@@ -7,7 +7,6 @@
 
 use ix_trace_rs::trace;
 use qsl_package::CheckedPackage;
-use quire_exact::NodeKey;
 use quire_exact::{EnumMember, Value, ValueType};
 use quire_semantic_value::checking::CheckingLimits;
 

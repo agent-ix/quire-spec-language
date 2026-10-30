@@ -20,7 +20,6 @@ use std::num::NonZeroU64;
 use ix_trace_rs::trace;
 use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
 use qsl_semantics::library::LibraryName;
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::observation::{
     AdmittedObservations, ClauseSelection, ClauseSelectionInput, DocumentRef, Observation,
@@ -30,7 +29,7 @@ use quire_eval::CallFailure;
 use quire_eval::FamilyOutcome;
 use quire_exact::{
     ChargePoint, EffectiveId, FieldValue, InjectedDenial, LimitKind, Meter, NodeKey, ObjectId,
-    ObjectReference, Outcome, UniverseId, Value,
+    ObjectReference, Outcome, Value,
 };
 use quire_semantic_value::call::InputRefusal;
 use quire_semantic_value::object_closure::ObjectClosure;
@@ -81,7 +80,7 @@ fn compose(
         formatted,
         "{path}: private fixture second-pass bytes",
     );
-    let checked = crate::spine::compose(
+    crate::spine::compose(
         formatted_identity,
         path,
         formatted.as_bytes(),
@@ -657,7 +656,7 @@ fn evaluate_clause_is_deterministic() {
             node_environment(types, node_effective.clone(), &["a", "b", "c"]),
             "a"
         ),
-        run.clone()(
+        run(
             node_environment(types, node_effective.clone(), &["a", "b", "c"]),
             "a"
         )
@@ -693,7 +692,7 @@ fn evaluate_clause_is_deterministic() {
             .expect("the two-node cycle is internally closed"),
         )
     };
-    assert_eq!(run.clone()(cycle(), "a"), run(cycle(), "a"));
+    assert_eq!(run(cycle(), "a"), run(cycle(), "a"));
 }
 
 /// TC-467 step 1 (FR-107-AC-4): a zero-budget meter completes `Incomplete`
@@ -3567,7 +3566,7 @@ fn s4_emits_exactly_the_fr_105_state_nodes() {
         .expect("ConfigVersion's own object_type node is in the graph")
         .key();
     assert_eq!(
-        crate::adm(&context_ref),
+        crate::adm(context_ref),
         config_version_node,
         "operation_anchor's context is ConfigVersion's own node, verified via resolve_declaration"
     );
@@ -3599,7 +3598,7 @@ fn s4_emits_exactly_the_fr_105_state_nodes() {
             panic!("state_clause's anchor argument is a reference");
         };
         assert_eq!(
-            crate::adm(&target),
+            crate::adm(target),
             config_version_node,
             "an invariant's anchor argument names ConfigVersion's own node"
         );
@@ -3631,12 +3630,12 @@ fn s4_emits_exactly_the_fr_105_state_nodes() {
     assert_eq!(only.field_name(), Some("versionNumber"));
     assert_eq!(
         crate::adm(&only.declaration()),
-        crate::adm(&context_ref),
+        crate::adm(context_ref),
         "modifies names ConfigVersion's own node"
     );
     assert_eq!(
         frames[0].semantic_type(),
-        Some(crate::adm(&context_ref)),
+        Some(crate::adm(context_ref)),
         "the frame's own semantic_type is the declaring object type"
     );
     let qsl_semantics::check::MemberTerm::Binding(qsl_semantics::check::Binding {
@@ -3654,7 +3653,7 @@ fn s4_emits_exactly_the_fr_105_state_nodes() {
         panic!("frame's value is a reference");
     };
     assert_eq!(
-        crate::adm(&frame_target),
+        crate::adm(frame_target),
         frames[0].key(),
         "the anchor's frame binding names the frame node"
     );
@@ -3971,7 +3970,7 @@ fn resolve_expression<'g>(
     let qsl_semantics::check::LeafTerm::Reference { target } = leaf else {
         return None;
     };
-    let node = graph.semantic_graph().node(crate::adm(&target))?;
+    let node = graph.semantic_graph().node(crate::adm(target))?;
     (node.node_tag() == qsl_semantics::check::NodeTag::Expression).then(|| node.body())
 }
 
@@ -4110,7 +4109,7 @@ fn clause_parameters(
             };
             let node = graph
                 .semantic_graph()
-                .node(crate::adm(&target))
+                .node(crate::adm(target))
                 .expect("the parameter node is in the graph");
             assert_eq!(
                 (node.node_tag(), node.semantic_form()),
@@ -4139,7 +4138,7 @@ fn clause_parameters(
                     _ => None,
                 })
                 .expect("a parameter node binds its name as a text literal");
-            (crate::adm(&target), name)
+            (crate::adm(target), name)
         })
         .collect()
 }
@@ -4153,7 +4152,7 @@ fn clause_condition_node(clause: &qsl_semantics::check::SemanticNode) -> NodeKey
     else {
         panic!("a state_clause's condition argument references its expression node");
     };
-    crate::adm(&target)
+    crate::adm(target)
 }
 
 /// TC-462 (FR-105-AC-2): each `state`/`state_clause`, `state`/
@@ -4259,7 +4258,7 @@ fn s4_state_clause_and_anchor_dependencies_beyond_the_frame() {
     assert_eq!(
         graph
             .semantic_graph()
-            .node(crate::adm(&receiver))
+            .node(crate::adm(receiver))
             .map(qsl_semantics::check::SemanticNode::node_tag),
         Some(qsl_semantics::check::NodeTag::Expression),
         "the field read's receiver is the `deref(self)` expression node"
@@ -4268,7 +4267,7 @@ fn s4_state_clause_and_anchor_dependencies_beyond_the_frame() {
         sorted_json(emitted_dependencies_of(&compiled, field_read.key())),
         sorted_json(vec![
             wire_node_id(&config_version_node),
-            wire_node_id(crate::adm(&receiver)),
+            wire_node_id(crate::adm(receiver)),
         ]),
         "the versionNumber field read depends on exactly ConfigVersion (its member's \
          declaration) and its receiver expression node"
@@ -4522,7 +4521,7 @@ fn clause_anchor_target(clause: &qsl_semantics::check::SemanticNode) -> NodeKey 
     else {
         panic!("state_clause's second argument is a reference to its anchor: {arguments:?}");
     };
-    crate::adm(&target)
+    crate::adm(target)
 }
 
 /// TC-463 (FR-105-AC-4): renaming `ParentOrder` changes no node id -- the
@@ -4790,7 +4789,7 @@ fn s4_pre_clauses_via_config_version_and_sub_share_one_anchor_at_config_version(
         panic!("the context binding's value is a reference, got {value:?}");
     };
     assert_eq!(
-        crate::adm(&context),
+        crate::adm(context),
         config_version_node,
         "the shared anchor's context is ConfigVersion, the operation's declaring type"
     );

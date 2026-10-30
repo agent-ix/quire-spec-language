@@ -10,8 +10,8 @@
 
 use ix_trace_rs::trace;
 use qsl_replay::{
-    compile_admitted, AdmittedContext, AdmittedUnit, DependencyInput, Identifier, NodeKey,
-    ReplayLimits, SourceIdentity, StageLimits,
+    compile_admitted, AdmittedContext, AdmittedUnit, DependencyInput, Identifier, ReplayLimits,
+    SourceIdentity, StageLimits,
 };
 use quire_exact::Outcome;
 use quire_exact::{Integer, Meter, Quantity, Rational, ScalarLimits, Value, ValueType};

@@ -335,7 +335,7 @@ impl SampledWitness {
 mod tests {
     use qsl_eval::simulation::model::{NotMarkov, ScheduledIdentity};
     use qsl_foundation::selection::DefinitionRef;
-    use quire_exact::{CancelCause, EffectiveId, ObjectId, ObjectReference, UniverseId};
+    use quire_exact::{CancelCause, ObjectId, ObjectReference};
 
     use super::*;
 

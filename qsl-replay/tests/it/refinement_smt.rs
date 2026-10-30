@@ -18,7 +18,6 @@ use qsl_replay::{
     TerminalValue, UnavailabilityCause,
 };
 use quire_exact::Cancel;
-use quire_exact::NodeKey;
 
 use crate::refinement_fixture::{
     cas_refines_counter, cas_refines_counter_add, mutated, Variant, World,

@@ -264,13 +264,6 @@ fn fixture_other_universe() -> DomainPackage {
     )
 }
 
-/// A variant of [`fixture_f1`] under another package identity.
-fn fixture_f1_with_identity(identity: &str) -> DomainPackage {
-    let mut domain_package = fixture_f1();
-    domain_package.model_selection.identity = identity.to_owned();
-    domain_package
-}
-
 fn view_of(domain_package: &DomainPackage) -> EffectiveView {
     match normalize(domain_package, ModelNormalizationLimits::UNLIMITED) {
         NormalizeOutcome::Completed(view) => view,
@@ -3430,24 +3423,6 @@ fn tc_291_population_id_is_deterministic_over_its_admission_preimage() {
     // a different identity.
     let direct_second_key = admit(&view, &second_population_key());
     assert_ne!(direct_second_key, direct_1);
-}
-
-fn identity_binding(
-    view: &EffectiveView,
-    document: &PopulationDocument,
-    maximum: Option<u64>,
-) -> PopulationBinding {
-    match admit_binding(
-        view,
-        document,
-        &p1_population_key(),
-        GeneralizationClosure::Closed,
-        maximum,
-        &mut AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED),
-    ) {
-        AdmissionOutcome::Admitted(binding) => binding,
-        other => panic!("expected admitted binding, got {other:?}"),
-    }
 }
 
 #[test]

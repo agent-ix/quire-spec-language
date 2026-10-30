@@ -19,7 +19,6 @@ const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
                       profile v = \"quire.value.complete/v1\";\n";
 
 const TWO_POW_127: &str = "170141183460469231731687303715884105728";
-const I128_MAX: &str = "170141183460469231731687303715884105727";
 const I128_MIN: &str = "-170141183460469231731687303715884105728";
 /// `function u using v(x: <parameter>): Boolean pure { <body> }`.
 fn unit(parameter: &str, body: &str) -> String {

@@ -55,9 +55,9 @@ pub use lifecycle::{
 pub type StateClauseExecutionPoints = BTreeMap<String, quire_contract_model::ExecutionPoint>;
 
 #[cfg(test)]
-pub(crate) use lifecycle::{compose, ComposedUnit};
+pub(crate) use lifecycle::composed_declaration;
 #[cfg(test)]
-pub(crate) use lifecycle::{composed_declaration, composed_here};
+pub(crate) use lifecycle::{compose, ComposedUnit};
 
 mod bind;
 pub use bind::{
@@ -1927,6 +1927,26 @@ fn value_type_source(value_type: &quire_exact::ValueType) -> String {
     }
 }
 
+/// A structural spelling of a unit: the declared node's key, or the
+/// compound terms as `key^exponent` factors.
+fn unit_spelling(unit: &quire_exact::UnitId) -> String {
+    if let Some(key) = unit.declared_key() {
+        return key.to_string();
+    }
+    unit.compound_terms()
+        .unwrap_or_default()
+        .iter()
+        .map(|(key, exponent)| format!("{key}^{exponent}"))
+        .collect::<Vec<_>>()
+        .join("*")
+}
+
+/// A structural spelling of an effective identity: its original declaration.
+pub(crate) fn effective_spelling(id: &quire_exact::EffectiveId) -> String {
+    let original = id.original();
+    format!("{}/{}", original.package(), original.node())
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -2545,24 +2565,4 @@ mod tests {
             "(Boolean, String)"
         );
     }
-}
-
-/// A structural spelling of a unit: the declared node's key, or the
-/// compound terms as `key^exponent` factors.
-fn unit_spelling(unit: &quire_exact::UnitId) -> String {
-    if let Some(key) = unit.declared_key() {
-        return key.to_string();
-    }
-    unit.compound_terms()
-        .unwrap_or_default()
-        .iter()
-        .map(|(key, exponent)| format!("{key}^{exponent}"))
-        .collect::<Vec<_>>()
-        .join("*")
-}
-
-/// A structural spelling of an effective identity: its original declaration.
-pub(crate) fn effective_spelling(id: &quire_exact::EffectiveId) -> String {
-    let original = id.original();
-    format!("{}/{}", original.package(), original.node())
 }

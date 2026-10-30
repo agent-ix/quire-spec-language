@@ -658,7 +658,6 @@ fn observed_replay_request(
         WitnessPacket,
     };
     use qsl_foundation::source::provenance::OccurrenceKey;
-    use quire_exact::NodeKey;
 
     let (base, packages) = unit_and_packages(OPERATIONS);
     let header = "profile v = \"quire.value.complete/v1\";\n";

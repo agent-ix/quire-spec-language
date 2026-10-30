@@ -25,7 +25,6 @@ const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
     profile v = \"quire.value.complete/v1\";\n";
 
 const F: &str = "function f using v(x: Int[0, 9]): Boolean pure { x < 5 }\n";
-const F_CHANGED: &str = "function f using v(x: Int[0, 9]): Boolean pure { x < 6 }\n";
 const H: &str = "function h using v(): Boolean pure { true }\n";
 
 fn lib(identity: &str) -> LibraryName {
@@ -589,26 +588,6 @@ fn a_union_and_an_import_alias_sharing_a_member_name_are_ambiguous() {
     ));
 }
 
-/// The `node_id` digest of the function `name` in `compiled`'s wire.
-fn function_node(compiled: &ComposedUnit, name: &str) -> Value {
-    let identity = compiled
-        .package
-        .graph()
-        .function_identity(name)
-        .expect("declared");
-    qsl_foundation::node_wire::node_key_to_json(&identity.clone()).expect("a node id encodes")
-}
-
-/// The wire node whose `node_id` is `id`.
-fn wire_node<'w>(written: &'w Value, id: &Value) -> &'w Value {
-    written["semantic_graph"]["nodes"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|node| node["node_id"] == *id)
-        .unwrap_or_else(|| panic!("no node {id}"))
-}
-
 /// The domain package the refusal library's `model M` selects.
 fn spine_model() -> Vec<u8> {
     std::fs::read(concat!(
@@ -616,41 +595,6 @@ fn spine_model() -> Vec<u8> {
         "/../tests/fixtures/spine-model.semantic-ir.json"
     ))
     .unwrap()
-}
-
-/// The wire node that is the one application whose operation is
-/// `quire.op.function.call`.
-fn call_node(written: &Value) -> &Value {
-    let calls: Vec<&Value> = written["semantic_graph"]["nodes"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter(|node| node["body"]["operation"]["identity"] == "quire.op.function.call")
-        .collect();
-    assert_eq!(calls.len(), 1, "one call node");
-    calls[0]
-}
-
-/// Whether `written` holds an `Int[0, 9]` bounded-domain node.
-fn holds_int_0_9(written: &Value) -> bool {
-    written["semantic_graph"]["nodes"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|node| {
-            let members = node["body"]["members"].as_array();
-            let bound = |name: &str| {
-                members.and_then(|members| {
-                    members
-                        .iter()
-                        .find(|member| member["name"] == name)
-                        .map(|member| member["value"]["value"].clone())
-                })
-            };
-            node["node_tag"] == "bounded_domain"
-                && bound("min") == Some(Value::from("0"))
-                && bound("max") == Some(Value::from("9"))
-        })
 }
 
 /// FR-099-AC-5 (TC-446 step 5), refusals: a call of a library function

@@ -74,7 +74,7 @@ fn at(
     key: &OccurrenceKey,
     source: ReplaySource,
 ) -> ReplayRequestWire {
-    let mut wire = request(source_text.as_bytes(), &compiled, name(&[function]), source);
+    let mut wire = request(source_text.as_bytes(), compiled, name(&[function]), source);
     wire.replay_target = crate::RequestTargetWire::function(name(&[function]), key.clone());
     wire
 }

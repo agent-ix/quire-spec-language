@@ -6,46 +6,14 @@
 use super::*;
 use crate::witness::{NoPayload, WitnessEnvelope, WitnessPacket};
 use crate::{ProfileSelection, TracePosition};
-use quire_exact::{IntegerInterval, NodeKey, Origin, Role};
+use quire_exact::{NodeKey, Origin, Role};
 use quire_semantic_value::supplied_stop::{SuppliedLimitKind, SuppliedLimits};
-
-const NODE: u8 = 0x22;
-/// The first argument's parameter and type nodes: arbitrary distinct ids.
-const P0: u8 = 0x55;
-const T0: u8 = 0x66;
-
-/// The JSON string literal the canonical encoding holds for the fixture
-/// node `fill`: its compact node text, escaped.
-fn lit(fill: u8) -> String {
-    node_lit(&crate::fixture_node(fill))
-}
-
-fn node_lit(node: &NodeKey) -> String {
-    serde_json::to_string(&crate::id_text::node_text(node).expect("a node spells"))
-        .expect("a string")
-}
 
 fn argument(parameter: NodeKey, position: usize, semantic_type: NodeKey) -> ValueParityArgument {
     ValueParityArgument {
         parameter,
         position,
         semantic_type,
-    }
-}
-
-/// The spec's first argument: `x: Int[0, 9]` (QSpec FR-322 P4 typed by T4).
-fn first() -> ValueParityArgument {
-    argument(crate::fixture_node(P0), 0, crate::fixture_node(T0))
-}
-
-fn second() -> ValueParityArgument {
-    argument(crate::fixture_node(0x33), 1, crate::fixture_node(0x44))
-}
-
-fn v2() -> ValueParityPreimage {
-    ValueParityPreimage {
-        node: crate::fixture_node(NODE),
-        arguments: vec![first(), second()],
     }
 }
 

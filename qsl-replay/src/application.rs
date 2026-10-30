@@ -1324,7 +1324,7 @@ mod tests {
         let parameter = &site.site.parameters[0].1;
         assert_eq!(
             handle
-                .lookup_callable(handle.package_name(), &parameter)
+                .lookup_callable(handle.package_name(), parameter)
                 .err(),
             Some(CallableLookupRefusal::WrongKind)
         );
@@ -2130,7 +2130,7 @@ mod tests {
         let first = LibraryName::new("first").unwrap();
         let second = LibraryName::new("second").unwrap();
         assert_eq!(
-            foreign_or_unknown(&[first.clone()]),
+            foreign_or_unknown(std::slice::from_ref(&first)),
             NestedCallSiteRefusal::ForeignCall(first.clone())
         );
         assert_eq!(

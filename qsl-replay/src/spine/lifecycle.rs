@@ -869,12 +869,6 @@ fn record_declarations(package: &pkg::CheckedPackage) {
     }
 }
 
-/// Whether a callable with this node key was [`compose`]d on this thread.
-#[cfg(test)]
-pub(crate) fn composed_here(callable: &quire_exact::NodeKey) -> bool {
-    DECLARATIONS.with(|declarations| declarations.borrow().contains_key(callable))
-}
-
 /// The `declaration` occurrence of the callable `callable` in a package
 /// [`compose`]d on this thread.
 #[cfg(test)]

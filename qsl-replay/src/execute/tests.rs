@@ -1127,8 +1127,6 @@ fn transitive_only_library_source_reaches_replay() {
         path: source_identity.to_owned(),
         bytes: bytes.as_bytes().to_vec(),
     };
-    let supplied =
-        DependencyInput::new(vec![library("test/c", "test:c", &c)]).expect("C is supplied");
     let a = units_source(
         "import \"test/b\" as b;\nfunction q using v(x: Int[0, 9]): Boolean pure { b::big(x) }\n",
     );
@@ -1932,7 +1930,7 @@ fn actual_public_package_comparator_fault_keeps_the_nested_cause_in_replay() {
         AdmittedEnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
     };
     use qsl_semantics::value::{NodeOwner, OwnerSelection, OwnerSubject};
-    use quire_exact::{ChargePoint, EnumMember, Meter, NodeKey, Value, ValueType};
+    use quire_exact::{ChargePoint, EnumMember, Meter, Value, ValueType};
     use quire_semantic_value::checking::{CheckMode, CheckingLimits};
     let limits = qsl_foundation::IdentityLimits::default();
     let owner = NodeOwner::Definition(OwnerSubject {
@@ -3223,10 +3221,6 @@ mod operator_arm {
         assert_ne!(agrees.claim(), other.claim());
     }
 
-    fn at(node: NodeKey, operation: ScalarOperation) -> OperatorClaim {
-        claim_raw(node, operation, completed(0))
-    }
-
     /// FR-357-AC-16: a request whose obligation identity is not the
     /// recomputed one refuses `ScalarIdentity` (`content-mismatch`) with the
     /// cause `Obligation` naming both digests, after any member of the
@@ -3237,7 +3231,8 @@ mod operator_arm {
         let base = claim(add(41, 1), completed(42));
         let mut other_key = base.clone();
         other_key.occurrence = quire_exact::Origin::new(quire_exact::Role::new("expression"), 1);
-        for (label, minted_over) in [("occurrence key", other_key)] {
+        {
+            let (label, minted_over) = ("occurrence key", other_key);
             let wire = wire_for("inc", &minted_over);
             let sent_id = wire.obligation_identity.clone();
             let report = crate::replay_operator_parity(wire, base.clone(), ReplayLimits::default());

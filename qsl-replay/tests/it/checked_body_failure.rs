@@ -235,7 +235,7 @@ fn fixture() -> Fixture {
 
     let acquired = acquire_checked_closure(
         qsl_replay::CompileUnit {
-            source: source,
+            source,
             package_name: "fixture".to_owned(),
             path: "body-failure.native",
             bytes: UNIT.as_bytes(),

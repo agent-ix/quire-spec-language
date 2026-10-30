@@ -25,7 +25,6 @@ use qsl_eval::value::ClauseEvaluation;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::check::{ApplicationTerm, BodyTerm, Operator};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
-use quire_exact::NodeKey;
 use quire_semantic_value::catalog::Category;
 
 /// The `witness` unit's invariants, on `Config::ConfigVersion` at
@@ -1980,7 +1979,7 @@ fn tc_744_every_deciding_element_kind_round_trips() {
     use quire_exact::{
         CardinalityBound, CollectionKind, CollectionType, Decimal, FieldValue, IeeeValue,
         IntegerInterval, ObjectId, ObjectReference, OptionValue, Quantity, Rational, UnitId,
-        UniverseId, ValueType, VariantId,
+        ValueType,
     };
     let unit = codec_unit();
     let package = &unit.compiled.package;

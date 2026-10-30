@@ -5,9 +5,7 @@ use ix_trace_rs::trace;
 use qsl_foundation::SourceIdentity;
 use qsl_semantics::model::refusal::ModelRefusalCause;
 use quire_checked::key::DeclarationKey;
-use quire_exact::{
-    BoundViolation, CardinalityBound, CollectionKind, Incomplete, Integer, UniverseId, Value,
-};
+use quire_exact::{BoundViolation, CardinalityBound, CollectionKind, Incomplete, Integer, Value};
 use quire_semantic_value::catalog::{
     CatalogCoded, UndefinedCoded, UndefinedReason, UndefinedRecord,
 };

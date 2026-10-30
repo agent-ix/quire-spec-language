@@ -13,9 +13,9 @@ use std::collections::BTreeMap;
 use ix_trace_rs::trace;
 use qsl_replay::spine::{self, default_accounting, ParseRequest};
 use qsl_replay::{
-    compile_package, run_with_requirements, Call, CallArgument, CallOutcome, DependencyInput,
-    Integer, ObjectEnvironment, OccurrenceKey, ReplayLimits, RunRefusal, RunWithRequirements,
-    SourceIdentity, SpineLimits, StageLimits, Value,
+    run_with_requirements, Call, CallArgument, CallOutcome, DependencyInput, Integer,
+    ObjectEnvironment, OccurrenceKey, RunRefusal, RunWithRequirements, SourceIdentity, SpineLimits,
+    Value,
 };
 use quire_exact::Cancel;
 use quire_semantic_value::supplied_stop::SuppliedLimits;

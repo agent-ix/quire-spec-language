@@ -30,7 +30,7 @@ fn admit(
             source: SourceIdentity::new("a", "u", "git", "1"),
             package_name: "fixture".to_owned(),
             path: "unit.native",
-            bytes: bytes,
+            bytes,
         },
         [],
         &DependencyInput::default(),

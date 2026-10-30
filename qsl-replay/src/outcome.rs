@@ -1539,7 +1539,7 @@ mod tests {
 
     use ix_trace_rs::trace;
     use qsl_foundation::{Position, SourceIdentity};
-    use qsl_semantics::library::LibraryName;
+
     use qsl_semantics::model::object_environment::ObjectEnvironment;
     use quire_exact::{Cancel, CancelCause, Identifier, ScalarLimits};
     use quire_semantic_value::catalog::{CatalogCode, InternalFault};

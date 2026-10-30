@@ -892,7 +892,6 @@ mod tests {
     use ix_trace_rs::trace;
     use qsl_foundation::source::provenance::OccurrenceKey as OccurrenceKeyForTest;
     use quire_exact::Identifier;
-    use quire_exact::NodeKey;
 
     fn scalar_limits(seed: u64) -> ScalarLimits {
         ScalarLimits {

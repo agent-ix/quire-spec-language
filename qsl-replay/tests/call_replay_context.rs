@@ -39,7 +39,6 @@ const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
 const R: &str = "function p using v(x: Int[0, 9]): Boolean pure { x > 3 }\n\
     function q using v(x: Int[0, 9]): Integer pure { x + 1 }\n\
     function r using v(x: Int[0, 9]): Integer pure { 10 mod x }\n";
-const S: &str = "function s using v(x: Int[0, 9]): Integer pure { x + 2 }\n";
 
 fn unit(extra: &str) -> String {
     format!("{HEADER}{R}{extra}")
