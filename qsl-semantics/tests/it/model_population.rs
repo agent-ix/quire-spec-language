@@ -286,7 +286,7 @@ fn type_id(view: &EffectiveView, identity: &str) -> EffectiveId {
         .find(|entry| {
             entry.preimage.owner_effective_type.is_none() && entry.preimage.original == original
         })
-        .map(|entry| entry.effective_id)
+        .map(|entry| entry.effective_id.clone())
         .unwrap_or_else(|| panic!("{identity} has no type-level effective declaration"))
 }
 
@@ -333,7 +333,7 @@ fn p1(model_identity: &str) -> PopulationDocument {
 fn reference_key(universe: &UniverseId, type_identity: &EffectiveId, object: &str) -> ReferenceKey {
     ReferenceKey {
         universe: universe.clone(),
-        type_identity: *type_identity,
+        type_identity: type_identity.clone(),
         object: object.to_owned(),
     }
 }
@@ -353,7 +353,7 @@ fn lookup_key(
     LookupKey {
         static_type,
         universe: universe.clone(),
-        type_identity: *type_identity,
+        type_identity: type_identity.clone(),
         object: object.as_bytes().to_vec(),
     }
 }
@@ -1133,7 +1133,7 @@ fn l03_lookup_refused_mode() {
             assert_eq!(
                 refusal.cause,
                 ModelRefusalCause::AbsentKey {
-                    binding: binding.population_id().to_string(),
+                    binding: format!("{:?}", binding.population_id()),
                     key: b"c9".to_vec(),
                 }
             );
@@ -1182,7 +1182,7 @@ fn l03_lookup_refused_mode_malformed_identity_reports_hex_detail() {
         LookupOutcome::Refused(ModelRefusal {
             code: Code::InvalidRuntimeInput,
             cause: ModelRefusalCause::AbsentKey {
-                binding: binding.population_id().to_string(),
+                binding: format!("{:?}", binding.population_id()),
                 key: vec![0xFF, 0xFE],
             },
             detail: "identity bytes 0xfffe (not UTF-8) is not a member of the bound population"
@@ -1212,7 +1212,7 @@ fn l03_lookup_present_member_found_through_the_raw_bytes_path() {
     let ra = LookupKey {
         static_type: DeclarationKey::fixture("model.A"),
         universe: universe.clone(),
-        type_identity: a,
+        type_identity: a.clone(),
         object: b"a1".to_vec(),
     };
     let mut meter = Meter::new(SCALAR_UNLIMITED);
@@ -4102,7 +4102,7 @@ fn tc_410_each_connected_component_has_its_own_object_universe() {
             type_id(&view, member_type),
             "{population}"
         );
-        observed.push(key.universe);
+        observed.push(key.universe.clone());
     }
     assert_eq!(
         observed.iter().collect::<BTreeSet<_>>().len(),

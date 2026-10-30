@@ -424,7 +424,7 @@ fn object_clauses_preserve_order_identity_and_effective_declarations() {
         assert_eq!(original.origin, origin(p, &format!("Order/{name}")));
     }
     let view = normalized(&package, 4);
-    let owner = view.type_identities()[&key(p, "Order")];
+    let owner = view.type_identities()[&key(p, "Order")].clone();
     for clause in clauses {
         assert_eq!(
             view.declarations()
@@ -432,7 +432,7 @@ fn object_clauses_preserve_order_identity_and_effective_declarations() {
                 .filter(|entry| {
                     entry.visible
                         && entry.preimage.original == clause.key
-                        && entry.preimage.owner_effective_type == Some(owner)
+                        && entry.preimage.owner_effective_type == Some(owner.clone())
                 })
                 .count(),
             1,
@@ -913,11 +913,11 @@ fn record_subtype_inherits_invariant_without_an_object_universe() {
     assert_eq!(clause.language, "ocl");
     assert_eq!(clause.text, "self.amount_minor >= 0");
     let view = normalized(&package, 5);
-    let subtype = view.type_identities()[&key(p, "SpecialAmount")];
+    let subtype = view.type_identities()[&key(p, "SpecialAmount")].clone();
     let mut inherited: Vec<_> = view
         .declarations()
         .iter()
-        .filter(|entry| entry.visible && entry.preimage.owner_effective_type == Some(subtype))
+        .filter(|entry| entry.visible && entry.preimage.owner_effective_type == Some(subtype.clone()))
         .map(|entry| entry.preimage.original.clone())
         .collect();
     inherited.sort();
@@ -1274,12 +1274,12 @@ fn inherited_business_members_derive_the_inherit_fact_only() {
     };
 
     let facts = |owner: &str, member: &str| {
-        let owner = view.type_identities()[&key(p, owner)];
+        let owner = view.type_identities()[&key(p, owner)].clone();
         let entry = view
             .declarations()
             .iter()
             .find(|entry| {
-                entry.preimage.owner_effective_type == Some(owner)
+                entry.preimage.owner_effective_type == Some(owner.clone())
                     && entry.preimage.original == key(p, member)
             })
             .unwrap_or_else(|| panic!("{member} is an effective member"));

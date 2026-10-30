@@ -160,7 +160,7 @@ fn the_counter_refinement_writes_an_initial_and_a_step_record_per_row() {
     assert!(any
         .requirements()
         .keys()
-        .all(|key| key.node() != node || key.origin().role().as_str() != "generated"));
+        .all(|key| *key.node() != node || key.origin().role().as_str() != "generated"));
 }
 
 /// FR-146-AC-2, the hidden-field case: a refinement with a hidden field
@@ -266,7 +266,7 @@ fn an_abstract_model_invariant_is_not_a_hypothesis_in_either_order() {
         .expect("CasInv")
         .identity();
     for record in records(&forward) {
-        assert_eq!(record.hypotheses, [concrete]);
+        assert_eq!(record.hypotheses, [concrete.clone()]);
     }
     assert_eq!(records(&forward), records(&backward));
 }
@@ -284,7 +284,7 @@ fn each_record_has_its_generated_occurrence_key() {
     assert_eq!(found.len(), 8);
     for (ordinal, entry) in found.iter().enumerate() {
         let origin = entry.occurrence().origin();
-        assert_eq!(entry.occurrence().node(), node);
+        assert_eq!(entry.occurrence().node(), &node);
         assert_eq!(origin.role().as_str(), "generated");
         assert_eq!(origin.ordinal(), ordinal as u64);
         let expected = match ordinal {
