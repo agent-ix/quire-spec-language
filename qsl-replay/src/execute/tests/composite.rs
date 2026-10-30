@@ -114,7 +114,9 @@ impl Fixture {
             .find(|node| {
                 matches!(
                     node.nominal_payload(),
-                    Some(qsl_semantics::value::nominal_payload::NominalPayload::Enum(_))
+                    Some(qsl_semantics::value::nominal_payload::NominalPayload::Enum(
+                        _
+                    ))
                 ) && node
                     .declaration()
                     .and_then(<[_]>::last)
@@ -826,11 +828,12 @@ fn tc_906_a_reference_replays_by_identity_and_a_dereference_completes_no_value()
         },
     )
     .expect("the declared object type has a universe");
-    let reference = |object_type: quire_exact::EffectiveId, identity: &[u8]| WitnessValue::Reference {
-        universe: universe.clone(),
-        object_type,
-        identity: identity.to_vec(),
-    };
+    let reference =
+        |object_type: quire_exact::EffectiveId, identity: &[u8]| WitnessValue::Reference {
+            universe: universe.clone(),
+            object_type,
+            identity: identity.to_vec(),
+        };
     for result in fixture.both("rw", reference(type_of("rw").clone(), b"w-1")) {
         assert_reproduced(result);
     }

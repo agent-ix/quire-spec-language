@@ -293,6 +293,7 @@ fn declarations(documents: &[&[u8]], text: &str) -> PackageDeclarations {
     .expect("the operation clauses parse");
     let mut declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         built,
         models,
         Vec::new(),
@@ -790,7 +791,7 @@ mod tp4 {
                 panic!("the clause ranges over a reference");
             };
             let reference = system
-                .bound_reference(*object_type, &instance)
+                .bound_reference(object_type.clone(), &instance)
                 .expect("the instance has a reference");
             StateContext::clause(
                 self.clause(),
@@ -839,8 +840,10 @@ mod tp4 {
         }
 
         pub fn foreign_keys(&self) -> BuchiStates {
-            let identity =
-                OccurrenceKey::new(fixture_node(0x53), Origin::new(Role::new("temporal"), 1));
+            let identity = OccurrenceKey::new(
+                super::fixture_node(0x53),
+                Origin::new(Role::new("temporal"), 1),
+            );
             let context = StateContext::clause(self.clause(), identity, Vec::new());
             BuchiStates::clause(self.clause(), &context, SubjectKind::Ordinary)
                 .expect("the foreign TP-4 key context builds")

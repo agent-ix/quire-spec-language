@@ -797,7 +797,11 @@ fn an_import_read_ceiling_is_incomplete_naming_the_limit() {
             identity: identity.clone(),
             refusal: Box::new(ImportViewRefusal::Read {
                 package: identity,
-                refusal: Box::new(StageFailure::Limit(LimitExceeded::new(Setting::I2Nodes, 1, 2))),
+                refusal: Box::new(StageFailure::Limit(LimitExceeded::new(
+                    Setting::I2Nodes,
+                    1,
+                    2,
+                ))),
             }),
         },
         region: None,

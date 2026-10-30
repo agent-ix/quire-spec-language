@@ -277,7 +277,9 @@ fn tc_792_source_compiled_lookup_driver_preserves_present_and_absent_paths() {
 #[test]
 #[trace("TC-792", "FR-100-AC-14", "FR-100-AC-16")]
 fn tc_792_source_driver_admits_unused_parameters_before_body_evaluation() {
-    let fixture = lookup_driver_fixture("function unused using v(p: Population<M::Gadget>[1], r: M::Gadget): Boolean pure { true }");
+    let fixture = lookup_driver_fixture(
+        "function unused using v(p: Population<M::Gadget>[1], r: M::Gadget): Boolean pure { true }",
+    );
     let (objects, population, _, present) = lookup_driver_context(&fixture);
     let foreign_universe = quire_exact::ObjectReference::new(
         crate::spine::fixture_ids::universe(0xa5),
@@ -897,7 +899,8 @@ fn tc_792_reference_exact_subtype_and_unrelated_vectors_use_model_conformance() 
         [],
         [
             ObjectTypeDeclaration::new(root_id.clone(), "Root", Vec::new()),
-            ObjectTypeDeclaration::new(target_id.clone(), "T", Vec::new()).with_supertypes(vec![root_id.clone()]),
+            ObjectTypeDeclaration::new(target_id.clone(), "T", Vec::new())
+                .with_supertypes(vec![root_id.clone()]),
             ObjectTypeDeclaration::new(subtype_id.clone(), "S", Vec::new())
                 .with_supertypes(vec![target_id.clone()]),
             ObjectTypeDeclaration::new(unrelated_id.clone(), "U", Vec::new())
@@ -2293,8 +2296,15 @@ fn argument_value_refuses_map_and_bounded_quantity_parameters() {
         None,
     )));
     let bounded = ValueType::BoundedQuantity(std::sync::Arc::new(
-        quire_exact::BoundedQuantityType::new(quire_exact::UnitId::compound(vec![(crate::fixture_node(5), quire_exact::Integer::from(1_i64))]), None, None)
-            .expect("an unbounded bounded quantity type"),
+        quire_exact::BoundedQuantityType::new(
+            quire_exact::UnitId::compound(vec![(
+                crate::fixture_node(5),
+                quire_exact::Integer::from(1_i64),
+            )]),
+            None,
+            None,
+        )
+        .expect("an unbounded bounded quantity type"),
     ));
     for value_type in [map, bounded] {
         assert!(matches!(

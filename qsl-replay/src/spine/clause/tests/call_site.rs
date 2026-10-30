@@ -331,10 +331,16 @@ fn call_site_locates_a_state_clause_by_name() {
     expected.sort_unstable();
     assert_eq!(invariants, expected, "the two invariants' own nodes");
     assert_eq!(parent_order.site.name.as_str(), "ParentOrder");
-    assert_eq!(parent_order.site.occurrence, claim(parent_order.site.node.clone()));
+    assert_eq!(
+        parent_order.site.occurrence,
+        claim(parent_order.site.node.clone())
+    );
 
     let pre = clause("AttemptPre");
-    assert_eq!(vec![pre.site.node.clone()], clause_nodes_of(graph, "precondition"));
+    assert_eq!(
+        vec![pre.site.node.clone()],
+        clause_nodes_of(graph, "precondition")
+    );
     assert_eq!(pre.site.occurrence, claim(pre.site.node.clone()));
 
     let post = clause("VersionUnchanged");
@@ -428,8 +434,14 @@ fn function_site_names_its_function_node_and_declaration_occurrence() {
 
     let p = site(PQ, "p");
     let q = site(PQ, "q");
-    assert_eq!(vec![p.function.clone()], function_nodes_declaring(graph, "p"));
-    assert_eq!(vec![q.function.clone()], function_nodes_declaring(graph, "q"));
+    assert_eq!(
+        vec![p.function.clone()],
+        function_nodes_declaring(graph, "p")
+    );
+    assert_eq!(
+        vec![q.function.clone()],
+        function_nodes_declaring(graph, "q")
+    );
     assert_eq!(
         p.declaration,
         OccurrenceKey::new(p.function.clone(), Origin::new(Role::new("declaration"), 0))

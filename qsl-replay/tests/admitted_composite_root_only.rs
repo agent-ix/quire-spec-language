@@ -128,7 +128,7 @@ fn a_consumer_seals_a_union_and_admits_a_value_of_each_member() {
     let (pair, shape, wrap) = (find("Pair"), find("Shape"), find("Wrap"));
     assert_eq!(shape.form(), AdmittedCompositeForm::Union);
     let members = shape.union_members().expect("a union has members");
-    let names: Vec<_> = members.iter().map(|m| m.identifier().as_str()).collect();
+    let names: Vec<_> = members.iter().map(|m| m.identifier()).collect();
     assert_eq!(names, ["Empty", "Circle", "Rect"]);
     let variants: std::collections::BTreeSet<_> = members.iter().map(|m| m.variant()).collect();
     assert_eq!(variants.len(), 3, "each member has its own id");
@@ -153,7 +153,8 @@ fn a_consumer_seals_a_union_and_admits_a_value_of_each_member() {
                     .iter()
                     .map(|member| {
                         UnionMemberDeclaration::resolved(
-                            member.identifier().clone(),
+                            quire_exact::Identifier::new(member.identifier())
+                                .expect("a valid identifier"),
                             member.payload().to_vec(),
                         )
                     })
@@ -182,7 +183,7 @@ fn a_consumer_seals_a_union_and_admits_a_value_of_each_member() {
             .map(|member| member.member().clone())
             .collect();
         types
-            .seal_union_verified(union.key().clone(), union.node(), bindings)
+            .seal_union_verified(union.key().clone(), union.node().clone(), bindings)
             .expect("the admitted bindings seal the union");
     }
 

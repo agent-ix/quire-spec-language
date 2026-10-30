@@ -13,7 +13,7 @@ use quire_eval::{
     Transition,
 };
 use quire_exact::{
-    Cancel, CancelCause, ChargePoint, Integer, LimitKind, Meter, NodeKey, Outcome, ScalarLimits,
+    Cancel, CancelCause, ChargePoint, Integer, LimitKind, Meter, Outcome, ScalarLimits,
     UnionMember, Value, ValueType,
 };
 use quire_semantic_value::catalog::InternalFault;
@@ -105,10 +105,11 @@ impl Body for ActionBody {
                 bindings,
                 cancel,
                 capture,
-            } => match types
-                .clone()
-                .seal_union_verified(*handle, *final_key, bindings.clone())
-            {
+            } => match types.clone().seal_union_verified(
+                handle.clone(),
+                final_key.clone(),
+                bindings.clone(),
+            ) {
                 Err(failure) => {
                     capture.lock().expect("capture mutex").failure = Some(failure.clone());
                     Err(BodyFailure::qsv_environment(failure, Some(cancel)))
@@ -266,7 +267,7 @@ fn fixture() -> Fixture {
         let [NominalDeclarationMember::UnionMember { variant, .. }] = view.members() else {
             panic!("expected the checked union declaration to have one member")
         };
-        *variant
+        variant.clone()
     };
     let argument = payload_environment
         .union(
@@ -295,7 +296,10 @@ fn composite(view: &NominalDeclaration) -> CompositeDeclaration {
         .map(|member| match member {
             NominalDeclarationMember::UnionMember {
                 member, payload, ..
-            } => UnionMemberDeclaration::resolved(member.identifier().clone(), payload.clone()),
+            } => UnionMemberDeclaration::resolved(
+                quire_exact::Identifier::new(member.identifier()).expect("a valid identifier"),
+                payload.clone(),
+            ),
             other => panic!("unexpected member in union declaration: {other:?}"),
         })
         .collect();
@@ -322,7 +326,11 @@ fn environment(view: &NominalDeclaration, declaration: CompositeDeclaration) -> 
     let mut environment =
         TypeEnvironment::new([declaration], []).expect("owner-authored union declaration admits");
     environment
-        .seal_union_verified(view.key().clone(), view.node(), verified_union_members(view))
+        .seal_union_verified(
+            view.key().clone(),
+            view.node().clone(),
+            verified_union_members(view),
+        )
         .expect("checked union member bindings seal the declaration");
     environment
 }

@@ -529,7 +529,11 @@ fn unit_compile_carries_one_linked_table_per_called_operation() {
         .iter()
         .map(|table| {
             let linked = |subtype| named(table.linked_for(&subtype).expect("linked").body);
-            (linked(a), linked(b), table.candidate_count() as usize)
+            (
+                linked(a.clone()),
+                linked(b.clone()),
+                table.candidate_count() as usize,
+            )
         })
         .collect();
     tables.sort();
@@ -555,7 +559,7 @@ fn unit_compile_carries_one_linked_table_per_called_operation() {
     let linked_pair = |table: usize| {
         let table = &graph.dispatch_tables()[table];
         let linked = |subtype| named(table.linked_for(&subtype).expect("linked").body);
-        (linked(a), linked(b))
+        (linked(a.clone()), linked(b.clone()))
     };
     let mut found = Vec::new();
     for clause in ["c1", "c2", "c3"] {

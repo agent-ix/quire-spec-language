@@ -832,13 +832,12 @@ fn tc_907_anything_short_of_covering_is_tested() {
     let first = unit.parameter("f", 0);
     type Edit = Box<dyn Fn(&mut Vec<ProofBound>)>;
     let edits: [(&str, Edit); 3] = [
-        (
-            "cardinality 2 on one s",
-            {
-                let first = first.clone();
-                Box::new(move |bounds| bounds[1] = bound(first.clone(), &[1], FiniteBound::cardinality(2)))
-            },
-        ),
+        ("cardinality 2 on one s", {
+            let first = first.clone();
+            Box::new(move |bounds| {
+                bounds[1] = bound(first.clone(), &[1], FiniteBound::cardinality(2))
+            })
+        }),
         (
             "[0, 8] on one x",
             Box::new(move |bounds| bounds[0] = bound(first.clone(), &[0], range(0, 8))),
@@ -1578,7 +1577,11 @@ fn tc_907_every_outcome_carries_the_full_claim() {
         let evidence = verified(success_checks, refinement);
         let report = settle_verified_shadow(wire, claim.clone(), evidence, ReplayLimits::default());
         let full = |evidence: VerifiedShadow| {
-            CompositeIdentity::new(obligation.clone(), &claim, CompositeEvidence::Verified(evidence))
+            CompositeIdentity::new(
+                obligation.clone(),
+                &claim,
+                CompositeEvidence::Verified(evidence),
+            )
         };
         assert_eq!(*report.claim(), full(evidence), "{row}");
         assert_ne!(

@@ -1344,7 +1344,8 @@ fn population_universe_for_agrees_with_normalize_s_own_universe_assignment() {
     .expect("population_universe_for resolves the same object type's universe");
 
     assert_eq!(
-        admitted_universe, expected_universe.expect("a universe identity"),
+        admitted_universe,
+        expected_universe.expect("a universe identity"),
         "admission's own universe resolution must agree with normalize's"
     );
 }
@@ -3566,7 +3567,8 @@ fn s4_emits_exactly_the_fr_105_state_nodes() {
         .expect("ConfigVersion's own object_type node is in the graph")
         .key();
     assert_eq!(
-        crate::adm(&context_ref), config_version_node,
+        crate::adm(&context_ref),
+        config_version_node,
         "operation_anchor's context is ConfigVersion's own node, verified via resolve_declaration"
     );
 
@@ -3597,7 +3599,8 @@ fn s4_emits_exactly_the_fr_105_state_nodes() {
             panic!("state_clause's anchor argument is a reference");
         };
         assert_eq!(
-            crate::adm(&target), config_version_node,
+            crate::adm(&target),
+            config_version_node,
             "an invariant's anchor argument names ConfigVersion's own node"
         );
     }
@@ -4787,7 +4790,8 @@ fn s4_pre_clauses_via_config_version_and_sub_share_one_anchor_at_config_version(
         panic!("the context binding's value is a reference, got {value:?}");
     };
     assert_eq!(
-        crate::adm(&context), config_version_node,
+        crate::adm(&context),
+        config_version_node,
         "the shared anchor's context is ConfigVersion, the operation's declaring type"
     );
     assert_eq!(anchor_node.semantic_type(), Some(config_version_node));

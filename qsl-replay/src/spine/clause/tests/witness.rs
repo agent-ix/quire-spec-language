@@ -2029,7 +2029,13 @@ fn tc_744_every_deciding_element_kind_round_trips() {
         ("float32", Value::Float(IeeeValue::binary32(0x4049_0fdb))),
         (
             "compound quantity",
-            Value::Quantity(Quantity::new(rational(1, 1), UnitId::compound(vec![(crate::fixture_node(5), quire_exact::Integer::from(1_i64))]))),
+            Value::Quantity(Quantity::new(
+                rational(1, 1),
+                UnitId::compound(vec![(
+                    crate::fixture_node(5),
+                    quire_exact::Integer::from(1_i64),
+                )]),
+            )),
         ),
         ("text", text("cafe\u{301}")),
         (
@@ -2135,9 +2141,12 @@ fn tc_744_every_deciding_element_kind_round_trips() {
         vec![FieldValue::Present(int(1))],
         vec![FieldValue::Present(int(1)), FieldValue::Present(int(10))],
     ] {
-        let foreign = cause_deciding(&unit, quire_exact::from_admitted_slots(point.clone(), slots.into()))
-            .to_json(None)
-            .unwrap();
+        let foreign = cause_deciding(
+            &unit,
+            quire_exact::from_admitted_slots(point.clone(), slots.into()),
+        )
+        .to_json(None)
+        .unwrap();
         assert!(matches!(
             DisagreementCause::from_json(&foreign, package, None),
             Err(crate::CauseCodecError::Value("slots"))

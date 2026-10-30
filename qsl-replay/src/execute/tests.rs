@@ -2512,11 +2512,11 @@ fn tc_904_a_value_report_carries_the_sent_claim_on_every_outcome() {
 
 mod operator_arm {
     use super::*;
-    use qsl_semantics::check::{LeafTerm, LiteralValue, MemberTerm};
     use crate::{
         GeneratedFault, NativeOutcome, OperandRefusal, OperatorClaim, OperatorIdentity,
         OperatorParityResult, ScalarClaim, ScalarOperand, ScalarOperation,
     };
+    use qsl_semantics::check::{LeafTerm, LiteralValue, MemberTerm};
 
     fn int(value: i64) -> Integer {
         Integer::from(value)
@@ -3335,7 +3335,7 @@ mod operator_arm {
         }
         let report = refused_claim(wrong_child);
         assert!(
-            matches!(mismatch_of(&report), crate::ScalarIdentityMismatch::OperandChild { position: 0, claimed, found: Some(found), .. } if *claimed == invented && *found == parameter),
+            matches!(mismatch_of(&report), crate::ScalarIdentityMismatch::OperandChild { position: 0, claimed, found: Some(found), .. } if **claimed == invented && **found == parameter),
             "{:?}",
             report.result()
         );
@@ -3379,7 +3379,9 @@ mod operator_arm {
                 left: ScalarOperand::graph_child(
                     2,
                     range(0, 100),
-                    children_of(node_of("quire.op.integer.add"))[0].clone().unwrap(),
+                    children_of(node_of("quire.op.integer.add"))[0]
+                        .clone()
+                        .unwrap(),
                 ),
                 right: ScalarOperand::literal(2),
             },

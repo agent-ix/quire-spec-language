@@ -236,12 +236,7 @@ fn settle(
     let package = compiled.checked.package();
     let call = select(&compiled, function, Claim::ValueParity)?;
     check_identity(&request, package, &call, function)?;
-    let joined = arguments(
-        &call,
-        request.source(),
-        request.obligation_identity(),
-        None,
-    )?;
+    let joined = arguments(&call, request.source(), request.obligation_identity(), None)?;
     let limits = request.accounting_limits();
     let mut run = SuppliedRun::new(request.supplied_limits(), Cancel::new())
         .map_err(ReplayRefusal::Supplied)?;

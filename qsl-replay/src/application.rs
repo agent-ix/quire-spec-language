@@ -2163,7 +2163,10 @@ mod tests {
         )));
         let bounded = ValueType::BoundedQuantity(std::sync::Arc::new(
             quire_exact::BoundedQuantityType::new(
-                quire_exact::UnitId::compound(vec![(crate::fixture_node(5), quire_exact::Integer::from(1_i64))]),
+                quire_exact::UnitId::compound(vec![(
+                    crate::fixture_node(5),
+                    quire_exact::Integer::from(1_i64),
+                )]),
                 None,
                 None,
             )
@@ -2343,7 +2346,8 @@ mod tests {
                                     unreachable!("union view has union members")
                                 };
                                 UnionMemberDeclaration::resolved(
-                                    quire_exact::Identifier::new(member.identifier()).expect("a valid identifier"),
+                                    quire_exact::Identifier::new(member.identifier())
+                                        .expect("a valid identifier"),
                                     payload.clone(),
                                 )
                             })

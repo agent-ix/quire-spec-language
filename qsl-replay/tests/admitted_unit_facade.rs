@@ -186,7 +186,7 @@ fn unit_ids_are_the_spines_distinct_and_stable() {
         .units()
         .map(|unit| {
             (
-                unit.node(),
+                unit.node().clone(),
                 unit.qualified_name()
                     .last()
                     .expect("a name")
@@ -200,7 +200,7 @@ fn unit_ids_are_the_spines_distinct_and_stable() {
         .dimensions()
         .map(|dimension| {
             (
-                dimension.node(),
+                dimension.node().clone(),
                 dimension
                     .qualified_name()
                     .last()
@@ -231,16 +231,18 @@ fn unit_ids_are_the_spines_distinct_and_stable() {
         .iter()
         .find(|(_, n)| n == "Length")
         .unwrap()
-        .0;
+        .0
+        .clone();
     let time = expected
         .dimensions
         .iter()
         .find(|(_, n)| n == "Time")
         .unwrap()
-        .0;
-    assert_eq!(unit_named(&admitted, "m").dimension(), length);
-    assert_eq!(unit_named(&admitted, "km").dimension(), length);
-    assert_eq!(unit_named(&admitted, "s").dimension(), time);
+        .0
+        .clone();
+    assert_eq!(unit_named(&admitted, "m").dimension().clone(), length);
+    assert_eq!(unit_named(&admitted, "km").dimension().clone(), length);
+    assert_eq!(unit_named(&admitted, "s").dimension().clone(), time);
 
     // Conversion: same dimension converts, either way; another does not.
     let (m, km, s) = (
@@ -252,8 +254,15 @@ fn unit_ids_are_the_spines_distinct_and_stable() {
     assert!(!m.converts_to(s) && !s.converts_to(km));
 
     for (node, ..) in &expected.units {
-        let first = context.unit_declaration(&wire(*node)).expect("found");
-        assert_eq!(first, context.unit_declaration(&wire(*node)).expect("found"));
+        let first = context
+            .unit_declaration(&wire(node.clone()))
+            .expect("found");
+        assert_eq!(
+            first,
+            context
+                .unit_declaration(&wire(node.clone()))
+                .expect("found")
+        );
     }
     let recompiled = admit(&text, &DependencyInput::default());
     assert_eq!(
@@ -300,9 +309,23 @@ fn unit_lookups_refuse_unknown_and_wrong_kind_ids() {
         Err(AdmittedLookupRefusal::Unknown { .. })
     ));
 
-    let dimension = wire(context.dimensions().next().expect("a dimension").node().clone());
+    let dimension = wire(
+        context
+            .dimensions()
+            .next()
+            .expect("a dimension")
+            .node()
+            .clone(),
+    );
     let color = wire(context.enums().next().expect("the enum").key().clone());
-    let record = wire(context.composites().next().expect("the record").node().clone());
+    let record = wire(
+        context
+            .composites()
+            .next()
+            .expect("the record")
+            .node()
+            .clone(),
+    );
     for id in [dimension, color, record] {
         assert!(
             matches!(
@@ -351,7 +374,8 @@ fn a_dependencys_unit_is_foreign() {
             .dimensions()
             .next()
             .expect("dimension")
-            .node().clone(),
+            .node()
+            .clone(),
     );
     let package = alone.context().package_name().clone();
     let mid = library(
@@ -479,7 +503,7 @@ fn derived_dimensions_chains_and_offsets_convert() {
         .iter()
         .map(|(node, exponent)| {
             let base = context
-                .dimension_declaration(&wire(*node))
+                .dimension_declaration(&wire(node.clone()))
                 .expect("a part is a listed dimension");
             (
                 base.qualified_name()
