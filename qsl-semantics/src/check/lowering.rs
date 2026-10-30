@@ -90,7 +90,9 @@ pub(crate) use hyper::{
     finish_step_relation, HyperClauseInput, LoweredStepRelation, StepRelationInput,
 };
 pub(crate) use model::ParentSlotFailure;
-pub(crate) use model::{bound_origin, quantity_origin, strictly_below, QuantityKind};
+pub(crate) use model::{
+    bound_origin, model_declaration_key, quantity_origin, strictly_below, QuantityKind,
+};
 pub use model::{
     collection_kind, AdmittedModel, AuthoredBound, CollectionShape, ForeignView, ModelClause,
     PlaceRow, PlaceStep,
