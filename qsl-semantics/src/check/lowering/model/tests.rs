@@ -1333,19 +1333,19 @@ mod quantities {
             Some((NodeTag::Model, "record_value_type"))
         );
         assert_eq!(record_form(&event), Some((NodeTag::Model, "event_type")));
-        let limits = qsl_foundation::IdentityLimits::default();
-        let record_key = record_node_key(&record, limits).unwrap().unwrap();
-        let event_key = record_node_key(&event, limits).unwrap().unwrap();
+        let keyed = |record: &DomainPackageRecord, form| {
+            model_declaration_key(
+                &record.key().package,
+                NodeTag::Model,
+                form,
+                &record.key().node,
+            )
+            .unwrap()
+        };
+        let record_key = keyed(&record, "record_value_type");
+        let event_key = keyed(&event, "event_type");
         assert_ne!(record_key, event_key);
-        // The supertypes are not part of the key: it is a function of the
-        // owner and the form alone.
-        let bare = DomainPackageRecord::EventType(EventTypeRecord {
-            key,
-            identity_fields: Vec::new(),
-            occurrence_field: None,
-            supertypes: Vec::new(),
-        });
-        assert_eq!(record_node_key(&bare, limits).unwrap().unwrap(), event_key);
+        assert_eq!(keyed(&event, "event_type"), event_key);
     }
 }
 

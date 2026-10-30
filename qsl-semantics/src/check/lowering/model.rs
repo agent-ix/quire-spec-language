@@ -1742,6 +1742,38 @@ pub(super) fn model_node_content(
     }
 }
 
+/// The text of the two node tags a model declaration node carries.
+fn model_tag_text(tag: NodeTag) -> &'static str {
+    match tag {
+        NodeTag::Relation => "relation",
+        _ => "model",
+    }
+}
+
+/// The structural key of a model declaration node: the declaring package's
+/// identity, the path `[tag, form, node]` (the IR node string is one opaque
+/// segment, never split or hashed) and ordinal 0.
+///
+/// # Errors
+///
+/// A refusal when the identity is empty or the key cannot be formed.
+pub(crate) fn model_declaration_key(
+    identity: &str,
+    tag: NodeTag,
+    form: &str,
+    node: &str,
+) -> Result<NodeKey, quire_exact::InvalidNodeKey> {
+    crate::check::declared_node_key(
+        identity.to_owned(),
+        vec![
+            model_tag_text(tag).to_owned(),
+            form.to_owned(),
+            node.to_owned(),
+        ],
+        0,
+    )
+}
+
 /// The content of a `relation`/`population` node (QSpec FR-322 "Population
 /// references"): the one definition lowering's population reference and an
 /// abstraction relation's population target both key.
@@ -1822,7 +1854,16 @@ impl<'a> Lowering<'a> {
             .ok_or_else(|| fault(location, KeyFault::UnknownDeclaration(declaration.clone())))?;
         let (node_tag, form) = record_form(record)
             .ok_or_else(|| fault(location, KeyFault::UnnamedRecordKind(declaration.clone())))?;
-        let key = self.insert_node(location, model_node_content(owner, node_tag, form))?;
+        let key =
+            model_declaration_key(&model.selection.identity, node_tag, form, &declaration.node)
+                .map_err(|_| fault(location, KeyFault::EmptyNode(declaration.clone())))?;
+        // COMPILE GAP: add the keyed content to the graph; `insert_node`
+        // mints content keys, so a keyed insert is owned by lowering.rs.
+        self.insert_declared_node(
+            location,
+            key.clone(),
+            model_node_content(owner, node_tag, form),
+        )?;
         self.correspondence
             .record(key.clone(), declaration.clone())
             .map_err(|conflict| fault(location, KeyFault::CorrespondenceConflict(conflict)))?;
@@ -1838,8 +1879,15 @@ impl<'a> Lowering<'a> {
         declaration: &DeclarationKey,
         location: &Location,
     ) -> Result<NodeKey, CheckRefusal> {
-        let (owner, _) = self.model_owner(declaration, location)?;
-        self.insert_node(location, population_node_content(owner))
+        let (owner, model) = self.model_owner(declaration, location)?;
+        let key = model_declaration_key(
+            &model.selection.identity,
+            NodeTag::Relation,
+            "population",
+            &declaration.node,
+        )
+        .map_err(|_| fault(location, KeyFault::EmptyNode(declaration.clone())))?;
+        self.insert_declared_node(location, key, population_node_content(owner))
     }
 
     /// The model declaration node of the variant type `variant` and one
