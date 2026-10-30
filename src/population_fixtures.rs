@@ -36,12 +36,10 @@ use qsl_semantics::{
     library::{LibraryName, PackageId},
 };
 use quire_contract_model::{
-    derive_application_node_id, derive_structural_candidates, encode_checked_package_v2,
-    ApplicationNodeDraft, BoundedDomainForm, CheckedNodeId, CheckedNodeKind,
+    encode_checked_package_v2, BoundedDomainForm, CheckedNodeId, CheckedNodeKind,
     CheckedPackageEvidence, CheckedPackageIdentityPreimageRefV2, CheckedPackageReadLimits,
     CheckedPackageSourceCorrespondenceRef, CheckedPackageV2, CheckedPackageV2ReadResult,
-    CheckedSemanticGraphV2, CheckedSemanticId, CheckedSemanticNodeV2, CheckedSourceMapEntry,
-    CheckedTerm,
+    CheckedSemanticGraphV2, CheckedSemanticId, CheckedSemanticNodeV2, CheckedTerm,
 };
 use quire_semantic_value::checking::CheckingLimits;
 
@@ -70,7 +68,7 @@ pub enum Variant {
     ChangedMax,
     /// Contract IR TC-453 step 5: [`Self::SameTypeAndOtherType`] with the `Gadget[0]`
     /// parameter's `semantic_type` retargeted to the `Gadget[5]` population
-    /// node, identities and `package_id` rederived, source rows kept.
+    /// node, `package_id` rederived, source rows kept.
     RetargetedParameter,
 }
 
@@ -186,15 +184,6 @@ pub enum RetargetRefusal {
     ParameterNodes {
         /// How many parameters name it.
         found: usize,
-    },
-    /// IR refused to derive a node identity.
-    #[error("IR's identity derivation refused: {0}")]
-    Derivation(String),
-    /// Re-keying renamed nodes without settling.
-    #[error("re-keying did not settle within {renames} renames")]
-    Unsettled {
-        /// The rename budget that ran out.
-        renames: usize,
     },
     /// The canonical encoder refused.
     #[error("canonical encoding refused: {0}")]
@@ -400,13 +389,9 @@ fn population_max(node: &CheckedSemanticNodeV2) -> Option<u64> {
     value.as_str()?.parse().ok()
 }
 
-/// The ceiling on canonical bytes and visits of the identity derivations.
-const DERIVATION_BYTES: u64 = u64::MAX;
-const DERIVATION_WORK: u64 = u64::MAX;
-
 /// `base` with the `semantic_type` of the parameter typed by the population
 /// of the first same-type binding pointed at the population of the second,
-/// every identity that change moves rederived, and the result read back by
+/// and the result read back by
 /// IR's reader under `evidence`.
 fn retarget(
     base: &CheckedPackageV2,
@@ -444,11 +429,6 @@ fn retarget(
     };
     parameter.semantic_type = to;
 
-    let mut source_map = base.source_map().to_vec();
-    rekey(&mut nodes, &mut source_map).map_err(refuse)?;
-    nodes.sort_by(|left, right| left.node_id.digest.cmp(&right.node_id.digest));
-    source_map.sort_by(|left, right| left.node_id.digest.cmp(&right.node_id.digest));
-
     let limits = quire_canonical::Limits::new(u64::MAX);
     let graph = CheckedSemanticGraphV2 {
         graph_version: base.graph().graph_version.clone(),
@@ -481,7 +461,7 @@ fn retarget(
         base.lock(),
         &graph,
         CheckedPackageSourceCorrespondenceRef {
-            source_map: &source_map,
+            source_map: base.source_map(),
             refinement_step_rows: base.refinement_step_rows(),
         },
         base.capability_report(),
@@ -495,90 +475,6 @@ fn retarget(
             package: *package,
         }),
         other => Err(Error::Admission(format!("{other:?}"))),
-    }
-}
-
-/// Renames every node whose retained key is not the one IR derives for it to
-/// the derived key, wherever the old key is named, until none is left.
-fn rekey(
-    nodes: &mut [CheckedSemanticNodeV2],
-    source_map: &mut [CheckedSourceMapEntry],
-) -> Result<(), RetargetRefusal> {
-    let budget = nodes.len().saturating_mul(nodes.len()).saturating_add(1);
-    for _ in 0..budget {
-        let derived = derived_keys(nodes)?;
-        let stale = nodes
-            .iter()
-            .zip(derived)
-            .find(|(node, derived)| *derived != *node.node_id.digest);
-        let Some((node, new)) = stale else {
-            return Ok(());
-        };
-        let old = node.node_id.clone();
-        rename(nodes, source_map, &old, &new);
-    }
-    Err(RetargetRefusal::Unsettled { renames: budget })
-}
-
-/// The key IR derives for each of `nodes`, in order: structural candidates
-/// for the structural families, the application derivation for the rest.
-fn derived_keys(nodes: &[CheckedSemanticNodeV2]) -> Result<Vec<String>, RetargetRefusal> {
-    let derivation =
-        |error: &dyn std::fmt::Debug| RetargetRefusal::Derivation(format!("{error:?}"));
-    let structural = derive_structural_candidates(nodes, DERIVATION_BYTES, DERIVATION_WORK)
-        .map_err(|error| derivation(&error))?;
-    let mut derived: Vec<Option<String>> = vec![None; nodes.len()];
-    for candidate in structural.nodes() {
-        let slot = usize::try_from(candidate.position())
-            .ok()
-            .and_then(|position| derived.get_mut(position));
-        if let Some(slot) = slot {
-            *slot = Some(candidate.candidate_node_id().digest.to_string());
-        }
-    }
-    nodes
-        .iter()
-        .zip(derived)
-        .map(|(node, structural)| match structural {
-            Some(digest) => Ok(digest),
-            None => {
-                derive_application_node_id(ApplicationNodeDraft::new(node), None, DERIVATION_BYTES)
-                    .map(|candidate| candidate.candidate_node_id().digest.to_string())
-                    .map_err(|error| derivation(&error))
-            }
-        })
-        .collect()
-}
-
-/// Names `new` for `old` in every node's identity, type, dependencies and
-/// body, and in the source map; dependencies are kept in digest order.
-fn rename(
-    nodes: &mut [CheckedSemanticNodeV2],
-    source_map: &mut [CheckedSourceMapEntry],
-    old: &CheckedNodeId,
-    new: &str,
-) {
-    let renamed = |id: &mut CheckedNodeId| {
-        if *id == *old {
-            id.digest = new.into();
-        }
-    };
-    for node in nodes {
-        renamed(&mut node.node_id);
-        renamed(&mut node.semantic_type);
-        node.dependencies.iter_mut().for_each(renamed);
-        node.dependencies
-            .sort_by(|left, right| left.digest.cmp(&right.digest));
-        node.body.replace_node_id(
-            old,
-            &CheckedNodeId {
-                domain: old.domain.clone(),
-                digest: new.into(),
-            },
-        );
-    }
-    for row in source_map {
-        renamed(&mut row.node_id);
     }
 }
 
@@ -824,7 +720,7 @@ mod tests {
     }
 
     /// Contract IR TC-453 step 3: the regenerated package differs only in one source
-    /// maximum, and the node and extent that maximum names change with it.
+    /// maximum, and the extent that maximum names changes with it.
     #[trace("FR-093-AC-19", "TC-416")]
     #[test]
     fn a_changed_maximum_regenerates_an_admitted_package() {
@@ -841,17 +737,16 @@ mod tests {
             );
         }
         let moved = population_with_max(&changed.package, 6);
-        assert_ne!(moved.node_id, population_with_max(&base.package, 5).node_id);
         assert!(has_type_row(&changed.package, &moved.node_id));
     }
 
     /// Contract IR TC-453 step 5: one parameter's `semantic_type` is retargeted from the
-    /// first population node to the second; identities are rederived, the
+    /// first population node to the second; the
     /// original population nodes and source rows are kept, and IR's reader
     /// admits the package.
     #[trace("FR-093-AC-19", "TC-416")]
     #[test]
-    fn a_retargeted_parameter_is_rederived_and_admitted() {
+    fn a_retargeted_parameter_is_admitted() {
         let base = variant_fixture(Variant::SameTypeAndOtherType).unwrap();
         let retargeted = variant_fixture(Variant::RetargetedParameter).unwrap();
         let (base, retargeted) = (&base.package, &retargeted.package);
