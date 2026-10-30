@@ -52,6 +52,7 @@ fn operation_site(
     let document = config_version_domain_document();
     call_site(
         source(),
+        "fixture".to_owned(),
         "clause-run-config-version.native",
         unit.as_bytes(),
         [document.as_slice()],
@@ -135,6 +136,7 @@ fn locate<S: crate::CallSiteSelection>(
 ) -> Result<CallSite<S::Site>, Box<CallSiteRefusal>> {
     call_site(
         source(),
+        "fixture".to_owned(),
         "call-site.native",
         unit.as_bytes(),
         [document],
@@ -157,7 +159,7 @@ fn claim(node: NodeKey) -> OccurrenceKey {
 }
 
 /// FR-121-AC-3: `attemptUpdate`'s selection returns the compiled package's
-/// `package_id`, the one `operation_anchor` and `frame` node, the frame's
+/// the one `operation_anchor` and `frame` node, the frame's
 /// `generated` occurrence at ordinal 0 -- equal to the key a client builds
 /// through the facade's own `OccurrenceKey::new` and `Origin::new` -- and
 /// exactly the one postcondition naming the operation, at its `claim`
@@ -168,7 +170,6 @@ fn call_site_locates_an_operations_anchor_frame_and_clauses() {
     let site = operation_site(operation("Config", "ConfigVersion", "attemptUpdate"))
         .expect("attemptUpdate is named by VersionUnchanged");
     let compiled = config_version_compiled();
-    assert_eq!(site.package_id, compiled.emitted.package_id().record());
 
     let graph = compiled.package.graph();
     let operation = &site.site;
@@ -211,11 +212,11 @@ fn call_site_locates_an_operations_anchor_frame_and_clauses() {
 
 /// FR-121-AC-5: an operation whose model alias, object type or operation
 /// does not resolve, or that no clause or attempt names, refuses
-/// `UnknownOperation`, paired with the compiled package's own `package_id`.
+/// `UnknownOperation`, paired with the package name.
 #[trace("TC-516", "FR-121-AC-5")]
 #[test]
 fn call_site_refuses_an_unknown_operation_paired_with_its_package() {
-    let package = config_version_compiled().emitted.package_id().record();
+    let package = qsl_semantics::library::LibraryName::new("fixture").unwrap();
     for selection in [
         operation("Nope", "ConfigVersion", "attemptUpdate"),
         operation("Config", "Nope", "attemptUpdate"),
@@ -281,13 +282,7 @@ fn call_site_returns_only_the_selected_operations_clauses_in_declaration_order()
 #[test]
 fn call_site_refuses_an_operation_no_clause_names() {
     let (unit, document) = two_operation_unit(false);
-    let package = locate(
-        &unit,
-        &document,
-        &ClauseName(identifier("VersionUnchanged")),
-    )
-    .expect("VersionUnchanged is declared")
-    .package_id;
+    let package = qsl_semantics::library::LibraryName::new("fixture").unwrap();
     let selection = operation("Config", "ConfigVersion", "probe");
     let refusal = locate(&unit, &document, &selection)
         .expect_err("no clause names probe, so it has no frame");
@@ -305,8 +300,7 @@ fn call_site_refuses_an_operation_no_clause_names() {
 
 /// FR-121-AC-8: a clause selection returns an invariant's, a
 /// precondition's and a postcondition's own `state_clause` node, of the
-/// clause's own kind, at its `claim` occurrence at ordinal 0, with the
-/// compiled package's `package_id`; a postcondition's answer is the one the
+/// clause's own kind, at its `claim` occurrence at ordinal 0, a postcondition's answer is the one the
 /// operation selection lists. A name no state clause declares -- including
 /// a function's -- refuses `UnknownClause`, paired with the package.
 #[trace("TC-516", "FR-121-AC-8")]
@@ -331,10 +325,6 @@ fn call_site_locates_a_state_clause_by_name() {
 
     let parent_order = clause("ParentOrder");
     let no_cycle = clause("NoCycle");
-    assert_eq!(
-        parent_order.package_id,
-        compiled.emitted.package_id().record()
-    );
     let mut invariants = vec![parent_order.site.node, no_cycle.site.node];
     invariants.sort_unstable();
     let mut expected = clause_nodes_of(graph, "invariant");
@@ -370,7 +360,7 @@ fn call_site_locates_a_state_clause_by_name() {
                 package,
             } => {
                 assert_eq!(refused, selection);
-                assert_eq!(package, parent_order.package_id);
+                assert_eq!(package, qsl_semantics::library::LibraryName::new("fixture").unwrap());
             }
             other => panic!("expected UnknownClause for {name}, got {other:?}"),
         }
@@ -412,6 +402,7 @@ fn function_site_names_its_function_node_and_declaration_occurrence() {
     let site = |unit: &str, name: &str| {
         call_site(
             source(),
+            "fixture".to_owned(),
             "pq.native",
             unit.as_bytes(),
             [],
@@ -497,6 +488,7 @@ fn call_site_refuses_an_unsupplied_domain_package_as_model_intake() {
     let (unit, _) = two_operation_unit(true);
     let refusal = call_site(
         source(),
+        "fixture".to_owned(),
         "call-site.native",
         unit.as_bytes(),
         [],
@@ -535,6 +527,7 @@ fn call_site_refusal_codes_for_operations_clauses_and_intake() {
 
     let refusal = call_site(
         source(),
+        "fixture".to_owned(),
         "call-site.native",
         unit.as_bytes(),
         [],
@@ -690,7 +683,7 @@ fn call_site_keys_a_state_field_under_its_declaring_type_by_name_ordinal() {
         }
     );
 
-    let package = compiled.emitted.package_id().record();
+    let package = qsl_semantics::library::LibraryName::new("fixture").unwrap();
     for selection in [
         field("Config", "Sub", "nope"),
         field("Config", "ConfigVersion", "alpha"),
@@ -898,8 +891,7 @@ fn call_site_keys_a_population_as_its_requirement_records_do() {
 }
 
 /// FR-121-AC-22: a population selection whose alias or population does not
-/// resolve refuses `UnknownPopulation`, paired with the compiled package's
-/// own `package_id`.
+/// resolve refuses `UnknownPopulation`, paired with the package name.
 #[trace("TC-516", "FR-121-AC-22")]
 #[test]
 fn call_site_refuses_an_unknown_population_paired_with_its_package() {
@@ -907,10 +899,7 @@ fn call_site_refuses_an_unknown_population_paired_with_its_package() {
     let [(_, document)] = packages.iter().collect::<Vec<_>>()[..] else {
         panic!("one supplied document");
     };
-    let package = compile_config_version_unit(&unit, &packages)
-        .emitted
-        .package_id()
-        .record();
+    let package = qsl_semantics::library::LibraryName::new("fixture").unwrap();
     for selection in [
         population("Config", "nope"),
         population("Nope", "config_history"),
