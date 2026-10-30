@@ -73,7 +73,7 @@ evidence state.
 
 ## Requirements Summary
 
-- [x] **QSL #116:** install the frozen contract, exact allocation,
+- [x] **QSL #116:** install the contract, exact allocation,
   evidence reconciliation and serial issue graph.
 - [x] **AD-003, FR-131/134, FR-302/303 and FR-339:** complete source packages,
   grammar, identities, lossless CST and incremental source tooling foundations
@@ -103,11 +103,11 @@ belong to Agent-C; they are not silently reassigned to this lane.
   repository owner, with final QSL qualification consuming the merged
   lifecycle tooling.
 - QSL #131 and #120 consume the merged filament-core-data semantic IR crates and
-  quire-rs extraction by exact git revision; they edit neither repository.
+  quire-rs extraction; they edit neither repository.
 - QSL #121 consumes merged temporal/protocol artifacts and preserves their
   semantic authority rather than importing their evaluators.
-- QSL #123 consumes merged temporal, protocol, IR and integration results under
-  the exact I18 ecosystem lock; absent results remain missing qualification.
+- QSL #123 consumes merged temporal, protocol, IR and integration results;
+  absent results remain missing qualification.
 
 ## Existing Evidence Reconciliation
 
@@ -281,7 +281,7 @@ concrete evidence owner; task files may require additional boundary cases.
 
 ### Track A: Critical path (serial)
 
-- **A00 = Task-046** adoption — exit: the frozen plan is validated and audited.
+- **A00 = Task-046** adoption — exit: the plan is validated and audited.
 - **A01 = Task-047** source packages — hard; exit: complete syntax and CST round-trip exactly.
 - **A02 = Task-048** scalar semantics — hard; exit: exact numeric/text/unit matrices pass.
 - **A03 = Task-049** composites/functions — hard; exit: collection and totality properties pass.
