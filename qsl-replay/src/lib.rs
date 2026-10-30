@@ -440,6 +440,15 @@ pub(crate) fn pn(node: &NodeKey) -> String {
     crate::witness::parameter_name(node).expect("a node spells")
 }
 
+/// The admitted node identity of a checked node reference.
+#[cfg(test)]
+pub(crate) fn adm(reference: &qsl_semantics::check::NodeRef) -> NodeKey {
+    reference
+        .admitted()
+        .expect("a checked reference is admitted")
+        .clone()
+}
+
 /// A universe identity for a test fixture, distinct per `fill`.
 #[cfg(test)]
 pub(crate) fn fixture_universe(fill: u8) -> quire_exact::UniverseId {

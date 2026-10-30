@@ -234,6 +234,7 @@ impl WireNode {
 }
 
 impl WireNode {
+    #[cfg(test)]
     pub(crate) fn into_key(self) -> NodeKey {
         self.0
     }

@@ -258,8 +258,8 @@ fn unit_ids_are_the_spines_distinct_and_stable() {
     assert!(!m.converts_to(s) && !s.converts_to(km));
 
     for (node, ..) in &expected.units {
-        let first = context.unit_declaration(wire(*node)).expect("found");
-        assert_eq!(first, context.unit_declaration(wire(*node)).expect("found"));
+        let first = context.unit_declaration(&wire(*node)).expect("found");
+        assert_eq!(first, context.unit_declaration(&wire(*node)).expect("found"));
     }
     let recompiled = admit(&text, &DependencyInput::default());
     assert_eq!(
@@ -298,34 +298,34 @@ fn unit_lookups_refuse_unknown_and_wrong_kind_ids() {
         case: None,
     });
     assert_eq!(
-        context.unit_declaration(nobody),
+        context.unit_declaration(&nobody),
         unknown.clone().map(|_: ()| unreachable!())
     );
     assert!(matches!(
-        context.dimension_declaration(nobody),
+        context.dimension_declaration(&nobody),
         Err(AdmittedLookupRefusal::Unknown { .. })
     ));
 
-    let dimension = wire(context.dimensions().next().expect("a dimension").node());
-    let color = wire(context.enums().next().expect("the enum").key());
-    let record = wire(context.composites().next().expect("the record").node());
+    let dimension = wire(context.dimensions().next().expect("a dimension").node().clone());
+    let color = wire(context.enums().next().expect("the enum").key().clone());
+    let record = wire(context.composites().next().expect("the record").node().clone());
     for id in [dimension, color, record] {
         assert!(
             matches!(
-                context.unit_declaration(id),
+                context.unit_declaration(&id),
                 Err(AdmittedLookupRefusal::WrongKind { declaration }) if declaration == id
             ),
             "{id:?}"
         );
     }
-    let unit = wire(unit_named(&admitted, "m").node());
+    let unit = wire(unit_named(&admitted, "m").node().clone());
     assert!(matches!(
-        context.dimension_declaration(unit),
+        context.dimension_declaration(&unit),
         Err(AdmittedLookupRefusal::WrongKind { declaration }) if declaration == unit
     ));
     // The record and enum lookups refuse a unit as the wrong kind too.
     assert!(matches!(
-        context.composite_declaration(unit),
+        context.composite_declaration(&unit),
         Err(AdmittedLookupRefusal::WrongKind { .. })
     ));
 }
@@ -350,14 +350,14 @@ fn a_dependencys_unit_is_foreign() {
     )
     .expect("the library compiles");
     let kg = alone.context().units().next().expect("the unit");
-    let kg_id = wire(kg.node());
+    let kg_id = wire(kg.node().clone());
     let mass_dimension = wire(
         alone
             .context()
             .dimensions()
             .next()
             .expect("dimension")
-            .node(),
+            .node().clone(),
     );
     let package = alone.context().package_name().clone();
     let mid = library(
@@ -377,14 +377,14 @@ fn a_dependencys_unit_is_foreign() {
         );
         let context = admitted.context();
         assert_eq!(
-            context.unit_declaration(kg_id).map(|_| ()),
+            context.unit_declaration(&kg_id).map(|_| ()),
             Err(AdmittedLookupRefusal::Foreign {
                 declaration: kg_id,
                 package,
             })
         );
         assert_eq!(
-            context.dimension_declaration(mass_dimension).map(|_| ()),
+            context.dimension_declaration(&mass_dimension).map(|_| ()),
             Err(AdmittedLookupRefusal::Foreign {
                 declaration: mass_dimension,
                 package,
@@ -392,7 +392,7 @@ fn a_dependencys_unit_is_foreign() {
         );
         assert_eq!(context.units().count(), 3);
         for own in context.units() {
-            assert_eq!(context.unit_declaration(wire(own.node())), Ok(own));
+            assert_eq!(context.unit_declaration(&wire(own.node().clone())), Ok(own));
         }
     }
 }
@@ -428,20 +428,20 @@ fn an_unused_unit_is_found_and_a_dimension_no_unit_names_is_not_listed() {
     assert!(expected
         .units
         .iter()
-        .all(|(node, _)| *node != unused.node()));
-    let id = wire(unused.node());
-    assert_eq!(context.unit_declaration(id), Ok(unused));
+        .all(|(node, _)| *node != *unused.node()));
+    let id = wire(unused.node().clone());
+    assert_eq!(context.unit_declaration(&id), Ok(unused));
     assert_eq!(context.units().count(), 2);
     assert!(matches!(
-        context.composite_declaration(id),
+        context.composite_declaration(&id),
         Err(AdmittedLookupRefusal::WrongKind { .. })
     ));
     assert!(matches!(
-        context.dimension_declaration(id),
+        context.dimension_declaration(&id),
         Err(AdmittedLookupRefusal::WrongKind { .. })
     ));
     assert!(matches!(
-        context.enum_declaration(id),
+        context.enum_declaration(&id),
         Err(AdmittedLookupRefusal::Unknown { .. })
     ));
     let names: Vec<_> = context
@@ -485,7 +485,7 @@ fn derived_dimensions_chains_and_offsets_convert() {
         .iter()
         .map(|(node, exponent)| {
             let base = context
-                .dimension_declaration(wire(*node))
+                .dimension_declaration(&wire(*node))
                 .expect("a part is a listed dimension");
             (
                 base.qualified_name()

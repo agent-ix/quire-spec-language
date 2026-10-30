@@ -195,23 +195,23 @@ fn lookups_find_admitted_keys_and_refuse_unknown_ones() {
     let admitted = admit_ok(&format!("{HEADER}{COLORS}"));
     let context = admitted.context();
     let color = context.enums().next().expect("an enum");
-    let declaration = wire(color.key());
+    let declaration = wire(color.key().clone());
 
-    let found = context.enum_declaration(declaration).expect("found");
+    let found = context.enum_declaration(&declaration).expect("found");
     assert_eq!(found.key(), color.key());
-    let green = context.enum_case(declaration, &id("GREEN")).expect("found");
+    let green = context.enum_case(&declaration, &id("GREEN")).expect("found");
     assert_eq!(Some(green), color.case(&id("GREEN")));
 
     let nobody = fixture_node(7);
     assert_eq!(
-        context.enum_declaration(nobody),
+        context.enum_declaration(&nobody),
         Err(AdmittedLookupRefusal::Unknown {
             declaration: nobody,
             case: None
         })
     );
     assert_eq!(
-        context.enum_case(declaration, &id("PURPLE")),
+        context.enum_case(&declaration, &id("PURPLE")),
         Err(AdmittedLookupRefusal::Unknown {
             declaration,
             case: Some(id("PURPLE"))
@@ -247,7 +247,7 @@ fn a_dependencys_enum_is_foreign() {
     let shades = library("test/shades", "shades", SHADES);
     let alone_shades = alone(&shades, &DependencyInput::default());
     let shade = alone_shades.context().enums().next().expect("an enum");
-    let shade_id = wire(shade.key());
+    let shade_id = wire(shade.key().clone());
 
     let text = format!("{HEADER}import \"test/shades\" as s;\n{COLORS}");
     let admitted = admit(
@@ -259,14 +259,14 @@ fn a_dependencys_enum_is_foreign() {
     .expect("the unit compiles against the library");
     let context = admitted.context();
     assert_eq!(
-        context.enum_declaration(shade_id),
+        context.enum_declaration(&shade_id),
         Err(AdmittedLookupRefusal::Foreign {
             declaration: shade_id,
             package: alone_shades.context().package_name().clone(),
         })
     );
     let color = context.enums().next().expect("the unit's enum");
-    assert!(context.enum_declaration(wire(color.key())).is_ok());
+    assert!(context.enum_declaration(&wire(color.key().clone())).is_ok());
     assert_eq!(context.enums().count(), 1);
 }
 
@@ -283,7 +283,7 @@ fn a_transitive_dependencys_enum_is_foreign() {
             .enums()
             .next()
             .expect("an enum")
-            .key(),
+            .key().clone(),
     );
     let mid = library(
         "test/mid",
@@ -300,7 +300,7 @@ fn a_transitive_dependencys_enum_is_foreign() {
     )
     .expect("the unit compiles against the libraries");
     assert_eq!(
-        admitted.context().enum_declaration(shade_id),
+        admitted.context().enum_declaration(&shade_id),
         Err(AdmittedLookupRefusal::Foreign {
             declaration: shade_id,
             package: alone_shades.context().package_name().clone(),

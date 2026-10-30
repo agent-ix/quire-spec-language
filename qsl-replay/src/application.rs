@@ -1313,6 +1313,7 @@ mod tests {
                 .expect("function name");
         let site = crate::call_site(
             identity("unit"),
+            "fixture".to_owned(),
             "unit.native",
             source.as_bytes(),
             [],
@@ -1320,7 +1321,7 @@ mod tests {
             &name,
         )
         .expect("function site");
-        let parameter = site.site.parameters[0].1;
+        let parameter = &site.site.parameters[0].1;
         assert_eq!(
             handle
                 .lookup_callable(handle.package_name(), &parameter)
@@ -1436,7 +1437,7 @@ mod tests {
             .next()
             .expect("retained checked dependency");
         let imported = handle
-            .lookup_callable(imported_id.record(), &wire(imported_package, "imported"))
+            .lookup_callable(imported_id, &wire(imported_package, "imported"))
             .expect("imported function");
         let imported_location = imported_package
             .graph()
@@ -1769,8 +1770,8 @@ mod tests {
             let wire = node.key().clone();
             for ordinal in 0..16 {
                 let occurrence = NestedCallOccurrence::new(wire.clone(), ordinal);
-                if let Ok(site) = handle.nested_call_site(caller, occurrence) {
-                    found.push((occurrence, site));
+                if let Ok(site) = handle.nested_call_site(caller, occurrence.clone()) {
+                    found.push((occurrence.clone(), site));
                 }
             }
         }
@@ -2012,10 +2013,10 @@ mod tests {
         let dependency_id = dependency_id.clone();
         let g = select(handle, own, &package, "g");
         let outer = select(handle, &dependency_id, dependency, "outer");
-        let g_call = issued(handle, &package, &g)[0].0;
+        let g_call = &issued(handle, &package, &g)[0].0;
         let k = select(handle, own, &package, "k");
-        let k_call = issued(handle, &package, &k)[0].0;
-        let outer_call = issued(handle, dependency, &outer)[0].0;
+        let k_call = &issued(handle, &package, &k)[0].0;
+        let outer_call = &issued(handle, dependency, &outer)[0].0;
 
         let second = acquire(&site_source(), &site_dependencies());
         let other = select(second.handle(), own, &second.handle().package, "g");
@@ -2025,13 +2026,13 @@ mod tests {
         let environment = ApplicationEnvironment::new(ObjectClosure::default());
         let meter_before = meter(1000);
         let refusals = [
-            handle.nested_call_site(&other, g_call),
-            handle.nested_call_site(&g, outer_call),
-            handle.nested_call_site(&outer, g_call),
-            handle.nested_call_site(&g, k_call),
+            handle.nested_call_site(&other, g_call.clone()),
+            handle.nested_call_site(&g, outer_call.clone()),
+            handle.nested_call_site(&outer, g_call.clone()),
+            handle.nested_call_site(&g, k_call.clone()),
             handle.nested_call_site(&g, NestedCallOccurrence::new(wire(&package, "g"), 0)),
             handle.nested_call_site(&g, NestedCallOccurrence::new(crate::fixture_node(7), 0)),
-            handle.nested_call_site(&g, NestedCallOccurrence::new(g_call.call_node, 99)),
+            handle.nested_call_site(&g, NestedCallOccurrence::new(g_call.call_node.clone(), 99)),
         ]
         .map(|result| result.expect_err("refused"));
         assert_eq!(
@@ -2098,7 +2099,7 @@ mod tests {
             Ok(Admission::Accepted)
         );
         let registered = handle
-            .nested_call_site(&g, occurrence)
+            .nested_call_site(&g, occurrence.clone())
             .expect("after register");
         let environment = ApplicationEnvironment::new(ObjectClosure::default());
         let mut work = meter(1000);
@@ -2107,7 +2108,7 @@ mod tests {
             .expect("begin");
         assert!(registry.is_sealed());
         let begun = handle
-            .nested_call_site(&g, occurrence)
+            .nested_call_site(&g, occurrence.clone())
             .expect("after begin");
         let cloned = handle
             .clone()
@@ -2151,18 +2152,18 @@ mod tests {
             .checked_type_nodes()
             .find_map(|type_node| match type_node {
                 qsl_semantics::check::CheckedTypeNode::Composite { declaration, .. } => {
-                    Some(*declaration)
+                    Some(declaration.clone())
                 }
                 _ => None,
             })
             .expect("the Pair composite declaration");
         let map = ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(
-            ValueType::Composite(pair),
+            ValueType::Composite(pair.clone()),
             None,
         )));
         let bounded = ValueType::BoundedQuantity(std::sync::Arc::new(
             quire_exact::BoundedQuantityType::new(
-                quire_exact::UnitId::compound([5; 32]),
+                quire_exact::UnitId::compound(vec![(crate::fixture_node(5), quire_exact::Integer::from(1_i64))]),
                 None,
                 None,
             )
@@ -2274,14 +2275,14 @@ mod tests {
         else {
             panic!("union view retains each sealed member in declared order");
         };
-        assert_eq!(empty_member.identifier().as_str(), "Empty");
-        assert_eq!(empty_member.variant(), *empty_variant);
+        assert_eq!(empty_member.identifier(), "Empty");
+        assert_eq!(empty_member.variant(), empty_variant.clone());
         assert!(empty_payload.is_empty());
-        assert_eq!(circle_member.identifier().as_str(), "Circle");
-        assert_eq!(circle_member.variant(), *circle_variant);
+        assert_eq!(circle_member.identifier(), "Circle");
+        assert_eq!(circle_member.variant(), circle_variant.clone());
         assert_eq!(circle_payload, &[ValueType::Integer]);
-        assert_eq!(boxed_member.identifier().as_str(), "Boxed");
-        assert_eq!(boxed_member.variant(), *boxed_variant);
+        assert_eq!(boxed_member.identifier(), "Boxed");
+        assert_eq!(boxed_member.variant(), boxed_variant.clone());
         assert_eq!(
             boxed_payload,
             &[ValueType::Composite(pair.key().clone()), ValueType::Boolean]
@@ -2342,7 +2343,7 @@ mod tests {
                                     unreachable!("union view has union members")
                                 };
                                 UnionMemberDeclaration::resolved(
-                                    member.identifier().clone(),
+                                    quire_exact::Identifier::new(member.identifier()).expect("a valid identifier"),
                                     payload.clone(),
                                 )
                             })
@@ -2357,7 +2358,7 @@ mod tests {
         types
             .seal_union_verified(
                 shape.key().clone(),
-                shape.node(),
+                shape.node().clone(),
                 shape
                     .members()
                     .iter()

@@ -127,7 +127,7 @@ fn tc_1252_call_site_mints_the_identity_of_a_value_function_only() {
                 .clone();
             assert_eq!(
                 parity.preimage.arguments[position],
-                argument(parameter.clone(), position, declared)
+                argument(parameter.clone(), position, declared.clone())
             );
         }
         assert_eq!(

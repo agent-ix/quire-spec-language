@@ -4,7 +4,6 @@
 //! refuse by kind, by domain and at the request's limits.
 
 use ix_trace_rs::trace;
-use qsl_semantics::check::NominalNode;
 use quire_exact::{Integer, ValueType};
 use quire_semantic_value::call::InputRefusal;
 use quire_semantic_value::supplied_stop::{
@@ -114,10 +113,12 @@ impl Fixture {
             .nodes()
             .find(|node| {
                 matches!(
-                    node.nominal(),
-                    Some(NominalNode::EnumDeclaration(preimage))
-                        if preimage.qualified_declaration().last().map(String::as_str) == Some(name)
-                )
+                    node.nominal_payload(),
+                    Some(qsl_semantics::value::nominal_payload::NominalPayload::Enum(_))
+                ) && node
+                    .declaration()
+                    .and_then(<[_]>::last)
+                    .is_some_and(|last| last.as_str() == name)
             })
             .expect("a declared enum");
         node.key().clone()
@@ -267,7 +268,7 @@ fn tc_906_a_value_the_declared_type_does_not_admit_refuses_by_kind() {
         ],
     };
     let inner_record = |fields: Vec<WitnessField>| WitnessValue::Record {
-        declaration: inner,
+        declaration: inner.clone(),
         fields,
     };
     let cases: Vec<(&str, WitnessValue)> = vec![
@@ -285,7 +286,7 @@ fn tc_906_a_value_the_declared_type_does_not_admit_refuses_by_kind() {
         (
             "an Inner named for Outer's declaration",
             with_inner(WitnessValue::Record {
-                declaration: outer_id,
+                declaration: outer_id.clone(),
                 fields: good(int(7)),
             }),
         ),
@@ -690,7 +691,7 @@ fn list(declaration: NodeKey, depth: usize) -> WitnessValue {
     };
     for _ in 1..depth {
         value = WitnessValue::Record {
-            declaration,
+            declaration: declaration.clone(),
             fields: vec![present("head", int(1)), present("tail", value)],
         };
     }
@@ -801,14 +802,15 @@ fn tc_906_a_reference_replays_by_identity_and_a_dereference_completes_no_value()
          function rd using v(w: Reference<M::Widget>): Boolean pure { deref(w).code > 0 }\n",
     );
     let type_of = |function: &str| {
-        let ValueType::Reference(object_type) = fixture.declared(function) else {
+        let declared = fixture.declared(function);
+        let ValueType::Reference(object_type) = &declared else {
             panic!("{function} takes a reference");
         };
-        *object_type.as_bytes()
+        object_type.clone()
     };
     // The universe of the declared `Reference<M::Widget>`; a reference is
     // foreign when its universe is not that one (FR-098).
-    let universe = *qsl_semantics::model::observation::population_universe_for(
+    let universe = qsl_semantics::model::observation::population_universe_for(
         fixture.compiled.package.graph().model_selections(),
         &package_input([std::fs::read(concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -819,21 +821,20 @@ fn tc_906_a_reference_replays_by_identity_and_a_dereference_completes_no_value()
         .unwrap(),
         SpineLimits::default().model,
         match fixture.declared("rw") {
-            ValueType::Reference(object_type) => object_type,
+            ValueType::Reference(ref object_type) => object_type.clone(),
             other => panic!("rw takes a reference, not {other:?}"),
         },
     )
-    .expect("the declared object type has a universe")
-    .as_bytes();
-    let reference = |object_type: [u8; 32], identity: &[u8]| WitnessValue::Reference {
-        universe,
+    .expect("the declared object type has a universe");
+    let reference = |object_type: quire_exact::EffectiveId, identity: &[u8]| WitnessValue::Reference {
+        universe: universe.clone(),
         object_type,
         identity: identity.to_vec(),
     };
-    for result in fixture.both("rw", reference(type_of("rw"), b"w-1")) {
+    for result in fixture.both("rw", reference(type_of("rw").clone(), b"w-1")) {
         assert_reproduced(result);
     }
-    for result in fixture.both("rd", reference(type_of("rw"), b"w-1")) {
+    for result in fixture.both("rd", reference(type_of("rw").clone(), b"w-1")) {
         let result = result.expect("the replay runs");
         assert_eq!(result.category(), Category::Inconclusive);
         assert!(matches!(
@@ -843,21 +844,21 @@ fn tc_906_a_reference_replays_by_identity_and_a_dereference_completes_no_value()
     }
     assert_wrong_kind(
         replay(
-            fixture.witness("rw", &reference(type_of("rr"), b"w-1")),
+            fixture.witness("rw", &reference(type_of("rr").clone(), b"w-1")),
             ReplayLimits::default(),
         ),
         "a reference to another object type",
     );
     assert_wrong_kind(
         replay(
-            fixture.witness("rw", &reference(type_of("rw"), &[0xff, 0xfe])),
+            fixture.witness("rw", &reference(type_of("rw").clone(), &[0xff, 0xfe])),
             ReplayLimits::default(),
         ),
         "an identity that is not UTF-8",
     );
     assert_wrong_kind(
         replay(
-            fixture.witness("rw", &reference(type_of("rw"), b"")),
+            fixture.witness("rw", &reference(type_of("rw").clone(), b"")),
             ReplayLimits::default(),
         ),
         "an empty identity",
@@ -1087,10 +1088,11 @@ fn admitted_composite_keys_are_the_keys_replay_converts_against() {
     let admitted = crate::compile_admitted(
         crate::CompileUnit {
             source: SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
-            package_name: IDENTITY,
-            path: fixture.source.as_bytes(),
-            bytes: [],
+            package_name: "fixture".to_owned(),
+            path: IDENTITY,
+            bytes: fixture.source.as_bytes(),
         },
+        [],
         &crate::spine::DependencyInput::default(),
         crate::request::StageLimits::default(),
         ReplayLimits::default(),
@@ -1150,10 +1152,11 @@ fn admitted_union_node_is_what_replay_converts_a_union_witness_against() {
     let admitted = crate::compile_admitted(
         crate::CompileUnit {
             source: SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
-            package_name: IDENTITY,
-            path: fixture.source.as_bytes(),
-            bytes: [],
+            package_name: "fixture".to_owned(),
+            path: IDENTITY,
+            bytes: fixture.source.as_bytes(),
         },
+        [],
         &crate::spine::DependencyInput::default(),
         crate::request::StageLimits::default(),
         ReplayLimits::default(),
@@ -1169,7 +1172,6 @@ fn admitted_union_node_is_what_replay_converts_a_union_witness_against() {
         .expect("the admitted union");
     let member = shape.union_members().expect("members")[1]
         .identifier()
-        .as_str()
         .to_owned();
     let id = |key: quire_exact::NodeKey| key.clone();
     let value = |declaration: NodeKey| WitnessValue::Union {
@@ -1204,23 +1206,24 @@ fn admitted_unit_ids_are_the_units_replay_converts_against() {
     let admitted = crate::compile_admitted(
         crate::CompileUnit {
             source: SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
-            package_name: IDENTITY,
-            path: fixture.source.as_bytes(),
-            bytes: [],
+            package_name: "fixture".to_owned(),
+            path: IDENTITY,
+            bytes: fixture.source.as_bytes(),
         },
+        [],
         &crate::spine::DependencyInput::default(),
         crate::request::StageLimits::default(),
         ReplayLimits::default(),
     )
     .expect("the unit compiles");
     let unit_id = |name: &str| {
-        *admitted
+        admitted
             .context()
             .units()
             .find(|unit| unit.qualified_name().last().map(Identifier::as_str) == Some(name))
             .expect("an admitted unit")
             .id()
-            .as_bytes()
+            .clone()
     };
     let quantity = |unit: quire_exact::UnitId| WitnessValue::Quantity {
         magnitude: QuantityMagnitude::Decimal {

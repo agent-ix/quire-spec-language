@@ -237,7 +237,6 @@ fn settle(
     let call = select(&compiled, function, Claim::ValueParity)?;
     check_identity(&request, package, &call, function)?;
     let joined = arguments(
-        package,
         &call,
         request.source(),
         request.obligation_identity(),

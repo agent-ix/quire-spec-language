@@ -58,10 +58,10 @@ fn wire_id_of(context: &AdmittedContext, name: &str) -> NodeKey {
 fn a_consumer_builds_composite_declarations_from_admitted_keys() {
     let context = context();
     let pair = context
-        .composite_declaration(wire_id_of(&context, "Pair"))
+        .composite_declaration(&wire_id_of(&context, "Pair"))
         .expect("the tuple is found");
     let holder = context
-        .composite_declaration(wire_id_of(&context, "Holder"))
+        .composite_declaration(&wire_id_of(&context, "Holder"))
         .expect("the record is found");
     assert_eq!(pair.form(), AdmittedCompositeForm::Tuple);
     assert_eq!(holder.form(), AdmittedCompositeForm::Record);
@@ -70,18 +70,18 @@ fn a_consumer_builds_composite_declarations_from_admitted_keys() {
     let types = TypeEnvironment::new(
         [
             CompositeDeclaration::new(
-                pair.key(),
+                pair.key().clone(),
                 "Pair",
                 CompositeShape::Tuple(vec![ValueType::Boolean, ValueType::Boolean]),
             ),
             CompositeDeclaration::new(
-                holder.key(),
+                holder.key().clone(),
                 "Holder",
                 CompositeShape::Record(vec![
                     FieldDeclaration::new("flag", ValueType::Boolean, Presence::Required),
                     FieldDeclaration::new(
                         "pair",
-                        ValueType::Composite(pair.key()),
+                        ValueType::Composite(pair.key().clone()),
                         Presence::Required,
                     ),
                 ]),
@@ -93,13 +93,13 @@ fn a_consumer_builds_composite_declarations_from_admitted_keys() {
 
     let pair_value = types
         .tuple(
-            pair.key(),
+            pair.key().clone(),
             vec![Value::Boolean(true), Value::Boolean(false)],
         )
         .expect("a Pair value");
     let holder_value = types
         .record(
-            holder.key(),
+            holder.key().clone(),
             vec![
                 ("flag", FieldValue::Present(Value::Boolean(true))),
                 ("pair", FieldValue::Present(pair_value)),
@@ -107,7 +107,7 @@ fn a_consumer_builds_composite_declarations_from_admitted_keys() {
         )
         .expect("a Holder value");
     assert!(types
-        .admits(&ValueType::Composite(holder.key()), &holder_value)
+        .admits(&ValueType::Composite(holder.key().clone()), &holder_value)
         .expect("admission runs"));
 }
 
@@ -122,7 +122,7 @@ fn a_consumer_seals_a_union_and_admits_a_value_of_each_member() {
     let context = context();
     let find = |name: &str| {
         context
-            .composite_declaration(wire_id_of(&context, name))
+            .composite_declaration(&wire_id_of(&context, name))
             .expect("found")
     };
     let (pair, shape, wrap) = (find("Pair"), find("Shape"), find("Wrap"));
@@ -134,17 +134,17 @@ fn a_consumer_seals_a_union_and_admits_a_value_of_each_member() {
     assert_eq!(variants.len(), 3, "each member has its own id");
     assert_eq!(
         members[2].payload(),
-        [ValueType::Composite(pair.key()), ValueType::Boolean]
+        [ValueType::Composite(pair.key().clone()), ValueType::Boolean]
     );
     let wrap_members = wrap.union_members().expect("members");
     assert_eq!(
         wrap_members[1].payload(),
-        [ValueType::Composite(shape.key())]
+        [ValueType::Composite(shape.key().clone())]
     );
 
     let declare = |composite: &qsl_replay::AdmittedComposite, name: &str| {
         CompositeDeclaration::new(
-            composite.key(),
+            composite.key().clone(),
             name,
             CompositeShape::Union(
                 composite
@@ -164,7 +164,7 @@ fn a_consumer_seals_a_union_and_admits_a_value_of_each_member() {
     let mut types = TypeEnvironment::new(
         [
             CompositeDeclaration::new(
-                pair.key(),
+                pair.key().clone(),
                 "Pair",
                 CompositeShape::Tuple(vec![ValueType::Boolean, ValueType::Boolean]),
             ),
@@ -182,13 +182,13 @@ fn a_consumer_seals_a_union_and_admits_a_value_of_each_member() {
             .map(|member| member.member().clone())
             .collect();
         types
-            .seal_union_verified(union.key(), union.node(), bindings)
+            .seal_union_verified(union.key().clone(), union.node(), bindings)
             .expect("the admitted bindings seal the union");
     }
 
     let pair_value = types
         .tuple(
-            pair.key(),
+            pair.key().clone(),
             vec![Value::Boolean(true), Value::Boolean(false)],
         )
         .expect("a Pair value");
@@ -200,33 +200,33 @@ fn a_consumer_seals_a_union_and_admits_a_value_of_each_member() {
     let mut circle = None;
     for (member, payload) in members.iter().zip(payloads) {
         let value = types
-            .union(shape.key(), member.variant(), payload)
+            .union(shape.key().clone(), member.variant(), payload)
             .expect("a value of the member");
         assert!(types
-            .admits(&ValueType::Composite(shape.key()), &value)
+            .admits(&ValueType::Composite(shape.key().clone()), &value)
             .expect("admission runs"));
         circle = Some(value);
     }
     let boxed = types
         .union(
-            wrap.key(),
+            wrap.key().clone(),
             wrap_members[1].variant(),
             vec![circle.expect("a Shape value")],
         )
         .expect("a Wrap holding a Shape");
     assert!(types
-        .admits(&ValueType::Composite(wrap.key()), &boxed)
+        .admits(&ValueType::Composite(wrap.key().clone()), &boxed)
         .expect("admission runs"));
     let plain = types
-        .union(wrap.key(), wrap_members[0].variant(), vec![])
+        .union(wrap.key().clone(), wrap_members[0].variant(), vec![])
         .expect("a payload-free member");
     assert!(types
-        .admits(&ValueType::Composite(wrap.key()), &plain)
+        .admits(&ValueType::Composite(wrap.key().clone()), &plain)
         .expect("admission runs"));
     // A member id of another union is not a member of this one.
     assert!(types
         .union(
-            wrap.key(),
+            wrap.key().clone(),
             members[1].variant(),
             vec![Value::Integer(3_i64.into())]
         )

@@ -262,7 +262,7 @@ fn settle(
         )));
     }
     let (_, function) = lookup(&compiled, function_name)?;
-    if !in_body(graph, &function.identity, &node.key()) {
+    if !in_body(graph, &function.identity, node.key()) {
         return Err(ReplayRefusal::ScalarIdentity(Box::new(
             ScalarIdentityMismatch::Function {
                 node: claim.node.clone(),

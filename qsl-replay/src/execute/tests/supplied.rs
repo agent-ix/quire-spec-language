@@ -705,7 +705,7 @@ fn tree_witness(unit: &Unit, depth: usize) -> WitnessValue {
     let key = types.union_key(handle).expect("check sealed the union");
     let declaration = key.clone();
     let member = |name: &str, components| WitnessValue::Union {
-        declaration,
+        declaration: declaration.clone(),
         member: name.to_owned(),
         components,
     };

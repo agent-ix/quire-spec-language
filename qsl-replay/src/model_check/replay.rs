@@ -714,7 +714,6 @@ pub fn replay_model_trace(
 ) -> Result<ModelTraceReplayResult, ReplayRefusal> {
     replay_on(
         wire,
-        envelope,
         replay_limits,
         |package, simulation, meter| {
             let clause = resolve_item(envelope, package.0, DerivedAnchors::Model, |clause| {
@@ -814,7 +813,6 @@ pub fn replay_protocol_trace(
 ) -> Result<ModelTraceReplayResult, ReplayRefusal> {
     replay_on(
         wire,
-        envelope,
         replay_limits,
         |package, simulation, meter| {
             // The fairness set depends on the protocol system, so it is
@@ -1002,9 +1000,8 @@ type ReplayPackage<'p> = (&'p CheckedPackage, LibraryName);
 /// FR-128's recompile and subject re-admission, then
 /// `replay` over the recompiled package, the subject's simulation request
 /// and the request's evaluation meter.
-fn replay_on<P: crate::witness::FamilyPayload>(
+fn replay_on(
     wire: ReplayRequestWire,
-    envelope: &WitnessEnvelope<P>,
     replay_limits: ReplayLimits,
     replay: impl for<'p> FnOnce(
         ReplayPackage<'p>,

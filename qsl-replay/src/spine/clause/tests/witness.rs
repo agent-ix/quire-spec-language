@@ -1922,7 +1922,7 @@ fn a_100000_deep_deciding_element_round_trips_on_a_small_stack() {
                 });
                 let deep_record = (0..DEEP).fold(
                     quire_exact::from_admitted_slots(
-                        chain,
+                        chain.clone(),
                         Box::new([quire_exact::FieldValue::Absent]),
                     ),
                     |next, _| {
@@ -2011,7 +2011,7 @@ fn tc_744_every_deciding_element_kind_round_trips() {
     let set = CollectionType::new(CollectionKind::Set, ValueType::Integer, None);
     let references = CollectionType::new(
         CollectionKind::Sequence,
-        ValueType::Reference(object_type),
+        ValueType::Reference(object_type.clone()),
         None,
     );
     let elements = [
@@ -2029,7 +2029,7 @@ fn tc_744_every_deciding_element_kind_round_trips() {
         ("float32", Value::Float(IeeeValue::binary32(0x4049_0fdb))),
         (
             "compound quantity",
-            Value::Quantity(Quantity::new(rational(1, 1), UnitId::compound([5; 32]))),
+            Value::Quantity(Quantity::new(rational(1, 1), UnitId::compound(vec![(crate::fixture_node(5), quire_exact::Integer::from(1_i64))]))),
         ),
         ("text", text("cafe\u{301}")),
         (
@@ -2045,7 +2045,7 @@ fn tc_744_every_deciding_element_kind_round_trips() {
         ),
         (
             "absent option",
-            OptionValue::none(ValueType::Composite(point)),
+            OptionValue::none(ValueType::Composite(point.clone())),
         ),
         (
             "option of option payload type",
@@ -2072,7 +2072,7 @@ fn tc_744_every_deciding_element_kind_round_trips() {
         (
             "composite",
             quire_exact::from_admitted_slots(
-                point,
+                point.clone(),
                 vec![FieldValue::Present(int(1)), FieldValue::Present(int(2))].into(),
             ),
         ),

@@ -495,7 +495,7 @@ fn tc_1053_step_3_mistyped_arguments_equal_runs() {
 #[trace("TC-1053", "FR-367-AC-4")]
 #[test]
 fn tc_1053_step_3_reference_admission_equals_runs() {
-    let fixture = lookup_driver_fixture();
+    let fixture = lookup_driver_fixture("function query using v(p: Population<M::Gadget>[1], r: M::Gadget): M::Gadget pure { lookup<M::Gadget>(p, r) absent refused }");
     let unit = compile_source(fixture.source.clone(), fixture.packages.clone());
     let (objects, _, present, _) = lookup_driver_context(&fixture);
     let occurrence = the_application(&unit, "mk", ScalarOperator::Add);
@@ -575,7 +575,7 @@ fn tc_1053_step_4_occurrence_identity_refusals() {
     ));
     let values = || call("sub", vec![arg("a", 7), arg("b", 2)]);
     let sub = the_application(&unit, "sub", ScalarOperator::Subtract);
-    let node = sub.application;
+    let node = sub.application.clone();
 
     // An occurrence key the node lacks, while the node has another.
     let mut stale = sub.clone();
@@ -872,14 +872,15 @@ fn tc_1053_step_3_foreign_model_selection_equals_runs() {
                 .type_identities()
                 .iter()
                 .find(|(key, _)| key.node.rsplit('/').next() == Some("Gizmo"))
-                .map(|(key, identity)| (&model.view, key.clone(), *identity))
+                .map(|(key, identity)| (&model.view, key.clone(), identity.clone()))
         })
         .expect("the second model declares Gizmo");
     let foreign = quire_exact::ObjectReference::new(
         other
             .object_universe_of(&key)
             .expect("a universe")
-            .identity(),
+            .identity()
+            .expect("a universe identity"),
         identity,
         quire_exact::ObjectId::new("g1").unwrap(),
     );
@@ -983,12 +984,13 @@ fn node_unit(
         .type_identities()
         .iter()
         .find(|(key, _)| key.node.rsplit('/').next() == Some("Node"))
-        .map(|(key, identity)| (key.clone(), *identity))
+        .map(|(key, identity)| (key.clone(), identity.clone()))
         .expect("Node is declared");
     let reference = quire_exact::ObjectReference::new(
         view.object_universe_of(&key)
             .expect("a universe")
-            .identity(),
+            .identity()
+            .expect("a universe identity"),
         identity,
         quire_exact::ObjectId::new("n1").unwrap(),
     );

@@ -142,7 +142,7 @@ pub(crate) fn check_operands(
                     });
                 };
                 if found != operand.value.to_string()
-                    || operand.range != ScalarOperand::literal(operand.value.clone()).range
+                    || operand.range != ScalarOperand::literal(operand.value).range
                 {
                     return Err(ScalarIdentityMismatch::LiteralValue {
                         node: application.clone(),

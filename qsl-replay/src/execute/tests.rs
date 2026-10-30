@@ -432,7 +432,7 @@ fn tc_444_a_witness_decodes_by_parameter_node_id() {
     assert!(
         matches!(
             refused,
-            ReplayRefusal::Witness { refusal: DecodeRefusal::Missing(missing), .. } if missing == x
+            ReplayRefusal::Witness { refusal: DecodeRefusal::Missing(ref missing), .. } if *missing == x
         ),
         "expected a missing entry, got {refused:?}"
     );
@@ -683,7 +683,7 @@ fn tc_444_an_arity_mismatch_refuses() {
 
     let unbound = with(vec![]);
     assert!(
-        matches!(unbound, ReplayRefusal::UnboundParameter(id) if id == x),
+        matches!(unbound, ReplayRefusal::UnboundParameter(ref id) if *id == x),
         "{unbound:?}"
     );
     let unknown = with(vec![
@@ -697,7 +697,7 @@ fn tc_444_an_arity_mismatch_refuses() {
         },
     ]);
     assert!(
-        matches!(unknown, ReplayRefusal::UnknownParameter(id) if id == b),
+        matches!(unknown, ReplayRefusal::UnknownParameter(ref id) if *id == b),
         "{unknown:?}"
     );
     let twice = with(vec![
@@ -711,7 +711,7 @@ fn tc_444_an_arity_mismatch_refuses() {
         },
     ]);
     assert!(
-        matches!(twice, ReplayRefusal::DuplicateArgument(id) if id == x),
+        matches!(twice, ReplayRefusal::DuplicateArgument(ref id) if *id == x),
         "{twice:?}"
     );
 }
@@ -1662,18 +1662,18 @@ fn real_public_package_equality_fault_propagates_into_replay_failure() {
     else {
         panic!("real equality model admission");
     };
-    let owner = *view.type_identities().get(&owner_key).unwrap();
+    let owner = view.type_identities().get(&owner_key).unwrap().clone();
     let model = AdmittedModel::new(&domain, &view).unwrap();
     let reference = quire_exact::ObjectReference::new(
-        quire_exact::UniverseId::from_digest([0; 32]),
-        owner,
+        crate::fixture_universe(0),
+        owner.clone(),
         quire_exact::ObjectId::new("receiver").unwrap(),
     );
     let types = |value_type| {
         TypeEnvironment::new(
             [],
             [ObjectTypeDeclaration::new(
-                owner,
+                owner.clone(),
                 "Owner",
                 vec![FieldDeclaration::new(
                     "number",
@@ -1705,6 +1705,7 @@ fn real_public_package_equality_fault_propagates_into_replay_failure() {
         )],
         ..PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture",
             qsl_foundation::IdentityLimits::default(),
         )
     };
@@ -1713,7 +1714,7 @@ fn real_public_package_equality_fault_propagates_into_replay_failure() {
     let expression = package
         .graph()
         .check_expression(
-            vec![("receiver".to_owned(), ValueType::Reference(owner))],
+            vec![("receiver".to_owned(), ValueType::Reference(owner.clone()))],
             &source,
             None,
             CheckMode::Kernel,
@@ -1816,7 +1817,7 @@ fn actual_empty_admitted_identity_fault_propagates_from_package_into_replay_fail
     else {
         panic!("real domain admission");
     };
-    let owner = *view.type_identities().get(&object).unwrap();
+    let owner = view.type_identities().get(&object).unwrap().clone();
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let document = PopulationDocument {
         model_identity: domain.model_selection.identity.clone(),
@@ -1864,6 +1865,7 @@ fn actual_empty_admitted_identity_fault_propagates_from_package_into_replay_fail
         )],
         ..PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture",
             qsl_foundation::IdentityLimits::default(),
         )
     };
@@ -1929,13 +1931,14 @@ fn actual_public_package_comparator_fault_keeps_the_nested_cause_in_replay() {
     use qsl_semantics::value::enumeration::{
         AdmittedEnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
     };
-    use qsl_semantics::value::{NodeIdentityPreimage, NodeOwner, OwnerSelection, OwnerSubject};
+    use qsl_semantics::value::{NodeOwner, OwnerSelection, OwnerSubject};
     use quire_exact::{ChargePoint, EnumMember, Meter, NodeKey, Value, ValueType};
     use quire_semantic_value::checking::{CheckMode, CheckingLimits};
     let limits = qsl_foundation::IdentityLimits::default();
     let owner = NodeOwner::Definition(OwnerSubject {
         authority: "test".to_owned(),
         identity: "nested-cause".to_owned(),
+        package_name: "fixture".to_owned(),
     });
     let owners = OwnerSelection::new([owner.clone()]);
     let admit = |name: &str, case: &str| {
@@ -1946,11 +1949,11 @@ fn actual_public_package_comparator_fault_keeps_the_nested_cause_in_replay() {
             vec!["DONE".to_owned(), "READY".to_owned()],
         )
         .unwrap();
-        let key = NodeKey::from_digest(preimage.digest(limits).unwrap());
-        let declaration = AdmittedEnumDeclaration::admit(preimage, key, &owners, limits).unwrap();
+        let key = preimage.key().unwrap();
+        let declaration = AdmittedEnumDeclaration::admit(preimage, key.clone(), &owners).unwrap();
         let preimage = EnumMemberPreimage::new(key, case).unwrap();
-        let key = NodeKey::from_digest(preimage.digest(limits).unwrap());
-        let member = declaration.admit_member(&preimage, key, limits).unwrap();
+        let key = preimage.key().unwrap();
+        let member = declaration.admit_member(&preimage, key).unwrap();
         (declaration, member)
     };
     let (declaration, left) = admit("Left", "DONE");
@@ -1981,7 +1984,7 @@ fn actual_public_package_comparator_fault_keeps_the_nested_cause_in_replay() {
             None,
             source.clone(),
         )],
-        ..PackageDeclarations::new(qsl_semantics::check::fixture_source(), limits)
+        ..PackageDeclarations::new(qsl_semantics::check::fixture_source(), "fixture", limits)
     };
     let package =
         qsl_package::CheckedPackage::link(declarations.check(CheckingLimits::default()).unwrap());
@@ -2368,7 +2371,7 @@ fn tc_904_only_the_declared_parameters_are_bound() {
         ReplayLimits::default(),
     );
     assert!(
-        matches!(stray.result(), ValueParityResult::Refused(refusal) if matches!(**refusal, ReplayRefusal::UnknownParameter(node) if node == other)),
+        matches!(stray.result(), ValueParityResult::Refused(refusal) if matches!(**refusal, ReplayRefusal::UnknownParameter(ref node) if *node == other)),
         "{stray:?}"
     );
     let unbound = replay_generated(
@@ -2509,6 +2512,7 @@ fn tc_904_a_value_report_carries_the_sent_claim_on_every_outcome() {
 
 mod operator_arm {
     use super::*;
+    use qsl_semantics::check::{LeafTerm, LiteralValue, MemberTerm};
     use crate::{
         GeneratedFault, NativeOutcome, OperandRefusal, OperatorClaim, OperatorIdentity,
         OperatorParityResult, ScalarClaim, ScalarOperand, ScalarOperation,
@@ -2540,12 +2544,12 @@ mod operator_arm {
             .semantic_graph()
             .nodes()
             .find(|node| {
-                serde_json::from_slice::<serde_json::Value>(node.preimage())
-                    .map(|json| json["body"]["operation"]["identity"] == identity)
-                    .unwrap_or(false)
+                node.body()
+                    .application_term()
+                    .is_some_and(|term| term.operation.identity() == identity)
             })
             .expect("the unit has the application");
-        node.key().clone()
+        node.key()
     }
 
     /// The identity and enclosing function of each operator's node.
@@ -2563,17 +2567,17 @@ mod operator_arm {
     fn children_of(node: NodeKey) -> Vec<Option<NodeKey>> {
         let compiled = spine(&parity_unit(), &BTreeMap::new());
         let graph = compiled.package.graph().semantic_graph();
-        let key = graph.resolve_wire(node).expect("the node is in the unit");
-        let preimage: serde_json::Value =
-            serde_json::from_slice(graph.node(key).expect("the node").preimage()).unwrap();
-        preimage["body"]["arguments"]
-            .as_array()
+        graph
+            .node(node)
+            .expect("the node is in the unit")
+            .body()
+            .application_term()
             .expect("an application")
+            .arguments
             .iter()
-            .map(|argument| {
-                (argument["term"] == "reference").then(|| {
-                    NodeKey::from_hex(argument["target"]["digest"].as_str().unwrap()).unwrap()
-                })
+            .map(|argument| match argument {
+                MemberTerm::Leaf(LeafTerm::Reference { target }) => target.admitted().cloned(),
+                _ => None,
             })
             .collect()
     }
@@ -2589,8 +2593,8 @@ mod operator_arm {
                 return operand;
             }
             match children[position] {
-                Some(child) => ScalarOperand {
-                    identity: crate::OperandIdentity::GraphChild(child),
+                Some(ref child) => ScalarOperand {
+                    identity: crate::OperandIdentity::GraphChild(child.clone()),
                     ..operand
                 },
                 None => ScalarOperand::literal(operand.value),
@@ -2906,20 +2910,20 @@ mod operator_arm {
         let application = graph
             .nodes()
             .find(|node| {
-                serde_json::from_slice::<serde_json::Value>(node.preimage()).is_ok_and(|json| {
-                    json["body"]["operation"]["identity"] == "quire.op.integer.add"
-                })
+                node.body()
+                    .application_term()
+                    .is_some_and(|term| term.operation.identity() == "quire.op.integer.add")
             })
             .expect("the unit has the application");
-        let node = application.key().clone();
+        let node = application.key();
         let children = (0..2)
             .map(|index| parameter(&compiled, "two", index))
             .collect::<Vec<_>>();
         let claim = claim_raw(
             node,
             ScalarOperation::Add {
-                left: ScalarOperand::graph_child(1, range(0, 100), children[0]),
-                right: ScalarOperand::graph_child(101, range(0, 100), children[1]),
+                left: ScalarOperand::graph_child(1, range(0, 100), children[0].clone()),
+                right: ScalarOperand::graph_child(101, range(0, 100), children[1].clone()),
             },
             completed(102),
         );
@@ -2929,11 +2933,11 @@ mod operator_arm {
             name(&["two"]),
             ReplaySource::Input(vec![
                 CanonicalAssignment {
-                    parameter: children[0],
+                    parameter: children[0].clone(),
                     value: WitnessValue::Integer(1),
                 },
                 CanonicalAssignment {
-                    parameter: children[1],
+                    parameter: children[1].clone(),
                     value: WitnessValue::Integer(2),
                 },
             ]),
@@ -3322,7 +3326,7 @@ mod operator_arm {
     fn tc_904_a_graph_child_that_is_not_the_nodes_child_is_refused() {
         let node = node_of("quire.op.integer.add");
         let children = children_of(node);
-        let parameter = children[0].expect("`x` is a graph child");
+        let parameter = children[0].clone().expect("`x` is a graph child");
         assert_eq!(children[1], None, "the literal `1` is inline");
         let invented = crate::fixture_node(7);
         let mut wrong_child = claim(add(2, 1), completed(3));
@@ -3375,7 +3379,7 @@ mod operator_arm {
                 left: ScalarOperand::graph_child(
                     2,
                     range(0, 100),
-                    children_of(node_of("quire.op.integer.add"))[0].unwrap(),
+                    children_of(node_of("quire.op.integer.add"))[0].clone().unwrap(),
                 ),
                 right: ScalarOperand::literal(2),
             },
@@ -3392,15 +3396,28 @@ mod operator_arm {
 
         let child = crate::fixture_node(0x22);
         let application = crate::fixture_node(0xaa);
-        let body = serde_json::json!({"body": {"arguments": [
-            {"term": "reference", "target": {"digest": child.to_string()}},
-            {"term": "literal", "value_kind": "integer", "value": "7"},
-        ]}});
+        let compiled = spine(&parity_unit(), &BTreeMap::new());
+        let graph = compiled.package.graph().semantic_graph();
+        let mut term = graph
+            .node(node_of("quire.op.integer.add"))
+            .expect("the add node")
+            .body()
+            .application_term()
+            .expect("an application")
+            .clone();
+        let MemberTerm::Leaf(LeafTerm::Literal { value, .. }) = &mut term.arguments[1] else {
+            panic!("the second argument is a literal");
+        };
+        *value = LiteralValue::Integer(Integer::from(7_i64));
+        let MemberTerm::Leaf(LeafTerm::Reference { target }) = &mut term.arguments[0] else {
+            panic!("the first argument is a reference");
+        };
+        *target = child.clone().into();
         let check = |operation: ScalarOperation| {
-            super::super::scalar_site::check_operands(&body, &application, &operation)
+            super::super::scalar_site::check_operands(&term, &application, &operation)
         };
         let mixed = |value: i64| ScalarOperation::Add {
-            left: ScalarOperand::graph_child(5, range(0, 100), child),
+            left: ScalarOperand::graph_child(5, range(0, 100), child.clone()),
             right: ScalarOperand::literal(value),
         };
         // A graph child and an inline literal together pass.
@@ -3422,7 +3439,7 @@ mod operator_arm {
         // has a reference.
         let reversed = ScalarOperation::Add {
             left: ScalarOperand::literal(7),
-            right: ScalarOperand::graph_child(5, range(0, 100), child),
+            right: ScalarOperand::graph_child(5, range(0, 100), child.clone()),
         };
         assert!(matches!(
             check(reversed),

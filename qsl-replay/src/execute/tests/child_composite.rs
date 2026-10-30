@@ -63,6 +63,7 @@ fn package() -> CheckedPackage {
             types,
             ..qsl_semantics::check::PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
+                "fixture",
                 qsl_foundation::IdentityLimits::default(),
             )
         }
@@ -222,9 +223,9 @@ fn a_child_record_is_admitted_as_a_payload_and_as_an_element() {
             2,
             "{kind:?} holds both: a child is not its parent"
         );
-        keys.sort_by_key(|key| *key.as_bytes());
+        keys.sort();
         let mut expected = [key("Money"), key("TaxedMoney")];
-        expected.sort_by_key(|key| *key.as_bytes());
+        expected.sort();
         assert_eq!(keys, expected);
         let bad = converted(
             match kind {

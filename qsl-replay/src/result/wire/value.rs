@@ -29,7 +29,7 @@ use quire_exact::{
     Decimal, DecimalType, EffectiveId, EnumMember, EnumShape, FieldValue, FloatType, IeeeValue,
     IeeeWidth, Integer, IntegerInterval, Meter, ObjectId, ObjectReference, OptionValue, Outcome,
     Presence, Quantity, Rational, RationalDomain, RoundingMode, ScalarLimits, TextPayload,
-    TextProfile, TextType, UnitDomain, UnitId, UniverseId, Value, ValueType, VariantId,
+    TextProfile, TextType, UnitDomain, UnitId, Value, ValueType,
 };
 use quire_semantic_value::declaration::{CompositeDeclaration, CompositeShape, TypeEnvironment};
 use serde::{Deserialize, Serialize};
@@ -46,6 +46,7 @@ mod tests {
     fn package() -> CheckedPackage {
         let declarations = qsl_semantics::check::PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture",
             qsl_foundation::IdentityLimits::default(),
         );
         CheckedPackage::link(
@@ -146,25 +147,25 @@ mod tests {
         let types = TypeEnvironment::new(
             [
                 CompositeDeclaration::new(
-                    money,
+                    money.clone(),
                     "Money",
                     CompositeShape::Record(vec![field("amount", ValueType::Integer)]),
                 ),
                 CompositeDeclaration::new(
-                    taxed,
+                    taxed.clone(),
                     "TaxedMoney",
                     CompositeShape::Record(vec![
                         field("amount", ValueType::Integer),
                         field("tax", ValueType::Integer),
                     ]),
                 )
-                .with_supertypes(vec![money]),
+                .with_supertypes(vec![money.clone()]),
                 CompositeDeclaration::new(
-                    pair,
+                    pair.clone(),
                     "Pair",
                     CompositeShape::Record(vec![
-                        field("first", ValueType::Composite(money)),
-                        field("second", ValueType::Composite(money)),
+                        field("first", ValueType::Composite(money.clone())),
+                        field("second", ValueType::Composite(money.clone())),
                     ]),
                 ),
             ],
@@ -176,6 +177,7 @@ mod tests {
                 types,
                 ..qsl_semantics::check::PackageDeclarations::new(
                     qsl_semantics::check::fixture_source(),
+                    "fixture",
                     qsl_foundation::IdentityLimits::default(),
                 )
             }
@@ -801,7 +803,7 @@ impl TypeLeafWire {
                 ordered: shape.is_ordered(),
                 variants: shape
                     .variants()
-                    .map(|variant| crate::id_text::variant_text(&variant).unwrap_or_default())
+                    .map(|variant| crate::id_text::variant_text(variant).unwrap_or_default())
                     .collect(),
             },
             ValueType::Composite(declaration) => Self::Composite {

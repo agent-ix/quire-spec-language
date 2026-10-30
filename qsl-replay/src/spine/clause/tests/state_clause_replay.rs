@@ -308,7 +308,7 @@ fn without(wire: &mut ReplayRequestWire, reference: &DocumentRef) {
 fn assert_reproduces_keeping_identities(case: Case, clause: &str) -> StateClauseReplayResult {
     let _unit_bytes = case.unit.bytes.clone();
     let (node, occurrence) = (
-        case.envelope.clause_node(),
+        case.envelope.clause_node().clone(),
         case.envelope.occurrence_key().clone(),
     );
     assert_eq!(

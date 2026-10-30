@@ -1095,7 +1095,6 @@ pub fn replay_with_cancel(
     let claim = function_claim(&compiled, function, replay_target)?;
     let call = select(&compiled, function, claim.kind())?;
     let joined = arguments(
-        package,
         &call,
         request.source(),
         request.obligation_identity(),
@@ -1907,7 +1906,6 @@ fn select(
 /// `Witness` source's transcript decoded against one binding per
 /// parameter, each naming the parameter's node id and declared type.
 fn arguments(
-    package: &CheckedPackage,
     call: &Selected,
     source: &ReplaySource,
     obligation: ObligationIdentity,

@@ -952,7 +952,7 @@ mod witness_tests {
             assert_eq!(
                 decode(format!("{x}={text}", x = pn_(&x)), &[integer(x.clone())]),
                 Err(DecodeRefusal::Malformed {
-                    parameter: x,
+                    parameter: x.clone(),
                     value_type: WitnessValueType::I128,
                     fault: EntryFault::Scalar,
                 })

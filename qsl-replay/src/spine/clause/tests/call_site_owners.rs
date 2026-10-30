@@ -373,7 +373,7 @@ fn anchor_context_form(unit: &str, document: &[u8], anchor: crate::NodeKey) -> S
     let node = graph
         .semantic_graph()
         .nodes()
-        .find(|node| *node.key() == anchor)
+        .find(|node| node.key() == anchor)
         .expect("the anchor is a node of the compiled graph");
     assert_eq!(node.semantic_form(), "operation_anchor");
     let context = node.semantic_type().expect("an anchor has a context");
@@ -394,7 +394,7 @@ fn assert_generated_frame(unit: &str, document: &[u8], site: &OperationSite, own
     let frame = graph
         .semantic_graph()
         .nodes()
-        .find(|node| *node.key() == site.frame)
+        .find(|node| node.key() == site.frame.clone())
         .expect("the frame is a node of the compiled graph");
     assert_eq!(frame.semantic_form(), "frame");
     let checked = graph
@@ -402,14 +402,14 @@ fn assert_generated_frame(unit: &str, document: &[u8], site: &OperationSite, own
         .expect("the compiled graph holds an operation frame for the node");
     assert_eq!(
         graph
-            .declaring_object(&identifier("Config"), checked.operation().declaring)
+            .declaring_object(&identifier("Config"), checked.operation().declaring.clone())
             .map(quire_exact::Identifier::as_str),
         Some(owner)
     );
     assert_eq!(
-        site.frame_occurrence,
+        site.frame_occurrence.clone(),
         crate::OccurrenceKey::new(
-            site.frame,
+            site.frame.clone(),
             crate::Origin::new(crate::Role::new("generated"), 0)
         )
     );
@@ -427,7 +427,7 @@ fn call_site_selects_a_process_operation() {
     assert_eq!(site.site.frame_operation, frame_operation("Flow", "go"));
     assert_eq!(clause_names(&site.site), ["P", "Q"]);
     assert_eq!(
-        anchor_context_form(&unit, &document, site.site.anchor),
+        anchor_context_form(&unit, &document, site.site.anchor.clone()),
         "process"
     );
     assert_generated_frame(&unit, &document, &site.site, "Flow");
@@ -462,7 +462,7 @@ fn call_site_selects_a_state_machine_operation_and_its_inherited_one() {
         ["PlaceRequires", "FlagsPlaced"]
     );
     assert_eq!(
-        anchor_context_form(&unit, &document, declared.site.anchor),
+        anchor_context_form(&unit, &document, declared.site.anchor.clone()),
         "state_machine"
     );
     assert_generated_frame(&unit, &document, &declared.site, "OrderLifecycle");
