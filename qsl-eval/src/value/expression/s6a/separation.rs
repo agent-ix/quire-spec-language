@@ -18,7 +18,6 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 pub use qsl_foundation::witness::{
     InvocationBinding, ObservationIdentity, RuntimeValuePath, SeparationStep, ValuePathStep,
@@ -389,6 +388,6 @@ pub(crate) fn occurrence_at(
     at().find(|(key, _, _)| applies(*key, operator))
         .or_else(|| operator.is_none().then(|| at().next()).flatten())
         .map(|(key, origin, _)| {
-            OccurrenceKey::new(WireNodeId::from_digest(*key.as_bytes()), origin)
+            OccurrenceKey::new(key.clone(), origin)
         })
 }

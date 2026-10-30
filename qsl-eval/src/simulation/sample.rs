@@ -4,7 +4,7 @@
 //! generator (FR-101; QSpec `proposals/quire-v1/definitions/
 //! simulation-sampler.md`).
 
-use qsl_foundation::digest::WireNodeId;
+use quire_exact::NodeKey;
 use qsl_foundation::selection::DefinitionRef;
 use quire_exact::ValueType;
 use quire_semantic_value::declaration::TypeEnvironment;
@@ -216,7 +216,7 @@ pub(crate) fn is_pinned_sampler(sampler: &DefinitionRef) -> bool {
 )]
 pub fn sample_request<S: TransitionSystem>(
     system: &S,
-    domains: &[(WireNodeId, &ValueType)],
+    domains: &[(NodeKey, &ValueType)],
     types: &TypeEnvironment,
     position_limit: u64,
     sampler: &DefinitionRef,
@@ -244,7 +244,7 @@ pub fn sample_request<S: TransitionSystem>(
 /// [`sample_request`]'s inputs.
 pub struct SampleRequest<'r> {
     /// The requires-bound roots.
-    pub domains: &'r [(WireNodeId, &'r ValueType)],
+    pub domains: &'r [(NodeKey, &'r ValueType)],
     /// The type environment the roots are classified under.
     pub types: &'r TypeEnvironment,
     /// The requires-bound pre-check's position budget.

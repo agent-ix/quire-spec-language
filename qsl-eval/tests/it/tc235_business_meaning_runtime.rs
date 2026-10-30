@@ -56,11 +56,11 @@ const UNLIMITED: ScalarLimits = ScalarLimits {
 };
 
 fn key(label: &str) -> quire_exact::NodeKey {
-    quire_exact::NodeKey::from_digest(Sha256::digest(label.as_bytes()).into())
+    crate::support::ids::node_key(label.as_bytes())
 }
 
 fn object_type(label: &str) -> EffectiveId {
-    EffectiveId::from_digest(Sha256::digest(label.as_bytes()).into())
+    crate::support::ids::effective_id(label.as_bytes())
 }
 
 fn k2_order_with(fields: serde_json::Value, clauses: serde_json::Value) -> serde_json::Value {
@@ -845,7 +845,7 @@ fn unresolved_object_reference_refuses_at_input_admission() {
         .unwrap(),
     );
     let reference = ObjectReference::new(
-        UniverseId::from_digest([4; 32]),
+        crate::support::ids::universe_id([4]),
         event,
         ObjectId::new("event-absent").unwrap(),
     );
@@ -1279,7 +1279,7 @@ fn lifecycle_receiver_and_parameter_boolean_components() {
         .unwrap(),
     );
     let receiver = ObjectReference::new(
-        UniverseId::from_digest([2; 32]),
+        crate::support::ids::universe_id([2]),
         lifecycle,
         ObjectId::new("i1").unwrap(),
     );

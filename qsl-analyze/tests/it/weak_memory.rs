@@ -387,7 +387,7 @@ impl Case {
         let unit = unit_text_with(self.profiles, &self.body).into_bytes();
         let id = self.package_id();
         let node = &self.checked.graph().temporal_clauses()[0];
-        let clause_node = WireNodeId::from_digest(*node.identity().as_bytes());
+        let clause_node = node.identity().clone();
         let occurrence = OccurrenceKey::new(clause_node, node.claim().clone());
         replay_protocol_trace(
             request(&document(), self.documents.snapshots.iter(), &unit, id),

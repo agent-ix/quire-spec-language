@@ -475,7 +475,7 @@ pub(crate) fn clause_identity(
     index: usize,
 ) -> (WireNodeId, OccurrenceKey) {
     let node = &package.graph().temporal_clauses()[index];
-    let id = WireNodeId::from_digest(*node.identity().as_bytes());
+    let id = node.identity().clone();
     (id, OccurrenceKey::new(id, node.claim().clone()))
 }
 
@@ -539,7 +539,7 @@ pub(crate) fn replay_unit_result(
         replay_target: qsl_replay::RequestTargetWire::function(
             selected(),
             qsl_replay::OccurrenceKey::new(
-                qsl_replay::WireNodeId::from_digest([7; 32]),
+                crate::fixture_ids::node_key([7]),
                 qsl_replay::Origin::new(qsl_replay::Role::new("declaration"), 0),
             ),
         ),

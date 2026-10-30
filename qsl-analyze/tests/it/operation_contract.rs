@@ -45,7 +45,7 @@ fn clause(world: &World, name: &str) -> OccurrenceKey {
         .find(|clause| clause.name() == name)
         .unwrap_or_else(|| panic!("the clause {name} is checked"));
     OccurrenceKey::new(
-        WireNodeId::from_digest(*clause.identity().as_bytes()),
+        clause.identity().clone(),
         clause.claim().clone(),
     )
 }
@@ -272,7 +272,7 @@ fn the_case_budget_settles_incomplete_naming_max_cases() {
 fn a_claim_that_selects_no_form_is_declined_invalid_input() {
     let world = world("", 0);
     let claim = OccurrenceKey::new(
-        WireNodeId::from_digest([7; 32]),
+        crate::fixture_ids::node_key([7]),
         Origin::new(Role::new("claim"), 0),
     );
     assert_eq!(
@@ -301,7 +301,7 @@ fn an_unbound_frame_item_is_unsupported_with_no_contract_level_reading() {
         .operation_anchor_of(operation.declaring, operation.declaration.name())
         .expect("the operation has an anchor");
     let claim = OccurrenceKey::new(
-        WireNodeId::from_digest(*anchor.as_bytes()),
+        anchor.clone(),
         Origin::new(Role::new("anchor"), 0),
     );
     let record = run(&world, &claim, None);
@@ -682,7 +682,7 @@ fn assert_no_per_step_reading(
     let node = refinement.v2_emission().expect("emits").identity;
     for ordinal in [0, 1] {
         let claim = OccurrenceKey::new(
-            WireNodeId::from_digest(*node.as_bytes()),
+            node.clone(),
             Origin::new(Role::new("generated"), ordinal),
         );
         let request = select_contract(package, &claim).map(|selected| ContractRequest {
@@ -787,7 +787,7 @@ fn a_bound_step_relation_is_unsupported_with_no_implementation_engine() {
     let [relation] = graph.step_relations() else {
         panic!("one step relation");
     };
-    let node = WireNodeId::from_digest(*relation.identity().expect("assembled").as_bytes());
+    let node = relation.identity().expect("assembled").clone();
     let code: Vec<&OccurrenceKey> = graph
         .requirements()
         .iter()

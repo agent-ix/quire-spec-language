@@ -106,7 +106,7 @@ fn reference() -> ObjectReference {
         .unwrap()
         .key();
     ObjectReference::new(
-        quire_exact::UniverseId::from_digest([0; 32]),
+        crate::test_ids::universe_id([0]),
         object_type,
         quire_exact::ObjectId::new("receiver").unwrap(),
     )
@@ -330,8 +330,8 @@ fn dispatch_table_candidate_and_each_callable_consumer_fault_at_its_own_site() {
         arguments: vec![],
     });
     let foreign = ObjectReference::new(
-        quire_exact::UniverseId::from_digest([0; 32]),
-        quire_exact::EffectiveId::from_digest([0xfe; 32]),
+        crate::test_ids::universe_id([0]),
+        crate::test_ids::effective_id([0xfe]),
         quire_exact::ObjectId::new("foreign-subtype").unwrap(),
     );
     probe_package!(
@@ -519,10 +519,10 @@ fn resolved_dispatch_and_callable_consumers_keep_the_matching_valid_prefixes() {
 
 fn quantity_units() -> quire_semantic_value::quantity::UnitTable {
     use quire_semantic_value::unit::{DimensionNode, NominalDeclaration, UnitGraph, UnitNode};
-    let dimension_a = quire_exact::NodeKey::from_digest([0xa1; 32]);
-    let dimension_b = quire_exact::NodeKey::from_digest([0xb1; 32]);
-    let unit_a = quire_exact::NodeKey::from_digest([0xa2; 32]);
-    let unit_b = quire_exact::NodeKey::from_digest([0xb2; 32]);
+    let dimension_a = crate::test_ids::node_key([0xa1]);
+    let dimension_b = crate::test_ids::node_key([0xb1]);
+    let unit_a = crate::test_ids::node_key([0xa2]);
+    let unit_b = crate::test_ids::node_key([0xb2]);
     let nominal = |name: &str| NominalDeclaration {
         qualified_declaration: vec![name.to_owned()],
         preimage: vec![],
@@ -887,7 +887,7 @@ fn result_stack_reference_and_import_shapes_reach_their_actual_producers() {
     });
     let callee = qsl_semantics::library::PackageNodeKey::new(
         qsl_semantics::library::PackageId::of_preimage(b"unresolved fixture package"),
-        qsl_foundation::digest::WireNodeId::from_digest([0xfe; 32]),
+        crate::test_ids::node_key([0xfe]),
     );
     let imported = body(|_| NodeKind::ImportedCall {
         callee,
@@ -1048,7 +1048,7 @@ fn both_ieee_profile_checks_and_conversion_operand_check_are_real_producers() {
 #[test]
 #[trace("TC-917", "FR-090-AC-15", "FR-090-AC-16")]
 fn field_slot_and_record_constructor_fail_at_the_actual_application_sites() {
-    let key = quire_exact::NodeKey::from_digest([4; 32]);
+    let key = crate::test_ids::node_key([4]);
     let field = body(|ids| NodeKind::Field {
         operand: ids[0],
         field: qsl_semantics::check::RecordField::new(key, "absent"),
@@ -1125,8 +1125,8 @@ fn edge_traversal_shape_probes_reach_all_seven_detecting_sites() {
     let literal = body(|_| NodeKind::Literal(CheckedLiteral(Value::Boolean(true))));
     let field = FieldRef::new(reference().object_type(), "edge");
     let unknown = ObjectReference::new(
-        quire_exact::UniverseId::from_digest([0; 32]),
-        quire_exact::EffectiveId::from_digest([0xfe; 32]),
+        crate::test_ids::universe_id([0]),
+        crate::test_ids::effective_id([0xfe]),
         quire_exact::ObjectId::new("unknown").unwrap(),
     );
     probe!("edge-attribute-declarations-unresolved", m, [], {
@@ -1235,7 +1235,7 @@ fn edge_traversal_shape_probes_reach_all_seven_detecting_sites() {
 #[trace("TC-917", "FR-090-AC-15", "FR-090-AC-16")]
 fn ordering_lookup_and_profile_rejections_are_not_kernel_refusals() {
     let member = Value::Enum(quire_exact::EnumMember::new(
-        quire_exact::VariantId::from_digest([0xfd; 32]),
+        crate::test_ids::variant_id([0xfd]),
         0,
     ));
     probe!("ordered-enumeration-variant-unresolved", m, [], {
@@ -1244,14 +1244,14 @@ fn ordering_lookup_and_profile_rejections_are_not_kernel_refusals() {
     });
     for distinct in [false, true] {
         let declaration = quire_semantic_value::enumeration::EnumDeclaration::new(
-            quire_exact::NodeKey::from_digest([0xfa; 32]),
+            crate::test_ids::node_key([0xfa]),
             distinct,
             vec!["A".to_owned()],
         )
         .unwrap();
         let other = if distinct {
             quire_semantic_value::enumeration::EnumDeclaration::new(
-                quire_exact::NodeKey::from_digest([0xfb; 32]),
+                crate::test_ids::node_key([0xfb]),
                 true,
                 vec!["A".to_owned()],
             )
@@ -1260,10 +1260,10 @@ fn ordering_lookup_and_profile_rejections_are_not_kernel_refusals() {
             declaration.clone()
         };
         let left = declaration
-            .member("A", quire_exact::NodeKey::from_digest([0xfc; 32]))
+            .member("A", crate::test_ids::node_key([0xfc]))
             .unwrap();
         let right = other
-            .member("A", quire_exact::NodeKey::from_digest([0xfd; 32]))
+            .member("A", crate::test_ids::node_key([0xfd]))
             .unwrap();
         let left_value = Value::Enum(quire_exact::EnumMember::new(left.variant(), 0));
         let right_value = Value::Enum(quire_exact::EnumMember::new(right.variant(), 0));
@@ -1691,7 +1691,7 @@ fn stack_extraction_and_frame_producers_report_their_own_invariants() {
                 "probe".to_owned(),
                 "probe".to_owned(),
                 ObjectReference::new(
-                    quire_exact::UniverseId::from_digest([0; 32]),
+                    crate::test_ids::universe_id([0]),
                     m.scope.types().object_types().next().unwrap().key(),
                     quire_exact::ObjectId::new("receiver").unwrap(),
                 ),
@@ -1878,7 +1878,7 @@ fn valid_required_and_optional_projection_preserves_values_without_a_charge() {
 #[test]
 #[trace("TC-917", "FR-090-AC-15", "FR-090-AC-16")]
 fn application_shapes_and_constructor_rejections_reach_their_detecting_sites() {
-    let bad_key = quire_exact::NodeKey::from_digest([0xfe; 32]);
+    let bad_key = crate::test_ids::node_key([0xfe]);
     let target = DecimalType::new(
         Integer::from(-10_i64),
         Integer::from(10_i64),
@@ -1914,7 +1914,7 @@ fn application_shapes_and_constructor_rejections_reach_their_detecting_sites() {
             body(|ids| NodeKind::Field {
                 operand: ids[0],
                 field: qsl_semantics::check::RecordField::new(
-                    quire_exact::NodeKey::from_digest([4; 32]),
+                    crate::test_ids::node_key([4]),
                     "x",
                 ),
                 optional: false,
@@ -2088,7 +2088,7 @@ fn projection_and_ordering_shape_faults_keep_their_original_channels() {
 #[trace("FR-359-AC-10", "TC-1002")]
 fn a_conforming_option_payload_projects_and_an_unrelated_one_is_rejected() {
     use quire_semantic_value::declaration::{CompositeDeclaration, FieldDeclaration};
-    let [money, taxed, fee] = [1, 2, 3].map(|byte| quire_exact::NodeKey::from_digest([byte; 32]));
+    let [money, taxed, fee] = [1, 2, 3].map(|byte| crate::test_ids::node_key([byte]));
     let record = |key, name: &str, supertypes: Vec<quire_exact::NodeKey>| {
         CompositeDeclaration::new(
             key,

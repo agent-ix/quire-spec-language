@@ -5,7 +5,8 @@
 use std::collections::{HashSet, VecDeque};
 
 use qsl_foundation::diagnostic::category_of;
-use qsl_foundation::digest::{DigestRecord, WireNodeId};
+use qsl_foundation::digest::DigestRecord;
+use quire_exact::NodeKey;
 use quire_canonical::Encode;
 use quire_exact::ValueType;
 use quire_semantic_value::catalog::CatalogCode;
@@ -475,7 +476,7 @@ pub(crate) fn explore<S: TransitionSystem>(
 )]
 pub fn explore_request<S: TransitionSystem>(
     system: &S,
-    domains: &[(WireNodeId, &ValueType)],
+    domains: &[(NodeKey, &ValueType)],
     types: &TypeEnvironment,
     position_limit: u64,
     limits: Limits,

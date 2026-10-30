@@ -224,7 +224,7 @@ impl Orders {
 
     fn at(&self, type_name: &str, object: &str) -> ObjectReference {
         ObjectReference::new(
-            UniverseId::from_digest([9; 32]),
+            crate::support::ids::universe_id([9]),
             self.id(type_name),
             ObjectId::new(object.to_owned()).expect("a nonempty object id"),
         )
@@ -975,7 +975,7 @@ fn the_first_missing_target_in_key_order_decides_between_dangling_and_undecidabl
 /// universe is 9).
 fn in_universe(orders: &Orders, universe: u8, type_name: &str, object: &str) -> ObjectReference {
     ObjectReference::new(
-        UniverseId::from_digest([universe; 32]),
+        crate::support::ids::universe_id([universe]),
         orders.id(type_name),
         ObjectId::new(object.to_owned()).expect("a nonempty object id"),
     )

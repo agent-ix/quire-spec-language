@@ -169,7 +169,7 @@ fn root_claim(package: &CheckedPackage, identity: &str) -> OccurrenceKey {
         .model_roots()
         .find(|(selection, _)| selection.identity == identity)
         .unwrap_or_else(|| panic!("a model_root for {identity}"));
-    OccurrenceKey::generated(WireNodeId::from_digest(*key.as_bytes()))
+    OccurrenceKey::generated(key.clone())
 }
 
 /// The request over `subject` holding the item of its package's first

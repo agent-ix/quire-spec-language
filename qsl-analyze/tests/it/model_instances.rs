@@ -427,7 +427,7 @@ fn population_root(population: &str) -> DomainKey {
     let digest =
         quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX)).expect("canonical");
     DomainKey::Node {
-        node: WireNodeId::from_digest(*digest.as_bytes()),
+        node: digest.clone(),
         path: Vec::new(),
     }
 }

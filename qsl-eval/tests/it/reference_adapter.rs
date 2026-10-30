@@ -285,7 +285,7 @@ fn registration_is_decided_from_the_packages_admitted_signature() {
     )
     .expect("the dependency links");
     let f_key = identity(&root, "f");
-    let unknown = NodeKey::from_digest([7; 32]);
+    let unknown = crate::support::ids::node_key([7]);
     let fresh = || Registry::new(Closure::new(&root));
 
     let admitted = Signature::new(vec![range(0, 9)], ValueType::Boolean);
@@ -446,7 +446,7 @@ fn invalid_child_requests_fault_and_a_valid_one_is_applied() {
     let objects = ObjectEnvironment::default();
     let (f_key, host) = (identity(&package, "f"), identity(&package, "host"));
     let cases: [(&str, NodeKey, Vec<Value>); 3] = [
-        ("unknown key", NodeKey::from_digest([9; 32]), vec![int(1)]),
+        ("unknown key", crate::support::ids::node_key([9]), vec![int(1)]),
         ("two arguments", f_key, vec![int(1), int(2)]),
         ("out of range", f_key, vec![int(10)]),
     ];

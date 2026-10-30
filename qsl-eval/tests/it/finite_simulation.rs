@@ -1013,7 +1013,7 @@ fn state_limit_mid_successors_places_the_blocked_key_after_the_queue() {
 #[trace("TC-455", "FR-101-AC-8")]
 #[test]
 fn requires_bound_refuses_before_any_transition_system_call() {
-    let node = WireNodeId::from_digest([7; 32]);
+    let node = crate::support::ids::node_key([7]);
     let unbounded = ValueType::Integer;
     let domains = [(node, &unbounded)];
     let types = empty_types();
@@ -1127,7 +1127,7 @@ fn exhaustive_small_graph_reports_exact_state_and_transition_counts() {
 #[trace("TC-455", "FR-101-AC-8")]
 #[test]
 fn bounded_domain_request_explores() {
-    let node = WireNodeId::from_digest([9; 32]);
+    let node = crate::support::ids::node_key([9]);
     let bounded = ValueType::Int(
         IntegerInterval::new(Integer::from(0_i64), Integer::from(9_i64))
             .expect("0..=9 is a valid interval"),
@@ -1646,7 +1646,7 @@ fn sample_request_refuses_a_generator_mismatch_before_any_call() {
 /// a negotiation disposition, not a refusal (FR-101 Behavior).
 #[test]
 fn not_simulated_catalog_code_and_fields_cover_every_variant() {
-    let node = WireNodeId::from_digest([9; 32]);
+    let node = crate::support::ids::node_key([9]);
     let unbounded = ValueType::Integer;
     let requires_bound_domains = [(node, &unbounded)];
     let system = RecordingSystem::new();

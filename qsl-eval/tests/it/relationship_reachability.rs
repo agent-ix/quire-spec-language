@@ -261,7 +261,7 @@ impl Orders {
 
     fn at(&self, type_name: &str, object: &str) -> ObjectReference {
         ObjectReference::new(
-            UniverseId::from_digest([9; 32]),
+            crate::support::ids::universe_id([9]),
             self.id(type_name),
             ObjectId::new(object.to_owned()).expect("a nonempty object id"),
         )

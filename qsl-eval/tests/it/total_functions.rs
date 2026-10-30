@@ -70,13 +70,13 @@ fn work_limit(work_units: u64) -> ScalarLimits {
 }
 
 fn key(label: &str) -> NodeKey {
-    NodeKey::from_digest(Sha256::digest(label.as_bytes()).into())
+    crate::support::ids::node_key(label.as_bytes())
 }
 
 /// A model object type's effective-declaration identity (ADR-013 O-05): the
 /// identity `Reference<T>` and `ObjectTypeDeclaration` carry.
 fn object_type(label: &str) -> EffectiveId {
-    EffectiveId::from_digest(Sha256::digest(label.as_bytes()).into())
+    crate::support::ids::effective_id(label.as_bytes())
 }
 
 fn integer(value: i64) -> Integer {
@@ -877,7 +877,7 @@ fn ieee_reference() -> DefinitionReference {
 
 fn object() -> ObjectReference {
     ObjectReference::new(
-        UniverseId::from_digest(Sha256::digest(b"u1").into()),
+        crate::support::ids::universe_id(b"u1"),
         object_type("M::Obj"),
         ObjectId::new("o1").unwrap(),
     )

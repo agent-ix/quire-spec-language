@@ -795,8 +795,8 @@ mod tests {
     /// `Outer { inner: Inner, flag: Boolean }`.
     fn nested() -> (TypeEnvironment, NodeKey, NodeKey) {
         use quire_semantic_value::declaration::FieldDeclaration;
-        let inner = NodeKey::from_digest([2; 32]);
-        let outer = NodeKey::from_digest([3; 32]);
+        let inner = crate::test_ids::node_key([2]);
+        let outer = crate::test_ids::node_key([3]);
         let declarations = [
             CompositeDeclaration::new(
                 inner,
@@ -866,12 +866,12 @@ mod tests {
     fn a_union_attempt_type_enumerates_every_member() {
         use quire_exact::{Identifier, UnionMember};
         use quire_semantic_value::declaration::UnionMemberDeclaration;
-        let union = NodeKey::from_digest([5; 32]);
+        let union = crate::test_ids::node_key([5]);
         let member = |name: &str, key: u8, positions: Vec<ValueType>| {
             UnionMemberDeclaration::from_verified(
                 UnionMember::from_admitted(
                     union,
-                    NodeKey::from_digest([key; 32]),
+                    crate::test_ids::node_key([key]),
                     Identifier::new(name).expect("an identifier"),
                 ),
                 positions,
@@ -920,11 +920,11 @@ mod tests {
     fn a_variant_union_orders_its_cases_by_name() {
         use quire_exact::{Identifier, UnionMember};
         use quire_semantic_value::declaration::UnionMemberDeclaration;
-        let union = NodeKey::from_digest([12; 32]);
+        let union = crate::test_ids::node_key([12]);
         let case = |byte: u8, name: &str| {
             UnionMember::from_admitted(
                 union,
-                NodeKey::from_digest([byte; 32]),
+                crate::test_ids::node_key([byte]),
                 Identifier::new(name).expect("an identifier"),
             )
         };
@@ -961,15 +961,15 @@ mod tests {
     fn a_variant_union_adds_nullary_and_payload_case_domains() {
         use quire_exact::{Identifier, UnionMember};
         use quire_semantic_value::declaration::UnionMemberDeclaration;
-        let union = NodeKey::from_digest([9; 32]);
+        let union = crate::test_ids::node_key([9]);
         let empty = UnionMember::from_admitted(
             union,
-            NodeKey::from_digest([10; 32]),
+            crate::test_ids::node_key([10]),
             Identifier::new("Empty").expect("an identifier"),
         );
         let enabled = UnionMember::from_admitted(
             union,
-            NodeKey::from_digest([11; 32]),
+            crate::test_ids::node_key([11]),
             Identifier::new("Enabled").expect("an identifier"),
         );
         let declaration = CompositeDeclaration::new(
@@ -1014,7 +1014,7 @@ mod tests {
     #[trace("TC-1270", "FR-120-AC-22")]
     #[test]
     fn a_tuple_value_domain_is_the_ordered_product_of_its_positions() {
-        let tuple = NodeKey::from_digest([12; 32]);
+        let tuple = crate::test_ids::node_key([12]);
         let declaration = CompositeDeclaration::new(
             tuple,
             "Pair",

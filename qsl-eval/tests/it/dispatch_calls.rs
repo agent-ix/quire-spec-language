@@ -88,7 +88,7 @@ fn assert_state_model_ill_typed(refusal: &CheckRefusal, expected: IllTypedCause,
 /// An object type's effective-declaration identity (ADR-013 O-05) for a
 /// hand-built fixture with no domain package behind it.
 fn object_type(label: &str) -> EffectiveId {
-    EffectiveId::from_digest(Sha256::digest(label.as_bytes()).into())
+    crate::support::ids::effective_id(label.as_bytes())
 }
 
 /// `label`'s effective identity in `view`: the identity the bridge resolves a
@@ -174,7 +174,7 @@ fn types(receiver_type: EffectiveId) -> TypeEnvironment {
 }
 
 fn universe() -> UniverseId {
-    UniverseId::from_digest(Sha256::digest(b"dispatch-calls-universe").into())
+    crate::support::ids::universe_id(b"dispatch-calls-universe")
 }
 
 fn receiver_reference(receiver_type: EffectiveId, identity: &str) -> ObjectReference {
@@ -501,7 +501,7 @@ fn record_dispatch_package_guarded(
         CompositeDeclaration, CompositeShape, FieldDeclaration,
     };
     let receiver_type = object_type("model.dispatch-calls.Receiver");
-    let [money, taxed, fee] = [1, 2, 3].map(|byte| NodeKey::from_digest([byte; 32]));
+    let [money, taxed, fee] = [1, 2, 3].map(|byte| crate::support::ids::node_key([byte]));
     let record = |key, name: &str, supertypes: Vec<NodeKey>| {
         CompositeDeclaration::new(
             key,
@@ -2814,7 +2814,7 @@ fn money_family() -> (
     use quire_semantic_value::declaration::{
         CompositeDeclaration, CompositeShape, FieldDeclaration,
     };
-    let [money, taxed, fee] = [1, 2, 3].map(|byte| NodeKey::from_digest([byte; 32]));
+    let [money, taxed, fee] = [1, 2, 3].map(|byte| crate::support::ids::node_key([byte]));
     let field = |name: &str| FieldDeclaration::new(name, ValueType::Integer, Presence::Required);
     let record = |key, name: &str, fields: Vec<FieldDeclaration>| {
         CompositeDeclaration::new(key, name, CompositeShape::Record(fields))

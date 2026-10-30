@@ -57,7 +57,7 @@ fn settled(
     .expect("the unit compiles")
     .package_id();
     let node = &world.package.graph().temporal_clauses()[0];
-    let clause_node = WireNodeId::from_digest(*node.identity().as_bytes());
+    let clause_node = node.identity().clone();
     let occurrence = OccurrenceKey::new(clause_node, node.claim().clone());
     let replay = |counterexample: &TemporalCounterexample| {
         replay_model_trace(

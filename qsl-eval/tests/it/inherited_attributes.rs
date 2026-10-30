@@ -45,7 +45,7 @@ const UNLIMITED: ScalarLimits = ScalarLimits {
 };
 
 fn effective(label: &str) -> EffectiveId {
-    EffectiveId::from_digest(Sha256::digest(label.as_bytes()).into())
+    crate::support::ids::effective_id(label.as_bytes())
 }
 
 fn integer_field(name: &str) -> FieldDeclaration {
@@ -85,7 +85,7 @@ fn package(object_types: Vec<ObjectTypeDeclaration>) -> (CheckedPackage, TypeEnv
 
 fn reference(label: &str, object: &str) -> ObjectReference {
     ObjectReference::new(
-        UniverseId::from_digest([0x42; 32]),
+        crate::support::ids::universe_id([0x42]),
         effective(label),
         ObjectId::new(object).unwrap(),
     )

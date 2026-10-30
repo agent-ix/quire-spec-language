@@ -123,7 +123,7 @@ impl Case {
         let id = package_id(&self.body);
         let unit = unit_text(&self.body).into_bytes();
         let node = &self.checked.graph().temporal_clauses()[0];
-        let clause_node = WireNodeId::from_digest(*node.identity().as_bytes());
+        let clause_node = node.identity().clone();
         let occurrence = OccurrenceKey::new(clause_node, node.claim().clone());
         let replay = |payload: &TemporalCounterexample<ProtocolTransition>| {
             let subject = self.subject(protocol);

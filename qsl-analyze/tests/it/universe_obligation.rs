@@ -153,7 +153,7 @@ fn a_proof_bound_or_an_initial_state_changes_the_identity_and_a_foreign_clause_i
     bounded.proof_bounds.push(
         ProofBound::new(
             DomainKey::Node {
-                node: WireNodeId::from_digest([9; 32]),
+                node: crate::fixture_ids::node_key([9]),
                 path: Vec::new(),
             },
             Some(DomainKind::Population),
@@ -225,7 +225,7 @@ fn hash_of(identity: &SubjectIdentity) -> u64 {
 fn bound(node: u8, maximum: u64) -> ProofBound {
     ProofBound::new(
         DomainKey::Node {
-            node: WireNodeId::from_digest([node; 32]),
+            node: crate::fixture_ids::node_key([node]),
             path: Vec::new(),
         },
         Some(DomainKind::Population),

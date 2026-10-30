@@ -194,7 +194,7 @@ fn the_hypothesis_items_decide_the_half() {
         assert_eq!(
             settled.safety.value,
             TerminalValue::Inconclusive(qsl_replay::InconclusiveCause::HypothesesNotEstablished {
-                hypothesis: qsl_foundation::digest::WireNodeId::from_digest(*cas_inv.as_bytes()),
+                hypothesis: cas_inv.clone(),
                 result: qsl_replay::ItemLabel::Inconclusive,
             })
         );

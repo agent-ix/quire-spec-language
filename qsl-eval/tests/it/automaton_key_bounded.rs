@@ -22,7 +22,7 @@ use crate::temporal_trace::{fixture, EVENT, INFINITE};
 
 fn occurrence(ordinal: u64) -> OccurrenceKey {
     OccurrenceKey::new(
-        WireNodeId::from_digest([0xab; 32]),
+        crate::support::ids::node_key([0xab]),
         Origin::new(Role::new("temporal"), ordinal),
     )
 }

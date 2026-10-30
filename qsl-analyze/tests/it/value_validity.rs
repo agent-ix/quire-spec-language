@@ -335,7 +335,7 @@ fn wire_of(package: &CheckedPackage, function: &str) -> WireNodeId {
         .graph()
         .callable(function)
         .expect("the function exists");
-    WireNodeId::from_digest(*callable.identity.as_bytes())
+    callable.identity.clone()
 }
 
 /// The key the vector names: the function's node at the vector's role and
@@ -971,7 +971,7 @@ fn a_replay_confirms_the_violation_it_was_asked_about_and_no_other() {
 fn a_claim_that_selects_no_form_is_declined_without_a_check() {
     let package = package_of("function f using v(x: Int[0, 3]): Int[0, 4] pure { x + 1 }");
     let none = OccurrenceKey::new(
-        WireNodeId::from_digest([7; 32]),
+        crate::fixture_ids::node_key([7]),
         Origin::new(Role::new("claim"), 0),
     );
     assert!(matches!(

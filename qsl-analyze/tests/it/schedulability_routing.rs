@@ -43,12 +43,12 @@ fn en_7_registers_and_a_schedulability_claim_routes_to_it() {
     .map(|(name, policy, fill)| {
         (
             OccurrenceKey::new(
-                WireNodeId::from_digest([fill; 32]),
+                crate::fixture_ids::node_key([fill]),
                 Origin::new(Role::new("claim"), 0),
             ),
             RequirementRecord::model_claim(
                 claim(name, policy).requirements(),
-                WireNodeId::from_digest([99; 32]),
+                crate::fixture_ids::node_key([99]),
             ),
         )
     })

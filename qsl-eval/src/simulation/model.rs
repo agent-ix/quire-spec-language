@@ -36,7 +36,7 @@ mod walk;
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_foundation::diagnostic::Code;
-use qsl_foundation::digest::{DigestRecord, WireNodeId};
+use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::selection::DefinitionRef;
 use qsl_foundation::IdentityLimits;
 use qsl_package::CheckedPackage;
@@ -1078,11 +1078,10 @@ impl<'a> ModelSystem<'a> {
     /// parameter and result, each field a `modifies` entry grants or a
     /// creatable type declares, and each population the initial states hold.
     /// A type this module cannot enumerate is listed as an unbounded domain.
-    pub fn domains(&self) -> Vec<(WireNodeId, ValueType)> {
+    pub fn domains(&self) -> Vec<(NodeKey, ValueType)> {
         let mut roots = Vec::new();
-        let mut root = |naming: Enc, value_type: &ValueType| {
-            let Ok(digest) = quire_canonical::sha256(&naming, CanonicalLimits::new(u64::MAX))
-            else {
+        let mut root = |package: &str, path: Vec<&str>, value_type: &ValueType| {
+            let Some(node) = root_node(package, path) else {
                 return;
             };
             let bounded = if matches!(value_type, ValueType::Population(_))
@@ -1096,7 +1095,7 @@ impl<'a> ModelSystem<'a> {
             } else {
                 ValueType::Integer
             };
-            roots.push((WireNodeId::from_digest(*digest.as_bytes()), bounded));
+            roots.push((node, bounded));
         };
         for declaration in self.types.object_types() {
             for operation in self.operations.declared_by(declaration.key()) {
@@ -1119,21 +1118,13 @@ impl<'a> ModelSystem<'a> {
                         continue;
                     }
                     root(
-                        Enc::Object(vec![
-                            ("operation", declaration_enc(&key)),
-                            ("parameter", Enc::text(name.clone())),
-                        ]),
+                        &key.package,
+                        vec!["operation", &key.node, "parameter", name],
                         value_type,
                     );
                 }
                 if let Some(result) = operation.result() {
-                    root(
-                        Enc::Object(vec![
-                            ("operation", declaration_enc(&key)),
-                            ("result", Enc::text("result")),
-                        ]),
-                        result,
-                    );
+                    root(&key.package, vec!["operation", &key.node, "result"], result);
                 }
             }
         }
@@ -1160,7 +1151,7 @@ impl<'a> ModelSystem<'a> {
         // "Initial element count").
         for key in &granted {
             if let Some(value_type) = field_types.get(key) {
-                root(declaration_enc(key), value_type);
+                root(&key.package, vec!["declaration", &key.node], value_type);
             }
         }
         let held: BTreeSet<&DeclarationKey> = self
@@ -1173,7 +1164,11 @@ impl<'a> ModelSystem<'a> {
                 .universes
                 .get(population)
                 .map(|keys| u64::try_from(keys.len()).unwrap_or(u64::MAX));
-            root(declaration_enc(population), &ValueType::Population(bound));
+            root(
+                &population.package,
+                vec!["declaration", &population.node],
+                &ValueType::Population(bound),
+            );
         }
         roots
     }
@@ -1215,24 +1210,20 @@ impl<'a> ModelSystem<'a> {
         let mut unbounded = Vec::new();
         for (_, population) in &admitting {
             if !self.universes.contains_key(*population) {
-                let digest = quire_canonical::sha256(
-                    &declaration_enc(population),
-                    CanonicalLimits::new(u64::MAX),
-                )
-                .map_err(|_| {
-                    NotSimulated::Extent(ClassifyFailure::Fault(InternalFault::new(
-                        "model-simulation",
-                        "population-root-digest",
-                    )))
-                })?;
-                unbounded.push((
-                    WireNodeId::from_digest(*digest.as_bytes()),
-                    ValueType::Population(None),
-                ));
+                let node = root_node(&population.package, vec!["declaration", &population.node])
+                    .ok_or_else(|| {
+                        NotSimulated::Extent(ClassifyFailure::Fault(InternalFault::new(
+                            "model-simulation",
+                            "population-root-node",
+                        )))
+                    })?;
+                unbounded.push((node, ValueType::Population(None)));
             }
         }
-        let roots: Vec<(WireNodeId, &ValueType)> =
-            unbounded.iter().map(|(id, root)| (*id, root)).collect();
+        let roots: Vec<(NodeKey, &ValueType)> = unbounded
+            .iter()
+            .map(|(id, root)| (id.clone(), root))
+            .collect();
         crate::simulation::not_simulated::check_requires_bound(&roots, self.types, u64::MAX)?;
         admitting.sort_by(|left, right| left.0.cmp(&right.0));
         Ok(admitting
@@ -1428,9 +1419,9 @@ pub fn check_model_bounds(
     position_limit: u64,
 ) -> Result<(), NotSimulated> {
     let domains = system.domains();
-    let roots: Vec<(WireNodeId, &ValueType)> = domains
+    let roots: Vec<(NodeKey, &ValueType)> = domains
         .iter()
-        .map(|(id, value_type)| (*id, value_type))
+        .map(|(id, value_type)| (id.clone(), value_type))
         .collect();
     crate::simulation::not_simulated::check_requires_bound(&roots, system.types, position_limit)
 }
@@ -1449,9 +1440,9 @@ pub fn explore_model(
     poll: impl FnMut() -> bool,
 ) -> Result<Exploration<ModelFinding>, NotSimulated> {
     let domains = system.domains();
-    let roots: Vec<(WireNodeId, &ValueType)> = domains
+    let roots: Vec<(NodeKey, &ValueType)> = domains
         .iter()
-        .map(|(id, value_type)| (*id, value_type))
+        .map(|(id, value_type)| (id.clone(), value_type))
         .collect();
     explore_request(
         system,
@@ -1486,9 +1477,9 @@ pub fn sample_model(
     max_steps: usize,
 ) -> Result<ModelTrace, ModelSampleError> {
     let domains = system.domains();
-    let roots: Vec<(WireNodeId, &ValueType)> = domains
+    let roots: Vec<(NodeKey, &ValueType)> = domains
         .iter()
-        .map(|(id, value_type)| (*id, value_type))
+        .map(|(id, value_type)| (id.clone(), value_type))
         .collect();
     let trace = sample_request(
         system,
@@ -1566,9 +1557,9 @@ pub fn sample_model_walk(
         .ok_or(NotSimulated::EmptyInitial)?;
     let view = OneInitial { system, start };
     let domains = system.domains();
-    let roots: Vec<(WireNodeId, &ValueType)> = domains
+    let roots: Vec<(NodeKey, &ValueType)> = domains
         .iter()
-        .map(|(id, value_type)| (*id, value_type))
+        .map(|(id, value_type)| (id.clone(), value_type))
         .collect();
     sample_request_until(
         &view,
@@ -1742,4 +1733,17 @@ mod tests {
         assert_eq!(BROKEN.code(), "runtime_invariant");
         assert_eq!(BROKEN.cause(), "established-invariant-broken");
     }
+}
+
+/// The requires-bound root node of a modelled declaration: the declaring
+/// package and the structural `path` that names the position, ordinal zero.
+fn root_node(package: &str, path: Vec<&str>) -> Option<NodeKey> {
+    NodeKey::new(
+        package,
+        path.into_iter()
+            .map(|segment| quire_exact::PathSegment::Text(segment.to_owned()))
+            .collect(),
+        0,
+    )
+    .ok()
 }

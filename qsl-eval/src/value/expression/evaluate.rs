@@ -4164,7 +4164,7 @@ mod tests {
             FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment,
         };
         use std::collections::BTreeMap;
-        let context_type = quire_exact::EffectiveId::from_digest([12; 32]);
+        let context_type = crate::test_ids::effective_id([12]);
         let collection_type =
             quire_exact::CollectionType::new(CollectionKind::Sequence, ValueType::Integer, None);
         let graph = PackageDeclarations {
@@ -4210,7 +4210,7 @@ mod tests {
         )]);
         let reference = |universe| {
             ObjectReference::new(
-                quire_exact::UniverseId::from_digest([universe; 32]),
+                crate::test_ids::universe_id([universe]),
                 context_type,
                 quire_exact::ObjectId::new("i1").unwrap(),
             )
@@ -4431,7 +4431,7 @@ mod tests {
     fn evaluate_bypassing_admission_with_an_unresolved_population_id_is_an_internal_fault() {
         let (package, identity) = population_function_package();
         let objects = ObjectEnvironment::default();
-        let unresolved_id = PopulationId::from_digest([7; 32]);
+        let unresolved_id = PopulationId::new(crate::test_ids::node_key([7]));
         let mut env = crate::value::expression::family::EvaluationEnv::new(
             &package,
             &objects,
@@ -4521,7 +4521,7 @@ mod tests {
             qsl_semantics::model::clause_observation::Observation,
         > = std::collections::BTreeMap::new();
         let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
-        let arguments = vec![Value::Population(PopulationId::from_digest([9; 32]))];
+        let arguments = vec![Value::Population(PopulationId::new(crate::test_ids::node_key([9])))];
         let evaluation = Machine::with_pre(
             graph.scope(),
             graph,
@@ -4603,9 +4603,9 @@ mod tests {
         > = std::collections::BTreeMap::new();
         let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
         let arguments = vec![
-            Value::Population(PopulationId::from_digest([9; 32])),
+            Value::Population(PopulationId::new(crate::test_ids::node_key([9]))),
             Value::Reference(ObjectReference::new(
-                quire_exact::UniverseId::from_digest([9; 32]),
+                crate::test_ids::universe_id([9]),
                 a,
                 quire_exact::ObjectId::new("root".to_owned()).expect("non-empty key"),
             )),
@@ -4725,7 +4725,7 @@ mod tests {
         let objects = ObjectEnvironment::default();
         let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
         let arguments = vec![Value::Reference(ObjectReference::new(
-            quire_exact::UniverseId::from_digest([9; 32]),
+            crate::test_ids::universe_id([9]),
             a,
             quire_exact::ObjectId::new("a1".to_owned()).expect("non-empty key"),
         ))];
@@ -4833,7 +4833,7 @@ mod tests {
             qsl_semantics::model::clause_observation::Observation::Current,
         )]);
         let reference = ObjectReference::new(
-            quire_exact::UniverseId::from_digest([9; 32]),
+            crate::test_ids::universe_id([9]),
             a,
             quire_exact::ObjectId::new("a1".to_owned()).expect("non-empty key"),
         );
@@ -4901,7 +4901,7 @@ mod tests {
         };
         let items_type =
             quire_exact::CollectionType::new(CollectionKind::Sequence, ValueType::Integer, None);
-        let point = quire_exact::NodeKey::from_digest([4; 32]);
+        let point = crate::test_ids::node_key([4]);
         let record = CompositeDeclaration::new(
             point,
             "Holder",
@@ -4951,8 +4951,8 @@ mod tests {
             panic!("a record value");
         };
         let object = ObjectReference::new(
-            quire_exact::UniverseId::from_digest([1; 32]),
-            quire_exact::EffectiveId::from_digest([2; 32]),
+            crate::test_ids::universe_id([1]),
+            crate::test_ids::effective_id([2]),
             quire_exact::ObjectId::new("o".to_owned()).unwrap(),
         );
         let trail = machine.trail.as_mut().unwrap();

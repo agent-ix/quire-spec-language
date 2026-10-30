@@ -120,7 +120,7 @@ fn an_indexed_reference_chain_evaluates_in_its_selected_component() {
         .find(|declaration| declaration.name() == "M::ConfigVersion")
         .expect("ConfigVersion's object declaration")
         .key();
-    let universe = UniverseId::from_digest([0x31; 32]);
+    let universe = crate::support::ids::universe_id([0x31]);
     let first = ObjectReference::new(
         universe,
         ledger_type,

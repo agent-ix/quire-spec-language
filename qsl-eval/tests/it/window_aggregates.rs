@@ -776,7 +776,7 @@ struct Observed {
 
 impl Observed {
     fn new(xs: &[i64]) -> Self {
-        let effective = EffectiveId::from_digest(Sha256::digest(b"M::E").into());
+        let effective = crate::support::ids::effective_id(b"M::E");
         let declaration = ObjectTypeDeclaration::new(
             effective,
             "M::E",
@@ -811,7 +811,7 @@ impl Observed {
             .check(CheckingLimits::default())
             .expect("the package checks");
         let over = ObjectReference::new(
-            UniverseId::from_digest([0x42; 32]),
+            crate::support::ids::universe_id([0x42]),
             effective,
             ObjectId::new("e1").expect("an object id"),
         );

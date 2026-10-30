@@ -33,7 +33,7 @@ fn of_kind<S: Clone>(
 
 fn occurrence(byte: u8) -> OccurrenceKey {
     OccurrenceKey::new(
-        WireNodeId::from_digest([byte; 32]),
+        crate::fixture_ids::node_key([byte]),
         Origin::new(Role::new("temporal"), 0),
     )
 }

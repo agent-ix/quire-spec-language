@@ -165,7 +165,7 @@ fn a_temporal_and_a_refinement_item_share_the_concrete_deadlock_item() {
         let subject = subject(&world);
         let identity = SubjectIdentity::of(&subject).expect("the package emits");
         let clause = OccurrenceKey::new(
-            qsl_foundation::digest::WireNodeId::from_digest([3; 32]),
+            crate::fixture_ids::node_key([3]),
             quire_exact::Origin::new(quire_exact::Role::new("temporal"), 0),
         );
         let graph = world.package().graph();

@@ -237,7 +237,7 @@ fn object_reference(
 /// digest, so a byte-length other than 32 can no longer reach this layer at
 /// all -- only a well-formed but different digest remains representable).
 fn foreign_universe_id() -> UniverseId {
-    UniverseId::from_digest([0x07; 32])
+    crate::support::ids::universe_id([0x07])
 }
 
 struct Scenario {
@@ -636,7 +636,7 @@ fn check_refusal_as_postcondition(
 /// declaration this file constructs -- finding 1's record-field case
 /// (checked at `TypeEnvironment::new` time, never through an expression).
 fn fixed_key(byte: u8) -> NodeKey {
-    NodeKey::from_digest([byte; 32])
+    crate::support::ids::node_key([byte])
 }
 
 /// A stable object-type `EffectiveId` distinct from any `scenario()` type,
@@ -644,7 +644,7 @@ fn fixed_key(byte: u8) -> NodeKey {
 /// `fixture_f1`'s model -- finding 1's object-attribute case and finding 2's
 /// package-declared-but-not-in-the-model case need one each.
 fn fixed_type(byte: u8) -> EffectiveId {
-    EffectiveId::from_digest([byte; 32])
+    crate::support::ids::effective_id([byte])
 }
 
 /// Unwraps a completed kernel evaluation, panicking on any family-owned

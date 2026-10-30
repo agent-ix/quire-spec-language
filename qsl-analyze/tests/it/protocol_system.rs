@@ -1268,7 +1268,7 @@ fn the_repaired_fill_is_deadlock_free_over_ten_states() {
     );
     let protocol = case.checked.graph().protocol("Fill").expect("Fill");
     let occurrence = deadlock_freedom_clause(&package_id(&case.body)).1;
-    let other = OccurrenceKey::generated(WireNodeId::from_digest([9; 32]));
+    let other = OccurrenceKey::generated(crate::fixture_ids::node_key([9]));
     let item = |occurrence| ProtocolTemporalItem {
         occurrence,
         subject: &"Fill",

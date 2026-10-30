@@ -36,7 +36,7 @@ const CLAIMS: &str = "probabilistic P95 using ev on M over (s: M::Server) under 
      { expected accumulate duration until holds(s.phase = 2) <= 5 }";
 
 fn node(fill: u8) -> WireNodeId {
-    WireNodeId::from_digest([fill; 32])
+    crate::fixture_ids::node_key([fill])
 }
 
 fn key(fill: u8) -> OccurrenceKey {

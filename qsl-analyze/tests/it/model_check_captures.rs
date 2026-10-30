@@ -439,7 +439,7 @@ fn replay_reproduces_an_undefined_capture_located_at_it() {
     .expect("the unit compiles")
     .package_id();
     let node = &world.package.graph().temporal_clauses()[0];
-    let identity = WireNodeId::from_digest(*node.identity().as_bytes());
+    let identity = node.identity().clone();
     let occurrence = OccurrenceKey::new(identity, node.claim().clone());
     let system =
         ModelSystem::new(world.subject(&["c"], UNLIMITED).simulation).expect("the subject admits");

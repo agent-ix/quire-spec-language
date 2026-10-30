@@ -108,7 +108,7 @@ fn jcs(value: &serde_json::Value) -> String {
 }
 
 fn hex(bytes: &[u8]) -> NodeKey {
-    NodeKey::from_digest(Sha256::digest(bytes).into())
+    crate::support::ids::node_key(bytes)
 }
 
 fn fixture_key(preimage: &serde_json::Value) -> NodeKey {
@@ -123,7 +123,7 @@ fn key(label: &str) -> NodeKey {
 /// A model object type's effective-declaration identity (ADR-013 O-05): the
 /// identity `Reference<T>` and `ObjectTypeDeclaration` carry.
 fn object_type(label: &str) -> EffectiveId {
-    EffectiveId::from_digest(Sha256::digest(label.as_bytes()).into())
+    crate::support::ids::effective_id(label.as_bytes())
 }
 
 fn owners() -> OwnerSelection {
@@ -1101,7 +1101,7 @@ fn object_environment() -> TypeEnvironment {
 }
 
 fn universe_id(tag: &str) -> UniverseId {
-    UniverseId::from_digest(Sha256::digest(tag.as_bytes()).into())
+    crate::support::ids::universe_id(tag.as_bytes())
 }
 
 fn reference(universe: &str, identity: &str) -> ObjectReference {

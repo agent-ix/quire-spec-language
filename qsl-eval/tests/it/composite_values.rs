@@ -54,13 +54,13 @@ const UNLIMITED: ScalarLimits = ScalarLimits {
 };
 
 fn key(label: &str) -> NodeKey {
-    NodeKey::from_digest(Sha256::digest(label.as_bytes()).into())
+    crate::support::ids::node_key(label.as_bytes())
 }
 
 /// A model object type's effective-declaration identity (ADR-013 O-05): the
 /// identity `Reference<T>` and `ObjectTypeDeclaration` carry.
 fn object_type(label: &str) -> EffectiveId {
-    EffectiveId::from_digest(Sha256::digest(label.as_bytes()).into())
+    crate::support::ids::effective_id(label.as_bytes())
 }
 
 fn int(value: i64) -> Value {
@@ -432,7 +432,7 @@ fn node_environment() -> TypeEnvironment {
 }
 
 fn universe_id(tag: &[u8]) -> UniverseId {
-    UniverseId::from_digest(Sha256::digest(tag).into())
+    crate::support::ids::universe_id(tag)
 }
 
 fn node_reference(name: &str) -> ObjectReference {
@@ -729,7 +729,7 @@ fn malformed_declarations_refuse_at_admission() {
 #[trace("QSpec-TC-188", "QSpec-FR-143-AC-4")]
 #[test]
 fn unknown_supertype_refuses_at_admission() {
-    let unknown = EffectiveId::from_digest([9; 32]);
+    let unknown = crate::support::ids::effective_id([9]);
     let refused = TypeEnvironment::new(
         [],
         [

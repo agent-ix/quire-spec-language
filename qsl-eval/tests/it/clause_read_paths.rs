@@ -159,7 +159,7 @@ fn a_selection_on_a_navigation_is_located_at_the_referenced_object() {
     };
     let at = |name: &str, object: &str| {
         ObjectReference::new(
-            UniverseId::from_digest([9; 32]),
+            crate::support::ids::universe_id([9]),
             id(name),
             ObjectId::new(object.to_owned()).unwrap(),
         )

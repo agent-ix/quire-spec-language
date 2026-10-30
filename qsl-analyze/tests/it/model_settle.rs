@@ -199,7 +199,7 @@ pub(crate) fn request<'a>(
         replay_target: qsl_replay::RequestTargetWire::function(
             selected(),
             qsl_replay::OccurrenceKey::new(
-                qsl_replay::WireNodeId::from_digest([7; 32]),
+                crate::fixture_ids::node_key([7]),
                 qsl_replay::Origin::new(qsl_replay::Role::new("declaration"), 0),
             ),
         ),
@@ -453,7 +453,7 @@ fn a_counterexample_resolves_its_item_by_clause_node_and_occurrence_key() {
         ModelTraceSettlement::Reproduced { .. }
     ));
 
-    let authored = WireNodeId::from_digest([7; 32]);
+    let authored = crate::fixture_ids::node_key([7]);
     let authored_key = OccurrenceKey::new(authored, Origin::new(Role::new("temporal"), 0));
     let (cause, code, tag) = refusal(replay_at(payload.clone(), authored, authored_key.clone()));
     assert_eq!(

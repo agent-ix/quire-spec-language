@@ -373,7 +373,7 @@ mod tests {
         let foreign = ModelQueryRefusal {
             cause: ModelRefusalCause::ForeignUniverse {
                 actual: vec![0xAB, 0xCD],
-                expected: quire_exact::UniverseId::from_digest([0x11; 32]),
+                expected: crate::test_ids::universe_id([0x11]),
             },
             detail: String::new(),
         };

@@ -1872,7 +1872,7 @@ mod tests {
 
         // Step 5: a fresh environment, called with a NodeKey naming no
         // function in this package.
-        let unknown_identity = NodeKey::from_digest([0xAB; 32]);
+        let unknown_identity = crate::test_ids::node_key([0xAB]);
         let mut fresh_env = family::EvaluationEnv::new(&package, &objects, Vec::new());
         let mut fresh_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
         let unknown_fault = qsl_semantics::check::ValueFunctionFamily::evaluate(
@@ -2047,7 +2047,7 @@ mod tests {
             .expect("an empty package checks cleanly"),
         );
         let objects = ObjectEnvironment::default();
-        let undeclared = NodeKey::from_digest([0xAB; 32]);
+        let undeclared = crate::test_ids::node_key([0xAB]);
         for kind in S6aFamilyKind::ALL {
             let name = s6a_family_name(kind);
             let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);

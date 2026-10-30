@@ -39,13 +39,13 @@ const UNLIMITED: ScalarLimits = ScalarLimits {
 };
 
 fn key(label: &str) -> NodeKey {
-    NodeKey::from_digest(Sha256::digest(label.as_bytes()).into())
+    crate::support::ids::node_key(label.as_bytes())
 }
 
 /// A model object type's effective-declaration identity (ADR-013 O-05): the
 /// identity `Reference<T>` and `ObjectTypeDeclaration` carry.
 fn object_type(label: &str) -> EffectiveId {
-    EffectiveId::from_digest(Sha256::digest(label.as_bytes()).into())
+    crate::support::ids::effective_id(label.as_bytes())
 }
 
 fn int(value: i64) -> Value {
@@ -347,7 +347,7 @@ fn holder_environment() -> TypeEnvironment {
 }
 
 fn universe_id(tag: &str) -> UniverseId {
-    UniverseId::from_digest(Sha256::digest(tag.as_bytes()).into())
+    crate::support::ids::universe_id(tag.as_bytes())
 }
 
 fn holder(env: &TypeEnvironment, universe: &str, identity: &str) -> Value {
@@ -718,7 +718,7 @@ mod checked {
     }
 
     fn key_of_bytes(bytes: &[u8]) -> NodeKey {
-        NodeKey::from_digest(Sha256::digest(bytes).into())
+        crate::support::ids::node_key(bytes)
     }
 
     fn owners() -> OwnerSelection {

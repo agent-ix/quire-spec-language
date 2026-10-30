@@ -44,12 +44,12 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_foundation::bound::{DomainKey, DomainKind};
 use qsl_foundation::diagnostic::Code;
-use qsl_foundation::digest::{DigestRecord, WireNodeId};
+use qsl_foundation::digest::DigestRecord;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckedActivation, CheckedProtocol, CheckedTerminalMember};
 use qsl_semantics::family::ClaimExtent;
 use quire_canonical::{Encode, Error, Limits as CanonicalLimits, Sink, Writer};
-use quire_exact::{Meter, ObjectReference, Value, ValueType};
+use quire_exact::{Meter, NodeKey, ObjectReference, Value, ValueType};
 use quire_semantic_value::catalog::{CatalogCode, InternalFault};
 
 use crate::fairness::{Constraint, Identity};
@@ -600,7 +600,7 @@ impl<C: Encode> Encode for ProtocolKey<C> {
 /// template. A binder's bounded record type this module cannot enumerate is
 /// refused when the system is built ([`Unsupported::UnenumerableRecord`]); an
 /// attempt type it cannot enumerate is an unbounded root.
-pub fn protocol_domains(protocol: &CheckedProtocol) -> Vec<(WireNodeId, ValueType)> {
+pub fn protocol_domains(protocol: &CheckedProtocol) -> Vec<(NodeKey, ValueType)> {
     let binders = protocol
         .slots
         .binders
@@ -623,7 +623,7 @@ pub fn protocol_domains(protocol: &CheckedProtocol) -> Vec<(WireNodeId, ValueTyp
 }
 
 /// The root a template's attempt type is named by.
-fn attempt_root(protocol: &CheckedProtocol, template: &str) -> WireNodeId {
+fn attempt_root(protocol: &CheckedProtocol, template: &str) -> NodeKey {
     binder_root(&protocol.name, &format!("{template}.attempt"))
 }
 
@@ -658,16 +658,18 @@ fn check_attempt_types(
     }
 }
 
-/// The root a protocol binder's record type is named by: the digest of
-/// `{"protocol": <name>, "binder": <name>}`.
-pub fn binder_root(protocol: &str, binder: &str) -> WireNodeId {
-    let naming = Enc::Object(vec![
-        ("protocol", Enc::text(protocol)),
-        ("binder", Enc::text(binder)),
-    ]);
-    let digest = quire_canonical::sha256(&naming, CanonicalLimits::new(u64::MAX))
-        .map_or([0; 32], |digest| *digest.as_bytes());
-    WireNodeId::from_digest(digest)
+/// The root a protocol binder's record type is named by: the node of
+/// package `protocol` at path `["binder", <name>]`.
+pub fn binder_root(protocol: &str, binder: &str) -> NodeKey {
+    NodeKey::new(
+        protocol,
+        vec![
+            quire_exact::PathSegment::Text("binder".to_owned()),
+            quire_exact::PathSegment::Text(binder.to_owned()),
+        ],
+        0,
+    )
+    .expect("a protocol binder root is a well-formed node identity")
 }
 
 /// FR-215 (ADR-027 TS-5): FR-101's requires-bound pre-check over the roots
@@ -691,17 +693,17 @@ pub fn check_protocol_bounds(
 fn subject_domains(
     model: &ModelSystem<'_>,
     protocol: &CheckedProtocol,
-) -> Vec<(WireNodeId, ValueType)> {
+) -> Vec<(NodeKey, ValueType)> {
     let mut domains = model.domains();
     domains.extend(protocol_domains(protocol));
     domains
 }
 
 /// `domains` as the requires-bound pre-check reads them.
-fn roots(domains: &[(WireNodeId, ValueType)]) -> Vec<(WireNodeId, &ValueType)> {
+fn roots(domains: &[(NodeKey, ValueType)]) -> Vec<(NodeKey, &ValueType)> {
     domains
         .iter()
-        .map(|(id, value_type)| (*id, value_type))
+        .map(|(id, value_type)| (id.clone(), value_type))
         .collect()
 }
 

@@ -536,7 +536,7 @@ mod tests {
 
     fn claim_key() -> qsl_replay::OccurrenceKey {
         qsl_replay::OccurrenceKey::new(
-            qsl_replay::WireNodeId::from_digest([1; 32]),
+            crate::test_ids::node_key([1]),
             quire_exact::Origin::new(quire_exact::Role::new("claim"), 0),
         )
     }

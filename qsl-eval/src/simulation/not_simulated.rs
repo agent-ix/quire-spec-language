@@ -2,7 +2,7 @@
 //! FR-101: the dispositions returned before any state is explored or
 //! sampled.
 
-use qsl_foundation::digest::WireNodeId;
+use quire_exact::NodeKey;
 use qsl_foundation::selection::DefinitionRef;
 use qsl_semantics::family::{classify_extent, ClaimExtent, ClassifyFailure, UnboundedDomains};
 use quire_exact::ValueType;
@@ -121,7 +121,7 @@ impl NotSimulated {
 /// method is called, shared by `explore_request` and `sample_request`
 /// (FR-101).
 pub(crate) fn check_requires_bound(
-    domains: &[(WireNodeId, &ValueType)],
+    domains: &[(NodeKey, &ValueType)],
     types: &TypeEnvironment,
     position_limit: u64,
 ) -> Result<(), NotSimulated> {

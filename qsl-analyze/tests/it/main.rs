@@ -2,6 +2,7 @@
 //! Public API tests for the unreduced graph core and the model checker.
 
 mod analyze;
+mod fixture_ids;
 mod bounded_closure;
 mod closure_certificate;
 mod component_certificate;

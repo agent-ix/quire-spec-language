@@ -661,7 +661,7 @@ fn an_other_clause_settles_unsupported_at_negotiation_with_no_run() {
 fn routed_hp4_hyper_item_settles_unsupported_requested_capability() {
     let reason = HyperUnsupported::ExistentialBeforeUniversal;
     let form = HyperForm::Other { reason };
-    let node = WireNodeId::from_digest([17; 32]);
+    let node = crate::fixture_ids::node_key([17]);
     let occurrence = OccurrenceKey::new(node, Origin::new(Role::new("claim"), 0));
     let extent = ClaimExtent::from_domains(
         [(
@@ -679,7 +679,7 @@ fn routed_hp4_hyper_item_settles_unsupported_requested_capability() {
         requirements.unsupported(),
         Some(&UnsupportedItem::HyperForm { reason })
     );
-    let record = RequirementRecord::model_claim(requirements, WireNodeId::from_digest([18; 32]));
+    let record = RequirementRecord::model_claim(requirements, crate::fixture_ids::node_key([18]));
     let records = [(occurrence, record)].into_iter().collect();
     let mut registry = Registry::new();
     registry

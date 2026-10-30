@@ -96,7 +96,7 @@ pub fn produce(
 
     let emission =
         emit_checked(package).map_err(|_| MonitorPlanRefusal::PackageIdentityUnavailable)?;
-    let clause_node = WireNodeId::from_digest(*node.identity().as_bytes());
+    let clause_node = node.identity().clone();
     let subject = MonitorSubject::new(
         emission.package().package_id(),
         clause_node,

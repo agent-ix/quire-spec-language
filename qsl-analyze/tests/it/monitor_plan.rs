@@ -66,14 +66,14 @@ fn checked_clause(formula: &str) -> (CheckedPackage, usize) {
     declarations.time_sources.push(ModelTimeSource {
         model: "M".to_owned(),
         span: Span { start: 0, end: 1 },
-        model_node: NodeKey::from_digest([0; 32]),
+        model_node: crate::fixture_ids::node_key([0]),
         tick_operation_key: None,
         tick_operation_span: None,
         tick_operation_anchor: None,
         source: TimeSourceKind::Dense,
         unit: "ms".to_owned(),
-        unit_node: NodeKey::from_digest([0; 32]),
-        time_dimension: NodeKey::from_digest([0; 32]),
+        unit_node: crate::fixture_ids::node_key([0]),
+        time_dimension: crate::fixture_ids::node_key([0]),
         nominal_nodes: Vec::new(),
     });
     let graph = declarations

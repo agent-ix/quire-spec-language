@@ -20,7 +20,7 @@ use quire_semantic_value::checking::CheckingLimits;
 /// The model object type `T` that `Holder` references; the kernel
 /// constructor is called here, in a test, not in the fixture.
 fn object_type() -> quire_exact::EffectiveId {
-    quire_exact::EffectiveId::from_digest([9; 32])
+    crate::test_ids::effective_id([9])
 }
 
 struct World {

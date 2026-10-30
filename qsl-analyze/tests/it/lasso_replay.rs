@@ -64,7 +64,7 @@ pub(crate) fn package_id(fixture: &Fixture) -> DigestRecord {
 /// The identities of the fixture's one clause, as an envelope carries them.
 pub(crate) fn clause_identity(fixture: &Fixture) -> (WireNodeId, OccurrenceKey) {
     let node = &fixture.package.graph().temporal_clauses()[0];
-    let id = WireNodeId::from_digest(*node.identity().as_bytes());
+    let id = node.identity().clone();
     (id, OccurrenceKey::new(id, node.claim().clone()))
 }
 
@@ -436,7 +436,7 @@ fn a_counterexample_names_its_clause_by_node_and_occurrence() {
     };
     assert!(replay_at(node, occurrence.clone()).is_ok());
 
-    let other = WireNodeId::from_digest([7; 32]);
+    let other = crate::fixture_ids::node_key([7]);
     let other_key = OccurrenceKey::new(other, occurrence.origin().clone());
     let (cause, code, tag) = refusal(replay_at(other, other_key));
     assert_eq!(

@@ -259,11 +259,11 @@ fn evaluates_a_protocol_slot_and_refuses_an_unread_binder_before_charging() {
     for (invalid, expected_locus) in [
         (
             ProtocolSlot {
-                node: quire_exact::NodeKey::from_digest([0xA5; 32]),
+                node: crate::support::ids::node_key([0xA5]),
                 member: "condition".to_owned(),
                 index: None,
             },
-            CallAdmissionLocus::Node(quire_exact::NodeKey::from_digest([0xA5; 32])),
+            CallAdmissionLocus::Node(crate::support::ids::node_key([0xA5])),
         ),
         (
             ProtocolSlot {
