@@ -1375,7 +1375,7 @@ impl PackageDeclarations {
                                 self.time_sources.push(ModelTimeSource {
                                     model: source.model.name.clone(),
                                     span: source.span,
-                                    model_node: *model_node,
+                                    model_node: model_node.clone(),
                                     tick_operation_key,
                                     tick_operation_span,
                                     tick_operation_anchor: None,
@@ -1861,11 +1861,12 @@ impl PackageDeclarations {
         let signatures = Signatures::new(signatures);
         let mut seen_operations = std::collections::BTreeSet::new();
         for operation in &scope.dispatch_operations {
-            if !seen_operations.insert((operation.receiver_type, operation.member.clone())) {
+            if !seen_operations.insert((operation.receiver_type.clone(), operation.member.clone()))
+            {
                 refusals.push(invalid_dispatch(
                     root(Origin::Expression),
                     InvalidDispatchDeclaration::DuplicateOperation {
-                        receiver_type: operation.receiver_type,
+                        receiver_type: operation.receiver_type.clone(),
                         member: operation.member.clone(),
                     },
                 ));
@@ -2107,7 +2108,10 @@ impl PackageDeclarations {
                  unordered declaration whose members are not sorted by case, before \
                  this declaration ever reaches `check`",
             );
-            type_nodes.insert(node, identity::CheckedTypeNode::Sum { node, variants });
+            type_nodes.insert(
+                node.clone(),
+                identity::CheckedTypeNode::Sum { node, variants },
+            );
         }
         // `node_count` reads the same `CheckingLimits.nodes()` the `Typer`
         // below honors: it is the ceiling claim classification walks under,
@@ -3921,7 +3925,7 @@ impl PackageDeclarations {
                     conditions,
                 }) {
                     Ok(lowered) => {
-                        lowering.record_temporal_key(*index, lowered.key);
+                        lowering.record_temporal_key(*index, lowered.key.clone());
                         if let Some(slot) = lowered_temporal.get_mut(dense) {
                             *slot = Some(lowered);
                         }
@@ -4057,7 +4061,7 @@ impl PackageDeclarations {
                                 .iter()
                                 .find_map(|model| model.effective_id(&key.declaring))?;
                             let operation = scope
-                                .operation_declaration(declaring, key.operation.as_str())?
+                                .operation_declaration(declaring.clone(), key.operation.as_str())?
                                 .clone();
                             Some((
                                 clause_index,
@@ -4095,7 +4099,7 @@ impl PackageDeclarations {
                             .find(|model| model.alias() == Some(alias.as_str()))?;
                         let declaring = model.effective_id(&operation.declaring)?;
                         let declaration = scope
-                            .operation_declaration(declaring, operation.operation.as_str())?
+                            .operation_declaration(declaring.clone(), operation.operation.as_str())?
                             .clone();
                         Some((
                             declaring,
@@ -4121,7 +4125,7 @@ impl PackageDeclarations {
                         (
                             form.spans.declaration.start,
                             lowering::AnchorInput {
-                                declaring: operation.declaring,
+                                declaring: operation.declaring.clone(),
                                 operation: &operation.declaration,
                                 location,
                                 reference,
@@ -4145,7 +4149,7 @@ impl PackageDeclarations {
                 source_ordered_anchors.push((
                     source_order,
                     lowering::AnchorInput {
-                        declaring: bound.operation.declaring,
+                        declaring: bound.operation.declaring.clone(),
                         operation: &bound.operation.declaration,
                         location,
                         reference,
@@ -4157,7 +4161,7 @@ impl PackageDeclarations {
             source_ordered_anchors.push((
                 *source_order,
                 lowering::AnchorInput {
-                    declaring: *declaring,
+                    declaring: declaring.clone(),
                     operation,
                     location,
                     reference: location,
@@ -4169,7 +4173,7 @@ impl PackageDeclarations {
                 source_ordered_anchors.push((
                     checked_relations[relation_index].span().start,
                     lowering::AnchorInput {
-                        declaring: *declaring,
+                        declaring: declaring.clone(),
                         operation,
                         location,
                         reference: location,
@@ -4185,7 +4189,7 @@ impl PackageDeclarations {
         for (checked, locations) in checked_protocols.iter().zip(&template_locations) {
             for (template, location) in checked.obligations.compensations.iter().zip(locations) {
                 anchors.push(lowering::AnchorInput {
-                    declaring: template.operation.declaring,
+                    declaring: template.operation.declaring.clone(),
                     operation: &template.operation.declaration,
                     location,
                     reference: location,
@@ -4215,7 +4219,9 @@ impl PackageDeclarations {
                     .iter()
                     .find(|model| model.alias() == Some(source.model.as_str()))?;
                 let (declaring, name) = model.operation_anchor_declaration(key)?;
-                let operation = scope.operation_declaration(declaring, &name)?.clone();
+                let operation = scope
+                    .operation_declaration(declaring.clone(), &name)?
+                    .clone();
                 Some((
                     index,
                     declaring,
@@ -4231,7 +4237,7 @@ impl PackageDeclarations {
             .collect();
         for (_, declaring, operation, location, reference) in &timed_operations {
             anchors.push(lowering::AnchorInput {
-                declaring: *declaring,
+                declaring: declaring.clone(),
                 operation,
                 location,
                 reference,
@@ -4242,7 +4248,7 @@ impl PackageDeclarations {
         }
         for (index, declaring, operation, location, reference) in &timed_operations {
             let anchor = lowering::AnchorInput {
-                declaring: *declaring,
+                declaring: declaring.clone(),
                 operation,
                 location,
                 reference,
@@ -4268,7 +4274,7 @@ impl PackageDeclarations {
             let declaration = root(Origin::TypeDeclaration {
                 name: time_source_origin(index),
             });
-            match lowering.clock_places(model.clocks(), source.model_node, &declaration) {
+            match lowering.clock_places(model.clocks(), source.model_node.clone(), &declaration) {
                 Ok(places) => model.set_place_nodes(places),
                 Err(refusal) => refusals.push(refusal),
             }
@@ -4277,7 +4283,7 @@ impl PackageDeclarations {
         let mut hyper_align: Vec<Vec<quire_exact::NodeKey>> = vec![Vec::new(); checked_hyper.len()];
         for (clause_index, _, declaring, operation, location) in &hyper_skipped {
             let anchor = lowering::AnchorInput {
-                declaring: *declaring,
+                declaring: declaring.clone(),
                 operation,
                 location,
                 reference: location,
@@ -4387,12 +4393,12 @@ impl PackageDeclarations {
                         kind: form.kind,
                         location,
                         name_location,
-                        context: form.context,
+                        context: form.context.clone(),
                         anchor: form
                             .operation
                             .as_ref()
                             .map(|operation| lowering::AnchorInput {
-                                declaring: operation.declaring,
+                                declaring: operation.declaring.clone(),
                                 operation: &operation.declaration,
                                 location,
                                 reference: location,
@@ -4426,12 +4432,12 @@ impl PackageDeclarations {
                     let input = lowering::AttemptInput {
                         location,
                         anchor: lowering::AnchorInput {
-                            declaring: bound.operation.declaring,
+                            declaring: bound.operation.declaring.clone(),
                             operation: &bound.operation.declaration,
                             location,
                             reference: location,
                         },
-                        frame_population: bound.frame_population,
+                        frame_population: bound.frame_population.clone(),
                     };
                     match lowering.protocol_attempt(&input) {
                         Ok(lowered) => *slot = Some(lowered),
@@ -4455,12 +4461,12 @@ impl PackageDeclarations {
                     let input = lowering::AttemptInput {
                         location,
                         anchor: lowering::AnchorInput {
-                            declaring: template.operation.declaring,
+                            declaring: template.operation.declaring.clone(),
                             operation: &template.operation.declaration,
                             location,
                             reference: location,
                         },
-                        frame_population: template.frame_population,
+                        frame_population: template.frame_population.clone(),
                     };
                     match lowering.protocol_attempt(&input) {
                         Ok(lowered) => *slot = Some(lowered),
@@ -4479,7 +4485,7 @@ impl PackageDeclarations {
             let anchors: Vec<lowering::AnchorInput<'_>> = operations
                 .iter()
                 .map(|(declaring, operation, location)| lowering::AnchorInput {
-                    declaring: *declaring,
+                    declaring: declaring.clone(),
                     operation,
                     location,
                     reference: location,
@@ -4552,8 +4558,8 @@ impl PackageDeclarations {
                         name: form.name.as_str(),
                         source_order: form.spans.declaration.start,
                         location,
-                        context: form.context,
-                        declaring: operation.declaring,
+                        context: form.context.clone(),
+                        declaring: operation.declaring.clone(),
                         operation: &operation.declaration,
                         has_execution_point: form.execution_point.is_some(),
                         lowered: lowered.as_ref()?,
@@ -4583,12 +4589,12 @@ impl PackageDeclarations {
                                     lowered_clauses
                                         .get(index)
                                         .and_then(Option::as_ref)
-                                        .map(|clause| clause.key)
+                                        .map(|clause| clause.key.clone())
                                 })
                                 .collect::<Option<Vec<_>>>()?;
                             Some(lowering::AttemptNodes {
                                 declaration: bound.declaration,
-                                anchor: lowered.as_ref()?.binding.anchor,
+                                anchor: lowered.as_ref()?.binding.anchor.clone(),
                                 contracts,
                             })
                         })
@@ -4607,7 +4613,7 @@ impl PackageDeclarations {
                         .filter_map(|(declaration, _)| {
                             Some(lowering::CompensationNodes {
                                 declaration,
-                                anchor: lowered.get(declaration)?.as_ref()?.binding.anchor,
+                                anchor: lowered.get(declaration)?.as_ref()?.binding.anchor.clone(),
                             })
                         })
                         .collect()
@@ -4769,7 +4775,7 @@ impl PackageDeclarations {
                     .iter()
                     .map(|(site, _)| timed_model::site_location(site))
                     .collect();
-                match lowering.timed_state(model.clocks(), *context, alternatives, &sites) {
+                match lowering.timed_state(model.clocks(), context.clone(), alternatives, &sites) {
                     Ok(key) => lowered.push((index, key)),
                     Err(refusal) => refusals.push(refusal),
                 }
@@ -4819,7 +4825,7 @@ impl PackageDeclarations {
             match lowering.composite_node(composite.key()) {
                 Ok(node) => {
                     type_nodes.insert(
-                        node,
+                        node.clone(),
                         identity::CheckedTypeNode::Composite {
                             node,
                             declaration: composite.key(),
@@ -4918,8 +4924,10 @@ impl PackageDeclarations {
             .ok_or_else(unlowered)?;
         // Each contract entry's own checked identity (FR-114 "Outputs"),
         // captured before `lowered_clauses` is consumed below.
-        let lowered_clause_keys: Vec<quire_exact::NodeKey> =
-            lowered_clauses.iter().map(|lowered| lowered.key).collect();
+        let lowered_clause_keys: Vec<quire_exact::NodeKey> = lowered_clauses
+            .iter()
+            .map(|lowered| lowered.key.clone())
+            .collect();
         // FR-115: each operation a `pre`/`post` clause or an attempt names,
         // with the frame node lowering bound it to (FR-105, FR-114).
         let clause_frames =
@@ -5049,7 +5057,8 @@ impl PackageDeclarations {
                     record,
                 } in keyed
                 {
-                    match requirements.entry(OccurrenceKey::new(claims::wire(node), origin)) {
+                    match requirements.entry(OccurrenceKey::new(claims::wire(node.clone()), origin))
+                    {
                         std::collections::btree_map::Entry::Vacant(slot) => {
                             slot.insert(record);
                         }
@@ -5095,7 +5104,7 @@ impl PackageDeclarations {
                     continue;
                 };
                 let classified = protocol_memory::classify(protocol, checked, bound, |binding| {
-                    let declaring = binding.operation.declaring;
+                    let declaring = binding.operation.declaring.clone();
                     let arguments: Vec<(String, quire_exact::EffectiveId)> = binding
                         .operation
                         .declaration
@@ -5111,7 +5120,7 @@ impl PackageDeclarations {
                         &state_clauses,
                         &model,
                         footprint::Operation {
-                            receiver_type: binding.receiver,
+                            receiver_type: binding.receiver.clone(),
                             declaring,
                             operation: &binding.operation.declaration,
                             arguments: &arguments,
@@ -5222,7 +5231,8 @@ impl PackageDeclarations {
                     }]
                 })?;
             if let Some(checked) = terminals.iter_mut().find(|checked| checked.model == *model) {
-                checked.occurrence = Some(OccurrenceKey::new(claims::wire(*key), claim.clone()));
+                checked.occurrence =
+                    Some(OccurrenceKey::new(claims::wire(key.clone()), claim.clone()));
             }
         }
         let hyper_nodes = checked_hyper
@@ -5246,7 +5256,8 @@ impl PackageDeclarations {
                             )),
                         }]
                     })?;
-                Ok(checked.assembled_at(OccurrenceKey::new(claims::wire(lowered.key), claim)))
+                Ok(checked
+                    .assembled_at(OccurrenceKey::new(claims::wire(lowered.key.clone()), claim)))
             })
             .collect::<Result<Vec<_>, Vec<CheckRefusal>>>()?;
         // FR-410 "Outputs": each state-graph claim carries its `claim`
@@ -5279,19 +5290,25 @@ impl PackageDeclarations {
                 .flat_map(references::body_objects)
                 .collect();
             let record = claims::RequirementRecord::unguarded(
-                checked.claim().requirements(claims::wire(lowered.key)),
+                checked
+                    .claim()
+                    .requirements(claims::wire(lowered.key.clone())),
                 ValueType::Boolean,
-                claims::wire(lowered.boolean),
+                claims::wire(lowered.boolean.clone()),
                 references::ModelReferences::new(objects, [], None),
             );
-            match requirements.entry(OccurrenceKey::new(claims::wire(lowered.key), claim.clone())) {
+            match requirements.entry(OccurrenceKey::new(
+                claims::wire(lowered.key.clone()),
+                claim.clone(),
+            )) {
                 std::collections::btree_map::Entry::Vacant(slot) => {
                     slot.insert(record);
                 }
                 std::collections::btree_map::Entry::Occupied(_) => return Err(unkeyable()),
             }
-            state_graph_nodes
-                .push(checked.assembled_at(OccurrenceKey::new(claims::wire(lowered.key), claim)));
+            state_graph_nodes.push(
+                checked.assembled_at(OccurrenceKey::new(claims::wire(lowered.key.clone()), claim)),
+            );
         }
         let named_scope = NamedScope::of(&models, &scope);
         let lowered_temporal = lowered_temporal
@@ -5339,11 +5356,13 @@ impl PackageDeclarations {
                     let extent = claimed
                         .populations()
                         .iter()
-                        .map(|domain| population_domain_key(&object_types, &object_nodes, *domain))
+                        .map(|domain| {
+                            population_domain_key(&object_types, &object_nodes, domain.clone())
+                        })
                         .collect::<Result<Vec<_>, _>>()
                         .and_then(|populations| {
                             claimed.requirements(
-                                claims::wire(lowered.key),
+                                claims::wire(lowered.key.clone()),
                                 &lowered
                                     .parameters
                                     .iter()
@@ -5371,12 +5390,13 @@ impl PackageDeclarations {
                             extent
                         },
                         ValueType::Boolean,
-                        claims::wire(lowered.boolean),
+                        claims::wire(lowered.boolean.clone()),
                         references::ModelReferences::new(objects.clone(), [], None),
                     );
-                    match requirements
-                        .entry(OccurrenceKey::new(claims::wire(lowered.key), claim.clone()))
-                    {
+                    match requirements.entry(OccurrenceKey::new(
+                        claims::wire(lowered.key.clone()),
+                        claim.clone(),
+                    )) {
                         std::collections::btree_map::Entry::Vacant(slot) => {
                             slot.insert(record);
                         }
@@ -5435,7 +5455,7 @@ impl PackageDeclarations {
             if !bounded {
                 domains.insert(
                     qsl_foundation::bound::DomainKey::Node {
-                        node: claims::wire(lowered.key),
+                        node: claims::wire(lowered.key.clone()),
                         path: Vec::new(),
                     },
                     qsl_foundation::bound::DomainKind::InfiniteTrace,
@@ -5481,13 +5501,13 @@ impl PackageDeclarations {
                 }]
             };
             let emission = checked.v2_emission().map_err(|_| unkeyable())?;
-            let node = claims::wire(emission.identity);
+            let node = claims::wire(emission.identity.clone());
             let boolean = refinement_booleans
                 .get(checked.name())
                 .cloned()
                 .ok_or_else(unkeyable)?;
             let occurrence = OccurrenceKey::new(
-                node,
+                node.clone(),
                 quire_exact::Origin::new(quire_exact::Role::new("declaration"), 0),
             );
             // FR-430: a refinement whose concrete model is `time dense` is
@@ -5501,7 +5521,7 @@ impl PackageDeclarations {
             let record = claims::RequirementRecord::unguarded(
                 if dense { wanted.over_timed() } else { wanted },
                 ValueType::Boolean,
-                claims::wire(boolean),
+                claims::wire(boolean.clone()),
                 references::ModelReferences::new(Default::default(), [], None),
             );
             // Two refinements of one meaning share one node and so one
@@ -5582,20 +5602,24 @@ impl PackageDeclarations {
                 let populations: Vec<(state_clause::PopulationDomain, quire_exact::NodeKey)> =
                     bound
                         .frame_population
-                        .zip(lowered_attempt.population_object)
+                        .clone()
+                        .zip(lowered_attempt.population_object.clone())
                         .into_iter()
                         .collect();
                 let record = state_clause::frame_record(
                     &bound.operation,
-                    frame,
+                    frame.clone(),
                     &populations,
-                    lowered_attempt.boolean,
+                    lowered_attempt.boolean.clone(),
                     scope.types(),
                     limits.nodes(),
                     location,
                 )
                 .map_err(|refusal| vec![refusal])?;
-                match requirements.entry(OccurrenceKey::new(claims::wire(frame), frame_origin)) {
+                match requirements.entry(OccurrenceKey::new(
+                    claims::wire(frame.clone()),
+                    frame_origin,
+                )) {
                     std::collections::btree_map::Entry::Vacant(slot) => {
                         slot.insert(record);
                     }
@@ -5612,7 +5636,7 @@ impl PackageDeclarations {
                 attempts.push(protocol_clause::CheckedAttempt {
                     declaration: bound.declaration,
                     operation: bound.operation.clone(),
-                    receiver: bound.receiver,
+                    receiver: bound.receiver.clone(),
                     anchor,
                     frame,
                     contracts,
@@ -5645,20 +5669,24 @@ impl PackageDeclarations {
                 let populations: Vec<(state_clause::PopulationDomain, quire_exact::NodeKey)> =
                     template
                         .frame_population
-                        .zip(lowered_template.population_object)
+                        .clone()
+                        .zip(lowered_template.population_object.clone())
                         .into_iter()
                         .collect();
                 let record = state_clause::frame_record(
                     &template.operation,
-                    frame,
+                    frame.clone(),
                     &populations,
-                    lowered_template.boolean,
+                    lowered_template.boolean.clone(),
                     scope.types(),
                     limits.nodes(),
                     location,
                 )
                 .map_err(|refusal| vec![refusal])?;
-                match requirements.entry(OccurrenceKey::new(claims::wire(frame), frame_origin)) {
+                match requirements.entry(OccurrenceKey::new(
+                    claims::wire(frame.clone()),
+                    frame_origin,
+                )) {
                     std::collections::btree_map::Entry::Vacant(slot) => {
                         slot.insert(record);
                     }
