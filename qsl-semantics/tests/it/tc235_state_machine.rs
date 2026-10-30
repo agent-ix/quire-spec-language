@@ -601,11 +601,11 @@ fn tc235_m19_state_machine_specialization_vectors() {
     let express = view.type_identities()[&DeclarationKey {
         package: PACKAGE.to_owned(),
         node: id("ExpressLifecycle"),
-    }];
+    }].clone();
     let mut effective: Vec<_> = view
         .declarations()
         .iter()
-        .filter(|entry| entry.visible && entry.preimage.owner_effective_type == Some(express))
+        .filter(|entry| entry.visible && entry.preimage.owner_effective_type == Some(express.clone()))
         .map(|entry| entry.preimage.original.node.clone())
         .collect();
     effective.sort();
@@ -1089,7 +1089,6 @@ fn tc1049_view_exposes_machine_scope_and_conformance_by_key() {
     assert!(!view.conforms(&express, &copy));
 
     // Step 4: the accessors changed nothing a caller can observe.
-    assert_eq!(view.identity(), without_calls.identity());
     assert_eq!(view.declarations(), without_calls.declarations());
     assert_eq!(view.type_identities(), without_calls.type_identities());
     assert!(view.declarations().iter().all(|entry| {

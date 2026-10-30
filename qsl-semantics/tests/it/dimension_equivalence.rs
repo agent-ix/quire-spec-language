@@ -551,7 +551,7 @@ fn an_equivalence_derives_one_class_with_the_least_key_as_root() {
         panic!("one equivalence");
     };
     let classes = EquivalenceClasses::new(&package.dimension_equivalences);
-    let [least, greater] = q12.dimensions;
-    assert_eq!(classes.class(least), (least, one));
+    let [least, greater] = q12.dimensions.clone();
+    assert_eq!(classes.class(least.clone()), (least.clone(), one));
     assert_eq!(classes.class(greater).0, least);
 }

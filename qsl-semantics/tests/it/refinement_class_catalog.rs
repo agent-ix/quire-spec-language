@@ -193,7 +193,7 @@ fn the_catalog_lowers_to_nodes_of_the_package_graph() {
     let declared = |name: &str| match keyed.concrete().iter().find(|class| class.class() == name) {
         Some(KeyedCatalogClass::Declared {
             node, binder_types, ..
-        }) => (*node, binder_types.clone()),
+        }) => (node.clone(), binder_types.clone()),
         other => panic!("{name}: {other:?}"),
     };
     assert_eq!(declared("SubCounter::peek"), declared("SubCounter::bump"));

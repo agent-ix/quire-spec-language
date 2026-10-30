@@ -1549,12 +1549,12 @@ fn one_actual_member_can_subset_and_redefine_the_same_parent() {
         )
         .expect("different rules retain equal inputs without a duplicate-path refusal");
         let view = &selected[0].view;
-        let owner = view.type_identities()[&key("B")];
+        let owner = view.type_identities()[&key("B")].clone();
         let entry = view
             .declarations()
             .iter()
             .find(|entry| {
-                entry.preimage.owner_effective_type == Some(owner)
+                entry.preimage.owner_effective_type == Some(owner.clone())
                     && entry.preimage.original == key("B/xb")
             })
             .expect("the member's effective entry");

@@ -1453,7 +1453,7 @@ fn time_dimensions_of_different_owners_do_not_mix() {
         let [source] = graph.time_sources() else {
             panic!("one time source");
         };
-        (source.time_dimension, source.unit.clone())
+        (source.time_dimension.clone(), source.unit.clone())
     };
     let (rpc_time, _) = source_of("time R dense unit R::ms;");
     let (flow_time, _) = source_of("time R dense unit F::sec;");
