@@ -63,8 +63,8 @@ fn dependency_selection(identity: &str, _label: &str) -> Value {
 /// Fields shared by a `semantic_graph` node and its identity-projection
 /// counterpart: `quire_contract_model::CheckedNodeProjectionV2::from`'s own
 /// definition of the projection is exactly a `CheckedSemanticNodeV2` with
-/// `occurrences` dropped; IR derives the package-id hash input's projection
-/// from `semantic_graph.nodes` that way and the wire carries none. A
+/// `occurrences` dropped; IR derives the identity projection from
+/// `semantic_graph.nodes` that way and the wire carries none. A
 /// self-typed scalar with an empty aggregate body needs no other
 /// node's identity and no frame/nominal validation. `export` is `R`'s own
 /// `declaration`, paired with a `declaration`-role occurrence
@@ -3211,6 +3211,7 @@ fn nodes_source_map(nodes: &[Value]) -> Value {
 }
 
 /// A minimal always-run FR-340 frame package with one type, object and frame.
+/// Locally constructed; this stands in for the missing FR-340 fixture.
 fn frame_fixture(frame_body: impl FnOnce(&Value) -> (Vec<Value>, Vec<Value>, Vec<Value>)) -> Value {
     let type_node = keyable_type_node("pkg::T", "T");
     let type_ref = type_node["node_id"].clone();
