@@ -60,10 +60,10 @@ fn emitted(document: &[u8], body: &str) -> (String, Value) {
 
 /// The node of `wire` that `reference` names.
 fn target<'w>(wire: &'w Value, reference: &Value) -> &'w Value {
-    let digest = &reference["target"]["digest"];
+    let key = &reference["target"];
     nodes(wire)
         .iter()
-        .find(|node| node["node_id"]["digest"] == *digest)
+        .find(|node| &node["node_id"] == key)
         .unwrap_or_else(|| panic!("{reference} names a node"))
 }
 
@@ -850,8 +850,11 @@ fn a_reset_by_selection_binds_its_slot() {
     let binder = target(&wire, binder);
     assert_eq!(binder["semantic_form"], "parameter");
     assert_eq!(literal(&binder["body"], "name"), "e");
-    let integer = qsl_semantics::check::builtin_integer_type_key().to_string();
-    assert_eq!(binder["semantic_type"]["digest"], integer);
+    let integer = qsl_semantics::check::builtin_integer_type_key("pkg").unwrap();
+    assert_eq!(
+        qsl_foundation::node_wire::node_key_from_json(&binder["semantic_type"]).unwrap(),
+        integer
+    );
     assert_true(&wire, target(&wire, member(&reset["body"], "condition")));
     assert_eq!(
         located(&wire, reset, &unit),

@@ -47,10 +47,10 @@ fn applications<'w>(wire: &'w Value, identity: &str) -> Vec<&'w Value> {
 
 /// The node `reference` term `term` names.
 fn referenced<'w>(wire: &'w Value, term: &Value) -> &'w Value {
-    let digest = term["target"]["digest"].as_str().expect("a reference");
+    let key = &term["target"];
     nodes(wire)
         .iter()
-        .find(|node| node["node_id"]["digest"] == digest)
+        .find(|node| &node["node_id"] == key)
         .expect("the referenced node")
 }
 
@@ -95,7 +95,7 @@ fn assert_converted(
     let arguments = equalities[0]["body"]["arguments"].as_array().unwrap();
     assert_eq!(arguments.len(), 2, "{body}");
     assert_eq!(
-        arguments[converted_at]["target"]["digest"], convert["node_id"]["digest"],
+        arguments[converted_at]["target"], convert["node_id"],
         "{body}: the converted operand is the convert node"
     );
     let peer = referenced(&wire, &arguments[1 - converted_at]);
@@ -280,12 +280,12 @@ fn an_equality_with_both_operands_converted_converts_each() {
         .as_array()
         .unwrap()
         .iter()
-        .map(|argument| &argument["target"]["digest"])
+        .map(|argument| &argument["target"])
         .collect();
     for (argument, parameter) in arguments.iter().zip(["a", "c"]) {
         let convert = converts
             .iter()
-            .find(|convert| &convert["node_id"]["digest"] == *argument)
+            .find(|convert| &convert["node_id"] == *argument)
             .expect("each argument is a convert node");
         let source = referenced(&wire, &convert["body"]["arguments"][0]);
         assert_eq!(source["body"]["members"][0]["value"]["value"], parameter);
@@ -405,8 +405,7 @@ fn a_converted_quantity_equality_converts_the_quantity_operand() {
         assert_eq!(equalities.len(), 1, "{suffix}: one quantity.{suffix}");
         let at = usize::from(!converted_first);
         assert_eq!(
-            equalities[0]["body"]["arguments"][at]["target"]["digest"],
-            converts[0]["node_id"]["digest"],
+            equalities[0]["body"]["arguments"][at]["target"], converts[0]["node_id"],
             "{suffix}: the converted operand is the convert node"
         );
     }
