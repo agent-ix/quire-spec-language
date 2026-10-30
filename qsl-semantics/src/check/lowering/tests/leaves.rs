@@ -561,10 +561,10 @@ fn long_leaf_paths_refuse_on_the_default_work_budget() {
         .expect("sixteen short leaves check");
 }
 
-/// TC-415 step 8 (FR-093-AC-10): `eq`, `has`, `eqa` and `eqo` check over
+/// TC-415 step 8 (FR-093-AC-11): `eq`, `has`, `eqa` and `eqo` check over
 /// recursive text-leaf records, and their nodes key the same with `A`
 /// declared before `B` and after it.
-#[trace("FR-093-AC-10", "TC-415")]
+#[trace("FR-093-AC-11", "TC-415")]
 #[test]
 fn recursive_text_leaf_functions_check_and_key_in_either_order() {
     let mut keys = Vec::new();
@@ -586,10 +586,10 @@ fn recursive_text_leaf_functions_check_and_key_in_either_order() {
     assert_eq!(keys[0], keys[1], "declaring B before A gives the same keys");
 }
 
-/// FR-092 "Recursion groups" (FR-093-AC-10): `Option<Node>` is one node
+/// FR-092 "Recursion groups" (FR-092-AC-11): `Option<Node>` is one node
 /// wherever it is named, whichever function names it first, and the nodes key
 /// the same under every order of the functions.
-#[trace("FR-093-AC-10", "TC-415")]
+#[trace("FR-092-AC-11", "TC-413")]
 #[test]
 fn an_in_group_type_is_its_member_in_every_declaration_order() {
     let keys_of = |functions: Vec<FunctionDeclaration>| {
