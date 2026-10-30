@@ -417,6 +417,8 @@ pub enum TemporalTraceParts {
 pub struct ClauseRequestParts {
     /// The exact program or extracted source.
     pub source: ClauseRunSource,
+    /// The package manifest's top-level name.
+    pub package_name: String,
     /// Canonical domain package input.
     pub packages: qsl_semantics::model::intake::PackageInput,
     /// Supplied library dependencies.
@@ -844,6 +846,7 @@ pub fn read_clause_run_request(
     }
     Ok(ClauseRunRequest {
         source: parts.source,
+        package_name: parts.package_name,
         packages: parts.packages,
         dependencies: parts.dependencies,
         snapshots,

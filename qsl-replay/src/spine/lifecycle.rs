@@ -520,6 +520,7 @@ pub fn select(
 /// dependency input and `limits`.
 pub fn check(
     parsed: &ParsedSource,
+    package_name: String,
     models: &AdmittedModels,
     dependencies: &DependencyInput,
     limits: SpineLimits,
@@ -527,6 +528,7 @@ pub fn check(
 ) -> Result<Staged<CheckedUnit>, FrontEndFailure> {
     check_with_execution_points(
         parsed,
+        package_name,
         &BTreeMap::new(),
         models,
         dependencies,
@@ -540,6 +542,7 @@ pub fn check(
 /// independently compiled libraries.
 pub fn check_with_execution_points(
     parsed: &ParsedSource,
+    package_name: String,
     execution_points: &super::StateClauseExecutionPoints,
     models: &AdmittedModels,
     dependencies: &DependencyInput,
@@ -574,7 +577,12 @@ pub fn check_with_execution_points(
             work: StageWork::default(),
         };
         let package =
-            resolution.check_unit(parsed, models.models.clone(), execution_points.clone())?;
+            resolution.check_unit(
+                parsed,
+                package_name.clone(),
+                models.models.clone(),
+                execution_points.clone(),
+            )?;
         *work = resolution.work;
         let (library_names, libraries) = resolution
             .compiled
@@ -926,6 +934,8 @@ struct Resolution<'a> {
 /// One unit whose imports the resolution is walking: the unit itself, or a
 /// library whose compile is in progress.
 struct Frame {
+    /// The manifest's top-level package name for this unit.
+    package_name: String,
     raw: RawSourceRef,
     unit: ParsedUnit,
     models: SelectedModels,
@@ -941,11 +951,13 @@ struct Frame {
 impl Frame {
     fn new(
         parsed: &ParsedSource,
+        package_name: String,
         models: SelectedModels,
         execution_points: super::StateClauseExecutionPoints,
     ) -> Self {
         let imports = parsed.unit.selections().imports.len();
         Self {
+            package_name,
             raw: parsed.source().reference().clone(),
             unit: parsed.unit.clone(),
             models,
@@ -1033,7 +1045,12 @@ impl<'a> Resolution<'a> {
         Ok(Library {
             identity,
             source: parsed.source().clone(),
-            frame: Frame::new(&parsed, models, super::StateClauseExecutionPoints::new()),
+            frame: Frame::new(
+                &parsed,
+                identity.as_str().to_owned(),
+                models,
+                super::StateClauseExecutionPoints::new(),
+            ),
         })
     }
 
@@ -1045,6 +1062,7 @@ impl<'a> Resolution<'a> {
         let limits = self.limits;
         let raw = frame.raw.clone();
         let unit = frame.unit.clone();
+        let package_name = frame.package_name.clone();
         let models = std::mem::take(&mut frame.models);
         let admitted = std::mem::take(&mut frame.admitted);
         let links = std::mem::take(&mut frame.links);
@@ -1061,6 +1079,7 @@ impl<'a> Resolution<'a> {
         let mut declarations = charged(cancel, &mut self.work.s3, || {
             PackageDeclarations::assemble_with_execution_points_and_cancel(
                 raw.clone(),
+                package_name,
                 unit,
                 models,
                 admitted,
@@ -1136,10 +1155,11 @@ impl<'a> Resolution<'a> {
     fn check_unit(
         &mut self,
         parsed: &ParsedSource,
+        package_name: String,
         models: SelectedModels,
         execution_points: super::StateClauseExecutionPoints,
     ) -> Result<pkg::CheckedPackage, Box<CompileRefusal>> {
-        let mut root = Frame::new(parsed, models, execution_points);
+        let mut root = Frame::new(parsed, package_name, models, execution_points);
         let mut libraries: Vec<Library> = Vec::new();
         loop {
             let frame = current(&mut root, &mut libraries);

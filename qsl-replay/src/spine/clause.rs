@@ -197,6 +197,8 @@ impl ClauseRunSource {
 pub struct ClauseRunRequest {
     /// The unit: program source bytes, or an I3 extracted source.
     pub source: ClauseRunSource,
+    /// The package manifest's top-level name; never derived from source.
+    pub package_name: String,
     /// FR-056's package input.
     pub packages: qsl_semantics::model::intake::PackageInput,
     /// FR-099's dependency input.
@@ -839,6 +841,7 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
             .into_value();
         let checked = front_end::check(
             &parsed,
+            request.package_name.clone(),
             &models,
             &request.dependencies,
             request.limits,

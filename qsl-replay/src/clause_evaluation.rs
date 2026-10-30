@@ -63,6 +63,8 @@ pub enum ClauseObservation {
 pub struct ClauseEvaluationRequest {
     /// The unit's four FR-001 labels.
     pub source: SourceIdentity,
+    /// The package manifest's top-level name; never derived from source.
+    pub package_name: String,
     /// The unit's display path; only displayed, never opened.
     pub path: String,
     /// The unit's source bytes.
@@ -171,6 +173,7 @@ pub enum ClauseEvaluation {
 pub fn evaluate_clause(request: ClauseEvaluationRequest) -> ClauseEvaluation {
     let ClauseEvaluationRequest {
         source,
+        package_name,
         path,
         bytes,
         packages,
@@ -251,6 +254,7 @@ pub fn evaluate_clause(request: ClauseEvaluationRequest) -> ClauseEvaluation {
         }
     };
     let run = ClauseRunRequest {
+        package_name,
         source: ClauseRunSource::Program {
             identity: source,
             path,

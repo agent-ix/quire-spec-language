@@ -265,6 +265,7 @@ pub struct DependencyEntryWire {
 /// recompilation input is reachable only through [`ByteProvision::get`].
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReplayRequest {
+    package_name: String,
     package_id: DigestRecord,
     sources: Vec<RawSourceRef>,
     dependencies: Vec<DependencyEntry>,
@@ -284,6 +285,10 @@ pub struct ReplayRequest {
 }
 
 impl ReplayRequest {
+    /// The package manifest's top-level name this request replays.
+    pub fn package_name(&self) -> &str {
+        &self.package_name
+    }
     /// The package this request replays against.
     pub fn package_id(&self) -> DigestRecord {
         self.package_id
@@ -399,6 +404,8 @@ impl ReplayRequestWire {
 /// belongs to a byte reader, and none exists yet.
 #[derive(Clone)]
 pub struct ReplayRequestWire {
+    /// The package manifest's top-level name.
+    pub package_name: String,
     /// The semantic profile selections; each must name a known profile.
     pub profile_selections: Vec<ProfileSelection>,
     /// `(digest domain, digest hex)` naming the package this request
@@ -871,6 +878,7 @@ impl ReplayRequest {
         }
 
         Ok(Self {
+            package_name: wire.package_name,
             package_id,
             sources,
             dependencies,
@@ -900,6 +908,7 @@ impl ReplayRequest {
             .map_or_else(RequestTargetWire::default, Into::into);
         replay_target.over = self.over.clone();
         ReplayRequestWire {
+            package_name: self.package_name.clone(),
             profile_selections: self.profile_selections.clone(),
             package_id: (
                 Some(self.package_id.domain().as_str().to_owned()),
@@ -982,6 +991,7 @@ use quire_exact::NodeKey;
     fn wire(stage_seed: u64) -> ReplayRequestWire {
         let source_bytes = source_bytes(0xAB, 64);
         ReplayRequestWire {
+            package_name: "fixture".to_owned(),
             profile_selections: vec![ProfileSelection::new(
                 "quire.profile.v1".to_owned(),
                 "finite-state".to_owned(),
