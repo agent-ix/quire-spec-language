@@ -10,10 +10,11 @@
 
 use qsl_foundation::bound::ProofBound;
 use qsl_foundation::{BackendId, RequestIndex, SourceIdentity};
+use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_exact::Cancel;
 
-use crate::call_requirements::{associate, CallRequirement, CallRequirements};
+use crate::call_requirements::{associate, package_name_of, CallRequirement, CallRequirements};
 use crate::limits::CallerLimits;
 use crate::proof_result::{PluginReplayContext, PluginReplayRefusal};
 use crate::request::ReplayRequestWire;
@@ -55,11 +56,17 @@ use crate::witness::CanonicalAssignment;
 /// ```
 #[derive(Clone, Debug)]
 pub struct CallReplayContext {
+    package_name: LibraryName,
     context: PluginReplayContext,
     members: Vec<CallRequirement>,
 }
 
 impl CallReplayContext {
+    /// The library name of the package of the run that produced this context.
+    pub fn package_name(&self) -> &LibraryName {
+        &self.package_name
+    }
+
     /// The `ReplayRequestWire` for the item at `request_index`: FR-290's
     /// [`PluginReplayContext::request`] at the member's occurrence key.
     ///
@@ -89,12 +96,19 @@ impl CallReplayContext {
 /// [`CallReplayContext`], all from one compile.
 #[derive(Debug)]
 pub struct RunWithReplayContext {
+    package_name: LibraryName,
     outcome: CallOutcome,
     requirements: CallRequirements,
     context: CallReplayContext,
 }
 
 impl RunWithReplayContext {
+    /// The compiled package's library name: the identity of the source unit
+    /// the run compiled.
+    pub fn package_name(&self) -> &LibraryName {
+        &self.package_name
+    }
+
     /// The call's outcome, as `run` returns it for the same inputs.
     pub fn outcome(&self) -> &CallOutcome {
         &self.outcome
@@ -143,6 +157,7 @@ pub fn run_with_replay_context(
     objects: &ObjectEnvironment,
     cancel: &Cancel,
 ) -> Result<RunWithReplayContext, Box<RunRefusal>> {
+    let package_name = package_name_of(&source)?;
     let (outcome, (members, context)) = run_reading(
         source,
         path,
@@ -162,9 +177,11 @@ pub fn run_with_replay_context(
         },
     )?;
     Ok(RunWithReplayContext {
+        package_name: package_name.clone(),
         outcome,
         requirements: CallRequirements::new(call, members.clone()),
         context: CallReplayContext {
+            package_name,
             context,
             members,
         },

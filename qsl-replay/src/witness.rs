@@ -184,55 +184,78 @@ impl Witness {
             .into_iter()
             .collect::<Result<Vec<_>, _>>()
             .map_err(|entry| DecodeRefusal::MalformedEntry(entry.to_owned()))?;
-        let names: Vec<String> = bindings
+        // BLOCKED-BY QSL-1282 (owner: planner titan:QSL:plan): the transcript spelling of a parameter node, whose text may hold the entry separators
+        let named = entries
             .iter()
-            .map(|binding| binding.parameter.to_string())
-            .collect();
-        if let Some((name, _)) = entries
+            .map(|(name, text)| {
+                parameter_node(name)
+                    .map(|node| (node, *name, *text))
+                    .ok_or_else(|| DecodeRefusal::Unbound((*name).to_owned()))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        if let Some((_, name, _)) = named
             .iter()
-            .find(|(name, _)| !names.iter().any(|bound| bound == name))
+            .find(|(node, _, _)| !bindings.iter().any(|bound| bound.parameter == *node))
         {
             return Err(DecodeRefusal::Unbound((*name).to_owned()));
         }
-        for (binding, name) in bindings.iter().zip(&names) {
-            if entries.iter().filter(|(entry, _)| entry == name).count() > 1 {
-                return Err(DecodeRefusal::Duplicate(binding.parameter));
+        for binding in bindings {
+            if named
+                .iter()
+                .filter(|(node, _, _)| *node == binding.parameter)
+                .count()
+                > 1
+            {
+                return Err(DecodeRefusal::Duplicate(binding.parameter.clone()));
             }
         }
-        for pair in entries.windows(2) {
-            if let [(before, _), (after, _)] = pair {
+        for pair in named.windows(2) {
+            if let [(before, _, _), (after, name, _)] = pair {
                 if after <= before {
-                    return Err(DecodeRefusal::EntryOrder((*after).to_owned()));
+                    return Err(DecodeRefusal::EntryOrder((*name).to_owned()));
                 }
             }
         }
         bindings
             .iter()
-            .zip(&names)
-            .map(|(binding, name)| {
-                let mut matching = entries.iter().filter(|(entry, _)| entry == name);
-                let Some((_, text)) = matching.next() else {
+            .map(|binding| {
+                let Some((_, _, text)) = named.iter().find(|(node, _, _)| *node == binding.parameter)
+                else {
                     return if optional(binding) {
                         Ok(None)
                     } else {
-                        Err(DecodeRefusal::Missing(binding.parameter))
+                        Err(DecodeRefusal::Missing(binding.parameter.clone()))
                     };
                 };
-                if matching.next().is_some() {
-                    return Err(DecodeRefusal::Duplicate(binding.parameter));
-                }
                 binding
                     .value_type
                     .read(text)
                     .map(Some)
                     .map_err(|fault| DecodeRefusal::Malformed {
-                        parameter: binding.parameter,
+                        parameter: binding.parameter.clone(),
                         value_type: binding.value_type,
                         fault,
                     })
             })
             .collect()
     }
+}
+
+/// The parameter node a transcript entry's name spells: the node's compact
+/// JSON object.
+pub(crate) fn parameter_node(name: &str) -> Option<NodeKey> {
+    let value: serde_json::Value = serde_json::from_str(name).ok()?;
+    let node = qsl_foundation::node_wire::node_key_from_json(&value);
+    qsl_foundation::node_wire::discard_node_json(value);
+    node.ok()
+}
+
+/// A parameter node's transcript name: its compact JSON object.
+pub(crate) fn parameter_name(node: &NodeKey) -> Option<String> {
+    let value = qsl_foundation::node_wire::node_key_to_json(node).ok()?;
+    let text = serde_json::to_string(&value).ok();
+    qsl_foundation::node_wire::discard_node_json(value);
+    text
 }
 
 /// The declared type of one harness argument (ADR-013 O-25): how its
@@ -271,7 +294,7 @@ impl WitnessValueType {
 
 /// One declared harness argument [`Witness::decode`] reads: the parameter
 /// node id the transcript entry names, and the argument's declared type.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WitnessBinding {
     /// The parameter this argument binds.
     pub parameter: NodeKey,
@@ -589,7 +612,6 @@ pub struct WitnessEnvelope<P: FamilyPayload> {
     occurrence_key: OccurrenceKey,
     clause_node: NodeKey,
     replay_target: ReplayTarget,
-    package_id: DigestRecord,
     profile_selections: Vec<ProfileSelection>,
     run_limits: ScalarLimits,
     declared_domains: Vec<DeclaredDomain>,
@@ -609,17 +631,13 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
         &self.occurrence_key
     }
     /// The clause node this counterexample witnesses against.
-    pub fn clause_node(&self) -> NodeKey {
-        self.clause_node
+    pub fn clause_node(&self) -> &NodeKey {
+        &self.clause_node
     }
     /// The replay target (QSpec FR-323): the one function, frame operation
     /// or state clause this counterexample selects, always typed names.
     pub fn replay_target(&self) -> &ReplayTarget {
         &self.replay_target
-    }
-    /// The package this counterexample was produced from.
-    pub fn package_id(&self) -> DigestRecord {
-        self.package_id
     }
     /// The semantic profile selections in effect for the proving run.
     pub fn profile_selections(&self) -> &[ProfileSelection] {

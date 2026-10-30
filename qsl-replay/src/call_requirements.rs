@@ -14,6 +14,7 @@ use std::collections::BTreeMap;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::{RequestIndex, SourceIdentity};
 use qsl_semantics::check::{Capability, CheckedGraph, RequirementRecord};
+use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_exact::{planned_equality, Cancel, Meter, Outcome, Value};
 use quire_semantic_value::catalog::InternalFault;
@@ -128,11 +129,18 @@ fn same_value(left: &Value, right: &Value) -> bool {
 /// call's [`CallRequirements`], all from one compile.
 #[derive(Debug)]
 pub struct RunWithRequirements {
+    package_name: LibraryName,
     outcome: CallOutcome,
     requirements: CallRequirements,
 }
 
 impl RunWithRequirements {
+    /// The compiled package's library name: the identity of the source unit
+    /// the run compiled.
+    pub fn package_name(&self) -> &LibraryName {
+        &self.package_name
+    }
+
     /// The call's outcome, as `run` returns it for the same inputs.
     pub fn outcome(&self) -> &CallOutcome {
         &self.outcome
@@ -174,6 +182,7 @@ pub fn run_with_requirements(
     objects: &ObjectEnvironment,
     cancel: &Cancel,
 ) -> Result<RunWithRequirements, Box<RunRefusal>> {
+    let package_name = package_name_of(&source)?;
     let (outcome, members) = run_reading(
         source,
         path,
@@ -191,8 +200,19 @@ pub fn run_with_requirements(
         },
     )?;
     Ok(RunWithRequirements {
+        package_name,
         outcome,
         requirements: CallRequirements::new(call, members),
+    })
+}
+
+/// The library name of the package `source` compiles to: the unit's identity.
+pub(crate) fn package_name_of(source: &SourceIdentity) -> Result<LibraryName, Box<RunRefusal>> {
+    LibraryName::new(source.identity()).map_err(|_| {
+        Box::new(RunRefusal::Fault(InternalFault::new(
+            "spine-run",
+            "source-unit-names-a-package",
+        )))
     })
 }
 
