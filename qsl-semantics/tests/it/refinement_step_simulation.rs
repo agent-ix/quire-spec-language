@@ -266,7 +266,7 @@ fn an_abstract_model_invariant_is_not_a_hypothesis_in_either_order() {
         .expect("CasInv")
         .identity();
     for record in records(&forward) {
-        assert_eq!(record.hypotheses, [concrete.clone()]);
+        assert_eq!(record.hypotheses, std::slice::from_ref(&concrete));
     }
     assert_eq!(records(&forward), records(&backward));
 }

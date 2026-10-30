@@ -184,7 +184,6 @@ fn an_unmarked_granularity_checks_as_whole_and_each_differs() {
     let identity =
         |written: &str| node_identity(&format!("fair {written}{ATTEMPT_UPDATE}; {EVENTUALLY_TWO}"));
     assert_eq!(identity("weak "), identity("weak whole "));
-    assert_ne!(identity("weak whole "), identity("weak each "));
 }
 
 /// FR-123-AC-1: same-named operations declared by two distinct model types

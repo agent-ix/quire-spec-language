@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! TC-1024 and TC-195 N12/N13 (FR-081-AC-11, NFR-012): the bytes admitted to
-//! identity hashing, the retained facts and the work units of normalization
-//! follow closed formulas that are linear in effective types and direct
-//! supertype edges, however many ancestor paths the shape has.
+//! TC-1024 and TC-195 N12/N13 (FR-081-AC-11, NFR-012): the retained facts
+//! and the work units of normalization follow closed formulas that are linear
+//! in effective types and direct supertype edges, however many ancestor
+//! paths the shape has.
 //!
 //! The fact and work-unit figures are computed here independently of the
-//! encoder under test; byte totals are checked only for linear growth.
+//! code under test.
 
 use ix_trace_rs::trace;
 use qsl_semantics::model::accounting::{LimitKind, ModelNormalizationLimits};
@@ -125,8 +125,8 @@ fn assert_closed_formulas(nodes: &[Node]) {
     assert_eq!(counters.facts, types + edges, "types plus edges");
     assert_eq!(
         counters.work_units,
-        4 * types + 2 * edges + 2,
-        "4V + 2E + 2"
+        3 * types + 2 * edges,
+        "3V + 2E"
     );
 }
 

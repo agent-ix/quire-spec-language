@@ -296,7 +296,7 @@ fn oracle_inherit(view: &EffectiveView, entry: &ViewEntry) -> Vec<Path> {
         if fact.rule != RULE_INHERIT {
             continue;
         }
-        let parent = entry_by_id(view, &fact.parent.as_ref().expect("an inherit fact links"));
+        let parent = entry_by_id(view, fact.parent.as_ref().expect("an inherit fact links"));
         let head = full_name(&fact.inputs[0]);
         let below = oracle_inherit(view, parent);
         if !is_member {
@@ -338,7 +338,7 @@ fn check_against_enumeration(fixture: &Fixture) {
         let expected = match entry.preimage.owner_effective_type.as_ref() {
             None => expected_type(fixture, &original),
             Some(owner) => {
-                let owner_entry = entry_by_id(&view, &owner);
+                let owner_entry = entry_by_id(&view, owner);
                 let at = owner_entry
                     .preimage
                     .original
@@ -412,7 +412,7 @@ fn the_diamond_holds_two_inherit_facts_not_three() {
                     && match owner {
                         None => entry.preimage.owner_effective_type.is_none(),
                         Some(owner) => entry.preimage.owner_effective_type.as_ref().is_some_and(|id| {
-                            entry_by_id(&view, &id).preimage.original == key(owner)
+                            entry_by_id(&view, id).preimage.original == key(owner)
                         }),
                     }
             })

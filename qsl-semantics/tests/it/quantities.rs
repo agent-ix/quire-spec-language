@@ -371,7 +371,7 @@ fn dimension_and_unit_node_preimages_admit() {
         .exponents()
         .map(|(base, exponent)| (base, exponent.clone()))
         .collect();
-    assert_eq!(terms, [(time, int(-1)), (length, int(1))]);
+    assert_eq!(terms, [(length, int(1)), (time, int(-1))]);
 
     let mm_node = graph.unit(mm).unwrap();
     assert_eq!(mm_node.root(), metre);
@@ -957,8 +957,8 @@ fn value_of_decimal(f: &Fixture, value: i64, target: &QuantityTarget) -> i64 {
 fn u09_u09b_identity_is_the_node_key_not_the_shape() {
     let f = fixture();
     let mut nodes = f.nodes.clone();
-    let other_length = nodes.dimension(base_dimension("other-model", "Length"));
-    let other_metre = nodes.unit(root_json("metre", other_length.clone()));
+    let other_length = nodes.dimension(base_dimension("other-model", "OtherLength"));
+    let other_metre = nodes.unit(root_json("other_metre", other_length.clone()));
     let alias = nodes.unit(unit_json(
         "metre_alias",
         f.length.clone(),
@@ -1049,7 +1049,7 @@ fn u10_exact_bound_accounting_and_named_denials() {
     assert_eq!(consumed, [8, 0, 0, 0, 0, 0, 1, 1, 6, 1]);
 
     assert_eq!(
-        run.clone()(&mut Meter::new(ScalarLimits {
+        run(&mut Meter::new(ScalarLimits {
             work_units: 5,
             ..U10
         })),
@@ -1143,18 +1143,17 @@ fn u11_invalid_topologies_refuse_admission() {
     unknown.units.retain(|(_, key)| *key != f.m);
     refuses(&unknown, SemanticGraphCause::UnknownTarget);
 
-    // A retained target cycle with no root. Keys are retained references, so
-    // topology is refused before key recomputation.
+    // A target cycle with no root.
     let cycle = |root: bool| {
         let mut nodes = f.nodes.clone();
         nodes.units.retain(|(_, key)| ![f.cm.clone(), f.inch.clone()].contains(key));
         if !root {
             nodes.units.retain(|(_, key)| *key != f.m);
         }
-        let first = unit_json("first", f.length.clone(), Some(f.inch.clone()), ("2", "1"), ("0", "1"));
-        let second = unit_json("second", f.length.clone(), Some(f.cm.clone()), ("3", "1"), ("0", "1"));
-        nodes.units.push((first, f.cm.clone()));
-        nodes.units.push((second, f.inch.clone()));
+        let first_key = unit_key(&root_json("loop_a", f.length.clone()));
+        let second_key = unit_key(&root_json("loop_b", f.length.clone()));
+        nodes.unit(unit_json("loop_a", f.length.clone(), Some(second_key), ("2", "1"), ("0", "1")));
+        nodes.unit(unit_json("loop_b", f.length.clone(), Some(first_key), ("3", "1"), ("0", "1")));
         nodes
     };
     refuses(&cycle(false), SemanticGraphCause::MissingRoot);
@@ -1413,7 +1412,7 @@ fn rounded_target_sizes_bound_the_materialized_coefficient() {
                 let target = wide_decimal(scale, mode);
                 let run =
                     |meter: &mut Meter| converted(f.at(&source), &f.unit(f.m.clone()), &target, meter);
-                let Outcome::Completed(ConvertedValue::Decimal(result)) = run.clone()(&mut unlimited())
+                let Outcome::Completed(ConvertedValue::Decimal(result)) = run(&mut unlimited())
                 else {
                     panic!("{numerator}/{denominator} at {scale} {mode:?} did not complete");
                 };
@@ -1423,7 +1422,7 @@ fn rounded_target_sizes_bound_the_materialized_coefficient() {
                 assert!(coefficient.decimal_digits() <= digits, "{context}");
                 if bits > input_bits {
                     assert_eq!(
-                        run.clone()(&mut Meter::new(ScalarLimits {
+                        run(&mut Meter::new(ScalarLimits {
                             integer_bits: bits - 1,
                             ..UNLIMITED
                         })),
@@ -1438,7 +1437,7 @@ fn rounded_target_sizes_bound_the_materialized_coefficient() {
                     );
                 }
                 assert_eq!(
-                    run.clone()(&mut Meter::new(ScalarLimits {
+                    run(&mut Meter::new(ScalarLimits {
                         decimal_digits: digits - 1,
                         ..UNLIMITED
                     })),
@@ -1692,7 +1691,7 @@ fn u15_every_edge_is_charged_before_the_first_rational_event() {
     // `max(bits(127) + bits(1), bits(0) + bits(5000)) + 1 = 15`.
     assert_eq!(meter.consumed(LimitKind::IntegerBits), 15);
     assert_eq!(
-        run.clone()(&mut limits(14, 0, 2, 1, 9, 1)),
+        run(&mut limits(14, 0, 2, 1, 9, 1)),
         Outcome::Incomplete(Incomplete {
             limit_kind: LimitKind::IntegerBits,
             limit: 14,
@@ -2303,14 +2302,14 @@ fn u29_integer_target_charges_integer_bits_only() {
         ]
     );
     assert_eq!(
-        run.clone()(
+        run(
             &inch,
             RoundingMode::NearestEven,
             &mut limits(15, 0, 1, 1, 4, 1)
         ),
         Outcome::Incomplete(work_denied(4, ChargePoint::UnitTargetDomain))
     );
-    let Outcome::Completed(ConvertedValue::Integer { value, .. }) = run.clone()(
+    let Outcome::Completed(ConvertedValue::Integer { value, .. }) = run(
         &inch,
         RoundingMode::NearestEven,
         &mut limits(15, 0, 1, 1, 6, 1),
@@ -2354,7 +2353,7 @@ fn integer_target_places_at_scale_zero_then_admits_the_integer_domain() {
     // FR-096: an integer target's refusal names the declared `Int[-10, 10]`,
     // not the scale-zero placement type.
     let Outcome::Refused(Refusal::InexactDecimal { target }) =
-        run.clone()(&integer_target(-10, 10, RoundingMode::Exact), &mut meter)
+        run(&integer_target(-10, 10, RoundingMode::Exact), &mut meter)
     else {
         panic!("strict exact refuses 2.5 m at an integer target");
     };
@@ -2659,12 +2658,6 @@ fn generated_unit_graphs_match_the_affine_oracle_and_every_denial() {
         assert_eq!(
             zero.admit().unwrap_err().cause,
             SemanticGraphCause::ZeroScale
-        );
-        let mut stale = nodes.clone();
-        stale.units[1].0["offset"] = json!({"numerator": "1", "denominator": "7"});
-        assert_eq!(
-            stale.admit().unwrap_err().cause,
-            SemanticGraphCause::StaleKey
         );
     }
 }

@@ -204,10 +204,8 @@ fn l07_migration_is_a_changed_export_set_and_never_relabels_evidence() {
     );
     assert_eq!(
         check_migration(&old_package, &new_package),
-        Ok(LibraryMigration::Migrated {
-            from: name("P"),
-            to: name("P"),
-        })
+        Ok(LibraryMigration::Unchanged),
+        "a relabelled package with the same export set is no migration"
     );
     assert_eq!(
         check_migration(&old_library, &library_l()),

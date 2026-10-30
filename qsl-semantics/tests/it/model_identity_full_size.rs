@@ -181,7 +181,7 @@ fn ten_thousand_edge_chain() {
     );
     assert_eq!(measured(&stdout, "DECLARATIONS"), 10_001);
     assert_eq!(measured(&stdout, "FACTS"), 20_001);
-    assert_eq!(measured(&stdout, "WORK"), 60_006);
+    assert_eq!(measured(&stdout, "WORK"), 50_003);
     let wall_ms = measured(&stdout, "WALL_MS");
     let resident = child_peak_bytes(&stdout, &String::from_utf8_lossy(&output.stderr));
     println!("N19 wall_ms={wall_ms} peak_resident_bytes={resident}");

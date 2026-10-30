@@ -1321,7 +1321,7 @@ fn qsl_732_composite_subtype_is_admitted_at_its_parent_slot_only() {
     );
     assert_eq!(
         assembled_composite(&declarations, "M::TaxedMoney").supertypes(),
-        [money.clone()]
+        std::slice::from_ref(&money)
     );
     assert!(assembled_composite(&declarations, "M::Money")
         .supertypes()

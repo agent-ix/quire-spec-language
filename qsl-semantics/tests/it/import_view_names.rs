@@ -55,6 +55,9 @@ const NAME_TYPES: [&str; 3] = ["str", "String", "QualifiedName"];
 /// `String` themselves (`AsRef<str>`, `Borrow<str>` and `Into<String>` do).
 const NAME_BOUNDS: [&str; 2] = ["ToString", "Display"];
 const KEY_TYPES: [&str; 2] = ["NodeKey", "ImportView"];
+/// Names a package, not a declaration: a map from one to a package is not a
+/// name -> node id index even though a package carries its exported keys.
+const PACKAGE_NAME_TYPES: [&str; 1] = ["LibraryName"];
 const VIEW: &str = "ImportView";
 /// Maps, and iterators over one, whose first type argument is the key.
 const MAP_TYPES: [&str; 7] = [
@@ -277,7 +280,7 @@ impl Vocabulary {
                         (is_name, is_key)
                     }
                 };
-                if is_name {
+                if is_name && !PACKAGE_NAME_TYPES.contains(&ident.as_str()) {
                     changed |= names.insert(ident.clone());
                 }
                 if is_key {
@@ -799,7 +802,7 @@ fn library_never_resolves_a_name_to_a_node_id() {
         .collect();
     let vocabulary = Vocabulary::of(&parsed);
     assert!(
-        vocabulary.keys.contains("ProjectedDeclarations"),
+        vocabulary.keys.contains("ImportView"),
         "the vocabulary must see library's own id-carrying types"
     );
     let report: Vec<String> = files

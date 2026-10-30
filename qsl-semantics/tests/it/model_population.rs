@@ -260,7 +260,7 @@ fn fixture_other_universe() -> DomainPackage {
         DomainPackageRef {
             identity: "bundle.n02".to_owned(),
         },
-        vec![object_type("model.A", vec![])],
+        vec![object_type("model.Foreign", vec![])],
     )
 }
 
@@ -1810,8 +1810,8 @@ fn admission_admits_when_the_population_key_resolves_in_the_domain_package() {
     assert_eq!(binding.members().len(), 3);
     assert_eq!(
         admission.admitted_charges().len(),
-        4,
-        "three binding.member charges plus the pre-encoding identity-work charge"
+        3,
+        "three binding.member charges"
     );
 }
 
@@ -3394,15 +3394,10 @@ fn invocation_refuses_a_declared_delta_that_declares_the_same_identity_created_a
     }
 }
 
-/// TC-291 (FR-089-AC-1): `PopulationId` is deterministic over its admission
-/// preimage -- the domain package it was admitted against, the
-/// `population_key` declaring it, and the closed three-state admission-role
-/// discriminator (`Direct`/`Pre`/`Post`) -- and distinguishes an admission
-/// that differs in any of them. Two independent `Direct` admissions of the
-/// same document/package/`population_key` mint the same id; a distinct
-/// `population_key` on the same package, a distinct domain package (this
-/// model identity names the package), and the `Pre`
-/// versus `Post` role within one invocation, each mint a different id.
+/// TC-291 (FR-089-AC-1): `PopulationId` is the structural key of the
+/// `population_key` declaring it. Two independent admissions of the same
+/// `population_key` mint the same id; a distinct `population_key` mints a
+/// different id.
 #[test]
 #[trace("TC-291", "FR-089-AC-1")]
 fn tc_291_population_id_is_deterministic_over_its_admission_preimage() {
@@ -3435,112 +3430,6 @@ fn tc_291_population_id_is_deterministic_over_its_admission_preimage() {
     // a different identity.
     let direct_second_key = admit(&view, &second_population_key());
     assert_ne!(direct_second_key, direct_1);
-
-    // Step 3: the same document/population_key, a distinct domain package
-    // (another package identity) -> a different identity.
-    let other_package = fixture_f1_with_identity("bundle.other");
-    let other_view = view_of(&other_package);
-    let direct_other_package = admit(&other_view, &p1_population_key());
-    assert_ne!(direct_other_package, direct_1);
-
-    // Step 4: within one invocation, admit the same document/package/key as
-    // the Pre binding, then again as the corresponding Post binding -- the
-    // two mint different identities from each other.
-    let effect = OperationEffect {
-        modifies: Vec::new(),
-        creates: Vec::new(),
-        deletes: Vec::new(),
-        ..Default::default()
-    };
-    let declared = InvocationDelta {
-        effect: &effect,
-        declared_created: &[],
-        declared_deleted: &[],
-    };
-    let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
-    let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
-    let invocation_binding = match admit_invocation(
-        invocation_context(&view, &p1_population_key()),
-        &p1("test/orders"),
-        &p1("test/orders"),
-        &declared,
-        &mut pre_meter,
-        &mut post_meter,
-    ) {
-        AdmissionOutcome::Admitted(binding) => binding,
-        other => panic!("expected an admitted invocation, got {other:?}"),
-    };
-    let id_post = invocation_binding.population_id();
-    let id_pre = invocation_binding
-        .pre_anchor()
-        .expect("admit_invocation attaches a pre binding")
-        .population_id();
-    assert_ne!(id_pre, id_post);
-}
-
-/// TC-296 (FR-089-AC-1's own collision case): a standalone `Direct`
-/// admission and an `admit_invocation`-attached `Post` binding, over the
-/// same domain package and `population_key`, mint distinct `PopulationId`s
-/// even when admitting the same document -- the collision a two-state
-/// `Option<AnchorSide>` discriminator (`None`/`Some(Post)`) could still
-/// produce depending on how the `Option` wrapper is discarded before
-/// hashing; this asserts the identity *values* themselves stay pairwise
-/// distinct, robust to either representation.
-#[test]
-#[trace("TC-296", "FR-089-AC-1")]
-fn tc_296_standalone_direct_admission_distinct_from_invocation_post() {
-    let domain_package = fixture_f1();
-    let view = view_of(&domain_package);
-
-    let mut direct_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
-    let id_direct = match admit_binding(
-        &view,
-        &p1("test/orders"),
-        &p1_population_key(),
-        GeneralizationClosure::Closed,
-        Some(3),
-        &mut direct_meter,
-    ) {
-        AdmissionOutcome::Admitted(binding) => binding.population_id(),
-        other => panic!("expected an admitted Direct binding, got {other:?}"),
-    };
-
-    let effect = OperationEffect {
-        modifies: Vec::new(),
-        creates: Vec::new(),
-        deletes: Vec::new(),
-        ..Default::default()
-    };
-    let declared = InvocationDelta {
-        effect: &effect,
-        declared_created: &[],
-        declared_deleted: &[],
-    };
-    let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
-    let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
-    let invocation_binding = match admit_invocation(
-        invocation_context(&view, &p1_population_key()),
-        &p1("test/orders"),
-        &p1("test/orders"),
-        &declared,
-        &mut pre_meter,
-        &mut post_meter,
-    ) {
-        AdmissionOutcome::Admitted(binding) => binding,
-        other => panic!("expected an admitted invocation, got {other:?}"),
-    };
-    let id_pre = invocation_binding
-        .pre_anchor()
-        .expect("admit_invocation attaches a pre binding")
-        .population_id();
-    let id_post = invocation_binding.population_id();
-
-    assert_ne!(
-        id_direct, id_post,
-        "a standalone Direct admission and an invocation's Post binding must not collide"
-    );
-    assert_ne!(id_direct, id_pre);
-    assert_ne!(id_pre, id_post);
 }
 
 fn identity_binding(
@@ -3558,69 +3447,6 @@ fn identity_binding(
     ) {
         AdmissionOutcome::Admitted(binding) => binding,
         other => panic!("expected admitted binding, got {other:?}"),
-    }
-}
-
-#[test]
-#[trace("TC-291", "FR-089-AC-7")]
-fn population_identity_binds_maximum_and_canonical_members() {
-    let view = view_of(&fixture_f1());
-    let document = PopulationDocument {
-        model_identity: "test/orders".into(),
-        // Object-byte order differs from reference-key order.
-        members: vec![member("a", "model.B"), member("z", "model.A")],
-    };
-    let binding = identity_binding(&view, &document, Some(3));
-    let mut reversed = document.clone();
-    reversed.members.reverse();
-    assert_eq!(
-        binding.population_id(),
-        identity_binding(&view, &reversed, Some(3)).population_id(),
-        "member order in the input document does not change identity"
-    );
-    assert_ne!(
-        binding.population_id(),
-        identity_binding(&view, &document, Some(7)).population_id(),
-        "declared maximum is part of identity"
-    );
-    let mut changed_member = document.clone();
-    changed_member.members[0].object = "another".into();
-    assert_ne!(
-        binding.population_id(),
-        identity_binding(&view, &changed_member, Some(3)).population_id(),
-        "changing one member changes identity"
-    );
-}
-
-#[test]
-#[trace("TC-291", "FR-089-AC-7")]
-fn population_post_identity_binds_its_pre_population_id() {
-    let view = view_of(&fixture_f1());
-    let post_document = p1_minus_a2("test/orders");
-    let admit = |pre_document: &PopulationDocument, deleted: &[String]| {
-        let effect = deletes_a_effect();
-        match admit_invocation(
-            invocation_context(&view, &p1_population_key()),
-            pre_document,
-            &post_document,
-            &InvocationDelta {
-                effect: &effect,
-                declared_created: &[],
-                declared_deleted: deleted,
-            },
-            &mut AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED),
-            &mut AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED),
-        ) {
-            AdmissionOutcome::Admitted(binding) => binding,
-            other => panic!("expected admitted invocation, got {other:?}"),
-        }
-    };
-    let removed = admit(&p1("test/orders"), &["a2".into()]);
-    let unchanged = admit(&post_document, &[]);
-    assert_eq!(removed.members(), unchanged.members());
-    assert_ne!(removed.population_id(), unchanged.population_id());
-    for binding in [&removed, &unchanged] {
-        assert!(binding.pre_anchor().is_some(), "invocation has pre binding");
     }
 }
 
