@@ -165,10 +165,10 @@ pub(crate) fn check_terminal<'a>(
     let view = ClauseView {
         kind: StateClauseKind::Invariant,
         complete_value: super::state_clause::is_complete_value(&declaration.selection),
-        context: Some(*context),
-        receiver: Some(("self", ValueType::Reference(*context))),
+        context: Some(context.clone()),
+        receiver: Some(("self", ValueType::Reference(context.clone()))),
         operation: None,
-        context_population: *population,
+        context_population: population.clone(),
         frame_population: None,
         binders: &[],
         presence_places: &[],
@@ -231,7 +231,7 @@ fn is_terminal_node(node: &SemanticNode) -> bool {
 
 /// One `temporal`/`terminal` node of a checked graph (FR-411), read from the
 /// graph's own semantic nodes: no emission is needed.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TerminalNode {
     /// The node.
     pub node: NodeKey,
@@ -267,7 +267,7 @@ impl TerminalNode {
         let mode = TerminalMode::from_wire(mode)?;
         Some(Self {
             node,
-            model: target.0,
+            model: target.admitted()?.clone(),
             mode,
         })
     }

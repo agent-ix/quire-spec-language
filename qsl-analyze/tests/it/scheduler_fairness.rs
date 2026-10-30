@@ -23,7 +23,6 @@ use qsl_eval::simulation::protocol::{
 use qsl_eval::simulation::TransitionSystem;
 use qsl_eval::temporal::AtomReading;
 use qsl_foundation::diagnostic::Code;
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::MemoryModelName;
 use qsl_foundation::SourceIdentity;
@@ -47,8 +46,8 @@ use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
 
 use crate::fill::{
-    attempt, contracts, document, fill_unit, instance, package, package_id, protocol, reachable,
-    sc_system, subject, unit_text, universe, v, Documents,
+    attempt, contracts, document, fill_unit, instance, package, protocol, reachable, sc_system,
+    subject, unit_text, universe, v, Documents,
 };
 use crate::model_settle::{envelope_at, request};
 
@@ -197,13 +196,12 @@ impl Chatter {
         payload: TemporalCounterexample<ProtocolTransition>,
     ) -> Result<ModelTraceReplayResult, ReplayRefusal> {
         let unit = unit_text(&self.body).into_bytes();
-        let id = package_id(&self.body);
         let node = &self.checked.graph().temporal_clauses()[0];
-        let clause_node = WireNodeId::from_digest(*node.identity().as_bytes());
-        let occurrence = OccurrenceKey::new(clause_node, node.claim().clone());
+        let clause_node = node.identity().clone();
+        let occurrence = OccurrenceKey::new(clause_node.clone(), node.claim().clone());
         let subject = self.subject();
         replay_protocol_trace(
-            request(&document(), self.documents.snapshots.iter(), &unit, id),
+            request(&document(), self.documents.snapshots.iter(), &unit),
             &ProtocolTraceSubject {
                 model: ModelTraceSubject {
                     timed: None,
@@ -221,7 +219,7 @@ impl Chatter {
                 max_messages: None,
                 max_live_instances: None,
             },
-            &envelope_at(id, payload, clause_node, occurrence),
+            &envelope_at(payload, clause_node, occurrence),
             self.letters,
             ReplayLimits::default(),
         )
@@ -235,7 +233,6 @@ impl Chatter {
         settle_protocol_check(
             outcome,
             &ModelCheckLimits::default(),
-            &package_id(&self.body),
             &ProtocolCertificateRequest {
                 subject: self.subject(),
                 item: self.item(),
@@ -324,9 +321,7 @@ fn chatter_carries_three_scheduler_constraints_and_no_fair_counterexample() {
 /// refuses `invalid_runtime_input`/`invalid-value` as unfair: `s` is enabled
 /// at every loop state and takes no step, and so is `r`, whose constraint
 /// comes first in the set. Not
-/// covered: the two packages' different identities. The compiled
-/// `package_id` does not bind the `scheduling` member until FR-383 emits
-/// it, so today the two identities are equal, and replay tells the two
+/// covered: the two packages' different identities. Replay tells the two
 /// packages' counterexamples apart by their fairness sets alone.
 #[trace("TC-657", "TC-662", "FR-217-AC-4")]
 #[test]
@@ -496,6 +491,7 @@ pub(crate) fn check_refusal(body: &str) -> CheckRefusal {
     .expect("the operation clauses parse");
     let mut refusals = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "package".to_owned(),
         built,
         models,
         Vec::new(),

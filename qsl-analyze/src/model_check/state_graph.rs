@@ -292,12 +292,12 @@ fn instances<'a>(
                 match entry.claim.over() {
                     None => vec![(None, None)],
                     Some(over) => system
-                        .instances(&ValueType::Reference(over.object))
+                        .instances(&ValueType::Reference(over.object.clone()))
                         .map_err(bounds_refusal)?
                         .iter()
                         .map(|instance| {
                             system
-                                .bound_reference(over.object, instance)
+                                .bound_reference(over.object.clone(), instance)
                                 .map(|reference| (Some(reference), Some(instance.clone())))
                                 .map_err(|_| fault("state-graph-instance-references"))
                         })
@@ -523,7 +523,6 @@ pub fn check_state_graph(
         max_candidates: request.subject.simulation.expansion.max_candidates,
     };
     let no_initial = request.subject.simulation.initial.is_empty();
-    let package = request.subject.simulation.package;
     let system = ModelSystem::new(request.subject.simulation)
         .map_err(|failure| ModelCheckRefusal::Admission(Box::new(failure)))?;
     check_model_bounds(&system, BOUND_POSITIONS).map_err(bounds_refusal)?;
@@ -655,7 +654,7 @@ pub fn check_state_graph(
             let Some(over) = item.claim.over() else {
                 continue;
             };
-            let parameter = (over.name.clone(), ValueType::Reference(over.object));
+            let parameter = (over.name.clone(), ValueType::Reference(over.object.clone()));
             for (_, predicate) in predicates(item.claim.form()) {
                 let CheckedStatePredicate::Checked(body) = predicate else {
                     continue;
@@ -679,7 +678,6 @@ pub fn check_state_graph(
     };
     let explored = explore::Exploration {
         system: &system,
-        package,
         limits: &request.limits,
         horizon: request.max_depth,
         cancel,
@@ -859,12 +857,11 @@ pub enum StateGraphPipelineRefusal {
 /// Run FR-166–FR-168 and settle every state-graph item instance under FR-169.
 ///
 /// `replay` is called only for evidence rows whose verdict requires replay;
-/// package identity and certificate checks remain in the core settlement map.
+/// certificate checks remain in the core settlement map.
 /// The optional deadlock-freedom result remains on `run` for its own FR-127
 /// settlement path.
 pub fn check_and_settle_state_graph(
     request: StateGraphRequest<'_>,
-    package_id: DigestRecord,
     cancel: &Cancel,
     mut replay: impl FnMut(&StateGraphInstanceOutcome) -> Result<GraphReplayResult, ReplayRefusal>,
 ) -> Result<SettledStateGraphRun, StateGraphPipelineRefusal> {
@@ -898,15 +895,7 @@ pub fn check_and_settle_state_graph(
             instances
                 .iter()
                 .map(|instance| {
-                    settle_state_graph(
-                        instance,
-                        &method,
-                        &package_id,
-                        &subject,
-                        claim,
-                        cancel,
-                        |_| replay(instance),
-                    )
+                    settle_state_graph(instance, &method, &subject, claim, cancel, &mut replay)
                 })
                 .collect()
         })

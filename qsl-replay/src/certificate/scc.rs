@@ -80,8 +80,7 @@ pub struct Component {
 /// and a partition of its states into components.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ComponentCertificate {
-    /// The closure FR-338's check reads; its `package_id` is the
-    /// certificate's.
+    /// The closure FR-338's check reads.
     pub closure: ClosureCertificate,
     /// The components, in topological order.
     pub components: Vec<Component>,

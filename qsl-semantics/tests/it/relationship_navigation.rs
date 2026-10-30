@@ -292,9 +292,14 @@ pub(crate) fn check_declarations(
         qsl_cst::Limits::default(),
     )
     .expect("S1 admits the unit");
-    let declarations =
-        PackageDeclarations::assemble(raw.source().reference().clone(), built, selected, vec![])
-            .expect("the model assembles");
+    let declarations = PackageDeclarations::assemble(
+        raw.source().reference().clone(),
+        crate::TEST_PACKAGE_NAME.to_owned(),
+        built,
+        selected,
+        vec![],
+    )
+    .expect("the model assembles");
     declarations.check(CheckingLimits::default())
 }
 

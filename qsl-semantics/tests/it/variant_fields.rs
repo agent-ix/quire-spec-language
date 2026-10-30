@@ -71,6 +71,7 @@ fn declarations_of(
         .collect();
     let assembled = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        crate::TEST_PACKAGE_NAME.to_owned(),
         unit,
         selected,
         Vec::new(),
@@ -694,6 +695,7 @@ fn an_unknown_variant_type_name_in_a_type_position_refuses_at_the_assembler() {
         .unwrap();
         PackageDeclarations::assemble(
             parsed.source().reference().clone(),
+            crate::TEST_PACKAGE_NAME.to_owned(),
             unit,
             selected,
             Vec::new(),
@@ -829,7 +831,7 @@ impl Replay {
             self.graph.model_selections(),
             &self.packages,
             ModelNormalizationLimits::default(),
-            account,
+            account.clone(),
         )
         .expect("the Account universe");
         let reference = closure.find(universe, "a1").expect("the admitted object");
@@ -1225,15 +1227,15 @@ impl Replay {
         let declaration = self
             .declarations
             .operations
-            .declared_by(account)
+            .declared_by(account.clone())
             .iter()
             .find(|operation| operation.name() == "promote")
             .expect("promote is declared")
             .clone();
         ClauseFacts {
-            identity: quire_exact::NodeKey::from_digest([7; 32]),
+            identity: fixture_key(7),
             kind,
-            context: account,
+            context: account.clone(),
             operation: Some(OperationFacts {
                 declaring: account,
                 declaration,
@@ -1478,6 +1480,16 @@ fn a_well_formed_case_over_a_variant_is_refused_at_its_scrutinee() {
 
 use qsl_semantics::model::observation::ValueEncoder;
 
+/// A structural node key for a fixture, distinct per `tag`.
+fn fixture_key(tag: u8) -> quire_exact::NodeKey {
+    quire_exact::NodeKey::new(
+        "fixture",
+        vec![quire_exact::PathSegment::Text(format!("node{tag}"))],
+        0,
+    )
+    .expect("a valid fixture key")
+}
+
 /// FR-360-AC-11 (TC-1010): the variant values an admitted snapshot holds
 /// encode as the item 9 form, naming their own variant type and case; a
 /// document whose members are written in the other order has the same
@@ -1609,7 +1621,7 @@ fn an_admitted_variant_value_encodes_as_its_form_and_decodes_to_itself() {
     // A value of no variant type does not encode.
     assert!(encoder
         .encode(&Datum::Enum(EnumMember::new(
-            quire_exact::VariantId::from_digest([9; 32]),
+            quire_exact::VariantId::new(fixture_key(9), "case").expect("a nonempty case"),
             0
         )))
         .is_none());
@@ -1666,7 +1678,8 @@ fn a_variant_type_with_non_identifier_cases_has_an_enum_shape_over_the_exact_nam
     for case in odd.cases() {
         assert_eq!(
             case.variant(),
-            qsl_semantics::value::enumeration::mint_variant_id(odd.node(), case.name()),
+            qsl_semantics::value::enumeration::mint_variant_id(odd.node(), case.name())
+                .expect("a declared case has a name"),
             "{}",
             case.name()
         );
@@ -1679,7 +1692,13 @@ fn a_variant_type_with_non_identifier_cases_has_an_enum_shape_over_the_exact_nam
         .iter()
         .map(qsl_semantics::check::VariantCaseDeclaration::variant)
         .collect();
-    assert_eq!(members, expected);
+    assert_eq!(
+        members
+            .iter()
+            .map(|member| (*member).clone())
+            .collect::<Vec<_>>(),
+        expected
+    );
 }
 
 /// FR-360-AC-4: a unit names a type with non-identifier cases in a parameter,

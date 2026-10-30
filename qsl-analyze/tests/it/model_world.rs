@@ -266,6 +266,7 @@ impl World {
             .expect("the operation clauses parse");
             PackageDeclarations::assemble(
                 parsed.source().reference().clone(),
+                "package".to_owned(),
                 built,
                 models,
                 Vec::new(),

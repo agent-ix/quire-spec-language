@@ -193,7 +193,6 @@ fn analyzed(world: &World) -> qsl_analyze::analyze::AnalyzeRecord {
     use qsl_route::deadlock::{ItemObligation, ObligationKind};
     use qsl_route::reductions::{ObligationReductions, Reductions};
 
-    let package = qsl_semantics::library::PackageId::of_preimage(b"analyze-dense");
     let system = world.system();
     let timed = TimedSystem::new(&system, "M").expect("a timed subject");
     let node = &world.package.graph().temporal_clauses()[0];
@@ -224,7 +223,6 @@ fn analyzed(world: &World) -> qsl_analyze::analyze::AnalyzeRecord {
             },
         },
         certificate_limits: CertificateCheckLimits::default(),
-        package_id: package.record(),
         replay: Box::new(|payload| {
             qsl_replay::replay_timed_counterexample(
                 &timed,
@@ -234,11 +232,7 @@ fn analyzed(world: &World) -> qsl_analyze::analyze::AnalyzeRecord {
                 system.meter_limits(),
                 &qsl_eval::simulation::Limits::default(),
             )
-            .map(|(settlement, hints)| ModelTraceReplayResult {
-                settlement,
-                hints,
-                package_id: package,
-            })
+            .map(|(settlement, hints)| ModelTraceReplayResult { settlement, hints })
         }),
     };
     let mut records = analyze(

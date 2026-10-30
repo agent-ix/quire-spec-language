@@ -224,17 +224,15 @@ impl KeyedClassCatalog {
 
     /// Every class node and binder-type key, ascending and once each: the
     /// catalog's share of the refinement node's local `dependencies`.
-    pub fn node_keys(&self) -> Vec<NodeKey> {
-        let keys: std::collections::BTreeSet<NodeKey> = self
+    pub fn node_keys(&self) -> Vec<&NodeKey> {
+        let keys: std::collections::BTreeSet<&NodeKey> = self
             .concrete
             .iter()
             .chain(&self.abstract_side)
             .flat_map(|class| match class {
                 KeyedCatalogClass::Declared {
                     node, binder_types, ..
-                } => std::iter::once(*node)
-                    .chain(binder_types.iter().copied())
-                    .collect(),
+                } => std::iter::once(node).chain(binder_types.iter()).collect(),
                 KeyedCatalogClass::Memory(_) => Vec::new(),
             })
             .collect();
@@ -277,7 +275,7 @@ pub(super) fn add_model_operations(
         return Err(fault("selected-model-alias-matches-catalog-subject"));
     }
     for (owner_key, owner) in model.operation_owners() {
-        if types.object_type(owner).is_none() {
+        if types.object_type(owner.clone()).is_none() {
             return Err(fault("selected-model-object-has-checked-type"));
         }
         if owner_key.package != model.selection().identity {
@@ -290,9 +288,9 @@ pub(super) fn add_model_operations(
                 "selected-model-object-has-alias-free-identity-segment",
             ));
         };
-        for (_, operation) in operations.effective(types, owner) {
+        for (_, operation) in operations.effective(types, owner.clone()) {
             let class = format!("{owner_name}::{}", operation.name());
-            let binder_types = std::iter::once(ValueType::Reference(owner))
+            let binder_types = std::iter::once(ValueType::Reference(owner.clone()))
                 .chain(
                     operation
                         .parameters()
@@ -386,12 +384,12 @@ pub(super) fn build(
                     "checked-protocol-over-type-resolves",
                 )
             })?;
-        let ValueType::Reference(context) = over else {
+        let ValueType::Reference(context) = &over else {
             continue;
         };
         if !concrete_model
             .object_types()
-            .any(|(_, object)| object == context)
+            .any(|(_, object)| object == *context)
         {
             continue;
         }

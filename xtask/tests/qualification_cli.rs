@@ -91,16 +91,19 @@ fn qualify_compiles_a_language_vector_through_the_public_entry_point() {
         "1",
     );
     let compiled = qsl_replay::compile_package(
-        identity,
-        "inputs/native.native",
-        &source_bytes,
+        qsl_replay::CompileUnit {
+            source: identity,
+            package_name: "qualification".to_owned(),
+            path: "inputs/native.native",
+            bytes: &source_bytes,
+        },
         std::iter::empty::<&[u8]>(),
         &qsl_replay::DependencyInput::default(),
         qsl_replay::StageLimits::default(),
         qsl_replay::ReplayLimits::default(),
     )
     .expect("the compile fixture is admitted");
-    let package_id = compiled.package_id();
+    let package: Value = serde_json::from_slice(compiled.bytes()).unwrap();
     let mut value: Value =
         serde_json::from_slice(&fs::read(corpus.join("complete-v1.json")).unwrap()).unwrap();
     value["coverage"]["primary"][0]["applicability"]["consumer_types"] =
@@ -108,8 +111,7 @@ fn qualify_compiles_a_language_vector_through_the_public_entry_point() {
     value["vectors"][0]["applicability"]["consumer_types"] = serde_json::json!(["language"]);
     value["vectors"][0]["subject"]["consumer_type"] = Value::String("language".into());
     value["vectors"][0]["subject"]["operation"] = Value::String("compile".into());
-    value["vectors"][0]["expected"]["value"] =
-        serde_json::json!({"domain":package_id.domain().as_str(),"hex":package_id.hex()});
+    value["vectors"][0]["expected"]["value"] = package;
     write_canonical(&corpus.join("complete-v1.json"), &value);
 
     let output = run(&["qualify", "--corpus", corpus.to_str().unwrap()]);

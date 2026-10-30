@@ -3,6 +3,7 @@
 //! `crate::support::<name>`.
 
 pub mod automata;
+pub mod ids;
 pub mod model;
 pub mod type_form;
 

@@ -5,15 +5,15 @@ use ix_trace_rs::trace;
 use qsl_replay::spine::{self, ParseRequest, SpineLimits};
 use qsl_replay::{
     acquire_checked_closure, ApplicationEnvironment, CallableSelection, CheckedClosureCompilation,
-    CheckedClosureHandle, DependencyInput, NominalDeclaration, NominalDeclarationForm,
-    NominalDeclarationMember, ReplayLimits, SourceIdentity, StageLimits, WireNodeId,
+    CheckedClosureHandle, DependencyInput, NodeKey, NominalDeclaration, NominalDeclarationForm,
+    NominalDeclarationMember, ReplayLimits, SourceIdentity, StageLimits,
 };
 use quire_eval::{
     Admission, Body, BodyFactory, BodyFailure, CallFailure, Evaluation, FamilyOutcome, Resume,
     Transition,
 };
 use quire_exact::{
-    Cancel, CancelCause, ChargePoint, Integer, LimitKind, Meter, NodeKey, Outcome, ScalarLimits,
+    Cancel, CancelCause, ChargePoint, Integer, LimitKind, Meter, Outcome, ScalarLimits,
     UnionMember, Value, ValueType,
 };
 use quire_semantic_value::catalog::InternalFault;
@@ -105,10 +105,11 @@ impl Body for ActionBody {
                 bindings,
                 cancel,
                 capture,
-            } => match types
-                .clone()
-                .seal_union_verified(*handle, *final_key, bindings.clone())
-            {
+            } => match types.clone().seal_union_verified(
+                handle.clone(),
+                final_key.clone(),
+                bindings.clone(),
+            ) {
                 Err(failure) => {
                     capture.lock().expect("capture mutex").failure = Some(failure.clone());
                     Err(BodyFailure::qsv_environment(failure, Some(cancel)))
@@ -199,6 +200,7 @@ fn fixture() -> Fixture {
         .into_value();
     let checked = spine::check(
         &parsed,
+        "fixture".to_owned(),
         &models,
         &DependencyInput::default(),
         limits,
@@ -208,12 +210,10 @@ fn fixture() -> Fixture {
     .into_value();
     let graph = checked.package().graph();
     let function_node = |name: &str| {
-        WireNodeId::from_digest(
-            *graph
-                .function_identity(name)
-                .expect("checked function identity")
-                .as_bytes(),
-        )
+        graph
+            .function_identity(name)
+            .expect("checked function identity")
+            .clone()
     };
     let composite_node = |name: &str| {
         let node = graph
@@ -225,7 +225,7 @@ fn fixture() -> Fixture {
                     .is_some_and(|segment| segment.as_str() == name)
             })
             .expect("checked composite declaration");
-        WireNodeId::from_digest(*node.key().as_bytes())
+        node.key().clone()
     };
     let f_node = function_node("f");
     let g_node = function_node("g");
@@ -234,9 +234,12 @@ fn fixture() -> Fixture {
     drop(checked);
 
     let acquired = acquire_checked_closure(
-        source,
-        "body-failure.native",
-        UNIT.as_bytes(),
+        qsl_replay::CompileUnit {
+            source,
+            package_name: "fixture".to_owned(),
+            path: "body-failure.native",
+            bytes: UNIT.as_bytes(),
+        },
         [],
         &DependencyInput::default(),
         StageLimits::default(),
@@ -245,16 +248,16 @@ fn fixture() -> Fixture {
     .expect("closure acquired");
     let handle = acquired.handle().clone();
     let selection = handle
-        .lookup_callable(handle.package_id(), f_node)
+        .lookup_callable(handle.package_name(), &f_node)
         .expect("f selected");
     let other_selection = handle
-        .lookup_callable(handle.package_id(), g_node)
+        .lookup_callable(handle.package_name(), &g_node)
         .expect("g selected");
     let payload_view = handle
-        .nominal_declaration(&selection, payload_node)
+        .nominal_declaration(&selection, &payload_node)
         .expect("Payload declaration is reachable from f");
     let other_view = handle
-        .nominal_declaration(&other_selection, other_node)
+        .nominal_declaration(&other_selection, &other_node)
         .expect("Other declaration is reachable from g");
     let payload = composite(&payload_view);
     let payload_environment = environment(&payload_view, payload.clone());
@@ -264,7 +267,7 @@ fn fixture() -> Fixture {
         let [NominalDeclarationMember::UnionMember { variant, .. }] = view.members() else {
             panic!("expected the checked union declaration to have one member")
         };
-        *variant
+        variant.clone()
     };
     let argument = payload_environment
         .union(
@@ -293,7 +296,10 @@ fn composite(view: &NominalDeclaration) -> CompositeDeclaration {
         .map(|member| match member {
             NominalDeclarationMember::UnionMember {
                 member, payload, ..
-            } => UnionMemberDeclaration::resolved(member.identifier().clone(), payload.clone()),
+            } => UnionMemberDeclaration::resolved(
+                quire_exact::Identifier::new(member.identifier()).expect("a valid identifier"),
+                payload.clone(),
+            ),
             other => panic!("unexpected member in union declaration: {other:?}"),
         })
         .collect();
@@ -303,7 +309,7 @@ fn composite(view: &NominalDeclaration) -> CompositeDeclaration {
         .map(|part| part.as_str())
         .collect::<Vec<_>>()
         .join("::");
-    CompositeDeclaration::new(view.key(), name, CompositeShape::Union(members))
+    CompositeDeclaration::new(view.key().clone(), name, CompositeShape::Union(members))
 }
 
 fn verified_union_members(view: &NominalDeclaration) -> Vec<UnionMember> {
@@ -320,7 +326,11 @@ fn environment(view: &NominalDeclaration, declaration: CompositeDeclaration) -> 
     let mut environment =
         TypeEnvironment::new([declaration], []).expect("owner-authored union declaration admits");
     environment
-        .seal_union_verified(view.key(), view.node(), verified_union_members(view))
+        .seal_union_verified(
+            view.key().clone(),
+            view.node().clone(),
+            verified_union_members(view),
+        )
         .expect("checked union member bindings seal the declaration");
     environment
 }

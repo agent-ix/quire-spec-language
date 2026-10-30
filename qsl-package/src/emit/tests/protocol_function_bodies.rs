@@ -36,7 +36,7 @@ fn admitted(text: &str) -> Lowered {
 
 /// The digest of the node `node`.
 fn digest(node: &Value) -> String {
-    node["node_id"]["digest"].as_str().unwrap().to_owned()
+    node["node_id"].to_string()
 }
 
 /// The `function` node declared `name`.
@@ -54,15 +54,9 @@ fn reaches(wire: &Value, node: &Value, wanted: &Value) -> bool {
     super::protocol_graph::reads(wire, node, &wanted["node_id"])
 }
 
-/// The clause key and the package identity.
-fn identity(lowered: &Lowered) -> (String, String) {
-    (
-        digest(clause(&lowered.wire)),
-        lowered.wire["package_id"]["digest"]
-            .as_str()
-            .unwrap()
-            .to_owned(),
-    )
+/// The clause key.
+fn identity(lowered: &Lowered) -> String {
+    digest(clause(&lowered.wire))
 }
 
 /// FR-383 "Outputs", QSL-1121g: a `finish` constraint, a capture
@@ -120,33 +114,6 @@ fn a_control_body_that_calls_a_function_is_admitted() {
     );
 }
 
-/// FR-383-AC-14: a call to a function whose key changes changes the
-/// protocol's key and the package's; a reformat and a comment change
-/// neither.
-#[test]
-fn the_clause_key_follows_the_called_function_and_ignores_layout() {
-    let unit = |body: &str, pad: &str| {
-        format!(
-            "function ok using v(): Boolean pure {{ {body} }}\n{}",
-            flow("on origin", "", "", &format!("{pad}ok(){pad}"))
-        )
-    };
-    let base = identity(&admitted(&unit("true", "")));
-    assert_eq!(base, identity(&admitted(&unit("true", "   "))));
-    let commented = format!("// a comment\n{}", unit("true  ", ""));
-    assert_eq!(base, identity(&admitted(&commented)));
-    let changed = identity(&admitted(&unit("true and true", "")));
-    assert_ne!(base.0, changed.0, "the clause key follows the callee");
-    assert_ne!(base.1, changed.1, "the package identity follows it");
-    // Calling a different function is a different clause.
-    let other = format!(
-        "function ok using v(): Boolean pure {{ true }}\n\
-         function no using v(): Boolean pure {{ false }}\n{}",
-        flow("on origin", "", "", "no()")
-    );
-    assert_ne!(base.0, identity(&admitted(&other)).0);
-}
-
 /// FR-464 "Reader order": a function that refers to a protocol whose body
 /// calls a function is keyed after that protocol, and a protocol that calls
 /// the function after both. The two `finish` binders are named differently,
@@ -188,10 +155,14 @@ fn a_chain_of_functions_and_protocols_is_keyed_in_dependency_order() {
     assert_ne!(digest(inner), digest(outer));
     // Declaring them in the reverse order changes nothing.
     let reversed: String = parts.iter().rev().copied().collect();
-    assert_eq!(
-        admitted(&reversed).wire["package_id"],
-        lowered.wire["package_id"]
-    );
+    let clause_ids = |lowered: &Lowered| -> std::collections::BTreeSet<String> {
+        nodes(&lowered.wire)
+            .iter()
+            .filter(|node| node["semantic_form"] == "protocol_clause")
+            .map(digest)
+            .collect()
+    };
+    assert_eq!(clause_ids(&admitted(&reversed)), clause_ids(&lowered));
 }
 
 /// QSL-844: a component of function calls and protocol references that

@@ -5,12 +5,9 @@
 //! other -- exactly FR-322's `source_map` (`SourceMapEntry`: `node_id`,
 //! `role`, `ordinal`, `regions`).
 //!
-//! The map is keyed by the wire node id ([`WireNodeId`]): it is read from
-//! `quire.checked-package/v2` bytes, and a node id read from a wire never
-//! becomes a `NodeKey` by conversion (R-10). A kernel
-//! [`quire_exact::Location`] (the checked occurrence tag, which carries no
-//! bytes) resolves through the map in the other, emission, direction
-//! ([`OccurrenceKey::from`]).
+//! The map is keyed by the admitted structural node identity. A kernel
+//! [`quire_exact::Location`] resolves through the map by the same node and
+//! occurrence, with no digest conversion ([`OccurrenceKey::from`]).
 //!
 //! Admission of the wire's own map (every occurrence mapped, every region
 //! under a locked, current source, no overlap within one occurrence and
@@ -23,9 +20,7 @@ use alloc::collections::BTreeMap;
 use alloc::{boxed::Box, string::String, vec::Vec};
 use core::fmt;
 
-use quire_exact::{Location, Origin, Role};
-
-use crate::digest::WireNodeId;
+use quire_exact::{Location, NodeKey, Origin, Role};
 
 /// Why a provenance value could not be formed. Each condition a caller must
 /// tell apart is its own variant.
@@ -185,39 +180,39 @@ impl Ord for SourceRegion {
 }
 
 /// ADR-013 O-07: an occurrence key, (node id, role, ordinal), exactly
-/// FR-322's `source_map` key. The node half is the wire node id; the role
+/// FR-322's `source_map` key. The node half is the admitted node id; the role
 /// and ordinal half is the kernel [`Origin`]. Equality and ordering are
 /// lexical over (node id, role, ordinal).
 ///
 /// quire:canonical
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct OccurrenceKey {
-    node: WireNodeId,
+    node: NodeKey,
     origin: Origin,
 }
 
 impl OccurrenceKey {
-    /// Name an occurrence by wire node id, role and ordinal.
-    pub fn new(node: WireNodeId, origin: Origin) -> Self {
+    /// Name an occurrence by structural node id, role and ordinal.
+    pub fn new(node: NodeKey, origin: Origin) -> Self {
         Self { node, origin }
     }
 
     /// The `generated` occurrence of `node` at ordinal 0: the one
     /// occurrence of a node the producer writes with no source construct of
     /// its own, such as a `model_root` node (QSpec FR-322-AC-132).
-    pub fn generated(node: WireNodeId) -> Self {
+    pub fn generated(node: NodeKey) -> Self {
         Self::new(node, Origin::new(Role::new("generated"), 0))
     }
 
     /// The `declaration` occurrence of `node` at ordinal 0, such as a
     /// protocol clause node's (QSpec FR-368 "Claim and anchor").
-    pub fn declaration(node: WireNodeId) -> Self {
+    pub fn declaration(node: NodeKey) -> Self {
         Self::new(node, Origin::new(Role::new("declaration"), 0))
     }
 
-    /// The occurrence's wire node id.
-    pub fn node(&self) -> WireNodeId {
-        self.node
+    /// The occurrence's structural node id.
+    pub fn node(&self) -> &NodeKey {
+        &self.node
     }
 
     /// The occurrence's role and ordinal.
@@ -227,19 +222,15 @@ impl OccurrenceKey {
 
     /// The first key of `node` in key order: the empty role sorts before
     /// every role, and ordinal zero before every ordinal.
-    fn first_of(node: WireNodeId) -> Self {
+    fn first_of(node: NodeKey) -> Self {
         Self::new(node, Origin::new(Role::new(""), 0))
     }
 }
 
-/// The emission direction: a checked location's node id, as the wire
-/// spells it. The reverse is never defined (R-10).
+/// A checked location's admitted structural node and occurrence.
 impl From<&Location> for OccurrenceKey {
     fn from(location: &Location) -> Self {
-        Self::new(
-            WireNodeId::from_digest(*location.node().as_bytes()),
-            location.occurrence().clone(),
-        )
+        Self::new(location.node().clone(), location.occurrence().clone())
     }
 }
 
@@ -261,7 +252,7 @@ impl fmt::Display for OccurrenceKey {
 pub enum UnresolvedOccurrence {
     /// The package maps no occurrence of the tag's node.
     #[error("the package names no node {0}")]
-    UnknownNode(WireNodeId),
+    UnknownNode(NodeKey),
     /// The package maps the tag's node, but not at the tag's role and
     /// ordinal.
     #[error("the package maps no occurrence {0}")]
@@ -310,10 +301,11 @@ impl PackageSourceMap {
     /// each with its regions.
     pub fn occurrences(
         &self,
-        node: WireNodeId,
+        node: &NodeKey,
     ) -> impl Iterator<Item = (&OccurrenceKey, &[SourceRegion])> {
+        let node = node.clone();
         self.entries
-            .range(OccurrenceKey::first_of(node)..)
+            .range(OccurrenceKey::first_of(node.clone())..)
             .take_while(move |(key, _)| key.node == node)
             .map(|(key, regions)| (key, &**regions))
     }
@@ -326,7 +318,7 @@ impl PackageSourceMap {
         if let Some(regions) = self.regions(&key) {
             return Ok(regions);
         }
-        if self.occurrences(key.node).next().is_none() {
+        if self.occurrences(&key.node).next().is_none() {
             Err(UnresolvedOccurrence::UnknownNode(key.node))
         } else {
             Err(UnresolvedOccurrence::UnknownOccurrence(key))
@@ -338,7 +330,7 @@ impl PackageSourceMap {
 mod tests {
     use alloc::{vec, vec::Vec};
     use ix_trace_rs::trace;
-    use quire_exact::NodeKey;
+    use quire_exact::PathSegment;
 
     use super::*;
 
@@ -350,11 +342,13 @@ mod tests {
         SourceRegion::new(source(authority), start, end).unwrap()
     }
 
+    fn node(value: u8) -> NodeKey {
+        NodeKey::new("test", vec![PathSegment::Text(value.to_string())], 0)
+            .expect("test node has a valid structural identity")
+    }
+
     fn key(node: u8, role: &str, ordinal: u64) -> OccurrenceKey {
-        OccurrenceKey::new(
-            WireNodeId::from_digest([node; 32]),
-            Origin::new(Role::new(role), ordinal),
-        )
+        OccurrenceKey::new(self::node(node), Origin::new(Role::new(role), ordinal))
     }
 
     /// A region's equality is lexical over (authority, identity, start,
@@ -403,6 +397,24 @@ mod tests {
     fn occurrence_keys_compare_over_node_role_and_ordinal() {
         assert_eq!(key(1, "expression", 0), key(1, "expression", 0));
         assert_ne!(key(1, "expression", 0), key(2, "expression", 0));
+        let same_path_other_package =
+            NodeKey::new("other", vec![PathSegment::Text("1".into())], 0).unwrap();
+        assert_ne!(
+            key(1, "expression", 0),
+            OccurrenceKey::new(
+                same_path_other_package,
+                Origin::new(Role::new("expression"), 0)
+            )
+        );
+        let same_path_other_ordinal =
+            NodeKey::new("test", vec![PathSegment::Text("1".into())], 1).unwrap();
+        assert_ne!(
+            key(1, "expression", 0),
+            OccurrenceKey::new(
+                same_path_other_ordinal,
+                Origin::new(Role::new("expression"), 0)
+            )
+        );
         assert_ne!(key(1, "expression", 0), key(1, "type", 0));
         assert_ne!(key(1, "expression", 0), key(1, "expression", 1));
     }
@@ -437,7 +449,7 @@ mod tests {
         );
         assert_eq!(map.regions(&key(1, "expression", 2)), None);
         let node_one: Vec<_> = map
-            .occurrences(WireNodeId::from_digest([1; 32]))
+            .occurrences(&node(1))
             .map(|(key, _)| key.clone())
             .collect();
         assert_eq!(
@@ -448,7 +460,7 @@ mod tests {
                 key(1, "expression", 1)
             ]
         );
-        assert_eq!(map.occurrences(WireNodeId::from_digest([3; 32])).count(), 0);
+        assert_eq!(map.occurrences(&node(3)).count(), 0);
     }
 
     /// O-12: a location tag resolves through the map by its node id and
@@ -459,10 +471,7 @@ mod tests {
     fn a_location_resolves_or_refuses_by_cause() {
         let map = map();
         let location = |node: u8, role: &str, ordinal| {
-            Location::new(
-                NodeKey::from_digest([node; 32]),
-                Origin::new(Role::new(role), ordinal),
-            )
+            Location::new(self::node(node), Origin::new(Role::new(role), ordinal))
         };
         assert_eq!(
             map.resolve(&location(2, "type", 0)),
@@ -470,9 +479,7 @@ mod tests {
         );
         assert_eq!(
             map.resolve(&location(3, "type", 0)),
-            Err(UnresolvedOccurrence::UnknownNode(WireNodeId::from_digest(
-                [3; 32]
-            )))
+            Err(UnresolvedOccurrence::UnknownNode(node(3)))
         );
         assert_eq!(
             map.resolve(&location(2, "type", 1)),

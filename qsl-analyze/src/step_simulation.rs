@@ -137,7 +137,10 @@ pub fn settle_step_simulations(
             given: records.len(),
         });
     }
-    let clauses: Vec<_> = hypotheses.iter().map(|(clause, _)| *clause).collect();
+    let clauses: Vec<_> = hypotheses
+        .iter()
+        .map(|(clause, _)| clause.clone())
+        .collect();
     if entries
         .iter()
         .any(|entry| entry.record().hypotheses != clauses)

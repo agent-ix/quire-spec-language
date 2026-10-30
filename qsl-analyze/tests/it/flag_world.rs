@@ -462,7 +462,6 @@ impl World {
         replay_unit(
             &ReplayUnit {
                 identity: "units",
-                path: "units.native",
                 text: self.text.as_bytes(),
                 document: &self.document,
                 snapshots: &self.snapshots,

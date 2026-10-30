@@ -11,7 +11,6 @@
 use std::cmp::Ordering;
 
 use ix_trace_rs::trace;
-use qsl_foundation::digest::WireNodeId;
 use qsl_semantics::check::union_fixture as fixture;
 use quire_exact::{compare_keys, ScalarLimits, Value, ValueType};
 use quire_semantic_value::supplied_stop::{SuppliedFailure, SuppliedLimitKind, SuppliedPhase};
@@ -29,7 +28,7 @@ fn int(number: i64) -> WitnessValue {
 
 fn union(name: &str, member: &str, components: Vec<WitnessValue>) -> WitnessValue {
     WitnessValue::Union {
-        declaration: WireNodeId::from_digest(*fixture::settled(name).as_bytes()),
+        declaration: fixture::settled(name).clone(),
         member: member.to_owned(),
         components,
     }
@@ -53,7 +52,7 @@ fn convert(
     value: &WitnessValue,
     limits: &ScalarLimits,
 ) -> Result<Value, Stopped> {
-    let types = fixture::types(quire_exact::EffectiveId::from_digest([9; 32]));
+    let types = fixture::types(crate::fixture_effective(9));
     convert_arguments_in(
         &types,
         Vec::new(),
@@ -196,9 +195,9 @@ fn a_union_input_evaluates_a_checked_case_through_replay() {
         .expect("Shape is declared")
         .key();
     let node = types.union_key(shape).expect("check sealed the union");
-    let declaration = WireNodeId::from_digest(*node.as_bytes());
+    let declaration = node.clone();
     let supplied = |member: &str, components: Vec<WitnessValue>| WitnessValue::Union {
-        declaration,
+        declaration: declaration.clone(),
         member: member.to_owned(),
         components,
     };
@@ -211,7 +210,7 @@ fn a_union_input_evaluates_a_checked_case_through_replay() {
     ] {
         let request = request(
             SHAPE_UNIT.as_bytes(),
-            compiled.emitted.package_id(),
+            &compiled,
             name(&["big"]),
             typed_input(parameter(&compiled, "big", 0), value.clone()),
         );

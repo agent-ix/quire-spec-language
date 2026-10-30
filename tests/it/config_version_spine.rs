@@ -632,7 +632,7 @@ fn clause_run_reader_diagnoses_deep_function_argument() {
 /// in-process report's stage, category and truth through the CLI route.
 #[trace("TC-891", "FR-312-AC-4")]
 #[test]
-fn clause_run_command_routes_function_frame_and_stale_package() {
+fn clause_run_command_routes_function_and_frame() {
     let directory = tempfile::tempdir().unwrap();
     let population = format!("ix://{}/config_history", spine::PACKAGE_IDENTITY);
     let path = directory.path().join(Case::Distinct.id());
@@ -697,25 +697,6 @@ fn clause_run_command_routes_function_frame_and_stale_package() {
         value["disposition"]["truth"],
         expected.disposition.truth().unwrap()
     );
-
-    let path = directory.path().join(Case::Healthy.id());
-    let mut in_process = build(&path, Case::Healthy);
-    let claim = "0".repeat(64);
-    in_process.expected_package_id_claim = Some(claim.clone());
-    let expected = run_clause(in_process).unwrap();
-    assert!(matches!(
-        expected.disposition,
-        ClauseDisposition::StalePackage { .. }
-    ));
-    let mut request = current_clause_request();
-    request["request"]["clause"]["package_id"] = json!(claim);
-    let output = run_clause_file(&path, &request);
-    assert_eq!(output.status.code(), Some(20), "{output:?}");
-    assert!(output.stderr.is_empty(), "{output:?}");
-    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["disposition"]["stage"], "compile");
-    assert_eq!(value["disposition"]["refusal"]["code"], "stale_dependency");
-    assert_eq!(value["disposition"]["refusal"]["cause"], "stale-package");
 }
 
 /// FR-312-AC-5: the named document role chooses the FR-106 input variant;
@@ -1054,7 +1035,7 @@ fn tc_469_step_4_generation_and_reports_are_deterministic() {
         let report_b = run_clause(request_b).unwrap();
 
         // The full report: exit code, disposition (stage/category/truth/
-        // code via the same summary step 2 uses), source digest, package_id
+        // code via the same summary step 2 uses), source digest
         // and usage all agree between the two runs.
         assert_eq!(
             report_a.disposition.category().exit_code(),
@@ -1082,7 +1063,6 @@ fn tc_469_step_4_generation_and_reports_are_deterministic() {
             "{}",
             case.id()
         );
-        assert_eq!(report_a.package_id, report_b.package_id, "{}", case.id());
         assert_eq!(
             report_a.usage.admission_consumed,
             report_b.usage.admission_consumed,
@@ -1103,30 +1083,12 @@ fn tc_469_step_4_generation_and_reports_are_deterministic() {
         );
 
         assert_eq!(limits_a, limits_b, "{}", case.id());
-
-        // A request carrying spine `compile`'s own emitted `package_id`
-        // gives the same report (FR-032-AC-4's package half). Only cases
-        // that reach compile have one to pin.
-        if let Some(package_id) = report_a.package_id {
-            let mut pinned_request = spine::request(&path, case).unwrap();
-            pinned_request.expected_package_id = Some(package_id);
-            let pinned_report = run_clause(pinned_request).unwrap();
-            assert_eq!(
-                pinned_report.disposition.category().exit_code(),
-                report_a.disposition.category().exit_code(),
-                "{}",
-                case.id()
-            );
-            assert_eq!(pinned_report.package_id, Some(package_id), "{}", case.id());
-        }
     }
 }
 
 /// FR-108-AC-5 (TC-469 step 5): with `quire-extraction`, each case's unit
 /// embedded in a Markdown fence and run through the I3 adapter gives the
-/// direct run's stage, category, truth and exit code, plus the extracted
-/// body's own `package_id` (the id of an independent compile under the body
-/// identity).
+/// direct run's stage, category, truth and exit code.
 #[cfg(feature = "quire-extraction")]
 mod extraction {
     use super::{build, run_clause, Case, ClauseRunRequest, CASES};
@@ -1202,19 +1164,6 @@ mod extraction {
             let path = directory.path().join(case.id());
             let direct_request = build(&path, case);
             let extracted = extracted(case, &direct_request);
-            // The extracted body's own package_id: what a direct compile of
-            // its bytes under its body identity emits, independent of the
-            // run (`None` where compile refuses).
-            let body = extracted.map().body();
-            let body_package_id = crate::support::front_end::emitted(
-                body.identity().clone(),
-                body.path(),
-                body.text().as_bytes(),
-                &direct_request.packages,
-                &direct_request.dependencies,
-            )
-            .ok()
-            .map(|emitted| emitted.package().package_id());
             let direct_report = run_clause(build(&path, case)).unwrap();
 
             let mut extracted_request = build(&path, case);
@@ -1245,63 +1194,11 @@ mod extraction {
                 "{}",
                 case.id()
             );
-            assert_eq!(
-                extracted_report.package_id,
-                body_package_id,
-                "{}",
-                case.id()
-            );
         }
     }
 }
 
-/// FR-108-AC-6 (TC-469 step 6), its package_id half: the expected table
-/// pins the FR-108 unit's `package_id` (the one spine `compile` emits for
-/// it), and every case's report carries exactly that value. The I04 `read`
-/// half is the separate test below.
-#[trace("TC-469", "FR-108-AC-6")]
-#[test]
-fn tc_469_step_6_package_id_is_pinned_across_every_case() {
-    let directory = tempfile::tempdir().unwrap();
-    let mut pinned = None;
-    for &case in CASES {
-        // `missing-model` never reaches compile with a package to pin.
-        if matches!(case, Case::MissingModel) {
-            continue;
-        }
-        let path = directory.path().join(case.id());
-        let request = build(&path, case);
-        let report = run_clause(request).unwrap();
-        let package_id = report
-            .package_id
-            .unwrap_or_else(|| panic!("{}: compile reached E4", case.id()));
-        match pinned {
-            None => pinned = Some(package_id),
-            Some(pinned) => assert_eq!(
-                package_id,
-                pinned,
-                "{}: every case shares the same unit and package",
-                case.id()
-            ),
-        }
-    }
-    let pinned = pinned.expect("at least one case compiles");
-
-    // The bytes spine's operations emit for the FR-108 unit, independent of
-    // any one case's request, share the same pinned `package_id`.
-    let unit = spine::unit_text();
-    let compiled = crate::support::front_end::emitted(
-        spine::unit_identity(),
-        "spine-unit.native",
-        unit.as_bytes(),
-        &qsl_semantics::model::intake::package_input([spine::DOMAIN_PACKAGE.as_bytes()]).unwrap(),
-        &qsl_replay::spine::DependencyInput::default(),
-    )
-    .expect("the FR-108 unit compiles");
-    assert_eq!(compiled.package().package_id(), pinned);
-}
-
-/// FR-108-AC-6's other half: the emitted package bytes admit through QSpec
+/// FR-108-AC-6: the emitted package bytes admit through QSpec
 /// I04 `read`, including the frame step and node 8's
 /// `quire.op.model.reaches_field` application, whose reference edge the
 /// reader checks.
@@ -1317,7 +1214,6 @@ fn tc_469_step_6_the_emitted_package_admits_via_i04() {
         &qsl_replay::spine::DependencyInput::default(),
     )
     .expect("the FR-108 unit compiles");
-    let pinned = compiled.package().package_id();
 
     let bytes = compiled.package().bytes();
     // I04 `read` needs the lock's required features as supported; they are
@@ -1344,13 +1240,7 @@ fn tc_469_step_6_the_emitted_package_admits_via_i04() {
         &evidence,
     );
     match result {
-        quire_contract_model::CheckedPackageDispatchResult::AdmittedV2(package) => {
-            assert_eq!(
-                package.package_id().digest.as_ref(),
-                pinned.hex(),
-                "I04 read recomputes the same package_id spine compile emitted"
-            );
-        }
+        quire_contract_model::CheckedPackageDispatchResult::AdmittedV2(_) => {}
         other => panic!("QSpec I04 read did not admit the emitted package: {other:?}"),
     }
 }

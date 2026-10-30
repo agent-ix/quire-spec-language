@@ -65,7 +65,7 @@ pub(crate) fn unemitted(
         let interface = models
             .iter()
             .filter(|model| model.alias() == Some(alias))
-            .any(|model| model.is_systems_interface(declaring));
+            .any(|model| model.is_systems_interface(declaring.clone()));
         if interface {
             return Some(refusal(clause, span));
         }

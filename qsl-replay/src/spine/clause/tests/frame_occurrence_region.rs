@@ -166,12 +166,12 @@ fn frame_occurrence_region_is_the_first_naming_clauses_operation_reference() {
         .filter(|node| node.semantic_form() == "frame")
         .map(|node| node.key())
         .collect();
-    let [frame] = frames[..] else {
+    let [ref frame] = frames[..] else {
         panic!("one frame node: {frames:?}");
     };
     let located: Vec<_> = graph
         .occurrences()
-        .filter(|(key, origin, _)| *key == frame && origin.role().as_str() == "generated")
+        .filter(|(key, origin, _)| *key == *frame && origin.role().as_str() == "generated")
         .collect();
     let [(_, _, frame_location)] = located[..] else {
         panic!("one generated frame occurrence: {located:?}");
@@ -191,7 +191,7 @@ fn frame_occurrence_region_is_the_first_naming_clauses_operation_reference() {
                 node,
                 role: quire_contract_model::CheckedOccurrenceRole::Generated,
                 ordinal: 0,
-            } if *node == frame
+            } if *node == *frame
         ),
         "{refusal:?}"
     );

@@ -233,6 +233,7 @@ fn declarations_from_text(document: &[u8], text: String) -> PackageDeclarations 
     .expect("the operation clauses parse");
     PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "package".to_owned(),
         built,
         models,
         Vec::new(),
@@ -503,6 +504,7 @@ pub(crate) fn package_from_text(document: &[u8], text: &str) -> CheckedPackage {
     .expect("the operation clauses parse");
     let graph = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "package".to_owned(),
         built,
         models,
         Vec::new(),

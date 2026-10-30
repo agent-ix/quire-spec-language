@@ -25,17 +25,17 @@ use qsl_eval::temporal::{AtomReading, UndefinedCause};
 use qsl_replay::{
     check_closure, check_components, settle_model_check, CertificateLocus, CertificateRejection,
     CertificateRequest, CertificateRule, Certification, ClosureCertificate, ClosureRefusal,
-    Component, ComponentCertificate, ComponentWitness, Execution, IncompleteCause,
-    InconclusiveCause, ModelCheckItem, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome,
-    ProductStateRef, ProofBasis, ProofCertificate, ResultLabel, RunStats, SettlementBasis,
-    SmtEncodingLimits, TemporalCertificateCheck, TerminalValue,
+    Component, ComponentCertificate, ComponentWitness, Execution, IncompleteCause, ModelCheckItem,
+    ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ProductStateRef, ProofBasis,
+    ProofCertificate, ResultLabel, RunStats, SettlementBasis, SmtEncodingLimits,
+    TemporalCertificateCheck, TerminalValue,
 };
 use qsl_semantics::check::{FormulaNodeId, TemporalClauseNode};
 use quire_exact::{Cancel, CancelCause, Meter, ScalarLimits};
 use serde_json::json;
 
 use crate::counter::{UNLIMITED, ZERO};
-use crate::example_units::{config, config_over, decide, reaches_two, EACH};
+use crate::example_units::{config, decide, reaches_two, EACH};
 use crate::liveness::{counter, is_three};
 use crate::por_world::{
     field, integer, level, number, object_type, operation, type_ref, writes, Atom, Fixture, Obj,
@@ -62,13 +62,6 @@ fn held(
         }) => (certificate, stats),
         other => panic!("expected a component certificate: {other:?}"),
     }
-}
-
-fn package_id(world: &World) -> qsl_semantics::library::PackageId {
-    qsl_package::emit_checked(&world.package)
-        .expect("the package emits")
-        .package()
-        .package_id()
 }
 
 /// Check `certificate` for `request` under `limits` and `cancel`.
@@ -220,59 +213,6 @@ fn an_altered_certificate_is_rejected_at_the_rule_the_alteration_breaks() {
     );
 }
 
-/// FR-339-AC-4: the certificate carries the `package_id` of the package EN-1
-/// explored and is accepted. The same certificate with the `package_id` of
-/// the unit whose claim targets `c.versionNumber = 1` is `PackageMismatch`
-/// naming both identities and settles `inconclusive`, `StaleDependency`,
-/// never rejected and never proved; with AC-2's wrong witness as well, no
-/// rule is evaluated, so it is still `PackageMismatch`.
-#[trace("TC-526", "TC-1141", "FR-339-AC-4")]
-#[test]
-fn a_certificate_from_another_package_is_stale_before_any_component_rule() {
-    let (world, certificate, stats) = weak_each_proof();
-    let recompiled = package_id(&world);
-    assert_eq!(certificate.closure.package_id, recompiled);
-    assert_eq!(accepts(&world, &certificate), ACCEPTED);
-
-    let other = config_over(
-        false,
-        EACH,
-        "always eventually holds(c.versionNumber = 1)",
-        (0, 0),
-    );
-    let foreign = package_id(&other);
-    assert_ne!(foreign, recompiled);
-    let mut stale = certificate.clone();
-    stale.closure.package_id = foreign;
-    let mismatch = TemporalCertificateCheck::PackageMismatch {
-        certificate: foreign,
-        recompiled,
-    };
-    assert_eq!(accepts(&world, &stale), mismatch);
-    stale.components[1].witness = weak(1);
-    assert_eq!(accepts(&world, &stale), mismatch);
-
-    let letters = reaches_two(&world);
-    let record = settle_model_check(
-        &ModelCheckOutcome::Holds {
-            certificate: ProofCertificate::Component(stale),
-            stats,
-        },
-        &ModelCheckLimits::default(),
-        &recompiled.record(),
-        &config_request(&world, &letters, UNLIMITED),
-        &Cancel::new(),
-        |_| panic!("a proof replays nothing"),
-    );
-    assert_eq!(
-        record.value,
-        TerminalValue::Inconclusive(InconclusiveCause::StaleDependency {
-            requested: qsl_replay::StaleIdentity::Package(foreign.record()),
-            recompiled: qsl_replay::StaleIdentity::Package(recompiled.record()),
-        })
-    );
-}
-
 /// FR-126-AC-13 (TC-1085): the weak `each` claim, whose second phase finds no
 /// fair accepting cycle, is `Holds` with a component certificate the
 /// checker accepts, and the settlement of that outcome is `proved`,
@@ -295,7 +235,6 @@ fn a_liveness_proof_settles_certified_through_its_component_certificate() {
         settle_model_check(
             outcome,
             &ModelCheckLimits::default(),
-            &package_id(&world).record(),
             &request,
             &Cancel::new(),
             |_| panic!("a proof replays nothing"),
@@ -876,7 +815,6 @@ fn a_guarded_each_activation_has_its_own_acceptance_set_in_the_certificate() {
                 stats,
             },
             &ModelCheckLimits::default(),
-            &package_id(&world).record(),
             &production.request(production.letters),
             &Cancel::new(),
             |_| panic!("a proof replays nothing"),
@@ -996,17 +934,13 @@ fn a_closure_certificate_never_proves_a_liveness_claim() {
         "always eventually holds(c.value = 3)",
     );
     let (honest, stats) = fixture.certified(is_three);
-    let recompiled = honest.closure.package_id;
     let violated = fixture.decide(never).expect("the clause is decided");
     assert!(matches!(violated, ModelCheckOutcome::Violated { .. }));
 
     let letters = fixture.letters(never);
     let request = fixture.certificate_request(&letters, UNLIMITED);
     let mut forged = ComponentCertificate {
-        closure: ClosureCertificate {
-            package_id: recompiled,
-            states: Vec::new(),
-        },
+        closure: ClosureCertificate { states: Vec::new() },
         components: Vec::new(),
     };
     loop {
@@ -1032,7 +966,6 @@ fn a_closure_certificate_never_proves_a_liveness_claim() {
         settle_model_check(
             &ModelCheckOutcome::Holds { certificate, stats },
             &ModelCheckLimits::default(),
-            &recompiled.record(),
             request,
             &Cancel::new(),
             |_| panic!("a proof replays nothing"),
@@ -1075,22 +1008,12 @@ fn components_offered_for_a_safety_clause_are_refused() {
         "always holds(c.value <= 3)",
     );
     let letters = fixture.letters(is_three);
-    let (mut liveness, _) = counter(
+    let (liveness, _) = counter(
         crate::counter::document(false),
         "",
         "always eventually holds(c.value = 3)",
     )
     .certified(is_three);
-    // The package of the safety unit, which the check reads first.
-    let TemporalCertificateCheck::PackageMismatch { recompiled, .. } = check(
-        &fixture.certificate_request(&letters, UNLIMITED),
-        &liveness,
-        &ModelCheckLimits::default(),
-        &Cancel::new(),
-    ) else {
-        panic!("the two claims are two packages");
-    };
-    liveness.closure.package_id = recompiled;
     assert!(matches!(
         check_components(
             &fixture.certificate_request(&letters, UNLIMITED),

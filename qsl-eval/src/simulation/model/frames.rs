@@ -98,10 +98,11 @@ fn argument_domains(
         .iter()
         .enumerate()
         .map(|(position, (_, value_type))| {
-            match system
-                .probabilistic
-                .support(application.declaring, &application.name, position)
-            {
+            match system.probabilistic.support(
+                application.declaring.clone(),
+                &application.name,
+                position,
+            ) {
                 Some(support) => Some(Domain::Listed(support.values())),
                 None => Domain::of(value_type, &references, system.types, &system.record_orders),
             }
@@ -278,7 +279,7 @@ pub(super) fn apply(
         if let Some(enabled) = enabled.as_deref_mut() {
             enabled.push(EnabledVector {
                 receiver: row.reference.clone(),
-                declaring: application.declaring,
+                declaring: application.declaring.clone(),
                 name: application.name.clone(),
                 operation: application.text.clone(),
                 args,
@@ -442,7 +443,7 @@ fn pre_observations(
 ) -> AdmittedObservations {
     AdmittedObservations {
         usage: AdmissionUsage::default(),
-        clause: clause.identity,
+        clause: clause.identity.clone(),
         current: None,
         pre: Some(walk.observation.clone()),
         post: None,
@@ -595,9 +596,9 @@ impl Run<'_, '_, '_> {
                         .model
                         .type_identity(candidate)
                         .is_some_and(|identity| {
-                            members
-                                .iter()
-                                .any(|member| system.types.conforms(identity, *member))
+                            members.iter().any(|member| {
+                                system.types.conforms(identity.clone(), member.clone())
+                            })
                         })
                 })
                 .cloned()
@@ -907,7 +908,7 @@ impl Run<'_, '_, '_> {
                 .filter_map(|(name, value)| match value {
                     Value::Reference(bound)
                         if before.get(bound.object().as_str()).is_some_and(|object| {
-                            system.model.type_identity(&object.type_identity)
+                            system.model.type_identity(&object.type_identity).as_ref()
                                 == Some(bound.object_type())
                         }) =>
                     {
@@ -1188,7 +1189,7 @@ impl Run<'_, '_, '_> {
         let verdict = conjunction(self.walk, self.postconditions, |info| {
             let observations = AdmittedObservations {
                 usage: AdmissionUsage::default(),
-                clause: info.identity,
+                clause: info.identity.clone(),
                 current: None,
                 pre: Some(self.walk.observation.clone()),
                 post: Some(post.clone()),
@@ -1324,7 +1325,7 @@ impl Run<'_, '_, '_> {
         let effect = self.effect_of(candidate, delta)?;
         Ok(AdmittedObservations {
             usage: AdmissionUsage::default(),
-            clause: info.identity,
+            clause: info.identity.clone(),
             current: None,
             pre: Some(self.walk.observation.clone()),
             post: Some(post),

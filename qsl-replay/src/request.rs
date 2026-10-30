@@ -8,7 +8,7 @@
 //! constructor argument typed as a filesystem path, environment-variable
 //! name or search location: every recompilation input is reachable only by
 //! digest lookup in [`ByteProvision`] (QC-1). This module performs no
-//! recompilation and no `package_id` recomputation -- that is #243's E9.
+//! recompilation and no package recomputation -- that is #243's E9.
 
 use std::collections::BTreeMap;
 
@@ -23,7 +23,6 @@ use crate::target::{
     ReplayOverBinding, ReplayTarget, RequestTargetWire, TargetMember, TargetSelectionRefusal,
 };
 use crate::witness::ReplaySource;
-use qsl_foundation::digest::{DigestDomain, DigestRecord, InvalidDigestRecord};
 use qsl_foundation::BackendId;
 use qsl_foundation::Code;
 use qsl_foundation::{AccountingSetting, Setting, SettingName};
@@ -228,7 +227,6 @@ impl ByteProvision {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DependencyEntry {
     identity: LibraryName,
-    package_id: DigestRecord,
     sources: Vec<RawSourceRef>,
 }
 
@@ -237,12 +235,6 @@ impl DependencyEntry {
     pub fn identity(&self) -> &LibraryName {
         &self.identity
     }
-    /// The dependency's `package_id` as the proving run recorded it: a
-    /// `quire.package.semantic/v2` claim, compared with a recomputed
-    /// `PackageId` and never itself one (ADR-015 D-2).
-    pub fn package_id(&self) -> DigestRecord {
-        self.package_id
-    }
     /// The dependency's own lock `sources`.
     pub fn sources(&self) -> &[RawSourceRef] {
         &self.sources
@@ -250,13 +242,11 @@ impl DependencyEntry {
 }
 
 /// A [`DependencyEntry`] in wire-packet shape: `identity`,
-/// `(package_id digest domain, digest hex)` and its source references.
+/// and its source references.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DependencyEntryWire {
     /// The library identity; non-empty.
     pub identity: String,
-    /// `(digest domain, digest hex)`, in `quire.package.semantic/v2`.
-    pub package_id: (Option<String>, String),
     /// The dependency's lock `sources`.
     pub sources: Vec<SourceRefWire>,
 }
@@ -265,7 +255,7 @@ pub struct DependencyEntryWire {
 /// recompilation input is reachable only through [`ByteProvision::get`].
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReplayRequest {
-    package_id: DigestRecord,
+    package_name: String,
     sources: Vec<RawSourceRef>,
     dependencies: Vec<DependencyEntry>,
     replay_target: Option<ReplayTarget>,
@@ -284,9 +274,9 @@ pub struct ReplayRequest {
 }
 
 impl ReplayRequest {
-    /// The package this request replays against.
-    pub fn package_id(&self) -> DigestRecord {
-        self.package_id
+    /// The package manifest's top-level name this request replays.
+    pub fn package_name(&self) -> &str {
+        &self.package_name
     }
     /// The package's declared source references.
     pub fn sources(&self) -> &[RawSourceRef] {
@@ -327,7 +317,7 @@ impl ReplayRequest {
     /// The obligation this request replays: the ADR-013 O-09 obligation
     /// digest, as on the frame and state-clause paths (ADR-013 O-26).
     pub fn obligation_identity(&self) -> ObligationIdentity {
-        self.obligation_identity
+        self.obligation_identity.clone()
     }
     /// The backend that produced the originating counterexample.
     pub fn backend(&self) -> &BackendId {
@@ -399,11 +389,10 @@ impl ReplayRequestWire {
 /// belongs to a byte reader, and none exists yet.
 #[derive(Clone)]
 pub struct ReplayRequestWire {
+    /// The package manifest's top-level name.
+    pub package_name: String,
     /// The semantic profile selections; each must name a known profile.
     pub profile_selections: Vec<ProfileSelection>,
-    /// `(digest domain, digest hex)` naming the package this request
-    /// replays against.
-    pub package_id: (Option<String>, String),
     /// `(authority, identity, revision namespace, revision)` per declared
     /// source reference.
     pub sources: Vec<SourceRefWire>,
@@ -416,9 +405,8 @@ pub struct ReplayRequestWire {
     /// The replay source: a witness transcript, canonical inputs, or an
     /// observed temporal counterexample envelope (FR-331).
     pub source: ReplaySource,
-    /// The obligation this request replays: the ADR-013 O-09 obligation
-    /// digest.
-    pub obligation_identity: [u8; 32],
+    /// The obligation this request replays.
+    pub obligation_identity: ObligationIdentity,
     /// The provider identity of the backend that produced the originating
     /// counterexample (ADR-013 O-19: the identity string alone).
     pub backend: String,
@@ -473,15 +461,6 @@ pub enum ReplayRequestRefusal {
         /// The role the selection was supplied for.
         required_role: &'static str,
     },
-    /// A digest names a domain outside the closed FR-201 set, or supplies no
-    /// domain at all.
-    #[error("stale_dependency/digest-domain-mismatch: {0}")]
-    DigestDomainMismatch(#[source] InvalidDigestRecord),
-    /// A digest names a domain FR-201 admits, but its own hex encoding is
-    /// malformed (wrong length, or not lowercase hex) -- not a domain
-    /// problem, so it is never spelled `digest-domain-mismatch`.
-    #[error("invalid_digest/malformed-encoding: {0}")]
-    MalformedDigest(#[source] InvalidDigestRecord),
     /// The package reference names a source with no matching
     /// byte-provision entry (`missing_import`/`missing-selection`).
     #[error("missing_import/missing-selection: {named_by} names {requested} with no matching byte-provision entry")]
@@ -612,8 +591,6 @@ impl ReplayRequestRefusal {
     pub fn code(&self) -> Code {
         match self {
             Self::UnknownSemanticProfile { .. } => Code::UnknownProfile,
-            Self::DigestDomainMismatch(_) => Code::StaleDependency,
-            Self::MalformedDigest(_) => Code::InvalidDigest,
             Self::IncompleteByteProvision { .. } => Code::MissingImport,
             Self::EmptyDependencySelection { .. } | Self::EmptyBackendIdentity => {
                 Code::InvalidIdentifier
@@ -664,17 +641,6 @@ impl ReplayRequestRefusal {
     }
 }
 
-/// Route `err` to [`ReplayRequestRefusal::DigestDomainMismatch`] or
-/// [`ReplayRequestRefusal::MalformedDigest`] by its real cause, so a wrong
-/// hex length is never reported as a domain problem (N5).
-fn classify_digest_error(err: InvalidDigestRecord) -> ReplayRequestRefusal {
-    if err.is_domain_mismatch() {
-        ReplayRequestRefusal::DigestDomainMismatch(err)
-    } else {
-        ReplayRequestRefusal::MalformedDigest(err)
-    }
-}
-
 /// The reader's own measurement of `wire`'s encoded size (FR-071-AC-7): the
 /// sum of every variable-length member's own byte length -- the
 /// byte-provision entries' actual raw bytes among them -- never a
@@ -685,7 +651,6 @@ fn measured_encoded_bytes(wire: &ReplayRequestWire) -> usize {
         .iter()
         .map(|p| p.profile().len() + p.value().len())
         .sum::<usize>()
-        + wire.package_id.1.len()
         + wire
             .stage_limits
             .keys()
@@ -701,7 +666,6 @@ fn measured_encoded_bytes(wire: &ReplayRequestWire) -> usize {
             .iter()
             .map(|entry| {
                 entry.identity.len()
-                    + entry.package_id.1.len()
                     + entry
                         .sources
                         .iter()
@@ -801,10 +765,6 @@ impl ReplayRequest {
 
         // Only past this point does decoding touch the package reference or
         // the byte provision.
-        let (package_domain, package_hex) = wire.package_id;
-        let package_id = DigestRecord::from_wire(package_domain.as_deref(), &package_hex)
-            .map_err(classify_digest_error)?;
-
         let sources = wire
             .sources
             .into_iter()
@@ -818,23 +778,12 @@ impl ReplayRequest {
             .map(|(index, entry)| {
                 let identity = LibraryName::new(entry.identity)
                     .map_err(|_| ReplayRequestRefusal::EmptyDependencySelection { index })?;
-                let (domain, hex) = entry.package_id;
-                let package_id = DigestRecord::from_wire_expecting(
-                    DigestDomain::PackageSemanticV2,
-                    domain.as_deref(),
-                    &hex,
-                )
-                .map_err(classify_digest_error)?;
                 let sources = entry
                     .sources
                     .into_iter()
                     .map(RawSourceRef::from_wire)
                     .collect::<Vec<_>>();
-                Ok::<_, ReplayRequestRefusal>(DependencyEntry {
-                    identity,
-                    package_id,
-                    sources,
-                })
+                Ok::<_, ReplayRequestRefusal>(DependencyEntry { identity, sources })
             })
             .collect::<Result<Vec<_>, _>>()?;
 
@@ -871,14 +820,14 @@ impl ReplayRequest {
         }
 
         Ok(Self {
-            package_id,
+            package_name: wire.package_name,
             sources,
             dependencies,
             replay_target,
             over,
             source: wire.source,
             profile_selections: wire.profile_selections,
-            obligation_identity: ObligationIdentity::from_digest(wire.obligation_identity),
+            obligation_identity: wire.obligation_identity.clone(),
             backend: BackendId::new(wire.backend),
             state_environment: wire.state_environment,
             accounting_limits,
@@ -900,27 +849,20 @@ impl ReplayRequest {
             .map_or_else(RequestTargetWire::default, Into::into);
         replay_target.over = self.over.clone();
         ReplayRequestWire {
+            package_name: self.package_name.clone(),
             profile_selections: self.profile_selections.clone(),
-            package_id: (
-                Some(self.package_id.domain().as_str().to_owned()),
-                self.package_id.hex(),
-            ),
             sources: self.sources.iter().map(RawSourceRef::to_wire).collect(),
             dependencies: self
                 .dependencies
                 .iter()
                 .map(|entry| DependencyEntryWire {
                     identity: entry.identity.as_str().to_owned(),
-                    package_id: (
-                        Some(entry.package_id.domain().as_str().to_owned()),
-                        entry.package_id.hex(),
-                    ),
                     sources: entry.sources.iter().map(RawSourceRef::to_wire).collect(),
                 })
                 .collect(),
             replay_target,
             source: self.source.clone(),
-            obligation_identity: *self.obligation_identity.as_bytes(),
+            obligation_identity: self.obligation_identity.clone(),
             backend: self.backend.as_str().to_owned(),
             state_environment: self.state_environment.clone(),
             accounting_limits: self.accounting_limits,
@@ -948,7 +890,6 @@ mod tests {
     use crate::identity::QualifiedName;
     use crate::target::ReplayTargetMembers;
     use ix_trace_rs::trace;
-    use qsl_foundation::digest::{DigestDomain, WireNodeId};
     use qsl_foundation::source::provenance::OccurrenceKey as OccurrenceKeyForTest;
     use quire_exact::Identifier;
 
@@ -981,14 +922,11 @@ mod tests {
     fn wire(stage_seed: u64) -> ReplayRequestWire {
         let source_bytes = source_bytes(0xAB, 64);
         ReplayRequestWire {
+            package_name: "fixture".to_owned(),
             profile_selections: vec![ProfileSelection::new(
                 "quire.profile.v1".to_owned(),
                 "finite-state".to_owned(),
             )],
-            package_id: (
-                Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
-                DigestRecord::mint(DigestDomain::PackageSemanticV2, [4; 32]).hex(),
-            ),
             sources: vec![(
                 "registry".to_owned(),
                 "pkg-a".to_owned(),
@@ -1005,10 +943,15 @@ mod tests {
                 crate::target::test_key(),
             ),
             source: ReplaySource::Input(vec![crate::witness::CanonicalAssignment {
-                parameter: WireNodeId::from_digest([9; 32]),
+                parameter: quire_exact::NodeKey::new(
+                    "fixture",
+                    vec![quire_exact::PathSegment::Text("node".into())],
+                    9,
+                )
+                .expect("a fixture key"),
                 value: crate::witness::WitnessValue::Integer(42),
             }]),
-            obligation_identity: [1; 32],
+            obligation_identity: crate::ObligationIdentity::new(crate::fixture_node(1), None, 0),
             backend: "kani-backend-1".to_owned(),
             state_environment: StateEnvironment::new(vec![("x".to_owned(), "1".to_owned())]),
             accounting_limits: scalar_limits(128),
@@ -1079,10 +1022,6 @@ mod tests {
         (
             DependencyEntryWire {
                 identity: identity.to_owned(),
-                package_id: (
-                    Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
-                    DigestRecord::mint(DigestDomain::PackageSemanticV2, [fill; 32]).hex(),
-                ),
                 sources: vec![(
                     "registry".to_owned(),
                     format!("lib-{fill}"),
@@ -1108,8 +1047,7 @@ mod tests {
 
     /// FR-071-AC-9 (TC-186): two `dependencies` entries round-trip exactly,
     /// in order. An entry's source with no byte-provision entry refuses at
-    /// construction; an empty identity, and a `package_id` in
-    /// the `quire.source.bytes/v1` domain, refuse at decode.
+    /// construction, and an empty identity refuses at decode.
     #[trace("TC-186", "FR-071-AC-9")]
     #[test]
     fn tc_186_dependencies_round_trip_and_refuse_at_decode() {
@@ -1166,17 +1104,6 @@ mod tests {
             ReplayRequestRefusal::EmptyDependencySelection { index: 0 }
         );
         assert_eq!(refused.code(), Code::InvalidIdentifier);
-
-        // A `package_id` in the source-bytes domain.
-        let (mut entry, bytes) = dependency("test/a", 0x0A);
-        entry.package_id.0 = Some(DigestDomain::SourceBytesV1.as_str().to_owned());
-        assert!(matches!(
-            ReplayRequest::decode(
-                with_dependencies(vec![(entry, bytes)]),
-                crate::ReplayLimits::default()
-            ),
-            Err(ReplayRequestRefusal::DigestDomainMismatch(_))
-        ));
     }
 
     /// FR-071-AC-2, FR-071-AC-5, FR-071-AC-7 (TC-186): no path-typed member
@@ -1322,10 +1249,14 @@ mod tests {
 
     fn model_graph_source() -> ReplaySource {
         ReplaySource::ModelGraph(Box::new(crate::GraphEvidenceEnvelope::new(
-            ObligationIdentity::from_digest([2; 32]),
+            ObligationIdentity::new(crate::fixture_node(2), None, 0),
             crate::target::test_key(),
-            WireNodeId::from_digest([3; 32]),
-            DigestRecord::mint(DigestDomain::PackageSemanticV2, [4; 32]),
+            quire_exact::NodeKey::new(
+                "fixture",
+                vec![quire_exact::PathSegment::Text("node".into())],
+                3,
+            )
+            .expect("a fixture key"),
             Vec::new(),
             wire(1).accounting_limits,
             Vec::new(),
@@ -1371,9 +1302,17 @@ mod tests {
     #[test]
     fn tc_185_a_function_request_round_trips_its_occurrence_key() {
         let function = QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap();
-        let node = WireNodeId::from_digest([5; 32]);
+        let node = quire_exact::NodeKey::new(
+            "fixture",
+            vec![quire_exact::PathSegment::Text("node".into())],
+            5,
+        )
+        .expect("a fixture key");
         for key in [
-            OccurrenceKeyForTest::new(node, quire_exact::Origin::new("declaration".into(), 0)),
+            OccurrenceKeyForTest::new(
+                node.clone(),
+                quire_exact::Origin::new("declaration".into(), 0),
+            ),
             OccurrenceKeyForTest::new(node, quire_exact::Origin::new("expression".into(), 1)),
         ] {
             let mut wire = wire(1);
@@ -1607,7 +1546,12 @@ mod tests {
         // `Input` arm.
         let distinctive_value: i128 = 918_273_645;
         request_wire.source = ReplaySource::Input(vec![crate::witness::CanonicalAssignment {
-            parameter: WireNodeId::from_digest([42; 32]),
+            parameter: quire_exact::NodeKey::new(
+                "fixture",
+                vec![quire_exact::PathSegment::Text("node".into())],
+                42,
+            )
+            .expect("a fixture key"),
             value: crate::witness::WitnessValue::Integer(distinctive_value),
         }]);
         let request = ReplayRequest::decode(request_wire, crate::ReplayLimits::default()).unwrap();

@@ -22,7 +22,6 @@ use qsl_analyze::analyze::{
     analyze, value_item, AnalyzeItem, AnalyzeRecord, DispositionKind, Engine, Engines, Settlement,
 };
 use qsl_analyze::value_check::{manifest, ValueRequest};
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::RequestIndex;
 use qsl_package::CheckedPackage;
 use qsl_replay::value_check::{ParameterDomain, Selection, ValueTarget, Verdict, Violation};
@@ -311,6 +310,7 @@ fn package_of(declarations: &str) -> CheckedPackage {
     let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
     let mut declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "package".to_owned(),
         unit,
         Vec::new(),
         Vec::new(),
@@ -330,12 +330,12 @@ fn package_of(declarations: &str) -> CheckedPackage {
     )
 }
 
-fn wire_of(package: &CheckedPackage, function: &str) -> WireNodeId {
+fn wire_of(package: &CheckedPackage, function: &str) -> quire_exact::NodeKey {
     let callable = package
         .graph()
         .callable(function)
         .expect("the function exists");
-    WireNodeId::from_digest(*callable.identity.as_bytes())
+    callable.identity.clone()
 }
 
 /// The key the vector names: the function's node at the vector's role and
@@ -791,14 +791,7 @@ fn an_undefined_subexpression_is_located_at_its_own_occurrence() {
     );
     let package_location = package
         .graph()
-        .occurrence(
-            package
-                .graph()
-                .semantic_graph()
-                .resolve_wire(at.locus.node())
-                .unwrap(),
-            at.locus.origin(),
-        )
+        .occurrence(at.locus.node().clone(), at.locus.origin())
         .expect("the locus is an occurrence of the package");
     assert_eq!(package_location, &expected);
     assert_ne!(at.locus, key);
@@ -831,14 +824,7 @@ fn an_undefinedness_inside_a_callee_is_located_in_the_callees_body() {
     let at = found.reproduced.violation().undefined.as_ref().unwrap();
     let location = package
         .graph()
-        .occurrence(
-            package
-                .graph()
-                .semantic_graph()
-                .resolve_wire(at.locus.node())
-                .unwrap(),
-            at.locus.origin(),
-        )
+        .occurrence(at.locus.node().clone(), at.locus.origin())
         .unwrap();
     // The call site is not a second locus: the locus lies in the callee.
     assert!(
@@ -971,7 +957,7 @@ fn a_replay_confirms_the_violation_it_was_asked_about_and_no_other() {
 fn a_claim_that_selects_no_form_is_declined_without_a_check() {
     let package = package_of("function f using v(x: Int[0, 3]): Int[0, 4] pure { x + 1 }");
     let none = OccurrenceKey::new(
-        WireNodeId::from_digest([7; 32]),
+        crate::fixture_ids::node_key([7]),
         Origin::new(Role::new("claim"), 0),
     );
     assert!(matches!(
@@ -1349,7 +1335,13 @@ fn a_location_holds_one_candidate_expression_occurrence() {
             if origin.role().as_str() != "expression" {
                 continue;
             }
-            if graph.semantic_graph().node(node).unwrap().node_tag() == NodeTag::Value {
+            if graph
+                .semantic_graph()
+                .node(node.clone())
+                .unwrap()
+                .node_tag()
+                == NodeTag::Value
+            {
                 continue;
             }
             let at = format!("{:?}{:?}", location.origin, location.path());

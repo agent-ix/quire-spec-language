@@ -40,7 +40,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::ops::ControlFlow;
 
 use qsl_foundation::bound::DomainKey;
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use quire_exact::{EffectiveId, IntegerInterval, NodeKey, Origin, ValueType};
 use quire_semantic_value::catalog::InternalFault;
@@ -49,7 +48,7 @@ use super::ir::{
     coerce_builds_narrow, scalar_conversion_target, CheckedNode, NodeKind, Slot, Visit,
 };
 use super::lowering::SemanticGraph;
-use super::node_key::{ApplicationTerm, BodyTerm, LeafTerm, MemberTerm};
+use super::node_key::{ApplicationTerm, BodyTerm, LeafTerm, MemberTerm, NodeKeyRefusal};
 use super::references::{read_object, ModelReferences};
 use super::refusal::KeyFault;
 use super::{
@@ -239,7 +238,7 @@ impl ValueClaim {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResultBound {
     value_type: ValueType,
-    node: WireNodeId,
+    node: NodeKey,
 }
 
 impl ResultBound {
@@ -249,8 +248,8 @@ impl ResultBound {
     }
 
     /// The result bound's type node.
-    pub fn node(&self) -> WireNodeId {
-        self.node
+    pub fn node(&self) -> NodeKey {
+        self.node.clone()
     }
 }
 
@@ -289,7 +288,7 @@ pub struct RequirementRecord {
     owner: Option<String>,
     /// FR-062 "Extent": the parameter and binder nodes the claim's extent
     /// is rooted at, including roots whose type adds no unbounded domain.
-    extent_roots: BTreeSet<WireNodeId>,
+    extent_roots: BTreeSet<NodeKey>,
 }
 
 impl RequirementRecord {
@@ -316,7 +315,7 @@ impl RequirementRecord {
     pub(crate) fn unguarded(
         requirements: Requirements,
         value_type: ValueType,
-        node: WireNodeId,
+        node: NodeKey,
         references: ModelReferences,
     ) -> Self {
         Self {
@@ -336,7 +335,7 @@ impl RequirementRecord {
     /// [`CheckedProbabilisticClaim::requirements`](super::CheckedProbabilisticClaim::requirements)),
     /// the `Boolean` result bound at the type node `boolean`, no direct
     /// conversion context, an empty path condition and no owner.
-    pub fn model_claim(requirements: Requirements, boolean: WireNodeId) -> Self {
+    pub fn model_claim(requirements: Requirements, boolean: NodeKey) -> Self {
         Self::unguarded(
             requirements,
             ValueType::Boolean,
@@ -353,7 +352,7 @@ impl RequirementRecord {
     /// FR-062 "Extent": the nodes of the claim's extent roots. A function
     /// parameter outside this set is read nowhere by the application or by
     /// the guards of its path condition (FR-098 "unread parameters").
-    pub fn extent_roots(&self) -> &BTreeSet<WireNodeId> {
+    pub fn extent_roots(&self) -> &BTreeSet<NodeKey> {
         &self.extent_roots
     }
 
@@ -695,7 +694,7 @@ impl<'n> ClaimsWalk<'n, '_> {
             ) => {
                 let payload = self
                     .types
-                    .composite(*declaration)
+                    .composite(declaration.clone())
                     .and_then(|union| match union.shape() {
                         CompositeShape::Union(members) => members.get(arms.get(index - 1)?.member),
                         CompositeShape::Record(_) | CompositeShape::Tuple(_) => None,
@@ -749,7 +748,7 @@ impl<'n> ClaimsWalk<'n, '_> {
             };
             reads.extend(read.iter().cloned());
             if let Some(read_objects) = self.roots.slot_objects.get(slot) {
-                objects.extend(read_objects.iter().copied());
+                objects.extend(read_objects.iter().cloned());
             }
         }
         if is_scalar_application(frame.node) {
@@ -888,7 +887,7 @@ impl Classify<'_> {
                 .get(index)
                 .ok_or_else(|| fault("guard-in-arena"))?;
             roots.extend(guard.reads.iter().cloned());
-            objects.extend(guard.objects.iter().copied());
+            objects.extend(guard.objects.iter().cloned());
             path_condition.push(SiteGuard {
                 location: guard.location.clone(),
                 holds: guard.holds,
@@ -930,11 +929,10 @@ impl Classify<'_> {
     }
 }
 
-/// The wire id of lowered node `key`.
-pub(crate) fn wire(key: NodeKey) -> WireNodeId {
-    WireNodeId::from_digest(*key.as_bytes())
+/// The source-map id of lowered node `key`: the structural id itself.
+pub(crate) fn wire(key: NodeKey) -> NodeKey {
+    key
 }
-
 /// Select the sole candidate narrow that directly references `scalar`.
 /// The predicate examines the candidate's lowered operation and operand;
 /// enclosing narrows are excluded because they reference another narrow.
@@ -945,17 +943,17 @@ fn unique_direct_narrow(
 ) -> Result<(NodeKey, Origin), KeyFault> {
     let mut matches = candidates.iter().filter(|(candidate, _)| {
         matches!(
-            graph.node(*candidate).map(|node| node.body()),
+            graph.node(candidate.clone()).map(|node| node.body()),
             Some(BodyTerm::Application(ApplicationTerm { operation, arguments, .. }))
                 if operation_role(operation.identity()) == OperationRole::Narrow
-                    && matches!(arguments.as_slice(), [MemberTerm::Leaf(LeafTerm::Reference { target })] if target.0 == scalar)
+                    && matches!(arguments.as_slice(), [MemberTerm::Leaf(LeafTerm::Reference { target })] if target.admitted() == Some(&scalar))
         )
     });
     let (node, origin) = matches.next().ok_or(KeyFault::UnkeyableRequirements)?;
     if matches.next().is_some() {
         return Err(KeyFault::UnkeyableRequirements);
     }
-    Ok((*node, origin.clone()))
+    Ok((node.clone(), origin.clone()))
 }
 
 /// Key each claim of `claims` by the `expression` occurrence of its scalar
@@ -988,11 +986,11 @@ pub(crate) fn key_claims(
     // enclosing form's own occurrence at that location.
     let own_declarations: BTreeSet<(NodeKey, &Location)> = binders
         .iter()
-        .map(|(site, key)| (*key, &site.binder))
+        .map(|(site, key)| (key.clone(), &site.binder))
         .collect();
     let mut at: BTreeMap<&Location, Vec<(NodeKey, Origin)>> = BTreeMap::new();
     for (node, origin, location) in occurrences.iter_role(OccurrenceRole::Expression) {
-        if own_declarations.contains(&(node, location)) {
+        if own_declarations.contains(&(node.clone(), location)) {
             continue;
         }
         at.entry(location).or_default().push((node, origin));
@@ -1014,15 +1012,15 @@ pub(crate) fn key_claims(
         // carries that function; one without is an unkeyable requirement.
         let owner = claim.owner.ok_or_else(unkeyable)?;
         let here = at.get(&site.location).map_or(&[][..], Vec::as_slice);
-        let mut applications = here.iter().filter(|(key, _)| scalar(*key));
+        let mut applications = here.iter().filter(|(key, _)| scalar(key.clone()));
         let (Some((key, origin)), None) = (applications.next(), applications.next()) else {
             return Err(unkeyable());
         };
         let (bound_type, conversion_context) = if matches!(site.bound, SiteBound::Narrowed(_)) {
-            let (narrow, narrow_origin) = unique_direct_narrow(here, *key, graph)?;
+            let (narrow, narrow_origin) = unique_direct_narrow(here, key.clone(), graph)?;
             (
                 graph
-                    .node(narrow)
+                    .node(narrow.clone())
                     .and_then(|node| node.semantic_type())
                     .ok_or_else(unkeyable)?,
                 Some(OccurrenceKey::new(wire(narrow), narrow_origin)),
@@ -1030,7 +1028,7 @@ pub(crate) fn key_claims(
         } else {
             (
                 graph
-                    .node(*key)
+                    .node(key.clone())
                     .and_then(|node| node.semantic_type())
                     .ok_or_else(unkeyable)?,
                 None,
@@ -1039,7 +1037,9 @@ pub(crate) fn key_claims(
         let mut path_condition = Vec::with_capacity(site.path_condition.len());
         for guard in &site.path_condition {
             let here = at.get(&guard.location).map_or(&[][..], Vec::as_slice);
-            let (node, origin) = outermost(here, graph).ok_or_else(unkeyable)?;
+            let (node, origin) = outermost(here, graph)
+                .map_err(|_| unkeyable())?
+                .ok_or_else(unkeyable)?;
             path_condition.push(PathGuard {
                 occurrence: OccurrenceKey::new(wire(node), origin),
                 holds: guard.holds,
@@ -1050,7 +1050,7 @@ pub(crate) fn key_claims(
             let node = binders.get(&root).ok_or_else(unkeyable)?;
             domains.insert(
                 DomainKey::Node {
-                    node: wire(*node),
+                    node: wire(node.clone()),
                     path,
                 },
                 kind,
@@ -1058,7 +1058,7 @@ pub(crate) fn key_claims(
         }
         let mut extent_roots = BTreeSet::new();
         for root in &claim.roots {
-            extent_roots.insert(wire(*binders.get(root).ok_or_else(unkeyable)?));
+            extent_roots.insert(wire(binders.get(root).ok_or_else(unkeyable)?.clone()));
         }
         let record = RequirementRecord {
             requirements: Requirements::new(
@@ -1076,7 +1076,10 @@ pub(crate) fn key_claims(
             extent_roots,
         };
         if records
-            .insert(OccurrenceKey::new(wire(*key), origin.clone()), record)
+            .insert(
+                OccurrenceKey::new(wire(key.clone()), origin.clone()),
+                record,
+            )
             .is_some()
         {
             return Err(unkeyable());
@@ -1087,8 +1090,8 @@ pub(crate) fn key_claims(
             continue;
         }
         for (key, origin) in here {
-            if scalar(*key)
-                && !records.contains_key(&OccurrenceKey::new(wire(*key), origin.clone()))
+            if scalar(key.clone())
+                && !records.contains_key(&OccurrenceKey::new(wire(key.clone()), origin.clone()))
             {
                 return Err(unkeyable());
             }
@@ -1100,23 +1103,34 @@ pub(crate) fn key_claims(
 /// The one occurrence in `here` whose node no other node in `here` names:
 /// the node lowered from the checked node at that location, when a node
 /// lowered with it (a `deref` under its `record.project`) shares it.
-fn outermost(here: &[(NodeKey, Origin)], graph: &SemanticGraph) -> Option<(NodeKey, Origin)> {
+fn outermost(
+    here: &[(NodeKey, Origin)],
+    graph: &SemanticGraph,
+) -> Result<Option<(NodeKey, Origin)>, NodeKeyRefusal> {
     let names = |outer: NodeKey, inner: NodeKey| {
         let mut named = false;
         if let Some(node) = graph.node(outer) {
-            node.body().for_each_key(&mut |key| named |= key == inner);
+            node.body().for_each_key(&mut |key| named |= key == inner)?;
         }
-        named
+        Ok::<_, NodeKeyRefusal>(named)
     };
-    let mut outer = here.iter().filter(|(inner, _)| {
-        !here
-            .iter()
-            .any(|(other, _)| other != inner && names(*other, *inner))
-    });
-    match (outer.next(), outer.next()) {
-        (Some(found), None) => Some(found.clone()),
-        _ => None,
+    let mut outer = None;
+    for (inner, origin) in here {
+        let mut named = false;
+        for (other, _) in here {
+            if other != inner && names(other.clone(), inner.clone())? {
+                named = true;
+                break;
+            }
+        }
+        if !named {
+            if outer.is_some() {
+                return Ok(None);
+            }
+            outer = Some((inner.clone(), origin.clone()));
+        }
     }
+    Ok(outer)
 }
 
 #[cfg(test)]

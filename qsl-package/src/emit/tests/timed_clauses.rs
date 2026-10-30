@@ -60,10 +60,10 @@ fn emitted(document: &[u8], body: &str) -> (String, Value) {
 
 /// The node of `wire` that `reference` names.
 fn target<'w>(wire: &'w Value, reference: &Value) -> &'w Value {
-    let digest = &reference["target"]["digest"];
+    let key = &reference["target"];
     nodes(wire)
         .iter()
-        .find(|node| node["node_id"]["digest"] == *digest)
+        .find(|node| &node["node_id"] == key)
         .unwrap_or_else(|| panic!("{reference} names a node"))
 }
 
@@ -133,14 +133,23 @@ fn assert_self(wire: &Value, reference: &Value) {
 /// The emitted package's timed aggregates are in QSpec FR-322's declared
 /// order.
 fn assert_declared_order(wire: &Value) {
-    let nodes: Vec<quire_contract_model::CheckedSemanticNodeV2> =
-        serde_json::from_value(wire["semantic_graph"]["nodes"].clone()).expect("nodes");
-    let source_map: Vec<quire_contract_model::CheckedSourceMapEntry> =
-        serde_json::from_value(wire["source_map"].clone()).expect("source map");
+    let (nodes, source_map) = admitted_graph(wire);
     assert_eq!(
         crate::emit::timed_order::first_out_of_order(&nodes, &source_map),
         Ok(None)
     );
+}
+
+/// The typed nodes and source map the last emission on this thread built.
+fn admitted_graph(
+    _wire: &Value,
+) -> (
+    Vec<quire_contract_model::CheckedSemanticNodeV2>,
+    Vec<quire_contract_model::CheckedSourceMapEntry>,
+) {
+    crate::emit::TIMED_GRAPH
+        .with(|held| held.borrow().clone())
+        .expect("the emission built a timed graph")
 }
 
 /// FR-230-AC-54, QSpec FR-322-AC-261, FR-322-AC-263 and
@@ -631,8 +640,11 @@ fn a_presence_reads_the_place_template_at_its_owner() {
     let places = timed(&wire, "clock_place");
     assert_eq!(places.len(), 2);
     for place in &places {
-        let node: quire_contract_model::CheckedSemanticNodeV2 =
-            serde_json::from_value((*place).clone()).expect("a node");
+        let node = admitted_graph(&wire)
+            .0
+            .into_iter()
+            .find(|node| serde_json::to_value(&node.node_id).unwrap() == place["node_id"])
+            .expect("a node");
         assert_eq!(
             crate::emit::timed_model_node_id(&node).expect("a key"),
             node.node_id,
@@ -774,12 +786,15 @@ fn a_point_qualified_clock_clause_refuses_at_the_clause() {
     };
     let refusals = PackageDeclarations::assemble_with_execution_points_and_cancel(
         raw,
+        "pkg".to_owned(),
         built,
         models,
         Vec::new(),
         Default::default(),
-        &quire_exact::Cancel::new(),
-        BTreeMap::from([("Late".to_owned(), point)]),
+        qsl_semantics::check::AssemblyRun {
+            cancel: &quire_exact::Cancel::new(),
+            execution_points: BTreeMap::from([("Late".to_owned(), point)]),
+        },
     )
     .expect("the unit assembles")
     .check(CheckingLimits::default())
@@ -849,8 +864,11 @@ fn a_reset_by_selection_binds_its_slot() {
     let binder = target(&wire, binder);
     assert_eq!(binder["semantic_form"], "parameter");
     assert_eq!(literal(&binder["body"], "name"), "e");
-    let integer = qsl_semantics::check::builtin_integer_type_key().to_string();
-    assert_eq!(binder["semantic_type"]["digest"], integer);
+    let integer = qsl_semantics::check::builtin_integer_type_key("pkg").unwrap();
+    assert_eq!(
+        qsl_foundation::node_wire::node_key_from_json(&binder["semantic_type"]).unwrap(),
+        integer
+    );
     assert_true(&wire, target(&wire, member(&reset["body"], "condition")));
     assert_eq!(
         located(&wire, reset, &unit),

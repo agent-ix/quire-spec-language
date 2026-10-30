@@ -823,8 +823,8 @@ pub fn kernel_refusal_record(
             ])
         }
         Refusal::ForeignReference { required, supplied } => BTreeMap::from([
-            ("required", required.to_string()),
-            ("supplied", supplied.to_string()),
+            ("required", required.root_type().to_string()),
+            ("supplied", supplied.root_type().to_string()),
         ]),
         Refusal::InexactDecimal { target } => BTreeMap::from([(
             "expected",

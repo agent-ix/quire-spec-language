@@ -209,7 +209,7 @@ impl super::s6a::ReferenceEvaluation for ValueFunctionFamily {
         let function = env
             .package
             .graph()
-            .function_by_identity(*checked)
+            .function_by_identity(checked.clone())
             .ok_or_else(|| InternalFault::new("S6a", "checked-identity-not-resolved-by-package"))?;
         // A second `evaluate` call on the same `env` finds its arguments
         // already taken: a broken S6a invariant (FR-090-AC-3), with its own
@@ -357,7 +357,11 @@ mod family_contract_tests {
         // The admitted declaration is declared once and has an identity.
         PackageDeclarations {
             functions: vec![form],
-            ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
+            ..PackageDeclarations::new(
+                fixture_source(),
+                "fixture".to_owned(),
+                qsl_foundation::IdentityLimits::default(),
+            )
         }
         .check(CheckingLimits::default())
         .expect("f checks")
@@ -426,6 +430,7 @@ mod family_contract_tests {
             functions: vec![declaration("f", Expression::boolean(true))],
             ..PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
             )
         }
@@ -484,6 +489,7 @@ mod family_contract_tests {
             functions: vec![declaration("f", Expression::boolean(true))],
             ..PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
             )
         }
@@ -564,6 +570,7 @@ mod family_contract_tests {
             ],
             ..PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
             )
         }
@@ -653,6 +660,7 @@ mod family_contract_tests {
             ],
             ..PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
             )
         }
@@ -683,47 +691,6 @@ mod family_contract_tests {
         assert!(
             env.location.is_some(),
             "the nested call's denial is located in the body"
-        );
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use ix_trace_rs::trace;
-    use qsl_forms::Expression;
-    use qsl_foundation::source::provenance::RawSourceRef;
-    use qsl_semantics::check::{admitted_source, declaration, fixture_source, PackageDeclarations};
-    use quire_semantic_value::checking::CheckingLimits;
-
-    /// `f`'s checked identity: its FR-092 function node key, declared by
-    /// `owner`'s unit.
-    fn checked_identity(source: RawSourceRef) -> NodeKey {
-        PackageDeclarations {
-            functions: vec![declaration("f", Expression::boolean(true))],
-            ..PackageDeclarations::new(source, qsl_foundation::IdentityLimits::default())
-        }
-        .check(CheckingLimits::default())
-        .expect("one boolean-literal function checks")
-        .function_identity("f")
-        .expect("f is declared")
-    }
-
-    /// ADR-013 O-11/FR-088-AC-6: a [`QualifiedName`] is a declared preimage
-    /// component, never an identity in its own right. Two entries that
-    /// share an equal qualified name but were declared by different owners
-    /// (FR-092) carry different node ids.
-    #[trace("TC-258", "FR-088-AC-6")]
-    #[test]
-    fn equal_qualified_names_do_not_collapse_distinct_declarations() {
-        let first = checked_identity(fixture_source());
-        let second = checked_identity(admitted_source(
-            qsl_foundation::SourceIdentity::new("a", "w", "git", "1"),
-            b"",
-        ));
-        assert_ne!(
-            first, second,
-            "distinct declarations must not share a node id"
         );
     }
 }

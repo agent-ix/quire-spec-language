@@ -44,11 +44,10 @@ qsl-semantics = { path = "../qsl-semantics" }
 # K: the I2 reader keys the v2 source map by the kernel occurrence `Origin`
 # (ADR-013 O-07).
 quire-exact = { workspace = true, optional = true }
-# The v2 wire vocabulary: the identity-preimage types the emitter builds and
-# IR's `checked_package` v2 reader the I2 byte reader delegates to.
-quire-contract-model = { git = "https://github.com/agent-ix/quire-contract-ir", branch = "main", optional = true }
-# ADR-013 §2 (ADR-013:113): the one RFC 8785 implementation; the
-# `package_id` preimage encodes through it.
+# The v2 structural wire vocabulary and the I2 byte reader's IR model.
+quire-contract-model = { git = "https://github.com/agent-ix/quire-contract-ir", rev = "0fa7cfdcd067eae9a8f0f2f7c8f48b081ceda221", optional = true }
+# ADR-013 §2 (ADR-013:113): the one RFC 8785 implementation for
+# canonical checked package bytes.
 quire-canonical = { workspace = true, optional = true }
 # ADR-011 §6.1 layer C: the checked terms the evaluator reads (FR-400).
 quire-checked = { workspace = true }

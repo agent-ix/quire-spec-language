@@ -321,6 +321,7 @@ impl Fixture {
         .expect("the operation clauses parse");
         let graph = PackageDeclarations::assemble(
             parsed.source().reference().clone(),
+            "package".to_owned(),
             built,
             models,
             Vec::new(),
@@ -556,7 +557,6 @@ impl Fixture {
         replay_unit(
             &ReplayUnit {
                 identity: "por",
-                path: "por.native",
                 text: self.text.as_bytes(),
                 document: &self.document,
                 snapshots: &self.snapshots,

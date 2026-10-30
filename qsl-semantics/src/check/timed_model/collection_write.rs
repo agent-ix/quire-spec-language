@@ -113,14 +113,16 @@ pub(super) fn collection_field(
     located: &Located<'_>,
     id: ExprId,
     clocks: &Clocks<'_>,
-    context: EffectiveId,
+    context: &EffectiveId,
 ) -> Option<(String, Vec<PlaceStep>)> {
     let path = self_path(located.form, id)?;
     let [PlaceStep::Field(field)] = path.as_slice() else {
         return None;
     };
     clocks.fields.iter().find_map(|clock| {
-        if !clocks.model.conforms(context, clock.owner) || !clock.path.starts_with(&path) {
+        if !clocks.model.conforms(context.clone(), clock.owner.clone())
+            || !clock.path.starts_with(&path)
+        {
             return None;
         }
         match clock.path.get(path.len()) {

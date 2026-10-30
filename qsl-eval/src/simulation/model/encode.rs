@@ -9,12 +9,16 @@
 //! checked package bounds, so building and writing it recurse once per
 //! declared nesting level and never per element.
 
+use qsl_foundation::node_wire::{node_key_from_json, node_key_to_json};
 use quire_canonical::{Encode, Error, Limits, Sink, Writer};
-use quire_exact::{CollectionKind, FieldValue, IeeeWidth, ObjectReference, Value};
+use quire_exact::{
+    CollectionKind, EffectiveId, FieldValue, IeeeWidth, NodeKey, ObjectReference,
+    OriginalDeclarationKey, UniverseId, Value,
+};
 use quire_semantic_value::declaration::{CompositeDeclaration, CompositeShape, TypeEnvironment};
+use serde_json::Value as Json;
 
 use qsl_semantics::check::VariantTypeDeclaration;
-use qsl_semantics::model::key::effective_id_from_digest;
 use qsl_semantics::model::state::{ModelState, StateField, StateModel};
 use quire_checked::key::DeclarationKey;
 
@@ -25,6 +29,12 @@ pub(crate) enum Enc {
     Bool(bool),
     Str(String),
     Array(Vec<Enc>),
+    /// A structural node identity, written as its `{package, path, ordinal}`
+    /// object.
+    Node(NodeKey),
+    /// A structural effective declaration identity, written as FR-201's
+    /// recursive `{owner_effective_type, original}` record.
+    Effective(EffectiveId),
     /// Members in any order: the writer sorts them (RFC 8785 section 3.2.3).
     Object(Vec<(&'static str, Enc)>),
     /// A value FR-181's typed canonical form does not yet cover here; it has
@@ -45,6 +55,12 @@ impl Encode for Enc {
                 }
                 writer.end_array()
             }
+            Self::Node(key) => {
+                let json = node_key_to_json(key)
+                    .map_err(|_| Error::Serialize("a node identity nested too deeply".into()))?;
+                write_json(writer, &json)
+            }
+            Self::Effective(id) => write_effective(writer, id),
             Self::Object(members) => {
                 writer.begin_object()?;
                 for (name, value) in members {
@@ -91,15 +107,60 @@ impl Encode for ModelKey {
     }
 }
 
-/// Lowercase hex of `bytes`.
-pub(crate) fn hex(bytes: &[u8]) -> String {
-    const DIGITS: &[u8; 16] = b"0123456789abcdef";
-    let mut text = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        text.push(char::from(DIGITS[usize::from(byte >> 4)]));
-        text.push(char::from(DIGITS[usize::from(byte & 0x0f)]));
+/// Write the node identity object `json` (a [`node_key_to_json`] value,
+/// nested no deeper than the codec's bound).
+fn write_json<S: Sink + ?Sized>(writer: &mut Writer<'_, S>, json: &Json) -> Result<(), Error> {
+    match json {
+        Json::Null => writer.null(),
+        Json::Bool(value) => writer.bool(*value),
+        Json::Number(number) => {
+            let value = number
+                .as_u64()
+                .ok_or_else(|| Error::Serialize("a node ordinal is an unsigned integer".into()))?;
+            writer.integer(i128::from(value))
+        }
+        Json::String(text) => writer.string(text),
+        Json::Array(items) => {
+            writer.begin_array()?;
+            for item in items {
+                write_json(writer, item)?;
+            }
+            writer.end_array()
+        }
+        Json::Object(members) => {
+            writer.begin_object()?;
+            for (name, value) in members {
+                writer.name(name)?;
+                write_json(writer, value)?;
+            }
+            writer.end_object()
+        }
     }
-    text
+}
+
+/// Write `id` as FR-201's recursive record, outermost owner last, one loop
+/// iteration per level: the writer's own nesting is the only depth.
+fn write_effective<S: Sink + ?Sized>(
+    writer: &mut Writer<'_, S>,
+    id: &EffectiveId,
+) -> Result<(), Error> {
+    let chain = id.owner_chain();
+    for original in chain.iter().rev() {
+        writer.begin_object()?;
+        writer.name("original")?;
+        writer.begin_object()?;
+        writer.name("node")?;
+        writer.string(original.node())?;
+        writer.name("package")?;
+        writer.string(original.package())?;
+        writer.end_object()?;
+        writer.name("owner_effective_type")?;
+    }
+    writer.null()?;
+    for _ in chain {
+        writer.end_object()?;
+    }
+    Ok(())
 }
 
 /// A declaration's identity text: the RFC 8785 text of its
@@ -123,34 +184,113 @@ pub(crate) fn reference_enc(reference: &ObjectReference) -> Enc {
     Enc::tagged(
         "reference",
         vec![
-            ("universe", Enc::text(hex(reference.universe().as_bytes()))),
+            (
+                "universe",
+                Enc::Node(reference.universe().root_type().clone()),
+            ),
             (
                 "object_type",
-                Enc::text(hex(reference.object_type().as_bytes())),
+                Enc::Effective(reference.object_type().clone()),
             ),
-            (
-                "identity",
-                Enc::text(hex(reference.object().as_str().as_bytes())),
-            ),
+            ("identity", Enc::text(reference.object().as_str())),
         ],
     )
 }
 
-/// The reference [`reference_enc`] wrote as `text`: its canonical text names
-/// the members in sorted order, so the text is matched member by member.
+/// FR-201's unit identity: `{declared: <NodeId>}` for a declared unit, and
+/// `{terms: [{unit: <root-unit NodeId>, exponent: <canonical decimal>}, ...]}`
+/// for a compound one, its terms in order.
+fn unit_enc(unit: &quire_exact::UnitId) -> Enc {
+    if let Some(node) = unit.declared_key() {
+        return Enc::Object(vec![("declared", Enc::Node(node.clone()))]);
+    }
+    let terms = unit.compound_terms().unwrap_or_default();
+    Enc::Object(vec![(
+        "terms",
+        Enc::Array(
+            terms
+                .iter()
+                .map(|(node, exponent)| {
+                    Enc::Object(vec![
+                        ("unit", Enc::Node(node.clone())),
+                        ("exponent", Enc::text(exponent.to_string())),
+                    ])
+                })
+                .collect(),
+        ),
+    )])
+}
+
+/// The first JSON value of `text` and the text after it.
+fn take_json(text: &str) -> Option<(Json, &str)> {
+    let mut values = serde_json::Deserializer::from_str(text).into_iter::<Json>();
+    let value = values.next()?.ok()?;
+    let rest = &text[values.byte_offset()..];
+    Some((value, rest))
+}
+
+/// The effective identity [`write_effective`] wrote at the start of `text`,
+/// and the text after it. Reads one record level per loop iteration and
+/// refuses any other shape.
+fn take_effective(text: &str) -> Option<(EffectiveId, &str)> {
+    let mut rest = text;
+    let mut originals = Vec::new();
+    loop {
+        rest = rest.strip_prefix(r#"{"original":"#)?;
+        let (original, after) = take_json(rest)?;
+        let members = original.as_object()?;
+        if members.len() != 2 {
+            return None;
+        }
+        originals.push(OriginalDeclarationKey::new(
+            members.get("package")?.as_str()?,
+            members.get("node")?.as_str()?,
+        ));
+        rest = after.strip_prefix(r#","owner_effective_type":"#)?;
+        if let Some(after_null) = rest.strip_prefix("null") {
+            rest = after_null;
+            break;
+        }
+    }
+    for _ in &originals {
+        rest = rest.strip_prefix('}')?;
+    }
+    let mut id = None;
+    for original in originals.into_iter().rev() {
+        id = Some(EffectiveId::new(id, original));
+    }
+    Some((id?, rest))
+}
+
+/// The reference [`reference_enc`] wrote at the start of `text`, and the
+/// text after it: its canonical text names the members in sorted order, so
+/// the text is matched member by member.
+fn take_reference(text: &str) -> Option<(ObjectReference, &str)> {
+    let rest = text.strip_prefix(r#"{"identity":"#)?;
+    let (identity, rest) = take_json(rest)?;
+    let rest = rest.strip_prefix(r#","object_type":"#)?;
+    let (object_type, rest) = take_effective(rest)?;
+    let rest = rest.strip_prefix(r#","type":"reference","universe":"#)?;
+    let (universe, rest) = take_json(rest)?;
+    let rest = rest.strip_prefix('}')?;
+    Some((
+        ObjectReference::new(
+            UniverseId::new(node_key_from_json(&universe).ok()?),
+            object_type,
+            quire_exact::ObjectId::new(identity.as_str()?).ok()?,
+        ),
+        rest,
+    ))
+}
+
+/// The reference [`reference_enc`] wrote as `text`.
 /// `#[string_edge]`: reads the canonical text this module's own encoder wrote.
 #[ix_trace_rs::string_edge]
 pub(crate) fn parse_reference(text: &str) -> Option<ObjectReference> {
-    let rest = text.strip_prefix(r#"{"identity":""#)?;
-    let (identity, rest) = rest.split_once(r#"","object_type":""#)?;
-    let (object_type, rest) = rest.split_once(r#"","type":"reference","universe":""#)?;
-    let universe = rest.strip_suffix(r#""}"#)?;
-    let identity = String::from_utf8(unhex(identity)?).ok()?;
-    Some(ObjectReference::new(
-        quire_exact::UniverseId::from_digest(unhex32(universe)?),
-        effective_id_from_digest(unhex32(object_type)?),
-        quire_exact::ObjectId::new(identity).ok()?,
-    ))
+    match take_reference(text)? {
+        (reference, "") => Some(reference),
+        _ => None,
+    }
 }
 
 /// A timed transition's `clock_place` argument split at the object it
@@ -164,9 +304,8 @@ pub(super) fn split_clock_place(text: &str) -> Option<(&str, ObjectReference, &s
     }
     let marker = r#","object":"#;
     let start = text.find(marker)? + marker.len();
-    let length = text[start..].find(r#""}"#)? + 2;
-    let reference = parse_reference(&text[start..start + length])?;
-    Some((&text[..start], reference, &text[start + length..]))
+    let (reference, after) = take_reference(&text[start..])?;
+    Some((&text[..start], reference, after))
 }
 
 /// The reference a parameter's canonical text names: the text of a reference,
@@ -185,21 +324,6 @@ pub(super) fn parse_optional_reference(text: &str) -> Option<Option<ObjectRefere
         };
     }
     parse_reference(text).map(Some)
-}
-
-fn unhex(text: &str) -> Option<Vec<u8>> {
-    let lower_hex = |byte: u8| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte);
-    if !text.len().is_multiple_of(2) || !text.bytes().all(lower_hex) {
-        return None;
-    }
-    (0..text.len())
-        .step_by(2)
-        .map(|at| u8::from_str_radix(&text[at..at + 2], 16).ok())
-        .collect()
-}
-
-fn unhex32(text: &str) -> Option<[u8; 32]> {
-    unhex(text)?.try_into().ok()
 }
 
 /// The declarations a value's typed canonical form reads: the package's
@@ -267,7 +391,7 @@ impl<'t> Typing<'t> {
         };
         let Some(CompositeShape::Record(fields)) = self
             .types?
-            .composite(composite.declaration())
+            .composite(composite.declaration().clone())
             .map(CompositeDeclaration::shape)
         else {
             return None;
@@ -313,9 +437,9 @@ fn composite_enc(
     types: &TypeEnvironment,
     slot_enc: &dyn Fn(&FieldValue) -> Enc,
 ) -> Enc {
-    let name = Enc::text(hex(composite.declaration().as_bytes()));
+    let name = Enc::Node(composite.declaration().clone());
     match types
-        .composite(composite.declaration())
+        .composite(composite.declaration().clone())
         .map(CompositeDeclaration::shape)
     {
         Some(CompositeShape::Record(fields)) if fields.len() == composite.slots().len() => {
@@ -385,7 +509,7 @@ pub(super) fn value_enc_with(
                         "denominator",
                         Enc::text(magnitude.denominator().to_string()),
                     ),
-                    ("unit", Enc::text(hex(quantity.unit().as_bytes()))),
+                    ("unit", unit_enc(quantity.unit())),
                 ],
             )
         }
@@ -450,7 +574,7 @@ pub(super) fn value_enc_with(
                 declared
                     .cases()
                     .iter()
-                    .find(|case| case.variant() == member.variant())
+                    .find(|case| case.variant() == *member.variant())
                     .map(|case| (declared, case))
             })
             .map_or(
@@ -459,7 +583,7 @@ pub(super) fn value_enc_with(
                     Enc::tagged(
                         "enum",
                         vec![
-                            ("name", Enc::text(hex(declared.node().as_bytes()))),
+                            ("name", Enc::Node(declared.node().clone())),
                             ("member", Enc::text(case.name())),
                         ],
                     )
@@ -476,8 +600,8 @@ pub(super) fn value_enc_with(
         Value::Union(union) => Enc::tagged(
             "union",
             vec![
-                ("name", Enc::text(hex(union.declaration().as_bytes()))),
-                ("member", Enc::text(union.member().identifier().as_str())),
+                ("name", Enc::Node(union.declaration().clone())),
+                ("member", Enc::text(union.member().identifier())),
                 (
                     "components",
                     Enc::Array(
@@ -761,8 +885,8 @@ pub(super) fn model_key(model: &StateModel, state: &ModelState, typing: Typing<'
 mod tests {
     use ix_trace_rs::trace;
     use quire_exact::{
-        from_admitted, CollectionKind, CollectionType, Integer, NodeKey, Quantity, Rational,
-        Timestamp, UnitId, Uuid, ValueType,
+        from_admitted, CollectionKind, CollectionType, Integer, Quantity, Rational, Timestamp,
+        UnitId, Uuid, ValueType,
     };
 
     use super::*;
@@ -834,29 +958,98 @@ mod tests {
         );
     }
 
+    /// FR-201: a compound unit writes its terms in order, each a root-unit
+    /// node and its canonical decimal exponent.
+    #[test]
+    fn a_compound_unit_encodes_its_terms() {
+        let unit = UnitId::compound(vec![
+            (crate::test_ids::node_key([1]), Integer::from(1_i64)),
+            (crate::test_ids::node_key([2]), Integer::from(-2_i64)),
+        ]);
+        let text = Enc::Object(vec![("unit", unit_enc(&unit))])
+            .canonical_text(Limits::new(1024))
+            .expect("a compound unit encodes");
+        assert_eq!(
+            text,
+            format!(
+                r#"{{"unit":{{"terms":[{{"exponent":"1","unit":{}}},{{"exponent":"-2","unit":{}}}]}}}}"#,
+                node_json(1),
+                node_json(2)
+            )
+        );
+    }
+
+    /// The structural object text of `crate::test_ids::node_key([seed])`.
+    fn node_json(seed: u8) -> String {
+        format!(r#"{{"ordinal":0,"package":"fixture","path":["[{seed}]"]}}"#)
+    }
+
+    /// An effective identity owned through `depth` declarations.
+    fn owned_chain(depth: usize) -> EffectiveId {
+        let mut id = None;
+        for level in 0..=depth {
+            id = Some(EffectiveId::new(
+                id,
+                OriginalDeclarationKey::new("fixture", format!("Level{level}")),
+            ));
+        }
+        id.expect("a chain has a root")
+    }
+
+    /// FR-201: a deep owner chain writes and reads back one loop iteration per
+    /// level, and the reference it travels in round-trips.
+    #[test]
+    fn a_deep_owner_chain_round_trips_through_a_reference() {
+        let reference = ObjectReference::new(
+            crate::test_ids::universe_id([1]),
+            owned_chain(5000),
+            quire_exact::ObjectId::new("object").expect("an object identity"),
+        );
+        let text = reference_enc(&reference)
+            .canonical_text(Limits::new(u64::MAX))
+            .expect("the reference encodes");
+        assert_eq!(parse_reference(&text), Some(reference));
+    }
+
+    /// FR-201: a reference text whose effective identity is malformed has no
+    /// reading.
+    #[test]
+    fn a_malformed_effective_identity_is_refused() {
+        let reference = ObjectReference::new(
+            crate::test_ids::universe_id([1]),
+            owned_chain(2),
+            quire_exact::ObjectId::new("object").expect("an object identity"),
+        );
+        let text = reference_enc(&reference)
+            .canonical_text(Limits::new(1 << 20))
+            .expect("the reference encodes");
+        // One closing brace short, an extra member, and a foreign shape.
+        let short = text.replacen("null}}}", "null}}", 1);
+        assert!(parse_reference(&short).is_none());
+        let extra = text.replacen(r#"{"node":"#, r#"{"extra":1,"node":"#, 1);
+        assert!(parse_reference(&extra).is_none());
+        assert!(parse_reference(r#"{"identity":"o","object_type":7}"#).is_none());
+    }
+
     /// The declarations of FR-120-AC-16's `Tag { sku: Integer, note?:
     /// Boolean }` (node `11…`), `Pair(Boolean, Integer)` (`22…`) and `Shape`
     /// with the nullary member `none` and the member `tagged(Tag)` (`33…`),
     /// and the values `Tag { sku }`, `Pair(true, -3)` and `none`.
     fn declared() -> (TypeEnvironment, impl Fn(i64) -> Value, Value, Value) {
-        use quire_exact::{from_admitted_slots, Identifier, Presence, UnionMember, UnionValue};
+        use quire_exact::{from_admitted_slots, Presence, UnionMember, UnionValue};
         use quire_semantic_value::declaration::{
             CompositeDeclaration, FieldDeclaration, UnionMemberDeclaration,
         };
         let (tag, pair, shape) = (
-            NodeKey::from_digest([0x11; 32]),
-            NodeKey::from_digest([0x22; 32]),
-            NodeKey::from_digest([0x33; 32]),
+            crate::test_ids::node_key([0x11]),
+            crate::test_ids::node_key([0x22]),
+            crate::test_ids::node_key([0x33]),
         );
-        let none = UnionMember::from_admitted(
-            shape,
-            NodeKey::from_digest([0x34; 32]),
-            Identifier::new("none").expect("an identifier"),
-        );
+        let none = UnionMember::from_admitted(shape.clone(), "none").expect("a member name");
         let types = TypeEnvironment::new(
             [
                 CompositeDeclaration::new(
-                    tag,
+                    tag.clone(),
                     "Tag",
                     CompositeShape::Record(vec![
                         FieldDeclaration::new("sku", ValueType::Integer, Presence::Required),
@@ -864,12 +1057,12 @@ mod tests {
                     ]),
                 ),
                 CompositeDeclaration::new(
-                    pair,
+                    pair.clone(),
                     "Pair",
                     CompositeShape::Tuple(vec![ValueType::Boolean, ValueType::Integer]),
                 ),
                 CompositeDeclaration::new(
-                    shape,
+                    shape.clone(),
                     "Shape",
                     CompositeShape::Union(vec![UnionMemberDeclaration::from_verified(
                         none.clone(),
@@ -882,7 +1075,7 @@ mod tests {
         .expect("the declarations admit");
         let tag_value = move |sku: i64| {
             from_admitted_slots(
-                tag,
+                tag.clone(),
                 vec![
                     FieldValue::Present(Value::Integer(Integer::from(sku))),
                     FieldValue::Absent,
@@ -913,22 +1106,22 @@ mod tests {
                 .canonical_text(Limits::new(4096))
                 .expect("the value encodes")
         };
-        let (tag_name, pair_name, shape_name) = ("11".repeat(32), "22".repeat(32), "33".repeat(32));
+        let (tag_name, pair_name, shape_name) = (node_json(0x11), node_json(0x22), node_json(0x33));
         assert_eq!(
             text(&tag(7)),
             format!(
-                r#"{{"fields":[{{"name":"sku","value":{{"type":"integer","value":"7"}}}},{{"name":"note","value":null}}],"name":"{tag_name}","type":"record"}}"#
+                r#"{{"fields":[{{"name":"sku","value":{{"type":"integer","value":"7"}}}},{{"name":"note","value":null}}],"name":{tag_name},"type":"record"}}"#
             )
         );
         assert_eq!(
             text(&pair),
             format!(
-                r#"{{"components":[{{"type":"boolean","value":true}},{{"type":"integer","value":"-3"}}],"name":"{pair_name}","type":"tuple"}}"#
+                r#"{{"components":[{{"type":"boolean","value":true}},{{"type":"integer","value":"-3"}}],"name":{pair_name},"type":"tuple"}}"#
             )
         );
         assert_eq!(
             text(&none),
-            format!(r#"{{"components":[],"member":"none","name":"{shape_name}","type":"union"}}"#)
+            format!(r#"{{"components":[],"member":"none","name":{shape_name},"type":"union"}}"#)
         );
         // Without the declarations a record has no form; a union keeps its.
         assert!(matches!(untyped_value_enc(&tag(7)), Enc::Unencodable(_)));
@@ -944,11 +1137,11 @@ mod tests {
         let typing = Typing::with_variants(&types, &[]);
         let record = |sku: &str| {
             format!(
-                r#"{{"fields":[{{"name":"sku","value":{{"type":"integer","value":"{sku}"}}}},{{"name":"note","value":null}}],"name":"{}","type":"record"}}"#,
-                "11".repeat(32)
+                r#"{{"fields":[{{"name":"sku","value":{{"type":"integer","value":"{sku}"}}}},{{"name":"note","value":null}}],"name":{},"type":"record"}}"#,
+                node_json(0x11)
             )
         };
-        let tag_type = ValueType::Composite(NodeKey::from_digest([0x11; 32]));
+        let tag_type = ValueType::Composite(crate::test_ids::node_key([0x11]));
         let option = quire_exact::OptionValue::from_admitted(tag_type.clone(), Some(tag(7)));
         assert_eq!(
             value_enc(&option, typing)
@@ -980,7 +1173,7 @@ mod tests {
         assert!(values_equal(&set, &set.clone()));
         let member = |rank| {
             Value::Enum(quire_exact::EnumMember::new(
-                quire_exact::VariantId::from_digest([0xfd; 32]),
+                crate::test_ids::variant_id([0xfd]),
                 rank,
             ))
         };
@@ -993,7 +1186,7 @@ mod tests {
     #[trace("TC-1195", "FR-120-AC-16")]
     #[test]
     fn a_quantity_encodes_its_rational_magnitude_and_unit() {
-        let unit = UnitId::declared(NodeKey::from_digest([0xab; 32]));
+        let unit = UnitId::declared(crate::test_ids::node_key([0xab]));
         let quantity = Value::Quantity(Quantity::new(
             Rational::new(Integer::from(3_i64), Integer::from(2_i64)).expect("nonzero"),
             unit,
@@ -1004,8 +1197,8 @@ mod tests {
         assert_eq!(
             text,
             format!(
-                r#"{{"denominator":"2","numerator":"3","type":"rational","unit":"{}"}}"#,
-                "ab".repeat(32)
+                r#"{{"denominator":"2","numerator":"3","type":"rational","unit":{{"declared":{}}}}}"#,
+                node_json(0xab)
             )
         );
     }

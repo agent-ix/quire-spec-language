@@ -9,11 +9,7 @@ fn text(max: u64, profile: TextProfile) -> ValueType {
 }
 
 fn handle(label: &str) -> NodeKey {
-    let mut digest = [0_u8; 32];
-    for (slot, byte) in digest.iter_mut().zip(label.bytes()) {
-        *slot = byte;
-    }
-    NodeKey::from_digest(digest)
+    fixture_key(label)
 }
 
 fn record(name: &str, fields: Vec<FieldDeclaration>) -> CompositeDeclaration {
@@ -105,7 +101,11 @@ fn package(
     PackageDeclarations {
         types: TypeEnvironment::new(records, []).expect("FR-143 admits the records"),
         functions,
-        ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
+        ..PackageDeclarations::new(
+            fixture_source(),
+            "fixture",
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
 }
 
@@ -605,15 +605,13 @@ fn an_in_group_type_is_its_member_in_every_declaration_order() {
                     && preimage(node)["declaration"]["qualified_name"] == json!(["Node"])
             })
             .expect("the graph holds record Node");
-        let member = preimage(node_record);
+        let node_key = node_record.key().to_string();
         let options = graph
             .nodes()
             .filter(|node| {
-                let held = preimage(node);
                 node.semantic_form() == "option"
-                    && held["recursion"]["group"] == member["recursion"]["group"]
-                    && held["body"]["members"][0]
-                        == json!({"ordinal": member["recursion"]["ordinal"], "term": "group_reference"})
+                    && node.recursion().is_some()
+                    && preimage(node)["body"]["members"][0]["target"]["digest"] == json!(node_key)
             })
             .count();
         assert_eq!(options, 1, "exactly one Option<Node> option node");

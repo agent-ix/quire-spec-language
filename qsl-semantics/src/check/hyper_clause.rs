@@ -27,10 +27,9 @@ use qsl_forms::{
 };
 use qsl_foundation::bound::{DomainKey, DomainKind};
 use qsl_foundation::diagnostic::{Code, StageFailure, Staged};
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::Span;
-use quire_exact::{EffectiveId, Identifier, ValueType};
+use quire_exact::{EffectiveId, Identifier, NodeKey, ValueType};
 use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::fairness::{FairnessConstraint, FairnessOperation};
 use quire_semantic_value::location::{Location, Origin};
@@ -254,7 +253,7 @@ impl StepRead {
         match self {
             Self::Operation { .. } => Some(ValueType::String),
             Self::Receiver { object, .. } => Some(ValueType::Option(std::sync::Arc::new(
-                ValueType::Reference(*object),
+                ValueType::Reference(object.clone()),
             ))),
             Self::Argument(argument) => Some(argument.read_type()),
             Self::Stutter => None,
@@ -435,10 +434,9 @@ pub struct CheckedHyperClause {
     /// each member of its fairness set, in fairness-set order.
     fairness_spans: Vec<Vec<Span>>,
     /// The `claim` occurrence of the clause's `hyperproperty` node, set when
-    /// the package is assembled (FR-488 "Outputs").
-    occurrence: OccurrenceKey,
-    /// Whether a package assembled the clause at [`Self::occurrence`].
-    assembled: bool,
+    /// the package is assembled (FR-488 "Outputs"); `None` for a clause no
+    /// package assembled.
+    occurrence: Option<OccurrenceKey>,
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -592,24 +590,16 @@ impl CheckedHyperClause {
     /// The `claim` occurrence `[node, "claim", ordinal]` (ADR-013 O-07) of
     /// the clause's `hyperproperty` node: the `clause` member of FR-315's
     /// `HyperProductIdentity`. The emitter assigns it when the package is
-    /// assembled, so a clause that was checked and not assembled has none
-    /// ([`Self::assembled_occurrence`]) and this returns the zero
-    /// occurrence, which names no node.
+    /// assembled, so a clause that was checked and not assembled has none.
     /// A consumer reads clauses from `CheckedGraph::hyper_clauses()`, which
     /// are all assembled, never from `HyperTraceFamily::check`.
-    pub fn occurrence(&self) -> &OccurrenceKey {
-        &self.occurrence
-    }
-
-    /// [`Self::occurrence`], or `None` for a clause no package assembled.
     pub fn assembled_occurrence(&self) -> Option<&OccurrenceKey> {
-        self.assembled.then_some(&self.occurrence)
+        self.occurrence.as_ref()
     }
 
     /// The same clause, assembled into a package at `occurrence`.
     pub(crate) fn assembled_at(mut self, occurrence: OccurrenceKey) -> Self {
-        self.occurrence = occurrence;
-        self.assembled = true;
+        self.occurrence = Some(occurrence);
         self
     }
 
@@ -651,15 +641,6 @@ pub enum MatchPart {
     Universal,
     /// `mu_E`: the conjuncts that read an existential variable.
     Existential,
-}
-
-/// The occurrence of a clause no package assembled: node zero, `claim`
-/// ordinal zero. No package holds a node with the zero id.
-fn unassembled() -> OccurrenceKey {
-    OccurrenceKey::new(
-        WireNodeId::from_digest([0; 32]),
-        quire_exact::Origin::new(quire_exact::Role::new("claim"), 0),
-    )
 }
 
 /// A `relation` over model executions, checked (FR-172 "Outputs").
@@ -708,7 +689,7 @@ impl OperationContractClaim {
     ///
     /// An internal fault when `roots` has fewer nodes than the claim has
     /// roots.
-    pub fn requirements(&self, roots: &[WireNodeId]) -> Result<Requirements, InternalFault> {
+    pub fn requirements(&self, roots: &[NodeKey]) -> Result<Requirements, InternalFault> {
         let mut domains = BTreeMap::new();
         for ((index, path), kind) in &self.domains {
             let node = roots
@@ -716,7 +697,7 @@ impl OperationContractClaim {
                 .ok_or_else(|| InternalFault::new(STAGE, "root-node-keyed"))?;
             domains.insert(
                 DomainKey::Node {
-                    node: *node,
+                    node: node.clone(),
                     path: path.clone(),
                 },
                 *kind,
@@ -803,7 +784,7 @@ impl CheckedModelRelation {
 
     /// The step-relation node key after S4 assembly.
     pub fn identity(&self) -> Option<quire_exact::NodeKey> {
-        self.identity
+        self.identity.clone()
     }
 
     /// The node's `claim` occurrence after S4 assembly.
@@ -1271,7 +1252,7 @@ fn check_behaviours<'a>(
     let atom_roots = || -> BTreeMap<&str, Root> {
         parameters
             .iter()
-            .map(|(parameter, object)| (parameter.name.as_str(), Root::Object(*object)))
+            .map(|(parameter, object)| (parameter.name.as_str(), Root::Object(object.clone())))
             .collect()
     };
     // A condition is lowered only when the clause's quantifiers and object
@@ -1300,7 +1281,13 @@ fn check_behaviours<'a>(
             .collect::<Vec<_>>(),
         &parameters
             .iter()
-            .map(|(parameter, object)| (parameter.name.as_str(), parameter.alias.as_str(), *object))
+            .map(|(parameter, object)| {
+                (
+                    parameter.name.as_str(),
+                    parameter.alias.as_str(),
+                    object.clone(),
+                )
+            })
             .collect::<Vec<_>>(),
     );
     let first_trace = |parameter: &str| {
@@ -1481,11 +1468,13 @@ fn check_behaviours<'a>(
         _ => CopyGroup::default(),
     };
 
-    let parameter_objects: Vec<EffectiveId> =
-        parameters.iter().map(|(_, object)| *object).collect();
+    let parameter_objects: Vec<EffectiveId> = parameters
+        .iter()
+        .map(|(_, object)| object.clone())
+        .collect();
     let roots: Vec<ValueType> = parameters
         .iter()
-        .map(|(_, object)| ValueType::Reference(*object))
+        .map(|(_, object)| ValueType::Reference(object.clone()))
         .collect();
     let root_refs: Vec<&ValueType> = roots.iter().collect();
     let parameter_domains = classify_domains(&root_refs, scope.types(), temporal.position_limit)
@@ -1535,8 +1524,7 @@ fn check_behaviours<'a>(
         atoms,
         parameter_objects,
         fairness_spans,
-        occurrence: unassembled(),
-        assembled: false,
+        occurrence: None,
     })
 }
 
@@ -1751,7 +1739,7 @@ fn checked_parameters(
             }));
             continue;
         };
-        match population_of(declarations.models, object, scope.types()) {
+        match population_of(declarations.models, object.clone(), scope.types()) {
             Ok(Some(population)) => checked.push((
                 ObjectParameter {
                     name,
@@ -2415,8 +2403,8 @@ fn receiver_object(declarations: &HyperDeclarations<'_>, alias: &str) -> Option<
             declaring.push(owner);
         }
     }
-    match declaring[..] {
-        [only] => Some(only),
+    match declaring.as_slice() {
+        [only] => Some(only.clone()),
         _ => None,
     }
 }
@@ -3337,6 +3325,7 @@ pub fn check_hyper_clauses(
             scope: &scope,
             selections: &package.temporal_selections,
             source: &package.source,
+            package_name: &package.package_name,
             embedding: None,
             position_limit: 10_000,
             models: &package.models,

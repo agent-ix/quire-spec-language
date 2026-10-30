@@ -275,8 +275,9 @@ pub fn select_contract(
         Some(
             graph
                 .semantic_graph()
-                .resolve_wire(claim.node())
-                .ok_or(ContractSelection::NoForm)?,
+                .node(claim.node().clone())
+                .ok_or(ContractSelection::NoForm)?
+                .key(),
         )
     };
     let relation = package.abstraction();
@@ -286,20 +287,20 @@ pub fn select_contract(
         target,
         bound,
     };
-    match (role, node) {
+    match (role, node.as_ref()) {
         (CheckedOccurrenceRole::Claim, Some(node))
             if graph
                 .step_relations()
                 .iter()
-                .any(|relation| relation.identity() == Some(node)) =>
+                .any(|relation| relation.identity() == Some(node.clone())) =>
         {
-            step_relation(package, claim, node)
+            step_relation(package, claim, node.clone())
         }
         (CheckedOccurrenceRole::Claim, Some(node)) => {
             let clause = graph
                 .state_clauses()
                 .iter()
-                .find(|clause| clause.identity() == node && clause.claim() == claim.origin())
+                .find(|clause| clause.identity() == *node && clause.claim() == claim.origin())
                 .ok_or(ContractSelection::NoForm)?;
             let context = clause.context();
             if clause.kind() == StateClauseKind::Constraint {
@@ -309,7 +310,7 @@ pub fn select_contract(
                 return Ok(selected(
                     ContractForm::Invariant,
                     Target::Invariant {
-                        clause: node,
+                        clause: node.clone(),
                         context,
                     },
                     false,
@@ -317,7 +318,7 @@ pub fn select_contract(
             }
             let operation = clause.operation().ok_or(ContractSelection::MissingNode)?;
             let name = operation.declaration.name().to_owned();
-            let key = operation_key(package, operation.declaring, &name)?;
+            let key = operation_key(package, operation.declaring.clone(), &name)?;
             let elements = graph
                 .item_elements(claim)
                 .transpose()
@@ -326,21 +327,21 @@ pub fn select_contract(
             let bound = binding(relation, &key, elements)?;
             let target = if clause.kind() == StateClauseKind::Precondition {
                 Target::Precondition {
-                    clause: node,
+                    clause: node.clone(),
                     context,
                 }
             } else {
                 Target::Postcondition {
-                    clause: node,
+                    clause: node.clone(),
                     context,
-                    operation: (operation.declaring, name),
+                    operation: (operation.declaring.clone(), name),
                 }
             };
             Ok(selected(ContractForm::Clause, target, bound))
         }
         (CheckedOccurrenceRole::Anchor, Some(node)) => {
             let frame = graph
-                .operation_frame_by_anchor(node)
+                .operation_frame_by_anchor(node.clone())
                 .ok_or(ContractSelection::NoForm)?;
             if claim.origin().ordinal() != 0 {
                 return Err(ContractSelection::NoForm);
@@ -349,7 +350,11 @@ pub fn select_contract(
             if operation.declaration.effect().is_empty() {
                 return Err(ContractSelection::NoForm);
             }
-            let key = operation_key(package, operation.declaring, operation.declaration.name())?;
+            let key = operation_key(
+                package,
+                operation.declaring.clone(),
+                operation.declaration.name(),
+            )?;
             let elements = [AbstractionKey::Object(key.declaring.clone())];
             let bound = binding(relation, &key, elements)?;
             Ok(selected(ContractForm::Frame, Target::Frame, bound))
@@ -409,7 +414,7 @@ fn step_relation(
     let relation = graph
         .step_relations()
         .iter()
-        .find(|relation| relation.identity() == Some(node))
+        .find(|relation| relation.identity() == Some(node.clone()))
         .ok_or(ContractSelection::NoForm)?;
     let code = graph
         .requirements()
@@ -455,7 +460,7 @@ fn not_step_simulable(
             && usize::try_from(ordinal).is_ok_and(|ordinal| ordinal <= refinement.steps().len())
             && refinement
                 .v2_emission()
-                .is_ok_and(|emission| emission.identity.as_bytes() == claim.node().as_bytes())
+                .is_ok_and(|emission| emission.identity == *claim.node())
     });
     if names {
         Ok(())
@@ -665,7 +670,7 @@ impl<'s, 'a> ContractTarget<'s, 'a> {
             }
             Target::Invariant { context, .. } => {
                 let relation = package.abstraction();
-                for (declaring, name) in concrete.context_operations(*context) {
+                for (declaring, name) in concrete.context_operations(context.clone()) {
                     let Ok(key) = operation_key(package, declaring, &name) else {
                         return Err(fault("operation-owner-is-admitted"));
                     };
@@ -906,15 +911,17 @@ impl<'s, 'a> ContractTarget<'s, 'a> {
     /// reading was open.
     fn violations(&self, case: &ContractCase) -> Result<Evaluated, Stop> {
         match &self.claim.target {
-            Target::Invariant { clause, context } => self.invariant(case, *clause, *context),
+            Target::Invariant { clause, context } => {
+                self.invariant(case, clause.clone(), context.clone())
+            }
             Target::Precondition { clause, context } => {
-                self.precondition(case.state(), *clause, *context)
+                self.precondition(case.state(), clause.clone(), context.clone())
             }
             Target::Postcondition {
                 clause,
                 context,
                 operation,
-            } => self.postcondition(case.state(), *clause, *context, operation),
+            } => self.postcondition(case.state(), clause.clone(), context.clone(), operation),
             Target::Frame | Target::NotStepSimulable | Target::StepRelation => {
                 Err(Stop::Fault(fault("an-unsupported-item-is-not-evaluated")))
             }
@@ -1074,12 +1081,12 @@ impl<'s, 'a> ContractTarget<'s, 'a> {
                         return Ok(evaluated);
                     }
                 }
-                for (declaring, operation) in self.concrete.context_operations(context) {
+                for (declaring, operation) in self.concrete.context_operations(context.clone()) {
                     let cases = self.concrete.operation_cases(
                         state,
-                        declaring,
+                        declaring.clone(),
                         &operation,
-                        context,
+                        context.clone(),
                         &|_| true,
                     )?;
                     open_contracts(&cases, &mut evaluated);
@@ -1090,7 +1097,7 @@ impl<'s, 'a> ContractTarget<'s, 'a> {
                             Ok(Some(undefined)) => evaluated.violations.push(self.violation(
                                 ContractObligation::Preservation,
                                 self.execution(
-                                    Some((declaring, &operation)),
+                                    Some((declaring.clone(), &operation)),
                                     Some(step.transition),
                                     state,
                                     step.arguments,
@@ -1123,7 +1130,7 @@ impl<'s, 'a> ContractTarget<'s, 'a> {
                 return Ok(evaluated);
             }
         }
-        let operation = self.clause(clause)?.operation;
+        let operation = self.clause(clause.clone())?.operation;
         for case in self.concrete.precondition_cases(state, clause)? {
             evaluated.checks += 1;
             let Some(outcome) = case.undecided else {
@@ -1136,7 +1143,7 @@ impl<'s, 'a> ContractTarget<'s, 'a> {
                         self.execution(
                             operation
                                 .as_ref()
-                                .map(|(declaring, name)| (*declaring, name.as_str())),
+                                .map(|(declaring, name)| (declaring.clone(), name.as_str())),
                             Some(case.transition),
                             state,
                             case.arguments,
@@ -1168,7 +1175,7 @@ impl<'s, 'a> ContractTarget<'s, 'a> {
                 return Ok(evaluated);
             }
         }
-        let name = self.clause(clause)?.name;
+        let name = self.clause(clause.clone())?.name;
         let clauses = self.concrete.contract_clauses();
         let select = |identity: NodeKey| {
             identity == clause
@@ -1176,9 +1183,9 @@ impl<'s, 'a> ContractTarget<'s, 'a> {
                     known.identity == identity && known.kind == ContractClauseKind::Precondition
                 })
         };
-        let cases = self
-            .concrete
-            .operation_cases(state, *declaring, operation, context, &select)?;
+        let cases =
+            self.concrete
+                .operation_cases(state, declaring.clone(), operation, context, &select)?;
         evaluated.checks = cases.enabled;
         for contract in cases.undecided {
             let undefined = undefined_of(&contract.evaluation);
@@ -1187,7 +1194,7 @@ impl<'s, 'a> ContractTarget<'s, 'a> {
                     evaluated.violations.push(self.violation(
                         ContractObligation::Definedness,
                         self.execution(
-                            Some((*declaring, operation)),
+                            Some((declaring.clone(), operation)),
                             Some(contract.transition),
                             state,
                             contract.arguments,
@@ -1264,9 +1271,13 @@ impl<'s, 'a> ContractTarget<'s, 'a> {
                 return Ok(evaluated);
             }
         }
-        let cases =
-            self.concrete
-                .operation_cases(state, declaring, operation, declaring, &|_| true)?;
+        let cases = self.concrete.operation_cases(
+            state,
+            declaring.clone(),
+            operation,
+            declaring.clone(),
+            &|_| true,
+        )?;
         open_contracts(&cases, &mut evaluated);
         if cases.steps.is_empty() {
             return Ok(evaluated);
@@ -1326,7 +1337,7 @@ impl<'s, 'a> ContractTarget<'s, 'a> {
                 ContractObligation::SimulationStep,
                 || {
                     self.execution(
-                        Some((declaring, operation)),
+                        Some((declaring.clone(), operation)),
                         Some(transition),
                         state,
                         arguments,

@@ -102,7 +102,6 @@ pub(super) fn run_temporal(
     let report = |disposition: ClauseDisposition, usage: ClauseRunUsage| ClauseRunReport {
         basis: SettlementBasis::Unavailable,
         witness: None,
-        package_id: Some(run.package_id),
         // A completed temporal verdict names no consequent events: it
         // refuses typed rather than reporting an empty list.
         consequent_source_events: if disposition.truth().is_some() {
@@ -200,7 +199,7 @@ pub(super) fn run_temporal(
         graph.model_selections(),
         run.packages,
         run.model_limits,
-        *type_identity,
+        type_identity.clone(),
     ) {
         Ok(universe) => universe,
         Err(failure) => return late(ClauseDisposition::Admit(failure)),

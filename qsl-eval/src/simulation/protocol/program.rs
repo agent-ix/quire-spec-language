@@ -410,7 +410,7 @@ fn templates<'p>(
         templates.push(Template {
             name,
             effect: template.effect,
-            declaring: template.operation.declaring,
+            declaring: template.operation.declaring.clone(),
             operation: template.operation.declaration.name().to_owned(),
             trigger: template.trigger.value_type.clone(),
             guard: &template.guard,
@@ -449,6 +449,7 @@ fn replicated_roles(
                 .ok_or_else(|| ProtocolRefusal::fault("a-replicated-role-is-a-role"))?;
             let object = role
                 .context
+                .clone()
                 .ok_or_else(|| ProtocolRefusal::fault("a-replicated-role-has-an-object-type"))?;
             Ok((
                 checked.role,
@@ -589,10 +590,10 @@ impl<'a> Program<'a> {
             attempts.insert(
                 node,
                 Attempt {
-                    declaring: attempt.operation.declaring,
+                    declaring: attempt.operation.declaring.clone(),
                     operation: attempt.operation.declaration.name().to_owned(),
-                    receiver: attempt.receiver,
-                    contracts: std::sync::Arc::new(attempt.contracts.iter().copied().collect()),
+                    receiver: attempt.receiver.clone(),
+                    contracts: std::sync::Arc::new(attempt.contracts.iter().cloned().collect()),
                     constraint: body_of(node),
                     binds,
                 },

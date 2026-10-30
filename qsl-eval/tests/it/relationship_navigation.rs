@@ -32,7 +32,7 @@ use quire_eval::{FamilyOutcome, FamilyResult};
 use quire_exact::{
     from_admitted, BoundViolation, ChargePoint, CollectionKind, CollectionType, EffectiveId,
     LimitKind, Meter, ObjectId, ObjectReference, OptionValue, Outcome, Refusal, ScalarLimits,
-    UniverseId, Value, ValueType,
+    Value, ValueType,
 };
 use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 use quire_semantic_value::object_closure::ObjectClosure;
@@ -172,9 +172,14 @@ fn orders_package(shape: Shape) -> CheckedPackage {
     )
     .expect("S1 admits the unit");
     let built = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
-    let declarations =
-        PackageDeclarations::assemble(parsed.source().reference().clone(), built, selected, vec![])
-            .expect("the model assembles");
+    let declarations = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        "fixture".to_owned(),
+        built,
+        selected,
+        vec![],
+    )
+    .expect("the model assembles");
     CheckedPackage::link(
         declarations
             .check(CheckingLimits::default())
@@ -224,7 +229,7 @@ impl Orders {
 
     fn at(&self, type_name: &str, object: &str) -> ObjectReference {
         ObjectReference::new(
-            UniverseId::from_digest([9; 32]),
+            crate::support::ids::universe_id([9]),
             self.id(type_name),
             ObjectId::new(object.to_owned()).expect("a nonempty object id"),
         )
@@ -347,7 +352,10 @@ impl Orders {
             .package
             .graph()
             .check_expression(
-                vec![("r".to_owned(), ValueType::Reference(receiver.object_type()))],
+                vec![(
+                    "r".to_owned(),
+                    ValueType::Reference(receiver.object_type().clone()),
+                )],
                 &Expression::field(Expression::name("r".to_owned()), role),
                 None,
                 CheckMode::Kernel,
@@ -950,7 +958,7 @@ fn the_first_missing_target_in_key_order_decides_between_dangling_and_undecidabl
         );
         let (evaluation, meter) = orders.navigate("holds", &s1, &objects, UNLIMITED);
         let (code, cause, fields) = refusal(evaluation);
-        let first_is_undecidable = first.object_type() == orders.id(undecidable_type);
+        let first_is_undecidable = first.object_type() == &orders.id(undecidable_type);
         let expected = if first_is_undecidable {
             ("incomplete_population", "incomplete-scope")
         } else {
@@ -975,7 +983,7 @@ fn the_first_missing_target_in_key_order_decides_between_dangling_and_undecidabl
 /// universe is 9).
 fn in_universe(orders: &Orders, universe: u8, type_name: &str, object: &str) -> ObjectReference {
     ObjectReference::new(
-        UniverseId::from_digest([universe; 32]),
+        crate::support::ids::universe_id([universe]),
         orders.id(type_name),
         ObjectId::new(object.to_owned()).expect("a nonempty object id"),
     )

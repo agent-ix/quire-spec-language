@@ -7,7 +7,7 @@
 //! records, per item, only what those criteria ask about: each struct's
 //! fields (name, whether private, and every type name its type mentions),
 //! each enum's variants, each function's return type and every path it
-//! names, whether it mints a `NodeKey`, and each `use` item.
+//! names, and each `use` item.
 //!
 //! **Shipped code.** An item under `#[cfg(test)]` is skipped, and so is a
 //! file declared by a `#[cfg(test)] mod x;` (with or without `#[path]`),
@@ -21,15 +21,8 @@
 //! and `use quire_exact::NodeKey as Nk;` are seen through. The alias table is
 //! global, not per scope, so a name reused for two aliases over-approximates.
 //!
-//! **Mints.** A function, method, trait default method, `static` or `const`
-//! mints a `NodeKey` if it names `NodeKey::from_digest` through any alias,
-//! calls `<NodeKey>::from_digest` through a qualified self type, calls
-//! `Self::from_digest` inside an `impl NodeKey`, calls a `node_key_of`
-//! helper, or writes any of those inside a macro's tokens.
-//!
-//! **Known limits.** A macro body is read as flat tokens: the mint check
-//! finds `Name::from_digest` there, but no other name set sees inside it,
-//! and a macro that builds the path from fragments is invisible. A value
+//! **Known limits.** A macro body is read as flat tokens, so no name set
+//! sees inside it. A value
 //! handed out through an out-parameter (`&mut Option<T>`) or a callback is
 //! not an owned return. A function reached only through a function pointer
 //! or trait object is recorded where it is defined, with no call graph. A
@@ -99,8 +92,6 @@ pub struct Function {
     pub return_map_keys: BTreeSet<String>,
     /// Every path segment name its signature and body mention.
     pub names: BTreeSet<String>,
-    /// Whether it mints a `NodeKey` (this module's doc, "Mints").
-    pub mints_node_key: bool,
 }
 
 /// One `use` item.
@@ -171,13 +162,6 @@ impl Aliases {
             keys.extend(self.map_keys.get(&name).into_iter().flatten().cloned());
         }
         self.close(&keys)
-    }
-
-    /// Whether `name` is `NodeKey` or an alias of it.
-    #[ix_trace_rs::string_edge]
-    fn is_node_key(&self, name: &str) -> bool {
-        self.close(&BTreeSet::from([name.to_owned()]))
-            .contains("NodeKey")
     }
 }
 
@@ -276,87 +260,14 @@ fn owned_type_names(ty: &syn::Type) -> (BTreeSet<String>, BTreeSet<String>) {
     (owned.names, keys.map_keys)
 }
 
-struct BodyScan<'a> {
-    aliases: &'a Aliases,
-    self_type: Option<&'a str>,
+struct BodyScan {
     names: BTreeSet<String>,
-    mints: bool,
 }
 
-impl BodyScan<'_> {
-    /// Whether `path` is `NodeKey::from_digest` under any alias,
-    /// `Self::from_digest` in an `impl NodeKey`, or a `node_key_of` helper.
-    #[ix_trace_rs::string_edge]
-    fn is_mint_path(&self, path: &syn::Path) -> bool {
-        let segments: Vec<String> = path
-            .segments
-            .iter()
-            .map(|segment| segment.ident.to_string())
-            .collect();
-        let owner_is_node_key = |owner: &str| {
-            self.aliases.is_node_key(owner)
-                || (owner == "Self"
-                    && self
-                        .self_type
-                        .is_some_and(|ty| self.aliases.is_node_key(ty)))
-        };
-        segments
-            .windows(2)
-            .any(|pair| pair[1] == "from_digest" && owner_is_node_key(&pair[0]))
-            || segments.last().is_some_and(|last| last == "node_key_of")
-    }
-}
-
-impl<'ast> Visit<'ast> for BodyScan<'_> {
-    fn visit_path(&mut self, node: &'ast syn::Path) {
-        if self.is_mint_path(node) {
-            self.mints = true;
-        }
-        syn::visit::visit_path(self, node);
-    }
-
-    fn visit_expr_path(&mut self, node: &'ast syn::ExprPath) {
-        if let Some(qself) = &node.qself {
-            let last = node
-                .path
-                .segments
-                .last()
-                .map(|segment| segment.ident.to_string());
-            if last.as_deref() == Some("from_digest")
-                && type_names(&qself.ty)
-                    .iter()
-                    .any(|name| self.aliases.is_node_key(name))
-            {
-                self.mints = true;
-            }
-        }
-        syn::visit::visit_expr_path(self, node);
-    }
-
+impl<'ast> Visit<'ast> for BodyScan {
     fn visit_path_segment(&mut self, node: &'ast syn::PathSegment) {
         self.names.insert(node.ident.to_string());
         syn::visit::visit_path_segment(self, node);
-    }
-
-    #[ix_trace_rs::string_edge]
-    fn visit_macro(&mut self, node: &'ast syn::Macro) {
-        let tokens = node.tokens.to_string().replace(' ', "");
-        let mut owners = self
-            .aliases
-            .targets
-            .keys()
-            .filter(|name| self.aliases.is_node_key(name))
-            .map(String::as_str)
-            .chain(["NodeKey"]);
-        // `NodeKey::from_digest`, and `<…NodeKey>::from_digest`.
-        if owners.any(|owner| {
-            tokens.contains(&format!("{owner}::from_digest"))
-                || tokens.contains(&format!("{owner}>::from_digest"))
-        }) || tokens.contains("node_key_of(")
-        {
-            self.mints = true;
-        }
-        syn::visit::visit_macro(self, node);
     }
 }
 
@@ -372,17 +283,14 @@ impl Scanner<'_> {
         &mut self,
         name: String,
         output: Option<&syn::Type>,
-        visit: impl FnOnce(&mut BodyScan<'_>),
+        visit: impl FnOnce(&mut BodyScan),
     ) {
         let (mut owned_return, return_map_keys) = output.map(owned_type_names).unwrap_or_default();
         if owned_return.remove("Self") {
             owned_return.extend(self.self_type.clone());
         }
         let mut body = BodyScan {
-            aliases: self.aliases,
-            self_type: self.self_type.as_deref(),
             names: BTreeSet::new(),
-            mints: false,
         };
         visit(&mut body);
         self.items.functions.push(Function {
@@ -392,7 +300,6 @@ impl Scanner<'_> {
             owned_return: self.aliases.close(&owned_return),
             return_map_keys: self.aliases.map_keys(&owned_return, &return_map_keys),
             names: self.aliases.close(&body.names),
-            mints_node_key: body.mints,
         });
     }
 
@@ -744,21 +651,11 @@ mod tests {
         scan(root.path(), &["src"]).expect("scan runs")
     }
 
-    fn minting(items: &Items) -> BTreeSet<String> {
-        items
-            .functions
-            .iter()
-            .filter(|function| function.mints_node_key)
-            .map(|function| function.name.clone())
-            .collect()
-    }
-
-    /// ADR-013 T-1's five new stage outputs and the file that owns each.
-    const STAGE_TYPES: [(&str, &str); 5] = [
+    /// ADR-013 T-1's four new stage outputs and the file that owns each.
+    const STAGE_TYPES: [(&str, &str); 4] = [
         ("CheckedGraph", "qsl-semantics/src/check/mod.rs"),
         ("CheckedPackage", "qsl-package/src/checked.rs"),
         ("EmittedPackage", "qsl-package/src/checked.rs"),
-        ("VerifiedPackage", "qsl-semantics/src/library/mod.rs"),
         ("ImportView", "qsl-semantics/src/library/mod.rs"),
     ];
 
@@ -814,7 +711,7 @@ mod tests {
 
     /// Every item allowed to hand back an owned stage-output type, by
     /// (file, `Self` type, name), and why.
-    const STAGE_CONSTRUCTORS: [(&str, Option<&str>, &str); 12] = [
+    const STAGE_CONSTRUCTORS: [(&str, Option<&str>, &str); 11] = [
         // S3: the checker.
         (
             S3_CONSTRUCTOR.file,
@@ -836,14 +733,8 @@ mod tests {
         ),
         // S4 wire: the v2 emitter's constructor.
         ("qsl-package/src/checked.rs", Some("EmittedPackage"), "new"),
-        // I2: the §4 verified binding.
-        ("qsl-semantics/src/library/mod.rs", None, "verify_binding"),
-        // I2: `VerifiedPackage` -> `ImportView`.
-        (
-            "qsl-semantics/src/library/mod.rs",
-            Some("VerifiedPackage"),
-            "into_import_view",
-        ),
+        // I2: the import view over a library package.
+        ("qsl-semantics/src/library/mod.rs", Some("ImportView"), "of"),
         // A shared handle to the graph `link` or `link_with` took, which an
         // importing package's E3 types an imported name from (ADR-015 D-5);
         // it builds no graph.
@@ -852,8 +743,7 @@ mod tests {
             Some("CheckedPackage"),
             "shared_graph",
         ),
-        // I2 over a library's own emission: the verified binding, then
-        // `into_import_view` (ADR-015 D-1 step 6).
+        // I2 over a library's own emission (ADR-015 D-1 step 6).
         ("qsl-package/src/checked_v2.rs", None, "read_import_view"),
         // The spine's S3 and S4 step over one parsed unit, and the per-library
         // chain the S4 source resolution reruns for each library (ADR-015
@@ -893,7 +783,7 @@ mod tests {
 
     /// FR-087-AC-1's constructor half and FR-087-AC-2 (TC-244 step 0): in
     /// the QSL crates, the only items returning an owned `CheckedGraph`,
-    /// `CheckedPackage`, `EmittedPackage`, `VerifiedPackage` or
+    /// `CheckedPackage`, `EmittedPackage` or
     /// `ImportView` (the lane-private `checking::CheckedPackage` included)
     /// are the named stage constructors; a `From` impl, decoder or other
     /// conversion into one fails here. Out-parameters are not seen.
@@ -925,7 +815,7 @@ mod tests {
             "type Forged = CheckedPackage;\n\
              pub fn by_alias() -> Forged { todo!() }\n\
              pub fn outer() { fn nested() -> Option<ImportView> { None } }\n\
-             pub trait Mint { fn made(&self) -> VerifiedPackage { todo!() } }\n\
+             pub trait Mint { fn made(&self) -> EmittedPackage { todo!() } }\n\
              pub fn out_param(out: &mut Option<CheckedGraph>) { let _ = out; }\n",
         )]);
         let names: BTreeSet<String> = stage_returners(&items)
@@ -1003,109 +893,6 @@ mod tests {
         }
     }
 
-    /// The wire-admitted types a `NodeKey` mint must never be fed by.
-    const WIRE_TYPES: [&str; 4] = [
-        "WireNodeId",
-        "PackageNodeKey",
-        "ImportView",
-        "VerifiedPackage",
-    ];
-
-    /// FR-087-AC-6 (TC-255 steps 1, 2 and 5, step 3 for direct feeding, and
-    /// step 4's role): across the QSL crates, `library`, `qsl-package` (E4)
-    /// and `qsl-replay` (E9) mint no `NodeKey`; every mint is in `check`; and
-    /// no minting item names a `WireNodeId`, `PackageNodeKey`, `ImportView`
-    /// or `VerifiedPackage`. A value that reaches a mint through a call to
-    /// another function is not traced. `arch-lint api-surface` (T12-B) is
-    /// not part of `make ci`; this test is. The deletion of qsl-eval's
-    /// second v2 producer removed T12-B's one debt-list entry (`qsl-eval`'s
-    /// `decode_v2`) along with the mint it named, so this scan now requires every mint outside `check` to be
-    /// gone, not merely on a named exception list.
-    #[trace("TC-255", "FR-087-AC-6", "FR-087-CON-3")]
-    #[test]
-    fn tc_255_no_node_key_is_minted_outside_check_or_from_a_wire_id() {
-        let items = qsl_items();
-        let mints: Vec<&Function> = items
-            .functions
-            .iter()
-            .filter(|function| function.mints_node_key)
-            .collect();
-        assert!(
-            mints
-                .iter()
-                .any(|function| function.file.starts_with("qsl-semantics/src/check/")),
-            "the scan sees check's own mints"
-        );
-        for function in mints {
-            let site = format!(
-                "{}: {:?}::{}",
-                function.file, function.self_type, function.name
-            );
-            for forbidden in [
-                "qsl-semantics/src/library/",
-                "qsl-package/src/",
-                "qsl-replay/src/",
-            ] {
-                assert!(!function.file.starts_with(forbidden), "mint at {site}");
-            }
-            assert!(
-                function.file.starts_with("qsl-semantics/src/check/"),
-                "mint outside check at {site}"
-            );
-            for wire in WIRE_TYPES {
-                assert!(
-                    !function.names.contains(wire),
-                    "mint fed by {wire} at {site}"
-                );
-            }
-        }
-    }
-
-    /// TC-255's scan sees a mint through a `use … as` rename, a `type`
-    /// alias, a qualified self type, `Self::` in `impl NodeKey`, a trait
-    /// default method, a `static`, a `const`, an associated `const`, a
-    /// macro and a `node_key_of` helper; and not a `WireNodeId`'s own
-    /// `from_digest`.
-    #[trace("TC-255", "FR-087-AC-6")]
-    #[test]
-    fn tc_255_scan_sees_every_mint_spelling() {
-        let items = scan_tree(&[(
-            "src/lib.rs",
-            "use quire_exact::NodeKey as Nk;\n\
-             type Key = quire_exact::NodeKey;\n\
-             pub fn by_rename() { Nk::from_digest([0; 32]); }\n\
-             pub fn by_type_alias() { Key::from_digest([0; 32]); }\n\
-             pub fn by_qself() { <quire_exact::NodeKey>::from_digest([0; 32]); }\n\
-             impl NodeKey { fn by_self() -> Self { Self::from_digest([0; 32]) } }\n\
-             pub trait T { fn by_default(&self) { NodeKey::from_digest([0; 32]); } }\n\
-             static BY_STATIC: fn([u8; 32]) -> Nk = Nk::from_digest;\n\
-             const BY_CONST: fn([u8; 32]) -> Key = Key::from_digest;\n\
-             impl Holder { const BY_ASSOC: fn([u8; 32]) -> Nk = Nk::from_digest; }\n\
-             pub fn by_macro() { let _ = vec![Nk::from_digest([0; 32])]; }\n\
-             pub fn by_macro_qself() { let _ = vec![<Key>::from_digest([0; 32])]; }\n\
-             pub fn by_helper() { node_key_of(1); }\n\
-             pub fn not_a_mint() { WireNodeId::from_digest([0; 32]); }\n",
-        )]);
-        assert_eq!(
-            minting(&items),
-            [
-                "BY_ASSOC",
-                "BY_CONST",
-                "BY_STATIC",
-                "by_default",
-                "by_helper",
-                "by_macro",
-                "by_macro_qself",
-                "by_qself",
-                "by_rename",
-                "by_self",
-                "by_type_alias",
-            ]
-            .map(str::to_owned)
-            .into()
-        );
-    }
-
     /// The scan skips exactly the files a `#[cfg(test)] mod` declares,
     /// with or without `#[path]`, and the files below them; a file whose
     /// name only looks like a test module is scanned.
@@ -1119,115 +906,21 @@ mod tests {
                  #[cfg(test)] mod tests;\n\
                  #[cfg(test)] #[path = \"support/fixture.rs\"] mod fixture;\n",
             ),
-            (
-                "src/forge_tests.rs",
-                "pub fn shipped() { NodeKey::from_digest([0; 32]); }",
-            ),
-            (
-                "src/tests.rs",
-                "pub fn test_only() { NodeKey::from_digest([0; 32]); }",
-            ),
-            (
-                "src/tests/deeper.rs",
-                "pub fn below_test() { NodeKey::from_digest([0; 32]); }",
-            ),
-            (
-                "src/support/fixture.rs",
-                "pub fn by_path() { NodeKey::from_digest([0; 32]); }",
-            ),
+            ("src/forge_tests.rs", "pub fn shipped() {  }"),
+            ("src/tests.rs", "pub fn test_only() {  }"),
+            ("src/tests/deeper.rs", "pub fn below_test() {  }"),
+            ("src/support/fixture.rs", "pub fn by_path() {  }"),
             (
                 "src/parent.rs",
                 "#[cfg(test)] mod child_tests;\npub fn parent() {}",
             ),
-            (
-                "src/parent/child_tests.rs",
-                "pub fn child() { NodeKey::from_digest([0; 32]); }",
-            ),
+            ("src/parent/child_tests.rs", "pub fn child() {  }"),
         ]);
-        assert_eq!(minting(&items), ["shipped".to_owned()].into());
-    }
-
-    /// FR-087-AC-11 (TC-281 steps 1, 4 and 5): `value::library` and
-    /// `value::package_identity` are gone; no `ExportIdentity` exists in the
-    /// QSL crates; `library` defines no `resolve_name` and no field or
-    /// variant holding a `NodeKey`; and the relocated surface is defined in
-    /// `library`.
-    #[trace("TC-281", "FR-087-AC-11")]
-    #[test]
-    fn tc_281_library_relocated_with_wire_ids_only() {
-        let root = workspace_root();
-        for gone in [
-            "src/value/library.rs",
-            "src/value/package_identity.rs",
-            "qsl-semantics/src/value/library.rs",
-            "qsl-semantics/src/value/package_identity.rs",
-        ] {
-            assert!(!root.join(gone).exists(), "{gone} still exists");
-        }
-        let value_mods =
-            crate::definition_scan::mod_declarations(&root, "qsl-semantics/src/value/mod.rs")
-                .expect("value/mod.rs parses");
-        for gone in ["library", "package_identity"] {
-            assert!(
-                !value_mods.iter().any(|name| name == gone),
-                "value declares mod {gone}"
-            );
-        }
-
-        let items = qsl_items();
-        assert_eq!(items.structs_named("ExportIdentity").count(), 0);
-        assert!(!items.enums.iter().any(|item| item.name == "ExportIdentity"));
-
-        let in_library = |file: &str| file.starts_with("qsl-semantics/src/library/");
-        assert!(
-            !items
-                .functions
-                .iter()
-                .any(|function| in_library(&function.file) && function.name == "resolve_name"),
-            "library defines resolve_name"
+        let names: BTreeSet<String> = items.functions.iter().map(|f| f.name.clone()).collect();
+        assert_eq!(
+            names,
+            BTreeSet::from(["parent".to_owned(), "shipped".to_owned()])
         );
-        for item in items.structs.iter().filter(|item| in_library(&item.file)) {
-            for field in &item.fields {
-                assert!(
-                    !field.type_names.contains("NodeKey"),
-                    "{}.{:?} holds a NodeKey",
-                    item.name,
-                    field.name
-                );
-            }
-        }
-        for item in items.enums.iter().filter(|item| in_library(&item.file)) {
-            for (variant, fields) in &item.variants {
-                assert!(
-                    !fields
-                        .iter()
-                        .any(|field| field.type_names.contains("NodeKey")),
-                    "{}::{variant} holds a NodeKey",
-                    item.name
-                );
-            }
-        }
-        for name in [
-            "LibraryName",
-            "LibraryPackage",
-            "PackageId",
-            "ImportDeclaration",
-            "LibraryLock",
-            "PackageNodeKey",
-        ] {
-            let files: Vec<&str> = items
-                .structs_named(name)
-                .map(|item| item.file.as_str())
-                .collect();
-            assert_eq!(files, ["qsl-semantics/src/library/mod.rs"], "{name}");
-        }
-        let resolvers: Vec<&str> = items
-            .functions
-            .iter()
-            .filter(|function| function.name == "resolve_libraries")
-            .map(|function| function.file.as_str())
-            .collect();
-        assert_eq!(resolvers, ["qsl-semantics/src/library/mod.rs"]);
     }
 
     /// FR-088-AC-6 (TC-258, partial: steps 1 and 3 over the layer crates'

@@ -210,6 +210,7 @@ fn check_with_internals(
     let unit = build_unit(&parsed).expect("S2 builds the unit");
     let mut assembled = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         unit,
         vec![concrete_model(), abstract_model()],
         Vec::new(),
@@ -2105,6 +2106,7 @@ fn check_written(text: &str) -> Result<CheckedGraph, Vec<CheckRefusal>> {
     let unit = build_unit(&parsed).expect("S2 builds the unit");
     PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         unit,
         vec![concrete_model(), abstract_model()],
         Vec::new(),

@@ -75,6 +75,7 @@ pub(crate) fn timed_on(activation: &str, body: &str) -> Fixture {
     .expect("the model selection admits");
     let mut package = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         built,
         models,
         Vec::new(),
@@ -83,12 +84,12 @@ pub(crate) fn timed_on(activation: &str, body: &str) -> Fixture {
     package.time_sources = vec![ModelTimeSource {
         model: "M".to_owned(),
         span: qsl_foundation::Span { start: 0, end: 1 },
-        model_node: quire_exact::NodeKey::from_digest([0; 32]),
+        model_node: crate::support::ids::node_key([0]),
         tick_operation_key: None,
         source: TimeSourceKind::Dense,
         unit: "ms".to_owned(),
-        unit_node: quire_exact::NodeKey::from_digest([0; 32]),
-        time_dimension: quire_exact::NodeKey::from_digest([0; 32]),
+        unit_node: crate::support::ids::node_key([0]),
+        time_dimension: crate::support::ids::node_key([0]),
         nominal_nodes: Vec::new(),
         tick_operation_span: None,
         tick_operation_anchor: None,

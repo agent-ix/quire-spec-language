@@ -28,7 +28,6 @@ use qsl_eval::simulation::{NotSimulated, RequiresBound};
 use qsl_eval::temporal::{AtomReading, UndefinedCause};
 use qsl_foundation::bound::{DomainKey, DomainKind};
 use qsl_foundation::diagnostic::Code;
-use qsl_foundation::digest::WireNodeId;
 use qsl_package::CheckedPackage;
 use qsl_replay::{check_closure, CertificateRequest, ClosureCertificate, ClosureRefusal};
 use qsl_replay::{CounterexampleKind, ModelCheckItem, ModelCheckLimits};
@@ -371,13 +370,7 @@ impl World {
                 },
                 smt_encoding: qsl_replay::SmtEncodingLimits::default(),
             },
-            &ClosureCertificate {
-                package_id: qsl_package::emit_checked(&package)
-                    .expect("the package emits")
-                    .package()
-                    .package_id(),
-                states: Vec::new(),
-            },
+            &ClosureCertificate { states: Vec::new() },
             &ModelCheckLimits::default(),
             &Cancel::new(),
         )
@@ -416,15 +409,20 @@ fn instance(population: &str, key: &str) -> ModelInstance {
     }
 }
 
-/// The requires-bound root of `population`: the digest of its declaration
-/// identity, as FR-120 names a population root.
+/// The requires-bound root of `population`: its declaration node, as FR-120
+/// names a population root.
 fn population_root(population: &str) -> DomainKey {
-    let naming = json!({"node": ident(population), "package": PACKAGE});
-    let read = quire_canonical::read(naming.to_string().as_bytes(), u64::MAX).expect("JSON");
-    let digest =
-        quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX)).expect("canonical");
     DomainKey::Node {
-        node: WireNodeId::from_digest(*digest.as_bytes()),
+        node: quire_exact::NodeKey::new(
+            PACKAGE,
+            vec![
+                quire_exact::PathSegment::Text("relation".to_owned()),
+                quire_exact::PathSegment::Text("population".to_owned()),
+                quire_exact::PathSegment::Text(ident(population)),
+            ],
+            0,
+        )
+        .expect("a population node is admissible"),
         path: Vec::new(),
     }
 }

@@ -88,24 +88,60 @@ pub struct ModelTimeSource {
 }
 
 /// A nominal unit-graph node that S4 must include when a timed model names it.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TimeNominalNode {
     /// The exact nominal node identity.
     pub key: quire_exact::NodeKey,
     /// `dimension` or `unit`.
     pub form: String,
-    /// The canonical nominal identity preimage bytes.
-    pub preimage: Vec<u8>,
-    /// Nominal nodes named by the preimage.
+    /// The declaration's qualified name segments: `Some` exactly when
+    /// [`Self::owner`] is [`NodeOwner::Source`], `None` for a model-owned
+    /// node, which carries no declaration (FR-322, AC-105).
+    pub qualified_declaration: Option<Vec<String>>,
+    /// The admitted owner of the declaration. A node of the checked unit's
+    /// own unit graph is owned by the unit's source
+    /// ([`NodeOwner::Source`], whose `package_name` is the manifest
+    /// package name) and has a declaration. A node a selected domain
+    /// package declares (its `Time` dimension or a unit of the `Time`
+    /// dimension) is owned by that model ([`NodeOwner::Model`], whose
+    /// `identity` is the package identity and `node` the declaration's IR
+    /// node identity) and has none.
+    pub owner: crate::value::NodeOwner,
+    /// Nominal nodes this node names.
     pub dependencies: Vec<quire_exact::NodeKey>,
+    /// The terms, target and exact conversion of a dimension or unit node,
+    /// for source-owned and model-selected nodes alike.
+    pub nominal: Option<crate::value::nominal_payload::NominalPayload>,
+}
+
+impl std::hash::Hash for TimeNominalNode {
+    /// Hashes the identity fields; the payload is a function of them, so
+    /// equal nodes still hash equal.
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.key.hash(state);
+        self.form.hash(state);
+        self.qualified_declaration.hash(state);
+        self.owner.hash(state);
+        self.dependencies.hash(state);
+    }
 }
 
 impl TimeNominalNode {
-    /// Decode the canonical identity preimage tree for the S4 wire adapter.
-    /// The package layer deserializes this value into its contract-model type
-    /// without taking a direct dependency on the JSON implementation.
-    pub fn preimage_value(&self) -> Result<serde_json::Value, serde_json::Error> {
-        serde_json::from_slice(&self.preimage)
+    /// The facts the node carries beyond its key: a dimension's terms, or a
+    /// unit's dimension, target and exact `factor`/`offset`.
+    pub fn nominal_payload(&self) -> Option<&crate::value::nominal_payload::NominalPayload> {
+        self.nominal.as_ref()
+    }
+
+    /// The declaration's qualified name segments (FR-322): `Some` for a
+    /// [`NodeOwner::Source`] node, `None` for a [`NodeOwner::Model`] node.
+    pub fn declaration(&self) -> Option<&[String]> {
+        self.qualified_declaration.as_deref()
+    }
+
+    /// The admitted owner of the declaration; see the field's owner rule.
+    pub fn owner(&self) -> &crate::value::NodeOwner {
+        &self.owner
     }
 }
 
@@ -154,7 +190,7 @@ fn model_of<'a>(
     let model = declarations
         .models
         .iter()
-        .find(|model| model.declaration_key(object).is_some())?;
+        .find(|model| model.declaration_key(object.clone()).is_some())?;
     let name = model
         .alias()
         .map_or_else(|| model.selection().identity.clone(), str::to_owned);
@@ -173,7 +209,7 @@ pub(crate) fn over_timed(over: &ValueType, declarations: &TemporalDeclarations<'
     let ValueType::Reference(object) = over else {
         return false;
     };
-    model_of(declarations, *object)
+    model_of(declarations, object.clone())
         .and_then(|(_, source)| source)
         .is_some()
 }
@@ -189,7 +225,7 @@ pub(crate) fn binding(
     let ValueType::Reference(object) = over else {
         return Err(TemporalCause::TimedTraceSubject { span: clause });
     };
-    let Some((model, source)) = model_of(declarations, *object) else {
+    let Some((model, source)) = model_of(declarations, object.clone()) else {
         return Err(TemporalCause::TimedTraceSubject { span: clause });
     };
     match (clock.text.as_str(), source) {

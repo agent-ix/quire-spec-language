@@ -1125,7 +1125,7 @@ mod tests {
         );
         // The S3 input from a `pub` function, never named, then checked.
         let method = "fn plant(view: &View) -> Result<CheckedGraph, Refusal> {\n    \
-                      checked_dispatch_operation(view, root, clauses, source, meter)?\n        \
+                      checked_dispatch_operation(view, root, clauses, source, package_name, meter)?\n        \
                       .check(limits)\n}\n";
         assert_eq!(
             scan_planted(&[(EVAL_PLANT, method)]),

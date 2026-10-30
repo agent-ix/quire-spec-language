@@ -18,12 +18,12 @@ use super::*;
 use crate::spine::OperationName;
 use crate::FrameOperation;
 use crate::{
-    call_site, CallSite, CallSiteRefusal, ClauseName, ClauseSite, OccurrenceKey, OperationSite,
-    Origin, QualifiedName, Role, WireNodeId,
+    call_site, CallSite, CallSiteRefusal, ClauseName, ClauseSite, NodeKey, OccurrenceKey,
+    OperationSite, Origin, QualifiedName, Role,
 };
 
-fn wire(node: NodeKey) -> WireNodeId {
-    WireNodeId::from_digest(*node.as_bytes())
+fn wire(node: NodeKey) -> NodeKey {
+    node.clone()
 }
 
 fn operation(model: &str, object: &str, operation: &str) -> OperationName {
@@ -52,6 +52,7 @@ fn operation_site(
     let document = config_version_domain_document();
     call_site(
         source(),
+        "fixture".to_owned(),
         "clause-run-config-version.native",
         unit.as_bytes(),
         [document.as_slice()],
@@ -135,6 +136,7 @@ fn locate<S: crate::CallSiteSelection>(
 ) -> Result<CallSite<S::Site>, Box<CallSiteRefusal>> {
     call_site(
         source(),
+        "fixture".to_owned(),
         "call-site.native",
         unit.as_bytes(),
         [document],
@@ -144,7 +146,7 @@ fn locate<S: crate::CallSiteSelection>(
 }
 
 /// The node keys of `graph`'s state clauses of `kind`, in graph order.
-fn clause_nodes_of(graph: &qsl_semantics::check::CheckedGraph, kind: &str) -> Vec<WireNodeId> {
+fn clause_nodes_of(graph: &qsl_semantics::check::CheckedGraph, kind: &str) -> Vec<NodeKey> {
     state_clause_nodes(graph)
         .into_iter()
         .filter(|(_, found)| *found == kind)
@@ -152,12 +154,12 @@ fn clause_nodes_of(graph: &qsl_semantics::check::CheckedGraph, kind: &str) -> Ve
         .collect()
 }
 
-fn claim(node: WireNodeId) -> OccurrenceKey {
+fn claim(node: NodeKey) -> OccurrenceKey {
     OccurrenceKey::new(node, Origin::new(Role::new("claim"), 0))
 }
 
 /// FR-121-AC-3: `attemptUpdate`'s selection returns the compiled package's
-/// `package_id`, the one `operation_anchor` and `frame` node, the frame's
+/// the one `operation_anchor` and `frame` node, the frame's
 /// `generated` occurrence at ordinal 0 -- equal to the key a client builds
 /// through the facade's own `OccurrenceKey::new` and `Origin::new` -- and
 /// exactly the one postcondition naming the operation, at its `claim`
@@ -168,7 +170,6 @@ fn call_site_locates_an_operations_anchor_frame_and_clauses() {
     let site = operation_site(operation("Config", "ConfigVersion", "attemptUpdate"))
         .expect("attemptUpdate is named by VersionUnchanged");
     let compiled = config_version_compiled();
-    assert_eq!(site.package_id, compiled.emitted.package_id().record());
 
     let graph = compiled.package.graph();
     let operation = &site.site;
@@ -187,12 +188,12 @@ fn call_site_locates_an_operations_anchor_frame_and_clauses() {
         OccurrenceKey::new(frame, Origin::new(Role::new("generated"), 0))
     );
 
-    let posts: Vec<WireNodeId> = state_clause_nodes(graph)
+    let posts: Vec<NodeKey> = state_clause_nodes(graph)
         .into_iter()
         .filter(|(_, kind)| *kind == "postcondition")
         .map(|(node, _)| wire(node.key()))
         .collect();
-    let [post] = posts[..] else {
+    let [ref post] = posts[..] else {
         panic!("the unit declares one postcondition: {posts:?}");
     };
     let [clause] = &operation.clauses[..] else {
@@ -202,20 +203,20 @@ fn call_site_locates_an_operations_anchor_frame_and_clauses() {
         );
     };
     assert_eq!(clause.name.as_str(), "VersionUnchanged");
-    assert_eq!(clause.node, post);
+    assert_eq!(clause.node, post.clone());
     assert_eq!(
         clause.occurrence,
-        OccurrenceKey::new(post, Origin::new(Role::new("claim"), 0))
+        OccurrenceKey::new(post.clone(), Origin::new(Role::new("claim"), 0))
     );
 }
 
 /// FR-121-AC-5: an operation whose model alias, object type or operation
 /// does not resolve, or that no clause or attempt names, refuses
-/// `UnknownOperation`, paired with the compiled package's own `package_id`.
+/// `UnknownOperation`, paired with the package name.
 #[trace("TC-516", "FR-121-AC-5")]
 #[test]
 fn call_site_refuses_an_unknown_operation_paired_with_its_package() {
-    let package = config_version_compiled().emitted.package_id().record();
+    let package = qsl_semantics::library::LibraryName::new("fixture").unwrap();
     for selection in [
         operation("Nope", "ConfigVersion", "attemptUpdate"),
         operation("Config", "Nope", "attemptUpdate"),
@@ -281,13 +282,7 @@ fn call_site_returns_only_the_selected_operations_clauses_in_declaration_order()
 #[test]
 fn call_site_refuses_an_operation_no_clause_names() {
     let (unit, document) = two_operation_unit(false);
-    let package = locate(
-        &unit,
-        &document,
-        &ClauseName(identifier("VersionUnchanged")),
-    )
-    .expect("VersionUnchanged is declared")
-    .package_id;
+    let package = qsl_semantics::library::LibraryName::new("fixture").unwrap();
     let selection = operation("Config", "ConfigVersion", "probe");
     let refusal = locate(&unit, &document, &selection)
         .expect_err("no clause names probe, so it has no frame");
@@ -305,8 +300,7 @@ fn call_site_refuses_an_operation_no_clause_names() {
 
 /// FR-121-AC-8: a clause selection returns an invariant's, a
 /// precondition's and a postcondition's own `state_clause` node, of the
-/// clause's own kind, at its `claim` occurrence at ordinal 0, with the
-/// compiled package's `package_id`; a postcondition's answer is the one the
+/// clause's own kind, at its `claim` occurrence at ordinal 0, a postcondition's answer is the one the
 /// operation selection lists. A name no state clause declares -- including
 /// a function's -- refuses `UnknownClause`, paired with the package.
 #[trace("TC-516", "FR-121-AC-8")]
@@ -331,25 +325,27 @@ fn call_site_locates_a_state_clause_by_name() {
 
     let parent_order = clause("ParentOrder");
     let no_cycle = clause("NoCycle");
-    assert_eq!(
-        parent_order.package_id,
-        compiled.emitted.package_id().record()
-    );
-    let mut invariants = vec![parent_order.site.node, no_cycle.site.node];
+    let mut invariants = vec![parent_order.site.node.clone(), no_cycle.site.node.clone()];
     invariants.sort_unstable();
     let mut expected = clause_nodes_of(graph, "invariant");
     expected.sort_unstable();
     assert_eq!(invariants, expected, "the two invariants' own nodes");
     assert_eq!(parent_order.site.name.as_str(), "ParentOrder");
-    assert_eq!(parent_order.site.occurrence, claim(parent_order.site.node));
+    assert_eq!(
+        parent_order.site.occurrence,
+        claim(parent_order.site.node.clone())
+    );
 
     let pre = clause("AttemptPre");
-    assert_eq!(vec![pre.site.node], clause_nodes_of(graph, "precondition"));
-    assert_eq!(pre.site.occurrence, claim(pre.site.node));
+    assert_eq!(
+        vec![pre.site.node.clone()],
+        clause_nodes_of(graph, "precondition")
+    );
+    assert_eq!(pre.site.occurrence, claim(pre.site.node.clone()));
 
     let post = clause("VersionUnchanged");
     assert!(clause_nodes_of(graph, "postcondition").contains(&post.site.node));
-    assert_eq!(post.site.occurrence, claim(post.site.node));
+    assert_eq!(post.site.occurrence, claim(post.site.node.clone()));
     let attempt = locate(
         &unit,
         &document,
@@ -370,7 +366,10 @@ fn call_site_locates_a_state_clause_by_name() {
                 package,
             } => {
                 assert_eq!(refused, selection);
-                assert_eq!(package, parent_order.package_id);
+                assert_eq!(
+                    package,
+                    qsl_semantics::library::LibraryName::new("fixture").unwrap()
+                );
             }
             other => panic!("expected UnknownClause for {name}, got {other:?}"),
         }
@@ -383,7 +382,7 @@ fn call_site_locates_a_state_clause_by_name() {
 fn function_nodes_declaring(
     graph: &qsl_semantics::check::CheckedGraph,
     name: &str,
-) -> Vec<WireNodeId> {
+) -> Vec<NodeKey> {
     graph
         .semantic_graph()
         .nodes()
@@ -412,6 +411,7 @@ fn function_site_names_its_function_node_and_declaration_occurrence() {
     let site = |unit: &str, name: &str| {
         call_site(
             source(),
+            "fixture".to_owned(),
             "pq.native",
             unit.as_bytes(),
             [],
@@ -434,15 +434,21 @@ fn function_site_names_its_function_node_and_declaration_occurrence() {
 
     let p = site(PQ, "p");
     let q = site(PQ, "q");
-    assert_eq!(vec![p.function], function_nodes_declaring(graph, "p"));
-    assert_eq!(vec![q.function], function_nodes_declaring(graph, "q"));
+    assert_eq!(
+        vec![p.function.clone()],
+        function_nodes_declaring(graph, "p")
+    );
+    assert_eq!(
+        vec![q.function.clone()],
+        function_nodes_declaring(graph, "q")
+    );
     assert_eq!(
         p.declaration,
-        OccurrenceKey::new(p.function, Origin::new(Role::new("declaration"), 0))
+        OccurrenceKey::new(p.function.clone(), Origin::new(Role::new("declaration"), 0))
     );
     assert_eq!(
         q.declaration,
-        OccurrenceKey::new(q.function, Origin::new(Role::new("declaration"), 0))
+        OccurrenceKey::new(q.function.clone(), Origin::new(Role::new("declaration"), 0))
     );
     assert_eq!(p.parameters, q.parameters, "one shared parameter node");
     assert_ne!(p.function, q.function);
@@ -483,7 +489,13 @@ fn function_site_names_its_function_node_and_declaration_occurrence() {
             &operation("Config", "ConfigVersion", operation_name),
         )
         .expect("the operation is named");
-        clause_nodes.extend(operation_site.site.clauses.iter().map(|clause| clause.node));
+        clause_nodes.extend(
+            operation_site
+                .site
+                .clauses
+                .iter()
+                .map(|clause| clause.node.clone()),
+        );
     }
     assert!(!clause_nodes.contains(&same_identity.function));
 }
@@ -497,6 +509,7 @@ fn call_site_refuses_an_unsupplied_domain_package_as_model_intake() {
     let (unit, _) = two_operation_unit(true);
     let refusal = call_site(
         source(),
+        "fixture".to_owned(),
         "call-site.native",
         unit.as_bytes(),
         [],
@@ -535,6 +548,7 @@ fn call_site_refusal_codes_for_operations_clauses_and_intake() {
 
     let refusal = call_site(
         source(),
+        "fixture".to_owned(),
         "call-site.native",
         unit.as_bytes(),
         [],
@@ -549,10 +563,6 @@ fn call_site_refusal_codes_for_operations_clauses_and_intake() {
     let mut wire = super::frame_replay::request(
         unit.as_bytes(),
         &document,
-        qsl_foundation::digest::DigestRecord::mint(
-            qsl_foundation::digest::DigestDomain::PackageSemanticV2,
-            [4; 32],
-        ),
         &[],
         crate::ReplayTarget::function(
             crate::QualifiedName::new(vec![quire_exact::Identifier::new("attemptUpdate").unwrap()])
@@ -656,14 +666,14 @@ fn call_site_keys_a_state_field_under_its_declaring_type_by_name_ordinal() {
     assert_eq!(
         key("ConfigVersion", "parent"),
         crate::DomainKey::Node {
-            node: config_version,
+            node: config_version.clone(),
             path: vec![0]
         }
     );
     assert_eq!(
         key("ConfigVersion", "versionNumber"),
         crate::DomainKey::Node {
-            node: config_version,
+            node: config_version.clone(),
             path: vec![1]
         }
     );
@@ -678,7 +688,7 @@ fn call_site_keys_a_state_field_under_its_declaring_type_by_name_ordinal() {
     assert_eq!(
         key("Sub", "alpha"),
         crate::DomainKey::Node {
-            node: sub,
+            node: sub.clone(),
             path: vec![0]
         }
     );
@@ -690,7 +700,7 @@ fn call_site_keys_a_state_field_under_its_declaring_type_by_name_ordinal() {
         }
     );
 
-    let package = compiled.emitted.package_id().record();
+    let package = qsl_semantics::library::LibraryName::new("fixture").unwrap();
     for selection in [
         field("Config", "Sub", "nope"),
         field("Config", "ConfigVersion", "alpha"),
@@ -738,7 +748,7 @@ fn call_site_keys_a_field_of_a_type_no_clause_names() {
         .expect("Sub.alpha resolves")
         .site
         .domain;
-    let crate::DomainKey::Node { node: sub, .. } = unminted else {
+    let crate::DomainKey::Node { node: ref sub, .. } = unminted else {
         panic!("a field key is a node key: {unminted:?}");
     };
     let compiled = compile_config_version_unit(&unit, &packages);
@@ -748,7 +758,7 @@ fn call_site_keys_a_field_of_a_type_no_clause_names() {
             .graph()
             .semantic_graph()
             .nodes()
-            .any(|node| wire(node.key()) == sub),
+            .any(|node| wire(node.key()) == *sub),
         "no clause names Sub, so its node is not in the graph"
     );
     assert_eq!(unminted, minted);
@@ -765,7 +775,7 @@ fn a_field_key_and_a_population_key_with_one_ordinal_are_distinct() {
     let graph = compiled.package.graph();
     let config_version = wire(config_version_node_key(graph));
     let population = crate::DomainKey::Population {
-        member_type: config_version,
+        member_type: config_version.clone(),
         ordinal: 0,
     };
     let recorded: Vec<&crate::DomainKey> = graph
@@ -898,8 +908,7 @@ fn call_site_keys_a_population_as_its_requirement_records_do() {
 }
 
 /// FR-121-AC-22: a population selection whose alias or population does not
-/// resolve refuses `UnknownPopulation`, paired with the compiled package's
-/// own `package_id`.
+/// resolve refuses `UnknownPopulation`, paired with the package name.
 #[trace("TC-516", "FR-121-AC-22")]
 #[test]
 fn call_site_refuses_an_unknown_population_paired_with_its_package() {
@@ -907,10 +916,7 @@ fn call_site_refuses_an_unknown_population_paired_with_its_package() {
     let [(_, document)] = packages.iter().collect::<Vec<_>>()[..] else {
         panic!("one supplied document");
     };
-    let package = compile_config_version_unit(&unit, &packages)
-        .emitted
-        .package_id()
-        .record();
+    let package = qsl_semantics::library::LibraryName::new("fixture").unwrap();
     for selection in [
         population("Config", "nope"),
         population("Nope", "config_history"),

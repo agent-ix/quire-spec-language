@@ -47,8 +47,13 @@ fn unit(extra: &[(&str, &str)], declarations: &str) -> (String, DeclarationsOrRe
         qsl_cst::Limits::default(),
     )
     .expect("S1 admits the unit");
-    let assembled =
-        PackageDeclarations::assemble(raw.source().reference().clone(), built, selected, vec![]);
+    let assembled = PackageDeclarations::assemble(
+        raw.source().reference().clone(),
+        crate::TEST_PACKAGE_NAME.to_owned(),
+        built,
+        selected,
+        vec![],
+    );
     (text, assembled)
 }
 

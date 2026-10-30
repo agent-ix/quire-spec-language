@@ -116,8 +116,7 @@ impl HyperProductIdentity {
             .subjects
             .iter()
             .map(SubjectIdentity::of)
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|_| no_identity())?;
+            .collect::<Vec<_>>();
         if !package
             .graph()
             .hyper_clauses()
@@ -182,11 +181,7 @@ fn check_subjects(
             return Err(binding(Some(alias.as_str())).into());
         };
         let (one, other) = (first.simulation.package, subject.simulation.package);
-        let same = std::ptr::eq(one, other)
-            || one
-                .emitted_package_id()
-                .is_some_and(|id| other.emitted_package_id() == Some(id));
-        if !same {
+        if !std::ptr::eq(one, other) {
             return Err(binding(Some(alias.as_str())).into());
         }
     }

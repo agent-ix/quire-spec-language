@@ -670,9 +670,16 @@ fn complete(
     let models = qsl_replay::spine::select(&parsed, &packages, limits.model, &cancel)
         .map_err(failure)?
         .into_value();
-    let checked = qsl_replay::spine::check(&parsed, &models, &dependencies, limits, &cancel)
-        .map_err(failure)?
-        .into_value();
+    let checked = qsl_replay::spine::check(
+        &parsed,
+        package_name(source.identity()),
+        &models,
+        &dependencies,
+        limits,
+        &cancel,
+    )
+    .map_err(failure)?
+    .into_value();
     let emitted = qsl_replay::spine::package(
         &checked,
         qsl_replay::spine::PackageLimits::default(),
@@ -976,8 +983,9 @@ fn run_complete(
         accounting: call_accounting(&call.accounting),
         supplied: request.limits.supplied.unwrap_or_default(),
     };
-    let (_, outcome) = qsl_replay::spine::run(
+    let outcome = qsl_replay::spine::run(
         source.source().identity().clone(),
+        package_name(source.source().identity()),
         source.source().path(),
         source.source().text().as_bytes(),
         &packages,
@@ -994,6 +1002,14 @@ fn run_complete(
         other => RunCause::SpineRun(Box::new(other)),
     })?;
     output::spine_run_result(&source, &call.function, outcome)
+}
+
+/// The package name a program compiles under: its source identity's
+/// `identity` label.
+fn package_name(identity: &qsl_foundation::source::SourceIdentity) -> String {
+    identity
+        .label(qsl_foundation::source::SourceLabel::Identity)
+        .to_owned()
 }
 
 /// The call's accounting limits (FR-100): each named counter uses the

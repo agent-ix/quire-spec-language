@@ -320,16 +320,6 @@ fn assert_clause_graph(wire: &Value, clause: &Value) {
     assert_eq!(constraint["body"]["value"], json!(true));
 }
 
-fn reference_key(text: &str) -> (String, Value) {
-    let (_, wire, read) = emit_model_unit(text, None);
-    assert!(matches!(read, Read::Verified { .. }), "{read:?}");
-    let reference = node_of(&wire, "protocol", "protocol_reference").clone();
-    (
-        reference["node_id"]["digest"].as_str().unwrap().to_owned(),
-        wire,
-    )
-}
-
 const REFERS_TO_FILL: &str = "function refers using v(): Boolean pure { protocol Fill }\n";
 
 /// The spine-model unit whose protocol `Flow` has two roles and a channel
@@ -411,7 +401,7 @@ fn a_reference_emits_the_target_node_and_one_carrier_the_reader_admits() {
         reference["occurrences"],
         json!([{"role": "expression", "ordinal": 0}])
     );
-    for absent in ["declaration", "owner", "nominal_identity_preimage"] {
+    for absent in ["declaration", "owner"] {
         assert!(
             reference.get(absent).is_none_or(Value::is_null),
             "{absent}: {reference}"
@@ -508,9 +498,11 @@ fn a_trigger_nested_runs_roles_and_scheduling_emit_what_the_reader_admits() {
     let roles = clause_argument(clause, "roles")["members"]
         .as_array()
         .unwrap();
-    let digests: Vec<&str> = roles
+    let digests: Vec<quire_exact::NodeKey> = roles
         .iter()
-        .map(|role| role["target"]["digest"].as_str().unwrap())
+        .map(|role| {
+            qsl_foundation::node_wire::node_key_from_json(&role["target"]).expect("a node id")
+        })
         .collect();
     assert_eq!(digests.len(), 2);
     assert!(
@@ -657,7 +649,7 @@ fn a_clause_key_is_distinct_per_protocol_and_independent_of_declaration_order() 
                         .as_str()
                         .unwrap()
                         .to_owned(),
-                    node["node_id"]["digest"].as_str().unwrap().to_owned(),
+                    node["node_id"].to_string(),
                 )
             })
             .collect()
@@ -667,42 +659,6 @@ fn a_clause_key_is_distinct_per_protocol_and_independent_of_declaration_order() 
     assert_eq!(forward.len(), 2);
     assert_ne!(forward["Fill"], forward["Drain"]);
     assert_eq!(forward, keys_of(&format!("{drain}{fill}")));
-}
-
-/// FR-092-AC-17 (TC-1021 step 6): the reference's key is the digest of its
-/// `quire.structural-node/v1` preimage, follows the bound target, repeats for
-/// the same unit and changes with the target's key.
-#[trace("FR-092-AC-17", "TC-1021")]
-#[test]
-fn a_references_key_follows_its_bound_target() {
-    let both = format!("{}{}", protocol("Fill"), protocol("Drain"));
-    let against_fill = selecting(&format!("{REFERS_TO_FILL}{both}"));
-    let against_drain = selecting(&format!(
-        "function refers using v(): Boolean pure {{ protocol Drain }}\n{both}"
-    ));
-    let (fill, fill_wire) = reference_key(&against_fill);
-    let (drain, _) = reference_key(&against_drain);
-    let (again, _) = reference_key(&against_fill);
-    assert_ne!(fill, drain, "different targets, different keys");
-    assert_eq!(fill, again, "the same unit, the same key");
-
-    let carrier = node_of(&fill_wire, "protocol", "protocol_reference");
-    let preimage = json!({
-        "version": "quire.structural-node/v1",
-        "node_tag": "protocol",
-        "semantic_form": "protocol_reference",
-        "semantic_type": carrier["semantic_type"],
-        "declaration": null,
-        "recursion": null,
-        "body": {"term": "reference", "target": carrier["body"]["target"]},
-    });
-    assert_eq!(fill, sha256_hex(&jcs(&preimage)));
-
-    // `Fill` renamed: its node key changes, so the reference's does too.
-    let renamed =
-        selecting(&format!("{REFERS_TO_FILL}{}", protocol("Fill")).replace("Fill", "Pour"));
-    let (poured, _) = reference_key(&renamed);
-    assert_ne!(fill, poured, "a changed target key changes the reference");
 }
 
 /// FR-218-AC-8 (TC-1021 step 4): an unknown name, a name only qualified, a
@@ -801,7 +757,7 @@ fn a_reference_bound_to_a_key_no_node_carries_refuses_missing_name() {
             .key()
     };
     let (target, reference) = (key_of("protocol_clause"), key_of("protocol_reference"));
-    assert!(graph.semantic_graph_mut().remove(target).is_some());
+    assert!(graph.semantic_graph_mut().remove(target.clone()).is_some());
     let refusal = emit_checked(&CheckedPackage::link(graph)).expect_err("no package");
     assert_eq!(refusal.code(), qsl_foundation::Code::MissingDeclaration);
     assert_eq!(refusal.cause(), Some("missing-name"));
