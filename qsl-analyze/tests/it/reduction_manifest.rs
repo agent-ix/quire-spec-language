@@ -195,8 +195,6 @@ fn en1_entry(reductions: &[&str]) -> Json {
         "tool": {
             "name": env!("CARGO_PKG_NAME"),
             "version": env!("CARGO_PKG_VERSION"),
-            "build": {"domain": "quire.build-inputs/v1", "algorithm": "sha256",
-                "digest": "00".repeat(32)},
         },
         "advertises": en1::ADVERTISED
             .iter()

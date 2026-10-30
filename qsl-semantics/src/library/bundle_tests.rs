@@ -416,7 +416,6 @@ fn a_missing_facet_or_capability_refuses_and_no_backend_input_exists() {
         linked.bundle().validate_known_capabilities(&narrower),
         Err(PackageError::UnknownCapability(_))
     ));
-
     let incomplete: Vec<_> = definitions
         .iter()
         .filter(|definition| definition.exact().identity() != "quire.observation.complete/v1")
@@ -468,7 +467,6 @@ fn reinterpret_definition(
         definition.exact_bytes(),
     )
 }
-
 /// The FR-131 half of the former compiled-model test: a definition root that
 /// names a compiled model's identity is a root the catalog lacks, so it
 /// refuses `unsupported-selection`; model selections resolve only through I1
@@ -550,7 +548,7 @@ fn catalog_and_link_resource_limits_have_exact_boundaries() {
         artifact_bytes,
         ..PackageLimits::default()
     };
-    assert!(link_bundle(&selected, &catalog, link_exact,).is_ok());
+    assert!(link_bundle(&selected, &catalog, link_exact).is_ok());
     let artifact_refusal = link_bundle(
         &selected,
         &catalog,
@@ -1098,7 +1096,7 @@ fn a_link_enforces_its_own_single_artifact_bytes() {
     );
     assert_catalogued(&refusal);
     assert_eq!(
-        link_bundle(&selected, &catalog, raised,).unwrap().limits(),
+        link_bundle(&selected, &catalog, raised).unwrap().limits(),
         raised
     );
 }

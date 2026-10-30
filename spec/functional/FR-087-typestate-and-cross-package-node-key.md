@@ -396,7 +396,6 @@ Each `resolve_source_package` capability goes one of two ways:
 | Definition closure over a caller-supplied `DefinitionCatalog`: root refusal (`unknown_profile`), dependency edges, `missing_import`, `conflicting-authority`, `definition-cycle` | Moves to `library::bundle` ([FR-111](FR-111-link-a-complete-v1-definition-bundle.md)). |
 | Complete-V1 facet and 176-capability bundle (`CompleteBundle`, `feature-set-mismatch`, `unknown_required_feature`) | Moves to `library::bundle` (FR-111). |
 | `PackageLimits` (definitions, dependency edges, artifact bytes, single-artifact bytes) | Moves to `library::bundle`; every field still applies, to the catalog and to the closure (FR-111). |
-| Resolved-graph identity (`quire.complete.resolved-graph/2`) | Moves to `library::bundle` as the bundle identity (FR-111). |
 | Source authority and selection spans on a refusal (`SourceAuthority`, `PackageRefusal`'s span) | Deleted. A bundle refusal names its root's index (FR-111); a spine refusal names its region (FR-110, ADR-011 §2.3). |
 | Compiled-model resolution (`ModelCatalog`, `ModelArtifact`, `ModelConflict`, the model `PackageError` variants) | Deleted. Model selections resolve only through I1 (a `model` declaration has no version form, FR-056). The FR-131 half of its test, a definition root naming a compiled model's identity, moves to FR-111-AC-2 (`unsupported-selection`). |
 
