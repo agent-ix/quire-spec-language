@@ -40,6 +40,7 @@ use qsl_semantics::check::{
     AbstractionKey, Capability, CheckedAbstractionRelation, CheckedRefinement, OperationKey,
 };
 use qsl_semantics::model::state::ModelState;
+use quire_contract_model::CheckedOccurrenceRole;
 use quire_exact::{EffectiveId, Identifier, NodeKey, Value};
 use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::model_transition::ModelTransition;
@@ -264,10 +265,11 @@ pub fn select_contract(
     claim: &OccurrenceKey,
 ) -> Result<ContractClaim, ContractSelection> {
     let graph = package.graph();
-    let role = claim.origin().role().as_str();
+    let role = qsl_package::occurrence_role(claim.origin().role().as_str())
+        .ok_or(ContractSelection::NoForm)?;
     // A refinement node is minted beside the semantic graph (FR-375), so a
     // `generated` claim is matched by occurrence, not resolved.
-    let node = if role == "generated" {
+    let node = if role == CheckedOccurrenceRole::Generated {
         None
     } else {
         Some(
@@ -285,7 +287,7 @@ pub fn select_contract(
         bound,
     };
     match (role, node) {
-        ("claim", Some(node))
+        (CheckedOccurrenceRole::Claim, Some(node))
             if graph
                 .step_relations()
                 .iter()
@@ -293,7 +295,7 @@ pub fn select_contract(
         {
             step_relation(package, claim, node)
         }
-        ("claim", Some(node)) => {
+        (CheckedOccurrenceRole::Claim, Some(node)) => {
             let clause = graph
                 .state_clauses()
                 .iter()
@@ -336,7 +338,7 @@ pub fn select_contract(
             };
             Ok(selected(ContractForm::Clause, target, bound))
         }
-        ("anchor", Some(node)) => {
+        (CheckedOccurrenceRole::Anchor, Some(node)) => {
             let frame = graph
                 .operation_frame_by_anchor(node)
                 .ok_or(ContractSelection::NoForm)?;
@@ -352,7 +354,7 @@ pub fn select_contract(
             let bound = binding(relation, &key, elements)?;
             Ok(selected(ContractForm::Frame, Target::Frame, bound))
         }
-        ("generated", _) => {
+        (CheckedOccurrenceRole::Generated, _) => {
             let entry = graph
                 .refinements()
                 .iter()
