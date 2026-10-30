@@ -594,9 +594,6 @@ fn key(package: &str, identity: &str) -> DeclarationKey {
     }
 }
 
-const PLACEHOLDER_DIGEST: &str =
-    "sha256:0000000000000000000000000000000000000000000000000000000000000000";
-
 /// The FR-154 intake document envelope `agent-ix-semantic-ir`'s own schema
 /// layer requires beyond `constructs[]`/`types[]` (M5, review of PR #200):
 /// `contractVersion`, the canonicalization profile, `source`, `package`'s full
@@ -610,15 +607,12 @@ fn wire_envelope(package_identity: &str, constructs: Value, types: Value) -> Val
             "identity": format!("ix://{package_identity}/spec"),
             "version": "1.0.0",
             "dialect": "spec-bundle",
-            "digest": PLACEHOLDER_DIGEST,
         },
         "package": {
             "identity": package_identity,
             "version": "1.0.0",
-            "manifestDigest": PLACEHOLDER_DIGEST,
             "mappingVersions": [],
             "profileVersions": [],
-            "lockDigest": PLACEHOLDER_DIGEST,
         },
         "occurrences": [],
         "extensions": [],
@@ -631,7 +625,6 @@ fn wire_construct(module: &str, name: &str, meaning: &str, members: Value) -> Va
     serde_json::json!({
         "kind": {"module": module, "name": name},
         "moduleVersion": "1.0.0",
-        "manifestDigest": PLACEHOLDER_DIGEST,
         "construct": {
             "identity": "none",
             "shape": "record",

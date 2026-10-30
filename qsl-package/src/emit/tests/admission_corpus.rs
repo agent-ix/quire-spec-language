@@ -476,7 +476,6 @@ fn with_state_machine(base: &[u8], from: &str, package: &str) -> Vec<u8> {
         .push(json!({
             "kind": {"module": package, "name": "state_machine"},
             "moduleVersion": "1.0.0",
-            "manifestDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
             "construct": {
                 "identity": "none", "shape": "record",
                 "members": {"states": "required", "transitions": "required"},

@@ -5927,9 +5927,6 @@ mod tests {
     // with schema-valid stand-ins, so the refusal each test asserts on is
     // this reader's own, not the validator's completeness check firing first.
 
-    const PLACEHOLDER_DIGEST: &str =
-        "sha256:0000000000000000000000000000000000000000000000000000000000000000";
-
     fn wire_envelope(package_identity: &str, constructs: Value, types: Value) -> Value {
         serde_json::json!({
             "contractVersion": "2.0.0",
@@ -5938,15 +5935,12 @@ mod tests {
                 "identity": format!("ix://{package_identity}/spec"),
                 "version": "1.0.0",
                 "dialect": "spec-bundle",
-                "digest": PLACEHOLDER_DIGEST,
             },
             "package": {
                 "identity": package_identity,
                 "version": "1.0.0",
-                "manifestDigest": PLACEHOLDER_DIGEST,
                 "mappingVersions": [],
                 "profileVersions": [],
-                "lockDigest": PLACEHOLDER_DIGEST,
             },
             "occurrences": [],
             "extensions": [],
@@ -5959,7 +5953,6 @@ mod tests {
         serde_json::json!({
             "kind": {"module": module, "name": name},
             "moduleVersion": "1.0.0",
-            "manifestDigest": PLACEHOLDER_DIGEST,
             "construct": {
                 "identity": "none",
                 "shape": "record",

@@ -253,7 +253,7 @@ fn build_with(flavor: Flavor) -> Value {
     if text {
         // A value type carrying a `scalar` is a record-shaped construct
         // (the `value` construct is the `target` alias).
-        let mut scalar = json!({
+        let scalar = json!({
             "kind": {"module": base::BUSINESS, "name": "scalar"},
             "moduleVersion": "1.0.0",
             "construct": {
@@ -261,19 +261,17 @@ fn build_with(flavor: Flavor) -> Value {
                 "meaning": "quire.meaning.model.value-type/v1",
             },
         });
-        scalar["manifestDigest"] = document["package"]["manifestDigest"].clone();
         document["constructs"]
             .as_array_mut()
             .expect("constructs")
             .push(scalar);
     }
     if collections {
-        let manifest = document["package"]["manifestDigest"].clone();
         document["constructs"]
             .as_array_mut()
             .expect("constructs")
             .push({
-                let mut bounded = json!({
+                let bounded = json!({
                     "kind": {"module": base::BUSINESS, "name": "bounded"},
                     "moduleVersion": "1.0.0",
                     "construct": {
@@ -281,7 +279,6 @@ fn build_with(flavor: Flavor) -> Value {
                         "meaning": "quire.meaning.model.value-type/v1",
                     },
                 });
-                bounded["manifestDigest"] = manifest;
                 bounded
             });
     }
