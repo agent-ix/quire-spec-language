@@ -15,7 +15,7 @@ use quire_spec_language::linking::composed::binding::{self, Disposition as Bindi
 use quire_spec_language::linking::composed::binding_work::Limits as BindingLimits;
 use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
 use quire_spec_language::linking::composed::definitions::{Artifact, Inventory, RuleInput};
-use quire_spec_language::linking::composed::models::ModelInput;
+use quire_spec_language::linking::composed::models::{ImportRefusal, ModelInput};
 use quire_spec_language::linking::composed::requests::{
     self, Aggregate, Assessment, Disposition, Family, InventoryGap, Request,
 };
@@ -368,6 +368,45 @@ fn changing_a_required_profile_selection_changes_the_static_subject() {
         assert_eq!(new.closure[0], R::StateQueries);
         assert_eq!(old.closure[0], R::StateGraph);
     }
+}
+
+/// A different model package supplied in place of the selected one is a changed
+/// required selection: the import names no supplied package and no declaration
+/// inherits the other model's meaning.
+#[test]
+#[trace("TC-115", "FR-036-AC-5")]
+fn a_model_of_another_package_is_not_inherited_as_the_selected_meaning() {
+    let authored = setup::native_rule_model::parts().model();
+    let other = setup::authored_model(|document| {
+        document["package"] = Value::from("example/other-tests");
+    });
+    assert_ne!(
+        authored.environment().owner().package(),
+        other.environment().owner().package()
+    );
+
+    let sources = ecosystem(&authored, R::StateGraph);
+    let models = [ModelInput::Native(&other)];
+    with_reports(
+        &sources,
+        &models,
+        WorkLimits::default(),
+        Limits::default(),
+        BindingLimits::default(),
+        |inventory, _, report| {
+            assert!(report.complete(), "{:?}", report.exhaustion());
+            let subject = StaticSubject::of(inventory, report).unwrap();
+            for component in subject.models() {
+                assert_eq!(component.selection, Err(ImportRefusal::MissingPackage));
+            }
+            for entry in report.declarations() {
+                assert_eq!(
+                    report.disposition(entry.declaration()),
+                    Some(BindingDisposition::Refused)
+                );
+            }
+        },
+    );
 }
 
 // ---------------------------------------------------------------------------
