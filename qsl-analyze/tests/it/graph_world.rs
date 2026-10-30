@@ -249,8 +249,7 @@ impl World {
             "language \"ix:native\" edition \"1-draft\";\n\
              profile v = \"quire.value.complete/v1\";\n{profiles}\
              model {} = \"{}\";\n{body}",
-            model.alias,
-            model.package
+            model.alias, model.package
         );
         let parsed = qsl_cst::parse(
             SourceIdentity::new("agent-ix", "graph", "git", "1"),

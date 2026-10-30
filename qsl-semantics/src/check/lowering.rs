@@ -2493,11 +2493,7 @@ impl<'a> Lowering<'a> {
     /// The law of `role`, or the FR-093 refusal.
     fn law(&self, role: LawRole, location: &Location) -> Result<OperationLaw, CheckRefusal> {
         let definition = match role {
-            LawRole::TextProfile => Some(
-                DefinitionLock::pinned()
-                    .entry(CatalogRole::TextProfile)
-                    .reference(),
-            ),
+            LawRole::TextProfile => Some(DefinitionRole::TextProfile.reference()),
             LawRole::IeeeProfile => self
                 .scope
                 .ieee_profile

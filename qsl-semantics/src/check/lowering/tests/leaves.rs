@@ -39,26 +39,6 @@ fn node_record() -> CompositeDeclaration {
     )
 }
 
-fn record_a() -> CompositeDeclaration {
-    record(
-        "A",
-        vec![
-            required("name", text(8, TextProfile::BinaryUtf8)),
-            optional("b", ValueType::Composite(handle("B"))),
-        ],
-    )
-}
-
-fn record_b() -> CompositeDeclaration {
-    record(
-        "B",
-        vec![
-            required("tag", text(4, TextProfile::Nfc)),
-            optional("a", ValueType::Composite(handle("A"))),
-        ],
-    )
-}
-
 fn named(name: &str) -> TypeForm {
     TypeForm::name(name, SPAN)
 }
@@ -72,27 +52,6 @@ fn equality(name: &str, (left, right): (&str, &str), operand: TypeForm) -> Funct
         None,
         binary(BinaryOperator::Equal, name_expr(left), name_expr(right)),
     )
-}
-
-/// `eq`, `has`, `eqa` and `eqo` of FR-093's Recursive text-leaf vectors.
-fn vector_functions() -> Vec<FunctionDeclaration> {
-    let nodes = TypeForm::collection(CollectionKind::Sequence, SPAN)
-        .with_arguments(vec![named("Node")])
-        .with_bounds(vec!["0".into(), "3".into()]);
-    let option_node =
-        TypeForm::builtin(BuiltinType::Option, SPAN).with_arguments(vec![named("Node")]);
-    vec![
-        equality("eq", ("a", "b"), named("Node")),
-        function(
-            "has",
-            &[("s", nodes), ("b", named("Node"))],
-            boolean(),
-            None,
-            Expression::contains(name_expr("s"), name_expr("b")),
-        ),
-        equality("eqa", ("x", "y"), named("A")),
-        equality("eqo", ("a", "b"), option_node),
-    ]
 }
 
 /// A package declaring `records` and holding `functions`.

@@ -11,9 +11,7 @@ use crate::value::definition::{admit_ieee_profile, DefinitionRole};
 
 /// QSL's text-profile definition, the law a text operation names.
 fn text_definition() -> DefinitionReference {
-    DefinitionLock::pinned()
-        .entry(CatalogRole::TextProfile)
-        .reference()
+    DefinitionRole::TextProfile.reference()
 }
 
 /// The pinned lock's IEEE profile definition.

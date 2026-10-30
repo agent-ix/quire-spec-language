@@ -1485,9 +1485,7 @@ fn a_text_equality_carries_the_text_profile_law() {
             name_expr("r"),
         )),
     );
-    let definition = DefinitionLock::pinned()
-        .entry(CatalogRole::TextProfile)
-        .reference();
+    let definition = DefinitionRole::TextProfile.reference();
     let graph = PackageDeclarations {
         functions: vec![te],
         ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
