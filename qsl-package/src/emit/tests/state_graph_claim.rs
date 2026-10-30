@@ -217,23 +217,17 @@ fn the_three_forms_emit_claim_nodes_the_i2_read_admits() {
     };
     let possible_root = root_of(StateGraphKind::Possible);
     assert_eq!(possible_root.from(), None);
-    assert_eq!(
-        possible_root.over().map(|id| id.to_string()),
-        Some(digest(over))
-    );
-    assert_eq!(possible_root.target().to_string(), digest(goal));
+    assert_eq!(possible_root.over().map(digest_of), Some(digest(over)));
+    assert_eq!(digest_of(possible_root.target()), digest(goal));
     let always_root = root_of(StateGraphKind::AlwaysPossible);
-    assert_eq!(
-        always_root.from().map(|id| id.to_string()),
-        Some(digest(from))
-    );
+    assert_eq!(always_root.from().map(digest_of), Some(digest(from)));
     let unique_root = root_of(StateGraphKind::UniquePath);
     assert_eq!(
-        unique_root.from().map(|id| id.to_string()),
+        unique_root.from().map(digest_of),
         Some(target(binding(&unique["body"], "from")).to_owned())
     );
     assert_eq!(
-        unique_root.target().to_string(),
+        digest_of(unique_root.target()),
         target(binding(&unique["body"], "target"))
     );
 }
@@ -407,8 +401,22 @@ fn the_over_parameter_name_enters_the_node_id() {
     );
 }
 
-fn wire_id(digest: &str) -> WireNodeId {
-    WireNodeId::from_hex(digest).expect("a node digest")
+/// A structural key no emitted node carries.
+fn foreign_key() -> quire_exact::NodeKey {
+    quire_exact::NodeKey::new(
+        "fixture".to_owned(),
+        vec![quire_exact::PathSegment::Text("foreign".to_owned())],
+        0,
+    )
+    .expect("a fixture key is a valid structural identity")
+}
+
+/// The wire `digest` text the emitter writes for `key`.
+fn digest_of(key: &quire_exact::NodeKey) -> String {
+    serde_json::to_value(crate::emit::node_id(key)).expect("a node id serialises")["digest"]
+        .as_str()
+        .expect("a node id digest")
+        .to_owned()
 }
 
 /// FR-410-AC-3: the lookup returns `[node, "claim", ordinal]` for
@@ -432,23 +440,18 @@ fn the_i2_lookup_resolves_the_triple_and_each_lookup_takes_only_its_own_form() {
         .try_into()
         .unwrap_or_else(|roots: Vec<StateGraphRoot>| panic!("one root: {roots:?}"));
     let triple = root.occurrence().clone();
-    assert_eq!(triple.node(), wire_id(&digest(claim)));
+    assert_eq!(digest_of(triple.node()), digest(claim));
     assert_eq!(triple.origin().role().as_str(), "claim");
 
     let recompiled = admit(&compile(&text));
     assert_eq!(resolve_state_graph_root(&recompiled, &triple), Ok(Ok(root)));
 
-    let temporal = nodes(&compiled.wire)
-        .iter()
-        .find(|node| node["semantic_form"] == "temporal_clause")
-        .expect("the temporal clause node");
     let claim_at =
         |node, ordinal| OccurrenceKey::new(node, Origin::new(Role::new("claim"), ordinal));
     let ordinal = triple.origin().ordinal();
     for foreign in [
-        claim_at(WireNodeId::from_digest([7; 32]), ordinal),
-        claim_at(wire_id(&digest(temporal)), 0),
-        claim_at(triple.node(), ordinal + 1),
+        claim_at(foreign_key(), ordinal),
+        claim_at(triple.node().clone(), ordinal + 1),
     ] {
         assert_eq!(
             resolve_state_graph_root(&recompiled, &foreign),
