@@ -8,8 +8,8 @@ use std::collections::BTreeMap;
 use ix_trace_rs::trace;
 use qsl_foundation::digest::{DigestDomain, DigestRecord};
 use qsl_foundation::{Code, SourceIdentity};
-use qsl_semantics::model::intake::package_input;
 use qsl_semantics::library::LibraryName;
+use qsl_semantics::model::intake::package_input;
 use quire_exact::{Identifier, Integer, ScalarLimits};
 
 use super::*;
@@ -345,7 +345,8 @@ fn tc_759_the_emitted_provision_replays_to_the_same_package() {
         .expect("the unit selects")
         .into_value();
     let checked = crate::spine::check(
-        &parsed, "fixture".to_owned(),
+        &parsed,
+        "fixture".to_owned(),
         &models,
         &crate::spine::DependencyInput::default(),
         limits,
@@ -412,9 +413,11 @@ fn tc_444_a_witness_decodes_by_parameter_node_id() {
             ReplaySource::Witness(Witness::parse(format!("<<<assertion|h|c|{values}>>>")).unwrap()),
         )
     };
-    let ReplayResult::Witness(result) =
-        replay(witness(format!("{}=8", crate::pn(&x))), ReplayLimits::default()).unwrap()
-    else {
+    let ReplayResult::Witness(result) = replay(
+        witness(format!("{}=8", crate::pn(&x))),
+        ReplayLimits::default(),
+    )
+    .unwrap() else {
         panic!("a Witness-sourced request settles on the Witness arm");
     };
     assert_eq!(
@@ -758,18 +761,15 @@ fn tc_444_a_boolean_parameter_replays() {
     let b = parameter(&compiled, "flag", 0);
     let flag = |source_of: ReplaySource| {
         replay(
-            request(
-                source.as_bytes(),
-                &compiled,
-                name(&["flag"]),
-                source_of,
-            ),
+            request(source.as_bytes(), &compiled, name(&["flag"]), source_of),
             ReplayLimits::default(),
         )
         .unwrap()
     };
     let witness = |bit: u8| {
-        ReplaySource::Witness(Witness::parse(format!("<<<assertion|h|c|{}={bit}>>>", crate::pn(&b))).unwrap())
+        ReplaySource::Witness(
+            Witness::parse(format!("<<<assertion|h|c|{}={bit}>>>", crate::pn(&b))).unwrap(),
+        )
     };
 
     let ReplayResult::Witness(off) = flag(witness(0)) else {
@@ -1070,10 +1070,7 @@ impl Importing {
 
     /// The `test/units` entry, from the unit's own source.
     fn units_entry(&self) -> crate::request::DependencyEntryWire {
-        entry(
-            "test/units",
-            vec![source_ref(UNITS_IDENTITY, REVISION)],
-        )
+        entry("test/units", vec![source_ref(UNITS_IDENTITY, REVISION)])
     }
 }
 
@@ -1462,10 +1459,7 @@ fn tc_444_dependency_entries_refuse_by_the_d4_rules() {
     let units = importing.units_entry();
     let units_bytes = importing.units.as_bytes();
     let extra_bytes = units_source("function spare using v(): Boolean pure { true }\n");
-    let extra = entry(
-        "test/zzz",
-        vec![source_ref("test:zzz", REVISION)],
-    );
+    let extra = entry("test/zzz", vec![source_ref("test:zzz", REVISION)]);
     let provision: &[&[u8]] = &[units_bytes, extra_bytes.as_bytes()];
 
     // An extra entry no import reaches: refused after the recompile.
@@ -2060,10 +2054,7 @@ fn parity_unit() -> String {
 
 /// A request replaying `function` of [`parity_unit`] with `source`, built
 /// from its parameter 0's node id.
-fn parity_request(
-    function: &str,
-    bind: impl FnOnce(NodeKey) -> ReplaySource,
-) -> ReplayRequestWire {
+fn parity_request(function: &str, bind: impl FnOnce(NodeKey) -> ReplaySource) -> ReplayRequestWire {
     let source = parity_unit();
     let compiled = spine(&source, &BTreeMap::new());
     let mut wire = request(
@@ -3248,11 +3239,7 @@ mod operator_arm {
         let graph = at(
             node,
             ScalarOperation::Add {
-                left: ScalarOperand::graph_child(
-                    1,
-                    range(-5, 100),
-                    crate::fixture_node(0x11),
-                ),
+                left: ScalarOperand::graph_child(1, range(-5, 100), crate::fixture_node(0x11)),
                 right: operand(2),
             },
         );

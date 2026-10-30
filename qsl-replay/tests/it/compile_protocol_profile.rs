@@ -38,7 +38,8 @@ fn unit(profile: Option<&str>, declarations: &str) -> String {
 fn compile(text: &str) -> Result<Value, ReplayRefusal> {
     let stages: StageLimits = [(Setting::S1InputBytes, 1 << 20)].into_iter().collect();
     let compiled = compile_package(
-        SourceIdentity::new("a", "u", "git", "1"), "fixture".to_owned(),
+        SourceIdentity::new("a", "u", "git", "1"),
+        "fixture".to_owned(),
         "unit.native",
         text.as_bytes(),
         [MODEL],

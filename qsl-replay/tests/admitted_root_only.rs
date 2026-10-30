@@ -26,7 +26,8 @@ fn admit(
     stages: StageLimits,
 ) -> Result<qsl_replay::AdmittedCompilation, AdmittedRefusal> {
     compile_admitted(
-        SourceIdentity::new("a", "u", "git", "1"), "fixture".to_owned(),
+        SourceIdentity::new("a", "u", "git", "1"),
+        "fixture".to_owned(),
         "unit.native",
         bytes,
         [],

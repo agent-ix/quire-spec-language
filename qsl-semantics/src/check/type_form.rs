@@ -608,7 +608,7 @@ mod tests {
     use super::*;
     use crate::check::family::fixtures::{empty_scope, root_location, scope_with};
     use ix_trace_rs::trace;
-    use quire_exact::{CollectionKind, EffectiveId};
+    use quire_exact::CollectionKind;
     use quire_semantic_value::declaration::{ObjectTypeDeclaration, TypeEnvironment};
 
     const SPAN: qsl_foundation::Span = qsl_foundation::Span { start: 0, end: 0 };
@@ -704,7 +704,7 @@ mod tests {
         TypeEnvironment::new(
             [],
             [ObjectTypeDeclaration::new(
-                EffectiveId::from_digest([7; 32]),
+                quire_exact::EffectiveId::new(None, quire_exact::OriginalDeclarationKey::new("fixture", "o7")),
                 name,
                 Vec::new(),
             )],
@@ -887,7 +887,7 @@ mod tests {
         let scope = scope_with(object_type("M::A"), Vec::new());
         assert_eq!(
             resolve_in(&scope, &reference("M::A")).expect("M::A is declared"),
-            ValueType::Reference(EffectiveId::from_digest([7; 32]))
+            ValueType::Reference(quire_exact::EffectiveId::new(None, quire_exact::OriginalDeclarationKey::new("fixture", "o7")))
         );
         let refusal = resolve_in(&scope, &reference("M::B")).unwrap_err();
         assert!(

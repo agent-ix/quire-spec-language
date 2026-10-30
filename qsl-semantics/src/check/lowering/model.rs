@@ -2251,8 +2251,8 @@ impl<'a> Lowering<'a> {
             let site = type_declaration(&quantity_origin(kind, &qualified.join(".")));
             let declaration = identifiers(qualified.iter().map(String::as_str), &site)?;
             // FR-322: a node this unit declares carries its `SourceOwner`.
-            let owner = (key.package() == self.package_name)
-                .then(|| Owner::Source(self.owner.clone()));
+            let owner =
+                (key.package() == self.package_name).then(|| Owner::Source(self.owner.clone()));
             let inserted = self.insert_nominal(
                 &site,
                 key.clone(),

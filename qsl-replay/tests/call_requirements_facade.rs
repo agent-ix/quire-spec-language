@@ -66,7 +66,8 @@ fn with_requirements(
     cancel: &Cancel,
 ) -> Result<RunWithRequirements, Box<RunRefusal>> {
     run_with_requirements(
-        identity(), "fixture".to_owned(),
+        identity(),
+        "fixture".to_owned(),
         "unit.native",
         source.as_bytes(),
         &BTreeMap::new(),
@@ -108,7 +109,8 @@ fn record_keys(source: &str) -> Vec<OccurrenceKey> {
         .expect("selects")
         .into_value();
     let checked = spine::check(
-        &parsed, "fixture".to_owned(),
+        &parsed,
+        "fixture".to_owned(),
         &models,
         &DependencyInput::default(),
         limits,

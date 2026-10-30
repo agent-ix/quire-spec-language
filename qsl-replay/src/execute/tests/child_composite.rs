@@ -20,7 +20,12 @@ use crate::execute::argument::convert_arguments;
 use crate::witness::{WitnessField, WitnessSlot};
 
 fn key(label: &str) -> NodeKey {
-    NodeKey::new("fixture", vec![quire_exact::PathSegment::Text(label.to_owned())], 0).expect("a fixture node")
+    NodeKey::new(
+        "fixture",
+        vec![quire_exact::PathSegment::Text(label.to_owned())],
+        0,
+    )
+    .expect("a fixture node")
 }
 
 fn record(label: &str, fields: &[&str], supertypes: &[&str]) -> CompositeDeclaration {

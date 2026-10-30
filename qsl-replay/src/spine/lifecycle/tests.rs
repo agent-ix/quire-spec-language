@@ -90,7 +90,15 @@ fn chain_of(
     let cancel = Cancel::new();
     let parsed = parse(&request(bytes), limits.source, &cancel)?.into_value();
     let models = select(&parsed, packages, limits.model, &cancel)?.into_value();
-    let checked = check(&parsed, "fixture".to_owned(), &models, dependencies, limits, &cancel)?.into_value();
+    let checked = check(
+        &parsed,
+        "fixture".to_owned(),
+        &models,
+        dependencies,
+        limits,
+        &cancel,
+    )?
+    .into_value();
     let emitted = package(&checked, PackageLimits::default(), &cancel)?.into_value();
     Ok(Chain {
         parsed,
@@ -519,7 +527,14 @@ fn assert_check_cancelled_at(
 ) {
     let gate = gated(Some(at));
     let outcome = gate.run(cause, |cancel| {
-        check(parsed, "fixture".to_owned(), models, &DependencyInput::default(), *limits, cancel)
+        check(
+            parsed,
+            "fixture".to_owned(),
+            models,
+            &DependencyInput::default(),
+            *limits,
+            cancel,
+        )
     });
     match outcome {
         Err(StageFailure::Cancelled(seen)) => assert_eq!(seen, cause),
@@ -957,8 +972,15 @@ fn each_operation_refuses_at_the_stage_that_owns_the_defect() {
         .expect("a unit with no model selects nothing")
         .into_value();
     let refused = refusal(
-        check(&parsed, "fixture".to_owned(), &models, &DependencyInput::default(), limits, &live)
-            .expect_err("the unit is ill typed"),
+        check(
+            &parsed,
+            "fixture".to_owned(),
+            &models,
+            &DependencyInput::default(),
+            limits,
+            &live,
+        )
+        .expect_err("the unit is ill typed"),
     );
     assert_eq!(refused.code().as_str(), "ill_typed");
     assert_eq!(refused.stage(), SpineStage::Check);
@@ -1614,7 +1636,14 @@ fn check_names_the_dependency_limit_field_it_reached() {
                 &mut limits,
                 usize::try_from(value).expect("a test bound fits usize"),
             );
-            reached(check(parsed, "fixture".to_owned(), models, dependencies, limits, &Cancel::new()))
+            reached(check(
+                parsed,
+                "fixture".to_owned(),
+                models,
+                dependencies,
+                limits,
+                &Cancel::new(),
+            ))
         }
     };
     assert_field(
@@ -1683,7 +1712,12 @@ fn an_internal_invariant_failure_is_a_fault() {
 fn a_rebound_model_node_leaves_the_front_end_as_an_internal_failure_with_no_package() {
     use qsl_semantics::check::{CheckCause, CheckRefusal, CorrespondenceConflict, KeyFault};
     use quire_checked::key::DeclarationKey;
-    let node = quire_exact::NodeKey::new("fixture", vec![quire_exact::PathSegment::Text("node".into())], 7).expect("a fixture key");
+    let node = quire_exact::NodeKey::new(
+        "fixture",
+        vec![quire_exact::PathSegment::Text("node".into())],
+        7,
+    )
+    .expect("a fixture key");
     let (d1, d2) = (
         DeclarationKey::fixture("ix://test/orders/Invoice"),
         DeclarationKey::fixture("ix://test/orders/Order"),

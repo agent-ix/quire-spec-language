@@ -381,7 +381,7 @@ impl Replay {
         let declaration = self
             .declarations
             .operations
-            .declared_by(item)
+            .declared_by(item.clone())
             .iter()
             .find(|operation| operation.name() == name)
             .expect("the operation is declared")
@@ -437,7 +437,7 @@ impl Replay {
             self.graph.model_selections(),
             &self.packages,
             ModelNormalizationLimits::default(),
-            item,
+            item.clone(),
         )
         .expect("the Item universe");
         let reference = closure.find(universe, OBJECT).expect("the admitted object");

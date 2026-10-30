@@ -7,8 +7,7 @@
 
 use super::frame::object;
 use super::frame_replay::{
-    config_version_unit, packet, request, unit_for, wire, witness_source, Unit,
-    IDENTITY,
+    config_version_unit, packet, request, unit_for, wire, witness_source, Unit, IDENTITY,
 };
 use super::*;
 use crate::{
@@ -17,10 +16,10 @@ use crate::{
     ReplayResult, ReplaySource, ReplayTarget, SnapshotValue, StateClauseCounterexample,
     StateClauseKind, StateClauseReplayResult, Verdict, WitnessEnvelope, WitnessSettlement,
 };
-use quire_exact::NodeKey;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_exact::Identifier;
+use quire_exact::NodeKey;
 use quire_semantic_value::catalog::Category;
 
 fn name(text: &str) -> Identifier {
@@ -555,7 +554,6 @@ fn a_stale_occurrence_refuses_naming_both_occurrences_before_admission() {
         assert_content_mismatch(&refusal);
     }
 }
-
 
 /// TC-517 step 3 (FR-122-AC-3): a request `state_clause` naming `Absent`,
 /// and one naming the function `sameIdentity`, each refuse

@@ -267,7 +267,7 @@ pub(super) fn derive(
         .iter()
         .rev()
         .map(|(root, value_type)| Pending {
-            root: *root,
+            root: root.clone(),
             path: None,
             value_type,
             composites: None,
@@ -280,7 +280,7 @@ pub(super) fn derive(
         }
         visited += 1;
         let key = || DomainKey::Node {
-            node: position.root,
+            node: position.root.clone(),
             path: indexes(&position.path),
         };
         match position.value_type {
@@ -336,7 +336,7 @@ pub(super) fn derive(
                     continue;
                 }
                 let composite = types
-                    .composite(*declaration)
+                    .composite(declaration.clone())
                     .ok_or_else(|| fault("composite-type-in-environment"))?;
                 let members: Vec<&ValueType> = match composite.shape() {
                     CompositeShape::Record(fields) => {
@@ -349,7 +349,7 @@ pub(super) fn derive(
                         .collect(),
                 };
                 for (index, member) in members.into_iter().enumerate().rev() {
-                    pending.push(child(&position, index, member, Some(*declaration))?);
+                    pending.push(child(&position, index, member, Some(declaration.clone()))?);
                 }
             }
             ValueType::Rational(_)
@@ -404,7 +404,7 @@ fn child<'t>(
         None => parent.composites.clone(),
     };
     Ok(Pending {
-        root: parent.root,
+        root: parent.root.clone(),
         path: Some(Rc::new(Step {
             index,
             parent: parent.path.clone(),

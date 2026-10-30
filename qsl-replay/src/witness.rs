@@ -13,8 +13,8 @@
 //!   point a family (starting with #186's state `forall`) attaches its own
 //!   typed payload through.
 
-use std::fmt;
 use quire_exact::NodeKey;
+use std::fmt;
 
 #[cfg(test)]
 use quire_exact::Origin;
@@ -218,7 +218,8 @@ impl Witness {
         bindings
             .iter()
             .map(|binding| {
-                let Some((_, _, text)) = named.iter().find(|(node, _, _)| *node == binding.parameter)
+                let Some((_, _, text)) =
+                    named.iter().find(|(node, _, _)| *node == binding.parameter)
                 else {
                     return if optional(binding) {
                         Ok(None)
@@ -281,7 +282,10 @@ fn percent_decode(text: &str) -> Option<String> {
     while let Some(&byte) = raw.get(index) {
         if byte == b'%' {
             let pair = text.get(index + 1..index + 3)?;
-            if !pair.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_lowercase()) {
+            if !pair
+                .bytes()
+                .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_lowercase())
+            {
                 return None;
             }
             bytes.push(u8::from_str_radix(pair, 16).ok()?);
@@ -720,10 +724,16 @@ mod witness_tests {
     #[test]
     fn parameter_names_are_injective_and_separator_free() {
         let key = |text: &str| {
-            NodeKey::new("fixture", vec![quire_exact::PathSegment::Text(text.to_owned())], 0)
-                .expect("a node")
+            NodeKey::new(
+                "fixture",
+                vec![quire_exact::PathSegment::Text(text.to_owned())],
+                0,
+            )
+            .expect("a node")
         };
-        let texts = ["a=b", "a;b", "a|b", "a%3Db", "a%", "%25", "a<<<b>>>", "a=b;c|d%"];
+        let texts = [
+            "a=b", "a;b", "a|b", "a%3Db", "a%", "%25", "a<<<b>>>", "a=b;c|d%",
+        ];
         let names: Vec<String> = texts.iter().map(|text| pn_(&key(text))).collect();
         for (text, name) in texts.iter().zip(&names) {
             assert!(!name.contains(['=', ';', '|', '<', '>']), "{name}");
@@ -784,7 +794,11 @@ mod witness_tests {
         let x = crate::fixture_node(1);
         let y = crate::fixture_node(2);
         let bindings = [integer(x), integer(y)];
-        let text = assertion("harness_a", "x == 1", &format!("{x}=1;{y}=2", x = pn_(&x), y = pn_(&y)));
+        let text = assertion(
+            "harness_a",
+            "x == 1",
+            &format!("{x}=1;{y}=2", x = pn_(&x), y = pn_(&y)),
+        );
         let witness = Witness::parse(text.clone()).unwrap();
         // Step 1: exhaustive destructure naming only `transcript`.
         let Witness { transcript } = witness;
@@ -808,7 +822,11 @@ mod witness_tests {
         assert_eq!(witness.harness_symbol(), second.harness_symbol());
 
         // Step 4: a differing transcript produces a differing derived value.
-        let third_text = assertion("harness_a", "x == 1", &format!("{x}=99;{y}=2", x = pn_(&x), y = pn_(&y)));
+        let third_text = assertion(
+            "harness_a",
+            "x == 1",
+            &format!("{x}=99;{y}=2", x = pn_(&x), y = pn_(&y)),
+        );
         let third = Witness::parse(third_text).unwrap();
         assert_ne!(witness.concrete_values(), third.concrete_values());
         assert_eq!(
@@ -857,7 +875,14 @@ mod witness_tests {
         let flag = crate::fixture_node(1);
         let low = crate::fixture_node(2);
         let high = crate::fixture_node(3);
-        let values = format!("{}=1;{}={};{}={}", pn_(&flag), pn_(&low), i128::MIN, pn_(&high), i128::MAX);
+        let values = format!(
+            "{}=1;{}={};{}={}",
+            pn_(&flag),
+            pn_(&low),
+            i128::MIN,
+            pn_(&high),
+            i128::MAX
+        );
         let witness = Witness::parse(assertion("h", "c", &values)).unwrap();
         assert_eq!(
             witness.decode(&[boolean(flag), integer(low), integer(high)]),
@@ -867,7 +892,8 @@ mod witness_tests {
                 WitnessValue::Integer(i128::MAX),
             ])
         );
-        let off = Witness::parse(assertion("h", "c", &format!("{flag}=0", flag = pn_(&flag)))).unwrap();
+        let off =
+            Witness::parse(assertion("h", "c", &format!("{flag}=0", flag = pn_(&flag)))).unwrap();
         assert_eq!(
             off.decode(&[boolean(flag)]),
             Ok(vec![WitnessValue::Boolean(false)])
@@ -900,7 +926,10 @@ mod witness_tests {
             Err(DecodeRefusal::Duplicate(x))
         );
         assert_eq!(
-            decode(format!("{x}=1;{b}=0", x = pn_(&x), b = pn_(&b)), &[integer(x)]),
+            decode(
+                format!("{x}=1;{b}=0", x = pn_(&x), b = pn_(&b)),
+                &[integer(x)]
+            ),
             Err(DecodeRefusal::Unbound(b.to_string()))
         );
         assert_eq!(

@@ -329,7 +329,10 @@ impl Graph {
     fn witness(&self, function: &str, value: &WitnessValue) -> ReplayRequestWire {
         let parameter = self.parameter(function);
         let text = value.to_value_text().unwrap();
-        let transcript = format!("<<<assertion|{function}|c|{}={text}>>>", crate::pn(&parameter));
+        let transcript = format!(
+            "<<<assertion|{function}|c|{}={text}>>>",
+            crate::pn(&parameter)
+        );
         self.base(
             function,
             ReplaySource::Witness(Witness::parse(transcript).unwrap()),
@@ -591,7 +594,10 @@ fn decode_entry(text: &str) -> Result<Vec<WitnessValue>, DecodeRefusal> {
 #[trace("TC-1042", "FR-070-AC-16")]
 #[test]
 fn tc_1042_row_06_a_reference_entry_decodes() {
-    let (universe, object_type) = (crate::fixture_universe(0x11), crate::fixture_effective(0x22));
+    let (universe, object_type) = (
+        crate::fixture_universe(0x11),
+        crate::fixture_effective(0x22),
+    );
     let (universe_text, type_text) = (universe_lit(&universe), type_lit(&object_type));
     let decoded = decode_entry(&reference_text(&universe_text, &type_text, "61")).unwrap();
     assert_eq!(

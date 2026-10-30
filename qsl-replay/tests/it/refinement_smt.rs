@@ -675,7 +675,12 @@ fn a_rejected_part_rejects_only_its_record() {
 #[trace("TC-551", "FR-146-AC-8")]
 #[test]
 fn the_safety_half_settles_by_the_first_rule_that_applies() {
-    let hypothesis = quire_exact::NodeKey::new("fixture", vec![quire_exact::PathSegment::Text("7".to_owned())], 0).expect("a fixture node");
+    let hypothesis = quire_exact::NodeKey::new(
+        "fixture",
+        vec![quire_exact::PathSegment::Text("7".to_owned())],
+        0,
+    )
+    .expect("a fixture node");
     let certified = proved(Certification::Certified);
     let uncertified = proved(Certification::Uncertified);
     let verified = StepCertification::of_check(Some(Ok(SmtProofCheck::Verified)), 7);
@@ -926,7 +931,12 @@ fn a_refused_initial_query_rejects_the_initial_record() {
 #[trace("TC-551", "FR-146-AC-8")]
 #[test]
 fn the_rule_order_outranks_the_query_order() {
-    let hypothesis = quire_exact::NodeKey::new("fixture", vec![quire_exact::PathSegment::Text("7".to_owned())], 0).expect("a fixture node");
+    let hypothesis = quire_exact::NodeKey::new(
+        "fixture",
+        vec![quire_exact::PathSegment::Text("7".to_owned())],
+        0,
+    )
+    .expect("a fixture node");
     let unknown = StepRecordVerdict::Other(OtherBackendResult::Inconclusive(
         InconclusiveCause::SolverInconclusive {
             trace: None,

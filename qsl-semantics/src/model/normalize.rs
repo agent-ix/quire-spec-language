@@ -4316,7 +4316,10 @@ mod tests {
     /// by an integration test simulating an external caller.
     fn entry(byte: u8) -> ViewEntry {
         ViewEntry {
-            effective_id: EffectiveId::from_digest([byte; 32]),
+            effective_id: EffectiveId::new(
+                None,
+                quire_exact::OriginalDeclarationKey::new("test", format!("n{byte}")),
+            ),
             preimage: EffectiveDeclarationPreimage {
                 owner_effective_type: None,
                 original: DeclarationKey::fixture("model.A"),
@@ -4358,7 +4361,7 @@ mod tests {
         assert_eq!(
             refusal.cause,
             ModelRefusalCause::UnsortedView {
-                at: view.declarations()[1].effective_id,
+                at: view.declarations()[1].effective_id.clone(),
             }
         );
         assert_eq!(refusal.code, Code::InvalidModelBinding);
@@ -5089,15 +5092,15 @@ mod tests {
         let by_id: HashMap<EffectiveId, &ViewEntry> = view
             .declarations()
             .iter()
-            .map(|entry| (entry.effective_id, entry))
+            .map(|entry| (entry.effective_id.clone(), entry))
             .collect();
         let root = DeclarationKey::fixture("model.C000");
         let mut inherited = 0;
         for entry in view.declarations() {
-            let Some(owner) = entry.preimage.owner_effective_type else {
+            let Some(owner) = entry.preimage.owner_effective_type.as_ref() else {
                 continue;
             };
-            if by_id[&owner].preimage.original == root {
+            if by_id[owner].preimage.original == root {
                 assert_eq!(entry.preimage.derivation.len(), 1);
                 assert_eq!(entry.preimage.derivation[0].rule, RULE_QUALIFY);
                 continue;
@@ -5106,9 +5109,13 @@ mod tests {
                 panic!("an inherited member holds exactly one fact");
             };
             assert_eq!(fact.rule, RULE_INHERIT);
-            let parent = by_id[&fact.parent.expect("an inherit fact links")];
+            let parent = by_id[fact.parent.as_ref().expect("an inherit fact links")];
             assert_eq!(parent.preimage.original, entry.preimage.original);
-            let parent_type = by_id[&parent.preimage.owner_effective_type.expect("a member")];
+            let parent_type = by_id[parent
+                .preimage
+                .owner_effective_type
+                .as_ref()
+                .expect("a member")];
             assert_eq!(fact.inputs[0], parent_type.preimage.original);
             inherited += 1;
         }
@@ -5173,7 +5180,6 @@ mod tests {
                 derivation_facts: 1_600_000,
                 effective_declarations: 1_600_000,
                 dispatch_candidates: 1_600_000,
-                hashed_bytes: 268_435_456,
                 work_units: 16_777_216,
                 ancestor_steps: 16_777_216,
                 family_steps: 16_777_216,

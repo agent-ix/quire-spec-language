@@ -751,7 +751,7 @@ pub(crate) fn over_value(
         parameter: input.name.clone(),
         object: over.key.clone(),
     };
-    let ValueType::Reference(object_type) = input.value_type else {
+    let ValueType::Reference(ref object_type) = input.value_type else {
         return Err(ProtocolRefusal::Unsupported(Unsupported::OverNotAnObject));
     };
     let instances = model.instances(&input.value_type).map_err(|_| refused())?;
@@ -759,7 +759,7 @@ pub(crate) fn over_value(
         return Err(refused());
     }
     model
-        .bound_reference(object_type, over)
+        .bound_reference(object_type.clone(), over)
         .map(Value::Reference)
         .map_err(|_| refused())
 }
@@ -922,6 +922,7 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
                 })?;
             let admits = role
                 .context
+                .clone()
                 .and_then(|context| model.declaring_package(context))
                 .is_some_and(|declaring| declaring == binding.model);
             if !admits {
@@ -1006,11 +1007,11 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
                 };
                 let instances = self
                     .model
-                    .instances(&ValueType::Reference(role.object))
+                    .instances(&ValueType::Reference(role.object.clone()))
                     .map_err(|_| refused())?;
                 let mut objects = instances
                     .iter()
-                    .map(|instance| self.model.bound_reference(role.object, instance))
+                    .map(|instance| self.model.bound_reference(role.object.clone(), instance))
                     .collect::<Result<Vec<_>, _>>()
                     .map_err(|_| refused())?;
                 objects.sort();

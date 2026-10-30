@@ -14,7 +14,6 @@
 //! settles an FR-072 result on the envelope's arm.
 
 use qsl_forms::StateClauseKind;
-use quire_exact::NodeKey;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::check::CheckedStateClause;
 use qsl_semantics::library::LibraryName;
@@ -22,6 +21,7 @@ use qsl_semantics::model::observation::{
     ClauseSelection, ClauseSelectionInput, DocumentRef, ObservationForm, OutOfRange,
     PostStateRange, Provisions,
 };
+use quire_exact::NodeKey;
 use quire_semantic_value::catalog::InternalFault;
 
 use super::{
@@ -298,7 +298,6 @@ pub fn replay_state_clause(
         // argument and checks no frame.
         ClauseDisposition::Compile(_)
         | ClauseDisposition::UnknownLanguage { .. }
-        | ClauseDisposition::StalePackage { .. }
         | ClauseDisposition::NotAPredicate { .. }
         | ClauseDisposition::ArgumentRefusal(_)
         | ClauseDisposition::Temporal(_)

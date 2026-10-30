@@ -746,7 +746,6 @@ fn a_disagreeing_declared_delta_refuses_at_evaluate() {
     assert_eq!(report.disposition.category().exit_code(), 20);
 }
 
-
 /// TC-514 step 3 (FR-115-AC-3): labels, model and
 /// operation each refuse at `admit`, and none reaches `evaluate`.
 #[trace("TC-514", "FR-115-AC-3")]

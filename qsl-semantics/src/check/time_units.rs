@@ -171,9 +171,7 @@ impl TimeUnits {
                                 .unwrap_or_default(),
                         }),
                         dependencies: Vec::new(),
-                        nominal: Some(NominalPayload::Dimension(DimensionPayload::new(
-                            Vec::new(),
-                        ))),
+                        nominal: Some(NominalPayload::Dimension(DimensionPayload::new(Vec::new()))),
                     },
                 );
             }

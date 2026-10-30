@@ -878,7 +878,6 @@ fn an_incomplete_population_is_incomplete_at_admit() {
     assert!(classified.classification.limits().is_empty());
 }
 
-
 /// FR-342: a cancelled argument refusal reads as the table's `refused`,
 /// carrying the `cancelled` code.
 #[trace("TC-862", "FR-342-AC-2")]

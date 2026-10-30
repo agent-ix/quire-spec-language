@@ -1458,10 +1458,10 @@ fn an_operation_and_its_frame_admit_and_assemble() {
         package: PACKAGE_IDENTITY.to_owned(),
         node: format!("ix://{PACKAGE_IDENTITY}/ConfigVersion"),
     };
-    let config_version_id = views[0].view.type_identities()[&config_version_key];
+    let config_version_id = views[0].view.type_identities()[&config_version_key].clone();
     let declared = declarations
         .types
-        .object_type(config_version_id)
+        .object_type(config_version_id.clone())
         .expect("ConfigVersion is declared");
     assert_eq!(declared.name(), "Config::ConfigVersion");
 
@@ -1480,7 +1480,7 @@ fn an_operation_and_its_frame_admit_and_assemble() {
         .expect("parent is an attribute");
     assert_eq!(
         parent.value_type(),
-        &ValueType::Reference(config_version_id)
+        &ValueType::Reference(config_version_id.clone())
     );
     assert_eq!(parent.presence(), Presence::Optional);
 
@@ -1556,7 +1556,7 @@ fn bound_integer_value_type_admits_and_assembles() {
         package: PACKAGE_IDENTITY.to_owned(),
         node: widget.clone(),
     };
-    let widget_id = views[0].view.type_identities()[&widget_key];
+    let widget_id = views[0].view.type_identities()[&widget_key].clone();
     let declared = declarations
         .types
         .object_type(widget_id)
@@ -1778,11 +1778,11 @@ fn process_model_members_assemble_as_an_identified_run_type() {
         package: PACKAGE_IDENTITY.to_owned(),
         node: node.to_owned(),
     };
-    let workflow_effective = identities[&key(&workflow)];
-    let process_effective = identities[&key(&process)];
+    let workflow_effective = identities[&key(&workflow)].clone();
+    let process_effective = identities[&key(&process)].clone();
     let declared = declarations
         .types
-        .object_type(process_effective)
+        .object_type(process_effective.clone())
         .expect("Fulfilment is projected as an identified run type");
     assert_eq!(declared.name(), "Config::Fulfilment");
     assert_eq!(declared.supertypes(), &[workflow_effective]);
@@ -1900,7 +1900,7 @@ fn state_machine_fields_assemble_on_the_state_owner() {
         package: PACKAGE_IDENTITY.to_owned(),
         node: machine,
     };
-    let machine_effective = views[0].view.type_identities()[&machine_key];
+    let machine_effective = views[0].view.type_identities()[&machine_key].clone();
     let declared = declarations
         .types
         .object_type(machine_effective)
@@ -1963,7 +1963,7 @@ fn object_uuid_field_projects_as_uuid() {
         package: PACKAGE_IDENTITY.to_owned(),
         node: order,
     };
-    let order_effective = views[0].view.type_identities()[&order_key];
+    let order_effective = views[0].view.type_identities()[&order_key].clone();
     let declared = declarations
         .types
         .object_type(order_effective)
@@ -2191,7 +2191,7 @@ fn a_modifies_entry_naming_a_relationship_admits_as_a_grant() {
         package: PACKAGE_IDENTITY.to_owned(),
         node: format!("ix://{PACKAGE_IDENTITY}/ConfigVersion"),
     };
-    let owner_id = views[0].view.type_identities()[&owner];
+    let owner_id = views[0].view.type_identities()[&owner].clone();
     let operation = declarations
         .operations
         .declared_by(owner_id)
@@ -2436,10 +2436,10 @@ fn a_version_number_typed_parameter_admits_and_is_typed_bound_integer() {
         package: PACKAGE_IDENTITY.to_owned(),
         node: format!("ix://{PACKAGE_IDENTITY}/ConfigVersion"),
     };
-    let config_version_id = views[0].view.type_identities()[&config_version_key];
+    let config_version_id = views[0].view.type_identities()[&config_version_key].clone();
     declarations
         .types
-        .object_type(config_version_id)
+        .object_type(config_version_id.clone())
         .expect("ConfigVersion is declared");
     let operation = declarations
         .operations
@@ -2524,7 +2524,7 @@ fn a_record_value_type_beside_an_admitted_operation_assembles() {
     let config_version_id = views[0].view.type_identities()[&DeclarationKey {
         package: PACKAGE_IDENTITY.to_owned(),
         node: config_version.clone(),
-    }];
+    }].clone();
     let declared = declarations
         .types
         .object_type(config_version_id)
@@ -2675,16 +2675,16 @@ fn admission_is_deterministic_regardless_of_document_order() {
         let config_version_id = identities[&DeclarationKey {
             package: PACKAGE_IDENTITY.to_owned(),
             node: config_version.clone(),
-        }];
+        }].clone();
         let audit_log_id = identities[&DeclarationKey {
             package: PACKAGE_IDENTITY.to_owned(),
             node: audit_log.clone(),
-        }];
-        let declared = |id| {
+        }].clone();
+        let declared = |id: quire_exact::EffectiveId| {
             (
                 declarations
                     .types
-                    .object_type(id)
+                    .object_type(id.clone())
                     .expect("the object type is declared")
                     .clone(),
                 declarations.operations.declared_by(id).to_vec(),

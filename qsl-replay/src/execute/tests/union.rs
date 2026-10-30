@@ -8,8 +8,8 @@
 //! `convert_arguments_in`; `a_union_input_evaluates_a_checked_case_through_replay`
 //! runs a union from source, through the spine and `replay`.
 
-use std::cmp::Ordering;
 use quire_exact::NodeKey;
+use std::cmp::Ordering;
 
 use ix_trace_rs::trace;
 use qsl_semantics::check::union_fixture as fixture;

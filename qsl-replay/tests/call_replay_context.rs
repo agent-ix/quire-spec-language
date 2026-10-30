@@ -76,7 +76,8 @@ fn run(
     cancel: &Cancel,
 ) -> Result<RunWithReplayContext, Box<RunRefusal>> {
     run_with_replay_context(
-        identity(), "fixture".to_owned(),
+        identity(),
+        "fixture".to_owned(),
         "unit.native",
         source.as_bytes(),
         &BTreeMap::new(),
@@ -117,7 +118,8 @@ fn oracle(source: &str, limits: CallerLimits) -> PluginReplayContext {
         .expect("selects")
         .into_value();
     let checked = spine::check(
-        &parsed, "fixture".to_owned(),
+        &parsed,
+        "fixture".to_owned(),
         &models,
         &DependencyInput::default(),
         limits.spine,
@@ -157,7 +159,8 @@ fn the_entry_returns_what_run_with_requirements_returns() {
     let limits = CallerLimits::default();
     let result = run(&source, &call, limits, &Cancel::new()).expect("runs");
     let plain = run_with_requirements(
-        identity(), "fixture".to_owned(),
+        identity(),
+        "fixture".to_owned(),
         "unit.native",
         source.as_bytes(),
         &BTreeMap::new(),
@@ -190,7 +193,8 @@ fn the_entry_returns_what_run_with_requirements_returns() {
         keys(plain.requirements().members())
     );
     let compiled = compile_package(
-        identity(), "fixture".to_owned(),
+        identity(),
+        "fixture".to_owned(),
         "unit.native",
         source.as_bytes(),
         std::iter::empty::<&[u8]>(),
@@ -223,7 +227,8 @@ fn parameter(source: &str, function: &str) -> NodeKey {
         .expect("selects")
         .into_value();
     let checked = spine::check(
-        &parsed, "fixture".to_owned(),
+        &parsed,
+        "fixture".to_owned(),
         &models,
         &DependencyInput::default(),
         limits,
@@ -438,7 +443,8 @@ fn only_the_spine_limits_bound_the_run() {
         "{compile:?}"
     );
     run_with_requirements(
-        identity(), "fixture".to_owned(),
+        identity(),
+        "fixture".to_owned(),
         "unit.native",
         source.as_bytes(),
         &BTreeMap::new(),
@@ -537,7 +543,8 @@ fn refusals_are_run_with_requirements_refusals() {
     for (source, call, cancel) in &cases {
         let ours = run(source, call, limits, cancel).expect_err("refuses");
         let theirs = run_with_requirements(
-            identity(), "fixture".to_owned(),
+            identity(),
+            "fixture".to_owned(),
             "unit.native",
             source.as_bytes(),
             &BTreeMap::new(),

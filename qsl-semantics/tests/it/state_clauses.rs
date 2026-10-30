@@ -244,7 +244,7 @@ fn subtype_reachability_accepts_an_inherited_supertype_edge() {
     );
     assert_eq!(
         clause.body().at(*target).value_type(),
-        &ValueType::Reference(edge.owner)
+        &ValueType::Reference(edge.owner.clone())
     );
 }
 
@@ -1466,7 +1466,7 @@ fn run_frame_clause_with(
         context: clause.context(),
         operation: clause.operation().map(|operation| {
             qsl_semantics::model::observation::OperationFacts {
-                declaring: operation.declaring,
+                declaring: operation.declaring.clone(),
                 declaration: operation.declaration.clone(),
             }
         }),
@@ -2343,7 +2343,7 @@ fn a_subtype_object_binds_a_supertype_parameter() {
     assert_eq!(target.object().as_str(), "k");
     let pre = observations.pre.as_ref().expect("one pre observation");
     assert_eq!(
-        pre.environment.objects().find(target.universe(), "k"),
+        pre.environment.objects().find(target.universe().clone(), "k"),
         Some(target),
         "target is archive's k, typed by k's own type"
     );
@@ -2801,7 +2801,7 @@ fn run_tc465_with_clauses_under(
         context: clause.context(),
         operation: clause.operation().map(|operation| {
             qsl_semantics::model::observation::OperationFacts {
-                declaring: operation.declaring,
+                declaring: operation.declaring.clone(),
                 declaration: operation.declaration.clone(),
             }
         }),
@@ -4014,7 +4014,7 @@ fn a_field_reference_to_an_admitted_subtype_object_admits() {
     let current = observations.current.expect("one current observation");
     let child = &observations.self_object;
     let parent = types
-        .attribute(child.object_type(), "parent")
+        .attribute(child.object_type().clone(), "parent")
         .expect("ConfigVersion declares parent");
     let field = quire_semantic_value::declaration::FieldRef::new(parent.owner(), "parent");
     let Some(quire_exact::FieldValue::Present(quire_exact::Value::Reference(target))) = current
@@ -4026,7 +4026,7 @@ fn a_field_reference_to_an_admitted_subtype_object_admits() {
     };
     assert_eq!(target.object().as_str(), "k");
     assert_eq!(
-        current.environment.objects().find(target.universe(), "k"),
+        current.environment.objects().find(target.universe().clone(), "k"),
         Some(target),
         "child.parent is archive's k, typed by k's own type"
     );
@@ -5153,7 +5153,7 @@ fn tc465_check_frame(
         context,
         frame: operation_frame.frame(),
         operation: OperationFacts {
-            declaring: operation_frame.operation().declaring,
+            declaring: operation_frame.operation().declaring.clone(),
             declaration: operation_frame.operation().declaration.clone(),
         },
     };

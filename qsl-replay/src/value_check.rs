@@ -116,7 +116,7 @@ pub struct TargetParameter {
 impl TargetParameter {
     /// The parameter's node.
     pub fn node(&self) -> NodeKey {
-        self.node
+        self.node.clone()
     }
 
     /// The parameter's wire node id.
@@ -233,7 +233,7 @@ impl<'p> ValueTarget<'p> {
             .map_err(|_| fault("function-name-is-an-identifier"))?;
         let semantic = graph.semantic_graph();
         let parameters = semantic
-            .node(callable.identity)
+            .node(callable.identity.clone())
             .and_then(|node| node.function_parameters())
             .ok_or_else(|| fault("callable-identity-is-a-function-node"))?;
         if parameters.len() != callable.parameters.len() {
@@ -261,9 +261,11 @@ impl<'p> ValueTarget<'p> {
             if !owned {
                 return Err(Selection::NoForm);
             }
-            semantic.node(claim.node()).ok_or(Selection::MissingNode)?;
+            semantic
+                .node(claim.node().clone())
+                .ok_or(Selection::MissingNode)?;
             graph
-                .occurrence(claim.node(), claim.origin())
+                .occurrence(claim.node().clone(), claim.origin())
                 .ok_or(Selection::MissingNode)?;
             ClaimForm::ScalarOperation
         };
@@ -487,7 +489,7 @@ impl<'p> ValueTarget<'p> {
                     && *origin.role() == expression
                     && graph
                         .semantic_graph()
-                        .node(*node)
+                        .node(node.clone())
                         .is_some_and(|n| n.node_tag() != NodeTag::Value)
             })
             .map(|(node, origin, _)| OccurrenceKey::new(node.clone(), origin));

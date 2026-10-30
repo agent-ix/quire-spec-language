@@ -27,11 +27,7 @@ fn node_lit(node: &NodeKey) -> String {
         .expect("a string")
 }
 
-fn argument(
-    parameter: NodeKey,
-    position: usize,
-    semantic_type: NodeKey,
-) -> ValueParityArgument {
+fn argument(parameter: NodeKey, position: usize, semantic_type: NodeKey) -> ValueParityArgument {
     ValueParityArgument {
         parameter,
         position,
@@ -45,11 +41,7 @@ fn first() -> ValueParityArgument {
 }
 
 fn second() -> ValueParityArgument {
-    argument(
-        crate::fixture_node(0x33),
-        1,
-        crate::fixture_node(0x44),
-    )
+    argument(crate::fixture_node(0x33), 1, crate::fixture_node(0x44))
 }
 
 fn v2() -> ValueParityPreimage {
@@ -169,7 +161,9 @@ fn tc_1252_every_member_changes_the_digest_and_a_position_out_of_order_refuses()
     changed.arguments.pop();
     variants.push(changed);
     let mut changed = v2();
-    changed.arguments.push(argument(other.clone(), 2, other.clone()));
+    changed
+        .arguments
+        .push(argument(other.clone(), 2, other.clone()));
     variants.push(changed);
     for variant in &variants {
         assert_ne!(identity_hex(variant), base);

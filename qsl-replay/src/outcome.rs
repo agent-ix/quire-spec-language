@@ -243,7 +243,8 @@ impl<'de> serde::Deserialize<'de> for WireNode {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         // Read through the canonical event reader, which reads a node id from
         // an explicit stack, so a deep key meets no recursion limit here.
-        let raw = <Box<serde_json::value::RawValue> as serde::Deserialize>::deserialize(deserializer)?;
+        let raw =
+            <Box<serde_json::value::RawValue> as serde::Deserialize>::deserialize(deserializer)?;
         let document = quire_canonical::read(raw.get().as_bytes(), u64::MAX)
             .map_err(serde::de::Error::custom)?;
         qsl_semantics::check::read_node_key(document.root())
@@ -1569,8 +1570,12 @@ mod tests {
     /// recursion limit, writes and reads back without a depth cap.
     #[test]
     fn a_wire_node_nested_two_hundred_deep_round_trips() {
-        let mut key = NodeKey::new("fixture", vec![quire_exact::PathSegment::Text("leaf".into())], 0)
-            .expect("a fixture key");
+        let mut key = NodeKey::new(
+            "fixture",
+            vec![quire_exact::PathSegment::Text("leaf".into())],
+            0,
+        )
+        .expect("a fixture key");
         for ordinal in 1..=200 {
             key = NodeKey::new(
                 "fixture",
@@ -2251,7 +2256,12 @@ mod tests {
             ),
             (
                 TerminalValue::Inconclusive(InconclusiveCause::HypothesesNotEstablished {
-                    hypothesis: quire_exact::NodeKey::new("fixture", vec![quire_exact::PathSegment::Text("node".into())], 0xdc).expect("a fixture key"),
+                    hypothesis: quire_exact::NodeKey::new(
+                        "fixture",
+                        vec![quire_exact::PathSegment::Text("node".into())],
+                        0xdc,
+                    )
+                    .expect("a fixture key"),
                     result: ItemLabel::Refuted,
                 }),
                 json!({

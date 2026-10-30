@@ -151,8 +151,8 @@ fn declares_shape(candidate: &EnumDeclaration, shape: &quire_exact::EnumShape) -
         && candidate
             .members
             .iter()
-            .map(|case| mint_variant_id(candidate.key.clone(), case))
-            .eq(shape.variants())
+            .map(|case| mint_variant_id(candidate.key.clone(), case).ok())
+            .eq(shape.variants().map(|variant| Some(variant.clone())))
 }
 
 /// The declaration whose members are exactly `shape`'s variants.
@@ -782,8 +782,7 @@ impl<'a> Converter<'a, '_> {
                     .enums
                     .iter()
                     .position(|candidate| {
-                        declares_shape(candidate, shape)
-                            && candidate.key == *declaration
+                        declares_shape(candidate, shape) && candidate.key == *declaration
                     })
                     .ok_or_else(|| self.wrong(parameter))?;
                 self.charge(parameter, SuppliedEvent::DescriptorQuery)?;
@@ -791,8 +790,9 @@ impl<'a> Converter<'a, '_> {
                 if !owner.members.contains(member) {
                     return Err(self.wrong(parameter));
                 }
-                let variant = mint_variant_id(owner.key.clone(), member);
-                let rank = shape.rank(variant.clone()).ok_or_else(|| self.wrong(parameter))?;
+                let variant = mint_variant_id(owner.key.clone(), member)
+                    .map_err(|_| self.wrong(parameter))?;
+                let rank = shape.rank(&variant).ok_or_else(|| self.wrong(parameter))?;
                 values.push(Value::Enum(EnumMember::new(variant, rank)));
             }
             (
@@ -824,14 +824,16 @@ impl<'a> Converter<'a, '_> {
                 let Some(supplied_type) = supplied_type else {
                     return Err(self.wrong(parameter));
                 };
-                if !self.types.conforms(supplied_type.clone(), object_type.clone()) {
+                if !self
+                    .types
+                    .conforms(supplied_type.clone(), object_type.clone())
+                {
                     return Err(self.wrong(parameter));
                 }
                 let identity =
                     String::from_utf8(identity.clone()).map_err(|_| self.wrong(parameter))?;
                 let object = ObjectId::new(identity).map_err(|_| self.wrong(parameter))?;
-                let reference =
-                    ObjectReference::new(universe.clone(), supplied_type, object);
+                let reference = ObjectReference::new(universe.clone(), supplied_type, object);
                 self.references.push((parameter, reference.clone()));
                 values.push(Value::Reference(reference));
             }
@@ -868,7 +870,7 @@ impl<'a> Converter<'a, '_> {
                     .get(declaration)
                     .ok_or_else(|| self.wrong(parameter))?;
                 let key = record.key();
-                if !types.composite_conforms(key, *slot_key) {
+                if !types.composite_conforms(key.clone(), slot_key.clone()) {
                     return Err(self.wrong(parameter));
                 }
                 let CompositeShape::Record(declared_fields) = record.shape() else {
@@ -901,7 +903,7 @@ impl<'a> Converter<'a, '_> {
                     }
                 }
                 pending.push(Step::Composite {
-                    key,
+                    key: key.clone(),
                     slots,
                     position: self.position,
                 });
@@ -916,18 +918,20 @@ impl<'a> Converter<'a, '_> {
             ) => {
                 let types: &'a TypeEnvironment = self.types;
                 self.charge(parameter, SuppliedEvent::DescriptorQuery)?;
-                let tuple = types.composite(*key).ok_or_else(|| self.wrong(parameter))?;
+                let tuple = types
+                    .composite(key.clone())
+                    .ok_or_else(|| self.wrong(parameter))?;
                 let CompositeShape::Tuple(positions) = tuple.shape() else {
                     return Err(self.wrong(parameter));
                 };
-                if declaration.as_bytes() != key.as_bytes() || components.len() != positions.len() {
+                if declaration != key || components.len() != positions.len() {
                     return Err(self.wrong(parameter));
                 }
                 for _ in positions {
                     self.charge(parameter, SuppliedEvent::DescriptorQuery)?;
                 }
                 pending.push(Step::Composite {
-                    key: *key,
+                    key: key.clone(),
                     slots: vec![Slot::Present; components.len()],
                     position: self.position,
                 });
@@ -955,13 +959,13 @@ impl<'a> Converter<'a, '_> {
                 let types: &'a TypeEnvironment = self.types;
                 self.charge(parameter, SuppliedEvent::DescriptorQuery)?;
                 let settled = types
-                    .union_key(*slot_key)
+                    .union_key(slot_key.clone())
                     .ok_or_else(|| self.wrong(parameter))?;
-                if declaration.as_bytes() != settled.as_bytes() {
+                if declaration != &settled {
                     return Err(self.wrong(parameter));
                 }
                 let (_, declared) = types
-                    .union_member_named(*slot_key, member)
+                    .union_member_named(slot_key.clone(), member)
                     .ok_or_else(|| self.wrong(parameter))?;
                 let binding = declared.member().ok_or_else(|| self.wrong(parameter))?;
                 let positions = declared.positions();

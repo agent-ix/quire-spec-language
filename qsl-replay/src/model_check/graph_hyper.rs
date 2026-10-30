@@ -151,12 +151,7 @@ pub(super) fn replay_evidence(
                 clause, &letters, &bindings, &positions, undefined, accounting, cancel,
             )?;
             Ok(if reproduced {
-                result(
-                    GraphReplaySettlement::Reproduced,
-                    Vec::new(),
-                    None,
-                    None,
-                )
+                result(GraphReplaySettlement::Reproduced, Vec::new(), None, None)
             } else {
                 result(
                     inconclusive(Category::Violation, Category::Success),
@@ -440,10 +435,7 @@ fn replay_product_trap(
     let mut product = match built {
         Ok(product) => product,
         Err(qsl_eval::automaton::AutomatonError::StateLimit { limit }) => {
-            return Ok(stopped_result(
-                ModelCheckLimit::MaxAutomatonStates,
-                limit,
-            ));
+            return Ok(stopped_result(ModelCheckLimit::MaxAutomatonStates, limit));
         }
         Err(_) => return Err(fault("the-HP-5-body-translates")),
     };

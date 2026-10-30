@@ -8,7 +8,6 @@
 //! settles `refuted`, category violation.
 
 use crate::bounds::{BoundExceeded, ReplayLimits};
-use quire_exact::NodeKey;
 use crate::call_site::CallSiteRefusal;
 use crate::certificate::closed_form::outcome::ClosedFormAnalysis;
 use crate::certificate::{CertificateLocus, CertificateRule};
@@ -31,6 +30,7 @@ use qsl_semantics::family::UnsupportedItem;
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_checked::key::DeclarationKey;
 use quire_contract_model::Std001Code;
+use quire_exact::NodeKey;
 use quire_exact::{CancelCause, Integer};
 use quire_semantic_value::catalog::{CatalogCode, Category};
 use quire_semantic_value::fairness::{FairnessConstraint, PropertyForm};
@@ -1656,10 +1656,7 @@ mod tests {
         use quire_semantic_value::fairness::FairnessOperation;
         FairnessConstraint::new(
             kind,
-            FairnessOperation::new(
-                crate::fixture_effective(7),
-                name.to_owned(),
-            ),
+            FairnessOperation::new(crate::fixture_effective(7), name.to_owned()),
             granularity,
         )
     }
@@ -2443,10 +2440,8 @@ mod tests {
         }
 
         fn base_witness() -> crate::SeparatingWitnessRecord {
-            let quantifier = OccurrenceKey::new(
-                crate::fixture_node(7),
-                Origin::new(Role::new("q"), 0),
-            );
+            let quantifier =
+                OccurrenceKey::new(crate::fixture_node(7), Origin::new(Role::new("q"), 0));
             crate::SeparatingWitnessRecord {
                 quantifier: quantifier.clone(),
                 deciding_element: Value::Integer(Integer::from(1_u64)),
@@ -2557,10 +2552,8 @@ mod tests {
         type WitnessEdit = (&'static str, fn(&mut crate::SeparatingWitnessRecord));
         let witness_edits: &[WitnessEdit] = &[
             ("quantifier role String", |record| {
-                record.quantifier = OccurrenceKey::new(
-                    crate::fixture_node(7),
-                    Origin::new(Role::new("qq"), 0),
-                );
+                record.quantifier =
+                    OccurrenceKey::new(crate::fixture_node(7), Origin::new(Role::new("qq"), 0));
             }),
             ("deciding Integer", |record| {
                 record.deciding_element = Value::Integer(Integer::from(10_u64));

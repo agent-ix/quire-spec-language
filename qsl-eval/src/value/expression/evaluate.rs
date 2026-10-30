@@ -214,7 +214,7 @@ impl From<ModelQueryHalt> for Halt {
             ))),
             ModelQueryHalt::AbsentKey { population, key } => Self::Family(FamilyResult::Undefined(
                 Box::new(StateModelUndefined::AbsentKey {
-                    binding: population.to_string(),
+                    binding: population.node().to_string(),
                     key: render_identity(&key),
                 }),
             )),
@@ -1368,7 +1368,7 @@ impl<'a, 'm> Machine<'a, 'm> {
         let (position, _) = self
             .scope
             .types()
-            .union_member(*declaration, scrutinee.variant())
+            .union_member(declaration.clone(), scrutinee.variant().clone())
             .ok_or_else(|| invariant("case-scrutinee-member-unresolved"))?;
         let arm = arms
             .iter()
@@ -1594,7 +1594,7 @@ impl<'a, 'm> Machine<'a, 'm> {
             NodeKind::Local(slot) => {
                 if let Some((binder, cause)) = self.unavailable_slots.get(slot) {
                     return Err(Halt::Unavailable {
-                        binder: *binder,
+                        binder: binder.clone(),
                         cause: *cause,
                     });
                 }
@@ -1730,7 +1730,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 let binding = match self
                     .scope
                     .types()
-                    .composite(*declaration)
+                    .composite(declaration.clone())
                     .map(|union| union.shape())
                 {
                     Some(CompositeShape::Union(members)) => members
@@ -2076,7 +2076,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 // are not a positional prefix of that record's.
                 let index = self
                     .scope
-                    .record_slot(composite.declaration(), field)
+                    .record_slot(composite.declaration().clone(), field)
                     .ok_or_else(|| invariant("field-slot-unresolved"))?;
                 let slot = composite
                     .slots()
@@ -2304,7 +2304,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 let value = self
                     .scope
                     .types()
-                    .tuple(*declaration, arguments)
+                    .tuple(declaration.clone(), arguments)
                     .map_err(|refusal| construction_fault(ConstructionSite::Tuple, &refusal))?;
                 outcome_into_stop(retain_composite(value, self.meter))?
             }
@@ -2317,7 +2317,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 let Some(CompositeShape::Record(declared)) = self
                     .scope
                     .types()
-                    .composite(*declaration)
+                    .composite(declaration.clone())
                     .map(|declaration| declaration.shape())
                 else {
                     return Err(invariant("record-declaration-unresolved"));
@@ -2338,7 +2338,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 let value = self
                     .scope
                     .types()
-                    .record(*declaration, fields)
+                    .record(declaration.clone(), fields)
                     .map_err(|refusal| construction_fault(ConstructionSite::Record, &refusal))?;
                 outcome_into_stop(retain_composite(value, self.meter))?
             }
@@ -2529,9 +2529,9 @@ impl<'a, 'm> Machine<'a, 'm> {
                 // seam's own enum.
                 #[allow(clippy::wildcard_enum_match_arm)]
                 let target_key = match node.value_type() {
-                    ValueType::Reference(key) => *key,
+                    ValueType::Reference(key) => key.clone(),
                     ValueType::Option(payload) => match &**payload {
-                        ValueType::Reference(key) => *key,
+                        ValueType::Reference(key) => key.clone(),
                         _ => return Err(invariant("lookup-reference-result-expected")),
                     },
                     _ => return Err(invariant("lookup-reference-result-expected")),
@@ -2546,7 +2546,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 evaluate_lookup(
                     binding,
                     target_key,
-                    *static_key,
+                    static_key.clone(),
                     reference_value,
                     *absence,
                     node.value_type(),
@@ -2698,7 +2698,7 @@ impl<'a, 'm> Machine<'a, 'm> {
         let attribute = self
             .scope
             .types()
-            .attributes(reference.object_type())
+            .attributes(reference.object_type().clone())
             .and_then(|attributes| {
                 attributes
                     .iter()
@@ -2777,13 +2777,13 @@ impl<'a, 'm> Machine<'a, 'm> {
         let ValueType::Reference(target) = result_type.element() else {
             return Err(invariant("all-instances-reference-element-expected"));
         };
-        self.named_covers(members, *target)?;
+        self.named_covers(members, target.clone())?;
         let types = self.scope.types();
         let listed = self.named_members(node, population)?;
         let mut selected = Vec::new();
         for reference in listed {
             charge_named(self.meter, ChargePoint::PopulationVisit)?;
-            if types.conforms(reference.object_type(), *target) {
+            if types.conforms(reference.object_type().clone(), target.clone()) {
                 selected.push(Value::Reference(reference.clone()));
             }
         }
@@ -2804,7 +2804,10 @@ impl<'a, 'm> Machine<'a, 'm> {
         target: quire_exact::EffectiveId,
     ) -> Result<(), Halt> {
         let types = self.scope.types();
-        if members.iter().any(|member| types.conforms(target, *member)) {
+        if members
+            .iter()
+            .any(|member| types.conforms(target.clone(), member.clone()))
+        {
             return Ok(());
         }
         let queried = self
@@ -2864,22 +2867,22 @@ impl<'a, 'm> Machine<'a, 'm> {
         let ValueType::Reference(target) = target else {
             return Err(invariant("lookup-reference-result-expected"));
         };
-        self.named_covers(members, *target)?;
+        self.named_covers(members, target.clone())?;
         if !self
             .scope
             .types()
-            .conforms(reference.object_type(), *target)
+            .conforms(reference.object_type().clone(), target.clone())
         {
             return Err(Halt::Family(FamilyResult::Refused(Box::new(
                 ModelQueryRefusal::from(
                     qsl_semantics::model::normalize::ModelRefusal::type_mismatch(
                         self.graph
-                            .object_type_key(reference.object_type())
+                            .object_type_key(reference.object_type().clone())
                             .ok_or_else(|| invariant("named-reference-type-declared"))?
                             .node
                             .clone(),
                         self.graph
-                            .object_type_key(*target)
+                            .object_type_key(target.clone())
                             .ok_or_else(|| invariant("named-queried-type-declared"))?
                             .node
                             .clone(),
@@ -3223,7 +3226,7 @@ impl<'a, 'm> Machine<'a, 'm> {
         let declared = self
             .scope
             .types()
-            .attributes(current.object_type())
+            .attributes(current.object_type().clone())
             .ok_or_else(|| invariant("edge-attribute-declarations-unresolved"))?;
         let attribute = declared
             .iter()
@@ -3338,8 +3341,8 @@ impl<'a, 'm> Machine<'a, 'm> {
             }
             (OrderedKind::Enums, Value::Enum(l), Value::Enum(r)) => {
                 let (Some(l), Some(r)) = (
-                    self.enum_members.resolve(l.variant()),
-                    self.enum_members.resolve(r.variant()),
+                    self.enum_members.resolve(l.variant().clone()),
+                    self.enum_members.resolve(r.variant().clone()),
                 ) else {
                     return Err(invariant("ordered-enumeration-variant-unresolved"));
                 };
@@ -3843,7 +3846,7 @@ impl<'a, 'm> Machine<'a, 'm> {
         let Some(CompositeShape::Record(fields)) = self
             .scope
             .types()
-            .composite(composite.declaration())
+            .composite(composite.declaration().clone())
             .map(|declaration| declaration.shape())
         else {
             return;

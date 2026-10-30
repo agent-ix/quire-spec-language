@@ -2119,7 +2119,18 @@ fn dimensions_and_units_are_admitted_under_their_declared_names() {
     let names: Vec<&str> = keys.keys().map(String::as_str).collect();
     assert_eq!(
         names,
-        ["Accel", "C", "K", "Length", "Speed", "Temperature", "Time", "cm", "km", "m"]
+        [
+            "Accel",
+            "C",
+            "K",
+            "Length",
+            "Speed",
+            "Temperature",
+            "Time",
+            "cm",
+            "km",
+            "m"
+        ]
     );
     let km = graph.unit(keys["km"].clone()).expect("km");
     assert_eq!(km.canonical().scale().to_string(), "1000/1");
@@ -2152,8 +2163,14 @@ fn dimensions_and_units_are_admitted_under_their_declared_names() {
     let term = |name: &str, exponent: &str| (name.to_owned(), exponent.to_owned());
     assert_eq!(exponents("Length"), [term("Length", "1")]);
     assert_eq!(exponents("Time"), [term("Time", "1")]);
-    assert_eq!(exponents("Speed"), [term("Length", "1"), term("Time", "-1")]);
-    assert_eq!(exponents("Accel"), [term("Length", "1"), term("Time", "-2")]);
+    assert_eq!(
+        exponents("Speed"),
+        [term("Length", "1"), term("Time", "-1")]
+    );
+    assert_eq!(
+        exponents("Accel"),
+        [term("Length", "1"), term("Time", "-2")]
+    );
     assert_eq!(exponents("Temperature"), [term("Temperature", "1")]);
     // A unit with no dimension or unit form has the empty graph.
     let empty = assemble("type Digit = Int[0, 9];").1.expect("assembles");

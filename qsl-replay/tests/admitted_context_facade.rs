@@ -66,7 +66,8 @@ fn admit(
     replay: ReplayLimits,
 ) -> Result<AdmittedCompilation, AdmittedRefusal> {
     compile_admitted(
-        unit_identity(), "fixture".to_owned(),
+        unit_identity(),
+        "fixture".to_owned(),
         "unit.native",
         text.as_bytes(),
         [],
@@ -107,7 +108,8 @@ fn spine_enums(text: &str) -> Vec<(NodeKey, Vec<(String, NodeKey)>)> {
         .expect("selects")
         .into_value();
     let checked = spine::check(
-        &parsed, "fixture".to_owned(),
+        &parsed,
+        "fixture".to_owned(),
         &models,
         &DependencyInput::default(),
         limits,
@@ -148,7 +150,8 @@ fn the_context_holds_every_case_with_the_keys_the_check_minted() {
     let text = format!("{HEADER}{COLORS}");
     let admitted = admit_ok(&text);
     let plain = compile_package(
-        unit_identity(), "fixture".to_owned(),
+        unit_identity(),
+        "fixture".to_owned(),
         "unit.native",
         text.as_bytes(),
         [],
@@ -216,7 +219,8 @@ fn lookups_find_admitted_keys_and_refuse_unknown_ones() {
 /// the wire id of its one enum.
 fn alone(library: &SuppliedLibrary, dependencies: &DependencyInput) -> AdmittedCompilation {
     compile_admitted(
-        library.source.clone(), "fixture".to_owned(),
+        library.source.clone(),
+        "fixture".to_owned(),
         &library.path,
         &library.bytes,
         [],
@@ -321,7 +325,8 @@ fn compile_failures_are_package_or_resource_refusals() {
     let text = format!("{HEADER}{COLORS}");
     let owned = DependencyInput::new([owned]).unwrap();
     let Err(ReplayRefusal::DependencyInput(expected)) = compile_package(
-        unit_identity(), "fixture".to_owned(),
+        unit_identity(),
+        "fixture".to_owned(),
         "unit.native",
         text.as_bytes(),
         [],

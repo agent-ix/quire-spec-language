@@ -16,7 +16,7 @@ use crate::simulation::expansion::ExpansionStop;
 
 /// The operation an attempt applies (FR-114): the type that declares it, its
 /// name, and the type of the attempt's receiver.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct OperationRef<'o> {
     /// The declaring type.
     pub(crate) declaring: EffectiveId,
@@ -158,7 +158,10 @@ impl<'a> ModelSystem<'a> {
         row: &Row,
         operation: &OperationRef<'_>,
     ) -> Option<&Application> {
-        if !self.types.conforms(row.type_id(), operation.receiver) {
+        if !self
+            .types
+            .conforms(row.type_id(), operation.receiver.clone())
+        {
             return None;
         }
         self.applications

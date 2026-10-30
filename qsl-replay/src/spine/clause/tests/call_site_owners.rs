@@ -580,10 +580,7 @@ fn a_call_site_frame_operation_resolves_as_a_replay_frame_target() {
             .unwrap_or_else(|refusal| panic!("{owner}::{name}: {refusal:?}"));
         let (context, frame) = resolve_target(graph, &site.site.frame_operation, &package_name)
             .unwrap_or_else(|refusal| panic!("{owner}::{name}: {refusal:?}"));
-        assert_eq!(
-            crate::frame.frame().clone(),
-            site.site.frame
-        );
+        assert_eq!(crate::frame.frame().clone(), site.site.frame);
         assert_eq!(frame.operation().declaring, context);
         assert_eq!(
             graph

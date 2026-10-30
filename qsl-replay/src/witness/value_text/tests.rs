@@ -4,8 +4,8 @@
 //! a small native stack.
 
 use ix_trace_rs::trace;
-use quire_exact::NodeKey;
 use quire_exact::Integer;
+use quire_exact::NodeKey;
 
 use super::super::envelope_tests::full_packet;
 use super::super::{

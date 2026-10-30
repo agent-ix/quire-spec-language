@@ -75,12 +75,7 @@ fn at(
     key: &OccurrenceKey,
     source: ReplaySource,
 ) -> ReplayRequestWire {
-    let mut wire = request(
-        source_text.as_bytes(),
-        &compiled,
-        name(&[function]),
-        source,
-    );
+    let mut wire = request(source_text.as_bytes(), &compiled, name(&[function]), source);
     wire.replay_target = crate::RequestTargetWire::function(name(&[function]), key.clone());
     wire
 }
@@ -201,7 +196,11 @@ fn tc_444_the_occurrence_key_selects_the_predicate_or_the_application_claim() {
     );
     let witness = |value: &str| {
         ReplaySource::Witness(
-            Witness::parse(format!("<<<assertion|h|c|{}={value}>>>", crate::pn(&x("r")))).unwrap(),
+            Witness::parse(format!(
+                "<<<assertion|h|c|{}={value}>>>",
+                crate::pn(&x("r"))
+            ))
+            .unwrap(),
         )
     };
     assert_eq!(
@@ -352,8 +351,9 @@ fn tc_444_binder_bodies_are_observed_and_unread_parameters_are_filled() {
     let refused = run(&source, &compiled, "u", &u_declaration, &[(x, int(0))]).unwrap_err();
     assert!(matches!(refused, ReplayRefusal::NotAPredicate { .. }));
     // A witness transcript may likewise leave the unread parameter out.
-    let transcript =
-        ReplaySource::Witness(Witness::parse(format!("<<<assertion|h|c|{}=0>>>", crate::pn(&x))).unwrap());
+    let transcript = ReplaySource::Witness(
+        Witness::parse(format!("<<<assertion|h|c|{}=0>>>", crate::pn(&x))).unwrap(),
+    );
     assert_eq!(
         settled(replay(
             at(&source, &compiled, "u", &u_application, transcript),

@@ -57,7 +57,8 @@ fn a_consumer_runs_builds_and_settles_through_the_crate_root() {
         supplied: SuppliedLimits::default(),
     };
     let result = run_with_replay_context(
-        SourceIdentity::new("a", "u", "git", "1"), "fixture".to_owned(),
+        SourceIdentity::new("a", "u", "git", "1"),
+        "fixture".to_owned(),
         "unit.native",
         SOURCE.as_bytes(),
         &BTreeMap::new(),
@@ -75,7 +76,10 @@ fn a_consumer_runs_builds_and_settles_through_the_crate_root() {
     let plugin = BackendId::new("acme");
     let node = fixture_node(7);
     let bounds = [ProofBound::new(
-        DomainKey::Node { node: node.clone(), path: vec![] },
+        DomainKey::Node {
+            node: node.clone(),
+            path: vec![],
+        },
         Some(DomainKind::Integer),
         FiniteBound::integer_range(Integer::from(0_i64), Integer::from(9_i64)).unwrap(),
     )

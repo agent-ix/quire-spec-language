@@ -576,13 +576,12 @@ pub fn check_with_execution_points(
             admitted: AdmittedPackages::default(),
             work: StageWork::default(),
         };
-        let package =
-            resolution.check_unit(
-                parsed,
-                package_name.clone(),
-                models.models.clone(),
-                execution_points.clone(),
-            )?;
+        let package = resolution.check_unit(
+            parsed,
+            package_name.clone(),
+            models.models.clone(),
+            execution_points.clone(),
+        )?;
         *work = resolution.work;
         let (library_names, libraries) = resolution
             .compiled
@@ -819,9 +818,16 @@ pub(crate) fn compose(
     let models = select(&parsed, packages, limits.model, &cancel)
         .map_err(refusal)?
         .into_value();
-    let checked = check(&parsed, "fixture".to_owned(), &models, dependencies, limits, &cancel)
-        .map_err(refusal)?
-        .into_value();
+    let checked = check(
+        &parsed,
+        "fixture".to_owned(),
+        &models,
+        dependencies,
+        limits,
+        &cancel,
+    )
+    .map_err(refusal)?
+    .into_value();
     let emitted = package(&checked, PackageLimits::default(), &cancel)
         .map_err(refusal)?
         .into_value();

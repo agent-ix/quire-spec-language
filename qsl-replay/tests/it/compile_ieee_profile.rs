@@ -21,7 +21,8 @@ const TO_R: &str = include_str!("../fixtures/ieee_float/to_rational.native");
 
 fn compile(text: &str) -> Result<AdmittedCompilation, AdmittedRefusal> {
     compile_admitted(
-        SourceIdentity::new("a", "ieee", "git", "1"), "fixture".to_owned(),
+        SourceIdentity::new("a", "ieee", "git", "1"),
+        "fixture".to_owned(),
         "ieee.native",
         text.as_bytes(),
         [],
@@ -391,7 +392,8 @@ fn admitted_float_arithmetic_and_rational_conversion_evaluate_through_the_source
                 .expect("models select")
                 .into_value();
             let checked = spine::check(
-                &parsed, "fixture".to_owned(),
+                &parsed,
+                "fixture".to_owned(),
                 &models,
                 &DependencyInput::default(),
                 limits,

@@ -6,8 +6,8 @@
 //! package under different aliases assign equal keys of both kinds.
 
 use ix_trace_rs::trace;
-use quire_exact::NodeKey;
 use qsl_package::CheckedPackage;
+use quire_exact::NodeKey;
 use quire_exact::{EnumMember, Value, ValueType};
 use quire_semantic_value::checking::CheckingLimits;
 

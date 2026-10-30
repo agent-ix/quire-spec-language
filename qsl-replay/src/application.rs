@@ -7,8 +7,8 @@ use std::sync::Arc;
 use qsl_eval::value::PackageClosure;
 use qsl_foundation::SourceIdentity;
 use qsl_package::CheckedPackage;
-use qsl_semantics::library::LibraryName;
 use qsl_semantics::check::{CheckedExpression, CheckedNode, NodeKind};
+use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_eval::{
     Admission, BodyFactory, CallFailure, Evaluation, Progress, Registry, Session, Signature,
@@ -238,7 +238,7 @@ impl CheckedClosureHandle {
                 .map(|node| node.key().clone())
                 .find(|key| key == node)
             {
-                if let Some(function) = package.graph().callable_by_identity(&key) {
+                if let Some(function) = package.graph().callable_by_identity(key.clone()) {
                     return Ok(CallableSelection {
                         owner: owner.clone(),
                         key,
@@ -286,7 +286,7 @@ impl CheckedClosureHandle {
             .graph()
             .semantic_graph()
             .nodes()
-            .find(|node| node.key() == declaration)
+            .find(|node| node.key() == *declaration)
         else {
             let foreign: Vec<_> = packages
                 .iter()
@@ -314,7 +314,7 @@ impl CheckedClosureHandle {
         else {
             return Err(NominalDeclarationRefusal::WrongKind);
         };
-        if checked_node != node.key()
+        if checked_node.clone() != node.key().clone()
             || node.node_tag() != qsl_semantics::check::NodeTag::CompositeType
         {
             return Err(NominalDeclarationRefusal::Inconsistent);
@@ -322,7 +322,7 @@ impl CheckedClosureHandle {
         let Some(qualified_name) = node.declaration() else {
             return Err(NominalDeclarationRefusal::Inconsistent);
         };
-        let Some(composite) = graph.scope().types().composite(key) else {
+        let Some(composite) = graph.scope().types().composite(key.clone()) else {
             return Err(NominalDeclarationRefusal::Inconsistent);
         };
         let declaration_form = nominal_declaration_form(*form, composite.shape())?;
@@ -366,7 +366,7 @@ impl CheckedClosureHandle {
                     }
                     Ok(NominalDeclarationMember::UnionMember {
                         member: binding.clone(),
-                        variant: binding.variant(),
+                        variant: binding.variant().clone(),
                         payload: member.positions().to_vec(),
                     })
                 })
@@ -409,7 +409,7 @@ impl CheckedClosureHandle {
         let Some(node) = graph
             .semantic_graph()
             .nodes()
-            .find(|node| *node.key() == call.call_node)
+            .find(|node| node.key() == call.call_node)
         else {
             let owners: Vec<_> = packages
                 .iter()
@@ -427,7 +427,7 @@ impl CheckedClosureHandle {
         ) else {
             return Err(NestedCallSiteRefusal::UnknownOccurrence);
         };
-        let Some(caller_function) = graph.function_by_identity(&caller.key) else {
+        let Some(caller_function) = graph.function_by_identity(caller.key.clone()) else {
             return Err(NestedCallSiteRefusal::Unreachable);
         };
         if !body_holds_call_at(caller_function.body, site) {
@@ -473,7 +473,7 @@ fn has_node(package: &CheckedPackage, node: &NodeKey) -> bool {
         .graph()
         .semantic_graph()
         .nodes()
-        .any(|candidate| candidate.key() == node)
+        .any(|candidate| candidate.key() == *node)
 }
 
 /// Collect the composite declaration keys reachable through one admitted
@@ -516,13 +516,13 @@ fn reachable_composites(
                     return Err(());
                 };
                 if declaration != key
-                    || graph.semantic_graph().node(node).is_none_or(|node| {
+                    || graph.semantic_graph().node(node.clone()).is_none_or(|node| {
                         node.node_tag() != qsl_semantics::check::NodeTag::CompositeType
                     })
                 {
                     return Err(());
                 }
-                let composite = graph.scope().types().composite(key).ok_or(())?;
+                let composite = graph.scope().types().composite(key.clone()).ok_or(())?;
                 if nominal_declaration_form(*form, composite.shape()).is_err() {
                     return Err(());
                 }
@@ -752,8 +752,8 @@ pub fn acquire_checked_closure<'a>(
         replay_limits,
     )?;
     let package_name = compiled.package.clone();
-    let context = context_of(compiled.checked.package(), &package_name)
-        .map_err(AdmittedRefusal::Fault)?;
+    let context =
+        context_of(compiled.checked.package(), &package_name).map_err(AdmittedRefusal::Fault)?;
     Ok(CheckedClosureCompilation {
         package: CompiledPackage::new(compiled.emitted),
         context,
@@ -811,7 +811,9 @@ impl ApplicationRegistry {
         if !Arc::ptr_eq(&self.acquisition, &selection.acquisition) {
             return Err(SelectionRefusal::WrongAcquisition);
         }
-        Ok(self.inner.register(selection.key.clone(), signature, factory))
+        Ok(self
+            .inner
+            .register(selection.key.clone(), signature, factory))
     }
 
     /// Begin a call under the leaf's admission and permanent sealing rules.
@@ -1076,7 +1078,9 @@ mod tests {
         );
         let handle = acquired.handle();
         assert_eq!(
-            handle.lookup_callable(handle.package_name(), &lib_wire).err(),
+            handle
+                .lookup_callable(handle.package_name(), &lib_wire)
+                .err(),
             Some(CallableLookupRefusal::Foreign(
                 lib_acquired.handle().package_name()
             ))
@@ -1101,7 +1105,9 @@ mod tests {
                     &wire(&handle.package, "f")
                 )
                 .err(),
-            Some(CallableLookupRefusal::Foreign(handle.package_name().clone()))
+            Some(CallableLookupRefusal::Foreign(
+                handle.package_name().clone()
+            ))
         );
         assert_eq!(
             handle
@@ -1300,10 +1306,7 @@ mod tests {
             .key();
         assert_eq!(
             handle
-                .lookup_callable(
-                    handle.package_name(),
-                    &enum_key.clone()
-                )
+                .lookup_callable(handle.package_name(), &enum_key.clone())
                 .err(),
             Some(CallableLookupRefusal::WrongKind)
         );
@@ -1321,7 +1324,9 @@ mod tests {
         .expect("function site");
         let parameter = site.site.parameters[0].1;
         assert_eq!(
-            handle.lookup_callable(handle.package_name(), &parameter).err(),
+            handle
+                .lookup_callable(handle.package_name(), &parameter)
+                .err(),
             Some(CallableLookupRefusal::WrongKind)
         );
         let unrelated = acquire(
@@ -1336,7 +1341,9 @@ mod tests {
             .expect("other");
         let missing = missing_key.clone();
         assert_eq!(
-            handle.lookup_callable(handle.package_name(), &missing).err(),
+            handle
+                .lookup_callable(handle.package_name(), &missing)
+                .err(),
             Some(CallableLookupRefusal::Unknown)
         );
         let mut malformed = own.clone();
@@ -1632,7 +1639,7 @@ mod tests {
         ] {
             let expected = crate::compile_admitted(
                 identity("unit"),
-            "fixture".to_owned(),
+                "fixture".to_owned(),
                 "unit.native",
                 source.as_bytes(),
                 [],
@@ -1643,7 +1650,7 @@ mod tests {
             .expect_err("existing refusal");
             let actual = acquire_checked_closure(
                 identity("unit"),
-            "fixture".to_owned(),
+                "fixture".to_owned(),
                 "unit.native",
                 source.as_bytes(),
                 [],
@@ -2019,10 +2026,7 @@ mod tests {
             handle.nested_call_site(&outer, g_call),
             handle.nested_call_site(&g, k_call),
             handle.nested_call_site(&g, NestedCallOccurrence::new(wire(&package, "g"), 0)),
-            handle.nested_call_site(
-                &g,
-                NestedCallOccurrence::new(crate::fixture_node(7), 0),
-            ),
+            handle.nested_call_site(&g, NestedCallOccurrence::new(crate::fixture_node(7), 0)),
             handle.nested_call_site(&g, NestedCallOccurrence::new(g_call.call_node, 99)),
         ]
         .map(|result| result.expect_err("refused"));

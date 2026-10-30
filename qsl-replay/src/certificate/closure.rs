@@ -401,13 +401,11 @@ fn check_protocol(
 ) -> Result<TemporalCertificateCheck, ClosureRefusal> {
     let model = admit(request.subject.model.simulation.clone())?;
     let graph = request.subject.model.simulation.package.graph();
-    let protocol = graph
-        .protocol(&request.subject.protocol)
-        .ok_or_else(|| {
-            ClosureRefusal::Protocol(ProtocolRefusal::UnknownProtocol {
-                protocol: request.subject.protocol.clone(),
-            })
-        })?;
+    let protocol = graph.protocol(&request.subject.protocol).ok_or_else(|| {
+        ClosureRefusal::Protocol(ProtocolRefusal::UnknownProtocol {
+            protocol: request.subject.protocol.clone(),
+        })
+    })?;
     check_protocol_bounds(&model, protocol, graph, BOUND_POSITIONS)
         .map_err(|refusal| ClosureRefusal::NotSimulated(Box::new(refusal)))?;
     let subject = &request.subject;

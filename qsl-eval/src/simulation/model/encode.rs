@@ -391,7 +391,7 @@ impl<'t> Typing<'t> {
         };
         let Some(CompositeShape::Record(fields)) = self
             .types?
-            .composite(composite.declaration())
+            .composite(composite.declaration().clone())
             .map(CompositeDeclaration::shape)
         else {
             return None;
@@ -439,7 +439,7 @@ fn composite_enc(
 ) -> Enc {
     let name = Enc::Node(composite.declaration().clone());
     match types
-        .composite(composite.declaration())
+        .composite(composite.declaration().clone())
         .map(CompositeDeclaration::shape)
     {
         Some(CompositeShape::Record(fields)) if fields.len() == composite.slots().len() => {
@@ -574,7 +574,7 @@ pub(super) fn value_enc_with(
                 declared
                     .cases()
                     .iter()
-                    .find(|case| case.variant() == member.variant())
+                    .find(|case| case.variant() == *member.variant())
                     .map(|case| (declared, case))
             })
             .map_or(
@@ -601,7 +601,7 @@ pub(super) fn value_enc_with(
             "union",
             vec![
                 ("name", Enc::Node(union.declaration().clone())),
-                ("member", Enc::text(union.member().identifier().as_str())),
+                ("member", Enc::text(union.member().identifier())),
                 (
                     "components",
                     Enc::Array(

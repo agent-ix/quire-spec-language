@@ -223,7 +223,7 @@ pub(super) fn preimage_of(claim: &OperatorIdentity) -> ParityPreimage {
         arguments: std::iter::once(first)
             .chain(second)
             .map(|operand| ParityArgument {
-                identity: operand.identity,
+                identity: operand.identity.clone(),
                 domain: Domain::Range(operand.range.clone()),
             })
             .collect(),
@@ -246,14 +246,12 @@ fn settle(
     let checked_graph = compiled.checked.package().graph();
     let graph = checked_graph.semantic_graph();
     let operator = claim.operation.operator();
-    let node = graph
-        .node(&claim.node)
-        .ok_or_else(|| {
-            ReplayRefusal::ScalarIdentity(Box::new(ScalarIdentityMismatch::Node {
-                node: claim.node.clone(),
-                package: package.clone(),
-            }))
-        })?;
+    let node = graph.node(claim.node.clone()).ok_or_else(|| {
+        ReplayRefusal::ScalarIdentity(Box::new(ScalarIdentityMismatch::Node {
+            node: claim.node.clone(),
+            package: package.clone(),
+        }))
+    })?;
     if !applies(node, operator) {
         return Err(ReplayRefusal::ScalarIdentity(Box::new(
             ScalarIdentityMismatch::Operator {
@@ -274,7 +272,7 @@ fn settle(
         )));
     }
     if checked_graph
-        .occurrence(&node.key(), &claim.occurrence)
+        .occurrence(node.key().clone(), &claim.occurrence)
         .is_none()
     {
         return Err(ReplayRefusal::ScalarIdentity(Box::new(
