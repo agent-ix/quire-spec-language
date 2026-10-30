@@ -434,10 +434,9 @@ pub struct CheckedHyperClause {
     /// each member of its fairness set, in fairness-set order.
     fairness_spans: Vec<Vec<Span>>,
     /// The `claim` occurrence of the clause's `hyperproperty` node, set when
-    /// the package is assembled (FR-488 "Outputs").
-    occurrence: OccurrenceKey,
-    /// Whether a package assembled the clause at [`Self::occurrence`].
-    assembled: bool,
+    /// the package is assembled (FR-488 "Outputs"); `None` for a clause no
+    /// package assembled.
+    occurrence: Option<OccurrenceKey>,
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -591,24 +590,16 @@ impl CheckedHyperClause {
     /// The `claim` occurrence `[node, "claim", ordinal]` (ADR-013 O-07) of
     /// the clause's `hyperproperty` node: the `clause` member of FR-315's
     /// `HyperProductIdentity`. The emitter assigns it when the package is
-    /// assembled, so a clause that was checked and not assembled has none
-    /// ([`Self::assembled_occurrence`]) and this returns the zero
-    /// occurrence, which names no node.
+    /// assembled, so a clause that was checked and not assembled has none.
     /// A consumer reads clauses from `CheckedGraph::hyper_clauses()`, which
     /// are all assembled, never from `HyperTraceFamily::check`.
-    pub fn occurrence(&self) -> &OccurrenceKey {
-        &self.occurrence
-    }
-
-    /// [`Self::occurrence`], or `None` for a clause no package assembled.
     pub fn assembled_occurrence(&self) -> Option<&OccurrenceKey> {
-        self.assembled.then_some(&self.occurrence)
+        self.occurrence.as_ref()
     }
 
     /// The same clause, assembled into a package at `occurrence`.
     pub(crate) fn assembled_at(mut self, occurrence: OccurrenceKey) -> Self {
-        self.occurrence = occurrence;
-        self.assembled = true;
+        self.occurrence = Some(occurrence);
         self
     }
 
@@ -650,15 +641,6 @@ pub enum MatchPart {
     Universal,
     /// `mu_E`: the conjuncts that read an existential variable.
     Existential,
-}
-
-/// The occurrence of a clause no package assembled: node zero, `claim`
-/// ordinal zero. No package holds a node with the zero id.
-fn unassembled() -> OccurrenceKey {
-    OccurrenceKey::new(
-        NodeKey::from_digest([0; 32]),
-        quire_exact::Origin::new(quire_exact::Role::new("claim"), 0),
-    )
 }
 
 /// A `relation` over model executions, checked (FR-172 "Outputs").
@@ -1299,7 +1281,13 @@ fn check_behaviours<'a>(
             .collect::<Vec<_>>(),
         &parameters
             .iter()
-            .map(|(parameter, object)| (parameter.name.as_str(), parameter.alias.as_str(), object.clone()))
+            .map(|(parameter, object)| {
+                (
+                    parameter.name.as_str(),
+                    parameter.alias.as_str(),
+                    object.clone(),
+                )
+            })
             .collect::<Vec<_>>(),
     );
     let first_trace = |parameter: &str| {
@@ -1480,8 +1468,10 @@ fn check_behaviours<'a>(
         _ => CopyGroup::default(),
     };
 
-    let parameter_objects: Vec<EffectiveId> =
-        parameters.iter().map(|(_, object)| object.clone()).collect();
+    let parameter_objects: Vec<EffectiveId> = parameters
+        .iter()
+        .map(|(_, object)| object.clone())
+        .collect();
     let roots: Vec<ValueType> = parameters
         .iter()
         .map(|(_, object)| ValueType::Reference(object.clone()))
@@ -1534,8 +1524,7 @@ fn check_behaviours<'a>(
         atoms,
         parameter_objects,
         fairness_spans,
-        occurrence: unassembled(),
-        assembled: false,
+        occurrence: None,
     })
 }
 

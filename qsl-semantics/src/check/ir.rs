@@ -47,7 +47,7 @@ impl RecordField {
 
     /// The record the read is typed at.
     pub fn declaration(&self) -> NodeKey {
-        self.declaration
+        self.declaration.clone()
     }
 
     /// The field's name in that record.

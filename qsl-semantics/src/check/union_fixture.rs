@@ -24,18 +24,22 @@ use quire_semantic_value::declaration::{
 
 use super::mint_union_member_key;
 
-fn digest(label: &str) -> [u8; 32] {
-    qsl_foundation::digest::ByteDigest::of(label.as_bytes()).as_bytes()
+fn fixture_key(path: &[&str]) -> NodeKey {
+    let path = path
+        .iter()
+        .map(|segment| quire_exact::PathSegment::Text((*segment).to_owned()))
+        .collect();
+    NodeKey::new("fixture", path, 0).expect("a fixture node key is well formed")
 }
 
 /// The declaration handle of the fixture union `union`.
 pub fn handle(union: &str) -> NodeKey {
-    NodeKey::from_digest(digest(union))
+    fixture_key(&[union])
 }
 
 /// The settled key of the fixture union `union`, the key its values carry.
 pub fn settled(union: &str) -> NodeKey {
-    NodeKey::from_digest(digest(&format!("{union} settled")))
+    fixture_key(&[union, "settled"])
 }
 
 /// The static type of the fixture union `union`.
@@ -74,7 +78,7 @@ fn members(union: &str, object_type: EffectiveId) -> Vec<(&'static str, Vec<Valu
 pub fn member(union: &str, name: &str) -> UnionMember {
     UnionMember::from_admitted(
         settled(union),
-        mint_union_member_key(settled(union), name),
+        mint_union_member_key(&settled(union), name).expect("a fixture member key is well formed"),
         Identifier::new(name).expect("a fixture member name is an identifier"),
     )
 }

@@ -145,17 +145,20 @@ impl<'a> UnionRef<'a> {
     }
 }
 
-/// Mint the FR-319 node key of `member` of the union whose declaration node
-/// id is `declaration` (QSpec FR-441), the key a verified union binding
-/// retains; only `check` mints a node key. `declaration` is the union's
-/// checked node id, not a temporary declaration handle. The member's
-/// `VariantId` is these bytes retyped
-/// ([`crate::value::enumeration::mint_union_variant_id`]).
-pub fn mint_union_member_key(declaration: NodeKey, member: &str) -> NodeKey {
-    NodeKey::from_digest(crate::value::enumeration::union_member_digest(
-        declaration,
-        member,
-    ))
+/// The FR-319 node key of `member` of the union whose declaration node id is
+/// `declaration` (QSpec FR-441), the key a verified union binding retains;
+/// only `check` mints a node key. A member is a declared node: it sits in the
+/// union's package, under the union's declaration path with the member name as
+/// the last scope segment. `declaration` is the union's checked node id, not a
+/// temporary declaration handle. The member's `VariantId` is built from this
+/// key ([`crate::value::enumeration::mint_union_variant_id`]).
+pub fn mint_union_member_key(
+    declaration: &NodeKey,
+    member: &str,
+) -> Result<NodeKey, quire_exact::InvalidNodeKey> {
+    let mut path = declaration.path();
+    path.push(quire_exact::PathSegment::Text(member.to_owned()));
+    NodeKey::new(declaration.package(), path, 0)
 }
 
 /// One member of a declared union, named by a construction `U::m` or

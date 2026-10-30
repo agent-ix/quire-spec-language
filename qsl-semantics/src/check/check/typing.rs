@@ -1040,7 +1040,8 @@ impl<'a> Typer<'a> {
                 };
                 node(
                     NodeKind::Literal(CheckedLiteral(Value::Quantity(quire_exact::Quantity::new(
-                        magnitude, unit,
+                        magnitude,
+                        unit.clone(),
                     )))),
                     ValueType::Quantity(unit),
                     &location,
@@ -2959,7 +2960,7 @@ impl<'a> Typer<'a> {
             },
             ValueType::collection(CollectionType::new(
                 CollectionKind::Set,
-                ValueType::Reference(population.member),
+                ValueType::Reference(population.member.clone()),
                 None,
             )),
             location,
@@ -3026,7 +3027,7 @@ impl<'a> Typer<'a> {
         self.enter(location)?;
         let operand = population_operand(population, &location.child(0));
         self.all_instances(
-            &ValueType::Reference(population.domain.object),
+            &ValueType::Reference(population.domain.object.clone()),
             operand,
             location,
         )
