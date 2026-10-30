@@ -207,7 +207,7 @@ fn a_concrete_invariant_is_a_hypothesis_of_every_record() {
 }
 
 /// FR-146-AC-5, model subject: the seven `Step` records name positions 0
-/// to 6 once each, the rows at those positions ascend by the node-key digest
+/// to 6 once each, the rows at those positions ascend by the node key
 /// of their concrete operation, and writing the rows in exact reverse gives
 /// each the same `StepRowRef`.
 #[trace("TC-551", "FR-146-AC-5")]
@@ -237,17 +237,21 @@ fn step_row_refs_follow_fr375_order_whatever_the_source_order() {
         .v2_emission()
         .expect("the refinement emits");
     let body = serde_json::to_value(&emission.body).expect("the body serializes");
-    let digests: Vec<&str> = body["steps"]
+    let keys: Vec<(String, String, u64)> = body["steps"]
         .as_array()
         .expect("steps")
         .iter()
-        .map(|step| step["source_node"]["digest"].as_str().expect("a node"))
+        .map(|step| {
+            let node = &step["source_node"];
+            (
+                node["package"].as_str().expect("a node").to_owned(),
+                node["path"].to_string(),
+                node["ordinal"].as_u64().expect("a node"),
+            )
+        })
         .collect();
-    assert_eq!(digests.len(), 7);
-    assert!(
-        digests.windows(2).all(|pair| pair[0] <= pair[1]),
-        "{digests:?}"
-    );
+    assert_eq!(keys.len(), 7);
+    assert!(keys.windows(2).all(|pair| pair[0] <= pair[1]), "{keys:?}");
 }
 
 /// FR-146-AC-6: with `AbsInv` on `Spec::Counter` beside `CasInv` on

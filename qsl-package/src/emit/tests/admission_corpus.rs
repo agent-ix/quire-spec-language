@@ -2401,7 +2401,7 @@ pub(super) const PROTOCOL_ROWS: [&str; 3] = [
 ];
 
 /// QSpec FR-375-AC-19 (the declaration-naming rows): a protocol subject's
-/// `steps` are ordered by their node's digest, rows of one node by their
+/// `steps` are ordered by their node key, rows of one node by their
 /// alias-free class spelling (`duplicate Impl::ch` before `lose Impl::ch`),
 /// each naming its class catalog node, whatever order they are written in.
 #[trace("FR-375-AC-19", "TC-310")]
@@ -2416,17 +2416,15 @@ fn protocol_step_rows_order_by_node_then_class_spelling() {
         (node["body"]["steps"].clone(), catalog)
     };
     let (written, catalog) = steps(&PROTOCOL_ROWS);
-    let steps_of = |steps: &Value| -> Vec<(String, String)> {
+    let steps_of = |steps: &Value| -> Vec<(NodeKey, String)> {
         steps
             .as_array()
             .expect("steps")
             .iter()
             .map(|step| {
                 (
-                    step["source_node"]
-                        .as_str()
-                        .expect("a node")
-                        .to_owned(),
+                    qsl_foundation::node_wire::node_key_from_json(&step["source_node"])
+                        .expect("a node id"),
                     step["source_class"].as_str().expect("a class").to_owned(),
                 )
             })
