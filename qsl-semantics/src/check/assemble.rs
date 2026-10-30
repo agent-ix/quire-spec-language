@@ -3746,7 +3746,7 @@ impl PackageDeclarations {
                 Members::Tuple(elements) => {
                     let mut declared = Vec::with_capacity(elements.len());
                     for element in elements {
-                        match resolve_form(&names, element) {
+                        match resolve_form(&names, &element) {
                             Ok(value_type) => declared.push(value_type),
                             Err(error) => errors.push(resolution_error(&unit, error)),
                         }
