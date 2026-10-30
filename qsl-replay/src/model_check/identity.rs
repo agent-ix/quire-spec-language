@@ -87,7 +87,7 @@ impl ClauseIdentity {
         let root = resolve_clause_root(read, &triple)?;
         Ok(Self {
             occurrence: root.occurrence().clone(),
-            over: root.over(),
+            over: root.over().cloned(),
         })
     }
 }
@@ -167,7 +167,7 @@ impl StateGraphIdentity {
             .map_err(|fault| ClauseRootRefusal::Package(format!("{fault:?}")))??;
         Ok(Self {
             occurrence: root.occurrence().clone(),
-            over: root.over(),
+            over: root.over().cloned(),
         })
     }
 }
@@ -203,12 +203,17 @@ impl HyperIdentity {
             .hyper_clauses()
             .iter()
             .find(|candidate| {
-                candidate.name() == clause.name() && candidate.occurrence() == clause.occurrence()
+                candidate.name() == clause.name() && candidate.assembled_occurrence() == clause.assembled_occurrence()
             })
             .ok_or_else(|| ClauseRootRefusal::Undeclared {
                 name: clause.name().to_owned(),
             })?;
-        let occurrence = assembled.occurrence().clone();
+        let occurrence = assembled
+            .assembled_occurrence()
+            .cloned()
+            .ok_or_else(|| ClauseRootRefusal::Undeclared {
+                name: clause.name().to_owned(),
+            })?;
         let (admitted, library) = read_back(package, domain_packages, cancel)?;
         let read = admitted
             .package(&library)

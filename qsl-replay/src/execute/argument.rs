@@ -151,8 +151,8 @@ fn declares_shape(candidate: &EnumDeclaration, shape: &quire_exact::EnumShape) -
         && candidate
             .members
             .iter()
-            .map(|case| mint_variant_id(candidate.key.clone(), case))
-            .eq(shape.variants())
+            .map(|case| mint_variant_id(candidate.key.clone(), case).ok())
+            .eq(shape.variants().map(|variant| Some(variant.clone())))
 }
 
 /// The declaration whose members are exactly `shape`'s variants.
@@ -791,8 +791,9 @@ impl<'a> Converter<'a, '_> {
                 if !owner.members.contains(member) {
                     return Err(self.wrong(parameter));
                 }
-                let variant = mint_variant_id(owner.key.clone(), member);
-                let rank = shape.rank(variant.clone()).ok_or_else(|| self.wrong(parameter))?;
+                let variant = mint_variant_id(owner.key.clone(), member)
+                    .map_err(|_| self.wrong(parameter))?;
+                let rank = shape.rank(&variant).ok_or_else(|| self.wrong(parameter))?;
                 values.push(Value::Enum(EnumMember::new(variant, rank)));
             }
             (
@@ -920,7 +921,7 @@ impl<'a> Converter<'a, '_> {
                 let CompositeShape::Tuple(positions) = tuple.shape() else {
                     return Err(self.wrong(parameter));
                 };
-                if declaration.as_bytes() != key.as_bytes() || components.len() != positions.len() {
+                if declaration != key || components.len() != positions.len() {
                     return Err(self.wrong(parameter));
                 }
                 for _ in positions {
@@ -957,7 +958,7 @@ impl<'a> Converter<'a, '_> {
                 let settled = types
                     .union_key(*slot_key)
                     .ok_or_else(|| self.wrong(parameter))?;
-                if declaration.as_bytes() != settled.as_bytes() {
+                if declaration != &settled {
                     return Err(self.wrong(parameter));
                 }
                 let (_, declared) = types

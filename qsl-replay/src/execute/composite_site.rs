@@ -77,7 +77,7 @@ pub(super) fn locate(
     let package = compiled.checked.package();
     let graph = package.graph().semantic_graph();
     let semantic = graph
-        .node(node)
+        .node(node.clone())
         .ok_or_else(|| {
             mismatch(ScalarIdentityMismatch::Node {
                 node: node.clone(),
@@ -108,7 +108,7 @@ pub(super) fn locate(
     };
     let location = package
         .graph()
-        .occurrence(&semantic.key(), occurrence)
+        .occurrence(semantic.key().clone(), occurrence)
         .filter(|location| match &location.origin {
             BodyOrigin::Body { function, .. } => function == segment.as_str(),
             BodyOrigin::Measure { .. }
@@ -122,7 +122,7 @@ pub(super) fn locate(
         .ok_or_else(refused)?;
     let state = package
         .graph()
-        .function_by_identity(&callable.identity)
+        .function_by_identity(callable.identity.clone())
         .ok_or_else(|| fault("function-identity-has-a-checked-body"))?;
     let (left, right) = equality_operands(state.body, &location)
         .ok_or_else(|| fault("claimed-node-has-a-checked-twin"))?;

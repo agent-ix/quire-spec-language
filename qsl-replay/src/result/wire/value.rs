@@ -35,7 +35,7 @@ use quire_semantic_value::declaration::{CompositeDeclaration, CompositeShape, Ty
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 
-use super::{digest, hex, malformed, present, CauseCodecError};
+use super::{malformed, present, spelled, CauseCodecError};
 
 #[cfg(test)]
 mod tests {

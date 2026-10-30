@@ -113,6 +113,15 @@ fn malformed(detail: &'static str) -> CauseCodecError {
     CauseCodecError::Shape(detail)
 }
 
+/// `text` read by `parse`, or a malformed-member refusal naming `member`.
+pub(super) fn spelled<T>(
+    parse: fn(&str) -> Option<T>,
+    text: &str,
+    member: &'static str,
+) -> Result<T, CauseCodecError> {
+    parse(text).ok_or_else(|| malformed(member))
+}
+
 impl DisagreementCause {
     /// FR-269: this cause's JSON document.
     pub fn to_json(

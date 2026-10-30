@@ -617,7 +617,7 @@ impl sealed::Locate for QualifiedName {
             })
         };
         Ok(FunctionSite {
-            function,
+            function: function.clone(),
             declaration: declaration_occurrence(function.clone()),
             parameters,
             value_parity,
@@ -750,7 +750,7 @@ fn operation_site(
         )))
     };
     let object = graph
-        .declaring_object(model, operation.declaring)
+        .declaring_object(model, operation.declaring.clone())
         .ok_or_else(|| fault("declaring-object-is-a-declaration-of-the-selected-model"))?;
     let object = QualifiedName::new(vec![model.clone(), object.clone()])
         .map_err(|_| fault("frame-operation-object-has-segments"))?;

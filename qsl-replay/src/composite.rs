@@ -195,7 +195,7 @@ impl CompositeIdentity {
     ) -> Self {
         Self {
             obligation,
-            node: claim.node,
+            node: claim.node.clone(),
             occurrence: claim.occurrence.clone(),
             operator: claim.operator,
             obligation_kind: claim.obligation_kind.clone(),

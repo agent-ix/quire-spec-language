@@ -16,7 +16,7 @@ use qsl_foundation::BackendId;
 use qsl_foundation::ReductionKind;
 use qsl_semantics::check::PredicateRole;
 use qsl_semantics::check::StateGraphForm;
-use quire_exact::{ObjectReference, ScalarLimits};
+use quire_exact::{NodeKey, ObjectReference, ScalarLimits};
 use quire_semantic_value::location::Location;
 use serde::{Serialize, Serializer};
 

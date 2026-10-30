@@ -197,7 +197,7 @@ fn check_identity(
         });
     }
     let mismatch = |cause| ReplayRefusal::ScalarIdentity(Box::new(cause));
-    let preimage = value_parity_preimage(package, call.identity, &call.parameters)
+    let preimage = value_parity_preimage(package, call.identity.clone(), &call.parameters)
         .map_err(ReplayRefusal::Fault)?;
     let recomputed = value_parity_obligation(&preimage)
         .map_err(|error| mismatch(ScalarIdentityMismatch::Encoding(error)))?;

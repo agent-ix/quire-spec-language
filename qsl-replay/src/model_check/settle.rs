@@ -231,7 +231,6 @@ pub fn settle_model_check(
     settle(
         outcome,
         limits,
-        cancel,
         |proof| match proof {
             ProofCertificate::Closure(closure) => {
                 check_closure(certificate, closure, limits, cancel)
@@ -265,7 +264,6 @@ pub fn settle_protocol_check(
     let mut record = settle(
         outcome,
         limits,
-        cancel,
         |proof| match proof {
             ProofCertificate::Closure(closure) => {
                 check_protocol_closure(certificate, closure, limits, cancel)

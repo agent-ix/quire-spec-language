@@ -238,7 +238,7 @@ impl CheckedClosureHandle {
                 .map(|node| node.key().clone())
                 .find(|key| key == node)
             {
-                if let Some(function) = package.graph().callable_by_identity(&key) {
+                if let Some(function) = package.graph().callable_by_identity(key.clone()) {
                     return Ok(CallableSelection {
                         owner: owner.clone(),
                         key,
@@ -286,7 +286,7 @@ impl CheckedClosureHandle {
             .graph()
             .semantic_graph()
             .nodes()
-            .find(|node| node.key() == declaration)
+            .find(|node| node.key() == *declaration)
         else {
             let foreign: Vec<_> = packages
                 .iter()
@@ -314,7 +314,7 @@ impl CheckedClosureHandle {
         else {
             return Err(NominalDeclarationRefusal::WrongKind);
         };
-        if checked_node != node.key()
+        if **checked_node != node.key()
             || node.node_tag() != qsl_semantics::check::NodeTag::CompositeType
         {
             return Err(NominalDeclarationRefusal::Inconsistent);
@@ -322,7 +322,7 @@ impl CheckedClosureHandle {
         let Some(qualified_name) = node.declaration() else {
             return Err(NominalDeclarationRefusal::Inconsistent);
         };
-        let Some(composite) = graph.scope().types().composite(key) else {
+        let Some(composite) = graph.scope().types().composite(key.clone()) else {
             return Err(NominalDeclarationRefusal::Inconsistent);
         };
         let declaration_form = nominal_declaration_form(*form, composite.shape())?;
@@ -366,7 +366,7 @@ impl CheckedClosureHandle {
                     }
                     Ok(NominalDeclarationMember::UnionMember {
                         member: binding.clone(),
-                        variant: binding.variant(),
+                        variant: binding.variant().clone(),
                         payload: member.positions().to_vec(),
                     })
                 })
@@ -409,7 +409,7 @@ impl CheckedClosureHandle {
         let Some(node) = graph
             .semantic_graph()
             .nodes()
-            .find(|node| *node.key() == call.call_node)
+            .find(|node| node.key() == call.call_node)
         else {
             let owners: Vec<_> = packages
                 .iter()
@@ -427,7 +427,7 @@ impl CheckedClosureHandle {
         ) else {
             return Err(NestedCallSiteRefusal::UnknownOccurrence);
         };
-        let Some(caller_function) = graph.function_by_identity(&caller.key) else {
+        let Some(caller_function) = graph.function_by_identity(caller.key.clone()) else {
             return Err(NestedCallSiteRefusal::Unreachable);
         };
         if !body_holds_call_at(caller_function.body, site) {
@@ -473,7 +473,7 @@ fn has_node(package: &CheckedPackage, node: &NodeKey) -> bool {
         .graph()
         .semantic_graph()
         .nodes()
-        .any(|candidate| candidate.key() == node)
+        .any(|candidate| candidate.key() == *node)
 }
 
 /// Collect the composite declaration keys reachable through one admitted
@@ -516,13 +516,13 @@ fn reachable_composites(
                     return Err(());
                 };
                 if declaration != key
-                    || graph.semantic_graph().node(node).is_none_or(|node| {
+                    || graph.semantic_graph().node(node.clone()).is_none_or(|node| {
                         node.node_tag() != qsl_semantics::check::NodeTag::CompositeType
                     })
                 {
                     return Err(());
                 }
-                let composite = graph.scope().types().composite(key).ok_or(())?;
+                let composite = graph.scope().types().composite(key.clone()).ok_or(())?;
                 if nominal_declaration_form(*form, composite.shape()).is_err() {
                     return Err(());
                 }

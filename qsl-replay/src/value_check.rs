@@ -116,7 +116,7 @@ pub struct TargetParameter {
 impl TargetParameter {
     /// The parameter's node.
     pub fn node(&self) -> NodeKey {
-        self.node
+        self.node.clone()
     }
 
     /// The parameter's wire node id.
@@ -261,9 +261,9 @@ impl<'p> ValueTarget<'p> {
             if !owned {
                 return Err(Selection::NoForm);
             }
-            semantic.node(claim.node()).ok_or(Selection::MissingNode)?;
+            semantic.node(claim.node().clone()).ok_or(Selection::MissingNode)?;
             graph
-                .occurrence(claim.node(), claim.origin())
+                .occurrence(claim.node().clone(), claim.origin())
                 .ok_or(Selection::MissingNode)?;
             ClaimForm::ScalarOperation
         };

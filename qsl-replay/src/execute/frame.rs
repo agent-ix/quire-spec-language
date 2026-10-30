@@ -277,7 +277,6 @@ pub fn replay_frame(
         // selection and argument stages are behind it.
         ClauseDisposition::Compile(_)
         | ClauseDisposition::UnknownLanguage { .. }
-        | ClauseDisposition::StalePackage { .. }
         | ClauseDisposition::MissingName { .. }
         | ClauseDisposition::NotAPredicate { .. }
         | ClauseDisposition::Temporal(_)

@@ -143,7 +143,7 @@ pub(super) fn parity_preimage(
     let mismatch = |cause: ScalarIdentityMismatch| ReplayRefusal::ScalarIdentity(Box::new(cause));
     let graph = compiled.checked.package().graph().semantic_graph();
     let node = graph
-        .node(&claim.node)
+        .node(claim.node.clone())
         .ok_or_else(|| fault("claimed-node-is-in-the-graph"))?;
     let identities = operand_identities(node, &claim.node).map_err(mismatch)?;
     let mut arguments = Vec::with_capacity(2);

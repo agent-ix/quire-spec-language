@@ -88,7 +88,7 @@ pub fn replay_model_graph_with_cancel(
         .graph()
         .hyper_clauses()
         .iter()
-        .find(|clause| clause.occurrence() == envelope.occurrence_key());
+        .find(|clause| clause.assembled_occurrence() == Some(envelope.occurrence_key()));
     if claim.is_some() == hyper_clause.is_some() {
         return Err(ReplayRefusal::ModelGraphMismatch {
             member: "claim_identity",
@@ -191,7 +191,7 @@ pub(super) fn replay_evidence(
         (None, None) => None,
         (Some(parameter), Some(instance)) => {
             let model_instance = system
-                .instances(&quire_exact::ValueType::Reference(parameter.object))
+                .instances(&quire_exact::ValueType::Reference(parameter.object.clone()))
                 .map_err(|_| refused(ModelTraceRefusal::OverBinding))?
                 .into_iter()
                 .find(|candidate| {
@@ -200,7 +200,7 @@ pub(super) fn replay_evidence(
                 .ok_or_else(|| refused(ModelTraceRefusal::OverBinding))?;
             Some(
                 system
-                    .bound_reference(parameter.object, &model_instance)
+                    .bound_reference(parameter.object.clone(), &model_instance)
                     .map_err(|_| fault("state-graph-over-reference"))?,
             )
         }

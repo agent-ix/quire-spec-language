@@ -280,7 +280,7 @@ pub(super) fn derive(
         }
         visited += 1;
         let key = || DomainKey::Node {
-            node: position.root,
+            node: position.root.clone(),
             path: indexes(&position.path),
         };
         match position.value_type {
@@ -404,7 +404,7 @@ fn child<'t>(
         None => parent.composites.clone(),
     };
     Ok(Pending {
-        root: parent.root,
+        root: parent.root.clone(),
         path: Some(Rc::new(Step {
             index,
             parent: parent.path.clone(),

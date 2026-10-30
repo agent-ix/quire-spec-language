@@ -862,11 +862,12 @@ fn replay_observed_temporal(
         });
     };
     let expected_node = clause_node.identity().clone();
-    let expected_occurrence = OccurrenceKey::new(expected_node, clause_node.claim().clone());
-    if envelope.clause_node() != expected_node || envelope.occurrence_key() != &expected_occurrence
+    let expected_occurrence =
+        OccurrenceKey::new(expected_node.clone(), clause_node.claim().clone());
+    if envelope.clause_node() != &expected_node || envelope.occurrence_key() != &expected_occurrence
     {
         return Err(ReplayRefusal::ObservedTemporalMismatch {
-            member: if envelope.clause_node() != expected_node {
+            member: if envelope.clause_node() != &expected_node {
                 "clause_node"
             } else {
                 "occurrence_key"
@@ -1661,7 +1662,7 @@ fn function_claim(
         .ok_or_else(refused)?;
     let semantic = graph.semantic_graph();
     let node = semantic
-        .node(key.node())
+        .node(key.node().clone())
         .map(|node| node.key().clone())
         .ok_or_else(refused)?;
     let site = graph
@@ -1673,13 +1674,13 @@ fn function_claim(
         .iter()
         .map(|root| {
             semantic
-                .node(root)
+                .node(root.clone())
                 .map(|node| node.key().clone())
                 .ok_or_else(|| fault("extent-root-is-a-node"))
         })
         .collect::<Result<_, _>>()?;
     let recursive = semantic
-        .node(&callable.identity)
+        .node(callable.identity.clone())
         .is_some_and(|node| node.recursion().is_some());
     Ok(FunctionClaim::Application(ApplicationClaim {
         site,
@@ -1717,7 +1718,7 @@ pub(crate) fn callable_parameter_keys(
     let parameters = package
         .graph()
         .semantic_graph()
-        .node(&callable.identity)
+        .node(callable.identity.clone())
         .and_then(|node| node.function_parameters())
         .ok_or_else(|| InternalFault::new("replay", "callable-identity-is-a-function-node"))?;
     if parameters.len() != callable.parameters.len() {
@@ -1745,7 +1746,7 @@ pub(crate) fn value_parity_preimage(
         .enumerate()
         .map(|(position, parameter)| {
             let semantic_type = graph
-                .node(parameter)
+                .node(parameter.clone())
                 .and_then(|node| node.semantic_type())
                 .ok_or_else(|| {
                     InternalFault::new("replay", "parameter-node-has-a-semantic-type")

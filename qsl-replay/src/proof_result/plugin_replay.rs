@@ -58,6 +58,7 @@ struct DependencySelection {
 /// replay's own recompile (FR-098).
 #[derive(Clone, Debug)]
 pub struct PluginReplayContext {
+    package_name: String,
     source: RawSourceRef,
     dependencies: Vec<DependencySelection>,
     functions: BTreeMap<NodeKey, FunctionDeclaration>,
@@ -145,6 +146,7 @@ impl PluginReplayContext {
             .map(|(setting, bound)| (setting.name().to_owned(), bound))
             .collect();
         Self {
+            package_name: graph.package_name().to_owned(),
             source: source_reference(checked.source()),
             dependencies,
             functions,
@@ -256,6 +258,7 @@ impl PluginReplayContext {
         let name = name.ok_or_else(fault)?;
         let selected_function = QualifiedName::new(vec![name]).map_err(|_| fault())?;
         Ok(ReplayRequestWire {
+            package_name: self.package_name.clone(),
             profile_selections: Vec::new(),
             sources: vec![self.source.to_wire()],
             dependencies,

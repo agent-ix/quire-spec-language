@@ -1126,7 +1126,7 @@ fn resolve_item<'p, T: SubjectTransition>(
         })
     };
     let found = package.graph().temporal_clauses().iter().find(|candidate| {
-        candidate.identity() == envelope.clause_node()
+        candidate.identity() == *envelope.clause_node()
     });
     let Some(found) = found else {
         return Err(refused(ModelTraceRefusal::UnknownTemporalClause {
