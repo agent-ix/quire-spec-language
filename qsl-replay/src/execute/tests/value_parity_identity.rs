@@ -6,6 +6,7 @@
 use super::*;
 use crate::witness::{NoPayload, WitnessEnvelope, WitnessPacket};
 use crate::{ProfileSelection, TracePosition};
+use qsl_foundation::ByteDigest;
 use quire_canonical::Limits;
 use quire_exact::{IntegerInterval, NodeKey, Origin, Role};
 use quire_semantic_value::supplied_stop::{SuppliedLimitKind, SuppliedLimits};

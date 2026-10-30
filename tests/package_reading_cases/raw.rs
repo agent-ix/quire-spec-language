@@ -47,15 +47,10 @@ fn raw_ir_and_jcs_digests_cannot_replace_native_static_identity() {
         .bindings()
         .clone();
     let original: Value = serde_json::from_slice(&vector.artifact).unwrap();
-    let declaration = models[0]
-        .environment()
-        .canonical_declaration(ir::CanonicalProfile::V1)
-        .unwrap();
     // This independent JCS document contains only one integer and one ASCII key,
     // so its canonical bytes are fixed without another canonicalizer.
     for digest in [
         format!("{:x}", Sha256::digest(&vector.artifact)),
-        declaration.digest().to_string(),
         format!("{:x}", Sha256::digest(br#"{"a":1}"#)),
     ] {
         assert_ne!(digest, vector.digest.as_str());

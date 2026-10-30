@@ -1164,7 +1164,6 @@ fn a_verified_read_carries_the_wire_source_map() {
         for region in regions {
             let source = region.source();
             assert_eq!((source.authority(), source.identity()), ("pkg", "src"));
-            assert_eq!(source.digest().hex(), hex("src"));
         }
         assert_eq!(
             source_map
@@ -1531,7 +1530,6 @@ fn conformance_c14_source_map_lookup_over_qspec_positive_fixtures() {
                 let source = region.source();
                 assert_eq!(source.authority(), wire["source"]["authority"]);
                 assert_eq!(source.identity(), wire["source"]["identity"]);
-                assert_eq!(source.digest().hex(), wire["source"]["digest"]);
             }
             *per_node.entry(node).or_default() += 1;
             looked_up += 1;

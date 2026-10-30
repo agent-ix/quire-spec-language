@@ -2639,7 +2639,6 @@ mod tests {
             fields: BTreeMap::new(),
             locus: Some(CallLocus {
                 file: "fixture.native".to_owned(),
-                file: "fixture.native".to_owned(),
                 span,
             }),
             location: None,
