@@ -88,7 +88,7 @@ pub struct ModelTimeSource {
 }
 
 /// A nominal unit-graph node that S4 must include when a timed model names it.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TimeNominalNode {
     /// The exact nominal node identity.
     pub key: quire_exact::NodeKey,
@@ -109,9 +109,30 @@ pub struct TimeNominalNode {
     pub owner: crate::value::NodeOwner,
     /// Nominal nodes this node names.
     pub dependencies: Vec<quire_exact::NodeKey>,
+    /// The terms, target and exact conversion of a dimension or unit node,
+    /// for source-owned and model-selected nodes alike.
+    pub nominal: Option<crate::value::nominal_payload::NominalPayload>,
+}
+
+impl std::hash::Hash for TimeNominalNode {
+    /// Hashes the identity fields; the payload is a function of them, so
+    /// equal nodes still hash equal.
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.key.hash(state);
+        self.form.hash(state);
+        self.qualified_declaration.hash(state);
+        self.owner.hash(state);
+        self.dependencies.hash(state);
+    }
 }
 
 impl TimeNominalNode {
+    /// The facts the node carries beyond its key: a dimension's terms, or a
+    /// unit's dimension, target and exact `factor`/`offset`.
+    pub fn nominal_payload(&self) -> Option<&crate::value::nominal_payload::NominalPayload> {
+        self.nominal.as_ref()
+    }
+
     /// The declaration's qualified name segments (FR-322): `Some` for a
     /// [`NodeOwner::Source`] node, `None` for a [`NodeOwner::Model`] node.
     pub fn declaration(&self) -> Option<&[String]> {
