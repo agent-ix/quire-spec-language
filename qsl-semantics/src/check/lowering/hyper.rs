@@ -649,6 +649,7 @@ pub(crate) fn finish_step_relation(
             })?,
         ));
     }
+    let declaration_path = lowered.declaration.as_str().to_owned();
     let content = super::NodeContent {
         owner_model: None,
         node_tag: NodeTag::Claim,
@@ -658,12 +659,8 @@ pub(crate) fn finish_step_relation(
         owner: Some(super::Owner::Source(lowered.owner)),
         body: lowered.body,
     };
-    let key = crate::check::declared_node_key(
-        package_name.to_owned(),
-        vec![lowered.declaration.as_str().to_owned()],
-        0,
-    )
-    .map_err(|cause| match cause {
+    let key = crate::check::declared_node_key(package_name.to_owned(), vec![declaration_path], 0)
+        .map_err(|cause| match cause {
         quire_exact::InvalidNodeKey::Allocation { requested } => super::refuse(
             &lowered.location,
             crate::check::refusal::CheckCause::Identity(

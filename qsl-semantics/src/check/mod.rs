@@ -254,9 +254,10 @@ pub(crate) fn declared_node_key(
     quire_exact::NodeKey::new(package, path, ordinal)
 }
 
-/// Mint a producer-selected structural identity, including the special
-/// clock-binding path and recursion-group members.
-pub(crate) fn structural_node_key(
+/// Mint a producer-selected structural identity under QSpec FR-322's
+/// `{package, path, ordinal}` rule. This includes the special clock-binding
+/// path and recursion-group members, whose paths are producer-selected.
+pub fn structural_node_key(
     package_name: &str,
     path: Vec<quire_exact::PathSegment>,
     ordinal: u64,
@@ -264,10 +265,10 @@ pub(crate) fn structural_node_key(
     quire_exact::NodeKey::new(package_name.to_owned(), path, ordinal)
 }
 
-/// Mint a derived node under the containing package from its closed tag,
-/// semantic form and ordered semantic operands. Recursion-group members use
-/// their producer-chosen path instead of this non-group recipe.
-pub(crate) fn derived_node_key(
+/// Mint a derived node under QSpec FR-322's non-group path rule:
+/// `[node_tag, semantic_form, ...operands]` in the containing package.
+/// Recursion-group members use their producer-chosen path instead.
+pub fn derived_node_key(
     package_name: &str,
     node_tag: NodeTag,
     semantic_form: &str,
