@@ -48,6 +48,11 @@ pub struct CheckedProtocolBinderKey {
     pub name: String,
     /// The FR-464 binder level.
     pub level: usize,
+    /// The static protocol declaration that introduced this binder. Input,
+    /// activation, capture, and expression-local binders have no such node.
+    /// This distinguishes binders with the same name and level on separate
+    /// control paths.
+    pub introducing: Option<ProtocolNodeId>,
     /// The `value`/`parameter` node key used by the expression graph.
     pub node: quire_exact::NodeKey,
     /// The checked semantic type node key.
