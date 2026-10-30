@@ -355,7 +355,6 @@ impl CompileRefusal {
                 | Setting::ModelDerivationFacts
                 | Setting::ModelEffectiveDeclarations
                 | Setting::ModelDispatchCandidates
-                | Setting::ModelHashedBytes
                 | Setting::ModelWorkUnits
                 | Setting::ModelAncestorSteps
                 | Setting::ModelFamilySteps

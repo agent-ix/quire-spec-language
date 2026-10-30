@@ -1291,12 +1291,6 @@ fn select_names_the_model_limit_field_it_reached() {
         run(|limits, value| limits.ancestor_steps = value),
     );
     assert_budget_field(
-        Setting::ModelHashedBytes,
-        "insufficient-next-charge",
-        100_000,
-        run(|limits, value| limits.hashed_bytes = value),
-    );
-    assert_budget_field(
         Setting::ModelWorkUnits,
         "insufficient-next-charge",
         100_000,
