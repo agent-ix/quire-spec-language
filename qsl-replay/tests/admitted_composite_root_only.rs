@@ -26,10 +26,12 @@ const SOURCE: &str = "language \"ix:native\" edition \"1-draft\";\n\
 
 fn context() -> AdmittedContext {
     compile_admitted(
-        SourceIdentity::new("a", "u", "git", "1"),
-        "fixture".to_owned(),
-        "unit.native",
-        SOURCE.as_bytes(),
+        qsl_replay::CompileUnit {
+            source: SourceIdentity::new("a", "u", "git", "1"),
+            package_name: "fixture".to_owned(),
+            path: "unit.native",
+            bytes: SOURCE.as_bytes(),
+        },
         [],
         &DependencyInput::default(),
         StageLimits::default(),

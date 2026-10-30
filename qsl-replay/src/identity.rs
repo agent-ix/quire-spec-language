@@ -58,7 +58,13 @@ impl From<&qsl_semantics::model::domain_package::DomainPackageRef> for ModelIden
 /// process-provider item and a function-value parity claim
 /// ([`crate::value_parity_obligation`]).
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct ObligationIdentity {
+pub struct ObligationIdentity(Box<ObligationParts>);
+
+/// The components of an [`ObligationIdentity`], held behind one allocation so
+/// the identity stays pointer-sized inside the refusals and claims that carry
+/// it by value.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct ObligationParts {
     node: NodeKey,
     model: Option<ModelIdentity>,
     ordinal: u32,
@@ -67,36 +73,36 @@ pub struct ObligationIdentity {
 impl ObligationIdentity {
     /// The obligation of `node` owned by `model` at occurrence `ordinal`.
     pub fn new(node: NodeKey, model: Option<ModelIdentity>, ordinal: u32) -> Self {
-        Self {
+        Self(Box::new(ObligationParts {
             node,
             model,
             ordinal,
-        }
+        }))
     }
 
     /// The claim or obligation node.
     pub fn node(&self) -> &NodeKey {
-        &self.node
+        &self.0.node
     }
 
     /// The owning model, if any.
     pub fn model(&self) -> Option<&ModelIdentity> {
-        self.model.as_ref()
+        self.0.model.as_ref()
     }
 
     /// The occurrence ordinal.
     pub fn ordinal(&self) -> u32 {
-        self.ordinal
+        self.0.ordinal
     }
 }
 
 impl fmt::Display for ObligationIdentity {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.node)?;
-        if let Some(model) = &self.model {
+        write!(f, "{}", self.0.node)?;
+        if let Some(model) = &self.0.model {
             write!(f, "@{}", model.as_str())?;
         }
-        write!(f, "#{}", self.ordinal)
+        write!(f, "#{}", self.0.ordinal)
     }
 }
 

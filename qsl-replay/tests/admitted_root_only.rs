@@ -26,10 +26,12 @@ fn admit(
     stages: StageLimits,
 ) -> Result<qsl_replay::AdmittedCompilation, AdmittedRefusal> {
     compile_admitted(
-        SourceIdentity::new("a", "u", "git", "1"),
-        "fixture".to_owned(),
-        "unit.native",
-        bytes,
+        qsl_replay::CompileUnit {
+            source: SourceIdentity::new("a", "u", "git", "1"),
+            package_name: "fixture".to_owned(),
+            path: "unit.native",
+            bytes: bytes,
+        },
         [],
         &DependencyInput::default(),
         stages,

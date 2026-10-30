@@ -1389,10 +1389,12 @@ pub(crate) fn run_spine(
     limits: SpineLimits,
 ) -> Result<Recompiled, ReplayRefusal> {
     run_spine_with_execution_points(
-        unit,
-        package,
-        path,
-        bytes,
+        SpineUnit {
+            identity: unit,
+            package,
+            path,
+            bytes,
+        },
         packages,
         dependencies,
         &spine::StateClauseExecutionPoints::new(),
@@ -1400,18 +1402,30 @@ pub(crate) fn run_spine(
     )
 }
 
+/// The one source unit a spine run recompiles: its identity, the library name
+/// its nodes are keyed under, its display path and its bytes.
+pub(crate) struct SpineUnit<'a> {
+    pub(crate) identity: &'a SourceIdentity,
+    pub(crate) package: &'a LibraryName,
+    pub(crate) path: &'a str,
+    pub(crate) bytes: &'a [u8],
+}
+
 /// [`run_spine`] with accepted state-clause execution points
 /// (FR-104-AC-15), checked through `spine::check_with_execution_points`.
 pub(crate) fn run_spine_with_execution_points(
-    unit: &SourceIdentity,
-    package: &LibraryName,
-    path: &str,
-    bytes: &[u8],
+    unit: SpineUnit<'_>,
     packages: &qsl_semantics::model::intake::PackageInput,
     dependencies: &DependencyInput,
     execution_points: &spine::StateClauseExecutionPoints,
     limits: SpineLimits,
 ) -> Result<Recompiled, ReplayRefusal> {
+    let SpineUnit {
+        identity: unit,
+        package,
+        path,
+        bytes,
+    } = unit;
     #[cfg(test)]
     SPINE_RUNS.with(|runs| runs.set(runs.get() + 1));
     let cancel = Cancel::new();

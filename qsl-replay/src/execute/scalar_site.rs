@@ -129,8 +129,8 @@ pub(crate) fn check_operands(
                     return Err(ScalarIdentityMismatch::OperandChild {
                         node: application.clone(),
                         position,
-                        claimed: node.clone(),
-                        found,
+                        claimed: Box::new(node.clone()),
+                        found: found.map(Box::new),
                     });
                 }
             }

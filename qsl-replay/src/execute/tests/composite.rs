@@ -1085,10 +1085,12 @@ fn admitted_composite_keys_are_the_keys_replay_converts_against() {
          function p using v(x: Holder): Boolean pure { x.flag }\n",
     );
     let admitted = crate::compile_admitted(
-        SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
-        IDENTITY,
-        fixture.source.as_bytes(),
-        [],
+        crate::CompileUnit {
+            source: SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
+            package_name: IDENTITY,
+            path: fixture.source.as_bytes(),
+            bytes: [],
+        },
         &crate::spine::DependencyInput::default(),
         crate::request::StageLimits::default(),
         ReplayLimits::default(),
@@ -1146,10 +1148,12 @@ fn admitted_union_node_is_what_replay_converts_a_union_witness_against() {
          { case x { Empty: false; Circle(r): r > 3; } }\n",
     );
     let admitted = crate::compile_admitted(
-        SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
-        IDENTITY,
-        fixture.source.as_bytes(),
-        [],
+        crate::CompileUnit {
+            source: SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
+            package_name: IDENTITY,
+            path: fixture.source.as_bytes(),
+            bytes: [],
+        },
         &crate::spine::DependencyInput::default(),
         crate::request::StageLimits::default(),
         ReplayLimits::default(),
@@ -1198,10 +1202,12 @@ fn admitted_unit_ids_are_the_units_replay_converts_against() {
          function p using v(x: Quantity<m>): Boolean pure { false }\n",
     );
     let admitted = crate::compile_admitted(
-        SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
-        IDENTITY,
-        fixture.source.as_bytes(),
-        [],
+        crate::CompileUnit {
+            source: SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
+            package_name: IDENTITY,
+            path: fixture.source.as_bytes(),
+            bytes: [],
+        },
         &crate::spine::DependencyInput::default(),
         crate::request::StageLimits::default(),
         ReplayLimits::default(),

@@ -61,10 +61,12 @@ fn wire(key: NodeKey) -> NodeKey {
 
 fn admit(text: &str, dependencies: &DependencyInput) -> AdmittedCompilation {
     compile_admitted(
-        unit_identity(),
-        "fixture".to_owned(),
-        "unit.native",
-        text.as_bytes(),
+        qsl_replay::CompileUnit {
+            source: unit_identity(),
+            package_name: "fixture".to_owned(),
+            path: "unit.native",
+            bytes: text.as_bytes(),
+        },
         [],
         dependencies,
         limits(),
@@ -335,10 +337,12 @@ fn unit_lookups_refuse_unknown_and_wrong_kind_ids() {
 fn a_dependencys_unit_is_foreign() {
     let mass = library("test/mass", "mass", LIBRARY);
     let alone = compile_admitted(
-        mass.source.clone(),
-        "fixture".to_owned(),
-        &mass.path,
-        &mass.bytes,
+        qsl_replay::CompileUnit {
+            source: mass.source.clone(),
+            package_name: "fixture".to_owned(),
+            path: &mass.path,
+            bytes: &mass.bytes,
+        },
         [],
         &DependencyInput::default(),
         limits(),

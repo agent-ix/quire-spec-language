@@ -233,10 +233,12 @@ fn fixture() -> Fixture {
     drop(checked);
 
     let acquired = acquire_checked_closure(
-        source,
-        "fixture".to_owned(),
-        "body-failure.native",
-        UNIT.as_bytes(),
+        qsl_replay::CompileUnit {
+            source: source,
+            package_name: "fixture".to_owned(),
+            path: "body-failure.native",
+            bytes: UNIT.as_bytes(),
+        },
         [],
         &DependencyInput::default(),
         StageLimits::default(),

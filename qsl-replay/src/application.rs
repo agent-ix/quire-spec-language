@@ -5,7 +5,6 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use qsl_eval::value::PackageClosure;
-use qsl_foundation::SourceIdentity;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckedExpression, CheckedNode, NodeKind};
 use qsl_semantics::library::LibraryName;
@@ -23,7 +22,7 @@ use quire_semantic_value::object_closure::ObjectClosure;
 
 use crate::admitted::{context_of, AdmittedContext, AdmittedRefusal};
 use crate::bounds::ReplayLimits;
-use crate::compile::{recompile_unit, CompiledPackage};
+use crate::compile::{recompile_unit, CompileUnit, CompiledPackage};
 use crate::request::StageLimits;
 use crate::spine::DependencyInput;
 
@@ -732,25 +731,13 @@ pub enum NestedCallSiteRefusal {
 
 /// Acquire and retain the checked closure from the one shared compilation path.
 pub fn acquire_checked_closure<'a>(
-    source: SourceIdentity,
-    package_name: String,
-    path: &str,
-    bytes: &[u8],
+    unit: CompileUnit<'_>,
     packages: impl IntoIterator<Item = &'a [u8]>,
     dependencies: &DependencyInput,
     limits: StageLimits,
     replay_limits: ReplayLimits,
 ) -> Result<CheckedClosureCompilation, AdmittedRefusal> {
-    let compiled = recompile_unit(
-        source,
-        package_name,
-        path,
-        bytes,
-        packages,
-        dependencies,
-        limits,
-        replay_limits,
-    )?;
+    let compiled = recompile_unit(unit, packages, dependencies, limits, replay_limits)?;
     let package_name = compiled.package.clone();
     let context =
         context_of(compiled.checked.package(), &package_name).map_err(AdmittedRefusal::Fault)?;
@@ -873,6 +860,7 @@ mod tests {
     use super::*;
     use crate::spine::SuppliedLibrary;
     use ix_trace_rs::trace;
+    use qsl_foundation::SourceIdentity;
     use quire_eval::{Body, BodyFailure, ChildRequest, FamilyOutcome, Resume, Transition};
     use quire_exact::{Cancel, CancelCause, Integer, LimitKind, Outcome, ScalarLimits, ValueType};
     use quire_semantic_value::call::InputRefusal;
@@ -888,10 +876,12 @@ mod tests {
     }
     fn acquire(text: &str, dependencies: &DependencyInput) -> CheckedClosureCompilation {
         acquire_checked_closure(
-            identity("unit"),
-            "fixture".to_owned(),
-            "unit.native",
-            text.as_bytes(),
+            crate::CompileUnit {
+                source: identity("unit"),
+                package_name: "fixture".to_owned(),
+                path: "unit.native",
+                bytes: text.as_bytes(),
+            },
             [],
             dependencies,
             StageLimits::default(),
@@ -985,10 +975,12 @@ mod tests {
         }])
         .expect("dependency input");
         let expected = crate::compile_admitted(
-            identity("unit"),
-            "fixture".to_owned(),
-            "unit.native",
-            text.as_bytes(),
+            crate::CompileUnit {
+                source: identity("unit"),
+                package_name: "fixture".to_owned(),
+                path: "unit.native",
+                bytes: text.as_bytes(),
+            },
             [],
             &input,
             StageLimits::default(),
@@ -1060,10 +1052,12 @@ mod tests {
             .into_bytes(),
         };
         let lib_acquired = acquire_checked_closure(
-            library.source.clone(),
-            "test/lib".to_owned(),
-            &library.path,
-            &library.bytes,
+            crate::CompileUnit {
+                source: library.source.clone(),
+                package_name: "test/lib".to_owned(),
+                path: &library.path,
+                bytes: &library.bytes,
+            },
             [],
             &DependencyInput::default(),
             StageLimits::default(),
@@ -1239,10 +1233,12 @@ mod tests {
         let malformed = "not a QSL unit";
         let input = DependencyInput::default();
         let expected = crate::compile_admitted(
-            identity("unit"),
-            "fixture".to_owned(),
-            "unit.native",
-            malformed.as_bytes(),
+            crate::CompileUnit {
+                source: identity("unit"),
+                package_name: "fixture".to_owned(),
+                path: "unit.native",
+                bytes: malformed.as_bytes(),
+            },
             [],
             &input,
             StageLimits::default(),
@@ -1250,10 +1246,12 @@ mod tests {
         )
         .unwrap_err();
         let actual = acquire_checked_closure(
-            identity("unit"),
-            "fixture".to_owned(),
-            "unit.native",
-            malformed.as_bytes(),
+            crate::CompileUnit {
+                source: identity("unit"),
+                package_name: "fixture".to_owned(),
+                path: "unit.native",
+                bytes: malformed.as_bytes(),
+            },
             [],
             &input,
             StageLimits::default(),
@@ -1638,10 +1636,12 @@ mod tests {
             (valid.as_str(), &empty, above),
         ] {
             let expected = crate::compile_admitted(
-                identity("unit"),
-                "fixture".to_owned(),
-                "unit.native",
-                source.as_bytes(),
+                crate::CompileUnit {
+                    source: identity("unit"),
+                    package_name: "fixture".to_owned(),
+                    path: "unit.native",
+                    bytes: source.as_bytes(),
+                },
                 [],
                 dependencies,
                 stages.clone(),
@@ -1649,10 +1649,12 @@ mod tests {
             )
             .expect_err("existing refusal");
             let actual = acquire_checked_closure(
-                identity("unit"),
-                "fixture".to_owned(),
-                "unit.native",
-                source.as_bytes(),
+                crate::CompileUnit {
+                    source: identity("unit"),
+                    package_name: "fixture".to_owned(),
+                    path: "unit.native",
+                    bytes: source.as_bytes(),
+                },
                 [],
                 dependencies,
                 stages,
@@ -1684,10 +1686,12 @@ mod tests {
             function h using v(p: Population<M::Widget>[3]): Boolean pure { true }\n"
             .to_string();
         let acquired = acquire_checked_closure(
-            identity("unit"),
-            "fixture".to_owned(),
-            "unit.native",
-            source.as_bytes(),
+            crate::CompileUnit {
+                source: identity("unit"),
+                package_name: "fixture".to_owned(),
+                path: "unit.native",
+                bytes: source.as_bytes(),
+            },
             [document.as_slice()],
             &DependencyInput::default(),
             StageLimits::default(),

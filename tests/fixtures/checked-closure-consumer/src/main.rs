@@ -53,10 +53,12 @@ pub fn run() {
     )
     .expect("function site");
     let compilation = acquire_checked_closure(
-        source,
-        "consumer.native",
-        SOURCE.as_bytes(),
-        [],
+        qsl_replay::CompileUnit {
+            source: source,
+            package_name: "consumer.native",
+            path: SOURCE.as_bytes(),
+            bytes: [],
+        },
         &DependencyInput::default(),
         StageLimits::default(),
         ReplayLimits::default(),

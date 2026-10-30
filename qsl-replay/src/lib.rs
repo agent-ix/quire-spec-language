@@ -141,7 +141,9 @@ pub use clause_evaluation::{
     evaluate_clause, ClauseEvaluation, ClauseEvaluationRequest, ClauseIncomplete,
     ClauseObservation, ClauseRefusal,
 };
-pub use compile::{compile_package, compile_package_with_execution_points, CompiledPackage};
+pub use compile::{
+    compile_package, compile_package_with_execution_points, CompileUnit, CompiledPackage,
+};
 pub use composite::{
     CompositeEvidence, CompositeIdentity, CompositeParityClaim, CompositeParityReport,
     CompositeParityResult, EqualityOutcome, FalsifiedParity, IncompleteStage, NativeCause,

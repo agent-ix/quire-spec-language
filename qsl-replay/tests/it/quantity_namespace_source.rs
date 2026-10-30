@@ -14,10 +14,12 @@ const UNITS: &str = "dimension Length;\nunit m : Length = rational(1, 1);\n";
 
 fn assert_admitted(source: &str) {
     let compiled = compile_admitted(
-        SourceIdentity::new("a", "u", "git", "1"),
-        "fixture".to_owned(),
-        "quantity-names.native",
-        source.as_bytes(),
+        qsl_replay::CompileUnit {
+            source: SourceIdentity::new("a", "u", "git", "1"),
+            package_name: "fixture".to_owned(),
+            path: "quantity-names.native",
+            bytes: source.as_bytes(),
+        },
         [],
         &DependencyInput::default(),
         StageLimits::default(),

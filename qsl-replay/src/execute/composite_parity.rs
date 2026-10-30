@@ -158,8 +158,8 @@ pub(super) fn parity_preimage(
                     return Err(mismatch(ScalarIdentityMismatch::OperandChild {
                         node: claim.node.clone(),
                         position,
-                        claimed: parameter.clone(),
-                        found: Some(found),
+                        claimed: Box::new(parameter.clone()),
+                        found: Some(Box::new(found)),
                     }));
                 }
                 let bounds = claim
@@ -185,7 +185,7 @@ pub(super) fn parity_preimage(
                 return Err(mismatch(ScalarIdentityMismatch::OperandChild {
                     node: claim.node.clone(),
                     position,
-                    claimed: parameter.clone(),
+                    claimed: Box::new(parameter.clone()),
                     found: None,
                 }))
             }

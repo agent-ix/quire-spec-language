@@ -92,9 +92,9 @@ pub enum ScalarIdentityMismatch {
         /// The operand's position.
         position: usize,
         /// The node the claim names.
-        claimed: NodeKey,
+        claimed: Box<NodeKey>,
         /// The node the argument references, or `None` for an inline term.
-        found: Option<NodeKey>,
+        found: Option<Box<NodeKey>>,
     },
     /// An `InlineLiteral` operand is not an inline integer literal of the
     /// node at its position.

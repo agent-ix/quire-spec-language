@@ -886,10 +886,12 @@ fn a_unit_with_linked_dispatch_emits_a_package() {
     );
     let emit = || {
         qsl_replay::compile_package(
-            SourceIdentity::new("a", "u", "git", "1"),
-            "fixture".to_owned(),
-            "unit.native",
-            text.as_bytes(),
+            qsl_replay::CompileUnit {
+                source: SourceIdentity::new("a", "u", "git", "1"),
+                package_name: "fixture".to_owned(),
+                path: "unit.native",
+                bytes: text.as_bytes(),
+            },
             [document.as_slice()],
             &DependencyInput::default(),
             qsl_replay::StageLimits::default(),

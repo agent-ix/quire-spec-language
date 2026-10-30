@@ -714,10 +714,12 @@ fn execute_vector(vector: &Vector, root: &Path, limits: &qsl_replay::CallerLimit
         (ConsumerType::Language, Operation::Compile) => {
             let stage_limits = qsl_replay::StageLimits::from_iter(limits.spine.bounds());
             match qsl_replay::compile_package(
-                identity,
-                "qualification".to_owned(),
-                &source.path,
-                bytes,
+                qsl_replay::CompileUnit {
+                    source: identity,
+                    package_name: "qualification".to_owned(),
+                    path: &source.path,
+                    bytes: bytes,
+                },
                 std::iter::empty::<&[u8]>(),
                 &qsl_replay::DependencyInput::default(),
                 stage_limits,

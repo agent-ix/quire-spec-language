@@ -48,10 +48,12 @@ fn admit(
     replay: ReplayLimits,
 ) -> Result<AdmittedCompilation, AdmittedRefusal> {
     compile_admitted(
-        SourceIdentity::new("a", "u", "git", "1"),
-        "fixture".to_owned(),
-        "unit.native",
-        text.as_bytes(),
+        qsl_replay::CompileUnit {
+            source: SourceIdentity::new("a", "u", "git", "1"),
+            package_name: "fixture".to_owned(),
+            path: "unit.native",
+            bytes: text.as_bytes(),
+        },
         [],
         &DependencyInput::default(),
         stages,

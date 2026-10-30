@@ -193,10 +193,12 @@ fn the_entry_returns_what_run_with_requirements_returns() {
         keys(plain.requirements().members())
     );
     let compiled = compile_package(
-        identity(),
-        "fixture".to_owned(),
-        "unit.native",
-        source.as_bytes(),
+        qsl_replay::CompileUnit {
+            source: identity(),
+            package_name: "fixture".to_owned(),
+            path: "unit.native",
+            bytes: source.as_bytes(),
+        },
         std::iter::empty::<&[u8]>(),
         &DependencyInput::default(),
         Default::default(),

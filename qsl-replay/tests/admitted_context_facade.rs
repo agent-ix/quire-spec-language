@@ -66,10 +66,12 @@ fn admit(
     replay: ReplayLimits,
 ) -> Result<AdmittedCompilation, AdmittedRefusal> {
     compile_admitted(
-        unit_identity(),
-        "fixture".to_owned(),
-        "unit.native",
-        text.as_bytes(),
+        qsl_replay::CompileUnit {
+            source: unit_identity(),
+            package_name: "fixture".to_owned(),
+            path: "unit.native",
+            bytes: text.as_bytes(),
+        },
         [],
         dependencies,
         stages,
@@ -150,10 +152,12 @@ fn the_context_holds_every_case_with_the_keys_the_check_minted() {
     let text = format!("{HEADER}{COLORS}");
     let admitted = admit_ok(&text);
     let plain = compile_package(
-        unit_identity(),
-        "fixture".to_owned(),
-        "unit.native",
-        text.as_bytes(),
+        qsl_replay::CompileUnit {
+            source: unit_identity(),
+            package_name: "fixture".to_owned(),
+            path: "unit.native",
+            bytes: text.as_bytes(),
+        },
         [],
         &DependencyInput::default(),
         limits(1 << 20),
@@ -219,10 +223,12 @@ fn lookups_find_admitted_keys_and_refuse_unknown_ones() {
 /// the wire id of its one enum.
 fn alone(library: &SuppliedLibrary, dependencies: &DependencyInput) -> AdmittedCompilation {
     compile_admitted(
-        library.source.clone(),
-        "fixture".to_owned(),
-        &library.path,
-        &library.bytes,
+        qsl_replay::CompileUnit {
+            source: library.source.clone(),
+            package_name: "fixture".to_owned(),
+            path: &library.path,
+            bytes: &library.bytes,
+        },
         [],
         dependencies,
         limits(1 << 20),
@@ -325,10 +331,12 @@ fn compile_failures_are_package_or_resource_refusals() {
     let text = format!("{HEADER}{COLORS}");
     let owned = DependencyInput::new([owned]).unwrap();
     let Err(ReplayRefusal::DependencyInput(expected)) = compile_package(
-        unit_identity(),
-        "fixture".to_owned(),
-        "unit.native",
-        text.as_bytes(),
+        qsl_replay::CompileUnit {
+            source: unit_identity(),
+            package_name: "fixture".to_owned(),
+            path: "unit.native",
+            bytes: text.as_bytes(),
+        },
         [],
         &owned,
         limits(1 << 20),
