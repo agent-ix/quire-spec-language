@@ -15,6 +15,7 @@ use quire_exact::{Integer, IntegerInterval, Presence};
 use serde_json::{json, Value as Json};
 
 use super::super::{generated_location, type_declaration, Lowering, SemanticGraph, SemanticNode};
+use super::super::tests::view::preimage;
 use super::*;
 use crate::check::checked_dispatch::{checked_dispatch_operation, DispatchRoot, OperationClauses};
 use crate::check::family::fixtures::{empty_scope, fixture_source};
@@ -37,10 +38,6 @@ mod expression_depth;
 mod place_rows;
 
 const SPAN: qsl_foundation::Span = qsl_foundation::Span { start: 0, end: 0 };
-
-fn preimage(node: &SemanticNode) -> Json {
-    serde_json::from_slice(node.preimage()).expect("a preimage is JSON")
-}
 
 /// Every application node whose operation is `identity`.
 fn applications<'g>(graph: &'g SemanticGraph, identity: &str) -> Vec<&'g SemanticNode> {
@@ -286,7 +283,7 @@ fn check(acme: &Acme, functions: Vec<FunctionDeclaration>) -> CheckedGraph {
         types: types(acme),
         models: vec![acme.model.clone()],
         functions,
-        ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
+        ..PackageDeclarations::new(fixture_source(), "fixture", qsl_foundation::IdentityLimits::default())
     }
     .check(CheckingLimits::default())
     .unwrap_or_else(|refusals| panic!("the acme functions check: {refusals:?}"))
@@ -379,6 +376,7 @@ fn dispatch_with(acme: &Acme, root: &str, clauses: &OperationClauses) -> Package
         },
         clauses,
         fixture_source(),
+        "fixture".to_owned(),
         &mut meter,
         qsl_foundation::IdentityLimits::default(),
     )
@@ -422,7 +420,7 @@ fn lower_with_occurrences<T>(
         0,
         &mut occurrences,
         &mut meter,
-        qsl_foundation::IdentityLimits::default(),
+        "fixture",
     );
     let built = build(&mut lowering);
     let graph = lowering.finish(&generated_location()).graph;
@@ -1079,7 +1077,7 @@ mod quantities {
                 builtin(BuiltinType::Boolean),
                 body,
             )],
-            ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
+            ..PackageDeclarations::new(fixture_source(), "fixture", qsl_foundation::IdentityLimits::default())
         };
         let plain = check_declarations(package(Expression::boolean(true)));
         let graph = plain.semantic_graph();
@@ -1206,7 +1204,7 @@ mod quantities {
                 named("Km"),
                 Expression::convert(named("Km"), name("a")),
             )],
-            ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
+            ..PackageDeclarations::new(fixture_source(), "fixture", qsl_foundation::IdentityLimits::default())
         });
         let convert = applications(checked.semantic_graph(), "quire.op.quantity.convert");
         assert_eq!(convert.len(), 1);

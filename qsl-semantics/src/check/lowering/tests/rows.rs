@@ -20,7 +20,7 @@ fn ieee_definition() -> DefinitionReference {
 }
 
 fn law(role: LawRole, definition: DefinitionReference) -> Json {
-    serde_json::to_value(OperationLaw { role, definition }).expect("a law serializes")
+    view::law_json(&OperationLaw { role, definition })
 }
 
 fn text_law() -> Json {
@@ -132,7 +132,7 @@ fn package(functions: Vec<FunctionDeclaration>) -> PackageDeclarations {
             ("Small".to_owned(), int(0, 5)),
         ],
         ieee_profile: Some(ieee),
-        ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
+        ..PackageDeclarations::new(fixture_source(), "fixture", qsl_foundation::IdentityLimits::default())
     }
 }
 
@@ -585,7 +585,7 @@ fn enum_parameter_package(functions: usize) -> PackageDeclarations {
                 )
             })
             .collect(),
-        ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
+        ..PackageDeclarations::new(fixture_source(), "fixture", qsl_foundation::IdentityLimits::default())
     }
 }
 
@@ -659,7 +659,7 @@ fn value_family_rows_carry_their_member_mode_laws_and_leaves() {
 #[trace("FR-093-AC-3", "TC-415")]
 #[test]
 fn a_tuple_value_is_a_value_node_over_its_arguments() {
-    let pair = NodeKey::from_digest([7; 32]);
+    let pair = fixture_key("pair");
     let types = TypeEnvironment::new(
         [CompositeDeclaration::new(
             pair,
@@ -679,7 +679,7 @@ fn a_tuple_value_is_a_value_node_over_its_arguments() {
     let checked = PackageDeclarations {
         types,
         functions: vec![make],
-        ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
+        ..PackageDeclarations::new(fixture_source(), "fixture", qsl_foundation::IdentityLimits::default())
     }
     .check(CheckingLimits::default())
     .expect("the tuple fixture checks");

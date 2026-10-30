@@ -2315,12 +2315,18 @@ mod requirement_key_tests {
     #[ix_trace_rs::trace("FR-383-AC-17", "TC-1063")]
     #[test]
     fn a_refused_required_temporal_adds_no_refusal() {
-        let keys = BTreeMap::from([(1, NodeKey::from_digest([1; 32]))]);
+        let one = NodeKey::new(
+            "fixture".to_owned(),
+            vec![quire_exact::PathSegment::Text("one".to_owned())],
+            0,
+        )
+        .expect("a fixture key");
+        let keys = BTreeMap::from([(1, one.clone())]);
         let refused = BTreeSet::from([7]);
         let resolved =
             resolve_temporal_requirement_keys([(1, "A"), (7, "Due")], &keys, &refused, &location());
         assert!(matches!(resolved, Ok(None)), "{resolved:?}");
         let resolved = resolve_temporal_requirement_keys([(1, "A")], &keys, &refused, &location());
-        assert!(matches!(resolved, Ok(Some(found)) if found == [NodeKey::from_digest([1; 32])]));
+        assert!(matches!(resolved, Ok(Some(found)) if found == [one.clone()]));
     }
 }

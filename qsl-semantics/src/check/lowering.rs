@@ -32,7 +32,6 @@
 use std::collections::{btree_map, BTreeMap, BTreeSet, HashMap, HashSet};
 use std::ops::ControlFlow;
 
-use qsl_foundation::IdentityLimits;
 use quire_exact::{
     ArithmeticOperator, Charge, ChargePoint, CollectionKind, CollectionType, EffectiveId,
     Identifier, Integer, Meter, NodeKey, OrderingOperator, Origin as OccurrenceOrigin, PathSegment,
@@ -90,7 +89,7 @@ pub(crate) use hyper::{
 pub(crate) use model::ParentSlotFailure;
 pub(crate) use model::{
     bound_origin, model_declaration_key, quantity_origin, record_node_key, strictly_below,
-    variant_type_node_key, QuantityKind,
+    QuantityKind,
 };
 pub use model::{
     collection_kind, model_root_key, AdmittedModel, AuthoredBound, CollectionShape, ForeignView,
@@ -118,10 +117,11 @@ pub(crate) use timed_clause::TimedClauseInput;
 /// A node's place in its recursion group (FR-092 "Recursion groups"): the
 /// node's ordinal and the number of the group's nodes.
 /// FR-093's emission writes a group's nodes in ordinal order.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NodeRecursion {
     ordinal: usize,
     size: usize,
+    members: std::sync::Arc<[NodeKey]>,
 }
 
 impl NodeRecursion {
@@ -133,6 +133,19 @@ impl NodeRecursion {
     /// The number of the group's nodes.
     pub fn size(&self) -> usize {
         self.size
+    }
+
+    /// The group's members as admitted keys, in group (ordinal) order. The
+    /// node's own key is `members()[ordinal()]`.
+    pub fn members(&self) -> &[NodeKey] {
+        &self.members
+    }
+
+    /// The group's anchor: its first member's key. Producer-assigned and
+    /// structural; every member of one group reports the same anchor, so it
+    /// is the shared `recursion_group` label when rendered as text.
+    pub fn anchor(&self) -> &NodeKey {
+        &self.members[0]
     }
 }
 
@@ -329,7 +342,7 @@ impl SemanticGraph {
         };
         application.arguments = vec![super::node_key::MemberTerm::Leaf(
             super::node_key::LeafTerm::Reference {
-                target: super::node_key::NodeRef(operand),
+                target: operand.into(),
             },
         )];
         graph.nodes.insert(key, enclosing);
@@ -553,9 +566,6 @@ pub(crate) struct Lowering<'a> {
     /// The checking stage's work meter (`CheckingLimits::work_budget`):
     /// each node built and each group keyed charges it.
     meter: &'a mut Meter,
-    /// The byte limit every node identity encodes under
-    /// (`identity.input_bytes`).
-    pub(super) identity: IdentityLimits,
     /// The check stage's node limit (`CheckingLimits::nodes`), and the
     /// units typing left of it: each text or recursion leaf costs one
     /// (FR-093 "Text leaves").
@@ -1525,7 +1535,6 @@ impl<'a> Lowering<'a> {
         function_count: usize,
         occurrences: &'a mut OccurrenceMap<Location>,
         meter: &'a mut Meter,
-        identity: IdentityLimits,
         package_name: &str,
     ) -> Self {
         Self {
@@ -1556,7 +1565,6 @@ impl<'a> Lowering<'a> {
             draft_binders: Vec::new(),
             parameter_spans: BTreeMap::new(),
             meter,
-            identity,
             node_limit: u64::MAX,
             node_budget: u64::MAX,
             text_reach: BTreeMap::new(),
@@ -1882,6 +1890,7 @@ impl<'a> Lowering<'a> {
                 names.iter().map(|name| name.as_str().to_owned()).collect(),
                 ordinal,
             ),
+            // BLOCKED-BY QSL-1312 (owner: planner titan:QSL:plan): shareable operand representation for derived node keys (FR-322 embeds the operand node ids in the path; interim is tag, form and producer ordinal)
             None => super::derived_node_key(
                 &package,
                 content.node_tag,
@@ -3060,6 +3069,7 @@ impl<'a> Lowering<'a> {
                 .map_or_else(|| node.clone(), NodeRef::Admitted),
             NodeRef::Admitted(_) => node.clone(),
         };
+        let group: std::sync::Arc<[NodeKey]> = member_admitted.clone().into();
         for (at, draft) in members.iter().enumerate() {
             let key = member_admitted[at].clone();
             let body = bodies[at]
@@ -3074,6 +3084,7 @@ impl<'a> Lowering<'a> {
                     recursion: Some(NodeRecursion {
                         ordinal: at,
                         size: members.len(),
+                        members: group.clone(),
                     }),
                     content: NodeContent {
                         owner_model: draft.content.owner_model.clone(),

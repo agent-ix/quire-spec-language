@@ -1841,22 +1841,6 @@ pub(crate) fn record_node_key(
     model_declaration_key(&key.package, node_tag, form, &key.node).map(Some)
 }
 
-/// The key of the model declaration node of the variant type `record`
-/// declares (FR-360 item 11); `None` for a record that declares no variant
-/// type.
-///
-/// # Errors
-///
-/// As [`record_node_key`].
-pub(crate) fn variant_type_node_key(
-    record: &DomainPackageRecord,
-) -> Result<Option<NodeKey>, quire_exact::InvalidNodeKey> {
-    match record {
-        DomainPackageRecord::Enum(_) => record_node_key(record),
-        _ => Ok(None),
-    }
-}
-
 /// A domain package record's model node tag and form, or `None` for a
 /// record kind no checked node names (FR-094 "Model declaration nodes";
 /// one arm per record kind, FR-094-CON-1).
