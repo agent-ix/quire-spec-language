@@ -128,7 +128,7 @@ fn idtext(id: &Value) -> String {
     id.to_string()
 }
 
-fn node_with<'w>(wire: &'w Value, digest: impl AsRef<str>) -> &'w Value {
+fn node_with(wire: &Value, digest: impl AsRef<str>) -> &Value {
     nodes(wire)
         .iter()
         .find(|node| idtext(&node["node_id"]) == digest.as_ref())
@@ -267,7 +267,7 @@ fn braking_and_slow_enough_emit_as_hybrid_nodes_the_i2_read_admits() {
             .as_array()
             .unwrap()
             .iter()
-            .map(|dependency| idtext(&dependency))
+            .map(idtext)
             .collect();
         assert_eq!(dependencies, expected, "{node}");
     }
@@ -533,7 +533,7 @@ fn braking2_restored_nodes_match_qspec_vectors() {
                 .expect("node dependencies")
                 .iter()
                 .map(|dependency| {
-                    idtext(&dependency)
+                    idtext(dependency)
                 }),
         );
         pending.push(

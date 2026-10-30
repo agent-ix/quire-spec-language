@@ -24,7 +24,7 @@ use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::Setting;
 use qsl_semantics::check::imports::ImportedNames;
 use qsl_semantics::check::CheckCause;
-use qsl_semantics::library::{ImportView, LibraryName, LibraryRefusal};
+use qsl_semantics::library::{ImportView, LibraryName};
 use quire_exact::{NodeKey, Origin, Role};
 use quire_semantic_value::catalog::{CatalogCode, CatalogCoded, Category};
 
@@ -84,18 +84,10 @@ fn node_fields(_label: &str, export: &str) -> Value {
     })
 }
 
-fn projection_node(label: &str, export: &str) -> Value {
-    node_fields(label, export)
-}
-
 fn node_fields_in_source(label: &str, export: &str, source: &str) -> Value {
     let mut node = node_fields(label, export);
     node["owner"]["identity"] = json!(source);
     node
-}
-
-fn projection_node_in_source(label: &str, export: &str, source: &str) -> Value {
-    node_fields_in_source(label, export, source)
 }
 
 fn graph_node(label: &str, export: &str) -> Value {
@@ -172,15 +164,6 @@ fn read(bytes: &[u8]) -> Read {
         V2ReadLimits::default(),
         &CheckedPackageEvidence::new(),
     )
-}
-
-/// The `library` refusal a wire read ended in, or a panic naming the
-/// outcome it got instead.
-fn structural(outcome: Read) -> LibraryRefusal {
-    match outcome {
-        Read::Refused(V2ReadRefusal::Structural(refusal)) => *refusal,
-        other => panic!("expected Refused(Structural(_)), got {other:?}"),
-    }
 }
 
 /// TC-253 step 1: valid v2 bytes with the requested package name are admitted.
@@ -596,12 +579,12 @@ fn incomplete_when_bytes_exceed_the_ceiling() {
 
 /// A valid wire of at least `min_bytes`, made large by one export whose
 /// qualified name is long (it appears in the semantic graph).
-fn wire_of_at_least(min_bytes: usize) -> (Value, Vec<u8>) {
+fn wire_of_at_least(min_bytes: usize) -> Vec<u8> {
     let export = format!("R{}", "r".repeat(min_bytes));
-    let (lock, envelope) = envelope_declaring(&[("pkg::R", &export)]);
+    let (_, envelope) = envelope_declaring(&[("pkg::R", &export)]);
     let bytes = jcs(&envelope);
     assert!(bytes.len() >= min_bytes);
-    (lock, bytes)
+    bytes
 }
 
 /// A caller-raised `artifact_bytes` is enforced as given by this
@@ -613,7 +596,7 @@ fn wire_of_at_least(min_bytes: usize) -> (Value, Vec<u8>) {
 #[test]
 fn a_caller_raised_artifact_bytes_ceiling_admits_a_valid_wire_past_the_default() {
     let default_bytes = V2ReadLimits::default().artifact_bytes;
-    let (lock, bytes) = wire_of_at_least(default_bytes + 1);
+    let bytes = wire_of_at_least(default_bytes + 1);
     let read_under = |limits: V2ReadLimits| {
         read_v2(
             &bytes,
@@ -658,7 +641,7 @@ fn a_caller_raised_ir_node_ceiling_admits_past_the_ir_default() {
         .iter()
         .map(|(label, export)| (label.as_str(), export.as_str()))
         .collect();
-    let (lock, envelope) = envelope_declaring(&exports);
+    let (_, envelope) = envelope_declaring(&exports);
     let bytes = jcs(&envelope);
     let read_under = |limits: V2ReadLimits| {
         read_v2(
@@ -712,7 +695,7 @@ fn a_100000_node_v2_read_clones_compares_formats_and_drops_on_a_small_stack() {
         .iter()
         .map(|(label, export)| (label.as_str(), export.as_str()))
         .collect();
-    let (lock, envelope) = envelope_declaring(&exports);
+    let (_, envelope) = envelope_declaring(&exports);
     let bytes = jcs(&envelope);
     let limits = V2ReadLimits {
         artifact_bytes: bytes.len(),
@@ -831,7 +814,7 @@ fn declaration_key(label: &str) -> OccurrenceKey {
 #[trace("TC-421", "FR-095-AC-3")]
 #[test]
 fn a_verified_read_carries_the_wire_source_map() {
-    let (lock, mut envelope) = envelope_declaring(&[("pkg::A", "A"), ("pkg::B", "B")]);
+    let (_, mut envelope) = envelope_declaring(&[("pkg::A", "A"), ("pkg::B", "B")]);
     let second = envelope["source_map"][1]["regions"][0].clone();
     envelope["source_map"][1]["regions"] = json!([
         {"source": source_ref("src"), "start": 7, "end": 9},
@@ -877,7 +860,7 @@ fn a_verified_read_carries_the_wire_source_map() {
 #[trace("TC-421", "FR-095-AC-4")]
 #[test]
 fn a_source_map_entry_naming_an_unknown_node_refuses() {
-    let (lock, mut envelope) = envelope_declaring(&[("pkg::A", "A")]);
+    let (_, mut envelope) = envelope_declaring(&[("pkg::A", "A")]);
     envelope["source_map"][0]["node_id"] = node_ref("pkg::unknown");
     match read(&jcs(&envelope)) {
         Read::Refused(refusal) => {
@@ -2546,7 +2529,7 @@ fn conformance_timed_clause_vectors_keep_their_published_outcomes() {
                     CheckedPackageRefusalCode::MalformedWire,
                     "{id}"
                 );
-                let pointer = locus_pointer(&refusal).unwrap_or_default();
+                let pointer = locus_pointer(refusal).unwrap_or_default();
                 assert!(pointer.starts_with(locus), "{id}: {pointer} within {locus}");
             }
             "refused" => {
@@ -3278,7 +3261,7 @@ fn frame_entry_outside_dependencies_refuses_as_missing_declaration() {
         vec![],
         vec![],
     );
-    let mut envelope = valid_envelope_over(vec![type_node, object_node, frame]);
+    let envelope = valid_envelope_over(vec![type_node, object_node, frame]);
     let outcome = read_frame_fixture(&envelope);
     match &outcome {
         Read::Refused(outer @ V2ReadRefusal::Envelope { refusal, .. }) => {
@@ -3445,7 +3428,8 @@ fn extension_definition_absent_from_selections_refuses_missing_selection() {
     };
     let original = read_fixture(&directory.join("positive-extension-nodes.json"));
     let mut mutated = original.clone();
-    for pointer in ["/lock/definition_selections"] {
+    {
+        let pointer = "/lock/definition_selections";
         let rows = mutated
             .pointer_mut(pointer)
             .and_then(Value::as_array_mut)
