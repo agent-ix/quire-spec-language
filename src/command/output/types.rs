@@ -49,7 +49,6 @@ impl Serialize for Stage {
 pub(super) struct Source<'a> {
     #[serde(flatten)]
     pub identity: &'a SourceIdentity,
-    pub digest: String,
     pub path: &'a str,
     pub formal: &'a ir::SourceIdentity,
 }
@@ -177,7 +176,6 @@ pub(super) struct AdmissionDeclarationKey {
 pub(super) struct RunSource<'a> {
     #[serde(flatten)]
     pub identity: &'a SourceIdentity,
-    pub digest: String,
     pub path: &'a str,
 }
 

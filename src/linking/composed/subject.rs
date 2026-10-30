@@ -23,7 +23,7 @@ use super::models::{ImportRefusal, ModelInput};
 use super::scopes::{Anchor, BinderKind, BinderType};
 use super::{DependencyKind, DependencySite, SourceInventory, WorkLimits};
 use crate::Limits;
-use qsl_foundation::{ByteDigest, SourceIdentity};
+use qsl_foundation::SourceIdentity;
 
 /// Which declared static component of two subjects differs.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -49,8 +49,6 @@ pub struct SourceComponent {
     pub authority: String,
     /// Exact selected source identity and revision.
     pub identity: SourceIdentity,
-    /// SHA-256 of the unit's original bytes.
-    pub digest: ByteDigest,
 }
 
 /// Language component: the single selection every source header must agree with.
@@ -214,7 +212,6 @@ impl StaticSubject {
             sources.push(SourceComponent {
                 authority: expected.authority.clone(),
                 identity: unit.source().identity().clone(),
-                digest: unit.source().digest(),
             });
         }
 
