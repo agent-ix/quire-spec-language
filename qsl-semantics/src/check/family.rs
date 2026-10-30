@@ -3500,9 +3500,7 @@ pub(crate) mod checking_tests {
     #[trace("TC-160", "FR-062-AC-2")]
     #[test]
     fn keyed_ordinals_match_counting_earlier_records() {
-        let keys: Vec<NodeKey> = (1..=5)
-            .map(|byte| fill_key(byte))
-            .collect();
+        let keys: Vec<NodeKey> = (1..=5).map(|byte| fill_key(byte)).collect();
         let roles = [
             OccurrenceRole::Declaration,
             OccurrenceRole::Expression,

@@ -1329,10 +1329,7 @@ mod tests {
         let injective: BTreeMap<DeclarationKey, EffectiveId> = [
             (DeclarationKey::fixture("model.A"), a.clone()),
             (DeclarationKey::fixture("model.B"), shared.clone()),
-            (
-                DeclarationKey::fixture("model.C"),
-                effective(0x0C),
-            ),
+            (DeclarationKey::fixture("model.C"), effective(0x0C)),
         ]
         .into_iter()
         .collect();

@@ -26,8 +26,8 @@ use quire_semantic_value::declaration::{CompositeDeclaration, FieldDeclaration, 
 
 mod binder_scope;
 mod deep_bodies;
-mod dimension_equivalence;
 mod depth;
+mod dimension_equivalence;
 mod expression_depth;
 mod leaves;
 mod rows;
