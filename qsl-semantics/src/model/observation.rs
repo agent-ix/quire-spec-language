@@ -1572,7 +1572,8 @@ fn read_error_refusal(
         // the shared reader refuses, which check 1.3 settles at the document
         // root before any value is read (FR-106-AC-32, FR-106-AC-38).
         quire_canonical::ReadError::Malformed {
-            kind: quire_canonical::Malformed::InvalidUtf8 | quire_canonical::Malformed::LoneSurrogate,
+            kind:
+                quire_canonical::Malformed::InvalidUtf8 | quire_canonical::Malformed::LoneSurrogate,
             ..
         } => Some(refuse(
             AdmissionRecord::new(Code::InvalidRuntimeInput, "invalid-value")

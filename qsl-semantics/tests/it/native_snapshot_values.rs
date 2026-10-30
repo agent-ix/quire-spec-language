@@ -1625,7 +1625,10 @@ fn the_document_edge_refuses_before_any_value_is_read() {
         let Err(AdmissionFailure::Refused(record)) = admit_bytes(bytes) else {
             panic!("a refusal");
         };
-        assert_eq!((record.code, record.cause), (Code::InvalidRuntimeInput, "invalid-value"));
+        assert_eq!(
+            (record.code, record.cause),
+            (Code::InvalidRuntimeInput, "invalid-value")
+        );
     }
     let huge = text.replace("\"ready\"", &format!("\"{}\"", "a".repeat(1_048_576)));
     let Err(AdmissionFailure::Refused(record)) = admit_bytes(huge.into_bytes()) else {
@@ -2044,7 +2047,10 @@ fn the_document_edge_refuses_a_title_before_any_value_is_read() {
         let Err(AdmissionFailure::Refused(record)) = admit_bytes(bytes) else {
             panic!("a refusal");
         };
-        assert_eq!((record.code, record.cause), (Code::InvalidRuntimeInput, "invalid-value"));
+        assert_eq!(
+            (record.code, record.cause),
+            (Code::InvalidRuntimeInput, "invalid-value")
+        );
     }
     let huge = text_of.replace("\"Ready\"", &format!("\"{}\"", "a".repeat(1_048_576)));
     let Err(AdmissionFailure::Refused(record)) = admit_bytes(huge.into_bytes()) else {
