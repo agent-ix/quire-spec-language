@@ -389,27 +389,13 @@ impl World {
             source_record.hex(),
         );
         let package_id = self.package_id().record();
-        let sha256_jcs = |digest: [u8; 32]| {
-            (
-                Some(DigestDomain::Sha256Jcs.as_str().to_owned()),
-                DigestRecord::mint(DigestDomain::Sha256Jcs, digest).hex(),
-            )
-        };
-        let mut byte_provision = vec![
-            (
-                Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-                source_record.hex(),
-                self.source.clone(),
-            ),
-            {
-                let (domain, hex) = sha256_jcs(digest_of(&self.document));
-                (domain, hex, self.document.clone())
-            },
-        ];
-        byte_provision.extend(self.snapshots.iter().map(|(digest, bytes)| {
-            let (domain, hex) = sha256_jcs(*digest);
-            (domain, hex, bytes.clone())
-        }));
+        let byte_provision = vec![(
+            Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
+            source_record.hex(),
+            self.source.clone(),
+        )];
+        let mut documents = vec![self.document.clone()];
+        documents.extend(self.snapshots.values().cloned());
         let obligation = [3; 32];
         let occurrence = claim
             .occurrence()
@@ -454,6 +440,7 @@ impl World {
             object_environment: None,
             declared_domains: Vec::new(),
             byte_provision,
+            documents,
         };
         let subject = ModelTraceSubject {
             timed: None,
