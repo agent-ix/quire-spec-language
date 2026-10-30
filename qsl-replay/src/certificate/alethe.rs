@@ -3082,4 +3082,53 @@ mod tests {
             "t0"
         )));
     }
+
+    /// cvc5's shape of a `cong` over a shared reflexive term: the premise is
+    /// the equality of two `define-fun` proxies, the other premise is the
+    /// `refl` of a `:named` reflexive term, and the conclusion is a proxy.
+    #[trace("TC-893")]
+    #[test]
+    fn cong_accepts_proxy_conclusion_with_a_named_refl_premise() {
+        let proof = "(define-fun @p_67 () Int y)(define-fun @p_45 () Int (+ y 1))\
+             (define-fun @p_71 () Bool (= (= @p_67 x) (= @p_45 x)))\
+             (step t34 (cl (= @p_67 @p_45)) :rule hole)\
+             (step t35 (cl (! (= x x) :named @p_65)) :rule refl)\
+             (step t36 (cl @p_71) :rule cong :premises (t34 t35))";
+        assert_eq!(verdict(proof), Err("short 5".to_owned()));
+        let wrong = proof.replace("(= @p_45 x)))", "(= @p_45 y)))");
+        assert_eq!(verdict(&wrong), Err("invalid 5".to_owned()));
+    }
+
+    /// Only `=` is symmetric: `cong` over any other head reads its arguments
+    /// in source order, so swapped premises or a swapped side are refused,
+    /// while an n-ary application and an `=` of more than two operands are
+    /// read argument by argument with a reflexive operand omitted.
+    #[trace("TC-893")]
+    #[test]
+    fn cong_reorders_only_the_arguments_of_an_equality() {
+        let premises = "(step t0 (cl (= y (+ y 1))) :rule hole)\
+             (step t1 (cl (= x (+ x 1))) :rule hole)";
+        let accepted = |text: &str, ids: &str| {
+            let proof = format!("{premises}(step t2 (cl (= {text})) :rule cong :premises ({ids}))");
+            match verdict(&proof) {
+                Err(reason) if reason == "short 2" => true,
+                Err(reason) if reason == "invalid 2" => false,
+                other => panic!("{text} {ids}: {other:?}"),
+            }
+        };
+        for head in ["-", "<", "+"] {
+            let same = format!("({head} y x) ({head} (+ y 1) (+ x 1))");
+            assert!(accepted(&same, "t0 t1"), "{head}");
+            assert!(!accepted(&same, "t1 t0"), "{head}");
+            let swapped = format!("({head} x y) ({head} (+ y 1) (+ x 1))");
+            assert!(!accepted(&swapped, "t0 t1"), "{head}");
+            assert!(!accepted(&swapped, "t1 t0"), "{head}");
+        }
+        // N-ary: the reflexive operand is omitted from the premises.
+        assert!(accepted("(+ y 1 x) (+ (+ y 1) 1 (+ x 1))", "t0 t1"));
+        assert!(!accepted("(+ y 1 x) (+ (+ y 1) 1 (+ x 1))", "t1 t0"));
+        // An `=` of three operands is not reordered.
+        assert!(accepted("(= y x 1) (= (+ y 1) (+ x 1) 1)", "t0 t1"));
+        assert!(!accepted("(= y x 1) (= (+ y 1) (+ x 1) 1)", "t1 t0"));
+    }
 }
