@@ -36,6 +36,7 @@
     reason = "a term holds quire_exact::Integer, whose lazy BigInt cache takes no part in Eq, Ord or Hash"
 )]
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::rc::Rc;
 use std::str::FromStr;
@@ -1685,17 +1686,19 @@ impl Step {
                 if f != g || xs.len() != ys.len() {
                     return false;
                 }
-                argument_orderings(f, xs, ys).iter().any(|(xs, ys)| {
-                    let mut next = premises.iter().peekable();
-                    for (x, y) in xs.iter().zip(ys) {
-                        if next.peek().is_some_and(|(from, to)| from == x && to == y) {
-                            next.next();
-                        } else if !renames(x, y) {
-                            return false;
+                argument_orderings(f, xs, ys)
+                    .iter()
+                    .any(|(ordered_xs, ordered_ys)| {
+                        let mut next = premises.iter().peekable();
+                        for (x, y) in ordered_xs.iter().zip(ordered_ys.iter()) {
+                            if next.peek().is_some_and(|(from, to)| from == x && to == y) {
+                                next.next();
+                            } else if !renames(x, y) {
+                                return false;
+                            }
                         }
-                    }
-                    next.next().is_none()
-                })
+                        next.next().is_none()
+                    })
             }
             _ => false,
         }
@@ -2218,11 +2221,11 @@ fn congruent(left: &Rc<Term>, right: &Rc<Term>, equalities: &[(Rc<Term>, Rc<Term
     }
     argument_orderings(f, xs, ys)
         .iter()
-        .any(|(xs, ys)| congruent_arguments(xs, ys, equalities))
+        .any(|(ordered_xs, ordered_ys)| congruent_arguments(ordered_xs, ordered_ys, equalities))
 }
 
 /// One ordering of the two argument lists of a congruence check.
-type Orderings = (Vec<Rc<Term>>, Vec<Rc<Term>>);
+type Orderings<'a> = (Cow<'a, [Rc<Term>]>, Cow<'a, [Rc<Term>]>);
 
 /// The orderings of the arguments of `f(xs)` and `f(ys)` a congruence check
 /// must try: the written one, and for a binary `=` also the swapped ones.
@@ -2230,13 +2233,22 @@ type Orderings = (Vec<Rc<Term>>, Vec<Rc<Term>>);
 /// of equalities), so the written positions of its arguments are lost and
 /// either side may have been swapped; equality is symmetric, so congruence
 /// over it holds for any ordering of each side.
-fn argument_orderings(f: &str, xs: &[Rc<Term>], ys: &[Rc<Term>]) -> Vec<Orderings> {
-    let mut orderings = vec![(xs.to_vec(), ys.to_vec())];
+fn argument_orderings<'a>(f: &str, xs: &'a [Rc<Term>], ys: &'a [Rc<Term>]) -> Vec<Orderings<'a>> {
+    let mut orderings = vec![(Cow::Borrowed(xs), Cow::Borrowed(ys))];
     if op(f) == Some(Op::Eq) && xs.len() == 2 && ys.len() == 2 {
-        let swap = |terms: &[Rc<Term>]| vec![terms[1].clone(), terms[0].clone()];
-        orderings.push((swap(xs), ys.to_vec()));
-        orderings.push((xs.to_vec(), swap(ys)));
-        orderings.push((swap(xs), swap(ys)));
+        let swap = |terms: &[Rc<Term>]| Cow::Owned(vec![terms[1].clone(), terms[0].clone()]);
+        // A side whose two operands are equal has no distinct swap.
+        let swap_left = xs[0] != xs[1];
+        let swap_right = ys[0] != ys[1];
+        if swap_left {
+            orderings.push((swap(xs), Cow::Borrowed(ys)));
+        }
+        if swap_right {
+            orderings.push((Cow::Borrowed(xs), swap(ys)));
+        }
+        if swap_left && swap_right {
+            orderings.push((swap(xs), swap(ys)));
+        }
     }
     orderings
 }
@@ -2277,12 +2289,15 @@ fn congruent_pairwise(
     f == g
         && xs.len() == ys.len()
         && xs.len() == equalities.len()
-        && argument_orderings(f, xs, ys).iter().any(|(xs, ys)| {
-            xs.iter()
-                .zip(ys)
-                .zip(equalities)
-                .all(|((x, y), (a, b))| (a == x && b == y) || (a == y && b == x))
-        })
+        && argument_orderings(f, xs, ys)
+            .iter()
+            .any(|(ordered_xs, ordered_ys)| {
+                ordered_xs
+                    .iter()
+                    .zip(ordered_ys.iter())
+                    .zip(equalities)
+                    .all(|((x, y), (a, b))| (a == x && b == y) || (a == y && b == x))
+            })
 }
 
 /// The most pivot choices [`resolution`] explores for a step that names no
@@ -2968,7 +2983,7 @@ mod tests {
     /// The shape cvc5 1.4.2 emits for a refinement step row: `cong` over an
     /// equality of equalities whose operands the reader stores in canonical
     /// order (steps `t31`..`t36` of a FR-315 row-1 proof, minimal chain).
-    #[trace("TC-893", "FR-314-AC-1")]
+    #[trace("TC-893", "FR-314-AC-4")]
     #[test]
     fn cong_accepts_cvc5_equality_of_equalities() {
         let query = || {
