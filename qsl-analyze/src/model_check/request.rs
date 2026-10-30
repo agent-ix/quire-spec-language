@@ -118,13 +118,13 @@ impl<'s, 'a> SubjectContext<'s, 'a> {
     }
 
     /// Write the item of the checked `refinement` (FR-144), with this subject
-    /// as its concrete subject and `abstract_package` with
+    /// as its concrete subject and the abstract library `abstract_library` with
     /// `abstract_initial` as the abstract subject, into `request` and return
     /// its index.
     ///
     /// The item's record is the refinement's own, read from the subject's
     /// checked package. It carries the abstract subject as the abstract
-    /// package's id and the initial snapshots (QSpec FR-368-AC-19). Its
+    /// package's library name, as the caller's request names it, and the initial snapshots (QSpec FR-368-AC-19). Its
     /// obligation is the subject's identity, the refinement's occurrence and
     /// the abstract initial snapshots, so the same refinement against other
     /// abstract initial states is another item.
@@ -132,13 +132,12 @@ impl<'s, 'a> SubjectContext<'s, 'a> {
     /// # Errors
     ///
     /// [`RequestRefusal::NoRefinementRecord`] when the package has no record
-    /// for the refinement, and [`RequestRefusal::Package`] when the abstract
-    /// package has no canonical identity.
+    /// for the refinement.
     pub fn author_refinement(
         &self,
         request: &mut ModelRequest<SubjectIdentity>,
         refinement: &CheckedRefinement,
-        abstract_package: &CheckedPackage,
+        abstract_library: qsl_semantics::library::LibraryName,
         abstract_initial: &[DocumentRef],
     ) -> Result<RequestIndex, RequestRefusal> {
         let package = self.subject.simulation.package.graph();
@@ -156,9 +155,7 @@ impl<'s, 'a> SubjectContext<'s, 'a> {
             package,
         };
         let abstract_subject = AbstractSubject {
-            package_id: qsl_package::emit_checked(abstract_package)?
-                .package()
-                .package_id(),
+            library: abstract_library,
             initial_states: abstract_initial.to_vec(),
         };
         request

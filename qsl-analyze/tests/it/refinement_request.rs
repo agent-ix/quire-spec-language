@@ -231,7 +231,7 @@ fn the_abstract_initial_states_are_part_of_the_obligation() {
             .author_refinement(
                 request,
                 world.refinement(),
-                world.package(),
+                qsl_semantics::library::LibraryName::new("fixture").expect("a library name"),
                 std::slice::from_ref(initial),
             )
             .expect("the record is written")

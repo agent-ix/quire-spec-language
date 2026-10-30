@@ -40,7 +40,7 @@ use qsl_route::request::{
 };
 use qsl_semantics::check::Capability;
 use qsl_semantics::family::{ClaimExtent, Requirements};
-use qsl_semantics::library::PackageId;
+use qsl_semantics::library::LibraryName;
 use quire_exact::Cancel;
 use quire_semantic_value::catalog::CatalogCode;
 use std::collections::BTreeSet;
@@ -73,7 +73,7 @@ pub(crate) fn derived_items<S: Clone + Eq>(
     }
     for item in refinements {
         let abstract_subject = AbstractSubject {
-            package_id: PackageId::of_preimage(b"abstract"),
+            library: LibraryName::new("abstract").expect("a library name"),
             initial_states: item.abstract_initial.to_vec(),
         };
         request

@@ -1083,7 +1083,7 @@ fn resolve_quantifier<'g>(
     qsl_semantics::check::CheckedNode<'g>,
 )> {
     use qsl_semantics::check::{NodeKind, Visit};
-    let key = graph.semantic_graph().resolve_wire(quantifier.node())?;
+    let key = quantifier.node();
     let location = graph.occurrence(key, quantifier.origin())?;
     let applies_quantify = matches!(
         graph.semantic_graph().node(key).map(|node| node.body()),
