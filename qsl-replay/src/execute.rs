@@ -585,6 +585,7 @@ impl ReplayRefusal {
             ) => Some(record.cause),
             Self::LimitAboveReader(_)
             | Self::SourceCount(_)
+            | Self::InvalidPackageName(_)
             | Self::Admission(AdmissionFailure::Fault(_))
             | Self::UnknownParameter(_)
             | Self::DuplicateArgument(_)

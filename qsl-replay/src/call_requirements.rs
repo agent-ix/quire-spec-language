@@ -173,6 +173,7 @@ impl RunWithRequirements {
 )]
 pub fn run_with_requirements(
     source: SourceIdentity,
+    package_name: String,
     path: &str,
     bytes: &[u8],
     packages: &qsl_semantics::model::intake::PackageInput,
@@ -182,9 +183,10 @@ pub fn run_with_requirements(
     objects: &ObjectEnvironment,
     cancel: &Cancel,
 ) -> Result<RunWithRequirements, Box<RunRefusal>> {
-    let package_name = package_name_of(&source)?;
+    let library_name = package_name_of(&package_name)?;
     let (outcome, members) = run_reading(
         source,
+        package_name,
         path,
         bytes,
         packages,
@@ -200,18 +202,18 @@ pub fn run_with_requirements(
         },
     )?;
     Ok(RunWithRequirements {
-        package_name,
+        package_name: library_name,
         outcome,
         requirements: CallRequirements::new(call, members),
     })
 }
 
-/// The library name of the package `source` compiles to: the unit's identity.
-pub(crate) fn package_name_of(source: &SourceIdentity) -> Result<LibraryName, Box<RunRefusal>> {
-    LibraryName::new(source.identity()).map_err(|_| {
+/// The library name the manifest's package name spells.
+pub(crate) fn package_name_of(name: &str) -> Result<LibraryName, Box<RunRefusal>> {
+    LibraryName::new(name).map_err(|_| {
         Box::new(RunRefusal::Fault(InternalFault::new(
             "spine-run",
-            "source-unit-names-a-package",
+            "package-name-is-a-library-name",
         )))
     })
 }
