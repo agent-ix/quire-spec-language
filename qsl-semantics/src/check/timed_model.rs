@@ -3614,7 +3614,7 @@ fn time_invariant(
             .iter()
             .map(|bound| {
                 let root = bound.clock.expression.root_id();
-                let clock = clocks.read(&bound.clock, root, &context).ok_or(
+                let clock = clocks.read(&bound.clock, root, context).ok_or(
                     TemporalCause::UnknownClock {
                         span: bound
                             .clock

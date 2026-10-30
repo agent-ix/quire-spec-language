@@ -238,7 +238,7 @@ impl Lowering<'_> {
             binders_scope.push(Binder {
                 slot,
                 parameter: parameter.into(),
-                semantic_type: semantic_type.into(),
+                semantic_type,
             });
         }
         let body_slot_names: Vec<String> = relation

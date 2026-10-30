@@ -102,6 +102,16 @@ use quire_semantic_value::semantic_node::{
     IdentityRefusal, InvalidSemanticGraph, SemanticGraphCause,
 };
 
+/// What one assembly run carries besides its inputs: the caller's [`Cancel`]
+/// handle and the accepted execution points keyed by exact authored
+/// state-clause name (FR-104-AC-15).
+pub struct AssemblyRun<'a> {
+    /// The caller's cancel handle, polled at every type-environment charge.
+    pub cancel: &'a Cancel,
+    /// Accepted execution points by state-clause name.
+    pub execution_points: BTreeMap<String, quire_contract_model::ExecutionPoint>,
+}
+
 /// The explicit limits the assembler takes (ADR-011 §2.3 Limits).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AssemblyLimits {
@@ -3059,8 +3069,10 @@ impl PackageDeclarations {
             models,
             imports,
             limits,
-            cancel,
-            BTreeMap::new(),
+            AssemblyRun {
+                cancel,
+                execution_points: BTreeMap::new(),
+            },
         )
     }
 
@@ -3073,9 +3085,12 @@ impl PackageDeclarations {
         models: impl Into<SelectedModels>,
         imports: Vec<AdmittedImport>,
         limits: AssemblyLimits,
-        cancel: &Cancel,
-        execution_points: BTreeMap<String, quire_contract_model::ExecutionPoint>,
+        run: AssemblyRun<'_>,
     ) -> Result<Self, AssemblyRefusal> {
+        let AssemblyRun {
+            cancel,
+            execution_points,
+        } = run;
         let (selections, forms) = unit.into_parts();
         // The models and the one meter their admission counted on; checking
         // continues that meter into the conformance stage.
@@ -3788,7 +3803,7 @@ impl PackageDeclarations {
                 Members::Tuple(elements) => {
                     let mut declared = Vec::with_capacity(elements.len());
                     for element in elements {
-                        match resolve_form(&names, &element) {
+                        match resolve_form(&names, element) {
                             Ok(value_type) => declared.push(value_type),
                             Err(error) => errors.push(resolution_error(&unit, error)),
                         }

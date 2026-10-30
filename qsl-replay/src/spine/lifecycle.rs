@@ -1077,8 +1077,10 @@ impl<'a> Resolution<'a> {
                 models,
                 admitted,
                 limits.assembly,
-                cancel,
-                execution_points,
+                qsl_semantics::check::AssemblyRun {
+                    cancel,
+                    execution_points,
+                },
             )
         })
         .map_err(|refusal| {

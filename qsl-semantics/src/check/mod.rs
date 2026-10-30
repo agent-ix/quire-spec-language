@@ -236,8 +236,7 @@ pub(crate) fn declared_node_key(
 ) -> Result<quire_exact::NodeKey, quire_exact::InvalidNodeKey> {
     let requested = declared_path
         .len()
-        .checked_mul(std::mem::size_of::<quire_exact::PathSegment>())
-        .unwrap_or(usize::MAX);
+        .saturating_mul(std::mem::size_of::<quire_exact::PathSegment>());
     let mut path = Vec::new();
     path.try_reserve_exact(declared_path.len())
         .map_err(|_| quire_exact::InvalidNodeKey::Allocation { requested })?;
@@ -349,7 +348,7 @@ pub use ir::{
 };
 
 pub use assemble::{
-    AdmittedImport, AssemblyCause, AssemblyError, AssemblyLimits, AssemblyRefusal,
+    AdmittedImport, AssemblyCause, AssemblyError, AssemblyLimits, AssemblyRefusal, AssemblyRun,
     ClockReadingDeclaration, ClockSite, ClockSlot, ClockTypePosition, ClockUse,
     DimensionEquivalence, EquivalenceClasses, EquivalenceFault, EquivalenceRetained,
     TimedDeclaration, TopologyFault, DEFAULT_DECIMAL_SCALE,

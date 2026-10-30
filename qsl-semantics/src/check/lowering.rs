@@ -3071,7 +3071,7 @@ impl<'a> Lowering<'a> {
             let body = bodies[at]
                 .map_refs(&mut to_key)
                 .map_err(|refusal| preimage_refusal(&draft.location, refusal))?;
-            let semantic_type = types[at].as_ref().map(&mut to_key);
+            let semantic_type = types[at].as_ref().map(to_key);
             self.graph
                 .nodes
                 .entry(key.clone())
@@ -3297,7 +3297,7 @@ impl<'a> Lowering<'a> {
             BodyTerm::application_node(operator, operation, result_type, arguments),
         )?;
         self.record(key.clone(), OccurrenceRole::Expression, location.clone());
-        Ok(LeafTerm::reference_node(key.into()))
+        Ok(LeafTerm::reference_node(key))
     }
 
     /// Key a `value` node for checked `node` and return a reference to it.
@@ -3321,7 +3321,7 @@ impl<'a> Lowering<'a> {
             OccurrenceRole::Expression,
             node.location().clone(),
         );
-        Ok(LeafTerm::reference_node(key.into()))
+        Ok(LeafTerm::reference_node(key))
     }
 
     /// The `type_argument` member naming `value_type`'s node.
@@ -3844,7 +3844,7 @@ impl<'a> Lowering<'a> {
                         )
                     })?;
                 let mut terms = Vec::with_capacity(arguments.len() + 1);
-                terms.push(LeafTerm::reference_node(callee.into()));
+                terms.push(LeafTerm::reference_node(callee));
                 return self.next_operand(
                     Box::new(OperandsFrame {
                         node,
@@ -4475,7 +4475,7 @@ impl<'a> Lowering<'a> {
                     let option = self.type_ref(&option, frame.node.location())?;
                     let member = MemberTerm::bound(
                         field.name(),
-                        LeafTerm::literal_node(option.into(), LiteralValue::None),
+                        LeafTerm::literal_node(option, LiteralValue::None),
                     );
                     frame.members.push(member);
                 }
@@ -4855,7 +4855,7 @@ impl<'a> Lowering<'a> {
             node,
             "literal",
             semantic_type.clone(),
-            BodyTerm::literal_node(semantic_type.into(), literal),
+            BodyTerm::literal_node(semantic_type, literal),
         )
     }
 
