@@ -103,7 +103,7 @@ fn orders_document(modifies: &[String]) -> Vec<u8> {
     });
     serde_json::to_vec(&json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
         "source": {
             "identity": identity("spec"), "version": "1.0.0",
             "dialect": "spec-bundle",

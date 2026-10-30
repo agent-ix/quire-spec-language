@@ -165,7 +165,7 @@ pub fn document(shape: ModelShape) -> Vec<u8> {
     let population = node("Pop");
     let document = json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
         "source": {
             "identity": node("spec"),
             "version": VERSION,
