@@ -86,31 +86,31 @@ impl KeyedRefinementRows {
     /// Every node of this graph the rows name, which QSpec FR-375 makes the
     /// refinement node's dependencies: each declaration key and each
     /// `reference` an expression term holds (a literal's type is not one).
-    pub(crate) fn node_keys(&self) -> Vec<NodeKey> {
-        fn term(keys: &mut Vec<NodeKey>, term: &LeafTerm) {
+    pub(crate) fn node_keys(&self) -> Vec<&NodeKey> {
+        fn term<'a>(keys: &mut Vec<&'a NodeKey>, term: &'a LeafTerm) {
             if let LeafTerm::Reference { target } = term {
-                keys.push(target.0);
+                keys.push(&target.0);
             }
         }
         let mut keys = Vec::new();
         for row in &self.populations {
-            keys.extend([row.abstract_population, row.concrete_population]);
+            keys.extend([&row.abstract_population, &row.concrete_population]);
         }
         for row in &self.objects {
-            keys.extend([row.abstract_type, row.concrete_type]);
+            keys.extend([&row.abstract_type, &row.concrete_type]);
             for (_, expression) in &row.fields {
                 term(&mut keys, expression);
             }
         }
         for row in &self.steps {
-            keys.extend(row.source_node);
+            keys.extend(row.source_node.as_ref());
             match &row.target {
                 KeyedStepTarget::Operation {
                     operation,
                     receiver,
                     arguments,
                 } => {
-                    keys.push(*operation);
+                    keys.push(operation);
                     term(&mut keys, receiver);
                     for argument in arguments.iter().flatten() {
                         term(&mut keys, argument);
@@ -119,7 +119,7 @@ impl KeyedRefinementRows {
                 KeyedStepTarget::ProtocolStep {
                     node, arguments, ..
                 } => {
-                    keys.extend(*node);
+                    keys.extend(node.as_ref());
                     for argument in arguments.iter().flatten() {
                         term(&mut keys, argument);
                     }
@@ -131,7 +131,7 @@ impl KeyedRefinementRows {
             self.assume
                 .iter()
                 .chain(&self.ensure)
-                .map(|row| row.operation),
+                .map(|row| &row.operation),
         );
         keys
     }

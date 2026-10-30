@@ -50,7 +50,7 @@ fn quantifier<'f>(
     located: &Located<'f>,
     id: ExprId,
     clocks: &Clocks<'_>,
-    context: EffectiveId,
+    context: &EffectiveId,
 ) -> Option<Quantifier<'f>> {
     let Some(ExprNode::Query {
         query: query @ (BinderQuery::Forall | BinderQuery::Exists),
@@ -63,7 +63,9 @@ fn quantifier<'f>(
     };
     let path = self_path(located.form, *source)?;
     let shape = clocks.fields.iter().find_map(|clock| {
-        if !clocks.model.conforms(context, clock.owner) || !clock.path.starts_with(&path) {
+        if !clocks.model.conforms(context.clone(), clock.owner.clone())
+            || !clock.path.starts_with(&path)
+        {
             return None;
         }
         match clock.path.get(path.len()) {
@@ -93,7 +95,7 @@ fn quantifier<'f>(
 pub(super) fn bodies(
     located: &Located<'_>,
     clocks: &Clocks<'_>,
-    context: EffectiveId,
+    context: &EffectiveId,
 ) -> BTreeSet<ExprId> {
     let mut found = BTreeSet::new();
     for node in located.form.expression.iter() {
@@ -125,7 +127,7 @@ pub(super) fn read(
     located: &Located<'_>,
     id: ExprId,
     clocks: &Clocks<'_>,
-    context: EffectiveId,
+    context: &EffectiveId,
     budget: &mut PartBudget,
 ) -> Result<Option<(Dnf, Dnf)>, CheckCause> {
     let Some(quantifier) = quantifier(located, id, clocks, context) else {
@@ -464,7 +466,7 @@ pub(super) fn reset(
     located: &Located<'_>,
     id: ExprId,
     clocks: &Clocks<'_>,
-    context: EffectiveId,
+    context: &EffectiveId,
     written: &BTreeSet<&DeclarationKey>,
 ) -> Result<Option<ResetDraft>, TemporalCause> {
     let Some(quantifier) = quantifier(located, id, clocks, context) else {
@@ -512,7 +514,7 @@ pub(super) fn reset(
     let value = match located.constant(value, clocks) {
         Ok(value) => value,
         Err(TemporalCause::ClockBoundNotConstant { .. }) => {
-            return Err(TemporalCause::ClockWrite { span })
+            return Err(TemporalCause::ClockWrite { span });
         }
         Err(cause) => return Err(cause),
     };
@@ -550,12 +552,12 @@ pub(super) fn reset(
 pub(super) fn first(
     located: &Located<'_>,
     clocks: &Clocks<'_>,
-    context: EffectiveId,
+    context: &EffectiveId,
 ) -> Option<qsl_foundation::Span> {
     located
         .form
         .expression
         .iter()
-        .find_map(|node| quantifier(located, node.id(), clocks, context))
+        .find_map(|node| quantifier(located, node.id(), clocks, &context))
         .map(|quantifier| quantifier.span)
 }

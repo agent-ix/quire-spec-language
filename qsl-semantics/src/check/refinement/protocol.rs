@@ -1068,7 +1068,7 @@ fn applied_operation(
                 .attempts
                 .iter()
                 .find(|bound| bound.declaration == node.0)?;
-            Some((bound.receiver, bound.operation.declaration.clone()))
+            Some((bound.receiver.clone(), bound.operation.declaration.clone()))
         }
         StepClass::CompensationAttempt(name) => {
             let template = clause
@@ -1078,7 +1078,7 @@ fn applied_operation(
                 .iter()
                 .find(|template| template.name == *name)?;
             Some((
-                template.operation.declaring,
+                template.operation.declaring.clone(),
                 template.operation.declaration.clone(),
             ))
         }
