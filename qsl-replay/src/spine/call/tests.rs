@@ -70,7 +70,6 @@ pub(in crate::spine) fn lookup_driver_fixture(functions: &str) -> LookupDriverFi
         .push(serde_json::json!({
             "kind": {"module": "acme/orders", "name": "population"},
             "moduleVersion": "1.0.0",
-            "manifestDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
             "construct": {
                 "identity": "none",
                 "shape": "record",

@@ -5,8 +5,8 @@ use super::{diagnostic, diagnostic_with_upstream, types};
 use crate::command::extraction::{ExtractionError, ExtractionMode, JoinCause, JoinFailure};
 use qsl_foundation::{Diagnostic, LocatedSpan, SourceIdentity};
 use qsl_source::{
-    semantic_core_version, ClauseRef, ClausesOutcome, KindAvailability, SemanticDiagnostic,
-    SemanticFailure, CONTRACT_VERSION,
+    ClauseRef, ClausesOutcome, KindAvailability, SemanticDiagnostic, SemanticFailure,
+    CONTRACT_VERSION,
 };
 use quire_contract_model as ir;
 use serde::{Serialize, Serializer};
@@ -136,7 +136,6 @@ pub(super) enum Failure<'a> {
     Mode(&'a ExtractionMode),
     Context {
         contract_version: &'static str,
-        semantic_core: &'static str,
         diagnostics: &'a [SemanticFailure],
     },
     Consumer(Box<ConsumerFailure<'a>>),
@@ -149,7 +148,6 @@ pub(super) fn failure(value: &ExtractionError) -> (types::Stage, Failure<'_>) {
             Stage::Context,
             Failure::Context {
                 contract_version: CONTRACT_VERSION,
-                semantic_core: semantic_core_version(),
                 diagnostics,
             },
         ),
@@ -195,7 +193,6 @@ mod tests {
         assert_eq!(value["stage"], "quire-context");
         assert_eq!(value["code"], "invalid-quire-context");
         assert_eq!(value["details"]["contract_version"], CONTRACT_VERSION);
-        assert_eq!(value["details"]["semantic_core"], semantic_core_version());
         assert_eq!(value["details"]["diagnostics"], expected);
         assert!(value.get("truth").is_none());
     }

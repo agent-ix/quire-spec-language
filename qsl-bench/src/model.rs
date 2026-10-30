@@ -63,9 +63,6 @@ pub const PACKAGE: &str = "bench/model";
 /// The package version every selection names.
 pub const VERSION: &str = "1.0.0";
 
-const PLACEHOLDER_DIGEST: &str =
-    "sha256:0000000000000000000000000000000000000000000000000000000000000000";
-
 /// A model document's size parameters.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ModelShape {
@@ -114,7 +111,6 @@ fn construct(name: &str, meaning: &str) -> Value {
     json!({
         "kind": {"module": PACKAGE, "name": name},
         "moduleVersion": "1.0.0",
-        "manifestDigest": PLACEHOLDER_DIGEST,
         "construct": {
             "identity": "none",
             "shape": "record",
@@ -174,15 +170,12 @@ pub fn document(shape: ModelShape) -> Vec<u8> {
             "identity": node("spec"),
             "version": VERSION,
             "dialect": "spec-bundle",
-            "digest": PLACEHOLDER_DIGEST,
         },
         "package": {
             "identity": PACKAGE,
             "version": VERSION,
-            "manifestDigest": PLACEHOLDER_DIGEST,
             "mappingVersions": [],
             "profileVersions": [],
-            "lockDigest": PLACEHOLDER_DIGEST,
         },
         "occurrences": [],
         "extensions": [],

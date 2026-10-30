@@ -28,7 +28,7 @@ use serde_json::{json, Value as Json};
 
 use crate::timed_world::{
     document, ident, refining, refining_from, renamed_package, wire_field, wire_type, Refining,
-    DENSE, PACKAGE, PLACEHOLDER,
+    DENSE, PACKAGE,
 };
 
 /// FR-430-AC-1's untimed `Req`: the object `c` (here `Call`) with `sent`
@@ -517,7 +517,7 @@ fn treq_with_records() -> Vec<u8> {
         .as_array_mut()
         .expect("constructs")
         .push(json!({"kind": {"module": PACKAGE, "name": "value_record"},
-            "moduleVersion": "1.0.0", "manifestDigest": PLACEHOLDER,
+            "moduleVersion": "1.0.0",
             "construct": {"identity": "none", "shape": "record", "members": {},
                 "meaning": meaning::RECORD_VALUE_TYPE}}));
     serde_json::to_vec(&document).expect("JSON")

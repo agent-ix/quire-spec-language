@@ -48,7 +48,6 @@ fn construct(name: &str, meaning: &str, shape: &str, members: Value) -> Value {
     json!({
         "kind": {"module": P, "name": name},
         "moduleVersion": "1.0.0",
-        "manifestDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
         "construct": {"identity": "none", "shape": shape, "members": members, "meaning": meaning},
     })
 }

@@ -12,7 +12,7 @@
 //! `MemberPath`; the reader names it in each refusal's detail until then.
 
 use ix_trace_rs::trace;
-use qsl_foundation::{ByteDigest, Code, IntakeLimits};
+use qsl_foundation::{Code, IntakeLimits};
 use qsl_semantics::check::AssemblyCause;
 use qsl_semantics::model::accounting::{Meter, ModelNormalizationLimits};
 use qsl_semantics::model::admitted::{AdmittedPackage, DeclarationKind};
@@ -20,7 +20,7 @@ use qsl_semantics::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, EnumRecord, ValueTypeRef, VariantRecord,
 };
 use qsl_semantics::model::intake::{admit, meaning, package_input, read_domain_package};
-use qsl_semantics::model::key::{hex, EffectiveDeclarationPreimage, RULE_QUALIFY};
+use qsl_semantics::model::key::{EffectiveDeclarationPreimage, RULE_QUALIFY};
 use qsl_semantics::model::normalize::{
     normalize_with_meter, EffectiveView, ModelRefusal, ModelRefusalCause, NormalizeOutcome,
 };
@@ -72,7 +72,6 @@ fn construct(name: &str, meaning: &str, shape: &str, members: Value) -> Value {
     json!({
         "kind": {"module": MODULE, "name": name},
         "moduleVersion": "1.0.0",
-        "manifestDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
         "construct": {
             "identity": "none", "shape": shape, "members": members, "meaning": meaning,
         },
@@ -115,25 +114,17 @@ fn variant_type(name: &str, cases: Vec<Value>) -> Value {
     definition(name, "variant_type", json!({"variants": cases}))
 }
 
-fn document(mut constructs: Vec<Value>, types: Vec<Value>) -> Value {
-    // The wire requires content digests; bind them to the authored types.
-    let digest = format!(
-        "sha256:{}",
-        hex(&ByteDigest::of(&serde_json::to_vec(&types).unwrap()).as_bytes())
-    );
-    for construct in &mut constructs {
-        construct["manifestDigest"] = json!(digest);
-    }
+fn document(constructs: Vec<Value>, types: Vec<Value>) -> Value {
     json!({
         "contractVersion": "2.0.0",
         "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
         "source": {
             "identity": id("spec"), "version": "1.0.0",
-            "dialect": "spec-bundle", "digest": digest,
+            "dialect": "spec-bundle"
         },
         "package": {
-            "identity": P, "version": "1.0.0", "manifestDigest": digest,
-            "mappingVersions": [], "profileVersions": [], "lockDigest": digest,
+            "identity": P, "version": "1.0.0",
+            "mappingVersions": [], "profileVersions": [],
         },
         "constructs": constructs, "types": types, "occurrences": [], "extensions": [],
     })

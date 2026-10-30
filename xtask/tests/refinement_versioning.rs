@@ -679,8 +679,10 @@ fn the_generated_corpus_follows_the_model_file() {
     // names it (its own `identity`, module references and `ix://` type ids).
     let edited = original
         .replacen(
-            "\"version\": \"1.0.0\",\n    \"manifestDigest\"",
-            "\"version\": \"1.0.7\",\n    \"manifestDigest\"",
+            "\"version\": \"1.0.0\",
+    \"mappingVersions\"",
+            "\"version\": \"1.0.7\",
+    \"mappingVersions\"",
             1,
         )
         .replace("example/config-version", "example/config-version-b");
