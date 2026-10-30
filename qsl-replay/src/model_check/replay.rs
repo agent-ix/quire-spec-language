@@ -698,7 +698,7 @@ fn no_value() -> ModelTraceSettlement {
 /// counterexample read them.
 ///
 /// Refuses, with no partial result, when the request does not decode, by
-/// FR-098's recompile rules, on a stale `package_id`, for a counterexample
+/// FR-098's recompile rules, for a counterexample
 /// of a clause the recompiled package does not hold or whose occurrence or
 /// fairness set differ, when the subject does not admit (FR-106's record),
 /// on an `initial_state` outside the subject, on a step that is not

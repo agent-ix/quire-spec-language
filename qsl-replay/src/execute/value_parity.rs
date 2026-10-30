@@ -221,7 +221,7 @@ fn settle(
     let request = ReplayRequest::decode(wire, replay_limits)?;
     let function = function_target(&request, ReplayEntry::ReplayValueParity)?;
     // FR-484: a value-parity claim has no proving run, so it carries no
-    // profile selection; lock rows bind through `package_id`, never read here.
+    // profile selection; lock rows are never read here.
     if !request.profile_selections().is_empty() {
         return Err(ReplayRefusal::UnusedProfileSelections {
             selections: request.profile_selections().to_vec(),

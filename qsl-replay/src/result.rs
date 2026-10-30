@@ -1627,18 +1627,6 @@ mod tests {
                         ])
                         .unwrap(),
                     ),
-                    package_id: Some((
-                        Some(
-                            qsl_foundation::digest::DigestDomain::PackageSemanticV2
-                                .as_str()
-                                .to_owned(),
-                        ),
-                        qsl_foundation::digest::DigestRecord::mint(
-                            qsl_foundation::digest::DigestDomain::PackageSemanticV2,
-                            [5; 32],
-                        )
-                        .hex(),
-                    )),
                     profile_selections: Some(vec![]),
                     run_limits: Some(charges()),
                     declared_domains: Some(vec![]),

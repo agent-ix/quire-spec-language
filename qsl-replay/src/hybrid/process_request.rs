@@ -131,9 +131,6 @@ pub enum HybridProcessRequestRefusal {
     /// The request carried a non-canonical or invalid v2 package.
     #[error("the request package was not admitted as checked-package/v2")]
     PackageRefused,
-    /// The request's package identity did not match the admitted package.
-    #[error("the request package identity does not match its package bytes")]
-    PackageIdentityMismatch,
     /// The context supplied conflicting evidence for one package identity.
     #[error("the process package context contains conflicting evidence")]
     PackageEvidenceConflict,
@@ -159,7 +156,6 @@ pub struct HybridProcessRequest(Vec<u8>);
 #[serde(deny_unknown_fields)]
 struct ProcessRequestWire {
     package: String,
-    package_id: Value,
     deadline_ms: u64,
     items: Vec<ProcessRequestItemWire>,
 }
@@ -188,8 +184,6 @@ impl HybridProcessRequest {
         items: &[HybridProcessItem],
     ) -> Result<Self, HybridProcessRequestRefusal> {
         let admitted = admit_package(package, context)?;
-        let package_id = serde_json::to_value(admitted.package_id())
-            .map_err(|_| HybridProcessRequestRefusal::PackageRefused)?;
         let mut wire_items = Vec::with_capacity(items.len());
         for (position, item) in items.iter().enumerate() {
             let position = u64::try_from(position)
@@ -215,7 +209,6 @@ impl HybridProcessRequest {
         }
         let request = ProcessRequestWire {
             package: URL_SAFE_NO_PAD.encode(package),
-            package_id,
             deadline_ms,
             items: wire_items,
         };
@@ -250,11 +243,6 @@ impl HybridProcessRequest {
             return Err(HybridProcessRequestRefusal::MalformedRequest);
         }
         let package = admit_package(&package_bytes, context)?;
-        let package_id = serde_json::to_value(package.package_id())
-            .map_err(|_| HybridProcessRequestRefusal::PackageRefused)?;
-        if wire.package_id != package_id {
-            return Err(HybridProcessRequestRefusal::PackageIdentityMismatch);
-        }
         let hybrids = read_hybrids(&package, context.limits.nodes)
             .map_err(|_| HybridProcessRequestRefusal::PackageRefused)?;
         let package_wire: Value = serde_json::from_slice(&package_bytes)

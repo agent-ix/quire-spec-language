@@ -436,7 +436,6 @@ mod redaction_tests {
     use ix_trace_rs::trace;
 
     use super::*;
-    use qsl_foundation::digest::{DigestDomain, DigestRecord};
     use quire_exact::Identifier;
 
     fn scalar_limits(seed: u64) -> quire_exact::ScalarLimits {
@@ -467,10 +466,7 @@ mod redaction_tests {
         // It returns the full content through the typed accessor.
         let valid_wire = ReplayRequestWire {
             profile_selections: vec![],
-            package_id: (
-                Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
-                DigestRecord::mint(DigestDomain::PackageSemanticV2, [1; 32]).hex(),
-            ),
+            package_name: "fixture".to_owned(),
             sources: vec![(
                 "registry".to_owned(),
                 "pkg-a".to_owned(),

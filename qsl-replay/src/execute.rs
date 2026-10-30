@@ -623,7 +623,6 @@ impl ReplayRefusal {
             Self::ModelGraphMismatch { member } => Some(match *member {
                 "claim_identity" | "clause_node" => "/replay/source/model_graph/clause_node",
                 "occurrence_key" => "/replay/source/model_graph/occurrence_key",
-                "package_id" => "/replay/source/model_graph/package_id",
                 "profile_selections" => "/replay/profile_selections",
                 "declared_domains" => "/replay/declared_domains",
                 "undefined_locus" => "/replay/source/model_graph/undefined/where/locus",
@@ -699,6 +698,7 @@ pub enum DependencySelectionsCause {
 /// # let small = QualifiedName::new(vec![Identifier::new("small").unwrap()]).unwrap();
 /// # let site = call_site(
 /// #     SourceIdentity::new("a", "u", "git", "1"),
+/// #     "fixture".to_owned(),
 /// #     "u",
 /// #     unit.as_bytes(),
 /// #     [],
@@ -722,10 +722,7 @@ pub enum DependencySelectionsCause {
 /// let wire = ReplayRequestWire {
 ///     replay_target: RequestTargetWire::function("small", key),
 /// #   profile_selections: vec![],
-/// #   package_id: (
-/// #       Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
-/// #       site.package_id.hex(),
-/// #   ),
+/// #   package_name: "fixture".to_owned(),
 /// #   sources: vec![(
 /// #       "a".to_owned(),
 /// #       "u".to_owned(),
@@ -734,7 +731,7 @@ pub enum DependencySelectionsCause {
 /// #   )],
 /// #   dependencies: Vec::new(),
 /// #   source: ReplaySource::Input(vec![CanonicalAssignment {
-/// #       parameter: site.site.parameters[0].1,
+/// #       parameter: site.site.parameters[0].1.clone(),
 /// #       value: WitnessValue::Integer(7),
 /// #   }]),
 /// #   obligation_identity: [0; 32],
@@ -763,6 +760,7 @@ pub enum DependencySelectionsCause {
 /// # let small = QualifiedName::new(vec![Identifier::new("small").unwrap()]).unwrap();
 /// # let site = call_site(
 /// #     SourceIdentity::new("a", "u", "git", "1"),
+/// #     "fixture".to_owned(),
 /// #     "u",
 /// #     unit.as_bytes(),
 /// #     [],
@@ -786,10 +784,7 @@ pub enum DependencySelectionsCause {
 /// let wire = ReplayRequestWire {
 ///     replay_target: RequestTargetWire::function(small, key),
 /// #   profile_selections: vec![],
-/// #   package_id: (
-/// #       Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
-/// #       site.package_id.hex(),
-/// #   ),
+/// #   package_name: "fixture".to_owned(),
 /// #   sources: vec![(
 /// #       "a".to_owned(),
 /// #       "u".to_owned(),
@@ -798,7 +793,7 @@ pub enum DependencySelectionsCause {
 /// #   )],
 /// #   dependencies: Vec::new(),
 /// #   source: ReplaySource::Input(vec![CanonicalAssignment {
-/// #       parameter: site.site.parameters[0].1,
+/// #       parameter: site.site.parameters[0].1.clone(),
 /// #       value: WitnessValue::Integer(7),
 /// #   }]),
 /// #   obligation_identity: [0; 32],
