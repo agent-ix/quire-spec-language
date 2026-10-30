@@ -677,6 +677,7 @@ fn classify(refusal: CompileRefusal) -> AdmittedRefusal {
 /// a broken QSL invariant.
 pub fn compile_admitted<'a>(
     source: SourceIdentity,
+    package_name: String,
     path: &str,
     bytes: &[u8],
     packages: impl IntoIterator<Item = &'a [u8]>,
@@ -686,6 +687,7 @@ pub fn compile_admitted<'a>(
 ) -> Result<AdmittedCompilation, AdmittedRefusal> {
     let compiled = recompile_unit(
         source,
+        package_name,
         path,
         bytes,
         packages,
@@ -693,10 +695,7 @@ pub fn compile_admitted<'a>(
         limits,
         replay_limits,
     )?;
-    let context = context_of(
-        compiled.checked.package(),
-        compiled.emitted.package().package_id(),
-    )
+    let context = context_of(compiled.checked.package(), &compiled.package)
     .map_err(AdmittedRefusal::Fault)?;
     Ok(AdmittedCompilation {
         package: CompiledPackage::new(compiled.emitted),
@@ -706,9 +705,9 @@ pub fn compile_admitted<'a>(
 
 pub(crate) fn context_of(
     package: &CheckedPackage,
-    id: PackageId,
+    name: &LibraryName,
 ) -> Result<AdmittedContext, InternalFault> {
-    let enums = enum_table(package.graph().semantic_graph())?;
+    let enums = enum_table(package.graph())?;
     let composites = composite_table(package.graph())?;
     let UnitTables {
         units,
@@ -719,9 +718,9 @@ pub(crate) fn context_of(
         .graph()
         .semantic_graph()
         .nodes()
-        .map(|node| *node.key().as_bytes())
-        .chain(units.keys().copied())
-        .chain(dimensions.keys().copied())
+        .map(qsl_semantics::check::SemanticNode::key)
+        .chain(units.keys().cloned())
+        .chain(dimensions.keys().cloned())
         .collect();
     let mut foreign = BTreeMap::new();
     let mut foreign_composites = BTreeMap::new();
@@ -729,31 +728,35 @@ pub(crate) fn context_of(
     let mut foreign_dimensions = BTreeMap::new();
     let mut visited = BTreeSet::new();
     let mut pending: Vec<_> = package.dependencies().iter().collect();
-    while let Some((&dependency_id, dependency)) = pending.pop() {
-        if !visited.insert(dependency_id) {
+    while let Some((dependency_name, dependency)) = pending.pop() {
+        if !visited.insert(dependency_name.clone()) {
             continue;
         }
-        for declaration in enum_table(dependency.graph().semantic_graph())?.into_keys() {
-            foreign.entry(declaration).or_insert(dependency_id);
+        for declaration in enum_table(dependency.graph())?.into_keys() {
+            foreign
+                .entry(declaration)
+                .or_insert_with(|| dependency_name.clone());
         }
         for declaration in composite_table(dependency.graph())?.into_keys() {
             foreign_composites
                 .entry(declaration)
-                .or_insert(dependency_id);
+                .or_insert_with(|| dependency_name.clone());
         }
         let (unit_keys, dimension_keys) = unit_keys(dependency.graph())?;
         for declaration in unit_keys {
-            foreign_units.entry(declaration).or_insert(dependency_id);
+            foreign_units
+                .entry(declaration)
+                .or_insert_with(|| dependency_name.clone());
         }
         for declaration in dimension_keys {
             foreign_dimensions
                 .entry(declaration)
-                .or_insert(dependency_id);
+                .or_insert_with(|| dependency_name.clone());
         }
         pending.extend(dependency.dependencies().iter());
     }
     Ok(AdmittedContext {
-        package: id,
+        package: name.clone(),
         enums,
         foreign,
         composites,
@@ -770,8 +773,8 @@ pub(crate) fn context_of(
 /// A graph's admitted units and dimensions, and the unit table they came
 /// from.
 struct UnitTables {
-    units: BTreeMap<[u8; 32], AdmittedUnit>,
-    dimensions: BTreeMap<[u8; 32], AdmittedDimension>,
+    units: BTreeMap<NodeKey, AdmittedUnit>,
+    dimensions: BTreeMap<NodeKey, AdmittedDimension>,
     table: UnitTable,
 }
 
@@ -797,50 +800,50 @@ fn declared_nodes(
     ),
     InternalFault,
 > {
-    let named = |key: NodeKey| {
+    let named = |key: &NodeKey| {
         table
-            .nominal_node(key.as_bytes())
+            .nominal_node(key)
             .ok_or_else(|| InternalFault::new("replay", "every-admitted-unit-has-a-nominal-node"))
     };
     let mut units = Vec::new();
     let mut pending = Vec::new();
     for id in table.ids() {
         if let Some(QuantityUnit::Declared(unit)) = table.get(id) {
-            pending.push(unit.dimension_node());
+            pending.push(unit.dimension_node().clone());
             units.push(&**unit);
         }
     }
     let mut seen = BTreeSet::new();
     let mut dimensions = Vec::new();
     while let Some(key) = pending.pop() {
-        if !seen.insert(*key.as_bytes()) {
+        let nominal = named(&key)?;
+        if !seen.insert(key) {
             continue;
         }
-        let nominal = named(key)?;
         let NominalUnitForm::Dimension { terms } = &nominal.form else {
             return Err(InternalFault::new(
                 "replay",
                 "every-admitted-unit-dimension-is-a-dimension",
             ));
         };
-        pending.extend(terms.iter().map(|(base, _)| *base));
+        pending.extend(terms.iter().map(|(base, _)| base.clone()));
         dimensions.push(nominal);
     }
     Ok((units, dimensions))
 }
 
 /// The unit and dimension node ids of a graph.
-type DeclaredKeys = (Vec<[u8; 32]>, Vec<[u8; 32]>);
+type DeclaredKeys = (Vec<NodeKey>, Vec<NodeKey>);
 
 /// The node ids of `graph`'s declared units and the dimensions they name,
 /// for a dependency's `Foreign` refusals: no names, no unit values.
 fn unit_keys(graph: &CheckedGraph) -> Result<DeclaredKeys, InternalFault> {
     let (units, dimensions) = declared_nodes(graph.scope().types().units())?;
     Ok((
-        units.iter().map(|unit| *unit.key().as_bytes()).collect(),
+        units.iter().map(|unit| unit.key().clone()).collect(),
         dimensions
             .iter()
-            .map(|dimension| *dimension.key.as_bytes())
+            .map(|dimension| dimension.key.clone())
             .collect(),
     ))
 }
@@ -854,16 +857,16 @@ fn unit_tables(graph: &CheckedGraph) -> Result<UnitTables, InternalFault> {
     let (declared, named_dimensions) = declared_nodes(&table)?;
     let mut units = BTreeMap::new();
     for unit in declared {
-        let nominal = table.nominal_node(unit.key().as_bytes()).ok_or_else(|| {
+        let nominal = table.nominal_node(unit.key()).ok_or_else(|| {
             InternalFault::new("replay", "every-admitted-unit-has-a-nominal-node")
         })?;
         units.insert(
-            *unit.key().as_bytes(),
+            unit.key().clone(),
             AdmittedUnit {
-                node: unit.key(),
+                node: unit.key().clone(),
                 id: unit.id(),
                 qualified_name: qualified_name(&nominal.declaration.qualified_declaration)?,
-                dimension: unit.dimension_node(),
+                dimension: unit.dimension_node().clone(),
                 unit: QuantityUnit::Declared(Box::new(unit.clone())),
             },
         );
@@ -874,9 +877,9 @@ fn unit_tables(graph: &CheckedGraph) -> Result<UnitTables, InternalFault> {
             continue;
         };
         dimensions.insert(
-            *nominal.key.as_bytes(),
+            nominal.key.clone(),
             AdmittedDimension {
-                node: nominal.key,
+                node: nominal.key.clone(),
                 qualified_name: qualified_name(&nominal.declaration.qualified_declaration)?,
                 terms: terms.clone(),
             },
@@ -896,7 +899,7 @@ fn unit_tables(graph: &CheckedGraph) -> Result<UnitTables, InternalFault> {
 /// kernel key.
 fn composite_table(
     graph: &CheckedGraph,
-) -> Result<BTreeMap<[u8; 32], AdmittedComposite>, InternalFault> {
+) -> Result<BTreeMap<NodeKey, AdmittedComposite>, InternalFault> {
     let mut composites = BTreeMap::new();
     for type_node in graph.checked_type_nodes() {
         let (node, key, shape) = match type_node {
@@ -905,12 +908,12 @@ fn composite_table(
                 declaration,
                 form,
             } => match form {
-                CompositeForm::Record => (*node, *declaration, AdmittedShape::Record),
-                CompositeForm::Tuple => (*node, *declaration, AdmittedShape::Tuple),
+                CompositeForm::Record => (node.clone(), declaration.clone(), AdmittedShape::Record),
+                CompositeForm::Tuple => (node.clone(), declaration.clone(), AdmittedShape::Tuple),
                 CompositeForm::Union => (
-                    *node,
-                    *declaration,
-                    AdmittedShape::Union(union_members(graph, *declaration)?),
+                    node.clone(),
+                    declaration.clone(),
+                    AdmittedShape::Union(union_members(graph, declaration)?),
                 ),
             },
             CheckedTypeNode::Scalar { .. }
@@ -919,14 +922,14 @@ fn composite_table(
         };
         let qualified_name = graph
             .semantic_graph()
-            .node(node)
+            .node(&node)
             .and_then(|declared| declared.declaration())
             .ok_or_else(|| {
                 InternalFault::new("replay", "every-admitted-composite-has-a-declared-node")
             })?
             .to_vec();
         composites.insert(
-            *node.as_bytes(),
+            node.clone(),
             AdmittedComposite {
                 node,
                 key,
@@ -942,12 +945,12 @@ fn composite_table(
 /// `key`, each with the `VariantId` of the binding the check sealed it with.
 fn union_members(
     graph: &CheckedGraph,
-    key: NodeKey,
+    key: &NodeKey,
 ) -> Result<Vec<AdmittedUnionMember>, InternalFault> {
     let Some(CompositeShape::Union(declared)) = graph
         .scope()
         .types()
-        .composite(key)
+        .composite(key.clone())
         .map(CompositeDeclaration::shape)
     else {
         return Err(InternalFault::new(
@@ -969,52 +972,37 @@ fn union_members(
         .collect()
 }
 
-/// Every enum declaration of `graph`, keyed by the declaration node's id
-/// bytes, with each case's member key read from the member node the checker
-/// built for it.
-fn enum_table(graph: &SemanticGraph) -> Result<BTreeMap<[u8; 32], AdmittedEnum>, InternalFault> {
-    let mut members = BTreeMap::new();
-    for node in graph.nodes() {
-        if let Some(NominalNode::EnumMember { declaration, case }) = node.nominal() {
-            members.insert((*declaration, case.as_str()), node.key());
-        }
-    }
+/// Every enum declaration of `graph`, keyed by its declaration node, with
+/// each case's member key as the checker admitted it.
+fn enum_table(graph: &CheckedGraph) -> Result<BTreeMap<NodeKey, AdmittedEnum>, InternalFault> {
+    let identifier = |text: &str| {
+        Identifier::new(text)
+            .map_err(|_| InternalFault::new("replay", "admitted-enum-names-are-identifiers"))
+    };
     let mut enums = BTreeMap::new();
-    for node in graph.nodes() {
-        let Some(NominalNode::EnumDeclaration(preimage)) = node.nominal() else {
-            continue;
-        };
-        let identifier = |text: &str| {
-            Identifier::new(text)
-                .map_err(|_| InternalFault::new("replay", "admitted-enum-names-are-identifiers"))
-        };
-        let cases = preimage
-            .members()
+    for binding in graph.scope().enums() {
+        let declaration = &binding.declaration;
+        let cases = binding
+            .members
             .iter()
-            .map(|case| {
-                let key = members
-                    .get(&(node.key(), case.as_str()))
-                    .copied()
-                    .ok_or_else(|| {
-                        InternalFault::new("replay", "every-admitted-enum-case-has-a-member-node")
-                    })?;
+            .map(|member| {
                 Ok(AdmittedEnumCase {
-                    case: identifier(case)?,
-                    key,
+                    case: identifier(member.case())?,
+                    key: member.member(),
                 })
             })
             .collect::<Result<Vec<_>, InternalFault>>()?;
-        let qualified_name = preimage
+        let qualified_name = declaration
             .qualified_declaration()
             .iter()
             .map(|name| identifier(name))
             .collect::<Result<Vec<_>, _>>()?;
         enums.insert(
-            *node.key().as_bytes(),
+            declaration.key(),
             AdmittedEnum {
-                key: node.key(),
+                key: declaration.key(),
                 qualified_name,
-                ordered: preimage.is_ordered(),
+                ordered: declaration.declaration().is_ordered(),
                 cases,
             },
         );
