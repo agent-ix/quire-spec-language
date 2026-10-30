@@ -226,10 +226,7 @@ pub fn source(name: &str, model: &NativeModel, body: &str) -> Source {
         ("P", R::Protocol),
     ] {
         let selection = profile.selection();
-        text.push_str(&format!(
-            "profile {alias} = \"{}\";\n",
-            selection.identity
-        ));
+        text.push_str(&format!("profile {alias} = \"{}\";\n", selection.identity));
     }
     text.push_str(&format!(
         "model M = \"{}\";\n{body}",

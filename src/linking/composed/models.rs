@@ -511,13 +511,7 @@ impl<'a> ModelBindings<'a> {
             let unit = UnitId(unit);
             for (import, selection) in syntax.models().iter().enumerate() {
                 work.charge(Dimension::Bindings, 1)?;
-                text(
-                    work,
-                    &[
-                        &selection.alias.value,
-                        &selection.package.value,
-                    ],
-                )?;
+                text(work, &[&selection.alias.value, &selection.package.value])?;
                 let selected = self.select(&selection.package.value, work)?;
                 let selected_input = selected.as_ref().ok().copied();
                 self.aliases
@@ -559,7 +553,9 @@ impl<'a> ModelBindings<'a> {
         for (index, input) in self.inputs.iter().enumerate() {
             work.charge(Dimension::References, 1)?;
             let named = match *input {
-                ModelInput::Native(model) => model.environment().owner().package().as_str() == package,
+                ModelInput::Native(model) => {
+                    model.environment().owner().package().as_str() == package
+                }
                 ModelInput::Domain(domain) => domain.selection().identity == package,
             };
             if named {

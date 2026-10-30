@@ -4,7 +4,6 @@
 //! `check`; no caller states a checked fact, and the work assertions read the
 //! meter the model admission carried into the conformance stage.
 
-
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
 use qsl_semantics::check::{
@@ -226,7 +225,11 @@ fn run(document: &[u8], body: &str, extra: Option<u64>) -> Run {
     run_unit(&unit, &packages, extra)
 }
 
-fn run_unit(unit: &str, packages: &qsl_semantics::model::intake::PackageInput, extra: Option<u64>) -> Run {
+fn run_unit(
+    unit: &str,
+    packages: &qsl_semantics::model::intake::PackageInput,
+    extra: Option<u64>,
+) -> Run {
     let n = admit_n(unit, packages);
     let limits = ModelNormalizationLimits {
         work_units: extra.map_or(u64::MAX, |extra| n + extra),
@@ -666,12 +669,8 @@ pub(super) fn cross_selection_refinement_decoy(row: usize) {
     };
     for reverse in [false, true] {
         let mut selections = [
-            format!(
-                "model Original = {PACKAGE:?};"
-            ),
-            format!(
-                "model Decoy = \"example/other\";"
-            ),
+            format!("model Original = {PACKAGE:?};"),
+            String::from("model Decoy = \"example/other\";"),
         ];
         if reverse {
             selections.reverse();
@@ -1279,12 +1278,8 @@ fn two_model_unit(reverse: bool) -> (String, qsl_semantics::model::intake::Packa
         .into_bytes();
     let input = package_input([bytes.as_slice(), second.as_slice()]).unwrap();
     let mut declarations = [
-        format!(
-            "model Z = {PACKAGE:?};"
-        ),
-        format!(
-            "model A = \"example/other\";"
-        ),
+        format!("model Z = {PACKAGE:?};"),
+        String::from("model A = \"example/other\";"),
     ];
     if reverse {
         declarations.reverse();

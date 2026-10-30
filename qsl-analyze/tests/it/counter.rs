@@ -172,7 +172,6 @@ fn document_with(parameter_type: Option<String>) -> Vec<u8> {
     .into_bytes()
 }
 
-
 /// The native unit selecting `document` as `M`, with `body` after the
 /// header.
 pub(crate) fn unit_text(body: &str) -> String {
@@ -335,7 +334,11 @@ impl Documents {
                 "objects": objects}],
         });
         let bytes = document.to_string().into_bytes();
-        self.snapshots.insert(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes);
+        self.snapshots.insert(
+            qsl_semantics::model::observation::document_reference(&bytes)
+                .expect("a document names itself"),
+            bytes,
+        );
         DocumentRef {
             authority: "test".to_owned(),
             identity: name.to_owned(),
@@ -345,7 +348,9 @@ impl Documents {
     }
 
     /// The bytes of each provisioned snapshot, by digest.
-    pub(crate) fn snapshot_bytes(&self) -> impl Iterator<Item = (&qsl_semantics::model::observation::DocumentRef, &Vec<u8>)> {
+    pub(crate) fn snapshot_bytes(
+        &self,
+    ) -> impl Iterator<Item = (&qsl_semantics::model::observation::DocumentRef, &Vec<u8>)> {
         self.snapshots.iter()
     }
 }

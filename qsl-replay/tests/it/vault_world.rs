@@ -336,7 +336,11 @@ fn snapshot(
         "populations": populations,
     });
     let bytes = body.to_string().into_bytes();
-    snapshots.insert(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes);
+    snapshots.insert(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    );
     DocumentRef {
         authority: "test".to_owned(),
         identity: name.to_owned(),
@@ -360,8 +364,7 @@ fn unit_text(other: Option<&[u8]>, build: &Build<'_>, body: &str) -> String {
          model V = \"{PACKAGE}\";\n\
          {second}function Noop using v(): Boolean pure {{ true }}\n\
          post Step using v on V::Vault::step {{ {} }}\n{}\n{body}",
-        build.post,
-        build.extra,
+        build.post, build.extra,
     )
 }
 

@@ -24,7 +24,6 @@ fn document() -> &'static [u8] {
     config_version_unit::DOMAIN_PACKAGE.as_bytes()
 }
 
-
 /// A unit selecting the ConfigVersion model, then `declarations`.
 fn unit(profile: &str, declarations: &str) -> String {
     format!(
@@ -94,7 +93,7 @@ fn evidence(wire: &Value) -> CheckedPackageEvidence {
         evidence.support_feature(feature.as_str().unwrap());
     }
     evidence
-        .insert_domain_package_document(package_identity(&document()), document().to_vec())
+        .insert_domain_package_document(package_identity(document()), document().to_vec())
         .expect("a fresh evidence key");
     evidence
 }
@@ -530,7 +529,6 @@ fn alias_identity(alias: &str) -> &'static str {
     }
 }
 
-
 /// A unit over the models `aliases` under `profile`, then `declarations`.
 fn world_unit(profile: &str, aliases: &[&str], declarations: &str) -> (String, Vec<Vec<u8>>) {
     let mut text = format!(
@@ -542,9 +540,7 @@ fn world_unit(profile: &str, aliases: &[&str], declarations: &str) -> (String, V
     for alias in aliases {
         let identity = alias_identity(alias);
         let document = vault(identity);
-        text.push_str(&format!(
-            "model {alias} = \"{identity}\";\n"
-        ));
+        text.push_str(&format!("model {alias} = \"{identity}\";\n"));
         documents.push(document);
     }
     text.push_str(declarations);

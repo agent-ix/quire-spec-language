@@ -251,7 +251,7 @@ fn read_back(document: &[u8]) -> Result<Vec<CheckedTimedModel>, String> {
         evidence.support_feature(feature.as_str().unwrap());
     }
     evidence
-        .insert_domain_package_document(package_identity(&document), document.to_vec())
+        .insert_domain_package_document(package_identity(document), document.to_vec())
         .expect("a fresh evidence key");
     let read = read_checked_package_v2(
         emission.package.bytes(),
@@ -499,7 +499,7 @@ fn read_back_with(document: &[u8], body: &str) -> Result<Vec<CheckedTimedModel>,
         evidence.support_feature(feature.as_str().unwrap());
     }
     evidence
-        .insert_domain_package_document(package_identity(&document), document.to_vec())
+        .insert_domain_package_document(package_identity(document), document.to_vec())
         .expect("a fresh evidence key");
     let read = read_checked_package_v2(
         emission.package.bytes(),
@@ -776,9 +776,7 @@ fn an_urgency_reading_element_presences_is_not_emitted() {
     fields.push(q);
     let document = serde_json::to_vec(&document).expect("JSON");
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
-    let unit = clocked_unit(
-        "urgent All when { forall(e in self.q : present(e)) };\n",
-    );
+    let unit = clocked_unit("urgent All when { forall(e in self.q : present(e)) };\n");
     let refusals = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
         .check(CheckingLimits::default())

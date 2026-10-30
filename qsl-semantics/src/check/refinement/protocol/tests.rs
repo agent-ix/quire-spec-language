@@ -160,9 +160,7 @@ fn header(protocol_profile: bool) -> String {
         ""
     };
     HEADER.replacen("model M", &format!("{profile}model M"), 1)
-        + &format!(
-            "model A = \"{ABSTRACT}\";\n"
-        )
+        + &format!("model A = \"{ABSTRACT}\";\n")
 }
 
 /// A refusal with the text of the unit it is located at.

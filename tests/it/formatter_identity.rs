@@ -1595,10 +1595,7 @@ fn replay_composite_and_model_units_keep_format_identity() {
     );
     let source = fixture_text(
         function_literal(fixture, "model_fixture", "language "),
-        &[
-            ("MODEL_PROFILE", &model_profile),
-            ("body", &body),
-        ],
+        &[("MODEL_PROFILE", &model_profile), ("body", &body)],
     );
     emitted(
         SourceIdentity::new("agent-ix", "test:replay", "git", "r1"),
@@ -2009,9 +2006,7 @@ fn package_dependent_library_keeps_format_identity() {
             "an_imported_name_whose_signature_is_package_dependent_refuses",
             "model M =",
         ),
-        &[
-            ("F", &source_literal(fixture, "F")),
-        ],
+        &[("F", &source_literal(fixture, "F"))],
     );
     let source = format!("{}{body}", source_literal(fixture, "HEADER"));
     emitted(
@@ -2139,7 +2134,10 @@ fn generated_config_version_unit_keeps_checked_identity() {
         crate::support::config_version_spine::spine::unit_identity(),
         "config-version.native",
         source.as_bytes(),
-        &qsl_semantics::model::intake::package_input([crate::support::config_version_spine::spine::DOMAIN_PACKAGE.as_bytes()]).unwrap(),
+        &qsl_semantics::model::intake::package_input([
+            crate::support::config_version_spine::spine::DOMAIN_PACKAGE.as_bytes(),
+        ])
+        .unwrap(),
         &DependencyInput::default(),
     )
     .expect("ConfigVersion fixture checks before and after formatting");

@@ -2995,9 +2995,7 @@ fn other_document() -> Vec<u8> {
 /// The `model Other` selection of [`other_document`]: a second model of
 /// the package.
 fn other_model() -> String {
-    format!(
-        "model Other = {OTHER:?};"
-    )
+    format!("model Other = {OTHER:?};")
 }
 
 /// FR-185-AC-5 (TC-620 step 5): a second `workload Steady on Service`, and a

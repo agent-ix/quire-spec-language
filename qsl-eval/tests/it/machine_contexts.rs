@@ -1283,9 +1283,7 @@ fn self_and_the_selection_must_agree_with_the_receiver() {
     );
 
     // Selections the clause does not take.
-    let p1 = lifecycle_document_ref(
-        "p1",
-    );
+    let p1 = lifecycle_document_ref("p1");
     let wrong = |outcome| {
         assert_refusal(
             &refused(outcome),

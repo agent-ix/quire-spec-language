@@ -38,20 +38,18 @@ fn source_identity() -> SourceIdentity {
 
 /// TC-1252's unit `UC`.
 fn uc() -> String {
-    format!(
-        "language \"ix:native\" edition \"1-draft\";\n\
+    String::from("language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
          profile t = \"quire.temporal.infinite-trace/v1\";\n\
          profile p = \"quire.protocol.finite-global/v1\";\n\
          model Config = \"example/config-version\";\n\
-         temporal ReachesTwo using t over (c: Config::ConfigVersion) clock \"model-steps\" on origin {{ always eventually holds(c.versionNumber = 2) }}\n\
-         protocol Flow using v over (input: Config::ConfigVersion) on origin {{\n\
+         temporal ReachesTwo using t over (c: Config::ConfigVersion) clock \"model-steps\" on origin { always eventually holds(c.versionNumber = 2) }\n\
+         protocol Flow using v over (input: Config::ConfigVersion) on origin {\n\
          role R on Config::ConfigVersion;\n\
-         run sequence Main {{ }}\n\
-         finish End as (outcome: Boolean) {{ true }};\n\
-         }}\n\
-         function inc using v(x: Int[0, 9]): Integer pure {{ x + 1 }}\n"
-    )
+         run sequence Main { }\n\
+         finish End as (outcome: Boolean) { true };\n\
+         }\n\
+         function inc using v(x: Int[0, 9]): Integer pure { x + 1 }\n")
 }
 
 fn inc() -> QualifiedName {
@@ -157,13 +155,11 @@ fn a_unit_whose_lock_selects_profiles_replays_with_an_empty_selection_list() {
         supplied_limits: None,
         object_environment: None,
         declared_domains: Vec::new(),
-        byte_provision: vec![
-            (
-                Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-                source_digest.hex(),
-                source.as_bytes().to_vec(),
-            ),
-        ],
+        byte_provision: vec![(
+            Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
+            source_digest.hex(),
+            source.as_bytes().to_vec(),
+        )],
         documents: vec![document.to_vec()],
     };
     assert!(

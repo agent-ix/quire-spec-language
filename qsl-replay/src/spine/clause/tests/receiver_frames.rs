@@ -22,7 +22,9 @@ fn population() -> String {
 
 /// The unit selecting the fixture's package for `operations`, and its
 /// package input.
-pub(super) fn unit_and_packages(operations: &[&str]) -> (String, qsl_semantics::model::intake::PackageInput) {
+pub(super) fn unit_and_packages(
+    operations: &[&str],
+) -> (String, qsl_semantics::model::intake::PackageInput) {
     let document = serde_json::to_vec(&fixture::document(operations, &[])).expect("fixture");
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let unit = format!(
@@ -94,11 +96,7 @@ fn run_selected(
 ) -> super::super::ClauseRunReport {
     let (unit, packages) = unit_and_packages(operations);
     let (pre, pre_bytes) = document_ref_and_bytes("counters-pre", |label| {
-        snapshot(
-            label,
-            "pre",
-            &[counter("c1", 0), counter("c2", 0)],
-        )
+        snapshot(label, "pre", &[counter("c1", 0), counter("c2", 0)])
     });
     let (post, post_bytes) = document_ref_and_bytes("counters-post", |label| {
         snapshot(label, "post", post_objects)

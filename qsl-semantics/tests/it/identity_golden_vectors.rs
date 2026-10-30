@@ -24,9 +24,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 use qsl_semantics::model::intake::{admit, package_input};
-use qsl_semantics::model::key::{
-    EffectiveDeclarationPreimage, EffectiveId, Fact, RULE_QUALIFY,
-};
+use qsl_semantics::model::key::{EffectiveDeclarationPreimage, EffectiveId, Fact, RULE_QUALIFY};
 use qsl_semantics::model::normalize::{ModelRefusal, ModelRefusalCause};
 use qsl_semantics::value::enumeration::{EnumDeclarationPreimage, EnumMemberPreimage};
 use qsl_semantics::value::{
@@ -41,8 +39,6 @@ const EFFECTIVE_TYPE: &str = r#"{"derivation":[{"inputs":[{"digest_domain":"sha2
 
 const EFFECTIVE_MEMBER_TEMPLATE: &str = r#"{"derivation":[{"inputs":[{"digest_domain":"sha256-jcs","node":"ix://test/orders/A/x","package":"test/orders"}],"ordinal":"0","parent":null,"rule":{"identity":"quire.model.normalize.qualify/v1"}}],"original":{"digest_domain":"sha256-jcs","node":"ix://test/orders/A/x","package":"test/orders"},"owner_effective_type":{"digest":"@TYPE@","domain":"quire.model.effective-declaration/v2"},"version":"quire.model.effective-declaration/v2"}"#;
 
-
-
 const ENUM_DECLARATION: &str = r#"{"members":["Active","Closed"],"ordered":false,"owner":{"authority":"agent-ix","identity":"example-model","kind":"definition"},"qualified_declaration":["Example","Status"],"version":"quire.enum-declaration-node/v1"}"#;
 
 const ENUM_MEMBER_TEMPLATE: &str = r#"{"case":"Active","declaration_node_id":{"digest":"@DECL@","domain":"quire.checked-semantic-node/v1"},"version":"quire.enum-member-node/v1"}"#;
@@ -52,7 +48,6 @@ const DIMENSION: &str = r#"{"owner":{"authority":"agent-ix","identity":"example-
 const UNIT_TEMPLATE: &str = r#"{"dimension_node_id":{"digest":"@DIM@","domain":"quire.checked-semantic-node/v1"},"offset":{"denominator":"1","numerator":"0"},"owner":{"authority":"agent-ix","identity":"example-model","kind":"definition"},"qualified_declaration":["Example","Metre"],"scale":{"denominator":"1","numerator":"1"},"target_unit_node_id":null,"version":"quire.unit-node/v1"}"#;
 
 const COMPOUND_UNIT_TEMPLATE: &str = r#"{"terms":[{"exponent":"2","unit_node_id":{"digest":"@UNIT@","domain":"quire.checked-semantic-node/v1"}}],"version":"quire.value.compound-unit/v1"}"#;
-
 
 fn sha256_hex(bytes: &[u8]) -> String {
     Sha256::digest(bytes)
@@ -73,9 +68,6 @@ fn effective_type_digest() -> String {
 fn effective_member() -> String {
     EFFECTIVE_MEMBER_TEMPLATE.replace("@TYPE@", &effective_type_digest())
 }
-
-
-
 
 fn enum_member() -> String {
     ENUM_MEMBER_TEMPLATE.replace("@DECL@", &digest_of(ENUM_DECLARATION))
@@ -123,7 +115,6 @@ fn key(node: &str) -> DeclarationKey {
         node: node.to_owned(),
     }
 }
-
 
 fn qualified(node: &str, owner: Option<EffectiveId>) -> EffectiveDeclarationPreimage {
     EffectiveDeclarationPreimage {

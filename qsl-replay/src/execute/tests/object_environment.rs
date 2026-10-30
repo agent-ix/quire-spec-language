@@ -348,16 +348,12 @@ fn environment(
     if provided {
         wire.documents.push(document.bytes.clone());
     }
-    wire.object_environment = Some(
-        ObjectEnvironmentRef::new(
-            EnvironmentLabels {
-                authority: "agent-ix".to_owned(),
-                identity: "ix://test/graph/environment".to_owned(),
-                revision_namespace: "git".to_owned(),
-                revision: "1".to_owned(),
-            },
-        ),
-    );
+    wire.object_environment = Some(ObjectEnvironmentRef::new(EnvironmentLabels {
+        authority: "agent-ix".to_owned(),
+        identity: "ix://test/graph/environment".to_owned(),
+        revision_namespace: "git".to_owned(),
+        revision: "1".to_owned(),
+    }));
     wire
 }
 
@@ -1130,16 +1126,12 @@ fn the_member_labels_are_not_compared_with_the_documents_identity() {
     let s1 = graph.s1();
     let mut wire = graph.input("fa", graph.node("a"));
     wire.documents.push(s1.bytes.clone());
-    wire.object_environment = Some(
-        ObjectEnvironmentRef::new(
-            EnvironmentLabels {
-                authority: "elsewhere".to_owned(),
-                identity: "ix://elsewhere/other".to_owned(),
-                revision_namespace: "svn".to_owned(),
-                revision: "9".to_owned(),
-            },
-        ),
-    );
+    wire.object_environment = Some(ObjectEnvironmentRef::new(EnvironmentLabels {
+        authority: "elsewhere".to_owned(),
+        identity: "ix://elsewhere/other".to_owned(),
+        revision_namespace: "svn".to_owned(),
+        revision: "9".to_owned(),
+    }));
     assert_completes_false(run(wire), false);
 }
 

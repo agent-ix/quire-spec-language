@@ -252,7 +252,10 @@ pub(crate) fn simulation_package_over(
     body: &str,
     guard: bool,
     wobble: bool,
-) -> (qsl_package::CheckedPackage, qsl_semantics::model::intake::PackageInput) {
+) -> (
+    qsl_package::CheckedPackage,
+    qsl_semantics::model::intake::PackageInput,
+) {
     let (declarations, _, _) = declarations_over(body, guard, wobble);
     let graph = declarations
         .check(CheckingLimits::default())
@@ -710,7 +713,11 @@ fn observations(graph: &CheckedGraph, view: &EffectiveView) -> AdmittedObservati
         revision_namespace: "fixture".to_owned(),
         revision: "1".to_owned(),
     };
-    let snapshots = BTreeMap::from([(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes)]);
+    let snapshots = BTreeMap::from([(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    )]);
     let invocations = BTreeMap::new();
     let model_bytes = model_document();
     let packages = qsl_semantics::model::intake::package_input([model_bytes.as_slice()]).unwrap();

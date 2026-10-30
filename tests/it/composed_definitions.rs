@@ -47,10 +47,7 @@ fn rules() -> Vec<RuleInput<'static>> {
 
 fn profile(alias: &str, definition: R) -> String {
     let selected = definition.selection();
-    format!(
-        "profile {alias} = \"{}\";\n",
-        selected.identity
-    )
+    format!("profile {alias} = \"{}\";\n", selected.identity)
 }
 
 fn source(name: &str, body: &str) -> Source {
@@ -480,10 +477,7 @@ fn zero_and_exact_limits_keep_immutable_partial_reports_and_fresh_retries() {
     let bytes = selected.edition.identity.len()
         + definitions
             .iter()
-            .map(|artifact| {
-                artifact.selection.identity.len()
-                    + artifact.bytes.len()
-            })
+            .map(|artifact| artifact.selection.identity.len() + artifact.bytes.len())
             .sum::<usize>()
         + rules
             .iter()

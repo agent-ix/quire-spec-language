@@ -196,17 +196,11 @@ impl Fixture {
             .collect();
         let mut text = "language \"ix:native\" edition \"1-draft\";\n".to_owned();
         for (alias, selected) in [("P", R::Protocol), ("S", R::StateCore)] {
-            text.push_str(&format!(
-                "profile {alias} = \"{}\";\n",
-                selected.identity()
-            ));
+            text.push_str(&format!("profile {alias} = \"{}\";\n", selected.identity()));
         }
         if !additional.is_empty() {
             for (alias, selected) in [("Q", R::StateQueries), ("T", R::EventPosition)] {
-                text.push_str(&format!(
-                    "profile {alias} = \"{}\";\n",
-                    selected.identity()
-                ));
+                text.push_str(&format!("profile {alias} = \"{}\";\n", selected.identity()));
             }
         }
         text.push_str(&format!(

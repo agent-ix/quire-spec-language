@@ -25,7 +25,8 @@ fn ratio(numerator: i64, denominator: i64) -> Rational {
 
 fn checked_clause(formula: &str) -> (CheckedPackage, usize) {
     let domain = Domain::config_version();
-    let packages = qsl_semantics::model::intake::package_input([domain.document.as_slice()]).unwrap();
+    let packages =
+        qsl_semantics::model::intake::package_input([domain.document.as_slice()]).unwrap();
     let source = SourceIdentity::new("agent-ix", "monitor-plan", "git", "1");
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\

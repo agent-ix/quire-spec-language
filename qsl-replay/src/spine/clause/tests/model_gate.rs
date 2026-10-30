@@ -61,7 +61,10 @@ fn size_operation() -> serde_json::Value {
 
 /// The header of a unit selecting `profiles` (alias, identity) and the
 /// `Config` model, with the packages that supply it.
-fn header(profiles: &[(&str, &str)], imports: &str) -> (String, qsl_semantics::model::intake::PackageInput) {
+fn header(
+    profiles: &[(&str, &str)],
+    imports: &str,
+) -> (String, qsl_semantics::model::intake::PackageInput) {
     let document = config_version_domain_document_with_operations(vec![
         size_operation(),
         config_version_probe_operation(),

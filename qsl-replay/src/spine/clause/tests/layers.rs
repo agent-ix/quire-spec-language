@@ -24,7 +24,10 @@ const PREDICATE: &str = "predicate Id using v(b: Boolean): Boolean { b }\n";
 
 /// A unit selecting the `test/nodes` model as `M` and `profiles` (alias,
 /// identity), holding `declarations`.
-fn unit(profiles: &[(&str, &str)], declarations: &str) -> (String, qsl_semantics::model::intake::PackageInput) {
+fn unit(
+    profiles: &[(&str, &str)],
+    declarations: &str,
+) -> (String, qsl_semantics::model::intake::PackageInput) {
     let document = domain_document();
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let headers: String = profiles

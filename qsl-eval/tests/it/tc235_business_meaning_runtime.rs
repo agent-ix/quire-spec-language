@@ -151,7 +151,8 @@ pub(crate) fn read_k2(
     let selection = DomainPackageRef {
         identity: crate::tc235_k2::PACKAGE.to_owned(),
     };
-    let (selection, admitted) = qsl_semantics::model::intake::admit(selection.identity.as_str(),
+    let (selection, admitted) = qsl_semantics::model::intake::admit(
+        selection.identity.as_str(),
         &offered,
         IntakeLimits::default(),
     )
@@ -162,7 +163,11 @@ pub(crate) fn read_k2(
     )
 }
 
-type LifecycleFixture = (CheckedPackage, EffectiveView, qsl_semantics::model::intake::PackageInput);
+type LifecycleFixture = (
+    CheckedPackage,
+    EffectiveView,
+    qsl_semantics::model::intake::PackageInput,
+);
 
 fn lifecycle_package(
     document: &serde_json::Value,
@@ -305,10 +310,7 @@ pub(crate) fn lifecycle_observation(
     (lifecycle_document_ref(label), bytes)
 }
 
-fn lifecycle_invocation(
-    pre: &DocumentRef,
-    post: &DocumentRef,
-) -> (DocumentRef, Vec<u8>) {
+fn lifecycle_invocation(pre: &DocumentRef, post: &DocumentRef) -> (DocumentRef, Vec<u8>) {
     lifecycle_invocation_with(pre, post, serde_json::json!({}))
 }
 
@@ -906,8 +908,7 @@ fn tc235_m15_lifecycle_invariant_keeps_receiver_context() {
     let run = |pre: &[(bool, bool)], post: &[(bool, bool)]| {
         let (pre_ref, pre_bytes) = lifecycle_observation("p1", "pre", pre);
         let (post_ref, post_bytes) = lifecycle_observation("q1", "post", post);
-        let (invocation_ref, invocation_bytes) =
-            lifecycle_invocation(&pre_ref, &post_ref);
+        let (invocation_ref, invocation_bytes) = lifecycle_invocation(&pre_ref, &post_ref);
         (
             BTreeMap::from([(pre_ref.clone(), pre_bytes), (post_ref.clone(), post_bytes)]),
             BTreeMap::from([(invocation_ref.clone(), invocation_bytes)]),
@@ -1771,7 +1772,8 @@ fn orders_fixture() -> OrdersFixture {
     .expect("M22 checks");
     let (pre_ref, pre_bytes) = lifecycle_observation("p1", "pre", &[(false, false)]);
     let (post_ref, post_bytes) = lifecycle_observation("q1", "post", &[(true, true)]);
-    let (invocation_ref, invocation_bytes) = lifecycle_invocation_with(&pre_ref,
+    let (invocation_ref, invocation_bytes) = lifecycle_invocation_with(
+        &pre_ref,
         &post_ref,
         serde_json::json!({"flags": {"record": {
             "type": flags_type,
@@ -2032,7 +2034,8 @@ fn items_fixture() -> OrdersFixture {
     };
     let (pre_ref, pre_bytes) = with_items("p1", "pre", &[(false, false)]);
     let (post_ref, post_bytes) = with_items("q1", "post", &[(true, true)]);
-    let (invocation_ref, invocation_bytes) = lifecycle_invocation_with(&pre_ref,
+    let (invocation_ref, invocation_bytes) = lifecycle_invocation_with(
+        &pre_ref,
         &post_ref,
         serde_json::json!({"flags": {"record": {
             "type": flags_type,

@@ -93,10 +93,7 @@ fn record_result(name: &str, report: &EvaluationReport<'_, '_, '_>) {
         context.selection().observation
     );
     for model in context.checked().linked().models() {
-        println!(
-            "case={name} model={:?}",
-            model.environment().owner()
-        );
+        println!("case={name} model={:?}", model.environment().owner());
     }
     for snapshot in &context.input().snapshots {
         println!(

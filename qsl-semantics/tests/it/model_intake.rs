@@ -192,7 +192,8 @@ fn every_corpus_package_admits_by_its_identity() {
             };
             let by_digest =
                 qsl_semantics::model::intake::package_input([bytes.as_slice()]).unwrap();
-            let admitted = admit(offered.identity.as_str(),
+            let admitted = admit(
+                offered.identity.as_str(),
                 &by_digest,
                 qsl_foundation::IntakeLimits::default(),
             );
@@ -240,7 +241,8 @@ fn lifts_the_architecture_bundle_and_admits_it() {
     let offered = DomainPackageRef {
         identity: identity.clone(),
     };
-    let (admitted, admitted_document) = admit(offered.identity.as_str(),
+    let (admitted, admitted_document) = admit(
+        offered.identity.as_str(),
         &bytes_by_digest,
         qsl_foundation::IntakeLimits::default(),
     )
@@ -1061,7 +1063,8 @@ fn a_qspec_conformant_document_admits_reads_and_classifies() {
     let offered = DomainPackageRef {
         identity: package_identity.to_owned(),
     };
-    let (package_ref, admitted_document) = admit(offered.identity.as_str(),
+    let (package_ref, admitted_document) = admit(
+        offered.identity.as_str(),
         &bytes_by_digest,
         qsl_foundation::IntakeLimits::default(),
     )
@@ -1232,7 +1235,8 @@ fn y10_a_systems_kind_comes_from_the_construct_meaning_not_the_kind_name() {
     let offered = DomainPackageRef {
         identity: package_identity.to_owned(),
     };
-    let (package_ref, admitted_document) = admit(offered.identity.as_str(),
+    let (package_ref, admitted_document) = admit(
+        offered.identity.as_str(),
         &bytes_by_digest,
         qsl_foundation::IntakeLimits::default(),
     )
@@ -1597,7 +1601,8 @@ fn admit_refuses_the_reserved_native_pseudo_package_identity() {
     };
     let bytes_by_digest = qsl_semantics::model::intake::PackageInput::new();
 
-    let refusal = admit(offered.identity.as_str(),
+    let refusal = admit(
+        offered.identity.as_str(),
         &bytes_by_digest,
         qsl_foundation::IntakeLimits::default(),
     )
@@ -1740,7 +1745,8 @@ fn a_systems_part_carrying_an_operation_with_a_broken_frame_refuses() {
     let offered = DomainPackageRef {
         identity: package_identity.to_owned(),
     };
-    let (_, admitted_document) = admit(offered.identity.as_str(),
+    let (_, admitted_document) = admit(
+        offered.identity.as_str(),
         &bytes_by_digest,
         qsl_foundation::IntakeLimits::default(),
     )

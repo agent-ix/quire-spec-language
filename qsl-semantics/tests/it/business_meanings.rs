@@ -132,7 +132,8 @@ fn read_authored(document: &Value) -> DomainPackage {
             .expect("package identity")
             .to_owned(),
     };
-    let (selection, admitted) = admit(selection.identity.as_str(),
+    let (selection, admitted) = admit(
+        selection.identity.as_str(),
         &packages,
         IntakeLimits::default(),
     )
@@ -987,7 +988,8 @@ fn authored_refusals(document: &Value) -> Vec<qsl_semantics::model::normalize::M
             .expect("package identity")
             .to_owned(),
     };
-    let (selection, admitted) = admit(selection.identity.as_str(),
+    let (selection, admitted) = admit(
+        selection.identity.as_str(),
         &packages,
         IntakeLimits::default(),
     )

@@ -410,10 +410,7 @@ impl<'a> Catalog<'a> {
         };
         for (index, artifact) in input.definitions.iter().enumerate() {
             work.charge(Dimension::Definitions, 1)?;
-            for bytes in [
-                artifact.selection.identity.as_bytes(),
-                artifact.bytes,
-            ] {
+            for bytes in [artifact.selection.identity.as_bytes(), artifact.bytes] {
                 work.charge(Dimension::Bytes, bytes.len())?;
             }
             catalog

@@ -216,14 +216,10 @@ fn an_invocation_carrying_a_replacement_frame_is_refused_not_obeyed() {
             let pre_ref = DocumentRef {
                 ..config_version_document_ref("bump-pre")
             };
-            let mut document: serde_json::Value =
-                serde_json::from_slice(&config_version_invocation_bytes(
-                    label,
-                    &pre_ref,
-                    &post,
-                    "child",
-                ))
-                .expect("the fixture is JSON");
+            let mut document: serde_json::Value = serde_json::from_slice(
+                &config_version_invocation_bytes(label, &pre_ref, &post, "child"),
+            )
+            .expect("the fixture is JSON");
             document["operation"] = json!("bump");
             document["parameters"] = json!({"expectedVersion": {"integer": "1"}});
             document["result"] = serde_json::Value::Null;

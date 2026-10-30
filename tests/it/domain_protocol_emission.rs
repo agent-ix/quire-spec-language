@@ -266,10 +266,7 @@ fn a_substituted_domain_package_naming_refuses() {
             ] {
                 assert_ne!(mutated, text);
                 let bytes = mutated.into_bytes();
-                refused(
-                    &inputs.read_bytes(proofs, &bytes),
-                    Error::Invalid(expected),
-                );
+                refused(&inputs.read_bytes(proofs, &bytes), Error::Invalid(expected));
             }
         },
     );

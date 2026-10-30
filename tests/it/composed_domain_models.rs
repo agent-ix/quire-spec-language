@@ -273,7 +273,8 @@ fn admit_bytes(bytes: Vec<u8>) -> (AdmittedPackage, Vec<u8>) {
             .expect("package identity")
             .to_owned(),
     };
-    let (selection, document) = admit(offered.identity.as_str(),
+    let (selection, document) = admit(
+        offered.identity.as_str(),
         &BTreeMap::from([(offered.identity.clone(), bytes.clone())]),
         qsl_foundation::IntakeLimits::default(),
     )
@@ -579,7 +580,8 @@ fn substituted_package_or_changed_digest_refuses_only_dependents() {
     );
     let selection = package.selection().clone();
 
-    for (inputs, refusal) in [([ModelInput::Domain(&other)], ImportRefusal::MissingPackage)] {
+    {
+        let (inputs, refusal) = ([ModelInput::Domain(&other)], ImportRefusal::MissingPackage);
         let text = program(&selection.identity);
         with_namespace(&text, |namespace| {
             let bindings = bind_models(namespace, &inputs, &mut work());
@@ -627,8 +629,7 @@ fn two_same_shaped_packages_keep_keys_under_their_selection() {
          model N = \"{}\";\n\
          predicate FromM using S (): Boolean {{ M::Pump::id = M::Pump::id }}\n\
          predicate FromN using S (): Boolean {{ N::Pump::id = N::Pump::id }}\n",
-        a.identity,
-        b.identity
+        a.identity, b.identity
     );
     with_namespace(&text, |namespace| {
         let bindings = bind_models(namespace, &inputs, &mut work());
@@ -683,8 +684,7 @@ fn domain_typed_declarations_type_check() {
          predicate SamePump using S (a: M::Pump, b: M::Pump): Boolean {{ a = b }}\n\
          predicate Mixed using S (pump: M::Pump, tally: M::Count): Boolean {{ pump = tally }}\n\
          predicate Unrelated using S (flag: Boolean): Boolean {{ flag }}\n",
-        profile.identity,
-        selection.identity
+        profile.identity, selection.identity
     );
     let source = Source::read(
         SourceIdentity {
@@ -1039,8 +1039,7 @@ fn domain_operation_parameters_and_result_bind_and_type_check() {
          pre EarlyResult using S on M::Pump::fill {{ result }}\n\
          post Latched using S on M::Pump::latch {{ result }}\n\
          pre Held using S on M::Pump::hold {{ true }}\n",
-        profile.identity,
-        selection.identity
+        profile.identity, selection.identity
     );
     let source = Source::read(
         SourceIdentity {

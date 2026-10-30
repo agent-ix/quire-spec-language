@@ -242,10 +242,7 @@ impl Inputs {
     fn with_models(units: &[Unit<'_>], model: NativeModel, domain: Option<DomainInput>) -> Self {
         let import = domain.as_ref().map_or_else(String::new, |domain| {
             let selection = domain.package.selection();
-            format!(
-                "model D = \"{}\";\n",
-                selection.identity
-            )
+            format!("model D = \"{}\";\n", selection.identity)
         });
         let sources: Vec<_> = units
             .iter()

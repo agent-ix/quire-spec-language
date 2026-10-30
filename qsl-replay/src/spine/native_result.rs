@@ -789,15 +789,9 @@ impl FrameWitnessRead {
         Ok(FrameWitness {
             code: Code::FrameViolation,
             cause: "unauthorized-change",
-            invocation: self
-                .invocation
-                .typed(),
-            pre: self
-                .pre
-                .typed(),
-            post: self
-                .post
-                .typed(),
+            invocation: self.invocation.typed(),
+            pre: self.pre.typed(),
+            post: self.post.typed(),
             population: self.population.clone(),
             change: self.change.typed(),
         })

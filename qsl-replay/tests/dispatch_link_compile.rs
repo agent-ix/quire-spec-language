@@ -123,7 +123,10 @@ fn package(operations: Vec<Value>, subtypes: &[(&str, &str, Vec<Value>)]) -> Vec
 
 /// The unit selecting `document` as model `Config`, then `declarations`, and
 /// its package input.
-fn unit(document: &[u8], declarations: &str) -> (String, qsl_semantics::model::intake::PackageInput) {
+fn unit(
+    document: &[u8],
+    declarations: &str,
+) -> (String, qsl_semantics::model::intake::PackageInput) {
     let packages = package_input([document]).unwrap();
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\

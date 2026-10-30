@@ -12,7 +12,6 @@
     reason = "each including test module uses a different part of the fixture"
 )]
 
-
 use qsl_semantics::check::{CheckRefusal, CheckedGraph, PackageDeclarations};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};

@@ -52,10 +52,7 @@ pub(crate) fn model() -> NativeModel {
 }
 
 pub(crate) fn source_prefix() -> String {
-    format!(
-        "{}model M = \"example/package-model\";\n",
-        super::HEADER
-    )
+    format!("{}model M = \"example/package-model\";\n", super::HEADER)
 }
 
 pub(crate) fn source() -> String {

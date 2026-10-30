@@ -17,9 +17,9 @@ use quire_semantic_value::declaration::TypeEnvironment;
 use quire_semantic_value::relationship_extent::RelationshipExtent;
 
 use crate::model::accounting::ModelNormalizationLimits;
-use crate::model::intake::PackageInput;
 use crate::model::domain_package::{DomainPackageRecord, DomainPackageRef};
 use crate::model::index::ModelIndex;
+use crate::model::intake::PackageInput;
 use crate::model::normalize::EffectiveView;
 use crate::model::observation::{
     admit_initial_state, model_views, observe_state, state_fields, state_reference,

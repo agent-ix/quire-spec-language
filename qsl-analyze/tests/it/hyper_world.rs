@@ -284,12 +284,7 @@ fn document(busy: bool, reset: bool) -> Vec<u8> {
 
 /// The unit text: the header selecting the domain package as `V`, the `step`
 /// contract of `vault`, and `body`.
-fn unit_text(
-    other: Option<&[u8]>,
-    vault: Vault,
-    reset: bool,
-    body: &str,
-) -> String {
+fn unit_text(other: Option<&[u8]>, vault: Vault, reset: bool, body: &str) -> String {
     let second = if other.is_some() {
         format!("model {OTHER_ALIAS} = \"{OTHER}\";\n")
     } else {
@@ -391,7 +386,11 @@ fn snapshot(
         "populations": populations,
     });
     let bytes = body.to_string().into_bytes();
-    snapshots.insert(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes);
+    snapshots.insert(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    );
     DocumentRef {
         authority: "test".to_owned(),
         identity: name.to_owned(),

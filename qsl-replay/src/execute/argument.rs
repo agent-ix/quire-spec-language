@@ -262,7 +262,8 @@ impl<'a> ReferenceModel<'a> {
     /// A call that selects no model: no reference type can be declared.
     #[cfg(test)]
     pub(super) fn unselected() -> Self {
-        const NONE: &qsl_semantics::model::intake::PackageInput = &std::collections::BTreeMap::new();
+        const NONE: &qsl_semantics::model::intake::PackageInput =
+            &std::collections::BTreeMap::new();
         Self {
             selections: &[],
             packages: NONE,

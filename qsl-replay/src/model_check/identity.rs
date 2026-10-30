@@ -12,7 +12,6 @@
 //! package does not declare, or that the lookup does not find, is
 //! `clause-root-unresolved` ([`ClauseRootRefusal`]).
 
-
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::{

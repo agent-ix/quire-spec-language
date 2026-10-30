@@ -35,7 +35,8 @@ pub(super) struct Unit {
 }
 
 pub(super) fn unit_for(unit: String, domain_document: Vec<u8>) -> Unit {
-    let packages = qsl_semantics::model::intake::package_input([domain_document.as_slice()]).unwrap();
+    let packages =
+        qsl_semantics::model::intake::package_input([domain_document.as_slice()]).unwrap();
     let compiled = compose(
         source(),
         IDENTITY,
@@ -163,11 +164,7 @@ fn invocation(
     post_objects: &[serde_json::Value],
     edit: impl FnOnce(&mut serde_json::Value),
 ) -> Invocation {
-    invocation_over(
-        pre_objects,
-        post_objects,
-        edit,
-    )
+    invocation_over(pre_objects, post_objects, edit)
 }
 
 /// [`invocation`] over the unit's domain package.

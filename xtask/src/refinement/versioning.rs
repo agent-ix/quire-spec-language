@@ -338,7 +338,8 @@ fn load_pair(directory: &Path, repository: &Path) -> Result<Pair, PairDefect> {
         .map(|path| read_in(&roots, path))
         .collect::<Result<Vec<_>, _>>()?;
     let packages =
-        qsl_semantics::model::intake::package_input(package_files.iter().map(Vec::as_slice)).unwrap();
+        qsl_semantics::model::intake::package_input(package_files.iter().map(Vec::as_slice))
+            .unwrap();
     let dependencies = dependencies(&roots, &file.dependencies)?;
     let mut documents = Documents::new(&roots);
     let mut cases = Vec::new();

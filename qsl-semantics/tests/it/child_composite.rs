@@ -637,7 +637,11 @@ fn admit_order_usage(
     .expect("the snapshot serializes");
     let bytes = edit(text).into_bytes();
     let selected = label;
-    let snapshots = BTreeMap::from([(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes)]);
+    let snapshots = BTreeMap::from([(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    )]);
     admit_current_snapshot(
         graph.model_selections(),
         graph.scope().types(),

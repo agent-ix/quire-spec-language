@@ -125,7 +125,10 @@ fn snapshot(
     anchor: serde_json::Value,
     complete: bool,
     objects: Vec<serde_json::Value>,
-) -> (DocumentRef, qsl_semantics::model::observation::DocumentProvision) {
+) -> (
+    DocumentRef,
+    qsl_semantics::model::observation::DocumentProvision,
+) {
     let reference = label("start");
     let mut document = json!({
         "format": "quire.state.snapshot/v1",
@@ -139,10 +142,12 @@ fn snapshot(
     }
     let bytes = document.to_string().into_bytes();
     (
-        DocumentRef {
-            ..reference
-        },
-        BTreeMap::from([(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes)]),
+        DocumentRef { ..reference },
+        BTreeMap::from([(
+            qsl_semantics::model::observation::document_reference(&bytes)
+                .expect("a document names itself"),
+            bytes,
+        )]),
     )
 }
 
@@ -629,10 +634,12 @@ fn a_states_observation_navigates_the_relationships_its_snapshot_listed() {
         });
         let bytes = document.to_string().into_bytes();
         (
-            DocumentRef {
-                ..reference
-            },
-            BTreeMap::from([(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes)]),
+            DocumentRef { ..reference },
+            BTreeMap::from([(
+                qsl_semantics::model::observation::document_reference(&bytes)
+                    .expect("a document names itself"),
+                bytes,
+            )]),
         )
     };
     let (state, _) = fixture

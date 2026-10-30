@@ -33,7 +33,8 @@ fn with_relation(unit: &str) -> String {
 }
 
 fn graph_of(text: &str) -> CheckedGraph {
-    let packages = qsl_semantics::model::intake::package_input([spine::DOMAIN_PACKAGE.as_bytes()]).unwrap();
+    let packages =
+        qsl_semantics::model::intake::package_input([spine::DOMAIN_PACKAGE.as_bytes()]).unwrap();
     let parsed = qsl_cst::parse(
         SourceIdentity::new("agent-ix", "test:abstraction-inert", "fixture", "fixture:1"),
         "program.native",

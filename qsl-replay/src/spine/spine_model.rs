@@ -3,7 +3,8 @@
 //! package [`DOCUMENT`] by the identity the document declares.
 
 /// The domain package document the unit's `model M` selects.
-pub(crate) const DOCUMENT: &[u8] = include_bytes!("../../../tests/fixtures/spine-model.semantic-ir.json");
+pub(crate) const DOCUMENT: &[u8] =
+    include_bytes!("../../../tests/fixtures/spine-model.semantic-ir.json");
 
 /// The spine-model unit.
 pub(crate) fn unit() -> String {

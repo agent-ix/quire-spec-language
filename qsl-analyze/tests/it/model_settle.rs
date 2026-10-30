@@ -37,8 +37,7 @@ use quire_semantic_value::catalog::Category;
 use quire_semantic_value::catalog::InternalFault;
 
 use crate::counter::{
-    document, package, subject, unit_text, universe, Documents, Letters, CONTRACT,
-    UNLIMITED,
+    document, package, subject, unit_text, universe, Documents, Letters, CONTRACT, UNLIMITED,
 };
 
 /// The letters of a replay that reads no atom: the deadlock-freedom item has
@@ -184,7 +183,12 @@ fn selected() -> QualifiedName {
 /// the snapshots in the byte provision.
 pub(crate) fn request<'a>(
     document: &[u8],
-    snapshots: impl Iterator<Item = (&'a qsl_semantics::model::observation::DocumentRef, &'a Vec<u8>)>,
+    snapshots: impl Iterator<
+        Item = (
+            &'a qsl_semantics::model::observation::DocumentRef,
+            &'a Vec<u8>,
+        ),
+    >,
     unit: &[u8],
     package_id: DigestRecord,
 ) -> ReplayRequestWire {
@@ -407,9 +411,9 @@ fn a_counterexample_the_model_does_not_take_refuses_with_no_result() {
     );
     assert_eq!(code, Code::InvalidRuntimeInput);
 
-    let edited = unit_text(
-        &format!("{CONTRACT}function Other using v(): Boolean pure {{ false }}\n"),
-    )
+    let edited = unit_text(&format!(
+        "{CONTRACT}function Other using v(): Boolean pure {{ false }}\n"
+    ))
     .into_bytes();
     let stale = replay_model_trace(
         request(

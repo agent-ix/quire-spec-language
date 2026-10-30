@@ -181,7 +181,10 @@ fn selection(
     clause: &str,
     snapshot: Snapshot,
     self_key: &str,
-) -> (ClauseSelection, qsl_semantics::model::observation::DocumentProvision) {
+) -> (
+    ClauseSelection,
+    qsl_semantics::model::observation::DocumentProvision,
+) {
     let (label, bytes) = snapshot.document();
     let snapshots = BTreeMap::from([(label.clone(), bytes)]);
     (
@@ -817,7 +820,8 @@ fn evaluate(
     work_units: u64,
 ) -> (AdmittedObservations, ClauseEvaluation, Meter) {
     let (selection, snapshots) = selection(clause, snapshot, self_key);
-    let packages = qsl_semantics::model::intake::package_input([unit.domain_document.as_slice()]).unwrap();
+    let packages =
+        qsl_semantics::model::intake::package_input([unit.domain_document.as_slice()]).unwrap();
     let graph = unit.compiled.package.graph();
     let declaration = graph.state_clause(clause).expect("the clause is declared");
     let invocations = BTreeMap::new();

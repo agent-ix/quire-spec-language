@@ -484,7 +484,8 @@ impl Compilation {
 pub fn compile_unit(input: &UnitInput) -> Compilation {
     let cancellation = Cancel::new();
     let packages =
-        qsl_semantics::model::intake::package_input(input.packages.iter().map(Vec::as_slice)).unwrap();
+        qsl_semantics::model::intake::package_input(input.packages.iter().map(Vec::as_slice))
+            .unwrap();
     let parsed = match spine::parse(
         &ParseRequest {
             source: &input.identity,

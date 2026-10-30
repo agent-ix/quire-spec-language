@@ -94,9 +94,7 @@ impl Unit {
     /// The invocation `label` of `Counter::bump` on the counter `a`, between
     /// `pre` and `post`.
     fn invocation(&mut self, label: &str, pre: &DocumentRef, post: &DocumentRef) -> DocumentRef {
-        let reference = |reference: &DocumentRef| {
-            json!({"identity": identity(reference)})
-        };
+        let reference = |reference: &DocumentRef| json!({"identity": identity(reference)});
         let bytes = serde_json::to_vec(&json!({
             "format": "quire.state.invocation/v1",
             "identity": {"authority": "test", "identity": label,

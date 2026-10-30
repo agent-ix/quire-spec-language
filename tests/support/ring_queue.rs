@@ -381,9 +381,7 @@ pub fn check_over(queue: &[u8], body: &str) -> Result<Checked, Vec<Refused>> {
     let mut selections = String::new();
     for (alias, identity, bytes) in [("Q", QUEUE, &queue), ("R", RING, &ring)] {
         let single = package_input([bytes.as_slice()]).unwrap();
-        selections.push_str(&format!(
-            "model {alias} = {identity:?};\n"
-        ));
+        selections.push_str(&format!("model {alias} = {identity:?};\n"));
         packages.extend(single);
     }
     let text = format!(

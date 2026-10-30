@@ -355,7 +355,11 @@ impl World {
                 ],
             });
             let bytes = document.to_string().into_bytes();
-            snapshots.insert(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes);
+            snapshots.insert(
+                qsl_semantics::model::observation::document_reference(&bytes)
+                    .expect("a document names itself"),
+                bytes,
+            );
             initial.push(DocumentRef {
                 authority: "test".to_owned(),
                 identity: name,

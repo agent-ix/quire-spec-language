@@ -64,10 +64,7 @@ pub(crate) fn fixture(
     starts: &[(&'static str, i64)],
 ) -> Fixture {
     let (package, clauses) = package_with_clauses(&document, body, &[("C", fairness, formula)]);
-    let unit = unit_text(
-        &(body.to_owned() + &clause_text("C", fairness, formula)),
-    )
-    .into_bytes();
+    let unit = unit_text(&(body.to_owned() + &clause_text("C", fairness, formula))).into_bytes();
     let mut documents = Documents::new(document);
     let initial = vec![documents.start("s0", starts)];
     Fixture {

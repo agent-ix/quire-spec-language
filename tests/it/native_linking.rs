@@ -472,9 +472,7 @@ fn tc_045_native_link_hard_inventory_syntax_and_depth_limits_cannot_be_raised() 
     );
     for count in [64, 65] {
         let imports: String = (1..count)
-            .map(|index| {
-                format!("model Alias{index} = \"example/rule-tests\";\n")
-            })
+            .map(|index| format!("model Alias{index} = \"example/rule-tests\";\n"))
             .collect();
         let text = document(&model, &(imports + &invariant("true")));
         let result = link_native(read(&text), &models, permissive);

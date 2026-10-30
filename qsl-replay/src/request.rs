@@ -179,7 +179,11 @@ pub struct ByteProvision {
 impl std::fmt::Debug for ByteProvision {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_map()
-            .entries(self.bytes.iter().map(|(digest, bytes)| (digest, bytes.len())))
+            .entries(
+                self.bytes
+                    .iter()
+                    .map(|(digest, bytes)| (digest, bytes.len())),
+            )
             .finish()
     }
 }
@@ -634,8 +638,9 @@ impl ReplayRequestRefusal {
     pub fn code(&self) -> Code {
         match self {
             Self::UnknownSemanticProfile { .. } => Code::UnknownProfile,
-            Self::DigestDomainMismatch(_)
-            | Self::ByteDigestMismatch { .. } => Code::StaleDependency,
+            Self::DigestDomainMismatch(_) | Self::ByteDigestMismatch { .. } => {
+                Code::StaleDependency
+            }
             Self::MalformedDigest(_) | Self::IneligibleByteProvisionDomain(_) => {
                 Code::InvalidDigest
             }
@@ -1297,7 +1302,9 @@ mod tests {
 
         // QC-1: a domain package document enters by what it declares.
         let mut domain_package = wire(1);
-        domain_package.documents.push(br#"{"b": 1, "a": [true]}"#.to_vec());
+        domain_package
+            .documents
+            .push(br#"{"b": 1, "a": [true]}"#.to_vec());
         let admitted =
             ReplayRequest::decode(domain_package, crate::ReplayLimits::default()).unwrap();
         assert_eq!(admitted.byte_provision().documents().count(), 1);

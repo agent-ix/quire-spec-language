@@ -137,10 +137,7 @@ fn canonical(env: &ir::DeclarationEnvironment) -> ir::CanonicalOutput {
 }
 
 fn import(env: &ir::DeclarationEnvironment, alias: &str) -> String {
-    format!(
-        "model {alias} = \"{}\";\n",
-        env.owner().package(),
-    )
+    format!("model {alias} = \"{}\";\n", env.owner().package(),)
 }
 
 fn clause(name: &str, expression: &str) -> String {

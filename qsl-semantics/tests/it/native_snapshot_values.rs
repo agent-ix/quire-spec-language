@@ -459,10 +459,7 @@ impl Replay {
         result: Value,
     ) -> Invoked {
         let (pre, pre_bytes) = (document_ref("pre"), pre.as_bytes().to_vec());
-        let (post, post_bytes) = (
-            document_ref("post"),
-            post.as_bytes().to_vec(),
-        );
+        let (post, post_bytes) = (document_ref("post"), post.as_bytes().to_vec());
         let call = DocumentRef {
             authority: "test".to_owned(),
             identity: "call".to_owned(),

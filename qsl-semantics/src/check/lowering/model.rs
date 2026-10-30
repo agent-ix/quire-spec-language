@@ -1799,7 +1799,7 @@ pub fn model_root_key(
     identity: qsl_foundation::IdentityLimits,
 ) -> Result<NodeKey, ModelRootKeyError> {
     let owner = ModelRootOwner::new(selection.identity.clone())
-    .map_err(|_| ModelRootKeyError::EmptyIdentity)?;
+        .map_err(|_| ModelRootKeyError::EmptyIdentity)?;
     let content = NodeContent {
         owner_model: None,
         node_tag: NodeTag::Model,

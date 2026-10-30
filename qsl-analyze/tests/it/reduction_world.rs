@@ -319,7 +319,11 @@ impl World {
                 "objects": objects}],
         });
         let bytes = document.to_string().into_bytes();
-        self.snapshots.insert(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes);
+        self.snapshots.insert(
+            qsl_semantics::model::observation::document_reference(&bytes)
+                .expect("a document names itself"),
+            bytes,
+        );
         DocumentRef {
             authority: "test".to_owned(),
             identity: name.to_owned(),
@@ -530,7 +534,7 @@ pub(crate) fn replay_unit_result(
         unit.text.to_vec(),
     )];
     let mut documents = vec![unit.document.to_vec()];
-    for (_, bytes) in unit.snapshots {
+    for bytes in unit.snapshots.values() {
         documents.push(bytes.clone());
     }
     let wire = ReplayRequestWire {

@@ -24,7 +24,6 @@ fn document() -> &'static [u8] {
     config_version_unit::DOMAIN_PACKAGE.as_bytes()
 }
 
-
 /// A unit selecting the ConfigVersion model and the temporal profile
 /// `profile` as `t`, then `declarations`.
 fn unit(profile: &str, declarations: &str) -> String {
@@ -91,7 +90,7 @@ fn evidence(wire: &Value) -> CheckedPackageEvidence {
         evidence.support_feature(feature.as_str().unwrap());
     }
     evidence
-        .insert_domain_package_document(package_identity(&document()), document().to_vec())
+        .insert_domain_package_document(package_identity(document()), document().to_vec())
         .expect("a fresh evidence key");
     evidence
 }

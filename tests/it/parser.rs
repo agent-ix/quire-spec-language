@@ -383,7 +383,8 @@ fn every_import_and_name_reference_keeps_its_exact_token_locus() {
     };
     let import = &u.imports()[0];
     check(&import.alias);
-    for literal in [&import.package] {
+    {
+        let literal = &import.package;
         let raw = u.source().slice(literal.span).unwrap();
         assert_eq!(serde_json::from_str::<String>(raw).unwrap(), literal.value);
         assert!(raw.starts_with('"') && raw.ends_with('"'));

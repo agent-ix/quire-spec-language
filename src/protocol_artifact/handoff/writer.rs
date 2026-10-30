@@ -49,7 +49,7 @@ use crate::{
         native, v2, wire as w,
     },
 };
-use qsl_foundation::{ByteDigest, Source, SourceIdentity};
+use qsl_foundation::{Source, SourceIdentity};
 use quire_contract_model as ir;
 
 const AUTHORITY: &str = "ix://agent-ix/quire-spec-language";
@@ -629,16 +629,11 @@ fn source(model: &NativeModel, recipe: &UnitRecipe) -> Result<Source, Error> {
     let mut text = "language \"ix:native\" edition \"1-draft\";\n".to_owned();
     for (alias, definition) in recipe.profiles {
         let selected = definition.selection();
-        text.push_str(&format!(
-            "profile {alias} = \"{}\";\n",
-            selected.identity
-        ));
+        text.push_str(&format!("profile {alias} = \"{}\";\n", selected.identity));
     }
     text.push_str(&format!(
         "model M = \"{}\";\n",
-        model.environment().owner().package().as_str(),
-        model.environment().owner().revision().get(),
-        model.digest()
+        model.environment().owner().package().as_str()
     ));
     text.push_str(recipe.body);
     Ok(Source::read(

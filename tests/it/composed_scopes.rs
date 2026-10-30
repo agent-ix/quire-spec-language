@@ -18,7 +18,8 @@ use quire_spec_language::linking::composed::{
 };
 use quire_spec_language::Limits;
 
-const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\nprofile S = \"test:unresolved-definition\";\n";
+const HEADER: &str =
+    "language \"ix:native\" edition \"1-draft\";\nprofile S = \"test:unresolved-definition\";\n";
 fn program(body: &str) -> String {
     format!("{HEADER}{body}")
 }

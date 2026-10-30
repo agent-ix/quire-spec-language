@@ -78,7 +78,6 @@ impl Domain {
             node: self.ident(suffix),
         }
     }
-
 }
 
 /// The unit text of a model header over `domain`, aliased `alias`, and
@@ -195,7 +194,11 @@ impl World {
                 "complete": true, "objects": objects}],
         });
         let bytes = document.to_string().into_bytes();
-        self.snapshots.insert(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes);
+        self.snapshots.insert(
+            qsl_semantics::model::observation::document_reference(&bytes)
+                .expect("a document names itself"),
+            bytes,
+        );
         DocumentRef {
             authority: "test".to_owned(),
             identity: name.to_owned(),

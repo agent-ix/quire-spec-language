@@ -20,9 +20,7 @@ use qsl_semantics::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, EnumRecord, ValueTypeRef, VariantRecord,
 };
 use qsl_semantics::model::intake::{admit, meaning, package_input, read_domain_package};
-use qsl_semantics::model::key::{
-    hex, EffectiveDeclarationPreimage, RULE_QUALIFY,
-};
+use qsl_semantics::model::key::{hex, EffectiveDeclarationPreimage, RULE_QUALIFY};
 use qsl_semantics::model::normalize::{
     normalize_with_meter, EffectiveView, ModelRefusal, ModelRefusalCause, NormalizeOutcome,
 };
@@ -163,7 +161,8 @@ fn read(document: &Value) -> Result<DomainPackage, Vec<ModelRefusal>> {
     let selection = DomainPackageRef {
         identity: document["package"]["identity"].as_str().unwrap().to_owned(),
     };
-    let (selection, admitted) = admit(selection.identity.as_str(),
+    let (selection, admitted) = admit(
+        selection.identity.as_str(),
         &packages,
         IntakeLimits::default(),
     )

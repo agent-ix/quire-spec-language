@@ -227,7 +227,6 @@ pub(crate) struct World {
     pub(crate) initial: Vec<DocumentRef>,
 }
 
-
 impl World {
     /// The world of `model` with `body` after the unit header, and one
     /// initial snapshot per entry of `starts`, each `(key, [(field,
@@ -239,8 +238,7 @@ impl World {
             "language \"ix:native\" edition \"1-draft\";\n\
              profile v = \"quire.value.complete/v1\";\n\
              model {} = \"{}\";\n{body}",
-            model.alias,
-            model.package
+            model.alias, model.package
         );
         let parsed = qsl_cst::parse(
             SourceIdentity::new("agent-ix", "graph", "git", "1"),
@@ -325,7 +323,11 @@ impl World {
                 "complete": true, "objects": objects}],
         });
         let bytes = document.to_string().into_bytes();
-        self.snapshots.insert(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes);
+        self.snapshots.insert(
+            qsl_semantics::model::observation::document_reference(&bytes)
+                .expect("a document names itself"),
+            bytes,
+        );
         DocumentRef {
             authority: "test".to_owned(),
             identity: name.to_owned(),

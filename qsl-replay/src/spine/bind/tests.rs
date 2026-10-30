@@ -503,8 +503,7 @@ fn tc_1053_step_3_mistyped_arguments_equal_runs() {
 #[trace("TC-1053", "FR-367-AC-4")]
 #[test]
 fn tc_1053_step_3_reference_admission_equals_runs() {
-    let fixture = lookup_driver_fixture(
-    );
+    let fixture = lookup_driver_fixture();
     let unit = compile_source(fixture.source.clone(), fixture.packages.clone());
     let (objects, _, present, _) = lookup_driver_context(&fixture);
     let occurrence = the_application(&unit, "mk", ScalarOperator::Add);
@@ -908,7 +907,6 @@ fn tc_1053_step_5_binder_operand_is_not_an_argument() {
 #[test]
 fn tc_1053_step_3_foreign_model_selection_equals_runs() {
     use qsl_semantics::model::intake::package_input;
-    
 
     let base = include_str!("../../../../tests/fixtures/spine-model.semantic-ir.json");
     let first = base.as_bytes().to_vec();
@@ -923,7 +921,10 @@ fn tc_1053_step_3_foreign_model_selection_equals_runs() {
          model N = \"acme/billing\";\n\
          function mk using v(r: M::Gadget, a: Int[0, 9]): Int[1, 10] pure {{ a + 1 }}\n"
     );
-    let unit = compile_source(source, package_input([first.as_slice(), second.as_slice()]).unwrap());
+    let unit = compile_source(
+        source,
+        package_input([first.as_slice(), second.as_slice()]).unwrap(),
+    );
     let occurrence = the_application(&unit, "mk", ScalarOperator::Add);
     let (other, key, identity) = unit
         .models
@@ -1016,7 +1017,7 @@ fn node_unit(
 ) -> (Unit, ObjectEnvironment, quire_exact::ObjectReference) {
     use crate::execute::tests::object_environment::{domain_document, PACKAGE};
     use qsl_semantics::model::intake::package_input;
-    
+
     use quire_semantic_value::object_closure::ObjectClosure;
 
     let document = domain_document();

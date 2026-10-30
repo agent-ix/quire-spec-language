@@ -211,7 +211,6 @@ pub(crate) fn document() -> Vec<u8> {
     .into_bytes()
 }
 
-
 /// The contracts: `IsX`/`IsY`/`IsZ` select a cell, `StoreZero` stores 0,
 /// `StoreOne` stores 1, `StoreTwo` stores 2, `StoreThree` stores 3, `AddOne` adds 1,
 /// `IsXw` and `FlagOne` store 1 to the `w` of `x`, `ReadFlag<n>` loads it,
@@ -454,7 +453,11 @@ impl Documents {
         Self {
             cells: cells.to_vec(),
             packages: package_input([document().as_slice()]).unwrap(),
-            snapshots: BTreeMap::from([(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes)]),
+            snapshots: BTreeMap::from([(
+                qsl_semantics::model::observation::document_reference(&bytes)
+                    .expect("a document names itself"),
+                bytes,
+            )]),
             initial: DocumentRef {
                 authority: "test".to_owned(),
                 identity: "s0".to_owned(),

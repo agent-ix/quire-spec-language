@@ -38,7 +38,8 @@ fn read_k2(document: &Value) -> Result<DomainPackage, Vec<ModelRefusal>> {
     let selection = DomainPackageRef {
         identity: PACKAGE.to_owned(),
     };
-    let (_selection, admitted) = admit(selection.identity.as_str(),
+    let (_selection, admitted) = admit(
+        selection.identity.as_str(),
         &offered,
         IntakeLimits::default(),
     )
@@ -379,7 +380,8 @@ fn admitted_original_keys_survive_normalization() {
     let selection = DomainPackageRef {
         identity: PACKAGE.to_owned(),
     };
-    let (_, admitted) = admit(selection.identity.as_str(),
+    let (_, admitted) = admit(
+        selection.identity.as_str(),
         &offered,
         IntakeLimits::default(),
     )
@@ -546,7 +548,8 @@ fn read_refusals(document: &Value) -> Vec<ModelRefusal> {
     let selection = DomainPackageRef {
         identity: PACKAGE.to_owned(),
     };
-    let (_selection, admitted) = admit(selection.identity.as_str(),
+    let (_selection, admitted) = admit(
+        selection.identity.as_str(),
         &offered,
         IntakeLimits::default(),
     )
@@ -759,7 +762,8 @@ fn tc235_m01_literal_k2_is_admitted_as_declared() {
     let selection = DomainPackageRef {
         identity: PACKAGE.to_owned(),
     };
-    let (selection, admitted) = admit(selection.identity.as_str(),
+    let (selection, admitted) = admit(
+        selection.identity.as_str(),
         &offered,
         IntakeLimits::default(),
     )

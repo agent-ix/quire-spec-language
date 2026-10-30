@@ -47,9 +47,7 @@ fn rule<'a>(models: &'a [NativeModel], expression: &str, kind: ClauseKind) -> Na
             format!("post Rule on M::Node::step {{ {expression} }}")
         }
     };
-    let text = format!(
-        "{HEADER}model M = \"example/rule-tests\";\n{clause}\n"
-    );
+    let text = format!("{HEADER}model M = \"example/rule-tests\";\n{clause}\n");
     NativePackage::new(
         checked(
             &text,

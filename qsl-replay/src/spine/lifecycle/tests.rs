@@ -1933,7 +1933,9 @@ fn check_takes_the_lock_evidence_the_text_law_comes_from() {
 
 /// The model fixture with an operation `touch` on `Widget` whose `pre`
 /// holds `clauses` (`language`, `text`), and the unit selecting it.
-fn widget_with_touch(clauses: &[(&str, &str)]) -> (String, qsl_semantics::model::intake::PackageInput) {
+fn widget_with_touch(
+    clauses: &[(&str, &str)],
+) -> (String, qsl_semantics::model::intake::PackageInput) {
     let mut document: serde_json::Value =
         serde_json::from_slice(MODEL_DOCUMENT).expect("the model fixture is JSON");
     let generated = |identity: &str| {
@@ -1970,7 +1972,9 @@ fn widget_with_touch(clauses: &[(&str, &str)]) -> (String, qsl_semantics::model:
 }
 
 /// The unit selecting `document`, the model fixture with its digest.
-fn offered_model(document: &serde_json::Value) -> (String, qsl_semantics::model::intake::PackageInput) {
+fn offered_model(
+    document: &serde_json::Value,
+) -> (String, qsl_semantics::model::intake::PackageInput) {
     let bytes = serde_json::to_vec(document).expect("the document serializes");
     let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()]).unwrap();
     (spine_model::unit(), packages)

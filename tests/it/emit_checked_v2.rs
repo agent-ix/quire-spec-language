@@ -509,7 +509,8 @@ fn a_malformed_switch_transition_is_refused_not_read_as_a_generic_term() {
         for feature in wire["lock"]["required_features"].as_array().unwrap() {
             evidence.support_feature(feature.as_str().unwrap());
         }
-        for (identity, document) in qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap()
+        for (identity, document) in
+            qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap()
         {
             evidence
                 .insert_domain_package_document(identity.as_str(), document)
@@ -785,7 +786,6 @@ fn an_over_cap_points_file_is_refused_explicitly() {
     assert!(stdout.is_empty());
 }
 
-
 /// FR-058-AC-1: the QSL-owned `adjust` operation of the switch example
 /// carries a precondition `P1` and a postcondition `Q2`; accepted execution
 /// points bind each to `adjust`, the emitted package reads back, and the
@@ -823,5 +823,8 @@ fn the_adjust_operation_emits_distinct_pre_and_post_clauses_with_their_points() 
         json!({"kind": "post", "operation": "adjust"}).to_string(),
     ];
     expected.sort();
-    assert_eq!(points, expected, "P1 is the pre point and Q2 the post point");
+    assert_eq!(
+        points, expected,
+        "P1 is the pre point and Q2 the post point"
+    );
 }

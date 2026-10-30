@@ -172,7 +172,7 @@ pub enum ReplayRefusal {
     /// QC-1: the request's domain package documents do not form a package
     /// input (an unreadable document, or two for one identity).
     #[error("{}", .0.detail)]
-    DomainPackages(qsl_semantics::model::normalize::ModelRefusal),
+    DomainPackages(Box<qsl_semantics::model::normalize::ModelRefusal>),
     /// ADR-015 D-4 rules 1 and 6: the package reference's `dependencies`
     /// are not in strictly ascending UTF-8 byte order of identity, or name
     /// an identity the recompiled package does not select
@@ -1649,7 +1649,8 @@ pub(crate) fn recompile(
 fn domain_packages(
     request: &ReplayRequest,
 ) -> Result<qsl_semantics::model::intake::PackageInput, ReplayRefusal> {
-    package_input(request.byte_provision().package_documents()).map_err(ReplayRefusal::DomainPackages)
+    package_input(request.byte_provision().package_documents())
+        .map_err(|refusal| ReplayRefusal::DomainPackages(Box::new(refusal)))
 }
 
 /// The one `quire.source.bytes/v1` source `references` names (ADR-015 D-4

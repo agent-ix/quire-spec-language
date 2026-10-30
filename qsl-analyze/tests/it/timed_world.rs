@@ -336,7 +336,11 @@ pub(crate) fn world_built(
     World {
         package: CheckedPackage::link(graph),
         packages,
-        snapshots: BTreeMap::from([(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes)]),
+        snapshots: BTreeMap::from([(
+            qsl_semantics::model::observation::document_reference(&bytes)
+                .expect("a document names itself"),
+            bytes,
+        )]),
         initial: DocumentRef {
             authority: "test".to_owned(),
             identity: "s0".to_owned(),
@@ -542,7 +546,11 @@ fn snapshot(
                     "late": {"boolean": late}, "retried": {"boolean": retried}}}]}],
     });
     let bytes = snapshot.to_string().into_bytes();
-    snapshots.insert(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes);
+    snapshots.insert(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    );
     DocumentRef {
         authority: "test".to_owned(),
         identity: name.to_owned(),

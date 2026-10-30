@@ -301,10 +301,7 @@ fn document_identity_json(label: &DocumentRef) -> serde_json::Value {
 /// A snapshot document naming `label`, admitting the given `next` chain in
 /// population `all_nodes` (each entry a `(key, next_key)` pair; `None`
 /// means `next` is absent), observed `current`.
-fn snapshot_bytes(
-    label: &DocumentRef,
-    chain: &[(&str, Option<&str>)],
-) -> Vec<u8> {
+fn snapshot_bytes(label: &DocumentRef, chain: &[(&str, Option<&str>)]) -> Vec<u8> {
     let population = population_identity();
     let node = node_type();
     let objects: Vec<_> = chain
@@ -740,7 +737,6 @@ fn evaluate_clause_reports_incomplete_when_the_meter_is_exhausted() {
 // FR-109: `run_clause`.
 // ---------------------------------------------------------------------------
 
-
 fn request(selection: ClauseRunSelection) -> ClauseRunRequest {
     let (unit, packages) = unit_and_packages();
     ClauseRunRequest {
@@ -772,11 +768,14 @@ fn no_cycle_request(chain: &[(&str, Option<&str>)]) -> (ClauseRunRequest, Docume
         revision: "1".to_owned(),
     };
     let bytes = snapshot_bytes(&label, chain);
-    let label = label;
     let selection = no_cycle_selection(label.clone(), "a");
 
     let mut request = request(ClauseRunSelection::Clause(selection));
-    request.snapshots.insert(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes);
+    request.snapshots.insert(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    );
     (request, label)
 }
 
@@ -929,12 +928,15 @@ fn run_clause_reports_missing_name_for_an_unknown_clause() {
         revision: "1".to_owned(),
     };
     let bytes = snapshot_bytes(&label, &[("a", None)]);
-    let label = label;
     let mut selection = no_cycle_selection(label, "a");
     selection.name = "NoSuchClause".to_owned();
 
     let mut request = request(ClauseRunSelection::Clause(selection));
-    request.snapshots.insert(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes);
+    request.snapshots.insert(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    );
     let report = run_clause(request).unwrap();
     assert!(matches!(
         report.disposition,
@@ -956,7 +958,6 @@ fn run_clause_evaluates_a_function_selection_with_an_integer_argument() {
         revision: "1".to_owned(),
     };
     let bytes = snapshot_bytes(&label, &[]);
-    let label = label;
 
     let mut request = request(ClauseRunSelection::Function {
         name: "isPositive".to_owned(),
@@ -966,7 +967,11 @@ fn run_clause_evaluates_a_function_selection_with_an_integer_argument() {
         }],
         snapshot: label,
     });
-    request.snapshots.insert(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes);
+    request.snapshots.insert(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    );
     let report = run_clause(request).unwrap();
     match report.disposition {
         ClauseDisposition::Evaluate(super::CallOutcome::Completed(super::CallValue::Boolean(
@@ -991,7 +996,6 @@ fn run_clause_evaluates_a_function_selection_with_a_reference_argument() {
         revision: "1".to_owned(),
     };
     let bytes = snapshot_bytes(&label, &[("a", Some("b")), ("b", None)]);
-    let label = label;
 
     let mut request = request(ClauseRunSelection::Function {
         name: "hasNext".to_owned(),
@@ -1004,7 +1008,11 @@ fn run_clause_evaluates_a_function_selection_with_a_reference_argument() {
         }],
         snapshot: label,
     });
-    request.snapshots.insert(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes);
+    request.snapshots.insert(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    );
     let report = run_clause(request).unwrap();
     match report.disposition {
         ClauseDisposition::Evaluate(super::CallOutcome::Completed(super::CallValue::Boolean(
@@ -1029,7 +1037,6 @@ fn run_clause_refuses_an_unresolved_reference_argument() {
         revision: "1".to_owned(),
     };
     let bytes = snapshot_bytes(&label, &[("a", None)]);
-    let label = label;
 
     let mut request = request(ClauseRunSelection::Function {
         name: "hasNext".to_owned(),
@@ -1042,7 +1049,11 @@ fn run_clause_refuses_an_unresolved_reference_argument() {
         }],
         snapshot: label,
     });
-    request.snapshots.insert(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes);
+    request.snapshots.insert(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    );
     let report = run_clause(request).unwrap();
     assert_eq!(report.disposition.stage(), ClauseRunStage::Admit);
     match report.disposition {
@@ -1071,14 +1082,17 @@ fn run_clause_reports_not_a_predicate_for_an_integer_function() {
         revision: "1".to_owned(),
     };
     let bytes = snapshot_bytes(&label, &[]);
-    let label = label;
 
     let mut request = request(ClauseRunSelection::Function {
         name: "seven".to_owned(),
         arguments: Vec::new(),
         snapshot: label,
     });
-    request.snapshots.insert(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes);
+    request.snapshots.insert(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    );
     let report = run_clause(request).unwrap();
     assert!(matches!(
         report.disposition,
@@ -1267,23 +1281,24 @@ fn run_clause_reports_the_document_order_first_unknown_member_not_the_alphabetic
     // `ordered_json.rs`'s own module doc), `json!`'s `Map` is `BTreeMap`-
     // backed and would serialize its members alphabetically regardless of
     // insertion order, destroying the very ordering this test exercises.
-    let bytes = format!(
-        r#"{{
+    let bytes = r#"{
             "format": "quire.state.snapshot/v1",
-            "identity": {{"authority": "test", "identity": "snap", "revision_namespace": "ns", "revision": "1"}},
+            "identity": {"authority": "test", "identity": "snap", "revision_namespace": "ns", "revision": "1"},
             "observation": "current",
-            "model": {{"identity": "test/nodes", "version": "1.0.0"}},
+            "model": {"identity": "test/nodes", "version": "1.0.0"},
             "populations": [],
             "zzz_unknown": true,
             "aaa_unknown": true
-        }}"#
-    )
+        }"#.to_string()
     .into_bytes();
-    let label = label;
     let selection = no_cycle_selection(label, "a");
 
     let mut request = request(ClauseRunSelection::Clause(selection));
-    request.snapshots.insert(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes);
+    request.snapshots.insert(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    );
     let report = run_clause(request).expect("a well-formed request always reports");
     match report.disposition {
         ClauseDisposition::Admit(super::AdmissionFailure::Refused(record)) => {
@@ -1627,7 +1642,8 @@ fn config_version_domain_document_with_operations(
 /// at all ("Today QSL emits no `state` node",
 /// `spec/functional/FR-105-emit-state-nodes.md`). `VersionUnchanged` below
 /// is that postcondition, now reachable through `run_clause` end to end.
-pub(crate) fn config_version_unit_and_packages() -> (String, qsl_semantics::model::intake::PackageInput) {
+pub(crate) fn config_version_unit_and_packages(
+) -> (String, qsl_semantics::model::intake::PackageInput) {
     config_version_unit_and_packages_for(config_version_domain_document())
 }
 
@@ -1653,7 +1669,6 @@ fn config_version_unit_and_packages_for(
     );
     (unit, packages)
 }
-
 
 /// The shared `ClauseRunRequest` shape for a config-version unit: `unit` and
 /// `packages` (either the base unit or a unit extending it) supply the
@@ -1782,11 +1797,14 @@ fn run_config_version_current(
 ) -> ClauseDisposition {
     let label = config_version_document_ref("current-snap");
     let bytes = config_version_snapshot(&label, root_version, child_version);
-    let label = label;
     let selection = config_version_current_selection(clause_name, label, self_key);
 
     let mut request = config_version_request(ClauseRunSelection::Clause(selection));
-    request.snapshots.insert(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes);
+    request.snapshots.insert(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    );
     run_clause(request)
         .expect("a well-formed request always reports")
         .disposition
@@ -1807,14 +1825,17 @@ fn boolean_disposition(disposition: &ClauseDisposition) -> bool {
 fn config_version_function_request(name: &str, arguments: Vec<ClauseArgument>) -> ClauseRunRequest {
     let label = config_version_document_ref("distinct-identities");
     let bytes = config_version_snapshot(&label, 1, Some(2));
-    let label = label;
 
     let mut request = config_version_request(ClauseRunSelection::Function {
         name: name.to_owned(),
         arguments,
         snapshot: label,
     });
-    request.snapshots.insert(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes);
+    request.snapshots.insert(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    );
     request
 }
 
@@ -1833,11 +1854,14 @@ fn config_version_reference(key: &str) -> ClauseArgumentValue {
 fn run_clause_reports_missing_name_selecting_absent_clause() {
     let label = config_version_document_ref("current-snap");
     let bytes = config_version_snapshot(&label, 1, None);
-    let label = label;
     let selection = config_version_current_selection("Absent", label, "root");
 
     let mut request = config_version_request(ClauseRunSelection::Clause(selection));
-    request.snapshots.insert(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes);
+    request.snapshots.insert(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    );
     let report = run_clause(request).unwrap();
     assert!(matches!(
         report.disposition,
@@ -1855,11 +1879,14 @@ fn run_clause_reports_missing_name_selecting_absent_clause() {
 fn run_clause_reports_missing_name_for_a_clause_selection_naming_a_function() {
     let label = config_version_document_ref("current-snap");
     let bytes = config_version_snapshot(&label, 1, None);
-    let label = label;
     let selection = config_version_current_selection("sameIdentity", label, "root");
 
     let mut request = config_version_request(ClauseRunSelection::Clause(selection));
-    request.snapshots.insert(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes);
+    request.snapshots.insert(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    );
     let report = run_clause(request).unwrap();
     assert!(matches!(
         report.disposition,
@@ -1934,11 +1961,14 @@ fn run_clause_refuses_a_dangling_parent_reference() {
         }],
     });
     let bytes = value.to_string().into_bytes();
-    let label = label;
     let selection = config_version_current_selection("ParentOrder", label, "child");
 
     let mut request = config_version_request(ClauseRunSelection::Clause(selection));
-    request.snapshots.insert(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes);
+    request.snapshots.insert(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    );
     let report = run_clause(request).unwrap();
     assert_eq!(report.disposition.stage(), ClauseRunStage::Admit);
     match &report.disposition {
@@ -1988,11 +2018,14 @@ fn run_clause_reports_incomplete_for_an_incomplete_population() {
         }],
     });
     let bytes = value.to_string().into_bytes();
-    let label = label;
     let selection = config_version_current_selection("ParentOrder", label, "child");
 
     let mut request = config_version_request(ClauseRunSelection::Clause(selection));
-    request.snapshots.insert(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes);
+    request.snapshots.insert(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    );
     let report = run_clause(request).unwrap();
     assert_eq!(report.disposition.stage(), ClauseRunStage::Admit);
     match &report.disposition {
@@ -2021,11 +2054,14 @@ fn run_clause_reports_incomplete_for_an_incomplete_population() {
 fn run_clause_reports_incomplete_when_work_units_are_exhausted() {
     let label = config_version_document_ref("current-snap");
     let bytes = config_version_snapshot(&label, 1, Some(2));
-    let label = label;
     let selection = config_version_current_selection("ParentOrder", label, "child");
 
     let mut request = config_version_request(ClauseRunSelection::Clause(selection));
-    request.snapshots.insert(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes);
+    request.snapshots.insert(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    );
     request.accounting = default_accounting(0);
     let report = run_clause(request).unwrap();
     assert_eq!(report.disposition.stage(), ClauseRunStage::Evaluate);
@@ -2562,22 +2598,11 @@ fn run_config_version_invocation_report(
     versions: InvocationVersions,
     self_key: &str,
 ) -> super::ClauseRunReport {
-
     let (pre_label, pre_bytes) = document_ref_and_bytes("invocation-pre", |label| {
-        config_version_invocation_snapshot(
-            label,
-            "pre",
-            versions.root_pre,
-            versions.child_pre,
-        )
+        config_version_invocation_snapshot(label, "pre", versions.root_pre, versions.child_pre)
     });
     let (post_label, post_bytes) = document_ref_and_bytes("invocation-post", |label| {
-        config_version_invocation_snapshot(
-            label,
-            "post",
-            versions.root_post,
-            versions.child_post,
-        )
+        config_version_invocation_snapshot(label, "post", versions.root_post, versions.child_post)
     });
     let (invocation_label, invocation_bytes) = document_ref_and_bytes("invocation", |label| {
         config_version_invocation_bytes(label, &pre_label, &post_label, self_key)
@@ -2626,7 +2651,8 @@ fn tc466_step1_version_unchanged_over_an_invocation() {
 /// other one, because `s4_emits_exactly_the_fr_105_state_nodes` (TC-462,
 /// below) counts that other unit's own emitted `state_clause` nodes
 /// exactly.
-fn config_version_step2_unit_and_packages() -> (String, qsl_semantics::model::intake::PackageInput) {
+fn config_version_step2_unit_and_packages() -> (String, qsl_semantics::model::intake::PackageInput)
+{
     let (base_unit, packages) = config_version_unit_and_packages();
     let unit = format!(
         "{base_unit}\
@@ -2802,12 +2828,14 @@ fn config_version_step3_domain_document() -> Vec<u8> {
 /// The package provision holding [`config_version_step3_domain_document`]
 /// and nothing else.
 fn config_version_step3_packages() -> qsl_semantics::model::intake::PackageInput {
-    qsl_semantics::model::intake::package_input([config_version_step3_domain_document().as_slice()]).unwrap()
+    qsl_semantics::model::intake::package_input([config_version_step3_domain_document().as_slice()])
+        .unwrap()
 }
 
 /// The unit text selecting [`config_version_step3_domain_document`] as
 /// model alias `Config`, with one precondition: `ReachesTarget`.
-fn config_version_step3_unit_and_packages() -> (String, qsl_semantics::model::intake::PackageInput) {
+fn config_version_step3_unit_and_packages() -> (String, qsl_semantics::model::intake::PackageInput)
+{
     let packages = config_version_step3_packages();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
@@ -2947,7 +2975,6 @@ fn probe_documents(
     self_key: &str,
     target_key: &str,
 ) -> ProbeDocuments {
-
     let (pre_label, pre_bytes) = document_ref_and_bytes("probe-pre", |label| {
         config_version_step3_snapshot(label, "pre", objects)
     });
@@ -4517,7 +4544,10 @@ fn s4_parent_order_self_parent_read_shares_no_cycles_member_shape() {
 // ---------------------------------------------------------------------------
 
 /// Compile `unit` against `packages` through the whole spine (S1 to S5).
-fn compile_config_version_unit(unit: &str, packages: &qsl_semantics::model::intake::PackageInput) -> ComposedUnit {
+fn compile_config_version_unit(
+    unit: &str,
+    packages: &qsl_semantics::model::intake::PackageInput,
+) -> ComposedUnit {
     compose(
         source(),
         "clause-run-config-version.native",

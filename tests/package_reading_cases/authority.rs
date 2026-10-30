@@ -11,9 +11,7 @@ fn ordered_import_occurrence_and_observation_claims_cannot_be_permuted() {
     let mut bindings = base.checked().bindings().clone();
     let text = bindings.source.source().text().replacen(
         "post Rule",
-        &format!(
-            "model Extra = \"example/rule-tests\";\npost Rule"
-        ),
+        &String::from("model Extra = \"example/rule-tests\";\npost Rule"),
         1,
     );
     let unit = parse(

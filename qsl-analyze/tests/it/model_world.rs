@@ -301,7 +301,9 @@ impl World {
     }
 
     /// The bytes of each provisioned snapshot, by digest.
-    pub(crate) fn snapshot_bytes(&self) -> impl Iterator<Item = (&qsl_semantics::model::observation::DocumentRef, &Vec<u8>)> {
+    pub(crate) fn snapshot_bytes(
+        &self,
+    ) -> impl Iterator<Item = (&qsl_semantics::model::observation::DocumentRef, &Vec<u8>)> {
         self.snapshots.iter()
     }
 
@@ -323,7 +325,11 @@ impl World {
                 "complete": true, "objects": objects}],
         });
         let bytes = document.to_string().into_bytes();
-        self.snapshots.insert(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes);
+        self.snapshots.insert(
+            qsl_semantics::model::observation::document_reference(&bytes)
+                .expect("a document names itself"),
+            bytes,
+        );
         DocumentRef {
             authority: "test".to_owned(),
             identity: "s0".to_owned(),

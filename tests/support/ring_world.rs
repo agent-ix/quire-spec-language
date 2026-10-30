@@ -320,7 +320,8 @@ fn packages(variant: Variant) -> qsl_semantics::model::intake::PackageInput {
     package_input([
         queue_document(variant).as_slice(),
         ring_document(variant).as_slice(),
-    ]).unwrap()
+    ])
+    .unwrap()
 }
 
 /// The checked graph of the unit with `refinement`, or its refusals.
@@ -377,7 +378,11 @@ fn snapshot(
         "populations": populations,
     });
     let bytes = snapshot.to_string().into_bytes();
-    snapshots.insert(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes);
+    snapshots.insert(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    );
     DocumentRef {
         authority: "test".to_owned(),
         identity: name,

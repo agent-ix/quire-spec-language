@@ -69,8 +69,8 @@ use quire_exact::{Presence, TextProfile, TextType};
 
 mod unit;
 pub use unit::{
-    admit_unit, admit_unit_with_cancel, OperationClauseFailure, SelectedModel,
-    SelectedModels, TypeInvariantFailure, UnitIntakeCause, UnitIntakeRefusal,
+    admit_unit, admit_unit_with_cancel, OperationClauseFailure, SelectedModel, SelectedModels,
+    TypeInvariantFailure, UnitIntakeCause, UnitIntakeRefusal,
 };
 
 /// A Quire meaning id (FR-208): the sole legitimate way to determine what a
@@ -305,8 +305,7 @@ pub struct PackageDocument {
 /// level, so a derived `Debug` would overflow the stack on a deep document.
 impl std::fmt::Debug for PackageDocument {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PackageDocument")
-            .finish_non_exhaustive()
+        f.debug_struct("PackageDocument").finish_non_exhaustive()
     }
 }
 
@@ -364,7 +363,6 @@ impl PackageDocument {
     pub fn tree(&self) -> &Value {
         &self.tree
     }
-
 }
 
 /// FR-260 B5: a package document of `actual` bytes is over
@@ -5896,8 +5894,7 @@ mod tests {
     fn two_supplied_documents_for_one_identity_refuse_as_conflicting() {
         let first = package_bytes("acme/orders", "1");
         let second = package_bytes("acme/orders", "2");
-        let refusal =
-            package_input([first.as_slice(), second.as_slice()]).unwrap_err();
+        let refusal = package_input([first.as_slice(), second.as_slice()]).unwrap_err();
         assert_eq!(refusal.code, Code::InvalidPackage);
         assert_eq!(
             refusal.cause,

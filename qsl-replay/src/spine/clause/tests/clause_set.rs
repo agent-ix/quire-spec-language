@@ -85,7 +85,8 @@ pub(super) fn admit(
     clause: &str,
     selection: ClauseSelection,
 ) -> AdmittedObservations {
-    let packages = qsl_semantics::model::intake::package_input([unit.domain_document.as_slice()]).unwrap();
+    let packages =
+        qsl_semantics::model::intake::package_input([unit.domain_document.as_slice()]).unwrap();
     let graph = unit.compiled.package.graph();
     let declaration = graph.state_clause(clause).expect("the clause is declared");
     admit_clause_observations(

@@ -451,10 +451,7 @@ fn checked(variant: &Variant) -> Admission {
         .expect("the model assembles")
         .check(CheckingLimits::default())
         .expect("the unit checks");
-    Admission {
-        graph,
-        packages,
-        }
+    Admission { graph, packages }
 }
 
 impl Admission {
@@ -1202,9 +1199,7 @@ impl Admission {
             snapshots.insert(reference.clone(), bytes);
             referenced.push(reference);
         }
-        let reference = |held: &DocumentRef| {
-            json!({"identity": labels(held)})
-        };
+        let reference = |held: &DocumentRef| json!({"identity": labels(held)});
         let mut invocation = json!({
             "format": "quire.state.invocation/v1",
             "identity": labels(&call),

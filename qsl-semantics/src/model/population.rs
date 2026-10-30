@@ -144,9 +144,7 @@ use crate::model::domain_package::{
     OperationEffect,
 };
 use crate::model::index::ModelIndex;
-use crate::model::key::{
-    declaration_key_wire, hex, DeclarationKeyWire, EffectiveId,
-};
+use crate::model::key::{declaration_key_wire, hex, DeclarationKeyWire, EffectiveId};
 use crate::model::normalize::{
     EffectiveView, ModelRefusal, ModelRefusalCause, OfferedSelection, TypeCatalog, ViewPopulation,
 };

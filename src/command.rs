@@ -637,9 +637,9 @@ fn complete(
             .map(|document| document.source().text().as_bytes()),
     )
     .map_err(|refusal| RunCause::ClauseRequest {
-            member: "models".to_owned(),
-            reason: refusal.detail,
-        })?;
+        member: "models".to_owned(),
+        reason: refusal.detail,
+    })?;
     let libraries = library_sources(request, intake)?;
     // A refusal is rendered over the source its region is in, by that
     // region's source digest: the program's or one library's, wherever in
@@ -984,9 +984,9 @@ fn run_complete(
             .map(|document| document.source().text().as_bytes()),
     )
     .map_err(|refusal| RunCause::ClauseRequest {
-            member: "models".to_owned(),
-            reason: refusal.detail,
-        })?;
+        member: "models".to_owned(),
+        reason: refusal.detail,
+    })?;
     let libraries = request
         .libraries
         .iter()

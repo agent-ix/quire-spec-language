@@ -14,8 +14,7 @@ use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::domain_package::DomainPackageRef;
 use qsl_semantics::model::intake::PackageInput;
 use qsl_semantics::model::observation::{
-    declared_type_universe_for, write_environment_document,
-    AdmissionFailure,
+    declared_type_universe_for, write_environment_document, AdmissionFailure,
 };
 pub use qsl_semantics::model::observation::{
     EnvironmentLabels, EnvironmentModel, EnvironmentObject, EnvironmentPopulation,
@@ -158,10 +157,7 @@ pub fn read_object_environment(
             member: MEMBER.to_owned(),
         });
     };
-    if let Some(unknown) = members
-        .keys()
-        .find(|name| name.as_str() != "identity")
-    {
+    if let Some(unknown) = members.keys().find(|name| name.as_str() != "identity") {
         return Err(ObjectEnvironmentRefusal::UnknownMember {
             member: path(unknown),
         });

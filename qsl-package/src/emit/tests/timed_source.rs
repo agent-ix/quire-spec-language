@@ -131,7 +131,7 @@ fn a_checked_time_source_emits_and_reads_back_its_resolved_nodes() {
         evidence.support_feature(feature.as_str().unwrap());
     }
     evidence
-        .insert_domain_package_document(package_identity(&document), document.to_vec())
+        .insert_domain_package_document(package_identity(document), document.to_vec())
         .expect("a fresh evidence key");
     let read = read_checked_package_v2(
         emission.package.bytes(),
@@ -231,7 +231,7 @@ fn a_tick_time_source_emits_its_exact_period_and_operation_anchor() {
         evidence.support_feature(feature.as_str().unwrap());
     }
     evidence
-        .insert_domain_package_document(package_identity(&document), document.to_vec())
+        .insert_domain_package_document(package_identity(document), document.to_vec())
         .expect("a fresh evidence key");
     let read = read_checked_package_v2(
         emission.package.bytes(),
@@ -280,7 +280,8 @@ fn three_time_dimensions_give_three_package_identities() {
         "scale": "1", "offset": "0", "origin": origin,
     }]);
     let flow = serde_json::to_vec(&flow).expect("JSON");
-    let packages = qsl_semantics::model::intake::package_input([rpc.as_slice(), flow.as_slice()]).unwrap();
+    let packages =
+        qsl_semantics::model::intake::package_input([rpc.as_slice(), flow.as_slice()]).unwrap();
     let identity = |unit: &str| {
         let text = format!(
             "language \"ix:native\" edition \"1-draft\";\n\

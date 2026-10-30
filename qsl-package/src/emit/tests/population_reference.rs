@@ -171,9 +171,12 @@ fn counter_unit(archive: bool, declarations: &str) -> (Emission, Read) {
     let emission = emit_checked(&CheckedPackage::link(checked.graph)).expect("the package emits");
     assert_eq!(emission.omitted, []);
     let mut evidence = read_evidence(&emission);
-    for (_digest, document) in &checked.packages {
+    for document in checked.packages.values() {
         evidence
-            .insert_domain_package_document(package_identity(&document.as_slice(),), document.as_slice(),)
+            .insert_domain_package_document(
+                package_identity(document.as_slice()),
+                document.as_slice(),
+            )
             .expect("a fresh evidence key");
     }
     let read = read_with(&emission, &evidence);

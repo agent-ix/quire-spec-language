@@ -94,9 +94,7 @@ fn assemble_under(
         let (identity, document) = model(alias);
         let input = package_input([document.as_slice()]).unwrap();
         assert_eq!(input.len(), 1, "one document");
-        selections.push_str(&format!(
-            "model {alias} = {identity:?};\n"
-        ));
+        selections.push_str(&format!("model {alias} = {identity:?};\n"));
         packages.extend(input);
     }
     let unit = format!(

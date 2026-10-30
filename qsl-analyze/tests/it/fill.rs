@@ -238,7 +238,6 @@ pub(crate) fn document() -> Vec<u8> {
     .into_bytes()
 }
 
-
 /// ADR-027 §7's contracts, with `TwoPre` as `two_pre`; `bump`'s of FR-206-AC-2;
 /// `flag`'s, which `inc` with a Boolean result.
 pub(crate) fn contracts(two_pre: &str) -> String {
@@ -411,7 +410,11 @@ impl Documents {
                 {"population": ident("idles"), "complete": true, "objects": []}],
         });
         let bytes = document.to_string().into_bytes();
-        self.snapshots.insert(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes);
+        self.snapshots.insert(
+            qsl_semantics::model::observation::document_reference(&bytes)
+                .expect("a document names itself"),
+            bytes,
+        );
         DocumentRef {
             authority: "test".to_owned(),
             identity: name.to_owned(),

@@ -15,17 +15,17 @@ use quire_semantic_value::checking::CheckingLimits;
 const MODEL: &[u8] = include_bytes!("../../../tests/fixtures/spine-model.semantic-ir.json");
 
 fn unit() -> String {
-    format!(
+    String::from(
         "language \"ix:native\" edition \"1-draft\";\n\
     profile v = \"quire.value.complete/v1\";\n\
     profile p = \"quire.protocol.finite-global/v1\";\n\
     model M = \"acme/orders\";\n\
-    function refers using v(): Boolean pure {{ protocol Fill }}\n\
-    protocol Fill using v over (input: M::Gadget) on origin {{\n\
+    function refers using v(): Boolean pure { protocol Fill }\n\
+    protocol Fill using v over (input: M::Gadget) on origin {\n\
     role R on M::Gadget;\n\
-    run sequence Main {{ }}\n\
-    finish End as (outcome: Boolean) {{ true }};\n\
-    }}\n"
+    run sequence Main { }\n\
+    finish End as (outcome: Boolean) { true };\n\
+    }\n",
     )
 }
 

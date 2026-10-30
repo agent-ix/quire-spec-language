@@ -394,7 +394,11 @@ impl World {
             })
             .to_string()
             .into_bytes();
-            snapshots.insert(qsl_semantics::model::observation::document_reference(&snapshot).expect("a document names itself"), snapshot);
+            snapshots.insert(
+                qsl_semantics::model::observation::document_reference(&snapshot)
+                    .expect("a document names itself"),
+                snapshot,
+            );
             initial.push(DocumentRef {
                 authority: "test".to_owned(),
                 identity,

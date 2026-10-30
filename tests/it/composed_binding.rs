@@ -52,10 +52,7 @@ fn source(id: &str, model: &NativeModel, profiles: &[(&str, R)], body: &str) -> 
     let mut text = "language \"ix:native\" edition \"1-draft\";\n".to_owned();
     for (alias, profile) in profiles {
         let selection = profile.selection();
-        text.push_str(&format!(
-            "profile {alias} = \"{}\";\n",
-            selection.identity
-        ));
+        text.push_str(&format!("profile {alias} = \"{}\";\n", selection.identity));
     }
     text.push_str(&format!(
         "model M = \"{}\";\n",

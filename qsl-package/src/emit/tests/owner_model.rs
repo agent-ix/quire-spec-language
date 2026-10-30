@@ -78,7 +78,7 @@ pub(super) fn verdict(lowered: &Lowered, envelope: &Value) -> String {
     }
     let document = document();
     evidence
-        .insert_domain_package_document(package_identity(&document[..],), &document[..],)
+        .insert_domain_package_document(package_identity(&document[..]), &document[..])
         .expect("a fresh evidence key");
     match read_checked_package(
         &jcs(envelope),

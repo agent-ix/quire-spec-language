@@ -299,7 +299,11 @@ fn try_world_of(
     Ok(World {
         package: CheckedPackage::link(graph),
         packages,
-        snapshots: BTreeMap::from([(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes)]),
+        snapshots: BTreeMap::from([(
+            qsl_semantics::model::observation::document_reference(&bytes)
+                .expect("a document names itself"),
+            bytes,
+        )]),
         initial: DocumentRef {
             authority: "test".to_owned(),
             identity: "s0".to_owned(),
