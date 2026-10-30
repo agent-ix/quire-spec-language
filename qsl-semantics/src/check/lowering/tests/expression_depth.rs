@@ -76,10 +76,13 @@ fn every_nested_form_checks_at_1000_levels_as_at_2_on_a_small_stack() {
 #[trace("FR-093-AC-14", "TC-415")]
 #[test]
 fn a_postcondition_pre_over_1000_levels_refuses_on_a_small_stack() {
-    let graph =
-        PackageDeclarations::new(fixture_source(), "fixture", qsl_foundation::IdentityLimits::default())
-            .check(CheckingLimits::default())
-            .expect("an empty package checks");
+    let graph = PackageDeclarations::new(
+        fixture_source(),
+        "fixture",
+        qsl_foundation::IdentityLimits::default(),
+    )
+    .check(CheckingLimits::default())
+    .expect("an empty package checks");
     let refused = std::thread::scope(|scope| {
         std::thread::Builder::new()
             .stack_size(STACK)

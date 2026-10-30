@@ -44,6 +44,7 @@ fn type_key(value_type: &ValueType) -> NodeKey {
         std::slice::from_ref(value_type),
     )
     .1[0]
+        .clone()
 }
 
 fn type_argument(value_type: &ValueType) -> Json {
@@ -132,7 +133,11 @@ fn package(functions: Vec<FunctionDeclaration>) -> PackageDeclarations {
             ("Small".to_owned(), int(0, 5)),
         ],
         ieee_profile: Some(ieee),
-        ..PackageDeclarations::new(fixture_source(), "fixture", qsl_foundation::IdentityLimits::default())
+        ..PackageDeclarations::new(
+            fixture_source(),
+            "fixture",
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
 }
 
@@ -585,7 +590,11 @@ fn enum_parameter_package(functions: usize) -> PackageDeclarations {
                 )
             })
             .collect(),
-        ..PackageDeclarations::new(fixture_source(), "fixture", qsl_foundation::IdentityLimits::default())
+        ..PackageDeclarations::new(
+            fixture_source(),
+            "fixture",
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
 }
 
@@ -679,7 +688,11 @@ fn a_tuple_value_is_a_value_node_over_its_arguments() {
     let checked = PackageDeclarations {
         types,
         functions: vec![make],
-        ..PackageDeclarations::new(fixture_source(), "fixture", qsl_foundation::IdentityLimits::default())
+        ..PackageDeclarations::new(
+            fixture_source(),
+            "fixture",
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
     .check(CheckingLimits::default())
     .expect("the tuple fixture checks");
@@ -730,7 +743,7 @@ fn rational_literals_are_one_literal_node_through_check() {
             .map(SemanticNode::key)
             .collect();
         assert_eq!(literals.len(), 1);
-        keys.push(literals[0]);
+        keys.push(literals[0].clone());
     }
     assert_eq!(keys[0], keys[1], "an equal rational is one node");
 }

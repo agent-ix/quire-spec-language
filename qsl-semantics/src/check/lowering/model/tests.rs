@@ -14,8 +14,8 @@ use qsl_forms::{
 use quire_exact::{Integer, IntegerInterval, Presence};
 use serde_json::{json, Value as Json};
 
+use super::super::tests::view::{node_ref, preimage};
 use super::super::{generated_location, type_declaration, Lowering, SemanticGraph, SemanticNode};
-use super::super::tests::view::preimage;
 use super::*;
 use crate::check::checked_dispatch::{checked_dispatch_operation, DispatchRoot, OperationClauses};
 use crate::check::family::fixtures::{empty_scope, fixture_source};
@@ -75,7 +75,7 @@ fn model_node_of(graph: &SemanticGraph, name: &str) -> NodeKey {
         .map(SemanticNode::key)
         .collect();
     assert_eq!(found.len(), 1, "one model node for {name}");
-    found[0]
+    found[0].clone()
 }
 
 // ---------------------------------------------------------------------
@@ -208,7 +208,7 @@ fn admitted(version: &str) -> Acme {
         panic!("acme/orders {version} normalizes");
     };
     let model = AdmittedModel::new(&package, &view).expect("the view is the package's own");
-    let id = |name: &str| view.type_identities()[&key(name)];
+    let id = |name: &str| view.type_identities()[&key(name)].clone();
     Acme {
         order: id("Order"),
         invoice: id("Invoice"),
@@ -233,10 +233,10 @@ fn types(acme: &Acme) -> TypeEnvironment {
     TypeEnvironment::new(
         [],
         [
-            ObjectTypeDeclaration::new(acme.order, "M::Order", total),
-            ObjectTypeDeclaration::new(acme.invoice, "M::Invoice", Vec::new()),
-            ObjectTypeDeclaration::new(acme.sub, "M::Sub", Vec::new())
-                .with_supertypes(vec![acme.order]),
+            ObjectTypeDeclaration::new(acme.order.clone(), "M::Order", total),
+            ObjectTypeDeclaration::new(acme.invoice.clone(), "M::Invoice", Vec::new()),
+            ObjectTypeDeclaration::new(acme.sub.clone(), "M::Sub", Vec::new())
+                .with_supertypes(vec![acme.order.clone()]),
         ],
     )
     .expect("the acme object types admit")
@@ -283,7 +283,11 @@ fn check(acme: &Acme, functions: Vec<FunctionDeclaration>) -> CheckedGraph {
         types: types(acme),
         models: vec![acme.model.clone()],
         functions,
-        ..PackageDeclarations::new(fixture_source(), "fixture", qsl_foundation::IdentityLimits::default())
+        ..PackageDeclarations::new(
+            fixture_source(),
+            "fixture",
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
     .check(CheckingLimits::default())
     .unwrap_or_else(|refusals| panic!("the acme functions check: {refusals:?}"))
@@ -302,7 +306,7 @@ fn clauses(acme: &Acme) -> OperationClauses {
         (
             "Order/size",
             "size",
-            acme.order,
+            acme.order.clone(),
             "self",
             None,
             true,
@@ -311,7 +315,7 @@ fn clauses(acme: &Acme) -> OperationClauses {
         (
             "Order/count",
             "count",
-            acme.order,
+            acme.order.clone(),
             "self",
             None,
             true,
@@ -320,7 +324,7 @@ fn clauses(acme: &Acme) -> OperationClauses {
         (
             "Sub/size",
             "size",
-            acme.sub,
+            acme.sub.clone(),
             "self",
             None,
             false,
@@ -329,7 +333,7 @@ fn clauses(acme: &Acme) -> OperationClauses {
         (
             "Order/scaled",
             "scaled",
-            acme.order,
+            acme.order.clone(),
             "self",
             Some("n"),
             true,
@@ -338,7 +342,7 @@ fn clauses(acme: &Acme) -> OperationClauses {
         (
             "Sub/scaled",
             "scaled",
-            acme.sub,
+            acme.sub.clone(),
             "this",
             Some("m"),
             false,
@@ -451,7 +455,7 @@ fn reference_types_key_over_their_model_nodes_and_record_the_correspondence() {
     assert_ne!(r_type, s_type);
     let m1 = model_node_of(graph, "Order");
     let m3 = model_node_of(graph, "Invoice");
-    let m1_preimage = preimage(graph.node(m1).unwrap());
+    let m1_preimage = preimage(graph.node(m1.clone()).unwrap());
     assert_eq!(
         m1_preimage["owner"],
         json!({"kind": "model", "identity": "acme/orders", "node": "ix://acme/orders/Order"})
@@ -461,7 +465,7 @@ fn reference_types_key_over_their_model_nodes_and_record_the_correspondence() {
         "no version member"
     );
     assert!(m1_preimage["declaration"].is_null());
-    let r = preimage(graph.node(r_type).unwrap());
+    let r = preimage(graph.node(r_type.clone()).unwrap());
     assert!(r.get("owner").is_none());
     assert!(
         serde_json::to_string(&r["body"])
@@ -477,7 +481,7 @@ fn reference_types_key_over_their_model_nodes_and_record_the_correspondence() {
         .map(SemanticNode::key)
         .collect();
     assert_eq!(model_nodes, {
-        let mut expected = vec![m1, m3];
+        let mut expected = vec![m1.clone(), m3.clone()];
         expected.sort();
         expected
     });
@@ -732,7 +736,10 @@ fn unmappable_model_inputs_are_internal_faults() {
     let acme = admitted("1.0.0");
     let models = std::slice::from_ref(&acme.model);
     let location = generated_location();
-    let unknown = EffectiveId::from_digest([9; 32]);
+    let unknown = quire_exact::EffectiveId::new(
+        None,
+        quire_exact::OriginalDeclarationKey::new("acme/unknown", "ix://acme/unknown/Missing"),
+    );
     let other = DeclarationKey {
         package: "acme/other".to_owned(),
         node: "ix://acme/other/Order".to_owned(),
@@ -744,7 +751,7 @@ fn unmappable_model_inputs_are_internal_faults() {
     let ((by_id, by_package, by_node, by_kind), graph) =
         lower(models, Default::default(), |lowering| {
             (
-                lowering.reference_type(unknown, &location),
+                lowering.reference_type(unknown.clone(), &location),
                 lowering.model_node(&other, &location),
                 lowering.model_node(&empty, &location),
                 lowering.model_node(&key("Order/total"), &location),
@@ -757,7 +764,7 @@ fn unmappable_model_inputs_are_internal_faults() {
         }) => *fault,
         other => panic!("expected an internal fault, got {other:?}"),
     };
-    assert_eq!(fault(by_id), KeyFault::UnknownEffectiveId(unknown));
+    assert_eq!(fault(by_id), KeyFault::UnknownEffectiveId(unknown.clone()));
     assert_eq!(fault(by_package), KeyFault::UnadmittedPackage(other));
     assert_eq!(fault(by_node), KeyFault::EmptyNode(empty));
     assert_eq!(
@@ -765,7 +772,8 @@ fn unmappable_model_inputs_are_internal_faults() {
         KeyFault::UnnamedRecordKind(key("Order/total"))
     );
     assert_eq!(graph.nodes().count(), 0, "no node was keyed");
-    let refusal = CheckCause::InternalFault(Box::new(KeyFault::UnknownEffectiveId(unknown)));
+    let refusal =
+        CheckCause::InternalFault(Box::new(KeyFault::UnknownEffectiveId(unknown.clone())));
     assert_eq!(
         refusal.code(),
         qsl_foundation::diagnostic::Code::RuntimeInvariant
@@ -792,9 +800,12 @@ fn keying_a_second_declaration_onto_a_recorded_node_refuses() {
     });
     let n = n.expect("`Order` keys");
     let ((keyed, resolved), _) = lower(models, Default::default(), |lowering| {
-        assert_eq!(lowering.correspondence.record(n, d1.clone()), Ok(()));
+        assert_eq!(
+            lowering.correspondence.record(n.clone(), d1.clone()),
+            Ok(())
+        );
         let keyed = lowering.model_node(&d2, &location);
-        (keyed, lowering.correspondence.resolve(n).cloned())
+        (keyed, lowering.correspondence.resolve(n.clone()).cloned())
     });
     let Err(CheckRefusal {
         cause: CheckCause::InternalFault(fault),
@@ -976,6 +987,7 @@ fn a_redefining_candidates_clauses_key_once_under_its_own_owner() {
 
 mod quantities {
     use super::*;
+    use crate::value::nominal_payload::NominalPayload;
     use crate::value::semantic_node::{NodeOwner, OwnerSelection, OwnerSubject};
     use crate::value::unit::{admit_unit_graph, DimensionPreimage, UnitPreimage};
     use quire_semantic_value::quantity::UnitTable;
@@ -1003,8 +1015,8 @@ mod quantities {
             vec!["Example".to_owned(), name.to_owned()],
             node_key(dimension),
             None,
-            &Rational::from(1),
-            &Rational::from(0),
+            &quire_exact::Rational::from_integer(Integer::from(1_i64)),
+            &quire_exact::Rational::from_integer(Integer::from(0_i64)),
         )
         .expect("a root unit")
     }
@@ -1077,7 +1089,11 @@ mod quantities {
                 builtin(BuiltinType::Boolean),
                 body,
             )],
-            ..PackageDeclarations::new(fixture_source(), "fixture", qsl_foundation::IdentityLimits::default())
+            ..PackageDeclarations::new(
+                fixture_source(),
+                "fixture",
+                qsl_foundation::IdentityLimits::default(),
+            )
         };
         let plain = check_declarations(package(Expression::boolean(true)));
         let graph = plain.semantic_graph();
@@ -1095,15 +1111,17 @@ mod quantities {
             (metre.node_tag(), metre.semantic_form()),
             (NodeTag::ScalarType, "unit")
         );
-        assert!(matches!(metre.nominal(), Some(NominalNode::Unit(None))));
+        assert!(
+            matches!(metre.nominal_payload(), Some(NominalPayload::Unit(unit)) if unit.target().is_none())
+        );
         assert_eq!(metre.semantic_type(), Some(node_key(LENGTH)));
         let length = graph
             .node(node_key(LENGTH))
             .expect("the Length dimension node");
         assert_eq!(length.semantic_form(), "dimension");
         assert!(matches!(
-            length.nominal(),
-            Some(NominalNode::Dimension(None))
+            length.nominal_payload(),
+            Some(NominalPayload::Dimension(dimension)) if dimension.is_base()
         ));
         assert!(graph.node(node_key(SECOND)).is_some() && graph.node(node_key(TIME)).is_some());
 
@@ -1117,7 +1135,10 @@ mod quantities {
         let product = applications(graph, "quire.op.quantity.mul");
         assert_eq!(product.len(), 1);
         let u1 = product[0].semantic_type().expect("a typed product");
-        assert_eq!(graph.node(u1).unwrap().semantic_form(), "compound_unit");
+        assert_eq!(
+            graph.node(u1.clone()).unwrap().semantic_form(),
+            "compound_unit"
+        );
         assert_ne!(u1, node_key(METRE));
 
         use quire_semantic_value::quantity::{result_unit, UnitOperation};
@@ -1153,10 +1174,10 @@ mod quantities {
             })
         });
         assert_eq!(keys.iter().collect::<BTreeSet<_>>().len(), 3);
-        let u2 = preimage(graph.node(keys[0]).unwrap());
+        let u2 = preimage(graph.node(keys[0].clone()).unwrap());
         assert_eq!(
             u2["body"]["members"][0]["members"][0]["value"]["target"]["digest"],
-            json!(resolved(METRE))
+            json!(node_key(METRE).to_string())
         );
         assert_ne!(keys[2], node_key(METRE));
     }
@@ -1173,8 +1194,8 @@ mod quantities {
             vec!["Example".to_owned(), "kilometre".to_owned()],
             node_key(LENGTH),
             Some(node_key(METRE)),
-            &Rational::from(1000),
-            &Rational::from(0),
+            &quire_exact::Rational::from_integer(Integer::from(1000_i64)),
+            &quire_exact::Rational::from_integer(Integer::from(0_i64)),
         )
         .expect("a derived unit");
         let km = kilometre.key().expect("the unit keys");
@@ -1204,7 +1225,11 @@ mod quantities {
                 named("Km"),
                 Expression::convert(named("Km"), name("a")),
             )],
-            ..PackageDeclarations::new(fixture_source(), "fixture", qsl_foundation::IdentityLimits::default())
+            ..PackageDeclarations::new(
+                fixture_source(),
+                "fixture",
+                qsl_foundation::IdentityLimits::default(),
+            )
         });
         let convert = applications(checked.semantic_graph(), "quire.op.quantity.convert");
         assert_eq!(convert.len(), 1);
@@ -1213,7 +1238,7 @@ mod quantities {
         let operation = &convert["body"]["operation"];
         assert_eq!(
             operation["member"],
-            json!({"kind": "type_argument", "declaration": node_id(&km.to_string())})
+            json!({"kind": "type_argument", "declaration": node_ref(&crate::check::node_key::NodeRef::Admitted(km.clone()))})
         );
         assert_eq!(
             operation["mode"],
@@ -1228,9 +1253,12 @@ mod quantities {
     #[trace("FR-094-AC-7", "TC-419")]
     #[test]
     fn an_unheld_compound_unit_is_an_internal_fault() {
-        let unheld = UnitId::compound([5; 32]);
+        let unheld = UnitId::compound(vec![(
+            super::super::super::tests::fixture_key("unheld"),
+            Integer::from(2_i64),
+        )]);
         let (result, graph) = lower(&[], units(), |lowering| {
-            lowering.type_node(&ValueType::Quantity(unheld), &generated_location())
+            lowering.type_node(&ValueType::Quantity(unheld.clone()), &generated_location())
         });
         assert!(matches!(
             result,

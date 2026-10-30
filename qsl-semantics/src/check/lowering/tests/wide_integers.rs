@@ -110,7 +110,7 @@ fn wide_integer_parameters_keep_their_nodes_in_one_unit() {
     .expect("g checks");
     assert_eq!(
         parameter_named(alone.semantic_graph(), "e").semantic_type(),
-        Some(types[4]),
+        Some(types[4].clone()),
         "the other wide parameters leave Int[0, 9] unchanged"
     );
 }

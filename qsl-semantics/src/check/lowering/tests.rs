@@ -18,7 +18,7 @@ use serde_json::{json, Value as Json};
 use super::*;
 use crate::check::depth_forms::{binary, boolean, function, int_form, integer_expr, name_expr};
 use crate::check::family::fixtures::{admitted_source, empty_scope, fixture_source, scope_with};
-use crate::check::{CheckedGraph, CheckedTypeNode, PackageDeclarations};
+use crate::check::{CheckedGraph, PackageDeclarations};
 use qsl_foundation::source::provenance::RawSourceRef;
 use qsl_foundation::SourceIdentity;
 use quire_semantic_value::checking::CheckingLimits;
@@ -47,7 +47,6 @@ pub(crate) fn fixture_key(label: &str) -> NodeKey {
 }
 
 const SPAN: qsl_foundation::Span = qsl_foundation::Span { start: 0, end: 0 };
-
 
 // ---------------------------------------------------------------------
 // Type nodes, built directly.
@@ -195,7 +194,7 @@ fn list_types() -> TypeEnvironment {
     let list = fixture_key("list");
     TypeEnvironment::new(
         [CompositeDeclaration::new(
-            list,
+            list.clone(),
             "List",
             CompositeShape::Record(vec![FieldDeclaration::new(
                 "next",
@@ -235,7 +234,11 @@ fn equality_and_contains_over_a_recursive_record_without_text_have_no_leaves() {
     let checked = PackageDeclarations {
         types: list_types(),
         functions: vec![eq, has],
-        ..PackageDeclarations::new(fixture_source(), "fixture", qsl_foundation::IdentityLimits::default())
+        ..PackageDeclarations::new(
+            fixture_source(),
+            "fixture",
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
     .check(CheckingLimits::default())
     .expect("equality and contains over List check");
@@ -349,7 +352,11 @@ fn keying_a_recursion_group_is_charged_to_the_work_budget() {
     let checked = |budget: u64| {
         PackageDeclarations {
             functions: ring(k),
-            ..PackageDeclarations::new(fixture_source(), "fixture", qsl_foundation::IdentityLimits::default())
+            ..PackageDeclarations::new(
+                fixture_source(),
+                "fixture",
+                qsl_foundation::IdentityLimits::default(),
+            )
         }
         .check(CheckingLimits::default().with_work_budget(budget))
     };
@@ -583,7 +590,11 @@ fn a_text_equality_carries_the_text_profile_law() {
     let definition = DefinitionRole::TextProfile.reference();
     let graph = PackageDeclarations {
         functions: vec![te],
-        ..PackageDeclarations::new(fixture_source(), "fixture", qsl_foundation::IdentityLimits::default())
+        ..PackageDeclarations::new(
+            fixture_source(),
+            "fixture",
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
     .check(CheckingLimits::default())
     .expect("the text equality checks");
@@ -1103,7 +1114,7 @@ fn bounded_metre() -> ValueType {
 }
 
 fn metre() -> quire_exact::UnitId {
-    quire_exact::UnitId::compound([5; 32])
+    quire_exact::UnitId::compound(vec![(fixture_key("metre"), Integer::from(1_i64))])
 }
 
 /// No checked type node carries a map or a bounded quantity yet (quire-exact
@@ -1214,7 +1225,11 @@ fn parameter_type(form: TypeForm, aliases: Vec<(String, ValueType)>) -> NodeKey 
             None,
             Expression::boolean(true),
         )],
-        ..PackageDeclarations::new(fixture_source(), "fixture", qsl_foundation::IdentityLimits::default())
+        ..PackageDeclarations::new(
+            fixture_source(),
+            "fixture",
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
     .check(CheckingLimits::default())
     .expect("g checks");
@@ -1237,7 +1252,11 @@ fn an_alias_introduces_no_type_node() {
             None,
             Expression::boolean(true),
         )],
-        ..PackageDeclarations::new(fixture_source(), "fixture", qsl_foundation::IdentityLimits::default())
+        ..PackageDeclarations::new(
+            fixture_source(),
+            "fixture",
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
     .check(CheckingLimits::default())
     .expect("g checks");
@@ -1260,7 +1279,7 @@ fn a_declared_record_carries_its_owner_and_an_anonymous_type_does_not() {
     let scope = scope_with(
         TypeEnvironment::new(
             [CompositeDeclaration::new(
-                point,
+                point.clone(),
                 "Point",
                 CompositeShape::Record(vec![
                     FieldDeclaration::new("x", int(0, 9), Presence::Required),
@@ -1281,12 +1300,15 @@ fn a_declared_record_carries_its_owner_and_an_anonymous_type_does_not() {
 
     assert_eq!(u_keys[0], again_keys[0], "one owner, one key");
     assert_eq!(u_keys[1], w_keys[1], "an anonymous type has no owner");
-    assert_eq!(under_u.node(u_keys[0]), again.node(again_keys[0]));
-    let d1 = preimage(under_u.node(u_keys[0]).unwrap());
+    assert_eq!(
+        under_u.node(u_keys[0].clone()),
+        again.node(again_keys[0].clone())
+    );
+    let d1 = preimage(under_u.node(u_keys[0].clone()).unwrap());
     assert!(d1.get("owner").is_some() && !d1["declaration"].is_null());
-    let d2 = preimage(under_w.node(w_keys[0]).unwrap());
+    let d2 = preimage(under_w.node(w_keys[0].clone()).unwrap());
     assert_eq!(d2["owner"]["identity"], "w");
-    let t4 = preimage(under_u.node(u_keys[1]).unwrap());
+    let t4 = preimage(under_u.node(u_keys[1].clone()).unwrap());
     assert!(t4.get("owner").is_none() && t4["declaration"].is_null());
 
     let g1 = function(
@@ -1302,7 +1324,7 @@ fn a_declared_record_carries_its_owner_and_an_anonymous_type_does_not() {
         parameter_keys.push(parameter_named(graph.semantic_graph(), "x").semantic_type());
     }
     assert_eq!(parameter_keys[0], parameter_keys[1]);
-    assert_eq!(parameter_keys[0], Some(u_keys[1]));
+    assert_eq!(parameter_keys[0], Some(u_keys[1].clone()));
 }
 
 /// TC-414 step 2 (FR-092-AC-5): a function lists every parameter in order,
@@ -1468,7 +1490,7 @@ fn equal_literals_are_one_node_with_one_occurrence_each() {
         .map(|ordinal| {
             graph
                 .occurrence(
-                    literal,
+                    literal.clone(),
                     &quire_exact::Origin::new(quire_exact::Role::new("expression"), ordinal),
                 )
                 .expect("an expression occurrence")
@@ -1532,7 +1554,7 @@ fn only_node_of_form(graph: &SemanticGraph, form: &str) -> NodeKey {
         .map(SemanticNode::key)
         .collect();
     assert_eq!(found.len(), 1, "one `{form}` node");
-    found[0]
+    found[0].clone()
 }
 
 /// TC-415 step 4 (FR-093-AC-4): a contained integer builds no convert node;
@@ -1664,7 +1686,11 @@ fn record_projection_and_record_values_name_their_record_node() {
     let graph = PackageDeclarations {
         types,
         functions: vec![project, build],
-        ..PackageDeclarations::new(fixture_source(), "fixture", qsl_foundation::IdentityLimits::default())
+        ..PackageDeclarations::new(
+            fixture_source(),
+            "fixture",
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
     .check(CheckingLimits::default())
     .expect("the record fixtures check");
@@ -1881,4 +1907,3 @@ fn a_mutually_recursive_pair_keys_alike_in_either_order() {
     let pong_first = keys(vec![recursive("pong", "ping"), recursive("ping", "pong")]);
     assert_eq!(ping_first, pong_first);
 }
-
