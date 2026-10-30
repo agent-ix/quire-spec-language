@@ -680,6 +680,15 @@ impl GroupTerm {
 }
 
 impl TupleMember {
+    /// Call `visit` with every Leaf of this member, in order, without
+    /// allocating.
+    pub(crate) fn for_each_leaf(&self, visit: &mut impl FnMut(&LeafTerm)) {
+        match self {
+            Self::Leaf(leaf) => visit(leaf),
+            Self::Group(group) => group.leaves().for_each(visit),
+        }
+    }
+
     /// Every Leaf of this member, in order.
     pub fn leaves(&self) -> Vec<&LeafTerm> {
         match self {
@@ -697,6 +706,13 @@ impl TupleMember {
 }
 
 impl TupleTerm {
+    /// Call `visit` with every Leaf of this Tuple, in order.
+    pub(crate) fn for_each_leaf(&self, visit: &mut impl FnMut(&LeafTerm)) {
+        for member in &self.members {
+            member.for_each_leaf(visit);
+        }
+    }
+
     /// `{term: "aggregate", members}` over Tuple members.
     pub(crate) fn new(members: Vec<TupleMember>) -> Self {
         Self { members }
@@ -724,6 +740,21 @@ impl BindingValue {
         Self::Group(GroupTerm::new(vec![GroupMember::Binding(Binding::new(
             name, leaf,
         ))]))
+    }
+
+    /// Call `visit` with every Leaf this value holds, in order.
+    pub(crate) fn for_each_leaf(&self, visit: &mut impl FnMut(&LeafTerm)) {
+        match self {
+            Self::Leaf(leaf) => visit(leaf),
+            Self::Group(group) => group.leaves().for_each(visit),
+            Self::Tuple(tuple) => tuple.for_each_leaf(visit),
+            Self::Aggregate(aggregate) => {
+                for member in &aggregate.members {
+                    member.for_each_leaf(visit);
+                }
+            }
+            Self::ExecutionPoint(_) => {}
+        }
     }
 
     /// Every Leaf this value holds, in order.
@@ -777,6 +808,15 @@ impl MemberTerm {
     /// `{term: "binding", name, value}` of a Leaf, as a Member.
     pub(crate) fn bound(name: impl Into<String>, value: LeafTerm) -> Self {
         Self::binding(name, BindingValue::Leaf(value))
+    }
+
+    /// Call `visit` with every Leaf this Member holds, in order.
+    pub(crate) fn for_each_leaf(&self, visit: &mut impl FnMut(&LeafTerm)) {
+        match self {
+            Self::Leaf(leaf) => visit(leaf),
+            Self::Group(group) => group.leaves().for_each(visit),
+            Self::Binding(binding) => binding.value.for_each_leaf(visit),
+        }
     }
 
     /// Every Leaf this Member holds, in order.
@@ -840,6 +880,21 @@ impl BodyTerm {
         })
     }
 
+    /// An application typed by an admitted identity or pending handle.
+    pub(crate) fn application_node(
+        operator: Operator,
+        operation: Operation,
+        result_type: NodeRef,
+        arguments: Vec<MemberTerm>,
+    ) -> Self {
+        Self::Application(ApplicationTerm {
+            operator,
+            operation,
+            result_type,
+            arguments,
+        })
+    }
+
     /// `{term: "frame", modifies, creates, deletes, deletes_scoped}` (QSpec FR-340).
     /// `creates` and `deletes` are each ordered lists of object type or
     /// process node keys.
@@ -862,6 +917,21 @@ impl BodyTerm {
         match self {
             Self::Application(application) => Some(application),
             Self::Leaf(_) | Self::Aggregate(_) | Self::Frame(_) | Self::Abstraction(_) => None,
+        }
+    }
+
+    /// Call `visit` with every Leaf of this body, in order, without
+    /// allocating.
+    pub(crate) fn for_each_leaf(&self, visit: &mut impl FnMut(&LeafTerm)) {
+        match self {
+            Self::Leaf(leaf) => visit(leaf),
+            Self::Application(ApplicationTerm { arguments, .. })
+            | Self::Aggregate(AggregateTerm { members: arguments }) => {
+                for member in arguments {
+                    member.for_each_leaf(visit);
+                }
+            }
+            Self::Frame(_) | Self::Abstraction(_) => {}
         }
     }
 
@@ -972,22 +1042,28 @@ impl BodyTerm {
             Self::Abstraction(term) => term.for_each_ref(visit),
             Self::Leaf(_) | Self::Aggregate(_) => {}
         }
-        for leaf in self.leaves() {
-            match leaf {
-                LeafTerm::Literal { ty, .. } => visit(ty),
-                LeafTerm::Reference { target } => visit(target),
-                LeafTerm::DependencyReference { node } => visit(node),
-            }
-        }
+        self.for_each_leaf(&mut |leaf| match leaf {
+            LeafTerm::Literal { ty, .. } => visit(ty),
+            LeafTerm::Reference { target } => visit(target),
+            LeafTerm::DependencyReference { node } => visit(node),
+        });
     }
 
     /// This body with every admitted node key it names replaced by `map`'s
     /// image; pending handles are kept.
     pub(crate) fn map_keys(&self, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Self {
-        // An admitted reference always maps to an admitted one here, so the
-        // refusal of `map_refs` cannot arise.
-        self.map_refs(&mut |reference| reference.map_admitted(&mut *map))
-            .unwrap_or_else(|_| self.clone())
+        // An admitted reference maps to an admitted one, so no member image
+        // is pending.
+        let mut pending_member = false;
+        let mapped = self.map_refs_in(
+            &mut |reference| reference.map_admitted(&mut *map),
+            &mut pending_member,
+        );
+        debug_assert!(
+            !pending_member,
+            "map_keys maps admitted keys to admitted keys"
+        );
+        mapped
     }
 
     /// This body with every node reference it holds replaced by `map`'s
@@ -1522,8 +1598,7 @@ pub enum NodeKeyRefusal {
 
 mod abstraction;
 
-pub use abstraction::AbstractionTerm;
-pub(crate) use abstraction::{FrameEntry, ObjectEntry, PopulationEntry};
+pub use abstraction::{AbstractionTerm, FrameEntry, ObjectEntry, PopulationEntry};
 
 #[cfg(test)]
 mod ref_tests;

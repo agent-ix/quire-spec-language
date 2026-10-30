@@ -61,6 +61,23 @@ struct ParameterEntry {
 }
 
 impl ObjectEntry {
+    /// The object type node.
+    pub fn ty(&self) -> &NodeRef {
+        &self.ty
+    }
+
+    /// The Rust path of the type, one element per segment.
+    pub fn rust_type(&self) -> &[String] {
+        &self.rust_type
+    }
+
+    /// Each `(field, rust_field)` pair, in field-name order.
+    pub fn fields(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.fields
+            .iter()
+            .map(|field| (field.name.as_str(), field.rust_field.as_str()))
+    }
+
     /// The binding of the object type `ty`, with each `(field, rust_field)`
     /// pair; the pairs are sorted by field name as UTF-8 bytes.
     pub(crate) fn new(
@@ -81,6 +98,16 @@ impl ObjectEntry {
 }
 
 impl PopulationEntry {
+    /// The population node.
+    pub fn population(&self) -> &NodeRef {
+        &self.population
+    }
+
+    /// The Rust path of the collection, one element per segment.
+    pub fn collection(&self) -> &[String] {
+        &self.collection
+    }
+
     /// The binding of the population `population` to `collection`.
     pub(crate) fn new(population: NodeKey, collection: Vec<String>) -> Self {
         Self {
@@ -91,6 +118,33 @@ impl PopulationEntry {
 }
 
 impl FrameEntry {
+    /// The object type node the operation belongs to.
+    pub fn context(&self) -> &NodeRef {
+        &self.context
+    }
+
+    /// The operation name.
+    pub fn operation(&self) -> &str {
+        &self.operation
+    }
+
+    /// The Rust path of the implementing function, one element per segment.
+    pub fn function(&self) -> &[String] {
+        &self.function
+    }
+
+    /// The Rust receiver name.
+    pub fn receiver(&self) -> &str {
+        &self.receiver
+    }
+
+    /// Each `(parameter, rust_parameter)` pair, in parameter-name order.
+    pub fn parameters(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.parameters
+            .iter()
+            .map(|parameter| (parameter.name.as_str(), parameter.rust_parameter.as_str()))
+    }
+
     /// The binding of `operation` of the object type `context`, with each
     /// `(parameter, rust_parameter)` pair; the pairs are sorted by parameter
     /// name as UTF-8 bytes.
@@ -138,6 +192,21 @@ impl AbstractionTerm {
             populations,
             frames,
         }
+    }
+
+    /// The object bindings, in canonical order.
+    pub fn objects(&self) -> &[ObjectEntry] {
+        &self.objects
+    }
+
+    /// The population bindings, in canonical order.
+    pub fn populations(&self) -> &[PopulationEntry] {
+        &self.populations
+    }
+
+    /// The operation bindings, in canonical order.
+    pub fn frames(&self) -> &[FrameEntry] {
+        &self.frames
     }
 
     /// Every admitted `type`, `population` and `context` target in structural
