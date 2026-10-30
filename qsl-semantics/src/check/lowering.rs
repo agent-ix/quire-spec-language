@@ -90,11 +90,12 @@ pub(crate) use hyper::{
 };
 pub(crate) use model::ParentSlotFailure;
 pub(crate) use model::{
-    bound_origin, model_declaration_key, quantity_origin, strictly_below, QuantityKind,
+    bound_origin, model_declaration_key, quantity_origin, record_node_key, strictly_below,
+    variant_type_node_key, QuantityKind,
 };
 pub use model::{
-    collection_kind, AdmittedModel, AuthoredBound, CollectionShape, ForeignView, ModelClause,
-    PlaceRow, PlaceStep,
+    collection_kind, model_root_key, AdmittedModel, AuthoredBound, CollectionShape, ForeignView,
+    ModelClause, PlaceRow, PlaceStep,
 };
 pub(crate) use model::{model_node_content, population_node_content};
 pub(crate) use protocol::{

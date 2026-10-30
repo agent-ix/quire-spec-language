@@ -862,6 +862,28 @@ impl AdmittedModel {
             .map(|(id, key)| (key, id.clone()))
     }
 
+    /// Every semantic object-type model node in this selected package, in
+    /// declaration-key order. FR-230 resolves a time-source alias only when
+    /// this package names exactly one such node.
+    pub(crate) fn object_type_model_node_keys(&self) -> Vec<NodeKey> {
+        self.object_types()
+            .filter_map(|(declaration, _)| self.model_node_key(declaration))
+            .collect()
+    }
+
+    /// The key of `declaration`'s model node, minted by the same recipe
+    /// [`Lowering::model_node`] uses, without adding a node to any graph.
+    /// `None` when this package does not declare `declaration`, or declares
+    /// it as a record kind no checked node names.
+    pub(crate) fn model_node_key(&self, declaration: &DeclarationKey) -> Option<NodeKey> {
+        if self.selection.identity != declaration.package {
+            return None;
+        }
+        record_node_key(self.records.get(declaration)?)
+            .ok()
+            .flatten()
+    }
+
     /// The object type a `terminal` declaration's model node names (FR-411):
     /// the one object type the package's populations range over (FR-124),
     /// else its least object type by declaration key, so that a model with
@@ -1798,6 +1820,41 @@ pub fn model_root_key(
 /// abstraction relation's population target both key.
 pub(crate) fn population_node_content(owner: ModelOwner) -> NodeContent {
     model_node_content(owner, NodeTag::Relation, "population")
+}
+
+/// The key of the model declaration node of `record`, or `None` for a record
+/// kind no checked node names: `[tag, form, node]` under the declaring
+/// package's identity (FR-322 "Model-owned members" step 2), so it is also
+/// the declaration key under which a model record value type or event type
+/// is declared in the type environment (FR-359 item 9).
+///
+/// # Errors
+///
+/// A refusal when the package identity is empty or the key cannot be formed.
+pub(crate) fn record_node_key(
+    record: &DomainPackageRecord,
+) -> Result<Option<NodeKey>, quire_exact::InvalidNodeKey> {
+    let Some((node_tag, form)) = record_form(record) else {
+        return Ok(None);
+    };
+    let key = record.key();
+    model_declaration_key(&key.package, node_tag, form, &key.node).map(Some)
+}
+
+/// The key of the model declaration node of the variant type `record`
+/// declares (FR-360 item 11); `None` for a record that declares no variant
+/// type.
+///
+/// # Errors
+///
+/// As [`record_node_key`].
+pub(crate) fn variant_type_node_key(
+    record: &DomainPackageRecord,
+) -> Result<Option<NodeKey>, quire_exact::InvalidNodeKey> {
+    match record {
+        DomainPackageRecord::Enum(_) => record_node_key(record),
+        _ => Ok(None),
+    }
 }
 
 /// A domain package record's model node tag and form, or `None` for a
