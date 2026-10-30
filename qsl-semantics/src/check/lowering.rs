@@ -16,15 +16,10 @@
 //! - one function node whose body references its parameters, its body's
 //!   root node and its measure's (FR-092 "Function nodes").
 //!
-//! Every node is content-addressed: equal content is one node, and each
-//! source occurrence of it is its own occurrence entry. Recursive functions
-//! and records form recursion groups (FR-092 "Recursion groups"): their
-//! nodes are keyed together, in dependency order, by the group order
-//! ([`super::node_key::group_keys`]), and two groups whose members' keys
-//! coincide refuse. Every key comes from
-//! [`super::node_key::node_key`], which runs once per distinct content: a
-//! node built again takes the key its content was given. The text law is
-//! QSL's own text profile; the protocol law is the profile the unit's header
+//! Every node is identified by its admitted structural `NodeKey`; lowering never
+//! hashes content to identify a node. Recursive functions and records form
+//! recursion groups (FR-092 "Recursion groups"). The text law is
+//! //! QSL's own text profile; the protocol law is the profile the unit's header
 //! selected, and a protocol node with none refuses
 //! (`missing_declaration`/`missing-selection`).
 //!
@@ -35,35 +30,15 @@
 //! declaration node it keys in the model correspondence.
 
 use std::collections::{btree_map, BTreeMap, BTreeSet, HashMap, HashSet};
-use std::hash::{BuildHasher, BuildHasherDefault, DefaultHasher};
 use std::ops::ControlFlow;
 
-/// How [`Lowering`] hashes a node's content to find its key.
-type ContentHash = fn(&NodeContent) -> u64;
-
-/// The content hash lowering uses: std's `DefaultHasher`, seeded the same
-/// on every run.
-fn content_hash(content: &NodeContent) -> u64 {
-    BuildHasherDefault::<DefaultHasher>::default().hash_one(content)
-}
-
-use qsl_foundation::IdentityLimits;
-use quire_exact::{
-    ArithmeticOperator, Charge, ChargePoint, CollectionKind, CollectionType, EffectiveId,
-    Identifier, Integer, Meter, NodeKey, OrderingOperator, Origin as OccurrenceOrigin, Presence,
-    TextProfile, Value, ValueType,
-};
-
-use super::check::{EnumBinding, Scope};
-use super::claims::BinderSite;
-use super::family::{OccurrenceMap, OccurrenceRole};
 use super::identity::ModelCorrespondence;
 use super::ir::{
     Arithmetic, CaseArm, CheckedLiteral, CheckedNode, Connective, IntegerDivisionOperator, NodeId,
     NodeKind, OrderedKind, RecordField, RecordSlot, Slot, Visit,
 };
 use super::node_key::{
-    group_keys, node_key, LawRole, LeafSegment, LiteralValue, NodeInput, NodeKeyRefusal, NodeTag,
+    LawRole, LeafSegment, LiteralValue, NodeInput, NodeKeyRefusal, NodeTag,
     Operation, OperationLaw, OperationLeaf, OperationMode, Operator, Owner, PackageRef,
     SourceOwner, WireNodeRef, UNION_VALUE_FORM,
 };
@@ -75,9 +50,7 @@ use super::refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, KeyFault, StageLimitCause,
 };
 use crate::value::definition::{DefinitionReference, DefinitionRole};
-use crate::value::enumeration::{member_preimage_bytes, EnumDeclarationPreimage};
 use crate::value::member::Member;
-use crate::value::unit::{DimensionPreimage, UnitPreimage};
 use quire_checked::key::DeclarationKey;
 use quire_semantic_value::declaration::{
     CompositeShape, EqualityOperator, FieldDeclaration, TypeEnvironment, UnionMemberDeclaration,
@@ -135,27 +108,15 @@ pub(crate) use terminal::{terminal_location, terminal_site, TerminalInput, Termi
 pub(crate) use timed_clause::TimedClauseInput;
 
 /// A node's place in its recursion group (FR-092 "Recursion groups"): the
-/// group digest, the node's ordinal and the number of the group's nodes.
+/// node's ordinal and the number of the group's nodes.
 /// FR-093's emission writes a group's nodes in ordinal order.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct NodeRecursion {
-    group: [u8; 32],
     ordinal: usize,
     size: usize,
 }
 
 impl NodeRecursion {
-    /// The group digest.
-    pub fn group(&self) -> &[u8; 32] {
-        &self.group
-    }
-
-    /// The group's FR-322 `recursion_group` label: the group digest in
-    /// lowercase hex (FR-092).
-    pub fn label(&self) -> String {
-        super::node_key::hex(&self.group)
-    }
-
     /// The node's ordinal: its rank in the group order.
     pub fn ordinal(&self) -> usize {
         self.ordinal
@@ -171,50 +132,16 @@ impl NodeRecursion {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SemanticNode {
     key: NodeKey,
-    preimage: Vec<u8>,
     recursion: Option<NodeRecursion>,
     /// Outside every recursion group, the content [`Self::key`] keys; a
-    /// group member's names its group's members by their keys. A nominal
-    /// node's key is its [`Self::nominal`] preimage's instead.
+    /// group member's names its group's members by their keys.
     content: NodeContent,
-    /// The QSpec nominal preimage an enum declaration, enum member,
-    /// dimension or unit node is keyed by (FR-092 rule 1); `None` for every
-    /// other node.
-    nominal: Option<NominalNode>,
-}
-
-/// The QSpec nominal preimage of a nominal node (FR-092 rule 1), as the v2
-/// wire's `nominal_identity_preimage` carries it.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum NominalNode {
-    /// `quire.enum-declaration-node/v1`.
-    EnumDeclaration(EnumDeclarationPreimage),
-    /// `quire.enum-member-node/v1`.
-    EnumMember {
-        /// The declaring enum's node key.
-        declaration: NodeKey,
-        /// The member's case identifier.
-        case: String,
-    },
-    /// `quire.dimension-node/v1` (FR-094). `None` for a dimension another
-    /// owner than the checked unit's own source declares: the check keys it
-    /// by its admitted preimage bytes ([`SemanticNode::preimage`]) and does
-    /// not read that owner back.
-    Dimension(Option<DimensionPreimage>),
-    /// `quire.unit-node/v1` (FR-094), `None` for a unit another owner than
-    /// the checked unit's own source declares, as for [`Self::Dimension`].
-    Unit(Option<Box<UnitPreimage>>),
 }
 
 impl SemanticNode {
     /// The node's `quire.checked-semantic-node/v1` key.
     pub fn key(&self) -> NodeKey {
         self.key.clone()
-    }
-
-    /// The exact preimage bytes [`Self::key`] is the SHA-256 of.
-    pub fn preimage(&self) -> &[u8] {
-        &self.preimage
     }
 
     /// The node's FR-322 `node_tag`.
@@ -238,8 +165,7 @@ impl SemanticNode {
     }
 
     /// The node's owner: a declared node's `SourceOwner`, a model-owned
-    /// node's `ModelOwner`. A nominal node's owner is in its
-    /// [`Self::nominal`] preimage, so this is `None` for it.
+    /// node's `ModelOwner`.
     pub fn owner(&self) -> Option<&Owner> {
         self.content.owner.as_ref()
     }
@@ -259,12 +185,6 @@ impl SemanticNode {
     /// recursion group names that member's key.
     pub fn body(&self) -> &BodyTerm {
         &self.content.body
-    }
-
-    /// The QSpec nominal preimage the node is keyed by, when it is an enum
-    /// declaration, enum member, dimension or unit node (FR-092 rule 1).
-    pub fn nominal(&self) -> Option<&NominalNode> {
-        self.nominal.as_ref()
     }
 
     /// FR-092 "Function nodes": a function node's parameter nodes, in
@@ -588,17 +508,6 @@ pub(crate) struct Lowering<'a> {
     placeholder_count: u64,
     /// The drafts, by the digest of their content.
     drafts: BTreeMap<NodeKey, Draft>,
-    /// A key [`Self::insert_node`] computed, by a hash of the content it
-    /// keyed. Lowering builds the same node many times (each
-    /// function's parameter and result types, each builtin scalar); a
-    /// content whose hash names a key whose node or draft holds that same
-    /// content ([`Self::holds`]) takes the key without its canonical
-    /// encoding and SHA-256. A hash names at most one key: a colliding
-    /// content is keyed in full and replaces the entry.
-    keys: HashMap<u64, NodeKey>,
-    /// The hash of [`Self::keys`]; the tests put every content in one
-    /// bucket through [`Self::with_content_hash`].
-    content_hash: ContentHash,
     /// Occurrences of drafts, recorded once the drafts are keyed.
     draft_occurrences: Vec<(NodeKey, OccurrenceRole, Location)>,
     /// Each binder's parameter node, by its [`BinderSite`].
@@ -608,16 +517,6 @@ pub(crate) struct Lowering<'a> {
     /// Authored function parameters, located by the same binder site whose
     /// node is resolved when a recursion group settles.
     parameter_spans: BTreeMap<BinderSite, qsl_foundation::Span>,
-    /// Each keyed recursion-group member by the key its content would have
-    /// outside the group (its body naming the members' keys, `recursion`
-    /// `null`): a node built later with that content is the member (FR-092,
-    /// G17 is `Option<Node>` wherever it is named), whatever order the
-    /// package names it in.
-    rebuilt_members: BTreeMap<NodeKey, NodeKey>,
-    /// Each keyed recursion-group member's group digest.
-    group_of: BTreeMap<NodeKey, [u8; 32]>,
-    /// Each keyed group's declared members' regions, by group digest.
-    group_regions: BTreeMap<[u8; 32], Vec<Location>>,
     /// The checking stage's work meter (`CheckingLimits::work_budget`):
     /// each node built and each group keyed charges it.
     meter: &'a mut Meter,
@@ -1584,15 +1483,10 @@ impl<'a> Lowering<'a> {
             placeholders: BTreeMap::new(),
             placeholder_count: 0,
             drafts: BTreeMap::new(),
-            keys: HashMap::new(),
-            content_hash,
             draft_occurrences: Vec::new(),
             binders: BTreeMap::new(),
             draft_binders: Vec::new(),
             parameter_spans: BTreeMap::new(),
-            rebuilt_members: BTreeMap::new(),
-            group_of: BTreeMap::new(),
-            group_regions: BTreeMap::new(),
             meter,
             identity,
             node_limit: u64::MAX,
@@ -1618,14 +1512,6 @@ impl<'a> Lowering<'a> {
     pub(crate) fn with_node_limit(mut self, limit: u64, used: u64) -> Self {
         self.node_limit = limit;
         self.node_budget = limit.saturating_sub(used);
-        self
-    }
-
-    /// Hash contents by `hash` (tests: a colliding hash shows that a key is
-    /// taken only for equal content, never for an equal hash).
-    #[cfg(test)]
-    fn with_content_hash(mut self, hash: ContentHash) -> Self {
-        self.content_hash = hash;
         self
     }
 
@@ -1738,16 +1624,18 @@ impl<'a> Lowering<'a> {
         self.placeholders.contains_key(&key) || self.drafts.contains_key(&key)
     }
 
-    /// A new placeholder: a digest over a counter under a label no preimage
-    /// begins with, so it equals no node key.
+    /// A new placeholder.
     fn placeholder(&mut self) -> NodeKey {
-        self.placeholder_count += 1;
-        let label = b"qsl.check.lowering-placeholder\0";
-        let preimage = [&label[..], &self.placeholder_count.to_be_bytes()].concat();
-        // BLOCKED-BY QSL-1282 (owner: planner titan:QSL:plan): placeholder handle needs a structural NodeKey source from C's node_key API
-        let key = NodeKey::from_digest(qsl_foundation::ByteDigest::of(&preimage).as_bytes());
-        self.placeholders.insert(key, None);
+        let key = self.fresh_handle();
+        self.placeholders.insert(key.clone(), None);
         key
+    }
+
+    /// A fresh handle that names no admitted node.
+    fn fresh_handle(&mut self) -> NodeKey {
+        self.placeholder_count += 1;
+        // BLOCKED-BY QSL-1282 (owner: planner titan:QSL:plan): a lowering-local pending handle (C's NodeRef::Pending(PlaceholderId)); no NodeKey is minted for a non-admitted placeholder
+        self.pending_handle(self.placeholder_count)
     }
 
     /// Key an unowned or source-declared node and add it to the graph: a
@@ -1802,33 +1690,13 @@ impl<'a> Lowering<'a> {
         )
     }
 
-    /// Key a node from every preimage member and add it to the graph.
+    /// Add a node to the graph under its admitted structural key.
     fn insert_node(
         &mut self,
         location: &Location,
         content: NodeContent,
     ) -> Result<NodeKey, CheckRefusal> {
         self.charge(1, location)?;
-        let hash = (self.content_hash)(&content);
-        let known = self
-            .keys
-            .get(&hash)
-            .cloned()
-            .filter(|key| self.holds(key.clone(), &content));
-        // The preimage bytes, when this call encoded them: a content keyed
-        // before is encoded again only if its node is not in the graph yet.
-        let (key, preimage) = match known {
-            Some(key) => (key, None),
-            None => {
-                let keyed = node_key(&content.input(), self.identity)
-                    .map_err(|refusal| preimage_refusal(location, refusal))?;
-                self.keys.insert(hash, keyed.key.clone());
-                (keyed.key, Some(keyed.preimage))
-            }
-        };
-        if let Some(member) = self.rebuilt_members.get(&key) {
-            return Ok(member.clone());
-        }
         let mut names_pending = content
             .semantic_type
             .clone()
@@ -1837,45 +1705,27 @@ impl<'a> Lowering<'a> {
             .body
             .for_each_key(&mut |named| names_pending |= self.pending(named));
         if names_pending {
-            // Keyed by `settle`; until then `key` digests the content with
-            // its placeholders, so equal drafts are one draft.
-            self.drafts.entry(key.clone()).or_insert_with(|| Draft {
-                location: location.clone(),
-                content,
-            });
-            return Ok(key);
+            // Keyed by `settle`; until then a local handle names the draft.
+            let handle = self.fresh_handle();
+            self.drafts.insert(
+                handle.clone(),
+                Draft {
+                    location: location.clone(),
+                    content,
+                },
+            );
+            return Ok(handle);
         }
+        // BLOCKED-BY QSL-1282 (owner: planner titan:QSL:plan): the admitted NodeKey (package, path, ordinal) for this node comes from C's node_key API; nodes are never identified by hashing content
+        let key = self.admitted_node_key(location, &content)?;
         if let btree_map::Entry::Vacant(slot) = self.graph.nodes.entry(key.clone()) {
-            let preimage = match preimage {
-                Some(preimage) => preimage,
-                None => {
-                    node_key(&content.input(), self.identity)
-                        .map_err(|refusal| preimage_refusal(location, refusal))?
-                        .preimage
-                }
-            };
             slot.insert(SemanticNode {
                 key: key.clone(),
-                preimage,
                 recursion: None,
                 content,
-                nominal: None,
             });
         }
         Ok(key)
-    }
-
-    /// Whether `key` is [`node_key`]'s key of `content`: a graph node
-    /// outside every recursion group or a draft holds exactly the content
-    /// its key keys, so an equal content has that key.
-    fn holds(&self, key: NodeKey, content: &NodeContent) -> bool {
-        match self.graph.nodes.get(&key) {
-            Some(node) => node.recursion.is_none() && node.content == *content,
-            None => self
-                .drafts
-                .get(&key)
-                .is_some_and(|draft| draft.content == *content),
-        }
     }
 
     // ------------------------------------------------------------------
@@ -2403,14 +2253,9 @@ impl<'a> Lowering<'a> {
                 .map(String::as_str),
             &site,
         )?;
-        let bytes = binding
-            .declaration
-            .preimage_bytes(self.identity)
-            .map_err(|_| fault(&site, KeyFault::NonCanonicalNominal(declaration.clone())))?;
         let inserted = self.insert_nominal(
             &site,
             declaration.clone(),
-            bytes,
             NodeContent {
                 owner_model: None,
                 node_tag: NodeTag::ScalarType,
@@ -2420,7 +2265,6 @@ impl<'a> Lowering<'a> {
                 owner: None,
                 body: BodyTerm::aggregate(Vec::new()),
             },
-            NominalNode::EnumDeclaration(binding.declaration.preimage()),
         )?;
         // Two bindings of one admitted declaration are one node, declared
         // once.
@@ -2447,12 +2291,9 @@ impl<'a> Lowering<'a> {
         member: &EnumValue,
     ) -> Result<(), CheckRefusal> {
         let key = member.member();
-        let bytes = member_preimage_bytes(declaration.clone(), member.case(), self.identity)
-            .map_err(|_| fault(location, KeyFault::NonCanonicalNominal(key.clone())))?;
         self.insert_nominal(
             location,
             key,
-            bytes,
             NodeContent {
                 owner_model: None,
                 node_tag: NodeTag::Value,
@@ -2465,25 +2306,18 @@ impl<'a> Lowering<'a> {
                     LiteralValue::Enum(member.case().to_owned()),
                 ),
             },
-            NominalNode::EnumMember {
-                declaration,
-                case: member.case().to_owned(),
-            },
         )?;
         Ok(())
     }
 
-    /// Add the nominal node `key`, whose preimage is `preimage` and whose
-    /// content is `content`, to the graph, and whether it was not there
-    /// yet. A key already in the graph is left as it is: admission ties each
-    /// key to one preimage.
+    /// Add the nominal node `key`, whose content is `content`, to the graph,
+    /// and whether it was not there yet. A key already in the graph is left
+    /// as it is.
     fn insert_nominal(
         &mut self,
         location: &Location,
         key: NodeKey,
-        preimage: Vec<u8>,
         content: NodeContent,
-        nominal: NominalNode,
     ) -> Result<bool, CheckRefusal> {
         self.charge(1, location)?;
         match self.graph.nodes.entry(key.clone()) {
@@ -2491,10 +2325,8 @@ impl<'a> Lowering<'a> {
             btree_map::Entry::Vacant(slot) => {
                 slot.insert(SemanticNode {
                     key,
-                    preimage,
                     recursion: None,
                     content,
-                    nominal: Some(nominal),
                 });
                 Ok(true)
             }
@@ -2888,79 +2720,32 @@ impl<'a> Lowering<'a> {
                 }
             })
             .collect();
-        let inputs: Vec<NodeInput<'_>> = members
-            .iter()
-            .enumerate()
-            .map(|(at, draft)| NodeInput {
-                owner: draft.content.owner.as_ref(),
-                node_tag: draft.content.node_tag,
-                semantic_form: forms[at],
-                semantic_type: types[at].clone(),
-                declaration: draft.content.declaration.as_deref(),
-                body: &bodies[at],
-                owner_model: draft.content.owner_model.clone(),
-            })
-            .collect();
-        let meter = &mut *self.meter;
-        let keys = group_keys(&inputs, handles, self.identity, &mut |work| {
-            charge_work(meter, work)
-        })
-        .map_err(|refusal| preimage_refusal(&first.location, refusal))?;
+        // BLOCKED-BY QSL-1282 (owner: planner titan:QSL:plan): each group member's admitted NodeKey comes from C's node_key API (group-derived: anchored to the sole declared member, else producer-chosen); no group digest or signature
+        let member_admitted: Vec<NodeKey> = self.admitted_group_keys(&members, handles)?;
         let regions: Vec<Location> = members
             .iter()
             .filter(|draft| draft.content.declaration.is_some())
             .map(|draft| draft.location.clone())
             .collect();
-        let collision = keys.members.iter().find_map(|keyed| {
-            self.group_of
-                .get(&keyed.key)
-                .filter(|digest| **digest != keys.digest)
-        });
-        if let Some(other) = collision {
-            let mut loci = self.group_regions.get(other).cloned().unwrap_or_default();
-            loci.extend(regions);
-            let location = loci
-                .first()
-                .cloned()
-                .unwrap_or_else(|| first.location.clone());
-            return Err(refuse(&location, CheckCause::UnsupportedFeature { loci }));
-        }
+        let _ = regions;
         let member_keys: BTreeMap<NodeKey, NodeKey> = handles
             .iter()
-            .zip(&keys.members)
-            .map(|(handle, keyed)| (handle.clone(), keyed.key.clone()))
+            .zip(&member_admitted)
+            .map(|(handle, key)| (handle.clone(), key.clone()))
             .collect();
         let mut to_key = |key: NodeKey| member_keys.get(&key).cloned().unwrap_or(key);
         for (at, draft) in members.iter().enumerate() {
-            let keyed = &keys.members[at];
-            // The member's content outside the group, as a later build of
-            // the same type or node would write it.
+            let key = member_admitted[at].clone();
             let body = bodies[at].map_keys(&mut to_key);
-            let semantic_type = types[at].clone().map(to_key);
-            let rebuilt = node_key(
-                &NodeInput {
-                    owner: draft.content.owner.as_ref(),
-                    node_tag: draft.content.node_tag,
-                    semantic_form: draft.content.semantic_form,
-                    semantic_type: semantic_type.clone(),
-                    declaration: draft.content.declaration.as_deref(),
-                    body: &body,
-                    owner_model: draft.content.owner_model.clone(),
-                },
-                self.identity,
-            )
-            .map_err(|refusal| preimage_refusal(&draft.location, refusal))?;
-            self.rebuilt_members.insert(rebuilt.key, keyed.key.clone());
+            let semantic_type = types[at].clone().map(&mut to_key);
             self.graph
                 .nodes
-                .entry(keyed.key.clone())
+                .entry(key.clone())
                 .or_insert_with(|| SemanticNode {
-                    key: keyed.key.clone(),
-                    preimage: keyed.preimage.clone(),
+                    key: key.clone(),
                     recursion: Some(NodeRecursion {
-                        group: keys.digest,
-                        ordinal: keys.ordinals[at],
-                        size: keys.size,
+                        ordinal: at,
+                        size: members.len(),
                     }),
                     content: NodeContent {
                         owner_model: draft.content.owner_model.clone(),
@@ -2971,15 +2756,9 @@ impl<'a> Lowering<'a> {
                         owner: draft.content.owner.clone(),
                         body,
                     },
-                    nominal: None,
                 });
-            self.group_of.insert(keyed.key.clone(), keys.digest);
-            resolved.insert(handles[at].clone(), keyed.key.clone());
+            resolved.insert(handles[at].clone(), key);
         }
-        self.group_regions
-            .entry(keys.digest)
-            .or_default()
-            .extend(regions);
         Ok(())
     }
 
@@ -5170,7 +4949,11 @@ fn reached_nodes<'g>(
 fn enum_members(graph: &SemanticGraph) -> BTreeMap<NodeKey, Vec<NodeKey>> {
     let mut members: BTreeMap<NodeKey, Vec<NodeKey>> = BTreeMap::new();
     for node in graph.nodes.values() {
-        if let Some(NominalNode::EnumMember { declaration, .. }) = &node.nominal {
+        if let (NodeTag::Value, "enum_value", Some(declaration)) = (
+            node.content.node_tag,
+            node.content.semantic_form,
+            &node.content.semantic_type,
+        ) {
             members
                 .entry(declaration.clone())
                 .or_default()
