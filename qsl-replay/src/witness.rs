@@ -25,7 +25,7 @@ use crate::identity::{DeclaredDomain, ObligationIdentity, ProfileSelection, Trac
 use crate::model_check::state_graph::GraphEvidenceEnvelope;
 use crate::target::{ReplayTarget, ReplayTargetMembers, TargetMember, TargetSelectionRefusal};
 use qsl_foundation::bound::{DomainKey, FiniteBound};
-use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord, InvalidDigestRecord};
+use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::BackendId;
 
@@ -915,8 +915,6 @@ pub struct WitnessPacket<P: FamilyPayload> {
     /// The replay target members (QSpec FR-323): exactly one must be
     /// present.
     pub replay_target: ReplayTargetMembers,
-    /// `(digest domain, digest hex)` naming the package.
-    pub package_id: Option<(Option<String>, String)>,
     /// The semantic profile selections in effect for the proving run.
     pub profile_selections: Option<Vec<ProfileSelection>>,
     /// The proving run's `quire.value.accounting/v1` limits (ADR-014 B-2).
@@ -943,7 +941,6 @@ impl<P: FamilyPayload> Default for WitnessPacket<P> {
             occurrence_key: None,
             clause_node: None,
             replay_target: ReplayTargetMembers::default(),
-            package_id: None,
             profile_selections: None,
             run_limits: None,
             declared_domains: None,
@@ -963,7 +960,6 @@ impl<P: FamilyPayload> Default for WitnessPacket<P> {
 fn measured_encoded_bytes<P: FamilyPayload>(packet: &WitnessPacket<P>) -> usize {
     let mut total = 0usize;
     total += packet.replay_target.measured_bytes();
-    total += packet.package_id.as_ref().map_or(0, |(_, hex)| hex.len());
     total += packet.profile_selections.as_ref().map_or(0, |selections| {
         selections
             .iter()
@@ -1029,29 +1025,9 @@ pub enum WitnessRefusal {
     /// The `backend` member is empty (`invalid_identifier`, ADR-013 O-19).
     #[error("invalid_identifier: the backend identity is empty")]
     EmptyBackendIdentity,
-    /// A digest names a domain outside the closed FR-201 set, or supplies no
-    /// domain at all.
-    #[error("stale_dependency/digest-domain-mismatch: {0:?}: {1}")]
-    DigestDomainMismatch(&'static str, InvalidDigestRecord),
-    /// A digest names a domain FR-201 admits, but its own hex encoding is
-    /// malformed (wrong length, or not lowercase hex) -- not a domain
-    /// problem, so it is never spelled `digest-domain-mismatch`.
-    #[error("invalid_digest/malformed-encoding: {0:?}: {1}")]
-    MalformedDigest(&'static str, InvalidDigestRecord),
     /// The encoded packet exceeds the configured reader bound.
     #[error(transparent)]
     BoundExceeded(#[from] BoundExceeded),
-}
-
-/// Route `err` to [`WitnessRefusal::DigestDomainMismatch`] or
-/// [`WitnessRefusal::MalformedDigest`] by its real cause, so a wrong hex
-/// length is never reported as a domain problem.
-fn classify_digest_error(member: &'static str, err: InvalidDigestRecord) -> WitnessRefusal {
-    if err.is_domain_mismatch() {
-        WitnessRefusal::DigestDomainMismatch(member, err)
-    } else {
-        WitnessRefusal::MalformedDigest(member, err)
-    }
 }
 
 impl<P: FamilyPayload> WitnessEnvelope<P> {
@@ -1103,11 +1079,6 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
                     WitnessRefusal::ConflictingTarget { members }
                 }
             })?;
-        let (package_domain, package_hex) = packet
-            .package_id
-            .ok_or(WitnessRefusal::MissingMember("package_id"))?;
-        let package_id = DigestRecord::from_wire(package_domain.as_deref(), &package_hex)
-            .map_err(|e| classify_digest_error("package_id", e))?;
         let profile_selections = packet
             .profile_selections
             .ok_or(WitnessRefusal::MissingMember("profile_selections"))?;
@@ -1139,7 +1110,6 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
             occurrence_key,
             clause_node,
             replay_target,
-            package_id,
             profile_selections,
             run_limits,
             declared_domains,
@@ -1159,12 +1129,8 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
         WitnessPacket {
             obligation_identity: Some(*self.obligation_identity.as_bytes()),
             occurrence_key: Some(self.occurrence_key.clone()),
-            clause_node: Some(self.clause_node),
+            clause_node: Some(self.clause_node.clone()),
             replay_target: self.replay_target.clone().into(),
-            package_id: Some((
-                Some(self.package_id.domain().as_str().to_owned()),
-                self.package_id.hex(),
-            )),
             profile_selections: Some(self.profile_selections.clone()),
             run_limits: Some(self.run_limits),
             declared_domains: Some(self.declared_domains.clone()),
@@ -1219,17 +1185,13 @@ mod envelope_tests {
         WitnessPacket {
             obligation_identity: Some(digest(1)),
             occurrence_key: Some(OccurrenceKey::new(
-                NodeKey::from_digest(digest(2)),
+                crate::fixture_node(2),
                 origin("reference", occurrence_ordinal),
             )),
-            clause_node: Some(NodeKey::from_digest(digest(3))),
+            clause_node: Some(crate::fixture_node(3)),
             replay_target: ReplayTargetMembers::function(
                 QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap(),
             ),
-            package_id: Some((
-                Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
-                DigestRecord::mint(DigestDomain::PackageSemanticV2, digest(4)).hex(),
-            )),
             profile_selections: Some(vec![ProfileSelection::new(
                 "quire.profile.v1".to_owned(),
                 "finite-state".to_owned(),
@@ -1238,7 +1200,7 @@ mod envelope_tests {
             declared_domains: Some(vec![DeclaredDomain::new(
                 ProofBound::new(
                     DomainKey::Node {
-                        node: NodeKey::from_digest(digest(6)),
+                        node: crate::fixture_node(6),
                         path: Vec::new(),
                     },
                     Some(DomainKind::Integer),
@@ -1298,7 +1260,7 @@ mod envelope_tests {
         // `Input`-arm envelope round trip too.
         let mut input_packet = full_packet(0);
         input_packet.source = Some(EnvelopeSource::Input(vec![CanonicalAssignment {
-            parameter: NodeKey::from_digest(digest(9)),
+            parameter: crate::fixture_node(9),
             value: WitnessValue::Integer(42),
         }]));
         let input_envelope =
@@ -1321,7 +1283,7 @@ mod envelope_tests {
         let mut packet = full_packet(0);
         // Two bounds on one parameter, at the parameter's own position and
         // at its element: distinct by their domain keys.
-        let parameter = NodeKey::from_digest(digest(6));
+        let parameter = crate::fixture_node(6);
         let whole = DomainKey::Node {
             node: parameter,
             path: Vec::new(),
@@ -1550,7 +1512,7 @@ mod envelope_tests {
             DeclaredDomain::new(
                 ProofBound::new(
                     DomainKey::Node {
-                        node: NodeKey::from_digest(digest(6)),
+                        node: crate::fixture_node(6),
                         path,
                     },
                     Some(DomainKind::Collection),
@@ -1583,7 +1545,6 @@ mod envelope_tests {
                 occurrence_key: self.occurrence_key,
                 clause_node: self.clause_node,
                 replay_target: self.replay_target,
-                package_id: self.package_id,
                 profile_selections: self.profile_selections,
                 run_limits: self.run_limits,
                 declared_domains: self.declared_domains,
