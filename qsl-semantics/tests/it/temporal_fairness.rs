@@ -10,7 +10,6 @@
 use ix_trace_rs::trace;
 use qsl_foundation::bound::{DomainKey, DomainKind, TemporalInterval, TemporalUpper};
 use qsl_foundation::diagnostic::{Code, StageFailure};
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::Span;
 use qsl_semantics::check::{
     check_clauses, Capability, CheckCause, CheckRefusal, CheckedInterval, CheckedTemporalClause,
@@ -26,6 +25,16 @@ use crate::model_operations::{
     admit_and_assemble_with_profiles, ambiguous_operation_document,
     attempt_update_modifies_version_number, config_unit_with_profiles, config_version_document,
 };
+
+/// A structural node key for a fixture, distinct per `tag`.
+fn fixture_key(tag: u8) -> quire_exact::NodeKey {
+    quire_exact::NodeKey::new(
+        "fixture",
+        vec![quire_exact::PathSegment::Text(format!("node{tag}"))],
+        0,
+    )
+    .expect("a valid fixture key")
+}
 
 const EVENT: &str = "quire.temporal.event-position.false-extension/v1";
 const FIXED: &str = "quire.temporal.fixed-sample.false-extension/v1";
@@ -360,15 +369,15 @@ fn clauses_over_a_model_subject_classify_into_their_property_form() {
             .expect("one claim");
         let record = claim
             .requirements(
-                WireNodeId::from_digest([1; 32]),
-                &[WireNodeId::from_digest([2; 32])],
+                fixture_key(1),
+                &[fixture_key(2)],
                 // The population's key is FR-336's test; this one reads the
                 // formula's domain.
                 &claim
                     .populations()
                     .iter()
                     .map(|_| DomainKey::Population {
-                        member_type: WireNodeId::from_digest([3; 32]),
+                        member_type: fixture_key(3),
                         ordinal: 0,
                     })
                     .collect::<Vec<_>>(),
@@ -436,12 +445,12 @@ fn a_clauses_requirements_carry_its_fairness_kinds() {
             .expect("one claim");
         claim
             .requirements(
-                WireNodeId::from_digest([1; 32]),
-                &[WireNodeId::from_digest([2; 32])],
+                fixture_key(1),
+                &[fixture_key(2)],
                 // The clauses are over `ConfigVersion`, whose population is
                 // unbounded: the caller keys it.
                 &[DomainKey::Population {
-                    member_type: WireNodeId::from_digest([3; 32]),
+                    member_type: fixture_key(3),
                     ordinal: 0,
                 }],
                 &[],

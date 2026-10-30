@@ -141,10 +141,6 @@ fn package_time_units_reach_s3_with_their_model_owner() {
         .check(quire_semantic_value::checking::CheckingLimits::default())
         .expect("S3 resolves the package-owned Time unit");
     assert_eq!(checked.time_sources()[0].unit, "Config::ms");
-    assert_ne!(
-        checked.time_sources()[0].time_dimension.as_bytes(),
-        &[0; 32]
-    );
 }
 
 #[trace("TC-685")]

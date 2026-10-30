@@ -578,7 +578,7 @@ impl Reader {
             .expect("a current observation")
             .environment
             .objects()
-            .find(self.universes[&initial], object)
+            .find(self.universes[&initial].clone(), object)
             .unwrap_or_else(|| panic!("{object} is held"))
             .clone()
     }

@@ -33,6 +33,16 @@ mod fixture;
 
 use fixture::id;
 
+/// A structural node key for a fixture, distinct per `tag`.
+fn fixture_key(tag: u8) -> quire_exact::NodeKey {
+    quire_exact::NodeKey::new(
+        "fixture",
+        vec![quire_exact::PathSegment::Text(format!("node{tag}"))],
+        0,
+    )
+    .expect("a valid fixture key")
+}
+
 /// The fixture object `Item` snapshots hold (TC-1038 calls it `child`).
 const OBJECT: &str = "child";
 
@@ -574,7 +584,7 @@ impl Replay {
             self.graph.model_selections(),
             self.graph.scope().types(),
             &ClauseFacts {
-                identity: quire_exact::NodeKey::from_digest([7; 32]),
+                identity: fixture_key(7),
                 kind,
                 context: self.item(),
                 operation: Some(self.operation(operation)),
@@ -649,7 +659,7 @@ impl Replay {
         let invoked = self.invocation_over(operation, pre, post, parameters, result);
         let facts = FrameFacts {
             context: self.item(),
-            frame: quire_exact::NodeKey::from_digest([8; 32]),
+            frame: fixture_key(8),
             operation: self.operation(operation),
         };
         let admitted = admit_frame_invocation(

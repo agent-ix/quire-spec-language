@@ -35,8 +35,8 @@ use qsl_semantics::model::population::{
 use qsl_semantics::value::environment_stage::stage_failure;
 use quire_checked::key::DeclarationKey;
 use quire_exact::{
-    FieldValue, Integer, IntegerInterval, Meter, ObjectId, ObjectReference, Presence, ScalarLimits,
-    UniverseId, Value, ValueType,
+    FieldValue, Integer, IntegerInterval, Meter, ObjectId, ObjectReference, OriginalDeclarationKey,
+    Presence, ScalarLimits, UniverseId, Value, ValueType,
 };
 use quire_semantic_value::catalog::{CatalogCode, CatalogCoded};
 use quire_semantic_value::declaration::{
@@ -47,7 +47,16 @@ use quire_semantic_value::declaration::{
 use quire_semantic_value::object_closure::{
     ObjectClosure, ObjectClosureCause, ObjectClosureRefusal,
 };
-use sha2::{Digest, Sha256};
+
+/// A structural node key for a fixture, distinct per `tag`.
+fn fixture_key(tag: u8) -> quire_exact::NodeKey {
+    quire_exact::NodeKey::new(
+        "fixture",
+        vec![quire_exact::PathSegment::Text(format!("node{tag}"))],
+        0,
+    )
+    .expect("a valid fixture key")
+}
 
 const SCALAR_UNLIMITED: ScalarLimits = ScalarLimits {
     integer_bits: u64::MAX,
@@ -166,7 +175,7 @@ fn evaluate_lookup(
 ) -> LookupOutcome {
     let key = LookupKey {
         static_type: DeclarationKey::fixture(s),
-        universe: binding.universe().as_bytes().to_vec(),
+        universe: binding.universe().clone(),
         type_identity: type_id(view, s),
         object: b"nobody".to_vec(),
     };
@@ -489,7 +498,7 @@ fn check_and_evaluation_share_one_default_and_one_edge_count() {
 // ---- flattening and redefinition --------------------------------------------
 
 fn effective(label: &str) -> EffectiveId {
-    EffectiveId::from_digest(Sha256::digest(label.as_bytes()).into())
+    EffectiveId::new(None, OriginalDeclarationKey::new("fixture", label))
 }
 
 fn integer_field(name: &str) -> FieldDeclaration {
@@ -526,7 +535,7 @@ fn slots(environment: &TypeEnvironment, label: &str) -> Vec<(EffectiveId, String
 
 fn reference(label: &str, object: &str) -> ObjectReference {
     ObjectReference::new(
-        UniverseId::from_digest([0x42; 32]),
+        UniverseId::new(fixture_key(0x42)),
         effective(label),
         ObjectId::new(object).unwrap(),
     )
@@ -860,7 +869,7 @@ fn a_redefinition_of_a_field_not_inherited_is_refused() {
 
     let record = TypeEnvironment::new(
         [CompositeDeclaration::new(
-            quire_exact::NodeKey::from_digest([0x11; 32]),
+            fixture_key(0x11),
             "R",
             CompositeShape::Record(vec![
                 integer_field("x").with_redefines(field_ref("M::A", "x"))
@@ -1092,8 +1101,8 @@ fn a_reference_field_is_redefined_by_the_same_or_a_subtype_reference() {
 #[trace("TC-219", "FR-082-AC-6")]
 #[test]
 fn record_and_tuple_admit_a_subtype_reference_by_conformance() {
-    let record_key = quire_exact::NodeKey::from_digest([0x21; 32]);
-    let tuple_key = quire_exact::NodeKey::from_digest([0x22; 32]);
+    let record_key = fixture_key(0x21);
+    let tuple_key = fixture_key(0x22);
     let target = ValueType::Reference(effective("M::CV"));
     let environment = TypeEnvironment::new(
         [

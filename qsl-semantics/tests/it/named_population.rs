@@ -7,7 +7,6 @@
 
 use ix_trace_rs::trace;
 use qsl_foundation::bound::{DomainKey, DomainKind};
-use qsl_foundation::digest::WireNodeId;
 use qsl_semantics::check::{CheckedGraph, CheckedNode, NodeKind};
 use qsl_semantics::family::ClaimExtent;
 use qsl_semantics::model::clause_observation::Observation;
@@ -95,11 +94,11 @@ fn domains(
     identity: quire_exact::NodeKey,
     claim: &quire_exact::Origin,
 ) -> Vec<(DomainKey, DomainKind)> {
-    let node = WireNodeId::from_digest(*identity.as_bytes());
+    let node = identity;
     let (_, record) = graph
         .requirements()
         .iter()
-        .find(|(key, _)| key.node() == node && key.origin() == claim)
+        .find(|(key, _)| *key.node() == node && key.origin() == claim)
         .expect("the clause's claim record");
     match record.requirements().extent() {
         ClaimExtent::Unbounded(domains) => domains

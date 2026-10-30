@@ -1231,7 +1231,7 @@ impl Replay {
             .expect("promote is declared")
             .clone();
         ClauseFacts {
-            identity: quire_exact::NodeKey::from_digest([7; 32]),
+            identity: fixture_key(7),
             kind,
             context: account,
             operation: Some(OperationFacts {
@@ -1478,6 +1478,16 @@ fn a_well_formed_case_over_a_variant_is_refused_at_its_scrutinee() {
 
 use qsl_semantics::model::observation::ValueEncoder;
 
+/// A structural node key for a fixture, distinct per `tag`.
+fn fixture_key(tag: u8) -> quire_exact::NodeKey {
+    quire_exact::NodeKey::new(
+        "fixture",
+        vec![quire_exact::PathSegment::Text(format!("node{tag}"))],
+        0,
+    )
+    .expect("a valid fixture key")
+}
+
 /// FR-360-AC-11 (TC-1010): the variant values an admitted snapshot holds
 /// encode as the item 9 form, naming their own variant type and case; a
 /// document whose members are written in the other order has the same
@@ -1609,7 +1619,7 @@ fn an_admitted_variant_value_encodes_as_its_form_and_decodes_to_itself() {
     // A value of no variant type does not encode.
     assert!(encoder
         .encode(&Datum::Enum(EnumMember::new(
-            quire_exact::VariantId::from_digest([9; 32]),
+            quire_exact::VariantId::new(fixture_key(9), "case").expect("a nonempty case"),
             0
         )))
         .is_none());

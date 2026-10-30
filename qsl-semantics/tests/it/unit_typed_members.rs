@@ -17,6 +17,16 @@ use crate::model_operations::{
     parse_and_build,
 };
 
+/// A structural node key for a fixture, distinct per `tag`.
+fn fixture_key(tag: u8) -> quire_exact::NodeKey {
+    quire_exact::NodeKey::new(
+        "fixture",
+        vec![quire_exact::PathSegment::Text(format!("node{tag}"))],
+        0,
+    )
+    .expect("a valid fixture key")
+}
+
 const UNITS: &str = "dimension Time;\nunit s : Time = rational(1, 1);\n\
                      unit ms : Time = rational(1, 1000) * s;\n";
 
@@ -367,7 +377,7 @@ fn unit_bounds_bound_the_members_of_their_unit_or_alias() {
     ];
     assert_eq!(read, expected);
 
-    let ms = quire_exact::UnitId::declared(quire_exact::NodeKey::from_digest([9; 32]));
+    let ms = quire_exact::UnitId::declared(fixture_key(9));
     let quantity = |magnitude: i64| {
         quire_exact::Value::Quantity(quire_exact::Quantity::new(
             quire_exact::Rational::new(
@@ -591,7 +601,7 @@ fn unit_bounds_reach_records_aliases_of_aliases_and_every_node() {
         },
         other => panic!("sp is a record: {other:?}"),
     };
-    let ms = quire_exact::UnitId::declared(quire_exact::NodeKey::from_digest([9; 32]));
+    let ms = quire_exact::UnitId::declared(fixture_key(9));
     let quantity = |magnitude: i64| {
         quire_exact::Value::Quantity(quire_exact::Quantity::new(
             quire_exact::Rational::new(

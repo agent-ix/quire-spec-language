@@ -8,7 +8,6 @@ use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
 use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBoundKind};
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::Code;
 use qsl_semantics::check::{
@@ -26,11 +25,12 @@ use super::refinement_declarations::{
 };
 
 /// The refinement's V2 node, which keys its records.
-fn refinement_node(refinement: &CheckedRefinement) -> WireNodeId {
+fn refinement_node(refinement: &CheckedRefinement) -> quire_exact::NodeKey {
     refinement
         .requirement_occurrence()
         .expect("the refinement record is written")
         .node()
+        .clone()
 }
 
 fn entries(graph: &CheckedGraph) -> Vec<StepSimulationEntry> {
@@ -145,7 +145,7 @@ fn the_counter_refinement_writes_an_initial_and_a_step_record_per_row() {
         expected
     );
     for record in &found {
-        assert_eq!(WireNodeId::from_digest(*record.refinement.as_bytes()), node);
+        assert_eq!(record.refinement, node);
         assert!(record.hypotheses.is_empty());
     }
 
@@ -198,10 +198,7 @@ fn a_concrete_invariant_is_a_hypothesis_of_every_record() {
     for record in &found {
         assert_eq!(record.hypotheses, [invariant.identity()]);
     }
-    let key = OccurrenceKey::new(
-        WireNodeId::from_digest(*invariant.identity().as_bytes()),
-        invariant.claim().clone(),
-    );
+    let key = OccurrenceKey::new(invariant.identity(), invariant.claim().clone());
     let record = graph
         .requirements()
         .get(&key)
