@@ -85,13 +85,12 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
 use quire_contract_model::{
-    derive_structural_candidates, encode_checked_package_v2, ApplicationOperator,
-    CheckedArtifactRef, CheckedBindingName, CheckedCapability, CheckedCapabilityDisposition,
-    CheckedDeclaration, CheckedDependencySelection, CheckedDiagnosticsV2, CheckedFieldScope,
-    CheckedFrameModification, CheckedNodeId, CheckedNodeKind, CheckedNodeOwner,
-    CheckedNodePathSegment, CheckedNodeTag, CheckedOccurrence, CheckedOccurrenceRole,
-    CheckedOperationAnchorBody, CheckedPackageEvidence, CheckedPackageLockV2,
-    CheckedPackageSourceCorrespondenceRef, CheckedPackageV2, CheckedRational,
+    encode_checked_package_v2, ApplicationOperator, CheckedArtifactRef, CheckedBindingName,
+    CheckedCapability, CheckedCapabilityDisposition, CheckedDeclaration,
+    CheckedDependencySelection, CheckedDiagnosticsV2, CheckedFieldScope, CheckedFrameModification,
+    CheckedNodeId, CheckedNodeKind, CheckedNodeOwner, CheckedNodePathSegment, CheckedNodeTag,
+    CheckedOccurrence, CheckedOccurrenceRole, CheckedOperationAnchorBody, CheckedPackageEvidence,
+    CheckedPackageLockV2, CheckedPackageSourceCorrespondenceRef, CheckedPackageV2, CheckedRational,
     CheckedRefinementStepRowRegion, CheckedScopedDeletion, CheckedSelection, CheckedSelectionRole,
     CheckedSemanticGraphV2, CheckedSemanticNodeV2, CheckedSourceMapEntry, CheckedSourceRef,
     CheckedSourceRegion, CheckedTerm, ExecutionPoint, LiteralKind, NominalIdentityPreimage,
@@ -1836,7 +1835,7 @@ fn write_clauses(
     clauses: &qsl_semantics::check::TimedClauseNodes,
     places: &[CheckedNodeId],
     unit: &CheckedNodeId,
-    placeholder: &dyn Fn(&str) -> CheckedNodeId,
+    placeholder: &dyn Fn(&str) -> Result<CheckedNodeId, EmitRefusal>,
     regions: &mut BTreeMap<CheckedNodeId, Vec<(u64, u64)>>,
 ) -> Result<(), EmitRefusal> {
     use qsl_semantics::check::{ConstraintTargetNodes, ResetTargetNodes};
@@ -1881,7 +1880,7 @@ fn write_clauses(
         let mut metadata = clause_metadata(placeholder(&format!(
             "constraint-{}",
             model.constraints.len()
-        )));
+        ))?);
         let id = occur(&mut metadata, region, regions, true);
         model.constraints.push(CheckedClockConstraint {
             metadata,
@@ -1907,7 +1906,7 @@ fn write_clauses(
                 constraints,
             });
         }
-        let mut metadata = clause_metadata(placeholder(&format!("guard-{}", model.guards.len())));
+        let mut metadata = clause_metadata(placeholder(&format!("guard-{}", model.guards.len()))?);
         occur(&mut metadata, span_region(guard.span), regions, true);
         model.guards.push(CheckedClockGuard {
             metadata,
@@ -1936,7 +1935,7 @@ fn write_clauses(
         let mut metadata = clause_metadata(placeholder(&format!(
             "invariant-{}",
             model.invariants.len()
-        )));
+        ))?);
         occur(&mut metadata, region, regions, true);
         model.invariants.push(CheckedTimeInvariant {
             metadata,
@@ -1972,7 +1971,7 @@ fn write_clauses(
             occur(&mut held.metadata, region, regions, false);
             continue;
         }
-        let mut metadata = clause_metadata(placeholder(&format!("reset-{}", model.resets.len())));
+        let mut metadata = clause_metadata(placeholder(&format!("reset-{}", model.resets.len()))?);
         occur(&mut metadata, region, regions, true);
         model.resets.push(CheckedClockReset {
             metadata,
@@ -2027,10 +2026,9 @@ fn push_scalar_type(
     });
 }
 
-/// Rebuild the structural identities and references of typed timed nodes
-/// after their bodies are serialized. Timed graph edges are acyclic by the
-/// closed FR-322 forms, so repeated digest passes propagate child-key changes
-/// to their parents.
+/// Replace producer-local temporary timed identities with their structural
+/// identities. Timed graph edges are acyclic, so each pass resolves another
+/// level of references until every node and source-map entry agrees.
 fn rekey_timed_model_nodes(
     nodes: &mut [CheckedSemanticNodeV2],
     source_map: &mut [CheckedSourceMapEntry],
@@ -2072,27 +2070,74 @@ fn rekey_timed_model_nodes(
     ))
 }
 
-/// Derive one ungrouped timed-node identity through IR's public producer API.
+/// The QSpec FR-322 producer identity for a timed node. Declared roots keep
+/// their qualified declaration path; derived forms flatten their typed body
+/// operands after the family and form path segments.
 fn timed_model_node_id(node: &CheckedSemanticNodeV2) -> Result<CheckedNodeId, EmitRefusal> {
     if node.recursion_group.is_some() {
         return Err(EmitRefusal::TimedModelWriterInvariant(
             "timed nodes cannot belong to a recursion group",
         ));
     }
-    // External references retain their identities here; complete-package
-    // admission checks their targets after the timed graph is re-keyed.
-    let candidates = derive_structural_candidates(
-        std::slice::from_ref(node),
-        crate::checked::EMIT_LIMITS.max_bytes(),
-        u64::MAX,
-    )
+    let package = node.node_id.package.as_ref();
+    let ordinal = node.node_id.ordinal;
+    let key = if let Some(declaration) = &node.declaration {
+        let path = declaration
+            .qualified_name
+            .iter()
+            .map(|part| PathSegment::Text(part.to_string()))
+            .collect();
+        qsl_semantics::check::structural_node_key(package, path, ordinal)
+    } else {
+        let mut operands = Vec::new();
+        timed_body_operands(&node.body, &mut operands)?;
+        qsl_semantics::check::derived_node_key(
+            package,
+            NodeTag::TimedModel,
+            &node.semantic_form,
+            operands,
+            ordinal,
+        )
+    }
     .map_err(encoding)?;
-    let [candidate] = candidates.nodes() else {
-        return Err(EmitRefusal::TimedModelWriterInvariant(
-            "a timed node must have one structural identity",
-        ));
-    };
-    Ok(candidate.candidate_node_id().clone())
+    Ok(node_id(key))
+}
+
+/// Append the literal values, binding names and reference identities of a
+/// closed timed body in body order. An IR-validated timed node uses these four
+/// term shapes only; any other shape is an internal producer disagreement.
+fn timed_body_operands(
+    term: &CheckedTerm,
+    operands: &mut Vec<PathSegment>,
+) -> Result<(), EmitRefusal> {
+    match term {
+        CheckedTerm::Aggregate { members } => {
+            for member in members {
+                timed_body_operands(member, operands)?;
+            }
+        }
+        CheckedTerm::Binding { name, value } => {
+            operands.push(PathSegment::Text(name.as_ref().to_owned()));
+            timed_body_operands(value, operands)?;
+        }
+        CheckedTerm::Reference { target } => {
+            operands.push(PathSegment::Node(admitted_key(target)?));
+        }
+        CheckedTerm::Literal { type_id, value, .. } => {
+            operands.push(PathSegment::Node(admitted_key(type_id)?));
+            let text = value
+                .as_str()
+                .map(str::to_owned)
+                .unwrap_or_else(|| value.to_string());
+            operands.push(PathSegment::Text(text));
+        }
+        _ => {
+            return Err(EmitRefusal::TimedModelWriterInvariant(
+                "timed body has a term outside the closed path grammar",
+            ))
+        }
+    }
+    Ok(())
 }
 
 /// QSpec FR-322 `model_root`, FR-322-AC-132 and AC-134: for each selected
@@ -2611,14 +2656,19 @@ fn emit_package_inner(
             .unwrap_or_else(|| node_id(qsl_semantics::check::builtin_text_type_key()));
         let rational_type = node_id(qsl_semantics::check::builtin_rational_type_key());
         for (index, source) in graph.time_sources().iter().enumerate() {
-            let placeholder = |kind: &str| CheckedNodeId {
-                domain: NODE_KEY_DOMAIN.into(),
-                digest: format!("timed-{kind}-{index}").into(),
+            let placeholder = |kind: &str| {
+                qsl_semantics::check::structural_node_key(
+                    graph.package_name(),
+                    vec![PathSegment::Text(format!("timed-pending-{kind}-{index}"))],
+                    0,
+                )
+                .map(node_id)
+                .map_err(encoding)
             };
             let mut model = CheckedTimedModel::from_checked_time_source(
                 source,
-                placeholder("source"),
-                placeholder("root"),
+                placeholder("source")?,
+                placeholder("root")?,
                 CheckedNodeOwner::Source {
                     authority: graph.source().authority().into(),
                     identity: graph.source().identity().into(),
@@ -2689,7 +2739,7 @@ fn emit_package_inner(
                 .filter(|timed| timed.model() == source.model)
             {
                 for (at, urgency) in timed.urgency().iter().enumerate() {
-                    let id = placeholder(&format!("urgency-{at}"));
+                    let id = placeholder(&format!("urgency-{at}"))?;
                     let metadata = TimedNodeMetadata {
                         node_id: id.clone(),
                         schema_version: GRAPH_V2.into(),
