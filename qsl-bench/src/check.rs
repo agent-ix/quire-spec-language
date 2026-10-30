@@ -13,7 +13,7 @@ use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::value::enumeration::{
     AdmittedEnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
 };
-use qsl_semantics::value::{NodeIdentityPreimage, NodeOwner, OwnerSelection, OwnerSubject};
+use qsl_semantics::value::{NodeOwner, OwnerSelection, OwnerSubject};
 use quire_eval::Evaluation;
 use quire_eval::FamilyOutcome;
 use quire_exact::{EffectiveId, Presence, ValueType};
