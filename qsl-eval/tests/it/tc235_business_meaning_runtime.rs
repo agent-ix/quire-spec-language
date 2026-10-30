@@ -31,8 +31,7 @@ use qsl_semantics::value::DefinitionRole;
 use quire_exact::{admit_text, TextPayload, TextProfile, TextType};
 use quire_exact::{
     CardinalityBound, CollectionKind, CollectionType, EffectiveId, FieldValue, Integer, Meter,
-    ObjectId, ObjectReference, OptionValue, Outcome, Presence, ScalarLimits, Value,
-    ValueType,
+    ObjectId, ObjectReference, OptionValue, Outcome, Presence, ScalarLimits, Value, ValueType,
 };
 use quire_semantic_value::call::WrongSnapshotCause;
 use quire_semantic_value::checking::CheckingLimits;
@@ -640,7 +639,8 @@ fn tc235_m02_record_values_compare_every_field_at_runtime() {
     let universe = view
         .object_universe_of(&declaration("Order"))
         .expect("Order has an object universe")
-        .identity().expect("the universe has an identity");
+        .identity()
+        .expect("the universe has an identity");
     let o1 = ObjectReference::new(universe, order_type, ObjectId::new("o1").unwrap());
 
     let truth_for = |quoted: Value| {
@@ -1416,18 +1416,24 @@ fn process_observation(
     let fulfilment = view.type_identities()[&quire_checked::key::DeclarationKey {
         package: crate::tc235_k2::PACKAGE.to_owned(),
         node: crate::tc235_k2::id("Fulfilment"),
-    }].clone();
+    }]
+        .clone();
     let universe = view
         .object_universe_of(&quire_checked::key::DeclarationKey {
             package: crate::tc235_k2::PACKAGE.to_owned(),
             node: crate::tc235_k2::id("Fulfilment"),
         })
         .expect("Fulfilment has an object universe")
-        .identity().expect("the universe has an identity");
+        .identity()
+        .expect("the universe has an identity");
     let references: Vec<_> = runs
         .iter()
         .map(|(object, _)| {
-            ObjectReference::new(universe.clone(), fulfilment.clone(), ObjectId::new(*object).unwrap())
+            ObjectReference::new(
+                universe.clone(),
+                fulfilment.clone(),
+                ObjectId::new(*object).unwrap(),
+            )
         })
         .collect();
     let objects = references

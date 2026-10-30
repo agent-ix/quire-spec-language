@@ -88,7 +88,10 @@ pub(super) fn verdict(lowered: &Lowered, envelope: &Value) -> String {
         CheckedPackageDispatchResult::Refused(refusal) => format!(
             "{:?} at {} ({:?})",
             refusal.code,
-            refusal.loci[0].path.as_ref().map_or("-", |path| path.as_str()),
+            refusal.loci[0]
+                .path
+                .as_ref()
+                .map_or("-", |path| path.as_str()),
             refusal.cause
         ),
         other => panic!("not a V2 verdict: {other:?}"),

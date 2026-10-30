@@ -123,11 +123,7 @@ fn assert_closed_formulas(nodes: &[Node]) {
     let counters = counters(nodes);
     assert_eq!(counters.declarations, types);
     assert_eq!(counters.facts, types + edges, "types plus edges");
-    assert_eq!(
-        counters.work_units,
-        3 * types + 2 * edges,
-        "3V + 2E"
-    );
+    assert_eq!(counters.work_units, 3 * types + 2 * edges, "3V + 2E");
 }
 
 /// TC-1024 steps 1 to 4: chains, a 500-layer ladder whose paths are

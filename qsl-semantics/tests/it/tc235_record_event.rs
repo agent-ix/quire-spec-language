@@ -1170,7 +1170,8 @@ fn tc235_m17_record_value_specialization_vectors() {
         .declarations()
         .iter()
         .filter(|declaration| {
-            declaration.visible && declaration.preimage.owner_effective_type == Some(taxed_type.clone())
+            declaration.visible
+                && declaration.preimage.owner_effective_type == Some(taxed_type.clone())
         })
         .map(|declaration| declaration.preimage.original.node.clone())
         .collect();
@@ -1332,8 +1333,14 @@ fn qsl_732_composite_subtype_is_admitted_at_its_parent_slot_only() {
     let parent = money_value(&declarations, "M::Money", false);
     let unrelated = money_value(&declarations, "M::Discount", false);
 
-    assert_eq!(types.admits(&ValueType::Composite(money.clone()), &child), Ok(true));
-    assert_eq!(types.admits(&ValueType::Composite(taxed.clone()), &child), Ok(true));
+    assert_eq!(
+        types.admits(&ValueType::Composite(money.clone()), &child),
+        Ok(true)
+    );
+    assert_eq!(
+        types.admits(&ValueType::Composite(taxed.clone()), &child),
+        Ok(true)
+    );
     // The child keeps its own identity when admitted at the parent's slot.
     let Value::Composite(record) = &child else {
         panic!("a composite value");

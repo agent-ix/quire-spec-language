@@ -87,7 +87,10 @@ fn an_unbounded_population_stays_in_the_requirement_record() {
     let [domain] = claim.populations() else {
         panic!("config_history has no maximum: {:?}", claim.populations());
     };
-    assert_eq!(graph.population_key(domain.clone()).as_ref(), Ok(&population));
+    assert_eq!(
+        graph.population_key(domain.clone()).as_ref(),
+        Ok(&population)
+    );
 
     let (clause_node, over) = (fixture_node("clause"), fixture_node("over"));
     let record = claim
@@ -287,7 +290,11 @@ fn subtype_populations_overlap_temporal_domains_but_unrelated_ones_do_not() {
     let actual: Vec<DomainKey> = claim
         .populations()
         .iter()
-        .map(|domain| graph.population_key(domain.clone()).expect("population key"))
+        .map(|domain| {
+            graph
+                .population_key(domain.clone())
+                .expect("population key")
+        })
         .collect();
     assert_eq!(
         actual, keys,

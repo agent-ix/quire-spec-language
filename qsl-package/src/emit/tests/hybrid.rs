@@ -454,10 +454,7 @@ fn braking2_slows_and_recent_emit_initial_entries_resets_activation_and_fairness
     assert_eq!(parameter(read), ("v".to_owned(), "3".to_owned()));
     // The capture `v0` holds the activation read of `v`.
     let capture = &slows["body"]["arguments"][3];
-    assert_eq!(
-        target(binding(capture, "v0")),
-        idtext(&read["node_id"])
-    );
+    assert_eq!(target(binding(capture, "v0")), idtext(&read["node_id"]));
     // Fairness: weak whole over `[Braking2, Moving]` and `Stopped`.
     let fairness = &slows["body"]["arguments"][4];
     let fair = node_with(&wire, target(&fairness["members"][0]));
@@ -515,24 +512,18 @@ fn braking2_restored_nodes_match_qspec_vectors() {
     admitted(&emission);
     let expected_ids: BTreeSet<String> = expected
         .iter()
-        .map(|node| {
-            idtext(&node["node_id"])
-        })
+        .map(|node| idtext(&node["node_id"]))
         .collect();
     let base_ids: BTreeSet<String> = fixture["nodes"]
         .as_array()
         .expect("QSpec base nodes")
         .iter()
-        .map(|node| {
-            idtext(&node["node_id"])
-        })
+        .map(|node| idtext(&node["node_id"]))
         .collect();
     let model = declared(&wire, "hybrid_model", &["Braking2"]);
     let mut pending: Vec<String> = std::iter::once(model)
         .chain(of_form(&wire, "temporal_clause"))
-        .map(|node| {
-            idtext(&node["node_id"])
-        })
+        .map(|node| idtext(&node["node_id"]))
         .collect();
     let mut reached = BTreeSet::new();
     while let Some(id) = pending.pop() {
@@ -545,13 +536,9 @@ fn braking2_restored_nodes_match_qspec_vectors() {
                 .as_array()
                 .expect("node dependencies")
                 .iter()
-                .map(|dependency| {
-                    idtext(dependency)
-                }),
+                .map(|dependency| idtext(dependency)),
         );
-        pending.push(
-            idtext(&node["semantic_type"]),
-        );
+        pending.push(idtext(&node["semantic_type"]));
     }
     let actual_ids: BTreeSet<String> = reached.difference(&base_ids).cloned().collect();
     assert_eq!(actual_ids, expected_ids, "complete restored node set");
@@ -790,23 +777,17 @@ fn edited(wire: &Value, digest: &str, edit: impl FnOnce(&mut Value)) -> Value {
 
 /// QSL's I2 read of `envelope`, expected to refuse in IR's reader.
 fn refused(emission: &Emission, wire: &Value, envelope: &Value) -> (CheckedPackageRefusal, String) {
-    let read = read_v2(
-        &jcs(envelope),
-        library(),
-        V2ReadLimits::default(),
-        &{
-            let mut evidence = CheckedPackageEvidence::new();
-            for feature in wire["lock"]["required_features"].as_array().unwrap() {
-                evidence.support_feature(feature.as_str().unwrap());
-            }
-            evidence
-        },
-    );
+    let read = read_v2(&jcs(envelope), library(), V2ReadLimits::default(), &{
+        let mut evidence = CheckedPackageEvidence::new();
+        for feature in wire["lock"]["required_features"].as_array().unwrap() {
+            evidence.support_feature(feature.as_str().unwrap());
+        }
+        evidence
+    });
     let _ = emission;
     match read {
         Read::Refused(V2ReadRefusal::Envelope { refusal, .. }) => {
-            let path = refusal
-                .loci[0]
+            let path = refusal.loci[0]
                 .path
                 .as_ref()
                 .map(|pointer| pointer.as_str().to_owned())
@@ -831,9 +812,8 @@ fn the_i2_read_refuses_each_fr_481_defect_at_its_locus() {
         braking(FLOW),
         slow_enough("p", BODY)
     ));
-    let digest = |form: &str, name: &[&str]| -> String {
-        idtext(&declared(&wire, form, name)["node_id"])
-    };
+    let digest =
+        |form: &str, name: &[&str]| -> String { idtext(&declared(&wire, form, name)["node_id"]) };
     let refuse = |envelope: &Value| refused(&emission, &wire, envelope);
 
     // A fourth rate in `Braking.Moving`: `invalid_model_binding` at `rates`.
@@ -881,11 +861,9 @@ fn the_i2_read_refuses_each_fr_481_defect_at_its_locus() {
                 && node["body"]["arguments"][1]["value"] == "model-time"
         })
         .expect("SlowEnough");
-    let (refusal, path) = refuse(&edited(
-        &wire,
-        &idtext(&claim["node_id"]),
-        |node| node["body"]["arguments"][1]["value"] = json!("wall"),
-    ));
+    let (refusal, path) = refuse(&edited(&wire, &idtext(&claim["node_id"]), |node| {
+        node["body"]["arguments"][1]["value"] = json!("wall")
+    }));
     assert_eq!(refusal.code, CheckedPackageRefusalCode::InvalidPackage);
     assert_eq!(
         refusal.cause,
@@ -972,11 +950,9 @@ fn the_i2_read_refuses_each_fr_481_defect_at_its_locus() {
     let [fair] = fair[..] else {
         panic!("one fairness node");
     };
-    let (refusal, _) = refuse(&edited(
-        &wire,
-        &idtext(&fair["node_id"]),
-        |node| node["body"]["operation"]["member"]["name"] = json!("Halted"),
-    ));
+    let (refusal, _) = refuse(&edited(&wire, &idtext(&fair["node_id"]), |node| {
+        node["body"]["operation"]["member"]["name"] = json!("Halted")
+    }));
     assert_eq!(refusal.code, CheckedPackageRefusalCode::MissingDeclaration);
     assert_eq!(refusal.cause, Some(CheckedPackageRefusalCause::MissingName));
 }

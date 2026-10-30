@@ -195,8 +195,7 @@ fn enum_declaration(name: &str) -> AdmittedEnumDeclaration {
     });
     let parsed = EnumDeclarationPreimage::from_json(preimage).unwrap();
     let key = parsed.key().unwrap();
-    AdmittedEnumDeclaration::admit(parsed, key, &owners())
-    .unwrap()
+    AdmittedEnumDeclaration::admit(parsed, key, &owners()).unwrap()
 }
 
 fn enum_value(

@@ -34,8 +34,8 @@ use std::ops::ControlFlow;
 
 use quire_exact::{
     ArithmeticOperator, Charge, ChargePoint, CollectionKind, CollectionType, EffectiveId,
-    Identifier, Integer, Meter, NodeKey, OrderingOperator, Origin as OccurrenceOrigin,
-    Presence, TextProfile, Value, ValueType,
+    Identifier, Integer, Meter, NodeKey, OrderingOperator, Origin as OccurrenceOrigin, Presence,
+    TextProfile, Value, ValueType,
 };
 
 use super::check::{EnumBinding, Scope};
@@ -3000,7 +3000,11 @@ impl<'a> Lowering<'a> {
                 let NodeRef::Admitted(key) = key else {
                     return Err(unresolved(&draft.location));
                 };
-                if self.peeked_declarations.get(&handles[*at]).is_some_and(|peeked| *peeked != key) {
+                if self
+                    .peeked_declarations
+                    .get(&handles[*at])
+                    .is_some_and(|peeked| *peeked != key)
+                {
                     return Err(fault(&draft.location, KeyFault::InvalidGroup));
                 }
                 resolved.insert(handles[*at], key);
@@ -3107,7 +3111,11 @@ impl<'a> Lowering<'a> {
                         body,
                     },
                 });
-            if self.peeked_declarations.get(&handles[at]).is_some_and(|peeked| *peeked != key) {
+            if self
+                .peeked_declarations
+                .get(&handles[at])
+                .is_some_and(|peeked| *peeked != key)
+            {
                 return Err(fault(&draft.location, KeyFault::InvalidGroup));
             }
             resolved.insert(handles[at], key);
@@ -4840,7 +4848,7 @@ impl<'a> Lowering<'a> {
                     variant.owner(),
                     variant.case(),
                 )
-                    .map_err(|_| {
+                .map_err(|_| {
                     fault(
                         node.location(),
                         KeyFault::InvalidMemberKey(variant.owner().clone()),
@@ -5492,7 +5500,8 @@ fn literal_operand_text(value: &LiteralValue) -> String {
         LiteralValue::Rational(value) | LiteralValue::Quantity(value) => {
             // A whole rational reads as its integer, as the wire writes it.
             let text = value.to_string();
-            text.strip_suffix("/1").map_or_else(|| text.clone(), str::to_owned)
+            text.strip_suffix("/1")
+                .map_or_else(|| text.clone(), str::to_owned)
         }
         LiteralValue::Float32Bits(bits) => format!("{bits:08x}"),
         LiteralValue::Float64Bits(bits) => format!("{bits:016x}"),

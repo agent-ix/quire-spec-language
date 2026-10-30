@@ -452,7 +452,8 @@ fn dispatch_argument_admits_a_reference_upcast() {
         [
             ObjectTypeDeclaration::new(receiver_type.clone(), "Receiver", vec![]),
             ObjectTypeDeclaration::new(super_type.clone(), "Super", vec![]),
-            ObjectTypeDeclaration::new(sub_type.clone(), "Sub", vec![]).with_supertypes(vec![super_type]),
+            ObjectTypeDeclaration::new(sub_type.clone(), "Sub", vec![])
+                .with_supertypes(vec![super_type]),
         ],
     )
     .unwrap();
@@ -514,7 +515,8 @@ fn record_dispatch_package_guarded(
         )
         .with_supertypes(supertypes)
     };
-    let mut package = one_candidate_package(receiver_type.clone(), precondition, ValueType::Integer);
+    let mut package =
+        one_candidate_package(receiver_type.clone(), precondition, ValueType::Integer);
     for function in &mut package.functions {
         function.parameters.push((
             "arg".to_owned(),
@@ -567,7 +569,10 @@ fn dispatch_argument_admits_a_conforming_record_and_refuses_the_rest() {
     let check = |argument: quire_exact::NodeKey| {
         checked_package.check_clause_expression(
             vec![
-                ("self".to_owned(), ValueType::Reference(receiver_type.clone())),
+                (
+                    "self".to_owned(),
+                    ValueType::Reference(receiver_type.clone()),
+                ),
                 ("arg".to_owned(), ValueType::Composite(argument)),
             ],
             &call,
@@ -635,7 +640,10 @@ fn a_dispatched_call_with_a_child_argument_runs_through_guard_and_body() {
         let checked = checked_package
             .check_clause_expression(
                 vec![
-                    ("self".to_owned(), ValueType::Reference(receiver_type.clone())),
+                    (
+                        "self".to_owned(),
+                        ValueType::Reference(receiver_type.clone()),
+                    ),
                     ("arg".to_owned(), ValueType::Composite(taxed.clone())),
                 ],
                 &call,
@@ -703,7 +711,8 @@ fn dispatch_argument_refuses_a_reference_downcast() {
         [
             ObjectTypeDeclaration::new(receiver_type.clone(), "Receiver", vec![]),
             ObjectTypeDeclaration::new(super_type.clone(), "Super", vec![]),
-            ObjectTypeDeclaration::new(sub_type, "Sub", vec![]).with_supertypes(vec![super_type.clone()]),
+            ObjectTypeDeclaration::new(sub_type, "Sub", vec![])
+                .with_supertypes(vec![super_type.clone()]),
         ],
     )
     .unwrap();
@@ -1116,7 +1125,10 @@ fn ab_bridge_clauses(
     for (operation, result) in [(&a, 1_i64), (&b, 2_i64)] {
         clauses.parameters.insert(
             operation.clone(),
-            vec![("self".to_owned(), ValueType::Reference(receiver_type.clone()))],
+            vec![(
+                "self".to_owned(),
+                ValueType::Reference(receiver_type.clone()),
+            )],
         );
         clauses.result.insert(operation.clone(), ValueType::Integer);
         clauses.own_body.insert(
@@ -1449,7 +1461,10 @@ fn d06_two_operations_sharing_one_table_report_the_operation_actually_dispatched
     .unwrap();
 
     let objects = objects(receiver_type.clone(), "r1");
-    let parameters = vec![("self".to_owned(), ValueType::Reference(receiver_type.clone()))];
+    let parameters = vec![(
+        "self".to_owned(),
+        ValueType::Reference(receiver_type.clone()),
+    )];
     let weight_call = Expression::dispatch(
         Expression::name("self".to_owned()),
         "weight".to_owned(),
@@ -1918,7 +1933,10 @@ fn bridge_keys_object_types_by_their_effective_identity() {
     let view = bridge_view(&domain_package);
     let (a, b) = (view_type(&view, "model.A"), view_type(&view, "model.B"));
     let supertypes = object_type_supertypes(&view).unwrap();
-    assert_eq!(supertypes, BTreeMap::from([(a.clone(), vec![]), (b.clone(), vec![a.clone()])]));
+    assert_eq!(
+        supertypes,
+        BTreeMap::from([(a.clone(), vec![]), (b.clone(), vec![a.clone()])])
+    );
 
     let types = TypeEnvironment::new(
         [],
@@ -1985,7 +2003,10 @@ fn bridge_clauses(receiver_type: EffectiveId) -> OperationClauses {
     for (operation, result) in [(&a, 1_i64), (&b, 2_i64)] {
         clauses.parameters.insert(
             operation.clone(),
-            vec![("self".to_owned(), ValueType::Reference(receiver_type.clone()))],
+            vec![(
+                "self".to_owned(),
+                ValueType::Reference(receiver_type.clone()),
+            )],
         );
         clauses.result.insert(operation.clone(), ValueType::Integer);
         clauses.own_body.insert(
@@ -2185,16 +2206,21 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
     let supertypes = object_type_supertypes(&view).unwrap();
     let types = TypeEnvironment::new(
         [],
-        [(a_type.clone(), "A"), (b_type, "B"), (c_type.clone(), "C"), (d_type.clone(), "D")]
-            .into_iter()
-            .map(|(key, name)| {
-                ObjectTypeDeclaration::new(key.clone(), name, vec![]).with_supertypes(
-                    supertypes
-                        .get(&key)
-                        .expect("every D01 type has a supertype entry")
-                        .clone(),
-                )
-            }),
+        [
+            (a_type.clone(), "A"),
+            (b_type, "B"),
+            (c_type.clone(), "C"),
+            (d_type.clone(), "D"),
+        ]
+        .into_iter()
+        .map(|(key, name)| {
+            ObjectTypeDeclaration::new(key.clone(), name, vec![]).with_supertypes(
+                supertypes
+                    .get(&key)
+                    .expect("every D01 type has a supertype entry")
+                    .clone(),
+            )
+        }),
     )
     .unwrap();
     assert!(types.conforms(d_type.clone(), a_type.clone()));
@@ -2315,7 +2341,8 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
         evaluated(selected_d),
         Outcome::Completed(Value::Boolean(true))
     ));
-    let (d_candidate_on_c, _) = evaluate_clause("D01SelectD", c_type.clone(), "c1", SCALAR_UNLIMITED);
+    let (d_candidate_on_c, _) =
+        evaluate_clause("D01SelectD", c_type.clone(), "c1", SCALAR_UNLIMITED);
     assert!(matches!(
         evaluated(d_candidate_on_c),
         Outcome::Completed(Value::Boolean(false))
@@ -2325,7 +2352,8 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
         evaluated(selected_c),
         Outcome::Completed(Value::Boolean(true))
     ));
-    let (a_candidate_on_d, _) = evaluate_clause("D01SelectA", d_type.clone(), "d1", SCALAR_UNLIMITED);
+    let (a_candidate_on_d, _) =
+        evaluate_clause("D01SelectA", d_type.clone(), "d1", SCALAR_UNLIMITED);
     assert!(matches!(
         evaluated(a_candidate_on_d),
         Outcome::Completed(Value::Boolean(false))
@@ -2917,7 +2945,8 @@ fn money_bridge(root_at_b: bool) -> MoneyBridge {
         composites,
         [
             ObjectTypeDeclaration::new(a_type.clone(), "A", vec![]),
-            ObjectTypeDeclaration::new(b_type.clone(), "B", vec![]).with_supertypes(vec![a_type.clone()]),
+            ObjectTypeDeclaration::new(b_type.clone(), "B", vec![])
+                .with_supertypes(vec![a_type.clone()]),
         ],
     )
     .unwrap();

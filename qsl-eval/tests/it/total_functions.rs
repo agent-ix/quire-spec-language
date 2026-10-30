@@ -36,7 +36,6 @@ use quire_semantic_value::location::{Location, Origin};
 use quire_semantic_value::loss::{LocatedLoss, ValueLoss};
 use quire_semantic_value::object_closure::ObjectClosure;
 
-
 /// FR-090: `CheckedPackage::call`/`evaluate` return `Evaluation { outcome:
 /// FamilyOutcome, .. }` (FR-090-OQ-3, ruled option A); every fixture in this
 /// file evaluates through the kernel path, so extracting `Evaluated`'s

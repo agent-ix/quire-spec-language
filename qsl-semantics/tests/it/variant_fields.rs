@@ -1693,7 +1693,10 @@ fn a_variant_type_with_non_identifier_cases_has_an_enum_shape_over_the_exact_nam
         .map(qsl_semantics::check::VariantCaseDeclaration::variant)
         .collect();
     assert_eq!(
-        members.iter().map(|member| (*member).clone()).collect::<Vec<_>>(),
+        members
+            .iter()
+            .map(|member| (*member).clone())
+            .collect::<Vec<_>>(),
         expected
     );
 }

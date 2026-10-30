@@ -551,8 +551,16 @@ fn objects(
     view: &EffectiveView,
 ) -> (ObjectEnvironment, ObjectReference, ObjectReference) {
     let a = object_type(view);
-    let universe = view.object_universe_of(&key(A)).unwrap().identity().expect("the universe has an identity");
-    let present = ObjectReference::new(universe.clone(), a.clone(), ObjectId::new("present").unwrap());
+    let universe = view
+        .object_universe_of(&key(A))
+        .unwrap()
+        .identity()
+        .expect("the universe has an identity");
+    let present = ObjectReference::new(
+        universe.clone(),
+        a.clone(),
+        ObjectId::new("present").unwrap(),
+    );
     let absent = ObjectReference::new(universe, a, ObjectId::new("absent").unwrap());
     let world = [present.clone(), absent.clone()]
         .into_iter()

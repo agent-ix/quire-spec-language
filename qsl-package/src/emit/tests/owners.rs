@@ -43,7 +43,11 @@ fn required_kind(node: &Value) -> Option<&'static str> {
 /// Every owner check of FR-093-AC-21 over one emitted package: each node's
 /// `owner` follows FR-322's presence rule, and `read` admits the package.
 /// Returns the wire.
-fn assert_owners(_package: &CheckedPackage, emission: &Emission, read: impl Fn(&Emission)) -> Value {
+fn assert_owners(
+    _package: &CheckedPackage,
+    emission: &Emission,
+    read: impl Fn(&Emission),
+) -> Value {
     let wire = wire(emission);
     assert!(
         wire["identity_preimage"]
@@ -314,7 +318,8 @@ fn model_declaration_nodes_and_clause_functions_carry_their_model_owner() {
         [],
         [
             ObjectTypeDeclaration::new(order.clone(), "M::Order", Vec::new()),
-            ObjectTypeDeclaration::new(sub.clone(), "M::Sub", Vec::new()).with_supertypes(vec![order.clone()]),
+            ObjectTypeDeclaration::new(sub.clone(), "M::Sub", Vec::new())
+                .with_supertypes(vec![order.clone()]),
         ],
     )
     .expect("the acme object types admit");

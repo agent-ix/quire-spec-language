@@ -557,8 +557,24 @@ mod tests {
     /// bare number.
     #[test]
     fn a_quantity_compares_only_with_its_own_unit() {
-        let metre = Ty::Quantity(UnitId::compound(vec![(quire_exact::NodeKey::new("fixture".to_owned(), vec![quire_exact::PathSegment::Text("m".to_owned())], 0).expect("a fixture key"), quire_exact::Integer::one())]));
-        let second = Ty::Quantity(UnitId::compound(vec![(quire_exact::NodeKey::new("fixture".to_owned(), vec![quire_exact::PathSegment::Text("s".to_owned())], 0).expect("a fixture key"), quire_exact::Integer::one())]));
+        let metre = Ty::Quantity(UnitId::compound(vec![(
+            quire_exact::NodeKey::new(
+                "fixture".to_owned(),
+                vec![quire_exact::PathSegment::Text("m".to_owned())],
+                0,
+            )
+            .expect("a fixture key"),
+            quire_exact::Integer::one(),
+        )]));
+        let second = Ty::Quantity(UnitId::compound(vec![(
+            quire_exact::NodeKey::new(
+                "fixture".to_owned(),
+                vec![quire_exact::PathSegment::Text("s".to_owned())],
+                0,
+            )
+            .expect("a fixture key"),
+            quire_exact::Integer::one(),
+        )]));
         assert!(metre.compares_with(&metre.clone()));
         assert!(!metre.compares_with(&second));
         assert!(!metre.compares_with(&Ty::Integer));

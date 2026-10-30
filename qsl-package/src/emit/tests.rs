@@ -2312,10 +2312,8 @@ fn a_model_bearing_unit_emits_its_model_selection_and_reads_back_verified() {
     assert_eq!(last_entry["ordinal"], 0);
     match read {
         Read::Verified { package, .. } => {
-            let exports: BTreeSet<String> = package
-                .exports()
-                .map(|(name, _)| name.to_owned())
-                .collect();
+            let exports: BTreeSet<String> =
+                package.exports().map(|(name, _)| name.to_owned()).collect();
             for name in ["keep", "held"] {
                 assert!(exports.contains(name), "{name}: {exports:?}");
             }
@@ -2340,10 +2338,8 @@ fn inherited_field_access_is_accepted_by_the_i2_read() {
     let (_emission, .., read) = emit_model_unit(&unit, None);
     match read {
         Read::Verified { package, .. } => {
-            let exports: BTreeSet<String> = package
-                .exports()
-                .map(|(name, _)| name.to_owned())
-                .collect();
+            let exports: BTreeSet<String> =
+                package.exports().map(|(name, _)| name.to_owned()).collect();
             assert!(exports.contains("code"), "{exports:?}");
         }
         other => panic!("expected Verified, got {other:?}"),
@@ -2363,10 +2359,8 @@ fn conforming_reference_equality_is_accepted_by_the_i2_read() {
     let (_emission, .., read) = emit_model_unit(&unit, None);
     match read {
         Read::Verified { package, .. } => {
-            let exports: BTreeSet<String> = package
-                .exports()
-                .map(|(name, _)| name.to_owned())
-                .collect();
+            let exports: BTreeSet<String> =
+                package.exports().map(|(name, _)| name.to_owned()).collect();
             assert!(exports.contains("same"), "{exports:?}");
         }
         other => panic!("expected Verified, got {other:?}"),

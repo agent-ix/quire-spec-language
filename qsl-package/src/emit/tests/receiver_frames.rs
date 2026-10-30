@@ -16,7 +16,6 @@ use crate::checked_v2::V2ReadRefusal;
 #[path = "../../../../qsl-semantics/tests/support/receiver_frames.rs"]
 pub(super) mod fixture;
 
-
 struct Emitted {
     wire: Value,
     evidence: CheckedPackageEvidence,
@@ -74,10 +73,7 @@ fn emit(operations: &[&str], overrides: &[(&str, Value)]) -> Emitted {
     evidence
         .insert_domain_package_document(package_identity(&document), document.as_slice())
         .expect("a fresh evidence key");
-    Emitted {
-        wire,
-        evidence,
-    }
+    Emitted { wire, evidence }
 }
 
 impl Emitted {
@@ -657,12 +653,7 @@ fn constraint_state_clause_reads_back_as_a_distinct_kind() {
         )
         .expect("a fresh evidence key");
     assert!(matches!(
-        read_v2(
-            &jcs(&wire),
-            library(),
-            V2ReadLimits::default(),
-            &evidence,
-        ),
+        read_v2(&jcs(&wire), library(), V2ReadLimits::default(), &evidence,),
         Read::Verified { .. }
     ));
 }

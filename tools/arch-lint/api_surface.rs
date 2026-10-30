@@ -247,15 +247,13 @@ pub(crate) const RULES: &[Rule] = &[
              another crate is not followed; the manifest check (TC-390) is what confines the \
              `construct` feature to `qsl-semantics`",
         ),
-        constructors: &[
-            ConstructorCallers {
-                function: "admitted_integer_division",
-                callers: &[AllowedCaller {
-                    crate_src: "qsl-semantics/src",
-                    module_prefix: "value::definition",
-                }],
-            },
-        ],
+        constructors: &[ConstructorCallers {
+            function: "admitted_integer_division",
+            callers: &[AllowedCaller {
+                crate_src: "qsl-semantics/src",
+                module_prefix: "value::definition",
+            }],
+        }],
         shipped_only: true,
     },
 ];
@@ -1635,7 +1633,11 @@ mod tests {
     fn tc_arch_lint_api_surface_004_allowed_caller_is_not_a_violation() {
         let dir = tempfile::tempdir().unwrap();
         ensure_qsl_roots(dir.path());
-        write(dir.path(), "qsl-semantics/src/check/normalize.rs", CONSTRUCT);
+        write(
+            dir.path(),
+            "qsl-semantics/src/check/normalize.rs",
+            CONSTRUCT,
+        );
         let outcome = evaluate(t12g(), dir.path(), Some(dir.path())).unwrap();
         assert_eq!(outcome.status, RuleStatus::Live);
         assert!(outcome.violations.is_empty(), "{:?}", outcome.violations);

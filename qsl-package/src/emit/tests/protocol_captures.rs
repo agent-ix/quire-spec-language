@@ -293,7 +293,6 @@ fn an_each_guard_emits_a_boolean_term_over_the_trigger() {
     let guard = target(&literal.wire, member(activation, "guard"));
     assert_eq!(guard["body"]["term"], "literal");
     assert_eq!(guard["body"]["value"], true);
-
 }
 
 /// Captures and a guard together, and two protocols that capture alike: the

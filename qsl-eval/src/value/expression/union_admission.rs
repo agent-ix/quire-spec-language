@@ -13,9 +13,7 @@ use std::cmp::Ordering;
 use super::*;
 use ix_trace_rs::trace;
 use qsl_semantics::check::union_fixture as fixture;
-use quire_exact::{
-    compare_keys, Integer, ObjectId, UnionMember, UnionValue,
-};
+use quire_exact::{compare_keys, Integer, ObjectId, UnionMember, UnionValue};
 
 /// The model object type `T` that `Holder` references; the kernel
 /// constructor is called here, in a test, not in the fixture.

@@ -132,7 +132,8 @@ fn environment_of(view: &EffectiveView, ancestor_steps: u64) -> Admission<TypeEn
     TypeEnvironment::bounded(
         [],
         supertypes.into_iter().map(|(key, generals)| {
-            ObjectTypeDeclaration::new(key.clone(), format!("{key:?}"), vec![]).with_supertypes(generals)
+            ObjectTypeDeclaration::new(key.clone(), format!("{key:?}"), vec![])
+                .with_supertypes(generals)
         }),
         TypeEnvironmentLimits {
             ancestor_steps,
@@ -250,7 +251,10 @@ fn divergence_unknown_supertype_refuses_at_check_and_at_evaluation() {
     .unwrap_err()
     .into_refused()
     .unwrap();
-    assert_eq!(refusal.cause, DeclarationCause::UnknownObjectType(missing.clone()));
+    assert_eq!(
+        refusal.cause,
+        DeclarationCause::UnknownObjectType(missing.clone())
+    );
     assert_eq!(refusal.code(), "invalid_semantic_graph");
 }
 
@@ -1128,14 +1132,20 @@ fn record_and_tuple_admit_a_subtype_reference_by_conformance() {
     let sub = Value::Reference(reference("M::Sub", "k"));
     let other = Value::Reference(reference("M::Other", "o"));
     environment
-        .record(record_key.clone(), vec![("r", FieldValue::Present(sub.clone()))])
+        .record(
+            record_key.clone(),
+            vec![("r", FieldValue::Present(sub.clone()))],
+        )
         .expect("a Sub reference fits a Reference<M::CV> field");
     environment
         .tuple(tuple_key.clone(), vec![sub])
         .expect("a Sub reference fits a Reference<M::CV> position");
     assert_eq!(
         environment
-            .record(record_key.clone(), vec![("r", FieldValue::Present(other.clone()))])
+            .record(
+                record_key.clone(),
+                vec![("r", FieldValue::Present(other.clone()))]
+            )
             .unwrap_err(),
         ConstructionRefusal {
             component: Component::Field("r".to_owned()),
@@ -1143,7 +1153,9 @@ fn record_and_tuple_admit_a_subtype_reference_by_conformance() {
         }
     );
     assert_eq!(
-        environment.tuple(tuple_key.clone(), vec![other]).unwrap_err(),
+        environment
+            .tuple(tuple_key.clone(), vec![other])
+            .unwrap_err(),
         ConstructionRefusal {
             component: Component::Position(0),
             cause: ConstructionCause::TypeMismatch,

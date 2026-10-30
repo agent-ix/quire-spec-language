@@ -4197,7 +4197,10 @@ mod tests {
         let checked = package
             .graph()
             .check_clause_expression(
-                vec![("self".to_owned(), ValueType::Reference(context_type.clone()))],
+                vec![(
+                    "self".to_owned(),
+                    ValueType::Reference(context_type.clone()),
+                )],
                 &Expression::binary(qsl_forms::BinaryOperator::Equal, field(), field()),
                 None,
                 qsl_forms::ClauseKind::Postcondition,

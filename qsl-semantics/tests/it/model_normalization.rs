@@ -4822,8 +4822,7 @@ fn keys(nodes: &[&str]) -> Vec<DeclarationKey> {
 }
 
 fn type_owner(view: &qsl_semantics::model::normalize::EffectiveView, node: &str) -> EffectiveId {
-    view
-        .type_identities()
+    view.type_identities()
         .get(&DeclarationKey::fixture(node))
         .unwrap_or_else(|| panic!("{node} has an effective type identity"))
         .clone()

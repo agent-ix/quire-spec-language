@@ -1007,8 +1007,12 @@ fn reordering_the_cases_changes_no_effective_identity() {
 #[test]
 fn cases_differing_in_letter_case_have_distinct_effective_identities() {
     let view = view_of(&tiers(&["Gold", "gold"]));
-    let upper = entry_of(&view, &key("variant/Tier-Gold")).effective_id.clone();
-    let lower = entry_of(&view, &key("variant/Tier-gold")).effective_id.clone();
+    let upper = entry_of(&view, &key("variant/Tier-Gold"))
+        .effective_id
+        .clone();
+    let lower = entry_of(&view, &key("variant/Tier-gold"))
+        .effective_id
+        .clone();
     assert_ne!(upper, lower);
     let ids: std::collections::BTreeSet<EffectiveId> = view
         .declarations()

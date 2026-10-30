@@ -601,11 +601,14 @@ fn tc235_m19_state_machine_specialization_vectors() {
     let express = view.type_identities()[&DeclarationKey {
         package: PACKAGE.to_owned(),
         node: id("ExpressLifecycle"),
-    }].clone();
+    }]
+        .clone();
     let mut effective: Vec<_> = view
         .declarations()
         .iter()
-        .filter(|entry| entry.visible && entry.preimage.owner_effective_type == Some(express.clone()))
+        .filter(|entry| {
+            entry.visible && entry.preimage.owner_effective_type == Some(express.clone())
+        })
         .map(|entry| entry.preimage.original.node.clone())
         .collect();
     effective.sort();

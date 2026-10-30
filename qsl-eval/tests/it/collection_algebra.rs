@@ -603,7 +603,6 @@ mod checked {
     use quire_semantic_value::checking::{CheckMode, CheckingLimits};
     use quire_semantic_value::object_closure::ObjectClosure;
     use quire_semantic_value::semantic_node::SemanticGraphCause;
-    
 
     fn name(spelling: &str) -> Expression {
         Expression::name(spelling.to_owned())

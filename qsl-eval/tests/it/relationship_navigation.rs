@@ -31,7 +31,8 @@ use quire_eval::Evaluation;
 use quire_eval::{FamilyOutcome, FamilyResult};
 use quire_exact::{
     from_admitted, BoundViolation, ChargePoint, CollectionKind, CollectionType, EffectiveId,
-    LimitKind, Meter, ObjectId, ObjectReference, OptionValue, Outcome, Refusal, ScalarLimits, Value, ValueType,
+    LimitKind, Meter, ObjectId, ObjectReference, OptionValue, Outcome, Refusal, ScalarLimits,
+    Value, ValueType,
 };
 use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 use quire_semantic_value::object_closure::ObjectClosure;
@@ -351,7 +352,10 @@ impl Orders {
             .package
             .graph()
             .check_expression(
-                vec![("r".to_owned(), ValueType::Reference(receiver.object_type().clone()))],
+                vec![(
+                    "r".to_owned(),
+                    ValueType::Reference(receiver.object_type().clone()),
+                )],
                 &Expression::field(Expression::name("r".to_owned()), role),
                 None,
                 CheckMode::Kernel,

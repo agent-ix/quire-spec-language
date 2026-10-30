@@ -1421,8 +1421,7 @@ fn the_internal_list_value_hosts_abstract_internal() {
     let (unit, documents) = protocol_subject();
     let internal =
         |name: &str, entries: &[&str]| json!([{"refinement": name, "internal": entries}]);
-    let listed =
-        emit_with_internals(&unit, &documents, Some(internal("R", &["A::Local::Done"])));
+    let listed = emit_with_internals(&unit, &documents, Some(internal("R", &["A::Local::Done"])));
     assert_eq!(
         listed["R"]["body"]["abstract_internal"],
         json!(["Local::Done"])
@@ -2611,7 +2610,10 @@ fn refinement_verdict(emitted: &Emitted, envelope: &Value, _position: usize) -> 
         quire_contract_model::CheckedPackageDispatchResult::Refused(refusal) => format!(
             "{:?} at {} ({:?})",
             refusal.code,
-            refusal.loci[0].path.as_ref().map_or("-", |path| path.as_str()),
+            refusal.loci[0]
+                .path
+                .as_ref()
+                .map_or("-", |path| path.as_str()),
             refusal.cause
         ),
         other => format!("{other:?}"),

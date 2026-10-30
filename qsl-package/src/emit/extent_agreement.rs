@@ -341,7 +341,11 @@ fn emitted_measure() -> (
     quire_exact::UnitId,
 ) {
     let (units, metre) = source_metre_units();
-    let measure = record(10, "Measure", vec![("len", ValueType::Quantity(metre.clone()))]);
+    let measure = record(
+        10,
+        "Measure",
+        vec![("len", ValueType::Quantity(metre.clone()))],
+    );
     let types = TypeEnvironment::new([measure.clone()], [])
         .expect("FR-143 admits Measure")
         .with_units(units);
@@ -412,10 +416,7 @@ fn velocity_units() -> (
     };
     let length = dimension("Length", json!([]));
     let time = dimension("Time", json!([]));
-    let mut velocity_terms = vec![
-        (length.1.clone(), "1"),
-        (time.1.clone(), "-1"),
-    ];
+    let mut velocity_terms = vec![(length.1.clone(), "1"), (time.1.clone(), "-1")];
     velocity_terms.sort();
     let velocity = dimension(
         "Velocity",
@@ -599,10 +600,7 @@ fn written(wire: &Value, node: &NodeKey) -> CheckedNodeId {
 
 /// Each requirement record of `package` whose application applies
 /// `operation`, in key order: its node and its extent.
-fn requirement_records(
-    package: &CheckedPackage,
-    operation: &str,
-) -> Vec<(NodeKey, ClaimExtent)> {
+fn requirement_records(package: &CheckedPackage, operation: &str) -> Vec<(NodeKey, ClaimExtent)> {
     let graph = package.graph();
     graph
         .requirements()

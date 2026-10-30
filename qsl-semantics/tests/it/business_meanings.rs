@@ -917,7 +917,9 @@ fn record_subtype_inherits_invariant_without_an_object_universe() {
     let mut inherited: Vec<_> = view
         .declarations()
         .iter()
-        .filter(|entry| entry.visible && entry.preimage.owner_effective_type == Some(subtype.clone()))
+        .filter(|entry| {
+            entry.visible && entry.preimage.owner_effective_type == Some(subtype.clone())
+        })
         .map(|entry| entry.preimage.original.clone())
         .collect();
     inherited.sort();

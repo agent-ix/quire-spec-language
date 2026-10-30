@@ -595,7 +595,10 @@ fn a_record_collection_holds_one_clock_place_per_slot() {
             .expect("t.x");
         assert_eq!(single.bound(), Some(1));
         // `t.x`, `u.x` and `x`, one each, and the slots of `ts`.
-        assert_eq!(model.dimension(&place.owner()), Some(3 + upper.unwrap_or(0)));
+        assert_eq!(
+            model.dimension(&place.owner()),
+            Some(3 + upper.unwrap_or(0))
+        );
     }
 }
 

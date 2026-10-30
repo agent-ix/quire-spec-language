@@ -404,7 +404,10 @@ fn resolution_follows_the_node_not_the_checked_declaration() {
             .len(),
         1
     );
-    assert!(graph.semantic_graph_mut().remove(node.node.clone()).is_some());
+    assert!(graph
+        .semantic_graph_mut()
+        .remove(node.node.clone())
+        .is_some());
     assert_eq!(
         resolve_terminals(&CheckedPackage::link(graph)).err(),
         Some(TerminalResolveRefusal::Disagrees {

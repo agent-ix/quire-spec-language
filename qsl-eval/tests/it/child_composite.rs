@@ -935,8 +935,10 @@ fn two_aliases_of_one_model_agree_on_keys_order_and_equality() {
             let Value::Composite(lines) = &built else {
                 panic!("a record");
             };
-            let quire_semantic_value::declaration::CompositeShape::Record(fields) =
-                types.composite(lines.declaration().clone()).unwrap().shape()
+            let quire_semantic_value::declaration::CompositeShape::Record(fields) = types
+                .composite(lines.declaration().clone())
+                .unwrap()
+                .shape()
             else {
                 panic!("a record shape");
             };

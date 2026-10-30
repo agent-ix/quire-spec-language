@@ -121,9 +121,12 @@ fn a_clock_collection_emits_one_template_place() {
     assert!(
         nodes(&wire)
             .iter()
-            .any(|node| qsl_foundation::node_wire::node_key_from_json(&node["node_id"]).as_ref() == Ok(&integer)
-                && node["node_tag"] == "scalar_type"
-                && node["semantic_form"] == "integer"),
+            .any(
+                |node| qsl_foundation::node_wire::node_key_from_json(&node["node_id"]).as_ref()
+                    == Ok(&integer)
+                    && node["node_tag"] == "scalar_type"
+                    && node["semantic_form"] == "integer"
+            ),
         "the selector's Integer type node is in the graph"
     );
     let places: Vec<&Value> = nodes(&wire)
@@ -149,10 +152,14 @@ fn a_clock_collection_emits_one_template_place() {
             vec![
                 ("kind".to_owned(), "slot".to_owned()),
                 ("collection".to_owned(), "sequence".to_owned()),
-                ("selector".to_owned(), format!(
-                    "ref:{}",
-                    qsl_foundation::node_wire::node_key_to_json(&integer).expect("a structural key")
-                )),
+                (
+                    "selector".to_owned(),
+                    format!(
+                        "ref:{}",
+                        qsl_foundation::node_wire::node_key_to_json(&integer)
+                            .expect("a structural key")
+                    )
+                ),
                 ("minimum".to_owned(), "0".to_owned()),
                 ("maximum".to_owned(), "3".to_owned()),
             ],
@@ -227,10 +234,7 @@ fn a_clock_collection_emits_one_template_place() {
         .iter()
         .map(|reference| &reference["target"])
         .collect();
-    let mut emitted: Vec<&Value> = places
-        .iter()
-        .map(|place| &place["node_id"])
-        .collect();
+    let mut emitted: Vec<&Value> = places.iter().map(|place| &place["node_id"]).collect();
     listed.sort_by_key(|digest| digest.to_string());
     emitted.sort_by_key(|digest| digest.to_string());
     assert_eq!(listed, emitted);

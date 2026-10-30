@@ -19,9 +19,7 @@ use qsl_semantics::model::observation::{
     ResolveBundle,
 };
 use quire_checked::key::DeclarationKey;
-use quire_exact::{
-    EffectiveId, ObjectId, ObjectReference, OriginalDeclarationKey, UniverseId,
-};
+use quire_exact::{EffectiveId, ObjectId, ObjectReference, OriginalDeclarationKey, UniverseId};
 use quire_semantic_value::declaration::TypeEnvironment;
 use quire_semantic_value::object_closure::ObjectClosure;
 use quire_semantic_value::relationship_extent::{

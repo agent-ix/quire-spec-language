@@ -162,7 +162,10 @@ fn a_literal_compares_in_a_call_a_binding_and_a_field_read() {
     for (label, equal) in [("a", true), ("b", false)] {
         let record = fixture
             .types
-            .record(key.clone(), vec![("label", FieldValue::Present(string(label)))])
+            .record(
+                key.clone(),
+                vec![("label", FieldValue::Present(string(label)))],
+            )
             .expect("an R");
         assert_eq!(truth(&fixture, "viaField", vec![record]), equal, "{label}");
     }

@@ -16,10 +16,10 @@
 
 use ix_trace_rs::trace;
 use qsl_eval::automaton::{
-    BuchiPhase, BuchiState, BuchiStates, Configuration, ContextActivation,
-    DistanceBucket, HistoryOperand, KeyRefusal, Letter, Obligation, Occurrence, PastMemory,
-    PastOperator, Polarity, SafetyState, SafetyStates, SafetyTranslation, StateContext,
-    SubjectKind, TranslationRefusal, Window,
+    BuchiPhase, BuchiState, BuchiStates, Configuration, ContextActivation, DistanceBucket,
+    HistoryOperand, KeyRefusal, Letter, Obligation, Occurrence, PastMemory, PastOperator, Polarity,
+    SafetyState, SafetyStates, SafetyTranslation, StateContext, SubjectKind, TranslationRefusal,
+    Window,
 };
 use qsl_foundation::source::provenance::OccurrenceKey;
 use quire_exact::{Origin, Role};

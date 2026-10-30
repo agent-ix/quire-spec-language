@@ -2343,7 +2343,9 @@ fn a_subtype_object_binds_a_supertype_parameter() {
     assert_eq!(target.object().as_str(), "k");
     let pre = observations.pre.as_ref().expect("one pre observation");
     assert_eq!(
-        pre.environment.objects().find(target.universe().clone(), "k"),
+        pre.environment
+            .objects()
+            .find(target.universe().clone(), "k"),
         Some(target),
         "target is archive's k, typed by k's own type"
     );
@@ -4026,7 +4028,10 @@ fn a_field_reference_to_an_admitted_subtype_object_admits() {
     };
     assert_eq!(target.object().as_str(), "k");
     assert_eq!(
-        current.environment.objects().find(target.universe().clone(), "k"),
+        current
+            .environment
+            .objects()
+            .find(target.universe().clone(), "k"),
         Some(target),
         "child.parent is archive's k, typed by k's own type"
     );

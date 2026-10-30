@@ -5,8 +5,8 @@
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
 use qsl_semantics::check::{
-    AggregateTerm, AssemblyCause, BindingValue, BodyTerm, CheckCause, GroupMember,
-    LeafTerm, MemberTerm, SemanticNode, TupleMember,
+    AggregateTerm, AssemblyCause, BindingValue, BodyTerm, CheckCause, GroupMember, LeafTerm,
+    MemberTerm, SemanticNode, TupleMember,
 };
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::admit_unit;
@@ -195,7 +195,8 @@ fn quantity_types_check_in_every_position_over_the_one_unit_node() {
     let owner = views[0].view.type_identities()[&DeclarationKey {
         package: "example/config-version".to_owned(),
         node: "ix://example/config-version/ConfigVersion".to_owned(),
-    }].clone();
+    }]
+        .clone();
     let measure = graph
         .scope()
         .operations()

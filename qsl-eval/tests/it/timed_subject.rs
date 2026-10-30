@@ -4143,10 +4143,7 @@ fn a_clock_parameter_has_one_instance_per_place() {
             .collect();
         assert_eq!(zeros.len(), 1, "{place}");
         let object = timed.places()[zeros[0]].object();
-        let named = format!(
-            "\"identity\":\"{}\"",
-            object.object().as_str()
-        );
+        let named = format!("\"identity\":\"{}\"", object.object().as_str());
         assert!(place.contains(&named), "{place} names {object:?}");
     }
 

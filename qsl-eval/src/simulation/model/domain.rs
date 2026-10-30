@@ -813,7 +813,11 @@ mod tests {
                 outer.clone(),
                 "Outer",
                 CompositeShape::Record(vec![
-                    FieldDeclaration::new("inner", ValueType::Composite(inner.clone()), Presence::Required),
+                    FieldDeclaration::new(
+                        "inner",
+                        ValueType::Composite(inner.clone()),
+                        Presence::Required,
+                    ),
                     FieldDeclaration::new("flag", ValueType::Boolean, Presence::Required),
                 ]),
             ),

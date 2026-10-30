@@ -704,7 +704,10 @@ mod tests {
         TypeEnvironment::new(
             [],
             [ObjectTypeDeclaration::new(
-                quire_exact::EffectiveId::new(None, quire_exact::OriginalDeclarationKey::new("fixture", "o7")),
+                quire_exact::EffectiveId::new(
+                    None,
+                    quire_exact::OriginalDeclarationKey::new("fixture", "o7"),
+                ),
                 name,
                 Vec::new(),
             )],
@@ -887,7 +890,10 @@ mod tests {
         let scope = scope_with(object_type("M::A"), Vec::new());
         assert_eq!(
             resolve_in(&scope, &reference("M::A")).expect("M::A is declared"),
-            ValueType::Reference(quire_exact::EffectiveId::new(None, quire_exact::OriginalDeclarationKey::new("fixture", "o7")))
+            ValueType::Reference(quire_exact::EffectiveId::new(
+                None,
+                quire_exact::OriginalDeclarationKey::new("fixture", "o7")
+            ))
         );
         let refusal = resolve_in(&scope, &reference("M::B")).unwrap_err();
         assert!(

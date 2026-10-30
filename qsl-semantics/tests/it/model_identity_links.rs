@@ -404,31 +404,36 @@ fn links_expand_to_independent_enumeration() {
 #[test]
 fn the_diamond_holds_two_inherit_facts_not_three() {
     let view = diamond().view();
-    let facts = |owner: Option<&str>, name: &str| -> Vec<&'static str> {
-        view.declarations()
-            .iter()
-            .find(|entry| {
-                entry.preimage.original == key(name)
-                    && match owner {
-                        None => entry.preimage.owner_effective_type.is_none(),
-                        Some(owner) => entry.preimage.owner_effective_type.as_ref().is_some_and(|id| {
-                            entry_by_id(&view, id).preimage.original == key(owner)
-                        }),
+    let facts =
+        |owner: Option<&str>, name: &str| -> Vec<&'static str> {
+            view.declarations()
+                .iter()
+                .find(|entry| {
+                    entry.preimage.original == key(name)
+                        && match owner {
+                            None => entry.preimage.owner_effective_type.is_none(),
+                            Some(owner) => entry
+                                .preimage
+                                .owner_effective_type
+                                .as_ref()
+                                .is_some_and(|id| {
+                                    entry_by_id(&view, id).preimage.original == key(owner)
+                                }),
+                        }
+                })
+                .expect("the declaration")
+                .preimage
+                .derivation
+                .iter()
+                .map(|fact| {
+                    if fact.rule == RULE_QUALIFY {
+                        "qualify"
+                    } else {
+                        "inherit"
                     }
-            })
-            .expect("the declaration")
-            .preimage
-            .derivation
-            .iter()
-            .map(|fact| {
-                if fact.rule == RULE_QUALIFY {
-                    "qualify"
-                } else {
-                    "inherit"
-                }
-            })
-            .collect()
-    };
+                })
+                .collect()
+        };
     assert_eq!(facts(None, "D"), ["qualify", "inherit", "inherit"]);
     assert_eq!(facts(Some("D"), "A/f"), ["inherit", "inherit"]);
     assert_eq!(facts(Some("A"), "A/f"), ["qualify"]);
@@ -463,12 +468,16 @@ fn position(entries: &[ViewEntry], owner: Option<&str>, name: &str) -> usize {
             entry.preimage.original == key(name)
                 && match owner {
                     None => entry.preimage.owner_effective_type.is_none(),
-                    Some(owner) => entry.preimage.owner_effective_type.as_ref().is_some_and(|id| {
-                        entries
-                            .iter()
-                            .find(|candidate| candidate.effective_id == *id)
-                            .is_some_and(|candidate| candidate.preimage.original == key(owner))
-                    }),
+                    Some(owner) => entry
+                        .preimage
+                        .owner_effective_type
+                        .as_ref()
+                        .is_some_and(|id| {
+                            entries
+                                .iter()
+                                .find(|candidate| candidate.effective_id == *id)
+                                .is_some_and(|candidate| candidate.preimage.original == key(owner))
+                        }),
                 }
         })
         .unwrap_or_else(|| panic!("declaration {name}"))
@@ -489,7 +498,8 @@ fn the_strict_reader_refuses_every_mis_wired_link() {
     let view = diamond().view();
     assert!(Links::new(view.declarations()).is_ok());
     let base = entries(&view);
-    let id = |owner: Option<&str>, name: &str| base[position(&base, owner, name)].effective_id.clone();
+    let id =
+        |owner: Option<&str>, name: &str| base[position(&base, owner, name)].effective_id.clone();
 
     // A parent that names a member where a type is required.
     let mut mutated = base.clone();

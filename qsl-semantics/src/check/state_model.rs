@@ -639,7 +639,14 @@ mod tests {
         use quire_semantic_value::declaration::{
             CompositeDeclaration, CompositeShape, FieldDeclaration, TypeEnvironment,
         };
-        let [money, taxed, fee] = [1, 2, 3].map(|byte| quire_exact::NodeKey::new("fixture".to_owned(), vec![quire_exact::PathSegment::Text(format!("n{byte}"))], 0).expect("a fixture key"));
+        let [money, taxed, fee] = [1, 2, 3].map(|byte| {
+            quire_exact::NodeKey::new(
+                "fixture".to_owned(),
+                vec![quire_exact::PathSegment::Text(format!("n{byte}"))],
+                0,
+            )
+            .expect("a fixture key")
+        });
         let record = |key, name: &str, supertypes: Vec<NodeKey>| {
             CompositeDeclaration::new(
                 key,
@@ -702,7 +709,10 @@ mod tests {
         for (actual, required) in [
             (composite(money.clone()), composite(taxed.clone())),
             (composite(fee.clone()), composite(money.clone())),
-            (sequence_of(composite(taxed.clone())), sequence_of(composite(money.clone()))),
+            (
+                sequence_of(composite(taxed.clone())),
+                sequence_of(composite(money.clone())),
+            ),
         ] {
             assert!(argument(actual, required).is_err());
         }

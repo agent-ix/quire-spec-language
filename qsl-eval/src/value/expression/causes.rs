@@ -380,14 +380,8 @@ mod tests {
         assert_eq!(
             keys(&foreign),
             [
-                (
-                    "required",
-                    crate::test_ids::node_key([0x11]).to_string()
-                ),
-                (
-                    "supplied",
-                    crate::test_ids::node_key([0xAB]).to_string()
-                )
+                ("required", crate::test_ids::node_key([0x11]).to_string()),
+                ("supplied", crate::test_ids::node_key([0xAB]).to_string())
             ]
         );
         // A cause with no key-table row has no fields, not an empty map,

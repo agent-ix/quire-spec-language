@@ -2524,7 +2524,8 @@ fn a_record_value_type_beside_an_admitted_operation_assembles() {
     let config_version_id = views[0].view.type_identities()[&DeclarationKey {
         package: PACKAGE_IDENTITY.to_owned(),
         node: config_version.clone(),
-    }].clone();
+    }]
+        .clone();
     let declared = declarations
         .types
         .object_type(config_version_id)
@@ -2675,11 +2676,13 @@ fn admission_is_deterministic_regardless_of_document_order() {
         let config_version_id = identities[&DeclarationKey {
             package: PACKAGE_IDENTITY.to_owned(),
             node: config_version.clone(),
-        }].clone();
+        }]
+            .clone();
         let audit_log_id = identities[&DeclarationKey {
             package: PACKAGE_IDENTITY.to_owned(),
             node: audit_log.clone(),
-        }].clone();
+        }]
+            .clone();
         let declared = |id: quire_exact::EffectiveId| {
             (
                 declarations

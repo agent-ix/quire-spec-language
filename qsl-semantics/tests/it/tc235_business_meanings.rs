@@ -1099,7 +1099,8 @@ fn tc235_m03_record_shape_and_clause_meanings() {
     let owner = view.type_identities()[&quire_checked::key::DeclarationKey {
         package: PACKAGE.to_owned(),
         node: id("Money"),
-    }].clone();
+    }]
+        .clone();
     assert!(view.declarations().iter().any(|declaration| {
         declaration.visible
             && declaration.preimage.original == invariant_key
@@ -1209,7 +1210,9 @@ fn record_value_subtype_preserves_effective_fields_support() {
     let mut effective_fields: Vec<_> = view
         .declarations()
         .iter()
-        .filter(|entry| entry.visible && entry.preimage.owner_effective_type == Some(taxed_type.clone()))
+        .filter(|entry| {
+            entry.visible && entry.preimage.owner_effective_type == Some(taxed_type.clone())
+        })
         .map(|entry| entry.preimage.original.node.clone())
         .collect();
     // FR-150 sorts effective declarations by identity; these same-package
@@ -1306,7 +1309,9 @@ fn tc235_taxed_money_assembly_resolves_composite_name_and_inherited_fields() {
         let effective_fields: Vec<_> = view
             .declarations()
             .iter()
-            .filter(|entry| entry.visible && entry.preimage.owner_effective_type == Some(child_id.clone()))
+            .filter(|entry| {
+                entry.visible && entry.preimage.owner_effective_type == Some(child_id.clone())
+            })
             .map(|entry| entry.preimage.original.node.as_str())
             .collect();
         assert!(
@@ -1999,7 +2004,9 @@ fn tc235_m18_event_type_specialization_vectors() {
     let mut effective_members: Vec<_> = view
         .declarations()
         .iter()
-        .filter(|entry| entry.visible && entry.preimage.owner_effective_type == Some(event_type.clone()))
+        .filter(|entry| {
+            entry.visible && entry.preimage.owner_effective_type == Some(event_type.clone())
+        })
         .map(|entry| entry.preimage.original.node.clone())
         .collect();
     effective_members.sort();
