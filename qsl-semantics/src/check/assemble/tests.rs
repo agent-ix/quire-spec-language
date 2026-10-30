@@ -1757,10 +1757,11 @@ fn enums_are_admitted_with_nominal_keys_over_the_units_owner() {
         color.declaration.key()
     );
 
-    // The owner enters the key.
+    // The owner is the node's `owner`, not part of its structural key
+    // (package, declared path, ordinal).
     let moved =
         assemble_as("a", "w", &text_with(&[PROFILE_V], STATUS)).expect("the unit assembles");
-    assert_ne!(
+    assert_eq!(
         binding(&moved, "Status").declaration.key(),
         status.declaration.key()
     );
@@ -2005,7 +2006,9 @@ fn predicate_and_enum_nodes_lower_to_their_fr_092_forms() {
         ))
     );
     assert_eq!(function.semantic_form(), "pure_function");
-    assert_ne!(predicate.key(), function.key());
+    // A declared node's key is its package and declared path: the form
+    // (`predicate`, `pure_function`) is the node's own, not part of its key.
+    assert_eq!(predicate.key(), function.key());
 
     let package = assemble(STATUS).1.expect("the unit assembles");
     let status = binding(&package, "Status");

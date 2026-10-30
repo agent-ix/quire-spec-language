@@ -940,10 +940,13 @@ fn the_i2_read_refuses_each_fr_481_defect_at_its_locus() {
                     "target": placeholder}},
             ]}]},
         }));
-        node["dependencies"]
-            .as_array_mut()
-            .unwrap()
-            .push(placeholder.clone());
+        let dependencies = node["dependencies"].as_array_mut().unwrap();
+        dependencies.push(placeholder.clone());
+        // The reader takes dependencies in ascending node-id order.
+        dependencies.sort_by_key(|dependency| {
+            serde_json::from_value::<quire_contract_model::CheckedNodeId>(dependency.clone())
+                .expect("a node id")
+        });
     }));
     assert_eq!(
         refusal.code,
