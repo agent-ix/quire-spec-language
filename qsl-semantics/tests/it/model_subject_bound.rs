@@ -125,12 +125,7 @@ fn a_bounded_population_joins_no_domain() {
         .expect("one claim");
     assert!(claim.populations().is_empty());
     let record = claim
-        .requirements(
-            fixture_node("clause"),
-            &[fixture_node("over")],
-            &[],
-            &[],
-        )
+        .requirements(fixture_node("clause"), &[fixture_node("over")], &[], &[])
         .expect("keyed");
     let ClaimExtent::Unbounded(domains) = record.extent() else {
         panic!("the formula is infinite-trace: {:?}", record.extent());
@@ -194,12 +189,7 @@ fn two_populations_of_the_over_type_are_both_domains_of_the_clause() {
     }
     assert_ne!(keys[0], keys[1]);
     let record = claim
-        .requirements(
-            fixture_node("clause"),
-            &[fixture_node("over")],
-            &keys,
-            &[],
-        )
+        .requirements(fixture_node("clause"), &[fixture_node("over")], &keys, &[])
         .expect("keyed");
     let ClaimExtent::Unbounded(domains) = record.extent() else {
         panic!("unbounded: {:?}", record.extent());

@@ -68,7 +68,7 @@ fn child() {
     let package = chain();
     #[cfg(target_os = "linux")]
     let baseline = peak_resident_bytes();
-    let (elapsed, declarations, facts, hashed, work, outcome) = std::thread::scope(|scope| {
+    let (elapsed, declarations, facts, work, outcome) = std::thread::scope(|scope| {
         std::thread::Builder::new()
             .stack_size(STACK_BYTES)
             .spawn_scoped(scope, || {
@@ -80,7 +80,6 @@ fn child() {
                     elapsed,
                     meter.consumed(LimitKind::EffectiveDeclarations),
                     meter.consumed(LimitKind::DerivationFacts),
-                    meter.consumed(LimitKind::HashedBytes),
                     meter.consumed(LimitKind::WorkUnits),
                     outcome,
                 )
@@ -95,7 +94,6 @@ fn child() {
     assert_eq!(view.declarations().len(), EDGES + 1);
     println!("DECLARATIONS={declarations}");
     println!("FACTS={facts}");
-    println!("HASHED={hashed}");
     println!("WORK={work}");
     println!("WALL_MS={}", elapsed.as_millis());
     #[cfg(target_os = "linux")]
