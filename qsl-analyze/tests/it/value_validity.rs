@@ -32,7 +32,7 @@ use qsl_replay::{
 };
 use qsl_route::Mode;
 use qsl_semantics::check::{Capability, NodeTag, PackageDeclarations};
-use qsl_semantics::value::{CatalogRole, DefinitionLock};
+use qsl_semantics::value::{admit_integer_division, DefinitionRole};
 use quire_exact::{Cancel, Integer, IntegerInterval, Origin, Role, Value};
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::location::{Location, Origin as LocationOrigin};
@@ -316,12 +316,9 @@ fn package_of(declarations: &str) -> CheckedPackage {
         Vec::new(),
     )
     .expect("the assembler builds the package declarations");
-    let lock = DefinitionLock::pinned();
     declarations.integer_division = Some(
-        lock.admit_integer_division(
-            &[lock
-                .entry(CatalogRole::IntegerDivisionEuclidean)
-                .reference()],
+        admit_integer_division(
+            &[DefinitionRole::IntegerDivisionEuclidean.reference()],
             None,
         )
         .expect("Euclidean division is admitted"),

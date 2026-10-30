@@ -88,7 +88,6 @@ use crate::model::intake::{
     member_identity_name, type_identity_segment, SelectedModel, SelectedModels,
 };
 use crate::model::operation::{OperationDeclaration, OperationLookup, OperationTable};
-use crate::value::definition::DefinitionLock;
 use crate::value::enumeration::{
     AdmittedEnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
 };
@@ -3219,7 +3218,6 @@ impl PackageDeclarations {
                 });
             }
         }
-        let lock = DefinitionLock::pinned();
         let predicates: BTreeSet<&str> = unit
             .functions
             .iter()
@@ -3306,11 +3304,10 @@ impl PackageDeclarations {
                         // FR-110 "Layer selection".
                         if let Some(layer) = HeaderLayer::from_identity(&profile.identity) {
                             let selected_admission =
-                                LayerAdmission::new(&lock, layer, &predicates, selects_model);
+                                LayerAdmission::new(layer, &predicates, selects_model);
                             if selects_model && selected_admission.body_needs_model_family(function)
                             {
                                 let model_admission = LayerAdmission::new(
-                                    &lock,
                                     HeaderLayer::ModelComplete,
                                     &predicates,
                                     selects_model,
@@ -3880,17 +3877,12 @@ impl PackageDeclarations {
             unit.state_clauses,
             &resolve,
             &admitted,
-            (&lock, &predicates),
+            &predicates,
             &execution_points,
         );
-        let state_graph_claims = state_graph_claims(
-            unit.state_graph_claims,
-            &resolve,
-            &admitted,
-            (&lock, &predicates),
-        );
-        let operation_bodies =
-            operation_bodies(unit.operation_bodies, &resolve, (&lock, &predicates));
+        let state_graph_claims =
+            state_graph_claims(unit.state_graph_claims, &resolve, &admitted, &predicates);
+        let operation_bodies = operation_bodies(unit.operation_bodies, &resolve, &predicates);
         let protocol_attempts = protocol_attempts(
             &unit.protocols,
             &object_names,
@@ -4302,7 +4294,7 @@ fn state_clauses(
     forms: Vec<StateClauseForm>,
     resolve: &Resolve<'_>,
     models: &[AdmittedModel],
-    (lock, predicates): (&DefinitionLock, &BTreeSet<&str>),
+    predicates: &BTreeSet<&str>,
     execution_points: &BTreeMap<String, quire_contract_model::ExecutionPoint>,
 ) -> Result<Vec<StateClauseDeclaration>, AssemblyRefusal> {
     let Resolve {
@@ -4332,8 +4324,7 @@ fn state_clauses(
             Some(selection) => {
                 if let Some(layer) = HeaderLayer::from_identity(&selection.identity) {
                     errors.extend(
-                        LayerAdmission::new(lock, layer, predicates, selects_model)
-                            .state_clause(&form),
+                        LayerAdmission::new(layer, predicates, selects_model).state_clause(&form),
                     );
                 }
             }
@@ -4588,7 +4579,7 @@ fn state_graph_claims(
     forms: Vec<qsl_forms::StateGraphClaimForm>,
     resolve: &Resolve<'_>,
     models: &[AdmittedModel],
-    (lock, predicates): (&DefinitionLock, &BTreeSet<&str>),
+    predicates: &BTreeSet<&str>,
 ) -> Result<Vec<StateGraphDeclaration>, AssemblyRefusal> {
     let Resolve {
         profiles,
@@ -4627,7 +4618,7 @@ fn state_graph_claims(
             Some(selection) => {
                 if let Some(layer) = HeaderLayer::from_identity(&selection.identity) {
                     errors.extend(
-                        LayerAdmission::new(lock, layer, predicates, selects_model)
+                        LayerAdmission::new(layer, predicates, selects_model)
                             .state_graph_claim(&form),
                     );
                 }
@@ -4991,7 +4982,7 @@ fn operation_key_of(
 fn operation_bodies(
     forms: Vec<OperationBodyForm>,
     resolve: &Resolve<'_>,
-    (lock, predicates): (&DefinitionLock, &BTreeSet<&str>),
+    predicates: &BTreeSet<&str>,
 ) -> Result<Vec<OperationBodyDeclaration>, AssemblyRefusal> {
     let Resolve {
         profiles,
@@ -5020,8 +5011,7 @@ fn operation_bodies(
             Some(selection) => {
                 if let Some(layer) = HeaderLayer::from_identity(&selection.identity) {
                     errors.extend(
-                        LayerAdmission::new(lock, layer, predicates, selects_model)
-                            .operation_body(&form),
+                        LayerAdmission::new(layer, predicates, selects_model).operation_body(&form),
                     );
                 }
             }

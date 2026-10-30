@@ -14,7 +14,7 @@
 
 use qsl_forms::{BinaryOperator, BuiltinType, Expression, FunctionDeclaration, TypeForm};
 use qsl_semantics::check::{LockEvidence, PackageDeclarations};
-use qsl_semantics::value::{CatalogRole, DefinitionLock, DefinitionReference};
+use qsl_semantics::value::{DefinitionReference, DefinitionRole};
 use quire_exact::{NodeKey, Presence, TextProfile, TextType, ValueType};
 use quire_semantic_value::declaration::{
     CompositeDeclaration, CompositeShape, FieldDeclaration, TypeEnvironment,
@@ -55,9 +55,7 @@ fn record(index: usize, records: usize) -> CompositeDeclaration {
 
 /// QSpec's text-profile definition, the law each text leaf names.
 fn text_profile() -> DefinitionReference {
-    DefinitionLock::pinned()
-        .entry(CatalogRole::TextProfile)
-        .reference()
+    DefinitionRole::TextProfile.reference()
 }
 
 /// `records` mutually referencing, Text-reachable records and one

@@ -133,6 +133,7 @@ struct Capability {
 #[serde(deny_unknown_fields)]
 struct CapabilityApplicability {
     consumer_types: Vec<ConsumerType>,
+    semantic_profiles: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -324,6 +325,7 @@ pub fn run(workspace_root: &Path, operands: &[OsString]) -> Result<Outcome> {
         .map(|cap| (cap.capability_id.as_str(), cap))
         .collect::<BTreeMap<_, _>>();
     let default_scope = args.capabilities.is_empty();
+    let profiles = qsl_profiles();
     let mut scope = if default_scope {
         corpus
             .coverage
@@ -334,6 +336,11 @@ pub fn run(workspace_root: &Path, operands: &[OsString]) -> Result<Outcome> {
                     .consumer_types
                     .iter()
                     .any(|kind| qsl_consumer(*kind))
+                    && cap
+                        .applicability
+                        .semantic_profiles
+                        .iter()
+                        .any(|profile| profiles.contains(profile))
             })
             .collect::<Vec<_>>()
     } else {
@@ -601,6 +608,34 @@ fn validate_semantics(corpus: &Corpus) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn qsl_profiles() -> BTreeSet<String> {
+    let mut profiles = qsl_semantics::value::DefinitionRole::ALL
+        .into_iter()
+        .map(|role| role.identity().to_owned())
+        .collect::<BTreeSet<_>>();
+    profiles.extend(
+        qsl_semantics::value::ModelRole::ALL
+            .into_iter()
+            .map(|role| role.identity().to_owned()),
+    );
+    profiles.extend(
+        qsl_semantics::value::TemporalRole::ALL
+            .into_iter()
+            .map(|role| role.identity().to_owned()),
+    );
+    profiles.extend(
+        qsl_semantics::value::HeaderLayer::ALL
+            .into_iter()
+            .map(|layer| layer.identity().to_owned()),
+    );
+    profiles.extend(
+        qsl_semantics::check::TemporalProfile::ALL
+            .into_iter()
+            .map(|profile| profile.identity().to_owned()),
+    );
+    profiles
 }
 
 fn qsl_consumer(value: ConsumerType) -> bool {

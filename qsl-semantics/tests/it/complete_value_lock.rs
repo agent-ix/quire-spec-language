@@ -1,23 +1,22 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! The `Value` family's local definition admission and selection-vector
-//! behavior. The tests that need QSpec vectors read only those vectors from
-//! the checkout named by `QSPEC_DIR`; they do not compare a local catalog
-//! with QSpec definition catalogs.
+//! behavior. The tests that need QSpec vectors read those vectors from the
+//! checkout named by `QSPEC_DIR`; role identities are resolved by closed
+//! typed enums, without a copied catalog.
 
 use std::collections::BTreeSet;
 use std::path::Path;
 
 use ix_trace_rs::trace;
-use qsl_semantics::value::{CatalogRole, DefinitionLock, HeaderLayer, LayerForm, Trigger};
+use qsl_semantics::value::{
+    admit_selection, always_roles, qualification_roles, DefinitionRole, HeaderLayer, LayerForm,
+    Trigger,
+};
 use quire_semantic_value::definition::SelectionRefusalCode;
 use serde_json::Value;
 
 /// The QSpec definitions directory inside a quire-specification checkout.
 const DEFINITIONS: &str = "proposals/quire-v1/definitions";
-
-fn lock() -> DefinitionLock {
-    DefinitionLock::pinned()
-}
 
 fn qspec_document(name: &str) -> Option<Value> {
     let qspec = std::env::var_os("QSPEC_DIR")?;
@@ -39,26 +38,18 @@ fn strings(value: &Value) -> Vec<&str> {
         .collect()
 }
 
-/// Every role has exactly one catalog entry, which names its definition by
-/// a nonempty authority and identity, and no two roles name one identity.
+/// The role enum is the single closed mapping from role names to identities.
 #[test]
-fn the_catalog_covers_every_role_exactly_once() {
-    let lock = lock();
-    let roles: Vec<_> = lock.catalog().iter().map(|entry| entry.role).collect();
-    assert_eq!(roles, CatalogRole::ALL);
-    let identities: BTreeSet<_> = lock.catalog().iter().map(|entry| entry.identity).collect();
-    assert_eq!(identities.len(), CatalogRole::ALL.len());
-    for entry in lock.catalog() {
+fn the_closed_roles_resolve_to_distinct_identity_references() {
+    let roles = DefinitionRole::ALL;
+    let identities: BTreeSet<_> = roles.iter().map(|role| role.identity()).collect();
+    assert_eq!(identities.len(), DefinitionRole::ALL.len());
+    for role in roles {
+        assert_eq!(DefinitionRole::from_code(role.as_str()), Some(role));
+        assert!(!role.identity().is_empty(), "{role:?}");
         assert_eq!(
-            CatalogRole::from_code(entry.role.as_str()),
-            Some(entry.role)
-        );
-        assert!(!entry.identity.is_empty(), "{:?}", entry.role);
-        assert_eq!(entry.authority, "agent-ix", "{:?}", entry.role);
-        assert_eq!(lock.entry(entry.role), entry);
-        assert_eq!(
-            serde_json::to_value(entry.reference()).unwrap(),
-            serde_json::json!({"authority": entry.authority, "identity": entry.identity})
+            serde_json::to_value(role.reference()).unwrap(),
+            serde_json::json!({"authority": "agent-ix", "identity": role.identity()})
         );
     }
 }
@@ -84,9 +75,9 @@ fn vector_roles<'a>(vectors: &'a Value, vector: &'a Value) -> Vec<&'a str> {
 /// its `expected_code`, and the refused vectors together reach every closed
 /// refusal code. Skipped (and passing) when `QSPEC_DIR` is unset; `make
 /// conformance` requires it.
-#[trace("QSpec-TC-192", "TC-490", "FR-110-AC-9")]
+#[trace("QSpec-TC-192")]
 #[test]
-fn conformance_admit_selection_matches_qspec_selection_vectors() {
+fn conformance_admit_selection_matches_qspec_vectors() {
     let Some(vectors) = qspec_document("complete-value-selection-vectors.json") else {
         println!("skipped: QSPEC_DIR not set");
         return;
@@ -97,17 +88,16 @@ fn conformance_admit_selection_matches_qspec_selection_vectors() {
         let name = &vector["name"];
         let triggers = strings(&vector["triggers"]);
         let roles = vector_roles(&vectors, vector);
-        let admitted = lock()
-            .admit_selection(&triggers, &roles)
-            .unwrap_or_else(|code| panic!("{name}: {code:?}"));
+        let admitted =
+            admit_selection(&triggers, &roles).unwrap_or_else(|code| panic!("{name}: {code:?}"));
         let expected: BTreeSet<Trigger> = triggers
             .iter()
             .map(|code| Trigger::from_code(code).unwrap())
             .collect();
         assert_eq!(admitted.triggers(), &expected, "{name}");
-        let roles: BTreeSet<CatalogRole> = roles
+        let roles: BTreeSet<DefinitionRole> = roles
             .iter()
-            .map(|code| CatalogRole::from_code(code).unwrap())
+            .map(|code| DefinitionRole::from_code(code).unwrap())
             .collect();
         assert_eq!(admitted.roles(), &roles, "{name}");
         assert_eq!(
@@ -123,12 +113,11 @@ fn conformance_admit_selection_matches_qspec_selection_vectors() {
         let name = &vector["name"];
         let expected = SelectionRefusalCode::from_code(vector["expected_code"].as_str().unwrap())
             .unwrap_or_else(|| panic!("{name}: unknown expected_code"));
-        let code = lock()
-            .admit_selection(
-                &strings(&vector["triggers"]),
-                &vector_roles(&vectors, vector),
-            )
-            .expect_err(&format!("{name} admitted"));
+        let code = admit_selection(
+            &strings(&vector["triggers"]),
+            &vector_roles(&vectors, vector),
+        )
+        .expect_err(&format!("{name} admitted"));
         assert_eq!(code, expected, "{name}");
         codes.insert(code);
     }
@@ -149,7 +138,6 @@ fn the_requires_closure_of_each_layer_is_computed() {
     use HeaderLayer::{
         ModelComplete, StateCore, StateGraph, StateQueries, TemporalComplete, ValueComplete,
     };
-    let lock = lock();
     let expected: [(HeaderLayer, &[HeaderLayer]); 6] = [
         (StateCore, &[StateCore]),
         (StateQueries, &[StateCore, StateQueries]),
@@ -178,14 +166,14 @@ fn the_requires_closure_of_each_layer_is_computed() {
         ),
     ];
     for (selected, closure) in expected {
-        assert_eq!(lock.closure(&[selected]), closure, "{selected:?}");
+        assert_eq!(HeaderLayer::closure(&[selected]), closure, "{selected:?}");
     }
     // A union of selections is the union of their closures.
     assert_eq!(
-        lock.closure(&[StateQueries, ValueComplete]),
+        HeaderLayer::closure(&[StateQueries, ValueComplete]),
         [StateCore, StateQueries, ValueComplete]
     );
-    assert_eq!(lock.closure(&[]), Vec::<HeaderLayer>::new());
+    assert_eq!(HeaderLayer::closure(&[]), Vec::<HeaderLayer>::new());
 }
 
 /// FR-110-AC-8: the admitted-form set of a layer is the forms of its closure.
@@ -199,8 +187,7 @@ fn a_layer_admits_the_forms_of_its_closure_and_no_wider_layer() {
         FunctionDeclaration, NamedPredicateCall, ObjectNavigation, PredicateDeclaration,
         SequenceQuery, StateClause, ValueConstruct,
     };
-    let lock = lock();
-    assert!(lock.admits(StateCore, StateClause));
+    assert!(StateCore.admits(StateClause));
     for form in [
         PredicateDeclaration,
         NamedPredicateCall,
@@ -209,7 +196,7 @@ fn a_layer_admits_the_forms_of_its_closure_and_no_wider_layer() {
         FunctionDeclaration,
         ValueConstruct,
     ] {
-        assert!(!lock.admits(StateCore, form), "state core admits {form:?}");
+        assert!(!StateCore.admits(form), "state core admits {form:?}");
     }
     for form in [
         StateClause,
@@ -217,15 +204,15 @@ fn a_layer_admits_the_forms_of_its_closure_and_no_wider_layer() {
         NamedPredicateCall,
         SequenceQuery,
     ] {
-        assert!(lock.admits(StateQueries, form), "queries refuses {form:?}");
+        assert!(StateQueries.admits(form), "queries refuses {form:?}");
     }
     for form in [ObjectNavigation, FunctionDeclaration, ValueConstruct] {
-        assert!(!lock.admits(StateQueries, form), "queries admits {form:?}");
+        assert!(!StateQueries.admits(form), "queries admits {form:?}");
     }
-    assert!(lock.admits(StateGraph, ObjectNavigation));
-    assert!(!lock.admits(StateGraph, FunctionDeclaration));
-    assert!(lock.admits(ValueComplete, FunctionDeclaration));
-    assert!(lock.admits(ValueComplete, ValueConstruct));
+    assert!(StateGraph.admits(ObjectNavigation));
+    assert!(!StateGraph.admits(FunctionDeclaration));
+    assert!(ValueComplete.admits(FunctionDeclaration));
+    assert!(ValueComplete.admits(ValueConstruct));
 }
 
 /// FR-110-AC-1: the qualification rows a package selects follow the lock's
@@ -234,13 +221,12 @@ fn a_layer_admits_the_forms_of_its_closure_and_no_wider_layer() {
 #[trace("TC-490", "FR-110-AC-1")]
 #[test]
 fn the_qualification_rows_follow_the_value_complete_layer() {
-    let lock = lock();
     assert_eq!(
-        lock.qualification_roles(&lock.closure(&[HeaderLayer::ValueComplete])),
-        lock.always_roles()
+        qualification_roles(&HeaderLayer::closure(&[HeaderLayer::ValueComplete])),
+        always_roles()
     );
     assert_eq!(
-        lock.qualification_roles(&lock.closure(&[HeaderLayer::StateGraph])),
-        [CatalogRole::Edition]
+        qualification_roles(&HeaderLayer::closure(&[HeaderLayer::StateGraph])),
+        [DefinitionRole::Edition]
     );
 }

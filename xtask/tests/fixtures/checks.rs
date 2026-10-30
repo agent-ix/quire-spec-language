@@ -11,5 +11,5 @@ pub(super) const CHECKS: [(&str, &str); 10] = [
     ("checked_v2::tests::conformance_shipped_projection_cases_are_refused_and_admitted_once_removed", "conformance: 1 shipped-projection cases refused and admitted once removed"),
     ("checked_v2::tests::conformance_dependency_selection_vectors", "conformance: 1 dependency-selection entry mutations and 1 order vectors"),
     ("emit::tests::golden::conformance_emitted_application_nodes_match_qspec_positive_fixtures", "conformance: 1 emitted application nodes match QSpec's positive fixtures"),
-    ("complete_value_lock::conformance_admit_selection_matches_qspec_selection_vectors", "conformance: 1 accepted and 1 refused selection vectors"),
+    ("complete_value_lock::conformance_admit_selection_matches_qspec_vectors", "conformance: 1 accepted and 1 refused selection vectors"),
 ];

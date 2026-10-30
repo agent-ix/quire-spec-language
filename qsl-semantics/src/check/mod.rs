@@ -1128,9 +1128,7 @@ impl PackageDeclarations {
         if !self.timed_forms.is_empty() {
             let required = crate::value::layer::HeaderLayer::TemporalComplete;
             let selected = self.header_layers.clone();
-            let admitted = crate::value::definition::DefinitionLock::pinned()
-                .closure(&selected)
-                .contains(&required);
+            let admitted = crate::value::layer::HeaderLayer::closure(&selected).contains(&required);
             let units = time_units::TimeUnits::new(
                 &self.units,
                 self.nominal_spans.keys().copied(),
@@ -1459,9 +1457,7 @@ impl PackageDeclarations {
         if !self.task_set_forms.is_empty() {
             let required = crate::value::layer::HeaderLayer::TemporalComplete;
             let selected = self.header_layers.clone();
-            let admitted = crate::value::definition::DefinitionLock::pinned()
-                .closure(&selected)
-                .contains(&required);
+            let admitted = crate::value::layer::HeaderLayer::closure(&selected).contains(&required);
             task_sets_admitted = admitted;
             if admitted {
                 let units = time_units::TimeUnits::new(
@@ -1617,8 +1613,7 @@ impl PackageDeclarations {
                 .iter()
                 .map(|protocol| protocol.name.name.as_str()),
         );
-        let model_selected = crate::value::definition::DefinitionLock::pinned()
-            .closure(&self.header_layers)
+        let model_selected = crate::value::layer::HeaderLayer::closure(&self.header_layers)
             .contains(&crate::value::layer::HeaderLayer::ModelComplete);
         let mut model_context_calls = Vec::new();
         if model_selected {
@@ -2537,8 +2532,7 @@ impl PackageDeclarations {
             let checking = timed_model::Checking {
                 declarations: &declarations,
                 state_clauses: &state_clause_forms,
-                complete_value: crate::value::definition::DefinitionLock::pinned()
-                    .closure(&header_layers)
+                complete_value: crate::value::layer::HeaderLayer::closure(&header_layers)
                     .contains(&crate::value::layer::HeaderLayer::ValueComplete),
                 presence_places: &[],
             };

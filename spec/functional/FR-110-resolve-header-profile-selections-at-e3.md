@@ -27,22 +27,21 @@ relationships:
 When spine `compile` (the FR-278 composition) compiles a complete-V1
 unit, E3 SHALL resolve each of the unit's `profile <alias> = "<identity>";`
 header declarations in the catalog of the family that owns the selected
-definition, and refuse, with a catalogued code and cause, every header
-profile that does not resolve (ADR-011 §2.4, amended 2026-09-26).
-This requirement specifies the `Value` family's catalog, the layer table
-(`qsl-semantics/src/value/definition.rs`), which names each definition the
-QSL build implements by `{authority, identity}`: the identities the QSpec
-definition prose names, including each header-selectable layer, the layers it
-requires and its admitted-form set. A clause profile (FR-322 roles
-`temporal_profile` and `protocol_profile`) resolves in its clause family's
-catalog (ADR-012 §2, the `TemporalTrace` and `ProtocolClause` families,
-#218), which also writes its `profile_selections` row.
+definition, and refuse, with its typed code and cause, every header profile
+that does not resolve (ADR-011 §2.4, amended 2026-09-26).
+The `Value` family's supported identities are represented by closed typed
+roles in QSL; header-selectable layer roles also define their direct layer
+requirements and admitted forms. A clause profile (FR-322 roles
+`temporal_profile` and `protocol_profile`) resolves against its clause
+family's supported profile roles (ADR-012 §2, the `TemporalTrace` and
+`ProtocolClause` families, #218), which also writes its `profile_selections`
+row. These roles do not form a separately recorded definition catalog.
 
 This is the header-selection half of `complete::resolve_source_package`'s
 successor (FR-087, "`ResolvedSourcePackage` retires when both successors
 exist"; ruling on QSL-229). Its model half is I1 (FR-056), which spine
 `compile` already runs, and which is the one model resolution path. The
-edition and each law's `DefinitionRef` come from the same catalog
+edition and each law's `DefinitionRef` are produced from those closed roles
 through the emitter (ADR-011 §2.4, amended 2026-09-24).
 
 FR-361 states what a unit that selects `quire.model.complete/v1` gains.
@@ -52,23 +51,22 @@ FR-361 states what a unit that selects `quire.model.complete/v1` gains.
 - The unit's profile selections as S2 carries them
   (`qsl_foundation::selection::ProfileSelection`: alias, `DefinitionRef`
   identity, declaration span, identity-literal span).
-- The layer table, the closed catalog of the definitions the QSpec definition
-  prose names, each by `{authority, identity}`, including the
-  header-selectable layers (each layer's identity, the layers it requires and
-  its admitted-form definition). It holds no revision and no QSpec document.
+- The closed typed roles for definitions the QSpec prose names, each resolved
+  by `{authority, identity}`, including header-selectable layers (each
+  layer's identity, direct requirements and admitted forms). There is no
+  separately recorded identity table.
 
 ## Outputs
 
 - `check::resolve_profiles(profiles: &[ProfileSelection])
-  -> Result<(), Vec<ProfileRefusal>>`, in layer-3 `check`, reading the layer
-  table. Success returns nothing: the `Value` family's catalog rows are fixed
-  by the table. The layers the headers resolve to reach the checked graph as
+  -> Result<(), Vec<ProfileRefusal>>`, in layer-3 `check`, matching the closed
+  typed roles. Success returns nothing. The layers the headers resolve to reach the checked graph as
   `header_layers`, which gate admitted forms ("Layer selection").
 - `check::ProfileRefusal`: the profile's alias, the span of its identity
   literal, the `DefinitionRef` it selected, the required role (`root`), the
-  `root` row it was compared with (`CatalogEntry`) and a `ProfileCause`:
+  typed `DefinitionRole::Root` it was compared with and a `ProfileCause`:
   `UnsupportedSelection` or `WrongSelectionRole`. Its `code()` and `cause()`
-  give the catalog pair in the table below.
+  give the typed refusal code and cause pair in the table below.
 - `qsl_replay::spine::CompileRefusal::Profile`: the refusals and the region
   of the first, reported at spine stage `assembly`.
 
@@ -77,7 +75,7 @@ FR-361 states what a unit that selects `quire.model.complete/v1` gains.
 ### Profile resolution
 
 For a header profile the `Value` family resolves, E3 SHALL compare its
-identity, in source order, with the layer table's rows. A header selects
+identity, in source order, with the closed layer roles. A header selects
 a header-selectable layer (see "Layer selection"); the catalog's
 qualification definitions are not selected by a header. E3
 compares the header's identity, the only member a header profile carries
@@ -87,7 +85,7 @@ emitter writes no row for the selected layer.
 | Header selection | Code | Cause |
 | --- | --- | --- |
 | identity equals a header-selectable layer's | resolves to that layer | |
-| identity equals no catalog row's, and no clause family's catalog holds it | `unknown_profile` | `unsupported-selection` |
+| identity equals no supported role, and no clause family admits it | `unknown_profile` | `unsupported-selection` |
 | identity equals a qualification definition's and no layer's | `unknown_profile` | `wrong-selection-role` |
 
 - If any header profile refuses, E3 SHALL return every refusing profile, in

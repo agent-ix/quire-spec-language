@@ -1001,7 +1001,7 @@ fn witness_result(
             result: CaseResult::ToolFailure,
         };
     };
-    let witness_request = layer.row().witness_request;
+    let witness_request = layer.witness_request();
     let capability = match witness_request.kind {
         WitnessKind::OperationContract => Capability::OperationContract,
         WitnessKind::ValueValidity => Capability::ValueValidity,
@@ -1412,8 +1412,7 @@ mod tests {
             .into_iter()
             .flat_map(|child| {
                 child
-                    .row()
-                    .requires
+                    .requires()
                     .iter()
                     .copied()
                     .map(move |parent| (parent, child))
