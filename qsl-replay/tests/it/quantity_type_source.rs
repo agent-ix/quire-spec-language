@@ -14,7 +14,7 @@ const UNITS: &str = "dimension Length;\nunit m : Length = rational(1, 1);\n";
 
 fn admit(body: &str) -> Result<(), AdmittedRefusal> {
     compile_admitted(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u", "git", "1"), "fixture".to_owned(),
         "unit.native",
         format!("{HEADER}{UNITS}{body}").as_bytes(),
         [],

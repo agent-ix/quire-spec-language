@@ -61,7 +61,7 @@ fn wire(key: NodeKey) -> NodeKey {
 
 fn admit(text: &str, dependencies: &DependencyInput) -> AdmittedCompilation {
     compile_admitted(
-        unit_identity(),
+        unit_identity(), "fixture".to_owned(),
         "unit.native",
         text.as_bytes(),
         [],
@@ -101,7 +101,7 @@ fn with_spine_graph<T>(text: &str, read: impl FnOnce(&CheckedGraph) -> T) -> T {
         .expect("selects")
         .into_value();
     let checked = spine::check(
-        &parsed,
+        &parsed, "fixture".to_owned(),
         &models,
         &DependencyInput::default(),
         limits,
@@ -396,7 +396,7 @@ fn union_members_are_the_producers_minted_variants_in_declared_order() {
 fn a_dependencys_composite_is_foreign() {
     let points = library("test/points", "points", POINTS);
     let alone = compile_admitted(
-        points.source.clone(),
+        points.source.clone(), "fixture".to_owned(),
         &points.path,
         &points.bytes,
         [],
@@ -418,7 +418,7 @@ fn a_dependencys_composite_is_foreign() {
         )
     };
     let (point_id, pick_id) = (found("Point"), found("Pick"));
-    let package = alone.context().package_id();
+    let package = alone.context().package_name().clone();
     let mid = library(
         "test/mid",
         "mid",

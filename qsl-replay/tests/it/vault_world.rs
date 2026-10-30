@@ -673,7 +673,6 @@ mod tp4 {
 
     pub struct Case {
         world: World,
-        package_id: qsl_semantics::library::PackageId,
     }
 
     impl Case {
@@ -682,11 +681,7 @@ mod tp4 {
                 "temporal Live using inf over (v: V::Vault) clock \"model-steps\" on origin {{ {BODY} }}"
             );
             let world = World::new(&["v"], false, &format!("{FORALL_EXISTS}\n{temporal}"));
-            let package_id = qsl_package::emit_checked(world.package())
-                .expect("the checked package emits")
-                .package()
-                .package_id();
-            Self { world, package_id }
+            Self { world }
         }
 
         pub fn clause(&self) -> &CheckedTemporalClause {
@@ -735,7 +730,6 @@ mod tp4 {
         pub fn certificate(&self) -> ClosureCertificate {
             let keys = self.expected_keys();
             let mut certificate = ClosureCertificate {
-                package_id: self.package_id,
                 states: Vec::new(),
             };
             // The checker names each absent product state (its model-state
