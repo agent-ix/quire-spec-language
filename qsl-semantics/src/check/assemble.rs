@@ -13,7 +13,7 @@
 //! error found, each with its typed cause and the span it concerns, and no
 //! partial output (ADR-011 §2.3 E3).
 //!
-//! Each `model M = … digest "sha256-jcs:…"` declaration names a domain
+//! Each `model M = "<identity>"` declaration names a domain
 //! package I1 admitted (`model::intake::admit_unit`, FR-056): its object
 //! types are named `M::T`, `T` the type's artifact id, and resolve to
 //! `ValueType::Reference` of their effective identity. The package's

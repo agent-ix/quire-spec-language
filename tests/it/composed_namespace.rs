@@ -15,7 +15,7 @@ use quire_spec_language::Limits;
 const LANGUAGE: &str = "ix:native";
 const EDITION: &str = "1-draft";
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
-profile S = \"test:unresolved-profile\" version \"selected\" digest \"unresolved\";\n";
+profile S = \"test:unresolved-profile\";\n";
 
 /// The source authority and revision namespace every source here is read
 /// under; each is charged as its own metadata string.

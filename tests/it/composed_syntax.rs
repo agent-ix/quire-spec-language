@@ -11,9 +11,9 @@ use quire_spec_language::syntax::{BinaryOp, ExprId, ExprKind};
 use quire_spec_language::{parse, parse_native, parse_native_source, Limits};
 
 const HEADER: &str = r#"language "ix:native" edition "1-draft";
-profile S = "quire.state.graph/v1" version "test:state" digest "unresolved-state";
-profile T = "quire.temporal.timestamped-event.finite-window/v1" version "test:temporal" digest "unresolved-temporal";
-profile P = "quire.protocol.finite-global/v1" version "test:protocol" digest "unresolved-protocol";
+profile S = "quire.state.graph/v1";
+profile T = "quire.temporal.timestamped-event.finite-window/v1";
+profile P = "quire.protocol.finite-global/v1";
 model M = "test:orders-and-refunds";
 "#;
 const PREDICATE: &str =
@@ -479,7 +479,7 @@ fn negative_and_unbounded_choreography_counts_refuse_as_unsigned_syntax() {
 fn exact_small_limits_admit_and_each_next_charge_refuses() {
     // 25 authored tokens; one profile, one declaration and one Boolean node.
     // The existing value parser enters expression and precedence contexts.
-    let text = "language \"ix:native\" edition \"1-draft\"; profile S = \"test:profile\" version \"1\" digest \"unresolved\"; predicate P using S(): Boolean { true }";
+    let text = "language \"ix:native\" edition \"1-draft\"; profile S = \"test:profile\"; predicate P using S(): Boolean { true }";
     let exact = Limits {
         source_bytes: text.len(),
         tokens: 25,

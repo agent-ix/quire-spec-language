@@ -643,8 +643,8 @@ fn source(model: &NativeModel, recipe: &UnitRecipe) -> Result<Source, Error> {
     for (alias, definition) in recipe.profiles {
         let selected = definition.selection();
         text.push_str(&format!(
-            "profile {alias} = \"{}\" version \"{}\" digest \"{}\";\n",
-            selected.identity, selected.revision, selected.digest
+            "profile {alias} = \"{}\";\n",
+            selected.identity
         ));
     }
     text.push_str(&format!(

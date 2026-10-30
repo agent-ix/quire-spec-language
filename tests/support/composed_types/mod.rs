@@ -227,8 +227,8 @@ pub fn source(name: &str, model: &NativeModel, body: &str) -> Source {
     ] {
         let selection = profile.selection();
         text.push_str(&format!(
-            "profile {alias} = \"{}\" version \"{}\" digest \"{}\";\n",
-            selection.identity, selection.revision, selection.digest
+            "profile {alias} = \"{}\";\n",
+            selection.identity
         ));
     }
     text.push_str(&format!(

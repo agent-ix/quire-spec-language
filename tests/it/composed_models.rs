@@ -123,7 +123,7 @@ fn a_named_record_cannot_grant_related_instance_authority() {
 fn program(model: &NativeModel, declarations: &str) -> String {
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
-        profile S = \"test:unresolved-definition\" version \"1\" digest \"unresolved\";\n\
+        profile S = \"test:unresolved-definition\";\n\
         model M = \"{}\";\n{declarations}",
         model.environment().owner().package().as_str()
     )

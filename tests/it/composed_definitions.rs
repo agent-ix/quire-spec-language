@@ -49,8 +49,8 @@ fn rules() -> Vec<RuleInput<'static>> {
 fn profile(alias: &str, definition: R) -> String {
     let selected = definition.selection();
     format!(
-        "profile {alias} = \"{}\" version \"{}\" digest \"{}\";\n",
-        selected.identity, selected.revision, selected.digest
+        "profile {alias} = \"{}\";\n",
+        selected.identity
     )
 }
 
@@ -158,84 +158,6 @@ fn installed_definition_bytes_never_fill_an_omitted_dependency() {
         &report.declarations[0].uses[0].refusal,
         Some(Cause::MissingDependency(required)) if *required == R::StateCore
     ));
-}
-
-#[test]
-#[trace("TC-114", "FR-036-AC-3")]
-fn stale_raw_bytes_refuse_while_resealed_content_still_selects_by_identity() {
-    let sources = [source(
-        "queries",
-        &(profile("Q", R::StateQueries) + "predicate Check using Q (): Boolean { true }"),
-    )];
-    let selection = inventory(&sources);
-    let namespace = admit_namespace(
-        &selection,
-        &sources,
-        WorkLimits::default(),
-        Limits::default(),
-    );
-    let rules = rules();
-    let mut altered = R::StateQueries.bytes().to_vec();
-    altered.extend_from_slice(b"\nChanged meaning.\n");
-    for resealed in [false, true] {
-        let mut definitions = definitions();
-        let index = definitions
-            .iter()
-            .position(|entry| entry.selection.identity == R::StateQueries.identity())
-            .unwrap();
-        definitions[index].bytes = &altered;
-        if resealed {
-            definitions[index].selection.digest = ByteDigest::of(&altered);
-        }
-        let selected = Inventory {
-            edition: R::Edition.selection(),
-            definitions: &definitions,
-            rules: &rules,
-        };
-        let report = definitions::resolve(
-            namespace.namespace().unwrap(),
-            &selected,
-            &mut Work::new(BindingLimits::default()),
-        );
-        let cause = report.declarations[0].uses[0].refusal.as_ref().unwrap();
-        if resealed {
-            assert!(matches!(cause, Cause::SelectionMismatch { .. }));
-        } else {
-            assert!(matches!(cause, Cause::DefinitionDigest { .. }));
-        }
-    }
-    // Recognition is by identity and revision alone: a resealed, self-consistent
-    // artifact matching the source's own declared digest still selects the
-    // compiler's StateQueries interpretation, regardless of its altered bytes.
-    let changed = source("resealed", &format!("profile Q = \"{}\" version \"{}\" digest \"{}\"; predicate Check using Q (): Boolean {{ true }}", R::StateQueries.identity(), R::StateQueries.revision(), ByteDigest::of(&altered)));
-    let changed = [changed];
-    let selection = inventory(&changed);
-    let namespace = admit_namespace(
-        &selection,
-        &changed,
-        WorkLimits::default(),
-        Limits::default(),
-    );
-    let mut definitions = definitions();
-    let index = definitions
-        .iter()
-        .position(|entry| entry.selection.identity == R::StateQueries.identity())
-        .unwrap();
-    definitions[index].bytes = &altered;
-    definitions[index].selection.digest = ByteDigest::of(&altered);
-    let selected = Inventory {
-        edition: R::Edition.selection(),
-        definitions: &definitions,
-        rules: &rules,
-    };
-    let report = definitions::resolve(
-        namespace.namespace().unwrap(),
-        &selected,
-        &mut Work::new(BindingLimits::default()),
-    );
-    let use_ = &report.declarations[0].uses[0];
-    assert!(use_.refusal.is_none());
-    assert_eq!(use_.closure, [R::StateQueries, R::StateCore, R::Edition]);
 }
 
 #[test]
@@ -574,12 +496,10 @@ fn zero_and_exact_limits_keep_immutable_partial_reports_and_fresh_retries() {
     // One alias candidate + root lookup: 2. Profile closure enter/leave: 6;
     // its two dependency lookups: 2. Every normative rule lookup costs one.
     let bytes = selected.edition.identity.len()
-        + selected.edition.revision.len()
         + definitions
             .iter()
             .map(|artifact| {
                 artifact.selection.identity.len()
-                    + artifact.selection.revision.len()
                     + artifact.bytes.len()
             })
             .sum::<usize>()

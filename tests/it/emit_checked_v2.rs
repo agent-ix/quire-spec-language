@@ -785,3 +785,43 @@ fn an_over_cap_points_file_is_refused_explicitly() {
     assert!(stdout.is_empty());
 }
 
+
+/// FR-058-AC-1: the QSL-owned `adjust` operation of the switch example
+/// carries a precondition `P1` and a postcondition `Q2`; accepted execution
+/// points bind each to `adjust`, the emitted package reads back, and the
+/// state clause nodes carry exactly those two points.
+#[test]
+fn the_adjust_operation_emits_distinct_pre_and_post_clauses_with_their_points() {
+    let model = Path::new(SWITCH_MODEL);
+    let program = Path::new("examples/switch-transition/adjust.native");
+    let document = std::fs::read(model).unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let file = directory.path().join("points.json");
+    std::fs::write(
+        &file,
+        r#"{"P1": {"kind": "pre", "operation": "adjust"}, "Q2": {"kind": "post", "operation": "adjust"}}"#,
+    )
+    .unwrap();
+    let mut command = strings(&["--model"]);
+    command.extend(args(&[model]));
+    command.extend(strings(&["--execution-points"]));
+    command.extend(args(&[&file, program]));
+    let mut stdout = Vec::new();
+    run(&command, &mut stdout).expect("the adjust clauses emit");
+    read_back(&stdout, &[&document]);
+    let wire: Value = serde_json::from_slice(&stdout).unwrap();
+    let mut points: Vec<String> = wire["semantic_graph"]["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|node| node["semantic_form"] == "state_clause")
+        .map(|node| node["body"]["operation"]["member"]["execution_point"].to_string())
+        .collect();
+    points.sort();
+    let mut expected = vec![
+        json!({"kind": "pre", "operation": "adjust"}).to_string(),
+        json!({"kind": "post", "operation": "adjust"}).to_string(),
+    ];
+    expected.sort();
+    assert_eq!(points, expected, "P1 is the pre point and Q2 the post point");
+}
