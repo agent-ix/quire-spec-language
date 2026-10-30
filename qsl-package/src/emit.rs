@@ -89,31 +89,29 @@ use quire_contract_model::{
     CheckedCapabilityDisposition, CheckedDeclaration, CheckedDependencySelection,
     CheckedDiagnosticsV2, CheckedNodeId, CheckedNodeKind, CheckedNodeOwner, CheckedNodeTag,
     CheckedOccurrence, CheckedOccurrenceRole, CheckedOperationAnchorBody, CheckedPackageEvidence,
-    CheckedPackageIdentityPreimageRefV2, CheckedPackageLockV2,
+    CheckedNodePathSegment, CheckedPackageLockV2,
     CheckedPackageSourceCorrespondenceRef, CheckedPackageV2, CheckedRational,
     CheckedRefinementStepRowRegion, CheckedSelection, CheckedSelectionRole, CheckedSemanticGraphV2,
-    CheckedSemanticId, CheckedSemanticNodeV2, CheckedSourceMapEntry, CheckedSourceRef,
+    CheckedSemanticNodeV2, CheckedSourceMapEntry, CheckedSourceRef,
     CheckedSourceRegion, CheckedTerm, ExecutionPoint, NominalIdentityPreimage, NominalOwner,
-    ProtocolForm, StateForm, ValueForm, PACKAGE_DOMAIN_V2,
+    ProtocolForm, StateForm, ValueForm,
 };
 use serde::Deserialize;
 
 use ix_trace_rs::string_edge;
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::{
     OccurrenceKey, PackageSourceMap, RawSourceRef, SourceRegion,
 };
 use qsl_foundation::Code;
 use qsl_semantics::check::{
     AbstractionNodeRefusal, AbstractionNodes, BodyTerm, CheckedGraph, CheckedRefinement, LawRole,
-    LeafTerm, NodeTag, NominalNode, OperationLaw, Owner, SemanticNode, TemporalProfile,
+    LeafTerm, NodeRef, NodeTag, NominalNode, OperationLaw, Owner, SemanticNode, TemporalProfile,
 };
-use qsl_semantics::library::PackageId;
 use qsl_semantics::value::{
     native_diagnostics_catalog, DefinitionReference, DefinitionRole, HeaderLayer, Member,
     ModelRole, NodeOwner, TemporalRole,
 };
-use quire_exact::{Cancel, Integer, NodeKey, Origin, Role, NODE_KEY_DOMAIN};
+use quire_exact::{Cancel, Integer, NodeKey, NodeKeyView, NodePathIter, Origin, PathSegment, PathSegmentView, Role};
 use quire_semantic_value::location::Location;
 
 use super::{CheckedPackage, EmittedPackage};
@@ -125,9 +123,6 @@ use crate::checked_v2::{
 
 /// The FR-322 graph schema version every node carries.
 const GRAPH_V2: &str = "quire.checked-semantic-graph/v2";
-
-/// The identity preimage's own version (FR-322).
-const IDENTITY_PREIMAGE_V2: &str = qsl_semantics::library::PACKAGE_ID_VERSION;
 
 /// The diagnostics catalog the package's (empty) diagnostics are qualified
 /// by, written at `diagnostics.catalog`: QSpec's `quire.native.diagnostics/v1`
@@ -259,6 +254,9 @@ pub enum EmitRefusal {
     /// The emitted source correspondence could not be represented in-process.
     #[error("the emitted source map violated its typed correspondence invariant")]
     SourceMapInvariant,
+    /// A lowering-local placeholder reached the wire boundary unresolved.
+    #[error("a checked node body contains an unresolved node reference")]
+    UnresolvedNodeReference,
 }
 
 impl From<quire_canonical::Error> for EmitRefusal {
@@ -291,7 +289,7 @@ impl EmitRefusal {
                 Code::UnsupportedConstruct
             }
             Self::UnlocatedRefinementDeclaration => Code::UnsupportedProjection,
-            Self::SourceMapInvariant => Code::RuntimeInvariant,
+            Self::SourceMapInvariant | Self::UnresolvedNodeReference => Code::RuntimeInvariant,
         }
     }
 
@@ -317,7 +315,8 @@ impl EmitRefusal {
             | Self::RefinementSubjectNotEmitted
             | Self::RefinementIdentityEncoding
             | Self::UnlocatedRefinementDeclaration
-            | Self::SourceMapInvariant => None,
+            | Self::SourceMapInvariant
+            | Self::UnresolvedNodeReference => None,
         }
     }
 }
@@ -421,20 +420,94 @@ fn ir_tag(tag: NodeTag) -> CheckedNodeTag {
     }
 }
 
-/// A `NodeRef` to `key`.
-fn node_id(key: NodeKey) -> CheckedNodeId {
-    CheckedNodeId {
-        domain: NODE_KEY_DOMAIN.into(),
-        digest: key.to_string().into(),
+/// Convert a checked structural key to the identical V2 wire identity.
+/// Nested path nodes are visited with an explicit stack so their depth
+/// cannot consume the call stack.
+pub(crate) fn node_id(key: impl std::borrow::Borrow<NodeKey>) -> CheckedNodeId {
+    struct Frame<'a> {
+        package: &'a str,
+        ordinal: u64,
+        segments: NodePathIter<'a>,
+        path: Vec<CheckedNodePathSegment>,
+    }
+    fn frame(view: NodeKeyView<'_>) -> Frame<'_> {
+        Frame {
+            package: view.package(),
+            ordinal: view.ordinal(),
+            segments: view.path(),
+            path: Vec::new(),
+        }
+    }
+    let mut current = frame(key.borrow().view());
+    let mut parents = Vec::new();
+    loop {
+        match current.segments.next() {
+            Some(PathSegmentView::Text(text)) => {
+                current.path.push(CheckedNodePathSegment::Name(text.into()));
+            }
+            Some(PathSegmentView::Node(nested)) => {
+                parents.push(std::mem::replace(&mut current, frame(nested)));
+            }
+            None => {
+                let id = CheckedNodeId {
+                    package: current.package.into(),
+                    path: std::mem::take(&mut current.path),
+                    ordinal: current.ordinal,
+                };
+                let Some(mut parent) = parents.pop() else {
+                    return id;
+                };
+                parent.path.push(CheckedNodePathSegment::Node(Box::new(id)));
+                current = parent;
+            }
+        }
     }
 }
 
-/// The Contract IR node id of the wire node id `node`: the same id
-/// [`emit_checked`] writes for the node.
-pub fn checked_node_id(node: WireNodeId) -> CheckedNodeId {
-    CheckedNodeId {
-        domain: NODE_KEY_DOMAIN.into(),
-        digest: node.to_string().into(),
+fn admitted_id(reference: &NodeRef) -> Result<CheckedNodeId, EmitRefusal> {
+    reference
+        .admitted()
+        .map(node_id)
+        .ok_or(EmitRefusal::UnresolvedNodeReference)
+}
+
+/// Recover the structural kernel key of a node that IR has already admitted.
+/// The explicit parent stack handles nested path identities at any depth.
+pub(crate) fn admitted_key(id: &CheckedNodeId) -> Result<NodeKey, EmitRefusal> {
+    struct Frame<'a> {
+        package: &'a str,
+        ordinal: u64,
+        segments: std::slice::Iter<'a, CheckedNodePathSegment>,
+        path: Vec<PathSegment>,
+    }
+    fn frame(id: &CheckedNodeId) -> Frame<'_> {
+        Frame {
+            package: &id.package,
+            ordinal: id.ordinal,
+            segments: id.path.iter(),
+            path: Vec::new(),
+        }
+    }
+    let mut current = frame(id);
+    let mut parents = Vec::new();
+    loop {
+        match current.segments.next() {
+            Some(CheckedNodePathSegment::Name(text)) => {
+                current.path.push(PathSegment::Text(text.to_string()));
+            }
+            Some(CheckedNodePathSegment::Node(nested)) => {
+                parents.push(std::mem::replace(&mut current, frame(nested)));
+            }
+            None => {
+                let key = NodeKey::new(current.package, std::mem::take(&mut current.path), current.ordinal)
+                    .map_err(|_| EmitRefusal::SourceMapInvariant)?;
+                let Some(mut parent) = parents.pop() else {
+                    return Ok(key);
+                };
+                parent.path.push(PathSegment::Node(key));
+                current = parent;
+            }
+        }
     }
 }
 
@@ -460,12 +533,12 @@ struct BodyNames {
 impl BodyNames {
     /// Read `body`: its stratified terms have a fixed depth (ADR-030 D-2),
     /// so this is a fixed-depth match over its leaves.
-    fn of(body: &BodyTerm) -> Self {
+    fn of(body: &BodyTerm) -> Result<Self, EmitRefusal> {
         let mut names = Self::default();
         match body {
             BodyTerm::Application(application) => {
                 let operation = &application.operation;
-                names.annotations.insert(node_id(application.result_type.0));
+                names.annotations.insert(admitted_id(&application.result_type)?);
                 if let Some(declaration) = operation.member().and_then(Member::declaration) {
                     names.dependencies.insert(node_id(declaration));
                 }
@@ -483,19 +556,12 @@ impl BodyNames {
             // frame node, so a reader can join each entry to the node it
             // names among the frame's own `dependencies`.
             BodyTerm::Frame(frame) => {
-                names.dependencies.extend(
-                    frame
-                        .modifies
-                        .iter()
-                        .map(|entry| node_id(entry.declaration().0)),
-                );
-                names.dependencies.extend(
-                    frame
-                        .creates
-                        .iter()
-                        .chain(&frame.deletes)
-                        .map(|node| node_id(node.0)),
-                );
+                for entry in &frame.modifies {
+                    names.dependencies.insert(admitted_id(&entry.declaration())?);
+                }
+                for node in frame.creates.iter().chain(&frame.deletes) {
+                    names.dependencies.insert(admitted_id(node)?);
+                }
             }
             // QSpec FR-451: `dependencies` are exactly the unique set of every
             // `type`, `population` and `context` target of the body.
@@ -509,17 +575,17 @@ impl BodyNames {
         for leaf in body.leaves() {
             match leaf {
                 LeafTerm::Literal { ty, .. } => {
-                    names.annotations.insert(node_id(ty.0));
+                    names.annotations.insert(admitted_id(ty)?);
                 }
                 LeafTerm::Reference { target } => {
-                    names.dependencies.insert(node_id(target.0));
+                    names.dependencies.insert(admitted_id(target)?);
                 }
                 // FR-322-AC-37: a `dependency_reference` is never one of the
                 // node's `dependencies`, and names no node of this graph.
                 LeafTerm::DependencyReference { .. } => {}
             }
         }
-        names
+        Ok(names)
     }
 }
 
@@ -555,7 +621,7 @@ struct Candidate<'g> {
 }
 
 impl<'g> Candidate<'g> {
-    fn of(node: &'g SemanticNode, occurrences: Recorded<'g>) -> Self {
+    fn of(node: &'g SemanticNode, occurrences: Recorded<'g>) -> Result<Self, EmitRefusal> {
         let nominal = nominal_preimage(node);
         let id = node_id(node.key());
         // A self-typed node names itself as its semantic type (FR-322).
@@ -564,7 +630,7 @@ impl<'g> Candidate<'g> {
             mut dependencies,
             annotations,
             laws,
-        } = BodyNames::of(node.body());
+        } = BodyNames::of(node.body())?;
         // QSpec FR-464 "owner_model": a protocol clause depends on its exact
         // owner model, besides the nodes its body reaches.
         dependencies.extend(node.owner_model().map(node_id));
@@ -602,7 +668,7 @@ impl<'g> Candidate<'g> {
         names.extend(annotations);
         names.insert(semantic_type.clone());
         names.remove(&id);
-        Self {
+        Ok(Self {
             node,
             tag: ir_tag(node.node_tag()),
             id,
@@ -612,7 +678,7 @@ impl<'g> Candidate<'g> {
             laws,
             occurrences,
             nominal,
-        }
+        })
     }
 
     /// Whether `decodes` admits the node's (`node_tag`, `semantic_form`).
@@ -777,7 +843,7 @@ fn nominal_preimage(node: &SemanticNode) -> Option<NominalIdentityPreimage> {
         ),
         Some(NominalNode::EnumMember { declaration, case }) => {
             NominalIdentityPreimage::EnumMember(quire_contract_model::EnumMemberPreimage {
-                declaration_node_id: node_id(*declaration),
+                declaration_node_id: node_id(declaration),
                 case: case.as_str().into(),
             })
         }
@@ -789,7 +855,7 @@ fn nominal_preimage(node: &SemanticNode) -> Option<NominalIdentityPreimage> {
                     .terms()
                     .iter()
                     .map(|(base, exponent)| quire_contract_model::DimensionTerm {
-                        dimension_node_id: wire_id(*base),
+                        dimension_node_id: node_id(base),
                         exponent: exponent.to_string().into(),
                     })
                     .collect(),
@@ -803,8 +869,8 @@ fn nominal_preimage(node: &SemanticNode) -> Option<NominalIdentityPreimage> {
             NominalIdentityPreimage::Unit(quire_contract_model::UnitPreimage {
                 owner: nominal_owner(preimage.owner()),
                 qualified_declaration: qualified(preimage.qualified_declaration()),
-                dimension_node_id: wire_id(preimage.dimension()),
-                target_unit_node_id: preimage.target().map(wire_id),
+                dimension_node_id: node_id(preimage.dimension()),
+                target_unit_node_id: preimage.target().map(node_id),
                 scale: rational(preimage.scale()),
                 offset: rational(preimage.offset()),
             })
@@ -822,14 +888,6 @@ fn qualified(segments: &[String]) -> Vec<Box<str>> {
         .iter()
         .map(|segment| segment.as_str().into())
         .collect()
-}
-
-/// The wire id of a node a nominal preimage names by id.
-fn wire_id(id: WireNodeId) -> CheckedNodeId {
-    CheckedNodeId {
-        domain: NODE_KEY_DOMAIN.into(),
-        digest: id.to_string().into(),
-    }
 }
 
 fn nominal_owner(owner: &NodeOwner) -> NominalOwner {
@@ -976,7 +1034,7 @@ fn stale_protocol_reference(
         let BodyTerm::Leaf(LeafTerm::Reference { target }) = node.body() else {
             continue;
         };
-        let target = node_id(target.0);
+        let target = admitted_id(target)?;
         let written = candidates.contains_key(&target)
             && !omitted.iter().any(|omission| omission.node == target);
         if !written {
@@ -1168,8 +1226,7 @@ fn inspection_source_map(
 ) -> Result<PackageSourceMap, EmitRefusal> {
     let mut mapped = Vec::with_capacity(entries.len());
     for entry in entries {
-        let node = WireNodeId::from_hex(entry.node_id.digest.as_ref())
-            .ok_or(EmitRefusal::SourceMapInvariant)?;
+        let node = admitted_key(&entry.node_id)?;
         let key = OccurrenceKey::new(
             node,
             Origin::new(
@@ -1314,20 +1371,10 @@ fn occurrence_role(node: NodeKey, origin: &Origin) -> Result<CheckedOccurrenceRo
 fn dependency_selections(package: &CheckedPackage) -> Vec<CheckedDependencySelection> {
     package
         .direct_dependency_selections()
-        .map(|(identity, resolved)| CheckedDependencySelection {
+        .map(|(identity, _)| CheckedDependencySelection {
             identity: identity.as_str().into(),
-            package_id: semantic_id(resolved.package_id),
         })
         .collect()
-}
-
-/// `package_id` as FR-322's `PackageId` member.
-fn semantic_id(package_id: PackageId) -> CheckedSemanticId {
-    CheckedSemanticId {
-        domain: PACKAGE_DOMAIN_V2.into(),
-        algorithm: "sha256".into(),
-        digest: package_id.hex().into(),
-    }
 }
 
 fn encoding(error: impl std::fmt::Display) -> EmitRefusal {
@@ -1854,22 +1901,11 @@ pub fn emit_timed_models(
         graph_version: base.graph().graph_version.clone(),
         nodes,
     };
-    let identity = base.identity_preimage();
-    let preimage = CheckedPackageIdentityPreimageRefV2 {
-        version: &identity.version,
-        edition: &identity.edition,
-        profile_selections: &identity.profile_selections,
-        definition_selections: &identity.definition_selections,
-        required_features: &identity.required_features,
-        dependency_selections: &identity.dependency_selections,
-        identity_projection: &semantic_graph.nodes,
-    };
     let capability_report = base.capability_report().to_vec();
     let diagnostics = base.diagnostics().clone();
-    let package = EmittedPackage::new(&preimage, |package_id: PackageId| {
+    let package = EmittedPackage::new(base.name(), |name| {
         encode_checked_package_v2(
-            &preimage,
-            &semantic_id(package_id),
+            name,
             &lock,
             &semantic_graph,
             CheckedPackageSourceCorrespondenceRef {
@@ -1980,7 +2016,7 @@ pub fn emit_checked_with_fault(
 /// see [`emit_checked_with_fault`].
 #[cfg(feature = "test-support")]
 #[doc(hidden)]
-pub fn checked_node_id_of(key: NodeKey) -> CheckedNodeId {
+pub fn checked_node_id_of(key: &NodeKey) -> CheckedNodeId {
     node_id(key)
 }
 
@@ -1998,19 +2034,20 @@ fn candidates_of<'g>(
     let mut candidates: BTreeMap<CheckedNodeId, Candidate<'g>> = graph
         .semantic_graph()
         .nodes()
-        .map(|node| {
+        .map(|node| -> Result<_, EmitRefusal> {
             let occurrences = recorded.remove(&node.key()).unwrap_or_default();
-            let candidate = Candidate::of(node, occurrences);
-            (candidate.id.clone(), candidate)
+            let candidate = Candidate::of(node, occurrences)?;
+            Ok((candidate.id.clone(), candidate))
         })
-        .collect();
+        .collect::<Result<_, _>>()?;
     // QSpec FR-451: the relation node has one `declaration` occurrence per
     // declaration it was read from; the nodes it names that the graph does not
     // hold are `generated`, at the first.
     if let Some(nodes) = abstraction {
-        let mut add = |node: &'g SemanticNode, occurrences: Recorded<'g>| {
-            let candidate = Candidate::of(node, occurrences);
+        let mut add = |node: &'g SemanticNode, occurrences: Recorded<'g>| -> Result<_, EmitRefusal> {
+            let candidate = Candidate::of(node, occurrences)?;
             candidates.entry(candidate.id.clone()).or_insert(candidate);
+            Ok(())
         };
         let declared = (0_u64..)
             .zip(nodes.sites())
@@ -2024,7 +2061,7 @@ fn candidates_of<'g>(
                 )
             })
             .collect();
-        add(nodes.relation(), declared);
+        add(nodes.relation(), declared)?;
         for node in nodes.support() {
             let generated = nodes
                 .sites()
@@ -2040,7 +2077,7 @@ fn candidates_of<'g>(
                 })
                 .into_iter()
                 .collect();
-            add(node, generated);
+            add(node, generated)?;
         }
     }
     Ok(candidates)
@@ -2572,21 +2609,13 @@ fn emit_package_inner(
         definition_selections: definition_selections.clone(),
         required_features: vec![root.into()],
         dependency_selections: dependency_selections(package),
+        refinement_internals: None,
     };
     let semantic_graph = CheckedSemanticGraphV2 {
         graph_version: GRAPH_V2.into(),
         nodes,
     };
     let inspection_source_map = inspection_source_map(&source_map)?;
-    let preimage = CheckedPackageIdentityPreimageRefV2 {
-        version: IDENTITY_PREIMAGE_V2,
-        edition: &edition,
-        profile_selections: &profile_selections,
-        definition_selections: &definition_selections,
-        required_features: &lock.required_features,
-        dependency_selections: &lock.dependency_selections,
-        identity_projection: &semantic_graph.nodes,
-    };
     let capability_report = [CheckedCapability {
         feature: root.into(),
         disposition: CheckedCapabilityDisposition::Available,
@@ -2595,10 +2624,9 @@ fn emit_package_inner(
         catalog: diagnostics_catalog(),
         entries: Vec::new(),
     };
-    let package = EmittedPackage::new(&preimage, |package_id: PackageId| {
+    let package = EmittedPackage::new(graph.package_name(), |name| {
         encode_checked_package_v2(
-            &preimage,
-            &semantic_id(package_id),
+            name,
             &lock,
             &semantic_graph,
             CheckedPackageSourceCorrespondenceRef {

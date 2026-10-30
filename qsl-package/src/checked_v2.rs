@@ -71,7 +71,7 @@ use std::sync::Arc;
 
 use quire_contract_model::{
     read_checked_package, CheckedOccurrenceRole, CheckedPackageDispatchResult,
-    CheckedPackageEvidence, CheckedPackageIdentityPreimageRefV2, CheckedPackageIncomplete,
+    CheckedPackageEvidence, CheckedPackageIncomplete,
     CheckedPackageLimit, CheckedPackageReadLimits, CheckedPackageRefusal,
     CheckedPackageRefusalCode, CheckedPackageV2, CheckedSourceMapEntry, CheckedSourceRef,
     CheckedSourceRegion, CHECKED_PACKAGE_V2,
@@ -80,15 +80,12 @@ use quire_contract_model::{
 use qsl_foundation::diagnostic::{
     Code, JsonPointer, LimitExceeded, Locus, RefusalRecord, StageFailure, Staged,
 };
-use qsl_foundation::digest::{DigestRecord, InvalidDigestRecord, WireNodeId};
+use qsl_foundation::digest::{DigestRecord, InvalidDigestRecord};
 use qsl_foundation::source::provenance::{
     InvalidProvenance, OccurrenceKey, PackageSourceMap, RawSourceRef, SourceRegion,
 };
 use qsl_foundation::{Setting, SettingLimits};
-use qsl_semantics::library::{
-    declared_exports, verify_binding, ImportView, LibraryName, LibraryPackage, LibraryRefusal,
-    PackageId, PinnedRequest, SupportedV2Wire, VerifiedPackage,
-};
+use qsl_semantics::library::{ImportView, LibraryName, LibraryPackage, LibraryRefusal};
 use quire_semantic_value::catalog::{CatalogCode, CatalogCoded, InternalFault};
 
 use crate::checked::CheckedPackage;
@@ -129,7 +126,7 @@ pub(crate) enum Read {
     /// The read admitted the bytes.
     Verified {
         /// See [`V2Read::package`].
-        package: VerifiedPackage,
+        package: ImportView,
         /// See [`V2Read::source_map`].
         source_map: PackageSourceMap,
         /// See [`V2Read::effective_limits`].
@@ -156,9 +153,8 @@ pub(crate) fn read_v2(
     identity: LibraryName,
     limits: V2ReadLimits,
     evidence: &CheckedPackageEvidence,
-    pinned: &PinnedRequest,
 ) -> Read {
-    match read_checked_package_v2(bytes, identity, limits, evidence, pinned) {
+    match read_checked_package_v2(bytes, identity, limits, evidence) {
         Ok(staged) => {
             let V2Read {
                 package,
@@ -342,17 +338,14 @@ pub enum V2ReadRefusal {
     /// `Result` carries this type.
     #[error(transparent)]
     Structural(Box<LibraryRefusal>),
-    /// `quire-canonical` refused to encode an admitted wire's identity
-    /// preimage. Practically unreachable: IR has already decoded the
-    /// preimage into typed Rust structs it itself just re-serialized without
-    /// error (`admit_value`'s own lossless-decode check), and those bytes
-    /// were canonical. Kept as its own honest QSL-side variant rather than a
-    /// fabricated `Envelope(CheckedPackageRefusal{MalformedWire, ..})`: IR
-    /// never actually reported this, and blaming IR's own wire vocabulary
-    /// for this crate's own serialization defect would misattribute the
-    /// fault to the wrong layer.
-    #[error("identity preimage re-serialization failed: {0}")]
-    Preimage(String),
+    /// The admitted wire claims a different name from the source manifest.
+    #[error("checked package name {actual:?} differs from selected library {expected}")]
+    IdentityMismatch {
+        /// The library identity requested by the import.
+        expected: LibraryName,
+        /// The name carried by the admitted wire.
+        actual: Box<str>,
+    },
     /// An admitted wire's `source_map` did not convert into the package
     /// source map (ADR-013 O-12). IR's reader has already validated the
     /// map, so this names a disagreement between IR's admission and this
@@ -369,9 +362,9 @@ pub enum V2ReadRefusal {
 /// [`PackageSourceMap`].
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum SourceMapDefect {
-    /// An entry's `node_id` digest is not 64 lowercase hexadecimal digits.
-    #[error("source-map node id {0:?} is not a wire node id")]
-    NodeId(Box<str>),
+    /// An admitted source-map node id could not become a structural key.
+    #[error("source-map node id is not a structural key")]
+    NodeId,
     /// A region's source digest did not read as a digest record.
     #[error(transparent)]
     Digest(#[from] InvalidDigestRecord),
@@ -425,8 +418,8 @@ fn source_region(region: &CheckedSourceRegion) -> Result<SourceRegion, SourceMap
 fn occurrence(
     entry: &CheckedSourceMapEntry,
 ) -> Result<(OccurrenceKey, Vec<SourceRegion>), SourceMapDefect> {
-    let node = WireNodeId::from_hex(&entry.node_id.digest)
-        .ok_or_else(|| SourceMapDefect::NodeId(entry.node_id.digest.clone()))?;
+    let node = crate::emit::admitted_key(&entry.node_id)
+        .map_err(|_| SourceMapDefect::NodeId)?;
     let origin = Origin::new(Role::new(role_spelling(&entry.role)), entry.ordinal);
     let regions = entry
         .regions
@@ -455,7 +448,7 @@ impl V2ReadRefusal {
             Self::UnsupportedVersion { .. } => Code::UnknownWire,
             Self::Envelope { refusal, .. } => map_refusal_code(refusal.code),
             Self::Structural(refusal) => refusal.code(),
-            Self::Preimage(_) => Code::InvalidPackage,
+            Self::IdentityMismatch { .. } => Code::InvalidPackage,
             Self::SourceMap(_) => Code::InvalidSourceMap,
             Self::Fault(_) => Code::RuntimeInvariant,
         }
@@ -469,7 +462,7 @@ impl V2ReadRefusal {
         match self {
             Self::UnsupportedVersion { locus, .. } => Some(locus),
             Self::Envelope { locus, .. } => locus.as_deref(),
-            Self::Structural(_) | Self::Preimage(_) | Self::SourceMap(_) | Self::Fault(_) => None,
+            Self::Structural(_) | Self::IdentityMismatch { .. } | Self::SourceMap(_) | Self::Fault(_) => None,
         }
     }
 
@@ -625,8 +618,8 @@ impl Artifact {
 /// identity listed in the caller's `pinned` library lock or pinned request.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct V2Read {
-    /// The verified package.
-    pub(crate) package: VerifiedPackage,
+    /// The admitted package's structural exports.
+    pub(crate) package: ImportView,
     /// The package source map (ADR-013 O-12), read from the wire's
     /// `source_map`.
     pub(crate) source_map: PackageSourceMap,
@@ -650,30 +643,6 @@ fn refused(refusal: V2ReadRefusal) -> V2ReadOutcome {
     Err(StageFailure::Refused(refusal))
 }
 
-/// The package-identity preimage's RFC 8785 bytes, encoded by
-/// `quire-canonical` (ADR-013 §2, ADR-013:113) under a byte ceiling of the
-/// reader's own `artifact_bytes`. The wire carries only the six selections
-/// (FR-322 `identity_preimage`); the hashed preimage adds the
-/// `identity_projection` derived from the admitted `semantic_graph`, through
-/// IR's borrowed producer view. Refuses with the encoder's reason.
-fn canonical_preimage(
-    package: &CheckedPackageV2,
-    artifact_bytes: usize,
-) -> Result<Vec<u8>, String> {
-    let selections = package.identity_preimage();
-    let preimage = CheckedPackageIdentityPreimageRefV2 {
-        version: &selections.version,
-        edition: &selections.edition,
-        profile_selections: &selections.profile_selections,
-        definition_selections: &selections.definition_selections,
-        required_features: &selections.required_features,
-        dependency_selections: &selections.dependency_selections,
-        identity_projection: &package.graph().nodes,
-    };
-    let limits = quire_canonical::Limits::new(u64::try_from(artifact_bytes).unwrap_or(u64::MAX));
-    quire_canonical::to_vec(&preimage, limits).map_err(|error| error.to_string())
-}
-
 /// Read and verify `bytes` as a `quire.checked-package/v2` artifact claiming
 /// library identity `identity` (ADR-011 §4 I2, all three verified-binding
 /// conditions). A wire artifact carries no library identity of its own --
@@ -690,7 +659,6 @@ pub(crate) fn read_checked_package_v2(
     identity: LibraryName,
     limits: V2ReadLimits,
     evidence: &CheckedPackageEvidence,
-    pinned: &PinnedRequest,
 ) -> V2ReadOutcome {
     if bytes.len() > limits.artifact_bytes {
         // No locus: the ceiling refuses without hashing the oversized bytes,
@@ -703,72 +671,44 @@ pub(crate) fn read_checked_package_v2(
     }
     match read_checked_package(bytes, limits.for_ir(), evidence) {
         CheckedPackageDispatchResult::AdmittedV2(package) => {
+            if package.name() != identity.as_str() {
+                return refused(V2ReadRefusal::IdentityMismatch {
+                    expected: identity,
+                    actual: package.name().into(),
+                });
+            }
             let timed_models = match CheckedTimedModel::from_admitted(&package) {
                 Ok(models) => models,
                 Err(invariant) => {
                     return refused(V2ReadRefusal::Fault(InternalFault::new("I2", invariant)))
                 }
             };
-            // The preimage's RFC 8785 bytes, from `quire-canonical` (ADR-013
-            // §2, ADR-013:113: the one RFC 8785 implementation), encoded
-            // straight from IR's typed preimage and the admitted graph: the
-            // encoder orders members itself. IR hashed the same projection
-            // under the same byte ceiling when it admitted the wire.
-            let preimage_bytes = match canonical_preimage(&package, limits.artifact_bytes) {
-                Ok(bytes) => bytes,
-                Err(reason) => return refused(V2ReadRefusal::Preimage(reason)),
-            };
-            let package_id = PackageId::of_preimage(&preimage_bytes);
-            // L2: cross-check this reader's own recompute against IR's
-            // already-verified `package_id.digest` (see the module doc).
-            // `verify_package` below re-recomputes from the same
-            // `preimage_bytes` this `package_id` was itself minted from, so
-            // it cannot by itself catch this reader's encoding of the
-            // preimage and graph projection diverging from IR's own -- only
-            // this comparison, against the digest IR verified, can.
-            let ir_digest = package.package_id().digest.as_ref();
-            if package_id.hex() != ir_digest {
-                return refused(V2ReadRefusal::Structural(Box::new(
-                    LibraryRefusal::IdentityDivergedFromIr {
-                        library: identity.clone(),
-                        ir_digest: ir_digest.into(),
-                        recomputed_hex: package_id.hex(),
-                    },
-                )));
+            let mut exports = Vec::new();
+            for node in &package.graph().nodes {
+                let Some(declaration) = &node.declaration else {
+                    continue;
+                };
+                let key = match crate::emit::admitted_key(&node.node_id) {
+                    Ok(key) => key,
+                    Err(_) => return refused(V2ReadRefusal::Fault(InternalFault::new(
+                        "I2", "admitted-declaration-node-id-is-structural",
+                    ))),
+                };
+                let name = declaration.qualified_name.iter().map(AsRef::as_ref).collect::<Vec<&str>>().join("::");
+                exports.push((name, key));
             }
-            // `PreimageDefect::AmbiguousDeclaration` cannot reach here: IR's
-            // `validate_declaration_names` refuses a repeated `qualified_name`
-            // (`ambiguous_declaration`) and its segments are identifiers, so
-            // the `::` join compares the same names.
-            let exports = match declared_exports(&preimage_bytes) {
-                Ok(exports) => exports,
-                Err(defect) => {
-                    return refused(V2ReadRefusal::Structural(Box::new(
-                        LibraryRefusal::InvalidPreimage {
-                            library: identity,
-                            defect,
-                        },
-                    )));
-                }
-            };
             let source_map = match package_source_map(package.source_map()) {
                 Ok(source_map) => source_map,
                 Err(defect) => return refused(defect.into()),
             };
             let candidate = LibraryPackage {
                 library: identity,
-                package_id,
-                identity_preimage: preimage_bytes.into_boxed_slice(),
                 imports: Vec::new(),
                 exports,
             };
-            // Condition 1: this call, in IR's `AdmittedV2` arm, is the
-            // witness's only production mint; `tests/it/
-            // verified_binding_witness.rs` fails on any other.
-            let admitted = SupportedV2Wire::attest_ir_admitted_v2();
-            match verify_binding(admitted, candidate, pinned) {
-                Ok(verified) => Ok(Staged::new(V2Read {
-                    package: verified,
+            match ImportView::of(&candidate) {
+                Ok(view) => Ok(Staged::new(V2Read {
+                    package: view,
                     source_map,
                     effective_limits: limits,
                     admitted: Arc::from(package),
@@ -930,25 +870,25 @@ pub fn read_import_view(
         admitted: std::mem::take(&mut admitted.0),
         limits,
     };
-    let read = reader.read_emitted(package, emission, identity);
+    let read = reader.read_emitted(package, emission, identity.clone());
     admitted.0 = reader.admitted;
     let read = read?;
     admitted
         .0
-        .insert(emission.package().package_id(), Arc::clone(&read.admitted));
-    Ok(read.package.into_import_view())
+        .insert(identity, Arc::clone(&read.admitted));
+    Ok(read.package)
 }
 
 /// The packages [`read_import_view`] calls have admitted, by `package_id`:
 /// one compile's reads share it, so each package of the closure is read
 /// once.
 #[derive(Debug, Default)]
-pub struct AdmittedPackages(BTreeMap<PackageId, Arc<CheckedPackageV2>>);
+pub struct AdmittedPackages(BTreeMap<LibraryName, Arc<CheckedPackageV2>>);
 
 impl AdmittedPackages {
     /// The package a [`read_import_view`] call admitted at `package_id`.
-    pub fn package(&self, package_id: &PackageId) -> Option<&CheckedPackageV2> {
-        self.0.get(package_id).map(Arc::as_ref)
+    pub fn package(&self, name: &LibraryName) -> Option<&CheckedPackageV2> {
+        self.0.get(name).map(Arc::as_ref)
     }
 }
 
@@ -977,12 +917,12 @@ pub fn supply_closure(
 /// `package_id`.
 fn hold_closure<'p>(
     package: &'p CheckedPackage,
-    held: &mut BTreeMap<PackageId, &'p CheckedPackage>,
+    held: &mut BTreeMap<LibraryName, &'p CheckedPackage>,
 ) {
     let mut pending = vec![package];
     while let Some(package) = pending.pop() {
         for (id, dependency) in package.dependencies() {
-            if held.insert(*id, dependency).is_none() {
+            if held.insert(id.clone(), dependency).is_none() {
                 pending.push(dependency);
             }
         }
@@ -992,9 +932,9 @@ fn hold_closure<'p>(
 /// One [`read_import_view`] call's reads: each package of the closure is
 /// admitted at most once.
 struct ClosureReader<'p> {
-    held: BTreeMap<PackageId, &'p CheckedPackage>,
+    held: BTreeMap<LibraryName, &'p CheckedPackage>,
     domain_packages: &'p qsl_semantics::model::intake::PackageInput,
-    admitted: BTreeMap<PackageId, Arc<CheckedPackageV2>>,
+    admitted: BTreeMap<LibraryName, Arc<CheckedPackageV2>>,
     limits: V2ReadLimits,
 }
 
@@ -1037,13 +977,11 @@ impl ClosureReader<'_> {
                 })?;
         }
         self.supply(package, &mut evidence)?;
-        let pinned = PinnedRequest::single(identity.clone(), emission.package.package_id());
         read_checked_package_v2(
             emission.package.bytes(),
             identity.clone(),
             self.limits,
             &evidence,
-            &pinned,
         )
         .map(Staged::into_value)
         .map_err(|refusal| ImportViewRefusal::Read {
@@ -1060,8 +998,8 @@ impl ClosureReader<'_> {
         evidence: &mut CheckedPackageEvidence,
     ) -> Result<(), ImportViewRefusal> {
         self.admit_closure(package)?;
-        for (dependency, resolved) in package.direct_dependency_selections() {
-            let admitted = self.admitted.get(&resolved.package_id).ok_or_else(|| {
+        for (dependency, _) in package.direct_dependency_selections() {
+            let admitted = self.admitted.get(dependency).ok_or_else(|| {
                 ImportViewRefusal::UnheldDependency {
                     identity: dependency.clone(),
                 }
@@ -1081,33 +1019,33 @@ impl ClosureReader<'_> {
     /// dependency chain of any length reads on a constant native stack
     /// (ADR-030 D-1).
     fn admit_closure(&mut self, package: &CheckedPackage) -> Result<(), ImportViewRefusal> {
-        // (library identity, package id, whether its dependencies are queued)
-        let mut pending: Vec<(LibraryName, PackageId, bool)> = package
+        // (library identity, whether its dependencies are queued)
+        let mut pending: Vec<(LibraryName, bool)> = package
             .direct_dependency_selections()
             .rev()
-            .map(|(identity, resolved)| (identity.clone(), resolved.package_id, false))
+            .map(|(identity, _)| (identity.clone(), false))
             .collect();
-        while let Some((identity, id, expanded)) = pending.pop() {
-            if self.admitted.contains_key(&id) {
+        while let Some((identity, expanded)) = pending.pop() {
+            if self.admitted.contains_key(&identity) {
                 continue;
             }
             let held = *self
                 .held
-                .get(&id)
+                .get(&identity)
                 .ok_or_else(|| ImportViewRefusal::UnheldDependency {
                     identity: identity.clone(),
                 })?;
             if !expanded {
-                pending.push((identity, id, true));
-                for (dependency, resolved) in held.direct_dependency_selections().rev() {
-                    if !self.admitted.contains_key(&resolved.package_id) {
-                        pending.push((dependency.clone(), resolved.package_id, false));
+                pending.push((identity, true));
+                for (dependency, _) in held.direct_dependency_selections().rev() {
+                    if !self.admitted.contains_key(dependency) {
+                        pending.push((dependency.clone(), false));
                     }
                 }
                 continue;
             }
-            let read = self.read(held, identity)?;
-            self.admitted.insert(id, read.admitted);
+            let read = self.read(held, identity.clone())?;
+            self.admitted.insert(identity, read.admitted);
         }
         Ok(())
     }
