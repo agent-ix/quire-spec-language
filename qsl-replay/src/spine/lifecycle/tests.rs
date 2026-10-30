@@ -813,7 +813,6 @@ fn a_cancel_tripped_mid_run_is_cancelled_with_its_cause_never_a_fault() {
         let checked = check(
             &parsed,
             "fixture".to_owned(),
-            "fixture".to_owned(),
             &models,
             &DependencyInput::default(),
             limits,
@@ -1063,7 +1062,6 @@ fn each_operation_reports_the_work_of_its_own_stages() {
 
     let checked = check(
         &parsed,
-        "fixture".to_owned(),
         "fixture".to_owned(),
         &models,
         &DependencyInput::default(),

@@ -21,10 +21,12 @@ const TO_R: &str = include_str!("../fixtures/ieee_float/to_rational.native");
 
 fn compile(text: &str) -> Result<AdmittedCompilation, AdmittedRefusal> {
     compile_admitted(
-        SourceIdentity::new("a", "ieee", "git", "1"),
-        "fixture".to_owned(),
-        "ieee.native",
-        text.as_bytes(),
+        qsl_replay::CompileUnit {
+            source: SourceIdentity::new("a", "ieee", "git", "1"),
+            package_name: "fixture".to_owned(),
+            path: "ieee.native",
+            bytes: text.as_bytes(),
+        },
         [],
         &DependencyInput::default(),
         StageLimits::default(),

@@ -141,7 +141,9 @@ pub use clause_evaluation::{
     evaluate_clause, ClauseEvaluation, ClauseEvaluationRequest, ClauseIncomplete,
     ClauseObservation, ClauseRefusal,
 };
-pub use compile::{compile_package, compile_package_with_execution_points, CompiledPackage};
+pub use compile::{
+    compile_package, compile_package_with_execution_points, CompileUnit, CompiledPackage,
+};
 pub use composite::{
     CompositeEvidence, CompositeIdentity, CompositeParityClaim, CompositeParityReport,
     CompositeParityResult, EqualityOutcome, FalsifiedParity, IncompleteStage, NativeCause,
@@ -436,6 +438,15 @@ pub(crate) fn fixture_node(fill: u8) -> NodeKey {
 #[cfg(test)]
 pub(crate) fn pn(node: &NodeKey) -> String {
     crate::witness::parameter_name(node).expect("a node spells")
+}
+
+/// The admitted node identity of a checked node reference.
+#[cfg(test)]
+pub(crate) fn adm(reference: &qsl_semantics::check::NodeRef) -> NodeKey {
+    reference
+        .admitted()
+        .expect("a checked reference is admitted")
+        .clone()
 }
 
 /// A universe identity for a test fixture, distinct per `fill`.

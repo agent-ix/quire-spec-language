@@ -190,7 +190,7 @@ pub fn run_with_replay_context(
 mod tests {
     use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound};
     use qsl_foundation::source::provenance::OccurrenceKey;
-    use quire_exact::{Integer, Origin, Role, Value};
+    use quire_exact::{Integer, NodeKey, Origin, Role, Value};
     use std::collections::BTreeMap;
 
     use super::*;
@@ -223,6 +223,7 @@ mod tests {
         };
         run_with_replay_context(
             SourceIdentity::new("a", "u", "git", "1"),
+            "fixture".to_owned(),
             "unit.native",
             source.as_bytes(),
             &BTreeMap::new(),
@@ -257,6 +258,7 @@ mod tests {
             .into_value();
         let checked = spine::check(
             &parsed,
+            "fixture".to_owned(),
             &models,
             &DependencyInput::default(),
             limits,
@@ -366,6 +368,7 @@ mod tests {
         };
         let result = run_with_replay_context(
             SourceIdentity::new("a", "u", "git", "1"),
+            "fixture".to_owned(),
             "unit.native",
             source.as_bytes(),
             &BTreeMap::new(),

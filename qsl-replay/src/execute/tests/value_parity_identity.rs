@@ -127,7 +127,7 @@ fn tc_1252_call_site_mints_the_identity_of_a_value_function_only() {
                 .clone();
             assert_eq!(
                 parity.preimage.arguments[position],
-                argument(parameter.clone(), position, declared)
+                argument(parameter.clone(), position, declared.clone())
             );
         }
         assert_eq!(
@@ -257,7 +257,7 @@ fn tc_1252_a_foreign_occurrence_refuses_before_any_call() {
         })
         .map(|(node, origin, _)| OccurrenceKey::new(node.clone(), origin))
         .expect("inc holds an `x + 1` expression occurrence");
-    assert_ne!(application.node(), inc_node);
+    assert_ne!(application.node().clone(), inc_node);
     let keys = [
         site(&source, "add").site.declaration,
         application,

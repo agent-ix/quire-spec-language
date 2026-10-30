@@ -449,7 +449,7 @@ fn no_cycle_completes_true_with_the_expected_reaches_charge_log() {
     let observations = no_cycle_observations(
         clause.identity(),
         environment,
-        node_reference(node_effective, "a"),
+        node_reference(node_effective.clone(), "a"),
     );
 
     let mut meter = Meter::new(default_accounting(1_000_000));
@@ -527,7 +527,7 @@ fn no_cycle_completes_false_over_a_cycle() {
     let observations = no_cycle_observations(
         clause.identity(),
         environment,
-        node_reference(node_effective, "a"),
+        node_reference(node_effective.clone(), "a"),
     );
     let mut meter = Meter::new(default_accounting(1_000_000));
     let name = QualifiedName::unqualified("NoCycle").unwrap();
@@ -553,7 +553,7 @@ fn evaluate_clause_refuses_an_unknown_clause_name() {
     let observations = no_cycle_observations(
         clause.identity(),
         environment,
-        node_reference(node_effective, "a"),
+        node_reference(node_effective.clone(), "a"),
     );
     let mut meter = Meter::new(default_accounting(1_000_000));
     let name = QualifiedName::unqualified("NoSuchClause").unwrap();
@@ -602,7 +602,7 @@ fn evaluate_clause_refuses_observations_admitted_for_another_clause() {
     let observations = no_cycle_observations(
         wrong_identity,
         environment,
-        node_reference(node_effective, "a"),
+        node_reference(node_effective.clone(), "a"),
     );
     let mut meter = Meter::new(default_accounting(1_000_000));
     let name = QualifiedName::unqualified("NoCycle").unwrap();
@@ -668,21 +668,21 @@ fn evaluate_clause_is_deterministic() {
                 types,
                 vec![
                     (
-                        node_reference(node_effective, "a"),
+                        node_reference(node_effective.clone(), "a"),
                         vec![(
                             "next",
                             FieldValue::Present(Value::Reference(node_reference(
-                                node_effective,
+                                node_effective.clone(),
                                 "b",
                             ))),
                         )],
                     ),
                     (
-                        node_reference(node_effective, "b"),
+                        node_reference(node_effective.clone(), "b"),
                         vec![(
                             "next",
                             FieldValue::Present(Value::Reference(node_reference(
-                                node_effective,
+                                node_effective.clone(),
                                 "a",
                             ))),
                         )],
@@ -1325,10 +1325,11 @@ fn population_universe_for_agrees_with_normalize_s_own_universe_assignment() {
         package: PACKAGE_IDENTITY.to_owned(),
         node: node_type(),
     };
-    let node_effective = *view
+    let node_effective = view
         .type_identities()
         .get(&node_key)
-        .expect("Node is a declared object type");
+        .expect("Node is a declared object type")
+        .clone();
     let expected_universe = view
         .object_universe_of(&node_key)
         .expect("Node has a universe")
@@ -1338,12 +1339,13 @@ fn population_universe_for_agrees_with_normalize_s_own_universe_assignment() {
         std::slice::from_ref(&model_selection),
         &packages,
         limits,
-        node_effective,
+        node_effective.clone(),
     )
     .expect("population_universe_for resolves the same object type's universe");
 
     assert_eq!(
-        admitted_universe, expected_universe,
+        admitted_universe,
+        expected_universe.expect("a universe identity"),
         "admission's own universe resolution must agree with normalize's"
     );
 }
@@ -3565,7 +3567,8 @@ fn s4_emits_exactly_the_fr_105_state_nodes() {
         .expect("ConfigVersion's own object_type node is in the graph")
         .key();
     assert_eq!(
-        context_ref.0, config_version_node,
+        crate::adm(&context_ref),
+        config_version_node,
         "operation_anchor's context is ConfigVersion's own node, verified via resolve_declaration"
     );
 
@@ -3596,7 +3599,8 @@ fn s4_emits_exactly_the_fr_105_state_nodes() {
             panic!("state_clause's anchor argument is a reference");
         };
         assert_eq!(
-            target.0, config_version_node,
+            crate::adm(&target),
+            config_version_node,
             "an invariant's anchor argument names ConfigVersion's own node"
         );
     }
@@ -3626,13 +3630,13 @@ fn s4_emits_exactly_the_fr_105_state_nodes() {
     };
     assert_eq!(only.field_name(), Some("versionNumber"));
     assert_eq!(
-        only.declaration().0,
-        context_ref.0,
+        crate::adm(&only.declaration()),
+        crate::adm(&context_ref),
         "modifies names ConfigVersion's own node"
     );
     assert_eq!(
         frames[0].semantic_type(),
-        Some(context_ref.0),
+        Some(crate::adm(&context_ref)),
         "the frame's own semantic_type is the declaring object type"
     );
     let qsl_semantics::check::MemberTerm::Binding(qsl_semantics::check::Binding {
@@ -3650,7 +3654,7 @@ fn s4_emits_exactly_the_fr_105_state_nodes() {
         panic!("frame's value is a reference");
     };
     assert_eq!(
-        frame_target.0,
+        crate::adm(&frame_target),
         frames[0].key(),
         "the anchor's frame binding names the frame node"
     );
@@ -3967,7 +3971,7 @@ fn resolve_expression<'g>(
     let qsl_semantics::check::LeafTerm::Reference { target } = leaf else {
         return None;
     };
-    let node = graph.semantic_graph().node(target.0)?;
+    let node = graph.semantic_graph().node(crate::adm(&target))?;
     (node.node_tag() == qsl_semantics::check::NodeTag::Expression).then(|| node.body())
 }
 
@@ -4106,7 +4110,7 @@ fn clause_parameters(
             };
             let node = graph
                 .semantic_graph()
-                .node(target.0)
+                .node(crate::adm(&target))
                 .expect("the parameter node is in the graph");
             assert_eq!(
                 (node.node_tag(), node.semantic_form()),
@@ -4135,7 +4139,7 @@ fn clause_parameters(
                     _ => None,
                 })
                 .expect("a parameter node binds its name as a text literal");
-            (target.0, name)
+            (crate::adm(&target), name)
         })
         .collect()
 }
@@ -4149,7 +4153,7 @@ fn clause_condition_node(clause: &qsl_semantics::check::SemanticNode) -> NodeKey
     else {
         panic!("a state_clause's condition argument references its expression node");
     };
-    target.0
+    crate::adm(&target)
 }
 
 /// TC-462 (FR-105-AC-2): each `state`/`state_clause`, `state`/
@@ -4187,7 +4191,7 @@ fn s4_state_clause_and_anchor_dependencies_beyond_the_frame() {
         .iter()
         .map(|(key, _)| wire_node_id(key))
         .collect();
-    expected.push(wire_node_id(anchor_key));
+    expected.push(wire_node_id(&anchor_key));
     expected.push(wire_node_id(clause_condition_node(version_unchanged)));
     assert_eq!(
         sorted_json(emitted_dependencies_of(&compiled, version_unchanged.key())),
@@ -4224,7 +4228,7 @@ fn s4_state_clause_and_anchor_dependencies_beyond_the_frame() {
     );
 
     let version_number_member = qsl_semantics::value::Member::Field {
-        declaration: config_version_node,
+        declaration: config_version_node.clone(),
         name: quire_exact::Identifier::new("versionNumber").expect("valid identifier"),
     };
     let field_read = graph
@@ -4255,7 +4259,7 @@ fn s4_state_clause_and_anchor_dependencies_beyond_the_frame() {
     assert_eq!(
         graph
             .semantic_graph()
-            .node(receiver.0)
+            .node(crate::adm(&receiver))
             .map(qsl_semantics::check::SemanticNode::node_tag),
         Some(qsl_semantics::check::NodeTag::Expression),
         "the field read's receiver is the `deref(self)` expression node"
@@ -4264,7 +4268,7 @@ fn s4_state_clause_and_anchor_dependencies_beyond_the_frame() {
         sorted_json(emitted_dependencies_of(&compiled, field_read.key())),
         sorted_json(vec![
             wire_node_id(&config_version_node),
-            wire_node_id(receiver.0),
+            wire_node_id(crate::adm(&receiver)),
         ]),
         "the versionNumber field read depends on exactly ConfigVersion (its member's \
          declaration) and its receiver expression node"
@@ -4518,7 +4522,7 @@ fn clause_anchor_target(clause: &qsl_semantics::check::SemanticNode) -> NodeKey 
     else {
         panic!("state_clause's second argument is a reference to its anchor: {arguments:?}");
     };
-    target.0
+    crate::adm(&target)
 }
 
 /// TC-463 (FR-105-AC-4): renaming `ParentOrder` changes no node id -- the
@@ -4763,7 +4767,7 @@ fn s4_pre_clauses_via_config_version_and_sub_share_one_anchor_at_config_version(
     );
     let anchor_node = graph
         .semantic_graph()
-        .node(anchor)
+        .node(anchor.clone())
         .expect("the anchor node is in the graph");
     let qsl_semantics::check::BodyTerm::Aggregate(qsl_semantics::check::AggregateTerm { members }) =
         anchor_node.body()
@@ -4786,7 +4790,8 @@ fn s4_pre_clauses_via_config_version_and_sub_share_one_anchor_at_config_version(
         panic!("the context binding's value is a reference, got {value:?}");
     };
     assert_eq!(
-        context.0, config_version_node,
+        crate::adm(&context),
+        config_version_node,
         "the shared anchor's context is ConfigVersion, the operation's declaring type"
     );
     assert_eq!(anchor_node.semantic_type(), Some(config_version_node));

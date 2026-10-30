@@ -60,10 +60,12 @@ fn a_union_unit_recompiles_to_its_emitted_package_id() {
 
     let stages: StageLimits = [(Setting::S1InputBytes, 1 << 20)].into_iter().collect();
     let recompiled = compile_package(
-        identity("2"),
-        "unit.native",
-        original.sources()[0].text().as_bytes(),
-        [],
+        qsl_replay::CompileUnit {
+            source: identity("2"),
+            package_name: "unit.native",
+            path: original.sources()[0].text().as_bytes(),
+            bytes: [],
+        },
         &DependencyInput::default(),
         stages,
         ReplayLimits::default(),

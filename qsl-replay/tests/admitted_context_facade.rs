@@ -13,7 +13,8 @@ use qsl_replay::{
     AdmittedResource, Code, DependencyInput, Identifier, NodeKey, ReplayLimits, ReplayRefusal,
     SourceIdentity, StageLimits, SuppliedLibrary,
 };
-use qsl_semantics::check::NominalNode;
+use qsl_semantics::value::enumeration::EnumMemberPreimage;
+use qsl_semantics::value::nominal_payload::NominalPayload;
 use quire_exact::Cancel;
 
 fn fixture_node(fill: u8) -> NodeKey {
@@ -66,10 +67,12 @@ fn admit(
     replay: ReplayLimits,
 ) -> Result<AdmittedCompilation, AdmittedRefusal> {
     compile_admitted(
-        unit_identity(),
-        "fixture".to_owned(),
-        "unit.native",
-        text.as_bytes(),
+        qsl_replay::CompileUnit {
+            source: unit_identity(),
+            package_name: "fixture".to_owned(),
+            path: "unit.native",
+            bytes: text.as_bytes(),
+        },
         [],
         dependencies,
         stages,
@@ -120,20 +123,17 @@ fn spine_enums(text: &str) -> Vec<(NodeKey, Vec<(String, NodeKey)>)> {
     let graph = checked.package().graph().semantic_graph();
     let mut enums = Vec::new();
     for node in graph.nodes() {
-        let Some(NominalNode::EnumDeclaration(preimage)) = node.nominal() else {
+        let Some(NominalPayload::Enum(payload)) = node.nominal_payload() else {
             continue;
         };
-        let cases = preimage
+        let cases = payload
             .members()
             .iter()
             .map(|case| {
-                let member = graph
-                    .nodes()
-                    .find(|member| {
-                        matches!(member.nominal(), Some(NominalNode::EnumMember { declaration, case: name })
-                            if *declaration == node.key() && name == case)
-                    })
-                    .expect("a member node per case");
+                let key = EnumMemberPreimage::new(node.key(), case.clone())
+                    .and_then(|preimage| preimage.key().map_err(|_| unreachable!()))
+                    .expect("a member key per case");
+                let member = graph.node(key).expect("a member node per case");
                 (case.clone(), member.key())
             })
             .collect();
@@ -150,10 +150,12 @@ fn the_context_holds_every_case_with_the_keys_the_check_minted() {
     let text = format!("{HEADER}{COLORS}");
     let admitted = admit_ok(&text);
     let plain = compile_package(
-        unit_identity(),
-        "fixture".to_owned(),
-        "unit.native",
-        text.as_bytes(),
+        qsl_replay::CompileUnit {
+            source: unit_identity(),
+            package_name: "fixture".to_owned(),
+            path: "unit.native",
+            bytes: text.as_bytes(),
+        },
         [],
         &DependencyInput::default(),
         limits(1 << 20),
@@ -171,14 +173,14 @@ fn the_context_holds_every_case_with_the_keys_the_check_minted() {
     let [color] = table.as_slice() else {
         panic!("one enum admitted");
     };
-    assert_eq!(color.key(), *declaration);
+    assert_eq!(color.key(), declaration);
     assert!(!color.is_ordered());
     let names: Vec<_> = color.cases().iter().map(|c| c.case().as_str()).collect();
     assert_eq!(names, ["BLUE", "GREEN", "RED"]);
     let keys: Vec<_> = color
         .cases()
         .iter()
-        .map(|c| (c.case().as_str().to_owned(), c.key()))
+        .map(|c| (c.case().as_str().to_owned(), c.key().clone()))
         .collect();
     assert_eq!(&keys, cases);
 }
@@ -191,23 +193,25 @@ fn lookups_find_admitted_keys_and_refuse_unknown_ones() {
     let admitted = admit_ok(&format!("{HEADER}{COLORS}"));
     let context = admitted.context();
     let color = context.enums().next().expect("an enum");
-    let declaration = wire(color.key());
+    let declaration = wire(color.key().clone());
 
-    let found = context.enum_declaration(declaration).expect("found");
+    let found = context.enum_declaration(&declaration).expect("found");
     assert_eq!(found.key(), color.key());
-    let green = context.enum_case(declaration, &id("GREEN")).expect("found");
+    let green = context
+        .enum_case(&declaration, &id("GREEN"))
+        .expect("found");
     assert_eq!(Some(green), color.case(&id("GREEN")));
 
     let nobody = fixture_node(7);
     assert_eq!(
-        context.enum_declaration(nobody),
+        context.enum_declaration(&nobody),
         Err(AdmittedLookupRefusal::Unknown {
             declaration: nobody,
             case: None
         })
     );
     assert_eq!(
-        context.enum_case(declaration, &id("PURPLE")),
+        context.enum_case(&declaration, &id("PURPLE")),
         Err(AdmittedLookupRefusal::Unknown {
             declaration,
             case: Some(id("PURPLE"))
@@ -219,10 +223,12 @@ fn lookups_find_admitted_keys_and_refuse_unknown_ones() {
 /// the wire id of its one enum.
 fn alone(library: &SuppliedLibrary, dependencies: &DependencyInput) -> AdmittedCompilation {
     compile_admitted(
-        library.source.clone(),
-        "fixture".to_owned(),
-        &library.path,
-        &library.bytes,
+        qsl_replay::CompileUnit {
+            source: library.source.clone(),
+            package_name: "fixture".to_owned(),
+            path: &library.path,
+            bytes: &library.bytes,
+        },
         [],
         dependencies,
         limits(1 << 20),
@@ -241,7 +247,7 @@ fn a_dependencys_enum_is_foreign() {
     let shades = library("test/shades", "shades", SHADES);
     let alone_shades = alone(&shades, &DependencyInput::default());
     let shade = alone_shades.context().enums().next().expect("an enum");
-    let shade_id = wire(shade.key());
+    let shade_id = wire(shade.key().clone());
 
     let text = format!("{HEADER}import \"test/shades\" as s;\n{COLORS}");
     let admitted = admit(
@@ -253,14 +259,14 @@ fn a_dependencys_enum_is_foreign() {
     .expect("the unit compiles against the library");
     let context = admitted.context();
     assert_eq!(
-        context.enum_declaration(shade_id),
+        context.enum_declaration(&shade_id),
         Err(AdmittedLookupRefusal::Foreign {
             declaration: shade_id,
             package: alone_shades.context().package_name().clone(),
         })
     );
     let color = context.enums().next().expect("the unit's enum");
-    assert!(context.enum_declaration(wire(color.key())).is_ok());
+    assert!(context.enum_declaration(&wire(color.key().clone())).is_ok());
     assert_eq!(context.enums().count(), 1);
 }
 
@@ -277,7 +283,8 @@ fn a_transitive_dependencys_enum_is_foreign() {
             .enums()
             .next()
             .expect("an enum")
-            .key(),
+            .key()
+            .clone(),
     );
     let mid = library(
         "test/mid",
@@ -294,7 +301,7 @@ fn a_transitive_dependencys_enum_is_foreign() {
     )
     .expect("the unit compiles against the libraries");
     assert_eq!(
-        admitted.context().enum_declaration(shade_id),
+        admitted.context().enum_declaration(&shade_id),
         Err(AdmittedLookupRefusal::Foreign {
             declaration: shade_id,
             package: alone_shades.context().package_name().clone(),
@@ -325,10 +332,12 @@ fn compile_failures_are_package_or_resource_refusals() {
     let text = format!("{HEADER}{COLORS}");
     let owned = DependencyInput::new([owned]).unwrap();
     let Err(ReplayRefusal::DependencyInput(expected)) = compile_package(
-        unit_identity(),
-        "fixture".to_owned(),
-        "unit.native",
-        text.as_bytes(),
+        qsl_replay::CompileUnit {
+            source: unit_identity(),
+            package_name: "fixture".to_owned(),
+            path: "unit.native",
+            bytes: text.as_bytes(),
+        },
         [],
         &owned,
         limits(1 << 20),

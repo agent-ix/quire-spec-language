@@ -279,6 +279,7 @@ mod tests {
             .into_value();
         let unit = spine::check(
             &parsed,
+            "fixture".to_owned(),
             &models,
             &DependencyInput::default(),
             limits,

@@ -195,7 +195,7 @@ impl PluginReplayContext {
     ) -> Result<ReplayRequestWire, PluginReplayRefusal> {
         let declaration = Origin::new(Role::new(DECLARATION_ROLE), 0);
         let function = (occurrence.origin() == &declaration)
-            .then(|| self.functions.get(&occurrence.node()))
+            .then(|| self.functions.get(occurrence.node()))
             .flatten();
         let record = self.requirements.get(occurrence);
         if function.is_none() && record.is_none() {

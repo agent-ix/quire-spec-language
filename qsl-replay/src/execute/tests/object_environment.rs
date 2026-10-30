@@ -812,16 +812,16 @@ fn tc_1042_row_19_a_bad_identity_is_the_wrong_kind() {
     let s1 = graph.s1();
     for identity in [Vec::new(), vec![0xff]] {
         let WitnessValue::Reference {
-            universe,
-            object_type,
+            ref universe,
+            ref object_type,
             ..
         } = graph.node("a")
         else {
             panic!("a reference");
         };
         let value = WitnessValue::Reference {
-            universe,
-            object_type,
+            universe: universe.clone(),
+            object_type: object_type.clone(),
             identity: identity.clone(),
         };
         wrong_kind(

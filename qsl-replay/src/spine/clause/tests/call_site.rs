@@ -193,7 +193,7 @@ fn call_site_locates_an_operations_anchor_frame_and_clauses() {
         .filter(|(_, kind)| *kind == "postcondition")
         .map(|(node, _)| wire(node.key()))
         .collect();
-    let [post] = posts[..] else {
+    let [ref post] = posts[..] else {
         panic!("the unit declares one postcondition: {posts:?}");
     };
     let [clause] = &operation.clauses[..] else {
@@ -203,10 +203,10 @@ fn call_site_locates_an_operations_anchor_frame_and_clauses() {
         );
     };
     assert_eq!(clause.name.as_str(), "VersionUnchanged");
-    assert_eq!(clause.node, post);
+    assert_eq!(clause.node, post.clone());
     assert_eq!(
         clause.occurrence,
-        OccurrenceKey::new(post, Origin::new(Role::new("claim"), 0))
+        OccurrenceKey::new(post.clone(), Origin::new(Role::new("claim"), 0))
     );
 }
 
@@ -325,21 +325,27 @@ fn call_site_locates_a_state_clause_by_name() {
 
     let parent_order = clause("ParentOrder");
     let no_cycle = clause("NoCycle");
-    let mut invariants = vec![parent_order.site.node, no_cycle.site.node];
+    let mut invariants = vec![parent_order.site.node.clone(), no_cycle.site.node.clone()];
     invariants.sort_unstable();
     let mut expected = clause_nodes_of(graph, "invariant");
     expected.sort_unstable();
     assert_eq!(invariants, expected, "the two invariants' own nodes");
     assert_eq!(parent_order.site.name.as_str(), "ParentOrder");
-    assert_eq!(parent_order.site.occurrence, claim(parent_order.site.node));
+    assert_eq!(
+        parent_order.site.occurrence,
+        claim(parent_order.site.node.clone())
+    );
 
     let pre = clause("AttemptPre");
-    assert_eq!(vec![pre.site.node], clause_nodes_of(graph, "precondition"));
-    assert_eq!(pre.site.occurrence, claim(pre.site.node));
+    assert_eq!(
+        vec![pre.site.node.clone()],
+        clause_nodes_of(graph, "precondition")
+    );
+    assert_eq!(pre.site.occurrence, claim(pre.site.node.clone()));
 
     let post = clause("VersionUnchanged");
     assert!(clause_nodes_of(graph, "postcondition").contains(&post.site.node));
-    assert_eq!(post.site.occurrence, claim(post.site.node));
+    assert_eq!(post.site.occurrence, claim(post.site.node.clone()));
     let attempt = locate(
         &unit,
         &document,
@@ -428,15 +434,21 @@ fn function_site_names_its_function_node_and_declaration_occurrence() {
 
     let p = site(PQ, "p");
     let q = site(PQ, "q");
-    assert_eq!(vec![p.function], function_nodes_declaring(graph, "p"));
-    assert_eq!(vec![q.function], function_nodes_declaring(graph, "q"));
+    assert_eq!(
+        vec![p.function.clone()],
+        function_nodes_declaring(graph, "p")
+    );
+    assert_eq!(
+        vec![q.function.clone()],
+        function_nodes_declaring(graph, "q")
+    );
     assert_eq!(
         p.declaration,
-        OccurrenceKey::new(p.function, Origin::new(Role::new("declaration"), 0))
+        OccurrenceKey::new(p.function.clone(), Origin::new(Role::new("declaration"), 0))
     );
     assert_eq!(
         q.declaration,
-        OccurrenceKey::new(q.function, Origin::new(Role::new("declaration"), 0))
+        OccurrenceKey::new(q.function.clone(), Origin::new(Role::new("declaration"), 0))
     );
     assert_eq!(p.parameters, q.parameters, "one shared parameter node");
     assert_ne!(p.function, q.function);
@@ -736,7 +748,7 @@ fn call_site_keys_a_field_of_a_type_no_clause_names() {
         .expect("Sub.alpha resolves")
         .site
         .domain;
-    let crate::DomainKey::Node { node: sub, .. } = unminted else {
+    let crate::DomainKey::Node { node: ref sub, .. } = unminted else {
         panic!("a field key is a node key: {unminted:?}");
     };
     let compiled = compile_config_version_unit(&unit, &packages);
@@ -746,7 +758,7 @@ fn call_site_keys_a_field_of_a_type_no_clause_names() {
             .graph()
             .semantic_graph()
             .nodes()
-            .any(|node| wire(node.key()) == sub),
+            .any(|node| wire(node.key()) == *sub),
         "no clause names Sub, so its node is not in the graph"
     );
     assert_eq!(unminted, minted);

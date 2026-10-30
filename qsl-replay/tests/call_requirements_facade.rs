@@ -244,7 +244,6 @@ fn package_name_and_outcome_equal_run() {
         .expect("run runs");
         let result = with_requirements(&source, &call, &Cancel::new()).expect("the call runs");
         assert_eq!(result.package_name().as_str(), "fixture");
-        assert_eq!(result.requirements().package_name().as_str(), "fixture");
         assert_eq!(format!("{:?}", result.outcome()), format!("{direct:?}"));
     }
 }

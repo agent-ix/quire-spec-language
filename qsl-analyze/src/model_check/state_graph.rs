@@ -523,7 +523,6 @@ pub fn check_state_graph(
         max_candidates: request.subject.simulation.expansion.max_candidates,
     };
     let no_initial = request.subject.simulation.initial.is_empty();
-    let package = request.subject.simulation.package;
     let system = ModelSystem::new(request.subject.simulation)
         .map_err(|failure| ModelCheckRefusal::Admission(Box::new(failure)))?;
     check_model_bounds(&system, BOUND_POSITIONS).map_err(bounds_refusal)?;
@@ -679,7 +678,6 @@ pub fn check_state_graph(
     };
     let explored = explore::Exploration {
         system: &system,
-        package,
         limits: &request.limits,
         horizon: request.max_depth,
         cancel,
@@ -897,9 +895,7 @@ pub fn check_and_settle_state_graph(
             instances
                 .iter()
                 .map(|instance| {
-                    settle_state_graph(instance, &method, &subject, claim, cancel, |_| {
-                        replay(instance)
-                    })
+                    settle_state_graph(instance, &method, &subject, claim, cancel, &mut replay)
                 })
                 .collect()
         })

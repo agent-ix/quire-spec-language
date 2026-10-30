@@ -231,6 +231,7 @@ fn a_package_with_no_emission_names_product_identity() {
             qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
             b"",
         ),
+        "fixture",
         qsl_foundation::IdentityLimits::default(),
     )
     .check(CheckingLimits::default())

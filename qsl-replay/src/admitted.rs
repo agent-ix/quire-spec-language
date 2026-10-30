@@ -14,7 +14,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use qsl_foundation::{Code, SourceIdentity};
+use qsl_foundation::Code;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckedGraph, CheckedTypeNode, CompositeForm};
 use qsl_semantics::library::LibraryName;
@@ -25,7 +25,7 @@ use quire_semantic_value::quantity::{QuantityUnit, UnitTable};
 use quire_semantic_value::unit::{NominalUnitForm, NominalUnitNode};
 
 use crate::bounds::ReplayLimits;
-use crate::compile::{recompile_unit, CompiledPackage};
+use crate::compile::{recompile_unit, CompileUnit, CompiledPackage};
 use crate::execute::{LimitAboveReader, ReplayRefusal};
 use crate::request::StageLimits;
 use crate::spine::{CompileRefusal, DependencyInput};
@@ -676,25 +676,13 @@ fn classify(refusal: CompileRefusal) -> AdmittedRefusal {
 /// or an S1 limit above the reader limit, and [`AdmittedRefusal::Fault`] for
 /// a broken QSL invariant.
 pub fn compile_admitted<'a>(
-    source: SourceIdentity,
-    package_name: String,
-    path: &str,
-    bytes: &[u8],
+    unit: CompileUnit<'_>,
     packages: impl IntoIterator<Item = &'a [u8]>,
     dependencies: &DependencyInput,
     limits: StageLimits,
     replay_limits: ReplayLimits,
 ) -> Result<AdmittedCompilation, AdmittedRefusal> {
-    let compiled = recompile_unit(
-        source,
-        package_name,
-        path,
-        bytes,
-        packages,
-        dependencies,
-        limits,
-        replay_limits,
-    )?;
+    let compiled = recompile_unit(unit, packages, dependencies, limits, replay_limits)?;
     let context = context_of(compiled.checked.package(), &compiled.package)
         .map_err(AdmittedRefusal::Fault)?;
     Ok(AdmittedCompilation {

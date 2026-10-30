@@ -51,6 +51,7 @@ fn package_over(document: &serde_json::Value, alias: &str) -> CheckedPackage {
     .expect("I1 admits the fixture package");
     let declarations = qsl_semantics::check::PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         unit,
         selected,
         Vec::new(),

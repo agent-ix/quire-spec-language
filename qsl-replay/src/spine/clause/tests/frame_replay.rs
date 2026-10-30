@@ -289,7 +289,7 @@ fn envelope_with(
     payload: FrameCounterexample,
     adjust: impl FnOnce(&mut WitnessPacket<FrameCounterexample>),
 ) -> WitnessEnvelope<FrameCounterexample> {
-    let (clause_node, occurrence) = (payload.frame, payload.occurrence.clone());
+    let (clause_node, occurrence) = (payload.frame.clone(), payload.occurrence.clone());
     let mut packet = packet(
         source_bytes,
         source,
@@ -472,8 +472,8 @@ fn a_frame_counterexample_reproduces_and_keeps_its_identities() {
     assert_eq!(arm.disagreement(), None);
     assert_eq!(result.source().identity(), IDENTITY);
     assert_eq!(result.operation(), &operation("attemptUpdate"));
-    assert_eq!(result.anchor(), payload.anchor);
-    assert_eq!(result.frame(), payload.frame);
+    assert_eq!(result.anchor().clone(), payload.anchor);
+    assert_eq!(result.frame().clone(), payload.frame);
     assert_eq!(result.occurrence(), &payload.occurrence);
     assert_eq!(
         (result.invocation(), result.pre(), result.post()),
@@ -589,8 +589,8 @@ fn a_stale_frame_identity_refuses_before_admission() {
         matches!(
             &refusal,
             ReplayRefusal::FrameIdentity(mismatch)
-                if matches!(**mismatch, FrameIdentityMismatch::Frame { payload, recompiled }
-                    if payload == other_frame && recompiled == recompiled_frame)
+                if matches!(&**mismatch, FrameIdentityMismatch::Frame { payload, recompiled }
+                    if *payload == other_frame && *recompiled == recompiled_frame)
         ),
         "{refusal:?}"
     );
@@ -620,8 +620,8 @@ fn a_stale_anchor_or_occurrence_refuses_content_mismatch() {
         matches!(
             &refusal,
             ReplayRefusal::FrameIdentity(mismatch)
-                if matches!(**mismatch, FrameIdentityMismatch::Anchor { payload, .. }
-                    if payload == stale_anchor)
+                if matches!(&**mismatch, FrameIdentityMismatch::Anchor { payload, .. }
+                    if *payload == stale_anchor)
         ),
         "{refusal:?}"
     );
@@ -699,7 +699,7 @@ fn an_envelope_clause_node_other_than_the_frame_refuses_before_recompiling() {
 
     let (_, other_frame, _) = identities(&parent_modifying_unit());
     assert_ne!(other_frame, payload.frame);
-    let frame = payload.frame;
+    let frame = payload.frame.clone();
     let stale = envelope_with(&unit.bytes, witness_source(), payload, |packet| {
         packet.clause_node = Some(other_frame.clone());
     });
@@ -708,8 +708,8 @@ fn an_envelope_clause_node_other_than_the_frame_refuses_before_recompiling() {
         matches!(
             &refusal,
             ReplayRefusal::FrameIdentity(mismatch)
-                if matches!(**mismatch, FrameIdentityMismatch::EnvelopeFrame { envelope, payload }
-                    if envelope == other_frame && payload == frame)
+                if matches!(&**mismatch, FrameIdentityMismatch::EnvelopeFrame { envelope, payload }
+                    if *envelope == other_frame && *payload == frame)
         ),
         "{refusal:?}"
     );

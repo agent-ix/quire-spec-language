@@ -41,6 +41,7 @@ const UNIT: &str = "record Q { x: Int[0, 9]; s: Sequence<Int[0, 9]>[0, 3]; }\n\
 struct Unit {
     source: String,
     compiled: Recompiled,
+    composed: ComposedUnit,
 }
 
 fn unit() -> Unit {
@@ -67,6 +68,7 @@ fn unit() -> Unit {
         .into_value();
     let checked = check(
         &parsed,
+        "fixture".to_owned(),
         &models,
         &DependencyInput::default(),
         limits,
@@ -80,10 +82,24 @@ fn unit() -> Unit {
     let compiled = Recompiled {
         checked,
         emitted,
-        packages: BTreeMap::new(),
+        package: qsl_semantics::library::LibraryName::new("fixture").expect("a library name"),
+        packages: qsl_semantics::model::intake::PackageInput::default(),
         model_limits: SpineLimits::default().model,
     };
-    Unit { source, compiled }
+    let composed = crate::spine::compose(
+        identity,
+        IDENTITY,
+        source.as_bytes(),
+        &qsl_semantics::model::intake::PackageInput::new(),
+        &DependencyInput::default(),
+        limits,
+    )
+    .expect("the unit composes");
+    Unit {
+        source,
+        compiled,
+        composed,
+    }
 }
 
 fn int(value: i64) -> WitnessValue {
@@ -240,7 +256,7 @@ impl Unit {
     ) -> ReplayRequestWire {
         let mut wire = request(
             self.source.as_bytes(),
-            &self.compiled,
+            &self.composed,
             name(&[function]),
             ReplaySource::Input(vec![]),
         );
@@ -816,13 +832,15 @@ fn tc_907_anything_short_of_covering_is_tested() {
     let first = unit.parameter("f", 0);
     type Edit = Box<dyn Fn(&mut Vec<ProofBound>)>;
     let edits: [(&str, Edit); 3] = [
-        (
-            "cardinality 2 on one s",
-            Box::new(move |bounds| bounds[1] = bound(first, &[1], FiniteBound::cardinality(2))),
-        ),
+        ("cardinality 2 on one s", {
+            let first = first.clone();
+            Box::new(move |bounds| {
+                bounds[1] = bound(first.clone(), &[1], FiniteBound::cardinality(2))
+            })
+        }),
         (
             "[0, 8] on one x",
-            Box::new(move |bounds| bounds[0] = bound(first, &[0], range(0, 8))),
+            Box::new(move |bounds| bounds[0] = bound(first.clone(), &[0], range(0, 8))),
         ),
         (
             "no bound on one x",
@@ -911,15 +929,15 @@ fn text_leaf_is_tested(
     for index in 0..2 {
         let parameter = unit.parameter("t", index);
         let integer = super::super::composite_domain::derive(
-            &[(parameter, fields[0].value_type())],
+            &[(parameter.clone(), fields[0].value_type())],
             unit.compiled.checked.package(),
             10,
         )
         .unwrap();
-        let drawn = [bound(parameter, &[], range(0, 9))];
+        let drawn = [bound(parameter.clone(), &[], range(0, 9))];
         assert!(integer.covered(&integer.harness(&drawn).unwrap()));
         let text = super::super::composite_domain::derive(
-            &[(parameter, fields[1].value_type())],
+            &[(parameter.clone(), fields[1].value_type())],
             unit.compiled.checked.package(),
             10,
         )
@@ -937,7 +955,7 @@ fn text_leaf_is_tested(
     let claim = unit.claim("t", EqualityOperator::Equal, bounds.clone());
     let mut wire = request(
         unit.source.as_bytes(),
-        &unit.compiled,
+        &unit.composed,
         name(&["t"]),
         ReplaySource::Input(vec![]),
     );
@@ -957,7 +975,7 @@ fn text_leaf_is_tested(
             else {
                 panic!("the Text equality compares two parameters");
             };
-            (*node, value_type)
+            (node.clone(), value_type)
         })
         .collect();
     let positions =
@@ -966,9 +984,9 @@ fn text_leaf_is_tested(
     assert!(!positions.covered(&positions.harness(&bounds).unwrap()));
     for (parameter, _) in &parameters {
         let mut with_length = bounds.clone();
-        with_length.push(bound(*parameter, &[1], FiniteBound::cardinality(4)));
+        with_length.push(bound(parameter.clone(), &[1], FiniteBound::cardinality(4)));
         let key = DomainKey::Node {
-            node: *parameter,
+            node: parameter.clone(),
             path: vec![1],
         };
         assert!(matches!(positions.harness(&with_length),
@@ -1293,7 +1311,7 @@ fn tc_907_a_tampered_obligation_digest_refuses() {
     let tampered = wire.obligation_identity.clone();
     let is_mismatch = |refusal: &ReplayRefusal| {
         matches!(refusal, ReplayRefusal::ScalarIdentity(cause)
-            if matches!(**cause, crate::ScalarIdentityMismatch::Obligation { claimed, .. } if claimed == tampered))
+            if matches!(&**cause, crate::ScalarIdentityMismatch::Obligation { claimed, .. } if *claimed == tampered))
     };
     let report = replay_composite_parity(
         wire.clone(),
@@ -1337,7 +1355,7 @@ fn tc_907_a_preimage_the_encoder_refuses_never_yields_an_identity() {
             if matches!(*cause, crate::ScalarIdentityMismatch::Obligation { .. })
     ));
     site.occurrence = OccurrenceKey::new(
-        claim.node,
+        claim.node.clone(),
         quire_exact::Origin::new(quire_exact::Role::new("expression"), 1_u64 << 60),
     );
     assert!(matches!(
@@ -1524,7 +1542,7 @@ fn tc_907_every_outcome_carries_the_full_claim() {
         );
         let full = |evidence: &FalsifiedParity| {
             CompositeIdentity::new(
-                obligation,
+                obligation.clone(),
                 &claim,
                 CompositeEvidence::Falsified(Box::new(evidence.clone())),
             )
@@ -1559,7 +1577,11 @@ fn tc_907_every_outcome_carries_the_full_claim() {
         let evidence = verified(success_checks, refinement);
         let report = settle_verified_shadow(wire, claim.clone(), evidence, ReplayLimits::default());
         let full = |evidence: VerifiedShadow| {
-            CompositeIdentity::new(obligation, &claim, CompositeEvidence::Verified(evidence))
+            CompositeIdentity::new(
+                obligation.clone(),
+                &claim,
+                CompositeEvidence::Verified(evidence),
+            )
         };
         assert_eq!(*report.claim(), full(evidence), "{row}");
         assert_ne!(
@@ -1644,10 +1666,10 @@ fn tc_907_an_integer_literal_operand_is_inline_unless_the_checker_narrows_it() {
     let claim = unit.claim("m", EqualityOperator::Equal, vec![]);
     let (_, compiled, site) = prepared(&unit, "m", &claim);
     let preimage = parity_preimage(&compiled, &site, &claim).unwrap();
-    let OperandIdentity::GraphChild(narrow) = preimage.arguments[1].identity else {
+    let OperandIdentity::GraphChild(ref narrow) = preimage.arguments[1].identity else {
         panic!("a narrowed literal is a graph child");
     };
-    assert_ne!(narrow, unit.parameter("m", 0));
+    assert_ne!(narrow.clone(), unit.parameter("m", 0));
     assert!(matches!(&preimage.arguments[1].domain, Domain::Bounds(_)));
 }
 

@@ -245,7 +245,7 @@ fn tc_905_a_refused_entry_leaves_no_partial_result() {
     assert!(
         matches!(
             refused,
-            Err(DecodeRefusal::Malformed { parameter, .. }) if parameter == id(2)
+            Err(DecodeRefusal::Malformed { ref parameter, .. }) if *parameter == id(2)
         ),
         "{refused:?}"
     );
@@ -285,12 +285,12 @@ fn tc_905_each_leaf_family_decodes_exactly() {
             coefficient: Integer::from(15_i64),
             scale: Integer::from(1_i64),
         },
-        unit: [0x44; 32],
+        unit: quire_exact::UnitId::declared(crate::fixture_node(0x44)),
     };
     assert_eq!(round_trip(&quantity), quantity);
     let reference = WitnessValue::Reference {
-        universe: [0x01; 32],
-        object_type: [0x02; 32],
+        universe: crate::fixture_universe(0x01),
+        object_type: crate::fixture_effective(0x02),
         identity: b"order-17".to_vec(),
     };
     assert_eq!(round_trip(&reference), reference);
@@ -378,7 +378,7 @@ fn list(depth: usize, head_name: &str, tail_name: &str) -> WitnessValue {
     };
     for _ in 1..depth {
         value = WitnessValue::Record {
-            declaration,
+            declaration: declaration.clone(),
             fields: vec![present(head_name, int(1)), present(tail_name, value)],
         };
     }

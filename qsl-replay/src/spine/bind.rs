@@ -462,7 +462,6 @@ impl<'a> Resolver<'a> {
         let parameter_nodes = callable_parameter_keys(checked, &callable)
             .map_err(|fault| Box::new(RunRefusal::Fault(fault)))?
             .into_iter()
-            .map(|key| key.clone())
             .collect();
         Ok(Self {
             ir: package.admitted,

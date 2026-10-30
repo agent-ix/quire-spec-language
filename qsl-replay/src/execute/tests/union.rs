@@ -198,7 +198,7 @@ fn a_union_input_evaluates_a_checked_case_through_replay() {
     let node = types.union_key(shape).expect("check sealed the union");
     let declaration = node.clone();
     let supplied = |member: &str, components: Vec<WitnessValue>| WitnessValue::Union {
-        declaration,
+        declaration: declaration.clone(),
         member: member.to_owned(),
         components,
     };

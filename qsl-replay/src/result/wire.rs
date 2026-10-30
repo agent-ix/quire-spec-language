@@ -9,7 +9,6 @@
 //! member, an unknown tag, a `null` member and a record missing a component
 //! its family assigns.
 
-use quire_exact::NodeKey;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 

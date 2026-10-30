@@ -91,10 +91,12 @@ fn qualify_compiles_a_language_vector_through_the_public_entry_point() {
         "1",
     );
     let compiled = qsl_replay::compile_package(
-        identity,
-        "qualification".to_owned(),
-        "inputs/native.native",
-        &source_bytes,
+        qsl_replay::CompileUnit {
+            source: identity,
+            package_name: "qualification".to_owned(),
+            path: "inputs/native.native",
+            bytes: &source_bytes,
+        },
         std::iter::empty::<&[u8]>(),
         &qsl_replay::DependencyInput::default(),
         qsl_replay::StageLimits::default(),

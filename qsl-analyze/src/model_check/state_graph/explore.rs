@@ -74,7 +74,6 @@ pub(super) struct Explored {
 /// Phase 1 of one run.
 pub(super) struct Exploration<'r, 'a, 'v> {
     pub(super) system: &'r ModelSystem<'a>,
-    pub(super) package: &'a qsl_package::CheckedPackage,
     pub(super) limits: &'r ModelCheckLimits,
     pub(super) horizon: Option<usize>,
     pub(super) cancel: &'r Cancel,
@@ -487,7 +486,6 @@ impl Exploration<'_, '_, '_> {
                 RunEnd::Completed => ModelCheckOutcome::Holds {
                     certificate: qsl_replay::ProofCertificate::Closure(deadlock_certificate(
                         graph,
-                        self.package,
                     )?),
                     stats,
                 },
@@ -500,7 +498,6 @@ impl Exploration<'_, '_, '_> {
 /// model state under the item's carried root, sorted.
 fn deadlock_certificate(
     graph: &ExploredStateGraph,
-    package: &qsl_package::CheckedPackage,
 ) -> Result<ClosureCertificate, ModelCheckRefusal> {
     let key = SafetyTranslation::deadlock_freedom()
         .map_err(|_| ModelCheckRefusal::Item(ItemRefusal::DeadlockContext))?

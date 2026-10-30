@@ -13,9 +13,7 @@
 //! `Inconclusive(CertificateRejected{rule, at})`, and a stopped check is
 //! `Incomplete` with its exact limit or cancellation source.
 
-use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::{BackendId, RequestIndex};
-use qsl_package::CheckedPackage;
 use quire_semantic_value::catalog::Category;
 
 use quire_exact::Cancel;

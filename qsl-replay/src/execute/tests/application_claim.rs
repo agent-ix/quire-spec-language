@@ -41,8 +41,7 @@ fn record(
         .iter()
         .filter(|(_, record)| record.owner() == Some(owner))
         .filter_map(|(key, _)| {
-            let node = graph.semantic_graph().resolve_wire(key.node())?;
-            let location = graph.occurrence(node, key.origin())?;
+            let location = graph.occurrence(key.node().clone(), key.origin())?;
             let region = graph.region(location)?;
             let text = &source
                 [usize::try_from(region.start()).ok()?..usize::try_from(region.end()).ok()?];
@@ -130,7 +129,7 @@ fn run(
     let assignments = values
         .iter()
         .map(|(parameter, value)| CanonicalAssignment {
-            parameter: *parameter,
+            parameter: parameter.clone(),
             value: value.clone(),
         })
         .collect();
@@ -265,7 +264,7 @@ fn tc_444_the_occurrence_key_selects_the_predicate_or_the_application_claim() {
                 value: int(0),
             }]),
         );
-        wire.obligation_identity = identity;
+        wire.obligation_identity = identity.clone();
         let request = ReplayRequest::decode(wire, ReplayLimits::default()).unwrap();
         assert_eq!(request.obligation_identity(), identity);
     }
@@ -401,11 +400,12 @@ fn record_binder_node(compiled: &ComposedUnit, function: &str) -> NodeKey {
         .find(|record| record.owner() == Some(function))
         .expect("a record");
     let parameters: Vec<NodeKey> = (0..1).map(|i| parameter(compiled, function, i)).collect();
-    *record
+    record
         .extent_roots()
         .iter()
         .find(|root| !parameters.contains(root))
         .expect("the binder is an extent root")
+        .clone()
 }
 
 /// FR-098-AC-25: a key that selects no claim of the function refuses

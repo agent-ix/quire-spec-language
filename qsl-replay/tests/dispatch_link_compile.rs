@@ -529,7 +529,11 @@ fn unit_compile_carries_one_linked_table_per_called_operation() {
         .iter()
         .map(|table| {
             let linked = |subtype| named(table.linked_for(&subtype).expect("linked").body);
-            (linked(a), linked(b), table.candidate_count() as usize)
+            (
+                linked(a.clone()),
+                linked(b.clone()),
+                table.candidate_count() as usize,
+            )
         })
         .collect();
     tables.sort();
@@ -555,7 +559,7 @@ fn unit_compile_carries_one_linked_table_per_called_operation() {
     let linked_pair = |table: usize| {
         let table = &graph.dispatch_tables()[table];
         let linked = |subtype| named(table.linked_for(&subtype).expect("linked").body);
-        (linked(a), linked(b))
+        (linked(a.clone()), linked(b.clone()))
     };
     let mut found = Vec::new();
     for clause in ["c1", "c2", "c3"] {
@@ -886,10 +890,12 @@ fn a_unit_with_linked_dispatch_emits_a_package() {
     );
     let emit = || {
         qsl_replay::compile_package(
-            SourceIdentity::new("a", "u", "git", "1"),
-            "fixture".to_owned(),
-            "unit.native",
-            text.as_bytes(),
+            qsl_replay::CompileUnit {
+                source: SourceIdentity::new("a", "u", "git", "1"),
+                package_name: "fixture".to_owned(),
+                path: "unit.native",
+                bytes: text.as_bytes(),
+            },
             [document.as_slice()],
             &DependencyInput::default(),
             qsl_replay::StageLimits::default(),

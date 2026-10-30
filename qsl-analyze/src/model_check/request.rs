@@ -15,7 +15,6 @@ use std::collections::BTreeSet;
 use qsl_eval::model_subject::ModelSubject;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::RequestIndex;
-use qsl_package::CheckedPackage;
 use qsl_replay::{node_occurrence, SubjectIdentity};
 use qsl_route::deadlock::{ModelRefinementItem, ModelTemporalItem};
 use qsl_route::model_request::ModelRequest;

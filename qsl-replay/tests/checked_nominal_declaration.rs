@@ -39,10 +39,12 @@ fn node_id(package: &[u8], tag: &str, name: &str) -> NodeKey {
 #[test]
 fn public_consumer_reads_complete_ordered_nominal_members_from_one_selection() {
     let acquisition = acquire_checked_closure(
-        SourceIdentity::new("a", "unit", "git", "1"),
-        "fixture".to_owned(),
-        "unit.native",
-        SOURCE.as_bytes(),
+        qsl_replay::CompileUnit {
+            source: SourceIdentity::new("a", "unit", "git", "1"),
+            package_name: "fixture".to_owned(),
+            path: "unit.native",
+            bytes: SOURCE.as_bytes(),
+        },
         [],
         &DependencyInput::default(),
         StageLimits::default(),
@@ -64,9 +66,9 @@ fn public_consumer_reads_complete_ordered_nominal_members_from_one_selection() {
     assert_eq!(holder.package_name(), handle.package_name());
     assert_eq!(
         selection.signature().parameters(),
-        &[ValueType::Composite(holder.key())]
+        &[ValueType::Composite(holder.key().clone())]
     );
-    assert_eq!(holder.node().as_bytes(), holder_id.as_bytes());
+    assert_eq!(holder.node(), &holder_id);
     assert_eq!(holder.form(), NominalDeclarationForm::Record);
     assert!(matches!(
         holder.members(),
@@ -78,7 +80,7 @@ fn public_consumer_reads_complete_ordered_nominal_members_from_one_selection() {
     ));
 
     let pair = handle
-        .nominal_declaration(&selection, pair_id)
+        .nominal_declaration(&selection, &pair_id)
         .expect("nested tuple declaration");
     assert_eq!(pair.form(), NominalDeclarationForm::Tuple);
     assert!(matches!(
@@ -96,7 +98,7 @@ fn public_consumer_reads_complete_ordered_nominal_members_from_one_selection() {
     ));
 
     let shape = handle
-        .nominal_declaration(&selection, shape_id)
+        .nominal_declaration(&selection, &shape_id)
         .expect("nested union declaration");
     assert_eq!(shape.form(), NominalDeclarationForm::Union);
     let [NominalDeclarationMember::UnionMember {
@@ -111,10 +113,10 @@ fn public_consumer_reads_complete_ordered_nominal_members_from_one_selection() {
     else {
         panic!("all declared union variants are available in order");
     };
-    assert_eq!(empty.identifier().as_str(), "Empty");
-    assert_eq!(empty.variant(), *empty_variant);
+    assert_eq!(empty.identifier(), "Empty");
+    assert_eq!(empty.variant(), empty_variant);
     assert!(empty_payload.is_empty());
-    assert_eq!(circle.identifier().as_str(), "Circle");
-    assert_eq!(circle.variant(), *circle_variant);
+    assert_eq!(circle.identifier(), "Circle");
+    assert_eq!(circle.variant(), circle_variant);
     assert_eq!(circle_payload, &[ValueType::Integer]);
 }

@@ -234,6 +234,7 @@ impl WireNode {
 }
 
 impl WireNode {
+    #[cfg(test)]
     pub(crate) fn into_key(self) -> NodeKey {
         self.0
     }
@@ -1560,7 +1561,7 @@ mod tests {
         for ordinal in 1..=200 {
             key = NodeKey::new(
                 "fixture",
-                vec![quire_exact::PathSegment::Node(Box::new(key))],
+                vec![quire_exact::PathSegment::Node(key)],
                 ordinal,
             )
             .expect("a nested key");

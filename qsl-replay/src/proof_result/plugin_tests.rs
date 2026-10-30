@@ -768,9 +768,16 @@ fn fixture_of(
     let models = select(&parsed, packages, limits.spine.model, &cancel)
         .unwrap_or_else(|failure| panic!("select: {failure:?}"))
         .into_value();
-    let checked = check(&parsed, &models, dependencies, limits.spine, &cancel)
-        .unwrap_or_else(|failure| panic!("check: {failure:?}"))
-        .into_value();
+    let checked = check(
+        &parsed,
+        "fixture".to_owned(),
+        &models,
+        dependencies,
+        limits.spine,
+        &cancel,
+    )
+    .unwrap_or_else(|failure| panic!("check: {failure:?}"))
+    .into_value();
     let emitted = package(&checked, PackageLimits::default(), &cancel)
         .unwrap_or_else(|failure| panic!("package: {failure:?}"))
         .into_value();
@@ -1071,7 +1078,9 @@ fn tc_774_limits_flow_into_the_request_and_refusals_are_ordered() {
     let defaults = CallerLimits::default();
     let context = context(&fixture, limits);
     let (p, p_x) = declaration(&fixture, "p");
-    let wire = context.request(&p, &[], &plugin(), input(p_x, 0)).unwrap();
+    let wire = context
+        .request(&p, &[], &plugin(), input(p_x.clone(), 0))
+        .unwrap();
     assert_eq!(wire.stage_limits["s1.tokens"], 200_000);
     assert_eq!(wire.stage_limits["library.definitions"], 9000);
     assert_eq!(wire.accounting_limits.work_units, 5000);
@@ -1096,7 +1105,7 @@ fn tc_774_limits_flow_into_the_request_and_refusals_are_ordered() {
         context
             .request(
                 &q_declaration,
-                &[bound_at(q_x), bound_at(q_x)],
+                &[bound_at(q_x.clone()), bound_at(q_x)],
                 &plugin(),
                 Vec::new()
             )
@@ -1128,7 +1137,7 @@ fn tc_774_limits_flow_into_the_request_and_refusals_are_ordered() {
             key: unknown_key.clone()
         })
     );
-    let duplicate = [bound_at(p_x), bound_at(p_x)];
+    let duplicate = [bound_at(p_x.clone()), bound_at(p_x.clone())];
     let refusal = context
         .request(&p, &duplicate, &plugin(), input(p_x, 0))
         .err()

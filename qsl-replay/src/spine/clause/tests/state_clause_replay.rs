@@ -308,11 +308,11 @@ fn without(wire: &mut ReplayRequestWire, reference: &DocumentRef) {
 fn assert_reproduces_keeping_identities(case: Case, clause: &str) -> StateClauseReplayResult {
     let _unit_bytes = case.unit.bytes.clone();
     let (node, occurrence) = (
-        case.envelope.clause_node(),
+        case.envelope.clause_node().clone(),
         case.envelope.occurrence_key().clone(),
     );
     assert_eq!(
-        (node, occurrence.clone()),
+        (node.clone(), occurrence.clone()),
         clause_identity(&case.unit, clause)
     );
     let read = case.documents.read.clone();
@@ -329,7 +329,7 @@ fn assert_reproduces_keeping_identities(case: Case, clause: &str) -> StateClause
     assert!(arm.record().is_none());
     assert_eq!(result.source().identity(), IDENTITY);
     assert_eq!(result.clause().to_string(), clause);
-    assert_eq!(result.clause_node(), node);
+    assert_eq!(result.clause_node().clone(), node);
     assert_eq!(result.occurrence_key(), &occurrence);
     assert_eq!(result.documents(), &read[..]);
     result
@@ -372,7 +372,7 @@ fn an_input_arm_envelope_reproduces_without_a_witness() {
     assert_eq!(arm.settlement(), InputSettlement::ReproducedWithoutWitness);
     assert_eq!(arm.value(), Some(EvaluatedValue::Boolean(false)));
     assert_eq!(result.clause().to_string(), "VersionUnchanged");
-    assert_eq!(result.clause_node(), node);
+    assert_eq!(result.clause_node().clone(), node);
     assert_eq!(result.occurrence_key(), &occurrence);
     assert_eq!(result.documents(), &read[..]);
 }

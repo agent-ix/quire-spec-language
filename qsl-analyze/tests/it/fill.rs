@@ -535,10 +535,12 @@ fn compiled_with(
 ) -> Result<qsl_replay::CompiledPackage, qsl_replay::ReplayRefusal> {
     let document = document();
     qsl_replay::compile_package(
-        SourceIdentity::new("agent-ix", "counter", "git", "1"),
-        "counter".to_owned(),
-        "counter.native",
-        unit_text_with(profiles, body).as_bytes(),
+        qsl_replay::CompileUnit {
+            source: SourceIdentity::new("agent-ix", "counter", "git", "1"),
+            package_name: "counter".to_owned(),
+            path: "counter.native",
+            bytes: unit_text_with(profiles, body).as_bytes(),
+        },
         [document.as_slice()],
         &qsl_replay::DependencyInput::default(),
         qsl_replay::StageLimits::default(),

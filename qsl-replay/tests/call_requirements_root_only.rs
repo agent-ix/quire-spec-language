@@ -65,8 +65,8 @@ fn run(source: &str, cancel: &Cancel) -> Result<qsl_replay::RunWithRequirements,
 fn a_consumer_calls_and_reads_through_the_crate_root() {
     let result = run(SOURCE, &Cancel::new()).expect("the call runs");
     let name: LibraryName = result.package_name().clone();
+    assert_eq!(name.as_str(), "fixture");
     let (outcome, requirements) = result.into_parts();
-    assert_eq!(requirements.package_name(), &name);
     let CallOutcome::Completed(CallValue::Integer(value)) = outcome else {
         panic!("a completed integer, not {outcome:?}");
     };

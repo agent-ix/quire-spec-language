@@ -183,7 +183,7 @@ impl HybridProcessRequest {
         deadline_ms: u64,
         items: &[HybridProcessItem],
     ) -> Result<Self, HybridProcessRequestRefusal> {
-        let admitted = admit_package(package, context)?;
+        admit_package(package, context)?;
         let mut wire_items = Vec::with_capacity(items.len());
         for (position, item) in items.iter().enumerate() {
             let position = u64::try_from(position)

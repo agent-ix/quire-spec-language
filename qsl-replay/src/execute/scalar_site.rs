@@ -129,8 +129,8 @@ pub(crate) fn check_operands(
                     return Err(ScalarIdentityMismatch::OperandChild {
                         node: application.clone(),
                         position,
-                        claimed: node.clone(),
-                        found,
+                        claimed: Box::new(node.clone()),
+                        found: found.map(Box::new),
                     });
                 }
             }
@@ -142,7 +142,7 @@ pub(crate) fn check_operands(
                     });
                 };
                 if found != operand.value.to_string()
-                    || operand.range != ScalarOperand::literal(operand.value.clone()).range
+                    || operand.range != ScalarOperand::literal(operand.value).range
                 {
                     return Err(ScalarIdentityMismatch::LiteralValue {
                         node: application.clone(),

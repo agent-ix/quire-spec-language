@@ -712,38 +712,33 @@ pub fn replay_model_trace(
     letters: &dyn ModelLetters,
     replay_limits: ReplayLimits,
 ) -> Result<ModelTraceReplayResult, ReplayRefusal> {
-    replay_on(
-        wire,
-        envelope,
-        replay_limits,
-        |package, simulation, meter| {
-            let clause = resolve_item(envelope, package.0, DerivedAnchors::Model, |clause| {
-                let payload = envelope.family_payload();
-                if payload.fairness == clause.fairness() {
-                    return Ok(());
-                }
-                Err(refused(ModelTraceRefusal::FairnessSet {
-                    payload: payload.fairness.clone(),
-                    recompiled: clause.fairness().to_vec(),
-                }))
-            })?;
-            let system = ModelSystem::new(simulation(subject)).map_err(ReplayRefusal::Admission)?;
-            let formula = clause.map(|clause| FormulaReplay {
-                clause,
-                letters,
-                meter,
-            });
-            match &subject.timed {
-                Some(reading) => timed::settle(
-                    &timed::timed_subject(&system, &reading.model, reading.max_clocks)?,
-                    envelope.family_payload(),
-                    formula,
-                    &reading.exploration,
-                ),
-                None => settle(&system, envelope.family_payload(), formula),
+    replay_on(wire, replay_limits, |package, simulation, meter| {
+        let clause = resolve_item(envelope, package.0, DerivedAnchors::Model, |clause| {
+            let payload = envelope.family_payload();
+            if payload.fairness == clause.fairness() {
+                return Ok(());
             }
-        },
-    )
+            Err(refused(ModelTraceRefusal::FairnessSet {
+                payload: payload.fairness.clone(),
+                recompiled: clause.fairness().to_vec(),
+            }))
+        })?;
+        let system = ModelSystem::new(simulation(subject)).map_err(ReplayRefusal::Admission)?;
+        let formula = clause.map(|clause| FormulaReplay {
+            clause,
+            letters,
+            meter,
+        });
+        match &subject.timed {
+            Some(reading) => timed::settle(
+                &timed::timed_subject(&system, &reading.model, reading.max_clocks)?,
+                envelope.family_payload(),
+                formula,
+                &reading.exploration,
+            ),
+            None => settle(&system, envelope.family_payload(), formula),
+        }
+    })
 }
 
 /// FR-237: the replay of a counterexample over the timed subject `timed`,
@@ -812,77 +807,72 @@ pub fn replay_protocol_trace(
     letters: &dyn ModelLetters,
     replay_limits: ReplayLimits,
 ) -> Result<ModelTraceReplayResult, ReplayRefusal> {
-    replay_on(
-        wire,
-        envelope,
-        replay_limits,
-        |package, simulation, meter| {
-            // The fairness set depends on the protocol system, so it is
-            // compared in `ProtocolReplay::settle`.
-            let clause = resolve_item(
-                envelope,
-                package.0,
-                DerivedAnchors::Protocol(&subject.protocol),
-                |_| Ok(()),
-            )?;
-            let payload = envelope.family_payload();
-            let simulation = simulation(&subject.model);
-            let protocol = package
-                .0
-                .graph()
-                .protocol(&subject.protocol)
-                .ok_or_else(|| {
-                    refused(ModelTraceRefusal::Protocol(
-                        ProtocolRefusal::UnknownProtocol {
-                            protocol: subject.protocol.clone(),
-                        },
-                    ))
-                })?;
-            let model = ModelSystem::new(simulation.clone()).map_err(ReplayRefusal::Admission)?;
-            check_protocol_bounds(&model, protocol, package.0.graph(), BOUND_POSITIONS)
-                .map_err(|refusal| refused(ModelTraceRefusal::NotSimulated(Box::new(refusal))))?;
-            let protocol_subject = ProtocolSubject {
-                model: ModelSubject {
-                    simulation,
-                    proof_bounds: Vec::new(),
-                },
-                protocol: subject.protocol.clone(),
-                over: subject.over.clone(),
-                roles: subject.roles.clone(),
-                memory: subject.memory.clone(),
-            };
-            let built = |refusal| refused(ModelTraceRefusal::Protocol(refusal));
-            let replayed = ProtocolReplay {
-                payload,
-                clause,
-                letters,
-                meter,
-            };
-            let live_instances = live_instance_bound(subject.max_live_instances);
-            let settlement = match SubjectMemory::of(
-                &subject.memory,
-                subject.max_store_buffer,
-                subject.max_messages,
-            ) {
-                SubjectMemory::Sc => replayed.settle(
-                    &ProtocolSystem::new(model, &protocol_subject, Sc)
-                        .map_err(built)?
-                        .with_max_live_instances(live_instances),
-                )?,
-                SubjectMemory::Tso(tso) => replayed.settle(
-                    &ProtocolSystem::new(model, &protocol_subject, tso)
-                        .map_err(built)?
-                        .with_max_live_instances(live_instances),
-                )?,
-                SubjectMemory::Ra(ra) => replayed.settle(
-                    &ProtocolSystem::new(model, &protocol_subject, ra)
-                        .map_err(built)?
-                        .with_max_live_instances(live_instances),
-                )?,
-            };
-            Ok((settlement, Vec::new()))
-        },
-    )
+    replay_on(wire, replay_limits, |package, simulation, meter| {
+        // The fairness set depends on the protocol system, so it is
+        // compared in `ProtocolReplay::settle`.
+        let clause = resolve_item(
+            envelope,
+            package.0,
+            DerivedAnchors::Protocol(&subject.protocol),
+            |_| Ok(()),
+        )?;
+        let payload = envelope.family_payload();
+        let simulation = simulation(&subject.model);
+        let protocol = package
+            .0
+            .graph()
+            .protocol(&subject.protocol)
+            .ok_or_else(|| {
+                refused(ModelTraceRefusal::Protocol(
+                    ProtocolRefusal::UnknownProtocol {
+                        protocol: subject.protocol.clone(),
+                    },
+                ))
+            })?;
+        let model = ModelSystem::new(simulation.clone()).map_err(ReplayRefusal::Admission)?;
+        check_protocol_bounds(&model, protocol, package.0.graph(), BOUND_POSITIONS)
+            .map_err(|refusal| refused(ModelTraceRefusal::NotSimulated(Box::new(refusal))))?;
+        let protocol_subject = ProtocolSubject {
+            model: ModelSubject {
+                simulation,
+                proof_bounds: Vec::new(),
+            },
+            protocol: subject.protocol.clone(),
+            over: subject.over.clone(),
+            roles: subject.roles.clone(),
+            memory: subject.memory.clone(),
+        };
+        let built = |refusal| refused(ModelTraceRefusal::Protocol(refusal));
+        let replayed = ProtocolReplay {
+            payload,
+            clause,
+            letters,
+            meter,
+        };
+        let live_instances = live_instance_bound(subject.max_live_instances);
+        let settlement = match SubjectMemory::of(
+            &subject.memory,
+            subject.max_store_buffer,
+            subject.max_messages,
+        ) {
+            SubjectMemory::Sc => replayed.settle(
+                &ProtocolSystem::new(model, &protocol_subject, Sc)
+                    .map_err(built)?
+                    .with_max_live_instances(live_instances),
+            )?,
+            SubjectMemory::Tso(tso) => replayed.settle(
+                &ProtocolSystem::new(model, &protocol_subject, tso)
+                    .map_err(built)?
+                    .with_max_live_instances(live_instances),
+            )?,
+            SubjectMemory::Ra(ra) => replayed.settle(
+                &ProtocolSystem::new(model, &protocol_subject, ra)
+                    .map_err(built)?
+                    .with_max_live_instances(live_instances),
+            )?,
+        };
+        Ok((settlement, Vec::new()))
+    })
 }
 
 /// What a protocol replay settles over its rebuilt system.
@@ -1002,9 +992,8 @@ type ReplayPackage<'p> = (&'p CheckedPackage, LibraryName);
 /// FR-128's recompile and subject re-admission, then
 /// `replay` over the recompiled package, the subject's simulation request
 /// and the request's evaluation meter.
-fn replay_on<P: crate::witness::FamilyPayload>(
+fn replay_on(
     wire: ReplayRequestWire,
-    envelope: &WitnessEnvelope<P>,
     replay_limits: ReplayLimits,
     replay: impl for<'p> FnOnce(
         ReplayPackage<'p>,

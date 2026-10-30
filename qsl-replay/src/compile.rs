@@ -8,9 +8,25 @@ use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::intake::package_input;
 
 use crate::bounds::ReplayLimits;
-use crate::execute::{request_limits, run_spine_with_execution_points, Recompiled, ReplayRefusal};
+use crate::execute::{
+    request_limits, run_spine_with_execution_points, Recompiled, ReplayRefusal, SpineUnit,
+};
 use crate::request::StageLimits;
 use crate::spine::{self, DependencyInput};
+
+/// The one source unit a compile reads: its source identity, the package
+/// manifest's top-level name its nodes are keyed under (it has no default),
+/// the path it is displayed as, and its bytes.
+pub struct CompileUnit<'a> {
+    /// The unit's source identity.
+    pub source: SourceIdentity,
+    /// The package manifest's top-level name.
+    pub package_name: String,
+    /// The path the unit is displayed as.
+    pub path: &'a str,
+    /// The unit's bytes.
+    pub bytes: &'a [u8],
+}
 
 /// One source unit compiled and emitted: its `quire.checked-package/v2`
 /// bytes.
@@ -50,20 +66,17 @@ impl CompiledPackage {
 /// owner, and [`ReplayRefusal::LimitAboveReader`] for an S1 limit above the
 /// reader limit.
 pub fn compile_package<'a>(
-    source: SourceIdentity,
-    package_name: String,
-    path: &str,
-    bytes: &[u8],
+    unit: CompileUnit<'_>,
     packages: impl IntoIterator<Item = &'a [u8]>,
     dependencies: &DependencyInput,
     limits: StageLimits,
     replay_limits: ReplayLimits,
 ) -> Result<CompiledPackage, ReplayRefusal> {
     compile_package_with_execution_points(
-        source,
-        package_name,
-        path,
-        bytes,
+        unit.source,
+        unit.package_name,
+        unit.path,
+        unit.bytes,
         packages,
         dependencies,
         &spine::StateClauseExecutionPoints::new(),
@@ -109,20 +122,17 @@ pub fn compile_package_with_execution_points<'a>(
 /// The one compile [`compile_package`] and [`crate::compile_admitted`] both
 /// run: the spine over `bytes`, keeping the checked unit.
 pub(crate) fn recompile_unit<'a>(
-    source: SourceIdentity,
-    package_name: String,
-    path: &str,
-    bytes: &[u8],
+    unit: CompileUnit<'_>,
     packages: impl IntoIterator<Item = &'a [u8]>,
     dependencies: &DependencyInput,
     limits: StageLimits,
     replay_limits: ReplayLimits,
 ) -> Result<Recompiled, ReplayRefusal> {
     recompile_unit_with_execution_points(
-        source,
-        package_name,
-        path,
-        bytes,
+        unit.source,
+        unit.package_name,
+        unit.path,
+        unit.bytes,
         packages,
         dependencies,
         &spine::StateClauseExecutionPoints::new(),
@@ -156,10 +166,12 @@ fn recompile_unit_with_execution_points<'a>(
         .map_err(ReplayRefusal::DependencyInput)?;
     let package = LibraryName::new(package_name).map_err(ReplayRefusal::InvalidPackageName)?;
     run_spine_with_execution_points(
-        &source,
-        &package,
-        path,
-        bytes,
+        SpineUnit {
+            identity: &source,
+            package: &package,
+            path,
+            bytes,
+        },
         &package_input(packages)
             .map_err(|refusal| ReplayRefusal::DomainPackages(Box::new(refusal)))?,
         dependencies,
