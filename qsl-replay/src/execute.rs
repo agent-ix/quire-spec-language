@@ -1433,6 +1433,7 @@ pub(crate) fn run_spine_with_execution_points(
         .into_value();
     let checked = spine::check_with_execution_points(
         &parsed,
+        package.as_str().to_owned(),
         execution_points,
         &models,
         dependencies,
@@ -1523,9 +1524,11 @@ pub(crate) fn recompile(
     let bytes = provided(source)?;
     let packages = domain_packages(request)?;
     // Rule 4: the recompile.
+    let package_name = LibraryName::new(request.package_name())
+        .map_err(ReplayRefusal::InvalidPackageName)?;
     let compiled = run_spine(
         &labels(source),
-        request.package_name(),
+        &package_name,
         source.identity(),
         bytes,
         &packages,
