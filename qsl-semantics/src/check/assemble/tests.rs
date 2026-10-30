@@ -63,6 +63,7 @@ fn assemble_as(
     let unit = build_unit(&parsed).expect("S2 builds the unit");
     PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "test/package".to_owned(),
         unit,
         crate::model::intake::SelectedModels::default(),
         Vec::new(),
@@ -2228,6 +2229,7 @@ fn the_decimal_scale_bound_refuses_with_a_work_budget_limit() {
         let unit = build_unit(&parsed).expect("S2 builds the unit");
         let assembled = PackageDeclarations::assemble_with_limits(
             parsed.source().reference().clone(),
+            "test/package".to_owned(),
             unit,
             crate::model::intake::SelectedModels::default(),
             Vec::new(),
@@ -3163,6 +3165,7 @@ fn a_union_is_bounded_only_by_the_configured_ceilings() {
         let unit = build_unit(&parsed).expect("S2 builds the unit");
         PackageDeclarations::assemble_with_limits(
             parsed.source().reference().clone(),
+            "test/package".to_owned(),
             unit,
             crate::model::intake::SelectedModels::default(),
             Vec::new(),

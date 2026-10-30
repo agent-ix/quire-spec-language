@@ -17,11 +17,10 @@ use quire_exact::{Integer, NodeKey, Rational};
 use super::{AssemblyCause, AssemblyError, AssemblyLimits, TopologyFault};
 use crate::check::lowering::strongly_connected;
 use crate::check::lowering::AdmittedModel;
-use crate::check::node_key::{nominal_key, SourceOwner};
+use crate::check::node_key::SourceOwner;
 use crate::model::domain_package::PackageDimensionRecord;
 use crate::value::semantic_node::{ModelSubject, NodeOwner, NominalRefusal, OwnerSelection};
 use crate::value::unit::{admit_unit_graph, DimensionPreimage, UnitPreimage};
-use qsl_foundation::IdentityLimits;
 use quire_checked::key::DeclarationKey;
 use quire_semantic_value::semantic_node::{InvalidSemanticGraph, SemanticGraphCause};
 use quire_semantic_value::unit::UnitGraph;
@@ -257,13 +256,13 @@ pub(super) struct Imported {
 impl Imported {
     /// The dimensions of `models`, each selected at the matching span of
     /// `selections`.
-    pub(super) fn new(models: &[(AdmittedModel, Span)], identity: IdentityLimits) -> Self {
+    pub(super) fn new(models: &[(AdmittedModel, Span)]) -> Self {
         let mut imported = Self::default();
         for (model, selection) in models {
             let Some(alias) = model.alias() else { continue };
             for dimension in &model.dimensions {
                 let Some((key, map, preimage)) =
-                    package_dimension(model, dimension, identity, &mut Vec::new())
+                    package_dimension(model, dimension, &mut Vec::new())
                 else {
                     continue;
                 };
@@ -303,7 +302,6 @@ impl Imported {
 pub(super) fn package_dimension(
     model: &AdmittedModel,
     dimension: &PackageDimensionRecord,
-    identity: IdentityLimits,
     visiting: &mut Vec<DeclarationKey>,
 ) -> Option<(NodeKey, BTreeMap<NodeKey, Integer>, DimensionPreimage)> {
     if visiting.contains(&dimension.key) {
@@ -317,7 +315,7 @@ pub(super) fn package_dimension(
     let mut map: BTreeMap<NodeKey, Integer> = BTreeMap::new();
     for (term, exponent) in &dimension.terms {
         let named = model.dimensions.iter().find(|d| &d.key == term)?;
-        let (_, term_map, _) = package_dimension(model, named, identity, visiting)?;
+        let (_, term_map, _) = package_dimension(model, named, visiting)?;
         for (base, power) in term_map {
             let entry = map.entry(base).or_insert_with(Integer::zero);
             *entry = entry.add(&power.mul(exponent));
@@ -327,7 +325,7 @@ pub(super) fn package_dimension(
     map.retain(|_, exponent| !exponent.is_zero());
     let terms: Vec<(NodeKey, Integer)> = map.clone().into_iter().collect();
     let preimage = DimensionPreimage::new(owner, vec![dimension.name.clone()], terms).ok()?;
-    let key = nominal_key(&preimage, identity).ok()?;
+    let key = preimage.key().ok()?;
     if dimension.terms.is_empty() {
         map.insert(key.clone(), Integer::one());
     }
@@ -344,7 +342,7 @@ fn provisional(
     scales: &[Option<Rational>],
     offsets: &[Option<Rational>],
     owner: &SourceOwner,
-    limits: AssemblyLimits,
+    package_name: &str,
 ) -> Provisional {
     let mut fixed = Provisional::default();
     for form in dimensions {
@@ -353,9 +351,13 @@ fn provisional(
             fixed.derived.insert(name);
             continue;
         }
-        let key = DimensionPreimage::new(owner.node_owner(), vec![name.clone()], Vec::new())
-            .ok()
-            .and_then(|preimage| nominal_key(&preimage, limits.identity).ok());
+        let key = DimensionPreimage::new(
+            owner.node_owner(package_name),
+            vec![name.clone()],
+            Vec::new(),
+        )
+        .ok()
+        .and_then(|preimage| preimage.key().ok());
         if let Some(key) = key {
             fixed.bases.entry(name).or_insert(key);
         }
@@ -412,6 +414,7 @@ pub(super) fn assemble(
     units: &[UnitForm],
     imported: &Imported,
     owner: &SourceOwner,
+    package_name: &str,
     limits: AssemblyLimits,
 ) -> Result<Assembled, Refused> {
     if dimensions.is_empty() && units.is_empty() {
@@ -506,7 +509,7 @@ pub(super) fn assemble(
         &scales,
         &offsets,
         owner,
-        limits,
+        package_name,
     );
     if !errors.is_empty() {
         return Err(Refused {
@@ -627,7 +630,7 @@ pub(super) fn assemble(
         topology: false,
         provisional: Provisional::default(),
     };
-    let node_owner = owner.node_owner();
+    let node_owner = owner.node_owner(package_name);
     let mut dimension_keys: Vec<Option<NodeKey>> = vec![None; dimensions.len()];
     let mut dimension_nodes = Vec::with_capacity(dimensions.len());
     for derived in [false, true] {
@@ -651,7 +654,9 @@ pub(super) fn assemble(
             let preimage =
                 DimensionPreimage::new(node_owner.clone(), vec![form.name.name.clone()], terms)
                     .map_err(|refusal| fault(refusal.into()))?;
-            let key = nominal_key(&preimage, limits.identity).map_err(fault)?;
+            let key = preimage
+                .key()
+                .map_err(|refusal| fault(super::nominal_key_refusal(refusal)))?;
             dimension_keys[index] = Some(key.clone());
             dimension_nodes.push((preimage, key));
         }
@@ -683,7 +688,9 @@ pub(super) fn assemble(
                 &offsets[index],
             )
             .map_err(|refusal| fault(refusal.into()))?;
-            let key = nominal_key(&preimage, limits.identity).map_err(fault)?;
+            let key = preimage
+                .key()
+                .map_err(|refusal| fault(super::nominal_key_refusal(refusal)))?;
             unit_keys[index] = Some(key.clone());
             // `root = s_t × (s × v + o) + o_t` along the target's edge.
             composed[index] = Some(match unit_edges[index].first() {
@@ -729,8 +736,7 @@ pub(super) fn assemble(
     let owners = OwnerSelection::new(
         std::iter::once(node_owner.clone()).chain(imported.owners.iter().cloned()),
     );
-    let graph =
-        admit_unit_graph(dimension_nodes, unit_nodes, &owners, limits.identity).map_err(fault)?;
+    let graph = admit_unit_graph(dimension_nodes, unit_nodes, &owners).map_err(fault)?;
     let mut spans = BTreeMap::new();
     for (key, span) in dimension_keys.iter().zip(&dimension_spans) {
         if let Some(key) = key {
