@@ -1178,11 +1178,11 @@ every checker of the language.
 - The enum entries rely on `value::enumeration` computing normalized content
   and never minting a key (ADR-011 FB-13), and on lowering
   building an admitted `EnumBinding`'s declaration and member nodes from
-  its admitted content and structural key (FR-092 rule 1, QSL-238's enum half).
+  its admitted content and FR-322 structural id (FR-092, QSL-238's enum half).
 - The dimension and unit hand-off: the assembler ends at an admitted
   `UnitGraph` in `PackageDeclarations::units`, which keeps each unit's,
-  dimension's and dimension equivalence's normalized content and structural
-  keys; FR-094's lowering
+  dimension's and dimension equivalence's normalized content and FR-322 structural
+  ids; FR-094's lowering
   builds their nodes.
 - QSpec FR-142 "Dimension and conversion algebra" (the unit-graph topology
   rules, order and causes), "Dimension equivalence" (the declaration, its

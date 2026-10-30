@@ -282,7 +282,7 @@ not through a graph reference; the v2 spelling of that link is QC-25.
 domain:
 
 - **Declared unit.** The type node is the unit's QSpec nominal node
-  (`scalar_type` / `unit`, FR-092 rule 1). It is the
+  (`scalar_type` / `unit`, FR-092). It is the
   quantity's `semantic_type`, `result_type` and literal `type` directly. No
   other node stands for the quantity type. `check` builds it, and every
   dimension and unit node it names (its dimension, that dimension's base
