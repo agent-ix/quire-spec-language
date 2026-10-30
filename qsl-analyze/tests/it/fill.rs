@@ -287,6 +287,7 @@ pub(crate) fn package_with(profiles: &str, body: &str) -> CheckedPackage {
     let packages = package_input([document.as_slice()]).unwrap();
     let parsed = qsl_cst::parse(
         SourceIdentity::new("agent-ix", "counter", "git", "1"),
+        "counter".to_owned(),
         "counter.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),
@@ -520,19 +521,6 @@ pub(crate) fn v(state: &ModelSimState, object: &str) -> i64 {
     }
 }
 
-/// The compiled `package_id` of the unit with `body`, through FR-098's
-/// compile.
-pub(crate) fn package_id(body: &str) -> qsl_replay::DigestRecord {
-    package_id_with("", body)
-}
-
-/// [`package_id`] with the further header `profiles` lines.
-pub(crate) fn package_id_with(profiles: &str, body: &str) -> qsl_replay::DigestRecord {
-    compiled_with(profiles, body)
-        .expect("the unit compiles")
-        .package_id()
-}
-
 /// FR-098's compile of the unit with `body`.
 pub(crate) fn compiled(
     body: &str,
@@ -548,6 +536,7 @@ fn compiled_with(
     let document = document();
     qsl_replay::compile_package(
         SourceIdentity::new("agent-ix", "counter", "git", "1"),
+        "counter".to_owned(),
         "counter.native",
         unit_text_with(profiles, body).as_bytes(),
         [document.as_slice()],
