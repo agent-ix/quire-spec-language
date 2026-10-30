@@ -109,7 +109,7 @@ use qsl_semantics::model::intake::{
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::value::identity_limit;
 use quire_eval::{CallFailure, Evaluation};
-use quire_exact::{Cancel, Meter, ScalarLimits, Value};
+use quire_exact::{Cancel, Meter, NodeKey, ScalarLimits, Value};
 use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::semantic_node::IdentityRefusal;
 
@@ -819,13 +819,13 @@ pub(crate) fn compose(
     let models = select(&parsed, packages, limits.model, &cancel)
         .map_err(refusal)?
         .into_value();
-    let checked = check(&parsed, &models, dependencies, limits, &cancel)
+    let checked = check(&parsed, "fixture".to_owned(), &models, dependencies, limits, &cancel)
         .map_err(refusal)?
         .into_value();
     let emitted = package(&checked, PackageLimits::default(), &cancel)
         .map_err(refusal)?
         .into_value();
-    record_declarations(&checked.package, &emitted.package().package_id().hex());
+    record_declarations(&checked.package);
     Ok(ComposedUnit {
         emitted: emitted.package().clone(),
         source: checked.source,
@@ -836,16 +836,15 @@ pub(crate) fn compose(
 #[cfg(test)]
 thread_local! {
     /// The `declaration` occurrence of each function of each composed
-    /// package, by `package_id` hex and function name: the key a `function`
-    /// replay request carries for the predicate claim (FR-098).
-    static DECLARATIONS: std::cell::RefCell<BTreeMap<(String, String), qsl_foundation::source::provenance::OccurrenceKey>> =
+    /// package, by the callable's own node key: the key a `function` replay
+    /// request carries for the predicate claim (FR-098).
+    static DECLARATIONS: std::cell::RefCell<BTreeMap<NodeKey, qsl_foundation::source::provenance::OccurrenceKey>> =
         const { std::cell::RefCell::new(BTreeMap::new()) };
 }
 
 /// Remember the `declaration` occurrence of each function of `package`.
 #[cfg(test)]
-fn record_declarations(package: &pkg::CheckedPackage, package_id: &str) {
-    use quire_exact::NodeKey;
+fn record_declarations(package: &pkg::CheckedPackage) {
     use qsl_foundation::source::provenance::OccurrenceKey;
     use quire_exact::{Origin, Role};
     let graph = package.graph();
@@ -858,37 +857,26 @@ fn record_declarations(package: &pkg::CheckedPackage, package_id: &str) {
             DECLARATIONS.with(|declarations| {
                 declarations
                     .borrow_mut()
-                    .insert((package_id.to_owned(), state.name.to_owned()), key);
+                    .insert(callable.identity.clone(), key);
             });
         }
     }
 }
 
-/// Whether a package with this `package_id` hex was [`compose`]d on this
-/// thread.
+/// Whether a callable with this node key was [`compose`]d on this thread.
 #[cfg(test)]
-pub(crate) fn composed_here(package_id: &str) -> bool {
-    DECLARATIONS.with(|declarations| {
-        declarations
-            .borrow()
-            .keys()
-            .any(|(composed, _)| composed == package_id)
-    })
+pub(crate) fn composed_here(callable: &NodeKey) -> bool {
+    DECLARATIONS.with(|declarations| declarations.borrow().contains_key(callable))
 }
 
-/// The `declaration` occurrence of `function` in a package [`compose`]d on
-/// this thread, by its `package_id` hex.
+/// The `declaration` occurrence of the callable `callable` in a package
+/// [`compose`]d on this thread.
 #[cfg(test)]
 pub(crate) fn composed_declaration(
-    package_id: &str,
-    function: &str,
+    callable: &NodeKey,
 ) -> Option<qsl_foundation::source::provenance::OccurrenceKey> {
-    DECLARATIONS.with(|declarations| {
-        declarations
-            .borrow()
-            .get(&(package_id.to_owned(), function.to_owned()))
-            .cloned()
-    })
+    DECLARATIONS.with(|declarations| declarations.borrow().get(callable).cloned())
+}
 }
 
 #[cfg(test)]

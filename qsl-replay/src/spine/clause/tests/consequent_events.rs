@@ -30,15 +30,12 @@ fn request_with_body(body: &str, chain: &[(&str, Option<&str>)]) -> ClauseRunReq
 }
 
 /// Compile the request's own source and return the checked package's
-/// `package_id` with the source-map regions (implication, consequent) of
+/// source-map regions (implication, consequent) of
 /// every `implies` node of the `NoCycle` body, in pre-order.
 fn checked_implications(
     request: &ClauseRunRequest,
     body: &str,
-) -> (
-    qsl_semantics::library::PackageId,
-    Vec<(SourceRegion, SourceRegion)>,
-) {
+) -> Vec<(SourceRegion, SourceRegion)> {
     let text = unit_and_packages().0.replace(NO_CYCLE_BODY, body);
     let composed = compose(
         source(),
@@ -64,7 +61,7 @@ fn checked_implications(
         }
         pending.extend(node.children().into_iter().rev());
     }
-    (composed.emitted.package_id(), found)
+    found
 }
 
 fn produced(report: &ClauseRunReport) -> &[ConsequentSourceEvent] {
@@ -82,17 +79,15 @@ fn states(report: &ClauseRunReport) -> Vec<ConsequentState> {
 /// package source map's, and return the report.
 fn run_checked(body: &str, chain: &[(&str, Option<&str>)]) -> ClauseRunReport {
     let request = request_with_body(body, chain);
-    let (package_id, checked) = checked_implications(&request, body);
+    let checked = checked_implications(&request, body);
     let report = run_clause(request).expect("a well-formed request reports");
     let events = produced(&report);
     assert_eq!(events.len(), checked.len(), "{body}");
     for (position, (event, (implication, consequent))) in events.iter().zip(&checked).enumerate() {
         assert_eq!(event.index, position, "{body}");
-        assert_eq!(event.package_id, package_id, "{body}");
         assert_eq!(&event.implication, implication, "{body}");
         assert_eq!(&event.consequent, consequent, "{body}");
     }
-    assert_eq!(report.package_id, Some(package_id));
     report
 }
 
@@ -169,7 +164,6 @@ fn a_refinement_clause_reports_its_consequent_for_both_verdicts() {
     for report in [&satisfied, &violated] {
         assert_eq!(states(report), [ConsequentState::Entered]);
         assert_eq!(produced(report)[0].index, 0);
-        assert_eq!(Some(produced(report)[0].package_id), report.package_id);
     }
     assert_eq!(
         produced(&satisfied)[0].implication,

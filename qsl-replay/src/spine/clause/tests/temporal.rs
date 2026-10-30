@@ -19,7 +19,6 @@ use crate::spine::{
     ClauseRunReport, OverObject, TemporalTraceRefusal, TemporalVerdict, TraceInput,
 };
 use crate::ReplayRequestWire;
-use qsl_foundation::digest::DigestRecord;
 use quire_exact::Identifier;
 
 const OPERATIONS: &[&str] = &["noop"];
@@ -658,7 +657,6 @@ fn observed_replay_request(
         ReplayOverBinding, ReplaySource, ReplayTarget, TracePosition, Witness, WitnessEnvelope,
         WitnessPacket,
     };
-    use qsl_foundation::digest::{DigestDomain};
 use quire_exact::NodeKey;
     use qsl_foundation::source::provenance::OccurrenceKey;
 
@@ -679,9 +677,6 @@ use quire_exact::NodeKey;
         crate::spine::SpineLimits::default(),
     )
     .expect("the temporal fixture compiles");
-    let package_id = compiled.emitted.package().package_id();
-    let package_record =
-        DigestRecord::mint(DigestDomain::PackageSemanticV2, *package_id.as_bytes());
     let package = compiled.checked.package();
     let clause_node = package
         .graph()
@@ -714,7 +709,6 @@ use quire_exact::NodeKey;
     let mut wire = super::frame_replay::request(
         &source_bytes,
         domain_document,
-        package_record,
         &documents,
         target.clone(),
     );
@@ -767,10 +761,6 @@ use quire_exact::NodeKey;
         occurrence_key: Some(occurrence),
         clause_node: Some(node),
         replay_target: target.into(),
-        package_id: Some((
-            Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
-            package_record.hex(),
-        )),
         profile_selections: Some(Vec::new()),
         run_limits: Some(wire.accounting_limits),
         declared_domains: Some(Vec::new()),
@@ -829,7 +819,6 @@ fn a_bounded_clause_over_a_finite_trace_violates_at_its_position() {
     assert_eq!(outcome(&report), &TemporalVerdict::Violated { at: 0 });
     assert_eq!(report.disposition.category(), Category::Violation);
     assert_eq!(exit_code(&report), 10);
-    assert!(report.package_id.is_some());
 }
 
 /// FR-330-AC-5 / TC-847: the third value makes the integer modulo divisor

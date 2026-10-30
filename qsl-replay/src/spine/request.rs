@@ -427,8 +427,6 @@ pub struct ClauseRequestParts {
     pub observations: BTreeMap<String, SuppliedObservation>,
     /// The wire selection reconstructed against the named documents.
     pub selection: ClauseSelectionPartsKind,
-    /// The caller's expected package identity claim.
-    pub expected_package_id_claim: Option<String>,
     /// Spine stage limits.
     pub limits: SpineLimits,
     /// Observation admission limits.
@@ -821,15 +819,6 @@ fn selection(
 pub fn read_clause_run_request(
     parts: ClauseRequestParts,
 ) -> Result<ClauseRunRequest, ClauseRequestReadError> {
-    if let Some(claim) = &parts.expected_package_id_claim {
-        if claim.len() != 64
-            || !claim
-                .bytes()
-                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-        {
-            return Err(invalid("package_id", "expected 64 lowercase hex digits"));
-        }
-    }
     let selection = selection(parts.selection, &parts.observations)?;
     let mut snapshots = BTreeMap::new();
     let mut invocations = BTreeMap::new();
@@ -852,8 +841,6 @@ pub fn read_clause_run_request(
         snapshots,
         invocations,
         selection,
-        expected_package_id: None,
-        expected_package_id_claim: parts.expected_package_id_claim,
         limits: parts.limits,
         observation_limits: parts.observation_limits,
         accounting: parts.accounting,

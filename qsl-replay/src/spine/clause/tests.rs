@@ -90,11 +90,6 @@ fn compose(
         formatted_limits,
     )
     .unwrap_or_else(|refusal| panic!("{path}: formatted private fixture refuses: {refusal:?}"));
-    assert_eq!(
-        checked.emitted.package_id(),
-        original.emitted.package_id(),
-        "{path}: private fixture formatting changed checked package identity",
-    );
     Ok(original)
 }
 
@@ -750,8 +745,7 @@ fn request(selection: ClauseRunSelection) -> ClauseRunRequest {
         snapshots: BTreeMap::new(),
         invocations: BTreeMap::new(),
         selection,
-        expected_package_id: None,
-        expected_package_id_claim: None,
+        package_name: "fixture".to_owned(),
         limits: SpineLimits::default(),
         observation_limits: ObservationLimits::default(),
         accounting: default_accounting(1_000_000),
@@ -782,26 +776,12 @@ fn no_cycle_request(chain: &[(&str, Option<&str>)]) -> (ClauseRunRequest, Docume
 /// TC-468 (FR-109-AC-1): a `Clause` selection over a `current` snapshot of
 /// an acyclic chain evaluates `NoCycle` to `Completed(Boolean(true))`, and
 /// a cyclic chain to `Completed(Boolean(false))`; both carry the
-/// compiled `package_id` and the usage
+/// usage
 /// (`FR-109-run-a-state-clause-through-the-spine.md:149`).
 #[trace("TC-468", "FR-109-AC-1", "FR-109-AC-6")]
 #[test]
 fn run_clause_evaluates_a_clause_selection() {
     let (request, _label) = no_cycle_request(&[("a", Some("b")), ("b", None)]);
-    // The package `compose` emits for this unit on its own, independent of
-    // the run.
-    let (unit, packages) = unit_and_packages();
-    let expected_package_id = compose(
-        source(),
-        "clause-run.native",
-        unit.as_bytes(),
-        &packages,
-        &DependencyInput::default(),
-        SpineLimits::default(),
-    )
-    .expect("the unit compiles")
-    .emitted
-    .package_id();
     let report = run_clause(request).expect("a well-formed request always reports");
     match report.disposition {
         ClauseDisposition::Evaluate(super::CallOutcome::Completed(super::CallValue::Boolean(
@@ -819,7 +799,6 @@ fn run_clause_evaluates_a_clause_selection() {
     assert_eq!(report.disposition.truth(), Some(true));
     assert_eq!(report.disposition.category().exit_code(), 0);
 
-    assert_eq!(report.package_id, Some(expected_package_id));
     assert!(
         report.usage.evaluation_admissions > 0,
         "the evaluation meter's charges are reported"
@@ -889,7 +868,6 @@ fn running_the_same_request_twice_gives_equal_reports_including_usage() {
     let report_one = run_clause(request_one).expect("a well-formed request always reports");
     let report_two = run_clause(request_two).expect("a well-formed request always reports");
 
-    assert_eq!(report_one.package_id, report_two.package_id);
     assert_eq!(
         report_one.disposition.truth(),
         report_two.disposition.truth()
@@ -1101,36 +1079,6 @@ fn run_clause_reports_not_a_predicate_for_an_integer_function() {
     assert_eq!(report.disposition.stage(), ClauseRunStage::Select);
 }
 
-/// FR-098's stale-package rule (reused verbatim by FR-109): an
-/// `expected_package_id` the recompile disagrees with refuses at stage
-/// `compile`, before any selection.
-#[trace("TC-468", "FR-109-AC-2")]
-#[test]
-fn run_clause_reports_a_stale_package() {
-    let compiled = compiled();
-    let real_id = compiled.emitted.package_id();
-    let bogus_id = qsl_semantics::library::PackageId::of_preimage(b"not-the-real-package");
-    assert_ne!(real_id, bogus_id, "the bogus id must actually differ");
-
-    let mut request = request(ClauseRunSelection::Function {
-        name: "seven".to_owned(),
-        arguments: Vec::new(),
-        snapshot: DocumentRef {
-            authority: "test".to_owned(),
-            identity: "snap".to_owned(),
-            revision_namespace: "ns".to_owned(),
-            revision: "1".to_owned(),
-        },
-    });
-    request.expected_package_id = Some(bogus_id);
-    let report = run_clause(request).unwrap();
-    assert!(matches!(
-        report.disposition,
-        ClauseDisposition::StalePackage { .. }
-    ));
-    assert_eq!(report.disposition.stage(), ClauseRunStage::Compile);
-    assert_eq!(report.disposition.category().exit_code(), 20);
-}
 
 /// [`ClauseRunRefusal::EmptySource`]: an empty unit refuses before any
 /// stage runs. Not one of FR-109's own AC rows (`ClauseRunRefusal` is only
@@ -1162,7 +1110,7 @@ fn run_clause_refuses_an_empty_source() {
 
 /// TC-468 step 2 (FR-109-AC-2): no domain package bytes supplied for the
 /// unit's `model` declaration refuses at stage `compile`,
-/// `missing_import`/`missing-selection`, exit 20, with no `package_id`.
+/// `missing_import`/`missing-selection`, exit 20.
 #[trace("TC-468", "FR-109-AC-2")]
 #[test]
 fn run_clause_reports_missing_import_when_no_package_bytes_are_supplied() {
@@ -1196,7 +1144,6 @@ fn run_clause_reports_missing_import_when_no_package_bytes_are_supplied() {
     }
     assert_eq!(report.disposition.stage(), ClauseRunStage::Compile);
     assert_eq!(report.disposition.category().exit_code(), 20);
-    assert_eq!(report.package_id, None);
 }
 
 /// FR-255-AC-1 (QSL-745): a model-normalization ceiling and the intake byte
@@ -1691,8 +1638,7 @@ fn config_version_request_for(
         snapshots: BTreeMap::new(),
         invocations: BTreeMap::new(),
         selection,
-        expected_package_id: None,
-        expected_package_id_claim: None,
+        package_name: "fixture".to_owned(),
         limits: SpineLimits::default(),
         observation_limits: ObservationLimits::default(),
         accounting: default_accounting(1_000_000),
@@ -1895,38 +1841,6 @@ fn run_clause_reports_missing_name_for_a_clause_selection_naming_a_function() {
     assert_eq!(report.disposition.stage(), ClauseRunStage::Select);
 }
 
-/// TC-468 step 2 (FR-109-AC-2): an `expected_package_id` taken from
-/// compiling a different unit (the `test/model` fixture, not
-/// `test/config-version`) refuses `compile`, `stale_dependency`, naming
-/// both identities.
-#[trace("TC-468", "FR-109-AC-2")]
-#[test]
-fn run_clause_reports_a_stale_package_naming_another_units_package_id() {
-    let other = compiled();
-    let other_id = other.emitted.package_id();
-
-    let mut request = config_version_request(ClauseRunSelection::Function {
-        name: "n".to_owned(),
-        arguments: vec![ClauseArgument {
-            parameter: "a".to_owned(),
-            value: config_version_reference("root"),
-        }],
-        snapshot: config_version_document_ref("current-snap"),
-    });
-    request.expected_package_id = Some(other_id);
-    let report = run_clause(request).unwrap();
-    match &report.disposition {
-        ClauseDisposition::StalePackage {
-            expected, actual, ..
-        } => {
-            assert_eq!(expected, &other_id.hex());
-            assert_ne!(*actual, other_id, "the config-version package differs");
-        }
-        other => panic!("expected StalePackage {{ .. }}, got {other:?}"),
-    }
-    assert_eq!(report.disposition.stage(), ClauseRunStage::Compile);
-    assert_eq!(report.disposition.category().exit_code(), 20);
-}
 
 /// TC-468 step 3 (FR-109-AC-2): a dangling `parent` reference (naming a key
 /// no admitted population holds) refuses `admit`, `refusal`,
@@ -3419,12 +3333,12 @@ mod extracted {
 
     /// TC-468 step 6 (FR-109-AC-6): the healthy-parent request whose unit
     /// is an I3 extracted source compiles the extracted body and reports
-    /// `success` as the program source does, with the body's `package_id`.
+    /// `success` as the program source does.
     #[trace("TC-468", "FR-109-AC-6")]
     #[test]
     fn run_clause_compiles_an_extracted_body() {
         let (mut request, _label) = no_cycle_request(&[("a", Some("b")), ("b", None)]);
-        let (unit, packages) = unit_and_packages();
+        let (unit, _packages) = unit_and_packages();
         let extracted = extracted();
         let body = extracted.map().body();
         assert_eq!(
@@ -3432,31 +3346,17 @@ mod extracted {
             unit.trim_end_matches('\n'),
             "the extracted body is the fenced unit"
         );
-        // The package the extracted body compiles to on its own: the unit
-        // `run_clause` compiled is that body, not the original document.
-        let body_package_id = compose(
-            body.identity().clone(),
-            body.path(),
-            body.text().as_bytes(),
-            &packages,
-            &DependencyInput::default(),
-            SpineLimits::default(),
-        )
-        .expect("the extracted body compiles")
-        .emitted
-        .package_id();
         request.source = ClauseRunSource::Extracted(extracted);
         let report = run_clause(request).expect("a well-formed request always reports");
 
         assert_eq!(report.disposition.stage(), ClauseRunStage::Evaluate);
         assert_eq!(report.disposition.truth(), Some(true));
         assert_eq!(report.disposition.category().exit_code(), 0);
-        assert_eq!(report.package_id, Some(body_package_id));
     }
 
     /// TC-468 step 6 (FR-109-AC-6): a violating-parent I3 request reports
     /// `violation`, and a compile refusal over an I3 source (no domain
-    /// package supplied) reports stage `compile` with no `package_id`.
+    /// package supplied) reports stage `compile`.
     #[trace("TC-468", "FR-109-AC-6")]
     #[test]
     fn run_clause_reports_a_violation_and_a_compile_refusal_over_an_extracted_body() {
@@ -3471,13 +3371,12 @@ mod extracted {
         missing.packages = BTreeMap::new();
         let report = run_clause(missing).expect("a well-formed request always reports");
         assert_eq!(report.disposition.stage(), ClauseRunStage::Compile);
-        assert_eq!(report.package_id, None);
-    }
+        }
 }
 
 /// TC-468 step 6 (FR-109-AC-6): an I3 extracted source whose fence declares
 /// a language other than `ix:native` reports stage `compile`, `refusal`,
-/// `unknown_language`, exit 20, with no `package_id` -- the same refusal the root crate's
+/// `unknown_language`, exit 20, -- the same refusal the root crate's
 /// `mapped::compile` gives that fence.
 #[cfg(feature = "quire-extraction")]
 #[trace("TC-468", "FR-109-AC-6")]
@@ -3506,7 +3405,6 @@ fn run_clause_refuses_an_extracted_fence_that_is_not_ix_native() {
             .exit_code()
     );
     assert_eq!(report.disposition.category().exit_code(), 20);
-    assert_eq!(report.package_id, None);
 }
 
 // ---------------------------------------------------------------------------
@@ -3915,7 +3813,7 @@ fn s4_emitted_frame_node_lists_configversion_in_dependencies() {
 }
 
 /// TC-463 step 2 (FR-105-AC-4): compiling FR-108's unit twice gives
-/// identical bytes and the same `package_id`.
+/// identical bytes.
 #[trace("TC-463", "FR-105-AC-4")]
 #[test]
 fn s4_state_package_emission_is_stable_across_compiles() {
@@ -3926,7 +3824,6 @@ fn s4_state_package_emission_is_stable_across_compiles() {
         second.emitted.bytes(),
         "compiling the same unit twice gives identical bytes"
     );
-    assert_eq!(first.emitted.package_id(), second.emitted.package_id());
 }
 
 // ---------------------------------------------------------------------------
@@ -4652,47 +4549,6 @@ fn s4_renaming_parent_order_changes_no_node_id() {
     );
 }
 
-/// TC-463 (FR-105-AC-4): changing `ParentOrder`'s `<` to `<=` changes its
-/// `state_clause` node id and the `package_id`, and leaves the other two
-/// clauses' node ids unchanged.
-#[trace("TC-463", "FR-105-AC-4", "FR-003-AC-9")]
-#[test]
-fn s4_changing_parent_orders_comparison_changes_its_node_id_and_the_package_id() {
-    let (unit, packages) = config_version_unit_and_packages();
-    let base = compile_config_version_unit(&unit, &packages);
-    let edited_unit = edit_once(
-        &unit,
-        ".versionNumber < self.versionNumber",
-        ".versionNumber <= self.versionNumber",
-    );
-    let edited = compile_config_version_unit(&edited_unit, &packages);
-    let identity = |compiled: &ComposedUnit, name: &str| {
-        compiled
-            .package
-            .graph()
-            .state_clause(name)
-            .unwrap_or_else(|| panic!("{name} is checked"))
-            .identity()
-    };
-
-    assert_ne!(
-        identity(&base, "ParentOrder"),
-        identity(&edited, "ParentOrder"),
-        "ParentOrder's state_clause node id covers its body"
-    );
-    assert_ne!(
-        base.emitted.package_id(),
-        edited.emitted.package_id(),
-        "the package_id covers the state_clause node"
-    );
-    for name in ["NoCycle", "VersionUnchanged"] {
-        assert_eq!(
-            identity(&base, name),
-            identity(&edited, name),
-            "{name}'s node id is untouched by ParentOrder's edit"
-        );
-    }
-}
 
 /// TC-463 (FR-105-AC-4, FR-104-AC-6): adding `ParentOrder2` with
 /// `ParentOrder`'s body adds no node and a second `claim` occurrence
@@ -4932,7 +4788,7 @@ fn s4_pre_clauses_via_config_version_and_sub_share_one_anchor_at_config_version(
 
 /// TC-463 step 1 (FR-105-AC-3): the emitted package reads back through
 /// QSL's I2 reader (`read_import_view`), including its frame step, with its
-/// recomputed `package_id` equal to the emitted one. `ParentOrder`'s
+/// `ParentOrder`'s
 /// cycle-safety predicate lowers to a `quire.op.model.reaches_field`
 /// application, so the read also checks that application's reference edge.
 #[trace("TC-463", "FR-105-AC-3")]
@@ -4943,7 +4799,6 @@ fn s4_state_package_reads_back_through_i2() {
 
     let emission = qsl_package::emit_checked(&first.package)
         .unwrap_or_else(|refusal| panic!("emission refused: {refusal:?}"));
-    assert_eq!(emission.package().package_id(), first.emitted.package_id());
     let library = LibraryName::new(CONFIG_VERSION_PACKAGE_IDENTITY.to_owned()).unwrap();
     let mut admitted = qsl_package::AdmittedPackages::default();
     let view = qsl_package::read_import_view(

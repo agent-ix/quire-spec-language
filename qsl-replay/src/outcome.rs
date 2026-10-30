@@ -29,7 +29,6 @@ use qsl_foundation::diagnostic::{Code, Locus, StageFailure, Staged};
 use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::source::provenance::{OccurrenceKey, RawSourceRef};
 use qsl_foundation::{LocatedSpan, RequestIndex};
-use qsl_semantics::library::PackageId;
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_exact::{CancelCause, NodeKey};
 use quire_semantic_value::catalog::Category;
@@ -360,39 +359,17 @@ pub struct ItemCause {
     recompiled: Option<StaleIdentityWire>,
 }
 
-/// A `quire.package.semantic/v2` identity on FR-331's stale-dependency cause.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-struct PackageIdentity {
-    domain: &'static str,
-    algorithm: &'static str,
-    digest: String,
-}
-
-impl From<&DigestRecord> for PackageIdentity {
-    fn from(record: &DigestRecord) -> Self {
-        Self {
-            domain: record.domain().as_str(),
-            algorithm: "sha256",
-            digest: record.hex(),
-        }
-    }
-}
-
 /// A stale identity on the terminal wire. The explicit discriminator keeps
-/// package IDs and refinement names distinct while sharing one cause shape.
+/// the identity kinds distinct while sharing one cause shape.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 enum StaleIdentityWire {
-    Package { package_id: PackageIdentity },
     Refinement { name: String },
 }
 
 impl From<&StaleIdentity> for StaleIdentityWire {
     fn from(identity: &StaleIdentity) -> Self {
         match identity {
-            StaleIdentity::Package(package_id) => Self::Package {
-                package_id: package_id.into(),
-            },
             StaleIdentity::Refinement(name) => Self::Refinement { name: name.clone() },
         }
     }
@@ -1051,8 +1028,6 @@ impl OutcomeDiagnostic {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ArtifactKind {
-    /// An emitted package's `package_id`.
-    PackageId,
     /// A generated artifact's content identity.
     Generated,
 }
@@ -1065,14 +1040,6 @@ pub struct OutcomeArtifact {
 }
 
 impl OutcomeArtifact {
-    /// An emitted package's identity.
-    pub fn package_id(id: &PackageId) -> Self {
-        Self {
-            kind: ArtifactKind::PackageId,
-            id: id.hex(),
-        }
-    }
-
     /// A generated artifact's content identity.
     pub fn generated(digest: &DigestRecord) -> Self {
         Self {
@@ -1298,18 +1265,14 @@ impl OutcomeDocument {
         }
     }
 
-    /// The document of a `package` outcome: success at S4 holds the
-    /// emitted package's `package_id`.
+    /// The document of a `package` outcome: success at S4.
     pub fn from_package(result: &Result<Staged<EmittedUnit>, FrontEndFailure>) -> Self {
         match result {
-            Ok(staged) => Self::new(
+            Ok(_) => Self::new(
                 Operation::Package,
                 Some(OutcomeStage::S4),
                 Category::Success,
-            )
-            .with_artifacts(vec![OutcomeArtifact::package_id(
-                &staged.value().package().package_id(),
-            )]),
+            ),
             Err(failure) => Self::from_failure(Operation::Package, failure),
         }
     }
@@ -1446,14 +1409,13 @@ impl OutcomeDocument {
     }
 
     /// The document of a `run`: a call that ran is [`Self::from_call`]'s
-    /// document plus the compiled package's `package_id`; a refusal is an
+    /// document; a refusal is an
     /// `execute` document at the stage it reached with the refusal's
     /// category and one diagnostic; a cancel is incomplete; a fault is
     /// internal failure with its catalog code.
-    pub fn from_run(result: &Result<(PackageId, CallOutcome), Box<RunRefusal>>) -> Self {
+    pub fn from_run(result: &Result<CallOutcome, Box<RunRefusal>>) -> Self {
         match result {
-            Ok((package_id, outcome)) => Self::from_call(outcome)
-                .with_artifacts(vec![OutcomeArtifact::package_id(package_id)]),
+            Ok(outcome) => Self::from_call(outcome),
             Err(refusal) => match refusal.as_ref() {
                 RunRefusal::Compile(compile) => Self::new(
                     Operation::Execute,
@@ -1540,7 +1502,6 @@ fn replay_stage(refusal: &ReplayRefusal) -> Option<OutcomeStage> {
         | ReplayRefusal::DependencySelections(_)
         | ReplayRefusal::DependencyInput(_)
         | ReplayRefusal::DependencyIdentityMismatch { .. }
-        | ReplayRefusal::PackageIdMismatch { .. }
         | ReplayRefusal::UnknownFunction { .. }
         | ReplayRefusal::ClaimOccurrence { .. }
         | ReplayRefusal::UnknownOperation { .. }
@@ -1594,7 +1555,6 @@ mod tests {
     use std::collections::BTreeMap;
 
     use ix_trace_rs::trace;
-    use qsl_foundation::digest::DigestDomain;
     use qsl_foundation::{Position, SourceIdentity};
     use qsl_semantics::library::LibraryName;
     use qsl_semantics::model::object_environment::ObjectEnvironment;
@@ -1703,14 +1663,6 @@ mod tests {
             })
         );
         let emitted = emitted.expect("the fixture checks");
-        let id = emitted
-            .as_ref()
-            .expect("the fixture packages")
-            .value()
-            .package()
-            .package_id()
-            .hex();
-        assert_eq!(id.len(), 64);
         assert_eq!(
             json_of(&OutcomeDocument::from_package(&emitted)),
             json!({
@@ -1720,7 +1672,7 @@ mod tests {
                 "category": "success",
                 "items": [],
                 "diagnostics": [],
-                "artifacts": [{"kind": "package_id", "id": id}],
+                "artifacts": [],
                 "result": null,
             })
         );
@@ -2273,8 +2225,6 @@ mod tests {
             proved: Verdict::from_category(Category::Success),
             replayed: Verdict::from_category(Category::Violation),
         };
-        let requested = DigestRecord::mint(DigestDomain::PackageSemanticV2, [1; 32]);
-        let recompiled = DigestRecord::mint(DigestDomain::PackageSemanticV2, [2; 32]);
         let cases = [
             (
                 TerminalValue::Declined {
@@ -2316,21 +2266,6 @@ mod tests {
             ),
             (
                 TerminalValue::Inconclusive(InconclusiveCause::StaleDependency {
-                    requested: StaleIdentity::Package(requested),
-                    recompiled: StaleIdentity::Package(recompiled),
-                }),
-                json!({
-                    "result": "inconclusive",
-                    "cause": {
-                        "kind": "stale-dependency",
-                        "requested": {"kind": "package", "package_id": {"domain": "quire.package.semantic/v2", "algorithm": "sha256", "digest": requested.hex()}},
-                        "recompiled": {"kind": "package", "package_id": {"domain": "quire.package.semantic/v2", "algorithm": "sha256", "digest": recompiled.hex()}},
-                    },
-                    "category": "inconclusive",
-                }),
-            ),
-            (
-                TerminalValue::Inconclusive(InconclusiveCause::StaleDependency {
                     requested: StaleIdentity::Refinement("OtherRefinement".to_owned()),
                     recompiled: StaleIdentity::Refinement("CasRefinesCounter".to_owned()),
                 }),
@@ -2364,7 +2299,6 @@ mod tests {
                     crate::scalar::ScalarAgreement::new(
                         crate::scalar::ScalarClaim::Function(Box::new(crate::ValueIdentity {
                             obligation: crate::identity::ObligationIdentity::from_digest([1; 32]),
-                            package_id: (None, String::new()),
                             function: Some(
                                 QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap(),
                             ),
@@ -2754,28 +2688,9 @@ mod tests {
                 "result": null,
             })
         );
-        let mismatch = ReplayRefusal::DependencyIdentityMismatch {
-            identity: LibraryName::new("test/geometry").expect("a library name"),
-            requested: DigestRecord::mint(DigestDomain::PackageSemanticV2, [1; 32]),
-            recompiled: PackageId::of_preimage(b"other"),
-        };
-        let stale = json_of(&OutcomeDocument::from_replay(&Err(mismatch)));
-        assert_eq!(stale["last_stage"], "S8");
-        assert_eq!(stale["category"], "refusal");
-        assert_eq!(stale["diagnostics"][0]["code"], "stale_dependency");
-        assert_eq!(stale["diagnostics"][0]["cause"], "content-mismatch");
-        let changed = ReplayRefusal::PackageIdMismatch {
-            requested: DigestRecord::mint(DigestDomain::PackageSemanticV2, [1; 32]),
-            recompiled: PackageId::of_preimage(b"other"),
-        };
-        let changed = json_of(&OutcomeDocument::from_replay(&Err(changed)));
-        assert_eq!(changed["last_stage"], "S8");
-        assert_eq!(changed["diagnostics"][0]["code"], "stale_dependency");
-        assert_eq!(changed["diagnostics"][0]["cause"], "content-mismatch");
         let unknown = ReplayRefusal::UnknownFunction {
             selection: QualifiedName::new(vec![Identifier::new("seven").expect("an identifier")])
                 .expect("a qualified name"),
-            package: PackageId::of_preimage(b"geometry"),
         };
         let unknown = json_of(&OutcomeDocument::from_replay(&Err(unknown)));
         assert_eq!(unknown["last_stage"], "S8");
@@ -2792,9 +2707,10 @@ mod tests {
         text: &str,
         function: &str,
         cancel: &Cancel,
-    ) -> Result<(PackageId, CallOutcome), Box<RunRefusal>> {
+    ) -> Result<CallOutcome, Box<RunRefusal>> {
         run(
             SourceIdentity::new("agent-ix", "test:outcome", "fixture", "fixture:1"),
+            "fixture".to_owned(),
             "unit.native",
             text.as_bytes(),
             &BTreeMap::new(),
@@ -2815,9 +2731,9 @@ mod tests {
     #[trace("TC-770", "FR-286-AC-6")]
     #[test]
     fn from_run_documents_every_arm() {
-        // Completed: the call's document plus the package's `package_id`.
+        // Completed: the call's document.
         let completed = run_source(FIXTURE, "seven", &Cancel::new());
-        let (package_id, call_outcome) = completed.as_ref().expect("seven runs");
+        let call_outcome = completed.as_ref().expect("seven runs");
         let document = json_of(&OutcomeDocument::from_run(&completed));
         assert_eq!(
             document,
@@ -2828,7 +2744,7 @@ mod tests {
                 "category": "success",
                 "items": [],
                 "diagnostics": [],
-                "artifacts": [{"kind": "package_id", "id": package_id.hex()}],
+                "artifacts": [],
                 "result": {"kind": "completed", "value": {"kind": "integer", "decimal": "7"}},
             })
         );
@@ -2837,29 +2753,22 @@ mod tests {
             json_of(&OutcomeDocument::from_call(call_outcome))["result"]
         );
 
-        // Undefined: the call's undefined result, still with the artifact.
-        let undefined = Ok((
-            *package_id,
-            CallOutcome::Undefined {
-                reason: "division-by-zero",
-            },
-        ));
+        // Undefined: the call's undefined result.
+        let undefined = Ok(CallOutcome::Undefined {
+            reason: "division-by-zero",
+        });
         let document = json_of(&OutcomeDocument::from_run(&undefined));
         assert_eq!(document["category"], "undefined");
         assert_eq!(
             document["result"],
             json!({"kind": "undefined", "reason": "division-by-zero"})
         );
-        assert_eq!(document["artifacts"].as_array().map(Vec::len), Some(1));
 
         // Refused call: its catalog code and cause as one diagnostic.
-        let refused = Ok((
-            *package_id,
-            CallOutcome::Refused(CallRefusal::Family {
-                code: CatalogCode::new("ill_typed", "type-mismatch"),
-                location: None,
-            }),
-        ));
+        let refused = Ok(CallOutcome::Refused(CallRefusal::Family {
+            code: CatalogCode::new("ill_typed", "type-mismatch"),
+            location: None,
+        }));
         let document = json_of(&OutcomeDocument::from_run(&refused));
         assert_eq!(document["category"], "refusal");
         assert_eq!(document["diagnostics"][0]["code"], "ill_typed");

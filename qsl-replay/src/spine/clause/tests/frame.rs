@@ -141,22 +141,7 @@ fn admit_record(report: &super::super::ClauseRunReport) -> &AdmissionRecord {
 #[test]
 fn a_frame_respecting_invocation_succeeds() {
     let input = changed_version();
-    // The package `compose` emits for the request's unit on its own,
-    // independent of the run.
-    let (unit, packages) = config_version_unit_and_packages();
-    let expected_package_id = compose(
-        source(),
-        "clause-run-config-version.native",
-        unit.as_bytes(),
-        &packages,
-        &DependencyInput::default(),
-        SpineLimits::default(),
-    )
-    .expect("the ConfigVersion unit compiles")
-    .emitted
-    .package_id();
     let report = run(input);
-    assert_eq!(report.package_id, Some(expected_package_id));
     assert!(
         matches!(
             report.disposition,
@@ -761,22 +746,6 @@ fn a_disagreeing_declared_delta_refuses_at_evaluate() {
     assert_eq!(report.disposition.category().exit_code(), 20);
 }
 
-/// TC-514 step 3 (FR-115-AC-3): an expected `package_id` from another unit
-/// refuses `compile`, `stale_dependency`, naming both.
-#[trace("TC-514", "FR-115-AC-3")]
-#[test]
-fn a_stale_package_refuses_before_evaluation() {
-    let other = compiled().emitted.package_id();
-    let mut input = changed_version();
-    input.request.expected_package_id = Some(other);
-    let report = run(input);
-    let ClauseDisposition::StalePackage { expected, actual } = &report.disposition else {
-        panic!("expected StalePackage, got {:?}", report.disposition);
-    };
-    assert_eq!(expected, &other.hex());
-    assert_ne!(*actual, other);
-    assert_eq!(report.disposition.stage(), ClauseRunStage::Compile);
-}
 
 /// TC-514 step 3 (FR-115-AC-3): labels, model and
 /// operation each refuse at `admit`, and none reaches `evaluate`.

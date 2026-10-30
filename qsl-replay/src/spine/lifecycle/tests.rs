@@ -90,7 +90,7 @@ fn chain_of(
     let cancel = Cancel::new();
     let parsed = parse(&request(bytes), limits.source, &cancel)?.into_value();
     let models = select(&parsed, packages, limits.model, &cancel)?.into_value();
-    let checked = check(&parsed, &models, dependencies, limits, &cancel)?.into_value();
+    let checked = check(&parsed, "fixture".to_owned(), &models, dependencies, limits, &cancel)?.into_value();
     let emitted = package(&checked, PackageLimits::default(), &cancel)?.into_value();
     Ok(Chain {
         parsed,
@@ -519,7 +519,7 @@ fn assert_check_cancelled_at(
 ) {
     let gate = gated(Some(at));
     let outcome = gate.run(cause, |cancel| {
-        check(parsed, models, &DependencyInput::default(), *limits, cancel)
+        check(parsed, "fixture".to_owned(), models, &DependencyInput::default(), *limits, cancel)
     });
     match outcome {
         Err(StageFailure::Cancelled(seen)) => assert_eq!(seen, cause),
@@ -771,6 +771,7 @@ fn a_cancel_tripped_mid_run_is_cancelled_with_its_cause_never_a_fault() {
     let run_under = |cancel: &Cancel| {
         crate::spine::run(
             identity(),
+            "fixture".to_owned(),
             "unit.native",
             FIXTURE.as_bytes(),
             &BTreeMap::new(),
@@ -792,6 +793,7 @@ fn a_cancel_tripped_mid_run_is_cancelled_with_its_cause_never_a_fault() {
         let models = select(&parsed, &BTreeMap::new(), limits.model, cancel)?.into_value();
         let checked = check(
             &parsed,
+            "fixture".to_owned(),
             &models,
             &DependencyInput::default(),
             limits,
@@ -955,7 +957,7 @@ fn each_operation_refuses_at_the_stage_that_owns_the_defect() {
         .expect("a unit with no model selects nothing")
         .into_value();
     let refused = refusal(
-        check(&parsed, &models, &DependencyInput::default(), limits, &live)
+        check(&parsed, "fixture".to_owned(), &models, &DependencyInput::default(), limits, &live)
             .expect_err("the unit is ill typed"),
     );
     assert_eq!(refused.code().as_str(), "ill_typed");
@@ -1034,6 +1036,7 @@ fn each_operation_reports_the_work_of_its_own_stages() {
 
     let checked = check(
         &parsed,
+        "fixture".to_owned(),
         &models,
         &DependencyInput::default(),
         limits,
@@ -1418,57 +1421,6 @@ fn long_body_chain() -> Chain {
     .unwrap_or_else(|failure| panic!("the unit compiles: {failure:?}"))
 }
 
-/// FR-255-AC-1 for `identity.input_bytes` through the compile. The unit has
-/// no record, enum or unit, so no declared type handle or nominal preimage is
-/// encoded at assembly: every identity encoding is a node preimage lowering
-/// keys under the limit `AssemblyLimits.identity` carries into the checked
-/// package. The smallest `identity.input_bytes` at which `check` admits it is
-/// then the largest node preimage the checked package holds (well past a
-/// declared type handle's size); one below it `check` stops with
-/// `LimitExceeded` naming `identity.input_bytes` and that bound. It fails if
-/// assembly stops carrying the caller's limit into lowering (the search
-/// finds no refusal at all), or if the spine stops mapping the refusal.
-#[trace("TC-720", "FR-255-AC-1")]
-#[test]
-fn check_names_the_identity_limit_it_reached() {
-    let chain = long_body_chain();
-    let largest = chain
-        .checked
-        .package
-        .graph()
-        .semantic_graph()
-        .nodes()
-        .map(|node| u64::try_from(node.preimage().len()).expect("a small preimage"))
-        .max()
-        .expect("the checked package holds nodes");
-    // A declared type handle encodes to about 123 bytes.
-    assert!(
-        largest > 200,
-        "the fixture's largest node preimage ({largest}) must exceed a handle's size"
-    );
-    let run = |value: u64| {
-        let mut limits = SpineLimits::default();
-        limits.assembly.identity.input_bytes = value;
-        reached(check(
-            &chain.parsed,
-            &chain.models,
-            &DependencyInput::default(),
-            limits,
-            &Cancel::new(),
-        ))
-    };
-    let counter = assert_field(
-        Setting::IdentityInputBytes,
-        FoundationKind::InputBytes,
-        1_000_000,
-        run,
-    );
-    assert_eq!(
-        counter, largest,
-        "the identity limit the check reaches is the largest node preimage"
-    );
-}
-
 /// FR-255-AC-4 at both entry points, stage-driven: an input that reaches a
 /// limit stops with that limit's setting, and the same input passes once the
 /// setting is raised, through the settings operation's operand and through a
@@ -1662,7 +1614,7 @@ fn check_names_the_dependency_limit_field_it_reached() {
                 &mut limits,
                 usize::try_from(value).expect("a test bound fits usize"),
             );
-            reached(check(parsed, models, dependencies, limits, &Cancel::new()))
+            reached(check(parsed, "fixture".to_owned(), models, dependencies, limits, &Cancel::new()))
         }
     };
     assert_field(

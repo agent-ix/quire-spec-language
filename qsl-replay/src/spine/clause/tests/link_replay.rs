@@ -4,7 +4,7 @@
 //! `{Q, p1}`, `created []`, `deleted []`; housing `p1`-`t1`, `p2`-`t1` in the
 //! pre snapshot and `p1`-`t2`, `p2`-`t1` in the post snapshot.
 
-use super::frame_replay::{package_digest, packet, request, unit_for, wire, Unit};
+use super::frame_replay::{packet, request, unit_for, wire, Unit};
 use super::*;
 use crate::{
     replay_frame, ClaimedChange, DisagreementCause, FrameCounterexample, FrameOperation,
@@ -266,17 +266,14 @@ fn replay_rehome(modifies: &[String], change: ClaimedChange) -> FrameReplayResul
         invocation,
         change,
     };
-    let package_id = package_digest(unit.compiled.emitted.package_id());
     let wire_request = request(
         &unit.bytes,
         &unit.domain_document,
-        package_id,
         &documents,
         target.clone(),
     );
     let packet = packet(
         &unit.bytes,
-        package_id,
         super::frame_replay::witness_source(),
         frame_node,
         occurrence,

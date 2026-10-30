@@ -9,7 +9,7 @@
 //! domains are in `witness_member`.
 
 use super::frame::object;
-use super::frame_replay::{package_digest, packet, request, unit_for, witness_source, Unit};
+use super::frame_replay::{packet, request, unit_for, witness_source, Unit};
 use super::*;
 use crate::execute::{separate, settle_separation, stopped_reason, SeparationOutcome};
 use crate::proof_result::SettlementBasis;
@@ -360,8 +360,6 @@ fn native_result_two_member_inventory_refuses_independent_edits() {
     else {
         panic!("clause result")
     };
-    let expected_id = report.package_id.as_ref().map(|id| id.hex());
-    assert_eq!(read.package_id(), expected_id.as_deref());
     assert_eq!(read.stage(), "evaluate");
     assert_eq!(read.category(), "violation");
     assert_eq!(read.truth(), Some(false));
@@ -386,7 +384,6 @@ fn native_result_two_member_inventory_refuses_independent_edits() {
 
     let members = [
         ("/format", "format"),
-        ("/package_id", "package_id"),
         ("/disposition", "disposition"),
         ("/usage", "usage"),
         ("/basis", "basis"),
@@ -759,7 +756,6 @@ fn native_result_two_retains_selection_refusal_record() {
 #[test]
 fn native_result_two_retains_compile_limit_fields() {
     let mut report = run("AllBelow", Snapshot::Low, "child");
-    report.package_id = None;
     report.disposition = ClauseDisposition::Compile(Box::new(crate::spine::CompileRefusal::Limit(
         qsl_foundation::diagnostic::LimitExceeded::new(
             qsl_foundation::Setting::S3Nodes,
@@ -1390,14 +1386,12 @@ fn replay_case(
     Result<WitnessEnvelope<StateClauseCounterexample>, crate::WitnessRefusal>,
 ) {
     let (label, bytes) = snapshot.document();
-    let package_id = package_digest(unit.compiled.emitted.package_id());
     let target = crate::ReplayTarget::state_clause(
         crate::QualifiedName::new(vec![quire_exact::Identifier::new(clause).unwrap()]).unwrap(),
     );
     let wire = request(
         &unit.bytes,
         &unit.domain_document,
-        package_id,
         &[(label.clone(), bytes)],
         target.clone(),
     );
@@ -1410,8 +1404,7 @@ fn replay_case(
     let envelope = WitnessEnvelope::reconstruct(
         packet(
             &unit.bytes,
-            package_id,
-            source,
+                source,
             node,
             OccurrenceKey::new(node, declaration.claim().clone()),
             payload,
@@ -2207,6 +2200,7 @@ fn metre_package() -> (qsl_package::CheckedPackage, quire_exact::UnitId) {
         &OwnerSelection::new([NodeOwner::Definition(OwnerSubject {
             authority: "agent-ix".into(),
             identity: "example".into(),
+            package_name: "example".into(),
         })]),
         qsl_foundation::IdentityLimits::default(),
     )
@@ -2216,6 +2210,7 @@ fn metre_package() -> (qsl_package::CheckedPackage, quire_exact::UnitId) {
         types: quire_semantic_value::declaration::TypeEnvironment::default().with_units(units),
         ..qsl_semantics::check::PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture",
             qsl_foundation::IdentityLimits::default(),
         )
     }

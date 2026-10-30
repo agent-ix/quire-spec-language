@@ -12,7 +12,7 @@ use quire_contract_model::{
 use quire_exact::{Cancel, Integer, IntegerInterval, Origin, Role, Value};
 
 use super::*;
-use crate::execute::scalar_site::{check_operands, equality_operator};
+use crate::execute::scalar_site::equality_operator;
 use crate::scalar::{ScalarOperand, ScalarOperation};
 use crate::spine::call::tests::{lookup_driver_context, lookup_driver_fixture};
 use crate::spine::{
@@ -63,7 +63,7 @@ fn compile_with(
     let models = select_models(&parsed, &packages, limits.model, &cancel)
         .expect("the models select")
         .into_value();
-    let checked = check(&parsed, &models, &dependencies, limits, &cancel)
+    let checked = check(&parsed, "fixture".to_owned(), &models, &dependencies, limits, &cancel)
         .expect("the unit checks")
         .into_value();
     let emitted = emit(&checked, Default::default(), &cancel)
@@ -237,6 +237,7 @@ const SUB: &str = "function sub using v(a: Int[0, 9], b: Int[0, 9]): Int[-9, 9] 
 fn run_refusal(unit: &Unit, call: &Call, objects: &ObjectEnvironment) -> Box<RunRefusal> {
     run(
         identity(),
+        "fixture".to_owned(),
         "bind.native",
         unit.source.as_bytes(),
         &unit.packages,
@@ -246,7 +247,6 @@ fn run_refusal(unit: &Unit, call: &Call, objects: &ObjectEnvironment) -> Box<Run
         objects,
         &Cancel::new(),
     )
-    .map(|(_, outcome)| outcome)
     .expect_err("run refuses the call")
 }
 
@@ -335,14 +335,6 @@ fn tc_1053_step_2_literals_repeats_and_unary_operands() {
     let literal = &plus.operands()[1];
     assert_eq!(literal.range, bound_range(1, 1));
     assert_eq!(literal.source, OperandSource::InlineLiteral);
-    let graph = unit.checked.package().graph().semantic_graph();
-    assert!(
-        graph.nodes().all(|node| {
-            serde_json::from_slice::<serde_json::Value>(node.preimage())
-                .map_or(true, |json| json["body"]["value"] != "1")
-        }),
-        "a source integer literal operand has no node of its own"
-    );
 
     let occurrence = the_application(&unit, "lead", ScalarOperator::Add);
     assert_eq!(
@@ -793,6 +785,7 @@ fn tc_1053_step_7_binding_does_not_evaluate() {
     starved.accounting = default_accounting(0);
     let evaluated = run(
         identity(),
+        "fixture".to_owned(),
         "bind.native",
         unit.source.as_bytes(),
         &BTreeMap::new(),
@@ -802,74 +795,12 @@ fn tc_1053_step_7_binding_does_not_evaluate() {
         &ObjectEnvironment::default(),
         &Cancel::new(),
     )
-    .unwrap()
-    .1;
+    .unwrap();
     let CallOutcome::Incomplete(incomplete) = evaluated else {
         panic!("run is incomplete at work_units, got {evaluated:?}");
     };
     assert_eq!(incomplete.limits_field(), "work_units");
     assert_eq!(bound(&unit, &starved, &occurrence).values(), [4, 1]);
-}
-
-/// FR-367-AC-9: the binding is FR-357's operator-level operand list, and its
-/// identities are the ones FR-357 checks against the application.
-#[trace("TC-1053", "FR-367-AC-9")]
-#[test]
-fn tc_1053_step_8_binding_is_the_operator_claims_operand_list() {
-    let unit = compile(
-        "function plus using v(a: Int[0, 9]): Int[1, 10] pure { a + 1 }\n\
-         function sub using v(a: Int[0, 9], b: Int[0, 9]): Int[-9, 9] pure { a - b }",
-    );
-    let graph = unit.checked.package().graph().semantic_graph();
-    let claimed = |function: &str, operator, request: Call| {
-        let occurrence = the_application(&unit, function, operator);
-        let bound = bound(&unit, &request, &occurrence);
-        let operands: Vec<ScalarOperand> = bound
-            .operands()
-            .iter()
-            .map(|operand| {
-                let range = IntegerInterval::spanning(
-                    Integer::from(operand.range.lower),
-                    Integer::from(operand.range.upper),
-                );
-                match operand.source {
-                    OperandSource::InlineLiteral => ScalarOperand::literal(operand.value),
-                    OperandSource::Argument { node, .. } => {
-                        ScalarOperand::graph_child(operand.value, range, node)
-                    }
-                }
-            })
-            .collect();
-        let preimage = {
-            let node = graph.node(&occurrence.application);
-            serde_json::from_slice::<serde_json::Value>(node.unwrap().preimage()).unwrap()
-        };
-        (bound, operands, preimage, occurrence)
-    };
-
-    let (bound, mut operands, preimage, occurrence) = claimed(
-        "sub",
-        ScalarOperator::Subtract,
-        call("sub", vec![arg("b", 2), arg("a", 7)]),
-    );
-    let (right, left) = (operands.pop().unwrap(), operands.pop().unwrap());
-    assert_eq!(
-        [left.value, right.value],
-        <[i64; 2]>::try_from(bound.values()).unwrap()
-    );
-    let operation = ScalarOperation::Subtract { left, right };
-    assert!(check_operands(&preimage, occurrence.application, &operation).is_ok());
-
-    let (bound, mut operands, preimage, occurrence) =
-        claimed("plus", ScalarOperator::Add, call("plus", vec![arg("a", 4)]));
-    let (right, left) = (operands.pop().unwrap(), operands.pop().unwrap());
-    assert!(matches!(
-        right.identity,
-        crate::scalar::OperandIdentity::InlineLiteral
-    ));
-    let operation = ScalarOperation::Add { left, right };
-    assert!(check_operands(&preimage, occurrence.application, &operation).is_ok());
-    assert_eq!(bound.values(), [4, 1]);
 }
 
 /// FR-367-AC-10: a `let` binder operand is a parameter node no argument
@@ -990,6 +921,7 @@ fn tc_1053_step_1_a_unit_importing_a_library_binds() {
     assert_eq!(bound(&unit, &request, &occurrence).values(), [4, 1]);
     let completed = run(
         identity(),
+        "fixture".to_owned(),
         "bind.native",
         unit.source.as_bytes(),
         &unit.packages,

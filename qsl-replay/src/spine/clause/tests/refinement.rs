@@ -598,7 +598,6 @@ fn dispositions_the_gate_never_produces_are_tool_failures() {
     ];
     for disposition in dispositions {
         let report = ClauseRunReport {
-            package_id: None,
             usage: Default::default(),
             basis: crate::proof_result::SettlementBasis::Unavailable,
             witness: None,
@@ -759,7 +758,6 @@ fn a_check_type_admission_limit_is_incomplete_naming_the_limit() {
 #[test]
 fn a_clause_run_compile_type_admission_limit_names_the_limit() {
     let report = ClauseRunReport {
-        package_id: None,
         usage: Default::default(),
         basis: crate::proof_result::SettlementBasis::Unavailable,
         witness: None,
@@ -880,23 +878,6 @@ fn an_incomplete_population_is_incomplete_at_admit() {
     assert!(classified.classification.limits().is_empty());
 }
 
-/// FR-342-AC-4: a stale package is a `tool failure` at `compile`.
-#[trace("TC-862", "FR-342-AC-4")]
-#[test]
-fn a_stale_package_is_a_tool_failure_at_compile() {
-    let mut request = config_version_request(ClauseRunSelection::Function {
-        name: "n".to_owned(),
-        arguments: Vec::new(),
-        snapshot: config_version_document_ref("current-snap"),
-    });
-    request.expected_package_id = Some(compiled().emitted.package_id());
-    let report = run_clause(request).unwrap();
-    assert_run(
-        &report,
-        RefinementClass::ToolFailure,
-        ClauseRunStage::Compile,
-    );
-}
 
 /// FR-342: a cancelled argument refusal reads as the table's `refused`,
 /// carrying the `cancelled` code.
@@ -904,7 +885,6 @@ fn a_stale_package_is_a_tool_failure_at_compile() {
 #[test]
 fn a_cancelled_argument_refusal_is_refused_at_admit() {
     let report = ClauseRunReport {
-        package_id: None,
         usage: Default::default(),
         basis: crate::proof_result::SettlementBasis::Unavailable,
         witness: None,

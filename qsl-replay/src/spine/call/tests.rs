@@ -42,6 +42,7 @@ fn call(function: &str, arguments: Vec<CallArgument>) -> Call {
 fn run_fixture(bytes: &str, call: &Call) -> Result<CallOutcome, Box<RunRefusal>> {
     run(
         source(),
+        "fixture".to_owned(),
         "spine-run.native",
         bytes.as_bytes(),
         &BTreeMap::new(),
@@ -51,7 +52,6 @@ fn run_fixture(bytes: &str, call: &Call) -> Result<CallOutcome, Box<RunRefusal>>
         &qsl_semantics::model::object_environment::ObjectEnvironment::default(),
         &Cancel::new(),
     )
-    .map(|(_, outcome)| outcome)
 }
 
 pub(in crate::spine) struct LookupDriverFixture {
@@ -138,6 +138,7 @@ pub(in crate::spine) fn lookup_driver_context(
     .into_value();
     let checked = crate::spine::check(
         &parsed,
+        "fixture".to_owned(),
         &models,
         &DependencyInput::default(),
         SpineLimits::default(),
@@ -234,6 +235,7 @@ fn tc_792_source_compiled_lookup_driver_preserves_present_and_absent_paths() {
     let invoke = |reference| {
         run(
             source(),
+            "fixture".to_owned(),
             "tc-792-lookup.native",
             fixture.source.as_bytes(),
             &fixture.packages,
@@ -257,7 +259,6 @@ fn tc_792_source_compiled_lookup_driver_preserves_present_and_absent_paths() {
             &objects,
             &Cancel::new(),
         )
-        .map(|(_, outcome)| outcome)
     };
     let present_outcome = invoke(present.clone()).expect("present lookup runs");
     assert!(matches!(
@@ -284,6 +285,7 @@ fn tc_792_source_driver_admits_unused_parameters_before_body_evaluation() {
     );
     let refusal = run(
         source(),
+        "fixture".to_owned(),
         "tc-792-lookup.native",
         fixture.source.as_bytes(),
         &fixture.packages,
@@ -322,6 +324,7 @@ fn tc_792_source_driver_binding_precedence_precedes_value_admission() {
     let (objects, _, _, _) = lookup_driver_context(&fixture);
     let refusal = run(
         source(),
+        "fixture".to_owned(),
         "tc-792-lookup.native",
         fixture.source.as_bytes(),
         &fixture.packages,
@@ -355,6 +358,7 @@ fn tc_792_source_driver_cancellation_returns_no_lookup_result() {
     cancel.cancel(quire_exact::CancelCause::Requested);
     let refusal = run(
         source(),
+        "fixture".to_owned(),
         "tc-792-lookup.native",
         fixture.source.as_bytes(),
         &fixture.packages,
@@ -406,6 +410,7 @@ fn tc_792_typed_call_contract_is_not_an_integer_only_facade() {
     };
     let result = run(
         source(),
+        "fixture".to_owned(),
         "spine-model.native",
         crate::spine::spine_model::unit().as_bytes(),
         &qsl_semantics::model::intake::package_input([crate::spine::spine_model::DOCUMENT])
@@ -480,6 +485,7 @@ fn tc_792_driver_returns_the_admitted_reference_identity() {
         .into_value();
     let checked = crate::spine::check(
         &parsed,
+        "fixture".to_owned(),
         &models,
         &DependencyInput::default(),
         SpineLimits::default(),
@@ -519,6 +525,7 @@ fn tc_792_driver_returns_the_admitted_reference_identity() {
     let objects = qsl_semantics::model::object_environment::ObjectEnvironment::new(world);
     let outcome = run(
         source(),
+        "fixture".to_owned(),
         "spine-model.native",
         bytes,
         &packages,
@@ -534,8 +541,7 @@ fn tc_792_driver_returns_the_admitted_reference_identity() {
         &objects,
         &Cancel::new(),
     )
-    .unwrap()
-    .1;
+    .unwrap();
     assert!(matches!(
         outcome,
         CallOutcome::Completed(CallValue::Reference(value)) if value == reference
@@ -1043,21 +1049,13 @@ fn tc_792_lookup_present_absent_malformed_and_accounting_vectors_preserve_owners
 }
 
 /// FR-100-AC-1/AC-7 (TC-450 step 1, TC-452 step 1): `seven()` completes
-/// integer `7`, and the returned `package_id` equals the composed operations'.
+/// integer `7`.
 #[trace("TC-452", "FR-100-AC-7")]
 #[test]
 fn tc_452_seven_completes_and_agrees_with_compile() {
-    let compiled = compose(
+    let outcome = run(
         source(),
-        "spine-run.native",
-        FIXTURE.as_bytes(),
-        &BTreeMap::new(),
-        &DependencyInput::default(),
-        SpineLimits::default(),
-    )
-    .unwrap();
-    let (package_id, outcome) = run(
-        source(),
+        "fixture".to_owned(),
         "spine-run.native",
         FIXTURE.as_bytes(),
         &BTreeMap::new(),
@@ -1068,7 +1066,6 @@ fn tc_452_seven_completes_and_agrees_with_compile() {
         &Cancel::new(),
     )
     .unwrap();
-    assert_eq!(package_id, compiled.emitted.package_id());
     match outcome {
         CallOutcome::Completed(CallValue::Integer(value)) => {
             assert_eq!(value.to_string(), "7");
@@ -1088,6 +1085,7 @@ fn tc_452_seven_completes_and_agrees_with_compile() {
 fn tc_450_step_6_libraries_and_models_both_present_runs() {
     let outcome = run(
         source(),
+        "fixture".to_owned(),
         "spine-run.native",
         FIXTURE.as_bytes(),
         &BTreeMap::new(),
@@ -1097,8 +1095,7 @@ fn tc_450_step_6_libraries_and_models_both_present_runs() {
         &qsl_semantics::model::object_environment::ObjectEnvironment::default(),
         &Cancel::new(),
     )
-    .unwrap()
-    .1;
+    .unwrap();
     assert!(matches!(outcome, CallOutcome::Completed(_)));
 }
 
@@ -1251,6 +1248,7 @@ fn tc_451_step_7_zero_work_units_is_incomplete() {
 fn run_limited(limits: SpineLimits, call: &Call) -> Result<CallOutcome, Box<RunRefusal>> {
     run(
         source(),
+        "fixture".to_owned(),
         "spine-run.native",
         FIXTURE.as_bytes(),
         &BTreeMap::new(),
@@ -1260,7 +1258,6 @@ fn run_limited(limits: SpineLimits, call: &Call) -> Result<CallOutcome, Box<RunR
         &qsl_semantics::model::object_environment::ObjectEnvironment::default(),
         &Cancel::new(),
     )
-    .map(|(_, outcome)| outcome)
 }
 
 fn run_fixture_call(call: &Call) -> CallOutcome {
@@ -1949,6 +1946,7 @@ fn tc_786_sum_over_pos_is_sum_out_of_domain_exit_10_or_completes_exit_0() {
         aliases: vec![("Pos".to_owned(), pos.clone())],
         ..PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture",
             qsl_foundation::IdentityLimits::default(),
         )
     }
@@ -2227,6 +2225,7 @@ fn run_cancellation_keeps_its_original_cause() {
         cancel.cancel(cause);
         let refusal = run(
             source(),
+            "fixture".to_owned(),
             "spine-run.native",
             SUPPLIED_UNIT.as_bytes(),
             &BTreeMap::new(),
