@@ -1,86 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! ADR-011 T-8 (M-4), slice S1b: the S4 v2 emitter, [`CheckedPackage`]
-//! -> [`EmittedPackage`] (the `quire.checked-package/v2` bytes with their own
-//! `package_id`, QSpec FR-322).
+//! The S4 checked-package/v2 emitter (QSpec FR-322, ADR-011 T-8).
 //!
-//! The emitter serializes the nodes `check` lowered and keyed
-//! ([`CheckedGraph::semantic_graph`], FR-092 to FR-094). It builds no body
-//! term and mints no node key (FR-093-CON-2). To each node it adds what
-//! FR-093 gives the emission arm: its `node_id`, its `dependencies` (FR-093
-//! "Node dependencies", rules 1 to 3), its occurrences, its
-//! `recursion_group` label and the graph order, which writes each recursion
-//! group's members in ordinal order.
+//! It writes the checked semantic graph with structural node identities
+//! `{package, path, ordinal}` and converts checked body terms into IR's typed
+//! term vocabulary. A pending lowering reference refuses emission. The
+//! package name is the checked graph's required manifest name.
 //!
-//! # Lock
-//!
-//! - `edition` and `definition_selections` come from closed typed role mappings
-//!   catalog: the `edition` role, every other always-selected role, and each
-//!   law `DefinitionRef` a node body names. Each is a QSpec `DefinitionRef`,
-//!   exactly `{authority, identity}`.
-//! - `sources` are the checked unit's `RawSourceRef` (`CheckedGraph::source`)
-//!   and any other raw source an occurrence region names, each with its
-//!   `quire.source.bytes/v1` digest.
-//! - `required_features` is `quire.value.complete/v1` (ADR-011 §2.4) and
-//!   `capability_report` reports it available.
-//! - `profile_selections` holds one row per clause-profile law a node body
-//!   names (`protocol_profile`, FR-092); it is empty for a package of
-//!   `Value`-family nodes only.
-//! - Each domain package the package was checked against appears as a
-//!   `model_root` node named by its identity (ADR-011 §2.4).
-//! - `dependency_selections` is [`CheckedPackage::dependency_selections`]:
-//!   the resolved library closure, one `{identity, package_id}`
-//!   entry per library identity in ascending UTF-8 byte order of `identity`
-//!   (FR-322, FR-307). The same entries are the identity preimage's, so each
-//!   dependency's `package_id` enters this package's.
-//! - `diagnostics.catalog` is QSpec's `quire.native.diagnostics/v1`
-//!   catalog, named by its `DefinitionRef`.
-//!
-//! # Source regions
-//!
-//! FR-322 maps every occurrence to at least one byte region. `check` records
-//! each occurrence at a `quire_semantic_value::location::Location` (a
-//! declaration and a child path).
-//! [`emit_checked`] places it through the checked unit's own form spans
-//! (`CheckedGraph::region`, FR-096, ADR-013 O-12); [`emit_package`] takes
-//! the conversion as a parameter. An occurrence that cannot be placed, or is
-//! placed at an empty region, refuses the whole emission
-//! ([`EmitRefusal::UnlocatedOccurrence`]).
-//!
-//! # Omitted nodes
-//!
-//! A node whose (`node_tag`, `semantic_form`) IR's v2 vocabulary does not
-//! hold is omitted. So is a node that names a node the checked graph does
-//! not hold, a nominal node whose owner the lock does not select (a
-//! definition-owned unit or dimension node, so a
-//! `scalar_type`/`compound_unit` node over one), and every node that names
-//! an omitted one. Every other node is written (FR-062-AC-9: all-or-nothing
-//! over the nodes a node names), `value`/`parameter` nodes and
-//! recursion-group application nodes included (IR-280, IR-242).
-//! [`Emission::omitted`] lists each omitted node and its cause. A
-//! `protocol_reference` carrier whose target the wire does not write is not
-//! omitted: it refuses the emission ([`EmitRefusal::StaleProtocolReference`]).
-//!
-//! # Abstraction relation
-//!
-//! A package that carries a checked abstraction relation
-//! ([`CheckedPackage::abstraction`], FR-304) writes it as the one
-//! `correspondence`/`abstraction_relation` node of QSpec FR-451 (FR-306),
-//! with the `model`/`object_type` and `relation`/`population` nodes it
-//! names that the graph does not hold.
-//! `check` builds and keys these ([`CheckedGraph::abstraction_nodes`]); the
-//! relation node has one `declaration` occurrence per declaration, the
-//! others one `generated`, at [`AbstractionNodes::sites`].
-//!
-//! # Nominal nodes
-//!
-//! An enum declaration or enum member node carries the QSpec nominal
-//! preimage its key hashes (`nominal_identity_preimage`, FR-092 rule 1).
-//! An enum member node depends on its declaration, as QSpec's
-//! `quire.enum-member-node/v1` rule requires.
-//!
-//! The wire envelope is written by IR's typed encoder,
-//! [`encode_checked_package_v2`]; this module defines no envelope type of its
-//! own, and IR's reader admits exactly the bytes that encoder writes.
+//! The emitter preserves graph order, occurrences, source regions, lock
+//! selections and omission causes. The IR encoder writes the envelope.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 

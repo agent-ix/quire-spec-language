@@ -1,71 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! ADR-011 §2.1 I2, §4 verified binding: the layer-4 `package` byte reader
-//! for `quire.checked-package/v2` wire artifacts (QSpec FR-322).
+//! The I2 reader for admitted checked-package/v2 bytes (QSpec FR-322).
 //!
-//! Envelope parsing, contract-version dispatch and the FR-322 `package_id`
-//! recompute are delegated to `quire_contract_model`'s I04 `checked_package`
-//! reader ([`quire_contract_model::read_checked_package`]): this module defines
-//! no wire member set, digest domain or contract-version spelling of its
-//! own, and never mints a `NodeKey` or `PackageId` from wire text (R-10,
-//! ADR-013 O-02). ADR-011 §4 condition 2 (`package_id` recompute-and-match)
-//! is primarily IR's own job, enforced before it ever admits a wire; this
-//! reader additionally mints its own typed `PackageId` (never trusting the
-//! wire's raw hex) from the same already-admitted preimage and asserts that
-//! mint agrees with IR's own already-verified `package_id.digest`, refusing
-//! if it does not (M-4 L2: defense against this reader's own
-//! encoding of the preimage and graph projection ever diverging from IR's
-//! (a different projection or byte ceiling, say) -- not a second,
-//! independent admission decision). What remains this layer's own job:
-//!
-//! - minting the package's own typed `PackageId` from the admitted identity
-//!   preimage via [`qsl_semantics::library::PackageId::of_preimage`] -- the only
-//!   constructor;
-//! - deriving the FR-307 export node keys from that preimage
-//!   (`qsl_semantics::library::declared_exports`/`verify_package`, layer-3);
-//! - the ADR-011 §4 verified binding itself (`qsl_semantics::library::verify_binding`,
-//!   layer-3): once IR admits the wire, this reader mints
-//!   the condition-1 witness (`qsl_semantics::library::SupportedV2Wire`, which only
-//!   this module constructs) and hands it, its digest-checked candidate and
-//!   the caller's `pinned` request to `library`, which applies conditions 2
-//!   and 3 and constructs the `VerifiedPackage` (FR-087-AC-1, AC-3) this
-//!   reader returns.
-//!
-//! IR's v2 reader validates the whole I04 contract unconditionally (the
-//! lock, the complete semantic graph, source-map and diagnostics) -- there
-//! is no narrower "envelope and `package_id` only" entry point. A caller
-//! therefore supplies [`quire_contract_model::CheckedPackageEvidence`]
-//! alongside the bytes: the domain package documents, admitted dependency
-//! packages and supported features this reader does not itself hold.
-//!
-//! # Ceilings
-//!
-//! [`V2ReadLimits`] carries every ceiling of this read: `artifact_bytes`,
-//! which this reader checks itself and also hands to IR as `bytes`, and IR's
-//! other five [`quire_contract_model::CheckedPackageReadLimits`] ceilings
-//! (`nodes`, `edges`, `occurrences`, `diagnostics`, `work`), passed through
-//! unchanged. Every one is the caller's, used as given; the defaults are IR's
-//! own `bounded()` values plus this reader's 16 MiB byte default. There is no
-//! depth ceiling (FR-264): IR's flat v2 wire has a JSON depth fixed by its
-//! closed schema whatever the package's node count, so the read recurses to
-//! that fixed depth and no further. It is not the native-v1 `PackageLimits`
-//! (the root crate's `package`, FR-019, SEAM-1 until M-6): that type's
-//! `string_bytes` and `entries` exist only for the native encode/intake path
-//! and have no IR counterpart. Every IR ceiling a caller can hit is reported,
-//! verbatim, as [`V2ReadIncomplete::Limit`]'s
-//! [`quire_contract_model::CheckedPackageLimit`].
-//!
-//! # Loci (FR-096)
-//!
-//! The read returns ADR-013 T-4's `Result<Staged<V2Read>,
-//! StageFailure<V2ReadRefusal>>`. Every refusal and limit IR reports at a
-//! value carries `Locus::Artifact`: the `raw-artifact-digest` record of the
-//! supplied bytes (FR-201, O-18) and the RFC 6901 pointer IR reports. An IR
-//! refusal at no value (malformed JSON, non-canonical bytes) and IR's byte
-//! budget carry no locus, since the whole-document pointer would stand in
-//! for a position it does not name. So does this reader's own artifact byte
-//! ceiling, which refuses without hashing the oversized bytes. IR's refusal
-//! of the contract version is `unknown_wire`/`unsupported-wire`, naming the
-//! version IR read (ADR-013 O-22).
+//! Contract IR parses and validates the envelope, graph, lock, source map
+//! and diagnostics. This layer checks the requested library name against the
+//! admitted package name, projects its structural node identities into
+//! `NodeKey`, and constructs the import view and package source map. It
+//! returns staged refusals with IR's loci and the caller's exact limits.
+
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
