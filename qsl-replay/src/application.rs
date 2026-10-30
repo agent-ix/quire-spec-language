@@ -952,7 +952,7 @@ mod tests {
                         losses: vec![],
                     }),
                 },
-                Resume::Child(result) => Transition::Done(result),
+                Resume::Child(result) => Transition::Done(*result),
                 Resume::Again => Transition::Continue,
             })
         }
@@ -1848,7 +1848,7 @@ mod tests {
                     location: None,
                     losses: vec![],
                 }),
-                (Resume::Child(result), _) => Transition::Done(result),
+                (Resume::Child(result), _) => Transition::Done(*result),
                 (Resume::Again, _) => Transition::Continue,
             })
         }
