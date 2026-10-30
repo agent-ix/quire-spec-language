@@ -267,7 +267,7 @@ impl ObjectEnvironment {
         reference: &ObjectReference,
         field: &FieldRef,
     ) -> bool {
-        let Some(attributes) = types.attributes(reference.object_type()) else {
+        let Some(attributes) = types.attributes(reference.object_type().clone()) else {
             return false;
         };
         self.out_of_range.iter().any(|witnessed| {

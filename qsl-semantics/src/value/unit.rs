@@ -265,7 +265,7 @@ impl DimensionEquivalencePreimage {
 
     /// The two related dimension nodes, in ascending digest order.
     pub fn dimensions(&self) -> [NodeKey; 2] {
-        self.dimensions
+        self.dimensions.clone()
     }
 
     /// One canonical root of the first node in canonical roots of the

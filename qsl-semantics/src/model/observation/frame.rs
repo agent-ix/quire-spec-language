@@ -127,12 +127,12 @@ fn wire_object<'a>(
 ) -> Result<(FrameObject<'a, TypedRaw<'a>>, WireFacts<'a>), AdmissionFailure> {
     let (view, type_identity) = find_declaration(context.views, object.type_identity.as_str())
         .ok_or_else(|| fault("frame-object-type-unresolved"))?;
-    let effective_type = *view
+    let effective_type = view
         .view
         .type_identities()
         .get(&type_identity)
-        .ok_or_else(|| fault("frame-object-type-has-no-effective-id"))?;
-    let (fields, names) = wire_fields(context, effective_type, &object.fields)?;
+        .ok_or_else(|| fault("frame-object-type-has-no-effective-id"))?.clone();
+    let (fields, names) = wire_fields(context, effective_type.clone(), &object.fields)?;
     Ok((
         FrameObject {
             object: object.key.as_str(),
@@ -367,7 +367,7 @@ fn run<'a>(
                 let facts = side
                     .facts_of(key)
                     .ok_or_else(|| fault("frame-delta-object-unresolved"))?;
-                into.push(object_reference(context.views, facts.effective_type, key)?);
+                into.push(object_reference(context.views, facts.effective_type.clone(), key)?);
             }
         }
     }
@@ -439,10 +439,10 @@ pub(super) fn enforce_contexts<'a>(
 ) -> Result<(), AdmissionFailure> {
     const RECEIVER: &str = "context";
     let side = |snapshot: &'a SnapshotDocument| -> Result<_, AdmissionFailure> {
-        let (raw, effective) = read_context(context.views, context.types, snapshot, machine)
+        let (raw, effective) = read_context(context.views, context.types, snapshot, machine.clone())
             .ok_or_else(|| fault("frame-read-context-missing"))?;
-        let type_identity = view_of(context.views, effective)
-            .and_then(|view| view.declaration_key(effective))
+        let type_identity = view_of(context.views, effective.clone())
+            .and_then(|view| view.declaration_key(effective.clone()))
             .cloned()
             .ok_or_else(|| fault("frame-context-machine-unresolved"))?;
         let (fields, names) = wire_fields(context, effective, &raw.fields)?;

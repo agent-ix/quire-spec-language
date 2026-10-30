@@ -428,7 +428,7 @@ impl TypeCatalog {
     fn new(by_key: BTreeMap<DeclarationKey, EffectiveId>) -> Self {
         let by_identity = by_key
             .iter()
-            .map(|(key, identity)| (*identity, key.clone()))
+            .map(|(key, identity)| (identity.clone(), key.clone()))
             .collect();
         Self {
             by_key,
@@ -678,10 +678,10 @@ impl EffectiveView {
                 return Err(ModelRefusal {
                     code: Code::InvalidModelBinding,
                     cause: ModelRefusalCause::UnsortedView {
-                        at: pair[1].effective_id,
+                        at: pair[1].effective_id.clone(),
                     },
                     detail: format!(
-                        "view declarations are not sorted ascending by effective identity at {}",
+                        "view declarations are not sorted ascending by effective identity at {:?}",
                         pair[1].effective_id
                     ),
                 });
@@ -2740,7 +2740,7 @@ impl<'t> MemberStore<'t> {
     /// The identity of the already-hashed member `(parent, member)`.
     fn id_of(&self, parent: usize, member: &DeclarationKey) -> Option<EffectiveId> {
         let position = self.position(parent, member)?;
-        self.slots[parent][position].id
+        self.slots[parent][position].id.clone()
     }
 }
 
@@ -3020,7 +3020,7 @@ fn build(
                 ordinal: derivation.len(),
                 rule: RULE_INHERIT,
                 inputs: vec![type_keys[parent].clone()],
-                parent: Some(type_ids[parent]),
+                parent: Some(type_ids[parent].clone()),
             });
         }
         let preimage = EffectiveDeclarationPreimage {
@@ -3041,7 +3041,7 @@ fn build(
     // `normalize.fact`, so charging as each member forms is the charge order.
     let mut store = MemberStore::new(&type_keys);
     for &at in &topological {
-        let owner_effective_id = type_ids[at];
+        let owner_effective_id = &type_ids[at].clone();
         let lists: Vec<&[MemberSlot]> = parents[at]
             .iter()
             .map(|&parent| store.slots[parent].as_slice())
@@ -3089,7 +3089,7 @@ fn build(
             }
             slots.push(MemberSlot {
                 preimage: EffectiveDeclarationPreimage {
-                    owner_effective_type: Some(owner_effective_id),
+                    owner_effective_type: Some(owner_effective_id.clone()),
                     original: member.clone(),
                     derivation,
                 },
@@ -3125,7 +3125,7 @@ fn build(
     let type_effective_ids: HashMap<DeclarationKey, EffectiveId> = type_keys
         .iter()
         .cloned()
-        .zip(type_ids.iter().copied())
+        .zip(type_ids.iter().cloned())
         .collect();
 
     // Phase 4: every type's own field-redefinition conflicts, run only now
@@ -3284,7 +3284,7 @@ fn build(
     let mut member_order: Vec<(EffectiveId, &DeclarationKey, usize, usize)> = Vec::new();
     for (at, slots) in store.slots.iter().enumerate() {
         for (position, slot) in slots.iter().enumerate() {
-            member_order.push((type_ids[at], &slot.preimage.original, at, position));
+            member_order.push((type_ids[at].clone(), &slot.preimage.original, at, position));
         }
     }
     member_order.sort_unstable_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(b.1)));
@@ -3321,7 +3321,7 @@ fn build(
     for (at, preimage) in type_preimages.into_iter().enumerate() {
         let Some(preimage) = preimage else { continue };
         entries.push(ViewEntry {
-            effective_id: type_ids[at],
+            effective_id: type_ids[at].clone(),
             preimage,
             visible: true,
         });
@@ -3338,7 +3338,7 @@ fn build(
             });
         }
     }
-    entries.sort_by_key(|a| a.effective_id);
+    entries.sort_by_key(|a| a.effective_id.clone());
 
     // ADR-013 §8 OQ-E: one universe per connected component of the
     // object-type supertype graph, never one universe over every root type
@@ -3358,7 +3358,7 @@ fn build(
             let mut root_types: Vec<EffectiveId> = members
                 .iter()
                 .filter(|key| !index.is_non_root(key))
-                .map(|key| type_effective_ids[key])
+                .map(|key| type_effective_ids[key].clone())
                 .collect();
             root_types.sort();
             let universe = ObjectUniverse {
@@ -3372,7 +3372,7 @@ fn build(
     // by its first root type identity". A component with no root type at
     // all (a pure cycle) arises only on a package phase 3 already refused
     // above, so `None` sorting first is never observed.
-    components.sort_by_key(|(_, universe)| universe.root_types.first().copied());
+    components.sort_by_key(|(_, universe)| universe.root_types.first().cloned());
     let mut universe_index_by_type: BTreeMap<DeclarationKey, usize> = BTreeMap::new();
     for (component_index, (members, _)) in components.iter().enumerate() {
         for member in members {
@@ -3425,7 +3425,7 @@ fn build(
 
     let type_identities = type_keys
         .iter()
-        .map(|key| (key.clone(), type_effective_ids[key]))
+        .map(|key| (key.clone(), type_effective_ids[key].clone()))
         .collect();
     let view = ViewBody {
         declarations: entries,
@@ -3677,7 +3677,7 @@ fn plan_redefinitions(
             // review): the package still declared `c` redefinitions of this
             // target. A single redefiner has nothing to contest and owes no
             // charge (QSL #145).
-            push_conflict_charge(accounting, owner_effective_id, &target_key, &edges);
+            push_conflict_charge(accounting, owner_effective_id.clone(), &target_key, &edges);
         }
         if reachable {
             // `model-complete.md:231`: one redefine fact on the redefining
@@ -3718,7 +3718,7 @@ fn plan_redefinitions(
             *accounting.phase4_fact_count += 2 * length_amount(edges.len());
         }
         if edges.len() >= 2 {
-            push_conflict_charge(accounting, owner_effective_id, &target_key, &edges);
+            push_conflict_charge(accounting, owner_effective_id.clone(), &target_key, &edges);
         }
         operation_groups.push(TargetGroup {
             target: target_key,
@@ -4208,7 +4208,7 @@ fn resolve_redefinition_contest(
         // original declaration key) -- this group's own resolving type's
         // effective identity, genuinely distinct per resolving type (QSL
         // #195).
-        let rank = Phase4Rank::ConflictCheck(*owner_effective_id, target_key.clone());
+        let rank = Phase4Rank::ConflictCheck(owner_effective_id.clone(), target_key.clone());
         (
             rank,
             ModelRefusal {

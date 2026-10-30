@@ -136,7 +136,7 @@ impl ValueEncoder {
                 }
                 Work::Read(Value::Enum(member), _) => done.push(self.variant(member)?),
                 Work::Read(Value::Quantity(quantity), _) => done.push(SnapshotValue::quantity(
-                    super::document::unit_name(&self.types, quantity.unit())?,
+                    super::document::unit_name(&self.types, quantity.unit().clone())?,
                     quantity.magnitude(),
                 )),
                 Work::Read(Value::Option(option), canonical) => match option.payload() {
@@ -163,7 +163,7 @@ impl ValueEncoder {
                 Work::Read(Value::Composite(composite), canonical) => {
                     let type_identity = self.records.get(&composite.declaration())?;
                     let CompositeShape::Record(declared) =
-                        self.types.composite(composite.declaration())?.shape()
+                        self.types.composite(composite.declaration().clone())?.shape()
                     else {
                         return None;
                     };

@@ -754,7 +754,7 @@ impl PopulationBinding {
     /// This binding's minted `PopulationId` (FR-089-AC-1); see the field's
     /// own doc comment.
     pub fn population_id(&self) -> PopulationId {
-        self.population_id
+        self.population_id.clone()
     }
 
     /// Every declared object type of the admitted effective view,
@@ -783,7 +783,7 @@ impl PopulationBinding {
 /// one of the `Some` values end up compared the same way (TC-296); naming
 /// all three states directly, with no `Option` wrapper to discard, closes
 /// that collision.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 enum AdmissionRole {
     /// A standalone [`admit_binding`] admission.
     Direct,
@@ -1408,7 +1408,7 @@ fn admit_binding_as(
 
         let key = ReferenceKey {
             universe,
-            type_identity: *effective_type,
+            type_identity: effective_type.clone(),
             object: member.object.clone(),
         };
         if let Some(existing) = by_object.get(&key.object) {
@@ -1419,11 +1419,11 @@ fn admit_binding_as(
                 code: Code::InvalidRuntimeInput,
                 cause: ModelRefusalCause::ConflictingIdentity {
                     object: key.object.clone(),
-                    existing_type: existing.type_identity,
-                    declared_type: key.type_identity,
+                    existing_type: existing.type_identity.clone(),
+                    declared_type: key.type_identity.clone(),
                 },
                 detail: format!(
-                    "object {} is declared with conflicting types {} and {}",
+                    "object {} is declared with conflicting types {:?} and {:?}",
                     key.object, existing.type_identity, key.type_identity
                 ),
             });
@@ -1573,7 +1573,7 @@ fn admit_binding_as(
     };
     AdmissionOutcome::Admitted(PopulationBinding {
         population_key: population_key.clone(),
-        universe,
+        universe: universe.clone(),
         members: admitted,
         declared_member_types: population.member_types.iter().cloned().collect(),
         declared_maximum,
@@ -2473,10 +2473,10 @@ fn foreign_universe(binding: &PopulationBinding, actual: &[u8]) -> ModelRefusal 
         code: Code::ForeignReference,
         cause: ModelRefusalCause::ForeignUniverse {
             actual: actual.to_vec(),
-            expected: *binding.universe(),
+            expected: binding.universe().clone(),
         },
         detail: format!(
-            "reference key names universe {}, not the binding's {}",
+            "reference key names universe {}, not the binding's {:?}",
             hex(actual),
             binding.universe()
         ),

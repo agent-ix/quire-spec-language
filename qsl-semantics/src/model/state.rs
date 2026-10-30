@@ -160,7 +160,7 @@ fn violation_at(
         Value::Composite(composite) => {
             let (name, rest) = rest.split_first()?;
             let quire_semantic_value::declaration::CompositeShape::Record(fields) =
-                types.composite(composite.declaration())?.shape()
+                types.composite(composite.declaration().clone())?.shape()
             else {
                 return None;
             };
@@ -489,7 +489,7 @@ impl StateModel {
     pub fn type_identity(&self, key: &DeclarationKey) -> Option<EffectiveId> {
         self.views
             .iter()
-            .find_map(|view| view.view.type_identities().get(key).copied())
+            .find_map(|view| view.view.type_identities().get(key).cloned())
     }
 
     /// The declaration key of the type whose effective identity is
@@ -497,7 +497,7 @@ impl StateModel {
     pub fn type_key(&self, identity: EffectiveId) -> Option<&DeclarationKey> {
         self.views
             .iter()
-            .find_map(|view| view.declaration_key(identity))
+            .find_map(|view| view.declaration_key(identity.clone()))
     }
 
     /// Whether the object type `key` is declared abstract.

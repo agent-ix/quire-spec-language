@@ -418,7 +418,7 @@ pub fn classify_domains(
                     domains.insert((position.root, entered.clone()), DomainKind::Recursive);
                     continue;
                 }
-                let Some(composite) = types.composite(*declaration) else {
+                let Some(composite) = types.composite(declaration.clone()) else {
                     return Err(ClassifyFailure::Fault(InternalFault::new(
                         STAGE,
                         "checked-composite-type-not-in-environment",
@@ -436,7 +436,7 @@ pub fn classify_domains(
                 };
                 // Pushed last-first so the stack visits them in order.
                 for (index, member) in members.into_iter().enumerate().rev() {
-                    pending.push(child(&position, index, member, Some(*declaration))?);
+                    pending.push(child(&position, index, member, Some(declaration.clone()))?);
                 }
             }
             ValueType::Boolean

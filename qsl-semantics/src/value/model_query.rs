@@ -141,8 +141,8 @@ fn to_object_reference(key: &ReferenceKey) -> Result<ObjectReference, ModelQuery
     let object = ObjectId::new(key.object.clone())
         .map_err(|_| invariant("model-query-object-identity-empty"))?;
     Ok(ObjectReference::new(
-        key.universe,
-        key.type_identity,
+        key.universe.clone(),
+        key.type_identity.clone(),
         object,
     ))
 }
@@ -157,7 +157,7 @@ fn bridge_lookup_key(static_type: DeclarationKey, reference: &ObjectReference) -
     LookupKey {
         static_type,
         universe: reference.universe().as_bytes().to_vec(),
-        type_identity: reference.object_type(),
+        type_identity: reference.object_type().clone(),
         object: reference.object().as_str().as_bytes().to_vec(),
     }
 }
@@ -183,7 +183,7 @@ fn resolve_target(
         ModelQueryHalt::Refused(Box::new(ModelRefusal {
             code: Code::IllTyped,
             cause: ModelRefusalCause::TypeMismatch,
-            detail: format!("{target} is not a declared type of this population's model"),
+            detail: format!("{target:?} is not a declared type of this population's model"),
         }))
     })
 }
@@ -200,7 +200,7 @@ pub fn evaluate_all_instances(
     let ValueType::Reference(target_key) = collection_type.element() else {
         return Err(invariant("model-query-reference-element-expected"));
     };
-    let target = resolve_target(binding, *target_key)?;
+    let target = resolve_target(binding, target_key.clone())?;
     match all_instances(binding, &target, meter) {
         AllInstancesOutcome::Completed(set) => {
             let mut elements = Vec::with_capacity(set.len());

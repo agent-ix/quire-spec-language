@@ -1127,7 +1127,7 @@ impl<'a> References<'a> {
                 let Some(effective) = view.view.type_identities().get(&key) else {
                     continue;
                 };
-                let Ok(reference) = object_reference(views, *effective, &object.key) else {
+                let Ok(reference) = object_reference(views, effective.clone(), &object.key) else {
                     continue;
                 };
                 admitted
@@ -1188,7 +1188,7 @@ impl<'a> References<'a> {
         self.record_keys
             .get_or_insert_with(|| record_keys(views))
             .get(identity)
-            .copied()
+            .cloned()
     }
 
     /// FR-106 check 8 over one check-10 value (a parameter or the result):
@@ -1236,7 +1236,7 @@ impl<'a> References<'a> {
     ) -> Result<ObjectReference, AdmissionRecord> {
         let wire = (reference.population.as_str(), reference.key.as_str());
         if let Some(target) = self.admitted.get(&wire) {
-            return if self.types.conforms(target.object_type(), declared) {
+            return if self.types.conforms(target.object_type().clone(), declared) {
                 Ok(target.clone())
             } else {
                 Err(admission_record(
@@ -1357,14 +1357,14 @@ fn admit_leaf(
         }
         (RawForm::Reference(reference), quire_exact::ValueType::Reference(type_identity)) => {
             references
-                .resolve(reference, *type_identity)
+                .resolve(reference, type_identity.clone())
                 .map(Value::Reference)
         }
         (RawForm::Variant(variant), quire_exact::ValueType::Enum(slot)) => {
             admit_variant(references, variant, slot)
         }
         (RawForm::Variant(variant), quire_exact::ValueType::Composite(handle)) => {
-            admit_union_case(references, variant, *handle)
+            admit_union_case(references, variant, handle.clone())
         }
         (RawForm::Native(native), value_type) => admit_native(native, value_type, references.types),
         _ => Err(admission_record(
@@ -1560,7 +1560,7 @@ fn admit_native(
             }
         }
         (NativeKind::Quantity, quire_exact::ValueType::Quantity(unit)) => {
-            if unit_name(types, *unit).as_deref() != Some(payload_text(native, "unit")) {
+            if unit_name(types, unit.clone()).as_deref() != Some(payload_text(native, "unit")) {
                 return Err(wrong("unit"));
             }
             let magnitude = native
@@ -1568,7 +1568,7 @@ fn admit_native(
                 .ok_or_else(|| wrong("magnitude"))?;
             Ok(Value::Quantity(quire_exact::Quantity::new(
                 quantity_magnitude(magnitude)?,
-                *unit,
+                unit.clone(),
             )))
         }
         // Type fit (check 6) refuses every other pairing before any length,
@@ -1723,7 +1723,7 @@ fn admit_union_case(
                 crate::model::domain_package::DomainPackageRecord::Enum(_)
             ) && record.key().node == type_identity
                 && crate::check::record_node_key(record, unbounded)
-                    .is_ok_and(|key| key == Some(handle))
+                    .is_ok_and(|key| key == Some(handle.clone()))
         })
     });
     let Some(CompositeShape::Union(members)) = names
@@ -1735,7 +1735,7 @@ fn admit_union_case(
     };
     members
         .iter()
-        .find(|member| member.identifier().as_str() == case && member.positions().is_empty())
+        .find(|member| member.identifier() == case && member.positions().is_empty())
         .and_then(|member| member.member())
         .map(|member| quire_exact::UnionValue::from_admitted(member.clone(), Vec::new()))
         .ok_or_else(|| refuse("invalid-value"))
@@ -1957,11 +1957,11 @@ fn admit_value<'a: 'w, 'w>(
                         let Some(own) = references.record_type(record.type_identity()) else {
                             return Err(refuse_at("wrong-value-kind", &path));
                         };
-                        if !types.composite_conforms(own, *slot) {
+                        if !types.composite_conforms(own.clone(), slot.clone()) {
                             return Err(refuse_at("wrong-value-kind", &path));
                         }
                         let Some(CompositeShape::Record(declared)) =
-                            types.composite(own).map(|declaration| declaration.shape())
+                            types.composite(own.clone()).map(|declaration| declaration.shape())
                         else {
                             return Err(refuse_at("wrong-value-kind", &path));
                         };
@@ -2268,7 +2268,7 @@ pub(super) fn record_field_type<'t>(
     identity: &str,
     field: &str,
 ) -> Option<&'t quire_exact::ValueType> {
-    let CompositeShape::Record(declared) = types.composite(*keys.get(identity)?)?.shape() else {
+    let CompositeShape::Record(declared) = types.composite(keys.get(identity)?.clone())?.shape() else {
         return None;
     };
     declared
@@ -2557,13 +2557,13 @@ pub(super) fn admit_population_values<'t>(
                         .with("object", object.key.clone()),
                 ));
             }
-            let effective_type = *population_view
+            let effective_type = population_view
                 .view
                 .type_identities()
                 .get(&object_key)
-                .ok_or_else(|| fault("object-type-has-no-effective-id"))?;
+                .ok_or_else(|| fault("object-type-has-no-effective-id"))?.clone();
 
-            let declared = types.attributes(effective_type).ok_or_else(|| {
+            let declared = types.attributes(effective_type.clone()).ok_or_else(|| {
                 AdmissionFailure::Fault(quire_semantic_value::catalog::InternalFault::new(
                     "observation-admission",
                     "object-type-has-no-checked-attributes",
@@ -2792,13 +2792,13 @@ fn admit_contexts<'t>(
             ));
         }
         machines.push(machine);
-        let effective = *view
+        let effective = view
             .view
             .type_identities()
             .get(&key)
-            .ok_or_else(|| fault("context-machine-has-no-effective-id"))?;
+            .ok_or_else(|| fault("context-machine-has-no-effective-id"))?.clone();
         let declared = types
-            .attributes(effective)
+            .attributes(effective.clone())
             .ok_or_else(|| fault("context-machine-has-no-checked-attributes"))?;
         // 6.12: the fields, in the machine's exposed effective order.
         if let Some(field) = population_collection_field(declared) {
@@ -2881,7 +2881,7 @@ fn admit_contexts<'t>(
             }));
             attributes.push((name, value));
         }
-        if read_machine.is_some_and(|clause| types.conforms(effective, clause)) {
+        if read_machine.as_ref().is_some_and(|clause| types.conforms(effective.clone(), clause.clone())) {
             read.push(ReadContext {
                 machine: machine.to_owned(),
                 entry,
@@ -2907,9 +2907,9 @@ pub(super) fn read_context<'s>(
 ) -> Option<(&'s RawContext, quire_exact::EffectiveId)> {
     snapshot.contexts.contexts().find_map(|(_, context)| {
         let (view, key) = find_declaration(views, &context.machine)?;
-        let effective = *view.view.type_identities().get(&key)?;
+        let effective = view.view.type_identities().get(&key)?.clone();
         types
-            .conforms(effective, machine)
+            .conforms(effective.clone(), machine.clone())
             .then_some((context, effective))
     })
 }
@@ -3552,9 +3552,9 @@ pub(super) fn resolve_self(
         .type_identities()
         .iter()
         .find(|(key, _)| key.node == context_name)
-        .map(|(_, effective)| *effective)
+        .map(|(_, effective)| effective.clone())
         .ok_or_else(|| fault("context-type-unresolved"))?;
-    let universe = population_universe(views, context_effective)?;
+    let universe = population_universe(views, context_effective.clone())?;
     let wrong_role_mapping = || {
         refuse(admission_record(
             Code::InvalidRuntimeInput,
@@ -3565,7 +3565,7 @@ pub(super) fn resolve_self(
         .objects()
         .find(universe, &self_object.key)
         .ok_or_else(wrong_role_mapping)?;
-    if types.conforms(reference.object_type(), context_effective) {
+    if types.conforms(reference.object_type().clone(), context_effective) {
         Ok(reference.clone())
     } else {
         Err(wrong_role_mapping())

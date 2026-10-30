@@ -154,12 +154,12 @@ impl OperationTable {
         let names: std::collections::BTreeSet<&str> = self
             .0
             .iter()
-            .filter(|(declaring, _)| types.conforms(object_type, **declaring))
+            .filter(|(declaring, _)| types.conforms(object_type.clone(), (*declaring).clone()))
             .flat_map(|(_, operations)| operations.iter().map(OperationDeclaration::name))
             .collect();
         names
             .into_iter()
-            .filter_map(|name| match self.resolve(types, object_type, name) {
+            .filter_map(|name| match self.resolve(types, object_type.clone(), name) {
                 OperationLookup::Declared {
                     declaring,
                     operation,
@@ -186,13 +186,13 @@ impl OperationTable {
             .0
             .iter()
             .filter(|(declaring, _)| {
-                types.object_type(**declaring).is_some() && types.conforms(object_type, **declaring)
+                types.object_type((*declaring).clone()).is_some() && types.conforms(object_type.clone(), (*declaring).clone())
             })
             .flat_map(|(declaring, operations)| {
                 operations
                     .iter()
                     .filter(|operation| operation.name() == name)
-                    .map(move |operation| (*declaring, operation))
+                    .map(move |operation| (declaring.clone(), operation))
             })
             .collect();
         let nearest: Vec<(EffectiveId, &OperationDeclaration)> = candidates
@@ -200,18 +200,18 @@ impl OperationTable {
             .filter(|(declaring, _)| {
                 !candidates
                     .iter()
-                    .any(|(other, _)| other != declaring && types.conforms(*other, *declaring))
+                    .any(|(other, _)| other != declaring && types.conforms(other.clone(), declaring.clone()))
             })
-            .copied()
+            .cloned()
             .collect();
         match nearest.as_slice() {
             [] => OperationLookup::Missing,
             [(declaring, operation)] => OperationLookup::Declared {
-                declaring: *declaring,
+                declaring: declaring.clone(),
                 operation,
             },
             many => {
-                OperationLookup::Ambiguous(many.iter().map(|(declaring, _)| *declaring).collect())
+                OperationLookup::Ambiguous(many.iter().map(|(declaring, _)| declaring.clone()).collect())
             }
         }
     }

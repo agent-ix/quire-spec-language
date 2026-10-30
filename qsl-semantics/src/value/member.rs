@@ -204,7 +204,7 @@ impl Member {
             | Self::RelationshipEnd { declaration, .. }
             | Self::Operation { declaration, .. }
             | Self::TypeArgument { declaration }
-            | Self::Fairness { declaration, .. } => Some(*declaration),
+            | Self::Fairness { declaration, .. } => Some(declaration.clone()),
             Self::ProfileOperator { .. }
             | Self::StateClause { .. }
             | Self::TemporalInterval { .. }
@@ -215,7 +215,7 @@ impl Member {
     /// The population node this member links, when it links one.
     pub fn population(&self) -> Option<NodeKey> {
         match self {
-            Self::RelationshipEnd { population, .. } => *population,
+            Self::RelationshipEnd { population, .. } => population.clone(),
             Self::Field { .. }
             | Self::Position { .. }
             | Self::Element { .. }

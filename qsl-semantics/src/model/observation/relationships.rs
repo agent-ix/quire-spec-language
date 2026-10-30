@@ -324,8 +324,8 @@ pub(super) fn model_facts(views: &[ModelView], types: &TypeEnvironment) -> Model
     for view in views {
         let identities = view.view.type_identities();
         let object = |key: &DeclarationKey| {
-            let id = *identities.get(key)?;
-            types.object_type(id).map(|_| id)
+            let id = identities.get(key)?.clone();
+            types.object_type(id.clone()).map(|_| id)
         };
         for record in &view.view.domain_package().records {
             match record {
@@ -356,7 +356,7 @@ pub(super) fn model_facts(views: &[ModelView], types: &TypeEnvironment) -> Model
                         covered: population
                             .member_types
                             .iter()
-                            .filter_map(|member| identities.get(member).copied())
+                            .filter_map(|member| identities.get(member).cloned())
                             .collect(),
                     });
                 }
@@ -398,7 +398,7 @@ impl PopulationEnumerator<DeclarationKey> for PackagePopulations<'_> {
         let complete = self.completeness.get(&declaration.key.node) == Some(&true);
         PopulationEntry::try_new(
             declaration.key.clone(),
-            declaration.covered.iter().copied(),
+            declaration.covered.iter().cloned(),
             complete,
         )
         .map(Some)
@@ -511,13 +511,13 @@ pub(super) fn check_entries(
             let source = checked_end(&instance.source, listed);
             let target = checked_end(&instance.target, listed);
             for (side, end, declared_end) in [
-                (EndSide::Source, &source, declared.source),
-                (EndSide::Target, &target, declared.target),
+                (EndSide::Source, &source, declared.source.clone()),
+                (EndSide::Target, &target, declared.target.clone()),
             ] {
                 let Some(reference) = &end.reference else {
                     continue;
                 };
-                if !types.conforms(reference.object_type(), declared_end.object_type) {
+                if !types.conforms(reference.object_type().clone(), declared_end.object_type) {
                     return Err(refuse(
                         record("wrong-value-kind", &raw.relationship, index)
                             .with("end", end_name(side))
@@ -782,11 +782,11 @@ fn side_extents(
         for object in &population.objects {
             let (view, declaration) = find_declaration(views, object.type_identity.as_str())
                 .ok_or_else(|| fault("frame-link-object-type-unresolved"))?;
-            let effective_type = *view
+            let effective_type = view
                 .view
                 .type_identities()
                 .get(&declaration)
-                .ok_or_else(|| fault("frame-link-object-type-has-no-effective-id"))?;
+                .ok_or_else(|| fault("frame-link-object-type-has-no-effective-id"))?.clone();
             listed.insert(
                 (population.population.as_str(), object.key.as_str()),
                 effective_type,
@@ -796,9 +796,9 @@ fn side_extents(
     let end = |raw: &RawEnd| -> Result<(ObjectReference, SelectedObject), AdmissionFailure> {
         // Only an object an instance end names needs a reference: a
         // state-machine context object has no object universe.
-        let effective_type = *listed
+        let effective_type = listed
             .get(&(raw.population.as_str(), raw.key.as_str()))
-            .ok_or_else(|| fault("frame-link-end-unlisted"))?;
+            .ok_or_else(|| fault("frame-link-end-unlisted"))?.clone();
         Ok((
             object_reference(views, effective_type, &raw.key)?,
             raw.clone(),
