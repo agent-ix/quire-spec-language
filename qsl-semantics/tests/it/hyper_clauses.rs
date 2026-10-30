@@ -8,7 +8,6 @@
 
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::{Code, StageFailure};
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::Span;
 use qsl_semantics::check::{
     check_hyper_clauses, Capability, CheckCause, CheckRefusal, CheckedHyper, CheckedHyperClause,
@@ -18,6 +17,7 @@ use qsl_semantics::check::{
 use qsl_semantics::family::{ClaimExtent, FamilyContract};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, package_input};
+use quire_exact::{NodeKey, PathSegment};
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::json;
 
@@ -221,15 +221,21 @@ const DET: &str =
      { x.i = y.i and pre(x.self.versionNumber) = pre(y.self.versionNumber) \
      implies x.self.versionNumber = y.self.versionNumber }";
 
+/// A structural fixture node key named `name`.
+fn fixture_node(name: &str) -> NodeKey {
+    NodeKey::new("fixture", vec![PathSegment::Text(name.to_owned())], 0)
+        .expect("a fixture node key is well formed")
+}
+
 fn unbounded(clause: &CheckedHyper) -> bool {
     let [claim] = HyperTraceFamily::requirements(clause)
         .try_into()
         .expect("one claim");
-    let params: Vec<WireNodeId> = (0..4_u8)
-        .map(|index| WireNodeId::from_digest([index + 2; 32]))
+    let params: Vec<NodeKey> = (0..4_u8)
+        .map(|index| fixture_node(&format!("parameter{index}")))
         .collect();
     let record = claim
-        .requirements(WireNodeId::from_digest([1; 32]), &params, &[], &[])
+        .requirements(fixture_node("clause"), &params, &[], &[])
         .expect("the record is keyed");
     assert_eq!(record.kind(), Capability::TemporalSatisfaction);
     matches!(record.extent(), ClaimExtent::Unbounded(_))

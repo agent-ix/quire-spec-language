@@ -332,7 +332,7 @@ fn p1(model_identity: &str) -> PopulationDocument {
 
 fn reference_key(universe: &UniverseId, type_identity: &EffectiveId, object: &str) -> ReferenceKey {
     ReferenceKey {
-        universe: *universe,
+        universe: universe.clone(),
         type_identity: *type_identity,
         object: object.to_owned(),
     }
@@ -352,7 +352,7 @@ fn lookup_key(
 ) -> LookupKey {
     LookupKey {
         static_type,
-        universe: universe.as_bytes().to_vec(),
+        universe: universe.clone(),
         type_identity: *type_identity,
         object: object.as_bytes().to_vec(),
     }
@@ -374,7 +374,9 @@ fn finite_object_population_requires_explicit_closure() {
     let binding = admitted_binding(&view, &document);
     let a = type_id(&view, "model.A");
     let b = type_id(&view, "model.B");
-    let universe = view.object_universe().identity();
+    let universe = view.object_universe()
+        .identity()
+        .expect("the universe has a root type");
     let expected: BTreeSet<_> = [
         reference_key(&universe, &a, "a1"),
         reference_key(&universe, &a, "a2"),
@@ -434,7 +436,9 @@ fn finite_object_population_requires_explicit_closure() {
 fn l01_all_instances_selects_subtype_population_once() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
-    let universe = view_of(&domain_package).object_universe().identity();
+    let universe = view_of(&domain_package).object_universe()
+        .identity()
+        .expect("the universe has a root type");
     let a = type_id(&view, "model.A");
     let b = type_id(&view, "model.B");
 
@@ -992,7 +996,9 @@ fn admitted_binding(view: &EffectiveView, document: &PopulationDocument) -> Popu
 fn l03_lookup_undefined_mode() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
-    let universe = view_of(&domain_package).object_universe().identity();
+    let universe = view_of(&domain_package).object_universe()
+        .identity()
+        .expect("the universe has a root type");
     let a = type_id(&view, "model.A");
     let b = type_id(&view, "model.B");
     let binding = admitted_binding(&view, &p1("test/orders"));
@@ -1049,7 +1055,9 @@ fn l03_lookup_undefined_mode() {
 fn l03_lookup_empty_mode() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
-    let universe = view_of(&domain_package).object_universe().identity();
+    let universe = view_of(&domain_package).object_universe()
+        .identity()
+        .expect("the universe has a root type");
     let a = type_id(&view, "model.A");
     let b = type_id(&view, "model.B");
     let binding = admitted_binding(&view, &p1("test/orders"));
@@ -1099,7 +1107,9 @@ fn l03_lookup_empty_mode() {
 fn l03_lookup_refused_mode() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
-    let universe = view_of(&domain_package).object_universe().identity();
+    let universe = view_of(&domain_package).object_universe()
+        .identity()
+        .expect("the universe has a root type");
     let a = type_id(&view, "model.A");
     let binding = admitted_binding(&view, &p1("test/orders"));
 
@@ -1141,13 +1151,15 @@ fn l03_lookup_refused_mode() {
 fn l03_lookup_refused_mode_malformed_identity_reports_hex_detail() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
-    let universe = view_of(&domain_package).object_universe().identity();
+    let universe = view_of(&domain_package).object_universe()
+        .identity()
+        .expect("the universe has a root type");
     let a = type_id(&view, "model.A");
     let binding = admitted_binding(&view, &p1("test/orders"));
 
     let malformed = LookupKey {
         static_type: DeclarationKey::fixture("model.A"),
-        universe: universe.as_bytes().to_vec(),
+        universe: universe.clone(),
         type_identity: a,
         object: vec![0xFF, 0xFE],
     };
@@ -1184,13 +1196,15 @@ fn l03_lookup_refused_mode_malformed_identity_reports_hex_detail() {
 fn l03_lookup_present_member_found_through_the_raw_bytes_path() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
-    let universe = view_of(&domain_package).object_universe().identity();
+    let universe = view_of(&domain_package).object_universe()
+        .identity()
+        .expect("the universe has a root type");
     let a = type_id(&view, "model.A");
     let binding = admitted_binding(&view, &p1("test/orders"));
 
     let ra = LookupKey {
         static_type: DeclarationKey::fixture("model.A"),
-        universe: universe.as_bytes().to_vec(),
+        universe: universe.clone(),
         type_identity: a,
         object: b"a1".to_vec(),
     };
@@ -1223,7 +1237,9 @@ fn l03_lookup_present_member_found_through_the_raw_bytes_path() {
 fn l03_lookup_type_mismatch_before_any_charge() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
-    let universe = view_of(&domain_package).object_universe().identity();
+    let universe = view_of(&domain_package).object_universe()
+        .identity()
+        .expect("the universe has a root type");
     let a = type_id(&view, "model.A");
     let binding = admitted_binding(&view, &p1("test/orders"));
 
@@ -1266,7 +1282,9 @@ fn l04_lookup_foreign_universe_refuses() {
     let binding = admitted_binding(&view, &p1("test/orders"));
 
     let other = fixture_other_universe();
-    let foreign_universe = view_of(&other).object_universe().identity();
+    let foreign_universe = view_of(&other).object_universe()
+        .identity()
+        .expect("the universe has a root type");
     assert_ne!(&foreign_universe, binding.universe());
 
     let rx = lookup_key(
@@ -1289,60 +1307,8 @@ fn l04_lookup_foreign_universe_refuses() {
             assert_eq!(
                 refusal.cause,
                 ModelRefusalCause::ForeignUniverse {
-                    actual: foreign_universe.as_bytes().to_vec(),
-                    expected: *binding.universe(),
-                }
-            );
-        }
-        other => panic!("expected Refused(foreign_reference/foreign-universe), got {other:?}"),
-    }
-    assert_eq!(meter.consumed(LimitKind::WorkUnits), 1);
-}
-
-/// TC-198 L04's byte-comparison layer: a `LookupKey.universe` of some length
-/// other than 32 (never a well-formed `quire_exact::UniverseId`, ADR-013 §8
-/// OQ-C ruling) still refuses `foreign_reference`/`foreign-universe`,
-/// reporting the caller's own raw bytes as `actual` rather than a
-/// substituted or truncated identity -- `lookup`'s own
-/// `r.universe.as_slice() != binding.universe().as_bytes().as_slice()`
-/// comparison is a plain byte-slice inequality, which Rust never panics on
-/// for a length mismatch, so this is memory-safe and refuses exactly like a
-/// well-formed-but-different universe does. Constructed directly through
-/// `LookupKey` (bypassing `ObjectReference`, which cannot represent a
-/// wrong-length universe at all after ADR-013 §8's fix) -- exactly the
-/// direct-construction path `crate::value::model_query`'s own module docs
-/// cite as this byte-level defense's real test.
-#[test]
-#[trace("QSpec-TC-198", "QSpec-FR-153-AC-3")]
-fn l04b_lookup_wrong_length_universe_refuses_as_foreign() {
-    let domain_package = fixture_f1();
-    let view = view_of(&domain_package);
-    let a = type_id(&view, "model.A");
-    let binding = admitted_binding(&view, &p1("test/orders"));
-
-    let wrong_length_universe = vec![0x07; 31];
-    let rx = LookupKey {
-        static_type: DeclarationKey::fixture("model.A"),
-        universe: wrong_length_universe.clone(),
-        type_identity: a,
-        object: b"a1".to_vec(),
-    };
-    let mut meter = Meter::new(SCALAR_UNLIMITED);
-    let outcome = lookup(
-        &binding,
-        &DeclarationKey::fixture("model.A"),
-        &rx,
-        AbsenceMode::Empty,
-        &mut meter,
-    );
-    match outcome {
-        LookupOutcome::Refused(refusal) => {
-            assert_eq!(refusal.code, Code::ForeignReference);
-            assert_eq!(
-                refusal.cause,
-                ModelRefusalCause::ForeignUniverse {
-                    actual: wrong_length_universe,
-                    expected: *binding.universe(),
+                    actual: foreign_universe.root_type().clone(),
+                    expected: binding.universe().clone(),
                 }
             );
         }
@@ -1426,8 +1392,8 @@ fn oqe_lookup_across_connected_components_refuses_as_foreign_universe() {
             assert_eq!(
                 refusal.cause,
                 ModelRefusalCause::ForeignUniverse {
-                    actual: e_binding.universe().as_bytes().to_vec(),
-                    expected: *ab_binding.universe(),
+                    actual: e_binding.universe().root_type().clone(),
+                    expected: ab_binding.universe().clone(),
                 }
             );
         }
@@ -2456,7 +2422,9 @@ fn invocation_context<'a>(
 fn l07_invocation_admits_a_declared_delete_and_attaches_the_pre_anchor() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
-    let universe = view_of(&domain_package).object_universe().identity();
+    let universe = view_of(&domain_package).object_universe()
+        .identity()
+        .expect("the universe has a root type");
     let a = type_id(&view, "model.A");
     let effect = deletes_a_effect();
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
@@ -3989,7 +3957,9 @@ fn qsl204_admission_reads_the_domain_package_the_view_was_normalized_from() {
         assert_eq!(view.domain_package(), domain_package);
         let binding = admitted_binding(&view, &p1("test/orders"));
         assert_eq!(binding.model_selection(), view.model_selection());
-        assert_eq!(*binding.universe(), view.object_universe().identity());
+        assert_eq!(binding.universe(), &view.object_universe()
+        .identity()
+        .expect("the universe has a root type"));
     }
     let forward_root = type_id(&view_of(&forward), "model.A");
     let reversed_root = type_id(&view_of(&reversed), "model.B");
@@ -4002,8 +3972,12 @@ fn qsl204_admission_reads_the_domain_package_the_view_was_normalized_from() {
         vec![reversed_root]
     );
     assert_ne!(
-        view_of(&forward).object_universe().identity(),
-        view_of(&reversed).object_universe().identity()
+        view_of(&forward).object_universe()
+        .identity()
+        .expect("the universe has a root type"),
+        view_of(&reversed).object_universe()
+        .identity()
+        .expect("the universe has a root type")
     );
 
     let mut cyclic = fixture_f1();

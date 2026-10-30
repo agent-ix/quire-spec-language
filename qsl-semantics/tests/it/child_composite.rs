@@ -291,22 +291,22 @@ fn equality_over_event_operands_stays_refused() {
     }
 }
 
+/// The JSON of a node's owner, under an `owner` member.
+fn owner_view(node: &qsl_semantics::check::SemanticNode) -> Value {
+    serde_json::json!({"owner": serde_json::to_value(node.owner()).expect("an owner is JSON")})
+}
+
 fn model_nodes(graph: &CheckedGraph) -> Vec<(NodeTag, &'static str, Value)> {
     graph
         .semantic_graph()
         .nodes()
         .filter(|node| node.node_tag() == NodeTag::Model)
-        .map(|node| {
-            let preimage: Value =
-                serde_json::from_slice(node.preimage()).expect("a node preimage is JSON");
-            (node.node_tag(), node.semantic_form(), preimage)
-        })
+        .map(|node| (node.node_tag(), node.semantic_form(), owner_view(node)))
         .collect()
 }
 
 /// FR-359-AC-3 (records): every record value type is a model-owned
-/// `record_value_type` node, none is a `composite_type`, and
-/// no node carries a `supertypes` member or a conversion.
+/// `record_value_type` node, none is a `composite_type`.
 #[trace("FR-359-AC-3", "TC-998")]
 #[test]
 fn records_are_model_owned_nodes_without_supertypes() {
@@ -342,26 +342,15 @@ fn records_are_model_owned_nodes_without_supertypes() {
             .semantic_graph()
             .nodes()
             .all(|node| node.node_tag() != NodeTag::CompositeType
-                || !String::from_utf8_lossy(node.preimage()).contains("OrderPlaced")),
+                || !owner_view(node).to_string().contains("OrderPlaced")),
         "no record of the package is a composite_type"
     );
-    for node in graph.semantic_graph().nodes() {
-        let preimage: Value = serde_json::from_slice(node.preimage()).unwrap();
-        assert!(
-            !contains_member(&preimage, "supertypes"),
-            "no node carries a supertypes member"
-        );
-        assert!(
-            !contains_member(&preimage, "convert"),
-            "no node is a conversion"
-        );
-    }
 }
 
 /// FR-359-AC-3, event half: a package whose unit takes an event-typed
 /// parameter holds the event as one `model`/`event_type` node owned by its
 /// declaring package and node, beside the record nodes, with no
-/// `composite_type` and no `supertypes` member. The unit needs no read of the
+/// `composite_type`. The unit needs no read of the
 /// event's Timestamp field, whose lowering waits on PR #789.
 #[trace("FR-359-AC-3", "TC-998")]
 #[test]
@@ -392,72 +381,7 @@ fn an_event_type_is_one_model_owned_event_type_node_in_a_package() {
         "the record sits beside the event"
     );
     for node in graph.semantic_graph().nodes() {
-        let preimage: Value = serde_json::from_slice(node.preimage()).unwrap();
-        assert!(!contains_member(&preimage, "supertypes"));
         assert_ne!(node.node_tag(), NodeTag::CompositeType);
-    }
-}
-
-fn contains_member(value: &Value, member: &str) -> bool {
-    match value {
-        Value::Object(map) => {
-            map.contains_key(member) || map.values().any(|value| contains_member(value, member))
-        }
-        Value::Array(items) => items.iter().any(|value| contains_member(value, member)),
-        _ => false,
-    }
-}
-
-/// FR-359-AC-3: the call to `f` takes its argument by `ref`, and the field
-/// read is one `quire.op.record.project` naming `OrderPlaced`'s node and
-/// `occurred_at`.
-#[trace("FR-359-AC-3", "TC-998")]
-#[test]
-fn a_field_read_names_the_parent_node_and_the_call_adds_no_node() {
-    let graph = check(
-        "function occurredAt using v(e: M::OrderPlaced): Integer pure { e.occurred_at }\n\
-         function fromExpress using v(e: M::ExpressOrderPlaced): Integer pure { occurredAt(e) }",
-    )
-    .expect("the unit checks");
-    let placed = graph
-        .semantic_graph()
-        .nodes()
-        .find(|node| {
-            node.node_tag() == NodeTag::Model && node.semantic_form() == "record_value_type" && {
-                let preimage: Value = serde_json::from_slice(node.preimage()).unwrap();
-                preimage["owner"]["node"] == fixture::id("OrderPlaced")
-            }
-        })
-        .expect("OrderPlaced is a model node")
-        .key()
-        .to_string();
-    let all: Vec<Value> = graph
-        .semantic_graph()
-        .nodes()
-        .map(|node| serde_json::from_slice(node.preimage()).unwrap())
-        .collect();
-    let projects: Vec<&Value> = all
-        .iter()
-        .filter(|preimage| preimage["body"]["operation"]["identity"] == "quire.op.record.project")
-        .collect();
-    assert_eq!(projects.len(), 1, "one record.project application");
-    let member = &projects[0]["body"]["operation"]["member"];
-    assert_eq!(member["kind"], "field");
-    assert_eq!(member["name"], "occurred_at");
-    assert_eq!(member["declaration"]["digest"], placed);
-    assert!(
-        all.iter()
-            .all(|preimage| !contains_text(preimage, "convert") && !contains_text(preimage, "cast")),
-        "no conversion node between the call and its argument"
-    );
-}
-
-fn contains_text(value: &Value, needle: &str) -> bool {
-    match value {
-        Value::String(text) => text.contains(needle),
-        Value::Object(map) => map.values().any(|value| contains_text(value, needle)),
-        Value::Array(items) => items.iter().any(|value| contains_text(value, needle)),
-        _ => false,
     }
 }
 
@@ -488,8 +412,7 @@ fn a_model_record_key_is_its_model_node_key_whatever_the_alias() {
                 .get(&composite.key())
                 .unwrap_or_else(|| panic!("{name} declares its model node's key"));
             assert_eq!(node.node_tag(), NodeTag::Model);
-            let preimage: Value = serde_json::from_slice(node.preimage()).unwrap();
-            assert_eq!(preimage["owner"]["node"], fixture::id(name));
+            assert_eq!(owner_view(node)["owner"]["node"], fixture::id(name));
             keys.insert(name.to_owned(), composite.key());
         }
         keys

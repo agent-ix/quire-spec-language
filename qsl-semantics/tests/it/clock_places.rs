@@ -4,7 +4,9 @@
 
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
-use qsl_semantics::check::{ClockOp, CollectionShape, PlaceStep, SlotRef};
+use qsl_semantics::check::{
+    BodyTerm, ClockOp, CollectionShape, LeafTerm, LiteralValue, NodeRef, NodeTag, PlaceStep, SlotRef,
+};
 use quire_semantic_value::declaration::CompositeShape;
 use serde_json::{json, Value};
 
@@ -2113,6 +2115,148 @@ fn absent_drops_an_option_clock() {
             (Code::InvalidTimedModel, "clock-write", write)
         );
     }
+}
+
+/// FR-230 "Presence bit" (TC-685), part of FR-230-AC-12: a postcondition
+/// writes one `Option<Clock>` place at most once. A reset and a drop, in
+/// either order, or two resets give the place no one presence and value,
+/// and refuse `invalid_timed_model`/`conflicting-clock-write` at the second
+/// write.
+#[trace("TC-685")]
+#[test]
+fn two_writes_of_an_option_clock_conflict() {
+    let document = option_clock_document();
+    for (writes, second) in [
+        ("self.v = 0 ms and self.v = absent", "self.v = absent"),
+        ("self.v = absent and self.v = 0 ms", "self.v = 0 ms"),
+        ("self.v = 0 ms and self.v = 1 ms", "self.v = 1 ms"),
+    ] {
+        let body =
+            format!("{UNITS}{DENSE}post Both using v on Config::Call::bump {{ {writes} }}\n");
+        let (cause, text) = refused(&document, &body);
+        assert_eq!(
+            (cause.code(), cause.tag(), text.as_str()),
+            (Code::InvalidTimedModel, "conflicting-clock-write", second),
+            "{writes}"
+        );
+    }
+}
+
+/// FR-230-AC-39 (TC-685), S3's part: `present(self.v)` is a `Boolean` data
+/// predicate over the presence bit beyond a guard's top-level conjunct.
+/// `self.v != absent` and `self.v = absent` in a guard are its presence and
+/// absence; `not present(self.v) or self.late` in a time invariant's `when`
+/// is two alternatives, one requiring `v` absent and one reading `late`;
+/// `urgent U when { present(self.v) and self.late }` requires `v` present.
+/// A presence read of `self` this slice does not read (under `or` in a
+/// postcondition) refuses `unsupported_construct`/`not-yet-implemented` at
+/// the read, never as a clock read.
+#[trace("TC-685")]
+#[test]
+fn present_is_a_data_predicate_beyond_a_guard_conjunct() {
+    let document = option_clock_document();
+    let body = format!(
+        "{UNITS}{DENSE}\
+         pre Armed using v on Config::Call::bump {{ self.v != absent and value(self.v) >= 1 ms }}\n\
+         pre Idle using v on Config::Call::reply {{ self.v = absent }}\n\
+         time invariant Idle when {{ not present(self.v) or self.late }} {{ self.x <= 5 ms }}\n\
+         urgent Due when {{ present(self.v) and self.late }};\n"
+    );
+    let graph = check(&document, &body).expect("presence reads check");
+    let model = timed(&graph);
+    let (v, _) = model
+        .clock_fields()
+        .find(|(_, field)| field.name() == "v")
+        .expect("v is a place");
+    let guards: Vec<_> = model
+        .guards()
+        .iter()
+        .map(|guard| {
+            guard
+                .parts()
+                .iter()
+                .map(|part| part.presences().to_vec())
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    assert_eq!(guards, [vec![vec![(v, true)]], vec![vec![(v, false)]]]);
+    let [invariant] = model.invariants() else {
+        panic!("one invariant");
+    };
+    let alternatives: Vec<_> = invariant
+        .alternatives()
+        .iter()
+        .map(|alternative| alternative.presences().to_vec())
+        .collect();
+    assert_eq!(alternatives, [vec![(v, false)], vec![]]);
+    let [qsl_semantics::check::Urgency::When { alternatives, .. }] = model.urgency() else {
+        panic!("one urgent when");
+    };
+    let urgent: Vec<_> = alternatives
+        .iter()
+        .map(|alternative| alternative.presences().to_vec())
+        .collect();
+    assert_eq!(urgent, [vec![(v, true)]]);
+
+    let either = "post Either using v on Config::Call::bump { present(self.v) or self.late }\n";
+    let (cause, text) = refused(&document, &format!("{UNITS}{DENSE}{either}"));
+    assert_eq!(
+        (cause.code(), cause.tag(), text.as_str()),
+        (
+            Code::UnsupportedConstruct,
+            "not-yet-implemented",
+            "present(self.v)"
+        )
+    );
+}
+
+/// The STD-493 `absent` ruling (TC-685), lowering: `absent` lowers to QSpec
+/// FR-322's `none` literal, a `value`/`literal` node of kind `none` whose
+/// type is the `Option<Integer>` it was typed by, the function's result.
+#[trace("TC-685")]
+#[test]
+fn absent_lowers_to_the_none_literal_of_its_option() {
+    let document = rpc_document_with(&["x"], false);
+    let graph = check(
+        &document,
+        &format!("{UNITS}{DENSE}function f using v(): Option<Integer> pure {{ absent }}\n"),
+    )
+    .expect("absent checks");
+    let nodes: Vec<_> = graph.semantic_graph().nodes().collect();
+    let [none] = nodes
+        .iter()
+        .filter(|node| {
+            matches!(
+                node.body(),
+                BodyTerm::Leaf(LeafTerm::Literal {
+                    value: LiteralValue::None,
+                    ..
+                })
+            )
+        })
+        .collect::<Vec<_>>()[..]
+    else {
+        panic!("one none literal");
+    };
+    assert_eq!(
+        (none.node_tag(), none.semantic_form()),
+        (NodeTag::Value, "literal")
+    );
+    // Typed by the function's result type, `Option<Integer>`.
+    let function = nodes
+        .iter()
+        .find(|node| node.node_tag() == NodeTag::Function)
+        .expect("the function node");
+    let BodyTerm::Leaf(LeafTerm::Literal { ty, .. }) = none.body() else {
+        unreachable!("filtered to a literal");
+    };
+    assert_eq!(
+        Some(ty),
+        function.semantic_type().map(NodeRef::Admitted).as_ref()
+    );
+    assert!(nodes
+        .iter()
+        .any(|node| node.semantic_form() == "option" && node.node_tag() == NodeTag::CompositeType));
 }
 
 /// FR-230 "Presence bit" (TC-685), part of FR-230-AC-12: a postcondition
