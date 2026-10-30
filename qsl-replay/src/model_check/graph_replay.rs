@@ -62,11 +62,6 @@ pub fn replay_model_graph_with_cancel(
             member: "profile_selections",
         });
     }
-    if request.source_digests() != envelope.source_digests() {
-        return Err(ReplayRefusal::ModelGraphMismatch {
-            member: "source_digests",
-        });
-    }
     if request.declared_domains() != envelope.declared_domains() {
         return Err(ReplayRefusal::ModelGraphMismatch {
             member: "declared_domains",

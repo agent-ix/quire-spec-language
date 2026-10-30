@@ -451,9 +451,7 @@ mod tests {
     fn outcome_region_locus_is_retained_without_source_bytes() {
         let source = RawSourceRef::new(
             "tests",
-            "source",
-            DigestRecord::mint(DigestDomain::SourceBytesV1, [3; 32]),
-        )
+            "source",)
         .unwrap();
         let region = SourceRegion::new(source.clone(), 4, 11).unwrap();
         let diagnostic = qsl_replay::OutcomeDiagnostic::new(

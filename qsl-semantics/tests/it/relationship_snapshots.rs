@@ -1078,12 +1078,7 @@ fn the_snapshot_built_manifest_is_closed_and_every_stored_end_is_present() {
     let admission = checked(&variant);
     let source = qsl_foundation::source::provenance::RawSourceRef::new(
         "authority",
-        "unit",
-        qsl_foundation::digest::DigestRecord::mint(
-            qsl_foundation::digest::DigestDomain::SourceBytesV1,
-            [1; 32],
-        ),
-    )
+        "unit",)
     .expect("a source reference");
     let rows = |spare: Option<bool>| {
         let mut document = base();

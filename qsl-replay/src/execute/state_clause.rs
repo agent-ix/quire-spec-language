@@ -221,7 +221,7 @@ pub fn replay_state_clause(
     }
 
     // `recompile` already required exactly one source, provided.
-    let source = one_source(request.source_digests())?;
+    let source = one_source(request.sources())?;
     let packages = domain_packages(&request)?;
     // FR-106 reads every document only from the byte provision, by its
     // identity labels.

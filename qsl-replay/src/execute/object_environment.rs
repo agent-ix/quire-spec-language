@@ -218,7 +218,7 @@ pub(super) fn admit(
         .source_digests()
         .first()
         .ok_or_else(|| fault("decoded-request-names-a-source"))?;
-    let source = RawSourceRef::new(unit.authority(), unit.identity(), unit.digest())
+    let source = RawSourceRef::new(unit.authority(), unit.identity())
         .map_err(|_| fault("package-source-names-a-source-document"))?;
     let key = BundleKey {
         source,

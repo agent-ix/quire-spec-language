@@ -411,12 +411,7 @@ pub(crate) fn occurrence_role(spelling: &str) -> Option<CheckedOccurrenceRole> {
 }
 
 pub(crate) fn raw_source_ref(source: &CheckedSourceRef) -> Result<RawSourceRef, SourceMapDefect> {
-    let digest = DigestRecord::from_wire(Some(&source.digest_domain), &source.digest)?;
-    Ok(RawSourceRef::new(
-        &*source.authority,
-        &*source.identity,
-        digest,
-    )?)
+    Ok(RawSourceRef::new(&*source.authority, &*source.identity)?)
 }
 
 fn source_region(region: &CheckedSourceRegion) -> Result<SourceRegion, SourceMapDefect> {

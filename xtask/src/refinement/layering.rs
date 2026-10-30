@@ -605,7 +605,7 @@ fn source_reference(source: &SourceFile, bytes: &[u8]) -> Result<RawSourceRef, S
         DigestDomain::SourceBytesV1,
         ByteDigest::of(bytes).as_bytes(),
     );
-    RawSourceRef::new(source.authority.clone(), source.identity.clone(), digest)
+    RawSourceRef::new(source.authority.clone(), source.identity.clone())
         .map_err(|error| format!("invalid source labels: {error}"))
 }
 

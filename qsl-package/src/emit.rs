@@ -1031,15 +1031,11 @@ fn artifact(reference: &DefinitionReference) -> CheckedArtifactRef {
     }
 }
 
-/// `source` as the wire's `RawSourceRef`: authority, identity and the
-/// digest of its bytes.
+/// `source` as the wire's `RawSourceRef`: authority and identity.
 fn source_artifact(source: &RawSourceRef) -> CheckedSourceRef {
-    let digest = source.digest();
     CheckedSourceRef {
         authority: source.authority().into(),
         identity: source.identity().into(),
-        digest_domain: digest.domain().to_string().into(),
-        digest: digest.hex().into(),
     }
 }
 

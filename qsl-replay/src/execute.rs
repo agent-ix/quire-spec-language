@@ -660,7 +660,6 @@ impl ReplayRefusal {
                 "claim_identity" | "clause_node" => "/replay/source/model_graph/clause_node",
                 "occurrence_key" => "/replay/source/model_graph/occurrence_key",
                 "package_id" => "/replay/source/model_graph/package_id",
-                "source_digests" => "/replay/source_digests",
                 "profile_selections" => "/replay/profile_selections",
                 "declared_domains" => "/replay/declared_domains",
                 "undefined_locus" => "/replay/source/model_graph/undefined/where/locus",
@@ -1554,7 +1553,7 @@ pub(crate) fn recompile(
     }
     // Rule 2: the proved package's sources, and each entry's, name one
     // source unit.
-    let source = one_source(request.source_digests())?;
+    let source = one_source(request.sources())?;
     let library_sources = request
         .dependencies()
         .iter()
@@ -1563,7 +1562,7 @@ pub(crate) fn recompile(
     let provided = |reference: &RawSourceRef| {
         request
             .byte_provision()
-            .get(reference.digest())
+            .get(reference)
             .ok_or_else(|| {
                 // `ReplayRequest::decode` refuses an incomplete provision.
                 ReplayRefusal::Fault(InternalFault::new(

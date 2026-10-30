@@ -229,7 +229,7 @@ pub fn replay_frame(
     check_identities(payload, operation_frame).map_err(ReplayRefusal::FrameIdentity)?;
 
     // `recompile` already required exactly one source, provided.
-    let source = one_source(request.source_digests())?;
+    let source = one_source(request.sources())?;
     let packages = domain_packages(&request)?;
     // FR-106 reads the invocation and its snapshots only from the byte
     // provision, by their identity labels.

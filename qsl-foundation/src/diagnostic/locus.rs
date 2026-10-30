@@ -164,9 +164,7 @@ mod tests {
         SourceRegion::new(
             RawSourceRef::new(
                 "a",
-                "u",
-                DigestRecord::mint(DigestDomain::SourceBytesV1, [7; 32]),
-            )
+                "u",)
             .unwrap(),
             start,
             end,

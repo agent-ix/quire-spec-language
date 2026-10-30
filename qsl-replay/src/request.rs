@@ -16,7 +16,7 @@ use quire_exact::ScalarLimits;
 
 use crate::bounds::{BoundExceeded, ReplayLimits};
 use crate::identity::{
-    DeclaredDomain, ObligationIdentity, ProfileSelection, RawSourceRef, SourceDigestWire,
+    DeclaredDomain, ObligationIdentity, ProfileSelection, RawSourceRef, SourceRefWire,
 };
 use crate::object_environment::ObjectEnvironmentRef;
 use crate::target::{
@@ -164,32 +164,34 @@ impl FromIterator<(Setting, u64)> for StageLimits {
 }
 
 /// The request's byte provision: every recompilation input the package
-/// reference names, keyed by its own declared [`DigestRecord`]. This type
+/// reference names, keyed by the source's authority and identity. This type
 /// defines no path-, environment-variable- or search-location-typed
 /// accessor anywhere (FR-071-AC-2): [`Self::get`] is the only way to reach
-/// an entry, and it takes a digest.
+/// an entry, and it takes a source reference.
 #[derive(Clone, Default, Eq, PartialEq)]
 pub struct ByteProvision {
-    bytes: BTreeMap<DigestRecord, Vec<u8>>,
+    bytes: BTreeMap<(String, String), Vec<u8>>,
     documents: Vec<Vec<u8>>,
 }
 
-/// FR-073-AC-2: never the entries' raw bytes -- only each entry's digest
-/// and byte length.
+/// FR-073-AC-2: never the entries' raw bytes -- only each entry's source and
+/// byte length.
 impl std::fmt::Debug for ByteProvision {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_map()
-            .entries(self.bytes.iter().map(|(digest, bytes)| (digest, bytes.len())))
+            .entries(self.bytes.iter().map(|(source, bytes)| (source, bytes.len())))
             .finish()
     }
 }
 
 impl ByteProvision {
-    /// Look up an entry by its own declared digest. The only public
+    /// Look up an entry by the source it is provided for. The only public
     /// accessor this type has; there is no path- or location-typed
     /// alternative.
-    pub fn get(&self, digest: DigestRecord) -> Option<&[u8]> {
-        self.bytes.get(&digest).map(Vec::as_slice)
+    pub fn get(&self, source: &RawSourceRef) -> Option<&[u8]> {
+        self.bytes
+            .get(&(source.authority().to_owned(), source.identity().to_owned()))
+            .map(Vec::as_slice)
     }
 
     /// The domain package and state documents the provision carries, each
@@ -252,7 +254,7 @@ pub struct DependencyEntryWire {
     /// `(digest domain, digest hex)`, in `quire.package.semantic/v2`.
     pub package_id: (Option<String>, String),
     /// The dependency's lock `sources`.
-    pub sources: Vec<SourceDigestWire>,
+    pub sources: Vec<SourceRefWire>,
 }
 
 /// FR-071/ADR-013 O-26: the typed replay request. Digest-only: every
@@ -260,7 +262,7 @@ pub struct DependencyEntryWire {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReplayRequest {
     package_id: DigestRecord,
-    source_digests: Vec<RawSourceRef>,
+    sources: Vec<RawSourceRef>,
     dependencies: Vec<DependencyEntry>,
     replay_target: Option<ReplayTarget>,
     over: Option<ReplayOverBinding>,
@@ -283,8 +285,8 @@ impl ReplayRequest {
         self.package_id
     }
     /// The package's declared source references.
-    pub fn source_digests(&self) -> &[RawSourceRef] {
-        &self.source_digests
+    pub fn sources(&self) -> &[RawSourceRef] {
+        &self.sources
     }
     /// The package reference's `dependencies`, in request order (QSpec
     /// FR-323, ADR-015 D-4).
@@ -398,9 +400,9 @@ pub struct ReplayRequestWire {
     /// `(digest domain, digest hex)` naming the package this request
     /// replays against.
     pub package_id: (Option<String>, String),
-    /// `(authority, identity, revision namespace, revision, digest domain,
-    /// digest hex)` per declared source reference.
-    pub source_digests: Vec<SourceDigestWire>,
+    /// `(authority, identity, revision namespace, revision)` per declared
+    /// source reference.
+    pub sources: Vec<SourceRefWire>,
     /// The package reference's `dependencies`, one per entry of the proved
     /// package's `dependency_selections`.
     pub dependencies: Vec<DependencyEntryWire>,
@@ -438,9 +440,8 @@ pub struct ReplayRequestWire {
     /// The declared domains of the proving run: the caller-substituted
     /// ADR-014 B-4 bounds the obligation was proved over.
     pub declared_domains: Vec<DeclaredDomain>,
-    /// `(digest domain, digest hex, raw bytes)` per raw-byte-addressed
-    /// entry.
-    pub byte_provision: Vec<(Option<String>, String, Vec<u8>)>,
+    /// `(authority, identity, raw bytes)` per source entry.
+    pub byte_provision: Vec<(String, String, Vec<u8>)>,
     /// The domain package and state documents, each identified by what it
     /// declares.
     pub documents: Vec<Vec<u8>>,
@@ -477,27 +478,11 @@ pub enum ReplayRequestRefusal {
     /// problem, so it is never spelled `digest-domain-mismatch`.
     #[error("invalid_digest/malformed-encoding: {0}")]
     MalformedDigest(#[source] InvalidDigestRecord),
-    /// A byte-provision entry names an FR-201 domain that is not
-    /// raw-byte-addressed: this reader recomputes only those, so such a
-    /// domain can never be verified here and is refused before any hashing
-    /// is attempted, distinct from an actual byte/digest mismatch.
-    #[error("invalid_digest/ineligible-domain: {0} is not a raw-byte-addressed digest domain and cannot be admitted as a byte-provision entry")]
-    IneligibleByteProvisionDomain(DigestDomain),
-    /// A byte-provision entry under a raw-byte domain does not hash to its
-    /// own declared digest: the raw bytes' own digest differs
-    /// (`stale_dependency`/`byte-digest-mismatch`).
-    #[error("stale_dependency/byte-digest-mismatch: entry under {declared} hashes to {actual}")]
-    ByteDigestMismatch {
-        /// The digest the entry is provided under.
-        declared: String,
-        /// The digest of the entry's raw bytes.
-        actual: String,
-    },
-    /// The package reference names a source digest with no matching
+    /// The package reference names a source with no matching
     /// byte-provision entry (`missing_import`/`missing-selection`).
     #[error("missing_import/missing-selection: {named_by} names {requested} with no matching byte-provision entry")]
     IncompleteByteProvision {
-        /// The requested digest record: its domain and digest.
+        /// The requested source: its authority and identity.
         requested: String,
         /// Where the package reference names it.
         named_by: String,
@@ -618,27 +603,13 @@ fn decode_target(wire: RequestTargetWire) -> Result<ReplayTarget, ReplayRequestR
     Ok(target)
 }
 
-/// `bytes`' digest under `digest`'s domain: SHA-256 of the raw bytes for a
-/// raw-byte-addressed domain (source and definition documents); every other
-/// domain refuses as ineligible.
-fn digest_of(digest: DigestRecord, bytes: &[u8]) -> Result<[u8; 32], ReplayRequestRefusal> {
-    let domain = digest.domain();
-    if domain.is_raw_byte_addressed() {
-        return Ok(ByteDigest::of(bytes).as_bytes());
-    }
-    Err(ReplayRequestRefusal::IneligibleByteProvisionDomain(domain))
-}
-
 impl ReplayRequestRefusal {
     /// The catalog code of this refusal.
     pub fn code(&self) -> Code {
         match self {
             Self::UnknownSemanticProfile { .. } => Code::UnknownProfile,
-            Self::DigestDomainMismatch(_)
-            | Self::ByteDigestMismatch { .. } => Code::StaleDependency,
-            Self::MalformedDigest(_) | Self::IneligibleByteProvisionDomain(_) => {
-                Code::InvalidDigest
-            }
+            Self::DigestDomainMismatch(_) => Code::StaleDependency,
+            Self::MalformedDigest(_) => Code::InvalidDigest,
             Self::IncompleteByteProvision { .. } => Code::MissingImport,
             Self::EmptyDependencySelection { .. } | Self::EmptyBackendIdentity => {
                 Code::InvalidIdentifier
@@ -717,7 +688,7 @@ fn measured_encoded_bytes(wire: &ReplayRequestWire) -> usize {
             .map(|name| name.len() + std::mem::size_of::<u64>())
             .sum::<usize>()
         + wire
-            .source_digests
+            .sources
             .iter()
             .map(RawSourceRef::wire_len)
             .sum::<usize>()
@@ -750,7 +721,7 @@ fn measured_encoded_bytes(wire: &ReplayRequestWire) -> usize {
         + wire
             .byte_provision
             .iter()
-            .map(|(_, hex, bytes)| hex.len() + bytes.len())
+            .map(|(authority, identity, bytes)| authority.len() + identity.len() + bytes.len())
             .sum::<usize>()
         + wire
             .declared_domains
@@ -830,12 +801,11 @@ impl ReplayRequest {
         let package_id = DigestRecord::from_wire(package_domain.as_deref(), &package_hex)
             .map_err(classify_digest_error)?;
 
-        let source_digests = wire
-            .source_digests
+        let sources = wire
+            .sources
             .into_iter()
             .map(RawSourceRef::from_wire)
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(classify_digest_error)?;
+            .collect::<Vec<_>>();
 
         let dependencies = wire
             .dependencies
@@ -855,8 +825,7 @@ impl ReplayRequest {
                     .sources
                     .into_iter()
                     .map(RawSourceRef::from_wire)
-                    .collect::<Result<Vec<_>, _>>()
-                    .map_err(classify_digest_error)?;
+                    .collect::<Vec<_>>();
                 Ok::<_, ReplayRequestRefusal>(DependencyEntry {
                     identity,
                     package_id,
@@ -866,34 +835,20 @@ impl ReplayRequest {
             .collect::<Result<Vec<_>, _>>()?;
 
         let mut provision = BTreeMap::new();
-        for (domain, hex, bytes) in wire.byte_provision {
-            let digest =
-                DigestRecord::from_wire(domain.as_deref(), &hex).map_err(classify_digest_error)?;
-            // N3: only a domain this reader can recompute passes the check
-            // below. A structural domain digests a form this reader never
-            // builds, so admitting one here would always refuse with a
-            // misleading staleness cause instead of the real "wrong domain
-            // for this position" one.
-            let recomputed = digest_of(digest, &bytes)?;
-            if recomputed != *digest.as_bytes() {
-                return Err(ReplayRequestRefusal::ByteDigestMismatch {
-                    declared: format!("{digest:?}"),
-                    actual: format!("{:?}", DigestRecord::mint(digest.domain(), recomputed)),
-                });
-            }
-            provision.insert(digest, bytes);
+        for (authority, identity, bytes) in wire.byte_provision {
+            provision.insert((authority, identity), bytes);
         }
         let byte_provision = ByteProvision {
             bytes: provision,
             documents: wire.documents,
         };
 
-        // Completeness: every named source digest, the proved package's and
-        // each dependency's, must have a matching entry (FR-071-AC-5, AC-9).
-        let named = source_digests
+        // Completeness: every named source, the proved package's and each
+        // dependency's, must have a matching entry (FR-071-AC-5, AC-9).
+        let named = sources
             .iter()
             .enumerate()
-            .map(|(index, source)| (format!("source_digests[{index}]"), source))
+            .map(|(index, source)| (format!("sources[{index}]"), source))
             .chain(dependencies.iter().enumerate().flat_map(|(index, entry)| {
                 entry.sources.iter().map(move |source| {
                     (
@@ -903,10 +858,9 @@ impl ReplayRequest {
                 })
             }));
         for (named_by, source) in named {
-            let digest = source.digest();
-            if byte_provision.get(digest).is_none() {
+            if byte_provision.get(source).is_none() {
                 return Err(ReplayRequestRefusal::IncompleteByteProvision {
-                    requested: format!("{} {}", digest.domain().as_str(), digest.hex()),
+                    requested: format!("{} {}", source.authority(), source.identity()),
                     named_by,
                 });
             }
@@ -914,7 +868,7 @@ impl ReplayRequest {
 
         Ok(Self {
             package_id,
-            source_digests,
+            sources,
             dependencies,
             replay_target,
             over,
@@ -947,8 +901,8 @@ impl ReplayRequest {
                 Some(self.package_id.domain().as_str().to_owned()),
                 self.package_id.hex(),
             ),
-            source_digests: self
-                .source_digests
+            sources: self
+                .sources
                 .iter()
                 .map(RawSourceRef::to_wire)
                 .collect(),
@@ -979,12 +933,8 @@ impl ReplayRequest {
                 .byte_provision
                 .bytes
                 .iter()
-                .map(|(digest, bytes)| {
-                    (
-                        Some(digest.domain().as_str().to_owned()),
-                        digest.hex(),
-                        bytes.clone(),
-                    )
+                .map(|((authority, identity), bytes)| {
+                    (authority.clone(), identity.clone(), bytes.clone())
                 })
                 .collect(),
         }

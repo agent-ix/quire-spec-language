@@ -21,7 +21,7 @@ use quire_exact::ScalarLimits;
 
 use crate::bounds::{BoundExceeded, ReplayLimits};
 use crate::identity::{
-    DeclaredDomain, ObligationIdentity, ProfileSelection, RawSourceRef, SourceDigestWire,
+    DeclaredDomain, ObligationIdentity, ProfileSelection, 
     TracePosition,
 };
 use crate::model_check::state_graph::GraphEvidenceEnvelope;
@@ -594,7 +594,6 @@ pub struct WitnessEnvelope<P: FamilyPayload> {
     clause_node: WireNodeId,
     replay_target: ReplayTarget,
     package_id: DigestRecord,
-    source_digests: Vec<RawSourceRef>,
     profile_selections: Vec<ProfileSelection>,
     run_limits: ScalarLimits,
     declared_domains: Vec<DeclaredDomain>,
@@ -625,10 +624,6 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
     /// The package this counterexample was produced from.
     pub fn package_id(&self) -> DigestRecord {
         self.package_id
-    }
-    /// The package's declared source references.
-    pub fn source_digests(&self) -> &[RawSourceRef] {
-        &self.source_digests
     }
     /// The semantic profile selections in effect for the proving run.
     pub fn profile_selections(&self) -> &[ProfileSelection] {
@@ -908,9 +903,6 @@ pub struct WitnessPacket<P: FamilyPayload> {
     pub replay_target: ReplayTargetMembers,
     /// `(digest domain, digest hex)` naming the package.
     pub package_id: Option<(Option<String>, String)>,
-    /// `(authority, identity, revision namespace, revision, digest domain,
-    /// digest hex)` per declared source reference.
-    pub source_digests: Option<Vec<SourceDigestWire>>,
     /// The semantic profile selections in effect for the proving run.
     pub profile_selections: Option<Vec<ProfileSelection>>,
     /// The proving run's `quire.value.accounting/v1` limits (ADR-014 B-2).
@@ -938,7 +930,6 @@ impl<P: FamilyPayload> Default for WitnessPacket<P> {
             clause_node: None,
             replay_target: ReplayTargetMembers::default(),
             package_id: None,
-            source_digests: None,
             profile_selections: None,
             run_limits: None,
             declared_domains: None,
@@ -959,9 +950,6 @@ fn measured_encoded_bytes<P: FamilyPayload>(packet: &WitnessPacket<P>) -> usize 
     let mut total = 0usize;
     total += packet.replay_target.measured_bytes();
     total += packet.package_id.as_ref().map_or(0, |(_, hex)| hex.len());
-    total += packet.source_digests.as_ref().map_or(0, |digests| {
-        digests.iter().map(RawSourceRef::wire_len).sum()
-    });
     total += packet.profile_selections.as_ref().map_or(0, |selections| {
         selections
             .iter()
@@ -1057,18 +1045,6 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
         std::mem::size_of_val(self)
             .saturating_add(self.occurrence_key.to_string().len())
             .saturating_add(
-                self.source_digests
-                    .iter()
-                    .map(|source| {
-                        source.authority().len()
-                            + source.identity().len()
-                            + source.revision_namespace().len()
-                            + source.revision().len()
-                            + source.digest().hex().len()
-                    })
-                    .sum::<usize>(),
-            )
-            .saturating_add(
                 self.profile_selections
                     .iter()
                     .map(|selection| selection.profile().len() + selection.value().len())
@@ -1118,15 +1094,6 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
             .ok_or(WitnessRefusal::MissingMember("package_id"))?;
         let package_id = DigestRecord::from_wire(package_domain.as_deref(), &package_hex)
             .map_err(|e| classify_digest_error("package_id", e))?;
-        let source_digests = packet
-            .source_digests
-            .ok_or(WitnessRefusal::MissingMember("source_digests"))?
-            .into_iter()
-            .map(|wire| {
-                RawSourceRef::from_wire(wire)
-                    .map_err(|e| classify_digest_error("source_digests", e))
-            })
-            .collect::<Result<Vec<_>, WitnessRefusal>>()?;
         let profile_selections = packet
             .profile_selections
             .ok_or(WitnessRefusal::MissingMember("profile_selections"))?;
@@ -1159,7 +1126,6 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
             clause_node,
             replay_target,
             package_id,
-            source_digests,
             profile_selections,
             run_limits,
             declared_domains,
@@ -1185,12 +1151,6 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
                 Some(self.package_id.domain().as_str().to_owned()),
                 self.package_id.hex(),
             )),
-            source_digests: Some(
-                self.source_digests
-                    .iter()
-                    .map(RawSourceRef::to_wire)
-                    .collect(),
-            ),
             profile_selections: Some(self.profile_selections.clone()),
             run_limits: Some(self.run_limits),
             declared_domains: Some(self.declared_domains.clone()),
@@ -1256,14 +1216,6 @@ mod envelope_tests {
                 Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
                 DigestRecord::mint(DigestDomain::PackageSemanticV2, digest(4)).hex(),
             )),
-            source_digests: Some(vec![(
-                "registry".to_owned(),
-                "pkg-a".to_owned(),
-                "git".to_owned(),
-                "rev-1".to_owned(),
-                Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-                DigestRecord::mint(DigestDomain::SourceBytesV1, digest(5)).hex(),
-            )]),
             profile_selections: Some(vec![ProfileSelection::new(
                 "quire.profile.v1".to_owned(),
                 "finite-state".to_owned(),
@@ -1432,13 +1384,6 @@ mod envelope_tests {
             Err(WitnessRefusal::MissingMember("trace_position"))
         ));
 
-        let mut missing_source_digest = full_packet(0);
-        missing_source_digest.source_digests = None;
-        assert!(matches!(
-            WitnessEnvelope::reconstruct(missing_source_digest, crate::ReplayLimits::default()),
-            Err(WitnessRefusal::MissingMember("source_digests"))
-        ));
-
         let mut missing_obligation = full_packet(0);
         missing_obligation.obligation_identity = None;
         assert!(matches!(
@@ -1550,48 +1495,6 @@ mod envelope_tests {
         // all -- that call site does not exist to attempt compiling.
     }
 
-    /// FR-070-AC-6 (TC-181, digest-domain half): a `RawSourceRef` digest
-    /// whose domain is outside the closed FR-201 set refuses at
-    /// reconstruction.
-    #[trace("TC-181", "FR-070-AC-6")]
-    #[test]
-    fn tc_181_refuses_an_out_of_domain_digest() {
-        let mut packet = full_packet(0);
-        packet.source_digests = Some(vec![(
-            "registry".to_owned(),
-            "pkg-a".to_owned(),
-            "git".to_owned(),
-            "rev-1".to_owned(),
-            Some("quire.not-a-real-domain/v1".to_owned()),
-            "ab".repeat(32),
-        )]);
-        assert!(matches!(
-            WitnessEnvelope::reconstruct(packet, crate::ReplayLimits::default()),
-            Err(WitnessRefusal::DigestDomainMismatch("source_digests", _))
-        ));
-    }
-
-    /// N5: a `RawSourceRef` digest with a valid FR-201 domain but malformed
-    /// hex (wrong length) refuses distinctly from an out-of-domain digest --
-    /// never spelled `digest-domain-mismatch`, since the domain itself named
-    /// no problem here.
-    #[test]
-    fn refuses_a_malformed_digest_encoding_distinctly_from_a_domain_mismatch() {
-        let mut packet = full_packet(0);
-        packet.source_digests = Some(vec![(
-            "registry".to_owned(),
-            "pkg-a".to_owned(),
-            "git".to_owned(),
-            "rev-1".to_owned(),
-            Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-            "ab".repeat(31), // 62 hex chars, not 64
-        )]);
-        assert!(matches!(
-            WitnessEnvelope::reconstruct(packet, crate::ReplayLimits::default()),
-            Err(WitnessRefusal::MalformedDigest("source_digests", _))
-        ));
-    }
-
     /// ADR-013 O-19: an empty `backend` member refuses reconstruction.
     #[test]
     fn an_empty_backend_member_refuses() {
@@ -1667,7 +1570,6 @@ mod envelope_tests {
                 clause_node: self.clause_node,
                 replay_target: self.replay_target,
                 package_id: self.package_id,
-                source_digests: self.source_digests,
                 profile_selections: self.profile_selections,
                 run_limits: self.run_limits,
                 declared_domains: self.declared_domains,

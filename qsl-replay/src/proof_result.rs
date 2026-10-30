@@ -2247,9 +2247,7 @@ mod tests {
     fn refuted_source_with_region(authority: &str, identity: String) -> BackendProviderSource {
         let source_ref = RawSourceRef::new(
             authority,
-            identity,
-            DigestRecord::mint(DigestDomain::SourceBytesV1, [1; 32]),
-        )
+            identity,)
         .unwrap();
         let region = SourceRegion::new(source_ref, 0, 1).unwrap();
         let replay = ReplayResult::Witness(crate::WitnessArmResult::settle_range_violation(
@@ -2602,9 +2600,7 @@ mod tests {
         let region = SourceRegion::new(
             RawSourceRef::new(
                 "a",
-                "i",
-                DigestRecord::mint(DigestDomain::SourceBytesV1, [1; 32]),
-            )
+                "i",)
             .unwrap(),
             0,
             1,

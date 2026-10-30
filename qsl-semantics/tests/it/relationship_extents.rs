@@ -998,9 +998,7 @@ fn bundle_key(label: &str) -> BundleKey {
 fn source(identity: &str, digest: u8) -> RawSourceRef {
     RawSourceRef::new(
         "authority",
-        identity,
-        DigestRecord::mint(DigestDomain::SourceBytesV1, [digest; 32]),
-    )
+        identity,)
     .expect("a source reference")
 }
 

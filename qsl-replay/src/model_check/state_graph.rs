@@ -253,7 +253,6 @@ pub struct GraphEvidenceEnvelope {
     occurrence_key: qsl_foundation::source::provenance::OccurrenceKey,
     claim_node: qsl_foundation::digest::WireNodeId,
     package_id: DigestRecord,
-    source_digests: Vec<RawSourceRef>,
     profile_selections: Vec<ProfileSelection>,
     run_limits: ScalarLimits,
     declared_domains: Vec<DeclaredDomain>,
@@ -269,7 +268,6 @@ impl GraphEvidenceEnvelope {
         occurrence_key: qsl_foundation::source::provenance::OccurrenceKey,
         claim_node: qsl_foundation::digest::WireNodeId,
         package_id: DigestRecord,
-        source_digests: Vec<RawSourceRef>,
         profile_selections: Vec<ProfileSelection>,
         run_limits: ScalarLimits,
         declared_domains: Vec<DeclaredDomain>,
@@ -281,7 +279,6 @@ impl GraphEvidenceEnvelope {
             occurrence_key,
             claim_node,
             package_id,
-            source_digests,
             profile_selections,
             run_limits,
             declared_domains,
@@ -308,11 +305,6 @@ impl GraphEvidenceEnvelope {
     /// The package identity the evidence was produced against.
     pub fn package_id(&self) -> DigestRecord {
         self.package_id
-    }
-
-    /// The package's declared source references.
-    pub fn source_digests(&self) -> &[RawSourceRef] {
-        &self.source_digests
     }
 
     /// The semantic profile selections of the proving run.
@@ -343,18 +335,6 @@ impl GraphEvidenceEnvelope {
     pub(crate) fn measured_bytes(&self) -> usize {
         std::mem::size_of_val(self)
             .saturating_add(self.occurrence_key.to_string().len())
-            .saturating_add(
-                self.source_digests
-                    .iter()
-                    .map(|source| {
-                        source.authority().len()
-                            + source.identity().len()
-                            + source.revision_namespace().len()
-                            + source.revision().len()
-                            + source.digest().hex().len()
-                    })
-                    .sum::<usize>(),
-            )
             .saturating_add(
                 self.profile_selections
                     .iter()

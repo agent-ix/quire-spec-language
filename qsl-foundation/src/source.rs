@@ -4,7 +4,6 @@
 //!
 //! [`provenance`] holds ADR-013 O-07/O-12's occurrence key, source region
 //! and package source map.
-use crate::digest::{DigestDomain, DigestRecord};
 use crate::ByteDigest;
 use alloc::sync::Arc;
 use alloc::{boxed::Box, format, string::String, vec, vec::Vec};
@@ -106,20 +105,15 @@ impl SourceIdentity {
         }
     }
 
-    /// The `RawSourceRef` of bytes with `digest` under these labels.
+    /// The `RawSourceRef` under these labels.
     /// Provenance refuses only an empty label, which is a blank one, so a
     /// blank label is named first and a provenance refusal after it is an
     /// established-invariant break ([`ReferenceError::Provenance`]).
-    fn reference(&self, digest: ByteDigest) -> Result<RawSourceRef, ReferenceError> {
+    fn reference(&self) -> Result<RawSourceRef, ReferenceError> {
         if let Some(label) = self.first_blank_label() {
             return Err(ReferenceError::Blank(label));
         }
-        RawSourceRef::new(
-            self.authority.clone(),
-            self.identity.clone(),
-            DigestRecord::mint(DigestDomain::SourceBytesV1, digest.as_bytes()),
-        )
-        .map_err(ReferenceError::Provenance)
+        RawSourceRef::new(self.authority.clone(), self.identity.clone()).map_err(ReferenceError::Provenance)
     }
 }
 
@@ -299,14 +293,10 @@ const BOM: &str = "\u{feff}";
 
 /// FR-001: render `region` over `bytes`, the bytes its `RawSourceRef` names,
 /// deriving one-based lines and Unicode scalar columns from the longest
-/// valid UTF-8 prefix of those bytes. Returns `None` when the bytes are not
-/// the ones the region's reference names, or when an end is not a scalar
+/// valid UTF-8 prefix of those bytes. Returns `None` when an end is not a scalar
 /// boundary inside that prefix. This is how a refusal region over offered
 /// bytes that were never admitted is rendered.
 pub fn render_offered(bytes: &[u8], region: &SourceRegion) -> Option<LocatedSpan> {
-    if region.source().digest().as_bytes() != &ByteDigest::of(bytes).as_bytes() {
-        return None;
-    }
     let text = match core::str::from_utf8(bytes) {
         Ok(text) => text,
         Err(error) => core::str::from_utf8(bytes.get(..error.valid_up_to())?).ok()?,

@@ -880,9 +880,7 @@ fn cases_differing_only_in_their_self_object_have_distinct_names() {
 fn dummy_reference(identity: &str) -> RawSourceRef {
     RawSourceRef::new(
         AUTHORITY,
-        identity,
-        DigestRecord::mint(DigestDomain::SourceBytesV1, [7; 32]),
-    )
+        identity,)
     .unwrap()
 }
 
