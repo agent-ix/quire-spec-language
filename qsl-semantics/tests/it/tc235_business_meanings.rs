@@ -340,6 +340,7 @@ fn assemble_k2_unit(document: &Value, declarations: &str) -> PackageDeclarations
     .expect("I1 admits and normalizes the K2-derived model");
     PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        crate::TEST_PACKAGE_NAME.to_owned(),
         unit,
         selected,
         Vec::new(),

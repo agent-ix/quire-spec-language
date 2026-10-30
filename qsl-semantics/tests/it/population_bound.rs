@@ -49,7 +49,7 @@ fn unit(extra: &[(&str, &str)], declarations: &str) -> (String, DeclarationsOrRe
     .expect("S1 admits the unit");
     let assembled = PackageDeclarations::assemble(
         raw.source().reference().clone(),
-        "fixture".to_string(),
+        crate::TEST_PACKAGE_NAME.to_owned(),
         built,
         selected,
         vec![],

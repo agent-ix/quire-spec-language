@@ -120,8 +120,14 @@ fn assemble_under(
     .source()
     .reference()
     .clone();
-    let package = PackageDeclarations::assemble(raw, built, models, Vec::new())
-        .unwrap_or_else(|refusal| panic!("{declarations}: the unit assembles: {refusal:?}"));
+    let package = PackageDeclarations::assemble(
+        raw,
+        crate::TEST_PACKAGE_NAME.to_owned(),
+        built,
+        models,
+        Vec::new(),
+    )
+    .unwrap_or_else(|refusal| panic!("{declarations}: the unit assembles: {refusal:?}"));
     (unit, package)
 }
 

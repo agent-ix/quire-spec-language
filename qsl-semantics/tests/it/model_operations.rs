@@ -969,7 +969,13 @@ pub(super) fn admit_and_assemble_with_profiles(
     .source()
     .reference()
     .clone();
-    PackageDeclarations::assemble(raw, built, models, Vec::new())
+    PackageDeclarations::assemble(
+        raw,
+        crate::TEST_PACKAGE_NAME.to_owned(),
+        built,
+        models,
+        Vec::new(),
+    )
 }
 
 /// A domain-package operation `name(params): <returns>` with `frame`, on
@@ -1406,8 +1412,14 @@ pub(super) fn admit_and_assemble(document: &[u8]) -> Result<PackageDeclarations,
     .source()
     .reference()
     .clone();
-    PackageDeclarations::assemble(raw, built, models, Vec::new())
-        .map_err(|refusal| format!("assembly refused: {refusal:?}"))
+    PackageDeclarations::assemble(
+        raw,
+        crate::TEST_PACKAGE_NAME.to_owned(),
+        built,
+        models,
+        Vec::new(),
+    )
+    .map_err(|refusal| format!("assembly refused: {refusal:?}"))
 }
 
 /// FR-103-AC-1 (TC-458 step 1): the `ConfigVersion` domain package admits.

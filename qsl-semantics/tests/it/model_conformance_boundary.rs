@@ -256,6 +256,7 @@ fn run_unit(
     .expect("source");
     let outcome = PackageDeclarations::assemble(
         raw.source().reference().clone(),
+        crate::TEST_PACKAGE_NAME.to_owned(),
         built,
         selected,
         Vec::new(),
@@ -1674,6 +1675,7 @@ fn staged_admission_spends_the_work_of_strict_admission() {
         .expect("source");
         let declarations = PackageDeclarations::assemble(
             raw.source().reference().clone(),
+            crate::TEST_PACKAGE_NAME.to_owned(),
             built,
             selected,
             Vec::new(),

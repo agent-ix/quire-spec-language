@@ -53,6 +53,7 @@ fn assemble_document(document: &Value, alias: &str, declarations: &str) -> Packa
     .expect("I1 admits and normalizes the fixture package");
     PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        crate::TEST_PACKAGE_NAME.to_owned(),
         unit,
         selected,
         Vec::new(),

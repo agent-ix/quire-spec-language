@@ -871,6 +871,7 @@ fn tc235_m22_flags_parameter_is_assembled_as_a_record() {
     .expect("M22 package admits for assembly");
     let declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        crate::TEST_PACKAGE_NAME.to_owned(),
         built,
         models,
         Vec::new(),

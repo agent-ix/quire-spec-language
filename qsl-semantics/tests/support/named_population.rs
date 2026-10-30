@@ -216,8 +216,13 @@ pub fn check(archive: bool, declarations: &str) -> Result<Checked, Vec<Refused>>
         ModelNormalizationLimits::default(),
     )
     .expect("the model selection admits");
-    let assembled =
-        PackageDeclarations::assemble(parsed.source().reference().clone(), built, models, vec![]);
+    let assembled = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        crate::TEST_PACKAGE_NAME.to_owned(),
+        built,
+        models,
+        vec![],
+    );
     let declarations = match assembled {
         Ok(declarations) => declarations,
         Err(refusal) => {

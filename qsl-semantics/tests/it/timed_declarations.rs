@@ -807,6 +807,7 @@ fn a_unit_without_the_timed_facet_refuses_every_timed_construct() {
     let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
     let refusals = qsl_semantics::check::PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        crate::TEST_PACKAGE_NAME.to_owned(),
         unit,
         qsl_semantics::model::intake::SelectedModels::default(),
         Vec::new(),
@@ -1387,8 +1388,13 @@ pub(crate) fn assemble_selected_as(
     .source()
     .reference()
     .clone();
-    let assembled =
-        qsl_semantics::check::PackageDeclarations::assemble(raw, built, models, Vec::new());
+    let assembled = qsl_semantics::check::PackageDeclarations::assemble(
+        raw,
+        crate::TEST_PACKAGE_NAME.to_owned(),
+        built,
+        models,
+        Vec::new(),
+    );
     (text, assembled)
 }
 

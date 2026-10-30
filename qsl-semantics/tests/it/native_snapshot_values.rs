@@ -160,6 +160,7 @@ fn replay_with(document: Value, base: Vec<(String, Value)>, declarations: &str) 
         .expect("I1 admits and normalizes the fixture package");
         PackageDeclarations::assemble(
             parsed.source().reference().clone(),
+            crate::TEST_PACKAGE_NAME.to_owned(),
             unit,
             selected,
             Vec::new(),

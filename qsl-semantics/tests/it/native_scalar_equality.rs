@@ -48,7 +48,7 @@ fn assemble(
     let (_, unit, source) = parse(declarations);
     PackageDeclarations::assemble(
         source,
-        "fixture".to_string(),
+        crate::TEST_PACKAGE_NAME.to_owned(),
         unit,
         SelectedModels::default(),
         Vec::new(),

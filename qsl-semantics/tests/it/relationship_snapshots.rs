@@ -447,10 +447,16 @@ fn checked(variant: &Variant) -> Admission {
     .source()
     .reference()
     .clone();
-    let graph = PackageDeclarations::assemble(raw, built, models, Vec::new())
-        .expect("the model assembles")
-        .check(CheckingLimits::default())
-        .expect("the unit checks");
+    let graph = PackageDeclarations::assemble(
+        raw,
+        crate::TEST_PACKAGE_NAME.to_owned(),
+        built,
+        models,
+        Vec::new(),
+    )
+    .expect("the model assembles")
+    .check(CheckingLimits::default())
+    .expect("the unit checks");
     Admission { graph, packages }
 }
 

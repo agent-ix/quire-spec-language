@@ -9,6 +9,10 @@
 //! feature; `cargo test --all-features` turns it on. Gating the `mod` line
 //! keeps a default-feature build from compiling them at all.
 
+// Integration units declare this source package name explicitly. Imported model
+// identities in individual fixtures remain independent of the source package.
+const TEST_PACKAGE_NAME: &str = "qsl-semantics-integration-tests";
+
 #[cfg(feature = "test-support")]
 mod business_meanings;
 mod child_composite;

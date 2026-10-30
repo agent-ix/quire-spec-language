@@ -313,8 +313,14 @@ fn assemble_over(document: &[u8], body: &str) -> PackageDeclarations {
     .source()
     .reference()
     .clone();
-    PackageDeclarations::assemble(raw, built, models, Vec::new())
-        .unwrap_or_else(|refusal| panic!("{body}: the unit assembles: {refusal:?}"))
+    PackageDeclarations::assemble(
+        raw,
+        crate::TEST_PACKAGE_NAME.to_owned(),
+        built,
+        models,
+        Vec::new(),
+    )
+    .unwrap_or_else(|refusal| panic!("{body}: the unit assembles: {refusal:?}"))
 }
 
 fn checked(body: &str) -> CheckedGraph {

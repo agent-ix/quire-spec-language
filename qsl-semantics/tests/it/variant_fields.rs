@@ -71,6 +71,7 @@ fn declarations_of(
         .collect();
     let assembled = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        crate::TEST_PACKAGE_NAME.to_owned(),
         unit,
         selected,
         Vec::new(),
@@ -694,6 +695,7 @@ fn an_unknown_variant_type_name_in_a_type_position_refuses_at_the_assembler() {
         .unwrap();
         PackageDeclarations::assemble(
             parsed.source().reference().clone(),
+            crate::TEST_PACKAGE_NAME.to_owned(),
             unit,
             selected,
             Vec::new(),

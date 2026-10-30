@@ -294,7 +294,7 @@ pub(crate) fn check_declarations(
     .expect("S1 admits the unit");
     let declarations = PackageDeclarations::assemble(
         raw.source().reference().clone(),
-        "fixture".to_string(),
+        crate::TEST_PACKAGE_NAME.to_owned(),
         built,
         selected,
         vec![],

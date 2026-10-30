@@ -1162,6 +1162,7 @@ fn a_wide_domain_and_a_literal_above_i64_max_are_decided_exactly() {
         .expect("source admits");
         let declarations = PackageDeclarations::assemble(
             raw.source().reference().clone(),
+            crate::TEST_PACKAGE_NAME.to_owned(),
             built,
             selected,
             vec![],
