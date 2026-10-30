@@ -769,6 +769,7 @@ mod tests {
             instance: 0,
             over: None,
             model_instance: None,
+            orbit: Vec::new(),
             predicates: vec![(PredicateRole::Target, None)],
         }
     }
@@ -859,6 +860,7 @@ mod tests {
                     source: NodeIndex(*source),
                     transition: transition(index),
                     target: NodeIndex(*target),
+                    permutation: qsl_eval::simulation::Permutation::identity(),
                 })
                 .collect(),
             open: BTreeMap::new(),
