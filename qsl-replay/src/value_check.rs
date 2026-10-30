@@ -121,7 +121,7 @@ impl TargetParameter {
 
     /// The parameter's wire node id.
     pub fn wire(&self) -> NodeKey {
-        wire_id(self.node)
+        self.node.clone()
     }
 
     /// The values the parameter ranges over.
@@ -246,7 +246,7 @@ impl<'p> ValueTarget<'p> {
         let is_clause_key = [Role::new("declaration"), Role::new("claim")]
             .into_iter()
             .any(|role| {
-                *claim == OccurrenceKey::new(wire_id(callable.identity), Origin::new(role, 0))
+                *claim == OccurrenceKey::new(callable.identity.clone(), Origin::new(role, 0))
             });
         let form = if is_clause_key {
             if *callable.result != ValueType::Boolean {
@@ -492,7 +492,7 @@ impl<'p> ValueTarget<'p> {
                         .node(*node)
                         .is_some_and(|n| n.node_tag() != NodeTag::Value)
             })
-            .map(|(node, origin, _)| OccurrenceKey::new(wire_id(node), origin));
+            .map(|(node, origin, _)| OccurrenceKey::new(node.clone(), origin));
         let only = found.next()?;
         found.next().is_none().then_some(only)
     }
@@ -502,7 +502,7 @@ fn undefined_reason(reason: Undefined) -> &'static str {
     kernel_undefined_reason(reason)
 }
 
-fn wire_id(key: NodeKey) -> NodeKey {
+fn (key: NodeKey).clone() -> NodeKey {
     key.clone()
 }
 

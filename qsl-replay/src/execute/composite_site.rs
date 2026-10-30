@@ -21,7 +21,7 @@ use quire_semantic_value::location::Origin as BodyOrigin;
 
 use super::operator_parity::ScalarIdentityMismatch;
 use super::scalar_site::{equality_operator, in_body};
-use super::{callable_parameter_keys, lookup, wire_id, Recompiled, ReplayRefusal};
+use super::{callable_parameter_keys, lookup, Recompiled, ReplayRefusal};
 use crate::identity::QualifiedName;
 
 /// One operand of the claimed equality.
@@ -142,7 +142,7 @@ pub(super) fn locate(
                 .get(*slot)
                 .ok_or_else(|| fault("parameter-slot-has-a-node"))?;
             return Ok(Operand::Parameter {
-                node: wire_id(*key),
+                node: key.clone(),
                 value_type: value_type.clone(),
             });
         }

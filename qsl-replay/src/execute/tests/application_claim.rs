@@ -64,7 +64,7 @@ fn declaration(compiled: &ComposedUnit, function: &str) -> OccurrenceKey {
         .callable(function)
         .expect("declared")
         .identity;
-    OccurrenceKey::new(wire_id(identity), Origin::new(Role::new("declaration"), 0))
+    OccurrenceKey::new(identity.clone(), Origin::new(Role::new("declaration"), 0))
 }
 
 /// A request for `function` at `key` carrying `source`.
@@ -408,7 +408,7 @@ fn tc_444_a_key_selecting_no_claim_of_the_function_refuses() {
                         && source[..start].ends_with("Int[0, 10] pure { ")
                 })
         })
-        .map(|(node, origin, _)| OccurrenceKey::new(wire_id(node), origin))
+        .map(|(node, origin, _)| OccurrenceKey::new(node.clone(), origin))
         .filter(|key| *key != inc_application && graph.requirements().get(key).is_none())
         .collect();
     assert!(

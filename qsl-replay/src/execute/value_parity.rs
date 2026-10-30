@@ -23,7 +23,7 @@ use quire_semantic_value::supplied_stop::{SuppliedFailure, SuppliedRun, Supplied
 use super::argument::{self, Stopped};
 use super::{
     arguments, call_failure_to_replay_refusal, consumed, declaration_occurrence, function_target,
-    recompile, request_limits, select, value_parity_obligation, value_parity_preimage, wire_id,
+    recompile, request_limits, select, value_parity_obligation, value_parity_preimage,
     Claim, ReplayRefusal, ScalarIdentityMismatch, Selected,
 };
 use crate::bounds::ReplayLimits;
@@ -190,7 +190,7 @@ fn check_identity(
             "function-request-carries-an-occurrence-key",
         ))
     })?;
-    if *key != declaration_occurrence(wire_id(call.identity)) {
+    if *key != declaration_occurrence(call.identity.clone()) {
         return Err(ReplayRefusal::ClaimOccurrence {
             key: key.clone(),
             function: function.clone(),

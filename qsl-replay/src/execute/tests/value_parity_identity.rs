@@ -401,7 +401,7 @@ fn tc_1252_a_wrong_identity_refuses_obligation_before_the_argument_join() {
 fn tc_1252_a_foreign_occurrence_refuses_before_any_call() {
     let source = unit();
     let compiled = spine(&source, &BTreeMap::new());
-    let inc_node = wire_id(function_node(&source, "inc"));
+    let inc_node = (function_node(&source, "inc")).clone();
     // `inc`'s `x + 1` application: an `expression` occurrence found by its
     // region text (a record-less occurrence still counts).
     let graph = compiled.package.graph();
@@ -416,7 +416,7 @@ fn tc_1252_a_foreign_occurrence_refuses_before_any_call() {
                         .ends_with("function inc using v(x: Int[0, 9]): Integer pure { ")
             })
         })
-        .map(|(node, origin, _)| OccurrenceKey::new(wire_id(node), origin))
+        .map(|(node, origin, _)| OccurrenceKey::new(node.clone(), origin))
         .expect("inc holds an `x + 1` expression occurrence");
     assert_ne!(application.node(), inc_node);
     let keys = [
