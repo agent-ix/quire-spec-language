@@ -779,8 +779,10 @@ fn a_point_qualified_clock_clause_refuses_at_the_clause() {
         models,
         Vec::new(),
         Default::default(),
-        &quire_exact::Cancel::new(),
-        BTreeMap::from([("Late".to_owned(), point)]),
+        qsl_semantics::check::AssemblyRun {
+            cancel: &quire_exact::Cancel::new(),
+            execution_points: BTreeMap::from([("Late".to_owned(), point)]),
+        },
     )
     .expect("the unit assembles")
     .check(CheckingLimits::default())

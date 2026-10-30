@@ -800,8 +800,10 @@ fn an_execution_point_on_a_clause_of_the_operation_gives_no_transition() {
             models,
             Vec::new(),
             Default::default(),
-            &quire_exact::Cancel::new(),
-            BTreeMap::from([(clause.to_owned(), point)]),
+            qsl_semantics::check::AssemblyRun {
+                cancel: &quire_exact::Cancel::new(),
+                execution_points: BTreeMap::from([(clause.to_owned(), point)]),
+            },
         )
         .expect("the unit assembles")
         .check(CheckingLimits::default())
