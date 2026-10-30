@@ -253,10 +253,10 @@ fn fixture() -> Fixture {
         .lookup_callable(handle.package_name(), &g_node)
         .expect("g selected");
     let payload_view = handle
-        .nominal_declaration(&selection, payload_node)
+        .nominal_declaration(&selection, &payload_node)
         .expect("Payload declaration is reachable from f");
     let other_view = handle
-        .nominal_declaration(&other_selection, other_node)
+        .nominal_declaration(&other_selection, &other_node)
         .expect("Other declaration is reachable from g");
     let payload = composite(&payload_view);
     let payload_environment = environment(&payload_view, payload.clone());
@@ -305,7 +305,7 @@ fn composite(view: &NominalDeclaration) -> CompositeDeclaration {
         .map(|part| part.as_str())
         .collect::<Vec<_>>()
         .join("::");
-    CompositeDeclaration::new(view.key(), name, CompositeShape::Union(members))
+    CompositeDeclaration::new(view.key().clone(), name, CompositeShape::Union(members))
 }
 
 fn verified_union_members(view: &NominalDeclaration) -> Vec<UnionMember> {
@@ -322,7 +322,7 @@ fn environment(view: &NominalDeclaration, declaration: CompositeDeclaration) -> 
     let mut environment =
         TypeEnvironment::new([declaration], []).expect("owner-authored union declaration admits");
     environment
-        .seal_union_verified(view.key(), view.node(), verified_union_members(view))
+        .seal_union_verified(view.key().clone(), view.node(), verified_union_members(view))
         .expect("checked union member bindings seal the declaration");
     environment
 }

@@ -24,7 +24,8 @@ fn fixture_node(fill: u8) -> NodeKey {
 }
 
 use qsl_replay::AdmittedUnit;
-use qsl_semantics::check::{CheckedGraph, NominalNode};
+use qsl_semantics::check::CheckedGraph;
+use qsl_semantics::value::nominal_payload::NominalPayload;
 use quire_exact::{
     Cancel, Integer, Meter, Outcome, Quantity, Rational, ScalarLimits, UnitDomain, UnitId,
     ValueType,
@@ -129,23 +130,16 @@ struct Expected {
 fn spine_expected(graph: &CheckedGraph) -> Expected {
     let (mut units, mut dimensions) = (Vec::new(), Vec::new());
     for node in graph.semantic_graph().nodes() {
-        match node.nominal() {
-            Some(NominalNode::Unit(Some(preimage))) => units.push((
-                node.key(),
-                preimage
-                    .qualified_declaration()
-                    .last()
-                    .expect("a name")
-                    .clone(),
-            )),
-            Some(NominalNode::Dimension(Some(preimage))) => dimensions.push((
-                node.key(),
-                preimage
-                    .qualified_declaration()
-                    .last()
-                    .expect("a name")
-                    .clone(),
-            )),
+        let Some(name) = node
+            .declaration()
+            .and_then(<[_]>::last)
+            .map(|last| last.as_str().to_owned())
+        else {
+            continue;
+        };
+        match node.nominal_payload() {
+            Some(NominalPayload::Unit(_)) => units.push((node.key(), name)),
+            Some(NominalPayload::Dimension(_)) => dimensions.push((node.key(), name)),
             _ => {}
         }
     }
@@ -157,7 +151,7 @@ fn spine_expected(graph: &CheckedGraph) -> Expected {
         .parameters
         .iter()
         .map(|(_, value_type)| match value_type {
-            ValueType::Quantity(unit) => *unit,
+            ValueType::Quantity(unit) => unit.clone(),
             other => panic!("a quantity parameter, got {other:?}"),
         })
         .collect();
@@ -226,9 +220,9 @@ fn unit_ids_are_the_spines_distinct_and_stable() {
     assert_eq!(ids.iter().collect::<BTreeSet<_>>().len(), 3);
     for name in ["m", "km", "s"] {
         let unit = unit_named(&admitted, name);
-        // The kernel id wraps the node id's bytes in the declared-unit domain.
+        // The kernel id wraps the node id in the declared-unit domain.
         assert_eq!(unit.id().domain(), UnitDomain::Declared, "{name}");
-        assert_eq!(unit.id().as_bytes(), unit.node().as_bytes(), "{name}");
+        assert_eq!(unit.id(), UnitId::declared(unit.node().clone()), "{name}");
     }
 
     // The dimension each unit names is the dimension node of that name.
@@ -294,7 +288,7 @@ fn unit_lookups_refuse_unknown_and_wrong_kind_ids() {
 
     let nobody = fixture_node(7);
     let unknown = Err(AdmittedLookupRefusal::Unknown {
-        declaration: nobody,
+        declaration: nobody.clone(),
         case: None,
     });
     assert_eq!(
@@ -379,15 +373,15 @@ fn a_dependencys_unit_is_foreign() {
         assert_eq!(
             context.unit_declaration(&kg_id).map(|_| ()),
             Err(AdmittedLookupRefusal::Foreign {
-                declaration: kg_id,
-                package,
+                declaration: kg_id.clone(),
+                package: package.clone(),
             })
         );
         assert_eq!(
             context.dimension_declaration(&mass_dimension).map(|_| ()),
             Err(AdmittedLookupRefusal::Foreign {
-                declaration: mass_dimension,
-                package,
+                declaration: mass_dimension.clone(),
+                package: package.clone(),
             })
         );
         assert_eq!(context.units().count(), 3);

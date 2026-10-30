@@ -52,7 +52,7 @@ fn unit<'a>(context: &'a AdmittedContext, name: &str) -> &'a AdmittedUnit {
         .find(|unit| unit.qualified_name().last() == Some(&name))
         .expect("the unit is admitted");
     context
-        .unit_declaration(found.node().clone())
+        .unit_declaration(&found.node().clone())
         .expect("the lookup finds it")
 }
 

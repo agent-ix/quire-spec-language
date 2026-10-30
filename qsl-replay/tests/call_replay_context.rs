@@ -240,12 +240,12 @@ fn parameter(source: &str, function: &str) -> NodeKey {
     .into_value();
     let graph = checked.package().graph();
     let identity = graph.callable(function).expect("declared").identity;
-    let parameter = graph
+    graph
         .semantic_graph()
         .node(identity)
         .and_then(|node| node.function_parameters())
-        .expect("a function node")[0];
-    parameter.clone()
+        .expect("a function node")[0]
+        .clone()
 }
 
 fn assign(parameter: NodeKey, x: i128) -> Vec<CanonicalAssignment> {
@@ -266,14 +266,14 @@ fn member_request(
     let oracle = oracle(source, CallerLimits::default());
     let member = &result.requirements().members()[0];
     let parameter = parameter(source, function);
-    let bounds = [bound_at(parameter)];
+    let bounds = [bound_at(parameter.clone())];
     let ours = result
         .context()
         .request(
             member.request_index(),
             &bounds,
             &plugin(),
-            assign(parameter, x),
+            assign(parameter.clone(), x),
         )
         .expect("a member is an application item");
     let theirs = oracle
@@ -281,7 +281,7 @@ fn member_request(
             member.occurrence(),
             &bounds,
             &plugin(),
-            assign(parameter, x),
+            assign(parameter.clone(), x),
         )
         .expect("the oracle builds it too");
     assert_eq!(ours.package_name, theirs.package_name);
@@ -470,9 +470,9 @@ fn only_the_spine_limits_bound_the_run() {
         .context()
         .request(
             member.request_index(),
-            &[bound_at(parameter)],
+            &[bound_at(parameter.clone())],
             &plugin(),
-            assign(parameter, 9),
+            assign(parameter.clone(), 9),
         )
         .expect("a member request");
     assert_eq!(wire.stage_limits["s1.tokens"], 200_000);

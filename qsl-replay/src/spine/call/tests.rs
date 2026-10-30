@@ -820,7 +820,7 @@ fn tc_792_foreign_type_maximum_and_dangling_controls_keep_admission_causes() {
             .unwrap()
             .identity()
             .expect("a universe identity"),
-        foreign_view.type_identities()[&foreign_type],
+        foreign_view.type_identities()[&foreign_type].clone(),
         quire_exact::ObjectId::new("foreign").unwrap(),
     ));
     let unknown_type = crate::spine::fixture_ids::effective(7);
@@ -1787,7 +1787,7 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
 
     // `FamilyResult::Refused` with a row: `ForeignUniverse`.
     let foreign_universe = ModelCause(ModelRefusalCause::ForeignUniverse {
-        actual: vec![0x01; 32],
+        actual: crate::fixture_node(0x01),
         expected: crate::spine::fixture_ids::universe(0x02),
     });
     match convert(FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(

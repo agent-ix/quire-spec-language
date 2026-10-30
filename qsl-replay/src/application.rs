@@ -2276,13 +2276,13 @@ mod tests {
             panic!("union view retains each sealed member in declared order");
         };
         assert_eq!(empty_member.identifier(), "Empty");
-        assert_eq!(empty_member.variant(), empty_variant.clone());
+        assert_eq!(empty_member.variant(), empty_variant);
         assert!(empty_payload.is_empty());
         assert_eq!(circle_member.identifier(), "Circle");
-        assert_eq!(circle_member.variant(), circle_variant.clone());
+        assert_eq!(circle_member.variant(), circle_variant);
         assert_eq!(circle_payload, &[ValueType::Integer]);
         assert_eq!(boxed_member.identifier(), "Boxed");
-        assert_eq!(boxed_member.variant(), boxed_variant.clone());
+        assert_eq!(boxed_member.variant(), boxed_variant);
         assert_eq!(
             boxed_payload,
             &[ValueType::Composite(pair.key().clone()), ValueType::Boolean]

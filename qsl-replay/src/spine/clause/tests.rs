@@ -672,17 +672,17 @@ fn evaluate_clause_is_deterministic() {
                         vec![(
                             "next",
                             FieldValue::Present(Value::Reference(node_reference(
-                                node_effective,
+                                node_effective.clone(),
                                 "b",
                             ))),
                         )],
                     ),
                     (
-                        node_reference(node_effective, "b"),
+                        node_reference(node_effective.clone(), "b"),
                         vec![(
                             "next",
                             FieldValue::Present(Value::Reference(node_reference(
-                                node_effective,
+                                node_effective.clone(),
                                 "a",
                             ))),
                         )],

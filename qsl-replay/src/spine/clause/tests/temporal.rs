@@ -754,7 +754,7 @@ fn observed_replay_request(
         trace_position: qsl_eval::temporal::TemporalPosition::new(position),
     };
     let packet = WitnessPacket::<crate::ObservedTemporalCounterexample> {
-        obligation_identity: Some(wire.obligation_identity),
+        obligation_identity: Some(wire.obligation_identity.clone()),
         occurrence_key: Some(occurrence),
         clause_node: Some(node),
         replay_target: target.into(),

@@ -472,8 +472,8 @@ fn a_frame_counterexample_reproduces_and_keeps_its_identities() {
     assert_eq!(arm.disagreement(), None);
     assert_eq!(result.source().identity(), IDENTITY);
     assert_eq!(result.operation(), &operation("attemptUpdate"));
-    assert_eq!(result.anchor(), payload.anchor);
-    assert_eq!(result.frame(), payload.frame);
+    assert_eq!(result.anchor().clone(), payload.anchor);
+    assert_eq!(result.frame().clone(), payload.frame);
     assert_eq!(result.occurrence(), &payload.occurrence);
     assert_eq!(
         (result.invocation(), result.pre(), result.post()),

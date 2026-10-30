@@ -1312,7 +1312,7 @@ fn tc_907_a_tampered_obligation_digest_refuses() {
     let tampered = wire.obligation_identity.clone();
     let is_mismatch = |refusal: &ReplayRefusal| {
         matches!(refusal, ReplayRefusal::ScalarIdentity(cause)
-            if matches!(**cause, crate::ScalarIdentityMismatch::Obligation { claimed, .. } if claimed == tampered))
+            if matches!(&**cause, crate::ScalarIdentityMismatch::Obligation { claimed, .. } if *claimed == tampered))
     };
     let report = replay_composite_parity(
         wire.clone(),
@@ -1543,7 +1543,7 @@ fn tc_907_every_outcome_carries_the_full_claim() {
         );
         let full = |evidence: &FalsifiedParity| {
             CompositeIdentity::new(
-                obligation,
+                obligation.clone(),
                 &claim,
                 CompositeEvidence::Falsified(Box::new(evidence.clone())),
             )
@@ -1578,7 +1578,7 @@ fn tc_907_every_outcome_carries_the_full_claim() {
         let evidence = verified(success_checks, refinement);
         let report = settle_verified_shadow(wire, claim.clone(), evidence, ReplayLimits::default());
         let full = |evidence: VerifiedShadow| {
-            CompositeIdentity::new(obligation, &claim, CompositeEvidence::Verified(evidence))
+            CompositeIdentity::new(obligation.clone(), &claim, CompositeEvidence::Verified(evidence))
         };
         assert_eq!(*report.claim(), full(evidence), "{row}");
         assert_ne!(
@@ -1666,7 +1666,7 @@ fn tc_907_an_integer_literal_operand_is_inline_unless_the_checker_narrows_it() {
     let OperandIdentity::GraphChild(ref narrow) = preimage.arguments[1].identity else {
         panic!("a narrowed literal is a graph child");
     };
-    assert_ne!(narrow, unit.parameter("m", 0));
+    assert_ne!(narrow.clone(), unit.parameter("m", 0));
     assert!(matches!(&preimage.arguments[1].domain, Domain::Bounds(_)));
 }
 

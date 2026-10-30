@@ -3465,16 +3465,16 @@ mod operator_arm {
     fn tc_904_a_preimage_the_encoder_refuses_never_yields_an_identity() {
         let verify = super::super::operator_parity::verify_obligation;
         let zero = crate::ObligationIdentity::new(crate::fixture_node(0), None, 0);
-        let mut huge = claim(add(2, 1), completed(3)).identity(zero);
+        let mut huge = claim(add(2, 1), completed(3)).identity(zero.clone());
         huge.occurrence =
             quire_exact::Origin::new(quire_exact::Role::new("expression"), 1_u64 << 60);
         assert!(matches!(
-            verify(&huge, zero),
+            verify(&huge, zero.clone()),
             Err(crate::ScalarIdentityMismatch::Encoding(
                 crate::IdentityEncodeError::IntegerBeyondEncoder { magnitude }
             )) if magnitude == i128::from(1_u64 << 60)
         ));
-        let sane = claim(add(2, 1), completed(3)).identity(zero);
+        let sane = claim(add(2, 1), completed(3)).identity(zero.clone());
         assert!(matches!(
             verify(&sane, zero),
             Err(crate::ScalarIdentityMismatch::Obligation { .. })

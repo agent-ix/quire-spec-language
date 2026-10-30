@@ -257,7 +257,7 @@ fn tc_1252_a_foreign_occurrence_refuses_before_any_call() {
         })
         .map(|(node, origin, _)| OccurrenceKey::new(node.clone(), origin))
         .expect("inc holds an `x + 1` expression occurrence");
-    assert_ne!(application.node(), inc_node);
+    assert_ne!(application.node().clone(), inc_node);
     let keys = [
         site(&source, "add").site.declaration,
         application,

@@ -41,6 +41,15 @@ fn admit(
 
 /// The whole consumer path: compile, take the parts, look a declaration and a
 /// case up by wire id, and read both refusal enums.
+fn fixture_node(fill: u8) -> NodeKey {
+    NodeKey::new(
+        "fixture",
+        vec![quire_exact::PathSegment::Text(fill.to_string())],
+        0,
+    )
+    .expect("fixture node")
+}
+
 #[trace("TC-1088", "FR-394-AC-5")]
 #[test]
 fn a_consumer_looks_keys_up_through_the_crate_root() {
@@ -52,21 +61,21 @@ fn a_consumer_looks_keys_up_through_the_crate_root() {
     let declaration = color.key().clone();
     let blue = Identifier::new("BLUE").expect("an identifier");
     assert_eq!(
-        context.enum_declaration(declaration).map(|e| e.key()),
+        context.enum_declaration(&declaration).map(|e| e.key()),
         Ok(color.key())
     );
     assert_eq!(
-        context.enum_case(declaration, &blue).map(|c| c.key()),
+        context.enum_case(&declaration, &blue).map(|c| c.key()),
         Ok(color.case(&blue).expect("BLUE").key())
     );
 
     let purple = Identifier::new("PURPLE").expect("an identifier");
     assert!(matches!(
-        context.enum_case(declaration, &purple),
+        context.enum_case(&declaration, &purple),
         Err(AdmittedLookupRefusal::Unknown { case: Some(_), .. })
     ));
     assert!(matches!(
-        context.enum_declaration(fixture_node(7)),
+        context.enum_declaration(&fixture_node(7)),
         Err(AdmittedLookupRefusal::Unknown { case: None, .. })
     ));
 

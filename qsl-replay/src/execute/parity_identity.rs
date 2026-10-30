@@ -184,7 +184,7 @@ pub(crate) fn process_provider_obligation(
 mod tests {
     use super::*;
     use ix_trace_rs::trace;
-    use qsl_foundation::bound::DomainKind;
+    use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound};
 
     fn node() -> NodeKey {
         crate::fixture_node(0x11)

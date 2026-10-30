@@ -264,7 +264,7 @@ fn tc_444_the_occurrence_key_selects_the_predicate_or_the_application_claim() {
                 value: int(0),
             }]),
         );
-        wire.obligation_identity = identity;
+        wire.obligation_identity = identity.clone();
         let request = ReplayRequest::decode(wire, ReplayLimits::default()).unwrap();
         assert_eq!(request.obligation_identity(), identity);
     }
