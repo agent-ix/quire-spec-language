@@ -176,58 +176,12 @@ pub(crate) fn refuse(cause: SemanticGraphCause) -> InvalidSemanticGraph {
 #[serde(transparent)]
 pub(crate) struct NodeIdDocument(serde_json::Value);
 
-/// One node id being assembled: its package, the path read so far, the path
-/// elements still to read and its ordinal.
-struct NodeFrame<'a> {
-    package: &'a str,
-    path: Vec<PathSegment>,
-    remaining: std::slice::Iter<'a, serde_json::Value>,
-    ordinal: u64,
-}
-
-impl<'a> NodeFrame<'a> {
-    fn open(value: &'a serde_json::Value) -> Option<Self> {
-        let object = value.as_object()?;
-        if object.len() != 3 {
-            return None;
-        }
-        let package = object.get("package")?.as_str()?;
-        let path = object.get("path")?.as_array()?;
-        let ordinal = object.get("ordinal")?.as_u64()?;
-        let mut segments = Vec::new();
-        segments.try_reserve_exact(path.len()).ok()?;
-        Some(Self {
-            package,
-            path: segments,
-            remaining: path.iter(),
-            ordinal,
-        })
-    }
-}
-
 impl NodeIdDocument {
     /// The structural key this document spells, or `None` for a shape or
-    /// nesting that is not a valid node identity.
+    /// nesting that is not a valid node identity, through the shared
+    /// `qsl_foundation::node_wire` codec.
     pub(crate) fn key(&self) -> Option<NodeKey> {
-        let mut stack = vec![NodeFrame::open(&self.0)?];
-        loop {
-            let frame = stack.last_mut()?;
-            if let Some(element) = frame.remaining.next() {
-                match element {
-                    serde_json::Value::String(name) => {
-                        frame.path.push(PathSegment::Text(name.clone()));
-                    }
-                    nested => stack.push(NodeFrame::open(nested)?),
-                }
-                continue;
-            }
-            let done = stack.pop()?;
-            let key = NodeKey::new(done.package, done.path, done.ordinal).ok()?;
-            match stack.last_mut() {
-                Some(parent) => parent.path.push(PathSegment::Node(key)),
-                None => return Some(key),
-            }
-        }
+        qsl_foundation::node_wire::node_key_from_json(&self.0).ok()
     }
 }
 

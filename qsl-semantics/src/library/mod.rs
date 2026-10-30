@@ -5,16 +5,11 @@
 //! unification, cycle refusal and identity-preserving migration).
 //!
 //! A package is identified by its [`LibraryName`] alone; there is no digest
-//! of its content. [`LibraryPackage`] carries the identity preimage bytes
-//! as produced by the CheckedPackage V2 writer, and resolution validates
-//! that preimage structurally before any import is followed. Each export
-//! node key is the structural `node_id` (`{package, path, ordinal}`) of the
-//! `identity_projection` node whose `declaration.qualified_name` spells the
-//! exported name; on a nominal node that name must equal its nominal
-//! `qualified_declaration`, else the package is refused as
-//! `declaration-nominal-mismatch`. An export no node's `declaration` spells
-//! is `missing_declaration` with cause `undeclared-export`, never a guessed
-//! node. A package's local declarations are exactly its exports.
+//! of its content. [`LibraryPackage`] carries its declared exports as typed
+//! `(qualified name, NodeKey)` pairs, each key the structural node id of the
+//! declaration the name spells. Resolution validates those pairs before any
+//! import is followed. A package's local declarations are exactly its
+//! exports.
 //!
 //! This module owns `LibraryLock`/`resolve_libraries`, the identities
 //! (`LibraryName`), declarations (`ImportDeclaration`, `LibraryPackage`),
@@ -33,10 +28,6 @@ use quire_exact::NodeKey;
 pub mod bundle;
 #[cfg(test)]
 mod bundle_tests;
-mod package_identity;
-
-use package_identity::{project_declarations, ProjectedDeclarations};
-pub use package_identity::{NodeDefect, PreimageDefect};
 
 /// A library identity (ADR-015 D-3; QSpec FR-307, FR-322
 /// `DependencySelection.identity`): any non-empty string, with no segment
@@ -89,14 +80,11 @@ pub struct ImportDeclaration {
 pub struct LibraryPackage {
     /// Library identity.
     pub library: LibraryName,
-    /// The RFC 8785 JCS bytes of its `quire.checked-package-id/v2` identity
-    /// preimage.
-    pub identity_preimage: Box<[u8]>,
     /// Imports in declaration order.
     pub imports: Vec<ImportDeclaration>,
-    /// Exported qualified declarations, spelled with `::`. Each node key is
-    /// derived from the identity preimage.
-    pub exports: Vec<String>,
+    /// Exported qualified declarations: each name spelled with `::` and the
+    /// structural node id of the declaration it names.
+    pub exports: Vec<(String, NodeKey)>,
 }
 
 /// A dependency path of library identities, importer first.
@@ -147,31 +135,25 @@ impl LibraryCause {
     }
 }
 
-/// The member path of a structurally malformed identity preimage.
-pub const IDENTITY_PREIMAGE_PATH: &str = "/identity_preimage";
-
 /// Why a package's import closure is refused.
 ///
 /// quire:canonical
 #[derive(Clone, Debug, Eq, Hash, PartialEq, thiserror::Error)]
 pub enum LibraryRefusal {
-    /// A package's identity preimage is structurally malformed, refused at
-    /// [`IDENTITY_PREIMAGE_PATH`] before resolution.
-    #[error("malformed identity preimage")]
-    InvalidPreimage {
-        /// The package's identity.
-        library: LibraryName,
-        /// What is malformed.
-        defect: PreimageDefect,
-    },
-    /// An export is not spelled by a nominal `qualified_declaration` in the
-    /// package's identity projection, so no explicit declaration names its
-    /// node.
-    #[error("export names no declaration")]
-    UndeclaredExport {
+    /// An export name is not a qualified declaration name.
+    #[error("invalid export name")]
+    InvalidExportName {
         /// The package's identity.
         library: LibraryName,
         /// The exported name.
+        export: String,
+    },
+    /// Two exports carry one qualified name (`ambiguous-name`).
+    #[error("ambiguous export name")]
+    AmbiguousDeclaration {
+        /// The package's identity.
+        library: LibraryName,
+        /// The repeated name.
         export: String,
     },
     /// An `as` qualifier is not an identifier.
@@ -207,45 +189,21 @@ impl LibraryRefusal {
     pub fn code(&self) -> Code {
         match self {
             Self::MissingImport { .. } => Code::MissingImport,
-            Self::InvalidPreimage {
-                defect: PreimageDefect::AmbiguousDeclaration { .. },
-                ..
-            } => Code::AmbiguousDeclaration,
-            Self::InvalidPreimage {
-                defect: PreimageDefect::AllocationFailed { .. },
-                ..
-            } => Code::ResourceExhausted,
-            Self::InvalidPreimage {
-                defect: PreimageDefect::DeclarationNominalMismatch { .. },
-                ..
-            }
-            | Self::InvalidPreimage { .. }
+            Self::AmbiguousDeclaration { .. } => Code::AmbiguousDeclaration,
+            Self::InvalidExportName { .. }
             | Self::InvalidQualifier { .. }
             | Self::ConflictingDefinition { .. }
             | Self::ImportCycle { .. } => Code::InvalidPackage,
-            Self::UndeclaredExport { .. } => Code::MissingDeclaration,
         }
     }
 
     /// The FR-272 cause.
     pub fn cause(&self) -> LibraryCause {
         match self {
-            Self::InvalidPreimage {
-                defect: PreimageDefect::AmbiguousDeclaration { .. },
-                ..
-            } => LibraryCause::AmbiguousName,
-            Self::InvalidPreimage {
-                defect: PreimageDefect::DeclarationNominalMismatch { .. },
-                ..
-            } => LibraryCause::DeclarationNominalMismatch,
-            Self::InvalidPreimage {
-                defect: PreimageDefect::AllocationFailed { .. },
-                ..
-            } => LibraryCause::AllocationFailed,
-            Self::InvalidPreimage { .. } | Self::InvalidQualifier { .. } => {
+            Self::AmbiguousDeclaration { .. } => LibraryCause::AmbiguousName,
+            Self::InvalidExportName { .. } | Self::InvalidQualifier { .. } => {
                 LibraryCause::InvalidValue
             }
-            Self::UndeclaredExport { .. } => LibraryCause::UndeclaredExport,
             Self::ConflictingDefinition { .. } => LibraryCause::ConflictingDefinition,
             Self::ImportCycle { .. } => LibraryCause::DefinitionCycle,
             Self::MissingImport { .. } => LibraryCause::MissingSelection,
@@ -255,9 +213,9 @@ impl LibraryRefusal {
     /// The refused member path, for a refusal located at one.
     pub fn member_path(&self) -> Option<&'static str> {
         match self {
-            Self::InvalidPreimage { .. } => Some(IDENTITY_PREIMAGE_PATH),
-            Self::InvalidQualifier { .. }
-            | Self::UndeclaredExport { .. }
+            Self::InvalidExportName { .. }
+            | Self::AmbiguousDeclaration { .. }
+            | Self::InvalidQualifier { .. }
             | Self::ConflictingDefinition { .. }
             | Self::ImportCycle { .. }
             | Self::MissingImport { .. } => None,
@@ -270,7 +228,7 @@ impl LibraryRefusal {
     pub fn class(&self) -> RefusalClass {
         match self {
             // The per-package admission checks `verify_package` raises.
-            Self::InvalidPreimage { .. } | Self::UndeclaredExport { .. } => {
+            Self::InvalidExportName { .. } | Self::AmbiguousDeclaration { .. } => {
                 RefusalClass::BindingCondition
             }
             // E3 name resolution: moves conceptually with the removed
@@ -302,27 +260,31 @@ pub enum RefusalClass {
     E3NameResolution,
 }
 
-/// Validate `package`'s identity preimage and require every name in
-/// `package.exports` to be one the preimage declares. Returns the
-/// declarations `package.exports` names, keyed by structural `NodeKey`;
-/// both steps test name membership and neither maps a name to a node id.
+/// Validate `package`'s exports: every name a qualified declaration name,
+/// and no name exported twice. Returns the exports keyed by structural
+/// `NodeKey`.
 pub(crate) fn verify_package(
     package: &LibraryPackage,
-) -> Result<ProjectedDeclarations, LibraryRefusal> {
-    let mut declarations = project_declarations(&package.identity_preimage).map_err(|defect| {
-        LibraryRefusal::InvalidPreimage {
-            library: package.library.clone(),
-            defect,
+) -> Result<BTreeMap<NodeKey, String>, LibraryRefusal> {
+    let mut names = std::collections::BTreeSet::new();
+    let mut exports = BTreeMap::new();
+    for (name, key) in &package.exports {
+        let segments: Vec<String> = name.split("::").map(str::to_owned).collect();
+        if !is_qualified_name(&segments) {
+            return Err(LibraryRefusal::InvalidExportName {
+                library: package.library.clone(),
+                export: name.clone(),
+            });
         }
-    })?;
-    if let Some(export) = declarations.undeclared(&package.exports) {
-        return Err(LibraryRefusal::UndeclaredExport {
-            library: package.library.clone(),
-            export: export.to_owned(),
-        });
+        if !names.insert(name.as_str()) {
+            return Err(LibraryRefusal::AmbiguousDeclaration {
+                library: package.library.clone(),
+                export: name.clone(),
+            });
+        }
+        exports.insert(key.clone(), name.clone());
     }
-    declarations.retain_exported(&package.exports);
-    Ok(declarations)
+    Ok(exports)
 }
 
 /// A package's exported declarations, exposed as data (FR-087-AC-4;
@@ -338,16 +300,15 @@ pub struct ImportView {
 }
 
 impl ImportView {
-    /// The import view of `package`: the declarations its `exports` list
-    /// names, after validating its identity preimage.
+    /// The import view of `package`: its exports, after validating them.
     ///
     /// # Errors
     ///
-    /// [`LibraryRefusal::InvalidPreimage`] or
-    /// [`LibraryRefusal::UndeclaredExport`].
+    /// [`LibraryRefusal::InvalidExportName`] or
+    /// [`LibraryRefusal::AmbiguousDeclaration`].
     pub fn of(package: &LibraryPackage) -> Result<Self, LibraryRefusal> {
         Ok(Self {
-            exports: verify_package(package)?.into_entries(),
+            exports: verify_package(package)?,
         })
     }
 
@@ -359,16 +320,6 @@ impl ImportView {
             .iter()
             .map(|(node, name)| (name.as_str(), node))
     }
-}
-
-/// Every name `identity_preimage` declares, in ascending order (FR-307: "a
-/// package's local declarations are exactly its exports").
-pub fn declared_exports(identity_preimage: &[u8]) -> Result<Vec<String>, PreimageDefect> {
-    Ok(project_declarations(identity_preimage)?
-        .declared_names()
-        .into_iter()
-        .map(str::to_owned)
-        .collect())
 }
 
 /// One selected package and the first dependency path that reached it.
@@ -394,7 +345,7 @@ struct Pending<'a> {
 
 /// Resolve the transitive import closure of `root` over `supplied` libraries
 /// in declaration order, after validating the root's and every supplied
-/// library's identity preimage.
+/// library's exports.
 pub fn resolve_libraries(
     root: &LibraryPackage,
     supplied: &[LibraryPackage],
@@ -491,10 +442,10 @@ impl LibraryLock {
 /// A checked migration from one package to its successor.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum LibraryMigration {
-    /// The successor's identity preimage is unchanged, so it is the identical
+    /// The successor's exports are unchanged, so it is the identical
     /// package rather than a migration.
     Unchanged,
-    /// A new package with a changed identity preimage.
+    /// A new package with changed exports.
     Migrated {
         /// The migrated package's identity.
         from: LibraryName,
@@ -503,15 +454,14 @@ pub enum LibraryMigration {
     },
 }
 
-/// Check `to` as the successor of `from`: both identity preimages are
-/// validated, and equal preimages are the identical package.
+/// Check `to` as the successor of `from`: both exports are
+/// validated, and equal exports are the identical package.
 pub fn check_migration(
     from: &LibraryPackage,
     to: &LibraryPackage,
 ) -> Result<LibraryMigration, LibraryRefusal> {
-    verify_package(from)?;
-    verify_package(to)?;
-    if from.identity_preimage == to.identity_preimage {
+    let (from_exports, to_exports) = (verify_package(from)?, verify_package(to)?);
+    if from_exports == to_exports {
         return Ok(LibraryMigration::Unchanged);
     }
     Ok(LibraryMigration::Migrated {
