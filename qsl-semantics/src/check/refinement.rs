@@ -1092,11 +1092,12 @@ fn leaf_checked_term(
                 LiteralValue::Enum(case) => ("enum", json!(case)),
             };
             let type_id = admitted(ty)?;
-            let value_kind = quire_contract_model::LiteralKind::from_wire(kind).ok_or_else(|| {
-                RefinementV2EncodingError::Body(serde_json::Error::custom(
-                    "a refinement row literal names no wire kind",
-                ))
-            })?;
+            let value_kind =
+                quire_contract_model::LiteralKind::from_wire(kind).ok_or_else(|| {
+                    RefinementV2EncodingError::Body(serde_json::Error::custom(
+                        "a refinement row literal names no wire kind",
+                    ))
+                })?;
             CheckedTerm::Literal {
                 type_id,
                 value_kind,
