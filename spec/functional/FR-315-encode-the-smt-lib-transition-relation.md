@@ -893,8 +893,9 @@ chosen in this requirement. `R` is the *rule* the query negates, as follows.
 The initial-state predicate is not asserted in a `Step` query, because the
 obligation holds for every pair of states of the declared types.
 
-The row index in `Step { row }` comes from FR-375's `steps` order, which is
-sorted by node key; it selects the row and plays no part in any assertion order.
+The row index in `Step { row }` is the row's position in FR-375's `steps`
+array, which holds the step rows in declaration order; it selects the row and
+plays no part in any assertion order.
 
 **Applications.** The applications of a row are those of its concrete
 operation, one per receiver and argument vector as Step relation defines an
