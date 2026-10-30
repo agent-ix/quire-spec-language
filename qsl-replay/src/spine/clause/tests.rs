@@ -357,7 +357,7 @@ fn no_cycle_selection(label: DocumentRef, self_key: &str) -> ClauseSelection {
 /// (FR-107), so one arbitrary universe for the whole environment suffices.
 fn node_reference(node_effective: EffectiveId, key: &str) -> ObjectReference {
     ObjectReference::new(
-        UniverseId::from_digest([7; 32]),
+        crate::spine::fixture_ids::universe(7),
         node_effective,
         ObjectId::new(key.to_owned()).expect("non-empty key"),
     )

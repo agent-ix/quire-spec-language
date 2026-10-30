@@ -517,7 +517,7 @@ fn tc_1053_step_3_reference_admission_equals_runs() {
     assert_eq!(good.values(), [4, 1]);
 
     let foreign = quire_exact::ObjectReference::new(
-        quire_exact::UniverseId::from_digest([0xa5; 32]),
+        crate::spine::fixture_ids::universe(0xa5),
         present.object_type(),
         present.object().clone(),
     );

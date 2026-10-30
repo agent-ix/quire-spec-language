@@ -2044,7 +2044,7 @@ fn tc_744_every_deciding_element_kind_round_trips() {
         (
             "enum",
             Value::Enum(quire_exact::EnumMember::new(
-                VariantId::from_digest([9; 32]),
+                crate::spine::fixture_ids::variant(9),
                 1,
             )),
         ),
@@ -2097,7 +2097,7 @@ fn tc_744_every_deciding_element_kind_round_trips() {
         (
             "reference",
             Value::Reference(ObjectReference::new(
-                UniverseId::from_digest([2; 32]),
+                crate::spine::fixture_ids::universe(2),
                 object_type,
                 ObjectId::new("root".to_owned()).unwrap(),
             )),
@@ -2381,8 +2381,8 @@ fn tc_743_long_text_or_object_identity_exceeds_the_reader_bound() {
         ..all_below_record(&unit)
     };
     let object = quire_exact::ObjectReference::new(
-        quire_exact::UniverseId::from_digest([2; 32]),
-        quire_exact::EffectiveId::from_digest([3; 32]),
+        crate::spine::fixture_ids::universe(2),
+        crate::spine::fixture_ids::effective(3),
         quire_exact::ObjectId::new(long).unwrap(),
     );
     let mut object_record = all_below_record(&unit);

@@ -278,7 +278,7 @@ fn tc_792_source_driver_admits_unused_parameters_before_body_evaluation() {
     let fixture = lookup_driver_fixture();
     let (objects, population, _, present) = lookup_driver_context(&fixture);
     let foreign_universe = quire_exact::ObjectReference::new(
-        UniverseId::from_digest([0xa5; 32]),
+        crate::spine::fixture_ids::universe(0xa5),
         present.object_type(),
         present.object().clone(),
     );
@@ -425,11 +425,11 @@ fn tc_792_typed_call_contract_is_not_an_integer_only_facade() {
 #[test]
 fn typed_model_values_bind_without_integer_coercion() {
     let reference = quire_exact::ObjectReference::new(
-        UniverseId::from_digest([1; 32]),
-        quire_exact::EffectiveId::from_digest([2; 32]),
+        crate::spine::fixture_ids::universe(1),
+        crate::spine::fixture_ids::effective(2),
         quire_exact::ObjectId::new("g1").unwrap(),
     );
-    let population = quire_exact::PopulationId::from_digest([3; 32]);
+    let population = crate::spine::fixture_ids::population(3);
     let bound = bind_arguments(
         &[
             (
@@ -658,7 +658,7 @@ fn tc_792_population_and_foreign_model_admission_keep_typed_causes() {
     use quire_semantic_value::declaration::TypeEnvironment;
 
     let types = TypeEnvironment::new([], []).unwrap();
-    let unknown = Value::Population(quire_exact::PopulationId::from_digest([9; 32]));
+    let unknown = Value::Population(crate::spine::fixture_ids::population(9));
     let unregistered = admit_model_arguments(
         &[],
         &types,
@@ -810,7 +810,7 @@ fn tc_792_foreign_type_maximum_and_dangling_controls_keep_admission_causes() {
         foreign_view.type_identities()[&foreign_type],
         quire_exact::ObjectId::new("foreign").unwrap(),
     ));
-    let unknown_type = quire_exact::EffectiveId::from_digest([7; 32]);
+    let unknown_type = crate::spine::fixture_ids::effective(7);
     let foreign_type_refusal = admit_model_arguments(
         &models,
         &TypeEnvironment::new([], []).unwrap(),
@@ -1459,8 +1459,8 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
         other => panic!("{other:?}"),
     }
     let reference = quire_exact::ObjectReference::new(
-        UniverseId::from_digest([4; 32]),
-        quire_exact::EffectiveId::from_digest([5; 32]),
+        crate::spine::fixture_ids::universe(4),
+        crate::spine::fixture_ids::effective(5),
         quire_exact::ObjectId::new("g1").unwrap(),
     );
     match convert(FamilyOutcome::Evaluated(Outcome::Completed(
@@ -1673,8 +1673,8 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
     // and a locus -- no longer bare, now that the kernel variant carries both
     // universes.
     {
-        let required = UniverseId::from_digest([0x01; 32]);
-        let supplied = UniverseId::from_digest([0x02; 32]);
+        let required = crate::spine::fixture_ids::universe(0x01);
+        let supplied = crate::spine::fixture_ids::universe(0x02);
         let refusal = Refusal::ForeignReference { required, supplied };
         match convert(FamilyOutcome::Evaluated(Outcome::Refused(refusal))).unwrap() {
             CallOutcome::Refused(CallRefusal::Record {
@@ -1779,7 +1779,7 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
     // `FamilyResult::Refused` with a row: `ForeignUniverse`.
     let foreign_universe = ModelCause(ModelRefusalCause::ForeignUniverse {
         actual: vec![0x01; 32],
-        expected: UniverseId::from_digest([0x02; 32]),
+        expected: crate::spine::fixture_ids::universe(0x02),
     });
     match convert(FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(
         Box::new(foreign_universe),

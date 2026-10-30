@@ -1844,6 +1844,9 @@ impl Default for DependencyLimits {
 mod dependency_tests;
 
 #[cfg(test)]
+pub(crate) mod fixture_ids;
+
+#[cfg(test)]
 pub(crate) mod spine_model;
 
 #[cfg(test)]
