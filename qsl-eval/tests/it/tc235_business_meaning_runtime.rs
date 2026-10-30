@@ -133,13 +133,6 @@ pub(crate) fn lifecycle_document_with(
         crate::tc235_k2::id("OrderLifecycle/cancelled"),
     ]);
     extra(&mut document);
-    let digest = crate::tc235_k2::jcs_digest(&document["types"]);
-    document["source"]["digest"] = serde_json::json!(digest);
-    document["package"]["manifestDigest"] = serde_json::json!(digest);
-    document["package"]["lockDigest"] = serde_json::json!(digest);
-    for construct in document["constructs"].as_array_mut().unwrap() {
-        construct["manifestDigest"] = serde_json::json!(digest);
-    }
     document
 }
 

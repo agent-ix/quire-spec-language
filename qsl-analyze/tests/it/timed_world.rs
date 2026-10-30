@@ -21,8 +21,6 @@ use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
 
 pub(crate) const PACKAGE: &str = "test/timed";
-pub(crate) const PLACEHOLDER: &str =
-    "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 
 pub(crate) fn ident(suffix: &str) -> String {
     format!("ix://{PACKAGE}/{suffix}")
@@ -139,7 +137,6 @@ fn document_with(
     .into_iter()
     .map(|(name, meaning)| {
         json!({"kind": {"module": PACKAGE, "name": name}, "moduleVersion": "1.0.0",
-            "manifestDigest": PLACEHOLDER,
             "construct": {"identity": "none", "shape": "record", "members": {},
                 "meaning": meaning}})
     })
@@ -164,10 +161,9 @@ fn document_with(
     json!({
         "contractVersion": "2.0.0",
         "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
-        "source": {"identity": ident("spec"), "version": "1.0.0", "dialect": "spec-bundle",
-            "digest": PLACEHOLDER},
-        "package": {"identity": PACKAGE, "version": "1.0.0", "manifestDigest": PLACEHOLDER,
-            "mappingVersions": [], "profileVersions": [], "lockDigest": PLACEHOLDER},
+        "source": {"identity": ident("spec"), "version": "1.0.0", "dialect": "spec-bundle"},
+        "package": {"identity": PACKAGE, "version": "1.0.0",
+            "mappingVersions": [], "profileVersions": []},
         "occurrences": [], "extensions": [],
         "constructs": constructs,
         "types": [
@@ -207,7 +203,6 @@ pub(crate) fn timers_document(max: u64, operations: &[(&str, &[&str])]) -> Vec<u
         .expect("constructs")
         .push(
             json!({"kind": {"module": PACKAGE, "name": "value_record"}, "moduleVersion": "1.0.0",
-            "manifestDigest": PLACEHOLDER,
             "construct": {"identity": "none", "shape": "record", "members": {},
                 "meaning": meaning::RECORD_VALUE_TYPE}}),
         );

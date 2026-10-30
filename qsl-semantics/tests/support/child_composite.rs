@@ -381,20 +381,7 @@ pub(crate) fn document_with_event() -> Value {
         base::construct("value", base_meaning::VALUE_TYPE),
         base::construct("happened", base_meaning::EVENT_TYPE),
     ]);
-    refresh_digests(&mut document);
     document
-}
-
-/// `document` with every digest its construct manifests and package header
-/// carry recomputed from its `types`.
-fn refresh_digests(document: &mut Value) {
-    let digest = base::jcs_digest(&document["types"]);
-    document["source"]["digest"] = json!(digest);
-    document["package"]["manifestDigest"] = json!(digest);
-    document["package"]["lockDigest"] = json!(digest);
-    for construct in document["constructs"].as_array_mut().unwrap() {
-        construct["manifestDigest"] = json!(digest);
-    }
 }
 
 /// [`document_with_event`] plus the native leaves PR #789 lowers: a
@@ -425,6 +412,5 @@ pub(crate) fn document_with_native_leaves() -> Value {
         ),
     ];
     document["types"].as_array_mut().unwrap().extend(types);
-    refresh_digests(&mut document);
     document
 }

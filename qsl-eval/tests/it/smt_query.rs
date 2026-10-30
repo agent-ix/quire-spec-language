@@ -25,7 +25,6 @@ use quire_semantic_value::fairness::PropertyForm;
 use serde_json::{json, Value as Json};
 
 const PACKAGE: &str = "test/smt";
-const PLACEHOLDER: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 const INFINITE: &str = "quire.temporal.infinite-trace/v1";
 const BOUNDED: &str = "quire.temporal.event-position.false-extension/v1";
 
@@ -133,7 +132,6 @@ fn document(object: &str, fields: Vec<Json>, operations: Vec<Json>) -> Vec<u8> {
     .into_iter()
     .map(|(name, meaning)| {
         json!({"kind": {"module": PACKAGE, "name": name}, "moduleVersion": "1.0.0",
-            "manifestDigest": PLACEHOLDER,
             "construct": {"identity": "none", "shape": "record", "members": {},
                 "meaning": meaning}})
     })
@@ -143,10 +141,9 @@ fn document(object: &str, fields: Vec<Json>, operations: Vec<Json>) -> Vec<u8> {
     json!({
         "contractVersion": "2.0.0",
         "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
-        "source": {"identity": ident("spec"), "version": "1.0.0", "dialect": "spec-bundle",
-            "digest": PLACEHOLDER},
-        "package": {"identity": PACKAGE, "version": "1.0.0", "manifestDigest": PLACEHOLDER,
-            "mappingVersions": [], "profileVersions": [], "lockDigest": PLACEHOLDER},
+        "source": {"identity": ident("spec"), "version": "1.0.0", "dialect": "spec-bundle"},
+        "package": {"identity": PACKAGE, "version": "1.0.0",
+            "mappingVersions": [], "profileVersions": []},
         "occurrences": [], "extensions": [],
         "constructs": constructs,
         "types": [

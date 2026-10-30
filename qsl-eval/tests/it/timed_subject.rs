@@ -31,7 +31,6 @@ use quire_semantic_value::model_transition::ModelTransition;
 use serde_json::{json, Value as Json};
 
 const PACKAGE: &str = "test/rpc";
-const PLACEHOLDER: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 
 fn ident(suffix: &str) -> String {
     format!("ix://{PACKAGE}/{suffix}")
@@ -114,7 +113,6 @@ fn clocked_document(clocked: bool, extra: &[&str]) -> Vec<u8> {
     .into_iter()
     .map(|(name, meaning)| {
         json!({"kind": {"module": PACKAGE, "name": name}, "moduleVersion": "1.0.0",
-            "manifestDigest": PLACEHOLDER,
             "construct": {"identity": "none", "shape": "record", "members": {},
                 "meaning": meaning}})
     })
@@ -136,10 +134,9 @@ fn clocked_document(clocked: bool, extra: &[&str]) -> Vec<u8> {
     json!({
         "contractVersion": "2.0.0",
         "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
-        "source": {"identity": ident("spec"), "version": "1.0.0", "dialect": "spec-bundle",
-            "digest": PLACEHOLDER},
-        "package": {"identity": PACKAGE, "version": "1.0.0", "manifestDigest": PLACEHOLDER,
-            "mappingVersions": [], "profileVersions": [], "lockDigest": PLACEHOLDER},
+        "source": {"identity": ident("spec"), "version": "1.0.0", "dialect": "spec-bundle"},
+        "package": {"identity": PACKAGE, "version": "1.0.0",
+            "mappingVersions": [], "profileVersions": []},
         "occurrences": [], "extensions": [],
         "constructs": constructs,
         "types": [
@@ -1162,7 +1159,6 @@ fn timer_document() -> Vec<u8> {
         .expect("constructs")
         .push(json!({
         "kind": {"module": PACKAGE, "name": "value_record"}, "moduleVersion": "1.0.0",
-        "manifestDigest": PLACEHOLDER,
         "construct": {"identity": "none", "shape": "record", "members": {},
             "meaning": meaning::RECORD_VALUE_TYPE}}));
     serde_json::to_vec(&document).expect("JSON")
@@ -1362,7 +1358,6 @@ fn a_record_holding_an_enum_steps_where_its_frame_does_not_grant_it() {
         .expect("constructs")
         .push(json!({
             "kind": {"module": PACKAGE, "name": "mode"}, "moduleVersion": "1.0.0",
-            "manifestDigest": PLACEHOLDER,
             "construct": {"identity": "none", "shape": "enumeration",
                 "members": {"variants": "required"}, "meaning": meaning::VARIANT_TYPE}}));
     let world = world_holding(
@@ -2701,7 +2696,6 @@ fn cells_document(
     let constructs = document["constructs"].as_array_mut().expect("constructs");
     constructs.push(json!({
         "kind": {"module": PACKAGE, "name": "mode"}, "moduleVersion": "1.0.0",
-        "manifestDigest": PLACEHOLDER,
         "construct": {"identity": "none", "shape": "enumeration",
             "members": {"variants": "required"}, "meaning": meaning::VARIANT_TYPE}}));
     serde_json::to_vec(&document).expect("JSON")

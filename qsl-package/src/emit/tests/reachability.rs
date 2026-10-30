@@ -87,8 +87,6 @@ pub(super) fn reachability_document() -> Vec<u8> {
     document["constructs"].as_array_mut().unwrap().push(json!({
         "kind": {"module": "acme/orders", "name": "population"},
         "moduleVersion": "1.0.0",
-        "manifestDigest":
-            "sha256:0000000000000000000000000000000000000000000000000000000000000000",
         "construct": {
             "identity": "none",
             "shape": "record",
