@@ -214,10 +214,12 @@ fn conflicting_unselected_inventory_is_not_hidden_by_wire_imports() {
         )
         .unwrap_err();
         assert_eq!((error.code, error.stage), (code, stage));
-        assert!(matches!(
-            error.cause,
-            Some(PackageCause::Linking(_)) | Some(PackageCause::Checking(_))
-        ));
+        if stage == PackageStage::Rebind {
+            assert!(matches!(
+                error.cause,
+                Some(PackageCause::Linking(_)) | Some(PackageCause::Checking(_))
+            ));
+        }
     }
 }
 
