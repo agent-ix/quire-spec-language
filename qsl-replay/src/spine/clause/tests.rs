@@ -577,9 +577,19 @@ fn evaluate_clause_refuses_observations_admitted_for_another_clause() {
     // disagrees.
     assert_ne!(
         clause.identity(),
-        quire_exact::NodeKey::new("fixture", vec![quire_exact::PathSegment::Text("node".into())], 9).expect("a fixture key")
+        quire_exact::NodeKey::new(
+            "fixture",
+            vec![quire_exact::PathSegment::Text("node".into())],
+            9
+        )
+        .expect("a fixture key")
     );
-    let wrong_identity = quire_exact::NodeKey::new("fixture", vec![quire_exact::PathSegment::Text("node".into())], 9).expect("a fixture key");
+    let wrong_identity = quire_exact::NodeKey::new(
+        "fixture",
+        vec![quire_exact::PathSegment::Text("node".into())],
+        9,
+    )
+    .expect("a fixture key");
     let observations = no_cycle_observations(
         wrong_identity,
         environment,
@@ -1078,7 +1088,6 @@ fn run_clause_reports_not_a_predicate_for_an_integer_function() {
     ));
     assert_eq!(report.disposition.stage(), ClauseRunStage::Select);
 }
-
 
 /// [`ClauseRunRefusal::EmptySource`]: an empty unit refuses before any
 /// stage runs. Not one of FR-109's own AC rows (`ClauseRunRefusal` is only
@@ -1840,7 +1849,6 @@ fn run_clause_reports_missing_name_for_a_clause_selection_naming_a_function() {
     ));
     assert_eq!(report.disposition.stage(), ClauseRunStage::Select);
 }
-
 
 /// TC-468 step 3 (FR-109-AC-2): a dangling `parent` reference (naming a key
 /// no admitted population holds) refuses `admit`, `refusal`,
@@ -3371,7 +3379,7 @@ mod extracted {
         missing.packages = BTreeMap::new();
         let report = run_clause(missing).expect("a well-formed request always reports");
         assert_eq!(report.disposition.stage(), ClauseRunStage::Compile);
-        }
+    }
 }
 
 /// TC-468 step 6 (FR-109-AC-6): an I3 extracted source whose fence declares
@@ -4548,7 +4556,6 @@ fn s4_renaming_parent_order_changes_no_node_id() {
             .identity(),
     );
 }
-
 
 /// TC-463 (FR-105-AC-4, FR-104-AC-6): adding `ParentOrder2` with
 /// `ParentOrder`'s body adds no node and a second `claim` occurrence

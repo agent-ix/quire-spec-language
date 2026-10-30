@@ -9,8 +9,8 @@
 //! encodes and decodes on a small native stack, and only the entry's byte
 //! length bounds it.
 
-use std::collections::{HashMap, HashSet};
 use quire_exact::NodeKey;
+use std::collections::{HashMap, HashSet};
 
 use quire_canonical::{read, to_vec, Error as CanonicalError, Limits, Node, NodeRef, Writer};
 use quire_exact::Integer;
@@ -556,8 +556,14 @@ fn value_steps<'v>(value: &'v WitnessValue, order: Option<&[usize]>) -> Vec<Task
         } => object(
             vec![
                 tag("reference"),
-                ("universe", Task::Owned(crate::id_text::universe_text(universe).unwrap_or_default())),
-                ("object_type", Task::Owned(crate::id_text::effective_text(object_type).unwrap_or_default())),
+                (
+                    "universe",
+                    Task::Owned(crate::id_text::universe_text(universe).unwrap_or_default()),
+                ),
+                (
+                    "object_type",
+                    Task::Owned(crate::id_text::effective_text(object_type).unwrap_or_default()),
+                ),
                 ("identity", Task::Owned(hex(identity))),
             ],
             vec![],
@@ -582,10 +588,7 @@ fn value_steps<'v>(value: &'v WitnessValue, order: Option<&[usize]>) -> Vec<Task
             }
             elements.push(Task::EndArray);
             with_array(
-                vec![
-                    tag("record"),
-                    ("name", Task::Owned(node_text(declaration))),
-                ],
+                vec![tag("record"), ("name", Task::Owned(node_text(declaration)))],
                 "fields",
                 elements,
             )
@@ -783,10 +786,7 @@ fn integer_member(members: &[(&str, NodeRef<'_>)], name: &str) -> Result<Integer
         .map_err(|_| EntryFault::Spelling)
 }
 
-fn declaration_member(
-    members: &[(&str, NodeRef<'_>)],
-    name: &str,
-) -> Result<NodeKey, EntryFault> {
+fn declaration_member(members: &[(&str, NodeRef<'_>)], name: &str) -> Result<NodeKey, EntryFault> {
     crate::id_text::node_from_text(string_member(members, name)?).ok_or(EntryFault::Spelling)
 }
 
@@ -1274,9 +1274,10 @@ fn visit<'d>(
             values.push(WitnessValue::Reference {
                 universe: crate::id_text::universe_from_text(string_member(&members, "universe")?)
                     .ok_or(EntryFault::Spelling)?,
-                object_type: crate::id_text::effective_from_text(
-                    string_member(&members, "object_type")?,
-                )
+                object_type: crate::id_text::effective_from_text(string_member(
+                    &members,
+                    "object_type",
+                )?)
                 .ok_or(EntryFault::Spelling)?,
                 identity: identity_bytes(string_member(&members, "identity")?)?,
             });

@@ -198,7 +198,8 @@ fn fixture() -> Fixture {
         .expect("fixture selects")
         .into_value();
     let checked = spine::check(
-        &parsed, "fixture".to_owned(),
+        &parsed,
+        "fixture".to_owned(),
         &models,
         &DependencyInput::default(),
         limits,
@@ -232,7 +233,8 @@ fn fixture() -> Fixture {
     drop(checked);
 
     let acquired = acquire_checked_closure(
-        source, "fixture".to_owned(),
+        source,
+        "fixture".to_owned(),
         "body-failure.native",
         UNIT.as_bytes(),
         [],

@@ -266,7 +266,7 @@ impl GraphEvidenceEnvelope {
         obligation_identity: ObligationIdentity,
         occurrence_key: qsl_foundation::source::provenance::OccurrenceKey,
         claim_node: NodeKey,
-            profile_selections: Vec<ProfileSelection>,
+        profile_selections: Vec<ProfileSelection>,
         run_limits: ScalarLimits,
         declared_domains: Vec<DeclaredDomain>,
         backend: BackendId,

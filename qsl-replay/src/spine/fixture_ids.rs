@@ -7,12 +7,8 @@ use quire_exact::{UniverseId, VariantId};
 
 /// A distinct fixture node under the package `fixture`.
 pub(crate) fn node(seed: u8) -> NodeKey {
-    NodeKey::new(
-        "fixture",
-        vec![PathSegment::Text(format!("n{seed}"))],
-        0,
-    )
-    .expect("a fixture node key is well formed")
+    NodeKey::new("fixture", vec![PathSegment::Text(format!("n{seed}"))], 0)
+        .expect("a fixture node key is well formed")
 }
 
 /// A distinct fixture universe.

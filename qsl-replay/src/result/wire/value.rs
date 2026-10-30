@@ -140,8 +140,7 @@ mod tests {
     /// a `Pair` of two `Money`, in a checked package.
     fn money_package() -> (CheckedPackage, [quire_exact::NodeKey; 3]) {
         use quire_semantic_value::declaration::FieldDeclaration;
-        let [money, taxed, pair] =
-            [1, 2, 3].map(crate::fixture_node);
+        let [money, taxed, pair] = [1, 2, 3].map(crate::fixture_node);
         let field =
             |name: &str, value_type| FieldDeclaration::new(name, value_type, Presence::Required);
         let types = TypeEnvironment::new(
@@ -1019,7 +1018,8 @@ impl ScalarWire {
             },
             Value::Reference(reference) => Self::Reference {
                 universe: crate::id_text::universe_text(reference.universe()).unwrap_or_default(),
-                object_type: crate::id_text::effective_text(reference.object_type()).unwrap_or_default(),
+                object_type: crate::id_text::effective_text(reference.object_type())
+                    .unwrap_or_default(),
                 object_identity: reference.object().as_str().to_owned(),
             },
             Value::Option(_)
@@ -1196,7 +1196,9 @@ impl quire_canonical::Encode for ElementEncode<'_> {
                         writer.name("kind")?;
                         writer.string("composite")?;
                         writer.name("declaration")?;
-                        writer.string(&crate::id_text::node_text(composite.declaration()).unwrap_or_default())?;
+                        writer.string(
+                            &crate::id_text::node_text(composite.declaration()).unwrap_or_default(),
+                        )?;
                         writer.name("slots")?;
                         writer.begin_array()?;
                         let mut next: Vec<Emit<'_>> =

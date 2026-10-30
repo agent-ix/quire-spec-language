@@ -402,11 +402,9 @@ fn settle<T: SubjectTransition>(
     let mut hints = Vec::new();
     let mut depth = None;
     let row = match outcome {
-        ModelCheckOutcome::Holds { certificate, .. } => {
-            Row::of_check(closure(certificate), || {
-                Row::proved(ProofBasis::Exhaustive, SettlementBasis::ClosedScope)
-            })
-        }
+        ModelCheckOutcome::Holds { certificate, .. } => Row::of_check(closure(certificate), || {
+            Row::proved(ProofBasis::Exhaustive, SettlementBasis::ClosedScope)
+        }),
         // ADR-021 RV-1: a reduced proof is its own technique, and a
         // constraint-only proof explored the subject without a certificate.
         ModelCheckOutcome::HoldsReduced { reductions, .. } => Row::proof(

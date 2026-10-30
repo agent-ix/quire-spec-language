@@ -246,14 +246,12 @@ fn settle(
     let checked_graph = compiled.checked.package().graph();
     let graph = checked_graph.semantic_graph();
     let operator = claim.operation.operator();
-    let node = graph
-        .node(claim.node.clone())
-        .ok_or_else(|| {
-            ReplayRefusal::ScalarIdentity(Box::new(ScalarIdentityMismatch::Node {
-                node: claim.node.clone(),
-                package: package.clone(),
-            }))
-        })?;
+    let node = graph.node(claim.node.clone()).ok_or_else(|| {
+        ReplayRefusal::ScalarIdentity(Box::new(ScalarIdentityMismatch::Node {
+            node: claim.node.clone(),
+            package: package.clone(),
+        }))
+    })?;
     if !applies(node, operator) {
         return Err(ReplayRefusal::ScalarIdentity(Box::new(
             ScalarIdentityMismatch::Operator {

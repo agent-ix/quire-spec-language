@@ -7,8 +7,8 @@ use std::sync::Arc;
 use qsl_eval::value::PackageClosure;
 use qsl_foundation::SourceIdentity;
 use qsl_package::CheckedPackage;
-use qsl_semantics::library::LibraryName;
 use qsl_semantics::check::{CheckedExpression, CheckedNode, NodeKind};
+use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_eval::{
     Admission, BodyFactory, CallFailure, Evaluation, Progress, Registry, Session, Signature,
@@ -752,8 +752,8 @@ pub fn acquire_checked_closure<'a>(
         replay_limits,
     )?;
     let package_name = compiled.package.clone();
-    let context = context_of(compiled.checked.package(), &package_name)
-        .map_err(AdmittedRefusal::Fault)?;
+    let context =
+        context_of(compiled.checked.package(), &package_name).map_err(AdmittedRefusal::Fault)?;
     Ok(CheckedClosureCompilation {
         package: CompiledPackage::new(compiled.emitted),
         context,
@@ -811,7 +811,9 @@ impl ApplicationRegistry {
         if !Arc::ptr_eq(&self.acquisition, &selection.acquisition) {
             return Err(SelectionRefusal::WrongAcquisition);
         }
-        Ok(self.inner.register(selection.key.clone(), signature, factory))
+        Ok(self
+            .inner
+            .register(selection.key.clone(), signature, factory))
     }
 
     /// Begin a call under the leaf's admission and permanent sealing rules.
@@ -1076,7 +1078,9 @@ mod tests {
         );
         let handle = acquired.handle();
         assert_eq!(
-            handle.lookup_callable(handle.package_name(), &lib_wire).err(),
+            handle
+                .lookup_callable(handle.package_name(), &lib_wire)
+                .err(),
             Some(CallableLookupRefusal::Foreign(
                 lib_acquired.handle().package_name()
             ))
@@ -1101,7 +1105,9 @@ mod tests {
                     &wire(&handle.package, "f")
                 )
                 .err(),
-            Some(CallableLookupRefusal::Foreign(handle.package_name().clone()))
+            Some(CallableLookupRefusal::Foreign(
+                handle.package_name().clone()
+            ))
         );
         assert_eq!(
             handle
@@ -1300,10 +1306,7 @@ mod tests {
             .key();
         assert_eq!(
             handle
-                .lookup_callable(
-                    handle.package_name(),
-                    &enum_key.clone()
-                )
+                .lookup_callable(handle.package_name(), &enum_key.clone())
                 .err(),
             Some(CallableLookupRefusal::WrongKind)
         );
@@ -1321,7 +1324,9 @@ mod tests {
         .expect("function site");
         let parameter = site.site.parameters[0].1;
         assert_eq!(
-            handle.lookup_callable(handle.package_name(), &parameter).err(),
+            handle
+                .lookup_callable(handle.package_name(), &parameter)
+                .err(),
             Some(CallableLookupRefusal::WrongKind)
         );
         let unrelated = acquire(
@@ -1336,7 +1341,9 @@ mod tests {
             .expect("other");
         let missing = missing_key.clone();
         assert_eq!(
-            handle.lookup_callable(handle.package_name(), &missing).err(),
+            handle
+                .lookup_callable(handle.package_name(), &missing)
+                .err(),
             Some(CallableLookupRefusal::Unknown)
         );
         let mut malformed = own.clone();
@@ -1632,7 +1639,7 @@ mod tests {
         ] {
             let expected = crate::compile_admitted(
                 identity("unit"),
-            "fixture".to_owned(),
+                "fixture".to_owned(),
                 "unit.native",
                 source.as_bytes(),
                 [],
@@ -1643,7 +1650,7 @@ mod tests {
             .expect_err("existing refusal");
             let actual = acquire_checked_closure(
                 identity("unit"),
-            "fixture".to_owned(),
+                "fixture".to_owned(),
                 "unit.native",
                 source.as_bytes(),
                 [],
@@ -2019,10 +2026,7 @@ mod tests {
             handle.nested_call_site(&outer, g_call),
             handle.nested_call_site(&g, k_call),
             handle.nested_call_site(&g, NestedCallOccurrence::new(wire(&package, "g"), 0)),
-            handle.nested_call_site(
-                &g,
-                NestedCallOccurrence::new(crate::fixture_node(7), 0),
-            ),
+            handle.nested_call_site(&g, NestedCallOccurrence::new(crate::fixture_node(7), 0)),
             handle.nested_call_site(&g, NestedCallOccurrence::new(g_call.call_node, 99)),
         ]
         .map(|result| result.expect_err("refused"));

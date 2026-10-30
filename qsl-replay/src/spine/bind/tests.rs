@@ -63,9 +63,16 @@ fn compile_with(
     let models = select_models(&parsed, &packages, limits.model, &cancel)
         .expect("the models select")
         .into_value();
-    let checked = check(&parsed, "fixture".to_owned(), &models, &dependencies, limits, &cancel)
-        .expect("the unit checks")
-        .into_value();
+    let checked = check(
+        &parsed,
+        "fixture".to_owned(),
+        &models,
+        &dependencies,
+        limits,
+        &cancel,
+    )
+    .expect("the unit checks")
+    .into_value();
     let emitted = emit(&checked, Default::default(), &cancel)
         .expect("the unit emits")
         .into_value();
@@ -612,7 +619,12 @@ fn tc_1053_step_4_occurrence_identity_refusals() {
     );
 
     // A node absent from the package.
-    let absent = quire_exact::NodeKey::new("fixture", vec![quire_exact::PathSegment::Text("node".into())], 0xee).expect("a fixture key");
+    let absent = quire_exact::NodeKey::new(
+        "fixture",
+        vec![quire_exact::PathSegment::Text("node".into())],
+        0xee,
+    )
+    .expect("a fixture key");
     let absent = ScalarOccurrence {
         application: absent,
         occurrence: OccurrenceKey::new(absent, sub.occurrence.origin().clone()),

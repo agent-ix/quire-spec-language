@@ -9,8 +9,8 @@
 //! member, an unknown tag, a `null` member and a record missing a component
 //! its family assigns.
 
-use std::cell::RefCell;
 use quire_exact::NodeKey;
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 
 use ix_trace_rs::string_edge;
@@ -1007,8 +1007,16 @@ impl PathWire {
         }
         for step in &self.steps {
             if let StepWire::Reference { object } = step {
-                spelled(crate::id_text::universe_from_text, &object.universe, "universe")?;
-                spelled(crate::id_text::effective_from_text, &object.object_type, "type")?;
+                spelled(
+                    crate::id_text::universe_from_text,
+                    &object.universe,
+                    "universe",
+                )?;
+                spelled(
+                    crate::id_text::effective_from_text,
+                    &object.object_type,
+                    "type",
+                )?;
                 quire_exact::ObjectId::new(object.object_identity.clone())
                     .map_err(|_| CauseCodecError::Empty("object_identity"))?;
             }
@@ -1029,8 +1037,10 @@ impl PathWire {
                 },
                 subject: match &path.subject {
                     ValuePathSubject::Object(object) => SubjectWire::Object {
-                        universe: crate::id_text::universe_text(object.universe()).unwrap_or_default(),
-                        object_type: crate::id_text::effective_text(object.object_type()).unwrap_or_default(),
+                        universe: crate::id_text::universe_text(object.universe())
+                            .unwrap_or_default(),
+                        object_type: crate::id_text::effective_text(object.object_type())
+                            .unwrap_or_default(),
                         object_identity: object.object().as_str().to_owned(),
                     },
                     ValuePathSubject::Invocation {
@@ -1070,8 +1080,10 @@ impl PathWire {
                     ValuePathStep::Index(index) => StepWire::Index { index: *index },
                     ValuePathStep::Reference(object) => StepWire::Reference {
                         object: ObjectWire {
-                            universe: crate::id_text::universe_text(object.universe()).unwrap_or_default(),
-                            object_type: crate::id_text::effective_text(object.object_type()).unwrap_or_default(),
+                            universe: crate::id_text::universe_text(object.universe())
+                                .unwrap_or_default(),
+                            object_type: crate::id_text::effective_text(object.object_type())
+                                .unwrap_or_default(),
                             object_identity: object.object().as_str().to_owned(),
                         },
                     },

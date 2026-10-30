@@ -350,7 +350,11 @@ pub fn select_contract(
             if operation.declaration.effect().is_empty() {
                 return Err(ContractSelection::NoForm);
             }
-            let key = operation_key(package, operation.declaring.clone(), operation.declaration.name())?;
+            let key = operation_key(
+                package,
+                operation.declaring.clone(),
+                operation.declaration.name(),
+            )?;
             let elements = [AbstractionKey::Object(key.declaring.clone())];
             let bound = binding(relation, &key, elements)?;
             Ok(selected(ContractForm::Frame, Target::Frame, bound))
@@ -907,7 +911,9 @@ impl<'s, 'a> ContractTarget<'s, 'a> {
     /// reading was open.
     fn violations(&self, case: &ContractCase) -> Result<Evaluated, Stop> {
         match &self.claim.target {
-            Target::Invariant { clause, context } => self.invariant(case, clause.clone(), context.clone()),
+            Target::Invariant { clause, context } => {
+                self.invariant(case, clause.clone(), context.clone())
+            }
             Target::Precondition { clause, context } => {
                 self.precondition(case.state(), clause.clone(), context.clone())
             }
@@ -1177,9 +1183,9 @@ impl<'s, 'a> ContractTarget<'s, 'a> {
                     known.identity == identity && known.kind == ContractClauseKind::Precondition
                 })
         };
-        let cases = self
-            .concrete
-            .operation_cases(state, declaring.clone(), operation, context, &select)?;
+        let cases =
+            self.concrete
+                .operation_cases(state, declaring.clone(), operation, context, &select)?;
         evaluated.checks = cases.enabled;
         for contract in cases.undecided {
             let undefined = undefined_of(&contract.evaluation);
@@ -1265,9 +1271,13 @@ impl<'s, 'a> ContractTarget<'s, 'a> {
                 return Ok(evaluated);
             }
         }
-        let cases =
-            self.concrete
-                .operation_cases(state, declaring.clone(), operation, declaring.clone(), &|_| true)?;
+        let cases = self.concrete.operation_cases(
+            state,
+            declaring.clone(),
+            operation,
+            declaring.clone(),
+            &|_| true,
+        )?;
         open_contracts(&cases, &mut evaluated);
         if cases.steps.is_empty() {
             return Ok(evaluated);

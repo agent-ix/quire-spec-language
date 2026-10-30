@@ -784,10 +784,7 @@ impl ReplayRequest {
                     .into_iter()
                     .map(RawSourceRef::from_wire)
                     .collect::<Vec<_>>();
-                Ok::<_, ReplayRequestRefusal>(DependencyEntry {
-                    identity,
-                    sources,
-                })
+                Ok::<_, ReplayRequestRefusal>(DependencyEntry { identity, sources })
             })
             .collect::<Result<Vec<_>, _>>()?;
 
@@ -894,9 +891,9 @@ mod tests {
     use crate::identity::QualifiedName;
     use crate::target::ReplayTargetMembers;
     use ix_trace_rs::trace;
-use quire_exact::NodeKey;
     use qsl_foundation::source::provenance::OccurrenceKey as OccurrenceKeyForTest;
     use quire_exact::Identifier;
+    use quire_exact::NodeKey;
 
     fn scalar_limits(seed: u64) -> ScalarLimits {
         ScalarLimits {
@@ -948,7 +945,12 @@ use quire_exact::NodeKey;
                 crate::target::test_key(),
             ),
             source: ReplaySource::Input(vec![crate::witness::CanonicalAssignment {
-                parameter: quire_exact::NodeKey::new("fixture", vec![quire_exact::PathSegment::Text("node".into())], 9).expect("a fixture key"),
+                parameter: quire_exact::NodeKey::new(
+                    "fixture",
+                    vec![quire_exact::PathSegment::Text("node".into())],
+                    9,
+                )
+                .expect("a fixture key"),
                 value: crate::witness::WitnessValue::Integer(42),
             }]),
             obligation_identity: [1; 32],
@@ -1251,7 +1253,12 @@ use quire_exact::NodeKey;
         ReplaySource::ModelGraph(Box::new(crate::GraphEvidenceEnvelope::new(
             ObligationIdentity::from_digest([2; 32]),
             crate::target::test_key(),
-            quire_exact::NodeKey::new("fixture", vec![quire_exact::PathSegment::Text("node".into())], 3).expect("a fixture key"),
+            quire_exact::NodeKey::new(
+                "fixture",
+                vec![quire_exact::PathSegment::Text("node".into())],
+                3,
+            )
+            .expect("a fixture key"),
             DigestRecord::mint(DigestDomain::PackageSemanticV2, [4; 32]),
             Vec::new(),
             wire(1).accounting_limits,
@@ -1298,7 +1305,12 @@ use quire_exact::NodeKey;
     #[test]
     fn tc_185_a_function_request_round_trips_its_occurrence_key() {
         let function = QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap();
-        let node = quire_exact::NodeKey::new("fixture", vec![quire_exact::PathSegment::Text("node".into())], 5).expect("a fixture key");
+        let node = quire_exact::NodeKey::new(
+            "fixture",
+            vec![quire_exact::PathSegment::Text("node".into())],
+            5,
+        )
+        .expect("a fixture key");
         for key in [
             OccurrenceKeyForTest::new(node, quire_exact::Origin::new("declaration".into(), 0)),
             OccurrenceKeyForTest::new(node, quire_exact::Origin::new("expression".into(), 1)),
@@ -1534,7 +1546,12 @@ use quire_exact::NodeKey;
         // `Input` arm.
         let distinctive_value: i128 = 918_273_645;
         request_wire.source = ReplaySource::Input(vec![crate::witness::CanonicalAssignment {
-            parameter: quire_exact::NodeKey::new("fixture", vec![quire_exact::PathSegment::Text("node".into())], 42).expect("a fixture key"),
+            parameter: quire_exact::NodeKey::new(
+                "fixture",
+                vec![quire_exact::PathSegment::Text("node".into())],
+                42,
+            )
+            .expect("a fixture key"),
             value: crate::witness::WitnessValue::Integer(distinctive_value),
         }]);
         let request = ReplayRequest::decode(request_wire, crate::ReplayLimits::default()).unwrap();

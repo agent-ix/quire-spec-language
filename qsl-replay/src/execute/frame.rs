@@ -13,10 +13,10 @@
 //! settles an FR-072 result on the envelope's arm.
 
 use qsl_foundation::source::provenance::OccurrenceKey;
-use quire_exact::NodeKey;
 use qsl_semantics::check::{CheckedGraph, CheckedOperationFrame};
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::observation::{DocumentRef, FrameWitness, Provisions};
+use quire_exact::NodeKey;
 use quire_semantic_value::catalog::InternalFault;
 
 use super::{

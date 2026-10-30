@@ -297,9 +297,7 @@ impl ClauseDisposition {
     /// The FR-109 stage this disposition reports at.
     pub fn stage(&self) -> ClauseRunStage {
         match self {
-            Self::Compile(_) | Self::UnknownLanguage { .. } => {
-                ClauseRunStage::Compile
-            }
+            Self::Compile(_) | Self::UnknownLanguage { .. } => ClauseRunStage::Compile,
             Self::MissingName { .. } | Self::NotAPredicate { .. } => ClauseRunStage::Select,
             Self::Admit(_) | Self::ArgumentRefusal(_) => ClauseRunStage::Admit,
             Self::Evaluate(_)
@@ -1109,8 +1107,7 @@ pub(crate) fn check_clause_admitted(
         .evaluate_clause(&qualified, &observations, &mut meter)
     {
         Ok(evaluation) => {
-            consequent_source_events =
-                derive_consequent_source_events(graph, clause, &evaluation);
+            consequent_source_events = derive_consequent_source_events(graph, clause, &evaluation);
             match derive_separating_witness(clause, &evaluation) {
                 Err(fault) => ClauseDisposition::EvaluateFault(fault),
                 Ok(witness) => {

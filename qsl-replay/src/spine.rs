@@ -2522,7 +2522,14 @@ mod tests {
                 "Option<Sequence<Integer>[1, 4]>",
             ),
             (
-                ValueType::Composite(NodeKey::new("fixture", vec![quire_exact::PathSegment::Text("node".into())], 0xab).expect("a fixture key")),
+                ValueType::Composite(
+                    NodeKey::new(
+                        "fixture",
+                        vec![quire_exact::PathSegment::Text("node".into())],
+                        0xab,
+                    )
+                    .expect("a fixture key"),
+                ),
                 &format!("Composite[{}]", "ab".repeat(32)),
             ),
         ];

@@ -297,7 +297,9 @@ pub enum CallSiteRefusal {
     /// `selection` names no function of the compiled `package`. Never a
     /// bare `QualifiedName` (FR-088-AC-6, TC-258): paired with the package
     /// it was looked up in, mirroring `ReplayRefusal::UnknownFunction`.
-    #[error("missing_declaration/missing-name: package {package} declares no function {selection}")]
+    #[error(
+        "missing_declaration/missing-name: package {package} declares no function {selection}"
+    )]
     UnknownFunction {
         /// The name `call_site` was given.
         selection: QualifiedName,
@@ -309,7 +311,9 @@ pub enum CallSiteRefusal {
     /// to no single operation, or no clause or attempt of the unit names it
     /// (FR-105 emits no frame for it). Paired with the package, as
     /// [`Self::UnknownFunction`] is (FR-088-AC-6).
-    #[error("missing_declaration/missing-name: package {package} holds no operation frame {selection}")]
+    #[error(
+        "missing_declaration/missing-name: package {package} holds no operation frame {selection}"
+    )]
     UnknownOperation {
         /// The operation `call_site` was given.
         selection: OperationName,
@@ -343,7 +347,9 @@ pub enum CallSiteRefusal {
     },
     /// `selection` names no state clause of the compiled `package`. Paired
     /// with the package, as [`Self::UnknownFunction`] is (FR-088-AC-6).
-    #[error("missing_declaration/missing-name: package {package} declares no state clause {selection}")]
+    #[error(
+        "missing_declaration/missing-name: package {package} declares no state clause {selection}"
+    )]
     UnknownClause {
         /// The clause name `call_site` was given.
         selection: ClauseName,
@@ -365,7 +371,9 @@ pub enum CallSiteRefusal {
     /// alias does not resolve, or its domain package declares no population
     /// of that artifact id. Paired with the package, as
     /// [`Self::UnknownFunction`] is (FR-088-AC-6).
-    #[error("missing_declaration/missing-name: package {package} declares no population {selection}")]
+    #[error(
+        "missing_declaration/missing-name: package {package} declares no population {selection}"
+    )]
     UnknownPopulation {
         /// The population `call_site` was given.
         selection: PopulationName,
@@ -501,9 +509,16 @@ pub fn call_site<'a, S: CallSiteSelection>(
     let models = spine::select(&parsed, &packages, limits.model, &cancel)
         .map_err(refusal)?
         .into_value();
-    let checked = spine::check(&parsed, package_name, &models, dependencies, limits, &cancel)
-        .map_err(refusal)?
-        .into_value();
+    let checked = spine::check(
+        &parsed,
+        package_name,
+        &models,
+        dependencies,
+        limits,
+        &cancel,
+    )
+    .map_err(refusal)?
+    .into_value();
     let emitted = spine::package(&checked, spine::PackageLimits::default(), &cancel)
         .map_err(refusal)?
         .into_value();
@@ -925,8 +940,7 @@ mod tests {
     #[trace("TC-516", "TC-166", "FR-121-AC-2")]
     #[test]
     fn call_site_refuses_an_unknown_function_name() {
-        function_site(UNIT.as_bytes(), "f")
-            .expect("f names a real function of the compiled unit");
+        function_site(UNIT.as_bytes(), "f").expect("f names a real function of the compiled unit");
         let qualified = QualifiedName::new(vec![
             Identifier::new("module").unwrap(),
             Identifier::new("f").unwrap(),

@@ -11,8 +11,8 @@
 //! the application claim). Every other item is non-replayable and settles
 //! `inconclusive` with cause `replay-refused` (ADR-029 PL-7).
 
-use std::collections::BTreeMap;
 use quire_exact::NodeKey;
+use std::collections::BTreeMap;
 
 use super::{InconclusiveCause, TerminalRecord, TerminalValue};
 use crate::execute::{process_provider_obligation, BoundEntries, IdentityEncodeError};

@@ -18,7 +18,7 @@ use quire_exact::{
 };
 use quire_semantic_value::catalog::InternalFault;
 
-use qsl_foundation::digest::{DigestRecord};
+use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use quire_semantic_value::supplied_stop::SuppliedLimits;
 

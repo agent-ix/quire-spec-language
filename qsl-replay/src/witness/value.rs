@@ -7,8 +7,8 @@
 //! (ADR-030 D-1): `Clone`, `PartialEq`, `Debug` and `Drop` are written over
 //! an explicit heap stack, as the kernel's own values are.
 
-use std::fmt;
 use quire_exact::{EffectiveId, NodeKey, UnitId, UniverseId};
+use std::fmt;
 
 use quire_exact::Integer;
 

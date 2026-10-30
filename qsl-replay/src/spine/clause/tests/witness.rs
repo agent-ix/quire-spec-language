@@ -22,10 +22,10 @@ use crate::{
     WitnessEnvelope, WitnessFailure, WitnessSettlement,
 };
 use qsl_eval::value::ClauseEvaluation;
-use quire_exact::NodeKey;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::check::{ApplicationTerm, BodyTerm, Operator};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
+use quire_exact::NodeKey;
 use quire_semantic_value::catalog::Category;
 
 /// The `witness` unit's invariants, on `Config::ConfigVersion` at
@@ -871,9 +871,7 @@ fn occurrence(unit: &Unit, clause: &str, path: &[usize], operator: Operator) -> 
                         if *applied == operator
                 )
         })
-        .map(|(key, origin, _)| {
-            OccurrenceKey::new(key.clone(), origin)
-        })
+        .map(|(key, origin, _)| OccurrenceKey::new(key.clone(), origin))
         .unwrap_or_else(|| panic!("{clause} has a {operator:?} node at {path:?}"))
 }
 
@@ -1404,7 +1402,7 @@ fn replay_case(
     let envelope = WitnessEnvelope::reconstruct(
         packet(
             &unit.bytes,
-                source,
+            source,
             node,
             OccurrenceKey::new(node, declaration.claim().clone()),
             payload,
@@ -2112,7 +2110,14 @@ fn tc_744_every_deciding_element_kind_round_trips() {
         &unit,
         Value::Quantity(Quantity::new(
             rational(5, 2),
-            UnitId::declared(quire_exact::NodeKey::new("fixture", vec![quire_exact::PathSegment::Text("node".into())], 6).expect("a fixture key")),
+            UnitId::declared(
+                quire_exact::NodeKey::new(
+                    "fixture",
+                    vec![quire_exact::PathSegment::Text("node".into())],
+                    6,
+                )
+                .expect("a fixture key"),
+            ),
         )),
     )
     .to_json(None)

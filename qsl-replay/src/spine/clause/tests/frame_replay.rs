@@ -15,10 +15,10 @@ use crate::{
     ReplayRequestRefusal, ReplayRequestWire, ReplayResult, ReplaySource, ReplayTarget,
     StateEnvironment, Verdict, Witness, WitnessEnvelope, WitnessPacket, WitnessSettlement,
 };
-use quire_exact::NodeKey;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::model::observation::{AdmissionFailure, FrameChange, SelectedObject};
 use quire_exact::Identifier;
+use quire_exact::NodeKey;
 use quire_semantic_value::catalog::Category;
 
 /// The labels `source()` gives the unit, as the request's source reference
@@ -404,12 +404,9 @@ fn case_in(
         request_target,
     );
     adjust(&mut wire, &mut payload);
-    let envelope = envelope_with(
-        &unit.bytes,
-        witness_source(),
-        payload,
-        |packet| packet.replay_target = envelope_target.into(),
-    );
+    let envelope = envelope_with(&unit.bytes, witness_source(), payload, |packet| {
+        packet.replay_target = envelope_target.into()
+    });
     Case {
         unit,
         input,
@@ -603,7 +600,12 @@ fn a_stale_frame_identity_refuses_before_admission() {
 #[trace("TC-515", "FR-116-AC-3")]
 #[test]
 fn a_stale_anchor_or_occurrence_refuses_content_mismatch() {
-    let stale_anchor = quire_exact::NodeKey::new("fixture", vec![quire_exact::PathSegment::Text("node".into())], 0xAA).expect("a fixture key");
+    let stale_anchor = quire_exact::NodeKey::new(
+        "fixture",
+        vec![quire_exact::PathSegment::Text("node".into())],
+        0xAA,
+    )
+    .expect("a fixture key");
     let refusal = replay(case_with(
         forbidden_parent_change(),
         child_change("parent"),
@@ -694,14 +696,9 @@ fn an_envelope_clause_node_other_than_the_frame_refuses_before_recompiling() {
     let (_, other_frame, _) = identities(&parent_modifying_unit());
     assert_ne!(other_frame, payload.frame);
     let frame = payload.frame;
-    let stale = envelope_with(
-        &unit.bytes,
-        witness_source(),
-        payload,
-        |packet| {
-            packet.clause_node = Some(other_frame);
-        },
-    );
+    let stale = envelope_with(&unit.bytes, witness_source(), payload, |packet| {
+        packet.clause_node = Some(other_frame);
+    });
     let refusal = replay_frame(wire, &stale, crate::ReplayLimits::default()).unwrap_err();
     assert!(
         matches!(
@@ -732,14 +729,9 @@ fn an_envelope_occurrence_other_than_the_frame_occurrence_refuses_before_recompi
         quire_exact::Origin::new(origin.role().clone(), origin.ordinal() + 1),
     );
     let occurrence = payload.occurrence.clone();
-    let stale = envelope_with(
-        &unit.bytes,
-        witness_source(),
-        payload,
-        |packet| {
-            packet.occurrence_key = Some(other.clone());
-        },
-    );
+    let stale = envelope_with(&unit.bytes, witness_source(), payload, |packet| {
+        packet.occurrence_key = Some(other.clone());
+    });
     let refusal = replay_frame(wire, &stale, crate::ReplayLimits::default()).unwrap_err();
     assert!(
         matches!(
@@ -756,8 +748,6 @@ fn an_envelope_occurrence_other_than_the_frame_occurrence_refuses_before_recompi
     assert!(message.contains(&format!("{other:?}")), "{message}");
     assert!(message.contains(&format!("{occurrence:?}")), "{message}");
 }
-
-
 
 /// TC-515 step 3 (FR-116-AC-3): an `operation` naming `missing` refuses
 /// `missing_declaration`/`missing-name`.
@@ -983,7 +973,14 @@ fn a_frame_replay_refuses_other_targets_before_the_recompile() {
             );
             if replace_node {
                 let mut packet = case.envelope.to_packet();
-                packet.clause_node = Some(quire_exact::NodeKey::new("fixture", vec![quire_exact::PathSegment::Text("node".into())], 9).expect("a fixture key"));
+                packet.clause_node = Some(
+                    quire_exact::NodeKey::new(
+                        "fixture",
+                        vec![quire_exact::PathSegment::Text("node".into())],
+                        9,
+                    )
+                    .expect("a fixture key"),
+                );
                 case.envelope =
                     WitnessEnvelope::reconstruct(packet, crate::ReplayLimits::default()).unwrap();
             }
@@ -1070,11 +1067,7 @@ fn replaying_one_envelope_twice_gives_equal_results() {
 fn an_input_arm_envelope_settles_the_input_arm() {
     let case = case(forbidden_parent_change(), child_change("parent"));
     let payload = case.envelope.family_payload().clone();
-    let envelope = envelope(
-        &case.unit.bytes,
-        ReplaySource::Input(Vec::new()),
-        payload,
-    );
+    let envelope = envelope(&case.unit.bytes, ReplaySource::Input(Vec::new()), payload);
     let result = replay_frame(case.wire, &envelope, crate::ReplayLimits::default())
         .expect("the replay settles");
     let ReplayResult::Input(arm) = result.result() else {

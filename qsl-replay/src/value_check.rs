@@ -233,7 +233,7 @@ impl<'p> ValueTarget<'p> {
             .map_err(|_| fault("function-name-is-an-identifier"))?;
         let semantic = graph.semantic_graph();
         let parameters = semantic
-            .node(&callable.identity)
+            .node(callable.identity.clone())
             .and_then(|node| node.function_parameters())
             .ok_or_else(|| fault("callable-identity-is-a-function-node"))?;
         if parameters.len() != callable.parameters.len() {
@@ -261,7 +261,9 @@ impl<'p> ValueTarget<'p> {
             if !owned {
                 return Err(Selection::NoForm);
             }
-            semantic.node(claim.node().clone()).ok_or(Selection::MissingNode)?;
+            semantic
+                .node(claim.node().clone())
+                .ok_or(Selection::MissingNode)?;
             graph
                 .occurrence(claim.node().clone(), claim.origin())
                 .ok_or(Selection::MissingNode)?;

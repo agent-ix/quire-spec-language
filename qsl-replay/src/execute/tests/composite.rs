@@ -141,7 +141,10 @@ impl Fixture {
     fn witness(&self, function: &str, value: &WitnessValue) -> ReplayRequestWire {
         let parameter = self.parameter(function);
         let text = value.to_value_text().unwrap();
-        let transcript = format!("<<<assertion|{function}|c|{}={text}>>>", crate::pn(&parameter));
+        let transcript = format!(
+            "<<<assertion|{function}|c|{}={text}>>>",
+            crate::pn(&parameter)
+        );
         self.request(
             function,
             ReplaySource::Witness(Witness::parse(transcript).unwrap()),
@@ -604,7 +607,8 @@ fn tc_906_a_quantity_converts_in_its_declared_unit_only() {
         },
         unit,
     };
-    let converted = convert_one(&declared, &quantity(declared_unit.clone()), &UNLIMITED).expect("converts");
+    let converted =
+        convert_one(&declared, &quantity(declared_unit.clone()), &UNLIMITED).expect("converts");
     let quire_exact::Value::Quantity(converted) = converted else {
         panic!("a quantity");
     };
@@ -614,7 +618,11 @@ fn tc_906_a_quantity_converts_in_its_declared_unit_only() {
         "1.5 converts exactly"
     );
     assert_eq!(converted.unit(), &declared_unit);
-    let refused = convert_one(&declared, &quantity(quire_exact::UnitId::declared(crate::fixture_node(8))), &UNLIMITED);
+    let refused = convert_one(
+        &declared,
+        &quantity(quire_exact::UnitId::declared(crate::fixture_node(8))),
+        &UNLIMITED,
+    );
     assert_eq!(
         refused.as_ref().err().and_then(refused_parameter),
         Some(0),

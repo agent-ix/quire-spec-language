@@ -13,7 +13,6 @@
 //! `clause-root-unresolved` ([`ClauseRootRefusal`]).
 
 use qsl_foundation::source::provenance::OccurrenceKey;
-use quire_exact::NodeKey;
 use qsl_package::{
     emit_checked_with_cancel, read_import_view, resolve_clause_root, resolve_hyper_root,
     resolve_state_graph_root, AdmittedPackages, CheckedPackage, ClauseRootUnresolved, EmitRefusal,
@@ -23,15 +22,13 @@ use qsl_semantics::check::{
     CheckedHyperClause, CheckedStateGraphClaim, CheckedTemporalClause, TemporalClauseNode,
 };
 use qsl_semantics::library::LibraryName;
+use quire_exact::NodeKey;
 use quire_exact::{Cancel, CancelCause};
 
 /// The `claim` occurrence of a checked clause `node`: its node id and claim
 /// origin (ADR-013 O-07).
 pub fn node_occurrence(node: &TemporalClauseNode) -> OccurrenceKey {
-    OccurrenceKey::new(
-        node.identity().clone(),
-        node.claim().clone(),
-    )
+    OccurrenceKey::new(node.identity().clone(), node.claim().clone())
 }
 
 /// A clause's identity in its package: the checked occurrence and the node of
@@ -203,17 +200,17 @@ impl HyperIdentity {
             .hyper_clauses()
             .iter()
             .find(|candidate| {
-                candidate.name() == clause.name() && candidate.assembled_occurrence() == clause.assembled_occurrence()
+                candidate.name() == clause.name()
+                    && candidate.assembled_occurrence() == clause.assembled_occurrence()
             })
             .ok_or_else(|| ClauseRootRefusal::Undeclared {
                 name: clause.name().to_owned(),
             })?;
-        let occurrence = assembled
-            .assembled_occurrence()
-            .cloned()
-            .ok_or_else(|| ClauseRootRefusal::Undeclared {
+        let occurrence = assembled.assembled_occurrence().cloned().ok_or_else(|| {
+            ClauseRootRefusal::Undeclared {
                 name: clause.name().to_owned(),
-            })?;
+            }
+        })?;
         let (admitted, library) = read_back(package, domain_packages, cancel)?;
         let read = admitted
             .package(&library)

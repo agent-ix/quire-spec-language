@@ -14,7 +14,8 @@ const UNITS: &str = "dimension Length;\nunit m : Length = rational(1, 1);\n";
 
 fn assert_admitted(source: &str) {
     let compiled = compile_admitted(
-        SourceIdentity::new("a", "u", "git", "1"), "fixture".to_owned(),
+        SourceIdentity::new("a", "u", "git", "1"),
+        "fixture".to_owned(),
         "quantity-names.native",
         source.as_bytes(),
         [],

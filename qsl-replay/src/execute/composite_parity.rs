@@ -12,8 +12,8 @@
 //! Neither selects a `Boolean` function or calls [`super::replay`], and no
 //! row settles `Refuted`.
 
-use std::collections::BTreeMap;
 use quire_exact::NodeKey;
+use std::collections::BTreeMap;
 
 use qsl_foundation::bound::DomainKey;
 use quire_exact::{plan_equality, planned_equality, Meter, Outcome, ScalarLimits, Value};

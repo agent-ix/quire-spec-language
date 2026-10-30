@@ -9,10 +9,10 @@
 //! subexpression, evaluated.
 
 use qsl_eval::value::evaluate_closed;
-use quire_exact::NodeKey;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::check::{CheckedNode, NodeKind};
 use quire_eval::FamilyOutcome;
+use quire_exact::NodeKey;
 use quire_exact::Origin as BodyKey;
 use quire_exact::{Meter, Outcome, Value, ValueType};
 use quire_semantic_value::catalog::InternalFault;
@@ -76,14 +76,12 @@ pub(super) fn locate(
     let (segment, callable) = lookup(compiled, function)?;
     let package = compiled.checked.package();
     let graph = package.graph().semantic_graph();
-    let semantic = graph
-        .node(node.clone())
-        .ok_or_else(|| {
-            mismatch(ScalarIdentityMismatch::Node {
-                node: node.clone(),
-                package: package_name.clone(),
-            })
-        })?;
+    let semantic = graph.node(node.clone()).ok_or_else(|| {
+        mismatch(ScalarIdentityMismatch::Node {
+            node: node.clone(),
+            package: package_name.clone(),
+        })
+    })?;
     if !in_body(graph, &callable.identity, semantic.key()) {
         return Err(mismatch(ScalarIdentityMismatch::Function {
             node: node.clone(),

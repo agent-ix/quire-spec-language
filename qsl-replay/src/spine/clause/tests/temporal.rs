@@ -657,8 +657,8 @@ fn observed_replay_request(
         ReplayOverBinding, ReplaySource, ReplayTarget, TracePosition, Witness, WitnessEnvelope,
         WitnessPacket,
     };
-use quire_exact::NodeKey;
     use qsl_foundation::source::provenance::OccurrenceKey;
+    use quire_exact::NodeKey;
 
     let (base, packages) = unit_and_packages(OPERATIONS);
     let header = "profile v = \"quire.value.complete/v1\";\n";
@@ -706,12 +706,8 @@ use quire_exact::NodeKey;
         crate::QualifiedName::new(vec![Identifier::new(name).expect("fixture name")])
             .expect("qualified name"),
     );
-    let mut wire = super::frame_replay::request(
-        &source_bytes,
-        domain_document,
-        &documents,
-        target.clone(),
-    );
+    let mut wire =
+        super::frame_replay::request(&source_bytes, domain_document, &documents, target.clone());
     wire.replay_target.over = Some(ReplayOverBinding {
         population: fixture::id("counters"),
         key: "c1".to_owned(),

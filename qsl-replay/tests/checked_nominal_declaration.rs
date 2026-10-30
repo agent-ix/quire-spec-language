@@ -39,7 +39,8 @@ fn node_id(package: &[u8], tag: &str, name: &str) -> NodeKey {
 #[test]
 fn public_consumer_reads_complete_ordered_nominal_members_from_one_selection() {
     let acquisition = acquire_checked_closure(
-        SourceIdentity::new("a", "unit", "git", "1"), "fixture".to_owned(),
+        SourceIdentity::new("a", "unit", "git", "1"),
+        "fixture".to_owned(),
         "unit.native",
         SOURCE.as_bytes(),
         [],

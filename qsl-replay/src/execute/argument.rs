@@ -782,8 +782,7 @@ impl<'a> Converter<'a, '_> {
                     .enums
                     .iter()
                     .position(|candidate| {
-                        declares_shape(candidate, shape)
-                            && candidate.key == *declaration
+                        declares_shape(candidate, shape) && candidate.key == *declaration
                     })
                     .ok_or_else(|| self.wrong(parameter))?;
                 self.charge(parameter, SuppliedEvent::DescriptorQuery)?;
@@ -825,14 +824,16 @@ impl<'a> Converter<'a, '_> {
                 let Some(supplied_type) = supplied_type else {
                     return Err(self.wrong(parameter));
                 };
-                if !self.types.conforms(supplied_type.clone(), object_type.clone()) {
+                if !self
+                    .types
+                    .conforms(supplied_type.clone(), object_type.clone())
+                {
                     return Err(self.wrong(parameter));
                 }
                 let identity =
                     String::from_utf8(identity.clone()).map_err(|_| self.wrong(parameter))?;
                 let object = ObjectId::new(identity).map_err(|_| self.wrong(parameter))?;
-                let reference =
-                    ObjectReference::new(universe.clone(), supplied_type, object);
+                let reference = ObjectReference::new(universe.clone(), supplied_type, object);
                 self.references.push((parameter, reference.clone()));
                 values.push(Value::Reference(reference));
             }
@@ -869,7 +870,7 @@ impl<'a> Converter<'a, '_> {
                     .get(declaration)
                     .ok_or_else(|| self.wrong(parameter))?;
                 let key = record.key();
-                if !types.composite_conforms(key, slot_key.clone()) {
+                if !types.composite_conforms(key.clone(), slot_key.clone()) {
                     return Err(self.wrong(parameter));
                 }
                 let CompositeShape::Record(declared_fields) = record.shape() else {
@@ -917,7 +918,9 @@ impl<'a> Converter<'a, '_> {
             ) => {
                 let types: &'a TypeEnvironment = self.types;
                 self.charge(parameter, SuppliedEvent::DescriptorQuery)?;
-                let tuple = types.composite(key.clone()).ok_or_else(|| self.wrong(parameter))?;
+                let tuple = types
+                    .composite(key.clone())
+                    .ok_or_else(|| self.wrong(parameter))?;
                 let CompositeShape::Tuple(positions) = tuple.shape() else {
                     return Err(self.wrong(parameter));
                 };

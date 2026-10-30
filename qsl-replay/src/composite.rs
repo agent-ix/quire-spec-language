@@ -11,9 +11,9 @@
 //! `Refuted`.
 
 use qsl_foundation::bound::ProofBound;
-use quire_exact::NodeKey;
 use qsl_foundation::diagnostic::Code;
-use qsl_foundation::digest::{DigestRecord};
+use qsl_foundation::digest::DigestRecord;
+use quire_exact::NodeKey;
 use quire_exact::{Incomplete, Origin, ScalarLimits};
 use quire_semantic_value::declaration::EqualityOperator;
 

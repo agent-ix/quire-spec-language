@@ -126,11 +126,7 @@ impl RunWithReplayContext {
 
     /// The outcome, the requirement items and the context.
     pub fn into_parts(self) -> (CallOutcome, CallRequirements, CallReplayContext) {
-        (
-            self.outcome,
-            self.requirements,
-            self.context,
-        )
+        (self.outcome, self.requirements, self.context)
     }
 }
 
@@ -273,9 +269,9 @@ mod tests {
             .graph()
             .callable(function)
             .expect("declared");
-        let parameter =
-            callable_parameter_keys(checked.package(), &callable).expect("a function node")[0]
-                .clone();
+        let parameter = callable_parameter_keys(checked.package(), &callable)
+            .expect("a function node")[0]
+            .clone();
         (
             OccurrenceKey::new(
                 callable.identity.clone(),

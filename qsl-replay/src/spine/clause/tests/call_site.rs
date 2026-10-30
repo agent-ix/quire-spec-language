@@ -18,8 +18,8 @@ use super::*;
 use crate::spine::OperationName;
 use crate::FrameOperation;
 use crate::{
-    call_site, CallSite, CallSiteRefusal, ClauseName, ClauseSite, OccurrenceKey, OperationSite,
-    Origin, QualifiedName, Role, NodeKey,
+    call_site, CallSite, CallSiteRefusal, ClauseName, ClauseSite, NodeKey, OccurrenceKey,
+    OperationSite, Origin, QualifiedName, Role,
 };
 
 fn wire(node: NodeKey) -> NodeKey {
@@ -360,7 +360,10 @@ fn call_site_locates_a_state_clause_by_name() {
                 package,
             } => {
                 assert_eq!(refused, selection);
-                assert_eq!(package, qsl_semantics::library::LibraryName::new("fixture").unwrap());
+                assert_eq!(
+                    package,
+                    qsl_semantics::library::LibraryName::new("fixture").unwrap()
+                );
             }
             other => panic!("expected UnknownClause for {name}, got {other:?}"),
         }

@@ -696,7 +696,7 @@ pub fn compile_admitted<'a>(
         replay_limits,
     )?;
     let context = context_of(compiled.checked.package(), &compiled.package)
-    .map_err(AdmittedRefusal::Fault)?;
+        .map_err(AdmittedRefusal::Fault)?;
     Ok(AdmittedCompilation {
         package: CompiledPackage::new(compiled.emitted),
         context,

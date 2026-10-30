@@ -370,12 +370,7 @@ pub(super) fn replay_evidence(
             )
         }
     };
-    Ok(result(
-        settlement,
-        evaluated,
-        closure_nodes,
-        first_target,
-    ))
+    Ok(result(settlement, evaluated, closure_nodes, first_target))
 }
 
 fn replay_claim_undefined(

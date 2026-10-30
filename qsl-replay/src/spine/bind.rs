@@ -12,7 +12,6 @@
 //! the function.
 
 use qsl_foundation::diagnostic::Code;
-use quire_exact::NodeKey;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::{checked_node_id, checked_occurrence, CheckedPackage};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
@@ -21,6 +20,7 @@ use quire_contract_model::{
     CheckedScalarOperand, CheckedScalarOperandChild, CheckedScalarOperandError,
     CheckedScalarOperandRange,
 };
+use quire_exact::NodeKey;
 use quire_exact::{Cancel, Integer, Value, ValueType};
 use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::location::Origin as BodyOrigin;
@@ -389,11 +389,7 @@ fn locate(
         }));
     }
     let node = occurrence.application.clone();
-    let not_a_node = || {
-        identity(BindIdentityCause::Node {
-            node: node.clone(),
-        })
-    };
+    let not_a_node = || identity(BindIdentityCause::Node { node: node.clone() });
     let graph = checked.graph().semantic_graph();
     let semantic = graph.node(&node).ok_or_else(not_a_node)?;
     let callable = checked

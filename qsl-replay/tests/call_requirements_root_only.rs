@@ -10,8 +10,8 @@ use std::collections::BTreeMap;
 use ix_trace_rs::trace;
 use qsl_replay::{
     run_with_requirements, Call, CallArgument, CallIncomplete, CallLocus, CallOutcome, CallRefusal,
-    CallValue, Cancel, CancelCause, CompileRefusal, DependencyInput, Integer, ObjectEnvironment,
-    LibraryName, RunRefusal, ScalarLimits, SourceIdentity, SpineLimits, Value,
+    CallValue, Cancel, CancelCause, CompileRefusal, DependencyInput, Integer, LibraryName,
+    ObjectEnvironment, RunRefusal, ScalarLimits, SourceIdentity, SpineLimits, Value,
 };
 use quire_semantic_value::supplied_stop::SuppliedLimits;
 
@@ -45,7 +45,8 @@ fn run(source: &str, cancel: &Cancel) -> Result<qsl_replay::RunWithRequirements,
         supplied: SuppliedLimits::default(),
     };
     run_with_requirements(
-        SourceIdentity::new("a", "u", "git", "1"), "fixture".to_owned(),
+        SourceIdentity::new("a", "u", "git", "1"),
+        "fixture".to_owned(),
         "unit.native",
         source.as_bytes(),
         &BTreeMap::new(),

@@ -31,8 +31,8 @@
 //! `stale_dependency`/`content-mismatch`. Replay needs no model checker and
 //! no solver, and reads no path, environment variable or clock.
 
-use std::collections::BTreeMap;
 use quire_exact::NodeKey;
+use std::collections::BTreeMap;
 
 use qsl_eval::fairness::{
     check_loop, Constraint, EdgeLabel, Identity, LassoFairness, LoopStep, Strength,
@@ -59,7 +59,7 @@ use qsl_eval::temporal::{
 };
 use qsl_eval::temporal::{AtomReading, CaptureReading};
 use qsl_foundation::diagnostic::Code;
-use qsl_foundation::digest::{DigestRecord};
+use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId};
@@ -77,9 +77,8 @@ pub(super) use self::timed::timed_prefix;
 use crate::bounds::ReplayLimits;
 use crate::execute::{recompile, request_limits, ReplayRefusal};
 use crate::model_check::counterexample::{
-    undefined_finding,
-    CounterexampleKind, Lasso, TemporalCounterexample, UndefinedEvaluation, UndefinedLocus,
-    UndefinedSite,
+    undefined_finding, CounterexampleKind, Lasso, TemporalCounterexample, UndefinedEvaluation,
+    UndefinedLocus, UndefinedSite,
 };
 use crate::model_check::hyper_counterexample::HyperUndefined;
 use crate::model_check::limits::ReachedLimit;
@@ -1125,9 +1124,11 @@ fn resolve_item<'p, T: SubjectTransition>(
             expected_key: Box::new(expected_key),
         })
     };
-    let found = package.graph().temporal_clauses().iter().find(|candidate| {
-        candidate.identity() == *envelope.clause_node()
-    });
+    let found = package
+        .graph()
+        .temporal_clauses()
+        .iter()
+        .find(|candidate| candidate.identity() == *envelope.clause_node());
     let Some(found) = found else {
         return Err(refused(ModelTraceRefusal::UnknownTemporalClause {
             clause_node: envelope.clause_node().clone(),

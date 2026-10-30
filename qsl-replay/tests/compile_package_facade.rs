@@ -56,7 +56,8 @@ fn spine_run(
         .map_err(refusal)?
         .into_value();
     let checked = spine::check(
-        &parsed, "fixture".to_owned(),
+        &parsed,
+        "fixture".to_owned(),
         &models,
         &DependencyInput::default(),
         limits,
@@ -72,7 +73,8 @@ fn spine_run(
 
 fn compile(text: &str, stages: StageLimits) -> Result<qsl_replay::CompiledPackage, ReplayRefusal> {
     compile_package(
-        identity(), "fixture".to_owned(),
+        identity(),
+        "fixture".to_owned(),
         "unit.native",
         text.as_bytes(),
         [],
@@ -125,7 +127,8 @@ fn a_library_with_the_units_owner_refuses() {
     };
     let dependencies = DependencyInput::new([library]).unwrap();
     let refusal = compile_package(
-        identity(), "fixture".to_owned(),
+        identity(),
+        "fixture".to_owned(),
         "unit.native",
         format!("{HEADER}{LIST}").as_bytes(),
         [],
@@ -162,7 +165,8 @@ fn a_raised_replay_input_bound_admits_an_s1_limit_the_default_refuses() {
     let above = qsl_replay::DEFAULT_REPLAY_INPUT_BYTES * 2;
     let compile_with = |replay: ReplayLimits| {
         compile_package(
-            identity(), "fixture".to_owned(),
+            identity(),
+            "fixture".to_owned(),
             "unit.native",
             text.as_bytes(),
             [],
@@ -196,7 +200,8 @@ fn a_domain_package_is_the_i1_input_as_in_the_spine() {
     );
     let bytes = spine_run(&text, &packages).expect("the spine compiles the unit");
     let compiled = compile_package(
-        identity(), "fixture".to_owned(),
+        identity(),
+        "fixture".to_owned(),
         "unit.native",
         text.as_bytes(),
         [document.as_slice()],

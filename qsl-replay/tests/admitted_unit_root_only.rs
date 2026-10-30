@@ -27,7 +27,8 @@ const SOURCE: &str = "language \"ix:native\" edition \"1-draft\";\n\
 
 fn context() -> AdmittedContext {
     compile_admitted(
-        SourceIdentity::new("a", "u", "git", "1"), "fixture".to_owned(),
+        SourceIdentity::new("a", "u", "git", "1"),
+        "fixture".to_owned(),
         "unit.native",
         SOURCE.as_bytes(),
         [],

@@ -174,7 +174,9 @@ pub enum ReplayRefusal {
     #[error("the package reference's dependencies are no dependency input: {0}")]
     DependencyInput(DependencyInputRefusal),
     /// The selection names no function node of the recompiled package.
-    #[error("missing_declaration/missing-name: package {package} declares no function {selection}")]
+    #[error(
+        "missing_declaration/missing-name: package {package} declares no function {selection}"
+    )]
     UnknownFunction {
         /// The request's selection.
         selection: QualifiedName,
@@ -342,7 +344,9 @@ pub enum ReplayRefusal {
     },
     /// FR-116: the request's `frame_operation` names no operation frame of
     /// the recompiled package.
-    #[error("missing_declaration/missing-name: package {package} holds no operation frame {operation}")]
+    #[error(
+        "missing_declaration/missing-name: package {package} holds no operation frame {operation}"
+    )]
     UnknownOperation {
         /// The request's operation.
         operation: FrameOperation,
@@ -379,7 +383,9 @@ pub enum ReplayRefusal {
     FrameIdentity(Box<FrameIdentityMismatch>),
     /// FR-122: the request's `state_clause` names no state clause of the
     /// recompiled package (a function's name included).
-    #[error("missing_declaration/missing-name: package {package} declares no state clause {clause}")]
+    #[error(
+        "missing_declaration/missing-name: package {package} declares no state clause {clause}"
+    )]
     UnknownClause {
         /// The request's `state_clause`.
         clause: QualifiedName,
@@ -1520,8 +1526,8 @@ pub(crate) fn recompile(
     let bytes = provided(source)?;
     let packages = domain_packages(request)?;
     // Rule 4: the recompile.
-    let package_name = LibraryName::new(request.package_name())
-        .map_err(ReplayRefusal::InvalidPackageName)?;
+    let package_name =
+        LibraryName::new(request.package_name()).map_err(ReplayRefusal::InvalidPackageName)?;
     let compiled = run_spine(
         &labels(source),
         &package_name,
@@ -1937,7 +1943,9 @@ fn arguments(
                     .get_mut(position)
                     .ok_or_else(|| ReplayRefusal::UnknownParameter(assignment.parameter.clone()))?;
                 if slot.replace(assignment.value.clone()).is_some() {
-                    return Err(ReplayRefusal::DuplicateArgument(assignment.parameter.clone()));
+                    return Err(ReplayRefusal::DuplicateArgument(
+                        assignment.parameter.clone(),
+                    ));
                 }
             }
             values
