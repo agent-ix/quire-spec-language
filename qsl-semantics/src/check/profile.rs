@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-110: E3 resolves a unit's header profile selections against the
-//! `Value` family's catalog, [`DefinitionLock::pinned`].
+//! closed typed definition roles.
 //!
-//! A header selects one of the lock's `header_selectable_layers` rows (the
+//! A header selects one of the closed `header_selectable_layers` roles (the
 //! six layers of QSpec AD-003, including the `root` row
-//! `quire.value.complete/v1`); the catalog's `qualification_catalog` rows
-//! come from its own package-selection rules. A clause
-//! profile resolves in its clause family's catalog (ADR-012 §2): the
+//! `quire.value.complete/v1`); qualification applicability is determined by
+//! the typed semantic roles. A clause
+//! profile resolves against its clause family's closed semantic profile
+//! definition (ADR-012 §2): the
 //! `ProtocolClause` family's is [`protocol_profile`] and the `TemporalTrace`
 //! family's is [`TemporalProfile`]. Every other header profile reaches the
 //! `Value` table.
@@ -14,7 +15,7 @@
 use qsl_foundation::selection::ProfileSelection;
 use qsl_foundation::{Code, Span};
 
-use crate::value::definition::{CatalogEntry, CatalogRole, DefinitionLock, DefinitionReference};
+use crate::value::definition::{DefinitionReference, DefinitionRole};
 use crate::value::layer::HeaderLayer;
 
 /// The publishing authority of the clause families' profiles.
@@ -25,7 +26,7 @@ pub(super) const CLAUSE_PROFILE_AUTHORITY: &str = "agent-ix";
 const PROTOCOL_PROFILE: &str = "quire.protocol.finite-global/v1";
 
 /// The `protocol_profile` definition a header profile `identity` selects, if
-/// it is one the `ProtocolClause` family's catalog holds (FR-110). The one
+/// it is admitted for the `ProtocolClause` family (FR-110). The one
 /// place a header profile's spelling is read for that family.
 #[ix_trace_rs::string_edge]
 pub(crate) fn protocol_profile(identity: &str) -> Option<DefinitionReference> {
@@ -35,7 +36,7 @@ pub(crate) fn protocol_profile(identity: &str) -> Option<DefinitionReference> {
     })
 }
 
-/// The `TemporalTrace` family's temporal profile catalog (QSpec FR-250 as
+/// The `TemporalTrace` family's closed temporal profile set (QSpec FR-250 as
 /// FR-326 admits it, with the timed profile FR-234 admits): the five profiles
 /// a `temporal` clause is checked under. A clause is checked under exactly
 /// one, selected by identity.
@@ -55,7 +56,7 @@ pub enum TemporalProfile {
 }
 
 impl TemporalProfile {
-    /// Every profile, in catalog order.
+    /// Every profile, in enum order.
     pub const ALL: [Self; 5] = [
         Self::EventPositionFalseExtension,
         Self::FixedSampleFalseExtension,
@@ -77,8 +78,8 @@ impl TemporalProfile {
         }
     }
 
-    /// The profile a header identity selects, if the `TemporalTrace`
-    /// family's catalog holds it (FR-110). The one place a header profile's
+    /// The profile a header identity selects, if it is admitted for the
+    /// `TemporalTrace` family (FR-110). The one place a header profile's
     /// spelling is read for that family.
     #[ix_trace_rs::string_edge]
     pub fn from_identity(identity: &str) -> Option<Self> {
@@ -112,9 +113,9 @@ impl TemporalProfile {
 /// Why a header profile does not resolve (FR-110's table).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ProfileCause {
-    /// The identity is in no catalog: `unknown_profile`/`unsupported-selection`.
+    /// The identity is not a closed semantic role: `unknown_profile`/`unsupported-selection`.
     UnsupportedSelection,
-    /// The identity is a catalog row other than `root`:
+    /// The identity is a closed semantic role other than `root`:
     /// `unknown_profile`/`wrong-selection-role`.
     WrongSelectionRole,
 }
@@ -130,9 +131,9 @@ pub struct ProfileRefusal {
     /// The definition identity the header selected.
     pub selected: String,
     /// The role a header profile must select.
-    pub required_role: CatalogRole,
+    pub required_role: DefinitionRole,
     /// The `root` row the selection was compared with.
-    pub root: CatalogEntry,
+    pub root: DefinitionReference,
     /// Why it refused.
     pub cause: ProfileCause,
 }
@@ -156,13 +157,12 @@ impl ProfileRefusal {
     }
 }
 
-/// Resolve each header profile by identity against the
-/// `header_selectable_layers` rows of [`DefinitionLock::pinned`] and the
-/// protocol clause family's catalog, in source order (FR-110). Every refusing
+/// Resolve each header profile by identity against the closed typed profile
+/// roles of the value, model, temporal and protocol families, in source order
+/// (FR-110). Every refusing
 /// profile is returned, in source order.
 pub fn resolve_profiles(profiles: &[ProfileSelection]) -> Result<(), Vec<ProfileRefusal>> {
-    let lock = DefinitionLock::pinned();
-    let root = *lock.entry(CatalogRole::Root);
+    let root = DefinitionRole::Root.reference();
     let refusals: Vec<ProfileRefusal> = profiles
         .iter()
         .filter_map(|profile| {
@@ -172,10 +172,15 @@ pub fn resolve_profiles(profiles: &[ProfileSelection]) -> Result<(), Vec<Profile
                 || TemporalProfile::from_identity(selected).is_some()
             {
                 return None;
-            } else if lock
-                .catalog()
-                .iter()
-                .any(|entry| entry.identity == selected)
+            } else if DefinitionRole::ALL
+                .into_iter()
+                .any(|role| role.identity() == selected)
+                || crate::value::ModelRole::ALL
+                    .into_iter()
+                    .any(|role| role.identity() == selected)
+                || crate::value::TemporalRole::ALL
+                    .into_iter()
+                    .any(|role| role.identity() == selected)
             {
                 ProfileCause::WrongSelectionRole
             } else {
@@ -185,8 +190,8 @@ pub fn resolve_profiles(profiles: &[ProfileSelection]) -> Result<(), Vec<Profile
                 alias: profile.alias.clone(),
                 identity_span: profile.identity_span,
                 selected: selected.to_owned(),
-                required_role: CatalogRole::Root,
-                root,
+                required_role: DefinitionRole::Root,
+                root: root.clone(),
                 cause,
             })
         })
@@ -205,11 +210,11 @@ mod tests {
     use super::*;
 
     /// FR-110: a header profile naming the protocol clause family's profile
-    /// resolves in that family's catalog, and selects it as the package's
-    /// `protocol_profile`; a profile in no catalog still refuses.
+    /// resolves against that family's closed profile set, and selects it as the package's
+    /// `protocol_profile`; a profile outside its closed set still refuses.
     #[trace("FR-092-AC-18", "TC-1021")]
     #[test]
-    fn the_protocol_profile_resolves_in_the_protocol_catalog() {
+    fn the_protocol_profile_resolves_in_the_protocol_profile_set() {
         let selection = |identity: &str| ProfileSelection {
             alias: "p".to_owned(),
             identity: identity.to_owned(),
@@ -233,11 +238,11 @@ mod tests {
 
     /// FR-326, FR-234, FR-110: the five temporal profiles, the timed
     /// profile `quire.temporal.timed/v1` among them, resolve in the
-    /// `TemporalTrace` family's catalog by identity, each as bounded or not;
+    /// `TemporalTrace` family's closed profile set by identity, each as bounded or not;
     /// a near-miss identity refuses.
     #[trace("FR-110")]
     #[test]
-    fn the_temporal_profiles_resolve_in_the_temporal_catalog() {
+    fn the_temporal_profiles_resolve_in_the_temporal_profile_set() {
         let selection = |identity: &str| ProfileSelection {
             alias: "t".to_owned(),
             identity: identity.to_owned(),

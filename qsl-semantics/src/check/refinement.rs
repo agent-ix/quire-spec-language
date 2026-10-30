@@ -83,7 +83,6 @@ use crate::model::clause_observation::Observation;
 use crate::model::domain_package::{DomainPackageRef, PopulationRecord};
 use crate::model::intake::type_identity_segment;
 use crate::model::operation::OperationLookup;
-use crate::value::definition::DefinitionLock;
 use crate::value::layer::HeaderLayer;
 use quire_checked::key::DeclarationKey;
 
@@ -2556,11 +2555,10 @@ struct Checker<'c, 'a> {
 /// infinite-trace profile does not admit, with the token span and the layer
 /// that admits it (QSpec FR-375 "Row layers").
 fn unsupported_row_form(expression: &ExpressionForm) -> Option<(&'static str, Span)> {
-    let lock = DefinitionLock::pinned();
-    let required: std::collections::BTreeSet<_> = lock
-        .admitted_forms(HeaderLayer::ValueComplete)
+    let required: std::collections::BTreeSet<_> = HeaderLayer::ValueComplete
+        .admitted_forms()
         .into_iter()
-        .chain(lock.admitted_forms(HeaderLayer::ModelComplete))
+        .chain(HeaderLayer::ModelComplete.admitted_forms())
         .collect();
     let predicates = std::collections::BTreeSet::new();
     let mut unsupported = None;
@@ -2583,7 +2581,7 @@ fn unsupported_row_form(expression: &ExpressionForm) -> Option<(&'static str, Sp
                     } else {
                         HeaderLayer::ALL
                             .into_iter()
-                            .find(|layer| lock.admits(*layer, form))
+                            .find(|layer| layer.admits(form))
                             .map(HeaderLayer::identity)
                     }
                 }),

@@ -24,8 +24,8 @@ use qsl_semantics::value::enumeration::{
     AdmittedEnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
 };
 use qsl_semantics::value::{
-    admit_unit_graph, AdmittedIeeeProfile, CatalogRole, DefinitionLock, DefinitionReference,
-    DimensionPreimage, NodeOwner, OwnerSelection, OwnerSubject, UnitPreimage,
+    admit_ieee_profile, admit_unit_graph, AdmittedIeeeProfile, DefinitionRole, DimensionPreimage,
+    NodeOwner, OwnerSelection, OwnerSubject, UnitPreimage,
 };
 use quire_eval::FamilyOutcome;
 use quire_eval::{CallFailure, Evaluation};
@@ -1258,13 +1258,7 @@ fn e16b_references_to_unrelated_object_types_refuse() {
 fn profile() -> &'static AdmittedIeeeProfile {
     static PROFILE: OnceLock<AdmittedIeeeProfile> = OnceLock::new();
     PROFILE.get_or_init(|| {
-        let lock = DefinitionLock::pinned();
-        let entry = lock.entry(CatalogRole::IeeeProfile);
-        let reference = DefinitionReference {
-            authority: entry.authority.to_owned(),
-            identity: entry.identity.to_owned(),
-        };
-        lock.admit_ieee_profile(&[reference], &[]).unwrap()
+        admit_ieee_profile(&[DefinitionRole::IeeeProfile.reference()], &[]).unwrap()
     })
 }
 

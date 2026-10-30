@@ -7,7 +7,7 @@ use qsl_forms::Accumulation;
 
 use super::*;
 use crate::check::check::EnumBinding;
-use crate::value::definition::{CatalogRole, DefinitionLock};
+use crate::value::definition::{admit_ieee_profile, DefinitionRole};
 
 /// The text-profile definition the lock evidence of these fixtures selects.
 fn text_definition() -> DefinitionReference {
@@ -19,11 +19,7 @@ fn text_definition() -> DefinitionReference {
 
 /// The pinned lock's IEEE profile definition.
 fn ieee_definition() -> DefinitionReference {
-    let entry = *DefinitionLock::pinned().entry(CatalogRole::IeeeProfile);
-    DefinitionReference {
-        authority: entry.authority.to_owned(),
-        identity: entry.identity.to_owned(),
-    }
+    DefinitionRole::IeeeProfile.reference()
 }
 
 fn law(role: LawRole, definition: DefinitionReference) -> Json {
@@ -130,9 +126,8 @@ struct Row {
 /// A package holding `functions`, with the text-profile lock evidence, the
 /// pinned IEEE profile and the accumulator aliases these rows use.
 fn package(functions: Vec<FunctionDeclaration>) -> PackageDeclarations {
-    let ieee = DefinitionLock::pinned()
-        .admit_ieee_profile(&[ieee_definition()], &[])
-        .expect("the pinned IEEE profile admits");
+    let ieee =
+        admit_ieee_profile(&[ieee_definition()], &[]).expect("the pinned IEEE profile admits");
     PackageDeclarations {
         functions,
         aliases: vec![

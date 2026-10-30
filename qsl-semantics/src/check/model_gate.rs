@@ -19,7 +19,6 @@ use qsl_foundation::selection::ProfileSelection;
 
 use super::assemble::{AssemblyCause, AssemblyError};
 use super::layer::{expression_form, visit_located};
-use crate::value::definition::DefinitionLock;
 use crate::value::layer::{HeaderLayer, LayerForm};
 
 /// The family of a refused model construct (FR-361 item 5).
@@ -123,9 +122,7 @@ fn selected_layers(profiles: &[ProfileSelection]) -> Vec<HeaderLayer> {
 /// Whether the unit's selected layers include the model layer through their
 /// `requires` closure (FR-361 item 1).
 pub(super) fn selects_model(profiles: &[ProfileSelection]) -> bool {
-    DefinitionLock::pinned()
-        .closure(&selected_layers(profiles))
-        .contains(&HeaderLayer::ModelComplete)
+    HeaderLayer::closure(&selected_layers(profiles)).contains(&HeaderLayer::ModelComplete)
 }
 
 /// The declarations of a unit the gate reads.

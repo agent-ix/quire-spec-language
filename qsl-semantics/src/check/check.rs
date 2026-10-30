@@ -62,7 +62,7 @@ use super::refusal::{
     IdentityObserving, KeyFault, Obligation, StageLimitCause,
 };
 use crate::model::operation::OperationTable;
-use crate::value::definition::{AdmittedIeeeProfile, CatalogRole, DefinitionLock};
+use crate::value::definition::{admit_ieee_profile, AdmittedIeeeProfile, DefinitionRole};
 use crate::value::enumeration::{mint_variant_id, AdmittedEnumDeclaration};
 use qsl_forms::{
     Accumulation, BinaryOperator, BinderQuery, ClauseKind, ExprId, ExprNode, ExprRef,
@@ -1549,16 +1549,16 @@ impl Scope {
         let has_float = has_ieee_literal || declared.into_iter().any(holds_float);
         self.ieee_operation = has_float;
         if has_float && self.ieee_profile.is_none() {
-            let lock = DefinitionLock::pinned();
-            let definition = lock.entry(CatalogRole::IeeeProfile).reference();
-            self.ieee_profile = Some(lock.admit_ieee_profile(&[definition], &[]).map_err(
-                |cause| CheckRefusal {
-                    location: Location::root(Origin::Expression),
-                    cause: CheckCause::InternalFault(Box::new(KeyFault::IeeeProfileAdmission(
-                        cause,
-                    ))),
-                },
-            )?);
+            let definition = DefinitionRole::IeeeProfile.reference();
+            self.ieee_profile =
+                Some(
+                    admit_ieee_profile(&[definition], &[]).map_err(|cause| CheckRefusal {
+                        location: Location::root(Origin::Expression),
+                        cause: CheckCause::InternalFault(Box::new(KeyFault::IeeeProfileAdmission(
+                            cause,
+                        ))),
+                    })?,
+                );
         }
         Ok(())
     }

@@ -20,7 +20,7 @@ use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
 use qsl_semantics::model::key::hex;
 use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
-use qsl_semantics::value::{CatalogRole, DefinitionLock};
+use qsl_semantics::value::{admit_integer_division, DefinitionRole};
 use quire_checked::key::DeclarationKey;
 use quire_exact::ScalarLimits;
 use quire_semantic_value::checking::CheckingLimits;
@@ -290,12 +290,9 @@ fn declarations(documents: &[&[u8]], text: &str) -> PackageDeclarations {
     )
     .expect("the unit assembles");
     // `div` reads truncating integer division.
-    let lock = DefinitionLock::pinned();
     declarations.integer_division = Some(
-        lock.admit_integer_division(
-            &[lock
-                .entry(CatalogRole::IntegerDivisionTruncating)
-                .reference()],
+        admit_integer_division(
+            &[DefinitionRole::IntegerDivisionTruncating.reference()],
             None,
         )
         .expect("the division profile admits"),
