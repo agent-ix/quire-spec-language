@@ -602,7 +602,7 @@ impl ResolutionCause {
 ///
 /// The roots close over their dependency edges depth first. Every
 /// [`PackageLimits`] field applies exactly as supplied. No backend, installed
-/// runtime or support set is an input.
+/// runtime or support set is an input to the selected bundle.
 pub fn link_bundle(
     roots: &[DefinitionRef],
     catalog: &DefinitionCatalog,
@@ -818,9 +818,7 @@ fn cause_tag(code: Code, cause: &PackageError) -> ResolutionCause {
         PackageError::DefinitionCycle(_) => Tag::DefinitionCycle,
         PackageError::MissingCapability(_) => Tag::UnsupportedFeature,
         PackageError::UnknownCapability(_) => Tag::UnknownFeature,
-        PackageError::CanonicalSize | PackageError::ResourceLimit { .. } => {
-            Tag::InsufficientNextCharge
-        }
+        PackageError::ResourceLimit { .. } => Tag::InsufficientNextCharge,
         PackageError::MissingFacet(_) => Tag::FeatureSetMismatch,
     }
 }
@@ -854,9 +852,6 @@ pub enum PackageError {
     /// Dependency closure omitted one atomic required capability.
     #[error("missing required capability {0:?}")]
     MissingCapability(CapabilityId),
-    /// Canonical length cannot be represented by the versioned wire encoding.
-    #[error("canonical field exceeds the u64 wire length domain")]
-    CanonicalSize,
     /// Package input reached a configured [`PackageLimits`] ceiling.
     #[error("package resource limit exceeded: {kind} (limit {limit}, reached {actual}); raise it with `--limit {setting}=<n>`", setting = .kind.setting())]
     ResourceLimit {
