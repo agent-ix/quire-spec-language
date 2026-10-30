@@ -2857,7 +2857,7 @@ pub enum ExecutionPointRefusal {
 
 /// The invariant [`CheckCause::InternalFault`] names, with the value that
 /// broke it.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum KeyFault {
     /// An accepted execution point its clause cannot carry (QSpec FR-341,
     /// FR-342): the variant is inapplicable to the clause kind, or its
