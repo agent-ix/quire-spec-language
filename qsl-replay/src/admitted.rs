@@ -361,6 +361,7 @@ fn unknown_what(declaration: &NodeKey, case: &Option<Identifier>) -> String {
 #[derive(Clone, Debug)]
 pub struct AdmittedContext {
     package: LibraryName,
+    package_bytes: Box<[u8]>,
     enums: BTreeMap<NodeKey, AdmittedEnum>,
     foreign: BTreeMap<NodeKey, LibraryName>,
     composites: BTreeMap<NodeKey, AdmittedComposite>,
@@ -381,6 +382,13 @@ impl AdmittedContext {
     /// The library name of the package whose check admitted this context.
     pub fn package_name(&self) -> &LibraryName {
         &self.package
+    }
+
+    /// The exact emitted checked-package bytes admitted by this context,
+    /// including its source lock and checked body. A consumer can compare
+    /// these with the original package before using any admitted lookup.
+    pub fn package_bytes(&self) -> &[u8] {
+        &self.package_bytes
     }
 
     /// Every enum declaration this package admitted, ascending by key.
@@ -683,8 +691,12 @@ pub fn compile_admitted<'a>(
     replay_limits: ReplayLimits,
 ) -> Result<AdmittedCompilation, AdmittedRefusal> {
     let compiled = recompile_unit(unit, packages, dependencies, limits, replay_limits)?;
-    let context = context_of(compiled.checked.package(), &compiled.package)
-        .map_err(AdmittedRefusal::Fault)?;
+    let context = context_of(
+        compiled.checked.package(),
+        &compiled.package,
+        compiled.emitted.package().bytes(),
+    )
+    .map_err(AdmittedRefusal::Fault)?;
     Ok(AdmittedCompilation {
         package: CompiledPackage::new(compiled.emitted),
         context,
@@ -694,6 +706,7 @@ pub fn compile_admitted<'a>(
 pub(crate) fn context_of(
     package: &CheckedPackage,
     name: &LibraryName,
+    package_bytes: &[u8],
 ) -> Result<AdmittedContext, InternalFault> {
     let enums = enum_table(package.graph())?;
     let composites = composite_table(package.graph())?;
@@ -745,6 +758,7 @@ pub(crate) fn context_of(
     }
     Ok(AdmittedContext {
         package: name.clone(),
+        package_bytes: package_bytes.into(),
         enums,
         foreign,
         composites,

@@ -739,8 +739,12 @@ pub fn acquire_checked_closure<'a>(
 ) -> Result<CheckedClosureCompilation, AdmittedRefusal> {
     let compiled = recompile_unit(unit, packages, dependencies, limits, replay_limits)?;
     let package_name = compiled.package.clone();
-    let context =
-        context_of(compiled.checked.package(), &package_name).map_err(AdmittedRefusal::Fault)?;
+    let context = context_of(
+        compiled.checked.package(),
+        &package_name,
+        compiled.emitted.package().bytes(),
+    )
+    .map_err(AdmittedRefusal::Fault)?;
     Ok(CheckedClosureCompilation {
         package: CompiledPackage::new(compiled.emitted),
         context,
