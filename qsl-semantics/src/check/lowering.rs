@@ -2315,6 +2315,19 @@ impl<'a> Lowering<'a> {
         Ok(())
     }
 
+    /// Add the node `content` under its admitted structural `key` and return
+    /// the key. Nodes are identified by `key` alone, never by their content:
+    /// a key already in the graph is left as it is.
+    pub(super) fn insert_declared_node(
+        &mut self,
+        location: &Location,
+        key: NodeKey,
+        content: NodeContent,
+    ) -> Result<NodeKey, CheckRefusal> {
+        self.insert_nominal(location, key.clone(), content)?;
+        Ok(key)
+    }
+
     /// Add the nominal node `key`, whose content is `content`, to the graph,
     /// and whether it was not there yet. A key already in the graph is left
     /// as it is.
