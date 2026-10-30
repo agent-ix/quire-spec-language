@@ -241,31 +241,22 @@ impl WireNode {
 
 impl<'de> serde::Deserialize<'de> for WireNode {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        // Read through the canonical event reader, which reads a node id from
-        // an explicit stack, so a deep key meets no recursion limit here.
-        let raw =
-            <Box<serde_json::value::RawValue> as serde::Deserialize>::deserialize(deserializer)?;
-        let document = quire_canonical::read(raw.get().as_bytes(), u64::MAX)
-            .map_err(serde::de::Error::custom)?;
-        qsl_semantics::check::read_node_key(document.root())
-            .map(Self)
-            .map_err(serde::de::Error::custom)
+        // `discard_node_json` drops the value iteratively, so a deep key
+        // meets no recursion limit on the way out.
+        let value = <serde_json::Value as serde::Deserialize>::deserialize(deserializer)?;
+        let key = qsl_foundation::node_wire::node_key_from_json(&value);
+        qsl_foundation::node_wire::discard_node_json(value);
+        key.map(Self).map_err(serde::de::Error::custom)
     }
 }
 
 impl Serialize for WireNode {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        // Written by the one node-id writer from an explicit stack, then
-        // emitted as the raw JSON text it is.
-        let bytes = quire_canonical::to_vec(
-            &qsl_semantics::check::node_wire::NodeRef(self.0.clone()),
-            quire_canonical::Limits::new(u64::MAX),
-        )
-        .map_err(serde::ser::Error::custom)?;
-        let text = String::from_utf8(bytes).map_err(serde::ser::Error::custom)?;
-        serde_json::value::RawValue::from_string(text)
-            .map_err(serde::ser::Error::custom)?
-            .serialize(serializer)
+        let value = qsl_foundation::node_wire::node_key_to_json(&self.0)
+            .map_err(serde::ser::Error::custom)?;
+        let written = Serialize::serialize(&value, serializer);
+        qsl_foundation::node_wire::discard_node_json(value);
+        written
     }
 }
 
@@ -918,12 +909,8 @@ pub enum OutcomeLocus {
         /// The occurrence key's display form.
         occurrence: String,
     },
-    /// A digest-addressed artifact and a JSON pointer into it.
+    /// An artifact and a JSON pointer into it.
     Artifact {
-        /// The artifact's digest domain.
-        domain: &'static str,
-        /// The artifact's digest, lower-case hex.
-        digest: String,
         /// The RFC 6901 pointer into the artifact.
         pointer: String,
     },
@@ -940,9 +927,7 @@ impl From<&Locus> for OutcomeLocus {
             Locus::Occurrence(location) => Self::Occurrence {
                 occurrence: OccurrenceKey::from(location).to_string(),
             },
-            Locus::Artifact { digest, pointer } => Self::Artifact {
-                domain: digest.domain().as_str(),
-                digest: digest.hex(),
+            Locus::Artifact { pointer } => Self::Artifact {
                 pointer: pointer.to_string(),
             },
         }
@@ -1386,12 +1371,8 @@ impl OutcomeDocument {
                             decimal: value.to_string(),
                         },
                         CallValue::Reference(reference) => ResultValue::Reference {
-                            universe: qsl_semantics::model::key::hex(
-                                reference.universe().as_bytes(),
-                            ),
-                            object_type: qsl_semantics::model::key::hex(
-                                reference.object_type().as_bytes(),
-                            ),
+                            universe: reference.universe().root_type().to_string(),
+                            object_type: crate::spine::effective_spelling(reference.object_type()),
                             object_identity: reference.object().as_str().to_owned(),
                         },
                     },
@@ -1494,6 +1475,7 @@ fn replay_stage(refusal: &ReplayRefusal) -> Option<OutcomeStage> {
     match refusal {
         ReplayRefusal::Recompile(refusal) => Some(refusal.stage().into()),
         ReplayRefusal::Fault(_)
+        | ReplayRefusal::InvalidPackageName(_)
         | ReplayRefusal::ObservedTemporalRefusal(qsl_eval::temporal::TemporalRefusal::Fault(_))
         | ReplayRefusal::Admission(AdmissionFailure::Fault(_)) => None,
         ReplayRefusal::Request(_)
@@ -1502,7 +1484,6 @@ fn replay_stage(refusal: &ReplayRefusal) -> Option<OutcomeStage> {
         | ReplayRefusal::SourceCount(_)
         | ReplayRefusal::DependencySelections(_)
         | ReplayRefusal::DependencyInput(_)
-        | ReplayRefusal::DependencyIdentityMismatch { .. }
         | ReplayRefusal::UnknownFunction { .. }
         | ReplayRefusal::ClaimOccurrence { .. }
         | ReplayRefusal::UnknownOperation { .. }
@@ -1624,6 +1605,7 @@ mod tests {
             .into_value();
         let checked = check(
             &parsed,
+            "fixture".to_owned(),
             &models,
             &DependencyInput::default(),
             limits,
@@ -2309,6 +2291,7 @@ mod tests {
                     crate::scalar::ScalarAgreement::new(
                         crate::scalar::ScalarClaim::Function(Box::new(crate::ValueIdentity {
                             obligation: crate::identity::ObligationIdentity::from_digest([1; 32]),
+                            package_name: "fixture".to_owned(),
                             function: Some(
                                 QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap(),
                             ),
@@ -2437,8 +2420,9 @@ mod tests {
                 accounting,
                 supplied: Default::default(),
             };
-            let (_, outcome) = run(
+            let outcome = run(
                 SourceIdentity::new("agent-ix", "test:outcome", "fixture", "fixture:1"),
+                "fixture".to_owned(),
                 "unit.native",
                 FIXTURE.as_bytes(),
                 &BTreeMap::new(),
@@ -2475,8 +2459,9 @@ mod tests {
             accounting: default_accounting(1_000_000),
             supplied: Default::default(),
         };
-        let (_, outcome) = run(
+        let outcome = run(
             SourceIdentity::new("agent-ix", "test:outcome", "fixture", "fixture:1"),
+            "fixture".to_owned(),
             "unit.native",
             FIXTURE.as_bytes(),
             &BTreeMap::new(),
@@ -2506,8 +2491,9 @@ mod tests {
             supplied: Default::default(),
             ..call
         };
-        let (_, outcome) = run(
+        let outcome = run(
             SourceIdentity::new("agent-ix", "test:outcome", "fixture", "fixture:1"),
+            "fixture".to_owned(),
             "unit.native",
             FIXTURE.as_bytes(),
             &BTreeMap::new(),
@@ -2552,6 +2538,7 @@ mod tests {
         cancelled.cancel(CancelCause::Requested);
         let result = check(
             &parsed,
+            "fixture".to_owned(),
             &models,
             &DependencyInput::default(),
             limits,
@@ -2701,6 +2688,7 @@ mod tests {
         let unknown = ReplayRefusal::UnknownFunction {
             selection: QualifiedName::new(vec![Identifier::new("seven").expect("an identifier")])
                 .expect("a qualified name"),
+            package: qsl_semantics::library::LibraryName::new("fixture").expect("a library name"),
         };
         let unknown = json_of(&OutcomeDocument::from_replay(&Err(unknown)));
         assert_eq!(unknown["last_stage"], "S8");

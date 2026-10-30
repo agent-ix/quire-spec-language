@@ -368,10 +368,13 @@ fn node_environment(
     let mut objects = Vec::with_capacity(chain.len());
     for (index, key) in chain.iter().enumerate() {
         let next = chain.get(index + 1).map(|next_key| {
-            FieldValue::Present(Value::Reference(node_reference(node_effective, next_key)))
+            FieldValue::Present(Value::Reference(node_reference(
+                node_effective.clone(),
+                next_key,
+            )))
         });
         objects.push((
-            node_reference(node_effective, key),
+            node_reference(node_effective.clone(), key),
             vec![("next", next.unwrap_or(FieldValue::Absent))],
         ));
     }
@@ -442,7 +445,7 @@ fn no_cycle_completes_true_with_the_expected_reaches_charge_log() {
     let clause = graph.state_clause("NoCycle").expect("NoCycle is declared");
     let node_effective = clause.context();
     let types = graph.scope().types();
-    let environment = node_environment(types, node_effective, &["a", "b", "c"]);
+    let environment = node_environment(types, node_effective.clone(), &["a", "b", "c"]);
     let observations = no_cycle_observations(
         clause.identity(),
         environment,
@@ -497,17 +500,23 @@ fn no_cycle_completes_false_over_a_cycle() {
             types,
             vec![
                 (
-                    node_reference(node_effective, "a"),
+                    node_reference(node_effective.clone(), "a"),
                     vec![(
                         "next",
-                        FieldValue::Present(Value::Reference(node_reference(node_effective, "b"))),
+                        FieldValue::Present(Value::Reference(node_reference(
+                            node_effective.clone(),
+                            "b",
+                        ))),
                     )],
                 ),
                 (
-                    node_reference(node_effective, "b"),
+                    node_reference(node_effective.clone(), "b"),
                     vec![(
                         "next",
-                        FieldValue::Present(Value::Reference(node_reference(node_effective, "a"))),
+                        FieldValue::Present(Value::Reference(node_reference(
+                            node_effective.clone(),
+                            "a",
+                        ))),
                     )],
                 ),
             ],
@@ -540,7 +549,7 @@ fn evaluate_clause_refuses_an_unknown_clause_name() {
     let clause = graph.state_clause("NoCycle").expect("NoCycle is declared");
     let node_effective = clause.context();
     let types = graph.scope().types();
-    let environment = node_environment(types, node_effective, &["a"]);
+    let environment = node_environment(types, node_effective.clone(), &["a"]);
     let observations = no_cycle_observations(
         clause.identity(),
         environment,
@@ -572,7 +581,7 @@ fn evaluate_clause_refuses_observations_admitted_for_another_clause() {
     let clause = graph.state_clause("NoCycle").expect("NoCycle is declared");
     let node_effective = clause.context();
     let types = graph.scope().types();
-    let environment = node_environment(types, node_effective, &["a"]);
+    let environment = node_environment(types, node_effective.clone(), &["a"]);
     // A clause identity that is not `NoCycle`'s own -- any other `NodeKey`
     // disagrees.
     assert_ne!(
@@ -626,7 +635,7 @@ fn evaluate_clause_is_deterministic() {
         let observations = no_cycle_observations(
             clause.identity(),
             environment,
-            node_reference(node_effective, self_key),
+            node_reference(node_effective.clone(), self_key),
         );
         let mut meter = Meter::new(default_accounting(1_000_000));
         let name = QualifiedName::unqualified("NoCycle").unwrap();
@@ -645,11 +654,11 @@ fn evaluate_clause_is_deterministic() {
     // charge logs.
     assert_eq!(
         run(
-            node_environment(types, node_effective, &["a", "b", "c"]),
+            node_environment(types, node_effective.clone(), &["a", "b", "c"]),
             "a"
         ),
-        run(
-            node_environment(types, node_effective, &["a", "b", "c"]),
+        run.clone()(
+            node_environment(types, node_effective.clone(), &["a", "b", "c"]),
             "a"
         )
     );
@@ -684,7 +693,7 @@ fn evaluate_clause_is_deterministic() {
             .expect("the two-node cycle is internally closed"),
         )
     };
-    assert_eq!(run(cycle(), "a"), run(cycle(), "a"));
+    assert_eq!(run.clone()(cycle(), "a"), run(cycle(), "a"));
 }
 
 /// TC-467 step 1 (FR-107-AC-4): a zero-budget meter completes `Incomplete`
@@ -703,7 +712,7 @@ fn evaluate_clause_reports_incomplete_when_the_meter_is_exhausted() {
     let clause = graph.state_clause("NoCycle").expect("NoCycle is declared");
     let node_effective = clause.context();
     let types = graph.scope().types();
-    let environment = node_environment(types, node_effective, &["a", "b", "c"]);
+    let environment = node_environment(types, node_effective.clone(), &["a", "b", "c"]);
     let observations = no_cycle_observations(
         clause.identity(),
         environment,
@@ -3928,7 +3937,7 @@ fn named_clause_node<'g>(
         .identity();
     graph
         .semantic_graph()
-        .node(identity)
+        .node(identity.clone())
         .unwrap_or_else(|| panic!("clause {name}'s node {identity} is in the graph"))
 }
 
@@ -3945,7 +3954,7 @@ fn single_state_node_key(graph: &qsl_semantics::check::CheckedGraph, form: &str)
     let [key] = keys.as_slice() else {
         panic!("exactly one state/{form} node, got {keys:?}");
     };
-    *key
+    key.clone()
 }
 
 /// The body of the `expression` node `leaf` references (FR-093's
@@ -4016,12 +4025,7 @@ fn find_field_read_member<'g>(
 
 /// `key`'s wire `node_id` object: the structural `{package, path, ordinal}` form.
 fn wire_node_id(key: impl std::borrow::Borrow<NodeKey>) -> serde_json::Value {
-    let bytes = quire_canonical::to_vec(
-        &qsl_semantics::check::node_wire::NodeRef(key.borrow().clone()),
-        quire_canonical::Limits::new(u64::MAX),
-    )
-    .expect("a node id encodes");
-    serde_json::from_slice(&bytes).expect("a node id encodes as JSON")
+    qsl_foundation::node_wire::node_key_to_json(&key.borrow().clone()).expect("a node id encodes")
 }
 
 /// Every occurrence of `key` as a `(role, ordinal)` pair (`claim`, `anchor`,
@@ -4316,7 +4320,7 @@ fn s4_state_clause_semantic_type_is_the_boolean_scalar_type_node() {
     for (node, kind) in state_clause_nodes(graph) {
         assert_eq!(
             node.semantic_type(),
-            Some(boolean),
+            Some(boolean.clone()),
             "{kind}'s state_clause node's own semantic_type is the Boolean scalar type node"
         );
     }
@@ -4594,7 +4598,7 @@ fn s4_parent_order2_with_parent_orders_body_adds_no_node_and_a_second_claim() {
         "ParentOrder2 checks to ParentOrder's node"
     );
     assert_eq!(
-        occurrences_of(base.package.graph(), parent_order),
+        occurrences_of(base.package.graph(), parent_order.clone()),
         occurrences_in("claim", &[0])
     );
     assert_eq!(

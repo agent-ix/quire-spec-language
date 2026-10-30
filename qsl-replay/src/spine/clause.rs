@@ -782,7 +782,7 @@ pub(crate) fn admit_clause_observations(
         kind: clause.kind(),
         context: clause.context(),
         operation: clause.operation().map(|operation| OperationFacts {
-            declaring: operation.declaring,
+            declaring: operation.declaring.clone(),
             declaration: operation.declaration.clone(),
         }),
         operations: graph.scope().operations().clone(),
@@ -1233,9 +1233,9 @@ pub(crate) fn check_frame(
     let frame = operation_frame.frame();
     let facts = FrameFacts {
         context,
-        frame,
+        frame: frame.clone(),
         operation: OperationFacts {
-            declaring: operation_frame.operation().declaring,
+            declaring: operation_frame.operation().declaring.clone(),
             declaration: operation_frame.operation().declaration.clone(),
         },
     };
@@ -1442,7 +1442,7 @@ fn run_function(
                     package.graph().model_selections(),
                     packages,
                     model_limits,
-                    *type_identity,
+                    type_identity.clone(),
                 ) {
                     Ok(universe) => universe,
                     Err(failure) => {

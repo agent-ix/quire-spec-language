@@ -1259,7 +1259,6 @@ mod tests {
                 3,
             )
             .expect("a fixture key"),
-            DigestRecord::mint(DigestDomain::PackageSemanticV2, [4; 32]),
             Vec::new(),
             wire(1).accounting_limits,
             Vec::new(),
@@ -1312,7 +1311,10 @@ mod tests {
         )
         .expect("a fixture key");
         for key in [
-            OccurrenceKeyForTest::new(node, quire_exact::Origin::new("declaration".into(), 0)),
+            OccurrenceKeyForTest::new(
+                node.clone(),
+                quire_exact::Origin::new("declaration".into(), 0),
+            ),
             OccurrenceKeyForTest::new(node, quire_exact::Origin::new("expression".into(), 1)),
         ] {
             let mut wire = wire(1);

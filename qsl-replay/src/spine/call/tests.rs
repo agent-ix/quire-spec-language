@@ -280,7 +280,7 @@ fn tc_792_source_driver_admits_unused_parameters_before_body_evaluation() {
     let (objects, population, _, present) = lookup_driver_context(&fixture);
     let foreign_universe = quire_exact::ObjectReference::new(
         crate::spine::fixture_ids::universe(0xa5),
-        present.object_type(),
+        present.object_type().clone(),
         present.object().clone(),
     );
     let refusal = run(
@@ -439,14 +439,14 @@ fn typed_model_values_bind_without_integer_coercion() {
         &[
             (
                 "reference".to_owned(),
-                ValueType::Reference(reference.object_type()),
+                ValueType::Reference(reference.object_type().clone()),
             ),
             ("population".to_owned(), ValueType::Population(Some(1))),
         ],
         &[
             CallArgument {
                 parameter: "population".to_owned(),
-                value: Value::Population(population),
+                value: Value::Population(population.clone()),
             },
             CallArgument {
                 parameter: "reference".to_owned(),

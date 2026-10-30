@@ -866,7 +866,7 @@ fn occurrence(unit: &Unit, clause: &str, path: &[usize], operator: Operator) -> 
             } if name == clause)
                 && location.path() == path
                 && matches!(
-                    semantic.node(*key).map(|node| node.body()),
+                    semantic.node(key.clone()).map(|node| node.body()),
                     Some(BodyTerm::Application(ApplicationTerm { operator: applied, .. }))
                         if *applied == operator
                 )
@@ -1403,7 +1403,7 @@ fn replay_case(
         packet(
             &unit.bytes,
             source,
-            node,
+            node.clone(),
             OccurrenceKey::new(node, declaration.claim().clone()),
             payload,
             target,
@@ -1927,7 +1927,7 @@ fn a_100000_deep_deciding_element_round_trips_on_a_small_stack() {
                     ),
                     |next, _| {
                         quire_exact::from_admitted_slots(
-                            chain,
+                            chain.clone(),
                             Box::new([quire_exact::FieldValue::Present(next)]),
                         )
                     },
@@ -2166,8 +2166,7 @@ fn tc_744_every_deciding_element_kind_round_trips() {
 /// that unit's id.
 fn metre_package() -> (qsl_package::CheckedPackage, quire_exact::UnitId) {
     use qsl_semantics::value::{
-        admit_unit_graph, DimensionPreimage, NodeIdentityPreimage, NodeOwner, OwnerSelection,
-        OwnerSubject, UnitPreimage,
+        admit_unit_graph, DimensionPreimage, NodeOwner, OwnerSelection, OwnerSubject, UnitPreimage,
     };
     let owner = json!({"kind": "definition", "authority": "agent-ix", "identity": "example"});
     let length = DimensionPreimage::from_json(json!({
@@ -2207,7 +2206,6 @@ fn metre_package() -> (qsl_package::CheckedPackage, quire_exact::UnitId) {
             identity: "example".into(),
             package_name: "example".into(),
         })]),
-        qsl_foundation::IdentityLimits::default(),
     )
     .expect("the unit graph admits");
     let units = quire_semantic_value::quantity::UnitTable::declared(&graph);

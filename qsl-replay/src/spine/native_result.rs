@@ -2138,9 +2138,9 @@ impl Disposition {
                             } => {
                                 fields.insert(
                                     "required",
-                                    qsl_semantics::model::key::hex(expected.as_bytes()),
+                                    expected.root_type().to_string(),
                                 );
-                                fields.insert("supplied", qsl_semantics::model::key::hex(actual));
+                                fields.insert("supplied", actual.to_string());
                             }
                             _ => {}
                         }

@@ -570,9 +570,9 @@ fn a_stale_frame_identity_refuses_before_admission() {
     let input = forbidden_parent_change();
     let pre = input.pre.clone();
     let case = case_with(input, child_change("parent"), |wire, payload| {
-        recompiled = Some((payload.anchor, payload.frame));
-        payload.anchor = other_anchor;
-        payload.frame = other_frame;
+        recompiled = Some((payload.anchor.clone(), payload.frame.clone()));
+        payload.anchor = other_anchor.clone();
+        payload.frame = other_frame.clone();
         payload.occurrence = other_occurrence;
         withhold(wire, &pre);
     });
@@ -609,7 +609,7 @@ fn a_stale_anchor_or_occurrence_refuses_content_mismatch() {
     let refusal = replay(case_with(
         forbidden_parent_change(),
         child_change("parent"),
-        |_, payload| payload.anchor = stale_anchor,
+        |_, payload| payload.anchor = stale_anchor.clone(),
     ))
     .unwrap_err();
     assert!(
@@ -629,7 +629,7 @@ fn a_stale_anchor_or_occurrence_refuses_content_mismatch() {
         |_, payload| {
             let origin = payload.occurrence.origin();
             let other = OccurrenceKey::new(
-                payload.occurrence.node(),
+                payload.occurrence.node().clone(),
                 quire_exact::Origin::new(origin.role().clone(), origin.ordinal() + 1),
             );
             stale_occurrence = Some(other.clone());
@@ -697,7 +697,7 @@ fn an_envelope_clause_node_other_than_the_frame_refuses_before_recompiling() {
     assert_ne!(other_frame, payload.frame);
     let frame = payload.frame;
     let stale = envelope_with(&unit.bytes, witness_source(), payload, |packet| {
-        packet.clause_node = Some(other_frame);
+        packet.clause_node = Some(other_frame.clone());
     });
     let refusal = replay_frame(wire, &stale, crate::ReplayLimits::default()).unwrap_err();
     assert!(
@@ -725,7 +725,7 @@ fn an_envelope_occurrence_other_than_the_frame_occurrence_refuses_before_recompi
     let (unit, wire, payload) = uncompilable_request();
     let origin = payload.occurrence.origin();
     let other = OccurrenceKey::new(
-        payload.occurrence.node(),
+        payload.occurrence.node().clone(),
         quire_exact::Origin::new(origin.role().clone(), origin.ordinal() + 1),
     );
     let occurrence = payload.occurrence.clone();

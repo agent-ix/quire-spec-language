@@ -477,7 +477,13 @@ fn function_site_names_its_function_node_and_declaration_occurrence() {
             &operation("Config", "ConfigVersion", operation_name),
         )
         .expect("the operation is named");
-        clause_nodes.extend(operation_site.site.clauses.iter().map(|clause| clause.node));
+        clause_nodes.extend(
+            operation_site
+                .site
+                .clauses
+                .iter()
+                .map(|clause| clause.node.clone()),
+        );
     }
     assert!(!clause_nodes.contains(&same_identity.function));
 }
@@ -545,10 +551,6 @@ fn call_site_refusal_codes_for_operations_clauses_and_intake() {
     let mut wire = super::frame_replay::request(
         unit.as_bytes(),
         &document,
-        qsl_foundation::digest::DigestRecord::mint(
-            qsl_foundation::digest::DigestDomain::PackageSemanticV2,
-            [4; 32],
-        ),
         &[],
         crate::ReplayTarget::function(
             crate::QualifiedName::new(vec![quire_exact::Identifier::new("attemptUpdate").unwrap()])
@@ -652,14 +654,14 @@ fn call_site_keys_a_state_field_under_its_declaring_type_by_name_ordinal() {
     assert_eq!(
         key("ConfigVersion", "parent"),
         crate::DomainKey::Node {
-            node: config_version,
+            node: config_version.clone(),
             path: vec![0]
         }
     );
     assert_eq!(
         key("ConfigVersion", "versionNumber"),
         crate::DomainKey::Node {
-            node: config_version,
+            node: config_version.clone(),
             path: vec![1]
         }
     );
@@ -674,7 +676,7 @@ fn call_site_keys_a_state_field_under_its_declaring_type_by_name_ordinal() {
     assert_eq!(
         key("Sub", "alpha"),
         crate::DomainKey::Node {
-            node: sub,
+            node: sub.clone(),
             path: vec![0]
         }
     );
@@ -761,7 +763,7 @@ fn a_field_key_and_a_population_key_with_one_ordinal_are_distinct() {
     let graph = compiled.package.graph();
     let config_version = wire(config_version_node_key(graph));
     let population = crate::DomainKey::Population {
-        member_type: config_version,
+        member_type: config_version.clone(),
         ordinal: 0,
     };
     let recorded: Vec<&crate::DomainKey> = graph

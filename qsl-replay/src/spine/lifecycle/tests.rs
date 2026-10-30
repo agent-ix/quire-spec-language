@@ -188,6 +188,7 @@ fn each_operation_takes_exactly_its_predecessors_output() {
     // `package` the `CheckedUnit` of that check, and `execute` the same.
     let rechecked = check(
         &chain.parsed,
+        "fixture".to_owned(),
         &chain.models,
         &DependencyInput::default(),
         SpineLimits::default(),
@@ -438,6 +439,7 @@ fn a_handle_cancelled_before_the_call_stops_every_operation() {
     ));
     assert_requested(check(
         &chain.parsed,
+        "fixture".to_owned(),
         &chain.models,
         &DependencyInput::default(),
         limits,
@@ -566,6 +568,7 @@ fn a_check_cancelled_from_another_thread_stops_within_one_charge() {
     let total = charges_of(|cancel| {
         check(
             &unit.0,
+            "fixture".to_owned(),
             &unit.1,
             &DependencyInput::default(),
             unit.2,
@@ -608,6 +611,7 @@ fn a_cancel_inside_one_large_body_stops_within_one_charge() {
     let total = charges_of(|cancel| {
         check(
             &unit.0,
+            "fixture".to_owned(),
             &unit.1,
             &DependencyInput::default(),
             unit.2,
@@ -808,6 +812,7 @@ fn a_cancel_tripped_mid_run_is_cancelled_with_its_cause_never_a_fault() {
         let models = select(&parsed, &BTreeMap::new(), limits.model, cancel)?.into_value();
         let checked = check(
             &parsed,
+            "fixture".to_owned(),
             "fixture".to_owned(),
             &models,
             &DependencyInput::default(),
@@ -1058,6 +1063,7 @@ fn each_operation_reports_the_work_of_its_own_stages() {
 
     let checked = check(
         &parsed,
+        "fixture".to_owned(),
         "fixture".to_owned(),
         &models,
         &DependencyInput::default(),
@@ -1390,6 +1396,7 @@ fn check_names_the_checking_limit_field_it_reached() {
             let limits = edit(SpineLimits::default(), value);
             reached(check(
                 &chain.parsed,
+                "fixture".to_owned(),
                 &chain.models,
                 &DependencyInput::default(),
                 limits,
@@ -1472,6 +1479,7 @@ fn a_reached_limit_is_raised_by_the_settings_operation_and_by_a_request() {
     let check_under = |limits: SpineLimits| {
         reached(check(
             &chain.parsed,
+            "fixture".to_owned(),
             &chain.models,
             &DependencyInput::default(),
             limits,
@@ -1515,6 +1523,7 @@ fn a_reached_limit_is_raised_by_the_settings_operation_and_by_a_request() {
             |value| {
                 reached(check(
                     &long.parsed,
+                    "fixture".to_owned(),
                     &long.models,
                     &DependencyInput::default(),
                     identity(value)[entry],
@@ -1545,6 +1554,7 @@ fn the_effective_limits_a_checked_package_records_are_the_defaults() {
     );
     let checked = check(
         &chain.parsed,
+        "fixture".to_owned(),
         &chain.models,
         &DependencyInput::default(),
         limits,
@@ -1578,6 +1588,7 @@ fn check_names_the_type_environment_limit_field_it_reached() {
             edit(&mut limits, value);
             reached(check(
                 &model.parsed,
+                "fixture".to_owned(),
                 &model.models,
                 &DependencyInput::default(),
                 limits,
@@ -1729,7 +1740,7 @@ fn a_rebound_model_node_leaves_the_front_end_as_an_internal_failure_with_no_pack
             ),
             cause: CheckCause::InternalFault(Box::new(KeyFault::CorrespondenceConflict(Box::new(
                 CorrespondenceConflict::NodeRebound {
-                    node,
+                    node: node.clone(),
                     recorded: d1.clone(),
                     offered: d2.clone(),
                 },

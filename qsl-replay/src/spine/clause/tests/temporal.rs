@@ -670,6 +670,7 @@ fn observed_replay_request(
     let path = "counter-temporal.native";
     let compiled = run_spine(
         &source_identity,
+        &qsl_semantics::library::LibraryName::new("fixture").expect("a library name"),
         path,
         &source_bytes,
         &packages,
@@ -685,7 +686,7 @@ fn observed_replay_request(
         .find(|node| node.clause().name() == name)
         .expect("the fixture temporal clause exists");
     let node = clause_node.identity().clone();
-    let occurrence = OccurrenceKey::new(node, clause_node.claim().clone());
+    let occurrence = OccurrenceKey::new(node.clone(), clause_node.claim().clone());
     let domain_document = packages.values().next().expect("one model package");
     let documents: Vec<(DocumentRef, Vec<u8>)> = values
         .iter()

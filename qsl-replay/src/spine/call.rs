@@ -712,7 +712,7 @@ pub(crate) fn admit_model_arguments(
         if let (ValueType::Population(maximum), Value::Population(population_id)) =
             (value_type, argument)
         {
-            let Some(binding) = objects.resolve_population(*population_id) else {
+            let Some(binding) = objects.resolve_population(population_id.clone()) else {
                 return Err(Box::new(RunRefusal::WrongValueKind { position }));
             };
             if binding.declared_maximum() != *maximum {
@@ -760,7 +760,7 @@ pub(crate) fn admit_model_arguments(
                             model
                                 .view
                                 .object_universe_of(key)
-                                .map(|universe| universe.identity())
+                                .and_then(|universe| universe.identity().ok())
                         })
                         .flatten()
                 })
@@ -771,7 +771,7 @@ pub(crate) fn admit_model_arguments(
                 .view
                 .type_identities()
                 .values()
-                .any(|identity| *identity == reference.object_type())
+                .any(|identity| identity == reference.object_type())
         });
         let Some((expected_model, expected)) = expected_model else {
             let Some(supplied_model) = supplied_model else {
@@ -781,7 +781,7 @@ pub(crate) fn admit_model_arguments(
                 .view
                 .type_identities()
                 .iter()
-                .find(|(_, identity)| **identity == reference.object_type())
+                .find(|(_, identity)| *identity == reference.object_type())
             else {
                 return Err(Box::new(RunRefusal::WrongValueKind { position }));
             };
@@ -821,19 +821,19 @@ pub(crate) fn admit_model_arguments(
                 }));
             }
         }
-        if reference.universe() != expected {
+        if *reference.universe() != expected {
             return Err(Box::new(RunRefusal::Admission {
                 position,
                 refusal: ModelRefusal {
                     code: Code::ForeignReference,
                     cause: ModelRefusalCause::ForeignUniverse {
-                        actual: reference.universe().as_bytes().to_vec(),
-                        expected,
+                        actual: reference.universe().root_type().clone(),
+                        expected: expected.clone(),
                     },
                     detail: format!(
                         "reference names universe {}, expected {}",
-                        reference.universe(),
-                        expected
+                        reference.universe().root_type(),
+                        expected.root_type()
                     ),
                 },
             }));

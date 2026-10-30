@@ -373,7 +373,7 @@ fn anchor_context_form(unit: &str, document: &[u8], anchor: crate::NodeKey) -> S
     let node = graph
         .semantic_graph()
         .nodes()
-        .find(|node| crate::node.key().clone() == anchor)
+        .find(|node| *node.key() == anchor)
         .expect("the anchor is a node of the compiled graph");
     assert_eq!(node.semantic_form(), "operation_anchor");
     let context = node.semantic_type().expect("an anchor has a context");
@@ -394,7 +394,7 @@ fn assert_generated_frame(unit: &str, document: &[u8], site: &OperationSite, own
     let frame = graph
         .semantic_graph()
         .nodes()
-        .find(|node| crate::node.key().clone() == site.frame)
+        .find(|node| *node.key() == site.frame)
         .expect("the frame is a node of the compiled graph");
     assert_eq!(frame.semantic_form(), "frame");
     let checked = graph
@@ -580,7 +580,7 @@ fn a_call_site_frame_operation_resolves_as_a_replay_frame_target() {
             .unwrap_or_else(|refusal| panic!("{owner}::{name}: {refusal:?}"));
         let (context, frame) = resolve_target(graph, &site.site.frame_operation, &package_name)
             .unwrap_or_else(|refusal| panic!("{owner}::{name}: {refusal:?}"));
-        assert_eq!(crate::frame.frame().clone(), site.site.frame);
+        assert_eq!(frame.frame().clone(), site.site.frame);
         assert_eq!(frame.operation().declaring, context);
         assert_eq!(
             graph

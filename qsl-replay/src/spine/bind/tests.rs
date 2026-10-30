@@ -193,12 +193,12 @@ fn occurrences_in(
         .filter(|(key, _, _)| {
             graph
                 .semantic_graph()
-                .node(*key)
+                .node(key.clone())
                 .is_some_and(&keep)
         })
         .map(|(key, origin, _)| ScalarOccurrence {
             function: function.to_owned(),
-            application: wire(key),
+            application: wire(key.clone()),
             occurrence: OccurrenceKey::new(wire(key), origin),
         })
         .collect()
@@ -220,7 +220,7 @@ fn parameter_node(unit: &Unit, function: &str, name: &str) -> NodeKey {
         .iter()
         .position(|(parameter, _)| parameter == name)
         .expect("declared parameter");
-    wire(keys[position])
+    wire(keys[position].clone())
 }
 
 fn bound_range(lower: i128, upper: i128) -> CheckedScalarOperandRange {
@@ -282,13 +282,13 @@ fn tc_1053_step_1_operands_bind_in_application_order() {
                 ordinal: 0,
                 value: 7,
                 range: bound_range(0, 9),
-                source: argument_source(1, "a", a),
+                source: argument_source(1, "a", a.clone()),
             },
             BoundOperand {
                 ordinal: 1,
                 value: 2,
                 range: bound_range(0, 9),
-                source: argument_source(0, "b", b),
+                source: argument_source(0, "b", b.clone()),
             },
         ]
     );
@@ -360,7 +360,7 @@ fn tc_1053_step_2_literals_repeats_and_unary_operands() {
             .map(|o| (o.ordinal, o.source.clone()))
             .collect::<Vec<_>>(),
         [
-            (0, argument_source(0, "a", a)),
+            (0, argument_source(0, "a", a.clone())),
             (1, argument_source(0, "a", a))
         ]
     );
@@ -388,7 +388,7 @@ fn tc_1053_step_2_inline_literal_term_binds_without_a_node() {
     let operands = [CheckedScalarOperand {
         ordinal: 0,
         child: CheckedScalarOperandChild::InlineLiteral {
-            application: checked_node_id(occurrence.application),
+            application: super::wire_node_id(&occurrence.application),
             occurrence: CheckedOccurrence {
                 role: quire_contract_model::CheckedOccurrenceRole::Expression,
                 ordinal: 0,
@@ -517,7 +517,7 @@ fn tc_1053_step_3_reference_admission_equals_runs() {
 
     let foreign = quire_exact::ObjectReference::new(
         crate::spine::fixture_ids::universe(0xa5),
-        present.object_type(),
+        present.object_type().clone(),
         present.object().clone(),
     );
     let foreign_call = reference(foreign);
@@ -533,8 +533,8 @@ fn tc_1053_step_3_reference_admission_equals_runs() {
     );
 
     let dangling = quire_exact::ObjectReference::new(
-        present.universe(),
-        present.object_type(),
+        present.universe().clone(),
+        present.object_type().clone(),
         quire_exact::ObjectId::new("absent-from-the-population").unwrap(),
     );
     let dangling_call = reference(dangling);
@@ -580,7 +580,7 @@ fn tc_1053_step_4_occurrence_identity_refusals() {
     // An occurrence key the node lacks, while the node has another.
     let mut stale = sub.clone();
     stale.occurrence = OccurrenceKey::new(
-        node,
+        node.clone(),
         Origin::new(Role::new(sub.occurrence.origin().role().as_str()), 99),
     );
     assert_eq!(
@@ -626,7 +626,7 @@ fn tc_1053_step_4_occurrence_identity_refusals() {
     )
     .expect("a fixture key");
     let absent = ScalarOccurrence {
-        application: absent,
+        application: absent.clone(),
         occurrence: OccurrenceKey::new(absent, sub.occurrence.origin().clone()),
         function: "sub".to_owned(),
     };
@@ -653,11 +653,11 @@ fn tc_1053_step_4_occurrence_identity_refusals() {
     assert_eq!(
         refused(&unit, &under_eq, &equality[0]),
         BindRefusal::ScalarIdentity(BindIdentityCause::Operator {
-            node: equality[0].application
+            node: equality[0].application.clone()
         })
     );
     assert_eq!(
-        BindRefusal::ScalarIdentity(BindIdentityCause::Operator { node }).code(),
+        BindRefusal::ScalarIdentity(BindIdentityCause::Operator { node: node.clone() }).code(),
         Code::StaleDependency
     );
     assert_eq!(
@@ -721,7 +721,7 @@ fn tc_1053_step_5_unbounded_and_nested_operands() {
         .expect("the outer application refuses");
     let operands = [CheckedScalarOperand {
         ordinal: 0,
-        child: CheckedScalarOperandChild::GraphChild(checked_node_id(nested.application)),
+        child: CheckedScalarOperandChild::GraphChild(super::wire_node_id(&nested.application)),
         range: bound_range(0, 12),
     }];
     let Err(Halt::Refused(refusal)) = resolver.bind(&operands) else {

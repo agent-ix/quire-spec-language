@@ -40,14 +40,17 @@ fn clause_identity(unit: &Unit, clause: &str) -> (NodeKey, OccurrenceKey) {
         .state_clause(clause)
         .expect("the clause is declared");
     let node = wire(clause.identity());
-    (node, OccurrenceKey::new(node, clause.claim().clone()))
+    (
+        node.clone(),
+        OccurrenceKey::new(node, clause.claim().clone()),
+    )
 }
 
 /// `occurrence` at the next ordinal of its role.
 fn next_ordinal(occurrence: &OccurrenceKey) -> OccurrenceKey {
     let origin = occurrence.origin();
     OccurrenceKey::new(
-        occurrence.node(),
+        occurrence.node().clone(),
         quire_exact::Origin::new(origin.role().clone(), origin.ordinal() + 1),
     )
 }
@@ -507,7 +510,7 @@ fn a_stale_clause_node_refuses_naming_both_nodes_before_admission() {
     for drop_invocation in [false, true] {
         for bump_occurrence in [false, true] {
             let refusal = stale_identity(drop_invocation, |(node, occurrence)| {
-                *node = parent_order;
+                *node = parent_order.clone();
                 if bump_occurrence {
                     *occurrence = next_ordinal(occurrence);
                 }
@@ -517,8 +520,8 @@ fn a_stale_clause_node_refuses_naming_both_nodes_before_admission() {
                     &refusal,
                     ReplayRefusal::ClauseIdentity(mismatch)
                         if **mismatch == ClauseIdentityMismatch::Node {
-                            envelope: parent_order,
-                            recompiled: version_unchanged,
+                            envelope: parent_order.clone(),
+                            recompiled: version_unchanged.clone(),
                         }
                 ),
                 "{refusal:?}"

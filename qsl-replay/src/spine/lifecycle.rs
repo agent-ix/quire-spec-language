@@ -1036,7 +1036,7 @@ impl<'a> Resolution<'a> {
         // A library is compiled independently of whoever imports it, so its
         // recomputed `package_id` cannot depend on the importer.
         Ok(Library {
-            identity,
+            identity: identity.clone(),
             source: parsed.source().clone(),
             frame: Frame::new(
                 &parsed,

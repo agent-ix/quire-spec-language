@@ -596,12 +596,7 @@ fn function_node(compiled: &ComposedUnit, name: &str) -> Value {
         .graph()
         .function_identity(name)
         .expect("declared");
-    let bytes = quire_canonical::to_vec(
-        &qsl_semantics::check::node_wire::NodeRef(identity.clone()),
-        quire_canonical::Limits::new(u64::MAX),
-    )
-    .expect("a node id encodes");
-    serde_json::from_slice(&bytes).expect("a node id is JSON")
+    qsl_foundation::node_wire::node_key_to_json(&identity.clone()).expect("a node id encodes")
 }
 
 /// The wire node whose `node_id` is `id`.
