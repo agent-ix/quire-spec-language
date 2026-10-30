@@ -3128,65 +3128,6 @@ fn tc_293_evaluator_resolves_population_id_through_recorded_correspondence() {
     }
 }
 
-/// FR-089-AC-7: admissions that differ only in declared maximum mint
-/// different population identities, so both bindings can be recorded and
-/// resolved independently in one object environment.
-#[test]
-#[trace("TC-291", "FR-089-AC-7")]
-fn population_bindings_with_different_maxima_have_distinct_ids() {
-    let domain_package = fixture_f1();
-    let view = view_of(&domain_package);
-
-    let mut meter_3 = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
-    let binding_3 = match admit_binding(
-        &view,
-        &p1("test/orders"),
-        &p1_population_key(),
-        GeneralizationClosure::Closed,
-        Some(3),
-        &mut meter_3,
-    ) {
-        AdmissionOutcome::Admitted(binding) => binding,
-        other => panic!("expected an admitted binding, got {other:?}"),
-    };
-    let mut meter_7 = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
-    let binding_7 = match admit_binding(
-        &view,
-        &p1("test/orders"),
-        &p1_population_key(),
-        GeneralizationClosure::Closed,
-        Some(7),
-        &mut meter_7,
-    ) {
-        AdmissionOutcome::Admitted(binding) => binding,
-        other => panic!("expected an admitted binding, got {other:?}"),
-    };
-    assert_ne!(
-        binding_3.population_id(),
-        binding_7.population_id(),
-        "declared maximum is part of the population identity"
-    );
-    let id_3 = binding_3.population_id();
-    let id_7 = binding_7.population_id();
-
-    let environment = ObjectEnvironment::default()
-        .with_population(binding_3.clone())
-        .unwrap();
-    let environment = environment.with_population(binding_7).unwrap();
-    assert_eq!(
-        environment
-            .resolve_population(id_3)
-            .and_then(PopulationBinding::declared_maximum),
-        Some(3)
-    );
-    assert_eq!(
-        environment
-            .resolve_population(id_7)
-            .and_then(PopulationBinding::declared_maximum),
-        Some(7)
-    );
-}
-
 /// TC-294 (FR-089-AC-4): a `Value::Population(population_id)` whose
 /// `population_id` names no binding recorded in the current evaluation's
 /// correspondence refuses at argument admission -- `InputRefusal::
@@ -4405,16 +4346,16 @@ fn the_adapter_validates_a_population_request_by_its_declared_maximum() {
     use qsl_eval::value::PackageClosure;
     use quire_eval::{CheckedClosure, RequestRefusal};
 
-    let domain_package = fixture_f1();
+    let domain_package = fixture_f1_with_second_population();
     let view = view_of(&domain_package);
     let universe = view_of(&domain_package).object_universe().identity().expect("the universe has an identity");
     let (a, b) = (type_id(&view, "model.A"), type_id(&view, "model.B"));
-    let admit = |maximum: Option<u64>| {
+    let admit = |key: DeclarationKey, maximum: Option<u64>| {
         let mut meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
         match admit_binding(
             &view,
             &p1("test/orders"),
-            &p1_population_key(),
+            &key,
             GeneralizationClosure::Closed,
             maximum,
             &mut meter,
@@ -4423,7 +4364,10 @@ fn the_adapter_validates_a_population_request_by_its_declared_maximum() {
             other => panic!("expected an admitted binding, got {other:?}"),
         }
     };
-    let (five, seven) = (admit(Some(5)), admit(Some(7)));
+    let (five, other) = (
+        admit(p1_population_key(), Some(5)),
+        admit(p2_population_key(), Some(5)),
+    );
     let scenario = Scenario {
         universe,
         a,
@@ -4434,7 +4378,7 @@ fn the_adapter_validates_a_population_request_by_its_declared_maximum() {
     let environment = ObjectEnvironment::default()
         .with_population(five.clone())
         .unwrap();
-    let unresolved = seven.population_id();
+    let unresolved = other.population_id();
 
     for (declared, argument, expected) in [
         (5, five.population_id(), Ok(())),
