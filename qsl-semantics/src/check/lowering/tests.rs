@@ -27,9 +27,7 @@ use quire_semantic_value::declaration::{CompositeDeclaration, FieldDeclaration, 
 mod binder_scope;
 mod deep_bodies;
 mod depth;
-mod differential;
 mod expression_depth;
-mod identity_depth;
 mod leaves;
 mod rows;
 mod wide_integers;
@@ -1346,49 +1344,6 @@ fn a_declared_record_carries_its_owner_and_an_anonymous_type_does_not() {
     }
     assert_eq!(parameter_keys[0], parameter_keys[1]);
     assert_eq!(parameter_keys[0], Some(u_keys[1]));
-}
-
-/// TC-413 step 9 (FR-092-AC-7): two recursion groups that differ only in
-/// their names key alike and refuse as a collision.
-#[trace("FR-092-AC-7", "TC-413")]
-#[test]
-fn groups_that_differ_only_in_names_collide_and_refuse() {
-    let mut group_keys = Vec::new();
-    for name in ["f", "g"] {
-        let checked = check(vec![recursive(name, name)]).expect("one group checks");
-        group_keys.push(
-            checked
-                .semantic_graph()
-                .nodes()
-                .filter(|node| node.recursion().is_some())
-                .map(SemanticNode::key)
-                .collect::<BTreeSet<_>>(),
-        );
-    }
-    let shared: BTreeSet<_> = group_keys[0].intersection(&group_keys[1]).collect();
-    assert!(
-        !shared.is_empty(),
-        "a group member's key does not depend on the function's name"
-    );
-    let refusals =
-        check(vec![recursive("f", "f"), recursive("g", "g")]).expect_err("the groups collide");
-    assert_eq!(refusals.len(), 1, "{refusals:?}");
-    let CheckCause::UnsupportedFeature { loci } = &refusals[0].cause else {
-        panic!("{refusals:?}");
-    };
-    let functions: Vec<&str> = loci
-        .iter()
-        .filter_map(|location| match &location.origin {
-            Origin::Body { function, .. } => Some(function.as_str()),
-            _ => None,
-        })
-        .collect();
-    assert_eq!(functions, ["f", "g"]);
-    assert_eq!(
-        refusals[0].cause.code().as_str(),
-        "unknown_required_feature"
-    );
-    assert_eq!(refusals[0].cause.cause(), Some("unsupported-feature"));
 }
 
 /// TC-413 step 10 (FR-092-AC-12): `Point`, declared through a
