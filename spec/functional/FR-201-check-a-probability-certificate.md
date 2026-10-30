@@ -141,11 +141,14 @@ product state form `{product_key}` and the second as `{member}`.
   with its own graph code. When the objective has a fairness set, it SHALL
   derive the maximal fair end components using FR-200's refinement before
   applying QSpec FR-412's certificate conditions.
-- It SHALL apply QSpec FR-412's exact-rational conditions, threshold-side
-  rule and first-failure ordering, and QSpec FR-331's rejection vocabulary.
-  QSL's internal rule and locus variants map to those published forms as the
-  table above specifies. Malformed certificate members are checked before
-  any re-enumeration.
+- It SHALL apply QSpec FR-412's exact-rational conditions and threshold-side
+  rule, and QSpec FR-331's rejection vocabulary. It SHALL accept when the
+  conditions hold and the initial state's value is on the claim's side of the
+  threshold, and report the side; otherwise it SHALL reject with the rule and
+  locus the table above gives the first failing condition and state in
+  canonical order. QSL's internal rule and locus variants map to the published
+  forms as the table above specifies. It SHALL check the `Malformed` members
+  before any re-enumeration.
 - For a `quantile q of M >= c` claim over every scheduler, proved by an
   `Upper` certificate `y` for `max E[Y]`, `Y = [activated] · ([M < c] − q)`
   (ADR-028 XF-2, CE-4): when `y(s0) < 0` the checker SHALL accept with side
