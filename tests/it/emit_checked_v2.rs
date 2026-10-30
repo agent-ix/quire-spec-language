@@ -27,6 +27,16 @@ fn args(items: &[&Path]) -> Vec<OsString> {
         .collect()
 }
 
+/// The explicit package name every emission here passes.
+const PACKAGE_NAME: &str = "fixture";
+
+/// `items` after the required `--package-name` flag.
+fn with_name(items: &[&Path]) -> Vec<OsString> {
+    let mut command = strings(&["--package-name", PACKAGE_NAME]);
+    command.extend(args(items));
+    command
+}
+
 fn strings(items: &[&str]) -> Vec<OsString> {
     items.iter().map(OsString::from).collect()
 }
@@ -94,7 +104,7 @@ fn the_output_is_the_producers_bytes_and_reads_back() {
     let program = program.as_path();
 
     let mut stdout = Vec::new();
-    let mut command = strings(&["--model"]);
+    let mut command = strings(&["--package-name", PACKAGE_NAME, "--model"]);
     command.extend(args(&[model, program]));
     run(&command, &mut stdout).expect("the fixture emits");
     assert!(!stdout.is_empty());
@@ -102,7 +112,7 @@ fn the_output_is_the_producers_bytes_and_reads_back() {
     read_back(&stdout, &[document]);
 
     let mut elsewhere = Vec::new();
-    let mut command = strings(&["--out"]);
+    let mut command = strings(&["--package-name", PACKAGE_NAME, "--out"]);
     command.extend(args(&[&out]));
     command.extend(strings(&["--model"]));
     command.extend(args(&[model, program]));
@@ -130,7 +140,7 @@ fn the_switch_example_pair_emits_a_transition_and_is_admitted() {
     let program = Path::new("examples/switch-transition/switch.native");
     let document = std::fs::read(model).unwrap();
     let source = switch_source();
-    let mut command = strings(&["--model"]);
+    let mut command = strings(&["--package-name", PACKAGE_NAME, "--model"]);
     command.extend(args(&[model, program]));
     let bytes = emit(&Request::parse(&command).unwrap()).expect("the transition form emits");
     assert_eq!(bytes, producer_bytes(program, &source, &[&document]));
@@ -195,7 +205,7 @@ fn the_switch_transition_reads_back_typed_subject_input_post_claim_and_source() 
     let program = Path::new(SWITCH_SOURCE);
     let document = std::fs::read(model).unwrap();
     let source = switch_source();
-    let mut command = strings(&["--model"]);
+    let mut command = strings(&["--package-name", PACKAGE_NAME, "--model"]);
     command.extend(args(&[model, program]));
     let bytes = emit(&Request::parse(&command).unwrap()).expect("the transition form emits");
     let package = read_back(&bytes, &[&document]);
@@ -444,7 +454,7 @@ fn the_typed_inputs_keep_the_declared_order_of_two_parameters() {
     let path = directory.path().join("switch2.semantic-ir.json");
     let document = serde_json::to_vec(&model).unwrap();
     std::fs::write(&path, &document).unwrap();
-    let mut command = strings(&["--model"]);
+    let mut command = strings(&["--package-name", PACKAGE_NAME, "--model"]);
     command.extend(args(&[&path, Path::new(SWITCH_SOURCE)]));
     let bytes = emit(&Request::parse(&command).unwrap()).expect("the two-input form emits");
     let package = read_back(&bytes, &[&document]);
@@ -479,7 +489,7 @@ fn the_typed_inputs_keep_the_declared_order_of_two_parameters() {
 fn a_malformed_switch_transition_is_refused_not_read_as_a_generic_term() {
     let model = Path::new(SWITCH_MODEL);
     let document = std::fs::read(model).unwrap();
-    let mut command = strings(&["--model"]);
+    let mut command = strings(&["--package-name", PACKAGE_NAME, "--model"]);
     command.extend(args(&[model, Path::new(SWITCH_SOURCE)]));
     let bytes = emit(&Request::parse(&command).unwrap()).unwrap();
     let wire: Value = serde_json::from_slice(&bytes).unwrap();
@@ -539,7 +549,7 @@ fn a_refused_source_writes_nothing_and_exits_nonzero() {
     let directory = tempfile::tempdir().unwrap();
     let program = spine_model_source(directory.path());
     let mut stdout = Vec::new();
-    let refusal = run(&args(&[&program]), &mut stdout).expect_err("the model is not supplied");
+    let refusal = run(&with_name(&[&program]), &mut stdout).expect_err("the model is not supplied");
     assert!(matches!(refusal, Error::Producer(_)), "{refusal:?}");
     assert_ne!(refusal.exit_code(), 0);
     assert!(!refusal.to_string().is_empty());
@@ -547,17 +557,28 @@ fn a_refused_source_writes_nothing_and_exits_nonzero() {
 
     for bad in [
         strings(&[]),
-        strings(&["--model"]),
-        strings(&["--bogus", "x"]),
-        strings(&["--library", "no-equals", "x"]),
-        strings(&["a.native", "b.native"]),
+        strings(&["--package-name", PACKAGE_NAME, "--model"]),
+        strings(&["--package-name", PACKAGE_NAME, "--bogus", "x"]),
+        strings(&[
+            "--package-name",
+            PACKAGE_NAME,
+            "--library",
+            "no-equals",
+            "x",
+        ]),
+        strings(&["--package-name", PACKAGE_NAME, "a.native", "b.native"]),
+        strings(&["a.native"]),
     ] {
         let refusal = run(&bad, &mut stdout).expect_err("a malformed command line");
         assert!(matches!(refusal, Error::Usage), "{bad:?}: {refusal:?}");
         assert_ne!(refusal.exit_code(), 0);
     }
     let missing = run(
-        &strings(&["/nonexistent/emit-checked-v2.native"]),
+        &strings(&[
+            "--package-name",
+            PACKAGE_NAME,
+            "/nonexistent/emit-checked-v2.native",
+        ]),
         &mut stdout,
     )
     .expect_err("an unreadable file");
@@ -583,13 +604,13 @@ fn the_size_ceiling_is_exact_and_over_cap_inputs_refuse_explicitly() {
     let program = directory.path().join("at-cap.native");
     std::fs::write(&program, &text).unwrap();
     let mut stdout = Vec::new();
-    run(&args(&[&program]), &mut stdout).expect("a source at the ceiling emits");
+    run(&with_name(&[&program]), &mut stdout).expect("a source at the ceiling emits");
     assert!(!stdout.is_empty());
 
     let over = directory.path().join("over-cap.native");
     std::fs::write(&over, format!("{text} ")).unwrap();
     let mut refused = Vec::new();
-    let refusal = run(&args(&[&over]), &mut refused).expect_err("one byte over the ceiling");
+    let refusal = run(&with_name(&[&over]), &mut refused).expect_err("one byte over the ceiling");
     assert!(matches!(refusal, Error::Producer(_)), "{refusal:?}");
     assert_eq!(refusal.exit_code(), 22, "{refusal}");
     assert!(!refusal.to_string().contains("--limit"), "{refusal}");
@@ -597,7 +618,7 @@ fn the_size_ceiling_is_exact_and_over_cap_inputs_refuse_explicitly() {
 
     let model = directory.path().join("big.semantic-ir.json");
     std::fs::write(&model, vec![b' '; MAX_SOURCE_BYTES + 1]).unwrap();
-    let mut command = strings(&["--model"]);
+    let mut command = strings(&["--package-name", PACKAGE_NAME, "--model"]);
     command.extend(args(&[&model, &program]));
     let refusal = run(&command, &mut refused).expect_err("an over-cap model file");
     assert!(matches!(refusal, Error::TooLarge { .. }), "{refusal:?}");
@@ -606,7 +627,7 @@ fn the_size_ceiling_is_exact_and_over_cap_inputs_refuse_explicitly() {
         refusal.to_string().contains("big.semantic-ir.json"),
         "{refusal}"
     );
-    let mut command = strings(&["--library"]);
+    let mut command = strings(&["--package-name", PACKAGE_NAME, "--library"]);
     command.push(OsString::from(format!("lib={}", model.display())));
     command.extend(args(&[&program]));
     let refusal = run(&command, &mut refused).expect_err("an over-cap library file");
@@ -636,7 +657,7 @@ fn accepted_execution_points_are_emitted_and_bad_points_refuse() {
         file
     };
     let command = |extra: &[&Path]| {
-        let mut command = strings(&["--model"]);
+        let mut command = strings(&["--package-name", PACKAGE_NAME, "--model"]);
         command.extend(args(&[model]));
         for file in extra {
             command.extend(strings(&["--execution-points"]));
@@ -726,7 +747,7 @@ fn several_accepted_execution_points_each_reach_their_clause() {
         r#"{"Q0": {"kind": "pre", "operation": "set"}, "Q1": {"kind": "post", "operation": "set"}}"#,
     )
     .unwrap();
-    let mut command = strings(&["--model"]);
+    let mut command = strings(&["--package-name", PACKAGE_NAME, "--model"]);
     command.extend(args(&[model]));
     command.extend(strings(&["--execution-points"]));
     command.extend(args(&[&file, &program]));
@@ -758,7 +779,7 @@ fn an_over_cap_points_file_is_refused_explicitly() {
     let directory = tempfile::tempdir().unwrap();
     let points = directory.path().join("big-points.json");
     std::fs::write(&points, vec![b' '; MAX_SOURCE_BYTES + 1]).unwrap();
-    let mut command = strings(&["--model"]);
+    let mut command = strings(&["--package-name", PACKAGE_NAME, "--model"]);
     command.extend(args(&[Path::new(
         "examples/switch-transition/switch.semantic-ir.json",
     )]));
@@ -791,7 +812,7 @@ fn the_adjust_operation_emits_distinct_pre_and_post_clauses_with_their_points() 
         r#"{"P1": {"kind": "pre", "operation": "adjust"}, "Q2": {"kind": "post", "operation": "adjust"}}"#,
     )
     .unwrap();
-    let mut command = strings(&["--model"]);
+    let mut command = strings(&["--package-name", PACKAGE_NAME, "--model"]);
     command.extend(args(&[model]));
     command.extend(strings(&["--execution-points"]));
     command.extend(args(&[&file, program]));
