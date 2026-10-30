@@ -2,8 +2,8 @@
 //! FR-128 (ADR-018 CX-3, DL-5, UE-5, UE-6): [`replay_model_trace`], the
 //! replay facade's entry for a finite-prefix model counterexample.
 //!
-//! It recompiles the request's package by FR-098's rules, refuses a stale
-//! `package_id`, re-admits the subject from the byte provision and the
+//! It recompiles the request's package by FR-098's rules,
+//! re-admits the subject from the byte provision and the
 //! request's universes, re-executes each step of the prefix through FR-120's
 //! `ModelSystem` (a step's post-state digest selects its successor among the
 //! post-states of its transition identity), and then checks what the
@@ -23,7 +23,7 @@
 //!
 //! The envelope's `clause_node` and `occurrence_key` resolve the item
 //! before any admission. The deadlock-freedom item's identity is
-//! [`deadlock_freedom_clause`] of the recompiled `package_id`; a payload
+//! [`deadlock_freedom_clause`] of the recompiled package; a payload
 //! only that item has, under any other identity, or an authored payload
 //! under that identity, refuses `stale_dependency`/`content-mismatch`. Any
 //! other identity names an authored clause: the recompiled package's
@@ -65,7 +65,7 @@ use qsl_foundation::digest::{DigestRecord};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId};
-use qsl_semantics::library::PackageId;
+use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::{Meter, Rational, ScalarLimits};
 use quire_semantic_value::catalog::{Category, InternalFault};
@@ -653,8 +653,7 @@ impl StrongFairnessHint {
 }
 
 /// The result of [`replay_model_trace`]: the settlement, the strong-fairness
-/// hints of a reproduced liveness lasso (FR-133) and the recompiled
-/// `package_id` it was settled against.
+/// hints of a reproduced liveness lasso (FR-133).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ModelTraceReplayResult {
     /// The settlement.
@@ -662,8 +661,6 @@ pub struct ModelTraceReplayResult {
     /// The hints, in the model's canonical operation order; empty unless the
     /// settlement reproduced a lasso.
     pub hints: Vec<StrongFairnessHint>,
-    /// The recompiled `package_id`.
-    pub package_id: PackageId,
 }
 
 /// The disagreement of a replay that reads `replayed` where a model
@@ -764,7 +761,7 @@ pub fn replay_model_trace(
 /// hints.
 ///
 /// It skips FR-128's recompile, identity, fairness-set and admission
-/// checks and binds no `package_id`, so it is test support only: the
+/// checks so it is test support only: the
 /// production path is [`replay_model_trace`].
 ///
 /// # Errors
@@ -997,10 +994,10 @@ impl ProtocolReplay<'_> {
     }
 }
 
-/// The recompiled package and its `package_id` record.
-type ReplayPackage<'p> = (&'p CheckedPackage, DigestRecord);
+/// The recompiled package and its library name.
+type ReplayPackage<'p> = (&'p CheckedPackage, LibraryName);
 
-/// FR-128's recompile, `package_id` check and subject re-admission, then
+/// FR-128's recompile and subject re-admission, then
 /// `replay` over the recompiled package, the subject's simulation request
 /// and the request's evaluation meter.
 fn replay_on<P: crate::witness::FamilyPayload>(
@@ -1023,13 +1020,6 @@ fn replay_on<P: crate::witness::FamilyPayload>(
         replay_limits,
     )?;
     let compiled = recompile(&request, &limits)?;
-    let package_id = compiled.emitted.package().package_id();
-    if !package_id.matches(&envelope.package_id()) {
-        return Err(ReplayRefusal::PackageIdMismatch {
-            requested: envelope.package_id(),
-            recompiled: package_id,
-        });
-    }
     let documents = request.byte_provision().snapshots();
     let meter = request.accounting_limits();
     let package = compiled.checked.package();
@@ -1044,12 +1034,8 @@ fn replay_on<P: crate::witness::FamilyPayload>(
         expansion: subject.expansion,
         meter,
     };
-    let (settlement, hints) = replay((package, package_id.record()), &simulation, meter)?;
-    Ok(ModelTraceReplayResult {
-        settlement,
-        hints,
-        package_id,
-    })
+    let (settlement, hints) = replay((package, compiled.package.clone()), &simulation, meter)?;
+    Ok(ModelTraceReplayResult { settlement, hints })
 }
 
 pub(super) fn refused(refusal: ModelTraceRefusal) -> ReplayRefusal {
@@ -1057,7 +1043,7 @@ pub(super) fn refused(refusal: ModelTraceRefusal) -> ReplayRefusal {
 }
 
 /// FR-128: resolve the envelope's item by its `clause_node` and
-/// `occurrence_key` against the recompiled package `package_id`. The
+/// `occurrence_key` against the recompiled package `package`. The
 /// derived deadlock-freedom item's identity is [`deadlock_freedom_clause`]
 /// and the derived race-freedom item's [`race_freedom_clause`]; the payload
 /// must be one only that item has, and a payload of that shape under any
@@ -1071,18 +1057,21 @@ pub(super) fn refused(refusal: ModelTraceRefusal) -> ReplayRefusal {
 fn resolve_item<'p, T: SubjectTransition>(
     envelope: &WitnessEnvelope<TemporalCounterexample<T>>,
     package: &'p CheckedPackage,
-    package_id: &DigestRecord,
+    package_name: &LibraryName,
     check_fairness: impl FnOnce(&CheckedTemporalClause) -> Result<(), ReplayRefusal>,
 ) -> Result<Option<&'p CheckedTemporalClause>, ReplayRefusal> {
-    let (deadlock_node, deadlock_key) = deadlock_freedom_clause(package_id);
-    let (race_node, race_key) = race_freedom_clause(package_id);
-    let (lock_node, lock_key) = time_lock_freedom_clause(package_id);
-    let names = |node: NodeKey, key: &OccurrenceKey| {
+    let derived = |result: Result<_, quire_exact::InvalidNodeKey>| {
+        result.map_err(|_| fault("a-derived-item-identity-is-admissible"))
+    };
+    let (deadlock_node, deadlock_key) = derived(deadlock_freedom_clause(package_name))?;
+    let (race_node, race_key) = derived(race_freedom_clause(package_name))?;
+    let (lock_node, lock_key) = derived(time_lock_freedom_clause(package_name))?;
+    let names = |node: &NodeKey, key: &OccurrenceKey| {
         envelope.clause_node() == node && envelope.occurrence_key() == key
     };
-    let on_deadlock = names(deadlock_node, &deadlock_key);
-    let on_race = names(race_node, &race_key);
-    let on_lock = names(lock_node, &lock_key);
+    let on_deadlock = names(&deadlock_node, &deadlock_key);
+    let on_race = names(&race_node, &race_key);
+    let on_lock = names(&lock_node, &lock_key);
     let (for_deadlock, for_race) = derived_items(envelope.family_payload());
     let for_lock = matches!(envelope.family_payload().kind, CounterexampleKind::TimeLock);
     if (on_deadlock && for_deadlock) || (on_race && for_race) || (on_lock && for_lock) {
@@ -1090,7 +1079,7 @@ fn resolve_item<'p, T: SubjectTransition>(
     }
     let identity_mismatch = |expected_node, expected_key| {
         refused(ModelTraceRefusal::ItemIdentity {
-            clause_node: envelope.clause_node(),
+            clause_node: envelope.clause_node().clone(),
             occurrence_key: Box::new(envelope.occurrence_key().clone()),
             expected_node,
             expected_key: Box::new(expected_key),
@@ -1107,21 +1096,21 @@ fn resolve_item<'p, T: SubjectTransition>(
     }
     if on_deadlock || on_race || on_lock {
         return Err(identity_mismatch(
-            envelope.clause_node(),
+            envelope.clause_node().clone(),
             envelope.occurrence_key().clone(),
         ));
     }
     let found = package.graph().temporal_clauses().iter().find(|candidate| {
-        candidate.identity().clone() == envelope.clause_node()
+        candidate.identity() == envelope.clause_node()
     });
     let Some(found) = found else {
         return Err(refused(ModelTraceRefusal::UnknownTemporalClause {
-            clause_node: envelope.clause_node(),
+            clause_node: envelope.clause_node().clone(),
         }));
     };
-    let expected = OccurrenceKey::new(envelope.clause_node(), found.claim().clone());
+    let expected = OccurrenceKey::new(envelope.clause_node().clone(), found.claim().clone());
     if expected != *envelope.occurrence_key() {
-        return Err(identity_mismatch(envelope.clause_node(), expected));
+        return Err(identity_mismatch(envelope.clause_node().clone(), expected));
     }
     let clause = found.clause();
     check_fairness(clause)?;

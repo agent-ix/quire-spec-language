@@ -3,7 +3,7 @@
 //! a state-graph item instance's FR-168 outcome to its terminal record.
 //!
 //! Evidence settles only through its replay (FR-170): the caller's `replay`
-//! supplies the result, and the map checks its `package_id`. A `Witnessed`
+//! supplies the result. A `Witnessed`
 //! or `Holds` outcome settles `proved` only after the core's own
 //! [`check_state_graph`], which the map runs itself against the request's
 //! own package, accepts its certificate: a rejected certificate settles
@@ -16,7 +16,6 @@
 use qsl_eval::model_subject::ModelSubject;
 use qsl_foundation::digest::DigestRecord;
 use qsl_semantics::check::CheckedStateGraphClaim;
-use qsl_semantics::library::PackageId;
 use quire_exact::Cancel;
 
 use crate::certificate::state_graph::{
@@ -48,13 +47,11 @@ pub enum GraphReplaySettlement {
 }
 
 /// The result of replaying a state-graph outcome's evidence: the settlement
-/// and the recompiled `package_id` it was settled against.
+/// it was settled to.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GraphReplayResult {
     /// The settlement.
     pub settlement: GraphReplaySettlement,
-    /// The recompiled `package_id`.
-    pub package_id: PackageId,
     /// Each claim predicate replay evaluated and its Boolean value, in
     /// evidence evaluation order.
     pub evaluated_predicates: Vec<(qsl_semantics::check::PredicateRole, bool)>,
@@ -111,21 +108,16 @@ pub struct StateGraphRecord {
     pub undefined: Option<GraphUndefined>,
 }
 
-/// FR-169: settle `instance`, decided by a run under `method` over the
-/// package `package_id`, as one terminal record. A `Witnessed` or `Holds`
-/// outcome's certificate is checked by [`check_state_graph`] over `subject`
-/// for `claim`'s instance, after the subject's own package is emitted and
-/// its `package_id` equals `package_id` (FR-282; another package settles
-/// `Inconclusive(ReplayRefused(stale_dependency))`). Evidence is handed to
-/// `replay` (FR-170) and settles by its result: reproduced against
-/// `package_id` settles the outcome's row; a result settled against any
-/// other package is `ReplayRefused(stale_dependency)`; a disagreement is
+/// FR-169: settle `instance`, decided by a run under `method`, as one
+/// terminal record. A `Witnessed` or `Holds` outcome's certificate is checked
+/// by [`check_state_graph`] over `subject` for `claim`'s instance. Evidence is
+/// handed to `replay` (FR-170) and settles by its result: reproduced settles
+/// the outcome's row; a disagreement is
 /// `ReplayParity`; a stopped trap replay is `Incomplete(LimitReached)`; a
 /// refusal is `ReplayRefused`, except an internal fault, which is `Failed`.
 pub fn settle_state_graph(
     instance: &StateGraphInstanceOutcome,
     method: &StateGraphMethod,
-    package_id: &DigestRecord,
     subject: &ModelSubject<'_>,
     claim: &CheckedStateGraphClaim,
     cancel: &Cancel,
@@ -162,7 +154,6 @@ pub fn settle_state_graph(
             over: instance.over.clone(),
         },
         limits: &method.limits,
-        package_id,
         cancel,
     };
     let mut end = None;
@@ -181,7 +172,7 @@ pub fn settle_state_graph(
             ..
         } if !one_per_initial(paths, initial) => Row::failed(),
         StateGraphOutcome::Witnessed { paths, certificate } => check.row(certificate, || {
-            replayed(replay(instance), package_id, || {
+            replayed(replay(instance), || {
                 Row::proved(
                     ProofBasis::Witness {
                         sources: sources(paths),
@@ -210,7 +201,7 @@ pub fn settle_state_graph(
             paths,
             end: run_end,
             ..
-        } => replayed(replay(instance), package_id, || {
+        } => replayed(replay(instance), || {
             // Only a `WellDefinednessUnchecked` record states the run's end
             // and the limit that stopped it.
             end = Some(run_end.clone());
@@ -224,15 +215,15 @@ pub fn settle_state_graph(
                 })
             }
         }),
-        StateGraphOutcome::Trapped { .. } => replayed(replay(instance), package_id, || {
+        StateGraphOutcome::Trapped { .. } => replayed(replay(instance), || {
             Row::refuted(SettlementBasis::ClosedScope)
         }),
-        StateGraphOutcome::PathPair { .. } => replayed(replay(instance), package_id, || {
+        StateGraphOutcome::PathPair { .. } => replayed(replay(instance), || {
             Row::refuted(SettlementBasis::DecisiveCounterexample)
         }),
         StateGraphOutcome::Undefined {
             undefined: found, ..
-        } => replayed(replay(instance), package_id, || {
+        } => replayed(replay(instance), || {
             undefined = Some(found.clone());
             Row::refuted(SettlementBasis::DecisiveCounterexample)
         }),
@@ -296,42 +287,27 @@ fn record_of(
 struct Certified<'r, 'a> {
     request: StateGraphCertificateRequest<'a>,
     limits: &'r ModelCheckLimits,
-    package_id: &'r DigestRecord,
     cancel: &'r Cancel,
 }
 
 impl Certified<'_, '_> {
-    /// `accepted`'s row when the request's own package is the run's and the
-    /// core accepts `certificate`; the check's row otherwise.
+    /// `accepted`'s row when the core accepts `certificate`; the check's row
+    /// otherwise.
     fn row(&self, certificate: &StateGraphCertificate, accepted: impl FnOnce() -> Row) -> Row {
-        Row::bound(
-            self.package_id,
-            self.request.subject.simulation.package,
-            self.cancel,
-            || {
-                Row::of_check(
-                    check_state_graph(&self.request, certificate, self.limits, self.cancel),
-                    accepted,
-                )
-            },
+        Row::of_check(
+            check_state_graph(&self.request, certificate, self.limits, self.cancel),
+            accepted,
         )
     }
 }
 
 /// The row of a replay `result`: `reproduced`'s when it reproduced the
-/// evidence against `package_id`.
+/// evidence.
 fn replayed(
     result: Result<GraphReplayResult, ReplayRefusal>,
-    package_id: &DigestRecord,
     reproduced: impl FnOnce() -> Row,
 ) -> Row {
     match result {
-        Ok(GraphReplayResult {
-            package_id: replayed,
-            ..
-        }) if !replayed.matches(package_id) => {
-            Row::stale_dependency(*package_id, replayed.record())
-        }
         Ok(GraphReplayResult { settlement, .. }) => match settlement {
             GraphReplaySettlement::Reproduced => reproduced(),
             GraphReplaySettlement::Inconclusive(cause) => {
@@ -345,10 +321,6 @@ fn replayed(
                 Some(reached),
             ),
         },
-        Err(ReplayRefusal::PackageIdMismatch {
-            requested,
-            recompiled,
-        }) => Row::stale_dependency(requested, recompiled.record()),
         Err(refusal) => Row::refused(&refusal),
     }
 }
