@@ -434,15 +434,15 @@ impl<'s> Binders<'s> {
 /// [`node_key`] keys. [`node_key`] is a function of these members alone, so
 /// equal content has one key, which [`Lowering::insert_node`] computes once.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-struct NodeContent {
-    node_tag: NodeTag,
-    semantic_form: &'static str,
-    semantic_type: Option<NodeRef>,
-    declaration: Option<Vec<Identifier>>,
-    owner: Option<Owner>,
+pub(crate) struct NodeContent {
+    pub(crate) node_tag: NodeTag,
+    pub(crate) semantic_form: &'static str,
+    pub(crate) semantic_type: Option<NodeRef>,
+    pub(crate) declaration: Option<Vec<Identifier>>,
+    pub(crate) owner: Option<Owner>,
     /// QSpec FR-464's `owner_model`: set for a `protocol_clause` node alone.
-    owner_model: Option<NodeKey>,
-    body: BodyTerm,
+    pub(crate) owner_model: Option<NodeKey>,
+    pub(crate) body: BodyTerm,
 }
 
 /// A node whose key waits on its recursion group (FR-092 "Recursion
