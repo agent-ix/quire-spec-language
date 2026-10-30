@@ -191,7 +191,7 @@ fn the_context_holds_every_case_with_the_keys_the_check_minted() {
 
 /// A context binds the entire emitted package, so equal names cannot make
 /// different checked bodies interchangeable before a consumer looks up nodes.
-#[trace("FR-394-AC-1")]
+#[trace("FR-394-AC-6")]
 #[test]
 fn admitted_context_exposes_exact_package_bytes() {
     let colors = admit_ok(&format!("{HEADER}{COLORS}"));

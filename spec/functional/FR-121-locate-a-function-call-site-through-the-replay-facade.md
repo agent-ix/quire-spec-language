@@ -109,6 +109,8 @@ can bound a domain nested inside a state field's type as it bounds the field.
   - for a `QualifiedName`, a `FunctionSite`: `function` (`WireNodeId`,
     the function declaration's `function` node, FR-092), `declaration`
     (`OccurrenceKey`, that node's `declaration` occurrence),
+    `obligation_identity` (the QSL-issued function-contract
+    `ObligationIdentity` for that occurrence),
     `parameters`, `Vec<(Identifier, WireNodeId)>`, in declared order, and
     `value_parity` (`Option<ValueParitySite>`, the function-value parity
     preimage and the obligation identity QSL mints from it, `Some` exactly
@@ -116,7 +118,9 @@ can bound a domain nested inside a state field's type as it bounds the field.
   - for an `OperationName`, an `OperationSite`: `frame_operation`
     (`FrameOperation`: `object`, the declaring object's `QualifiedName`,
     and `operation`, the operation's `Identifier`), `anchor` and `frame`
-    (`WireNodeId`), `frame_occurrence` (`OccurrenceKey`) and `clauses`
+    (`WireNodeId`), `frame_occurrence` (`OccurrenceKey`),
+    `obligation_identity` (the QSL-issued operation-frame
+    `ObligationIdentity` for that occurrence), and `clauses`
     (`Vec<ClauseSite>`, each `name: Identifier`, `node: WireNodeId` and
     `occurrence: OccurrenceKey`, in declaration order);
   - for a `ClauseName`, a `ClauseSite`: `name`, `node` and `occurrence`;
@@ -363,6 +367,8 @@ can bound a domain nested inside a state field's type as it bounds the field.
 | FR-121-AC-28 | For the ConfigVersion domain package plus a record value type `Span` declaring `lo: Integer` then `hi: Int[0, 9]` and an object type `Box` whose fields are `span: Span`, `tags`, an unbounded collection of `Integer`, and `note`, an optional `Span`, a field selection of `Config::Box` returns `DomainKey::Node` on `Box`'s `object_type` node with paths: `[1]` for `span` with no steps; `[1, 0]` for `span` with `[Field(lo)]` and `[1, 1]` with `[Field(hi)]`; `[2]` for `tags` and `[2, 0]` with `[Element]`; `[0, 0, 1]` for `note` with `[Payload, Field(hi)]`. `FieldName::new` and `FieldName::nested` with no steps give equal keys. `span` with `[Field(mid)]`, `[Element]` or `[Field(lo), Element]`, `tags` with `[Payload]` and `note` with `[Field(lo)]` each refuse `CallSiteRefusal::UnknownField` (code `missing_declaration`), pairing the `FieldName` with the package. | Test (TC-516) |
 | FR-121-AC-29 | For a domain package whose record `Node` declares `value: Integer` then `next`, an optional `Node`, and whose object type `List` declares one field `head: Node`, `Config::List.head` with `[Field(next), Payload]` reaches `Node` again and returns path `[0]`, where `Node` was first entered: the `Recursive` domain key ADR-014 §4's extent walk gives `Node` under `head`, equal to `head`'s key with no steps. `[Field(value)]` returns `[0, 0]`, and `[Field(next), Payload, Field(value)]` refuses `CallSiteRefusal::UnknownField`. With a union `Shape` declaring member `Circle(r: Integer)` then `Rect(w: Integer, h: Int[0, 9])`, and an object type `Figure` whose one field is `shape: Shape`, `Config::Figure.shape` with `[Member(Rect, 1)]` returns `[0, 2]` and with `[Member(Circle, 1)]` refuses `CallSiteRefusal::UnknownField`. | Test (TC-516) |
 | FR-121-AC-27 | An operation selection whose owner names a record value type, an event type, an enum, a persistence interface or a population of the package refuses `CallSiteRefusal::NotAnOperationOwner` (code `invalid_model_binding`, message leading with `invalid_model_binding/malformed-declaration`); over a package where `C` specializes `A` and `B`, each declaring `touch` with a clause of the unit on each, the `M::C::touch` selection refuses `CallSiteRefusal::AmbiguousOperation` (code `ambiguous_declaration`, message leading with `ambiguous_declaration/ambiguous-name`), although `C` has no frame for `touch`; each pairs the `OperationName` with the compiled package's own `package_id` and maps by `TerminalValue::from_call_site_refusal` to `Declined` with `InvalidInput` and its code. | Test (TC-1162) |
+| FR-121-AC-30 | For AC-15's `p` and `q`, each `FunctionSite` carries the QSL-issued `ObligationIdentity` whose node is its own checked function node, model is `None`, and ordinal is its `declaration` occurrence ordinal 0. The two identities differ even though the parameter node is shared; inserting a comment and blank lines before `p` leaves `p`'s identity equal. The consumer takes this value unchanged and mints no replacement. | Test (TC-516) |
+| FR-121-AC-31 | For AC-3's selected operation, `OperationSite` carries the QSL-issued `ObligationIdentity` whose node is the selected frame node, whose model is the selected model's domain package identity, and whose ordinal is the frame's `generated` occurrence ordinal. An inherited selection of the same frame yields the same identity; two distinct frames yield different identities. The consumer takes this value unchanged and mints no replacement. | Test (TC-516) |
 
 ## Dependencies
 
