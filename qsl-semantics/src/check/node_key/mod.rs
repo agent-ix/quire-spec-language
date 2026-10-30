@@ -83,10 +83,11 @@ impl SourceOwner {
 
     /// This owner as the nominal preimages' `{kind: "source", authority,
     /// identity}` owner subject (FR-091 "Enum declarations").
-    pub(crate) fn node_owner(&self) -> NodeOwner {
+    pub(crate) fn node_owner(&self, package_name: &str) -> NodeOwner {
         NodeOwner::Source(OwnerSubject {
             authority: self.authority.clone(),
             identity: self.identity.clone(),
+            package_name: package_name.to_owned(),
         })
     }
 

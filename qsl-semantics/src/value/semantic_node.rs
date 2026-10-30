@@ -38,6 +38,25 @@ pub struct OwnerSubject {
     pub authority: String,
     /// Nonempty identity.
     pub identity: String,
+    /// The nonempty name of the package whose nodes this owner mints; it is
+    /// the package component of every node key under the owner.
+    pub package_name: String,
+}
+
+impl OwnerSubject {
+    /// An owner subject of `authority` and `identity` minting nodes in
+    /// package `package_name`.
+    pub fn new(
+        authority: impl Into<String>,
+        identity: impl Into<String>,
+        package_name: impl Into<String>,
+    ) -> Self {
+        Self {
+            authority: authority.into(),
+            identity: identity.into(),
+            package_name: package_name.into(),
+        }
+    }
 }
 
 /// Identity and node of a model owner.
@@ -54,27 +73,25 @@ impl NodeOwner {
     /// The structural key of the declaration `path` under this owner: the
     /// owner supplies the package and the leading path segments, the
     /// declaration path follows, and the ordinal is 0. A source or
-    /// definition owner is package `authority` with path `[kind, identity,
-    /// ..path]`; a model owner is package `identity` with path `["model",
-    /// node, ..path]`. The owner's strings are never parsed or hashed.
+    /// definition owner is package `package_name` with path `path`; a model
+    /// owner is package `identity` with path `[node, ..path]`. The owner's strings are never parsed or hashed.
     ///
     /// # Errors
     ///
     /// [`InvalidNodeKey`] when the key cannot be built.
     pub fn declaration_key(&self, path: &[String]) -> Result<NodeKey, InvalidNodeKey> {
-        let (package, kind, identity) = match self {
-            Self::Source(subject) => (&subject.authority, "source", &subject.identity),
-            Self::Definition(subject) => (&subject.authority, "definition", &subject.identity),
-            Self::Model(subject) => (&subject.identity, "model", &subject.node),
+        let (package, prefix): (&String, Vec<&String>) = match self {
+            Self::Source(subject) | Self::Definition(subject) => {
+                (&subject.package_name, Vec::new())
+            }
+            Self::Model(subject) => (&subject.identity, vec![&subject.node]),
         };
         let mut segments = Vec::new();
+        let requested = path.len().saturating_add(prefix.len());
         segments
-            .try_reserve_exact(path.len().saturating_add(2))
-            .map_err(|_| InvalidNodeKey::Allocation {
-                requested: path.len().saturating_add(2),
-            })?;
-        segments.push(PathSegment::Text(kind.to_owned()));
-        segments.push(PathSegment::Text(identity.clone()));
+            .try_reserve_exact(requested)
+            .map_err(|_| InvalidNodeKey::Allocation { requested })?;
+        segments.extend(prefix.into_iter().cloned().map(PathSegment::Text));
         segments.extend(path.iter().cloned().map(PathSegment::Text));
         NodeKey::new(package.clone(), segments, 0)
     }
@@ -92,7 +109,9 @@ impl NodeOwner {
     pub(crate) fn is_well_formed(&self) -> bool {
         match self {
             Self::Source(subject) | Self::Definition(subject) => {
-                !subject.authority.is_empty() && !subject.identity.is_empty()
+                !subject.authority.is_empty()
+                    && !subject.identity.is_empty()
+                    && !subject.package_name.is_empty()
             }
             Self::Model(subject) => !subject.identity.is_empty() && !subject.node.is_empty(),
         }
