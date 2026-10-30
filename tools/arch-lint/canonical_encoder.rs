@@ -1652,9 +1652,6 @@ pub(super) fn digest_of(value: &serde_json::Value) -> [u8; 32] {
             .iter()
             .map(|(exemption, function)| (exemption.module, *function))
             .collect();
-        assert_eq!(
-            stale,
-            vec![("runtime::construction", None)]
-        );
+        assert_eq!(stale, vec![("runtime::construction", None)]);
     }
 }
