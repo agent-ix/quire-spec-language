@@ -85,11 +85,13 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
 use quire_contract_model::{
-    encode_checked_package_v2, ApplicationOperator, CheckedArtifactRef, CheckedBindingName,
-    CheckedCapability, CheckedCapabilityDisposition, CheckedDeclaration,
-    CheckedDependencySelection, CheckedDiagnosticsV2, CheckedFieldScope, CheckedFrameModification,
-    CheckedNodeId, CheckedNodeKind, CheckedNodeOwner, CheckedNodePathSegment, CheckedNodeTag,
-    CheckedOccurrence, CheckedOccurrenceRole, CheckedOperationAnchorBody, CheckedPackageEvidence,
+    encode_checked_package_v2, ApplicationOperator, CheckedAbstractionField,
+    CheckedAbstractionFrame, CheckedAbstractionObject, CheckedAbstractionParameter,
+    CheckedAbstractionPopulation, CheckedArtifactRef, CheckedBindingName, CheckedCapability,
+    CheckedCapabilityDisposition, CheckedDeclaration, CheckedDependencySelection,
+    CheckedDiagnosticsV2, CheckedFieldScope, CheckedFrameModification, CheckedNodeId,
+    CheckedNodeKind, CheckedNodeOwner, CheckedNodePathSegment, CheckedNodeTag, CheckedOccurrence,
+    CheckedOccurrenceRole, CheckedOperationAnchorBody, CheckedPackageEvidence,
     CheckedPackageLockV2, CheckedPackageSourceCorrespondenceRef, CheckedPackageV2, CheckedRational,
     CheckedRefinementStepRowRegion, CheckedScopedDeletion, CheckedSelection, CheckedSelectionRole,
     CheckedSemanticGraphV2, CheckedSemanticNodeV2, CheckedSourceMapEntry, CheckedSourceRef,
@@ -1160,6 +1162,74 @@ fn frame_term(frame: &FrameTerm) -> Result<CheckedTerm, EmitRefusal> {
             .map(admitted_id)
             .collect::<Result<_, _>>()?,
         deletes_scoped,
+    })
+}
+
+fn abstraction_term(
+    abstraction: &qsl_semantics::check::AbstractionTerm,
+) -> Result<CheckedTerm, EmitRefusal> {
+    let objects = abstraction
+        .objects()
+        .iter()
+        .map(|object| {
+            Ok(CheckedAbstractionObject {
+                type_id: admitted_id(object.ty())?,
+                type_path: object
+                    .rust_type()
+                    .iter()
+                    .map(|part| part.as_str().into())
+                    .collect(),
+                fields: object
+                    .fields()
+                    .map(|(name, rust_field)| CheckedAbstractionField {
+                        name: name.into(),
+                        field_ident: rust_field.into(),
+                    })
+                    .collect(),
+            })
+        })
+        .collect::<Result<Vec<_>, EmitRefusal>>()?;
+    let populations = abstraction
+        .populations()
+        .iter()
+        .map(|population| {
+            Ok(CheckedAbstractionPopulation {
+                population: admitted_id(population.population())?,
+                collection: population
+                    .collection()
+                    .iter()
+                    .map(|part| part.as_str().into())
+                    .collect(),
+            })
+        })
+        .collect::<Result<Vec<_>, EmitRefusal>>()?;
+    let frames = abstraction
+        .frames()
+        .iter()
+        .map(|frame| {
+            Ok(CheckedAbstractionFrame {
+                context: admitted_id(frame.context())?,
+                operation: frame.operation().into(),
+                function: frame
+                    .function()
+                    .iter()
+                    .map(|part| part.as_str().into())
+                    .collect(),
+                receiver: frame.receiver().into(),
+                parameters: frame
+                    .parameters()
+                    .map(|(name, rust_parameter)| CheckedAbstractionParameter {
+                        name: name.into(),
+                        parameter_ident: rust_parameter.into(),
+                    })
+                    .collect(),
+            })
+        })
+        .collect::<Result<Vec<_>, EmitRefusal>>()?;
+    Ok(CheckedTerm::AbstractionRelation {
+        objects,
+        populations,
+        frames,
     })
 }
 
