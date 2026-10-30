@@ -6,7 +6,7 @@
 //! `#[cfg(test)]` module in the root crate's `src/command/extraction.rs`.
 
 use ix_trace_rs::trace;
-use qsl_foundation::{ByteDigest, Code, Source, SourceIdentity, Span};
+use qsl_foundation::{Code, Source, SourceIdentity, Span};
 use qsl_source::{
     extract, semantic_core_version, Cause, Limits, PreflightFailure, Selection, SemanticContext,
     CONTRACT_VERSION, MAX_LINES, MAX_SOURCE_BYTES,
@@ -70,18 +70,6 @@ fn document(expression: &str, crlf: bool) -> Source {
 fn stale_foreign_unavailable_and_inconsistent_source_selections_refuse() {
     let original = document("true", false);
     let ctx = context();
-    let changed = format!("{}Changed unselected prose.\n", original.text());
-    let error = Source::read_verified(
-        identity(),
-        "rules.md",
-        changed.as_bytes(),
-        original.digest(),
-        1_048_576,
-    )
-    .unwrap_err();
-    assert_eq!(error.code, Code::SourceDigestMismatch);
-    assert_ne!(ByteDigest::of(changed.as_bytes()), original.digest());
-
     for text in [
         original
             .text()
@@ -309,6 +297,6 @@ fn each_foreign_context_refuses_with_its_own_typed_preflight_cause() {
         assert_eq!(**actual, expected, "{change:?}");
         assert_eq!(error.code(), expected.code());
         assert!(error.extraction().is_none());
-        assert_eq!(error.original().digest(), original.digest());
+        assert_eq!(error.original().text(), original.text());
     }
 }

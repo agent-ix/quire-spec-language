@@ -110,7 +110,7 @@ pub struct Error {
 }
 
 impl Error {
-    /// Original immutable document, including exact byte digest.
+    /// Original immutable document and its exact source text.
     pub fn original(&self) -> &Source {
         &self.original
     }
