@@ -114,8 +114,6 @@ fn private_clause_source_generators_keep_format_identity() {
 }
 
 const PACKAGE_IDENTITY: &str = "test/nodes";
-const PLACEHOLDER_DIGEST: &str =
-    "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 
 fn node_type() -> String {
     format!("ix://{PACKAGE_IDENTITY}/Node")
@@ -133,20 +131,17 @@ fn domain_document() -> Vec<u8> {
     let population = population_identity();
     let envelope = json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
         "source": {
             "identity": format!("ix://{PACKAGE_IDENTITY}/spec"),
             "version": "1.0.0",
             "dialect": "spec-bundle",
-            "digest": PLACEHOLDER_DIGEST,
         },
         "package": {
             "identity": PACKAGE_IDENTITY,
             "version": "1.0.0",
-            "manifestDigest": PLACEHOLDER_DIGEST,
             "mappingVersions": [],
             "profileVersions": [],
-            "lockDigest": PLACEHOLDER_DIGEST,
         },
         "occurrences": [],
         "extensions": [],
@@ -154,7 +149,6 @@ fn domain_document() -> Vec<u8> {
             {
                 "kind": {"module": PACKAGE_IDENTITY, "name": "object_type"},
                 "moduleVersion": "1.0.0",
-                "manifestDigest": PLACEHOLDER_DIGEST,
                 "construct": {
                     "identity": "none",
                     "shape": "record",
@@ -165,7 +159,6 @@ fn domain_document() -> Vec<u8> {
             {
                 "kind": {"module": PACKAGE_IDENTITY, "name": "population"},
                 "moduleVersion": "1.0.0",
-                "manifestDigest": PLACEHOLDER_DIGEST,
                 "construct": {
                     "identity": "none",
                     "shape": "record",
@@ -1453,20 +1446,17 @@ fn config_version_domain_document_with_operations(
     operations.extend(extra_operations);
     let envelope = json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
         "source": {
             "identity": format!("ix://{CONFIG_VERSION_PACKAGE_IDENTITY}/spec"),
             "version": "1.0.0",
             "dialect": "spec-bundle",
-            "digest": PLACEHOLDER_DIGEST,
         },
         "package": {
             "identity": CONFIG_VERSION_PACKAGE_IDENTITY,
             "version": "1.0.0",
-            "manifestDigest": PLACEHOLDER_DIGEST,
             "mappingVersions": [],
             "profileVersions": [],
-            "lockDigest": PLACEHOLDER_DIGEST,
         },
         "occurrences": [],
         "extensions": [],
@@ -1474,7 +1464,6 @@ fn config_version_domain_document_with_operations(
             {
                 "kind": {"module": CONFIG_VERSION_PACKAGE_IDENTITY, "name": "object_type"},
                 "moduleVersion": "1.0.0",
-                "manifestDigest": PLACEHOLDER_DIGEST,
                 "construct": {
                     "identity": "none",
                     "shape": "record",
@@ -1485,7 +1474,6 @@ fn config_version_domain_document_with_operations(
             {
                 "kind": {"module": CONFIG_VERSION_PACKAGE_IDENTITY, "name": "population"},
                 "moduleVersion": "1.0.0",
-                "manifestDigest": PLACEHOLDER_DIGEST,
                 "construct": {
                     "identity": "none",
                     "shape": "record",
@@ -1496,7 +1484,6 @@ fn config_version_domain_document_with_operations(
             {
                 "kind": {"module": CONFIG_VERSION_PACKAGE_IDENTITY, "name": "value_type"},
                 "moduleVersion": "1.0.0",
-                "manifestDigest": PLACEHOLDER_DIGEST,
                 "construct": {
                     "identity": "none",
                     "shape": "record",

@@ -123,8 +123,8 @@ fn mapped_parent_workflow_preserves_authorship_and_runtime_results() {
     let expression = "present(self.parent) implies deref(value(self.parent)).n < self.n";
     let body = text(model, expression);
     let map = mapping(&body);
-    let original_digest = map.original().digest();
-    let body_digest = map.body().digest();
+    let original_text = map.original().text().to_owned();
+    let body_text = map.body().text().to_owned();
     let program = compile(
         map,
         "ix:native",
@@ -134,10 +134,10 @@ fn mapped_parent_workflow_preserves_authorship_and_runtime_results() {
         CompileLimits::default(),
     )
     .unwrap();
-    assert_eq!(program.mapping().original().digest(), original_digest);
+    assert_eq!(program.mapping().original().text(), original_text);
     assert_eq!(
-        program.native().checked().linked().unit().source().digest(),
-        body_digest
+        program.native().checked().linked().unit().source().text(),
+        body_text
     );
     assert_eq!(
         program.native().checked().clauses()[0].binding(),
@@ -241,7 +241,7 @@ fn mapped_refusals_keep_the_selected_clause_and_original_bytes() {
         ("ix:native", "self.n", Code::IllTyped),
     ] {
         let map = mapping(&text(&models[0], expression));
-        let body_digest = map.body().digest();
+        let body_text = map.body().text().to_owned();
         let error = compile(
             map,
             language,
@@ -253,7 +253,7 @@ fn mapped_refusals_keep_the_selected_clause_and_original_bytes() {
         .unwrap_err();
         assert_eq!(error.code(), code);
         assert_eq!(error.binding(), &binding());
-        assert_eq!(error.mapping().body().digest(), body_digest);
+        assert_eq!(error.mapping().body().text(), body_text);
         let diagnostic = error.native_diagnostic().unwrap();
         let spans = error.original_spans().unwrap().unwrap();
         let mapped: String = spans

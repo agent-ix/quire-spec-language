@@ -34,8 +34,6 @@ pub(crate) const INFINITE: &str = "quire.temporal.infinite-trace/v1";
 /// The bounded event-position false-extension profile.
 pub(crate) const BOUNDED: &str = "quire.temporal.event-position.false-extension/v1";
 
-const PLACEHOLDER: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
-
 /// A domain package with one population of one object type.
 pub(crate) struct Domain {
     /// The package identity.
@@ -157,7 +155,6 @@ pub(crate) fn health() -> Domain {
     .into_iter()
     .map(|(name, meaning)| {
         json!({"kind": {"module": package, "name": name}, "moduleVersion": "1.0.0",
-            "manifestDigest": PLACEHOLDER,
             "construct": {"identity": "none", "shape": "record", "members": {},
                 "meaning": meaning}})
     })
@@ -166,11 +163,10 @@ pub(crate) fn health() -> Domain {
     let population = ident("systems");
     let document = json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
-        "source": {"identity": ident("spec"), "version": "1.0.0", "dialect": "spec-bundle",
-            "digest": PLACEHOLDER},
-        "package": {"identity": package, "version": "1.0.0", "manifestDigest": PLACEHOLDER,
-            "mappingVersions": [], "profileVersions": [], "lockDigest": PLACEHOLDER},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
+        "source": {"identity": ident("spec"), "version": "1.0.0", "dialect": "spec-bundle"},
+        "package": {"identity": package, "version": "1.0.0",
+            "mappingVersions": [], "profileVersions": []},
         "occurrences": [], "extensions": [],
         "constructs": constructs,
         "types": [

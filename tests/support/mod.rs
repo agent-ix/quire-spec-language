@@ -58,15 +58,7 @@ pub(crate) use runtime_setup::native_rule_model;
 pub(crate) use standalone_setup::runtime as runtime_setup;
 
 /// The admitted artifact of `model-source.json` written before the package
-/// producer existed (TC-101): `model-artifact.json`, whose `{source_digest}`
-/// is the SHA-256 of `model-source.json`, derived here rather than frozen.
-pub(crate) fn historical_model_artifact() -> Vec<u8> {
-    use sha2::{Digest, Sha256};
-    let source = include_bytes!("../fixtures/native-package/model-source.json");
-    include_str!("../fixtures/native-package/model-artifact.json")
-        .replace(
-            "{source_digest}",
-            &format!("sha256:{:x}", Sha256::digest(source)),
-        )
-        .into_bytes()
+/// producer existed (TC-101): `model-artifact.json`.
+pub(crate) fn historical_model_artifact() -> &'static [u8] {
+    include_bytes!("../fixtures/native-package/model-artifact.json")
 }

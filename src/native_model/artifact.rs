@@ -212,7 +212,6 @@ fn loci(environment: &ir::DeclarationEnvironment) -> Vec<Locus<'_>> {
 struct ModelSource<'a> {
     identity: &'a str,
     revision: &'a str,
-    digest: String,
     formal: &'a ir::SourceIdentity,
 }
 
@@ -288,7 +287,6 @@ pub(super) fn encode(
         source: ModelSource {
             identity: &source.source().identity().identity,
             revision: &source.source().identity().revision,
-            digest: source.source().digest().to_string(),
             formal: source.identity(),
         },
         loci: loci(environment),

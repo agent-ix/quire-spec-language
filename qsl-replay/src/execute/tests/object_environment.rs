@@ -24,7 +24,6 @@ use crate::SnapshotValue;
 use quire_checked::key::DeclarationKey;
 
 pub(crate) const PACKAGE: &str = "test/graph";
-const PLACEHOLDER: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 
 fn identity(name: &str) -> String {
     format!("ix://{PACKAGE}/{name}")
@@ -89,26 +88,22 @@ pub(crate) fn domain_document() -> Vec<u8> {
         json!({
             "kind": {"module": PACKAGE, "name": name},
             "moduleVersion": "1.0.0",
-            "manifestDigest": PLACEHOLDER,
             "construct": {"identity": "none", "shape": "record", "members": {}, "meaning": meaning},
         })
     };
     json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
         "source": {
             "identity": identity("spec"),
             "version": "1.0.0",
             "dialect": "spec-bundle",
-            "digest": PLACEHOLDER,
         },
         "package": {
             "identity": PACKAGE,
             "version": "1.0.0",
-            "manifestDigest": PLACEHOLDER,
             "mappingVersions": [],
             "profileVersions": [],
-            "lockDigest": PLACEHOLDER,
         },
         "occurrences": [],
         "extensions": [],

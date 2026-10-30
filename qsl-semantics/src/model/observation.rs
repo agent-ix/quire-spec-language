@@ -2528,11 +2528,8 @@ fn admit_invocation_documents(
             if self_object.is_some() {
                 return Err(wrong_self_kind());
             }
-            let receiver_pre = pre_values.attach_read_context(
-                context_name,
-                &documents.pre.identity,
-                selected,
-            )?;
+            let receiver_pre =
+                pre_values.attach_read_context(context_name, &documents.pre.identity, selected)?;
             let receiver_post = if post_self {
                 Some(post_values.attach_read_context(
                     context_name,

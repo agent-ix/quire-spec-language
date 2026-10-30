@@ -364,17 +364,16 @@ fn tc_044_enum_identity_is_not_a_reference_and_parameters_are_operation_scoped()
 #[trace("TC-043", "FR-015-AC-4")]
 fn tc_043_inventory_conflicts_refuse_before_import_selection() {
     let original = parts().model();
-    for mutation in 0..4 {
+    for mutation in 0..3 {
         let mut input = parts();
         reowner(&mut input, "OtherRule");
         let old = input.source.source();
         let mut identity = old.identity().clone();
-        let mut text = old.text().to_owned();
+        let text = old.text().to_owned();
         match mutation {
             0 => identity.identity.push_str(":foreign"),
             1 => identity.revision.push_str(":foreign"),
-            2 => text.push('\n'),
-            3 => {
+            2 => {
                 reowner(&mut input, "RuleModel");
                 input.roles.operations[0].frame.fields.clear();
             }

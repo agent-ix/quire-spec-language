@@ -120,19 +120,11 @@ during implementation.**
    `value::package_identity` are ADR-011's own relocation target for this
    requirement's `library` module, not a naming coincidence next to it.
    ADR-011 `:187` further lists `value::library` among the modules that
-   *today* implement part of the S3 check stage, and FR-060's T12-B
-   (`spec/functional/FR-060-check-qsl-api-surface-boundary.md:82`) names
-   `value::library` among its *allowed* callers of the kernel `NodeKey`
-   constructor, not a real current one: FR-060's own Status section
-   (`:169-183`) records T12-B's actual real call sites as
-   `value::enumeration`, `value::unit` and `value::model_query`, none of
-   them `value::library`. `library`'s own current source does call a
-   `NodeKey`-shaped constructor by a different path, though:
+   *today* implement part of the S3 check stage. `library`'s own current
+   source calls a `NodeKey`-shaped constructor:
    `value/package_identity.rs`'s `node_key` function (`:177-182`) builds a
-   `NodeKey` with `NodeKey::from_hex` from a wire-read JSON preimage — a
-   call T12-B's rule does not scan for (its patterns are `NodeKey::of(`,
-   `NodeKey::from_bytes(` and `node_key_of(`, not `NodeKey::from_hex(`) and
-   that ADR-013 O-04/R-10 forbid once this code sits in a layer-3 module
+   `NodeKey` with `NodeKey::from_hex` from a wire-read JSON preimage, which
+   ADR-013 O-04/R-10 forbid once this code sits in a layer-3 module
    ordered ahead of `check`, per this requirement's own R-10 boundary
    (Behavior, "R-10: checked typestate is never built from wire bytes";
    FR-087-AC-6, FR-087-AC-11). This requirement's Outputs accordingly
@@ -241,7 +233,7 @@ during implementation.**
   `check::CheckedPackage` accessor surface) delegates through the
   `CheckedGraph` field's own accessor methods rather than `package`
   re-declaring or copying those types itself (FR-087-AC-9).
-- `EmittedPackage` (S4 wire output: the v2 bytes with their `package_id`),
+- `EmittedPackage` (S4 wire output: the v2 bytes),
   new, defined in layer-4 `package`, distinct from
   `protocol_artifact::native::EmittedPackage` (Description).
 - Retirement of `ResolvedSourcePackage` (formerly `qsl-semantics/src/complete/package.rs`)
@@ -451,7 +443,7 @@ that change each scenario of `tests/it/complete_package.rs` and
 | FR-087-AC-11 | **RETIRED (the `PackageId` selection and `WireNodeId`-typed `library` shapes are deleted).** `value::library` and `value::package_identity` no longer exist as modules under `value`; `LibraryName`, `LibraryPackage`, `ImportDeclaration`, `LibraryLock`, `resolve_libraries` and `package_identity`'s preimage-reading functions are reachable only from the top-level `library` module. A package is identified by its `LibraryName` alone, `LibraryLock::selections()` returns `Vec<LibraryName>`, and `library` defines no function resolving a name to a declaration or node id. | Test (TC-281), retired |
 | FR-087-AC-12 | Every `LibraryRefusal` variant `resolve_libraries` (in `library`) can return classifies to exactly one of: an ADR-011 I2 graph rule, the preimage admission `ImportView::of` performs, or E3 name resolution. Concretely: `InvalidPreimage` and `UndeclaredExport` classify to preimage admission as per-package checks (raised by `verify_package`); `InvalidQualifier` classifies to E3 name resolution; `MissingImport` classifies to I2's first rule (missing or unlisted identity); `ConflictingDefinition` (two supplied packages of one library identity) classifies to I2's second rule; `ImportCycle` classifies to I2's third rule. This criterion does not require `resolve_libraries` to gain a new refusal variant; it requires every variant to be classified to one of the three, with none left unclassified or misclassified. | Test (TC-282) |
 | FR-087-AC-13 | The importing package's checker resolves imported names as Behavior, "E3 resolves an imported name in the importing package's checker", states. Given package `P` importing library `L@1` (which exports `R`) with no `as` qualifier, and declaring no `R` of its own, `P`'s checker refuses both `R` and `L::R` with `missing_declaration` / `missing-name`. Given `P` importing `A@1` and `B@1` both `as a`, the assembler refuses the second alias `a` with `ambiguous_declaration` / `ambiguous-name`, naming both import spans, and E3 does not run. Given `P` importing `L@1` `as l`, `l::R` resolves to R's exported structural `NodeKey` in `L@1`'s package, and `l::Q`, which `L@1` does not export, is refused `missing_declaration` / `missing-name`. Given `P` importing `L@1` `as l` with no library supplied as `L`, the import is refused `missing_import` / `missing-selection` at stage `intake`, and E3 does not run. | Test (TC-379) |
-| FR-087-AC-14 | The E4 link step with dependencies (`CheckedPackage::link_with`) records each imported package's `package_id` as selected (an import names its library by identity alone); the closure holds one `{identity, package_id}` entry per library identity over the direct imports and every dependency's own closure, and the step refuses two packages of one identity whose `package_id`s differ with `invalid_package`/`conflicting-definition` (FR-307's diamond rule), naming both packages and both dependency paths. Two paths reaching one package unify. A refusal yields no package. Binding an `Import`'s identity to the source's resolved import declarations is FR-099's (ADR-015 D-1). `CheckedPackage::dependencies` holds each direct import's checked package by `package_id`, and `CheckedPackage::dependency_selections` the closure in ascending UTF-8 byte order of identity. | Test (TC-253) |
+| FR-087-AC-14 | **RETIRED (a package has no id).** The E4 link step selects each imported library by its `LibraryName`; there is no `package_id` to record, compare or unify, and no diamond rule over ids. | Test (TC-253), retired |
 
 The `library`/`ImportView` name-resolution scan does not see a node
 id returned as raw bytes, a hex `String` or a `usize` position; a

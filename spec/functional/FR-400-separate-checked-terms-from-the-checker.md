@@ -31,8 +31,7 @@ boundary.
 The checked terms SHALL live in the crate `quire-checked`, in the repository
 `agent-ix/quire-eval`, at [ADR-011](../decisions/ADR-011-stage-dag-and-dependency-architecture.md)
 §6.1 layer C: a shared leaf above SV, K and W and below QSL layer 3, RT and
-CG. The checker (`qsl-semantics` `check`, with the library binding for a
-package identity and the definition admission for the integer division law)
+CG. The checker (`qsl-semantics` `check`, with the definition admission for the integer division law)
 SHALL be the only code that constructs a checked term. The evaluator SHALL read checked terms from
 `quire-checked` and SHALL NOT reach the checker to evaluate one. Everything
 the separation moves keeps its meaning, its identities and its locations: a
@@ -230,9 +229,9 @@ carries it; the walk that builds it is a constructor in C's `construct`
 module, called from `check`.
 
 A method of a moved type that mints a kernel identity or names a layer-3
-type does not move: only `check` calls the `NodeKey` constructor and only
+type does not move: only
 `model` calls the `EffectiveId` and `PopulationId` constructors (ADR-011
-§6.1, FR-060 T12-B to T12-D). `DeclarationKey` moves as a value with no
+§6.1, FR-060 T12-C and T12-D). `DeclarationKey` moves as a value with no
 method that mints or encodes an identity. The effective-declaration preimage,
 `model::key::EffectiveDeclarationPreimage` with its derivation facts (`Fact`,
 `RuleRef`), is read by no evaluator or simulation path and stays in
@@ -309,10 +308,8 @@ SHALL construct a checked term:
    `construct` feature.
 3. In QSL, only `qsl-semantics` SHALL enable `construct`. FR-060 rule T12-G
    SHALL allow calls into the `construct` module only from `qsl-semantics`'
-   `check` and its descendant modules, and in addition from
-   `value::definition` for `AdmittedIntegerDivision`, with no debt list.
-   `qsl-package`'s emitter (`checked.rs`) and I2 reader (`checked_v2.rs`)
-   never call `construct` themselves.
+   `check` and its descendant modules, and in addition from `value::definition` for `AdmittedIntegerDivision`,
+   with no debt list.
 4. FR-059's direction check SHALL report, as an FB-05 violation, a resolved
    IR, RT or CG dependency on `quire-checked` with its `construct` feature
    enabled. A backend reads checked terms and never builds one.

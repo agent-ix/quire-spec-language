@@ -33,7 +33,7 @@ pub enum Case {
 fn source(source: &FormalSource, file: &str) -> Value {
     json!({"file":file,"authority":source.source().identity().authority,"identity":source.source().identity().identity,
         "revision_namespace":source.source().identity().revision_namespace,"revision":source.source().identity().revision,
-        "digest":source.source().digest().to_string(),"document":source.identity().document().as_str(),"formal_revision":source.identity().revision().get()})
+        "document":source.identity().document().as_str(),"formal_revision":source.identity().revision().get()})
 }
 
 /// Write licensed fixtures, propagating I/O failure separately from static setup defects.
@@ -221,7 +221,7 @@ pub fn write_extracted(directory: &Path, case: Case, crlf: bool) -> io::Result<V
     }});
     program["source"] = json!({"file":"rules.md","authority":"agent-ix",
         "identity":"ix://example/runtime-rules/spec","revision_namespace":"authored",
-        "revision":"authored:7","digest":qsl_foundation::ByteDigest::of(text.as_bytes()).to_string(),
+        "revision":"authored:7",
         "document":"AuthoredRules","formal_revision":7});
     std::fs::write(directory.join("rules.md"), text)?;
     std::fs::write(

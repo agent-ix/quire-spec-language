@@ -18,6 +18,5 @@ source's and the package's) is computed from the bytes it names when the test
 runs, so no digest is frozen in a file.
 
 `model-source.json` is the upstream model input. `model-artifact.json` is its
-admitted artifact as written before the package producer existed; its
-`{source_digest}` is the SHA-256 of `model-source.json`, filled in at test time.
+admitted artifact as written before the package producer existed.
 `header.native` is the shared unit header.

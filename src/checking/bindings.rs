@@ -19,10 +19,7 @@ pub(super) fn validate(linked: &LinkedPackage<'_>, bindings: &CheckBindings) -> 
         error
     })?;
     let bound = bindings.source.source();
-    if bound.identity() != unit.source().identity()
-        || bound.path() != unit.source().path()
-        || bound.digest() != unit.source().digest()
-    {
+    if bound.identity() != unit.source().identity() || bound.path() != unit.source().path() {
         return Err(invalid(
             "checking source does not match the exact linked source",
         ));
@@ -32,8 +29,7 @@ pub(super) fn validate(linked: &LinkedPackage<'_>, bindings: &CheckBindings) -> 
             .native_model()
             .ok_or_else(|| invalid("selected model has no native correspondence"))?;
         if model.source().identity() == bindings.source.identity()
-            && (model.source().source().identity() != bound.identity()
-                || model.source().source().digest() != bound.digest())
+            && model.source().source().identity() != bound.identity()
         {
             return Err(invalid(
                 "native clause and model sources conflict under one formal source identity",

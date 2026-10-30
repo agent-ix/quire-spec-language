@@ -68,7 +68,7 @@ fn incremental_edit_reuses_only_unchanged_byte_correspondent_nodes() {
         "{:?}",
         edited.diagnostics()
     );
-    assert_ne!(parsed.source().digest(), edited.source().digest());
+    assert_ne!(parsed.source().text(), edited.source().text());
     let map = parsed
         .cst()
         .reuse_map(

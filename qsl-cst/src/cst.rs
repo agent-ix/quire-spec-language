@@ -2,7 +2,7 @@
 //! The lossless complete-V1 concrete syntax tree: the recovering node/token
 //! tree and incremental whitespace-only editing. The definition/model
 //! selection values the parser recovers are `qsl_foundation::selection`'s.
-use qsl_foundation::{ByteDigest, Source, Span};
+use qsl_foundation::{Source, Span};
 
 /// Public lossless leaf classification; token spellings remain exact bytes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -302,20 +302,13 @@ productions! {
     ParameterBinding,
 }
 
-/// Revision-bound CST identity required when exchanging a node (FR-302 "CST
-/// identity contract"): the source revision digest, the node's byte range and
-/// its structural path. The path is not copied into the identity: within one
-/// revision a node's arena index determines it, and
-/// [`LosslessCst::structural_path`] derives the child ordinals from parent
-/// links on request. Every field is fixed-size, so building identities costs
-/// constant work per node.
+/// Structural CST identity: the node's byte range and its position in the
+/// current parse. The structural path is derived from parent links on request.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct NodeIdentity {
-    /// Digest of the caller-selected source revision label.
-    pub source_revision_digest: ByteDigest,
-    /// Exact node byte range in that revision.
+    /// Exact node byte range in the current parse.
     pub span: Span,
-    /// The node's position in that revision; resolves the structural path
+    /// The node's position in the current parse; resolves the structural path
     /// through [`LosslessCst::structural_path`].
     pub node: NodeIndex,
 }
@@ -449,23 +442,6 @@ impl LosslessCst {
         recoveries: Vec<Recovery>,
     ) -> Self {
         materialize_elements(&tokens, &mut nodes);
-        let mut revision_preimage = b"quire.complete.document-revision/1\0".to_vec();
-        let source_digest = source.digest().to_string();
-        let labels = source.identity();
-        for value in [
-            labels.authority.as_bytes(),
-            labels.identity.as_bytes(),
-            labels.revision_namespace.as_bytes(),
-            labels.revision.as_bytes(),
-            source_digest.as_bytes(),
-        ] {
-            revision_preimage
-                .extend_from_slice(&u64::try_from(value.len()).unwrap_or(u64::MAX).to_be_bytes());
-            revision_preimage.extend_from_slice(value);
-        }
-        // The one identity hash of a parse: over the revision labels, never
-        // over per-node data.
-        let revision_digest = identity_digest(&revision_preimage);
         let mut links = vec![(None, 0_u32); nodes.len()];
         for (index, node) in nodes.iter().enumerate() {
             let children = node.children.iter().filter_map(|child| match child {
@@ -487,7 +463,6 @@ impl LosslessCst {
                 span: node.span,
                 children: node.children,
                 identity: NodeIdentity {
-                    source_revision_digest: revision_digest,
                     span: node.span,
                     node: NodeIndex(index),
                 },
@@ -784,14 +759,6 @@ pub(crate) fn token(class: TokenClass, kind: TokenKind, span: Span, spelling: &[
     }
 }
 
-/// The only digest [`LosslessCst::new`] computes. Test builds count the
-/// calls, so a test can show a parse digests once whatever its node count.
-fn identity_digest(preimage: &[u8]) -> ByteDigest {
-    #[cfg(test)]
-    tests::IDENTITY_DIGESTS.with(|count| count.set(count.get() + 1));
-    ByteDigest::of(preimage)
-}
-
 fn materialize_elements(tokens: &[CstToken], nodes: &mut [RawNode]) {
     for index in 0..nodes.len() {
         let child_nodes: Vec<_> = nodes[index]
@@ -911,15 +878,9 @@ impl LosslessCst {
 
 #[cfg(test)]
 mod tests {
-    use std::cell::Cell;
-
     use super::{LosslessCst, Production, SourceChange};
     use crate::{parse, Limits};
     use qsl_foundation::{SourceIdentity, Span};
-
-    thread_local! {
-        pub(super) static IDENTITY_DIGESTS: Cell<usize> = const { Cell::new(0) };
-    }
 
     const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\nprofile Complete = \"quire.value.complete/v1\";\n";
 
@@ -948,23 +909,6 @@ mod tests {
         .expect("parses");
         assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
         parsed.cst().clone()
-    }
-
-    /// Identity digests computed while building `text`'s CST.
-    fn digests_while_parsing(text: &str) -> (usize, usize) {
-        IDENTITY_DIGESTS.with(|count| count.set(0));
-        let nodes = cst("r1", text).nodes().len();
-        (IDENTITY_DIGESTS.with(Cell::get), nodes)
-    }
-
-    #[ix_trace_rs::trace("TC-222", "FR-302-AC-3")]
-    #[test]
-    fn a_parse_computes_one_identity_digest_whatever_its_node_count() {
-        let (small, small_nodes) = digests_while_parsing(&functions(1, "x"));
-        let (large, large_nodes) =
-            digests_while_parsing(&functions(300, "if x > 0 then x + 1 else 0"));
-        assert!(large_nodes > 100 * small_nodes);
-        assert_eq!((small, large), (1, 1));
     }
 
     // Reuse sees productions only through a label that admits equality and

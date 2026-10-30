@@ -16,7 +16,7 @@
 //! are written on failure.
 //!
 //! The emitted bytes embed the source path exactly as given: the label
-//! `source:<path>` feeds the source digest labels.
+//! `source:<path>` feeds the source reference labels.
 //! A caller that needs stable bytes passes an identical, fixed,
 //! cwd-relative path on every invocation. The same holds for each
 //! `--library` path.
