@@ -1750,27 +1750,6 @@ impl<'a> Lowering<'a> {
         require_admitted(node, location)
     }
 
-    /// [`Self::insert_owned_ref`] for a node that names no pending handle.
-    fn insert_owned(
-        &mut self,
-        location: &Location,
-        node_tag: NodeTag,
-        semantic_form: &'static str,
-        semantic_type: Option<NodeKey>,
-        owner: Owner,
-        body: BodyTerm,
-    ) -> Result<NodeKey, CheckRefusal> {
-        let node = self.insert_owned_ref(
-            location,
-            node_tag,
-            semantic_form,
-            semantic_type.map(NodeRef::from),
-            owner,
-            body,
-        )?;
-        require_admitted(node, location)
-    }
-
     /// Key an unowned or source-declared node and add it to the graph: a
     /// node with a `declaration` carries the unit's `SourceOwner`.
     fn insert_ref(
