@@ -36,6 +36,8 @@ record!(Semantics {
     model_profile: String,
     checking_contract: String,
 });
+// BLOCKED-BY PLAT-1205 (owner: planner titan:QSL:plan): Source::digest, the schema `source.digest`
+// member and this record's `digest`.
 record!(Source {
     authority: Text,
     identity: Text,

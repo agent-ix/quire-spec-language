@@ -108,7 +108,7 @@
       "required": ["identity", "digest"],
       "properties": {
         "identity": {"$ref": "#/$defs/source_identity"},
-        "digest": {"$ref": "#/$defs/digest"}
+        "digest": {"$comment": "BLOCKED-BY PLAT-1205 (owner: planner titan:QSL:plan): the runtime SnapshotRef and InvocationRef digest.", "$ref": "#/$defs/digest"}
       }
     },
     "object_entry": {

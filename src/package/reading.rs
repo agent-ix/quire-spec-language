@@ -2,8 +2,8 @@
 //! FR-020: ordered selection, explicit authority, real reconstruction and comparison.
 
 use super::{
-    encoding, intake, view, wire, NativePackage, PackageCause, PackageError,
-    PackageLimits, PackagePathSegment, PackageStage, PackageUsage,
+    encoding, intake, view, wire, NativePackage, PackageCause, PackageError, PackageLimits,
+    PackagePathSegment, PackageStage, PackageUsage,
 };
 use crate::checking::{check, CheckBindings, CheckLimits};
 use crate::native_model::NativeModel;

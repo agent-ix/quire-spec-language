@@ -6,9 +6,7 @@ use fixtures::runtime;
 
 use ix_trace_rs::trace;
 use qsl_foundation::ByteDigest;
-use quire_spec_language::package::{
-    NativePackage, PackageReadLimits, PackageSupport,
-};
+use quire_spec_language::package::{NativePackage, PackageReadLimits, PackageSupport};
 use serde_json::{json, Value};
 use std::{
     path::Path,

@@ -428,6 +428,9 @@ impl Source {
         Ok(Self::admit(identity, reference, path, text, digest))
     }
 
+    // BLOCKED-BY PLAT-1205 (owner: planner titan:QSL:plan): Source::digest (this verified intake and
+    // `Source::digest`), the schema `source.digest` member and the `Source`
+    // record's `digest` in `src/package/wire.rs`.
     /// Verified intake: [`Source::read_typed`], then the admitted bytes'
     /// digest against the independently selected one. A mismatch concerns
     /// the bytes as a whole and refuses with no region (FR-001).

@@ -10,9 +10,7 @@ use ix_trace_rs::trace;
 use qsl_foundation::{ByteDigest, Code};
 use quire_spec_language::native_model::NativeModel;
 use quire_spec_language::package::{NativePackage, PackageLimits};
-use quire_spec_language::package::{
-    PackageReadLimits, PackageStage, PackageSupport,
-};
+use quire_spec_language::package::{PackageReadLimits, PackageStage, PackageSupport};
 
 fn model() -> NativeModel {
     native_rule_model::from_text(
