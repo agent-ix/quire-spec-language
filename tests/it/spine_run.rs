@@ -281,10 +281,6 @@ fn tc_450_step_1_seven_completes_through_the_spine() {
     assert_eq!(document["source"]["identity"], "test:spine-run");
     assert_eq!(document["source"]["revision_namespace"], "fixture");
     assert_eq!(document["source"]["revision"], "fixture:1");
-    assert_eq!(
-        document["source"]["digest"],
-        ByteDigest::of(&program).to_string()
-    );
     assert_eq!(document["source"]["path"], "program.native");
     assert_eq!(document["function"], "seven");
     assert_eq!(
@@ -305,7 +301,6 @@ fn tc_450_step_1_seven_completes_through_the_spine() {
                 "identity": "test:spine-run",
                 "revision_namespace": "fixture",
                 "revision": "fixture:1",
-                "digest": ByteDigest::of(&program).to_string(),
                 "path": "program.native",
             },
             "function": "seven",

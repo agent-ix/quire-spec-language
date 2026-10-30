@@ -494,7 +494,7 @@ impl<'a> ModelBindings<'a> {
             for (_, model) in &inputs[1..] {
                 work.charge(Dimension::References, 1)?;
                 let source = model.source().source();
-                if source.identity() != first.identity() || source.digest() != first.digest() {
+                if source.identity() != first.identity() {
                     different = true;
                     break;
                 }

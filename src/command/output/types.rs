@@ -49,7 +49,6 @@ impl Serialize for Stage {
 pub(super) struct Source<'a> {
     #[serde(flatten)]
     pub identity: &'a SourceIdentity,
-    pub digest: String,
     pub path: &'a str,
     pub formal: &'a ir::SourceIdentity,
 }
@@ -171,13 +170,12 @@ pub(super) struct AdmissionDeclarationKey {
 }
 
 /// FR-100: the program source as `spine-run-result/1` renders one -- its
-/// four FR-001 labels, `sha256:` source digest and authored path. Narrower
+/// four FR-001 labels and authored path. Narrower
 /// than [`Source`]: no formal document/revision member.
 #[derive(Serialize)]
 pub(super) struct RunSource<'a> {
     #[serde(flatten)]
     pub identity: &'a SourceIdentity,
-    pub digest: String,
     pub path: &'a str,
 }
 

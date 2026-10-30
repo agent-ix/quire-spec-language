@@ -156,7 +156,6 @@ fn with_namespace(texts: &[String], test: impl FnOnce(&SyntaxNamespace)) {
             .map(|source| ExpectedSource {
                 authority: source.identity().identity.clone(),
                 identity: source.identity().clone(),
-                digest: source.digest(),
             })
             .collect(),
     };

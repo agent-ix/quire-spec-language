@@ -192,7 +192,6 @@ fn admit_namespace_uses_raised_parser_limits_as_given() {
         units: vec![ExpectedSource {
             authority: "test".into(),
             identity: source.identity().clone(),
-            digest: source.digest(),
         }],
     };
     let sources = [source];

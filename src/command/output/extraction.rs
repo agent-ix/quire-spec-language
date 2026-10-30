@@ -52,7 +52,6 @@ struct Original<'a> {
     #[serde(flatten)]
     identity: &'a SourceIdentity,
     path: &'a str,
-    digest: String,
 }
 
 #[derive(Serialize)]
@@ -119,7 +118,6 @@ fn consumer_failure(value: &JoinFailure) -> ConsumerFailure<'_> {
         original: Original {
             identity: original.identity(),
             path: original.path(),
-            digest: original.digest().to_string(),
         },
         selection: Selection {
             name: &binding.name,

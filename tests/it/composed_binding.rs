@@ -82,7 +82,6 @@ fn inventory(sources: &[Source]) -> SourceInventory {
             .map(|source| ExpectedSource {
                 authority: source.identity().identity.clone(),
                 identity: source.identity().clone(),
-                digest: source.digest(),
             })
             .collect(),
     }

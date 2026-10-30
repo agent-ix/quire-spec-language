@@ -111,7 +111,7 @@ pub struct JoinFailure {
 }
 
 impl JoinFailure {
-    /// Original immutable document, including exact byte digest.
+    /// Original immutable document, including its exact bytes.
     pub fn original(&self) -> &Source {
         &self.original
     }
@@ -360,10 +360,6 @@ mod tests {
             .iter()
             .any(|value| value.code == "semantic.clause-language-unchecked"));
         assert_eq!(
-            program.mapped().mapping().original().digest(),
-            original.digest()
-        );
-        assert_eq!(
             program.mapped().native().checked().clauses()[0].binding(),
             &binding()
         );
@@ -467,7 +463,6 @@ mod tests {
             .unwrap_err();
             assert_eq!(error.code(), code);
             assert_eq!(error.extraction(), Some(expected));
-            assert_eq!(error.original().digest(), original.digest());
             assert_eq!(error.binding(), &binding());
             let JoinCause::Compile(native) = &error.cause else {
                 panic!("actual native parser refusal required");

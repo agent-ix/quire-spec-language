@@ -34,7 +34,6 @@ impl std::fmt::Display for NativeResult {
 fn source(value: &FormalSource) -> types::Source<'_> {
     types::Source {
         identity: value.source().identity(),
-        digest: value.source().digest().to_string(),
         path: value.source().path(),
         formal: value.identity(),
     }
@@ -128,9 +127,7 @@ pub(super) fn error(error: &RunError, artifact: bool) -> Result<Value, serde_jso
                 },
             },
         ),
-        RunCause::Digest(_) | RunCause::ClauseRequest { .. } => {
-            (types::Stage::Request, types::Details::None)
-        }
+        RunCause::ClauseRequest { .. } => (types::Stage::Request, types::Details::None),
         RunCause::ClauseOutput(_) => (types::Stage::Output, types::Details::None),
         RunCause::Identifier(error) => (types::Stage::Request, types::Details::Identifier(error)),
         RunCause::Native(error) => (
@@ -449,7 +446,6 @@ pub(super) fn spine_run_result(
         package_id: package_id.hex(),
         source: types::RunSource {
             identity: source.source().identity(),
-            digest: source.source().digest().to_string(),
             path: source.source().path(),
         },
         function,
@@ -521,7 +517,6 @@ mod tests {
                     "identity": "test:spine-run",
                     "revision_namespace": "fixture",
                     "revision": "fixture:1",
-                    "digest": source.source().digest().to_string(),
                     "path": "program.native",
                 },
                 "function": "seven",

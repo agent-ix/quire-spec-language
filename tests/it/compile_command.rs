@@ -879,7 +879,7 @@ fn a_cycle_inside_the_libraries_renders_over_the_library_source() {
     };
     let a = format!("{SPINE_HEADER}{}", import("test/b")).into_bytes();
     let b = format!("{SPINE_HEADER}{}", import("test/a")).into_bytes();
-    // The program's bytes differ from b.native's, so the two digests do.
+    // The program and library source text are distinct.
     let program = format!(
         "{SPINE_HEADER}{}function u using v(): Boolean pure {{ false }}\n",
         import("test/a")
