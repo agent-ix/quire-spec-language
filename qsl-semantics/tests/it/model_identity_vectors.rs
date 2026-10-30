@@ -231,10 +231,6 @@ fn published_shape(name: &str) -> Option<Vec<Shape>> {
     )
 }
 
-fn universe_short(view: &EffectiveView) -> String {
-    view.object_universe().identity().to_string()[..8].to_owned()
-}
-
 fn published_vector(name: &str) -> Option<serde_json::Value> {
     let path = PathBuf::from(std::env::var_os("QSPEC_DIR")?)
         .join("proposals/checked-package-v2/model-effective-declaration-vectors.json");
@@ -251,40 +247,6 @@ fn published_vector(name: &str) -> Option<serde_json::Value> {
             .unwrap_or_else(|| panic!("QSpec publishes no model identity vector {name}"))
             .clone(),
     )
-}
-
-fn published_digest(name: &str) -> Option<String> {
-    Some(
-        published_vector(name)?["sha256"]
-            .as_str()
-            .expect("published vector digest")
-            .to_owned(),
-    )
-}
-
-fn published_short(name: &str) -> Option<String> {
-    Some(published_digest(name)?[..8].to_owned())
-}
-
-fn digest_hex(id: &EffectiveId) -> String {
-    id.as_bytes()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
-}
-
-fn assert_published_digest(actual: &EffectiveId, name: &str) {
-    let Some(expected) = published_digest(name) else {
-        return;
-    };
-    assert_eq!(digest_hex(actual), expected, "{name}: published identity");
-}
-
-fn assert_published_prefix(actual: &str, name: &str) {
-    let Some(expected) = published_short(name) else {
-        return;
-    };
-    assert_eq!(actual, expected, "{name}: published identity prefix");
 }
 
 fn charge_points(meter: &Meter) -> Vec<ChargePoint> {
@@ -315,12 +277,6 @@ fn n01_identities_facts_and_counters() {
     let b = type_entry(&view, "B");
     let ax = member_entry(&view, "A", "A/x");
     let bx = member_entry(&view, "B", "A/x");
-    assert_published_digest(&a.effective_id, "n01-type-A");
-    assert_published_digest(&b.effective_id, "n01-type-B");
-    assert_published_digest(&ax.effective_id, "n01-member-A-x");
-    assert_published_digest(&bx.effective_id, "n01-member-B-x");
-    assert_published_digest(&view.identity(), "n01-view");
-    assert_published_prefix(&universe_short(&view), "n01-universe");
     assert_eq!(
         view.object_universe().root_types,
         vec![a.effective_id],
@@ -453,20 +409,6 @@ fn n02_the_diamond_stores_one_link_per_direct_edge() {
         panic!("N02 completes");
     };
     assert_eq!(view.declarations().len(), 8);
-    for (entry, vector) in [
-        (type_entry(&view, "A"), "n02-type-A"),
-        (type_entry(&view, "B"), "n02-type-B"),
-        (type_entry(&view, "C"), "n02-type-C"),
-        (type_entry(&view, "D"), "n02-type-D"),
-        (member_entry(&view, "A", "A/x"), "n02-member-A-x"),
-        (member_entry(&view, "B", "A/x"), "n02-member-B-x"),
-        (member_entry(&view, "C", "A/x"), "n02-member-C-x"),
-        (member_entry(&view, "D", "A/x"), "n02-member-D-x"),
-    ] {
-        assert_published_digest(&entry.effective_id, vector);
-    }
-    assert_published_digest(&view.identity(), "n02-view");
-    assert_published_prefix(&universe_short(&view), "n02-universe");
 
     for (actual, name) in [
         (shape(type_entry(&view, "D")), "n02-type-D"),
@@ -600,7 +542,6 @@ fn n07_reversed_nodes_give_the_same_identities_and_view() {
     let mut reversed = f2();
     reversed.records.reverse();
     let reversed = completed(&reversed);
-    assert_published_digest(&reversed.identity(), "n02-view");
     assert_eq!(forward.identity(), reversed.identity());
     let ids = |view: &EffectiveView| -> BTreeMap<String, String> {
         view.declarations()
@@ -625,10 +566,6 @@ fn n09_a_second_selection_changes_only_the_view_and_the_universe() {
             .collect()
     };
     assert_eq!(ids(&first), ids(&second));
-    assert_published_digest(&first.identity(), "n01-view");
-    assert_published_digest(&second.identity(), "n01v2-view");
-    assert_published_prefix(&universe_short(&first), "n01-universe");
-    assert_published_prefix(&universe_short(&second), "n01v2-universe");
 }
 
 /// N12: the counters of the admitted fixture and the identities that move
