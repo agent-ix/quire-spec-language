@@ -126,6 +126,9 @@ struct CliCandidate {
 ///
 /// # Errors
 /// The first [`Mismatch`] found.
+// Intake proof: the_expected_unsupported_run_passes. The CLI report's
+// witness class, reason and dispositions are read as its wire words.
+#[ix_trace_rs::string_edge]
 pub fn expected_run(code: Option<i32>, stdout: &[u8]) -> std::result::Result<(), Mismatch> {
     if code != Some(UNSUPPORTED_EXIT) {
         return Err(Mismatch::Exit { found: code });

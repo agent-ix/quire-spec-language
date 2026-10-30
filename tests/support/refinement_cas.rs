@@ -24,7 +24,6 @@ use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckedGraph, CheckedRefinement, PackageDeclarations};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::observation::{AdmissionFailure, DocumentRef, ObservationLimits};
 use qsl_semantics::model::state::{ModelState, StateObject};
 use quire_checked::key::DeclarationKey;
@@ -422,21 +421,12 @@ pub fn mutated(body: &str, from: &str, to: &str) -> String {
 }
 
 /// The unit text: both models, their contracts and `refinement`.
-fn unit_text(
-    documents: &BTreeMap<[u8; 32], Vec<u8>>,
+pub fn unit_text(
+    documents: &qsl_semantics::model::intake::PackageInput,
     refinement: &str,
     variant: Variant,
 ) -> String {
-    let digest = |package: &str| {
-        documents
-            .iter()
-            .find(|(_, bytes)| {
-                serde_json::from_slice::<Json>(bytes)
-                    .is_ok_and(|json| json["package"]["identity"] == package)
-            })
-            .map(|(digest, _)| hex(digest))
-            .expect("the package is provisioned")
-    };
+    let _ = documents;
     // Leading `profile` lines of `refinement` are header selections.
     let (profiles, refinement) = {
         let split = refinement
@@ -450,15 +440,12 @@ fn unit_text(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
          profile inf = \"quire.temporal.infinite-trace/v1\";\n\
-         {profiles}model Spec = \"{SPEC}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
-         model Impl = \"{CAS}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
-         model Third = \"{THIRD}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         {profiles}model Spec = \"{SPEC}\";\n\
+         model Impl = \"{CAS}\";\n\
+         model Third = \"{THIRD}\";\n\
          pre CanInc using v on Spec::Counter::inc {{ self.value < 2 }}\n\
          post Inc using v on Spec::Counter::inc {{ pre(self.value) < 2 and self.value = pre(self.value) + 1 }}\n\
          {}{}{}{refinement}\n",
-        digest(SPEC),
-        digest(CAS),
-        digest(THIRD),
         worker("A", variant),
         worker("B", variant),
         if variant.add {
@@ -470,13 +457,14 @@ fn unit_text(
     )
 }
 
-/// The two domain packages' documents, by digest.
-pub fn packages(variant: Variant) -> BTreeMap<[u8; 32], Vec<u8>> {
+/// The two domain packages' documents, by identity.
+pub fn packages(variant: Variant) -> qsl_semantics::model::intake::PackageInput {
     package_input([
         spec_document(SPEC, variant.add).as_slice(),
         cas_document(variant).as_slice(),
         spec_document(THIRD, false).as_slice(),
     ])
+    .unwrap()
 }
 
 /// The checked graph of the unit with `refinement`, or its refusals.
@@ -519,21 +507,15 @@ pub fn check(variant: Variant, refinement: &str) -> Result<CheckedGraph, String>
 /// fields are each `fields`.
 fn snapshot(
     package: &str,
-    document: &[u8],
     (fields, keys): (Json, &[String]),
-    snapshots: &mut BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: &mut qsl_semantics::model::observation::DocumentProvision,
 ) -> DocumentRef {
     let objects: Vec<Json> = keys
         .iter()
         .map(|key| json!({"key": key, "type": ident(package, "Counter"), "fields": fields}))
         .collect();
-    let model_digest = *package_input([document])
-        .keys()
-        .next()
-        .expect("one package");
-    let header = json!({"identity": package, "version": "1.0.0",
-        "digest": format!("sha256-jcs:{}", hex(&model_digest))});
-    let name = format!("{package}/start");
+    let header = json!({"identity": package});
+    let name = format!("{package}/start/{fields}/{}", keys.join(","));
     let snapshot = json!({
         "format": "quire.state.snapshot/v1",
         "identity": {"authority": "test", "identity": name, "revision_namespace": "fixture",
@@ -544,17 +526,16 @@ fn snapshot(
             "objects": objects}],
     });
     let bytes = snapshot.to_string().into_bytes();
-    let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-    let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-        .expect("canonical fixture")
-        .as_bytes();
-    snapshots.insert(digest, bytes);
+    snapshots.insert(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    );
     DocumentRef {
         authority: "test".to_owned(),
         identity: name,
         revision_namespace: "fixture".to_owned(),
         revision: "fixture:1".to_owned(),
-        digest,
     }
 }
 
@@ -562,8 +543,8 @@ fn snapshot(
 pub struct World {
     keys: Vec<String>,
     package: CheckedPackage,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
+    snapshots: qsl_semantics::model::observation::DocumentProvision,
     spec_initial: DocumentRef,
     spec_one: DocumentRef,
     cas_initial: DocumentRef,
@@ -592,25 +573,21 @@ impl World {
         let mut snapshots = BTreeMap::new();
         let spec_initial = snapshot(
             SPEC,
-            &spec_document(SPEC, variant.add),
             (json!({"value": {"integer": "0"}}), &keys),
             &mut snapshots,
         );
         let spec_one = snapshot(
             SPEC,
-            &spec_document(SPEC, variant.add),
             (json!({"value": {"integer": "1"}}), &keys),
             &mut snapshots,
         );
         let third_initial = snapshot(
             THIRD,
-            &spec_document(THIRD, false),
             (json!({"value": {"integer": "0"}}), &keys),
             &mut snapshots,
         );
         let cas_initial = snapshot(
             CAS,
-            &cas_document(variant),
             (
                 json!({
                     "value": {"integer": variant.concrete_value.to_string()},
@@ -631,6 +608,26 @@ impl World {
             cas_initial,
             third_initial,
         }
+    }
+
+    /// The domain package provision.
+    pub fn package_provision(&self) -> &qsl_semantics::model::intake::PackageInput {
+        &self.packages
+    }
+
+    /// The snapshot provision.
+    pub fn snapshot_provision(&self) -> &qsl_semantics::model::observation::DocumentProvision {
+        &self.snapshots
+    }
+
+    /// The concrete subject's initial snapshot.
+    pub fn concrete_initial(&self) -> DocumentRef {
+        self.cas_initial.clone()
+    }
+
+    /// The object keys each population holds.
+    pub fn object_keys(&self) -> &[String] {
+        &self.keys
     }
 
     /// The unit's checked package.

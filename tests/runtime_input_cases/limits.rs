@@ -17,10 +17,7 @@ fn limits_from(snapshot: &Snapshot) -> ArtifactLimits {
 #[trace("TC-057", "FR-018-AC-6")]
 fn independent_text_totals_include_all_metadata_and_value_strings() {
     let mut snapshot = empty();
-    snapshot.models.push(ModelBinding {
-        model: owner(),
-        digest: zero_digest(),
-    });
+    snapshot.models.push(ModelBinding { model: owner() });
     snapshot.populations.push(Population {
         model: owner(),
         record: symbol("Node"),
@@ -35,8 +32,8 @@ fn independent_text_totals_include_all_metadata_and_value_strings() {
     snapshot.arena = vec![ValueNode::Text { value: "x".into() }];
     let artifact = Snapshot::new(identity(), snapshot.clone(), ArtifactLimits::default()).unwrap();
     // Labels 28 (agent-ix, snapshot:current, git, 1); three owners 27 each;
-    // record/universe 9; key/field 2; State name 5; payload 1. Digests and
-    // fixed encoding tokens are output work.
+    // record/universe 9; key/field 2; State name 5; payload 1. Fixed encoding
+    // tokens are output work.
     assert_eq!(artifact.usage().text_bytes, 126);
     let error = Snapshot::new(
         identity(),
@@ -59,10 +56,7 @@ fn independent_text_totals_include_all_metadata_and_value_strings() {
     );
 
     let mut operation = invocation();
-    operation.models.push(ModelBinding {
-        model: owner(),
-        digest: zero_digest(),
-    });
+    operation.models.push(ModelBinding { model: owner() });
     operation.parameters.push(binding("arg", 0));
     operation.created.push(object("new"));
     operation.deleted.push(object("old"));
@@ -171,10 +165,7 @@ fn generated_shared_arenas_obey_each_exact_lowered_dimension() {
 #[trace("TC-057", "FR-018-AC-6")]
 fn every_metadata_entry_class_is_counted_before_its_work() {
     let mut snapshot = empty();
-    snapshot.models.push(ModelBinding {
-        model: owner(),
-        digest: zero_digest(),
-    });
+    snapshot.models.push(ModelBinding { model: owner() });
     snapshot.populations.push(Population {
         model: owner(),
         record: symbol("Node"),
@@ -219,10 +210,7 @@ fn every_metadata_entry_class_is_counted_before_its_work() {
         }
     }
     let mut operation = invocation();
-    operation.models.push(ModelBinding {
-        model: owner(),
-        digest: zero_digest(),
-    });
+    operation.models.push(ModelBinding { model: owner() });
     operation.parameters.push(binding("arg", 0));
     operation.result = Some(ValueId::new(0));
     operation.created.push(object("new"));
@@ -431,15 +419,11 @@ fn oversized_text_stops_before_encoding_and_retains_original_labels() {
     assert_eq!(error.usage.artifact_bytes, 0);
     assert_eq!(error.code, Code::ResourceExhausted);
     assert_eq!(
-        SnapshotRef::new(oversized.clone(), zero_digest())
-            .unwrap_err()
-            .code,
+        SnapshotRef::new(oversized.clone()).unwrap_err().code,
         Code::ResourceExhausted
     );
     assert_eq!(
-        InvocationRef::new(oversized, zero_digest())
-            .unwrap_err()
-            .code,
+        InvocationRef::new(oversized).unwrap_err().code,
         Code::ResourceExhausted
     );
 }

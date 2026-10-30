@@ -39,7 +39,7 @@ relationships:
 ## Parallel Execution Summary
 
 ```text
-Task-045: specification fixtures -> `/3` wire/producer/reader -> TC-143 -> QProtocol pin
+Task-045: specification fixtures -> `/3` wire/producer/reader -> TC-143
 ```
 
 ## Task File Mapping

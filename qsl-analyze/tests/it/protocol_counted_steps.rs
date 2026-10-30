@@ -146,7 +146,7 @@ impl Case {
                     max_messages: None,
                     max_live_instances: None,
                 },
-                &envelope_at(&unit, id, payload.clone(), clause_node, occurrence.clone()),
+                &envelope_at(id, payload.clone(), clause_node, occurrence.clone()),
                 letters,
                 ReplayLimits::default(),
             )

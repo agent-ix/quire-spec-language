@@ -46,6 +46,7 @@ use qsl_semantics::check::Capability;
 use quire_exact::Cancel;
 use quire_semantic_value::catalog::CatalogCode;
 
+pub use crate::contract_check::contract_item;
 pub use crate::value_check::value_item;
 pub use items::{
     derived_model_item, derived_protocol_item, derived_zone_item, hyper_form_item, model_item,
@@ -54,7 +55,7 @@ pub use items::{
 };
 
 use crate::zone_check::ZoneCheckRecord;
-use crate::{model_check, statistical, value_check, zone_check};
+use crate::{contract_check, model_check, statistical, value_check, zone_check};
 
 /// One layer-A engine as `analyze` runs it: its backend identity and the
 /// descriptor FR-288 converts its manifest into.
@@ -76,7 +77,7 @@ impl Engine {
     ///
     /// Only if the registry's admission rules refuse EN-1's own manifest.
     pub fn model_check() -> Result<Self, RegistrationRefusal> {
-        model_check::manifest::descriptor(ProviderOrigin::Linked, linked_digest()).map(Self::new)
+        model_check::manifest::descriptor(ProviderOrigin::Linked).map(Self::new)
     }
 
     /// EN-6, the zone engine, which decides items over a `time dense`
@@ -86,7 +87,7 @@ impl Engine {
     ///
     /// Only if the registry's admission rules refuse EN-6's own manifest.
     pub fn zone_check() -> Result<Self, RegistrationRefusal> {
-        zone_check::manifest::descriptor(ProviderOrigin::Linked, linked_digest()).map(Self::new)
+        zone_check::manifest::descriptor(ProviderOrigin::Linked).map(Self::new)
     }
 
     /// EN-4, the statistical engine.
@@ -95,7 +96,7 @@ impl Engine {
     ///
     /// Only if the registry's admission rules refuse EN-4's own manifest.
     pub fn statistical() -> Result<Self, RegistrationRefusal> {
-        statistical::manifest::descriptor(ProviderOrigin::Linked, linked_digest()).map(Self::new)
+        statistical::manifest::descriptor(ProviderOrigin::Linked).map(Self::new)
     }
 
     /// The value-validity check arm (QSpec FR-483, FR-484).
@@ -104,7 +105,16 @@ impl Engine {
     ///
     /// Only if the registry's admission rules refuse the arm's own manifest.
     pub fn value_check() -> Result<Self, RegistrationRefusal> {
-        value_check::manifest::descriptor(ProviderOrigin::Linked, linked_digest()).map(Self::new)
+        value_check::manifest::descriptor(ProviderOrigin::Linked).map(Self::new)
+    }
+
+    /// The operation-contract check arm (QSpec FR-483, FR-485).
+    ///
+    /// # Errors
+    ///
+    /// Only if the registry's admission rules refuse the arm's own manifest.
+    pub fn contract_check() -> Result<Self, RegistrationRefusal> {
+        contract_check::manifest::descriptor(ProviderOrigin::Linked).map(Self::new)
     }
 
     /// The value-validity arm publishing `max_cases` as its default case
@@ -116,8 +126,7 @@ impl Engine {
     pub fn value_check_with_max_cases(
         max_cases: std::num::NonZeroU64,
     ) -> Result<Self, RegistrationRefusal> {
-        value_check::manifest::descriptor_with(ProviderOrigin::Linked, linked_digest(), max_cases)
-            .map(Self::new)
+        value_check::manifest::descriptor_with(ProviderOrigin::Linked, max_cases).map(Self::new)
     }
 
     /// The default `max_cases` this engine's descriptor publishes.
@@ -137,12 +146,6 @@ impl Engine {
             .filter_map(|(advertised, mode)| (advertised == kind).then_some(mode))
             .collect()
     }
-}
-
-/// A linked engine publishes its manifest as data of its own module and has
-/// no separate manifest bytes to digest.
-fn linked_digest() -> qsl_route::ManifestDigest {
-    qsl_route::ManifestDigest::from_digest([0; 32])
 }
 
 /// `Engines::with` was given an engine whose `BackendId` the set holds
@@ -183,6 +186,7 @@ impl Engines {
                 Engine::statistical()?,
                 Engine::zone_check()?,
                 Engine::value_check()?,
+                Engine::contract_check()?,
             ],
         })
     }
@@ -302,6 +306,8 @@ pub(crate) enum EngineReport {
     Statistical(Box<StatisticalRecord>),
     /// The value-validity arm's finding.
     Value(Box<value_check::ValueReport>),
+    /// The operation-contract arm's finding.
+    Contract(Box<contract_check::ContractReport>),
     /// EN-6's record, settled by FR-235's map, or a timed refinement's by
     /// FR-144's rows over EN-6's causes.
     Zone(Box<ZoneCheckRecord>),
@@ -427,6 +433,9 @@ pub struct AnalyzeRecord {
     pub zone_check: Option<Box<ZoneCheckRecord>>,
     /// The value-validity arm's counterexample, carried by a `refuted` item.
     pub value_check: Option<Box<value_check::ValueCounterexample>>,
+    /// The operation-contract arm's counterexample, carried by a `refuted`
+    /// item.
+    pub contract_check: Option<Box<qsl_replay::contract_check::ContractCounterexample>>,
 }
 
 /// How an item settled.
@@ -556,6 +565,7 @@ fn run(engines: &Engines, item: AnalyzeItem<'_>, cancel: &Cancel) -> AnalyzeReco
         protocol_check: None,
         zone_check: None,
         value_check: None,
+        contract_check: None,
     };
     let disposed = |kind, diagnostic| {
         record(Settlement::Disposed(Disposed {
@@ -631,6 +641,7 @@ fn settle(
         protocol_check: None,
         zone_check: None,
         value_check: None,
+        contract_check: None,
     };
     let disposed = |kind, diagnostic: Diagnostic, backend| {
         record(
@@ -659,6 +670,12 @@ fn settle(
             settled.value_check = counterexample.map(Box::new);
             settled
         }
+        EngineReport::Contract(report) => {
+            let (settled_record, counterexample) = contract_check::settle(*report, index, backend);
+            let mut settled = record(terminal(settled_record), None);
+            settled.contract_check = counterexample.map(Box::new);
+            settled
+        }
         EngineReport::Protocol(protocol) => AnalyzeRecord {
             request_index: index,
             // A refuted value without its reproduced counterexample is an
@@ -672,6 +689,7 @@ fn settle(
             protocol_check: Some(protocol),
             zone_check: None,
             value_check: None,
+            contract_check: None,
         },
         EngineReport::Statistical(statistical) => {
             record(terminal(statistical.into_terminal(index, backend)), None)
@@ -693,6 +711,7 @@ fn settle(
             protocol_check: None,
             zone_check: Some(zone),
             value_check: None,
+            contract_check: None,
         },
         EngineReport::Refused(Refusal::Declined(cause, code, diagnostic)) => record(
             terminal(TerminalRecord::declined_with(
@@ -730,7 +749,7 @@ fn settle(
 mod tests {
     use ix_trace_rs::trace;
     use qsl_foundation::bound::DomainKind;
-    use qsl_route::{descriptor_from_manifest, ManifestDigest};
+    use qsl_route::descriptor_from_manifest;
 
     use super::*;
 
@@ -739,7 +758,6 @@ mod tests {
             descriptor_from_manifest(
                 Candidate::new(BackendId::new(id)),
                 ProviderOrigin::Linked,
-                ManifestDigest::from_digest([9; 32]),
                 [(Some(kind.to_wire()), Some(Mode::Bounded.to_wire()))],
                 qsl_route::ManifestMembers {
                     domains: Some(&[DomainKind::Population.to_wire()]),
@@ -793,10 +811,10 @@ mod tests {
                 .iter()
                 .map(|descriptor| descriptor.id().as_str())
                 .collect::<Vec<_>>(),
-            ["en-1", "en-4", "en-6", "value-checker"]
+            ["en-1", "en-4", "en-6", "value-checker", "contract-checker"]
         );
-        let [en1, en4, _en6, value] = registrations.as_slice() else {
-            panic!("the linked engine set contains EN-1, EN-4, EN-6 and the value arm");
+        let [en1, en4, _en6, value, contract] = registrations.as_slice() else {
+            panic!("the linked engine set contains EN-1, EN-4, EN-6 and the two check arms");
         };
         assert!(registrations
             .iter()
@@ -810,6 +828,9 @@ mod tests {
         assert!(value
             .advertises()
             .any(|(kind, _)| kind == Capability::ValueValidity));
+        assert!(contract
+            .advertises()
+            .any(|(kind, _)| kind == Capability::OperationContract));
     }
 
     /// FR-281-AC-10: a second engine of one `BackendId` is refused as

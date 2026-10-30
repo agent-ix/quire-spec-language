@@ -414,8 +414,8 @@ impl CallSiteRefusal {
 
 /// Compile `bytes` (labelled `source`, displayed as `path`) through S1 to S4
 /// under the default spine stage limits, with `packages` -- each a domain
-/// package document, keyed by its own `sha256-jcs` digest as `replay` keys
-/// the documents of its byte provision -- as I1's package input and
+/// package document, keyed by its package identity as `replay` keys the
+/// documents of its byte provision -- as I1's package input and
 /// `dependencies` as the dependency input, and locate `selection` in the
 /// result.
 ///
@@ -478,7 +478,12 @@ pub fn call_site<'a, S: CallSiteSelection>(
         Err(fault) => Box::new(CallSiteRefusal::Fault(fault)),
     };
     let limits = spine::SpineLimits::default();
-    let packages = package_input(packages);
+    let packages = package_input(packages).map_err(|_| {
+        Box::new(CallSiteRefusal::Fault(InternalFault::new(
+            "call-site",
+            "package-documents-form-a-package-input",
+        )))
+    })?;
     let parsed = spine::parse(
         &spine::ParseRequest {
             source: &source,
@@ -493,16 +498,9 @@ pub fn call_site<'a, S: CallSiteSelection>(
     let models = spine::select(&parsed, &packages, limits.model, &cancel)
         .map_err(refusal)?
         .into_value();
-    let checked = spine::check(
-        &parsed,
-        &models,
-        dependencies,
-        &spine::LockEvidence::default(),
-        limits,
-        &cancel,
-    )
-    .map_err(refusal)?
-    .into_value();
+    let checked = spine::check(&parsed, &models, dependencies, limits, &cancel)
+        .map_err(refusal)?
+        .into_value();
     let emitted = spine::package(&checked, spine::PackageLimits::default(), &cancel)
         .map_err(refusal)?
         .into_value();
@@ -798,7 +796,7 @@ fn wire_id(key: NodeKey) -> WireNodeId {
 #[cfg(test)]
 mod tests {
     use ix_trace_rs::trace;
-    use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord};
+    use qsl_foundation::digest::{DigestDomain, DigestRecord};
     use qsl_foundation::SourceIdentity;
     use quire_exact::{Identifier, ScalarLimits};
 
@@ -867,23 +865,17 @@ mod tests {
         declaration: qsl_foundation::source::provenance::OccurrenceKey,
         assignments: Vec<CanonicalAssignment>,
     ) -> ReplayRequestWire {
-        let source_digest_record = DigestRecord::mint(
-            DigestDomain::SourceBytesV1,
-            ByteDigest::of(bytes).as_bytes(),
-        );
         ReplayRequestWire {
             profile_selections: vec![],
             package_id: (
                 Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
                 package_id.hex(),
             ),
-            source_digests: vec![(
+            sources: vec![(
                 "a".to_owned(),
                 "u".to_owned(),
                 "git".to_owned(),
                 "1".to_owned(),
-                Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-                source_digest_record.hex(),
             )],
             dependencies: Vec::new(),
             replay_target: crate::RequestTargetWire::function(function, declaration),
@@ -896,11 +888,8 @@ mod tests {
             supplied_limits: None,
             object_environment: None,
             declared_domains: Vec::new(),
-            byte_provision: vec![(
-                Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-                source_digest_record.hex(),
-                bytes.to_vec(),
-            )],
+            byte_provision: vec![("a".to_owned(), "u".to_owned(), bytes.to_vec())],
+            documents: vec![],
         }
     }
 
@@ -1010,7 +999,7 @@ mod tests {
             SourceIdentity::new("a", "u", "git", "1"),
             "unit.native",
             UNIT.as_bytes(),
-            &qsl_semantics::model::intake::package_input([]),
+            &qsl_semantics::model::intake::package_input([]).unwrap(),
             &DependencyInput::default(),
             crate::spine::SpineLimits::default(),
         )
@@ -1043,7 +1032,6 @@ mod tests {
             edition: &selections.edition,
             profile_selections: &selections.profile_selections,
             definition_selections: &selections.definition_selections,
-            model_selections: &selections.model_selections,
             required_features: &selections.required_features,
             dependency_selections: &selections.dependency_selections,
             identity_projection: &package.graph().nodes,

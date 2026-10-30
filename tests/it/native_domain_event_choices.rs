@@ -178,7 +178,6 @@ fn admitted(
             );
             let read = read.into_result().unwrap();
             assert_eq!(read.package(), package);
-            assert_eq!(read.digest(), emitted.digest());
         },
     );
 }

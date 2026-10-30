@@ -113,12 +113,6 @@ pub(crate) mod imports;
 mod ir;
 mod layer;
 mod lowering;
-// FR-092/093/094's golden vectors, resolved from the specs' hand-written
-// preimages; the package emitter's and the evaluator's tests recompute the
-// keys through it, so only `test-support` exposes it.
-#[cfg(any(test, feature = "test-support"))]
-#[path = "lowering/spec_vectors.rs"]
-pub mod spec_vectors;
 // FR-091's dimension, unit and enum key vectors, recomputed from the spec's
 // stated preimage content.
 #[cfg(any(test, feature = "test-support"))]
@@ -225,8 +219,8 @@ pub use profile::{resolve_profiles, ProfileCause, ProfileRefusal};
 #[cfg(any(test, feature = "test-support"))]
 pub use family::DeclarationMetrics;
 pub use lowering::{
-    model_root_key, AdmittedModel, AuthoredBound, ForeignView, LockEvidence, ModelClause,
-    ModelRootKeyError, NominalNode, SemanticGraph, SemanticNode,
+    model_root_key, AdmittedModel, AuthoredBound, ForeignView, ModelClause, ModelRootKeyError,
+    NominalNode, SemanticGraph, SemanticNode,
 };
 pub use node_key::AbstractionTerm;
 pub use node_key::{
@@ -415,12 +409,13 @@ pub use qsl_forms::{
 pub use refusal::{
     AliasKind, AmbiguousMember, AmbiguousQualified, ArmFault, ChannelEnd, CheckCause, CheckRefusal,
     CheckingLimitKind, CheckingStage, DispatchFunctionRole, DispatchLinkCause,
-    DispatchSubtypeFailure, ExecutionPointRefusal, IdentityForm, IdentityNode, IdentityObserving,
-    InvalidDispatchDeclaration, JoinFault, KeyFault, MeasureObligation, MemberCandidate,
-    NavigationBound, Obligation, ObservationReason, PredicateRole, ProtocolAnchorCause,
-    ProtocolConstruct, ProtocolReferenceCause, ProvedInterval, QualifiedCandidate, RelatedEnd,
-    ShadowedDeclaration, SlotKind, StageLimitCause, StateGraphCause, TaskSetDefect, TaskTimeMember,
-    TemporalCause, TimeUnitCause, TimedConstruct,
+    DispatchSubtypeFailure, ExcludedClauseForm, ExecutionPointRefusal, IdentityForm, IdentityNode,
+    IdentityObserving, InvalidDispatchDeclaration, JoinFault, KeyFault, MeasureObligation,
+    MemberCandidate, NavigationBound, Obligation, ObservationReason, PredicateRole,
+    ProtocolAnchorCause, ProtocolConstruct, ProtocolReferenceCause, ProvedInterval,
+    QualifiedCandidate, RelatedEnd, ShadowedDeclaration, SlotKind, StageLimitCause,
+    StateGraphCause, TaskSetDefect, TaskTimeMember, TemporalCause, TimeUnitCause, TimedConstruct,
+    TimedOmission, UnwrittenTimedMember,
 };
 pub use state_graph_claim::{
     CheckedPredicateBody, CheckedStateGraphClaim, CheckedStatePredicate, OverParameter,
@@ -439,9 +434,10 @@ pub use temporal_clause::{
 };
 pub use timed_model::{
     CheckedTimedPredicate, ClockConstraint, ClockField, ClockGuard, ClockId, ClockOp,
-    ClockParameterRange, ClockReset, ClockResets, CollectionWrite, ConvexPart, ElementBinding,
-    QuantifiedFamily, SlotRef, SlotSelection, StateAlternative, TimeInvariant, TimedModel, Urgency,
-    Written,
+    ClockParameterRange, ClockReset, ClockResets, CollectionWrite, ConstraintNodes,
+    ConstraintTargetNodes, ConvexPart, ElementBinding, GuardNodes, InvariantNodes, PartNodes,
+    QuantifiedFamily, ResetNodes, ResetTargetNodes, SlotRef, SlotSelection, StateAlternative,
+    TimeInvariant, TimedClauseNodes, TimedModel, Urgency, Written,
 };
 
 /// A checked function.
@@ -1126,9 +1122,7 @@ impl PackageDeclarations {
         if !self.timed_forms.is_empty() {
             let required = crate::value::layer::HeaderLayer::TemporalComplete;
             let selected = self.header_layers.clone();
-            let admitted = crate::value::definition::DefinitionLock::pinned()
-                .closure(&selected)
-                .contains(&required);
+            let admitted = crate::value::layer::HeaderLayer::closure(&selected).contains(&required);
             let units = time_units::TimeUnits::new(
                 &self.units,
                 self.nominal_spans.keys().copied(),
@@ -1457,9 +1451,7 @@ impl PackageDeclarations {
         if !self.task_set_forms.is_empty() {
             let required = crate::value::layer::HeaderLayer::TemporalComplete;
             let selected = self.header_layers.clone();
-            let admitted = crate::value::definition::DefinitionLock::pinned()
-                .closure(&selected)
-                .contains(&required);
+            let admitted = crate::value::layer::HeaderLayer::closure(&selected).contains(&required);
             task_sets_admitted = admitted;
             if admitted {
                 let units = time_units::TimeUnits::new(
@@ -1615,8 +1607,7 @@ impl PackageDeclarations {
                 .iter()
                 .map(|protocol| protocol.name.name.as_str()),
         );
-        let model_selected = crate::value::definition::DefinitionLock::pinned()
-            .closure(&self.header_layers)
+        let model_selected = crate::value::layer::HeaderLayer::closure(&self.header_layers)
             .contains(&crate::value::layer::HeaderLayer::ModelComplete);
         let mut model_context_calls = Vec::new();
         if model_selected {
@@ -1915,7 +1906,7 @@ impl PackageDeclarations {
             .map(|function| function.parameter_spans().map(<[_]>::to_vec))
             .collect();
         let owner = node_key::SourceOwner::from(&source);
-        let lock_evidence = self.lock_evidence;
+        let protocol_profile = self.protocol_profile;
         let header_layers = self.header_layers;
         let models = self.models;
         let model_inputs = self.model_inputs;
@@ -1947,7 +1938,7 @@ impl PackageDeclarations {
             .iter()
             .map(|model| model.selection().clone())
             .collect();
-        model_selections.sort_by(|a, b| (&a.identity, &a.version).cmp(&(&b.identity, &b.version)));
+        model_selections.sort_by(|a, b| a.identity.cmp(&b.identity));
         // FR-094 (ADR-013 O-01): a check selects one version of each domain
         // package identity, so a model owner names one declaration.
         let mut selected = std::collections::BTreeSet::new();
@@ -2109,7 +2100,7 @@ impl PackageDeclarations {
                 &owner,
                 &models,
                 scope.types().units().clone(),
-                &lock_evidence,
+                protocol_profile.as_ref(),
                 0,
                 &mut sealing_occurrences,
                 &mut sealing_meter,
@@ -2535,8 +2526,7 @@ impl PackageDeclarations {
             let checking = timed_model::Checking {
                 declarations: &declarations,
                 state_clauses: &state_clause_forms,
-                complete_value: crate::value::definition::DefinitionLock::pinned()
-                    .closure(&header_layers)
+                complete_value: crate::value::layer::HeaderLayer::closure(&header_layers)
                     .contains(&crate::value::layer::HeaderLayer::ValueComplete),
                 presence_places: &[],
             };
@@ -2559,8 +2549,15 @@ impl PackageDeclarations {
         // FR-230: each `urgent when` predicate S3 lowers is located at its own
         // site, so its nodes' occurrences resolve.
         for model in &mut timed_models {
-            for (_, _, predicate) in model.urgency_predicates_mut() {
-                site_spans.insert(predicate.site.clone(), predicate.spans.clone());
+            for (_, _, predicate) in model.urgency_predicates() {
+                for (site, spans) in &predicate.sites {
+                    site_spans.insert(site.clone(), spans.clone());
+                }
+            }
+            // FR-230, QSpec FR-322 "Clause nodes": so is each guard part's
+            // and time invariant's predicate.
+            for (site, spans) in model.predicate_sites() {
+                site_spans.insert(site.clone(), spans.clone());
             }
         }
         // FR-135 to FR-137: each `refinement` declaration, its rows typed as
@@ -2827,8 +2824,8 @@ impl PackageDeclarations {
         let mut protocol_bindings = Vec::with_capacity(self.protocols.len());
         // The selected protocol profile, which the structural refusals of a
         // protocol's control tree name (FR-218, FR-381).
-        let protocol_profile = lock_evidence
-            .protocol_profile()
+        let protocol_profile_identity = protocol_profile
+            .as_ref()
             .map(|definition| definition.identity.clone());
         // FR-218 "Requirements": the unit's declarations a `requires
         // temporal` name resolves among, each other kind by its keyword.
@@ -2916,7 +2913,7 @@ impl PackageDeclarations {
                 attempts,
                 &state_clause_forms,
                 protocol_clause::Selections {
-                    protocol: protocol_profile.as_deref(),
+                    protocol: protocol_profile_identity.as_deref(),
                     temporal: &temporal_aliases,
                 },
             );
@@ -2945,7 +2942,7 @@ impl PackageDeclarations {
             let obligations = protocol_obligation::check(
                 protocol,
                 anchored.as_ref().ok().map(|(checked, _)| checked),
-                protocol_profile.as_deref(),
+                protocol_profile_identity.as_deref(),
                 &obligation_declarations,
                 &mut obligation_cx,
             );
@@ -3024,7 +3021,7 @@ impl PackageDeclarations {
                         &slot_declarations,
                         &mut slot_cx,
                         &regions,
-                        protocol_profile.as_deref(),
+                        protocol_profile_identity.as_deref(),
                     ) {
                         protocol_slots::Slots::Checked(slots, used) => {
                             checked.slots = *slots;
@@ -3734,7 +3731,7 @@ impl PackageDeclarations {
             &owner,
             &models,
             units,
-            &lock_evidence,
+            protocol_profile.as_ref(),
             drafts.len(),
             &mut occurrences,
             &mut contract_meter,
@@ -4203,6 +4200,27 @@ impl PackageDeclarations {
             };
             match lowering.time_source_anchor(&anchor) {
                 Ok(key) => self.time_sources[*index].tick_operation_anchor = Some(key),
+                Err(refusal) => refusals.push(refusal),
+            }
+        }
+        // QSpec FR-322 "Timed-model nodes": the `clock_place` template of
+        // each clock of each dense model, located at its time declaration,
+        // which a `presence_read` and a clause name, before any clause whose
+        // body reads a presence (QSpec FR-322 `CW-05`).
+        for model in &mut timed_models {
+            let Some((index, source)) = self
+                .time_sources
+                .iter()
+                .enumerate()
+                .find(|(_, source)| source.model == model.model())
+            else {
+                continue;
+            };
+            let declaration = root(Origin::TypeDeclaration {
+                name: time_source_origin(index),
+            });
+            match lowering.clock_places(model.clocks(), source.model_node, &declaration) {
+                Ok(places) => model.set_place_nodes(places),
                 Err(refusal) => refusals.push(refusal),
             }
         }
@@ -4687,7 +4705,8 @@ impl PackageDeclarations {
         // FR-230, QSpec FR-322 "Timed-model nodes": each `urgent when`
         // predicate's expression node, which its `urgency` node references.
         for model in &mut timed_models {
-            for (_, urgency, predicate) in model.urgency_predicates_mut() {
+            let mut lowered = Vec::new();
+            for (index, urgency, predicate) in model.urgency_predicates() {
                 let timed_model::Urgency::When {
                     context,
                     alternatives,
@@ -4696,14 +4715,55 @@ impl PackageDeclarations {
                 else {
                     continue;
                 };
-                let [alternative] = alternatives.as_slice() else {
-                    continue;
-                };
-                match lowering.urgency_predicate(*context, alternative.predicate(), &predicate.site)
-                {
-                    Ok(key) => predicate.node = Some(key),
+                let sites: Vec<_> = predicate
+                    .sites
+                    .iter()
+                    .map(|(site, _)| timed_model::site_location(site))
+                    .collect();
+                match lowering.timed_state(model.clocks(), *context, alternatives, &sites) {
+                    Ok(key) => lowered.push((index, key)),
                     Err(refusal) => refusals.push(refusal),
                 }
+            }
+            model.set_urgency_predicate_nodes(lowered);
+        }
+        // FR-230, QSpec FR-322 "Clause nodes": the terms of the guards,
+        // resets and time invariants of each model S4 writes whole.
+        for model in &mut timed_models {
+            if model.unwritten().is_some() {
+                continue;
+            }
+            let Some(source) = self
+                .time_sources
+                .iter()
+                .position(|source| source.model == model.model())
+            else {
+                continue;
+            };
+            let declaration = root(Origin::TypeDeclaration {
+                name: time_source_origin(source),
+            });
+            let name = model.model().to_owned();
+            let part_site = |guard: usize, part: usize| {
+                timed_model::site_location(&timed_model::guard_part_site(&name, guard, part))
+            };
+            let invariant_site = |invariant: usize, alternative: usize| {
+                timed_model::site_location(&timed_model::invariant_site(
+                    &name,
+                    invariant,
+                    alternative,
+                ))
+            };
+            let input = lowering::TimedClauseInput {
+                model,
+                clause_locations: &clause_locations,
+                declaration: &declaration,
+                part_site: &part_site,
+                invariant_site: &invariant_site,
+            };
+            match lowering.timed_clauses(&input) {
+                Ok(nodes) => model.set_clause_nodes(nodes),
+                Err(refusal) => refusals.push(refusal),
             }
         }
         for composite in scope.types().composites() {
@@ -5616,12 +5676,7 @@ impl PackageDeclarations {
             }));
         }
         if !self.emit_unwritten_timed_members {
-            unwritten.extend(
-                timed_models
-                    .iter()
-                    .filter(|model| model.has_unwritten_members())
-                    .map(timed_model::not_emitted),
-            );
+            unwritten.extend(timed_models.iter().filter_map(timed_model::not_emitted));
         }
         if !unwritten.is_empty() {
             return Err(unwritten);
@@ -6715,6 +6770,33 @@ impl CheckedGraph {
         self.operation_frames
             .iter()
             .find(|operation| operation.frame == frame)
+    }
+
+    /// QSpec FR-485 "Forms": the operation frame whose
+    /// `state`/`operation_anchor` node identity is `anchor`, the node a
+    /// `frame` item's claim names.
+    pub fn operation_frame_by_anchor(
+        &self,
+        anchor: quire_exact::NodeKey,
+    ) -> Option<&CheckedOperationFrame> {
+        self.operation_frames
+            .iter()
+            .find(|operation| operation.anchor == anchor)
+    }
+
+    /// The `state`/`operation_anchor` node of the operation `name` that
+    /// `declaring` declares, when a clause or attempt of the unit names it.
+    pub fn operation_anchor_of(
+        &self,
+        declaring: quire_exact::EffectiveId,
+        name: &str,
+    ) -> Option<quire_exact::NodeKey> {
+        self.operation_frames
+            .iter()
+            .find(|frame| {
+                frame.operation.declaring == declaring && frame.operation.declaration.name() == name
+            })
+            .map(|frame| frame.anchor)
     }
 
     /// FR-107: the checked state clause whose minted node identity is

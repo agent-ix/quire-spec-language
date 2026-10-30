@@ -28,20 +28,19 @@ An immutable LinkedPackage borrowing the selected environments and owning the
 original ParsedUnit, or the existing Box<Diagnostic> with a link phase and no
 package. Declaration identities retain RequirementRef ownership, declaration
 kind/path and original IR SourceSpan. Native occurrence spans retain exact source
-bytes, the two source labels of FR-001 (authority and identity) and the source digest.
+bytes and the two source labels of FR-001 (authority and identity).
 
 ## Behavior
 
 This profile uses existing IR canonical declaration bytes as its explicit formal
 model artifact. Its package is the owner's exact PackageId namespace; its version is the exact
-decimal spelling of the positive IR requirement revision. Its import byte digest
-is SHA-256 of the existing V1 canonical declaration bytes, distinct from IR's
-domain-separated CanonicalDigest. This profile does not reinterpret historical
-Filament artifact digests or add a model decoder. All declarations/dependencies
+decimal spelling of the positive IR requirement revision. An import is selected by
+that exact package, requirement and revision. This profile does not reinterpret
+historical Filament artifacts or add a model decoder. All declarations/dependencies
 inside an environment participate in that canonical artifact.
 
 Every import is resolved before exposing a package. Missing package, stale
-revision/digest, ambiguous exports and missing declarations have distinct codes.
+revision, ambiguous exports and missing declarations have distinct codes.
 Repeated aliases contribute candidate exports; no first/last precedence is
 inferred. A context needs one record and an explicit state value named self with
 that record type. Field, value, enum and local references retain their respective
@@ -60,7 +59,7 @@ equality and Boolean roots remain FR-006's subsequent checking phase.
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-013-AC-1 | LinkedPackage preserves exact source identity, bytes and all native/formal declaration loci after successful exact import selection. | Test (TC-030) |
-| FR-013-AC-2 | A canonical semantic digest or another environment's byte digest cannot substitute for the selected canonical-declaration byte digest. | Test (TC-030) |
+| FR-013-AC-2 | **RETIRED (import digest removed).** An import is selected by its exact package, requirement and revision, and no digest exists to substitute. | Test (TC-030), retired |
 | FR-013-AC-3 | Lexical scopes, record fields, values and enum variants resolve to their exact local or owner-qualified identities; a missing reference refuses without a package. | Test (TC-031) |
 | FR-013-AC-4 | Unsupported reference/operation mappings refuse with unsupported_construct and never yield a package or Boolean result. | Test (TC-032) |
 | FR-013-AC-5 | Exact caller limits are admitted, a required next operation above a configured limit returns resource_exhausted, an input above a default links once that limit is raised to fit it, and zero does not disable a limit. | Test (TC-033) |

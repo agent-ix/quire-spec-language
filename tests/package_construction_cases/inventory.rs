@@ -23,10 +23,8 @@ fn source_order_preserves_multiple_model_owners_and_complete_invariant_pre_post_
     )
     .unwrap();
     let models = [native_rule_model::parts().model(), extra.model()];
-    let prefix = format!(
-        "{HEADER}model Z = \"example/extra-model\" version \"1\" digest \"{}\";\nmodel A = \"example/rule-tests\" version \"1\" digest \"{}\";\n",
-        models[1].digest(), models[0].digest(),
-    );
+    let prefix =
+        format!("{HEADER}model Z = \"example/extra-model\";\nmodel A = \"example/rule-tests\";\n",);
     let clauses = [
         "invariant Always on Z::Node at current { true }",
         "pre Before on A::Node::step { true }",
@@ -80,8 +78,8 @@ fn source_order_preserves_multiple_model_owners_and_complete_invariant_pre_post_
     assert_eq!(
         wire["models"],
         json!([
-            {"alias":"Z","owner":models[1].environment().owner(),"digest":models[1].digest().to_string(),"artifact":std::str::from_utf8(models[1].artifact_bytes()).unwrap()},
-            {"alias":"A","owner":models[0].environment().owner(),"digest":models[0].digest().to_string(),"artifact":std::str::from_utf8(models[0].artifact_bytes()).unwrap()},
+            {"alias":"Z","owner":models[1].environment().owner(),"artifact":std::str::from_utf8(models[1].artifact_bytes()).unwrap()},
+            {"alias":"A","owner":models[0].environment().owner(),"artifact":std::str::from_utf8(models[0].artifact_bytes()).unwrap()},
         ])
     );
     let mut expected = Vec::new();

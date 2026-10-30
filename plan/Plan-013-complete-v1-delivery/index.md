@@ -9,7 +9,7 @@ okf_version: "0.1"
 ## Contents
 
 * [Plan-013](./plan.md) - complete requirements, evidence, tests, DAG and capability allocation.
-* [Task-046](./tasks/Task-046-adopt-complete-v1.md) - adopt and audit the frozen baseline.
+* [Task-046](./tasks/Task-046-adopt-complete-v1.md) - adopt and audit the complete-V1 baseline.
 * [Task-047](./tasks/Task-047-complete-source-packages.md) - QSL #117 source/package/CST delivery.
 * [Task-048](./tasks/Task-048-exact-scalar-semantics.md) - QSL #118 exact scalar semantics.
 * [Task-049](./tasks/Task-049-composite-expression-semantics.md) - QSL #119 composites and pure functions.

@@ -89,7 +89,6 @@ use qsl_semantics::library::{
     declared_exports, verify_binding, ImportView, LibraryName, LibraryPackage, LibraryRefusal,
     PackageId, PinnedRequest, SupportedV2Wire, VerifiedPackage,
 };
-use qsl_semantics::model::key::hex;
 use quire_semantic_value::catalog::{CatalogCode, CatalogCoded, InternalFault};
 
 use crate::checked::CheckedPackage;
@@ -116,9 +115,10 @@ pub use terminal::{
     ReadTerminal, ReadTerminalDeclaration, TerminalResolveRefusal,
 };
 pub use timed_model::{
-    CheckedClockConstraint, CheckedClockPlace, CheckedClockReset, CheckedTimeSource,
-    CheckedTimeSourceKind, CheckedTimedModel, CheckedTimedPredicate, CheckedUrgency, ClockPathStep,
-    ResolvedClockPathStep, TimedLiteralTypes, TimedNodeMetadata,
+    CheckedClockConstraint, CheckedClockGuard, CheckedClockPlace, CheckedClockReset,
+    CheckedConstraintTarget, CheckedGuardPart, CheckedResetTarget, CheckedTimeInvariant,
+    CheckedTimeSource, CheckedTimeSourceKind, CheckedTimedModel, CheckedUrgency, ClockComparison,
+    ClockPathStep, ResolvedClockPathStep, TimedLiteralTypes, TimedNodeMetadata,
 };
 
 /// A test's view of one [`read_checked_package_v2`] outcome, T-4's
@@ -403,20 +403,15 @@ const OCCURRENCE_ROLES: [CheckedOccurrenceRole; 6] = [
     CheckedOccurrenceRole::Generated,
 ];
 
-/// The occurrence role `spelling` names, the inverse of [`role_spelling`].
-pub(crate) fn occurrence_role(spelling: &str) -> Option<CheckedOccurrenceRole> {
+/// The occurrence role `spelling` names, the inverse of `role_spelling`.
+pub fn occurrence_role(spelling: &str) -> Option<CheckedOccurrenceRole> {
     OCCURRENCE_ROLES
         .into_iter()
         .find(|role| role_spelling(role) == spelling)
 }
 
 pub(crate) fn raw_source_ref(source: &CheckedSourceRef) -> Result<RawSourceRef, SourceMapDefect> {
-    let digest = DigestRecord::from_wire(Some(&source.digest_domain), &source.digest)?;
-    Ok(RawSourceRef::new(
-        &*source.authority,
-        &*source.identity,
-        digest,
-    )?)
+    Ok(RawSourceRef::new(&*source.authority, &*source.identity)?)
 }
 
 fn source_region(region: &CheckedSourceRegion) -> Result<SourceRegion, SourceMapDefect> {
@@ -657,7 +652,7 @@ fn refused(refusal: V2ReadRefusal) -> V2ReadOutcome {
 
 /// The package-identity preimage's RFC 8785 bytes, encoded by
 /// `quire-canonical` (ADR-013 §2, ADR-013:113) under a byte ceiling of the
-/// reader's own `artifact_bytes`. The wire carries only the seven selections
+/// reader's own `artifact_bytes`. The wire carries only the six selections
 /// (FR-322 `identity_preimage`); the hashed preimage adds the
 /// `identity_projection` derived from the admitted `semantic_graph`, through
 /// IR's borrowed producer view. Refuses with the encoder's reason.
@@ -671,7 +666,6 @@ fn canonical_preimage(
         edition: &selections.edition,
         profile_selections: &selections.profile_selections,
         definition_selections: &selections.definition_selections,
-        model_selections: &selections.model_selections,
         required_features: &selections.required_features,
         dependency_selections: &selections.dependency_selections,
         identity_projection: &package.graph().nodes,
@@ -906,8 +900,8 @@ impl ImportViewRefusal {
 /// `package_id`, into the [`VerifiedPackage`]'s [`ImportView`]
 /// (ADR-011 §4 verified binding). The lock is checked against the
 /// emission's own evidence of the artifacts it compiled against, against
-/// `domain_packages` (FR-056's package input, by `sha256-jcs` digest) for
-/// its `model_selections`, and against the admitted package of every entry
+/// `domain_packages` (FR-056's package input, by identity) for
+/// its `model_root` nodes, and against the admitted package of every entry
 /// of its `dependency_selections` (QSpec FR-322-AC-36): taken from
 /// `admitted`, by `package_id`, where an earlier read admitted it, and
 /// otherwise read the same way from the closure `package` holds. Every
@@ -924,7 +918,7 @@ pub fn read_import_view(
     package: &CheckedPackage,
     emission: &Emission,
     identity: LibraryName,
-    domain_packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    domain_packages: &qsl_semantics::model::intake::PackageInput,
     admitted: &mut AdmittedPackages,
     limits: V2ReadLimits,
 ) -> Result<ImportView, ImportViewRefusal> {
@@ -964,7 +958,7 @@ impl AdmittedPackages {
 /// that reads `package`'s own bytes itself.
 pub fn supply_closure(
     package: &CheckedPackage,
-    domain_packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    domain_packages: &qsl_semantics::model::intake::PackageInput,
     limits: V2ReadLimits,
     evidence: &mut CheckedPackageEvidence,
 ) -> Result<(), ImportViewRefusal> {
@@ -999,7 +993,7 @@ fn hold_closure<'p>(
 /// admitted at most once.
 struct ClosureReader<'p> {
     held: BTreeMap<PackageId, &'p CheckedPackage>,
-    domain_packages: &'p BTreeMap<[u8; 32], Vec<u8>>,
+    domain_packages: &'p qsl_semantics::model::intake::PackageInput,
     admitted: BTreeMap<PackageId, Arc<CheckedPackageV2>>,
     limits: V2ReadLimits,
 }
@@ -1034,9 +1028,9 @@ impl ClosureReader<'_> {
             });
         }
         let mut evidence = emission.evidence.clone();
-        for (digest, document) in self.domain_packages {
+        for (selected, document) in self.domain_packages {
             evidence
-                .insert_domain_package_document(hex(digest), document.as_slice())
+                .insert_domain_package_document(selected.as_str(), document.as_slice())
                 .map_err(|conflict| ImportViewRefusal::Evidence {
                     package: identity.clone(),
                     conflict,

@@ -26,13 +26,13 @@ model `example/config-version`:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/first-rule-dark.svg">
-  <img alt="An annotated QSL unit: (1) the header names the language and edition, (2) the profile says which part of the language the rules use, (3) the model line imports a domain package by exact identity and digest, (4) invariants must hold for every object, (5) a post rule compares a value after an operation with its value before." src="docs/images/first-rule-light.svg">
+  <img alt="An annotated QSL unit: (1) the header names the language and edition, (2) the profile says which part of the language the rules use, (3) the model line imports a domain package by exact identity, (4) invariants must hold for every object, (5) a post rule compares a value after an operation with its value before." src="docs/images/first-rule-light.svg">
 </picture>
 
 ```
 language "ix:native" edition "1-draft";
 profile v = "quire.value.complete/v1";
-model Config = "example/config-version" version "1.0.0" digest "sha256-jcs:…";
+model Config = "example/config-version";
 
 invariant ParentOrder using v on Config::ConfigVersion at current {
   present(self.parent) implies deref(value(self.parent)).versionNumber < self.versionNumber
@@ -51,8 +51,8 @@ post VersionUnchanged using v on Config::ConfigVersion::attemptUpdate {
 - **`profile`** selects the part of the language the rules may use.
   `quire.value.complete/v1` covers values, records and expressions. The line
   binds it to the name `v`, and each rule says `using v`.
-- **`model`** imports the domain model by identity, version and content digest.
-  A rule is always checked against that exact model.
+- **`model`** imports the domain model by identity.
+  A rule is checked against the model with that identity.
 - **`invariant … at current`** must hold for every `ConfigVersion` in the data.
   `ParentOrder`: a parent, when present, has a lower version number.
   `self.parent` is an optional reference; `present` tests it, `value` unwraps
@@ -98,7 +98,7 @@ Every check ends in one outcome, and the process exit code matches it:
 | --- | --- | --- |
 | success | 0 | The check completed and the rule holds. |
 | violation, undefined | 10 | The check completed and the rule is broken, or the rule asked for a value that is not defined. |
-| refused | 20 | The input was rejected before any rule ran: bad syntax, a wrong model digest, a malformed request. |
+| refused | 20 | The input was rejected before any rule ran: bad syntax, a wrong model identity, a malformed request. |
 | unsupported | 21 | The construct is valid QSL, but the selected profile or backend cannot check it. |
 | incomplete, inconclusive | 22 | Data was missing or the work budget ran out. |
 | internal failure | 30 | A bug in QSL. |
@@ -211,8 +211,7 @@ so unchecked input cannot reach an evaluator or backend.
 
 ## Usage
 
-Install Rust. [`rust-toolchain.toml`](rust-toolchain.toml) selects the toolchain,
-and `rustup` installs it automatically. No other tools or services are needed.
+Install Rust at or above the `rust-version` in `Cargo.toml`. No other tools or services are needed.
 
 ```sh
 git clone https://github.com/agent-ix/quire-spec-language
@@ -260,10 +259,10 @@ target/debug/quire-spec compile /tmp/config-version/healthy-parent/compile.json 
 ```
 
 **Emit package bytes from a source file.** `compile` needs a request file with
-source digests. For a downstream reader that wants the bytes of one `1-draft`
+source labels. For a downstream reader that wants the bytes of one `1-draft`
 source, the `emit_checked_v2` example takes the files directly and calls the
 same producer (`qsl_replay::compile_package`), so the bytes follow the
-producer and nothing is frozen. Pass each domain package document the
+producer. Pass each domain package document the
 source's `model` declarations select with `--model`, and each imported library
 as `--library <identity>=<file>`. The bytes go to stdout, or to `--out <path>`.
 Every failure (usage, unreadable file, write failure, refusal) writes no
@@ -271,8 +270,8 @@ bytes, prints a diagnostic on stderr that tells them apart, and exits with the
 refusal category's code 20, as `quire-spec` does; a producer refusal whose
 catalog code is in another category (for example incomplete) exits with that
 category's code (22). The emitted bytes embed the source path exactly as given
-(the `source:<path>` label feeds the source digest labels and the
-`package_id`), so pass an identical, fixed, cwd-relative path on every
+(the `source:<path>` label feeds the source labels and the
+package identity), so pass an identical, fixed, cwd-relative path on every
 invocation to get stable bytes. The source is read under the source-size ceiling (a longer source is the
 producer's size refusal, exit 22, with its `--limit` hint removed because this
 tool has no such flag); a `--model`, `--library` or `--execution-points` file over the
@@ -281,25 +280,11 @@ ceiling is an explicit refusal naming the file (exit 20), never truncated.
 ```sh
 cargo run --locked --example emit_checked_v2 -- \
   --model examples/switch-transition/switch.semantic-ir.json \
-  examples/switch-transition/switch.native.in > package.json
+  examples/switch-transition/switch.native > package.json
 ```
 
 The package is read back with the same domain documents as evidence
 (`CheckedPackageEvidence::insert_domain_package_document`).
-
-**Source templates.** A source that carries the placeholder `{model_digest}` where a
-`model` statement's digest goes (as `examples/switch-transition/switch.native.in` does) is
-filled, byte-wise, with the `sha256-jcs` digest of the single `--model` file, so no
-committed file freezes a digest. Every occurrence of the exact text `{model_digest}` is
-replaced; other `{...}` text is untouched and `{{model_digest}}` becomes the digest in
-single braces; a non-UTF-8 source is filled the same way and left to the producer to
-refuse. A template with no `--model`, several, or one that is not a domain package
-document is an explicit refusal (exit 20, each with its own message). `--source-out
-<path>` writes the rendered source only for a template, only after the producer accepted
-it, and atomically (temporary file, then rename); a refusal leaves no file and a source
-without the placeholder is not copied. The emitted bytes embed the path of the source as
-given, that is the template path (`examples/switch-transition/switch.native.in`), not the
-path of the rendered file.
 
 **Accepted execution points.** `--execution-points <file>` supplies accepted
 state-clause execution points (FR-104-AC-15) through the producer's
@@ -354,7 +339,7 @@ analyzers. The driver runs the chain. All of them use a set of shared `no_std` l
 | [quire-exact](https://github.com/agent-ix/quire-exact) | Exact numbers and closed outcomes; `no_std`. | QSL depends on it. |
 | [quire-semantic-value](https://github.com/agent-ix/quire-semantic-value) | Semantic values with their origin, built on quire-exact; `no_std`. | QSL depends on it. |
 | [quire-walk](https://github.com/agent-ix/quire-walk) | Walks deep trees on a heap stack; `no_std`. | QSL depends on it. |
-| [quire-canonical](https://github.com/agent-ix/quire-canonical) | Canonical JSON (RFC 8785), hashed while it is written. | QSL depends on it. |
+| [quire-canonical](https://github.com/agent-ix/quire-canonical) | Canonical JSON (RFC 8785). | QSL depends on it. |
 | [quire-contract-ir](https://github.com/agent-ix/quire-contract-ir) | The target-neutral contract model that backends use. | QSL depends on its model crate; IR reads QSL's checked packages. |
 | [quire-contract-codegen](https://github.com/agent-ix/quire-contract-codegen) | Generates Rust, property tests, bounded proofs and evidence from contracts. | Depends on QSL to replay counterexamples. |
 | [quire-contract-runtime](https://github.com/agent-ix/quire-contract-runtime) | The `no_std` runtime for generated checks. | Used by codegen's output. |
@@ -365,7 +350,7 @@ analyzers. The driver runs the chain. All of them use a set of shared `no_std` l
 | quire-protocol (private) | Checks running systems against compiled protocols, including compensation. | Consumes QSL's compiled protocols. |
 | quire-verification (private) | Selects verification techniques and plans for each requirement. | No direct dependency. |
 | quire-driver (private) | The `quire` command line that runs the whole chain. | Depends on QSL. |
-| quire-integration (private) | Pins a working set of versions and tests the chain together. | Depends on QSL. |
+| quire-integration (private) | Fixes a working set of versions and tests the chain together. | Depends on QSL. |
 
 ## Crates
 

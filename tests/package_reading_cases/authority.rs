@@ -11,10 +11,7 @@ fn ordered_import_occurrence_and_observation_claims_cannot_be_permuted() {
     let mut bindings = base.checked().bindings().clone();
     let text = bindings.source.source().text().replacen(
         "post Rule",
-        &format!(
-            "model Extra = \"example/rule-tests\" version \"1\" digest \"{}\";\npost Rule",
-            models[0].digest()
-        ),
+        &String::from("model Extra = \"example/rule-tests\";\npost Rule"),
         1,
     );
     let unit = parse(
@@ -199,27 +196,29 @@ fn conflicting_unselected_inventory_is_not_hidden_by_wire_imports() {
         original_model.environment().owner(),
         changed.environment().owner()
     );
-    assert_ne!(original_model.digest(), changed.digest());
     let models = [original_model, changed];
     let package = rule(&models[..1], "invariant", "true");
-    for (offered, code) in [
-        (&models[..], Code::InvalidModelBinding),
-        (&models[1..], Code::StaleDependency),
+    for (offered, code, stage) in [
+        (&models[..], Code::InvalidModelBinding, PackageStage::Rebind),
+        // Only the changed artifact offered: the import selects it, and the
+        // package it rebuilds is not the one read.
+        (&models[1..], Code::InvalidPackage, PackageStage::Compare),
     ] {
         let error = NativePackage::read_verified(
             package.bytes(),
-            package.reference(),
             package.checked().bindings().clone(),
             offered,
             &PackageSupport::default(),
             PackageReadLimits::default(),
         )
         .unwrap_err();
-        assert_eq!((error.code, error.stage), (code, PackageStage::Rebind));
-        assert!(matches!(
-            error.cause,
-            Some(PackageCause::Linking(_)) | Some(PackageCause::Checking(_))
-        ));
+        assert_eq!((error.code, error.stage), (code, stage));
+        if stage == PackageStage::Rebind {
+            assert!(matches!(
+                error.cause,
+                Some(PackageCause::Linking(_)) | Some(PackageCause::Checking(_))
+            ));
+        }
     }
 }
 

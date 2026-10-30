@@ -23,7 +23,6 @@ use qsl_package::CheckedPackage;
 use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
 use quire_checked::key::DeclarationKey;
 use quire_exact::Value;
@@ -239,10 +238,6 @@ pub(crate) fn document() -> Vec<u8> {
     .into_bytes()
 }
 
-fn document_digest(document: &[u8]) -> [u8; 32] {
-    *package_input([document]).keys().next().expect("one model")
-}
-
 /// ADR-027 §7's contracts, with `TwoPre` as `two_pre`; `bump`'s of FR-206-AC-2;
 /// `flag`'s, which `inc` with a Boolean result.
 pub(crate) fn contracts(two_pre: &str) -> String {
@@ -276,8 +271,7 @@ pub(crate) fn unit_text_with(profiles: &str, body: &str) -> String {
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
          profile {name} = \"{profile}\";\n{profiles}\
-         model M = \"{PACKAGE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n{body}",
-        hex(&document_digest(&document()))
+         model M = \"{PACKAGE}\";\n{body}"
     )
 }
 
@@ -290,7 +284,7 @@ pub(crate) fn package(body: &str) -> CheckedPackage {
 pub(crate) fn package_with(profiles: &str, body: &str) -> CheckedPackage {
     let document = document();
     let text = unit_text_with(profiles, body);
-    let packages = package_input([document.as_slice()]);
+    let packages = package_input([document.as_slice()]).unwrap();
     let parsed = qsl_cst::parse(
         SourceIdentity::new("agent-ix", "counter", "git", "1"),
         "counter.native",
@@ -371,14 +365,14 @@ pub(crate) fn fill_unit(two_pre: &str, members: &str) -> String {
 
 /// A subject's documents: the domain package and the snapshots.
 pub(crate) struct Documents {
-    pub(crate) packages: BTreeMap<[u8; 32], Vec<u8>>,
-    pub(crate) snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    pub(crate) packages: qsl_semantics::model::intake::PackageInput,
+    pub(crate) snapshots: qsl_semantics::model::observation::DocumentProvision,
 }
 
 impl Documents {
     pub(crate) fn new() -> Self {
         Self {
-            packages: package_input([document().as_slice()]),
+            packages: package_input([document().as_slice()]).unwrap(),
             snapshots: BTreeMap::new(),
         }
     }
@@ -404,8 +398,7 @@ impl Documents {
                         "w": {"integer": weight.to_string()}}})
             })
             .collect();
-        let header = json!({"identity": PACKAGE, "version": "1.0.0",
-            "digest": format!("sha256-jcs:{}", hex(&document_digest(&document())))});
+        let header = json!({"identity": PACKAGE});
         let document = json!({
             "format": "quire.state.snapshot/v1",
             "identity": {"authority": "test", "identity": name, "revision_namespace": "fixture",
@@ -417,17 +410,16 @@ impl Documents {
                 {"population": ident("idles"), "complete": true, "objects": []}],
         });
         let bytes = document.to_string().into_bytes();
-        let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-        let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-            .expect("canonical fixture")
-            .as_bytes();
-        self.snapshots.insert(digest, bytes);
+        self.snapshots.insert(
+            qsl_semantics::model::observation::document_reference(&bytes)
+                .expect("a document names itself"),
+            bytes,
+        );
         DocumentRef {
             authority: "test".to_owned(),
             identity: name.to_owned(),
             revision_namespace: "fixture".to_owned(),
             revision: "fixture:1".to_owned(),
-            digest,
         }
     }
 }

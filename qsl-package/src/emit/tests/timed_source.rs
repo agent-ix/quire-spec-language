@@ -47,11 +47,8 @@ fn package_units_document() -> Vec<u8> {
 #[test]
 fn a_checked_time_source_emits_and_reads_back_its_resolved_nodes() {
     let document = config_version_unit::DOMAIN_PACKAGE.as_bytes();
-    let packages = qsl_semantics::model::intake::package_input([document]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    let unit = config_version_unit::unit_text(&qsl_semantics::model::key::hex(digest)).replace(
+    let packages = qsl_semantics::model::intake::package_input([document]).unwrap();
+    let unit = config_version_unit::unit_text().replace(
         "profile v = \"quire.model.complete/v1\";\n",
         "profile v = \"quire.model.complete/v1\";\n\
          profile t = \"quire.temporal.complete/v1\";\n",
@@ -134,7 +131,7 @@ fn a_checked_time_source_emits_and_reads_back_its_resolved_nodes() {
         evidence.support_feature(feature.as_str().unwrap());
     }
     evidence
-        .insert_domain_package_document(qsl_semantics::model::key::hex(digest), document.to_vec())
+        .insert_domain_package_document(package_identity(document), document.to_vec())
         .expect("a fresh evidence key");
     let read = read_checked_package_v2(
         emission.package.bytes(),
@@ -159,18 +156,15 @@ fn a_checked_time_source_emits_and_reads_back_its_resolved_nodes() {
     assert!(timed.guards.is_empty());
     assert!(timed.invariants.is_empty());
     assert!(timed.urgencies.is_empty());
-    assert!(timed.normalized_constraints.is_empty());
+    assert!(timed.constraints.is_empty());
 }
 
 #[trace("FR-230-AC-5", "FR-230-AC-32", "FR-230-AC-38")]
 #[test]
 fn a_package_owned_time_unit_emits_its_model_owned_nominal_nodes() {
     let document = package_units_document();
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    let unit = config_version_unit::unit_text(&qsl_semantics::model::key::hex(digest)).replace(
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
+    let unit = config_version_unit::unit_text().replace(
         "profile v = \"quire.model.complete/v1\";\n",
         "profile v = \"quire.model.complete/v1\";\n\
          profile t = \"quire.temporal.complete/v1\";\n",
@@ -201,7 +195,7 @@ fn a_package_owned_time_unit_emits_its_model_owned_nominal_nodes() {
         evidence.support_feature(feature.as_str().unwrap());
     }
     evidence
-        .insert_domain_package_document(qsl_semantics::model::key::hex(digest), document)
+        .insert_domain_package_document(package_identity(&document), document)
         .expect("a fresh evidence key");
     read_checked_package_v2(
         emission.package.bytes(),
@@ -217,11 +211,8 @@ fn a_package_owned_time_unit_emits_its_model_owned_nominal_nodes() {
 #[test]
 fn a_tick_time_source_emits_its_exact_period_and_operation_anchor() {
     let document = config_version_unit::DOMAIN_PACKAGE.as_bytes();
-    let packages = qsl_semantics::model::intake::package_input([document]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    let unit = config_version_unit::unit_text(&qsl_semantics::model::key::hex(digest)).replace(
+    let packages = qsl_semantics::model::intake::package_input([document]).unwrap();
+    let unit = config_version_unit::unit_text().replace(
         "profile v = \"quire.model.complete/v1\";\n",
         "profile v = \"quire.model.complete/v1\";\n\
          profile t = \"quire.temporal.complete/v1\";\n",
@@ -240,7 +231,7 @@ fn a_tick_time_source_emits_its_exact_period_and_operation_anchor() {
         evidence.support_feature(feature.as_str().unwrap());
     }
     evidence
-        .insert_domain_package_document(qsl_semantics::model::key::hex(digest), document.to_vec())
+        .insert_domain_package_document(package_identity(document), document.to_vec())
         .expect("a fresh evidence key");
     let read = read_checked_package_v2(
         emission.package.bytes(),
@@ -289,26 +280,18 @@ fn three_time_dimensions_give_three_package_identities() {
         "scale": "1", "offset": "0", "origin": origin,
     }]);
     let flow = serde_json::to_vec(&flow).expect("JSON");
-    let packages = qsl_semantics::model::intake::package_input([rpc.as_slice(), flow.as_slice()]);
-    let digest = |bytes: &[u8]| {
-        packages
-            .iter()
-            .find(|(_, document)| document.as_slice() == bytes)
-            .map(|(digest, _)| qsl_semantics::model::key::hex(digest))
-            .expect("a supplied document")
-    };
+    let packages =
+        qsl_semantics::model::intake::package_input([rpc.as_slice(), flow.as_slice()]).unwrap();
     let identity = |unit: &str| {
         let text = format!(
             "language \"ix:native\" edition \"1-draft\";\n\
              profile v = \"quire.model.complete/v1\";\n\
              profile t = \"quire.temporal.complete/v1\";\n\
-             model R = \"example/config-version\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
-             model F = \"example/flow\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+             model R = \"example/config-version\";\n\
+             model F = \"example/flow\";\n\
              dimension Time;\nunit s : Time = rational(1, 1);\n\
              function noop using v(): Boolean pure {{ true }}\n\
-             time R dense unit {unit};\n",
-            digest(&rpc),
-            digest(&flow)
+             time R dense unit {unit};\n"
         );
         let graph = assemble_with_models(text.as_bytes(), &packages)
             .expect("the unit assembles")

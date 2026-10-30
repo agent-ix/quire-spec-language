@@ -31,7 +31,7 @@ Scope: FR-312-AC-1 to FR-312-AC-6.
 4. Write a `function` request for `sameIdentity` over the
    distinct-identities snapshot with arguments `{b: child, a: root}`, and a
    `frame` request; build the same `ClauseRunRequest`s in process and call
-   `run_clause`. Set `package_id` to another unit's and run again.
+   `run_clause`.
 5. Build a current clause request with `self` and `anchor`, a pre clause
    request with `self` and `parameters: {}`, and an invocation clause request
    with neither context member. Compare each to the same FR-106 selection
@@ -55,9 +55,7 @@ Tag the tests `#[trace("TC-891", "FR-312-AC-n")]`.
   `violation`, `truth: false`, exit 10.
 - Step 2: each refuses `invalid-request` at stage `request`, exit 20, no result document, naming the member or key.
 - Step 3: the intake-limit refusal, then a run.
-- Step 4: each document's disposition equals the in-process report; the
-  `package_id` run writes a `/2` document with stage `compile`,
-  `stale_dependency`, exit 20.
+- Step 4: each document's disposition equals the in-process report.
 - Step 5: each valid request gives the same report as its in-process
   selection, using the supplied current or pre `self`, the supplied current
   `anchor`, and the invocation document's own `self`. A mismatched current

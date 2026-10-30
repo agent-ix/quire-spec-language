@@ -103,10 +103,11 @@ pub(crate) fn hex(bytes: &[u8]) -> String {
 }
 
 /// A declaration's identity text: the RFC 8785 text of its
-/// `$defs.DeclarationKey` preimage (FR-120 "Identities").
+/// `$defs.DeclarationKey` preimage `{package, node}` (FR-120 "Identities"),
+/// the same text `qsl_semantics::model::key::declaration_identity_text`
+/// gives, which checked clauses lower operation labels to.
 pub(crate) fn declaration_enc(key: &DeclarationKey) -> Enc {
     Enc::Object(vec![
-        ("digest_domain", Enc::text("sha256-jcs")),
         ("node", Enc::text(key.node.clone())),
         ("package", Enc::text(key.package.clone())),
     ])

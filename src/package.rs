@@ -25,9 +25,8 @@ pub use reading::{PackageReadLimits, PackageSupport};
 use std::fmt;
 
 use serde::Serialize;
-use sha2::{Digest, Sha256};
 
-use qsl_foundation::{ByteDigest, Code, Diagnostic};
+use qsl_foundation::{Code, Diagnostic};
 
 /// Inclusive per-pass ceilings; elevated options clamp to the defaults.
 ///
@@ -185,71 +184,11 @@ impl PackageError {
     }
 }
 
-/// Exact byte selector under the fixed native-linked-package/1 format.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct NativePackageRef {
-    digest: ByteDigest,
-}
-
-impl NativePackageRef {
-    /// Select bytes without claiming they exist or have passed checking.
-    pub fn new(digest: ByteDigest) -> Self {
-        Self { digest }
-    }
-    /// Selected complete artifact hash.
-    pub fn digest(&self) -> ByteDigest {
-        self.digest
-    }
-    /// Exact wire format selected by this reference type.
-    pub fn format(&self) -> &'static str {
-        view::FORMAT
-    }
-}
-
-/// Source-bound static identity in quire.native.bound-package/v1, using SHA-256.
-///
-/// TC-091: a native static identity cannot select raw package bytes:
-/// ```compile_fail,E0308
-/// use quire_spec_language::package::{NativePackageIdentity, NativePackageRef};
-/// fn select(identity: NativePackageIdentity) {
-///     let _ = NativePackageRef::new(identity);
-/// }
-/// ```
-/// Nor can it substitute for the independent Contract IR canonical role:
-/// ```compile_fail,E0308
-/// use quire_spec_language::package::NativePackageIdentity;
-/// fn substitute(identity: NativePackageIdentity) {
-///     let _: quire_contract_model::CanonicalDigest = identity;
-/// }
-/// ```
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct NativePackageIdentity([u8; 32]);
-
-impl NativePackageIdentity {
-    fn of(canonical: &[u8]) -> Self {
-        let mut hash = Sha256::new();
-        hash.update(b"quire-spec-language\0quire.native.bound-package/v1\0linked-package\0");
-        hash.update(canonical);
-        Self(hash.finalize().into())
-    }
-}
-
-impl fmt::Display for NativePackageIdentity {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for byte in self.0 {
-            write!(f, "{byte:02x}")?;
-        }
-        Ok(())
-    }
-}
-
 /// Immutable checked source, complete artifact bytes and separately typed identities.
 #[derive(Debug)]
 pub struct NativePackage<'model> {
     checked: crate::checking::CheckedPackage<'model>,
     bytes: Vec<u8>,
-    digest: ByteDigest,
-    canonical_identity: NativePackageIdentity,
     usage: PackageUsage,
 }
 
@@ -261,13 +200,12 @@ impl<'model> NativePackage<'model> {
     /// compiler failures, forged derived claims and exhausted selected limits.
     pub fn read_verified(
         bytes: &[u8],
-        expected: NativePackageRef,
         bindings: crate::checking::CheckBindings,
         models: &'model [crate::native_model::NativeModel],
         support: &PackageSupport,
         limits: PackageReadLimits,
     ) -> Result<Self, Box<PackageError>> {
-        reading::read(bytes, expected, bindings, models, support, limits)
+        reading::read(bytes, bindings, models, support, limits)
     }
     /// Encode a real checked package with no runtime inputs or capability overrides.
     ///
@@ -280,27 +218,24 @@ impl<'model> NativePackage<'model> {
         let limits = limits.bounded();
         let mut usage = PackageUsage::default();
         let features = features::derive(&checked)?;
-        let manifest = view::Manifest::new(&checked, &features, true, None);
+        let manifest = view::Manifest::new(&checked, &features, true);
         run(&manifest, limits, Pass::Derive, &mut usage)?;
         let canonical = run(
-            &view::Manifest::new(&checked, &features, false, None),
+            &view::Manifest::new(&checked, &features, false),
             limits,
             Pass::Canonical,
             &mut usage,
         )?;
-        let canonical_identity = NativePackageIdentity::of(&canonical);
         drop(canonical);
         let bytes = run(
-            &view::Manifest::new(&checked, &features, true, Some(canonical_identity)),
+            &view::Manifest::new(&checked, &features, true),
             limits,
             Pass::Encode,
             &mut usage,
         )?;
         Ok(Self {
-            digest: ByteDigest::of(&bytes),
             checked,
             bytes,
-            canonical_identity,
             usage,
         })
     }
@@ -311,18 +246,6 @@ impl<'model> NativePackage<'model> {
     /// Complete immutable accepted artifact bytes.
     pub fn bytes(&self) -> &[u8] {
         &self.bytes
-    }
-    /// Exact complete artifact hash, separate from the static native identity.
-    pub fn digest(&self) -> ByteDigest {
-        self.digest
-    }
-    /// Native static identity derived under the named domain and byte profile.
-    pub fn canonical_identity(&self) -> NativePackageIdentity {
-        self.canonical_identity
-    }
-    /// Exact byte selector for this artifact.
-    pub fn reference(&self) -> NativePackageRef {
-        NativePackageRef::new(self.digest)
     }
     /// Actual request-local measurements.
     pub fn usage(&self) -> &PackageUsage {

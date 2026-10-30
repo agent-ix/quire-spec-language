@@ -28,8 +28,8 @@ invariant `SysOk` on `Sys` (always true) for the `Current` rows; and, for the
 `modifies` empty unless a row says otherwise) with the precondition
 `RehomePre` and the postcondition `RehomePost`, both always true, so that a
 postcondition selection runs check 11. Documents are written as FR-106 shows
-them, held in in-memory provisions keyed by `sha256-jcs` digest, and the
-provision digest is recomputed for every mutated document.
+them, held in in-memory provisions keyed by document `identity`, and each
+mutated document replaces its provision entry.
 
 Base snapshot **B**: `observation` `current`, anchor `{handler, validate}`,
 population `Q` complete holding `s1`, `s2`, `p1`, `p2`, `p3`, `t1` (all
@@ -52,7 +52,7 @@ tests `#[trace("TC-1035", "FR-106-AC-n")]`.
 | # | Check | Mutation | Expected |
 | --- | --- | --- | --- |
 | 1 | admit | B as written | one current observation; composition extent complete with `targets(s1)` `[p1, p2]` and `sources(p1)` `[s1]`; housing extent complete with `sources(t1)` `[p1, p2]` |
-| 2 | admit | B with the entries, the instances and the JSON members reordered | the digest and the admitted value of row 1 |
+| 2 | admit | B with the entries, the instances and the JSON members reordered | the admitted value of row 1 |
 | 3 | admit | `relationships` removed | admitted; `complete` false for both relationships |
 | 4 | admit | composition entry `{"complete": true, "instances": []}` | admitted; composition `complete` true and empty; housing as row 1 |
 | 5 | admit | composition `s1`-`p1`, `s1`-`p2`, `s1`-`p3` and `s1`-`p4` with `p4` added to `Q`; and housing listing no instance for `p3` | admitted; no multiplicity comparison |

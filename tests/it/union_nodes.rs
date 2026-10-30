@@ -8,12 +8,11 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use ix_trace_rs::trace;
 use qsl_foundation::bound::DomainKind;
-use qsl_foundation::digest::ByteDigest;
 use qsl_foundation::{BackendId, Setting, SourceIdentity};
 use qsl_replay::spine::DependencyInput;
 use qsl_replay::{compile_package, ReplayLimits, StageLimits};
 use qsl_route::request::items_from_requirements;
-use qsl_route::{BackendDescriptor, Candidate, ManifestDigest, Mode, ProviderOrigin, Registry};
+use qsl_route::{BackendDescriptor, Candidate, Mode, ProviderOrigin, Registry};
 use qsl_semantics::check::Capability;
 use serde_json::Value;
 
@@ -98,7 +97,6 @@ fn a_claim_inside_a_case_arm_is_requested_as_a_value_validity_item() {
     let descriptor = BackendDescriptor::new(
         Candidate::new(BackendId::new("kani")),
         ProviderOrigin::Linked,
-        ManifestDigest::from_digest(ByteDigest::of(b"kani").as_bytes()),
         [(Capability::ValueValidity, Mode::Bounded)],
         Some(BTreeSet::from([DomainKind::Collection])),
         None,

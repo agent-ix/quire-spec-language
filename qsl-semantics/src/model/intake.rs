@@ -58,7 +58,6 @@ use crate::model::domain_package::{
     ScalarValueDomain, SequenceTypeRecord, TuplePositionRecord, TupleValueTypeRecord,
     ValueBoundRecord, ValueTypeRef, VariantRecord,
 };
-use crate::model::key::{hex, raw_bytes_digest, SHA256_JCS_DIGEST_DOMAIN};
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause, Refusals};
 use crate::model::refusal::{Inexact, IntakeLimit, MemberPath, MemberRoot};
 use qsl_foundation::diagnostic::{Code, JsonPointer};
@@ -70,8 +69,8 @@ use quire_exact::{Presence, TextProfile, TextType};
 
 mod unit;
 pub use unit::{
-    admit_unit, admit_unit_with_cancel, package_input, OperationClauseFailure, SelectedModel,
-    SelectedModels, TypeInvariantFailure, UnitIntakeCause, UnitIntakeRefusal,
+    admit_unit, admit_unit_with_cancel, OperationClauseFailure, SelectedModel, SelectedModels,
+    TypeInvariantFailure, UnitIntakeCause, UnitIntakeRefusal,
 };
 
 /// A Quire meaning id (FR-208): the sole legitimate way to determine what a
@@ -294,27 +293,19 @@ pub fn lift_document(bundle_root: &Path, module_roots: &[PathBuf]) -> Result<Vec
 /// or digest that cannot reserve memory refuses as
 /// [`ModelRefusalCause::AllocationFailed`] (FR-259 B6).
 ///
-/// The `sha256-jcs` digest is taken here, once, by `quire-canonical` (ADR-013
-/// §2, ADR-013:113: the one RFC 8785 implementation) under
-/// `digest_limits`, and [`admit`]'s check 3 compares it.
 pub struct PackageDocument {
     /// `{"ir": <document>}`: the bundle `agent_ix_semantic_ir::decide` reads
     /// (`input-bundle.schema.json` requires an `ir` member).
     bundle: agent_ix_semantic_ir::json::Json,
     /// The same document as a `serde_json::Value`.
     tree: Value,
-    /// SHA-256 over the document's RFC 8785 bytes: the package's
-    /// `sha256-jcs` digest.
-    jcs_digest: [u8; 32],
 }
 
-/// The digest only: `Value` and `Json` format by recursion, once per level,
-/// so a derived `Debug` would overflow the stack on a deep document.
+/// Names the type only: `Value` and `Json` format by recursion, once per
+/// level, so a derived `Debug` would overflow the stack on a deep document.
 impl std::fmt::Debug for PackageDocument {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PackageDocument")
-            .field("jcs_digest", &self.jcs_digest)
-            .finish_non_exhaustive()
+        f.debug_struct("PackageDocument").finish_non_exhaustive()
     }
 }
 
@@ -351,9 +342,6 @@ impl PackageDocument {
         if let Some((document_pointer, inexact, lexeme)) = first_inexact_number(document.root()) {
             return Err(noncanonical_number(document_pointer, inexact, lexeme));
         }
-        let jcs_digest = *quire_canonical::sha256(&document, digest_limits(max_input_bytes))
-            .map_err(|error| digest_refusal(error, max_input_bytes, length))?
-            .as_bytes();
         let tree = value_of(document.root()).map_err(view_refusal)?;
         let ir = match json_of(document.root()) {
             Ok(json) => json,
@@ -368,7 +356,6 @@ impl PackageDocument {
         Ok(Self {
             bundle: agent_ix_semantic_ir::json::Json::Object(vec![("ir".to_owned(), ir)]),
             tree,
-            jcs_digest,
         })
     }
 
@@ -376,27 +363,6 @@ impl PackageDocument {
     pub fn tree(&self) -> &Value {
         &self.tree
     }
-
-    /// The package's `sha256-jcs` digest: SHA-256 over the document's
-    /// RFC 8785 bytes. The replay byte provision verifies a domain package
-    /// entry against its declared digest with this (ADR-013 QC-1).
-    pub fn jcs_digest(&self) -> [u8; 32] {
-        self.jcs_digest
-    }
-}
-
-/// How many times longer a document's RFC 8785 text can be than the document
-/// itself. Only number spelling grows: `1e20` (4 bytes) canonicalizes to
-/// `100000000000000000000` (21 bytes), 5.25 times as long, and no shorter
-/// lexeme grows more (from `1e21` on the text is exponent form again).
-/// Whitespace and escapes only shrink. Rounded up to 6.
-const CANONICAL_GROWTH: u64 = 6;
-
-/// The limits intake's `sha256-jcs` digest encodes under: canonical text up
-/// to [`CANONICAL_GROWTH`] times the document's byte limit, a ceiling no
-/// admitted document reaches.
-fn digest_limits(input_bytes: u64) -> quire_canonical::Limits {
-    quire_canonical::Limits::new(input_bytes.saturating_mul(CANONICAL_GROWTH))
 }
 
 /// FR-260 B5: a package document of `actual` bytes is over
@@ -471,24 +437,6 @@ pub(super) fn out_of_range_number(pointer: &str, lexeme: &str) -> Option<(JsonPo
         Inexact::Number
     };
     Some((pointer, inexact))
-}
-
-/// [`PackageDocument::parse`]'s refusal for an error of the `sha256-jcs`
-/// digest's encoding.
-fn digest_refusal(error: quire_canonical::Error, bound: u64, actual: u64) -> ModelRefusal {
-    match error {
-        quire_canonical::Error::Limit(_) => input_bytes_exceeded(bound, actual),
-        quire_canonical::Error::Allocation { requested } => allocation_failed(requested),
-        // A read tree always has an RFC 8785 encoding: every number is a
-        // finite double and every member name a string.
-        other => malformed_declaration(
-            "$".to_owned(),
-            None,
-            None,
-            MemberPath::new(MemberRoot::Package),
-            format!("package document could not be RFC 8785-encoded: {other}"),
-        ),
-    }
 }
 
 /// FR-056: the package document's number `lexeme`, at `document_pointer`,
@@ -971,263 +919,146 @@ fn view_refusal(fault: BuildFault<&str>) -> ModelRefusal {
     )
 }
 
-/// FR-154 Intake's four-check admission table (`model-complete.md:58-70`).
-///
-/// Runs the checks in table order and stops at the first failure: digest
-/// domain, then byte presence, then digest equality
-/// (`check_package_digest`), then the package's own declared
-/// identity/version.
+/// The package input FR-056 names: each supplied domain package document
+/// keyed by the identity it declares. A source `model` selects a document by
+/// that identity alone.
+pub type PackageInput = BTreeMap<String, Vec<u8>>;
+
+/// Key each supplied domain package document by the identity it declares.
+/// A document that does not read refuses with its own reader refusal; a
+/// document with no declared identity refuses `wrong-model-selection`; two
+/// documents declaring one identity refuse
+/// `invalid_package`/`conflicting-definition` (one domain package per
+/// identity). Each document is read here under no byte limit, and again when
+/// a selection admits it under the caller's `intake.input_bytes`.
+pub fn package_input<'a>(
+    documents: impl IntoIterator<Item = &'a [u8]>,
+) -> Result<PackageInput, ModelRefusal> {
+    let mut input = PackageInput::new();
+    for bytes in documents {
+        let document = PackageDocument::parse(
+            bytes,
+            IntakeLimits {
+                input_bytes: u64::MAX,
+            },
+        )?;
+        let identity = declared_member(&document, "identity");
+        if identity.is_empty() {
+            return Err(ModelRefusal {
+                code: Code::InvalidModelBinding,
+                cause: ModelRefusalCause::WrongModelSelection {
+                    identity: String::new(),
+                    actual_identity: String::new(),
+                },
+                detail: "a supplied domain package declares no identity".to_owned(),
+            });
+        }
+        if input.insert(identity.clone(), bytes.to_vec()).is_some() {
+            return Err(ModelRefusal {
+                code: Code::InvalidPackage,
+                cause: ModelRefusalCause::ConflictingPackage {
+                    identity: identity.clone(),
+                },
+                detail: format!(
+                    "two supplied domain packages declare identity {identity:?}; one domain \
+                     package is supplied per identity"
+                ),
+            });
+        }
+    }
+    Ok(input)
+}
+
+/// The package document's own declared `package` member, empty when absent.
+fn declared_member(document: &PackageDocument, member: &str) -> String {
+    document
+        .tree
+        .get("package")
+        .and_then(|package| package.get(member))
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned()
+}
+
+/// FR-154 Intake's admission table: the package input supplies a document
+/// under the selected identity (`missing_import`/`missing-selection`), and
+/// the document's own declared identity is that identity
+/// (`wrong-model-selection`).
 ///
 /// The package bytes are parsed once, here, into the [`PackageDocument`]
 /// this returns alongside the admitted selection; [`read_records`] reads
 /// that same tree rather than parsing the bytes again.
-///
-/// `offered` carries `{identity, version, digest}` -- [`DomainPackageRef`]'s
-/// own flat FR-321 shape (its `digest_domain` is implicitly `sha256-jcs`).
-/// `digest_domain` is taken as a separate string, not assumed to already be
-/// `sha256-jcs`: check 1 of the table below is exactly the question of
-/// whether the caller's offered digest domain is the one Intake accepts, so
-/// a parameter that already assumed the answer could not state that check.
 #[ix_trace_rs::string_edge]
 pub fn admit(
-    offered: &DomainPackageRef,
-    digest_domain: &str,
-    bytes_by_digest: &BTreeMap<[u8; 32], Vec<u8>>,
+    identity: &str,
+    packages: &PackageInput,
     limits: IntakeLimits,
 ) -> Result<(DomainPackageRef, PackageDocument), ModelRefusal> {
     // ADR-010 OBS-006 / ADR-013 O-03: the reserved `quire/native`
     // pseudo-package never selects, regardless of what its bytes would
-    // otherwise admit -- checked first, ahead of FR-154's own four-check
-    // table, because this rejects the offered identity itself rather than
-    // anything about the package's bytes.
-    if offered.identity == native::RESERVED_IDENTITY {
+    // otherwise admit -- checked first, because this rejects the selected
+    // identity itself rather than anything about the package's bytes.
+    if identity == native::RESERVED_IDENTITY {
         return Err(ModelRefusal {
             code: Code::InvalidModelBinding,
             cause: ModelRefusalCause::ReservedPackageIdentity {
-                selection: offered.clone(),
+                identity: identity.to_owned(),
             },
             detail: format!(
-                "domain package selection names identity {:?}, the reserved native-reference \
+                "domain package selection names identity {identity:?}, the reserved native-reference \
                  pseudo-package -- a native value type resolves only as ValueTypeRef::Native \
-                 and never shares a real package's key space",
-                offered.identity
+                 and never shares a real package's key space"
             ),
         });
     }
-    if digest_domain != SHA256_JCS_DIGEST_DOMAIN {
-        return Err(ModelRefusal {
-            code: Code::StaleDependency,
-            cause: ModelRefusalCause::DigestDomainMismatch {
-                expected: SHA256_JCS_DIGEST_DOMAIN,
-                actual: digest_domain.to_owned(),
-            },
-            detail: format!(
-                "domain package selection {}@{} names digest domain {digest_domain:?}, not {SHA256_JCS_DIGEST_DOMAIN:?}",
-                offered.identity, offered.version
-            ),
-        });
-    }
-    let package_ref = offered.clone();
-    let Some(bytes) = bytes_by_digest.get(&offered.digest) else {
+    let Some(bytes) = packages.get(identity) else {
         return Err(ModelRefusal {
             code: Code::MissingImport,
             cause: ModelRefusalCause::MissingSelection {
-                selection: package_ref.clone(),
+                identity: identity.to_owned(),
             },
-            detail: format!(
-                "no package bytes supplied under digest {}",
-                hex(&offered.digest)
-            ),
+            detail: format!("no domain package supplied for identity {identity:?}"),
         });
     };
-    // A document over one of the parse limits, one whose read could not
-    // reserve memory, and one holding a number with no exact RFC 8785
-    // spelling have no JCS digest check 3 can compare: each refuses naming
-    // the limit (ADR-011 Limits), the failed reservation (FR-259 B6) or the
-    // number's pointer (FR-056, IR FR-038-AC-93), never as a digest
-    // mismatch. Any other parse failure is not itself a refusal here: bytes
-    // the shared reader refuses are digested raw by check 3 (FR-056), and
-    // supply no identity/version to check 4.
-    let document = match PackageDocument::parse(bytes, limits) {
-        Ok(document) => Some(document),
-        Err(
-            refusal @ ModelRefusal {
-                cause:
-                    ModelRefusalCause::IntakeLimitExceeded { .. }
-                    | ModelRefusalCause::AllocationFailed { .. }
-                    | ModelRefusalCause::NoncanonicalNumber { .. },
-                ..
-            },
-        ) => return Err(refusal),
-        Err(_) => None,
-    };
-    check_package_digest(
-        offered.digest,
-        bytes,
-        document.as_ref().map(|document| document.jcs_digest),
-    )
-    .map_err(|mismatch| match mismatch {
-        DigestMismatch::Content { recomputed } => ModelRefusal {
-            code: Code::StaleDependency,
-            cause: ModelRefusalCause::ContentMismatch {
-                selected: offered.digest,
-                recomputed,
-            },
-            detail: format!(
-                "domain package {}@{} recomputes to digest {}, not the selected {}",
-                offered.identity,
-                offered.version,
-                hex(&recomputed),
-                hex(&offered.digest)
-            ),
-        },
-        DigestMismatch::RawBytes { digest } => ModelRefusal {
-            code: Code::StaleDependency,
-            cause: ModelRefusalCause::ByteDigestMismatch {
-                expected: offered.digest,
-                actual: digest,
-            },
-            detail: format!(
-                "domain package {}@{} bytes hash to {}, not the selected {}",
-                offered.identity,
-                offered.version,
-                hex(&digest),
-                hex(&offered.digest)
-            ),
-        },
-    })?;
-    // The package's own declared identity/version, read defensively: bytes
-    // that fail to parse or omit `package` simply supply no identity/version,
-    // which check 4 below reports as a `wrong-model-selection` mismatch
-    // rather than a separate malformed-package case FR-154's table does not
-    // name.
-    let package = document
-        .as_ref()
-        .and_then(|document| document.tree.get("package"));
-    let declared = |member: &str| {
-        package
-            .and_then(|package| package.get(member))
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_owned()
-    };
-    let actual_identity = declared("identity");
-    let actual_version = declared("version");
-    match document {
-        Some(document)
-            if actual_identity == offered.identity && actual_version == offered.version =>
-        {
-            Ok((package_ref, document))
-        }
-        _ => Err(ModelRefusal {
+    let document = PackageDocument::parse(bytes, limits)?;
+    let actual_identity = declared_member(&document, "identity");
+    if actual_identity != identity {
+        return Err(ModelRefusal {
             code: Code::InvalidModelBinding,
             cause: ModelRefusalCause::WrongModelSelection {
-                selection: package_ref,
+                identity: identity.to_owned(),
                 actual_identity: actual_identity.clone(),
-                actual_version: actual_version.clone(),
             },
             detail: format!(
-                "domain package selection names {}@{} but the package declares {actual_identity}@{actual_version}",
-                offered.identity, offered.version
+                "domain package selection names {identity:?} but the package declares {actual_identity:?}"
             ),
-        }),
+        });
     }
+    Ok((
+        DomainPackageRef {
+            identity: identity.to_owned(),
+        },
+        document,
+    ))
 }
 
-/// FR-154 Intake check 3 (`model-complete.md:69`): the canonical digest of
-/// the supplied document equals the selected digest, else
-/// `stale_dependency`/`content-mismatch`; bytes that did not parse compare
-/// their raw digest and refuse `stale_dependency`/`byte-digest-mismatch`.
-///
-/// When the bytes parsed, the digest is taken over this crate's own RFC 8785
-/// JCS canonicalisation of the parsed tree, not the raw bytes verbatim, so
-/// two byte-different-but-JCS-equivalent encodings of the same document
-/// (a whitespace variant, say) digest identically. Bytes that did not parse
-/// have no JCS form; the digest is then taken over the raw bytes, which a
-/// producer that actually selected this digest could never have done for
-/// unparseable bytes either, so this still reports the real mismatch rather
-/// than fabricating a match.
-///
-/// The parsed document's digest is the one [`PackageDocument::parse`] took
-/// through `quire-canonical` (ADR-013 §2, ADR-013:113).
-///
-/// Generalized to serve a second caller, `model::observation`'s
-/// own FR-106 admission: `parsed_digest` is the caller's own already-taken
-/// `sha256-jcs` digest (through `quire-canonical` directly) when its bytes
-/// parsed, or `None` when they did not -- this function never parses
-/// `bytes` itself and never names `serde_json`, so it stays the one place
-/// `raw_bytes_digest`'s non-parsing fallback is called for either caller
-/// (ADR-013 §2's one-encoder rule, which exempts this
-/// function): `Err`'s digest is the mismatch to report, `Ok(())` a match.
-/// A caller constructs its own refusal from `Err`'s digest, since intake's
-/// [`ModelRefusal`] and FR-106's `AdmissionFailure` are different types.
-pub(super) fn check_package_digest(
-    expected: [u8; 32],
-    bytes: &[u8],
-    parsed_digest: Option<[u8; 32]>,
-) -> Result<(), DigestMismatch> {
-    let (actual_digest, mismatch): (_, fn([u8; 32]) -> DigestMismatch) = match parsed_digest {
-        Some(digest) => (digest, |recomputed| DigestMismatch::Content { recomputed }),
-        None => (raw_bytes_digest(bytes), |digest| DigestMismatch::RawBytes {
-            digest,
-        }),
-    };
-    if actual_digest == expected {
-        Ok(())
-    } else {
-        Err(mismatch(actual_digest))
-    }
-}
-
-/// Why [`check_package_digest`] refused, naming the digest to report.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum DigestMismatch {
-    /// The supplied document parsed and its canonical `sha256-jcs` digest
-    /// differs from the selected one (`content-mismatch`).
-    Content {
-        /// The digest recomputed from the supplied document.
-        recomputed: [u8; 32],
-    },
-    /// The supplied bytes did not parse, so their raw digest was compared
-    /// and differs from the selected one (`byte-digest-mismatch`).
-    RawBytes {
-        /// The raw bytes' own digest.
-        digest: [u8; 32],
-    },
-}
-
-/// ADR-013 O-01: admits every selection in `offered`, in order, through
-/// [`admit`], and additionally refuses a second selection naming a
-/// domain-package `identity` already admitted earlier in this same call --
-/// "a package selects at most one version of a domain-package identity"
-/// (QC-5, catalogued `duplicate_selection`/`duplicate-identity`, revision
-/// `1-draft.6`) -- whether or not the repeated selection's version matches
-/// the one already admitted. Checked before [`admit`]'s own byte-level work
-/// for the repeated item, since the defect is in the selection list itself,
-/// not in that item's bytes. No production caller offers more than one
-/// domain package yet; this is the single-selection rule #131 was asked to
-/// wire together with [`admit`] and did not (ADR-013 O-01's own "Implementing
-/// ticket" row).
+/// [`admit`] over several identities, additionally refusing a second
+/// selection naming an identity already admitted earlier in this same call
+/// (`duplicate_selection`/`duplicate-identity`): a package selects at most
+/// one domain package per identity.
 pub fn admit_selections(
-    offered: &[DomainPackageRef],
-    digest_domain: &str,
-    bytes_by_digest: &BTreeMap<[u8; 32], Vec<u8>>,
+    offered: &[String],
+    packages: &PackageInput,
     limits: IntakeLimits,
 ) -> Result<Vec<(DomainPackageRef, PackageDocument)>, ModelRefusal> {
-    admit_located(
-        offered,
-        |selection| selection,
-        digest_domain,
-        bytes_by_digest,
-        limits,
-    )
-    .map(|admitted| {
-        admitted
-            .into_iter()
-            .map(|(_, admitted_ref, document)| (admitted_ref, document))
-            .collect()
-    })
-    .map_err(|(_, refusal)| refusal)
+    admit_located(offered, String::as_str, packages, limits)
+        .map(|admitted| {
+            admitted
+                .into_iter()
+                .map(|(_, admitted_ref, document)| (admitted_ref, document))
+                .collect()
+        })
+        .map_err(|(_, refusal)| refusal)
 }
 
 /// One item [`admit_located`] admitted: the item, its admitted selection
@@ -1235,43 +1066,35 @@ pub fn admit_selections(
 pub(crate) type Admitted<'a, T> = (&'a T, DomainPackageRef, PackageDocument);
 
 /// [`admit_selections`] over any `offered` items, each naming its
-/// selection through `selection`: an admitted item comes back with its
+/// identity through `identity_of`: an admitted item comes back with its
 /// package document, and a refusal names the item it concerns.
 pub(crate) fn admit_located<'a, T>(
     offered: &'a [T],
-    selection: impl Fn(&T) -> &DomainPackageRef,
-    digest_domain: &str,
-    bytes_by_digest: &BTreeMap<[u8; 32], Vec<u8>>,
+    identity_of: impl Fn(&T) -> &str,
+    packages: &PackageInput,
     limits: IntakeLimits,
 ) -> Result<Vec<Admitted<'a, T>>, (&'a T, ModelRefusal)> {
     let mut admitted = Vec::with_capacity(offered.len());
-    let mut selected_versions: BTreeMap<&str, &str> = BTreeMap::new();
+    let mut selected: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
     for item in offered {
-        let offered_ref = selection(item);
-        if let Some(&already_selected_version) =
-            selected_versions.get(offered_ref.identity.as_str())
-        {
+        let identity = identity_of(item);
+        if !selected.insert(identity) {
             return Err((
                 item,
                 ModelRefusal {
                     code: Code::DuplicateSelection,
                     cause: ModelRefusalCause::DuplicateSelection {
-                        identity: offered_ref.identity.clone(),
-                        already_selected_version: already_selected_version.to_owned(),
-                        requested_version: offered_ref.version.clone(),
+                        identity: identity.to_owned(),
                     },
                     detail: format!(
-                        "domain package identity {:?} is already selected at version {:?}; this \
-                         call additionally selects it at version {:?}, and a package selects at \
-                         most one version of a domain-package identity",
-                        offered_ref.identity, already_selected_version, offered_ref.version
+                        "domain package identity {identity:?} is already selected; a package \
+                         selects at most one domain package per identity"
                     ),
                 },
             ));
         }
-        let (admitted_ref, document) = admit(offered_ref, digest_domain, bytes_by_digest, limits)
-            .map_err(|refusal| (item, refusal))?;
-        selected_versions.insert(&offered_ref.identity, &offered_ref.version);
+        let (admitted_ref, document) =
+            admit(identity, packages, limits).map_err(|refusal| (item, refusal))?;
         admitted.push((item, admitted_ref, document));
     }
     Ok(admitted)
@@ -5811,7 +5634,6 @@ fn inherit_process_identity_fields(records: &mut [DomainPackageRecord]) {
 mod tests {
     use super::*;
     use ix_trace_rs::trace;
-    use sha2::{Digest, Sha256};
 
     /// QSpec FR-154-AC-33: package intake retains a tuple declaration and
     /// each ordinal position's value type in authored product order.
@@ -5992,23 +5814,6 @@ mod tests {
         }
     }
 
-    fn digest_of(bytes: &[u8]) -> [u8; 32] {
-        Sha256::digest(bytes).into()
-    }
-
-    /// `value`'s RFC 8785 bytes as the `sha256-jcs` digest reads them: the
-    /// one encoder (ADR-013:113) over the shared reader's tree of `value`'s
-    /// JSON text, each number the double its text denotes.
-    fn canonical(value: &Value) -> Vec<u8> {
-        let text = serde_json::to_vec(value).expect("the test value serializes");
-        let document = quire_canonical::read(&text, u64::MAX).expect("the test value reads");
-        quire_canonical::to_vec(
-            &document,
-            digest_limits(IntakeLimits::default().input_bytes),
-        )
-        .expect("the test value has an RFC 8785 encoding")
-    }
-
     /// Test document bytes through intake's one parse.
     fn parse_document(bytes: &[u8]) -> PackageDocument {
         PackageDocument::parse(bytes, qsl_foundation::IntakeLimits::default())
@@ -6024,41 +5829,18 @@ mod tests {
         .into_bytes()
     }
 
-    fn selection(
-        identity: &str,
-        version: &str,
-        digest_domain: &str,
-        digest: [u8; 32],
-    ) -> (DomainPackageRef, String) {
-        (
-            DomainPackageRef {
-                identity: identity.to_owned(),
-                version: version.to_owned(),
-                digest,
-            },
-            digest_domain.to_owned(),
-        )
+    fn supplied(documents: &[&[u8]]) -> PackageInput {
+        package_input(documents.iter().copied()).expect("the test documents key")
     }
 
     #[trace("TC-145", "FR-056-AC-2")]
     #[test]
-    fn admits_matching_selection() {
-        let bytes = package_bytes("acme/orders", "1");
-        let digest = digest_of(&bytes);
-        let mut map = BTreeMap::new();
-        map.insert(digest, bytes.clone());
-        let (offered, digest_domain) =
-            selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest);
-        let (package_ref, document) = admit(
-            &offered,
-            &digest_domain,
-            &map,
-            qsl_foundation::IntakeLimits::default(),
-        )
-        .unwrap();
+    fn admits_a_package_selected_by_identity_and_reads_its_version() {
+        let bytes = package_bytes("acme/orders", "7");
+        let map = supplied(&[&bytes]);
+        let (package_ref, document) =
+            admit("acme/orders", &map, qsl_foundation::IntakeLimits::default()).unwrap();
         assert_eq!(package_ref.identity, "acme/orders");
-        assert_eq!(package_ref.version, "1");
-        assert_eq!(package_ref.digest, digest);
         assert_eq!(
             document.tree(),
             &serde_json::from_slice::<Value>(&bytes).unwrap()
@@ -6067,115 +5849,10 @@ mod tests {
 
     #[trace("TC-145", "FR-056-AC-2")]
     #[test]
-    fn admits_a_whitespace_variant_under_the_same_jcs_digest() {
-        // The digest is taken over JCS bytes, not the raw bytes verbatim,
-        // so a byte-different-but-JCS-equivalent re-encoding of the same
-        // document (extra whitespace here) still admits under the digest
-        // recorded for the compact encoding.
-        let compact = package_bytes("acme/orders", "1");
-        let digest = digest_of(&canonical(&serde_json::from_slice(&compact).unwrap()));
-        let padded = b"  \n\t"
-            .iter()
-            .chain(compact.iter())
-            .copied()
-            .collect::<Vec<u8>>();
-        assert_ne!(padded, compact, "the two encodings are byte-different");
-        let mut map = BTreeMap::new();
-        map.insert(digest, padded.clone());
-        let (offered, digest_domain) =
-            selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest);
-        let (package_ref, document) = admit(
-            &offered,
-            &digest_domain,
-            &map,
-            qsl_foundation::IntakeLimits::default(),
-        )
-        .unwrap();
-        assert_eq!(package_ref.digest, digest);
-        assert_eq!(
-            document.tree(),
-            &serde_json::from_slice::<Value>(&compact).unwrap()
-        );
-    }
-
-    // These five `admit` refusal tests assert the whole `ModelRefusal` --
-    // `code`, every typed field of the matched `ModelRefusalCause` variant,
-    // and `detail` -- not just `.code`/`.cause.as_str()`, so a regression
-    // that keeps the right tag but drops or corrupts a typed field (the
-    // wrong `expected` digest domain, the caller's own selection echoed
-    // back wrong) still fails the test.
-
-    #[trace("TC-145", "FR-056-AC-2")]
-    #[test]
-    fn refuses_foreign_digest_domain() {
-        let map = BTreeMap::new();
-        let (offered, digest_domain) = selection("acme/orders", "1", "sha1", [0; 32]);
+    fn refuses_a_selection_no_document_is_supplied_for() {
         let refusal = admit(
-            &offered,
-            &digest_domain,
-            &map,
-            qsl_foundation::IntakeLimits::default(),
-        )
-        .unwrap_err();
-        assert_eq!(
-            refusal,
-            ModelRefusal {
-                code: Code::StaleDependency,
-                cause: ModelRefusalCause::DigestDomainMismatch {
-                    expected: SHA256_JCS_DIGEST_DOMAIN,
-                    actual: "sha1".to_owned(),
-                },
-                detail: "domain package selection acme/orders@1 names digest \
-                          domain \"sha1\", not \"sha256-jcs\""
-                    .to_owned(),
-            }
-        );
-    }
-
-    /// (#260 review round 3) `"sha1"` above is not an FR-201 label at all,
-    /// so it cannot tell this check apart from one that refuses only
-    /// *unrecognized* domains while silently admitting a *valid but wrong*
-    /// one -- a real FR-201 label (`ir-canonical`, O-18's own vocabulary)
-    /// that is not `sha256-jcs` must refuse here too (FR-154 Intake check
-    /// 1 is a total match against `sha256-jcs`, not "is this any known
-    /// domain").
-    #[trace("TC-145", "FR-056-AC-2")]
-    #[test]
-    fn refuses_a_valid_fr201_domain_that_is_not_sha256_jcs() {
-        let map = BTreeMap::new();
-        let (offered, digest_domain) = selection("acme/orders", "1", "ir-canonical", [0; 32]);
-        let refusal = admit(
-            &offered,
-            &digest_domain,
-            &map,
-            qsl_foundation::IntakeLimits::default(),
-        )
-        .unwrap_err();
-        assert_eq!(
-            refusal,
-            ModelRefusal {
-                code: Code::StaleDependency,
-                cause: ModelRefusalCause::DigestDomainMismatch {
-                    expected: SHA256_JCS_DIGEST_DOMAIN,
-                    actual: "ir-canonical".to_owned(),
-                },
-                detail: "domain package selection acme/orders@1 names digest \
-                          domain \"ir-canonical\", not \"sha256-jcs\""
-                    .to_owned(),
-            }
-        );
-    }
-
-    #[trace("TC-145", "FR-056-AC-2")]
-    #[test]
-    fn refuses_missing_bytes() {
-        let map = BTreeMap::new();
-        let (offered, digest_domain) =
-            selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, [0; 32]);
-        let refusal = admit(
-            &offered,
-            &digest_domain,
-            &map,
+            "acme/orders",
+            &PackageInput::new(),
             qsl_foundation::IntakeLimits::default(),
         )
         .unwrap_err();
@@ -6184,167 +5861,61 @@ mod tests {
             ModelRefusal {
                 code: Code::MissingImport,
                 cause: ModelRefusalCause::MissingSelection {
-                    selection: DomainPackageRef {
-                        identity: "acme/orders".to_owned(),
-                        version: "1".to_owned(),
-                        digest: [0; 32],
-                    },
+                    identity: "acme/orders".to_owned(),
                 },
-                detail: format!("no package bytes supplied under digest {}", hex(&[0; 32])),
+                detail: "no domain package supplied for identity \"acme/orders\"".to_owned(),
             }
         );
     }
 
     #[trace("TC-145", "FR-056-AC-2")]
     #[test]
-    fn a_parsed_document_under_another_digest_refuses_content_mismatch() {
-        let bytes = package_bytes("acme/orders", "1");
-        let wrong_digest = digest_of(b"not the package");
-        let actual_digest = digest_of(&canonical(&serde_json::from_slice(&bytes).unwrap()));
-        let mut map = BTreeMap::new();
-        map.insert(wrong_digest, bytes);
-        let (offered, digest_domain) =
-            selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, wrong_digest);
-        let refusal = admit(
-            &offered,
-            &digest_domain,
-            &map,
-            qsl_foundation::IntakeLimits::default(),
-        )
-        .unwrap_err();
-        assert_eq!(
-            refusal,
-            ModelRefusal {
-                code: Code::StaleDependency,
-                cause: ModelRefusalCause::ContentMismatch {
-                    selected: wrong_digest,
-                    recomputed: actual_digest,
-                },
-                detail: format!(
-                    "domain package acme/orders@1 recomputes to digest {}, not the selected {}",
-                    hex(&actual_digest),
-                    hex(&wrong_digest)
-                ),
-            }
-        );
-    }
-
-    #[trace("TC-145", "FR-056-AC-2")]
-    #[test]
-    fn refuses_wrong_package_identity() {
-        let bytes = package_bytes("acme/other", "1");
-        let digest = digest_of(&canonical(&serde_json::from_slice(&bytes).unwrap()));
-        let mut map = BTreeMap::new();
-        map.insert(digest, bytes);
-        let (offered, digest_domain) =
-            selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest);
-        let refusal = admit(
-            &offered,
-            &digest_domain,
-            &map,
-            qsl_foundation::IntakeLimits::default(),
-        )
-        .unwrap_err();
+    fn refuses_a_document_supplied_under_another_identity() {
+        let mut map = PackageInput::new();
+        map.insert("acme/orders".to_owned(), package_bytes("acme/other", "1"));
+        let refusal =
+            admit("acme/orders", &map, qsl_foundation::IntakeLimits::default()).unwrap_err();
         assert_eq!(
             refusal,
             ModelRefusal {
                 code: Code::InvalidModelBinding,
                 cause: ModelRefusalCause::WrongModelSelection {
-                    selection: DomainPackageRef {
-                        identity: "acme/orders".to_owned(),
-                        version: "1".to_owned(),
-                        digest,
-                    },
+                    identity: "acme/orders".to_owned(),
                     actual_identity: "acme/other".to_owned(),
-                    actual_version: "1".to_owned(),
                 },
-                detail: "domain package selection names acme/orders@1 but \
-                          the package declares acme/other@1"
+                detail: "domain package selection names \"acme/orders\" but the package \
+                         declares \"acme/other\""
                     .to_owned(),
             }
         );
     }
 
-    /// `admit`'s version-only mismatch -- the selected bytes' own package
-    /// identity matches the selection but the version does not -- is a
-    /// distinct branch of the same `WrongModelSelection` check from
-    /// `refuses_wrong_package_identity`'s identity mismatch, so it gets its
-    /// own whole-outcome test.
     #[trace("TC-145", "FR-056-AC-2")]
     #[test]
-    fn refuses_version_only_mismatch() {
-        let bytes = package_bytes("acme/orders", "2");
-        let digest = digest_of(&canonical(&serde_json::from_slice(&bytes).unwrap()));
-        let mut map = BTreeMap::new();
-        map.insert(digest, bytes);
-        let (offered, digest_domain) =
-            selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest);
-        let refusal = admit(
-            &offered,
-            &digest_domain,
-            &map,
-            qsl_foundation::IntakeLimits::default(),
-        )
-        .unwrap_err();
+    fn two_supplied_documents_for_one_identity_refuse_as_conflicting() {
+        let first = package_bytes("acme/orders", "1");
+        let second = package_bytes("acme/orders", "2");
+        let refusal = package_input([first.as_slice(), second.as_slice()]).unwrap_err();
+        assert_eq!(refusal.code, Code::InvalidPackage);
         assert_eq!(
-            refusal,
-            ModelRefusal {
-                code: Code::InvalidModelBinding,
-                cause: ModelRefusalCause::WrongModelSelection {
-                    selection: DomainPackageRef {
-                        identity: "acme/orders".to_owned(),
-                        version: "1".to_owned(),
-                        digest,
-                    },
-                    actual_identity: "acme/orders".to_owned(),
-                    actual_version: "2".to_owned(),
-                },
-                detail: "domain package selection names acme/orders@1 but \
-                          the package declares acme/orders@2"
-                    .to_owned(),
+            refusal.cause,
+            ModelRefusalCause::ConflictingPackage {
+                identity: "acme/orders".to_owned()
             }
         );
+        assert_eq!(refusal.cause.as_str(), "conflicting-definition");
     }
 
-    /// `admit`'s non-JSON-bytes case is a distinct branch from
-    /// `refuses_wrong_package_identity`'s JSON-but-wrong-identity case --
-    /// bytes that are not JSON at all never reach a `package.identity`
-    /// comparison, so `parsed` stays `None` and both `actual_identity`/
-    /// `actual_version` default to empty strings.
     #[trace("TC-145", "FR-056-AC-2")]
     #[test]
-    fn refuses_non_json_bytes_as_wrong_selection() {
-        let bytes = b"not json".to_vec();
-        let digest = digest_of(&bytes);
-        let mut map = BTreeMap::new();
-        map.insert(digest, bytes);
-        let (offered, digest_domain) =
-            selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest);
-        let refusal = admit(
-            &offered,
-            &digest_domain,
-            &map,
-            qsl_foundation::IntakeLimits::default(),
-        )
-        .unwrap_err();
-        assert_eq!(
-            refusal,
-            ModelRefusal {
-                code: Code::InvalidModelBinding,
-                cause: ModelRefusalCause::WrongModelSelection {
-                    selection: DomainPackageRef {
-                        identity: "acme/orders".to_owned(),
-                        version: "1".to_owned(),
-                        digest,
-                    },
-                    actual_identity: String::new(),
-                    actual_version: String::new(),
-                },
-                detail: "domain package selection names acme/orders@1 but \
-                          the package declares @"
-                    .to_owned(),
-            }
-        );
+    fn a_document_that_does_not_read_refuses_with_the_readers_refusal() {
+        let refusal = package_input([b"not json".as_slice()]).unwrap_err();
+        assert_eq!(refusal.code, Code::InvalidModelBinding);
+        assert!(matches!(
+            refusal.cause,
+            ModelRefusalCause::MalformedDeclaration
+                | ModelRefusalCause::IntakeMalformedDeclaration { .. }
+        ));
     }
 
     // M5 (review of PR #200): `read_records` now runs `validate_with_semantic_ir`
@@ -6633,8 +6204,6 @@ mod tests {
         let package = read_domain_package(
             DomainPackageRef {
                 identity: "acme/orders".to_owned(),
-                version: "1.0.0".to_owned(),
-                digest: [0; 32],
             },
             &document,
         )
@@ -7105,7 +6674,7 @@ mod tests {
     /// `wrong-model-selection`.
     #[trace("TC-145", "FR-056-AC-13")]
     #[test]
-    fn a_u64_bound_above_2_53_refuses_at_its_pointer_before_check_3() {
+    fn a_u64_bound_above_2_53_refuses_at_its_pointer() {
         const EXACT: u64 = (1 << 60) + 1;
         let mut field = wire_field(
             "ix://acme/orders/Widget/count",
@@ -7124,31 +6693,6 @@ mod tests {
             PackageDocument::parse(&bytes, qsl_foundation::IntakeLimits::default()).unwrap_err(),
             expected
         );
-
-        // The RFC 8785 text the document used to admit under, the bound
-        // spelled as ECMAScript spells 2^60.
-        let mut rounded: Value = serde_json::from_slice(&bytes).unwrap();
-        rounded["types"][0]["fields"][0]["multiplicity"]["upper"] =
-            Value::Number(serde_json::Number::from_f64(1_152_921_504_606_846_976.0).unwrap());
-        let text = String::from_utf8(canonical(&rounded)).unwrap();
-        assert!(text.contains(r#""upper":1152921504606847000}"#), "{text}");
-        let rounded_digest = digest_of(text.as_bytes());
-        let raw = digest_of(&bytes);
-        let map = BTreeMap::from([(rounded_digest, bytes.clone()), (raw, bytes)]);
-        for digest in [rounded_digest, raw] {
-            let (offered, digest_domain) =
-                selection("acme/orders", "1.0.0", SHA256_JCS_DIGEST_DOMAIN, digest);
-            assert_eq!(
-                admit(
-                    &offered,
-                    &digest_domain,
-                    &map,
-                    qsl_foundation::IntakeLimits::default()
-                )
-                .unwrap_err(),
-                expected
-            );
-        }
     }
 
     // `agent-ix-semantic-ir` at the pinned rev resolves
@@ -9828,18 +9372,11 @@ mod tests {
         assert_noncanonical(r#"{"x":[1e-400,1e400]}"#, Inexact::Integer, "/x/1", "1e400");
     }
 
-    /// FR-154 admission refuses a number with no finite double
-    /// `noncanonical_wire` at its pointer under a digest that matches
-    /// nothing, never `stale_dependency`.
+    /// Package input refuses a number with no finite double
+    /// `noncanonical_wire` at its pointer.
     #[trace("TC-145", "FR-056-AC-2")]
     #[test]
-    fn admission_refuses_a_number_with_no_finite_double_under_an_unrelated_digest() {
-        let digest = [7_u8; 32];
-        let offered = DomainPackageRef {
-            identity: "acme/orders".to_owned(),
-            version: "1".to_owned(),
-            digest,
-        };
+    fn package_input_refuses_a_number_with_no_finite_double() {
         for (text, inexact, pointer) in [
             (
                 document_with_count("1e400"),
@@ -9852,14 +9389,7 @@ mod tests {
                 "/package/count",
             ),
         ] {
-            let bytes = BTreeMap::from([(digest, text.clone().into_bytes())]);
-            let refusal = admit(
-                &offered,
-                SHA256_JCS_DIGEST_DOMAIN,
-                &bytes,
-                qsl_foundation::IntakeLimits::default(),
-            )
-            .unwrap_err();
+            let refusal = package_input([text.as_bytes()]).unwrap_err();
             assert_eq!(refusal.code, Code::NoncanonicalWire, "{text}");
             assert_eq!(
                 refusal.cause,
@@ -9872,13 +9402,12 @@ mod tests {
         }
     }
 
-    /// The JCS digest check still runs over the one parse.
     /// A document nested past serde_json's default recursion limit (128)
-    /// admits under its JCS digest, which the old `serde_json::from_slice`
-    /// in `admit` could not parse and so digested raw.
+    /// admits, which the old `serde_json::from_slice` in `admit` could not
+    /// parse.
     #[trace("TC-145", "FR-056-AC-2")]
     #[test]
-    fn admits_a_deeply_nested_document_under_its_jcs_digest() {
+    fn admits_a_deeply_nested_document() {
         let mut nested = serde_json::json!(0);
         for _ in 0..150 {
             nested = serde_json::json!([nested]);
@@ -9889,19 +9418,11 @@ mod tests {
         });
         let padded = format!("  {document}  ").into_bytes();
         assert!(serde_json::from_slice::<Value>(&padded).is_err());
-        let digest = digest_of(&canonical(&document));
-        let mut map = BTreeMap::new();
-        map.insert(digest, padded);
-        let (offered, digest_domain) =
-            selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest);
-        let (package_ref, admitted) = admit(
-            &offered,
-            &digest_domain,
-            &map,
-            qsl_foundation::IntakeLimits::default(),
-        )
-        .expect("a deeply nested document admits under its JCS digest");
-        assert_eq!(package_ref.digest, digest);
+        let map = supplied(&[&padded]);
+        let (package_ref, admitted) =
+            admit("acme/orders", &map, qsl_foundation::IntakeLimits::default())
+                .expect("a deeply nested document admits");
+        assert_eq!(package_ref.identity, "acme/orders");
         assert_eq!(admitted.tree(), &document);
     }
 
@@ -10010,39 +9531,6 @@ mod tests {
         }
     }
 
-    /// The reviewer's scenario: lone-surrogate bytes offered under the JCS
-    /// digest of the U+FFFD document no longer admit.
-    #[trace("TC-145", "FR-056-AC-2")]
-    #[test]
-    fn a_lone_surrogate_no_longer_admits_under_the_replacement_character_digest() {
-        let replacement = serde_json::json!({
-            "package": {"identity": "acme/orders", "version": "1"},
-            "s": "\u{FFFD}",
-        });
-        let digest = digest_of(&canonical(&replacement));
-        let lone = br#"{"package":{"identity":"acme/orders","version":"1"},"s":"\ud800"}"#.to_vec();
-        let mut map = BTreeMap::new();
-        map.insert(digest, lone.clone());
-        let (offered, digest_domain) =
-            selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest);
-        let refusal = admit(
-            &offered,
-            &digest_domain,
-            &map,
-            qsl_foundation::IntakeLimits::default(),
-        )
-        .unwrap_err();
-        assert_eq!(refusal.code, Code::StaleDependency);
-        assert_eq!(
-            refusal.cause,
-            ModelRefusalCause::ByteDigestMismatch {
-                expected: digest,
-                actual: digest_of(&lone),
-            },
-            "unparseable bytes digest raw, so they cannot match a JCS digest"
-        );
-    }
-
     // PR #379 review F2: a document over a parse limit that arrives with its
     // correct JCS digest refuses naming the limit, not as a digest mismatch.
 
@@ -10078,7 +9566,7 @@ mod tests {
     #[trace("TC-145", "FR-056-AC-2")]
     #[trace("TC-732", "FR-260-AC-4")]
     #[test]
-    fn refuses_an_oversize_document_with_its_correct_digest_as_a_size_limit() {
+    fn refuses_an_oversize_document_as_a_size_limit() {
         use qsl_foundation::SettingLimits;
         let head = r#"{"package":{"identity":"acme/orders","version":"1"},"pad":""#;
         let tail = r#""}"#;
@@ -10086,13 +9574,9 @@ mod tests {
         let pad = bound as usize + 1 - head.len() - tail.len();
         let bytes = format!("{head}{}{tail}", "x".repeat(pad)).into_bytes();
         assert_eq!(bytes.len() as u64, bound + 1);
-        let digest = digest_of(&canonical(&serde_json::from_slice(&bytes).unwrap()));
-        let mut map = BTreeMap::new();
-        map.insert(digest, bytes);
-        let (offered, digest_domain) =
-            selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest);
+        let map = supplied(&[&bytes]);
         let at_bound = IntakeLimits::default().with_input_bytes(bound);
-        let refusal = admit(&offered, &digest_domain, &map, at_bound).unwrap_err();
+        let refusal = admit("acme/orders", &map, at_bound).unwrap_err();
         assert_eq!(
             refusal,
             ModelRefusal {
@@ -10111,7 +9595,7 @@ mod tests {
         assert_eq!(outcome.actual(), u128::from(bound) + 1);
         // Raised through the builder: judged on its content, not the size.
         let raised = at_bound.with_input_bytes(bound + 1);
-        assert!(admit(&offered, &digest_domain, &map, raised).is_ok());
+        assert!(admit("acme/orders", &map, raised).is_ok());
         // Raised through the settings operation.
         let mut operated = at_bound;
         let operand = format!("intake.input_bytes={}", bound + 1);
@@ -10123,40 +9607,7 @@ mod tests {
             assert!(operated.set_bound(setting, value));
         }
         assert_eq!(operated, raised);
-        assert!(admit(&offered, &digest_domain, &map, operated).is_ok());
-    }
-
-    /// PR #379 review F3: unparseable bytes supply no document, so even an
-    /// empty offered identity and version, whose raw digest matches, refuse
-    /// `wrong-model-selection`. Before `admit` required a parsed document,
-    /// the two empty strings compared equal and the bytes admitted.
-    #[trace("TC-145", "FR-056-AC-2")]
-    #[test]
-    fn refuses_unparseable_bytes_under_an_empty_identity_and_version() {
-        let bytes = b"not json".to_vec();
-        let digest = digest_of(&bytes);
-        let mut map = BTreeMap::new();
-        map.insert(digest, bytes);
-        let (offered, digest_domain) = selection("", "", SHA256_JCS_DIGEST_DOMAIN, digest);
-        let refusal = admit(
-            &offered,
-            &digest_domain,
-            &map,
-            qsl_foundation::IntakeLimits::default(),
-        )
-        .unwrap_err();
-        assert_eq!(
-            refusal,
-            ModelRefusal {
-                code: Code::InvalidModelBinding,
-                cause: ModelRefusalCause::WrongModelSelection {
-                    selection: offered.clone(),
-                    actual_identity: String::new(),
-                    actual_version: String::new(),
-                },
-                detail: "domain package selection names @ but the package declares @".to_owned(),
-            }
-        );
+        assert!(admit("acme/orders", &map, operated).is_ok());
     }
 
     /// PR #379 review F4: the tree the one parse derives, and the digest it
@@ -10203,11 +9654,6 @@ mod tests {
             ) {
                 (Ok(document), Ok(expected)) => {
                     assert_eq!(document.tree(), &expected, "{text}");
-                    assert_eq!(
-                        document.jcs_digest(),
-                        digest_of(&canonical(&expected)),
-                        "{text}"
-                    );
                 }
                 (Err(_), Err(_)) => assert!(text.ends_with("1e400"), "{text}: both refused"),
                 (parsed, expected) => {
@@ -10217,23 +9663,18 @@ mod tests {
         }
     }
 
-    /// A non-whole number in the tree is the correctly rounded double the
-    /// digest encodes, even where serde_json's own float parse is one unit
-    /// in the last place off.
+    /// A non-whole number in the tree is the correctly rounded double of its
+    /// text, even where serde_json's own float parse is one unit in the last
+    /// place off.
     #[trace("TC-145", "FR-056-AC-15")]
     #[test]
-    fn a_non_whole_number_in_the_tree_is_the_digests_double() {
+    fn a_non_whole_number_in_the_tree_is_its_texts_double() {
         for text in ["1.5e-300", "0.1", "2.5", "-3e-7"] {
             let document =
                 PackageDocument::parse(text.as_bytes(), qsl_foundation::IntakeLimits::default())
                     .unwrap();
             let expected: f64 = text.parse().unwrap();
             assert_eq!(document.tree().as_f64(), Some(expected), "{text}");
-            assert_eq!(
-                document.jcs_digest(),
-                digest_of(&canonical(document.tree())),
-                "{text}"
-            );
         }
     }
 
@@ -10399,11 +9840,6 @@ mod tests {
                 Some(expected),
                 "{number}"
             );
-            assert_eq!(
-                document.jcs_digest(),
-                digest_of(&canonical(document.tree())),
-                "{number}"
-            );
         }
         for number in [
             "1500000000000000.3",
@@ -10455,61 +9891,7 @@ mod tests {
             }
             let expected: Value = serde_json::from_str(&text).unwrap();
             assert_eq!(count, &expected["package"]["count"], "{number}");
-            assert_eq!(
-                document.jcs_digest(),
-                digest_of(&canonical(&expected)),
-                "{number}"
-            );
         }
-    }
-
-    /// Two documents that differ only in a number rounding to one double
-    /// used to share one `sha256-jcs` digest, the digest of that double's
-    /// text. Now a document whose number is not that text refuses at the
-    /// parse, and admission returns that refusal under the digest they used
-    /// to share: `18446744073709551615` and `18446744073709551616` both
-    /// refuse, and of `0.1` and `0.1000000000000000000001` only `0.1`
-    /// admits. No two documents share a digest.
-    #[trace("TC-145", "FR-056-AC-13", "FR-056-AC-14")]
-    #[test]
-    fn documents_differing_only_in_an_inexact_number_share_no_digest() {
-        let shared_integer = digest_of(
-            br#"{"package":{"count":18446744073709552000,"identity":"acme/orders","version":"1"}}"#,
-        );
-        let shared_tenth =
-            digest_of(br#"{"package":{"count":0.1,"identity":"acme/orders","version":"1"}}"#);
-        for (number, shared, inexact) in [
-            ("18446744073709551615", shared_integer, Inexact::Integer),
-            ("18446744073709551616", shared_integer, Inexact::Integer),
-            ("0.1000000000000000000001", shared_tenth, Inexact::Number),
-        ] {
-            let bytes = document_with_count(number).into_bytes();
-            let map = BTreeMap::from([(shared, bytes)]);
-            let (offered, digest_domain) =
-                selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, shared);
-            assert_eq!(
-                admit(
-                    &offered,
-                    &digest_domain,
-                    &map,
-                    qsl_foundation::IntakeLimits::default()
-                )
-                .unwrap_err(),
-                noncanonical_number("/package/count".parse().unwrap(), inexact, number),
-                "{number}"
-            );
-        }
-        let tenth = document_with_count("0.1").into_bytes();
-        let map = BTreeMap::from([(shared_tenth, tenth)]);
-        let (offered, digest_domain) =
-            selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, shared_tenth);
-        assert!(admit(
-            &offered,
-            &digest_domain,
-            &map,
-            qsl_foundation::IntakeLimits::default()
-        )
-        .is_ok());
     }
 
     /// The decision reads the number's text in time linear in its length
@@ -10617,30 +9999,6 @@ mod tests {
                 "package document is malformed JSON at byte 0: unexpected character"
             )
         );
-
-        let repeated = br#"{"package":{"identity":"acme/orders","version":"1"},"s":1,"s":2}"#;
-        let last_wins: Value = serde_json::from_slice(repeated).unwrap();
-        let digest = digest_of(&canonical(&last_wins));
-        let mut map = BTreeMap::new();
-        map.insert(digest, repeated.to_vec());
-        let (offered, digest_domain) =
-            selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest);
-        let refusal = admit(
-            &offered,
-            &digest_domain,
-            &map,
-            qsl_foundation::IntakeLimits::default(),
-        )
-        .unwrap_err();
-        assert_eq!(refusal.code, Code::StaleDependency);
-        assert_eq!(
-            refusal.cause,
-            ModelRefusalCause::ByteDigestMismatch {
-                expected: digest,
-                actual: digest_of(repeated),
-            },
-            "a repeated-name document digests raw"
-        );
     }
 
     /// The reader's and the encoder's allocation failures refuse
@@ -10662,10 +10020,6 @@ mod tests {
                 1,
                 2
             ),
-            expected
-        );
-        assert_eq!(
-            digest_refusal(quire_canonical::Error::Allocation { requested: 4096 }, 1, 2),
             expected
         );
     }
@@ -10714,7 +10068,6 @@ mod tests {
             let package = PackageDocument {
                 bundle: agent_ix_semantic_ir::json::Json::Null,
                 tree: value_of(document.root()).expect("the deep tree builds"),
-                jcs_digest: [0; 32],
             };
             drop(package);
         });

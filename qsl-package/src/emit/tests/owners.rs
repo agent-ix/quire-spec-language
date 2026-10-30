@@ -91,11 +91,11 @@ fn assert_owners(package: &CheckedPackage, emission: &Emission, read: impl Fn(&E
     for node in written {
         let id = node["node_id"]["digest"].as_str().unwrap();
         if node["semantic_form"] == "model_root" {
-            // A root is derived from its selection row, not lowered from a
-            // checked node (FR-322-AC-134).
-            let selected = wire["lock"]["model_selections"].as_array().unwrap();
-            assert!(selected.iter().any(|row| node["owner"]
-                == json!({"kind": "model_root", "identity": row["identity"], "digest": row["digest"]})));
+            // A root is derived from its package identity, not lowered from
+            // a checked node (FR-322-AC-134).
+            assert_eq!(node["owner"]["kind"], "model_root");
+            assert!(node["owner"]["identity"].is_string());
+            assert!(node["owner"].get("digest").is_none());
             continue;
         }
         assert_eq!(
@@ -349,13 +349,9 @@ fn clauses(order: EffectiveId, sub: EffectiveId) -> OperationClauses {
 #[test]
 fn model_declaration_nodes_and_clause_functions_carry_their_model_owner() {
     let document = acme_document();
-    let digest: [u8; 32] =
-        Sha256::digest(jcs(&serde_json::from_slice::<Value>(&document).unwrap())).into();
     let package = DomainPackage::new(
         DomainPackageRef {
             identity: "acme/orders".to_owned(),
-            version: "1.0.0".to_owned(),
-            digest,
         },
         vec![
             object("Order", &[]),
@@ -418,12 +414,8 @@ fn model_declaration_nodes_and_clause_functions_carry_their_model_owner() {
         assert_eq!(emission.omitted, []);
         let read = |emission: &Emission| {
             let mut evidence = read_evidence(emission);
-            let wire = wire(emission);
-            let digest = wire["lock"]["model_selections"][0]["digest"]
-                .as_str()
-                .unwrap();
             evidence
-                .insert_domain_package_document(digest, &document[..])
+                .insert_domain_package_document(package_identity(&document[..]), &document[..])
                 .expect("a fresh evidence key");
             assert!(
                 matches!(read_with(emission, &evidence), Read::Verified { .. }),

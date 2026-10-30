@@ -374,7 +374,7 @@ by name (`use crate::library;`) is classified on that module. A
 `super::` or `self::` path is resolved relative to its file before it is
 classified. The rule
 classifies this crate's own modules and the workspace crates `quire_exact`,
-`quire_semantic_value` and `qsl_foundation`; `std` and third-party crates (`serde_json`, `sha2`,
+`quire_semantic_value` and `qsl_foundation`; `std` and third-party crates (`serde_json`,
 `ix_trace_rs`) are governed by the Cargo manifest, not by this rule. Test code is excluded
 because the Cargo dependency graph that replaces this gate governs shipped
 code only; the S3-to-S4 handoff is tested in `qsl-package`, which links a

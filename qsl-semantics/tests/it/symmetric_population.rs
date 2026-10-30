@@ -151,11 +151,7 @@ fn an_annotated_population_checks_and_changes_the_package_selection() {
     let body = format!("{PARENT_ORDER}{NO_CYCLE}{VERSION_UNCHANGED}");
     let plain = check(&document(), &body).expect("the unannotated unit checks");
     let marked = check(&annotated(&document()), &body).expect("the annotated unit checks");
-    assert_ne!(
-        plain.model_selections(),
-        marked.model_selections(),
-        "a package differing only by the annotation is a different package"
-    );
+    assert_eq!(plain.model_selections(), marked.model_selections());
 
     for (bytes, symmetric) in [(document(), false), (annotated(&document()), true)] {
         let package = PackageDocument::parse(&bytes, IntakeLimits::default()).expect("parses");

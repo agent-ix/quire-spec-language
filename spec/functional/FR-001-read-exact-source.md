@@ -21,8 +21,9 @@ source reference that names them.
 label check still carry the revision namespace and revision labels (four
 labels in all); they drop to the authority and identity as AC-6, AC-7,
 AC-8, AC-10 and AC-11 state. The `RequestRevision` and
-`EditPredecessor` checks compare revisions and become digest comparisons
-(AC-12).
+`EditPredecessor` checks are removed (AC-12): an edit or editor request is
+made against the one immutable `Source` instance it names, so no predecessor
+or revision value is carried or compared.
 
 ## Inputs
 
@@ -31,12 +32,12 @@ ceilings.
 
 ## Outputs
 
-Immutable source with its digest, its source reference and indexed
+Immutable source with its source reference and indexed
 locations, or a diagnostic.
 
 ## Behavior
 
-The input ceiling is the caller's, used as given; it defaults to 1 MiB and may be set above or below that. Invalid UTF-8, BOM and NUL refuse. Verified intake checks the selected raw SHA-256 digest. Byte spans remain original and half open; line/scalar-column coordinates are derived without changing source text.
+The input ceiling is the caller's, used as given; it defaults to 1 MiB and may be set above or below that. Invalid UTF-8, BOM and NUL refuse. Byte spans remain original and half open; line/scalar-column coordinates are derived without changing source text.
 
 ### The caller names the source it hands QSL
 
@@ -49,8 +50,7 @@ spine's lexer (ADR-013 §6 Spans row).
 A source QSL reads itself is named by the caller, never by QSL. The caller
 supplies two labels with the bytes: the **authority** that issues the
 source's identity, and the **identity** within that authority. The source's
-identity is that document identity plus the content digest of its bytes
-(QSpec STD-150). QSL does not default either label and does not derive one
+identity is that document identity (authority and identity). QSL does not default either label and does not derive one
 from the path, the bytes or the other label: a path is a locator, not an
 identity (QSpec FR-004).
 
@@ -72,11 +72,9 @@ region.
 ### Edit and binding refusals are not source-identity refusals
 
 Three complete-V1 host refusals concern a source already admitted, not the
-labels it was admitted under: an incremental edit whose predecessor digest is
-not the source's current digest or that changes the authority or identity
-(`EditPredecessor`), a CST node rendered against a parsed source it does not
-belong to (`ForeignNode`), and an editor request bound to another source
-digest of the document (`RequestRevision`). They SHALL refuse with
+labels it was admitted under: an incremental edit that changes the authority or identity
+(`EditPredecessor`) and a CST node rendered against a parsed source it does not
+belong to (`ForeignNode`). They SHALL refuse with
 `invalid_source_map`, the retained host code for an invalid correspondence,
 source binding or queried range, whose causes the catalog does not
 close, keeping their host cause. They SHALL name no region: byte 0 cannot
@@ -92,20 +90,18 @@ context: "Unavailable context is explicitly unavailable; byte zero, an empty
 path or a name-search match cannot masquerade as a located failure"):
 
 - Invalid UTF-8, a BOM and NUL refuse at a region under a `RawSourceRef`
-  minted for the refusal over the offered bytes: the two labels and the
-  `quire.source.bytes/v1` digest of the bytes offered. Only these refusals
-  mint a reference over bytes that were not admitted. Invalid UTF-8 is the
+  minted for the refusal: the two labels. Only these refusals
+  mint a reference for bytes that were not admitted. Invalid UTF-8 is the
   empty region at the end of the longest valid prefix; a BOM is the region
   of its three bytes at 0; NUL is the one-byte region of the first NUL.
-- A blank label or an empty path, input beyond the byte ceiling, and a
-  digest mismatch under verified intake refuse with no region. The first has
+- A blank label or an empty path and input beyond the byte ceiling refuse
+  with no region. The first has
   no complete, non-blank label set to name the source by, and an empty path
   names no location. The second is
-  refused without hashing the offered bytes. The third concerns the bytes
-  as a whole, not a position in them.
+  refused without reading the offered bytes.
 
-This changes current behaviour, which places the unnamed-source, byte-budget
-and digest-mismatch refusals at byte 0. The native-v1 `Diagnostic` hosted in
+This changes current behaviour, which places the unnamed-source and byte-budget
+refusals at byte 0. The native-v1 `Diagnostic` hosted in
 F requires a span. For a refusal with no region it keeps rendering byte 0.
 That is retained lane-private debt (ADR-013 §6), recorded here so no
 implementer mistakes it for this requirement's behaviour; this requirement
@@ -123,20 +119,19 @@ longest valid UTF-8 prefix of those bytes, which contains the region.
 ### Admission mints the source reference
 
 On admission the source shall carry its `RawSourceRef` (ADR-013 O-07,
-QSpec FR-322): the two labels exactly as supplied and the
-`quire.source.bytes/v1` digest of the admitted bytes. The source reference
+QSpec FR-322): the two labels exactly as supplied.
+The source reference
 is the one value every later stage names this source by:
 
 - A region in this source is a `SourceRegion` under this `RawSourceRef`
   (ADR-013 O-12).
-- The checked package's lock lists this `RawSourceRef` among its `sources`
-  (QSpec FR-322 `PackageLock`).
+- The checked package's `sources` list this `RawSourceRef` (QSpec FR-322).
 - A declaration of this source is owned by
   `SourceOwner{authority, identity}`, taken from this `RawSourceRef`
   ([FR-091](FR-091-produce-value-forms-and-assemble-package-declarations.md),
   [FR-092](FR-092-key-type-parameter-and-declared-nodes.md)).
 
-The digest does not enter a declaration's node key: two contents of one
+A declaration's node key does not depend on the source content: two contents of one
 source keep the keys of their unchanged declarations
 (QSpec `proposals/checked-package-v2/README.md`). A different authority or
 identity gives every source-owned declaration a different key.
@@ -166,9 +161,7 @@ identity gives every source-owned declaration a different key.
   reference's identity as the path, and the provided bytes as the source. A
   reference whose label is only whitespace, which QSpec's `Nonempty` admits,
   refuses the replay with `invalid_source_identity`/`blank-label`, naming
-  that label, at S1, before any form is built. It requires the recomputed
-  `quire.source.bytes/v1` digest to equal the reference's digest, as
-  ADR-013 C-13 requires. The recompiled package therefore names each source
+  that label, at S1, before any form is built. The recompiled package therefore names each source
   exactly as the proving run did, which keeps its declaration keys and its
   `package_id` (US-005). The executor is ADR-013 TK-01, `qsl_replay::replay`
   ([FR-098](FR-098-execute-a-replay-request.md)), and this is the
@@ -179,8 +172,8 @@ identity gives every source-owned declaration a different key.
 
 A native runtime input artifact (a snapshot or an invocation,
 `native-state-input/1`) is not a source read under this requirement. Its
-caller names it with the same two labels and the artifact's content digest
-(QSpec FR-004, STD-150)
+caller names it with the same two labels
+(QSpec FR-004)
 ([FR-018](FR-018-construct-native-runtime-inputs.md),
 [FR-024](FR-024-read-native-runtime-artifacts.md)).
 
@@ -188,17 +181,17 @@ caller names it with the same two labels and the artifact's content digest
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-001-AC-1 | Matching selected bytes produce the expected SHA-256 digest. | Test (TC-011) |
-| FR-001-AC-2 | Changed bytes under a selected digest receive source_digest_mismatch. | Test (TC-011) |
+| FR-001-AC-1 | **RETIRED (source content check removed).** Admission carries only the authority and identity of the source. | Test (TC-011), retired |
+| FR-001-AC-2 | **RETIRED (verified intake removed).** There is no verified intake and no content-mismatch refusal. | Test (TC-011), retired |
 | FR-001-AC-3 | Invalid UTF-8 receives a source diagnostic. | Test (TC-011) |
 | FR-001-AC-4 | Input beyond the selected byte ceiling receives resource_exhausted naming that ceiling, whether the ceiling is below or above the 1 MiB default. | Test (TC-011) |
-| FR-001-AC-5 | Source admitted with authority `agent-ix`, identity `specs/a.quire` and bytes `b` carries a `RawSourceRef` whose authority and identity read exactly those labels and whose digest is the `quire.source.bytes/v1` digest of `b`, and no other member. Admitting bytes `b'` under the same labels gives a `RawSourceRef` that differs only in the digest. | Test (TC-424) |
+| FR-001-AC-5 | Source admitted with authority `agent-ix`, identity `specs/a.quire` and bytes `b` carries a `RawSourceRef` whose authority and identity read exactly those labels, and no other member. Admitting bytes `b'` under the same labels gives an equal `RawSourceRef`. | Test (TC-424) |
 | FR-001-AC-6 | Admission refuses with `invalid_source_identity`, cause `blank-label`, and admits nothing, when exactly one of the authority or identity is empty, again when it is a single space, and again when it is U+3000 IDEOGRAPHIC SPACE; field `label` is `authority` or `identity` respectively. A label that is U+200B ZERO WIDTH SPACE, which is not `White_Space`, is not blank. | Test (TC-424) |
 | FR-001-AC-11 | With both the identity and the authority blank, admission refuses `invalid_source_identity`/`blank-label` with `label` `authority`. With the identity blank and the path empty, it refuses `blank-label` with `label` `identity`, not `empty-path`. With both labels non-blank and the path empty, it refuses `invalid_source_identity`/`empty-path` with no field. | Test (TC-424) |
-| FR-001-AC-12 | An incremental edit whose expected predecessor digest is not the source's digest, rendering a CST node against a parsed source it does not belong to, and an editor request bound to another source digest each refuse with `invalid_source_map`, keeping the host cause `EditPredecessor`, `ForeignNode` or `RequestRevision` respectively, and name no region; none refuses with `invalid_source_identity`. | Test (TC-424) |
+| FR-001-AC-12 | An incremental edit that changes the authority or identity and rendering a CST node against a parsed source it does not belong to each refuse with `invalid_source_map`, keeping the host cause `EditPredecessor` or `ForeignNode`, and name no region; neither refuses with `invalid_source_identity`. (The edit and the request name the one `Source` instance they act on.) | Test (TC-424) |
 | FR-001-AC-7 | Package declarations holding one record `Point` with field `x: Int[0, 9]`, checked under the source reference of bytes `b` admitted as authority `a`, identity `u`, and again under the reference of bytes `b'` admitted as `a`, `u`, give `Point` the same node key. Checked under the reference of `b` admitted as authority `c`, identity `u`, they give `Point` a different key, and under the reference of `b` admitted as authority `a`, identity `v`, a third key. | Test (TC-424) |
-| FR-001-AC-8 | Bytes `a\xffb` admitted as (`a`, `u`) refuse with the region `[1, 1)` under the `RawSourceRef` of those three bytes, and bytes `ab\0c` with the region `[2, 3)` under theirs. | Test (TC-424) |
-| FR-001-AC-10 | Admission with an empty identity, admission of five bytes under a four-byte ceiling, and verified intake of bytes whose digest differs from the selected one each refuse with no region, not a region at byte 0. | Test (TC-424) |
+| FR-001-AC-8 | Bytes `a\xffb` admitted as (`a`, `u`) refuse with the region `[1, 1)` under the `RawSourceRef` (`a`, `u`), and bytes `ab\0c` with the region `[2, 3)` under it. | Test (TC-424) |
+| FR-001-AC-10 | Admission with an empty identity, and admission of five bytes under a four-byte ceiling each refuse with no region, not a region at byte 0. | Test (TC-424) |
 | FR-001-AC-9 | A renderer given the region `[4, 7)` of admitted source `ab\ncdéf` reports start line 2, column 2 and end line 2, column 4, derived from the admitted bytes; the region itself holds only its `RawSourceRef`, 4 and 7. | Test (TC-424) |
 
 The cause and `label` reach the native `Diagnostic`,
@@ -209,8 +202,8 @@ and the native `Diagnostic`; the other outputs cannot reach it: `parse` and
 `format` and the run request open the file before any source is admitted (an
 empty file operand is a file error), a native-state-input artifact has no
 path, and the replay path is the reference's identity, which a non-blank
-label set makes non-empty. `EditPredecessor`, `ForeignNode` and
-`RequestRevision` refuse with `invalid_source_map` and no region
+label set makes non-empty. `EditPredecessor` and `ForeignNode`
+refuse with `invalid_source_map` and no region
 (`qsl-cst/src/diagnostic.rs` `HostCause::code`, `error_without_region`).
 
 ## Dependencies
@@ -223,8 +216,8 @@ label set makes non-empty. `EditPredecessor`, `ForeignNode` and
   builds this requirement's source reference.
 - QSpec FR-004: a path or display label is a locator. QSpec FR-322
   `RawSourceRef`, `SourceOwner` and `PackageLock.sources`.
-- QSpec STD-150: source identity is the document identity plus the content
-  digest; `RawSourceRef` is the authority, the identity and that digest.
+- QSpec STD-150 defines `RawSourceRef` with an extra content member; this requirement's
+  `RawSourceRef` is the authority and the identity only (QSpec must follow before the wire matches).
 - `quire.native.diagnostics/v1` (QSpec STD-110,
   `proposals/quire-v1/definitions/native-diagnostics.md`, cited by
   reference): the `invalid_source_identity` row, its causes `blank-label`

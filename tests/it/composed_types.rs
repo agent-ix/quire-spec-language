@@ -62,7 +62,7 @@ fn model_values_use_selected_inventory_and_ambiguous_inputs_refuse_upstream() {
             let Some(NativeType::Scalar { model, role, .. }) = &delta.ty else {
                 panic!("selected model input must retain its nominal scalar type");
             };
-            assert_eq!(model.digest(), selected.digest());
+            assert_eq!(model.artifact_bytes(), selected.artifact_bytes());
             assert_eq!(model.environment().owner(), selected.environment().owner());
             assert_eq!(role.name.as_str(), "Signed");
             assert!(report.exhaustion().is_none());

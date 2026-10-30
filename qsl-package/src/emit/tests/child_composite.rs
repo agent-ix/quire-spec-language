@@ -17,15 +17,11 @@ pub(super) mod fixture;
 /// document as evidence.
 fn emit_unit(unit_body: &str) -> (Emission, Value, Read) {
     let document = serde_json::to_vec(&fixture::document()).expect("the fixture serializes");
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    let digest = qsl_semantics::model::key::hex(digest);
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
-         model M = {package:?} version \"1\" digest \"sha256-jcs:{digest}\";\n\
+         model M = {package:?};\n\
          {unit_body}\n",
         package = fixture::PACKAGE,
     );
@@ -41,7 +37,7 @@ fn emit_unit(unit_body: &str) -> (Emission, Value, Read) {
         evidence.support_feature(feature.as_str().unwrap());
     }
     evidence
-        .insert_domain_package_document(digest.as_str(), document.as_slice())
+        .insert_domain_package_document(package_identity(&document), document.as_slice())
         .expect("a fresh evidence key");
     let read = read_v2(
         emission.package.bytes(),

@@ -251,7 +251,7 @@ fn corpus() -> Vec<(&'static str, String)> {
             source(
                 concat!(
                     "import \"acme/base\" as Base;\n",
-                    "model M = \"acme/model\" version \"1\" digest \"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\";\n",
+                    "model M = \"acme/model\";\n",
                     "dimension Length = M::Length^2 / M::Time;\n",
                     "dimension M::Time ~ Time by 1 M::s = rational(1, 1000) ms;\n",
                     "unit meter: M::Length = rational(1, 1) * M::meter + decimal(0, 0);\n",
@@ -763,7 +763,7 @@ fn complete_source_diagnostics_carry_their_catalogued_typed_cause() {
             "language \"ix:native\" edition \"1-draft\";\nprofile Complete = \"{identity}\";\nrecord Reading {{ datum: Integer; }}"
         )
     };
-    let cases: [(&str, Vec<u8>, CompleteCode, CompleteCause); 10] = [
+    let cases: [(&str, Vec<u8>, CompleteCode, CompleteCause); 9] = [
         (
             "unexpected-token",
             source("record Broken { value: Integer }").into_bytes(),
@@ -799,12 +799,6 @@ fn complete_source_diagnostics_carry_their_catalogued_typed_cause() {
             profile("").into_bytes(),
             CompleteCode::InvalidIdentifier,
             CompleteCause::Host(HostCause::SelectionIdentity),
-        ),
-        (
-            "invalid-digest",
-            b"language \"ix:native\" edition \"1-draft\";\nprofile Complete = \"quire.value.complete/v1\";\nmodel M = \"acme/orders\" version \"1\" digest \"sha256:AA\";\nrecord Reading { datum: Integer; }".to_vec(),
-            CompleteCode::InvalidDigest,
-            CompleteCause::Host(HostCause::SelectionDigest),
         ),
         (
             "invalid-utf8",
@@ -849,10 +843,6 @@ fn complete_source_diagnostics_carry_their_catalogued_typed_cause() {
         assert!(cause.is_cause_of(code), "{id}");
     }
     assert_eq!(CompleteCause::InvalidEscape.as_str(), "invalid-escape");
-    assert_eq!(
-        CompleteCause::Host(HostCause::SelectionDigest).as_str(),
-        "invalid-digest"
-    );
     assert!(!CompleteCause::UnexpectedEnd.is_cause_of(CompleteCode::ResourceExhausted));
 }
 

@@ -10,7 +10,7 @@ use crate::linking::composed::models::ModelTarget;
 use crate::linking::composed::{definition_source::RegisteredDefinition as R, DeclarationId};
 use crate::native_model::NativeModel;
 use crate::protocol_artifact::{
-    self as artifact, wire as w, work::Work, ByteDigest, Dimension, Error, Invalid, Unsupported,
+    self as artifact, wire as w, work::Work, Dimension, Error, Invalid, Unsupported,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -45,8 +45,6 @@ pub(super) fn copy_reference(
     let bytes = value.ref_version.len()
         + value.authority.len()
         + value.identity.len()
-        + value.revision.namespace.len()
-        + value.revision.value.len()
         + value.wire.identity.len()
         + value.wire.version.len();
     work.bytes(bytes)?;
@@ -176,9 +174,6 @@ pub(super) fn lower(
         work.visit()?;
         artifact::intake::reference(d.artifact)?;
         work.bytes(d.bytes.len())?;
-        if ByteDigest::of(d.bytes) != d.artifact.digest {
-            return Err(Error::Invalid(Invalid::Seal));
-        }
         let mut requires = Vec::new();
         for r in d.requires {
             work.charge(Dimension::Entries, 1)?;
@@ -192,10 +187,6 @@ pub(super) fn lower(
             requires,
         });
     }
-    // The producer's own binary is identity, not a dependency: it is
-    // recorded and checked as a digest on `Producer.binary` (validated by
-    // `copy_reference` below), never as one of these exact-byte
-    // dependencies, so its bytes are never required here.
     for r in [selections.contract, selections.baseline] {
         dependency(&dependencies, r, work)?;
     }
@@ -246,9 +237,7 @@ pub(super) fn lower(
             return Err(Error::Invalid(Invalid::Duplicate));
         }
         let source = selected.source.source();
-        if selected.artifact.kind != w::ArtifactKind::Source
-            || selected.artifact.digest != source.digest()
-        {
+        if selected.artifact.kind != w::ArtifactKind::Source {
             return Err(Error::Invalid(Invalid::Selection));
         }
         work.charge(Dimension::SourceBytes, source.text().len())?;
@@ -568,7 +557,6 @@ pub(super) fn lower(
                 namespace: text(&selections.producer.revision.namespace, work)?,
                 value: text(&selections.producer.revision.value, work)?,
             },
-            binary: copy_reference(&selections.producer.binary, work)?,
         },
         baseline: copy_reference(selections.baseline, work)?,
         language,

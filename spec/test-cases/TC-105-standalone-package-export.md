@@ -24,7 +24,7 @@ Scope: FR-027-AC-2, FR-027-AC-3 and FR-027-AC-13.
    `selection` and `package`.
 3. Compile a request whose program source lacks `identity`, then one whose
    program source lacks `authority`.
-4. Compile a request whose program source digest is stale, then one whose
+4. Compile a request whose program source file is missing, then one whose
    program source has malformed syntax.
 5. Compile a request whose sources exceed `dependent_bytes`; compile it
    again with the limit raised to its size.

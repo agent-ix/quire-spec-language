@@ -112,15 +112,11 @@ fn applications<'w>(wire: &'w Value, identity: &str) -> Vec<&'w Value> {
 #[test]
 fn a_navigation_lowers_to_one_navigate_application_over_the_reference() {
     let document = navigation_document();
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    let digest = qsl_semantics::model::key::hex(digest);
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
-         model M = \"acme/orders\" version \"1.0.0\" digest \"sha256-jcs:{digest}\";\n\
+         model M = \"acme/orders\";\n\
          {FUNCTIONS}"
     );
     let graph = assemble_with_models(unit.as_bytes(), &packages)
@@ -196,7 +192,7 @@ fn a_navigation_lowers_to_one_navigate_application_over_the_reference() {
 
     let mut evidence = read_evidence(&emission);
     evidence
-        .insert_domain_package_document(digest.as_str(), &document[..])
+        .insert_domain_package_document(package_identity(&document[..]), &document[..])
         .expect("a fresh evidence key");
     assert!(
         matches!(read_with(&emission, &evidence), Read::Verified { .. }),

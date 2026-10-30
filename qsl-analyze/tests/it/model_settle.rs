@@ -37,8 +37,7 @@ use quire_semantic_value::catalog::Category;
 use quire_semantic_value::catalog::InternalFault;
 
 use crate::counter::{
-    document, document_digest, package, subject, unit_text, universe, Documents, Letters, CONTRACT,
-    UNLIMITED,
+    document, package, subject, unit_text, universe, Documents, Letters, CONTRACT, UNLIMITED,
 };
 
 /// The letters of a replay that reads no atom: the deadlock-freedom item has
@@ -103,7 +102,7 @@ impl Case {
 
 pub(crate) fn case(body: &str, values: &[i64]) -> Case {
     let document = document(false);
-    let unit = unit_text(&document, body).into_bytes();
+    let unit = unit_text(body).into_bytes();
     let package_id = compile_package(
         SourceIdentity::new(AUTHORITY, IDENTITY, "git", "1"),
         "counter.native",
@@ -120,7 +119,7 @@ pub(crate) fn case(body: &str, values: &[i64]) -> Case {
     let initial: Vec<DocumentRef> = values
         .iter()
         .enumerate()
-        .map(|(index, value)| documents.start(&format!("s{index}"), &[("c", *value)]))
+        .map(|(index, value)| documents.start(&format!("s{index}-{value}"), &[("c", *value)]))
         .collect();
     let outcome = check_model(
         ModelCheckRequest {
@@ -143,24 +142,15 @@ pub(crate) fn case(body: &str, values: &[i64]) -> Case {
     }
 }
 
-fn source_digest(bytes: &[u8]) -> DigestRecord {
-    DigestRecord::mint(
-        DigestDomain::SourceBytesV1,
-        qsl_foundation::ByteDigest::of(bytes).as_bytes(),
-    )
-}
+/// A source reference as the request spells it.
+type SourceWire = (String, String, String, String);
 
-/// A source reference as the request and the envelope spell it.
-type SourceWire = (String, String, String, String, Option<String>, String);
-
-pub(crate) fn source_wire(bytes: &[u8]) -> SourceWire {
+pub(crate) fn source_wire() -> SourceWire {
     (
         AUTHORITY.to_owned(),
         IDENTITY.to_owned(),
         "git".to_owned(),
         "1".to_owned(),
-        Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-        source_digest(bytes).hex(),
     )
 }
 
@@ -184,31 +174,19 @@ fn selected() -> QualifiedName {
 /// the snapshots in the byte provision.
 pub(crate) fn request<'a>(
     document: &[u8],
-    snapshots: impl Iterator<Item = (&'a [u8; 32], &'a Vec<u8>)>,
+    snapshots: impl Iterator<
+        Item = (
+            &'a qsl_semantics::model::observation::DocumentRef,
+            &'a Vec<u8>,
+        ),
+    >,
     unit: &[u8],
     package_id: DigestRecord,
 ) -> ReplayRequestWire {
-    let sha256_jcs = |digest: [u8; 32]| {
-        (
-            Some(DigestDomain::Sha256Jcs.as_str().to_owned()),
-            DigestRecord::mint(DigestDomain::Sha256Jcs, digest).hex(),
-        )
-    };
-    let source = source_digest(unit);
-    let mut byte_provision = vec![
-        (
-            Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-            source.hex(),
-            unit.to_vec(),
-        ),
-        {
-            let (domain, hex) = sha256_jcs(document_digest(document));
-            (domain, hex, document.to_vec())
-        },
-    ];
-    for (digest, bytes) in snapshots {
-        let (domain, hex) = sha256_jcs(*digest);
-        byte_provision.push((domain, hex, bytes.clone()));
+    let byte_provision = vec![(AUTHORITY.to_owned(), IDENTITY.to_owned(), unit.to_vec())];
+    let mut documents = vec![document.to_vec()];
+    for (_, bytes) in snapshots {
+        documents.push(bytes.clone());
     }
     ReplayRequestWire {
         profile_selections: Vec::new(),
@@ -216,7 +194,7 @@ pub(crate) fn request<'a>(
             Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
             package_id.hex(),
         ),
-        source_digests: vec![source_wire(unit)],
+        sources: vec![source_wire()],
         dependencies: Vec::new(),
         replay_target: qsl_replay::RequestTargetWire::function(
             selected(),
@@ -235,24 +213,23 @@ pub(crate) fn request<'a>(
         object_environment: None,
         declared_domains: Vec::new(),
         byte_provision,
+        documents,
     }
 }
 
-/// The envelope carrying `payload` at `package_id`, from `unit`, under the
+/// The envelope carrying `payload` at `package_id`, under the
 /// derived deadlock-freedom item's identity.
 fn envelope(
-    unit: &[u8],
     package_id: DigestRecord,
     payload: TemporalCounterexample,
 ) -> WitnessEnvelope<TemporalCounterexample> {
     let (node, occurrence) = deadlock_freedom_clause(&package_id);
-    envelope_at(unit, package_id, payload, node, occurrence)
+    envelope_at(package_id, payload, node, occurrence)
 }
 
-/// The envelope carrying `payload` at `package_id`, from `unit`, naming the
+/// The envelope carrying `payload` at `package_id`, naming the
 /// item by `node` and `occurrence`.
 pub(crate) fn envelope_at<T: SubjectTransition>(
-    unit: &[u8],
     package_id: DigestRecord,
     payload: TemporalCounterexample<T>,
     node: WireNodeId,
@@ -268,7 +245,6 @@ pub(crate) fn envelope_at<T: SubjectTransition>(
                 Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
                 package_id.hex(),
             )),
-            source_digests: Some(vec![source_wire(unit)]),
             profile_selections: Some(Vec::new()),
             run_limits: Some(UNLIMITED),
             declared_domains: Some(Vec::new()),
@@ -305,7 +281,7 @@ pub(crate) fn replay(
             case.package_id,
         ),
         &trace_subject(case),
-        &envelope(&case.unit, case.package_id, payload),
+        &envelope(case.package_id, payload),
         &NO_ATOMS,
         ReplayLimits::default(),
     )
@@ -418,10 +394,9 @@ fn a_counterexample_the_model_does_not_take_refuses_with_no_result() {
     );
     assert_eq!(code, Code::InvalidRuntimeInput);
 
-    let edited = unit_text(
-        &case.documents.document,
-        &format!("{CONTRACT}function Other using v(): Boolean pure {{ false }}\n"),
-    )
+    let edited = unit_text(&format!(
+        "{CONTRACT}function Other using v(): Boolean pure {{ false }}\n"
+    ))
     .into_bytes();
     let stale = replay_model_trace(
         request(
@@ -431,7 +406,7 @@ fn a_counterexample_the_model_does_not_take_refuses_with_no_result() {
             case.package_id,
         ),
         &trace_subject(&case),
-        &envelope(&edited, case.package_id, payload),
+        &envelope(case.package_id, payload),
         &NO_ATOMS,
         ReplayLimits::default(),
     );
@@ -466,7 +441,7 @@ fn a_counterexample_resolves_its_item_by_clause_node_and_occurrence_key() {
                 case.package_id,
             ),
             &trace_subject(&case),
-            &envelope_at(&case.unit, case.package_id, payload, node, occurrence),
+            &envelope_at(case.package_id, payload, node, occurrence),
             &NO_ATOMS,
             ReplayLimits::default(),
         )
@@ -1030,7 +1005,7 @@ fn a_counterexample_against_a_unit_with_another_terminal_declaration_is_refused(
         "{terminals:?}"
     );
     let any_package_id = self::case(&with_terminal(TERMINAL_ANY), &[0]).package_id;
-    let swapped = unit_text(&case.documents.document, &with_terminal(TERMINAL_ANY)).into_bytes();
+    let swapped = unit_text(&with_terminal(TERMINAL_ANY)).into_bytes();
     let stale = replay_model_trace(
         request(
             &case.documents.document,
@@ -1039,7 +1014,7 @@ fn a_counterexample_against_a_unit_with_another_terminal_declaration_is_refused(
             case.package_id,
         ),
         &trace_subject(&case),
-        &envelope(&swapped, case.package_id, payload),
+        &envelope(case.package_id, payload),
         &NO_ATOMS,
         ReplayLimits::default(),
     );
@@ -1101,7 +1076,7 @@ fn a_race_counterexample_over_a_model_subject_refuses_the_replay() {
             case.package_id,
         ),
         &trace_subject(&case),
-        &envelope_at(&case.unit, case.package_id, payload, node, occurrence),
+        &envelope_at(case.package_id, payload, node, occurrence),
         &NO_ATOMS,
         ReplayLimits::default(),
     );

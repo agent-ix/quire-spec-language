@@ -16,7 +16,7 @@ use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::{OccurrenceKey, RawSourceRef, SourceRegion};
 use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::library::{LibraryName, PinnedRequest};
-use qsl_semantics::value::{native_diagnostics_catalog, CatalogRole, DefinitionLock};
+use qsl_semantics::value::{always_roles, native_diagnostics_catalog, DefinitionRole};
 use quire_contract_model::CheckedPackageEvidence;
 use quire_exact::{
     CardinalityBound, CollectionKind, CollectionType, NodeKey, Presence, Role, ValueType,
@@ -69,6 +69,7 @@ mod state_transition;
 mod step_relation;
 mod temporal_clause;
 mod terminal;
+mod timed_clauses;
 mod timed_source;
 mod union_nodes;
 mod variant_types;
@@ -91,6 +92,14 @@ pub(super) fn source() -> RawSourceRef {
 /// Places every occurrence at the whole fixture unit.
 pub(super) fn whole_unit(_: &Location) -> Option<SourceRegion> {
     Some(SourceRegion::new(source(), 0, TEXT.len() as u64).unwrap())
+}
+
+/// The identity the domain package `document` declares.
+fn package_identity(document: &[u8]) -> String {
+    serde_json::from_slice::<serde_json::Value>(document)
+        .ok()
+        .and_then(|value| value["package"]["identity"].as_str().map(str::to_owned))
+        .expect("the document declares its package identity")
 }
 
 fn boolean() -> TypeForm {
@@ -360,8 +369,8 @@ fn a_function_identity_survives_emission_and_the_i2_read() {
     assert_eq!(identities.len(), 1, "reordering changed t's identity");
 }
 
-/// The wire lock's edition and definition selections are the
-/// `DefinitionLock` catalog's rows, each exactly `{authority, identity}`;
+/// The wire lock's edition and definition selections are resolved directly
+/// from closed role enums, each exactly `{authority, identity}`;
 /// the diagnostics catalog is QSpec's native diagnostics `DefinitionRef`,
 /// `{agent-ix, quire.native.diagnostics/v1}` and no other member; each
 /// source row, and each source-map region's source, keeps its
@@ -372,19 +381,17 @@ fn the_lock_selects_the_catalog_definitions() {
     let emission = emit(&package(vec![t()]));
     assert!(matches!(read_back(&emission), Read::Verified { .. }));
     let wire = wire(&emission);
-    let lock = DefinitionLock::pinned();
-    let row = |role: CatalogRole| {
-        let entry = lock.entry(role);
-        json!({"authority": entry.authority, "identity": entry.identity})
+    let row = |role: DefinitionRole| {
+        let reference = role.reference();
+        json!({"authority": reference.authority, "identity": reference.identity})
     };
     assert_eq!(
         wire["lock"]["edition"],
-        json!({"role": "edition", "definition": row(CatalogRole::Edition)})
+        json!({"role": "edition", "definition": row(DefinitionRole::Edition)})
     );
-    let expected: Vec<Value> = lock
-        .always_roles()
+    let expected: Vec<Value> = always_roles()
         .iter()
-        .filter(|role| **role != CatalogRole::Edition)
+        .filter(|role| **role != DefinitionRole::Edition)
         .map(|role| row(*role))
         .collect();
     assert_eq!(wire["lock"]["definition_selections"], json!(expected));
@@ -393,8 +400,6 @@ fn the_lock_selects_the_catalog_definitions() {
     let source = json!({
         "authority": "a",
         "identity": "u",
-        "digest_domain": "quire.source.bytes/v1",
-        "digest": sha256_hex(TEXT),
     });
     assert_eq!(wire["lock"]["sources"], json!([source]));
     for entry in wire["source_map"].as_array().unwrap() {
@@ -430,9 +435,7 @@ fn a_law_names_its_definition_by_authority_and_identity() {
     let emission = emit(&golden::float_add_of(BuiltinType::Float64, "nearest-even"));
     assert!(matches!(read_back(&emission), Read::Verified { .. }));
     let wire = wire(&emission);
-    let ieee = DefinitionLock::pinned()
-        .entry(CatalogRole::IeeeProfile)
-        .reference();
+    let ieee = DefinitionRole::IeeeProfile.reference();
     let ieee = json!({"authority": ieee.authority, "identity": ieee.identity});
     let laws: Vec<&Value> = wire["semantic_graph"]["nodes"]
         .as_array()
@@ -695,10 +698,7 @@ fn every_written_node_recomputes_to_its_node_id() {
 #[trace("FR-093-AC-7", "TC-416")]
 #[test]
 fn recursion_group_members_are_written_in_ordinal_order() {
-    for (package, label) in [
-        (recursive_f(), Some(fr_092_g4_to_g6_group_digest())),
-        (tree(), None),
-    ] {
+    for (package, label) in [(recursive_f(), None::<String>), (tree(), None)] {
         let expected: BTreeMap<String, usize> = package
             .graph()
             .semantic_graph()
@@ -727,22 +727,6 @@ fn recursion_group_members_are_written_in_ordinal_order() {
             assert_eq!(members[0].1["recursion_group"], json!(label));
         }
     }
-}
-
-/// FR-092's G4-G6 group digest, recomputed from the group's hand-written
-/// member preimages in the spec in this repository.
-fn fr_092_g4_to_g6_group_digest() -> String {
-    qsl_semantics::check::spec_vectors::group_digest("FR-092", "G4")
-        .expect("FR-092 states the G4-G6 group members")
-}
-
-/// FR-092's declared-node vector `id` (`D1`): its key, recomputed from the
-/// vector's hand-written preimage in the spec in this repository.
-fn fr_092_vector_key(id: &str) -> String {
-    qsl_semantics::check::spec_vectors::vectors("FR-092")
-        .remove(id)
-        .unwrap_or_else(|| panic!("FR-092 has a vector {id}"))
-        .0
 }
 
 /// FR-093 "Node dependencies" rules 1 to 3, rebuilt from a written node by a
@@ -978,19 +962,18 @@ fn a_record_and_a_tuple_are_written_with_their_declarations() {
     assert_eq!(emission.omitted, []);
     let exports = verified_exports(&emission);
     let wire = wire(&emission);
-    for (name, form, digest) in [
-        ("Point", "record", fr_092_vector_key("D1")),
-        ("Pair", "tuple", fr_092_vector_key("D5")),
-    ] {
+    for (name, form) in [("Point", "record"), ("Pair", "tuple")] {
         let node = declared(&wire, name);
         assert_eq!(node["semantic_form"], form);
-        assert_eq!(node["node_id"]["digest"], digest);
+        let digest = node["node_id"]["digest"]
+            .as_str()
+            .expect("the node id is written");
         assert_eq!(
             node["occurrences"],
             json!([{"role": "declaration", "ordinal": 0}]),
             "{name}"
         );
-        assert_eq!(exports.get(name).map(String::as_str), Some(digest.as_str()));
+        assert_eq!(exports.get(name).map(String::as_str), Some(digest));
     }
 }
 
@@ -1458,7 +1441,7 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
             Err(EmitRefusal::ProbabilisticModelNotEmitted { .. }) => {
                 panic!("the fixture set declares no random parameter, reward or workload")
             }
-            Err(EmitRefusal::TimedModelNotEmitted { .. }) => {
+            Err(EmitRefusal::TimedModelNotEmitted { .. } | EmitRefusal::TimedOrder(_)) => {
                 panic!("the fixture set declares no timed model")
             }
         }
@@ -2412,7 +2395,7 @@ const SPINE_MODEL_DOCUMENT: &[u8] = spine_model::DOCUMENT;
 /// `compile` runs it.
 fn assemble_with_models(
     unit: &[u8],
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &qsl_semantics::model::intake::PackageInput,
 ) -> Result<PackageDeclarations, String> {
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-model", "fixture", "fixture:1"),
@@ -2456,15 +2439,10 @@ fn spine_model_without(removed: &[&str]) -> String {
 /// `unit` through S1, S2, I1, the assembler, check, link and the v2
 /// emitter against the spine-model document, with nothing omitted, and a
 /// read of the bytes through QSL's I2 reader under the document's
-/// `sha256-jcs` digest as domain package evidence (or `evidence_digest`,
-/// when given). Returns the emission, its wire, the document's digest and
-/// the read.
-fn emit_model_unit(unit: &str, evidence_digest: Option<&str>) -> (Emission, Value, String, Read) {
-    let packages = qsl_semantics::model::intake::package_input([SPINE_MODEL_DOCUMENT]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    let digest = qsl_semantics::model::key::hex(digest);
+/// identity as domain package evidence (or `evidence_identity`, when
+/// given). Returns the emission, its wire and the read.
+fn emit_model_unit(unit: &str, evidence_identity: Option<&str>) -> (Emission, Value, Read) {
+    let packages = qsl_semantics::model::intake::package_input([SPINE_MODEL_DOCUMENT]).unwrap();
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
         .check(CheckingLimits::default())
@@ -2477,7 +2455,10 @@ fn emit_model_unit(unit: &str, evidence_digest: Option<&str>) -> (Emission, Valu
         evidence.support_feature(feature.as_str().unwrap());
     }
     evidence
-        .insert_domain_package_document(evidence_digest.unwrap_or(&digest), SPINE_MODEL_DOCUMENT)
+        .insert_domain_package_document(
+            evidence_identity.map_or_else(|| package_identity(SPINE_MODEL_DOCUMENT), str::to_owned),
+            SPINE_MODEL_DOCUMENT,
+        )
         .expect("a fresh evidence key");
     let read = read_v2(
         emission.package.bytes(),
@@ -2486,7 +2467,7 @@ fn emit_model_unit(unit: &str, evidence_digest: Option<&str>) -> (Emission, Valu
         &evidence,
         &qsl_semantics::library::fixtures::single_pin(library(), emission.package.package_id()),
     );
-    (emission, wire, digest, read)
+    (emission, wire, read)
 }
 
 /// FR-027-AC-9, FR-056-AC-9 (TC-442 step 1): the spine-model fixture
@@ -2504,7 +2485,7 @@ fn emit_model_unit(unit: &str, evidence_digest: Option<&str>) -> (Emission, Valu
 #[test]
 fn a_model_bearing_unit_emits_its_model_selection_and_reads_back_verified() {
     let unit = spine_model_without(&[FIELD_ACCESS, CONFORMING_EQUALITY]);
-    let packages = qsl_semantics::model::intake::package_input([SPINE_MODEL_DOCUMENT]);
+    let packages = qsl_semantics::model::intake::package_input([SPINE_MODEL_DOCUMENT]).unwrap();
     let declarations =
         assemble_with_models(unit.as_bytes(), &packages).expect("the unit assembles");
     assert_eq!(declarations.models.len(), 1);
@@ -2531,14 +2512,9 @@ fn a_model_bearing_unit_emits_its_model_selection_and_reads_back_verified() {
     assert!(declarations.types.conforms(gadget, widget));
     assert!(!declarations.types.conforms(widget, gadget));
 
-    let (emission, wire, digest, read) = emit_model_unit(&unit, None);
-    let selection = json!([{
-        "identity": "acme/orders",
-        "digest_domain": "sha256-jcs",
-        "digest": digest,
-    }]);
-    assert_eq!(wire["lock"]["model_selections"], selection);
-    assert_eq!(wire["identity_preimage"]["model_selections"], selection);
+    let (emission, wire, read) = emit_model_unit(&unit, None);
+    assert!(wire["lock"].get("model_selections").is_none());
+    assert!(wire["identity_preimage"].get("model_selections").is_none());
     assert!(
         nodes(&wire).iter().any(|node| node["node_tag"] == "model"),
         "a model node is emitted"
@@ -2565,13 +2541,7 @@ fn a_model_bearing_unit_emits_its_model_selection_and_reads_back_verified() {
     );
     // QSpec FR-322-AC-132/134/136: exactly one `model_root` for the one row,
     // last in graph order with its `generated` source-map entry last, keyed by
-    // the row alone (`{identity, digest}`), never by the alias.
-    let root_key = sha256_hex(
-        format!(
-            r#"{{"body":{{"members":[],"term":"aggregate"}},"declaration":null,"node_tag":"model","owner":{{"digest":"{digest}","identity":"acme/orders","kind":"model_root"}},"recursion":null,"semantic_form":"model_root","semantic_type":null,"version":"quire.structural-node/v1"}}"#
-        )
-        .as_bytes(),
-    );
+    // its identity alone, never by the alias.
     let graph = nodes(&wire);
     assert_eq!(
         graph
@@ -2582,11 +2552,10 @@ fn a_model_bearing_unit_emits_its_model_selection_and_reads_back_verified() {
     );
     let root = graph.last().expect("a graph");
     assert_eq!(root["semantic_form"], "model_root");
-    assert_eq!(root["node_id"]["digest"], root_key);
     assert_eq!(root["semantic_type"], root["node_id"]);
     assert_eq!(
         root["owner"],
-        json!({"kind": "model_root", "identity": "acme/orders", "digest": digest})
+        json!({"kind": "model_root", "identity": "acme/orders"})
     );
     assert_eq!(root["dependencies"], json!([]));
     assert_eq!(
@@ -2612,64 +2581,8 @@ fn a_model_bearing_unit_emits_its_model_selection_and_reads_back_verified() {
         other => panic!("expected Verified, got {other:?}"),
     }
     // Adverse: evidence naming another document refuses the read.
-    let (.., other) = emit_model_unit(&unit, Some(&"0".repeat(64)));
+    let (.., other) = emit_model_unit(&unit, Some("acme/other"));
     assert!(matches!(other, Read::Refused(_)));
-}
-
-/// QSpec FR-322-AC-134: the root derived for QSpec's published `acme/orders`
-/// row has the key the published `positive-all-families` fixture carries.
-#[trace("TC-310", "FR-322-AC-134", "FR-322-AC-137")]
-#[test]
-fn the_model_root_for_the_published_acme_orders_row_has_the_published_key() {
-    // QSpec's published fixture, read from the checkout `QSPEC_DIR` names;
-    // without it the row digest is arbitrary and only the independent hash
-    // below is checked (`make conformance` requires it).
-    let published: Option<Value> = std::env::var_os("QSPEC_DIR").map(|qspec| {
-        let path = std::path::Path::new(&qspec)
-            .join("proposals/checked-package-v2/fixtures/positive-all-families.json");
-        serde_json::from_slice(&std::fs::read(path).expect("the fixture reads"))
-            .expect("the fixture parses")
-    });
-    let published_root = published.as_ref().map(|fixture| {
-        fixture["semantic_graph"]["nodes"]
-            .as_array()
-            .and_then(|nodes| {
-                nodes.iter().find(|node| {
-                    node["semantic_form"] == "model_root"
-                        && node["owner"]["identity"] == "acme/orders"
-                })
-            })
-            .expect("the fixture holds the acme/orders model root")
-            .clone()
-    });
-    let row_hex = published_root.as_ref().map_or_else(
-        || "17".repeat(32),
-        |root| root["owner"]["digest"].as_str().unwrap().to_owned(),
-    );
-    let mut digest = [0_u8; 32];
-    for (byte, pair) in digest.iter_mut().zip(row_hex.as_bytes().chunks(2)) {
-        *byte = u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap();
-    }
-    let row = qsl_semantics::model::domain_package::DomainPackageRef {
-        identity: "acme/orders".to_owned(),
-        version: "1".to_owned(),
-        digest,
-    };
-    let key = qsl_semantics::check::model_root_key(&row, qsl_foundation::IdentityLimits::default())
-        .expect("the root derives");
-    let root = model_root_node(&row, key);
-    // The key is the SHA-256 of the root's hand-written preimage.
-    let expected = sha256_hex(
-        format!(
-            r#"{{"body":{{"members":[],"term":"aggregate"}},"declaration":null,"node_tag":"model","owner":{{"digest":"{row_hex}","identity":"acme/orders","kind":"model_root"}},"recursion":null,"semantic_form":"model_root","semantic_type":null,"version":"quire.structural-node/v1"}}"#
-        )
-        .as_bytes(),
-    );
-    assert_eq!(root.node_id.digest.as_ref(), expected);
-    if let Some(published_root) = published_root {
-        assert_eq!(published_root["node_id"]["digest"], expected);
-    }
-    assert_eq!(root.semantic_type, root.node_id);
 }
 
 /// FR-027-AC-9, FR-056-AC-9 (TC-442 step 1): the whole spine-model fixture,
@@ -2731,7 +2644,7 @@ fn conforming_reference_equality_is_accepted_by_the_i2_read() {
 fn an_unknown_model_type_refuses_at_the_assembler_and_a_missing_package_at_intake() {
     let fixture = spine_model::unit();
     let unknown = fixture.replace("w: Reference<M::Widget>", "w: Reference<M::Nope>");
-    let packages = qsl_semantics::model::intake::package_input([SPINE_MODEL_DOCUMENT]);
+    let packages = qsl_semantics::model::intake::package_input([SPINE_MODEL_DOCUMENT]).unwrap();
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-model", "fixture", "fixture:1"),
         "program.native",
@@ -2837,7 +2750,7 @@ fn normalization_refusals_and_limits_stop_intake_at_the_declaration() {
     let selections = unit_selections(&fixture);
     let limited = qsl_semantics::model::intake::admit_unit(
         &selections,
-        &qsl_semantics::model::intake::package_input([SPINE_MODEL_DOCUMENT]),
+        &qsl_semantics::model::intake::package_input([SPINE_MODEL_DOCUMENT]).unwrap(),
         qsl_semantics::model::accounting::ModelNormalizationLimits {
             declaration_records: 1,
             ..Default::default()
@@ -2867,11 +2780,8 @@ fn normalization_refusals_and_limits_stop_intake_at_the_declaration() {
         }
     }
     let cyclic = serde_json::to_vec(&cyclic).unwrap();
-    let packages = qsl_semantics::model::intake::package_input([cyclic.as_slice()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    let text = spine_model::unit_selecting(digest);
+    let packages = qsl_semantics::model::intake::package_input([cyclic.as_slice()]).unwrap();
+    let text = spine_model::unit();
     let refused = qsl_semantics::model::intake::admit_unit(
         &unit_selections(&text),
         &packages,
@@ -3282,8 +3192,6 @@ fn config_version_model(with_sub: bool) -> qsl_semantics::model::intake::Selecte
     let package = DomainPackage::new(
         DomainPackageRef {
             identity: "example/config-version".to_owned(),
-            version: "1".to_owned(),
-            digest: [0_u8; 32],
         },
         records,
     );
@@ -3309,8 +3217,7 @@ fn attempt_frame_unit(declarations: &str, operation: &str, contracts: &str) -> S
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
-         model Config = \"example/config-version\" version \"1\" digest \
-         \"sha256-jcs:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\";\n\
+         model Config = \"example/config-version\";\n\
          {declarations}\n\
          protocol Flow using v over (input: Boolean) on origin {{\n\
          role R on Config::ConfigVersion;\n\
@@ -3581,8 +3488,7 @@ fn an_inherited_operation_binds_its_declaring_types_anchor_and_frame() {
 fn a_protocol_with_unchecked_garbage_content_refuses_at_check() {
     let unit = "language \"ix:native\" edition \"1-draft\";\n\
         profile v = \"quire.model.complete/v1\";\n\
-        model Config = \"example/config-version\" version \"1\" digest \
-        \"sha256-jcs:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\";\n\
+        model Config = \"example/config-version\";\n\
         function f using v (): Boolean pure { true }\n\
         protocol Flow using v over (input: Nope::Input) on origin {\n\
         role R on Nope::Actor;\n\

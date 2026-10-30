@@ -69,10 +69,10 @@ selector.
    authored sources and registered definition catalog, not projected from the
    producer's table. Under each surrounding-execution closure, require the `/2`
    classification to equal the `/1` classification's disposition and retained
-   native subject, and to retain the admitted package digest, the declaration
-   index, the registered definition identity and revision, and the digest of the
-   independently selected definition artifact, with the package digest computed
-   from the emitted bytes and the revision compared with its namespace. Require
+   native subject, and to retain the admitted package identity and version, the declaration
+   index, the registered definition identity and revision, and the identity of the
+   independently selected definition artifact, with the package identity read
+   from the emitted package and the revision compared with its namespace. Require
    the `/1` classification to retain no authenticated selection, and require a
    `/2` request for a declaration just past the package, for the largest index a
    caller can name and for the non-temporal protocol declaration to return its

@@ -44,7 +44,7 @@ request (ADR-030 D-4.8, D-3).
 3. **Values.** Replay SHALL decode each canonical assignment value into a
    `quire_exact::Value` from `quire-canonical`'s reader tree (FR-259), over
    an explicit heap stack.
-4. **Value identities.** Replay SHALL encode every identity and digest over
+4. **Value identities.** Replay SHALL encode every identity over
    a value through the event API (FR-259).
 5. **Limit outcomes.** When a recompile stage reaches a limit, replay SHALL
    return the refusal FR-098 defines for a recompile stage limit, carrying

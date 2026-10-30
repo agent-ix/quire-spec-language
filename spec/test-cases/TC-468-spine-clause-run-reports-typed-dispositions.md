@@ -21,8 +21,7 @@ Scope: FR-109-AC-1 to FR-109-AC-7 and FR-109-AC-9.
 Build `ClauseRunRequest`s from FR-108's fixtures, in memory.
 
 1. healthy-parent; violating-parent.
-2. missing-model (no domain package supplied); healthy-parent with an
-   expected `package_id` taken from compiling another unit; healthy-parent
+2. missing-model (no domain package supplied); healthy-parent
    selecting the clause `Absent`; healthy-parent with a `Clause` selection
    naming the function `sameIdentity`.
 3. dangling-parent; incomplete-population; exhausted-work (`work_units` 0).
@@ -54,8 +53,7 @@ Tag the tests `#[trace("TC-468", "FR-109-AC-n")]`.
 - Step 1: `evaluate`, `success`, `truth: true`, exit 0, with the compiled
   `package_id`; then `violation`, `truth: false`, exit 10.
 - Step 2: `compile`, `refusal`, `missing_import`/`missing-selection`, exit 20,
-  no `package_id`; `compile`, `stale_dependency`, naming both
-  identities; `select`, `missing_declaration`/`missing-name`, twice.
+  no `package_id`; `select`, `missing_declaration`/`missing-name`, twice.
 - Step 3: `admit`, `refusal`, `dangling_reference`, exit 20; `admit`,
   `incomplete`, `incomplete_population`, exit 22; `evaluate`, `incomplete`,
   `{"kind": "incomplete", "limit": "work_units"}`, exit 22. None has `truth`.

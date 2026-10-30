@@ -67,7 +67,7 @@ Tag the tests `#[trace("TC-472", "FR-120-AC-n")]`.
 ## Expected Results
 
 - Step 1: `Exhaustive`, `Stats { states: 3, transitions: 2, depth: 2 }`,
-  and `findings` is exactly `[StateFindings { state: <v2's digest>, depth:
+  and `findings` is exactly `[StateFindings { state: <v2's state key>, depth:
   2, findings: [InvariantViolated { Small, c1, {handler, <increment>} }] }]`.
   With `reset`: `Exhaustive`, 3 states, 5 transitions, one of them
   `v2 → v0`, and the same one `findings` entry.
@@ -76,7 +76,7 @@ Tag the tests `#[trace("TC-472", "FR-120-AC-n")]`.
   resource_exhausted/insufficient-next-charge> }`, where `s0`'s anchor is
   `{initialization, start}` and `v1`'s and `v2`'s is `{handler,
   <increment>}`. Second, `Outcome::Stopped` with cause `resource_exhausted`/
-  `insufficient-next-charge`, frontier `[<s0's digest>]`, category
+  `insufficient-next-charge`, frontier `[<s0's state key>]`, category
   incomplete, its `ExpansionStop` naming `EvaluationMeter` with counter
   `work_units`. Third, `Stopped` with the same cause, its `ExpansionStop`
   naming `MaxCandidates` and no counter (FR-120-AC-21).
@@ -105,7 +105,7 @@ Tag the tests `#[trace("TC-472", "FR-120-AC-n")]`.
   `ContractUndetermined { <ready>, none, Low, FamilyResult::Undefined
   precondition-false }`. `Low` with `Never`: no `ready` successor and no
   finding. `LowPost`: no `ready` successor, and `t1` has
-  `ContractUndetermined { <ready>, Some(<t1's digest>), LowPost,
+  `ContractUndetermined { <ready>, Some(<t1's state key>), LowPost,
   FamilyResult::Undefined precondition-false }`.
 - Step 7: D10's results, reason `absent-key` and then
   `precondition-false`, with the charges FR-120-AC-20 names; the split

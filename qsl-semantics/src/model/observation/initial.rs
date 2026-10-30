@@ -43,7 +43,7 @@ pub(super) fn field_key(
 pub(crate) fn admit_initial_state(
     views: &[ModelView],
     types: &TypeEnvironment,
-    provision: &BTreeMap<[u8; 32], Vec<u8>>,
+    provision: &BTreeMap<DocumentRef, Vec<u8>>,
     selected: &DocumentRef,
     limits: ObservationLimits,
     ancestor_steps: u64,

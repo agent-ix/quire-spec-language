@@ -16,8 +16,7 @@ use quire_exact::Integer;
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
      profile t = \"quire.temporal.infinite-trace/v1\";\n\
-     model Config = \"example/config-version\" version \"1\" digest \
-     \"sha256-jcs:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n";
+     model Config = \"example/config-version\";\n";
 
 /// The declarations of FR-393-AC-1.
 const RPC: &str = "time Rpc dense unit ms;\n\

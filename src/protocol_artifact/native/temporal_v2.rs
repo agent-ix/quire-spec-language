@@ -43,11 +43,6 @@ impl AdmissionV2 {
         self.candidate.bytes()
     }
 
-    /// Raw-byte digest of the complete canonical version-2 payload.
-    pub fn digest(&self) -> qsl_foundation::ByteDigest {
-        self.candidate.digest()
-    }
-
     /// Strict admitted view backed by the same source-authorized package.
     pub fn admitted(&self) -> &v2::AdmittedPackage {
         &self.admitted
@@ -198,11 +193,9 @@ pub fn admit_v2(
         };
         let candidate = artifact::encoding::candidate(&package, &mut work)?;
         let admitted = v2::AdmittedPackage {
-            digest: candidate.digest(),
             clocks: artifact::ClockNames::of_v2(&package),
             package,
-            // Emission produces bytes and their raw-byte digest; the caller
-            // publishes the artifact identity, so none is invented here.
+            // The caller publishes the artifact identity; none is invented here.
             artifact: None,
             model_schema: lowered.model_schema,
         };

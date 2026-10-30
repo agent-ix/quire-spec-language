@@ -20,8 +20,7 @@ caller-assigned native body identity, and caller-configured original byte and li
 limits. The spine clause runner holds the other `ClauseRunRequest` members:
 the package and dependency inputs, the provisions, the selection and the
 spine and evaluation limits (FR-109).
-The caller selects and verifies the original document's
-digest before admission. The selected Quire heading ID equals the authored
+The caller selects the original document before admission. The selected Quire heading ID equals the authored
 binding's clause ID; the body contains a complete single-clause native unit.
 The context explicitly names the original source identity/path and authored
 package.
@@ -85,7 +84,7 @@ repositories, schemas, CLI/wire adoption and broader integration.
 | --- | --- | --- |
 | FR-030-AC-1 | Actual Quire extraction of an indented CRLF clause with Unicode surroundings reaches spine compilation and the clause runner's healthy, violating and refused outcomes with exact original and body identity. | Test (TC-108) |
 | FR-030-AC-2 | A successful extraction yields an ExtractedSource whose ClausesOutcome equals Quire's actual output unchanged: its availability, its complete clause population, its diagnostics and, for a clause tagged with an unchecked language, Quire's unchecked-language advisory. After a successful and after a failed spine compile of the body, the retained ClausesOutcome is still that one; an unchecked tag alone does not pass the S1 parser. | Test (TC-108) |
-| FR-030-AC-3 | Stale original digest, foreign context, missing/duplicate selected clauses and unavailable extraction refuse without a package; each foreign context field retains its distinct typed preflight cause before extraction. | Test (TC-108) |
+| FR-030-AC-3 | Foreign context, missing/duplicate selected clauses and unavailable extraction refuse without a package; each foreign context field retains its distinct typed preflight cause before extraction. | Test (TC-108) |
 | FR-030-AC-4 | Verified original/body coordinates remain exact at body EOF and with trailing layout; invalid body identity and out-of-range mapping requests refuse. | Test (TC-108) |
 | FR-030-AC-5 | Original byte/line and spine limits return incomplete, with successful fresh retry; a build without `qsl-replay`'s `quire-extraction` calls no Quire extraction. | Test (TC-108) |
 

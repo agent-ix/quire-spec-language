@@ -150,12 +150,11 @@ fn orders_package(shape: Shape) -> CheckedPackage {
         ),
     ];
     let package = DomainPackage::new(DomainPackageRef::fixture("bundle.orders"), records);
-    let digest = qsl_semantics::model::key::hex(&package.model_selection.digest);
     let identity = package.model_selection.identity.clone();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
-         model M = {identity:?} version \"1\" digest \"sha256-jcs:{digest}\";\n\
+         model M = {identity:?};\n\
          function Unit using v(): Boolean pure {{ true }}\n"
     );
     let selected = SelectedModels::fixture(

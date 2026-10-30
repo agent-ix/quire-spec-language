@@ -375,7 +375,6 @@ fn all_eight_queries_emit_original_ordered_graphs_after_actual_discharge() {
                 .into_result()
                 .expect("independent original source/model/definition selections");
             assert_eq!(read.package(), package);
-            assert_eq!(read.digest(), emitted.digest());
         },
     );
 }
@@ -511,7 +510,6 @@ fn statically_empty_filter_emits_its_original_collection_binder_and_body() {
                 .into_result()
                 .expect("independently selected reader preserves empty-filter source graph");
             assert_eq!(read.package(), package);
-            assert_eq!(read.digest(), emitted.digest());
         },
     );
 }

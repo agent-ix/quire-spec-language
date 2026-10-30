@@ -91,7 +91,7 @@ fn run_layering(
 mod tests {
     use ix_trace_rs::trace;
     use qsl_foundation::BackendId;
-    use qsl_route::{descriptor_from_manifest, Candidate, ManifestDigest, ProviderOrigin};
+    use qsl_route::{descriptor_from_manifest, Candidate, ProviderOrigin};
 
     use super::*;
 
@@ -103,7 +103,6 @@ mod tests {
         let refusal = descriptor_from_manifest(
             Candidate::new(BackendId::new("bad-provider")),
             ProviderOrigin::Linked,
-            ManifestDigest::from_digest([0; 32]),
             [(Some("unknown-kind"), Some("bounded"))],
             qsl_route::ManifestMembers::default(),
         )

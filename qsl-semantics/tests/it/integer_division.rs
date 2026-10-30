@@ -10,7 +10,7 @@ use std::num::NonZeroU32;
 use std::num::NonZeroU64;
 
 use ix_trace_rs::trace;
-use qsl_semantics::value::{divide, CatalogRole, DefinitionLock, DefinitionReference};
+use qsl_semantics::value::{admit_integer_division, divide, DefinitionReference, DefinitionRole};
 use quire_exact::{
     modulo, ChargePoint, DivisionMember, DivisionProfile, Incomplete, InjectedDenial, Integer,
     IntegerDomain, IntegerInterval, LimitKind, Meter, Outcome, Refusal, ScalarLimits, Undefined,
@@ -32,28 +32,21 @@ const UNLIMITED: ScalarLimits = ScalarLimits {
 
 use crate::admitted_charge_points as admitted_points;
 
-fn lock() -> DefinitionLock {
-    DefinitionLock::pinned()
-}
-
-fn role(profile: DivisionProfile) -> CatalogRole {
+fn role(profile: DivisionProfile) -> DefinitionRole {
     match profile {
-        DivisionProfile::Truncating => CatalogRole::IntegerDivisionTruncating,
-        DivisionProfile::Floor => CatalogRole::IntegerDivisionFloor,
-        DivisionProfile::Euclidean => CatalogRole::IntegerDivisionEuclidean,
+        DivisionProfile::Truncating => DefinitionRole::IntegerDivisionTruncating,
+        DivisionProfile::Floor => DefinitionRole::IntegerDivisionFloor,
+        DivisionProfile::Euclidean => DefinitionRole::IntegerDivisionEuclidean,
     }
 }
 
-/// The [`DefinitionReference`] for `role`: the catalog entry's
-/// `{authority, identity}`.
-fn reference(role: CatalogRole) -> DefinitionReference {
-    lock().entry(role).reference()
+/// The [`DefinitionReference`] associated with the closed `role`.
+fn reference(role: DefinitionRole) -> DefinitionReference {
+    role.reference()
 }
 
 fn admitted(profile: DivisionProfile) -> AdmittedIntegerDivision {
-    let admitted = lock()
-        .admit_integer_division(&[reference(role(profile))], None)
-        .unwrap();
+    let admitted = admit_integer_division(&[reference(role(profile))], None).unwrap();
     assert_eq!(admitted.profile(), profile);
     assert_eq!(
         reference(role(profile)).identity,
@@ -186,23 +179,21 @@ fn div_02_div_03_mod_is_euclidean_and_non_euclidean_claims_refuse() {
             assert_eq!(outcome.completed().map(|r| int(&r)), Some(expected));
         }
     }
-    let euclidean = reference(CatalogRole::IntegerDivisionEuclidean);
+    let euclidean = reference(DefinitionRole::IntegerDivisionEuclidean);
     for law in [
         DivisionProfile::Truncating,
         DivisionProfile::Floor,
         DivisionProfile::Euclidean,
     ] {
-        assert!(lock()
-            .admit_integer_division(&[reference(role(law))], Some(&euclidean))
-            .is_ok());
+        assert!(admit_integer_division(&[reference(role(law))], Some(&euclidean)).is_ok());
     }
     for claim in [
-        CatalogRole::IntegerDivisionTruncating,
-        CatalogRole::IntegerDivisionFloor,
+        DefinitionRole::IntegerDivisionTruncating,
+        DefinitionRole::IntegerDivisionFloor,
     ] {
         assert_eq!(
-            lock().admit_integer_division(
-                &[reference(CatalogRole::IntegerDivisionFloor)],
+            admit_integer_division(
+                &[reference(DefinitionRole::IntegerDivisionFloor)],
                 Some(&reference(claim))
             ),
             Err(PackageRefusal {
@@ -563,16 +554,16 @@ fn div_09_missing_conflicting_or_foreign_division_definitions_refuse_admission()
             cause,
         })
     };
-    let floor = reference(CatalogRole::IntegerDivisionFloor);
+    let floor = reference(DefinitionRole::IntegerDivisionFloor);
     assert_eq!(
-        lock().admit_integer_division(&[], None),
+        admit_integer_division(&[], None),
         refuse(PackageCause::MissingMember)
     );
     assert_eq!(
-        lock().admit_integer_division(
+        admit_integer_division(
             &[
                 floor.clone(),
-                reference(CatalogRole::IntegerDivisionEuclidean)
+                reference(DefinitionRole::IntegerDivisionEuclidean)
             ],
             None
         ),
@@ -583,11 +574,11 @@ fn div_09_missing_conflicting_or_foreign_division_definitions_refuse_admission()
     let mut foreign = floor.clone();
     foreign.authority = "other".into();
     assert_eq!(
-        lock().admit_integer_division(&[foreign], None),
+        admit_integer_division(&[foreign], None),
         refuse(PackageCause::IncompatibleDefinition)
     );
     assert_eq!(
-        lock().admit_integer_division(&[reference(CatalogRole::Root)], None),
+        admit_integer_division(&[reference(DefinitionRole::Root)], None),
         refuse(PackageCause::IncompatibleDefinition)
     );
 }

@@ -3,7 +3,6 @@ use super::*;
 use crate::spine::{compose, DependencyInput};
 use ix_trace_rs::trace;
 use qsl_foundation::SourceIdentity;
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::refusal::ModelRefusalCause;
 use quire_checked::key::DeclarationKey;
 use quire_exact::{
@@ -57,7 +56,7 @@ fn run_fixture(bytes: &str, call: &Call) -> Result<CallOutcome, Box<RunRefusal>>
 
 pub(in crate::spine) struct LookupDriverFixture {
     pub(in crate::spine) source: String,
-    pub(in crate::spine) packages: BTreeMap<[u8; 32], Vec<u8>>,
+    pub(in crate::spine) packages: qsl_semantics::model::intake::PackageInput,
 }
 
 pub(in crate::spine) fn lookup_driver_fixture(functions: &str) -> LookupDriverFixture {
@@ -92,21 +91,12 @@ pub(in crate::spine) fn lookup_driver_fixture(functions: &str) -> LookupDriverFi
         }}
     }]);
     let bytes = serde_json::to_vec(&document).expect("the lookup driver model serializes");
-    let digest = qsl_semantics::model::intake::PackageDocument::parse(
-        &bytes,
-        qsl_foundation::IntakeLimits::default(),
-    )
-    .expect("the lookup driver model admits")
-    .jcs_digest();
     let source = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
-         model M = \"acme/orders\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
-         {}\n",
-        hex(&digest),
-        functions
+         model M = \"acme/orders\";\n{functions}\n"
     );
-    let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()]);
+    let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()]).unwrap();
     LookupDriverFixture { source, packages }
 }
 
@@ -150,7 +140,6 @@ pub(in crate::spine) fn lookup_driver_context(
         &parsed,
         &models,
         &DependencyInput::default(),
-        &crate::spine::LockEvidence::default(),
         SpineLimits::default(),
         &cancel,
     )
@@ -427,7 +416,8 @@ fn tc_792_typed_call_contract_is_not_an_integer_only_facade() {
         source(),
         "spine-model.native",
         crate::spine::spine_model::unit().as_bytes(),
-        &qsl_semantics::model::intake::package_input([crate::spine::spine_model::DOCUMENT]),
+        &qsl_semantics::model::intake::package_input([crate::spine::spine_model::DOCUMENT])
+            .unwrap(),
         &DependencyInput::default(),
         SpineLimits::default(),
         &call,
@@ -479,7 +469,7 @@ fn tc_792_driver_returns_the_admitted_reference_identity() {
     let unit = crate::spine::spine_model::unit();
     let bytes = unit.as_bytes();
     let packages =
-        qsl_semantics::model::intake::package_input([crate::spine::spine_model::DOCUMENT]);
+        qsl_semantics::model::intake::package_input([crate::spine::spine_model::DOCUMENT]).unwrap();
     let cancel = Cancel::new();
     let identity = source();
     let parsed = crate::spine::parse(
@@ -500,7 +490,6 @@ fn tc_792_driver_returns_the_admitted_reference_identity() {
         &parsed,
         &models,
         &DependencyInput::default(),
-        &crate::spine::LockEvidence::default(),
         SpineLimits::default(),
         &cancel,
     )
@@ -578,7 +567,11 @@ fn synthetic_model(
     let object = DeclarationKey::fixture(format!("{placeholder}/A"));
     let population = DeclarationKey::fixture(format!("{placeholder}/P"));
     let domain = DomainPackage::new(
-        DomainPackageRef::fixture(placeholder),
+        // Selection is by identity alone, so two synthetic models are foreign
+        // to each other only under distinct identities.
+        DomainPackageRef {
+            identity: format!("test/{placeholder}"),
+        },
         vec![
             DomainPackageRecord::ObjectType(ObjectTypeRecord {
                 key: object.clone(),
@@ -621,7 +614,11 @@ fn synthetic_reference_hierarchy(
     let subtype = DeclarationKey::fixture(format!("{placeholder}/S"));
     let unrelated = DeclarationKey::fixture(format!("{placeholder}/U"));
     let domain = DomainPackage::new(
-        DomainPackageRef::fixture(placeholder),
+        // Selection is by identity alone, so two synthetic models are foreign
+        // to each other only under distinct identities.
+        DomainPackageRef {
+            identity: format!("test/{placeholder}"),
+        },
         vec![
             DomainPackageRecord::ObjectType(ObjectTypeRecord {
                 key: root.clone(),
@@ -1516,10 +1513,6 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
                     ])
                 );
                 let locus = locus.expect("a record locus");
-                assert_eq!(
-                    locus.source_digest,
-                    qsl_foundation::ByteDigest::of(FIXTURE_F.as_bytes()).to_string()
-                );
                 assert_eq!(locus.span.start.byte, 132);
                 assert_eq!(locus.span.start.line, 3);
                 assert_eq!(locus.span.start.column, 54);
@@ -1675,10 +1668,6 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
                     assert_eq!(got_code, CatalogCode::new(code, cause), "{refusal:?}");
                     assert_eq!(fields, expected_fields, "{refusal:?}");
                     let locus = locus.expect("a record locus");
-                    assert_eq!(
-                        locus.source_digest,
-                        qsl_foundation::ByteDigest::of(FIXTURE_F.as_bytes()).to_string()
-                    );
                     assert_eq!(locus.span.start.byte, 132);
                     assert_eq!(locus.span.end.byte, 133);
                     assert_location(&got_location);
@@ -1711,10 +1700,6 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
                     BTreeMap::from([("required", "01".repeat(32)), ("supplied", "02".repeat(32)),])
                 );
                 let locus = locus.expect("a record locus");
-                assert_eq!(
-                    locus.source_digest,
-                    qsl_foundation::ByteDigest::of(FIXTURE_F.as_bytes()).to_string()
-                );
                 assert_eq!(locus.span.start.byte, 132);
                 assert_eq!(locus.span.end.byte, 133);
                 assert_location(&got_location);

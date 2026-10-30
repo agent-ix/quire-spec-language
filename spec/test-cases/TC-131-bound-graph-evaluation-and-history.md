@@ -29,7 +29,7 @@ declared-complete domain with the same absence under unavailable membership or
 closure authority. Keep a known foreign target in both cases as the structural-
 invalidity precedence control.
 
-Run the frozen ConfigVersion source/model/runtime fixtures before and after the
+Run the ConfigVersion source/model/runtime fixtures before and after the
 new graph profile without adding a finite integer maximum or replacement parent
 relation.
 

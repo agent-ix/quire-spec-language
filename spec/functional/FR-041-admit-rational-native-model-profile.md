@@ -35,7 +35,7 @@ implementation defaults. Unknown profile/format selections refuse.
 
 An immutable admitted `NativeModel` with inspectable actual profile, original
 source/declaration/role loci, canonical IR declaration content and deterministic
-native artifact bytes/digest. Failure retains the existing typed frontend,
+native artifact bytes. Failure retains the existing typed frontend,
 upstream IR or native-admission cause with original source correspondence and
 no partially admitted model. A source draft remains a draft until admission.
 
@@ -93,12 +93,12 @@ The native model adapter SHALL encode the actual selected model profile in the a
 The existing bounded IR canonicalization and Serde artifact writer remain the
 identity machinery. The actual profile is fixed by admission and cannot be
 retagged afterward. Otherwise identical `/1` and `/2` models have distinct
-native bytes/digests even when no rational is used. Raw native artifact integrity
+native bytes even when no rational is used. Raw native artifact integrity
 remains distinct from IR canonical identity and original model source integrity.
 
 If a historical link_native import selects a native-state-model/2 artifact, then the historical linker SHALL refuse the unit before exposing it to the historical checker or runtime.
 
-When composed model binding selects an admitted native-state-model/2 artifact, the composed binder SHALL retain its actual profile, exact import bytes/digest, model ownership and existing permitted-export checks.
+When composed model binding selects an admitted native-state-model/2 artifact, the composed binder SHALL retain its actual profile, exact import bytes, model ownership and existing permitted-export checks.
 
 Adding an unused `/2` input does not grant historical semantics; the selected
 import is the boundary requiring refusal. Composed model binding grants no
@@ -124,8 +124,8 @@ canonicalization or output-content checks.
 | FR-041-AC-2 | A rational scalar with identical IR numerator/denominator bounds at all scalar sites admits under `/2`; missing/duplicate/empty site mappings, kind mismatch or a change to any one site's minimum, maximum or denominator refuses without a model. | Test (TC-120) |
 | FR-041-AC-3 | The closed rational JSON variant preserves i64 numerator extrema, integers adjacent to 2^53 and valid maximum-denominator boundaries exactly. Zero/negative/too-large denominator, reversed numerator bounds, missing/duplicate/unknown fields, wrong tags, floating values and out-of-width integers refuse through the actual decoder/IR constructor. | Test (TC-120) |
 | FR-041-AC-4 | Source-derived rational values and record fields under options/sequences retain exact nominal identity, unit and original scalar/site loci. Missing/null unit is dimensionless; named units remain exact. Existing integer/text/enum/object/operation meanings and wrappers are preserved under both compatible profiles. | Test (TC-120) |
-| FR-041-AC-5 | Historical link_native refuses a selected `/2` model, including an otherwise unchanged integer-only model, without a linked package. Composed bind_models accepts actual admitted `/2` exports and refuses stale digests, foreign ownership or wrong exports through its existing typed boundary. | Test (TC-120) |
-| FR-041-AC-6 | `/1` and `/2` over otherwise identical source/declarations/roles yield different profile-bearing native artifacts. Rational bounds, unit and source mutations alter the selected artifact; set-like inventory reorderings remain deterministic, and IR canonical/source digests cannot substitute for native artifact digest. | Test (TC-120) |
+| FR-041-AC-5 | Historical link_native refuses a selected `/2` model, including an otherwise unchanged integer-only model, without a linked package. Composed bind_models accepts actual admitted `/2` exports and refuses stale models, foreign ownership or wrong exports through its existing typed boundary. | Test (TC-120) |
+| FR-041-AC-6 | `/1` and `/2` over otherwise identical source/declarations/roles yield different profile-bearing native artifacts. Rational bounds, unit and source mutations alter the selected artifact; and set-like inventory reorderings remain deterministic. | Test (TC-120) |
 | FR-041-AC-7 | Controlled rational/wrapped inputs obey existing source-entry, role/site/node and artifact/canonicalization limits at zero, exact and one-step-insufficient capacities, and an input above a default is admitted once that limit is raised to fit it. Exhaustion yields typed resource incompleteness without partial model or historical fallback. | Test (TC-120) |
 
 ## Dependencies
@@ -138,7 +138,7 @@ located JSON producer. This explicit extension supplies
 [#36](https://github.com/agent-ix/quire-spec-language/issues/36).
 [TC-120](../test-cases/TC-120-admit-rational-native-model-profile.md) has implemented
 public controls with passing local runs; PR review corrections are underway.
-The pinned IR already owns rational declarations, constructors, canonicalization
+The IR already owns rational declarations, constructors, canonicalization
 and arithmetic; this requirement changes native producer selection/admission.
 It does not implement expression checks, execution, D's unrelated producer
 correspondence or the full artifact delivery tracked by compiler #40.

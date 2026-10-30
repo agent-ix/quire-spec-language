@@ -33,7 +33,7 @@ Fixture **W** is TC-1061's.
 | 2 | **W** with `activation on origin` | one row: the clause key, `Origin` with no trigger, `OrderClosureBounded`'s node key |
 | 3 | **W** with no `requires temporal` | an empty map |
 | 4 | **W** with a second `requires temporal OrderClosureBounded` | the map of step 1 |
-| 5 | **W** with a temporal clause `OrderPaidBounded` and `requires temporal OrderPaidBounded` | two rows, in ascending node-id digest order of the two temporal clause nodes |
+| 5 | **W** with a temporal clause `OrderPaidBounded` and `requires temporal OrderPaidBounded` | two rows, in ascending node-key order of the two temporal clause nodes |
 | 6 | **W** with a temporal clause `RefundBounded` on the clock `refund-clock`, not required by the protocol | the map of step 1 |
 | 7 | **W**, compiled twice; **W** reformatted with a comment added; **W**'s emitted package read back through the I2 reader | every map equals step 1's |
 | 8 | **W**'s emitted package with the `requirements` entry naming a node absent from the clause's `dependencies`; separately, with the `each` trigger naming such a node | the I2 reader refuses `missing_declaration`/`missing-name` at the target; no map |

@@ -13,9 +13,9 @@ Exact native source intake. Type: Integration; priority P1. Traces: FR-001-AC-1,
 
 ## Test Procedure
 
-Run the existing source/digest and parser-source tests over original Unicode/CRLF bytes, selected and changed digests, invalid UTF-8 and a lowered source ceiling.
+Run the existing source and parser-source tests over original Unicode/CRLF bytes, invalid UTF-8 and a lowered source ceiling.
 
 ## Expected Results
 
-Accepted sources retain exact bytes and coordinates; changed digest, invalid encoding and excess bytes return their distinct diagnostics.
+Accepted sources retain exact bytes and coordinates; invalid encoding and excess bytes return their distinct diagnostics.
 

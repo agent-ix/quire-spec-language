@@ -161,8 +161,8 @@ source map SHALL carry the occurrence through E3 and E4 without re-minting
 any span.
 
 Each identity is an ADR-013 O-04 checked node id: the
-`quire.checked-semantic-node/v1` digest of the RFC 8785 encoding of the
-node's preimage. A function declaration's node lists its parameter nodes and
+structural key of the node: its
+preimage value itself, compared by equality. A function declaration's node lists its parameter nodes and
 references its body's root expression node, so its body holds no
 application. It is keyed by QSL's `quire.structural-node/v1` preimage, which
 names its `SourceOwner` (O-04;
@@ -172,7 +172,7 @@ preimage, which has no owner member because an expression carries no
 declaration ([FR-093](FR-093-lower-checked-value-expressions-to-fr-322-terms.md)).
 Neither preimage names a `package_id` or any unrelated declaration, so the
 identity does not depend on their order (AC-2). The declaration's identity
-equals FR-092's golden vector, and the call's equals the FR-322
+equals FR-092's expected key tuple, and the call's equals the FR-322
 application-node key of the same node (AC-8). The checker mints these
 preimages (#384).
 
@@ -266,7 +266,7 @@ for the function family.
   provenance guarantees are built from.
 - [FR-092](FR-092-key-type-parameter-and-declared-nodes.md) and
   [FR-093](FR-093-lower-checked-value-expressions-to-fr-322-terms.md) define
-  the node shapes and preimages the declaration and call identities hash.
+  the node shapes and preimages the declaration and call identities are made of.
 - QSpec FR-322 publishes operation-node identity vectors used by the
   application-node key conformance check in FR-065-AC-8.
 - [US-005](../usecase/US-005-trust-checked-identity-across-packaging.md).

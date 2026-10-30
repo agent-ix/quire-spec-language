@@ -19,7 +19,7 @@ Scope: FR-102-AC-1, FR-102-AC-2, FR-102-AC-3, FR-102-AC-8.
 
 Every unit starts with the header
 `language "ix:native" edition "1-draft";`, one `profile v = ...;` and
-`model Config = "example/config-version" digest "sha256-jcs:<64 hex>";`,
+`model Config = "example/config-version";`,
 QSpec's shared-grammar `model` production.
 Parse each through S1 and build through `qsl_forms::build_unit`.
 

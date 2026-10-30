@@ -65,7 +65,6 @@ pub fn model() -> io::Result<NativeModel> {
 fn binding(model: &NativeModel) -> ModelBinding {
     ModelBinding {
         model: model.environment().owner().clone(),
-        digest: model.digest(),
     }
 }
 
@@ -189,7 +188,7 @@ struct Syntax {
     point: Value,
 }
 
-fn write_program(directory: &Path, model: &NativeModel, case: Case) -> io::Result<Program> {
+fn write_program(directory: &Path, case: Case) -> io::Result<Program> {
     let spec = case.spec();
     let clause = spec.clause;
     let syntax = match spec.input {
@@ -205,8 +204,8 @@ fn write_program(directory: &Path, model: &NativeModel, case: Case) -> io::Resul
         },
     };
     let native = format!(
-        "// SPDX-License-Identifier: AGPL-3.0-only\nlanguage \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel Config = \"example/config-version\" version \"1\" digest \"{}\";\n{} {} on {} {{ {} }}\n",
-        model.digest(), syntax.keyword, clause.name, syntax.context, clause.expression,
+        "// SPDX-License-Identifier: AGPL-3.0-only\nlanguage \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel Config = \"example/config-version\";\n{} {} on {} {{ {} }}\n",
+        syntax.keyword, clause.name, syntax.context, clause.expression,
     );
     std::fs::write(directory.join("program.native"), &native)?;
     let owner = json!({"package":"example/config-version","requirement":clause.name,"revision":1});
@@ -376,7 +375,7 @@ fn write_requests(
 pub fn write(directory: &Path, model: &NativeModel, case: Case) -> io::Result<()> {
     std::fs::create_dir_all(directory)?;
     let models = write_model(directory, model, case.spec())?;
-    let program = write_program(directory, model, case)?;
+    let program = write_program(directory, case)?;
     let inputs = write_inputs(directory, model, case)?;
     write_requests(directory, case, models, program, inputs)?;
     super::config_version_spine::spine::write(directory, case)

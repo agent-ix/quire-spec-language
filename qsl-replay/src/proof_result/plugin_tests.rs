@@ -17,9 +17,7 @@ use crate::bounds::ReplayLimits;
 use crate::execute::{process_provider_obligation, BoundEntries};
 use crate::limits::CallerLimits;
 use crate::result::ReplayResult;
-use crate::spine::{
-    check, package, parse, select, DependencyInput, LockEvidence, PackageLimits, ParseRequest,
-};
+use crate::spine::{check, package, parse, select, DependencyInput, PackageLimits, ParseRequest};
 use crate::witness::{CanonicalAssignment, WitnessValue};
 
 fn wrong(pointer: &str) -> PluginResultRefusal {
@@ -760,7 +758,7 @@ fn fixture() -> Fixture {
 
 fn fixture_of(
     source: &str,
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &qsl_semantics::model::intake::PackageInput,
     dependencies: &DependencyInput,
 ) -> Fixture {
     let identity = SourceIdentity::new("agent-ix", "test:plugin", "fixture", "fixture:1");
@@ -780,16 +778,9 @@ fn fixture_of(
     let models = select(&parsed, packages, limits.spine.model, &cancel)
         .unwrap_or_else(|failure| panic!("select: {failure:?}"))
         .into_value();
-    let checked = check(
-        &parsed,
-        &models,
-        dependencies,
-        &LockEvidence::default(),
-        limits.spine,
-        &cancel,
-    )
-    .unwrap_or_else(|failure| panic!("check: {failure:?}"))
-    .into_value();
+    let checked = check(&parsed, &models, dependencies, limits.spine, &cancel)
+        .unwrap_or_else(|failure| panic!("check: {failure:?}"))
+        .into_value();
     let emitted = package(&checked, PackageLimits::default(), &cancel)
         .unwrap_or_else(|failure| panic!("package: {failure:?}"))
         .into_value();
@@ -868,7 +859,7 @@ fn tc_774_function_contract_and_application_items_replay() {
         Some("p".to_owned())
     );
     assert_eq!(wire.backend, "acme");
-    assert_eq!(wire.source_digests.len(), 1);
+    assert_eq!(wire.sources.len(), 1);
     assert_eq!(wire.declared_domains.len(), 1);
     assert!(wire.state_environment.entries().is_empty());
     assert!(wire.object_environment.is_none());

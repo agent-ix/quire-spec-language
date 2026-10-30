@@ -21,7 +21,7 @@ expected result regardless of order. Scope: FR-075-AC-4, FR-075-AC-7.
 ## Test Procedure
 
 Build complete `BackendDescriptor` fixtures for TC-282's roles. Descriptor
-equality covers identity, provider origin, manifest digest, advertised
+equality covers identity, provider origin, advertised
 (kind, mode) pairs, retained `domains`, and evidence-kind sets. For TC-282's
 non-probabilistic vectors, each descriptor has no evidence kinds; keep the
 other members equal within each duplicate comparison. Where TC-282's `A2`

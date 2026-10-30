@@ -92,17 +92,10 @@ const CLAUSES: &[(&str, &str)] = &[
 
 /// The `witness` unit's text, selecting the `Config` domain package.
 fn witness_unit_text() -> String {
-    let document = config_version_domain_document();
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
     let mut unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
-         model Config = {CONFIG_VERSION_PACKAGE_IDENTITY:?} version \"1.0.0\" \
-         digest \"sha256-jcs:{}\";\n",
-        hex(digest)
+         model Config = {CONFIG_VERSION_PACKAGE_IDENTITY:?};\n"
     );
     // A collection literal takes its type from the parameter it is passed
     // to; each function returns its argument unchanged.
@@ -169,7 +162,6 @@ impl Snapshot {
                 "anchor": {"kind": "handler", "name": "validate"},
                 "model": {
                     "identity": CONFIG_VERSION_PACKAGE_IDENTITY, "version": "1.0.0",
-                    "digest": format!("sha256-jcs:{}", config_version_model_digest_hex()),
                 },
                 "populations": [{
                     "population": config_version_population_identity(),
@@ -189,9 +181,12 @@ fn selection(
     clause: &str,
     snapshot: Snapshot,
     self_key: &str,
-) -> (ClauseSelection, BTreeMap<[u8; 32], Vec<u8>>) {
+) -> (
+    ClauseSelection,
+    qsl_semantics::model::observation::DocumentProvision,
+) {
     let (label, bytes) = snapshot.document();
-    let snapshots = BTreeMap::from([(label.digest, bytes)]);
+    let snapshots = BTreeMap::from([(label.clone(), bytes)]);
     (
         config_version_current_selection(clause, label, self_key),
         snapshots,
@@ -208,7 +203,7 @@ fn clause_request(
 ) -> ClauseRunRequest {
     let (selection, snapshots) = selection(clause, snapshot, self_key);
     let document = config_version_domain_document();
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let mut request = config_version_request_for(
         witness_unit_text(),
         packages,
@@ -590,7 +585,6 @@ fn native_result_two_retains_refused_outcome_members() {
         fields: BTreeMap::from([("expected", "Int[0, 9]".to_owned())]),
         locus: Some(crate::spine::CallLocus {
             file: "fixture.native".to_owned(),
-            source_digest: format!("sha256:{}", "0".repeat(64)),
             span: qsl_foundation::LocatedSpan {
                 start: qsl_foundation::Position {
                     byte: 0,
@@ -825,7 +819,8 @@ fn evaluate(
     work_units: u64,
 ) -> (AdmittedObservations, ClauseEvaluation, Meter) {
     let (selection, snapshots) = selection(clause, snapshot, self_key);
-    let packages = qsl_semantics::model::intake::package_input([unit.domain_document.as_slice()]);
+    let packages =
+        qsl_semantics::model::intake::package_input([unit.domain_document.as_slice()]).unwrap();
     let graph = unit.compiled.package.graph();
     let declaration = graph.state_clause(clause).expect("the clause is declared");
     let invocations = BTreeMap::new();
@@ -1252,7 +1247,6 @@ fn parent_order_request(
             "anchor": {"kind": "handler", "name": "validate"},
             "model": {
                 "identity": CONFIG_VERSION_PACKAGE_IDENTITY, "version": "1.0.0",
-                "digest": format!("sha256-jcs:{}", config_version_model_digest_hex()),
             },
             "populations": [{
                 "population": config_version_population_identity(),
@@ -1265,7 +1259,7 @@ fn parent_order_request(
     });
     let selection = config_version_current_selection("ParentOrder", label.clone(), "child");
     let mut request = config_version_request(ClauseRunSelection::Clause(selection));
-    request.snapshots.insert(label.digest, bytes);
+    request.snapshots.insert(label.clone(), bytes);
     request
 }
 

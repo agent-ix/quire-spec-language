@@ -14,7 +14,7 @@ use qsl_replay::{
 use qsl_route::deadlock::{ModelRefinementItem, ObligationKind};
 use qsl_route::model_request::ModelRequest;
 use qsl_route::request::{items_from_requirements, ItemKind};
-use qsl_route::{CandidateOutcome, ManifestDigest, ProviderOrigin, Registry};
+use qsl_route::{CandidateOutcome, ProviderOrigin, Registry};
 use qsl_semantics::check::{Capability, RequirementRecord};
 use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::Cancel;
@@ -94,10 +94,7 @@ fn a_refinement_writes_one_temporal_record_routed_to_the_explicit_state_provider
 
         let mut registry = Registry::new();
         registry
-            .register(
-                en1::descriptor(ProviderOrigin::Linked, ManifestDigest::from_digest([8; 32]))
-                    .expect("EN-1 admits"),
-            )
+            .register(en1::descriptor(ProviderOrigin::Linked).expect("EN-1 admits"))
             .expect("registered");
         let items = items_from_requirements(records, &registry, None);
         let item = items
@@ -226,7 +223,7 @@ fn the_abstract_initial_states_are_part_of_the_obligation() {
     let subject = subject(&world);
     let context = SubjectContext::new(&subject).expect("the package emits");
     let (zero, one) = (world.abstract_initial(), world.abstract_initial_one());
-    assert_ne!(zero.digest, one.digest);
+    assert_ne!(zero, one);
 
     let mut request = ModelRequest::new();
     let author = |request: &mut ModelRequest<_>, initial: &DocumentRef| {
@@ -333,7 +330,6 @@ fn smt_backend(advertises: &[(Capability, qsl_route::Mode)]) -> qsl_route::Backe
     qsl_route::BackendDescriptor::new(
         qsl_route::Candidate::new(qsl_foundation::BackendId::new("smt")),
         ProviderOrigin::Process,
-        ManifestDigest::from_digest([9; 32]),
         advertises.iter().copied(),
         Some(
             [DomainKind::Population, DomainKind::Integer]
@@ -353,10 +349,7 @@ fn smt_backend(advertises: &[(Capability, qsl_route::Mode)]) -> qsl_route::Backe
 fn registry(smt: Option<qsl_route::BackendDescriptor>) -> Registry {
     let mut registry = Registry::new();
     registry
-        .register(
-            en1::descriptor(ProviderOrigin::Linked, ManifestDigest::from_digest([8; 32]))
-                .expect("EN-1 admits"),
-        )
+        .register(en1::descriptor(ProviderOrigin::Linked).expect("EN-1 admits"))
         .expect("registered");
     if let Some(smt) = smt {
         registry.register(smt).expect("registered");

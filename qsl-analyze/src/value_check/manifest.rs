@@ -11,8 +11,8 @@ use std::num::NonZeroU64;
 
 use qsl_foundation::bound::DomainKind;
 use qsl_route::{
-    descriptor_from_manifest_with_max_cases, BackendDescriptor, Candidate, ManifestDigest,
-    ManifestMembers, MaxCasesMember, Mode, ProviderOrigin, RegistrationRefusal,
+    descriptor_from_manifest_with_max_cases, BackendDescriptor, Candidate, ManifestMembers,
+    MaxCasesMember, Mode, ProviderOrigin, RegistrationRefusal,
 };
 use qsl_semantics::check::Capability;
 
@@ -40,11 +40,8 @@ pub const DEFAULT_MAX_CASES: NonZeroU64 = NonZeroU64::new(1_048_576).unwrap();
 ///
 /// Only if the registry's admission rules refuse this module's own data,
 /// which the tests of this module rule out.
-pub fn descriptor(
-    origin: ProviderOrigin,
-    manifest_digest: ManifestDigest,
-) -> Result<BackendDescriptor, RegistrationRefusal> {
-    descriptor_with(origin, manifest_digest, DEFAULT_MAX_CASES)
+pub fn descriptor(origin: ProviderOrigin) -> Result<BackendDescriptor, RegistrationRefusal> {
+    descriptor_with(origin, DEFAULT_MAX_CASES)
 }
 
 /// As [`descriptor`], publishing `max_cases` as the default.
@@ -54,13 +51,11 @@ pub fn descriptor(
 /// As [`descriptor`].
 pub fn descriptor_with(
     origin: ProviderOrigin,
-    manifest_digest: ManifestDigest,
     max_cases: NonZeroU64,
 ) -> Result<BackendDescriptor, RegistrationRefusal> {
     descriptor_from_manifest_with_max_cases(
         Candidate::new(qsl_foundation::BackendId::new(BACKEND_ID)),
         origin,
-        manifest_digest,
         ADVERTISED,
         ManifestMembers {
             domains: Some(&DOMAINS),

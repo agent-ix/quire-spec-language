@@ -3,15 +3,6 @@
 use ix_trace_rs::trace;
 use std::process::Command;
 
-/// The lowercase-hex `quire.source.bytes/v1` digest of `bytes`.
-fn hex(bytes: &[u8]) -> String {
-    qsl_foundation::ByteDigest::of(bytes)
-        .as_bytes()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
-}
-
 #[trace("TC-015", "FR-010-AC-3", "FR-010-AC-4", "FR-010-AC-7")]
 #[test]
 fn cli_usage_io_and_resource_outcomes_are_distinct() {
@@ -127,7 +118,6 @@ fn cli_preserves_non_utf8_os_paths() {
     assert_eq!(value["status"], "parsed");
     assert_eq!(value["source"]["identity"], "exact:é");
     assert!(value["source"].get("revision").is_none());
-    assert_eq!(value["source"]["digest"], hex(bytes));
     assert_eq!(value["path"], path.to_string_lossy().as_ref());
     assert!(value["path"].as_str().unwrap().contains('\u{fffd}'));
 }
@@ -155,10 +145,6 @@ fn cli_parses_and_formats_without_claiming_execution() {
     assert!(value["source"].get("revision").is_none());
     assert_eq!(value["source"]["identity"], "test:parent");
     assert_eq!(value["path"], "tests/fixtures/parent.native");
-    assert_eq!(
-        value["source"]["digest"],
-        hex(include_bytes!("../fixtures/parent.native"))
-    );
     assert!(value.get("value").is_none());
     // FR-003: `format` reads complete-V1 source through the lossless CST.
     let formatted = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
@@ -249,7 +235,7 @@ fn parse_of_a_recognized_but_unsupported_construct_exits_21() {
         &path,
         "language \"ix:native\" edition \"0-draft\";\n\
          profile \"state-finite/0-draft\";\n\
-         model M = \"test/model\" version \"1\" digest \"unresolved\";\n\
+         model M = \"test/model\";\n\
          invariant Test on M::Thing at current { 1 / 2 }\n",
     )
     .unwrap();
@@ -286,7 +272,7 @@ fn parse_of_genuinely_malformed_syntax_exits_20_not_21() {
         &path,
         "language \"ix:native\" edition \"0-draft\";\n\
          profile \"state-finite/0-draft\";\n\
-         model M = \"test/model\" version \"1\" digest \"unresolved\";\n\
+         model M = \"test/model\";\n\
          invariant Test on M::Thing at current { }\n",
     )
     .unwrap();
@@ -346,7 +332,7 @@ fn malformed_operands_report_the_selected_command_before_io() {
 
 /// TC-425 (FR-010-AC-11): `parse` and `format` take the four source labels
 /// before the file; `parse` reports the source as its `RawSourceRef`:
-/// authority, identity and digest, and no other member.
+/// authority and identity, and no other member.
 #[trace("TC-425", "FR-010-AC-11")]
 #[test]
 fn parse_and_format_take_the_four_source_labels() {
@@ -366,8 +352,6 @@ fn parse_and_format_take_the_four_source_labels() {
         serde_json::json!({
             "authority": "agent-ix",
             "identity": "specs/a.quire",
-            "digest_domain": "quire.source.bytes/v1",
-            "digest": hex(include_bytes!("../fixtures/parent.native")),
         })
     );
 

@@ -131,7 +131,6 @@ fn p_environment() -> TypeEnvironment {
 
 #[trace("QSpec-TC-188", "QSpec-FR-143-AC-1")]
 #[trace("QSpec-TC-188", "QSpec-FR-143-AC-5")]
-#[trace("TC-136", "FR-049-AC-3")]
 #[test]
 fn r01_equal_records_compare_structurally_whatever_the_source_field_order() {
     let env = p_environment();
@@ -1182,7 +1181,6 @@ mod checked {
     }
 
     #[trace("QSpec-TC-188", "QSpec-FR-143-AC-10")]
-    #[trace("TC-136", "FR-049-AC-3")]
     #[test]
     fn r11_optional_field_projections_need_present_or_value() {
         let x = [("x", composite("P"))];
@@ -1265,7 +1263,6 @@ mod library_import {
             "dependency_selections": [],
             "edition": {"role": "edition"},
             "identity_projection": [node],
-            "model_selections": [],
             "profile_selections": [],
             "required_features": ["quire.value.complete/v1"],
             "version": "quire.checked-package-id/v2",

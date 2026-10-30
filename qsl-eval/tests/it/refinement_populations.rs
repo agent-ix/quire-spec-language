@@ -59,7 +59,7 @@ fn integer(value: i64) -> Value {
 
 struct World {
     package: CheckedPackage,
-    packages: std::collections::BTreeMap<[u8; 32], Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
 }
 
 impl World {
@@ -155,7 +155,6 @@ impl World {
                 identity: "state".to_owned(),
                 revision_namespace: "fixture".to_owned(),
                 revision: "fixture:1".to_owned(),
-                digest: [0; 32],
             },
         )
         .expect("the state observes")

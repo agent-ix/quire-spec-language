@@ -302,6 +302,7 @@ ci-clean-build:
 # outside `#[cfg(feature = "std")]` fails here. Own target dir, so no other
 # lane's artifacts are reused (NFR-013).
 build-no-std:
+	rustup target add thumbv7em-none-eabi
 	cargo build --locked -p qsl-foundation --no-default-features --target thumbv7em-none-eabi --target-dir "$${CARGO_TARGET_DIR:-target}/no-std"
 	cargo clippy --locked -p qsl-foundation --no-default-features --target thumbv7em-none-eabi --target-dir "$${CARGO_TARGET_DIR:-target}/no-std" -- -D warnings
 	cargo test --locked -p qsl-foundation --no-default-features --target-dir "$${CARGO_TARGET_DIR:-target}/no-std"
@@ -319,7 +320,8 @@ ci-docs:
 # the S3 checker: 10,000 generated sources nested 1 to 100,000 levels deep.
 # Depths are spread over orders of magnitude (`qsl_bench::deep_input`).
 # It resolves against the root `Cargo.lock`, copied in (fuzz/Cargo.lock is
-# gitignored), and builds on the toolchain `rust-toolchain.toml` selects, with no sanitizer:
+# gitignored), and builds on the caller's active toolchain (CI derives it from
+# `Cargo.toml`'s `rust-version`), with no sanitizer:
 # QSL's crates forbid `unsafe`, so the run checks panics, aborts
 # and stack overflows. Needs `cargo install cargo-fuzz`. Not part of `ci:`.
 FUZZ_RUNS ?= 10000
@@ -429,9 +431,10 @@ arch-lint: arch-lint-api-surface-qsl arch-lint-canonical-encoder arch-lint-quali
 # criterion bench per axis, each runnable by name. `make bench` runs all
 # six; `make bench-probe` prints the counts, refusal boundaries and one-shot
 # large-input timings (with peak RSS) the criterion benches do not record.
-# The recorded baseline, with its variance, is `qsl-bench/BASELINE.md`.
-# Pass criterion options through BENCH_ARGS, e.g.
-# `make bench-model BENCH_ARGS='--save-baseline before'`. Not part of `ci:`
+# Compare a candidate with current main in one interleaved session; see
+# `qsl-bench/BENCHMARKING.md` for the live-run method. No stored baseline is used.
+# Pass criterion options through BENCH_ARGS, e.g. `BENCH_ARGS='--noplot'`.
+# Not part of `ci:`
 # -- timing is not a pass/fail gate.
 BENCH_ARGS ?=
 BENCH_AXES := parser checker cst model evaluator text_cluster

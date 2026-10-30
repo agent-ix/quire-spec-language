@@ -106,15 +106,13 @@ pub enum CallValue {
     Reference(quire_exact::ObjectReference),
 }
 
-/// A refusal's [`Locus::Region`], resolved to the `sha256:` digest of the
-/// source it points into and its span rendered over that source's bytes
-/// (FR-096, FR-100).
+/// A refusal's [`Locus::Region`], resolved to the path of the source it
+/// points into and its span rendered over that source's bytes (FR-096,
+/// FR-100).
 #[derive(Clone, Debug)]
 pub struct CallLocus {
     /// Authored path of the source containing the region (FR-100's wire).
     pub file: String,
-    /// The `sha256:` digest of the source the region belongs to.
-    pub source_digest: String,
     /// The region's span, rendered over that source.
     pub span: qsl_foundation::LocatedSpan,
 }
@@ -425,7 +423,7 @@ pub fn run(
     source: SourceIdentity,
     path: &str,
     bytes: &[u8],
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &qsl_semantics::model::intake::PackageInput,
     dependencies: &DependencyInput,
     limits: SpineLimits,
     call: &Call,
@@ -461,7 +459,7 @@ pub(crate) fn run_reading<T>(
     source: SourceIdentity,
     path: &str,
     bytes: &[u8],
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &qsl_semantics::model::intake::PackageInput,
     dependencies: &DependencyInput,
     limits: SpineLimits,
     call: &Call,
@@ -490,16 +488,9 @@ pub(crate) fn run_reading<T>(
     let models = front_end::select(&parsed, packages, limits.model, cancel)
         .map_err(refusal)?
         .into_value();
-    let checked = front_end::check(
-        &parsed,
-        &models,
-        dependencies,
-        &super::LockEvidence::default(),
-        limits,
-        cancel,
-    )
-    .map_err(refusal)?
-    .into_value();
+    let checked = front_end::check(&parsed, &models, dependencies, limits, cancel)
+        .map_err(refusal)?
+        .into_value();
     let emitted = front_end::package(&checked, front_end::PackageLimits::default(), cancel)
         .map_err(refusal)?
         .into_value();
@@ -946,7 +937,6 @@ pub(crate) fn resolve_locus(
     let span = source.render(region).ok_or_else(unresolved)?;
     Ok(CallLocus {
         file: source.path().to_owned(),
-        source_digest: format!("sha256:{}", region.source().digest().hex()),
         span,
     })
 }

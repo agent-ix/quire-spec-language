@@ -464,14 +464,15 @@ fn the_accessor_yields_every_cause_in_order() {
 }
 
 pub(super) fn current_report(clause: &str, root: i64, child: i64) -> ClauseRunReport {
-    let model_digest_hex = config_version_model_digest_hex();
     let label = config_version_document_ref("current-snap");
-    let bytes = config_version_snapshot(&label, &model_digest_hex, root, Some(child));
-    let digest = document_digest(&bytes);
-    let label = DocumentRef { digest, ..label };
+    let bytes = config_version_snapshot(&label, root, Some(child));
     let selection = config_version_current_selection(clause, label, "child");
     let mut request = config_version_request(ClauseRunSelection::Clause(selection));
-    request.snapshots.insert(digest, bytes);
+    request.snapshots.insert(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    );
     run_clause(request).expect("a well-formed request always reports")
 }
 
@@ -556,14 +557,15 @@ fn select_and_admit_refusals_classify_at_their_stage() {
 #[trace("TC-862", "FR-342-AC-3")]
 #[test]
 fn an_exhausted_budget_is_incomplete_naming_work_units() {
-    let model_digest_hex = config_version_model_digest_hex();
     let label = config_version_document_ref("current-snap");
-    let bytes = config_version_snapshot(&label, &model_digest_hex, 1, Some(2));
-    let digest = document_digest(&bytes);
-    let label = DocumentRef { digest, ..label };
+    let bytes = config_version_snapshot(&label, 1, Some(2));
     let selection = config_version_current_selection("ParentOrder", label, "child");
     let mut request = config_version_request(ClauseRunSelection::Clause(selection));
-    request.snapshots.insert(digest, bytes);
+    request.snapshots.insert(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    );
     request.accounting = default_accounting(0);
     let report = run_clause(request).unwrap();
     let classified = assert_run(
@@ -816,7 +818,6 @@ fn an_import_read_ceiling_is_incomplete_naming_the_limit() {
 /// A one-object `current` snapshot for `ParentOrder`: `child` at version 2
 /// naming `parent_key`, in a population that is `complete` or not.
 fn child_snapshot_report(identity: &str, complete: bool, parent_key: &str) -> ClauseRunReport {
-    let model_digest_hex = config_version_model_digest_hex();
     let label = config_version_document_ref(identity);
     let population = config_version_population_identity();
     let value = json!({
@@ -829,7 +830,6 @@ fn child_snapshot_report(identity: &str, complete: bool, parent_key: &str) -> Cl
         "anchor": {"kind": "handler", "name": "validate"},
         "model": {
             "identity": CONFIG_VERSION_PACKAGE_IDENTITY, "version": "1.0.0",
-            "digest": format!("sha256-jcs:{model_digest_hex}"),
         },
         "populations": [{
             "population": population,
@@ -844,11 +844,13 @@ fn child_snapshot_report(identity: &str, complete: bool, parent_key: &str) -> Cl
         }],
     });
     let bytes = value.to_string().into_bytes();
-    let digest = document_digest(&bytes);
-    let label = DocumentRef { digest, ..label };
     let selection = config_version_current_selection("ParentOrder", label, "child");
     let mut request = config_version_request(ClauseRunSelection::Clause(selection));
-    request.snapshots.insert(digest, bytes);
+    request.snapshots.insert(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    );
     run_clause(request).unwrap()
 }
 

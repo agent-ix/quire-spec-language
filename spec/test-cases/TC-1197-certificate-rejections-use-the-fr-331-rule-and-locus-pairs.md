@@ -62,7 +62,7 @@ step verifies.
 - Step 4: `Malformed` at the locus FR-169-AC-14 gives each certificate,
   with no successor recomputed; the closure-index one is written
   `{"entry": "<length>"}` and the foreign-domain one as a State record in
-  the `package-fingerprint` domain; each settles `inconclusive`,
+  a foreign domain; each settles `inconclusive`,
   `CertificateRejected`, never `proved`.
 - Step 5: the rule and locus FR-201-AC-6 and FR-245-AC-7 give each
   certificate, written in FR-331's `{product_key}`, `{member}`, `{node}`,

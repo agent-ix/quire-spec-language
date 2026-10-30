@@ -208,8 +208,8 @@ fn rpc_unit_guarded(t: u32, guard: &str, extra: &str) -> String {
 
 struct World {
     package: CheckedPackage,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
+    snapshots: qsl_semantics::model::observation::DocumentProvision,
     initial: DocumentRef,
 }
 
@@ -251,14 +251,12 @@ fn try_world_of(
     unit_body: &str,
     objects: Json,
 ) -> Result<World, Vec<qsl_semantics::check::CheckRefusal>> {
-    let packages = package_input([document.as_slice()]);
-    let digest = *packages.keys().next().expect("one model");
+    let packages = package_input([document.as_slice()]).unwrap();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
          profile t = \"quire.temporal.complete/v1\";\n{profiles}\
-         model M = \"{PACKAGE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n{unit_body}",
-        hex(&digest)
+         model M = \"{PACKAGE}\";\n{unit_body}",
     );
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("test", "fr-231", "fixture", "1"),
@@ -288,8 +286,7 @@ fn try_world_of(
     .expect("the unit assembles")
     .with_unwritten_timed_members()
     .check(CheckingLimits::default())?;
-    let header = json!({"identity": PACKAGE, "version": "1.0.0",
-        "digest": format!("sha256-jcs:{}", hex(&digest))});
+    let header = json!({"identity": PACKAGE});
     let document = json!({
         "format": "quire.state.snapshot/v1",
         "identity": {"authority": "test", "identity": "s0", "revision_namespace": "fixture",
@@ -299,20 +296,19 @@ fn try_world_of(
         "populations": [{"population": ident("calls"), "complete": true, "objects": objects}],
     });
     let bytes = document.to_string().into_bytes();
-    let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-    let snapshot_digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-        .expect("canonical fixture")
-        .as_bytes();
     Ok(World {
         package: CheckedPackage::link(graph),
         packages,
-        snapshots: BTreeMap::from([(snapshot_digest, bytes)]),
+        snapshots: BTreeMap::from([(
+            qsl_semantics::model::observation::document_reference(&bytes)
+                .expect("a document names itself"),
+            bytes,
+        )]),
         initial: DocumentRef {
             authority: "test".to_owned(),
             identity: "s0".to_owned(),
             revision_namespace: "fixture".to_owned(),
             revision: "fixture:1".to_owned(),
-            digest: snapshot_digest,
         },
     })
 }
@@ -4603,6 +4599,77 @@ fn a_dropped_element_regrows_absent() {
         .filter(|bits| bits.len() == 1)
         .collect();
     assert_eq!(regrown, [[false]]);
+}
+
+/// QSpec FR-322 `SD-02` (FR-230-AC-54, TC-685): over `q:
+/// Sequence<Option<Clock>>[0, 2]`, `forall(e in self.q: present(e) implies
+/// e = 0 ms)` resets each element present in the post-state and writes no
+/// absent one. From `[false, true]` after 3 ms, `work` keeps `[false,
+/// true]` with the absent element absent and the present one reset to 0;
+/// from `[false, false]` it keeps both absent. Every present element of
+/// every successor is at 0 ms.
+#[trace("TC-685", "FR-230-AC-54")]
+#[test]
+fn a_presence_selection_reset_leaves_an_absent_element_absent() {
+    let world = option_sequence_world(
+        &["q"],
+        "post R using v on M::Call::work { forall(e in self.q: present(e) implies e = 0 ms) }\n",
+    );
+    let held = system(&world);
+    let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+    let initial = timed.initial();
+    let from = |bits: &[bool]| {
+        let state = initial
+            .iter()
+            .find(|state| option_bits(state) == bits)
+            .unwrap_or_else(|| panic!("an initial state {bits:?}"));
+        timed
+            .delay(state, &exact(3, 1))
+            .expect("decided")
+            .expect("no invariant bounds the delay")
+    };
+    let successors = |state: &TimedState| {
+        timed
+            .steps(state)
+            .expect("the state steps")
+            .into_iter()
+            .filter(|(step, _)| step.operation().contains("Call/work"))
+            .map(|(_, post)| post)
+            .collect::<Vec<_>>()
+    };
+    let q_clocks = |state: &TimedState| -> Vec<(usize, Rational)> {
+        timed
+            .places()
+            .iter()
+            .zip(state.clocks().values())
+            .filter(|(place, _)| {
+                timed.live(place, state.discrete())
+                    && timed
+                        .model()
+                        .clock(place.clock())
+                        .is_some_and(|clock| clock.name().starts_with("q"))
+            })
+            .map(|(place, value)| (place.slots()[0], value.clone()))
+            .collect()
+    };
+    for start in [&[false, true][..], &[false, false][..]] {
+        let posts = successors(&from(start));
+        assert!(!posts.is_empty(), "{start:?} steps");
+        assert!(
+            posts.iter().any(|post| option_bits(post) == start),
+            "an absent element can stay absent from {start:?}"
+        );
+        for post in &posts {
+            for (slot, value) in q_clocks(post) {
+                assert_eq!(value, exact(0, 1), "{start:?} -> slot {slot} is reset");
+            }
+        }
+    }
+    let kept = successors(&from(&[false, true]))
+        .into_iter()
+        .find(|post| option_bits(post) == [false, true])
+        .expect("[false, true] is kept");
+    assert_eq!(q_clocks(&kept), [(1, exact(0, 1))]);
 }
 
 /// QSpec FR-415-AC-20 and STD-526 PR-03 (TC-685 step 34), the timed

@@ -215,7 +215,6 @@ pub(super) struct Argument {
 )]
 pub(super) struct SelectedPackage {
     pub file: String,
-    pub digest: String,
 }
 
 // Omission selects compilation; an explicitly supplied value must be an object.
