@@ -151,7 +151,6 @@ use crate::model::normalize::{
 use qsl_foundation::absence::AbsenceMode;
 use qsl_foundation::diagnostic::Code;
 use quire_checked::key::DeclarationKey;
-use quire_semantic_value::catalog::InternalFault;
 use serde::Serialize;
 
 use quire_exact::{
