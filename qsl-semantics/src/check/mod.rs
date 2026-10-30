@@ -586,6 +586,9 @@ pub struct CheckedGraph {
     /// FR-001: the checked unit's `RawSourceRef`, for the lock's `sources`
     /// entry.
     source: qsl_foundation::source::provenance::RawSourceRef,
+    /// The package manifest's top-level name, the `package` of every
+    /// structural node id the graph's nodes carry.
+    package_name: String,
     scope: Scope,
     functions: CheckedFunctions,
     dispatch_tables: Vec<DispatchTable>,
@@ -1920,6 +1923,7 @@ impl PackageDeclarations {
             return Err(refusals);
         }
         let source = self.source;
+        let package_name = self.package_name;
         let mut type_spans = self.declared_type_spans;
         for refinement in &self.refinements {
             type_spans.insert(
@@ -5725,6 +5729,7 @@ impl PackageDeclarations {
         }
         let mut graph = CheckedGraph {
             source,
+            package_name,
             scope,
             functions,
             dispatch_tables,
@@ -6312,6 +6317,12 @@ impl CheckedGraph {
     /// from, the lock's `sources` entry (QSpec FR-322 `PackageLock`).
     pub fn source(&self) -> &qsl_foundation::source::provenance::RawSourceRef {
         &self.source
+    }
+
+    /// The package manifest's top-level name this package was checked under:
+    /// the `package` of every structural node id of the graph.
+    pub fn package_name(&self) -> &str {
+        &self.package_name
     }
 
     /// The lowered nodes, for a test that re-keys one after the nodes bound

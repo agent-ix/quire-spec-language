@@ -2398,7 +2398,6 @@ impl TryFrom<Setting> for CheckingLimitKind {
             | Setting::ModelDerivationFacts
             | Setting::ModelEffectiveDeclarations
             | Setting::ModelDispatchCandidates
-            | Setting::ModelHashedBytes
             | Setting::ModelWorkUnits
             | Setting::ModelAncestorSteps
             | Setting::ModelFamilySteps
