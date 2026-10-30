@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 
 use quire_exact::{EffectiveId, Integer, NodeKey, UnitDomain, UnitId, ValueType};
 
-use super::{identifiers, refuse, type_declaration, Lowering, NodeContent};
+use super::{identifiers, refuse, require_admitted, type_declaration, Lowering, NodeContent};
 use crate::check::family::OccurrenceRole;
 use crate::check::node_key::{
     Binding, BodyTerm, GroupMember, GroupTerm, LeafTerm, MemberTerm, ModelOwner, NodeTag, Owner,
@@ -2137,6 +2137,7 @@ impl<'a> Lowering<'a> {
             None => Vec::new(),
         };
         let node = self.bounded("model_population", set, bindings, location)?;
+        let node = require_admitted(node, location)?;
         self.population_nodes.insert(node.clone());
         Ok(node)
     }
@@ -2253,7 +2254,7 @@ impl<'a> Lowering<'a> {
                     owner_model: None,
                     node_tag: NodeTag::ScalarType,
                     semantic_form,
-                    semantic_type,
+                    semantic_type: semantic_type.map(Into::into),
                     declaration: Some(declaration),
                     owner: None,
                     body: BodyTerm::aggregate(Vec::new()),

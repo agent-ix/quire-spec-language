@@ -39,7 +39,7 @@ mod controls;
 use controls::RunInputs;
 pub(crate) use controls::{AttemptNodes, CompensationNodes};
 
-use super::{fault, refuse, Binder, Binders, Lowering, NodeContent};
+use super::{fault, refuse, Binder, Binders, Lowering, NodeContent, NodeRef};
 use crate::check::family::OccurrenceRole;
 use crate::check::ir::{CheckedBody, CheckedNode, NodeKind};
 use crate::check::node_key::{
@@ -768,16 +768,13 @@ impl Lowering<'_> {
             if !visited.insert(key.clone()) {
                 continue;
             }
-            let content = match self.graph.nodes.get(&key) {
-                Some(node) => &node.content,
-                None => match self.drafts.get(&key) {
-                    Some(draft) => &draft.content,
-                    // A nominal enum is keyed by its declaration node, which
-                    // is written with the declarations and not by this
-                    // type: a scalar `enum` the reader compares.
-                    None => continue,
-                },
+            // A nominal enum is keyed by its declaration node, which is
+            // written with the declarations and not by this type: a scalar
+            // `enum` the reader compares.
+            let Some(node) = self.graph.nodes.get(&key) else {
+                continue;
             };
+            let content = &node.content;
             match (content.node_tag, content.semantic_form) {
                 (
                     NodeTag::ScalarType,
@@ -786,7 +783,13 @@ impl Lowering<'_> {
                 )
                 | (NodeTag::CompositeType, "reference") => {}
                 (NodeTag::CompositeType, _) => {
-                    content.body.for_each_key(&mut |child| pending.push(child));
+                    if content
+                        .body
+                        .for_each_key(&mut |child| pending.push(child))
+                        .is_err()
+                    {
+                        return false;
+                    }
                 }
                 (
                     NodeTag::ScalarType
@@ -823,8 +826,8 @@ impl Lowering<'_> {
         let parameter = self.parameter(&binder.name, level, semantic_type.clone(), location)?;
         Ok(Binder {
             slot,
-            parameter,
-            semantic_type,
+            parameter: parameter.into(),
+            semantic_type: semantic_type.into(),
         })
     }
 
@@ -841,13 +844,13 @@ impl Lowering<'_> {
         owner_model: Option<NodeKey>,
         body: BodyTerm,
     ) -> Result<NodeKey, CheckRefusal> {
-        let key = self.insert_node(
+        let key = self.insert_content_key(
             location,
             NodeContent {
                 owner_model,
                 node_tag: NodeTag::Protocol,
                 semantic_form,
-                semantic_type: Some(boolean),
+                semantic_type: Some(boolean.into()),
                 declaration: Some(declaration),
                 owner: None,
                 body,
@@ -978,7 +981,10 @@ impl Lowering<'_> {
             Some(trigger) => {
                 let mut members = vec![
                     member("kind", self.text_literal("each", location)?),
-                    member("trigger", LeafTerm::reference(trigger.parameter.clone())),
+                    member(
+                        "trigger",
+                        LeafTerm::reference_node(trigger.parameter.clone()),
+                    ),
                 ];
                 members.extend(guard.map(|guard| member("guard", guard)));
                 GroupTerm::new(members)
@@ -1003,7 +1009,7 @@ impl Lowering<'_> {
                 operation("protocol")?,
                 boolean,
                 vec![
-                    MemberTerm::bound("over", LeafTerm::reference(over.parameter)),
+                    MemberTerm::bound("over", LeafTerm::reference_node(over.parameter)),
                     MemberTerm::binding("activation", BindingValue::Group(activation)),
                     MemberTerm::binding("captures", BindingValue::Tuple(captures)),
                     MemberTerm::binding("roles", BindingValue::Group(GroupTerm::references(roles))),
@@ -1129,7 +1135,7 @@ impl Lowering<'_> {
             let initializer = self.expression(capture.initializer.root(), &mut binders)?;
             readable.push(binder.clone());
             records.push(TupleMember::Group(GroupTerm::new(vec![
-                member("binder", LeafTerm::reference(binder.parameter)),
+                member("binder", LeafTerm::reference_node(binder.parameter)),
                 member("initializer", initializer),
             ])));
         }
@@ -1249,8 +1255,8 @@ impl Lowering<'_> {
                 let mut scope = readable.to_vec();
                 scope.push(Binder {
                     slot: readable.len(),
-                    parameter,
-                    semantic_type,
+                    parameter: parameter.into(),
+                    semantic_type: semantic_type.into(),
                 });
                 let mut binders = Binders::new(&slot_names, &scope);
                 members.push(member("until", self.expression(body.root(), &mut binders)?));
@@ -1366,7 +1372,7 @@ impl Lowering<'_> {
             )?;
             args.push(MemberTerm::bound(
                 "forward_binder",
-                LeafTerm::reference(forward.1[0].parameter.clone()),
+                LeafTerm::reference_node(forward.1[0].parameter.clone()),
             ));
             args.push(MemberTerm::bound("role", LeafTerm::reference(role)));
             args.push(MemberTerm::bound("operation", LeafTerm::reference(anchor)));
@@ -1403,7 +1409,7 @@ impl Lowering<'_> {
                 registration.push(TupleMember::Group(GroupTerm::new(vec![
                     member(
                         "binder",
-                        LeafTerm::reference(
+                        LeafTerm::reference_node(
                             scope.1.last().ok_or_else(unchecked)?.parameter.clone(),
                         ),
                     ),
@@ -1436,7 +1442,7 @@ impl Lowering<'_> {
                 BindingValue::Group(GroupTerm::new(vec![
                     member(
                         "binder",
-                        LeafTerm::reference(trigger_scope.1[0].parameter.clone()),
+                        LeafTerm::reference_node(trigger_scope.1[0].parameter.clone()),
                     ),
                     member("guard", guard),
                 ])),
@@ -1475,7 +1481,7 @@ impl Lowering<'_> {
                 activation.push(TupleMember::Group(GroupTerm::new(vec![
                     member(
                         "binder",
-                        LeafTerm::reference(
+                        LeafTerm::reference_node(
                             scope.1.last().ok_or_else(unchecked)?.parameter.clone(),
                         ),
                     ),
@@ -1539,11 +1545,11 @@ impl Lowering<'_> {
                 BindingValue::Group(GroupTerm::new(vec![
                     member(
                         "earlier",
-                        LeafTerm::reference(retry_scope.1[0].parameter.clone()),
+                        LeafTerm::reference_node(retry_scope.1[0].parameter.clone()),
                     ),
                     member(
                         "later",
-                        LeafTerm::reference(retry_scope.1[1].parameter.clone()),
+                        LeafTerm::reference_node(retry_scope.1[1].parameter.clone()),
                     ),
                     member("relation", relation),
                 ])),
@@ -1579,7 +1585,7 @@ impl Lowering<'_> {
                 BindingValue::Group(GroupTerm::new(vec![
                     member(
                         "binder",
-                        LeafTerm::reference(recovery_scope.1[0].parameter.clone()),
+                        LeafTerm::reference_node(recovery_scope.1[0].parameter.clone()),
                     ),
                     member("predicate", predicate),
                 ])),
@@ -1610,7 +1616,7 @@ impl Lowering<'_> {
         &mut self,
         entries: &[(String, ValueType)],
         levels: &BTreeMap<String, usize>,
-        parameters: &mut BTreeMap<String, (NodeKey, NodeKey)>,
+        parameters: &mut BTreeMap<String, (NodeRef, NodeRef)>,
         location: &Location,
     ) -> Result<(Vec<String>, Vec<Binder>), CheckRefusal> {
         let names = entries
@@ -1624,19 +1630,24 @@ impl Lowering<'_> {
                 .get(name)
                 .ok_or_else(|| fault(location, KeyFault::UncheckedProtocolFact))?;
             let parameter = if let Some((parameter, existing_type)) = parameters.get(name) {
-                if *existing_type != semantic_type {
+                if *existing_type != NodeRef::from(semantic_type.clone()) {
                     return Err(fault(location, KeyFault::UncheckedProtocolFact));
                 }
                 parameter.clone()
             } else {
-                let parameter = self.parameter(name, level, semantic_type.clone(), location)?;
-                parameters.insert(name.clone(), (parameter.clone(), semantic_type.clone()));
+                let parameter: NodeRef = self
+                    .parameter(name, level, semantic_type.clone(), location)?
+                    .into();
+                parameters.insert(
+                    name.clone(),
+                    (parameter.clone(), semantic_type.clone().into()),
+                );
                 parameter
             };
             binders.push(Binder {
                 slot,
                 parameter,
-                semantic_type,
+                semantic_type: semantic_type.into(),
             });
         }
         Ok((names, binders))
@@ -1817,8 +1828,8 @@ impl Lowering<'_> {
                     &slot_names,
                     &[Binder {
                         slot: 0,
-                        parameter: parameter.clone(),
-                        semantic_type: carries,
+                        parameter: parameter.clone().into(),
+                        semantic_type: carries.into(),
                     }],
                 );
                 let key = self.expression(key.root(), &mut binders)?;
@@ -1865,13 +1876,13 @@ impl Lowering<'_> {
             )])),
         };
         let overflow = self.text_literal(overflow, location)?;
-        let queue = self.insert_node(
+        let queue = self.insert_content_key(
             location,
             NodeContent {
                 owner_model: None,
                 node_tag: NodeTag::Protocol,
                 semantic_form: "queue",
-                semantic_type: Some(boolean.clone()),
+                semantic_type: Some(boolean.clone().into()),
                 declaration: None,
                 owner: None,
                 body: BodyTerm::application(
@@ -1944,7 +1955,7 @@ impl Lowering<'_> {
                 operation.clone(),
                 boolean,
                 vec![
-                    MemberTerm::bound("binder", LeafTerm::reference(binder.parameter)),
+                    MemberTerm::bound("binder", LeafTerm::reference_node(binder.parameter)),
                     MemberTerm::bound("constraint", constraint),
                 ],
             ),
@@ -2025,13 +2036,13 @@ impl Lowering<'_> {
     ) -> Result<LeafTerm, CheckRefusal> {
         let target = self.protocol_key(protocol, node.location())?;
         let semantic_type = self.type_node(&ValueType::Boolean, node.location())?;
-        let key = self.insert_node(
+        let key = self.insert_content_key(
             node.location(),
             NodeContent {
                 owner_model: None,
                 node_tag: NodeTag::Protocol,
                 semantic_form: "protocol_reference",
-                semantic_type: Some(semantic_type),
+                semantic_type: Some(semantic_type.into()),
                 declaration: None,
                 owner: None,
                 body: BodyTerm::Leaf(LeafTerm::reference(target)),

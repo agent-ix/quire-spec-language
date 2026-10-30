@@ -136,11 +136,11 @@ impl Lowering<'_> {
             self.record(self_type.clone(), OccurrenceRole::Type, claim_at.clone());
             scope.push(Binder {
                 slot: 0,
-                parameter,
-                semantic_type: self_type,
+                parameter: parameter.into(),
+                semantic_type: self_type.into(),
             });
         }
-        let parameters = BindingValue::Group(GroupTerm::references(
+        let parameters = BindingValue::Group(GroupTerm::references_nodes(
             scope.iter().map(|binder| binder.parameter.clone()),
         ));
         let mut binders = Binders::new(&predicate.slot_names, &scope);

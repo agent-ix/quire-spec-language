@@ -162,8 +162,8 @@ impl Lowering<'_> {
         self.record(over_type.clone(), OccurrenceRole::Type, over_at);
         let scope = [Binder {
             slot: 0,
-            parameter: over.clone(),
-            semantic_type: over_type.clone(),
+            parameter: over.clone().into(),
+            semantic_type: over_type.clone().into(),
         }];
 
         // FR-337 "`on each` activation at S4" and "Captures at S4": the
@@ -180,8 +180,8 @@ impl Lowering<'_> {
                 parameters.push(trigger.clone());
                 scope.push(Binder {
                     slot: 1,
-                    parameter: trigger.clone(),
-                    semantic_type: over_type,
+                    parameter: trigger.clone().into(),
+                    semantic_type: over_type.into(),
                 });
                 Some(trigger)
             }
@@ -206,8 +206,8 @@ impl Lowering<'_> {
             parameters.push(capture.clone());
             scope.push(Binder {
                 slot: level,
-                parameter: capture,
-                semantic_type: declared,
+                parameter: capture.into(),
+                semantic_type: declared.into(),
             });
         }
 

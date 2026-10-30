@@ -35,8 +35,8 @@ use std::ops::ControlFlow;
 use qsl_foundation::IdentityLimits;
 use quire_exact::{
     ArithmeticOperator, Charge, ChargePoint, CollectionKind, CollectionType, EffectiveId,
-    Identifier, Integer, Meter, NodeKey, OrderingOperator, Origin as OccurrenceOrigin, Presence,
-    TextProfile, Value, ValueType,
+    Identifier, Integer, Meter, NodeKey, OrderingOperator, Origin as OccurrenceOrigin, PathSegment,
+    Presence, TextProfile, Value, ValueType,
 };
 
 use super::check::{EnumBinding, Scope};
@@ -52,16 +52,15 @@ use super::node_key::{
     TupleMember, TupleTerm,
 };
 use super::node_key::{
-    LawRole, LeafSegment, LiteralValue, NodeInput, NodeKeyRefusal, NodeTag, Operation,
-    OperationLaw, OperationLeaf, OperationMode, Operator, Owner, PackageRef, SourceOwner,
-    WireNodeRef, UNION_VALUE_FORM,
+    LawRole, LeafSegment, LiteralValue, NodeKeyRefusal, NodeTag, Operation, OperationLaw,
+    OperationLeaf, OperationMode, Operator, Owner, SourceOwner,
 };
+use super::node_key::{NodeRef, PlaceholderId};
 use super::refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, KeyFault, StageLimitCause,
 };
 use crate::value::definition::{DefinitionReference, DefinitionRole};
 use crate::value::member::Member;
-use quire_checked::key::DeclarationKey;
 use quire_semantic_value::declaration::{
     CompositeShape, EqualityOperator, FieldDeclaration, TypeEnvironment, UnionMemberDeclaration,
 };
@@ -195,7 +194,11 @@ impl SemanticNode {
 
     /// The node's semantic type, or `None` for a self-typed node.
     pub fn semantic_type(&self) -> Option<NodeKey> {
-        self.content.semantic_type.clone()
+        self.content
+            .semantic_type
+            .as_ref()
+            .and_then(NodeRef::admitted)
+            .cloned()
     }
 
     /// The node's `declaration.qualified_name`, when it declares.
@@ -253,7 +256,7 @@ impl SemanticNode {
             .members
             .iter()
             .map(|member| match member {
-                GroupMember::Leaf(LeafTerm::Reference { target }) => Some(target.0.clone()),
+                GroupMember::Leaf(LeafTerm::Reference { target }) => target.admitted().cloned(),
                 GroupMember::Leaf(_) | GroupMember::Binding(_) => None,
             })
             .collect()
@@ -372,8 +375,8 @@ pub(crate) struct FunctionInput<'a> {
 #[derive(Clone)]
 struct Binder {
     slot: Slot,
-    parameter: NodeKey,
-    semantic_type: NodeKey,
+    parameter: NodeRef,
+    semantic_type: NodeRef,
 }
 
 /// The binders in scope at one point of a function body.
@@ -434,27 +437,12 @@ impl<'s> Binders<'s> {
 struct NodeContent {
     node_tag: NodeTag,
     semantic_form: &'static str,
-    semantic_type: Option<NodeKey>,
+    semantic_type: Option<NodeRef>,
     declaration: Option<Vec<Identifier>>,
     owner: Option<Owner>,
     /// QSpec FR-464's `owner_model`: set for a `protocol_clause` node alone.
     owner_model: Option<NodeKey>,
     body: BodyTerm,
-}
-
-impl NodeContent {
-    /// The content as [`node_key`]'s input.
-    fn input(&self) -> NodeInput<'_> {
-        NodeInput {
-            owner: self.owner.as_ref(),
-            node_tag: self.node_tag,
-            semantic_form: self.semantic_form,
-            semantic_type: self.semantic_type.clone(),
-            declaration: self.declaration.as_deref(),
-            body: &self.body,
-            owner_model: self.owner_model.clone(),
-        }
-    }
 }
 
 /// A node whose key waits on its recursion group (FR-092 "Recursion
@@ -505,6 +493,13 @@ pub(crate) struct Lowered {
 /// group by FR-092's group order.
 pub(crate) struct Lowering<'a> {
     scope: &'a Scope,
+    /// The admitted package name every structural node key is minted under.
+    package_name: String,
+    /// The admitted node of each distinct content: equal content is one node.
+    node_index: HashMap<NodeContent, NodeKey>,
+    /// The next unused ordinal of each structural path, keyed by the
+    /// path's ordinal-0 identity.
+    ordinals: BTreeMap<NodeKey, u64>,
     /// The checked unit's own source: the owner of every node it declares.
     owner: SourceOwner,
     models: &'a [AdmittedModel],
@@ -517,10 +512,10 @@ pub(crate) struct Lowering<'a> {
     protocol_profile: Option<&'a DefinitionReference>,
     graph: SemanticGraph,
     occurrences: &'a mut OccurrenceMap<Location>,
-    /// Each lowered function's key, by function index.
-    functions: Vec<Option<NodeKey>>,
-    /// Each declared composite's node key, by its declaration key.
-    composites: BTreeMap<NodeKey, NodeKey>,
+    /// Each lowered function's node, by function index.
+    functions: Vec<Option<NodeRef>>,
+    /// Each declared composite's node, by its declaration key.
+    composites: BTreeMap<NodeKey, NodeRef>,
     /// The model record value type or event type each model-owned composite
     /// declaration key stands for (FR-359 item 9), built on first use.
     /// The `functions` slots and `composites` entries written since the
@@ -533,7 +528,7 @@ pub(crate) struct Lowering<'a> {
     composites_in_progress: Vec<NodeKey>,
     /// The placeholder naming each composite in progress that reached
     /// itself.
-    composite_placeholders: BTreeMap<NodeKey, NodeKey>,
+    composite_placeholders: BTreeMap<NodeKey, NodeRef>,
     /// Whether a recursive function group is being lowered.
     functions_open: bool,
     /// The `clock_place` template node of each clock place of the unit's
@@ -541,17 +536,17 @@ pub(crate) struct Lowering<'a> {
     /// "Presence").
     timed_places: Vec<timed_clause::TimedPlace>,
     /// Each placeholder, and the draft it became once built.
-    placeholders: BTreeMap<NodeKey, Option<NodeKey>>,
+    placeholders: BTreeMap<PlaceholderId, Option<NodeRef>>,
     /// How many placeholders this lowering has made.
     placeholder_count: u64,
-    /// The drafts, by the digest of their content.
-    drafts: BTreeMap<NodeKey, Draft>,
+    /// The drafts, by their local handle.
+    drafts: BTreeMap<PlaceholderId, Draft>,
     /// Occurrences of drafts, recorded once the drafts are keyed.
-    draft_occurrences: Vec<(NodeKey, OccurrenceRole, Location)>,
+    draft_occurrences: Vec<(NodeRef, OccurrenceRole, Location)>,
     /// Each binder's parameter node, by its [`BinderSite`].
     binders: BTreeMap<BinderSite, NodeKey>,
     /// Binders whose parameter node is a draft, recorded once it is keyed.
-    draft_binders: Vec<(BinderSite, NodeKey)>,
+    draft_binders: Vec<(BinderSite, NodeRef)>,
     /// Authored function parameters, located by the same binder site whose
     /// node is resolved when a recursion group settles.
     parameter_spans: BTreeMap<BinderSite, qsl_foundation::Span>,
@@ -608,6 +603,38 @@ pub(crate) struct Lowering<'a> {
         BTreeMap<String, Vec<crate::check::protocol_clause::CheckedProtocolExpressionBindings>>,
     /// The protocol whose S4 bodies are being lowered, when any.
     active_protocol: Option<String>,
+}
+
+/// The admitted key of `node`: a node that names no pending handle is
+/// admitted when built, so a pending one here is an internal fault.
+pub(crate) fn require_admitted(
+    node: NodeRef,
+    location: &Location,
+) -> Result<NodeKey, CheckRefusal> {
+    match node {
+        NodeRef::Admitted(key) => Ok(key),
+        NodeRef::Pending(_) => Err(fault(location, KeyFault::UnresolvedDraft)),
+    }
+}
+
+/// The declared structural key of a step-relation node, which is built
+/// outside a [`Lowering`]: its one declared name under the package, at
+/// ordinal 0 (a unit declares one step relation per name).
+pub(crate) fn admitted_step_relation_key(
+    package_name: &str,
+    content: &NodeContent,
+    location: &Location,
+) -> Result<NodeKey, CheckRefusal> {
+    let names = content
+        .declaration
+        .as_ref()
+        .ok_or_else(|| fault(location, KeyFault::InvalidGroup))?;
+    super::declared_node_key(
+        package_name.to_owned(),
+        names.iter().map(|name| name.as_str().to_owned()).collect(),
+        0,
+    )
+    .map_err(|refusal| fault(location, KeyFault::ModelRootKey(refusal.to_string())))
 }
 
 fn refuse(location: &Location, cause: CheckCause) -> CheckRefusal {
@@ -668,7 +695,7 @@ enum TypeStep<'v> {
     /// Build the node of this type.
     Descend(&'v ValueType),
     /// This node is built: hand its key to the frame waiting for it.
-    Built(NodeKey),
+    Built(NodeRef),
 }
 
 /// A type node waiting for the node of a type inside it.
@@ -695,19 +722,19 @@ struct CompositeFrame<'v> {
     awaiting: Option<&'v FieldDeclaration>,
     /// The payload type nodes built so far of the union member being built,
     /// in position order.
-    payload: Vec<NodeKey>,
+    payload: Vec<NodeRef>,
 }
 
 impl CompositeFrame<'_> {
     /// Append the member whose type node is `key`: a record field's
     /// binding (an optional one's through `optional`), a tuple position's
     /// reference, or the next payload type of the union member being built.
-    fn accept(&mut self, key: NodeKey) {
+    fn accept(&mut self, key: NodeRef) {
         if matches!(self.shape, CompositeShape::Union(_)) {
             self.payload.push(key);
             return;
         }
-        let reference = LeafTerm::reference(key);
+        let reference = LeafTerm::reference_node(key);
         self.members.push(match self.awaiting.take() {
             None => MemberTerm::Leaf(reference),
             Some(field) => MemberTerm::binding(
@@ -724,7 +751,7 @@ impl CompositeFrame<'_> {
 /// How a declared composite's node starts.
 enum OpenComposite<'v> {
     /// Its node, or the placeholder naming it while it is being built.
-    Built(NodeKey),
+    Built(NodeRef),
     /// Its frame: its members are still to build.
     Open(CompositeFrame<'v>),
 }
@@ -802,16 +829,16 @@ enum Keyed {
     Application(Operator, Operation),
     /// A `value` node of this form, typed at this type node, whose body
     /// aggregates the operands.
-    Value(&'static str, NodeKey),
+    Value(&'static str, NodeRef),
     /// A union construction (QSpec FR-440 "Union value node"): the
     /// `union_value` node typed at the union's type node, whose body is one
     /// binding of the active member's name over the payload terms.
     UnionValue {
-        semantic_type: NodeKey,
+        semantic_type: NodeRef,
         member: String,
     },
     /// A present option's payload binding, typed at its option node.
-    OptionValue(NodeKey),
+    OptionValue(NodeRef),
 }
 
 /// A node over its operands' terms.
@@ -851,7 +878,7 @@ struct BinderFrame<'n> {
 /// A record value's members, one binding per declared field.
 struct RecordFrame<'n> {
     node: CheckedNode<'n>,
-    semantic_type: NodeKey,
+    semantic_type: NodeRef,
     fields: Vec<FieldDeclaration>,
     slots: &'n [RecordSlot],
     members: Vec<MemberTerm>,
@@ -876,7 +903,7 @@ struct CaseFrame<'n> {
 /// An arm whose binders are in scope and whose body is being lowered.
 struct OpenArm {
     /// The parameter node of each binder, in payload position order.
-    parameters: Vec<NodeKey>,
+    parameters: Vec<NodeRef>,
 }
 
 /// `fold`/`reduce` over `source`.
@@ -1499,8 +1526,12 @@ impl<'a> Lowering<'a> {
         occurrences: &'a mut OccurrenceMap<Location>,
         meter: &'a mut Meter,
         identity: IdentityLimits,
+        package_name: &str,
     ) -> Self {
         Self {
+            package_name: package_name.to_owned(),
+            node_index: HashMap::new(),
+            ordinals: BTreeMap::new(),
             scope,
             owner: owner.clone(),
             models,
@@ -1593,21 +1624,34 @@ impl<'a> Lowering<'a> {
         Lowered {
             graph: self.graph,
             correspondence: self.correspondence,
-            functions: self.functions,
+            functions: self
+                .functions
+                .into_iter()
+                .map(|node| node.and_then(|node| node.admitted().cloned()))
+                .collect(),
             binders: self.binders,
             parameter_spans,
             population_nodes: self.population_nodes,
-            composites: self.composites,
+            composites: self
+                .composites
+                .into_iter()
+                .filter_map(|(declaration, node)| {
+                    node.admitted().cloned().map(|node| (declaration, node))
+                })
+                .collect(),
             protocol_members: self.protocol_members,
         }
     }
 
     /// Record an occurrence of `key`: a draft's waits until it is keyed.
-    fn record(&mut self, key: NodeKey, role: OccurrenceRole, location: Location) {
-        if self.pending(key.clone()) {
-            self.draft_occurrences.push((key, role, location));
-        } else {
-            self.occurrences.record(key, role, location);
+    fn record(&mut self, key: impl Into<NodeRef>, role: OccurrenceRole, location: Location) {
+        match key.into() {
+            NodeRef::Admitted(key) => {
+                self.occurrences.record(key, role, location);
+            }
+            pending @ NodeRef::Pending(_) => {
+                self.draft_occurrences.push((pending, role, location));
+            }
         }
     }
 
@@ -1629,16 +1673,16 @@ impl<'a> Lowering<'a> {
         &mut self,
         declaring: EffectiveId,
         name: &str,
-        frame: NodeKey,
+        frame: impl Into<NodeRef>,
         location: &Location,
     ) -> Result<OccurrenceOrigin, CheckRefusal> {
         let key = (declaring, name.to_owned());
         if let Some(origin) = self.frame_origins.get(&key) {
             return Ok(origin.clone());
         }
-        if self.pending(frame.clone()) {
+        let NodeRef::Admitted(frame) = frame.into() else {
             return Err(fault(location, KeyFault::UnresolvedDraft));
-        }
+        };
         let origin = self
             .occurrences
             .record(frame, OccurrenceRole::Generated, location.clone());
@@ -1648,35 +1692,36 @@ impl<'a> Lowering<'a> {
 
     /// Record `key` as the parameter node of the binder at `site`: a
     /// draft's waits until it is keyed.
-    fn record_binder(&mut self, site: BinderSite, key: NodeKey) {
-        if self.pending(key.clone()) {
-            self.draft_binders.push((site, key));
-        } else {
-            self.binders.insert(site, key);
+    fn record_binder(&mut self, site: BinderSite, key: impl Into<NodeRef>) {
+        match key.into() {
+            NodeRef::Admitted(key) => {
+                self.binders.insert(site, key);
+            }
+            pending @ NodeRef::Pending(_) => self.draft_binders.push((site, pending)),
         }
     }
 
-    /// Whether `key` names a placeholder or a draft.
-    fn pending(&self, key: NodeKey) -> bool {
-        self.placeholders.contains_key(&key) || self.drafts.contains_key(&key)
+    /// Whether `node` is a local handle of a placeholder or a draft.
+    fn pending(node: &NodeRef) -> bool {
+        matches!(node, NodeRef::Pending(_))
     }
 
     /// A new placeholder.
-    fn placeholder(&mut self) -> NodeKey {
-        let key = self.fresh_handle();
-        self.placeholders.insert(key.clone(), None);
-        key
+    fn placeholder(&mut self) -> NodeRef {
+        let handle = self.fresh_handle();
+        self.placeholders.insert(handle, None);
+        NodeRef::Pending(handle)
     }
 
-    /// A fresh handle that names no admitted node.
-    fn fresh_handle(&mut self) -> NodeKey {
+    /// A fresh local handle that names no admitted node.
+    fn fresh_handle(&mut self) -> PlaceholderId {
+        let handle = PlaceholderId(self.placeholder_count as usize);
         self.placeholder_count += 1;
-        // BLOCKED-BY QSL-1282 (owner: planner titan:QSL:plan): a lowering-local pending handle (C's NodeRef::Pending(PlaceholderId)); no NodeKey is minted for a non-admitted placeholder
-        self.pending_handle(self.placeholder_count)
+        handle
     }
 
-    /// Key an unowned or source-declared node and add it to the graph: a
-    /// node with a `declaration` carries the unit's `SourceOwner`.
+    /// [`Self::insert_ref`] for a node that names no pending handle: the
+    /// admitted key.
     fn insert(
         &mut self,
         location: &Location,
@@ -1686,6 +1731,49 @@ impl<'a> Lowering<'a> {
         declaration: Option<Vec<Identifier>>,
         body: BodyTerm,
     ) -> Result<NodeKey, CheckRefusal> {
+        let node = self.insert_ref(
+            location,
+            node_tag,
+            semantic_form,
+            semantic_type.map(NodeRef::from),
+            declaration,
+            body,
+        )?;
+        require_admitted(node, location)
+    }
+
+    /// [`Self::insert_owned_ref`] for a node that names no pending handle.
+    fn insert_owned(
+        &mut self,
+        location: &Location,
+        node_tag: NodeTag,
+        semantic_form: &'static str,
+        semantic_type: Option<NodeKey>,
+        owner: Owner,
+        body: BodyTerm,
+    ) -> Result<NodeKey, CheckRefusal> {
+        let node = self.insert_owned_ref(
+            location,
+            node_tag,
+            semantic_form,
+            semantic_type.map(NodeRef::from),
+            owner,
+            body,
+        )?;
+        require_admitted(node, location)
+    }
+
+    /// Key an unowned or source-declared node and add it to the graph: a
+    /// node with a `declaration` carries the unit's `SourceOwner`.
+    fn insert_ref(
+        &mut self,
+        location: &Location,
+        node_tag: NodeTag,
+        semantic_form: &'static str,
+        semantic_type: Option<NodeRef>,
+        declaration: Option<Vec<Identifier>>,
+        body: BodyTerm,
+    ) -> Result<NodeRef, CheckRefusal> {
         let owner = declaration
             .as_ref()
             .map(|_| Owner::Source(self.owner.clone()));
@@ -1704,15 +1792,15 @@ impl<'a> Lowering<'a> {
     }
 
     /// Key a model-owned node (FR-094): `owner`, no `declaration`.
-    fn insert_owned(
+    fn insert_owned_ref(
         &mut self,
         location: &Location,
         node_tag: NodeTag,
         semantic_form: &'static str,
-        semantic_type: Option<NodeKey>,
+        semantic_type: Option<NodeRef>,
         owner: Owner,
         body: BodyTerm,
-    ) -> Result<NodeKey, CheckRefusal> {
+    ) -> Result<NodeRef, CheckRefusal> {
         self.insert_node(
             location,
             NodeContent {
@@ -1727,33 +1815,30 @@ impl<'a> Lowering<'a> {
         )
     }
 
-    /// Add a node to the graph under its admitted structural key.
+    /// Add a node to the graph under its admitted structural key. A node
+    /// naming a pending handle is a draft until [`Self::settle`] admits it.
     fn insert_node(
         &mut self,
         location: &Location,
         content: NodeContent,
-    ) -> Result<NodeKey, CheckRefusal> {
+    ) -> Result<NodeRef, CheckRefusal> {
         self.charge(1, location)?;
-        let mut names_pending = content
-            .semantic_type
-            .clone()
-            .is_some_and(|named| self.pending(named));
+        let mut names_pending = content.semantic_type.as_ref().is_some_and(Self::pending);
         content
             .body
-            .for_each_key(&mut |named| names_pending |= self.pending(named));
+            .for_each_ref(&mut |named| names_pending |= Self::pending(named));
         if names_pending {
-            // Keyed by `settle`; until then a local handle names the draft.
+            // Admitted by `settle`; until then a local handle names the draft.
             let handle = self.fresh_handle();
             self.drafts.insert(
-                handle.clone(),
+                handle,
                 Draft {
                     location: location.clone(),
                     content,
                 },
             );
-            return Ok(handle);
+            return Ok(NodeRef::Pending(handle));
         }
-        // BLOCKED-BY QSL-1282 (owner: planner titan:QSL:plan): the admitted NodeKey (package, path, ordinal) for this node comes from C's node_key API; nodes are never identified by hashing content
         let key = self.admitted_node_key(location, &content)?;
         if let btree_map::Entry::Vacant(slot) = self.graph.nodes.entry(key.clone()) {
             slot.insert(SemanticNode {
@@ -1762,7 +1847,140 @@ impl<'a> Lowering<'a> {
                 content,
             });
         }
+        Ok(NodeRef::Admitted(key))
+    }
+
+    /// [`Self::insert_node`] for content that names no pending handle: the
+    /// admitted key.
+    pub(super) fn insert_content_key(
+        &mut self,
+        location: &Location,
+        content: NodeContent,
+    ) -> Result<NodeKey, CheckRefusal> {
+        let node = self.insert_node(location, content)?;
+        require_admitted(node, location)
+    }
+
+    /// The structural key of an unpended `content`: equal content is one
+    /// node; a declared node is keyed by its declaration's path, any other
+    /// by its closed tag, semantic form and ordered semantic operands.
+    /// Repeats of one path take the next unused ordinal.
+    fn admitted_node_key(
+        &mut self,
+        location: &Location,
+        content: &NodeContent,
+    ) -> Result<NodeKey, CheckRefusal> {
+        if let Some(key) = self.node_index.get(content) {
+            return Ok(key.clone());
+        }
+        let mut operands: Vec<PathSegment> = Vec::new();
+        if let Some(semantic_type) = &content.semantic_type {
+            let admitted = semantic_type
+                .admitted()
+                .ok_or_else(|| fault(location, KeyFault::UnresolvedDraft))?;
+            operands.push(PathSegment::Node(admitted.clone()));
+        }
+        if let Some(owner_model) = &content.owner_model {
+            operands.push(PathSegment::Node(owner_model.clone()));
+        }
+        content
+            .body
+            .for_each_key(&mut |named| operands.push(PathSegment::Node(named)))
+            .map_err(|refusal| preimage_refusal(location, refusal))?;
+        let package = self.package_name.clone();
+        let key = self.mint_key(location, |ordinal| match &content.declaration {
+            Some(names) => super::declared_node_key(
+                package.clone(),
+                names.iter().map(|name| name.as_str().to_owned()).collect(),
+                ordinal,
+            ),
+            None => super::derived_node_key(
+                &package,
+                content.node_tag,
+                content.semantic_form,
+                operands.clone(),
+                ordinal,
+            ),
+        })?;
+        self.node_index.insert(content.clone(), key.clone());
         Ok(key)
+    }
+
+    /// Mint the first unused key of one structural path, `build` forming the
+    /// key at an ordinal: 0 unless the same package and path repeat.
+    fn mint_key(
+        &mut self,
+        location: &Location,
+        build: impl Fn(u64) -> Result<NodeKey, quire_exact::InvalidNodeKey>,
+    ) -> Result<NodeKey, CheckRefusal> {
+        let invalid = |refusal: quire_exact::InvalidNodeKey| {
+            fault(location, KeyFault::ModelRootKey(refusal.to_string()))
+        };
+        let base = build(0).map_err(invalid)?;
+        let next = self.ordinals.entry(base.clone()).or_insert(0);
+        loop {
+            let ordinal = *next;
+            *next += 1;
+            let key = if ordinal == 0 {
+                base.clone()
+            } else {
+                build(ordinal).map_err(invalid)?
+            };
+            if !self.graph.nodes.contains_key(&key) {
+                return Ok(key);
+            }
+        }
+    }
+
+    /// The admitted keys of one recursion group's members, in member order.
+    /// A declared member is keyed by its declaration's path; any other
+    /// member by the group's anchor (its first declared member) and its
+    /// own tag, form and position. A group with no declared member has no
+    /// anchor, which is an internal fault.
+    fn admitted_group_keys(
+        &mut self,
+        members: &[&Draft],
+        location: &Location,
+    ) -> Result<Vec<NodeKey>, CheckRefusal> {
+        let package = self.package_name.clone();
+        let mut keys: Vec<Option<NodeKey>> = Vec::with_capacity(members.len());
+        for draft in members {
+            keys.push(match &draft.content.declaration {
+                Some(names) => Some(self.mint_key(&draft.location, |ordinal| {
+                    super::declared_node_key(
+                        package.clone(),
+                        names.iter().map(|name| name.as_str().to_owned()).collect(),
+                        ordinal,
+                    )
+                })?),
+                None => None,
+            });
+        }
+        let anchor = keys
+            .iter()
+            .flatten()
+            .next()
+            .cloned()
+            .ok_or_else(|| fault(location, KeyFault::InvalidGroup))?;
+        let mut admitted = Vec::with_capacity(members.len());
+        for (draft, key) in members.iter().zip(keys) {
+            admitted.push(match key {
+                Some(key) => key,
+                None => self.mint_key(&draft.location, |ordinal| {
+                    super::structural_node_key(
+                        &package,
+                        vec![
+                            PathSegment::Text("recursion_group".to_owned()),
+                            PathSegment::Node(anchor.clone()),
+                            PathSegment::Text(draft.content.node_tag.as_str().to_owned()),
+                            PathSegment::Text(draft.content.semantic_form.to_owned()),
+                        ],
+                        ordinal,
+                    )
+                })?,
+            });
+        }
+        Ok(admitted)
     }
 
     // ------------------------------------------------------------------
@@ -1771,14 +1989,15 @@ impl<'a> Lowering<'a> {
 
     /// A builtin `scalar_type` node: its own semantic type, empty body.
     fn scalar(&mut self, form: &'static str, location: &Location) -> Result<NodeKey, CheckRefusal> {
-        self.insert(
+        let node = self.insert_ref(
             location,
             NodeTag::ScalarType,
             form,
             None,
             None,
             BodyTerm::aggregate(Vec::new()),
-        )
+        )?;
+        require_admitted(node, location)
     }
 
     /// An integer literal typed at the builtin `Integer` node (T2).
@@ -1804,19 +2023,19 @@ impl<'a> Lowering<'a> {
     fn bounded(
         &mut self,
         form: &'static str,
-        base: NodeKey,
+        base: impl Into<NodeRef>,
         bindings: Vec<(&'static str, LeafTerm)>,
         location: &Location,
-    ) -> Result<NodeKey, CheckRefusal> {
+    ) -> Result<NodeRef, CheckRefusal> {
         let members = bindings
             .into_iter()
             .map(|(name, value)| MemberTerm::bound(name, value))
             .collect();
-        self.insert(
+        self.insert_ref(
             location,
             NodeTag::BoundedDomain,
             form,
-            Some(base),
+            Some(base.into()),
             None,
             BodyTerm::aggregate(members),
         )
@@ -1828,11 +2047,11 @@ impl<'a> Lowering<'a> {
     /// so a long composite chain costs heap, not stack. Nodes are built,
     /// charged and refused in the order a depth-first recursive build would
     /// reach them, so every key is the recursive build's key.
-    pub(crate) fn type_node<'v>(
+    pub(crate) fn type_ref<'v>(
         &mut self,
         value_type: &'v ValueType,
         location: &Location,
-    ) -> Result<NodeKey, CheckRefusal>
+    ) -> Result<NodeRef, CheckRefusal>
     where
         'a: 'v,
     {
@@ -1846,13 +2065,27 @@ impl<'a> Lowering<'a> {
         built
     }
 
-    /// [`Self::type_node`]'s loop: descend into a type, or hand a built
+    /// [`Self::type_node`] for a type that names no pending handle: the
+    /// admitted key.
+    pub(crate) fn type_node<'v>(
+        &mut self,
+        value_type: &'v ValueType,
+        location: &Location,
+    ) -> Result<NodeKey, CheckRefusal>
+    where
+        'a: 'v,
+    {
+        let node = self.type_ref(value_type, location)?;
+        require_admitted(node, location)
+    }
+
+    /// [`Self::type_ref`]'s loop: descend into a type, or hand a built
     /// node's key to the frame waiting for it.
     fn build_type_node<'v>(
         &mut self,
         value_type: &'v ValueType,
         location: &Location,
-    ) -> Result<NodeKey, CheckRefusal>
+    ) -> Result<NodeRef, CheckRefusal>
     where
         'a: 'v,
     {
@@ -1903,8 +2136,8 @@ impl<'a> Lowering<'a> {
                     OpenComposite::Open(composite) => self.advance(composite, location, frames),
                 };
             }
-            ValueType::Boolean => self.scalar("boolean", location),
-            ValueType::Integer => self.scalar("integer", location),
+            ValueType::Boolean => self.scalar("boolean", location).map(NodeRef::from),
+            ValueType::Integer => self.scalar("integer", location).map(NodeRef::from),
             ValueType::Int(interval) => {
                 let base = self.scalar("integer", location)?;
                 let min = self.integer_literal(interval.lower().clone(), location)?;
@@ -1991,11 +2224,12 @@ impl<'a> Lowering<'a> {
                 // declaration node, `value::enumeration`'s key.
                 let scope: &'a Scope = self.scope;
                 if let Some(binding) = scope.enum_binding_of(shape) {
-                    Ok(binding.declaration.key())
+                    Ok(NodeRef::from(binding.declaration.key()))
                 } else if let Some(variant) = scope.variant_type_of(shape) {
                     // FR-360 item 12: a model variant type is its
                     // `model`/`variant_type` node.
                     self.variant_type_nodes(variant, location)
+                        .map(NodeRef::from)
                 } else {
                     Err(refuse(
                         location,
@@ -2003,23 +2237,27 @@ impl<'a> Lowering<'a> {
                     ))
                 }
             }
-            ValueType::Quantity(unit) => self.quantity_type(unit.clone(), location),
+            ValueType::Quantity(unit) => self
+                .quantity_type(unit.clone(), location)
+                .map(NodeRef::from),
             // No checked type node carries a map or a bounded quantity yet:
             // a typed refusal, never a guessed node.
             ValueType::Map(_) | ValueType::BoundedQuantity(_) => Err(refuse(
                 location,
                 CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch),
             )),
-            ValueType::Reference(target) => self.reference_type(target.clone(), location),
+            ValueType::Reference(target) => self
+                .reference_type(target.clone(), location)
+                .map(NodeRef::from),
             // FR-094: a `Population<T>[N]` node is built from its binding's
             // resolved type form ([`Self::binder_type`]); the checked type
             // alone carries no `T`.
             ValueType::Population(_) => Err(fault(location, KeyFault::UntargetedPopulation)),
             // FR-056: the native String, UUID and Timestamp each a distinct
             // bare scalar node, as a record or event field carries them.
-            ValueType::String => self.scalar("string", location),
-            ValueType::Uuid => self.scalar("uuid", location),
-            ValueType::Timestamp => self.scalar("timestamp", location),
+            ValueType::String => self.scalar("string", location).map(NodeRef::from),
+            ValueType::Uuid => self.scalar("uuid", location).map(NodeRef::from),
+            ValueType::Timestamp => self.scalar("timestamp", location).map(NodeRef::from),
         }?;
         Ok(TypeStep::Built(key))
     }
@@ -2027,16 +2265,16 @@ impl<'a> Lowering<'a> {
     /// The `option` node over the payload node `payload`.
     fn option_type(
         &mut self,
-        payload: NodeKey,
+        payload: NodeRef,
         location: &Location,
-    ) -> Result<NodeKey, CheckRefusal> {
-        self.insert(
+    ) -> Result<NodeRef, CheckRefusal> {
+        self.insert_ref(
             location,
             NodeTag::CompositeType,
             "option",
             None,
             None,
-            BodyTerm::aggregate(vec![MemberTerm::reference(payload)]),
+            BodyTerm::aggregate(vec![MemberTerm::reference_node(payload)]),
         )
     }
 
@@ -2044,16 +2282,16 @@ impl<'a> Lowering<'a> {
     fn collection_type(
         &mut self,
         collection: &CollectionType,
-        element: NodeKey,
+        element: NodeRef,
         location: &Location,
-    ) -> Result<NodeKey, CheckRefusal> {
-        let base = self.insert(
+    ) -> Result<NodeRef, CheckRefusal> {
+        let base = self.insert_ref(
             location,
             NodeTag::CompositeType,
             collection_form(collection.kind()),
             None,
             None,
-            BodyTerm::aggregate(vec![MemberTerm::reference(element)]),
+            BodyTerm::aggregate(vec![MemberTerm::reference_node(element)]),
         )?;
         // An unbounded `K<T>` is its composite node alone: it has no
         // `collection_bounds` domain (ADR-014 N-3), which is the form IR's
@@ -2106,6 +2344,7 @@ impl<'a> Lowering<'a> {
                 OccurrenceRole::Generated,
                 type_declaration(&alias),
             );
+            let key = NodeRef::Admitted(key);
             self.composites.insert(declaration, key.clone());
             return Ok(OpenComposite::Built(key));
         }
@@ -2208,7 +2447,7 @@ impl<'a> Lowering<'a> {
                     let payload = std::mem::take(&mut composite.payload);
                     composite.members.push(MemberTerm::binding(
                         member.identifier(),
-                        BindingValue::Group(GroupTerm::references(payload)),
+                        BindingValue::Group(GroupTerm::references_nodes(payload)),
                     ));
                 }
             }
@@ -2221,7 +2460,7 @@ impl<'a> Lowering<'a> {
         &mut self,
         composite: CompositeFrame<'_>,
         location: &Location,
-    ) -> Result<NodeKey, CheckRefusal> {
+    ) -> Result<NodeRef, CheckRefusal> {
         let CompositeFrame {
             declaration,
             name,
@@ -2236,7 +2475,7 @@ impl<'a> Lowering<'a> {
             CompositeShape::Tuple(_) => "tuple",
             CompositeShape::Union(_) => "union",
         };
-        let key = self.insert(
+        let key = self.insert_ref(
             location,
             NodeTag::CompositeType,
             form,
@@ -2247,7 +2486,9 @@ impl<'a> Lowering<'a> {
         // FR-322: a node carrying `declaration` has a `declaration`
         // occurrence.
         self.record(key.clone(), OccurrenceRole::Declaration, site);
-        if let Some(placeholder) = self.composite_placeholders.remove(&declaration) {
+        if let Some(NodeRef::Pending(placeholder)) =
+            self.composite_placeholders.remove(&declaration)
+        {
             self.placeholders.insert(placeholder, Some(key.clone()));
         }
         self.composites.insert(declaration.clone(), key.clone());
@@ -2265,14 +2506,16 @@ impl<'a> Lowering<'a> {
         &mut self,
         declaration: NodeKey,
         location: &Location,
-    ) -> Result<NodeKey, CheckRefusal> {
-        self.type_node(&ValueType::Composite(declaration), location)
+    ) -> Result<NodeRef, CheckRefusal> {
+        self.type_ref(&ValueType::Composite(declaration), location)
     }
 
     /// The node of the declared composite `declaration` (FR-092-AC-12): its
     /// checked type node's id.
     pub(crate) fn composite_node(&mut self, declaration: NodeKey) -> Result<NodeKey, CheckRefusal> {
-        self.composite_type_node(declaration, &generated_location())
+        let location = generated_location();
+        let node = self.composite_type_node(declaration, &location)?;
+        require_admitted(node, &location)
     }
 
     /// Build the admitted enum `binding`'s declaration node and one node
@@ -2336,7 +2579,7 @@ impl<'a> Lowering<'a> {
                 owner_model: None,
                 node_tag: NodeTag::Value,
                 semantic_form: "enum_value",
-                semantic_type: Some(declaration.clone()),
+                semantic_type: Some(declaration.clone().into()),
                 declaration: None,
                 owner: None,
                 body: BodyTerm::literal(
@@ -2486,22 +2729,32 @@ impl<'a> Lowering<'a> {
 
     /// The type node of a binder of `value_type`: for a `Population<T>[N]`
     /// binding, the FR-094 node over `target`, its resolved `T`.
+    fn binder_ref(
+        &mut self,
+        value_type: &ValueType,
+        target: Option<EffectiveId>,
+        location: &Location,
+    ) -> Result<NodeRef, CheckRefusal> {
+        match (value_type, target) {
+            (ValueType::Population(maximum), Some(target)) => self
+                .population_type(target, *maximum, location)
+                .map(NodeRef::from),
+            _ => self.type_ref(value_type, location),
+        }
+    }
+
+    /// [`Self::binder_ref`] for a type that names no pending handle.
     fn binder_type(
         &mut self,
         value_type: &ValueType,
         target: Option<EffectiveId>,
         location: &Location,
     ) -> Result<NodeKey, CheckRefusal> {
-        match (value_type, target) {
-            (ValueType::Population(maximum), Some(target)) => {
-                self.population_type(target, *maximum, location)
-            }
-            _ => self.type_node(value_type, location),
-        }
+        let node = self.binder_ref(value_type, target, location)?;
+        require_admitted(node, location)
     }
 
-    /// A binder's parameter node: `value`/`parameter`, typed at its binder's
-    /// type node `semantic_type`, its body binding its name and level.
+    /// [`Self::parameter_ref`] over an admitted type node: the admitted key.
     fn parameter(
         &mut self,
         name: &str,
@@ -2509,9 +2762,22 @@ impl<'a> Lowering<'a> {
         semantic_type: NodeKey,
         location: &Location,
     ) -> Result<NodeKey, CheckRefusal> {
+        let node = self.parameter_ref(name, level, semantic_type.into(), location)?;
+        require_admitted(node, location)
+    }
+
+    /// A binder's parameter node: `value`/`parameter`, typed at its binder's
+    /// type node `semantic_type`, its body binding its name and level.
+    fn parameter_ref(
+        &mut self,
+        name: &str,
+        level: usize,
+        semantic_type: NodeRef,
+        location: &Location,
+    ) -> Result<NodeRef, CheckRefusal> {
         let name_literal = self.text_literal(name, location)?;
         let level_literal = self.integer_literal(Integer::from(level), location)?;
-        let key = self.insert(
+        let key = self.insert_ref(
             location,
             NodeTag::Value,
             "parameter",
@@ -2529,8 +2795,8 @@ impl<'a> Lowering<'a> {
                 .push(crate::check::protocol_clause::CheckedProtocolBinderKey {
                     name: name.to_owned(),
                     level,
-                    node: key.clone(),
-                    semantic_type,
+                    node: require_admitted(key.clone(), location)?,
+                    semantic_type: require_admitted(semantic_type, location)?,
                 });
         }
         self.record(key.clone(), OccurrenceRole::Expression, location.clone());
@@ -2555,14 +2821,16 @@ impl<'a> Lowering<'a> {
                     *slot = Some(placeholder.clone());
                     self.unsettled_functions.push(*index);
                 }
-                placeholders.push(placeholder);
+                if let NodeRef::Pending(handle) = placeholder {
+                    placeholders.push(handle);
+                }
             }
         }
         for (position, (index, function)) in group.members.iter().zip(functions).enumerate() {
             match self.function(*index, function) {
                 Ok(key) => {
                     if let Some(placeholder) = placeholders.get(position) {
-                        self.placeholders.insert(placeholder.clone(), Some(key));
+                        self.placeholders.insert(*placeholder, Some(key));
                     }
                 }
                 Err(refusal) => refusals.push(refusal),
@@ -2599,13 +2867,18 @@ impl<'a> Lowering<'a> {
                 None => return Ok(()),
             }
         }
-        let alias = |key: NodeKey| aliases.get(&key).cloned().unwrap_or(key);
-        let handles: Vec<NodeKey> = drafts.keys().cloned().collect();
+        let alias = |node: &NodeRef| match node {
+            NodeRef::Pending(handle) => {
+                aliases.get(handle).cloned().unwrap_or_else(|| node.clone())
+            }
+            NodeRef::Admitted(_) => node.clone(),
+        };
+        let handles: Vec<PlaceholderId> = drafts.keys().copied().collect();
         let drafts: Vec<Draft> = drafts.into_values().collect();
-        let position: HashMap<NodeKey, usize> = handles
+        let position: HashMap<PlaceholderId, usize> = handles
             .iter()
             .enumerate()
-            .map(|(position, handle)| (handle.clone(), position))
+            .map(|(position, handle)| (*handle, position))
             .collect();
         let mut graph_refusal = None;
         let edges: Vec<Vec<usize>> = drafts
@@ -2617,7 +2890,7 @@ impl<'a> Lowering<'a> {
                     return Vec::new();
                 }
                 let mut named = Vec::new();
-                let mut visit = |key: NodeKey| {
+                let mut visit = |node: &NodeRef| {
                     if graph_refusal.is_some() {
                         return;
                     }
@@ -2625,21 +2898,23 @@ impl<'a> Lowering<'a> {
                         graph_refusal = Some(preimage_refusal(&drafts[at].location, refusal));
                         return;
                     }
-                    if let Some(target) = position.get(&alias(key)) {
-                        named.push(*target);
+                    if let NodeRef::Pending(handle) = alias(node) {
+                        if let Some(target) = position.get(&handle) {
+                            named.push(*target);
+                        }
                     }
                 };
                 if let Some(ref semantic_type) = draft.content.semantic_type {
-                    visit(semantic_type.clone());
+                    visit(semantic_type);
                 }
-                draft.content.body.for_each_key(&mut visit);
+                draft.content.body.for_each_ref(&mut visit);
                 named
             })
             .collect();
         if let Some(refusal) = graph_refusal {
             return Err(refusal);
         }
-        let mut resolved: HashMap<NodeKey, NodeKey> = HashMap::new();
+        let mut resolved: HashMap<PlaceholderId, NodeKey> = HashMap::new();
         // A name of a draft that is keyed nowhere: dependency order keys
         // every draft outside a component before the component.
         let unresolved = |location: &Location| fault(location, KeyFault::UnresolvedDraft);
@@ -2648,33 +2923,43 @@ impl<'a> Lowering<'a> {
                 .map_err(|refusal| preimage_refusal(&drafts[node].location, refusal))
         })?;
         for component in components {
-            let members: Vec<NodeKey> = component.iter().map(|at| handles[*at].clone()).collect();
-            let member_set: HashSet<NodeKey> = members.iter().cloned().collect();
+            let members: Vec<PlaceholderId> = component.iter().map(|at| handles[*at]).collect();
+            let member_set: HashSet<PlaceholderId> = members.iter().copied().collect();
             // Names outside the component take their keys; names inside it
             // stay the members' handles; other keys are not drafts.
             let mut stranded = false;
-            let mut substitute = |key: NodeKey| {
-                let key = alias(key);
-                if member_set.contains(&key) {
-                    key
-                } else if let Some(resolved) = resolved.get(&key) {
-                    resolved.clone()
-                } else {
-                    stranded |= position.contains_key(&key);
-                    key
+            let mut substitute = |node: &NodeRef| {
+                let node = alias(node);
+                match node {
+                    NodeRef::Pending(handle) if member_set.contains(&handle) => node,
+                    NodeRef::Pending(handle) => {
+                        if let Some(resolved) = resolved.get(&handle) {
+                            NodeRef::Admitted(resolved.clone())
+                        } else {
+                            stranded |= position.contains_key(&handle);
+                            node
+                        }
+                    }
+                    NodeRef::Admitted(_) => node,
                 }
             };
-            let bodies: Vec<BodyTerm> = component
-                .iter()
-                .map(|at| drafts[*at].content.body.map_keys(&mut substitute))
-                .collect();
-            let types: Vec<Option<NodeKey>> = component
+            let mut bodies: Vec<BodyTerm> = Vec::with_capacity(component.len());
+            for at in &component {
+                let body = drafts[*at]
+                    .content
+                    .body
+                    .map_refs(&mut substitute)
+                    .map_err(|refusal| preimage_refusal(&drafts[*at].location, refusal))?;
+                bodies.push(body);
+            }
+            let types: Vec<Option<NodeRef>> = component
                 .iter()
                 .map(|at| {
-                    <std::option::Option<NodeKey> as Clone>::clone(
-                        &drafts[*at].content.semantic_type,
-                    )
-                    .map(&mut substitute)
+                    drafts[*at]
+                        .content
+                        .semantic_type
+                        .as_ref()
+                        .map(&mut substitute)
                 })
                 .collect();
             if stranded {
@@ -2707,38 +2992,40 @@ impl<'a> Lowering<'a> {
                         body,
                     },
                 )?;
-                resolved.insert(<NodeKey as Clone>::clone(&handles[*at]), key);
+                let NodeRef::Admitted(key) = key else {
+                    return Err(unresolved(&draft.location));
+                };
+                resolved.insert(handles[*at], key);
             }
         }
         // Every draft is keyed now: a key that still names one is a fault.
-        let resolve = |key: NodeKey| {
-            let key = alias(key);
-            match resolved.get(&key) {
-                Some(resolved) => Ok(resolved.clone()),
-                None if position.contains_key(&key) => Err(()),
-                None => Ok(key),
-            }
+        let resolve = |node: &NodeRef| match alias(node) {
+            NodeRef::Pending(handle) => match resolved.get(&handle) {
+                Some(resolved) => Ok(NodeRef::Admitted(resolved.clone())),
+                None => Err(()),
+            },
+            admitted @ NodeRef::Admitted(_) => Ok(admitted),
         };
         let root = generated_location();
         // A key an earlier settle resolved names no draft or placeholder of
         // this one, so only the keys written since then can change.
         for index in unsettled_functions {
-            if let Some(Some(key)) = self.functions.get_mut(index) {
-                *key = resolve(key.clone()).map_err(|()| unresolved(&root))?;
+            if let Some(Some(node)) = self.functions.get_mut(index) {
+                *node = resolve(node).map_err(|()| unresolved(&root))?;
             }
         }
         for declaration in unsettled_composites {
-            if let Some(key) = self.composites.get_mut(&declaration) {
-                *key = resolve(key.clone()).map_err(|()| unresolved(&root))?;
+            if let Some(node) = self.composites.get_mut(&declaration) {
+                *node = resolve(node).map_err(|()| unresolved(&root))?;
             }
         }
-        for (key, role, location) in occurrences {
-            let key = resolve(key).map_err(|()| unresolved(&location))?;
-            self.occurrences.record(key, role, location);
+        for (node, role, location) in occurrences {
+            let node = resolve(&node).map_err(|()| unresolved(&location))?;
+            self.record(node, role, location);
         }
-        for (site, key) in draft_binders {
-            let key = resolve(key).map_err(|()| unresolved(&site.binder))?;
-            self.binders.insert(site, key);
+        for (site, node) in draft_binders {
+            let node = resolve(&node).map_err(|()| unresolved(&site.binder))?;
+            self.record_binder(site, node);
         }
         Ok(())
     }
@@ -2751,10 +3038,10 @@ impl<'a> Lowering<'a> {
         &mut self,
         component: &[usize],
         drafts: &[Draft],
-        handles: &[NodeKey],
+        handles: &[PlaceholderId],
         bodies: &[BodyTerm],
-        types: &[Option<NodeKey>],
-        resolved: &mut HashMap<NodeKey, NodeKey>,
+        types: &[Option<NodeRef>],
+        resolved: &mut HashMap<PlaceholderId, NodeKey>,
     ) -> Result<(), CheckRefusal> {
         let members: Vec<&Draft> = component.iter().map(|at| &drafts[*at]).collect();
         let Some(first) = members.first() else {
@@ -2771,24 +3058,25 @@ impl<'a> Lowering<'a> {
                 }
             })
             .collect();
-        // BLOCKED-BY QSL-1282 (owner: planner titan:QSL:plan): each group member's admitted NodeKey comes from C's node_key API (group-derived: anchored to the sole declared member, else producer-chosen); no group digest or signature
-        let member_admitted: Vec<NodeKey> = self.admitted_group_keys(&members, handles)?;
-        let regions: Vec<Location> = members
-            .iter()
-            .filter(|draft| draft.content.declaration.is_some())
-            .map(|draft| draft.location.clone())
-            .collect();
-        let _ = regions;
-        let member_keys: BTreeMap<NodeKey, NodeKey> = handles
+        let member_admitted: Vec<NodeKey> = self.admitted_group_keys(&members, &first.location)?;
+        let member_keys: BTreeMap<PlaceholderId, NodeKey> = handles
             .iter()
             .zip(&member_admitted)
-            .map(|(handle, key)| (handle.clone(), key.clone()))
+            .map(|(handle, key)| (*handle, key.clone()))
             .collect();
-        let mut to_key = |key: NodeKey| member_keys.get(&key).cloned().unwrap_or(key);
+        let mut to_key = |node: &NodeRef| match node {
+            NodeRef::Pending(handle) => member_keys
+                .get(handle)
+                .cloned()
+                .map_or_else(|| node.clone(), NodeRef::Admitted),
+            NodeRef::Admitted(_) => node.clone(),
+        };
         for (at, draft) in members.iter().enumerate() {
             let key = member_admitted[at].clone();
-            let body = bodies[at].map_keys(&mut to_key);
-            let semantic_type = types[at].clone().map(&mut to_key);
+            let body = bodies[at]
+                .map_refs(&mut to_key)
+                .map_err(|refusal| preimage_refusal(&draft.location, refusal))?;
+            let semantic_type = types[at].as_ref().map(&mut to_key);
             self.graph
                 .nodes
                 .entry(key.clone())
@@ -2808,7 +3096,7 @@ impl<'a> Lowering<'a> {
                         body,
                     },
                 });
-            resolved.insert(handles[at].clone(), key);
+            resolved.insert(handles[at], key);
         }
         Ok(())
     }
@@ -2819,12 +3107,12 @@ impl<'a> Lowering<'a> {
         &mut self,
         index: usize,
         function: &FunctionInput<'_>,
-    ) -> Result<NodeKey, CheckRefusal> {
+    ) -> Result<NodeRef, CheckRefusal> {
         let mut parameters = Vec::with_capacity(function.parameters.len());
         for (level, (name, value_type)) in function.parameters.iter().enumerate() {
             let target = function.population_targets.get(level).cloned().flatten();
-            let type_key = self.binder_type(value_type, target, function.location)?;
-            let key = self.parameter(name, level, type_key.clone(), function.location)?;
+            let type_key = self.binder_ref(value_type, target, function.location)?;
+            let key = self.parameter_ref(name, level, type_key.clone(), function.location)?;
             if let Some(span) = function.parameter_spans.and_then(|spans| spans.get(level)) {
                 self.parameter_spans.insert(
                     BinderSite {
@@ -2852,7 +3140,7 @@ impl<'a> Lowering<'a> {
                 semantic_type: type_key,
             });
         }
-        let result = self.type_node(function.result, function.location)?;
+        let result = self.type_ref(function.result, function.location)?;
         self.record(
             result.clone(),
             OccurrenceRole::Type,
@@ -2860,7 +3148,7 @@ impl<'a> Lowering<'a> {
         );
         let mut members = vec![MemberTerm::binding(
             FUNCTION_PARAMETERS,
-            BindingValue::Group(GroupTerm::references(
+            BindingValue::Group(GroupTerm::references_nodes(
                 parameters.iter().map(|binder| binder.parameter.clone()),
             )),
         )];
@@ -2886,7 +3174,7 @@ impl<'a> Lowering<'a> {
             Some(clause) => {
                 let (owner, clause) = self.clause_owner(clause, function.location)?;
                 members.push(clause);
-                let key = self.insert_owned(
+                let key = self.insert_owned_ref(
                     function.location,
                     NodeTag::Function,
                     semantic_form,
@@ -2903,7 +3191,7 @@ impl<'a> Lowering<'a> {
             }
             None => {
                 let declaration = qualified_name(function.name, function.location)?;
-                let key = self.insert(
+                let key = self.insert_ref(
                     function.location,
                     NodeTag::Function,
                     semantic_form,
@@ -2937,9 +3225,10 @@ impl<'a> Lowering<'a> {
         &mut self,
         binders: &mut Binders<'_>,
         slot: Slot,
-        semantic_type: NodeKey,
+        semantic_type: impl Into<NodeRef>,
         location: &Location,
     ) -> Result<String, CheckRefusal> {
+        let semantic_type = semantic_type.into();
         let name = binders.slot_names.get(slot).cloned().ok_or_else(|| {
             refuse(
                 location,
@@ -2947,7 +3236,7 @@ impl<'a> Lowering<'a> {
             )
         })?;
         let level = binders.scope.len();
-        let parameter = self.parameter(&name, level, semantic_type.clone(), location)?;
+        let parameter = self.parameter_ref(&name, level, semantic_type.clone(), location)?;
         self.record_binder(
             BinderSite {
                 binder: location.clone(),
@@ -2969,13 +3258,13 @@ impl<'a> Lowering<'a> {
         &mut self,
         node: CheckedNode<'_>,
         binders: &Binders<'_>,
-    ) -> Result<NodeKey, CheckRefusal> {
+    ) -> Result<NodeRef, CheckRefusal> {
         if let NodeKind::Local(slot) = node.kind() {
             if let Some(binder) = binders.find(*slot) {
                 return Ok(binder.semantic_type.clone());
             }
         }
-        self.type_node(node.value_type(), node.location())
+        self.type_ref(node.value_type(), node.location())
     }
 
     /// Key an application node for checked `node` and return a reference to
@@ -2987,7 +3276,7 @@ impl<'a> Lowering<'a> {
         operation: Operation,
         arguments: Vec<MemberTerm>,
     ) -> Result<LeafTerm, CheckRefusal> {
-        let result_type = self.type_node(node.value_type(), node.location())?;
+        let result_type = self.type_ref(node.value_type(), node.location())?;
         self.typed_application(node.location(), result_type, operator, operation, arguments)
     }
 
@@ -2996,21 +3285,22 @@ impl<'a> Lowering<'a> {
     fn typed_application(
         &mut self,
         location: &Location,
-        result_type: NodeKey,
+        result_type: impl Into<NodeRef>,
         operator: Operator,
         operation: Operation,
         arguments: Vec<MemberTerm>,
     ) -> Result<LeafTerm, CheckRefusal> {
-        let key = self.insert(
+        let result_type = result_type.into();
+        let key = self.insert_ref(
             location,
             NodeTag::Expression,
             operator.semantic_form(),
             Some(result_type.clone()),
             None,
-            BodyTerm::application(operator, operation, result_type, arguments),
+            BodyTerm::application_node(operator, operation, result_type, arguments),
         )?;
         self.record(key.clone(), OccurrenceRole::Expression, location.clone());
-        Ok(LeafTerm::reference(key))
+        Ok(LeafTerm::reference_node(key.into()))
     }
 
     /// Key a `value` node for checked `node` and return a reference to it.
@@ -3018,10 +3308,10 @@ impl<'a> Lowering<'a> {
         &mut self,
         node: CheckedNode<'_>,
         form: &'static str,
-        semantic_type: NodeKey,
+        semantic_type: NodeRef,
         body: BodyTerm,
     ) -> Result<LeafTerm, CheckRefusal> {
-        let key = self.insert(
+        let key = self.insert_ref(
             node.location(),
             NodeTag::Value,
             form,
@@ -3034,7 +3324,7 @@ impl<'a> Lowering<'a> {
             OccurrenceRole::Expression,
             node.location().clone(),
         );
-        Ok(LeafTerm::reference(key))
+        Ok(LeafTerm::reference_node(key.into()))
     }
 
     /// The `type_argument` member naming `value_type`'s node.
@@ -3073,8 +3363,8 @@ impl<'a> Lowering<'a> {
                     Some(crate::check::protocol_clause::CheckedProtocolBinderKey {
                         name: binders.slot_names.get(binder.slot)?.clone(),
                         level: binder.slot,
-                        node: binder.parameter.clone(),
-                        semantic_type: binder.semantic_type.clone(),
+                        node: binder.parameter.admitted()?.clone(),
+                        semantic_type: binder.semantic_type.admitted()?.clone(),
                     })
                 })
                 .collect();
@@ -3135,22 +3425,26 @@ impl<'a> Lowering<'a> {
             NodeKind::Local(slot) => {
                 let key = binders
                     .find(*slot)
-                    .map(|binder| binder.parameter)
+                    .map(|binder| binder.parameter.clone())
                     .ok_or_else(|| {
                         refuse(
                             node.location(),
                             CheckCause::NodePreimage(NodeKeyRefusal::EmptyBindingName),
                         )
                     })?;
-                self.record(key, OccurrenceRole::Expression, node.location().clone());
-                return Ok(LowerStep::Lowered(LeafTerm::reference(key)));
+                self.record(
+                    key.clone(),
+                    OccurrenceRole::Expression,
+                    node.location().clone(),
+                );
+                return Ok(LowerStep::Lowered(LeafTerm::reference_node(key)));
             }
             // FR-391 "Lowering": the population operand of `allInstances` or
             // `lookup` references the population's `relation`/`population`
             // node (FR-322 "Population references").
             NodeKind::NamedPopulation { population, .. } => {
                 let key = self.population_reference_node(population, node.location())?;
-                return Ok(LowerStep::Lowered(LeafTerm::reference(key)));
+                return Ok(LowerStep::Lowered(LeafTerm::reference_node(key.into())));
             }
             NodeKind::Coerce(operand, interval) => {
                 if !super::ir::coerce_builds_narrow(node.at(*operand).value_type(), interval) {
@@ -3481,20 +3775,22 @@ impl<'a> Lowering<'a> {
             } => {
                 let mut path = vec![PlaceStep::Field(field.name.clone())];
                 path.extend(case.clone().map(PlaceStep::Union));
-                let place = self.timed_place(field.owner, &path).ok_or_else(|| {
-                    refuse(
-                        node.location(),
-                        CheckCause::UnsupportedFeature {
-                            loci: vec![node.location().clone()],
-                        },
-                    )
-                })?;
+                let place = self
+                    .timed_place(field.owner.clone(), &path)
+                    .ok_or_else(|| {
+                        refuse(
+                            node.location(),
+                            CheckCause::UnsupportedFeature {
+                                loci: vec![node.location().clone()],
+                            },
+                        )
+                    })?;
                 return self.next_operand(
                     Box::new(OperandsFrame {
                         node,
                         operands: Operands::One(reference),
                         next: 0,
-                        terms: vec![LeafTerm::reference(place)],
+                        terms: vec![LeafTerm::reference_node(place.into())],
                         keyed: Keyed::Application(
                             Operator::Present,
                             plain("quire.op.option.present"),
@@ -3550,7 +3846,7 @@ impl<'a> Lowering<'a> {
                         )
                     })?;
                 let mut terms = Vec::with_capacity(arguments.len() + 1);
-                terms.push(LeafTerm::reference(callee));
+                terms.push(LeafTerm::reference_node(callee.into()));
                 return self.next_operand(
                     Box::new(OperandsFrame {
                         node,
@@ -3569,8 +3865,7 @@ impl<'a> Lowering<'a> {
             } => {
                 let mut terms = Vec::with_capacity(arguments.len() + 1);
                 terms.push(LeafTerm::DependencyReference {
-                    package: PackageRef(callee.package),
-                    node: WireNodeRef(callee.node),
+                    node: NodeRef::Admitted(callee.clone()),
                 });
                 return self.next_operand(
                     Box::new(OperandsFrame {
@@ -3587,18 +3882,20 @@ impl<'a> Lowering<'a> {
                 declaration,
                 arguments,
             } => {
-                let semantic_type = self.composite_type_node(*declaration, node.location())?;
+                let semantic_type =
+                    self.composite_type_node(declaration.clone(), node.location())?;
                 (
                     Keyed::Value("tuple_value", semantic_type),
                     Operands::Each(arguments),
                 )
             }
             NodeKind::Record { declaration, slots } => {
-                let semantic_type = self.composite_type_node(*declaration, node.location())?;
+                let semantic_type =
+                    self.composite_type_node(declaration.clone(), node.location())?;
                 let Some(CompositeShape::Record(fields)) = self
                     .scope
                     .types()
-                    .composite(*declaration)
+                    .composite(declaration.clone())
                     .map(|c| c.shape().clone())
                 else {
                     return Err(refuse(
@@ -4012,8 +4309,10 @@ impl<'a> Lowering<'a> {
                 member,
                 arguments,
             } => {
-                let semantic_type = self.composite_type_node(*declaration, node.location())?;
-                let member = self.union_member_name(*declaration, *member, node.location())?;
+                let semantic_type =
+                    self.composite_type_node(declaration.clone(), node.location())?;
+                let member =
+                    self.union_member_name(declaration.clone(), *member, node.location())?;
                 (
                     Keyed::UnionValue {
                         semantic_type,
@@ -4030,10 +4329,10 @@ impl<'a> Lowering<'a> {
                 arms,
             } => {
                 // The union's type node, which the arm binders' types name.
-                self.composite_type_node(*declaration, node.location())?;
+                self.composite_type_node(declaration.clone(), node.location())?;
                 frames.push(LowerFrame::Case(Box::new(CaseFrame {
                     node,
-                    declaration: *declaration,
+                    declaration: declaration.clone(),
                     arms,
                     scrutinee: None,
                     lowered: Vec::with_capacity(arms.len()),
@@ -4127,7 +4426,7 @@ impl<'a> Lowering<'a> {
                 let payload = GroupTerm::new(terms.into_iter().map(GroupMember::Leaf).collect());
                 self.value_node(
                     node,
-                    UNION_VALUE_FORM,
+                    "union_value",
                     semantic_type,
                     BodyTerm::aggregate(vec![MemberTerm::binding(
                         member,
@@ -4175,10 +4474,10 @@ impl<'a> Lowering<'a> {
                 }
                 RecordSlot::Null | RecordSlot::Absent => {
                     let option = ValueType::option(field.value_type().clone());
-                    let option = self.type_node(&option, frame.node.location())?;
+                    let option = self.type_ref(&option, frame.node.location())?;
                     let member = MemberTerm::bound(
                         field.name(),
-                        LeafTerm::literal(option, LiteralValue::None),
+                        LeafTerm::literal_node(option.into(), LiteralValue::None),
                     );
                     frame.members.push(member);
                 }
@@ -4238,7 +4537,7 @@ impl<'a> Lowering<'a> {
                 None => {
                     let location = frame.node.location();
                     let element = element_type(frame.source.value_type(), location)?;
-                    let element = self.type_node(&element, location)?;
+                    let element = self.type_ref(&element, location)?;
                     let name = self.bind(binders, frame.slot, element, location)?;
                     frame.bound = Some((term, name));
                     let body = frame.body;
@@ -4366,7 +4665,7 @@ impl<'a> Lowering<'a> {
                 }
                 let name =
                     self.union_member_name(frame.declaration.clone(), arm.member, location)?;
-                let parameters = GroupTerm::references(open.parameters);
+                let parameters = GroupTerm::references_nodes(open.parameters);
                 frame.lowered.push(MemberTerm::binding(
                     name,
                     BindingValue::Tuple(TupleTerm::new(vec![
@@ -4413,7 +4712,7 @@ impl<'a> Lowering<'a> {
         }
         let mut parameters = Vec::with_capacity(payload.len());
         for (slot, value_type) in arm.binders.iter().zip(payload) {
-            let semantic_type = self.type_node(value_type, location)?;
+            let semantic_type = self.type_ref(value_type, location)?;
             self.bind(binders, *slot, semantic_type, location)?;
             let parameter = binders
                 .find(*slot)
@@ -4483,8 +4782,8 @@ impl<'a> Lowering<'a> {
         // element, then lower the step under them.
         let node = frame.node;
         let element = element_type(frame.source.value_type(), node.location())?;
-        let element = self.type_node(&element, node.location())?;
-        let accumulator_type = self.type_node(node.value_type(), node.location())?;
+        let element = self.type_ref(&element, node.location())?;
+        let accumulator_type = self.type_ref(node.value_type(), node.location())?;
         let accumulator = self.bind(
             binders,
             frame.accumulator,
@@ -4519,7 +4818,7 @@ impl<'a> Lowering<'a> {
                 // FR-093: the enum member's QSpec `enum_value` node, whose
                 // key is its `VariantId` (ADR-013 O-14). A model variant
                 // type's nodes are built where it is first named, here.
-                self.type_node(node.value_type(), node.location())?;
+                self.type_ref(node.value_type(), node.location())?;
                 let variant = member.variant();
                 let key = super::sum_case::mint_union_member_key(variant.owner(), variant.case())
                     .map_err(|_| {
@@ -4533,7 +4832,7 @@ impl<'a> Lowering<'a> {
                     OccurrenceRole::Expression,
                     node.location().clone(),
                 );
-                return Ok(LeafTerm::reference(key));
+                return Ok(LeafTerm::reference_node(key.into()));
             }
             // FR-093-AC-33: a quantity literal is a `quantity` literal typed
             // by its unit's node; the magnitude is already reduced.
@@ -4553,12 +4852,12 @@ impl<'a> Lowering<'a> {
             Value::Timestamp(value) => LiteralValue::Timestamp(*value),
             Value::String(value) => LiteralValue::String(value.clone()),
         };
-        let semantic_type = self.type_node(node.value_type(), node.location())?;
+        let semantic_type = self.type_ref(node.value_type(), node.location())?;
         self.value_node(
             node,
             "literal",
             semantic_type.clone(),
-            BodyTerm::literal(semantic_type, literal),
+            BodyTerm::literal_node(semantic_type.into(), literal),
         )
     }
 
@@ -4576,7 +4875,10 @@ impl<'a> Lowering<'a> {
             )
         })?;
         Ok(Member::Field {
-            declaration: self.composite_type_node(field.declaration(), location)?,
+            declaration: require_admitted(
+                self.composite_type_node(field.declaration(), location)?,
+                location,
+            )?,
             name,
         })
     }
@@ -4964,20 +5266,34 @@ pub(crate) fn type_declaration(name: &str) -> Location {
 /// references.
 fn named_nodes(node: &SemanticNode) -> Vec<NodeKey> {
     let body = &node.content.body;
-    let mut named: Vec<NodeKey> = node.content.semantic_type.clone().into_iter().collect();
+    let mut named: Vec<NodeKey> = node
+        .content
+        .semantic_type
+        .as_ref()
+        .and_then(NodeRef::admitted)
+        .cloned()
+        .into_iter()
+        .collect();
     match body {
-        BodyTerm::Application(application) => named.push(application.result_type.0.clone()),
+        BodyTerm::Application(application) => {
+            named.extend(application.result_type.admitted().cloned());
+        }
         BodyTerm::Frame(frame) => {
-            named.extend(frame.modifies.iter().map(|entry| entry.declaration().0));
+            named.extend(
+                frame
+                    .modifies
+                    .iter()
+                    .filter_map(|entry| entry.declaration().admitted().cloned()),
+            );
             named.extend(
                 frame
                     .creates
                     .iter()
                     .chain(&frame.deletes)
-                    .map(|node| node.0.clone()),
+                    .filter_map(|node| node.admitted().cloned()),
             );
         }
-        BodyTerm::Abstraction(term) => named.extend(term.targets()),
+        BodyTerm::Abstraction(term) => named.extend(term.targets().into_iter().flatten()),
         BodyTerm::Leaf(_) | BodyTerm::Aggregate(_) => {}
     }
     // A dependency's node is not a node of this graph.
@@ -5004,7 +5320,7 @@ fn reached_nodes<'g>(
 fn enum_members(graph: &SemanticGraph) -> BTreeMap<NodeKey, Vec<NodeKey>> {
     let mut members: BTreeMap<NodeKey, Vec<NodeKey>> = BTreeMap::new();
     for node in graph.nodes.values() {
-        if let (NodeTag::Value, "enum_value", Some(declaration)) = (
+        if let (NodeTag::Value, "enum_value", Some(NodeRef::Admitted(declaration))) = (
             node.content.node_tag,
             node.content.semantic_form,
             &node.content.semantic_type,

@@ -63,8 +63,8 @@ impl Lowering<'_> {
                 self.record(semantic_type.clone(), OccurrenceRole::Type, over_at);
                 scope.push(Binder {
                     slot: 0,
-                    parameter: parameter.clone(),
-                    semantic_type,
+                    parameter: parameter.clone().into(),
+                    semantic_type: semantic_type.into(),
                 });
                 Some(parameter)
             }

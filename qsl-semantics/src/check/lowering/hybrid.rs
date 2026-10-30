@@ -787,7 +787,7 @@ impl Lowering<'_> {
                             .cloned()
                             .flatten()
                             .ok_or_else(|| stage_fault(location, "callee-lowered"))?;
-                        operand_terms.insert(0, LeafTerm::reference(callee));
+                        operand_terms.insert(0, LeafTerm::reference_node(callee));
                     }
                     let result_type = match result {
                         TermKind::Boolean => self.type_node(&ValueType::Boolean, location)?,

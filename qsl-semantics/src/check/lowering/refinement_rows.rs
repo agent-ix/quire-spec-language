@@ -171,8 +171,8 @@ impl Lowering<'_> {
             );
             scope.push(Binder {
                 slot: level,
-                parameter: key,
-                semantic_type: type_key,
+                parameter: key.into(),
+                semantic_type: type_key.into(),
             });
         }
         let mut binders = Binders::new(&row.slot_names, &scope);

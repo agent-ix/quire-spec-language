@@ -222,7 +222,7 @@ pub use lowering::{
     model_root_key, AdmittedModel, AuthoredBound, ForeignView, ModelClause, SemanticGraph,
     SemanticNode,
 };
-pub use node_key::AbstractionTerm;
+pub use node_key::{AbstractionTerm, FrameEntry, ObjectEntry, PopulationEntry};
 pub use node_key::{
     AggregateTerm, ApplicationTerm, Binding, BindingValue, BodyTerm, FrameDeletesScoped,
     FrameField, FrameModifies, FrameScope, FrameTerm, GroupMember, GroupTerm, InvalidModelOwner,
@@ -2157,6 +2157,7 @@ impl PackageDeclarations {
                 &mut sealing_occurrences,
                 &mut sealing_meter,
                 self.identity,
+                &package_name,
             );
             let mut sealed_refusals = Vec::new();
             for declaration in scope.types().composites() {
@@ -3790,6 +3791,7 @@ impl PackageDeclarations {
             &mut occurrences,
             &mut contract_meter,
             self.identity,
+            &package_name,
         )
         .with_node_limit(limits.nodes(), nodes_used);
         // Relationship declarations are model graph roots. No existing
