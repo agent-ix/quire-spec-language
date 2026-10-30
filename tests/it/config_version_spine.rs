@@ -198,12 +198,10 @@ fn build(directory: &Path, case: Case) -> ClauseRunRequest {
     spine::request(directory, case).expect("the written spine files reconstruct a request")
 }
 
-fn current_clause_request(path: &Path) -> Value {
-    let unit = std::fs::read(path.join("spine-unit.native")).unwrap();
-    let model = std::fs::read(path.join("spine-model.semantic-ir.json")).unwrap();
-    let source = |file: &str, bytes: &[u8], document: &str| {
+fn current_clause_request() -> Value {
+    let source = |file: &str, document: &str| {
         json!({
-            "file": file, "digest": qsl_foundation::ByteDigest::of(bytes).to_string(),
+            "file": file,
             "authority": "agent-ix", "identity": format!("test:fr-312:{file}"),
             "revision_namespace": "fixture", "revision": "1",
             "document": document, "formal_revision": 1
@@ -211,8 +209,8 @@ fn current_clause_request(path: &Path) -> Value {
     };
     let request = json!({"format":"native-run/1", "request": {
         "models": [{"format":"semantic-ir/2.0.0", "source":
-            source("spine-model.semantic-ir.json", &model, "SpineModel")}],
-        "program": {"source": source("spine-unit.native", &unit, "SpineUnit")},
+            source("spine-model.semantic-ir.json", "SpineModel")}],
+        "program": {"source": source("spine-unit.native", "SpineUnit")},
         "clause": {
             "selection": {"clause": {"name":"ParentOrder", "observation":"current",
                 "self": {"population":format!("ix://{}/config_history", spine::PACKAGE_IDENTITY),
@@ -249,7 +247,7 @@ fn clause_run_command_uses_explicit_current_self_and_anchor() {
             run_clause(in_process).unwrap().disposition.truth(),
             Some(truth)
         );
-        let request = current_clause_request(&path);
+        let request = current_clause_request();
         let output = run_clause_file(&path, &request);
         assert_eq!(output.status.code(), Some(exit), "{output:?}");
         assert!(output.stderr.is_empty(), "{output:?}");
@@ -287,7 +285,7 @@ fn clause_run_command_refuses_ambiguous_and_missing_selection_members() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("healthy-parent");
     build(&path, Case::Healthy);
-    let valid = current_clause_request(&path);
+    let valid = current_clause_request();
     type Edit = (&'static str, fn(&mut Value));
     let edits: &[Edit] = &[
         ("call", |value| {
@@ -341,7 +339,7 @@ fn clause_run_command_refuses_a_missing_self_of_an_object_receiver_at_admission(
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("healthy-parent");
     build(&path, Case::Healthy);
-    let mut request = current_clause_request(&path);
+    let mut request = current_clause_request();
     request["request"]["clause"]["selection"]["clause"]
         .as_object_mut()
         .unwrap()
@@ -374,7 +372,7 @@ fn clause_run_reader_checks_observation_role_and_anchor() {
             serde_json::from_slice(&std::fs::read(&snapshot_path).unwrap()).unwrap();
         snapshot[member] = replacement;
         std::fs::write(&snapshot_path, serde_json::to_vec(&snapshot).unwrap()).unwrap();
-        let output = run_clause_file(&path, &current_clause_request(&path));
+        let output = run_clause_file(&path, &current_clause_request());
         assert_eq!(output.status.code(), Some(20), "{label}: {output:?}");
         assert!(output.stdout.is_empty(), "{label}");
         let error: Value = serde_json::from_slice(&output.stderr).unwrap();
@@ -387,7 +385,7 @@ fn clause_run_reader_checks_observation_role_and_anchor() {
 
     let path = directory.path().join("wrong-anchor");
     build(&path, Case::Healthy);
-    let mut request = current_clause_request(&path);
+    let mut request = current_clause_request();
     request["request"]["clause"]["selection"]["clause"]["anchor"]["name"] = json!("other");
     let output = run_clause_file(&path, &request);
     assert_eq!(output.status.code(), Some(20), "{output:?}");
@@ -413,7 +411,7 @@ fn clause_run_reader_accepts_observation_deeper_than_128() {
         &format!(",\"padding\":{}0{}", "[".repeat(160), "]".repeat(160)),
     );
     std::fs::write(&snapshot_path, document).unwrap();
-    let request = current_clause_request(&path);
+    let request = current_clause_request();
     std::fs::write(
         path.join("request.json"),
         serde_json::to_vec(&request).unwrap(),
@@ -439,7 +437,7 @@ fn clause_run_reader_honors_raised_observation_byte_limit() {
         &format!(",\"padding\":\"{}\"", "x".repeat(1_100_000)),
     );
     std::fs::write(&snapshot_path, document).unwrap();
-    let mut request = current_clause_request(&path);
+    let mut request = current_clause_request();
     request["request"]["clause"]["observation_limits"] = json!({"document_bytes":2_000_000});
     std::fs::write(
         path.join("request.json"),
@@ -466,7 +464,7 @@ fn clause_run_observation_limit_reports_its_own_bound() {
         &format!(",\"padding\":\"{}\"", "x".repeat(1_100_000)),
     );
     std::fs::write(&snapshot_path, document).unwrap();
-    let mut request = current_clause_request(&path);
+    let mut request = current_clause_request();
     request["request"]["clause"]["observation_limits"] = json!({"document_bytes":1_000_000});
     std::fs::write(
         path.join("request.json"),
@@ -494,7 +492,7 @@ fn clause_run_reader_keeps_parameter_beyond_128_levels() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("deep-parameter");
     build(&path, Case::Unchanged);
-    let mut request = current_clause_request(&path);
+    let mut request = current_clause_request();
     request["request"]["clause"]["selection"] = json!({"clause": {
         "name":"ParentPresent", "observation":"pre",
         "self":{"population":format!("ix://{}/config_history", spine::PACKAGE_IDENTITY),
@@ -535,7 +533,7 @@ fn clause_run_accounting_object_sets_all_counters_and_rejects_legacy_member() {
     let path = directory.path().join("accounting-object");
     build(&path, Case::Healthy);
 
-    let defaults = current_clause_request(&path);
+    let defaults = current_clause_request();
     std::fs::write(
         path.join("request.json"),
         serde_json::to_vec(&defaults).unwrap(),
@@ -549,7 +547,7 @@ fn clause_run_accounting_object_sets_all_counters_and_rejects_legacy_member() {
         qsl_replay::spine::default_accounting(qsl_replay::spine::DEFAULT_WORK_UNITS)
     );
 
-    let mut request = current_clause_request(&path);
+    let mut request = current_clause_request();
     request["request"]["clause"]["accounting"] = json!({
         "integer_bits":1,
         "decimal_digits":2,
@@ -585,7 +583,7 @@ fn clause_run_accounting_object_sets_all_counters_and_rejects_legacy_member() {
         }
     );
 
-    let mut legacy = current_clause_request(&path);
+    let mut legacy = current_clause_request();
     legacy["request"]["clause"]["work_units"] = json!(0);
     let output = run_clause_file(&path, &legacy);
     assert_eq!(output.status.code(), Some(20), "{output:?}");
@@ -607,7 +605,7 @@ fn clause_run_reader_diagnoses_deep_function_argument() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("deep-function-argument");
     build(&path, Case::Healthy);
-    let mut request = current_clause_request(&path);
+    let mut request = current_clause_request();
     request["request"]["clause"]["selection"] = json!({"function": {
         "name":"sameIdentity", "snapshot":"current", "arguments":[
             {"parameter":"a", "value":"__DEEP_ARGUMENT__"}
@@ -639,7 +637,7 @@ fn clause_run_command_routes_function_frame_and_stale_package() {
     let population = format!("ix://{}/config_history", spine::PACKAGE_IDENTITY);
     let path = directory.path().join(Case::Distinct.id());
     let in_process = run_clause(build(&path, Case::Distinct)).unwrap();
-    let mut request = current_clause_request(&path);
+    let mut request = current_clause_request();
     request["request"]["clause"]["selection"] = json!({"function": {
         "name": "sameIdentity", "snapshot": "current", "arguments": [
             {"parameter":"a", "value":{"reference":{"population":population,"key":"child"}}},
@@ -679,7 +677,7 @@ fn clause_run_command_routes_function_frame_and_stale_package() {
         invocation,
     };
     let expected = run_clause(in_process).unwrap();
-    let mut request = current_clause_request(&path);
+    let mut request = current_clause_request();
     request["request"]["clause"]["selection"] = json!({"frame": {
         "operation": "Config::ConfigVersion::attemptUpdate", "invocation": "invocation"
     }});
@@ -709,7 +707,7 @@ fn clause_run_command_routes_function_frame_and_stale_package() {
         expected.disposition,
         ClauseDisposition::StalePackage { .. }
     ));
-    let mut request = current_clause_request(&path);
+    let mut request = current_clause_request();
     request["request"]["clause"]["package_id"] = json!(claim);
     let output = run_clause_file(&path, &request);
     assert_eq!(output.status.code(), Some(20), "{output:?}");
@@ -728,7 +726,7 @@ fn clause_run_reader_distinguishes_pre_and_invocation_roles() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join(Case::Unchanged.id());
     let expected = run_clause(build(&path, Case::Unchanged)).unwrap();
-    let mut request = current_clause_request(&path);
+    let mut request = current_clause_request();
     request["request"]["clause"]["selection"] = json!({"clause": {
         "name":"VersionUnchanged", "observation":"invocation"
     }});
@@ -836,7 +834,7 @@ fn clause_run_command_reports_select_admit_and_incomplete_classes() {
     for &(case, edit, stage, code, exit, incomplete_limit) in cases {
         let path = directory.path().join(format!("{}-{stage}", case.id()));
         build(&path, case);
-        let mut request = current_clause_request(&path);
+        let mut request = current_clause_request();
         edit(&mut request);
         let output = run_clause_file(&path, &request);
         assert_eq!(output.status.code(), Some(exit), "{output:?}");
@@ -867,7 +865,7 @@ fn clause_run_command_honors_caller_byte_ceilings() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join(Case::Healthy.id());
     build(&path, Case::Healthy);
-    let request = current_clause_request(&path);
+    let request = current_clause_request();
     std::fs::write(
         path.join("request.json"),
         serde_json::to_vec(&request).unwrap(),

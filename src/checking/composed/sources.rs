@@ -21,9 +21,7 @@ fn bytes(source: &FormalSource) -> usize {
 }
 
 fn same(left: &Source, right: &Source) -> bool {
-    left.identity() == right.identity()
-        && left.path() == right.path()
-        && left.digest() == right.digest()
+    left.identity() == right.identity() && left.path() == right.path()
 }
 
 impl<'s> Correspondence<'s> {

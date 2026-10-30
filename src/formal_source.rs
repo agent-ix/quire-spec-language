@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-014/030/031: explicit native/formal identities and exact source correspondence.
+//! FR-014/030/031: explicit native/formal identities and source correspondence.
 //! This binding checks coordinates; assigning authored identities is the caller's role.
 
 use quire_contract_model::{SourceIdentity as IrIdentity, SourceLocation, SourceSpan};
@@ -15,7 +15,7 @@ pub struct SourceIdentities {
     pub formal: IrIdentity,
 }
 
-/// Immutable correspondence between one exact native source and a formal identity.
+/// Immutable correspondence between one native source and a formal identity.
 /// Native labels remain opaque; no revision conversion or global registry is implied.
 #[derive(Clone, Debug)]
 pub struct FormalSource {
@@ -30,7 +30,7 @@ impl FormalSource {
         Self { source, identity }
     }
 
-    /// Retained original source, including opaque native labels and exact byte digest.
+    /// Retained original source, including its opaque native labels.
     pub fn source(&self) -> &Source {
         &self.source
     }
@@ -43,10 +43,7 @@ impl FormalSource {
     /// Map an exact-source span into IR coordinates using the existing source index.
     /// Foreign labels, path or digest and invalid UTF-8 ranges refuse without a locus.
     pub fn to_ir(&self, source: &Source, span: Span) -> Result<SourceSpan, Box<FormalSourceError>> {
-        if source.identity() != self.source.identity()
-            || source.path() != self.source.path()
-            || source.digest() != self.source.digest()
-        {
+        if source.identity() != self.source.identity() || source.path() != self.source.path() {
             return Err(self.failure("span request differs from the bound native source"));
         }
         let located = self

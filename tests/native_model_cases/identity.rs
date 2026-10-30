@@ -33,7 +33,7 @@ fn tc_042_generated_semantic_mutations_bind_the_changed_payload() {
         Some("9223372036854775807")
     );
     // Each case regenerates the real producer's source loci. Assert the affected
-    // semantic payload as well as digest sensitivity, so changed source bytes
+    // semantic payload as well as source sensitivity, so changed source bytes
     // alone cannot disguise an omitted field in the artifact.
     let mutations: &[fn(&mut Value)] = &[
         |d| {

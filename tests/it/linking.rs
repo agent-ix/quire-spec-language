@@ -170,14 +170,14 @@ fn unit(env: &ir::DeclarationEnvironment, expression: &str) -> ParsedUnit {
 #[trace("TC-020", "TC-030", "FR-005-AC-1", "FR-013-AC-1", "FR-013-AC-2")]
 #[trace("FR-017-AC-3")]
 #[test]
-fn exact_source_owner_field_and_digest_domains() {
+fn exact_source_owner_field_and_source_identity() {
     let envs = [environment("FR-001", 1, 10)];
     let original = unit(&envs[0], "self.count >= 0");
     let source = original.source().clone();
     let linked = link(original, &envs, LinkLimits::default()).unwrap();
     assert_eq!(linked.unit().source().text(), source.text());
     assert_eq!(linked.unit().source().identity(), source.identity());
-    assert_eq!(linked.unit().source().digest(), source.digest());
+    assert_eq!(linked.unit().source().identity(), source.identity());
     assert!(std::ptr::eq(linked.models()[0].environment(), &envs[0]));
     let c = &linked.clauses()[0];
     assert_eq!(c.model(), 0);

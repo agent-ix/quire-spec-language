@@ -170,7 +170,7 @@ pub(super) struct AdmissionDeclarationKey {
 }
 
 /// FR-100: the program source as `spine-run-result/1` renders one -- its
-/// four FR-001 labels, `sha256:` source digest and authored path. Narrower
+/// four FR-001 labels and authored path. Narrower
 /// than [`Source`]: no formal document/revision member.
 #[derive(Serialize)]
 pub(super) struct RunSource<'a> {

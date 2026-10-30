@@ -28,7 +28,7 @@ use qsl_foundation::SourceIdentity;
 /// Which declared static component of two subjects differs.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum ComponentKind {
-    /// Exact authority, identity, revision and byte digest of every source unit.
+    /// Exact authority, identity and revision of every source unit.
     Sources,
     /// Exact language/edition selection and its supplied definition artifact.
     Language,

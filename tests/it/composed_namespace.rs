@@ -3,7 +3,7 @@
 //! Unresolved profile/model strings are syntax inputs, not model-intake evidence.
 
 use ix_trace_rs::trace;
-use qsl_foundation::{ByteDigest, Code, Source, SourceIdentity, Span};
+use qsl_foundation::{Code, Source, SourceIdentity, Span};
 use quire_spec_language::linking::composed::{
     admit_namespace, ConflictKind, DeclarationDisposition, DeclarationRefusal, Dimension,
     Exhaustion, ExpectedSource, InventoryIssue, NamespaceReport, SourceInventory, Usage, Work,
@@ -55,7 +55,6 @@ fn inventory(sources: &[(&str, &Source)]) -> SourceInventory {
             .map(|(authority, source)| ExpectedSource {
                 authority: (*authority).into(),
                 identity: source.identity().clone(),
-                digest: source.digest(),
             })
             .collect(),
     }
@@ -146,7 +145,6 @@ fn reordered_sources_match_exact_selections_without_using_paths_as_identity() {
         assert_eq!(namespace.expected_index(entry.unit()), Some(expected));
         assert_eq!(namespace.supplied_index(entry.unit()), Some(offered));
         assert_eq!(unit.source().identity(), &selected.units[expected].identity);
-        assert_eq!(unit.source().digest(), selected.units[expected].digest);
         assert_eq!(unit.source().text(), supplied[offered].text());
         assert_eq!(
             namespace.disposition(id),
@@ -182,7 +180,7 @@ fn missing_and_unexpected_sources_refuse_the_closed_namespace() {
 
 #[test]
 #[trace("TC-114", "FR-036-AC-2")]
-fn identity_revision_and_digest_substitutions_refuse_independently() {
+fn identity_and_revision_substitutions_refuse_independently() {
     let text = predicates(&["Selected"]);
     let original = source("test:selected", "r1", "selected.native", &text);
     let selected = inventory(&[("selected", &original)]);
@@ -204,17 +202,6 @@ fn identity_revision_and_digest_substitutions_refuse_independently() {
             .any(|issue| matches!(issue, InventoryIssue::UnexpectedSource { supplied: 0 })));
     }
     let supplied = [original];
-    let mut wrong_digest = selected.clone();
-    wrong_digest.units[0].digest = ByteDigest::of(b"different exact source bytes");
-    let report = admit(&wrong_digest, &supplied);
-    assert!(report.namespace().is_none());
-    assert!(matches!(
-        report.issues(),
-        [InventoryIssue::DigestMismatch {
-            expected: 0,
-            supplied: 0
-        }]
-    ));
     assert!(admit(&selected, &supplied).namespace().is_some());
 }
 
@@ -504,7 +491,6 @@ fn byte_unit_and_declaration_boundaries_refuse_before_work_and_retry_immutably()
     let unit = source(ID, REVISION, PATH, &text);
     let selected = inventory(&[(AUTHORITY, &unit)]);
     let original_inventory = selected.clone();
-    let original_digest = ByteDigest::of(text.as_bytes());
     let supplied = [unit];
     let header_bytes = LANGUAGE.len() + EDITION.len();
     let labels = LABEL.len() * 2 + ID.len() + REVISION.len();
@@ -622,7 +608,6 @@ fn byte_unit_and_declaration_boundaries_refuse_before_work_and_retry_immutably()
         assert_eq!(failed.exhaustion(), Some(&expected_exhaustion));
         assert_eq!(failed.usage(), expected_usage);
         assert_eq!(selected, original_inventory);
-        assert_eq!(supplied[0].digest(), original_digest);
         assert_eq!(supplied[0].text(), text);
         assert_eq!(supplied[0].identity().identity, ID);
         assert_eq!(supplied[0].identity().revision, REVISION);

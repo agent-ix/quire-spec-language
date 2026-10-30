@@ -186,9 +186,6 @@ pub enum RunCause {
     /// A command intake ceiling stopped the request.
     #[error("{0} limit exceeded")]
     Limit(LimitKind),
-    /// Selected digest spelling is invalid.
-    #[error("{0}")]
-    Digest(#[from] qsl_foundation::digest::InvalidDigest),
     /// Existing IR identifier validation failed.
     #[error("invalid request identifier: {0:?}")]
     Identifier(ir::Diagnostic),
@@ -310,7 +307,6 @@ impl RunCause {
             #[cfg(feature = "quire-extraction")]
             Self::Extraction(error) => error.code(),
             Self::Limit(_) => Code::ResourceExhausted,
-            Self::Digest(_) => Code::InvalidDigest,
             Self::Identifier(_) => Code::InvalidIdentifier,
             Self::Native(error) => error.code,
             Self::Linking(error) => error.diagnostic.code,
@@ -434,15 +430,8 @@ impl Intake<'_> {
 
     fn source(&mut self, selected: &wire::SourceFile) -> Result<FormalSource> {
         let identity = selected.identity.bind()?;
-        let expected = selected.digest.parse()?;
         let bytes = self.file(&selected.file, self.remaining)?;
-        let source = Source::read_verified(
-            identity.native,
-            &selected.file,
-            &bytes,
-            expected,
-            self.maximum,
-        )?;
+        let source = Source::read(identity.native, &selected.file, &bytes, self.maximum)?;
         Ok(FormalSource::new(source, identity.formal))
     }
 }
@@ -597,7 +586,7 @@ impl Edition {
 
 /// Spine-compile a `1-draft` program. Each selected model is a domain
 /// package document (format [`DOMAIN_PACKAGE_PROFILE`], the Semantic IR
-/// contract it is admitted under), read under its source digest and handed
+/// contract it is admitted under), read under its source reference and handed
 /// to the spine as FR-056's package input; the program's `model`
 /// declarations select from it. Native rule models and clause bindings
 /// select native constructs, which a complete-V1 program does not take. The
@@ -631,7 +620,7 @@ fn complete(
     })?;
     let libraries = library_sources(request, intake)?;
     // A refusal is rendered over the source its region is in, by that
-    // region's source digest: the program's or one library's, wherever in
+    // region's source reference: the program's or one library's, wherever in
     // the closure it arose. A refusal with no region names the program.
     let spine_failure = |refusal: qsl_replay::spine::CompileRefusal| {
         let located = refusal

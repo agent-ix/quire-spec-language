@@ -338,7 +338,6 @@ fn with_namespace(text: &str, test: impl FnOnce(&SyntaxNamespace)) {
         units: vec![ExpectedSource {
             authority: "plumbing".into(),
             identity: source.identity().clone(),
-            digest: source.digest(),
         }],
     };
     let sources = [source];
