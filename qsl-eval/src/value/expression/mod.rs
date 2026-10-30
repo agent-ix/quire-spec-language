@@ -1826,6 +1826,7 @@ mod tests {
             functions: vec![identity_function()],
             ..PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
             )
         }
@@ -1931,6 +1932,7 @@ mod tests {
             )],
             ..PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
             )
         }
@@ -2041,6 +2043,7 @@ mod tests {
         let empty = qsl_package::CheckedPackage::link(
             PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
             )
             .check(CheckingLimits::default())
@@ -2099,6 +2102,7 @@ mod tests {
             functions: vec![identity_function()],
             ..PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
             )
         }

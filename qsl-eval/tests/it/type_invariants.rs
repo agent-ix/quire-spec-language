@@ -252,6 +252,7 @@ fn compile_parsed(unit: &str, packages: &Packages) -> Compiled {
     };
     let declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         built,
         models,
         Vec::new(),

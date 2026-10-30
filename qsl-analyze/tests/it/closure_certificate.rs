@@ -670,16 +670,10 @@ fn the_checker_resolves_each_clause_s_identity_from_the_package() {
             .expect("the package declares the clause")
     };
     for (identity, node) in [(at(c), node_c), (at(d), node_d)] {
-        assert_eq!(
-            identity.occurrence().node(),
-            node.identity().clone()
-        );
+        assert_eq!(identity.occurrence().node(), node.identity().clone());
         assert_eq!(identity.occurrence().origin(), node.claim());
         assert_eq!(identity.occurrence().origin().role().as_str(), "claim");
-        assert_eq!(
-            identity.over(),
-            Some(node.over().clone())
-        );
+        assert_eq!(identity.over(), Some(node.over().clone()));
     }
     assert_ne!(
         at(c).occurrence().origin().ordinal(),

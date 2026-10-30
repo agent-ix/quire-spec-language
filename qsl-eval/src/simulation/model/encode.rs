@@ -9,14 +9,14 @@
 //! checked package bounds, so building and writing it recurse once per
 //! declared nesting level and never per element.
 
-use quire_canonical::{Encode, Error, Limits, Sink, Writer};
 use qsl_foundation::node_wire::{node_key_from_json, node_key_to_json};
+use quire_canonical::{Encode, Error, Limits, Sink, Writer};
 use quire_exact::{
     CollectionKind, EffectiveId, FieldValue, IeeeWidth, NodeKey, ObjectReference,
     OriginalDeclarationKey, UniverseId, Value,
 };
-use serde_json::Value as Json;
 use quire_semantic_value::declaration::{CompositeDeclaration, CompositeShape, TypeEnvironment};
+use serde_json::Value as Json;
 
 use qsl_semantics::check::VariantTypeDeclaration;
 use qsl_semantics::model::state::{ModelState, StateField, StateModel};
@@ -208,7 +208,10 @@ fn unit_enc(unit: &quire_exact::UnitId) -> Enc {
         terms
             .iter()
             .map(|(node, exponent)| {
-                Enc::Array(vec![Enc::Node(node.clone()), Enc::text(exponent.to_string())])
+                Enc::Array(vec![
+                    Enc::Node(node.clone()),
+                    Enc::text(exponent.to_string()),
+                ])
             })
             .collect(),
     )
@@ -878,8 +881,8 @@ pub(super) fn model_key(model: &StateModel, state: &ModelState, typing: Typing<'
 mod tests {
     use ix_trace_rs::trace;
     use quire_exact::{
-        from_admitted, CollectionKind, CollectionType, Integer, Quantity, Rational,
-        Timestamp, UnitId, Uuid, ValueType,
+        from_admitted, CollectionKind, CollectionType, Integer, Quantity, Rational, Timestamp,
+        UnitId, Uuid, ValueType,
     };
 
     use super::*;

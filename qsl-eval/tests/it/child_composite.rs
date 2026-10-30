@@ -95,6 +95,7 @@ fn declarations_over(
     .expect("I1 admits the fixture package");
     PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         unit,
         selected,
         Vec::new(),
@@ -239,6 +240,7 @@ fn linked_ledger_clause(trace: &str) -> (CheckedPackage, qsl_semantics::check::C
     .expect("the model selection admits");
     let declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         unit,
         selected,
         Vec::new(),

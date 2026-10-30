@@ -299,6 +299,7 @@ fn a_package_with_no_emission_is_refused_package() {
             qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
             b"",
         ),
+        "fixture".to_owned(),
         qsl_foundation::IdentityLimits::default(),
     )
     .check(CheckingLimits::default())

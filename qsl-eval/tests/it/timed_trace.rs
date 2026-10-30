@@ -75,6 +75,7 @@ pub(crate) fn timed_on(activation: &str, body: &str) -> Fixture {
     .expect("the model selection admits");
     let mut package = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         built,
         models,
         Vec::new(),

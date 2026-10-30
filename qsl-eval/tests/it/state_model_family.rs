@@ -157,6 +157,7 @@ fn declarations_over(
     let model_span = unit.selections().models[0].span;
     let mut declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         unit,
         vec![SelectedModel {
             alias: "M".to_owned(),
@@ -204,6 +205,7 @@ fn declarations_over(
         },
         &clauses,
         declarations.source.clone(),
+        "fixture".to_owned(),
         &mut ModelMeter::new(ModelNormalizationLimits::default()),
         qsl_foundation::IdentityLimits::default(),
     )
@@ -518,6 +520,7 @@ fn tc790_all_instances_missing_target_type_refuses_during_assembly() {
     let model_span = unit.selections().models[0].span;
     let refusal = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         unit,
         vec![SelectedModel {
             alias: "M".to_owned(),
@@ -867,6 +870,7 @@ fn a_population_binding_over_a_non_object_target_refuses_type_mismatch() {
     let model_span = unit.selections().models[0].span;
     let assembled = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         unit,
         vec![SelectedModel {
             alias: "M".to_owned(),

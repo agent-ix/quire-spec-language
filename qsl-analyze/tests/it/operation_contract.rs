@@ -44,10 +44,7 @@ fn clause(world: &World, name: &str) -> OccurrenceKey {
         .iter()
         .find(|clause| clause.name() == name)
         .unwrap_or_else(|| panic!("the clause {name} is checked"));
-    OccurrenceKey::new(
-        clause.identity().clone(),
-        clause.claim().clone(),
-    )
+    OccurrenceKey::new(clause.identity().clone(), clause.claim().clone())
 }
 
 fn run(world: &World, claim: &OccurrenceKey, max_cases: Option<u64>) -> AnalyzeRecord {
@@ -300,10 +297,7 @@ fn an_unbound_frame_item_is_unsupported_with_no_contract_level_reading() {
     let anchor = graph
         .operation_anchor_of(operation.declaring, operation.declaration.name())
         .expect("the operation has an anchor");
-    let claim = OccurrenceKey::new(
-        anchor.clone(),
-        Origin::new(Role::new("anchor"), 0),
-    );
+    let claim = OccurrenceKey::new(anchor.clone(), Origin::new(Role::new("anchor"), 0));
     let record = run(&world, &claim, None);
     let TerminalValue::Unsupported(UnavailabilityCause::ContractCheck { form, reason }) =
         terminal(&record)
@@ -681,10 +675,7 @@ fn assert_no_per_step_reading(
     assert!(refinement.step_simulations().is_empty());
     let node = refinement.v2_emission().expect("emits").identity;
     for ordinal in [0, 1] {
-        let claim = OccurrenceKey::new(
-            node.clone(),
-            Origin::new(Role::new("generated"), ordinal),
-        );
+        let claim = OccurrenceKey::new(node.clone(), Origin::new(Role::new("generated"), ordinal));
         let request = select_contract(package, &claim).map(|selected| ContractRequest {
             package,
             claim: selected,

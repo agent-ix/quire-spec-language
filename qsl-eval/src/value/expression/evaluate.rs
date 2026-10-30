@@ -4183,6 +4183,7 @@ mod tests {
             .unwrap(),
             ..PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
             )
         }
@@ -4406,6 +4407,7 @@ mod tests {
             )],
             ..PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
             )
         }
@@ -4521,7 +4523,9 @@ mod tests {
             qsl_semantics::model::clause_observation::Observation,
         > = std::collections::BTreeMap::new();
         let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
-        let arguments = vec![Value::Population(PopulationId::new(crate::test_ids::node_key([9])))];
+        let arguments = vec![Value::Population(PopulationId::new(
+            crate::test_ids::node_key([9]),
+        ))];
         let evaluation = Machine::with_pre(
             graph.scope(),
             graph,
@@ -4693,6 +4697,7 @@ mod tests {
             models: vec![model],
             ..PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
             )
         }
@@ -4804,6 +4809,7 @@ mod tests {
             models: vec![model],
             ..PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
             )
         }
@@ -4915,6 +4921,7 @@ mod tests {
             types: TypeEnvironment::new([record], []).expect("one record admits"),
             ..PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
             )
         }

@@ -6,8 +6,8 @@ use std::collections::{HashSet, VecDeque};
 
 use qsl_foundation::diagnostic::category_of;
 use qsl_foundation::digest::DigestRecord;
-use quire_exact::NodeKey;
 use quire_canonical::Encode;
+use quire_exact::NodeKey;
 use quire_exact::ValueType;
 use quire_semantic_value::catalog::CatalogCode;
 use quire_semantic_value::catalog::Category;

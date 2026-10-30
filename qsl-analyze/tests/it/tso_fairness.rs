@@ -879,6 +879,7 @@ fn refusal_of(fairness: &str) -> qsl_semantics::check::CheckRefusal {
     .expect("the operation clauses parse");
     let mut refusals = qsl_semantics::check::PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         built,
         models,
         Vec::new(),

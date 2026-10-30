@@ -62,6 +62,7 @@ fn declarations(functions: Vec<FunctionDeclaration>) -> PackageDeclarations {
         functions,
         ..PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
         )
     }
@@ -248,7 +249,11 @@ fn located_dependency() -> CheckedPackage {
     CheckedPackage::link(
         PackageDeclarations {
             functions: vec![declaration],
-            ..PackageDeclarations::new(source, qsl_foundation::IdentityLimits::default())
+            ..PackageDeclarations::new(
+                source,
+                "fixture".to_owned(),
+                qsl_foundation::IdentityLimits::default(),
+            )
         }
         .check(CheckingLimits::default())
         .unwrap(),
@@ -446,7 +451,11 @@ fn invalid_child_requests_fault_and_a_valid_one_is_applied() {
     let objects = ObjectEnvironment::default();
     let (f_key, host) = (identity(&package, "f"), identity(&package, "host"));
     let cases: [(&str, NodeKey, Vec<Value>); 3] = [
-        ("unknown key", crate::support::ids::node_key([9]), vec![int(1)]),
+        (
+            "unknown key",
+            crate::support::ids::node_key([9]),
+            vec![int(1)],
+        ),
         ("two arguments", f_key, vec![int(1), int(2)]),
         ("out of range", f_key, vec![int(10)]),
     ];

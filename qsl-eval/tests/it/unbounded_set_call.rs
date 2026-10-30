@@ -44,6 +44,7 @@ fn package() -> CheckedPackage {
     let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
     let declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         unit,
         Vec::new(),
         Vec::new(),

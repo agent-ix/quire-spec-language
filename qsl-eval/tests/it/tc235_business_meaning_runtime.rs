@@ -244,6 +244,7 @@ fn model_package_with(
     .expect("M15 kept operation clauses parse");
     let declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         built,
         models,
         Vec::new(),
@@ -557,6 +558,7 @@ fn package_with_types(
             function_selections,
             ..PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
             )
         }
@@ -838,6 +840,7 @@ fn unresolved_object_reference_refuses_at_input_admission() {
             types,
             ..PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
             )
         }
@@ -1272,6 +1275,7 @@ fn lifecycle_receiver_and_parameter_boolean_components() {
             types,
             ..PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
             )
         }

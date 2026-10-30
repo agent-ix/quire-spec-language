@@ -158,6 +158,7 @@ fn package(types: TypeEnvironment, functions: Vec<FunctionDeclaration>) -> Check
         )],
         ..PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
         )
     }
@@ -515,6 +516,7 @@ fn q04_empty_fold_uses_identity_and_empty_reduce_is_undefined_or_refused() {
         )],
         ..PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
         )
     }

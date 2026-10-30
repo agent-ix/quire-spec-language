@@ -311,6 +311,7 @@ fn package_of(declarations: &str) -> CheckedPackage {
     let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
     let mut declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         unit,
         Vec::new(),
         Vec::new(),

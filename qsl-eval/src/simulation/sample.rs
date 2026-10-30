@@ -4,8 +4,8 @@
 //! generator (FR-101; QSpec `proposals/quire-v1/definitions/
 //! simulation-sampler.md`).
 
-use quire_exact::NodeKey;
 use qsl_foundation::selection::DefinitionRef;
+use quire_exact::NodeKey;
 use quire_exact::ValueType;
 use quire_semantic_value::declaration::TypeEnvironment;
 

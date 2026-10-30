@@ -56,6 +56,7 @@ fn run(source: &str, entry: &str, argument: i64, work_units: u64) -> (String, us
     let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
     let declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         unit,
         Vec::new(),
         Vec::new(),

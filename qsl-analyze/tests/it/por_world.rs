@@ -324,6 +324,7 @@ impl Fixture {
         .expect("the operation clauses parse");
         let graph = PackageDeclarations::assemble(
             parsed.source().reference().clone(),
+            "fixture".to_owned(),
             built,
             models,
             Vec::new(),

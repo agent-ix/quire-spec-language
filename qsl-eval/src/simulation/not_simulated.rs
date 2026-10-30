@@ -2,9 +2,9 @@
 //! FR-101: the dispositions returned before any state is explored or
 //! sampled.
 
-use quire_exact::NodeKey;
 use qsl_foundation::selection::DefinitionRef;
 use qsl_semantics::family::{classify_extent, ClaimExtent, ClassifyFailure, UnboundedDomains};
+use quire_exact::NodeKey;
 use quire_exact::ValueType;
 use quire_semantic_value::catalog::{CatalogCode, CatalogCoded};
 use quire_semantic_value::declaration::TypeEnvironment;

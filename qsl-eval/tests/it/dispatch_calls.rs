@@ -297,6 +297,7 @@ fn one_candidate_package(
         model_clauses,
         ..PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
         )
     }
@@ -850,6 +851,7 @@ fn checked_package_call_refuses_a_non_callable_by_name_function_found_by_lookup(
         )],
         ..PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
         )
     }
@@ -1166,6 +1168,7 @@ fn ab_bridge_declarations(
         &root,
         &clauses,
         qsl_semantics::check::fixture_source(),
+        "fixture".to_owned(),
         &mut meter,
         qsl_foundation::IdentityLimits::default(),
     )
@@ -1439,6 +1442,7 @@ fn d06_two_operations_sharing_one_table_report_the_operation_actually_dispatched
         ]),
         ..PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
         )
     }
@@ -1775,6 +1779,7 @@ fn d06_bridge_ancestor_let_binder_colliding_with_descendant_parameter_does_not_c
         &root,
         &clauses,
         qsl_semantics::check::fixture_source(),
+        "fixture".to_owned(),
         &mut meter,
         qsl_foundation::IdentityLimits::default(),
     )
@@ -2026,6 +2031,7 @@ fn bridge_links_a_real_family_and_evaluates_through_the_built_table() {
         &root,
         &clauses,
         qsl_semantics::check::fixture_source(),
+        "fixture".to_owned(),
         &mut meter,
         qsl_foundation::IdentityLimits::default(),
     )
@@ -2172,6 +2178,7 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
         },
         &clauses,
         qsl_semantics::check::fixture_source(),
+        "fixture".to_owned(),
         &mut normalization_meter,
         qsl_foundation::IdentityLimits::default(),
     )
@@ -2486,6 +2493,7 @@ fn bridge_exposes_dispatch_through_an_inherited_static_type_that_never_redefines
         &root,
         &clauses,
         qsl_semantics::check::fixture_source(),
+        "fixture".to_owned(),
         &mut meter,
         qsl_foundation::IdentityLimits::default(),
     )
@@ -2583,6 +2591,7 @@ fn not_a_query_refusal(domain_package: &DomainPackage) -> DispatchBridgeRefusal 
         &root,
         &clauses,
         qsl_semantics::check::fixture_source(),
+        "fixture".to_owned(),
         &mut meter,
         qsl_foundation::IdentityLimits::default(),
     )
@@ -2784,6 +2793,7 @@ fn checked_dispatch_operation_checks_root_key_first_not_record_order() {
         &root,
         &clauses,
         qsl_semantics::check::fixture_source(),
+        "fixture".to_owned(),
         &mut meter,
         qsl_foundation::IdentityLimits::default(),
     )
@@ -2899,6 +2909,7 @@ fn money_bridge(root_at_b: bool) -> MoneyBridge {
         &root,
         &clauses,
         qsl_semantics::check::fixture_source(),
+        "fixture".to_owned(),
         &mut meter,
         qsl_foundation::IdentityLimits::default(),
     )

@@ -279,6 +279,7 @@ fn checked_dispatch_package() -> qsl_package::CheckedPackage {
         )],
         ..PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
         )
     };
@@ -572,13 +573,14 @@ fn imported_callable_consumer_uses_a_real_emitted_and_admitted_library() {
         BuiltinType, DeclarationSpans, Expression, ExpressionSpans, FunctionDeclaration, TypeForm,
     };
     use qsl_semantics::check::{AdmittedImport, PackageDeclarations};
-    use qsl_semantics::library::{LibraryName, PackageNodeKey};
+    use qsl_semantics::library::LibraryName;
     let span = qsl_foundation::Span { start: 0, end: 4 };
     let mut declarations = PackageDeclarations::new(
         qsl_semantics::check::admitted_source(
             qsl_foundation::SourceIdentity::new("a", "callable", "git", "1"),
             b"true",
         ),
+        "fixture".to_owned(),
         qsl_foundation::IdentityLimits::default(),
     );
     declarations.functions.push(
@@ -612,19 +614,10 @@ fn imported_callable_consumer_uses_a_real_emitted_and_admitted_library() {
         qsl_package::V2ReadLimits::default(),
     )
     .unwrap();
-    let callee = PackageNodeKey::new(
-        emission.package().package_id(),
-        qsl_foundation::digest::WireNodeId::from_digest(
-            *library
-                .graph()
-                .callable("Body")
-                .unwrap()
-                .identity
-                .as_bytes(),
-        ),
-    );
+    let callee = library.graph().callable("Body").unwrap().identity.clone();
     let mut declarations = PackageDeclarations::new(
         qsl_semantics::check::fixture_source(),
+        "fixture".to_owned(),
         qsl_foundation::IdentityLimits::default(),
     );
     declarations.imports.insert(
@@ -641,7 +634,7 @@ fn imported_callable_consumer_uses_a_real_emitted_and_admitted_library() {
             .unwrap(),
     );
     let node = body(|_| NodeKind::ImportedCall {
-        callee,
+        callee: callee.clone(),
         function: usize::MAX,
         arguments: vec![],
     });
@@ -753,6 +746,7 @@ fn query_stop_provenance_rejects_a_missing_selected_position_at_the_real_quantif
     let span = qsl_foundation::Span { start: 0, end: 0 };
     let mut declarations = PackageDeclarations::new(
         qsl_semantics::check::fixture_source(),
+        "fixture".to_owned(),
         qsl_foundation::IdentityLimits::default(),
     );
     declarations.functions.push(FunctionDeclaration::new(
@@ -1020,6 +1014,7 @@ fn both_ieee_profile_checks_and_conversion_operand_check_are_real_producers() {
         ieee_profile: Some(profile),
         ..qsl_semantics::check::PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
         )
     }
@@ -1079,6 +1074,7 @@ fn field_slot_and_record_constructor_fail_at_the_actual_application_sites() {
         types: quire_semantic_value::declaration::TypeEnvironment::new([declaration], []).unwrap(),
         ..qsl_semantics::check::PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
         )
     }
@@ -1111,6 +1107,7 @@ fn object_package(
         models: vec![model],
         ..qsl_semantics::check::PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
         )
     }
@@ -1394,6 +1391,7 @@ fn received_equality_source_cause_crosses_actual_public_call_and_evaluate_unchan
     let expression = Expression::binary(BinaryOperator::Equal, operand(), operand());
     let mut declarations = PackageDeclarations::new(
         qsl_semantics::check::fixture_source(),
+        "fixture".to_owned(),
         qsl_foundation::IdentityLimits::default(),
     );
     declarations.types = types;
@@ -1913,10 +1911,7 @@ fn application_shapes_and_constructor_rejections_reach_their_detecting_sites() {
         (
             body(|ids| NodeKind::Field {
                 operand: ids[0],
-                field: qsl_semantics::check::RecordField::new(
-                    crate::test_ids::node_key([4]),
-                    "x",
-                ),
+                field: qsl_semantics::check::RecordField::new(crate::test_ids::node_key([4]), "x"),
                 optional: false,
             }),
             vec![Value::Boolean(true)],

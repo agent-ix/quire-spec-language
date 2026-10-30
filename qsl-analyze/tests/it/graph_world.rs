@@ -272,6 +272,7 @@ impl World {
         .expect("the operation clauses parse");
         let mut declarations = PackageDeclarations::assemble(
             parsed.source().reference().clone(),
+            "fixture".to_owned(),
             built,
             models,
             Vec::new(),

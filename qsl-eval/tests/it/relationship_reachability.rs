@@ -200,9 +200,14 @@ fn orders_package(shape: Shape, declarations: &str) -> CheckedPackage {
     )
     .expect("S1 admits the unit");
     let built = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
-    let declarations =
-        PackageDeclarations::assemble(parsed.source().reference().clone(), built, selected, vec![])
-            .expect("the model assembles");
+    let declarations = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        "fixture".to_owned(),
+        built,
+        selected,
+        vec![],
+    )
+    .expect("the model assembles");
     CheckedPackage::link(
         declarations
             .check(CheckingLimits::default())

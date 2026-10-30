@@ -70,6 +70,7 @@ fn package_from_source(source: &str) -> CheckedPackage {
     CheckedPackage::link(
         PackageDeclarations::assemble(
             parsed.source().reference().clone(),
+            "fixture".to_owned(),
             unit,
             models,
             Vec::new(),
@@ -131,6 +132,7 @@ fn compensation_package() -> CheckedPackage {
     CheckedPackage::link(
         PackageDeclarations::assemble(
             parsed.source().reference().clone(),
+            "fixture".to_owned(),
             unit,
             models,
             Vec::new(),

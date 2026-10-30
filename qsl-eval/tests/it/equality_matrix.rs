@@ -127,10 +127,11 @@ fn object_type(label: &str) -> EffectiveId {
 }
 
 fn owners() -> OwnerSelection {
-    OwnerSelection::new([NodeOwner::Definition(OwnerSubject {
-        authority: "agent-ix".into(),
-        identity: "example-model".into(),
-    })])
+    OwnerSelection::new([NodeOwner::Definition(OwnerSubject::new(
+        "agent-ix",
+        "example-model",
+        "fixture",
+    ))])
 }
 
 fn owner_json() -> serde_json::Value {
@@ -296,6 +297,7 @@ fn real_public_enum_comparator_fault_retains_its_nested_ill_typed_cause() {
             )],
             ..PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
             )
         };
@@ -2077,6 +2079,7 @@ fn expression_package(types: TypeEnvironment, ieee: bool) -> CheckedPackage {
         ieee_profile: ieee.then(|| profile().clone()),
         ..PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
         )
     }
@@ -2699,6 +2702,7 @@ fn e20_source_order_row_evaluates_fields_in_declaration_order() {
         )],
         ..PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
         )
     }

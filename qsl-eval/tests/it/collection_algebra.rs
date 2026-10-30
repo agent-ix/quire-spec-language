@@ -722,10 +722,11 @@ mod checked {
     }
 
     fn owners() -> OwnerSelection {
-        OwnerSelection::new([NodeOwner::Definition(OwnerSubject {
-            authority: "agent-ix".into(),
-            identity: "example-model".into(),
-        })])
+        OwnerSelection::new([NodeOwner::Definition(OwnerSubject::new(
+            "agent-ix",
+            "example-model",
+            "fixture",
+        ))])
     }
 
     fn declaration_preimage(label: &str, ordered: bool, members: &[&str]) -> serde_json::Value {
@@ -809,6 +810,7 @@ mod checked {
             enums: vec![color.clone(), level.clone()],
             ..PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
             )
         });
@@ -882,6 +884,7 @@ mod checked {
             )],
             ..PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
             )
         });
@@ -972,6 +975,7 @@ mod checked {
             )],
             ..PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
             )
         });
@@ -1028,6 +1032,7 @@ mod checked {
     fn c11_converting_to_the_other_bound_admits_equality_without_loss() {
         let package = package(PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
         ));
         let x_type = collection_type(CollectionKind::Set, ValueType::Integer, 0, 2);
@@ -1070,6 +1075,7 @@ mod checked {
     fn c12_collection_literals_take_their_unique_expected_type() {
         let package = package(PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
         ));
         let set = || literal_collection(CollectionKind::Set, &[2, 1]);

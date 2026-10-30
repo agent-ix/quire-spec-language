@@ -392,6 +392,7 @@ fn package(scenario: &Scenario) -> CheckedPackage {
         models: vec![scenario.model.clone()],
         ..PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
         )
     }
@@ -432,6 +433,7 @@ fn package_with_size_function(scenario: &Scenario, maximum: u64) -> CheckedPacka
         )],
         ..PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
         )
     }
@@ -468,6 +470,7 @@ fn package_with_collection_function(scenario: &Scenario) -> CheckedPackage {
         )],
         ..PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
         )
     }
@@ -1254,6 +1257,7 @@ fn package_with_unrelated_type(scenario: &Scenario) -> CheckedPackage {
         models: vec![scenario.model.clone()],
         ..PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
         )
     }
@@ -1486,6 +1490,7 @@ fn attribute_world_of(
         models: vec![scenario.model.clone()],
         ..PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
         )
     }
@@ -1979,6 +1984,7 @@ fn all_instances_expression_target_declared_but_not_in_model_is_type_mismatch() 
         types,
         ..PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
         )
     }
@@ -3827,7 +3833,11 @@ fn a_refused_lookup_builds_a_record_at_the_lookup_expression() {
             types: types(&scenario),
             models: vec![scenario.model.clone()],
             functions: vec![function],
-            ..PackageDeclarations::new(source.clone(), qsl_foundation::IdentityLimits::default())
+            ..PackageDeclarations::new(
+                source.clone(),
+                "fixture".to_owned(),
+                qsl_foundation::IdentityLimits::default(),
+            )
         }
         .check(CheckingLimits::default())
         .expect("the unit checks"),
@@ -4098,6 +4108,7 @@ fn empty_admitted_member_faults_through_public_call_and_evaluate_with_exact_pref
             )],
             ..PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
             )
         }

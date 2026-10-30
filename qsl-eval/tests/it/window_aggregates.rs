@@ -551,6 +551,7 @@ fn clause() -> CheckedTemporalClause {
     let built = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
     let package = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         built,
         SelectedModels::default(),
         Vec::new(),
@@ -801,6 +802,7 @@ impl Observed {
         let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
         let mut declarations = PackageDeclarations::assemble(
             parsed.source().reference().clone(),
+            "fixture".to_owned(),
             unit,
             Vec::new(),
             Vec::new(),

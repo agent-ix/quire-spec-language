@@ -357,7 +357,11 @@ mod family_contract_tests {
         // The admitted declaration is declared once and has an identity.
         PackageDeclarations {
             functions: vec![form],
-            ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
+            ..PackageDeclarations::new(
+                fixture_source(),
+                "fixture".to_owned(),
+                qsl_foundation::IdentityLimits::default(),
+            )
         }
         .check(CheckingLimits::default())
         .expect("f checks")
@@ -426,6 +430,7 @@ mod family_contract_tests {
             functions: vec![declaration("f", Expression::boolean(true))],
             ..PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
             )
         }
@@ -484,6 +489,7 @@ mod family_contract_tests {
             functions: vec![declaration("f", Expression::boolean(true))],
             ..PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
             )
         }
@@ -564,6 +570,7 @@ mod family_contract_tests {
             ],
             ..PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
             )
         }
@@ -653,6 +660,7 @@ mod family_contract_tests {
             ],
             ..PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
             )
         }
@@ -701,7 +709,11 @@ mod tests {
     fn checked_identity(source: RawSourceRef) -> NodeKey {
         PackageDeclarations {
             functions: vec![declaration("f", Expression::boolean(true))],
-            ..PackageDeclarations::new(source, qsl_foundation::IdentityLimits::default())
+            ..PackageDeclarations::new(
+                source,
+                "fixture".to_owned(),
+                qsl_foundation::IdentityLimits::default(),
+            )
         }
         .check(CheckingLimits::default())
         .expect("one boolean-literal function checks")

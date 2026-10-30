@@ -47,6 +47,7 @@ fn a_function_compiled_from_source_is_called_by_name() {
     let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
     let declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         unit,
         Vec::new(),
         Vec::new(),
@@ -105,6 +106,7 @@ fn package_of(declarations: &str) -> CheckedPackage {
     let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
     let declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         unit,
         Vec::new(),
         Vec::new(),
@@ -151,6 +153,7 @@ fn operator_declarations(body: &str, parameters: &str, result: &str) -> PackageD
     let unit = qsl_forms::build_unit(&parsed).expect("S2 maps the operator");
     PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         unit,
         Vec::new(),
         Vec::new(),
