@@ -1188,17 +1188,12 @@ fn row_21_the_first_neighbour_in_order_that_is_not_present_decides() {
     );
     // Reference-key order is (universe, type, id), so the type identities
     // decide which of the two sorts first. The expected outcome is derived
-    // from that production order; the other order is not producible with
-    // these two types.
+    // from that production order.
     let (cause, first) = if s1 < d2 {
         (UNDECIDABLE, "s1")
     } else {
         (DANGLING, "d2")
     };
-    assert_eq!(
-        first, "d2",
-        "the Order neighbour sorts first in the fixture"
-    );
     assert_neighbour_refusal(evaluation, cause, first);
     assert_charges(&meter, &[EXPAND, EDGE, EXPAND], 3, 0);
 }

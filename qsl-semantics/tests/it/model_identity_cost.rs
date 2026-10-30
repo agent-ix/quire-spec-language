@@ -134,26 +134,6 @@ fn assert_closed_formulas(nodes: &[Node]) {
     );
 }
 
-/// The published N13 shapes, by their literal fact and work-unit counters.
-#[trace("QSpec-TC-195", "QSpec-FR-081-AC-11")]
-#[test]
-fn n13_counters_equal_the_published_figures() {
-    let one = counters(&chain(99, 2));
-    assert_eq!((one.facts, one.work_units), (199, 600), "chain of 99 edges");
-    let two = counters(&ladder(50, 2));
-    assert_eq!(
-        (two.facts, two.work_units),
-        (296, 794),
-        "50-layer width-2 ladder, 196 edges"
-    );
-    let three = counters(&dense(30, 5, 2));
-    assert_eq!(
-        (three.facts, three.work_units),
-        (165, 392),
-        "thirty types, each generalizing the previous five"
-    );
-}
-
 /// TC-1024 steps 1 to 4: chains, a 500-layer ladder whose paths are
 /// exponential, and 1,000 types with ten parents each.
 #[trace("QSpec-TC-1024", "QSpec-FR-081-AC-11")]

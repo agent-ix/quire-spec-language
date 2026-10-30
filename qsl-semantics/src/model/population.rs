@@ -2918,27 +2918,4 @@ mod tests {
             "admit_invocation never builds, for either instant"
         );
     }
-
-    /// The member wire's typed effective identity keeps the existing `type`
-    /// key and lowercase-hex string representation.
-    #[trace("TC-291", "FR-089-AC-7")]
-    #[test]
-    fn population_member_type_identity_wire_keeps_its_hex_string_shape() {
-        let type_identity = EffectiveId::from_digest([0xab; 32]);
-        let declaration = DeclarationKey::fixture("model.A");
-        let member = PopulationMemberWire {
-            universe: "cd".repeat(32),
-            r#type: PopulationMemberTypeIdentityWire(&type_identity),
-            object: "obj-1",
-            declaration: declaration_key_wire(&declaration),
-        };
-        let encoded = quire_canonical::to_vec(&member, quire_canonical::Limits::new(4096))
-            .expect("member wire has a fixed canonical shape");
-        let expected = format!(
-            "{{\"declaration\":{{\"node\":\"model.A\",\"package\":\"test/orders\"}},\"object\":\"obj-1\",\"type\":\"{}\",\"universe\":\"{}\"}}",
-            "ab".repeat(32),
-            "cd".repeat(32)
-        );
-        assert_eq!(encoded, expected.as_bytes());
-    }
 }

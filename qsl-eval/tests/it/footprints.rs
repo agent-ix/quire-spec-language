@@ -469,7 +469,7 @@ fn transition(
     arguments: Vec<String>,
 ) -> ModelTransition {
     let operation = format!(
-        r#"{{"digest_domain":"sha256-jcs","node":"{}","package":"{PACKAGE}"}}"#,
+        r#"{{"node":"{}","package":"{PACKAGE}"}}"#,
         ident(&format!("{object_type}/{operation}"))
     );
     ModelTransition::new(
