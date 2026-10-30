@@ -92,12 +92,6 @@ pub enum ArtifactField {
     Authority,
     /// Artifact identity.
     Identity,
-    /// Revision namespace.
-    RevisionNamespace,
-    /// Revision value.
-    RevisionValue,
-    /// Raw-byte digest; it cannot stand for a canonical producer digest.
-    Digest,
     /// Artifact wire identity, which selects the raw-byte interpretation domain.
     WireIdentity,
     /// Artifact wire version.
@@ -240,15 +234,6 @@ impl Refusal {
             Self::Definition(DefinitionField::Artifact(ArtifactField::Identity)) => {
                 "v2.definition.artifact.identity"
             }
-            Self::Definition(DefinitionField::Artifact(ArtifactField::RevisionNamespace)) => {
-                "v2.definition.artifact.revision-namespace"
-            }
-            Self::Definition(DefinitionField::Artifact(ArtifactField::RevisionValue)) => {
-                "v2.definition.artifact.revision-value"
-            }
-            Self::Definition(DefinitionField::Artifact(ArtifactField::Digest)) => {
-                "v2.definition.artifact.digest"
-            }
             Self::Definition(DefinitionField::Artifact(ArtifactField::WireIdentity)) => {
                 "v2.definition.artifact.wire-identity"
             }
@@ -283,12 +268,6 @@ pub(crate) fn artifact_field(
         Some(ArtifactField::Authority)
     } else if actual.identity != expected.identity {
         Some(ArtifactField::Identity)
-    } else if actual.revision.namespace != expected.revision.namespace {
-        Some(ArtifactField::RevisionNamespace)
-    } else if actual.revision.value != expected.revision.value {
-        Some(ArtifactField::RevisionValue)
-    } else if actual.digest != expected.digest {
-        Some(ArtifactField::Digest)
     } else if actual.wire.identity != expected.wire.identity {
         Some(ArtifactField::WireIdentity)
     } else if actual.wire.version != expected.wire.version {

@@ -17,8 +17,7 @@ gate. Scope: NFR-015-AC-1, NFR-015-AC-2, NFR-015-AC-3 and NFR-015-AC-8.
 
 1. Read `qsl-foundation/Cargo.toml` and its crate root.
 2. Run `cargo build --locked -p qsl-foundation --no-default-features
-   --target thumbv7em-none-eabi` with the toolchain `rust-toolchain.toml`
-   selects.
+   --target thumbv7em-none-eabi` on the default toolchain.
 3. Run `cargo tree --locked -p qsl-foundation --no-default-features -e
    normal --depth 1 --target thumbv7em-none-eabi`, then the full
    `cargo tree --locked -p qsl-foundation --no-default-features -e

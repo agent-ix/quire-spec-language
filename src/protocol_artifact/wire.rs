@@ -145,20 +145,27 @@ impl Serialize for Integer {
     }
 }
 
-// Exact shared raw-byte digest spelling; no new digest identity or algorithm.
-mod digest {
-    use super::*;
-    pub(super) fn serialize<S: Serializer>(
-        value: &ByteDigest,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error> {
-        serializer.collect_str(value)
+/// A `sha256-jcs` digest (FR-056-CON-4): 64 lowercase hex digits, with no
+/// `sha256:` prefix, so a raw-byte [`ByteDigest`] spelling cannot occupy it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct JcsDigest(pub [u8; 32]);
+
+impl Serialize for JcsDigest {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use std::fmt::Write as _;
+        let mut text = String::with_capacity(64);
+        for byte in self.0 {
+            write!(text, "{byte:02x}").map_err(serde::ser::Error::custom)?;
+        }
+        serializer.serialize_str(&text)
     }
-    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
-        decoder: D,
-    ) -> Result<ByteDigest, D::Error> {
-        String::deserialize(decoder)?
-            .parse()
+}
+
+impl<'de> Deserialize<'de> for JcsDigest {
+    fn deserialize<D: Deserializer<'de>>(decoder: D) -> Result<Self, D::Error> {
+        // `from_hex` admits exactly 64 lowercase hex digits and no prefix.
+        ByteDigest::from_hex(&String::deserialize(decoder)?)
+            .map(|digest| Self(digest.as_bytes()))
             .map_err(de::Error::custom)
     }
 }
@@ -260,7 +267,7 @@ record! { /// Wire identity/version, separate from semantic definition revision.
 }
 record! { /// Narrow representation of the exact shared ArtifactRef/3 object.
     ArtifactRef {
-        /// The ArtifactRef schema's own version, distinct from `revision` below.
+        /// The ArtifactRef schema's own version.
         #[serde(rename = "refVersion")] ref_version: String,
         /// The referenced artifact's closed kind (`ArtifactKind`).
         kind: ArtifactKind,
@@ -268,10 +275,6 @@ record! { /// Narrow representation of the exact shared ArtifactRef/3 object.
         authority: String,
         /// The artifact's own identity string, unique within `authority`.
         identity: String,
-        /// The artifact's selected revision.
-        revision: Revision,
-        /// The artifact's content digest, in its exact selected domain.
-        #[serde(with = "digest")] digest: ByteDigest,
         /// The wire schema this artifact reference itself conforms to.
         wire: Wire
     }
@@ -361,7 +364,11 @@ record! { /// Located producer export, whose kind/path must exist in its admitte
 record! { /// FR-042/FR-056: the exact domain package a model was linked against.
     DomainPackage {
         /// The domain package's own identity.
-        identity: String
+        identity: String,
+        /// The domain package's own version.
+        version: String,
+        /// The `sha256-jcs` digest of its Semantic IR 2.0.0 document.
+        digest: JcsDigest
     }
 }
 record! { /// Selected model artifact and exports, naming its domain package directly.
