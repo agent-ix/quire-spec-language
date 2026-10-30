@@ -358,41 +358,6 @@ pub(crate) const RULES: &[Rule] = &[
         debt_list: &[],
     },
     Rule {
-        id: "T12-E",
-        description: "only layer-4 `qsl-package`'s `checked_v2` mints the ADR-011 §4 \
-                      condition-1 witness `SupportedV2Wire` (ADR-013 T-1, FR-087-AC-1)",
-        role: Role::Qsl,
-        // `library::SupportedV2Wire::attest_ir_admitted_v2` is `pub` only so
-        // the layer-4 v2 reader can call it across the layer-3 crate
-        // boundary; the witness attests that IR's v2 reader admitted the
-        // bytes, which only that reader knows. The bare name matches every
-        // spelling: `SupportedV2Wire::attest_ir_admitted_v2(..)`,
-        // `Self::attest_ir_admitted_v2(..)` and the minter passed as a value.
-        // Its own `fn attest_ir_admitted_v2(` definition is not a call.
-        call_patterns: &["attest_ir_admitted_v2"],
-        forbidden_patterns: &[],
-        forbidden_modules: &[],
-        allowed_callers: &[AllowedCaller {
-            crate_src: "qsl-package/src",
-            module_prefix: "checked_v2",
-        }],
-        requires_path: Some("qsl-semantics/src/library/witness.rs"),
-        pending_reason: "the witness module `qsl-semantics/src/library/witness.rs` is absent from \
-                         the --qsl tree",
-        scope_note: Some(
-            "scoped to QSL's own tree; confines references by module only, so a wrapper \
-             defined inside `checked_v2` (a `#[macro_export]` macro, a trait impl or a helper) \
-             and called elsewhere passes this rule -- the companion gate \
-             `tests/it/verified_binding_witness.rs` refuses any reference in `checked_v2` but \
-             the one direct call in `read_checked_package_v2`'s `AdmittedV2` arm, across every \
-             workspace crate's `src/`; the allowed caller is `qsl-package`'s `checked_v2` \
-             since X-7",
-        ),
-        constructors: &[],
-        shipped_only: true,
-        debt_list: &[],
-    },
-    Rule {
         id: "T12-F",
         description: "no QSL module decodes an admitted `NodeKey` (ADR-011 T-12, \
                       \"Decoding an admitted key\"; FR-087-AC-6, AC-11)",
@@ -2837,97 +2802,6 @@ mod tests {
         assert!(outcome.debt.is_empty(), "{:?}", outcome.debt);
         assert!(outcome.passed());
     }
-    /// tc_arch_lint_api_surface_023 (T12-E, TC-157, FR-060-AC-3, FR-087-AC-1): a call to
-    /// the condition-1 witness minter from any module outside
-    /// `qsl-package`'s `checked_v2` -- including `library`, which defines
-    /// it in `qsl-semantics`, and another `qsl-package` module -- is a
-    /// violation, whether spelled through the type, through `Self`, as a
-    /// function value or across the crate boundary
-    /// (`qsl_semantics::library::SupportedV2Wire::..`), and so is a
-    /// `checked_v2` module in another crate; the one call in `qsl-package`'s
-    /// `checked_v2` and the minter's own definition are not.
-    #[trace("TC-157", "FR-060-AC-3", "FR-087-AC-1")]
-    #[test]
-    fn tc_arch_lint_api_surface_023_witness_minter_outside_checked_v2_is_a_violation() {
-        let dir = tempfile::tempdir().unwrap();
-        ensure_qsl_roots(dir.path());
-        write(
-            dir.path(),
-            "qsl-semantics/src/library/witness.rs",
-            "pub struct SupportedV2Wire(());\n\
-             impl SupportedV2Wire {\n\
-             \x20   pub fn attest_ir_admitted_v2() -> Self {\n\
-             \x20       Self(())\n\
-             \x20   }\n\
-             \x20   fn again() -> Self {\n\
-             \x20       Self::attest_ir_admitted_v2()\n\
-             \x20   }\n\
-             }\n",
-        );
-        write(
-            dir.path(),
-            "qsl-package/src/checked_v2.rs",
-            "fn read() {\n    let _ = SupportedV2Wire::attest_ir_admitted_v2();\n}\n",
-        );
-        write(
-            dir.path(),
-            "qsl-package/src/emit.rs",
-            "fn emit() {\n    let mint = SupportedV2Wire::attest_ir_admitted_v2;\n}\n",
-        );
-        write(
-            dir.path(),
-            "src/route.rs",
-            "fn route() {\n    let _ = qsl_semantics::library::SupportedV2Wire::attest_ir_admitted_v2();\n}\n",
-        );
-        // A module of the same path in another crate is not the allowed
-        // caller: the allow-list names `qsl-package`'s `checked_v2`.
-        write(
-            dir.path(),
-            "src/checked_v2.rs",
-            "fn read() {\n    let _ = SupportedV2Wire::attest_ir_admitted_v2();\n}\n",
-        );
-        let rule = RULES.iter().find(|rule| rule.id == "T12-E").unwrap();
-        let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
-        assert_eq!(outcome.status, RuleStatus::Live);
-        let found: Vec<(&str, usize, &str)> = outcome
-            .violations
-            .iter()
-            .map(|site| (site.module.as_str(), site.line, site.function.as_str()))
-            .collect();
-        assert_eq!(
-            found,
-            vec![
-                ("emit", 2, "emit"),
-                ("library::witness", 7, "SupportedV2Wire::again"),
-                ("checked_v2", 2, "read"),
-                ("route", 2, "route"),
-            ],
-            "{:?}",
-            outcome.violations
-        );
-        assert!(!outcome.passed());
-    }
-
-    /// tc_arch_lint_api_surface_024 (T12-E on this repository's own tree):
-    /// the witness minter's only shipped caller is
-    /// `qsl-package`'s `checked_v2`. This is the CI gate for the rule: it
-    /// runs in `cargo test --workspace` (`make ci`), where the `arch-lint`
-    /// binary itself does not yet run.
-    #[trace("TC-157", "FR-060-AC-2", "FR-087-AC-1")]
-    #[test]
-    fn tc_arch_lint_api_surface_024_witness_minter_live_tree_has_no_other_caller() {
-        let qsl_root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../..")
-            .canonicalize()
-            .unwrap();
-        assert_is_qsl_root(&qsl_root).unwrap();
-        let rule = RULES.iter().find(|rule| rule.id == "T12-E").unwrap();
-        let outcome = evaluate(rule, &qsl_root, Some(&qsl_root)).unwrap();
-        assert_eq!(outcome.status, RuleStatus::Live);
-        assert!(outcome.violations.is_empty(), "{:?}", outcome.violations);
-        assert!(outcome.passed());
-    }
-
     /// tc_arch_lint_api_surface_027 (T12-F, TC-157, FR-060-AC-3; ADR-011
     /// T-12; FR-087-AC-6): T12-F has no QSL allowed caller, so a
     /// `NodeKey::decode_admitted` call from any QSL module -- including

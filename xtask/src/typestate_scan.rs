@@ -658,12 +658,11 @@ mod tests {
         scan(root.path(), &["src"]).expect("scan runs")
     }
 
-    /// ADR-013 T-1's five new stage outputs and the file that owns each.
-    const STAGE_TYPES: [(&str, &str); 5] = [
+    /// ADR-013 T-1's four new stage outputs and the file that owns each.
+    const STAGE_TYPES: [(&str, &str); 4] = [
         ("CheckedGraph", "qsl-semantics/src/check/mod.rs"),
         ("CheckedPackage", "qsl-package/src/checked.rs"),
         ("EmittedPackage", "qsl-package/src/checked.rs"),
-        ("VerifiedPackage", "qsl-semantics/src/library/mod.rs"),
         ("ImportView", "qsl-semantics/src/library/mod.rs"),
     ];
 
@@ -719,7 +718,7 @@ mod tests {
 
     /// Every item allowed to hand back an owned stage-output type, by
     /// (file, `Self` type, name), and why.
-    const STAGE_CONSTRUCTORS: [(&str, Option<&str>, &str); 12] = [
+    const STAGE_CONSTRUCTORS: [(&str, Option<&str>, &str); 11] = [
         // S3: the checker.
         (
             S3_CONSTRUCTOR.file,
@@ -741,14 +740,8 @@ mod tests {
         ),
         // S4 wire: the v2 emitter's constructor.
         ("qsl-package/src/checked.rs", Some("EmittedPackage"), "new"),
-        // I2: the §4 verified binding.
-        ("qsl-semantics/src/library/mod.rs", None, "verify_binding"),
-        // I2: `VerifiedPackage` -> `ImportView`.
-        (
-            "qsl-semantics/src/library/mod.rs",
-            Some("VerifiedPackage"),
-            "into_import_view",
-        ),
+        // I2: the import view over a library package.
+        ("qsl-semantics/src/library/mod.rs", Some("ImportView"), "of"),
         // A shared handle to the graph `link` or `link_with` took, which an
         // importing package's E3 types an imported name from (ADR-015 D-5);
         // it builds no graph.
@@ -757,8 +750,7 @@ mod tests {
             Some("CheckedPackage"),
             "shared_graph",
         ),
-        // I2 over a library's own emission: the verified binding, then
-        // `into_import_view` (ADR-015 D-1 step 6).
+        // I2 over a library's own emission (ADR-015 D-1 step 6).
         ("qsl-package/src/checked_v2.rs", None, "read_import_view"),
         // The spine's S3 and S4 step over one parsed unit, and the per-library
         // chain the S4 source resolution reruns for each library (ADR-015
@@ -798,7 +790,7 @@ mod tests {
 
     /// FR-087-AC-1's constructor half and FR-087-AC-2 (TC-244 step 0): in
     /// the QSL crates, the only items returning an owned `CheckedGraph`,
-    /// `CheckedPackage`, `EmittedPackage`, `VerifiedPackage` or
+    /// `CheckedPackage`, `EmittedPackage` or
     /// `ImportView` (the lane-private `checking::CheckedPackage` included)
     /// are the named stage constructors; a `From` impl, decoder or other
     /// conversion into one fails here. Out-parameters are not seen.
@@ -830,7 +822,7 @@ mod tests {
             "type Forged = CheckedPackage;\n\
              pub fn by_alias() -> Forged { todo!() }\n\
              pub fn outer() { fn nested() -> Option<ImportView> { None } }\n\
-             pub trait Mint { fn made(&self) -> VerifiedPackage { todo!() } }\n\
+             pub trait Mint { fn made(&self) -> EmittedPackage { todo!() } }\n\
              pub fn out_param(out: &mut Option<CheckedGraph>) { let _ = out; }\n",
         )]);
         let names: BTreeSet<String> = stage_returners(&items)

@@ -127,4 +127,3 @@ mod temporal_negotiation;
 mod text_enum_identity;
 mod unbounded_declarations;
 mod union_nodes;
-mod verified_binding_witness;

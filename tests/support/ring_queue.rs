@@ -405,10 +405,15 @@ pub fn check_over(queue: &[u8], body: &str) -> Result<Checked, Vec<Refused>> {
         ModelNormalizationLimits::default(),
     )
     .unwrap_or_else(|refusal| panic!("I1 refused: {refusal:?}"));
-    let declarations =
-        PackageDeclarations::assemble(parsed.source().reference().clone(), "fixture".to_string(), built, selected, vec![])
-            .unwrap_or_else(|refusal| panic!("{body}: the unit assembles: {refusal:?}"))
-            .with_unwritten_refinements();
+    let declarations = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        "fixture".to_string(),
+        built,
+        selected,
+        vec![],
+    )
+    .unwrap_or_else(|refusal| panic!("{body}: the unit assembles: {refusal:?}"))
+    .with_unwritten_refinements();
     let regions = declarations.regions();
     match declarations.check(CheckingLimits::default()) {
         Ok(graph) => Ok(Checked { graph, packages }),
