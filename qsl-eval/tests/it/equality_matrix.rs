@@ -2863,3 +2863,41 @@ fn a_converted_equality_operand_is_converted_once_and_compared() {
         }
     }
 }
+
+/// FR-096-AC-23 (TC-1274): `2^64 * 2^64` under `integer_bits` 128 is the
+/// kernel's `Incomplete` at `integer-arithmetic.arithmetic`, with the
+/// kernel's amounts and no result-retain charge.
+#[trace("TC-1274", "FR-096-AC-23")]
+#[test]
+fn a_two_to_the_64_product_past_integer_bits_is_incomplete_at_its_arithmetic_charge() {
+    let package = plain_package();
+    let two_64 = Integer::from(1u128 << 64);
+    let operand_type = ValueType::Int(IntegerInterval::new(integer(0), two_64.clone()).unwrap());
+    let parameters = [("a", operand_type.clone()), ("b", operand_type)];
+    let (outcome, meter) = run_in(
+        &package,
+        &parameters,
+        &operation(BinaryOperator::Multiply, "a", "b"),
+        None,
+        vec![Value::Integer(two_64.clone()), Value::Integer(two_64)],
+        ScalarLimits {
+            integer_bits: 128,
+            ..UNLIMITED
+        },
+    );
+    match outcome {
+        Outcome::Incomplete(record) => {
+            assert_eq!(record.limit_kind, LimitKind::IntegerBits);
+            assert_eq!(record.limit, 128);
+            assert_eq!(record.consumed, 65);
+            assert_eq!(record.next_charge, integer(130));
+            assert_eq!(
+                record.charge_point,
+                ChargePoint::IntegerArithmeticArithmetic
+            );
+        }
+        other => panic!("an Incomplete record, not {other:?}"),
+    }
+    assert!(!crate::support::admitted_charge_points(&meter)
+        .contains(&ChargePoint::IntegerArithmeticResultRetain));
+}

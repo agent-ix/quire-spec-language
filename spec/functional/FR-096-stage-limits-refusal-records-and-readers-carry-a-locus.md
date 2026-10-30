@@ -390,6 +390,16 @@ At S6a, a consumer SHALL build a record as follows:
 In both cases the locus is `Evaluation.location`, resolved by the checked
 package. It is absent when the location is `None` or resolves to no region.
 
+### An integer multiplication past `integer_bits` is an incomplete outcome at its arithmetic charge
+
+When S6a evaluates an integer multiplication whose charge at
+`integer-arithmetic.arithmetic` exceeds the `integer_bits` limit, it SHALL
+return the kernel `Outcome::Incomplete` unchanged: the limit kind
+`integer_bits`, the limit, the consumed amount, the denied amount and the
+charge point `integer-arithmetic.arithmetic`. It builds no refusal record and
+no value, and makes no later charge. The amounts are the kernel's
+(`quire.value.accounting/v1`); QSL neither recomputes nor adjusts them.
+
 ### The I2 reader locates its refusals in the artifact
 
 IR's `read_checked_package` decides the version (ADR-013 O-22 Package
@@ -435,6 +445,7 @@ name.
 | FR-096-AC-20 | A unit compiled with `body sizeA ... { 11 }`, `body sizeB ... { 22 }` and `pre preA`, `pre preB` on `A.size` and `B.size` (`B` redefining `A`), and a `pre` clause calling `size`: the body function of `A.size` resolves to the text `11` and that of `B.size` to `22`; the precondition function of `A.size` and of `B.size`, and the disjunction `B.size` takes with `A.size`, resolve to the text of `preA`, `preB` and `preB`; each of the five functions has one `generated` occurrence resolving to the same region as its body; and `compile_package` emits the unit. | Test (TC-1018) |
 | FR-096-AC-21 | A received `Refusal::CheckedInvariant { cause: NativeIntegerCapacityBreach }` at S6a, located or unlocated, returns `Err(InternalFault)` with stage `S6a`, invariant `checked-program-invariant`, code `runtime_invariant`, cause `established-invariant-broken`, category internal failure, no named fields and `kernel_cause()` equal to `NativeIntegerCapacityBreach`; building a kernel refusal record from it yields none, and the paired kernel `IntegerOutOfDomain { target: Int[-5, 9] }` stop still yields the `integer_out_of_domain` record with `expected` `Int[-5, 9]`. | Test |
 | FR-096-AC-22 | A partition-proof work-budget stop (FR-218-AC-30's 24-atom `choice` under the default `s3.work_units`) is a `CheckRefusal`/`stage_limit_exceeded` with kind work budget, `region: None` on its `StageLimitCause`, and `DeclarationRegions::refusal_region` resolving to the `choice`'s span, not the declaration span and not a lowering node. | Test (TC-1172) |
+| FR-096-AC-23 | Evaluating `a * b` over `a, b: Int[0, 18446744073709551616]` (up to 2^64) at S6a with `a = b = 18446744073709551616` (2^64) under `integer_bits` 128 returns `FamilyOutcome::Evaluated(Outcome::Incomplete(_))` naming limit kind `integer_bits`, limit 128, consumed 65, denied amount 130 and charge point `integer-arithmetic.arithmetic`; it is not a refusal, and the meter admits no `integer-arithmetic.result-retain` charge. | Test (TC-1274) |
 
 The fourth
 no-region case (a span the map splits) is backed directly against the
