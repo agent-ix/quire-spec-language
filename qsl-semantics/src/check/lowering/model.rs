@@ -397,7 +397,8 @@ impl AdmittedModel {
         let (owner, _) = self.types.iter().find(|(_, key)| *key == &field.owner)?;
         let name = crate::model::intake::member_identity_name(&field.owner.node, &field.key.node)?;
         Some(quire_semantic_value::declaration::FieldRef::new(
-            *owner, name,
+            owner.clone(),
+            name,
         ))
     }
 
@@ -405,7 +406,7 @@ impl AdmittedModel {
     pub(crate) fn effective_id(&self, key: &DeclarationKey) -> Option<EffectiveId> {
         self.types
             .iter()
-            .find_map(|(identity, declared)| (declared == key).then_some(*identity))
+            .find_map(|(identity, declared)| (declared == key).then_some(identity.clone()))
     }
 
     /// The field record a staged admission's field identity stands for.
@@ -527,7 +528,7 @@ impl AdmittedModel {
             let Some(parent) = self.effective_id(edge) else {
                 continue;
             };
-            let slot = staged.parent_field(child, parent, &target_ref, (), ())?;
+            let slot = staged.parent_field(child.clone(), parent, &target_ref, (), ())?;
             if slots.iter().any(|known| known.field == slot.field) {
                 continue;
             }
@@ -612,7 +613,7 @@ impl AdmittedModel {
                 quire_exact::Presence::Required
             };
             projections.insert(
-                FieldRef::new(context, name),
+                FieldRef::new(context.clone(), name),
                 (first.value_type.clone(), presence),
             );
         }
@@ -672,7 +673,7 @@ impl AdmittedModel {
             types: view
                 .type_identities()
                 .iter()
-                .map(|(key, id)| (*id, key.clone()))
+                .map(|(key, id)| (id.clone(), key.clone()))
                 .collect(),
         }
         .with_places()
@@ -844,7 +845,7 @@ impl AdmittedModel {
                     Some(DomainPackageRecord::ObjectType(_))
                 )
             })
-            .map(|(id, key)| (key, *id))
+            .map(|(id, key)| (key, id.clone()))
     }
 
     /// Every state-machine declaration of this package and its effective
@@ -863,7 +864,7 @@ impl AdmittedModel {
                         matches!(record, DomainPackageRecord::FieldMember(field) if &field.owner == *key)
                     })
             })
-            .map(|(id, key)| (key, *id))
+            .map(|(id, key)| (key, id.clone()))
     }
 
     /// Every semantic object-type model node in this selected package, in
@@ -888,7 +889,7 @@ impl AdmittedModel {
         let populated = self.population_objects();
         let mut populated = populated.iter();
         match (populated.next(), populated.next()) {
-            (Some(only), None) => Some(*only),
+            (Some(only), None) => Some(only.clone()),
             _ => self
                 .object_types()
                 .min_by(|(left, _), (right, _)| left.cmp(right))
@@ -926,7 +927,7 @@ impl AdmittedModel {
                     )
                 )
             })
-            .map(|(id, key)| (key, *id))
+            .map(|(id, key)| (key, id.clone()))
     }
 
     /// The declaration key of every top-level declaration of this package
@@ -1005,7 +1006,7 @@ impl AdmittedModel {
     ) -> Vec<(usize, &DeclarationKey, EffectiveId, Option<&AuthoredBound>)> {
         let covers = |member: &DeclarationKey| {
             self.types.iter().any(|(id, declared)| {
-                declared == member && (*id == target || conforms(target, *id))
+                declared == member && (*id == target || conforms(target.clone(), id.clone()))
             })
         };
         self.population_domains()
@@ -1033,7 +1034,9 @@ impl AdmittedModel {
         let overlaps = |member: &DeclarationKey| {
             self.types.iter().any(|(id, declared)| {
                 declared == member
-                    && (*id == target || conforms(target, *id) || conforms(*id, target))
+                    && (*id == target
+                        || conforms(target.clone(), id.clone())
+                        || conforms(id.clone(), target.clone()))
             })
         };
         self.population_domains()
@@ -1067,7 +1070,7 @@ impl AdmittedModel {
                     .filter_map(|member| {
                         self.types
                             .iter()
-                            .find_map(|(id, declared)| (declared == member).then_some(*id))
+                            .find_map(|(id, declared)| (declared == member).then_some(id.clone()))
                     })
                     .collect();
                 Some(NamedPopulationRecord {
@@ -1102,7 +1105,9 @@ impl AdmittedModel {
                 let covers = |member: &DeclarationKey| {
                     self.types.iter().any(|(id, declared)| {
                         declared == member
-                            && (*id == target || conforms(target, *id) || conforms(*id, target))
+                            && (*id == target
+                                || conforms(target.clone(), id.clone())
+                                || conforms(id.clone(), target.clone()))
                     })
                 };
                 symmetric
@@ -1365,7 +1370,7 @@ impl AdmittedModel {
     ) -> Option<&PackagePlace> {
         self.clock_places()
             .iter()
-            .find(|place| place.path == path && self.conforms(object, place.owner))
+            .find(|place| place.path == path && self.conforms(object.clone(), place.owner.clone()))
     }
 
     /// The package record type a written name `T` or `M::T` names, when
@@ -1476,8 +1481,8 @@ impl AdmittedModel {
     pub(crate) fn referenced_object(&self, object: EffectiveId, name: &str) -> Option<EffectiveId> {
         self.references
             .iter()
-            .find(|(owner, field, _)| field == name && self.conforms(object, *owner))
-            .map(|(_, _, target)| *target)
+            .find(|(owner, field, _)| field == name && self.conforms(object.clone(), owner.clone()))
+            .map(|(_, _, target)| target.clone())
     }
 
     /// Every required single-valued field of a package object type
@@ -1519,7 +1524,7 @@ impl AdmittedModel {
             let PlaceStep::Field(name) = step else {
                 return (walked, at);
             };
-            match self.referenced_object(at, name) {
+            match self.referenced_object(at.clone(), name) {
                 Some(next) => at = next,
                 None => return (walked, at),
             }
@@ -1546,7 +1551,7 @@ impl AdmittedModel {
             let owner = self.object_type_id(&field.owner)?;
             let name =
                 crate::model::intake::member_identity_name(&field.owner.node, &field.key.node)?;
-            (name == first && self.conforms(object, owner) && single(field))
+            (name == first && self.conforms(object.clone(), owner) && single(field))
                 .then_some(&field.value_type)
         })?;
         for step in rest {
@@ -1720,7 +1725,7 @@ impl AdmittedModel {
                 let node = self
                     .types
                     .iter()
-                    .find_map(|(id, declared)| (declared == canonical).then_some(*id))?;
+                    .find_map(|(id, declared)| (declared == canonical).then_some(id.clone()))?;
                 Some((ordinal, population, node))
             })
     }
@@ -1987,7 +1992,7 @@ impl<'a> Lowering<'a> {
             .ok_or_else(|| fault(location, KeyFault::UnnamedRecordKind(declaration.clone())))?;
         let key = self.insert_node(location, model_node_content(owner, node_tag, form))?;
         self.correspondence
-            .record(key, declaration.clone())
+            .record(key.clone(), declaration.clone())
             .map_err(|conflict| fault(location, KeyFault::CorrespondenceConflict(conflict)))?;
         Ok(key)
     }
@@ -2016,7 +2021,7 @@ impl<'a> Lowering<'a> {
     ) -> Result<NodeKey, CheckRefusal> {
         let declaration = self.model_node(variant.declaration(), location)?;
         for member in variant.members() {
-            self.enum_member_node(location, declaration, member)?;
+            self.enum_member_node(location, declaration.clone(), member)?;
         }
         Ok(declaration)
     }
@@ -2088,13 +2093,13 @@ impl<'a> Lowering<'a> {
         location: &Location,
     ) -> Result<NodeKey, CheckRefusal> {
         match value_type {
-            ValueType::Reference(target) => self.object_node(*target, location),
+            ValueType::Reference(target) => self.object_node(target.clone(), location),
             ValueType::Option(payload) => match payload.as_ref() {
-                ValueType::Reference(target) => self.object_node(*target, location),
+                ValueType::Reference(target) => self.object_node(target.clone(), location),
                 _ => Err(mismatch(location)),
             },
             ValueType::Collection(collection) => match collection.element() {
-                ValueType::Reference(target) => self.object_node(*target, location),
+                ValueType::Reference(target) => self.object_node(target.clone(), location),
                 _ => Err(mismatch(location)),
             },
             _ => Err(mismatch(location)),
@@ -2146,7 +2151,7 @@ impl<'a> Lowering<'a> {
             None => Vec::new(),
         };
         let node = self.bounded("model_population", set, bindings, location)?;
-        self.population_nodes.insert(node);
+        self.population_nodes.insert(node.clone());
         Ok(node)
     }
 
@@ -2164,8 +2169,8 @@ impl<'a> Lowering<'a> {
     ) -> Result<NodeKey, CheckRefusal> {
         let site = type_declaration(&bound_origin(&bound.label));
         let node = self.population_type(near, Some(bound.maximum), reachability)?;
-        if self.bound_sites.insert((bound.label.clone(), node)) {
-            self.record(node, OccurrenceRole::Type, site);
+        if self.bound_sites.insert((bound.label.clone(), node.clone())) {
+            self.record(node.clone(), OccurrenceRole::Type, site);
         }
         Ok(node)
     }

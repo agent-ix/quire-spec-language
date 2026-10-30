@@ -130,7 +130,7 @@ impl Lowering<'_> {
             binders: inputs
                 .clause_binders
                 .iter()
-                .map(|binder| (binder.slot, *binder))
+                .map(|binder| (binder.slot, binder.clone()))
                 .collect(),
             own: BTreeMap::new(),
             anchored: BTreeMap::new(),
@@ -184,7 +184,7 @@ impl Lowering<'_> {
                 .len();
             let declared = slots.binders.get(slot).ok_or_else(unchecked)?;
             let binder = self.protocol_binder(declared, slot, level, &location)?;
-            controls.binders.insert(slot, binder);
+            controls.binders.insert(slot, binder.clone());
             controls.own.insert(control.node, binder);
         }
 
@@ -212,7 +212,7 @@ impl Lowering<'_> {
             let key = self.protocol_member(
                 &location,
                 "control",
-                inputs.boolean,
+                inputs.boolean.clone(),
                 declaration,
                 None,
                 BodyTerm::application(
@@ -224,7 +224,7 @@ impl Lowering<'_> {
                         }),
                         ..Operation::plain("quire.op.protocol.control")
                     },
-                    inputs.boolean,
+                    inputs.boolean.clone(),
                     arguments,
                 ),
             )?;
@@ -234,9 +234,9 @@ impl Lowering<'_> {
         let readable = slots
             .root_out
             .iter()
-            .map(|slot| controls.binders.get(slot).copied().ok_or_else(unchecked))
+            .map(|slot| controls.binders.get(slot).cloned().ok_or_else(unchecked))
             .collect::<Result<Vec<_>, _>>()?;
-        let root = keys.get(&root.node).copied().ok_or_else(unchecked)?;
+        let root = keys.get(&root.node).cloned().ok_or_else(unchecked)?;
         Ok(Run {
             root,
             readable,
@@ -259,7 +259,7 @@ impl Lowering<'_> {
         let unchecked = || fault(location, KeyFault::UncheckedProtocolFact);
         let control = checked.controls.control(node).ok_or_else(unchecked)?;
         let declaration = form.declarations.get(node.0).ok_or_else(unchecked)?;
-        let key_of = |target: &ProtocolNodeId| keys.get(target).copied().ok_or_else(unchecked);
+        let key_of = |target: &ProtocolNodeId| keys.get(target).cloned().ok_or_else(unchecked);
         let anchor_of = || {
             controls
                 .anchored
@@ -271,7 +271,9 @@ impl Lowering<'_> {
             controls
                 .own
                 .get(&node)
-                .map(|binder| MemberTerm::bound("binder", LeafTerm::reference(binder.parameter)))
+                .map(|binder| {
+                    MemberTerm::bound("binder", LeafTerm::reference(binder.parameter.clone()))
+                })
                 .ok_or_else(unchecked)
         };
         let role = |name: Option<&str>| {
@@ -281,7 +283,7 @@ impl Lowering<'_> {
                 .roles
                 .iter()
                 .find(|(declared, _)| declared == name)
-                .map(|(_, key)| MemberTerm::bound("role", LeafTerm::reference(*key)))
+                .map(|(_, key)| MemberTerm::bound("role", LeafTerm::reference(key.clone())))
                 .ok_or_else(unchecked)
         };
         let channel = || {
@@ -295,7 +297,7 @@ impl Lowering<'_> {
                 .channels
                 .iter()
                 .find(|(declared, _)| *declared == via.channel)
-                .map(|(_, key)| MemberTerm::bound("channel", LeafTerm::reference(*key)))
+                .map(|(_, key)| MemberTerm::bound("channel", LeafTerm::reference(key.clone())))
                 .ok_or_else(unchecked)
         };
         // A `related by` clause names a relationship, which is not written
@@ -392,12 +394,12 @@ impl Lowering<'_> {
                     "attempt",
                     vec![
                         role(Some(&attempt.role.name))?,
-                        MemberTerm::bound("operation", LeafTerm::reference(nodes.anchor)),
+                        MemberTerm::bound("operation", LeafTerm::reference(nodes.anchor.clone())),
                         MemberTerm::binding("ordering", ordering),
                         MemberTerm::binding(
                             "contracts",
                             BindingValue::Group(GroupTerm::references(sorted(
-                                nodes.contracts.iter().copied(),
+                                nodes.contracts.iter().cloned(),
                             ))),
                         ),
                         binder()?,
@@ -527,7 +529,7 @@ impl Lowering<'_> {
             let [body] = branch.children[..] else {
                 return Err(unchecked());
             };
-            let body = keys.get(&body).copied().ok_or_else(unchecked)?;
+            let body = keys.get(&body).cloned().ok_or_else(unchecked)?;
             branches.push((branch.name.as_str(), body));
         }
         branches.sort_by(|left, right| left.0.as_bytes().cmp(right.0.as_bytes()));
@@ -558,7 +560,7 @@ impl Lowering<'_> {
                     .pending_predicate_joins
                     .iter()
                     .find(|join| join.node == control.node)
-                    .and_then(|join| self.functions.get(join.function).copied().flatten())
+                    .and_then(|join| self.functions.get(join.function).cloned().flatten())
                     .ok_or_else(unchecked)?;
                 join.push(member("predicate", LeafTerm::reference(function)));
             }
@@ -637,7 +639,7 @@ impl Lowering<'_> {
             let [body] = case.children[..] else {
                 return Err(unchecked());
             };
-            let body = keys.get(&body).copied().ok_or_else(unchecked)?;
+            let body = keys.get(&body).cloned().ok_or_else(unchecked)?;
             let guard = checked
                 .cases
                 .iter()
@@ -708,7 +710,7 @@ impl Lowering<'_> {
                                 && declaration.name.span.end <= span.end
                         })
                 })
-                .and_then(|child| keys.get(&child).copied())
+                .and_then(|child| keys.get(&child).cloned())
                 .ok_or_else(unchecked)
         };
         let body = within(form.body)?;
@@ -784,7 +786,7 @@ impl Lowering<'_> {
         let unchecked = || fault(location, KeyFault::UncheckedProtocolFact);
         let scope = entry
             .iter()
-            .map(|slot| controls.binders.get(slot).copied().ok_or_else(unchecked))
+            .map(|slot| controls.binders.get(slot).cloned().ok_or_else(unchecked))
             .collect::<Result<Vec<_>, _>>()?;
         let mut binders = Binders::new(&controls.slot_names, &scope);
         self.expression(body.root(), &mut binders)
@@ -805,10 +807,10 @@ impl Lowering<'_> {
         let body = controls.bodies.get(&node).ok_or_else(unchecked)?;
         let mut scope = entry
             .iter()
-            .map(|slot| controls.binders.get(slot).copied().ok_or_else(unchecked))
+            .map(|slot| controls.binders.get(slot).cloned().ok_or_else(unchecked))
             .collect::<Result<Vec<_>, _>>()?;
         if own {
-            scope.push(controls.own.get(&node).copied().ok_or_else(unchecked)?);
+            scope.push(controls.own.get(&node).cloned().ok_or_else(unchecked)?);
         }
         let mut binders = Binders::new(&controls.slot_names, &scope);
         self.expression(body.root(), &mut binders)
@@ -913,7 +915,7 @@ impl Controls<'_, '_> {
             .roles
             .iter()
             .find(|(declared, _)| declared == name)
-            .map(|(_, key)| *key)
+            .map(|(_, key)| key.clone())
     }
 
     /// The controls of the tree in an order that keys each after every node

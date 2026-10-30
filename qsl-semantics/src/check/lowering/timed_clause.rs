@@ -84,7 +84,7 @@ impl Lowering<'_> {
         let mut guards = Vec::with_capacity(model.guards().len());
         for (at, guard) in model.guards().iter().enumerate() {
             let location = clause_at(guard.index)?;
-            let context = guard.context;
+            let context = guard.context.clone();
             let operation = self.clause_anchor(guard.operation(), location)?;
             let mut parts = Vec::with_capacity(guard.parts().len());
             // A covered guard is its always-holding part: the disjuncts that
@@ -101,7 +101,7 @@ impl Lowering<'_> {
                     None => location.clone(),
                 };
                 let mut conjuncts =
-                    self.self_presences(model.clocks(), part.presences(), context, &site)?;
+                    self.self_presences(model.clocks(), part.presences(), context.clone(), &site)?;
                 if let Some(data) = part.data() {
                     conjuncts.push(self.timed_predicate(data, &site)?);
                 }
@@ -113,7 +113,12 @@ impl Lowering<'_> {
                     .clocks()
                     .iter()
                     .map(|constraint| {
-                        self.constraint_nodes(constraint, context, guard.operation(), location)
+                        self.constraint_nodes(
+                            constraint,
+                            context.clone(),
+                            guard.operation(),
+                            location,
+                        )
                     })
                     .collect::<Result<Vec<_>, _>>()?;
                 parts.push(PartNodes {
@@ -134,17 +139,17 @@ impl Lowering<'_> {
                     let mut product = Vec::with_capacity(held.parts.len() * parts.len());
                     for left in &held.parts {
                         for right in &parts {
-                            let predicate = if self.is_truth(left.predicate) {
-                                right.predicate
-                            } else if self.is_truth(right.predicate)
+                            let predicate = if self.is_truth(left.predicate.clone()) {
+                                right.predicate.clone()
+                            } else if self.is_truth(right.predicate.clone())
                                 || left.predicate == right.predicate
                             {
-                                left.predicate
+                                left.predicate.clone()
                             } else {
                                 self.connective(
                                     "quire.op.boolean.and",
-                                    left.predicate,
-                                    right.predicate,
+                                    left.predicate.clone(),
+                                    right.predicate.clone(),
                                     location,
                                 )?
                             };
@@ -171,7 +176,7 @@ impl Lowering<'_> {
         let mut resets = Vec::new();
         for written in model.resets() {
             let location = clause_at(written.index)?;
-            let context = written.context;
+            let context = written.context.clone();
             let operation = self.clause_anchor(written.operation(), location)?;
             for reset in written.resets() {
                 let target = match reset.parameter() {
@@ -179,7 +184,7 @@ impl Lowering<'_> {
                         parameter: clock_parameter_name(written.operation(), position, location)?,
                     },
                     None => {
-                        let owner = self.timed_self(context, location)?;
+                        let owner = self.timed_self(context.clone(), location)?;
                         let binders = match reset.selection() {
                             None => Vec::new(),
                             Some(selection) => {
@@ -201,7 +206,7 @@ impl Lowering<'_> {
                                     self.timed_place(clock.owner(), clock.path()).ok_or_else(
                                         || super::fault(location, KeyFault::UnkeyableRequirements),
                                     )?;
-                                self.presence_read(place, owner, &binders, location)?
+                                self.presence_read(place, owner.clone(), &binders, location)?
                             }
                             _ => self.timed_true(location)?,
                         };
@@ -215,7 +220,7 @@ impl Lowering<'_> {
                     }
                 };
                 resets.push(ResetNodes {
-                    operation,
+                    operation: operation.clone(),
                     target,
                     value: reset.value().clone(),
                     span: reset.span(),
@@ -263,7 +268,7 @@ impl Lowering<'_> {
         location: &Location,
     ) -> Result<NodeKey, CheckRefusal> {
         let anchor = super::AnchorInput {
-            declaring: operation.declaring,
+            declaring: operation.declaring.clone(),
             operation: &operation.declaration,
             location,
             reference: location,
@@ -324,7 +329,7 @@ impl Lowering<'_> {
         via: &[PlaceStep],
         location: &Location,
     ) -> Result<NodeKey, CheckRefusal> {
-        let mut owner = self.timed_self(context, location)?;
+        let mut owner = self.timed_self(context.clone(), location)?;
         let mut at = context;
         for step in via {
             let unreachable = || super::fault(location, KeyFault::UnkeyableRequirements);
@@ -334,18 +339,18 @@ impl Lowering<'_> {
             let next = self
                 .models
                 .iter()
-                .find_map(|model| model.referenced_object(at, name))
+                .find_map(|model| model.referenced_object(at.clone(), name))
                 .ok_or_else(unreachable)?;
             let object = self.object_node(at, location)?;
             let dereferenced = self.typed_application(
                 location,
-                object,
+                object.clone(),
                 Operator::Deref,
                 Operation::plain("quire.op.model.deref"),
                 vec![MemberTerm::Leaf(LeafTerm::reference(owner))],
             )?;
-            let field_type = self.type_node(&ValueType::Reference(next), location)?;
-            self.record(field_type, OccurrenceRole::Type, location.clone());
+            let field_type = self.type_node(&ValueType::Reference(next.clone()), location)?;
+            self.record(field_type.clone(), OccurrenceRole::Type, location.clone());
             let name = Identifier::new(name.as_str()).map_err(|_| unreachable())?;
             let read = self.typed_application(
                 location,
@@ -373,7 +378,7 @@ impl Lowering<'_> {
         location: &Location,
     ) -> Result<NodeKey, CheckRefusal> {
         let self_type = self.type_node(&ValueType::Reference(context), location)?;
-        self.record(self_type, OccurrenceRole::Type, location.clone());
+        self.record(self_type.clone(), OccurrenceRole::Type, location.clone());
         self.parameter("self", 0, self_type, location)
     }
 
@@ -391,8 +396,8 @@ impl Lowering<'_> {
                 continue;
             }
             let semantic_type = self.binder_type(value_type, None, site)?;
-            self.record(semantic_type, OccurrenceRole::Type, site.clone());
-            let parameter = self.parameter(name, slot, semantic_type, site)?;
+            self.record(semantic_type.clone(), OccurrenceRole::Type, site.clone());
+            let parameter = self.parameter(name, slot, semantic_type.clone(), site)?;
             scope.push(Binder {
                 slot,
                 parameter,
@@ -414,11 +419,15 @@ impl Lowering<'_> {
             location,
             NodeTag::Value,
             "literal",
-            Some(boolean),
+            Some(boolean.clone()),
             None,
             BodyTerm::literal(boolean, LiteralValue::Boolean(true)),
         )?;
-        self.record(literal, OccurrenceRole::Expression, location.clone());
+        self.record(
+            literal.clone(),
+            OccurrenceRole::Expression,
+            location.clone(),
+        );
         self.boolean_expression(literal, location)
     }
 
@@ -455,9 +464,9 @@ impl Lowering<'_> {
         let Some((first, rest)) = conjuncts.split_first() else {
             return Ok(None);
         };
-        let mut joined = *first;
+        let mut joined = first.clone();
         for conjunct in rest {
-            joined = self.connective("quire.op.boolean.and", joined, *conjunct, location)?;
+            joined = self.connective("quire.op.boolean.and", joined, conjunct.clone(), location)?;
         }
         Ok(Some(joined))
     }
@@ -473,7 +482,7 @@ impl Lowering<'_> {
             return false;
         };
         wrapper.node_tag == NodeTag::Expression
-            && content(target.0).is_some_and(|literal| {
+            && content(target.0.clone()).is_some_and(|literal| {
                 matches!(
                     &literal.body,
                     BodyTerm::Leaf(LeafTerm::Literal {
@@ -501,7 +510,7 @@ impl Lowering<'_> {
             return Ok(Vec::new());
         }
         let integer = self.scalar("integer", location)?;
-        let count = |value: u64| LeafTerm::literal(integer, LiteralValue::Count(value));
+        let count = |value: u64| LeafTerm::literal(integer.clone(), LiteralValue::Count(value));
         let group = |members: Vec<(&str, LeafTerm)>| {
             TupleMember::Group(GroupTerm::new(
                 members
@@ -529,7 +538,7 @@ impl Lowering<'_> {
                             "collection",
                             self.text_literal(super::collection_kind(*shape), location)?,
                         ),
-                        ("selector", LeafTerm::reference(integer)),
+                        ("selector", LeafTerm::reference(integer.clone())),
                         ("minimum", count(shape.min)),
                         (
                             "maximum",
@@ -567,7 +576,7 @@ impl Lowering<'_> {
                 ]));
             }
             let body = BodyTerm::aggregate(vec![
-                MemberTerm::bound("model", LeafTerm::reference(model_node)),
+                MemberTerm::bound("model", LeafTerm::reference(model_node.clone())),
                 MemberTerm::binding("path", BindingValue::Tuple(TupleTerm::new(path))),
                 MemberTerm::binding("resolved_path", BindingValue::Tuple(TupleTerm::new(rows))),
             ]);
@@ -579,11 +588,11 @@ impl Lowering<'_> {
                 None,
                 body,
             )?;
-            self.record(node, OccurrenceRole::Expression, location.clone());
+            self.record(node.clone(), OccurrenceRole::Expression, location.clone());
             self.timed_places.push(TimedPlace {
                 owner: clock.owner(),
                 path: clock.path().to_vec(),
-                node,
+                node: node.clone(),
             });
             nodes.push(node);
         }
@@ -596,7 +605,7 @@ impl Lowering<'_> {
         self.timed_places
             .iter()
             .find(|place| place.owner == owner && place.path == path)
-            .map(|place| place.node)
+            .map(|place| place.node.clone())
     }
 
     /// The `presence_read` of the place `place` at the owner term `owner`
@@ -617,7 +626,7 @@ impl Lowering<'_> {
         arguments.extend(
             slots
                 .iter()
-                .map(|slot| MemberTerm::Leaf(LeafTerm::reference(*slot))),
+                .map(|slot| MemberTerm::Leaf(LeafTerm::reference(slot.clone()))),
         );
         self.typed_application(
             location,
@@ -648,7 +657,7 @@ impl Lowering<'_> {
             let place = self
                 .timed_place(clock.owner(), clock.path())
                 .ok_or_else(unplaced)?;
-            let owner = self.timed_self(context, location)?;
+            let owner = self.timed_self(context.clone(), location)?;
             let boolean = self.type_node(&ValueType::Boolean, location)?;
             let read = self.presence_read(place, owner, &[], location)?;
             reads.push(if *present {
@@ -684,7 +693,7 @@ impl Lowering<'_> {
         let mut disjuncts = Vec::with_capacity(alternatives.len());
         for (alternative, site) in alternatives.iter().zip(sites) {
             let mut conjuncts =
-                self.self_presences(clocks, alternative.presences(), context, site)?;
+                self.self_presences(clocks, alternative.presences(), context.clone(), site)?;
             let data = alternative.predicate();
             let trivial = matches!(
                 data.checked_body().root().kind(),
@@ -701,9 +710,9 @@ impl Lowering<'_> {
                 KeyFault::UnkeyableRequirements,
             ));
         };
-        let mut joined = *first;
+        let mut joined = first.clone();
         for disjunct in rest {
-            joined = self.connective("quire.op.boolean.or", joined, *disjunct, site)?;
+            joined = self.connective("quire.op.boolean.or", joined, disjunct.clone(), site)?;
         }
         self.boolean_expression(joined, site)
     }
@@ -728,7 +737,11 @@ impl Lowering<'_> {
             None,
             BodyTerm::Leaf(LeafTerm::reference(key)),
         )?;
-        self.record(wrapped, OccurrenceRole::Expression, location.clone());
+        self.record(
+            wrapped.clone(),
+            OccurrenceRole::Expression,
+            location.clone(),
+        );
         Ok(wrapped)
     }
 }

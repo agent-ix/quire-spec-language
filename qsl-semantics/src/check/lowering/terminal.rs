@@ -58,9 +58,9 @@ impl Lowering<'_> {
     pub(crate) fn terminal(&mut self, input: &TerminalInput<'_>) -> Result<NodeKey, CheckRefusal> {
         let claim_at = terminal_location(input.index, TerminalSite::Claim);
         let boolean = self.type_node(&ValueType::Boolean, &claim_at)?;
-        self.record(boolean, OccurrenceRole::Type, claim_at.clone());
+        self.record(boolean.clone(), OccurrenceRole::Type, claim_at.clone());
         let object = self.terminal_object(input.model, &claim_at)?;
-        let model = self.object_node(object, &claim_at)?;
+        let model = self.object_node(object.clone(), &claim_at)?;
 
         let (mode, parameters, condition) = match input.declaration {
             TerminalDeclaration::When(predicate) => {
@@ -94,7 +94,7 @@ impl Lowering<'_> {
                 MemberTerm::binding("condition", condition),
             ]),
         )?;
-        self.record(key, OccurrenceRole::Claim, claim_at);
+        self.record(key.clone(), OccurrenceRole::Claim, claim_at);
         Ok(key)
     }
 
@@ -132,8 +132,8 @@ impl Lowering<'_> {
         let mut scope = Vec::new();
         if predicate.body.reads_local(0) {
             let self_type = self.type_node(&ValueType::Reference(object), &claim_at)?;
-            let parameter = self.parameter("self", 0, self_type, &claim_at)?;
-            self.record(self_type, OccurrenceRole::Type, claim_at.clone());
+            let parameter = self.parameter("self", 0, self_type.clone(), &claim_at)?;
+            self.record(self_type.clone(), OccurrenceRole::Type, claim_at.clone());
             scope.push(Binder {
                 slot: 0,
                 parameter,
@@ -141,7 +141,7 @@ impl Lowering<'_> {
             });
         }
         let parameters = BindingValue::Group(GroupTerm::references(
-            scope.iter().map(|binder| binder.parameter),
+            scope.iter().map(|binder| binder.parameter.clone()),
         ));
         let mut binders = Binders::new(&predicate.slot_names, &scope);
         let term = self.expression(predicate.body.root(), &mut binders)?;

@@ -145,8 +145,8 @@ impl Lowering<'_> {
         node: impl FnOnce(&mut Self) -> Result<NodeKey, CheckRefusal>,
     ) -> Result<NodeKey, CheckRefusal> {
         let key = node(self)?;
-        if !self.occurrences.has(key) {
-            self.record(key, OccurrenceRole::Generated, location.clone());
+        if !self.occurrences.has(key.clone()) {
+            self.record(key.clone(), OccurrenceRole::Generated, location.clone());
         }
         Ok(key)
     }
@@ -160,14 +160,14 @@ impl Lowering<'_> {
         let mut scope = Vec::with_capacity(row.parameters.len());
         for (level, (name, value_type)) in row.parameters.iter().enumerate() {
             let type_key = self.binder_type(value_type, None, &location)?;
-            let key = self.parameter(name, level, type_key, &location)?;
-            self.record(type_key, OccurrenceRole::Type, location.clone());
+            let key = self.parameter(name, level, type_key.clone(), &location)?;
+            self.record(type_key.clone(), OccurrenceRole::Type, location.clone());
             self.record_binder(
                 BinderSite {
                     binder: location.clone(),
                     slot: level,
                 },
-                key,
+                key.clone(),
             );
             scope.push(Binder {
                 slot: level,
@@ -214,7 +214,7 @@ impl Lowering<'_> {
         let scope = self.scope;
         let operation = scope
             .operations()
-            .declared_by(declaring)
+            .declared_by(declaring.clone())
             .iter()
             .find(|operation| operation.name() == name)
             .ok_or_else(|| rows_fault(location, "a-row-operation-is-declared"))?;
@@ -226,8 +226,8 @@ impl Lowering<'_> {
         };
         let binding = self.operation_anchor(&anchor, None, location)?;
         // An `operation_anchor`'s every occurrence is an `anchor` (FR-322).
-        if !self.occurrences.has(binding.anchor) {
-            self.record(binding.anchor, OccurrenceRole::Anchor, location.clone());
+        if !self.occurrences.has(binding.anchor.clone()) {
+            self.record(binding.anchor.clone(), OccurrenceRole::Anchor, location.clone());
         }
         Ok(binding.anchor)
     }
@@ -258,7 +258,7 @@ fn catalog_node(
     location: &Location,
 ) -> Result<Option<NodeKey>, CheckRefusal> {
     match side.iter().find(|entry| entry.class() == class) {
-        Some(KeyedCatalogClass::Declared { node, .. }) => Ok(Some(*node)),
+        Some(KeyedCatalogClass::Declared { node, .. }) => Ok(Some(node.clone())),
         Some(KeyedCatalogClass::Memory(_)) => Ok(None),
         None => Err(rows_fault(location, "a-row-class-is-catalogued")),
     }
