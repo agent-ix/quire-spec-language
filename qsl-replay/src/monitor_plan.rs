@@ -415,9 +415,6 @@ pub enum MonitorPlanRefusal {
     /// The selected clause has no timed binding.
     #[error("selected clause has no checked model-time binding")]
     NotTimedClause,
-    /// The selected package has no emitted package identity.
-    #[error("checked package identity could not be emitted")]
-    PackageIdentityUnavailable,
     /// The target unit is not a checked exact time unit.
     #[error("target unit is not a checked time unit: {unit}")]
     InvalidTimeUnit {

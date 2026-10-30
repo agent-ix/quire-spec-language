@@ -370,16 +370,17 @@ fn tc_774_cause_reader_accepts_the_plugin_spellings() {
 #[trace("TC-774")]
 #[test]
 fn the_cause_reader_reads_hypotheses_not_established() {
-    let node = |domain: &str, digest: String| json!({"domain": domain, "digest": digest});
-    let domain = quire_exact::NODE_KEY_DOMAIN;
+    let node = |ordinal: u64| json!({"package": "fixture", "path": ["clause"], "ordinal": ordinal});
+    let hypothesis = crate::fixture_node(0xdc);
+    let wire = qsl_foundation::node_wire::node_key_to_json(&hypothesis).unwrap();
     assert_eq!(
         read_plugin_inconclusive_cause(&json!({
             "type": "hypotheses-not-established",
-            "hypothesis": node(domain, "dc".repeat(32)),
+            "hypothesis": wire,
             "result": "refuted",
         })),
         Ok(InconclusiveCause::HypothesesNotEstablished {
-            hypothesis: crate::fixture_node(0xdc),
+            hypothesis,
             result: crate::outcome::ItemLabel::Refuted,
         })
     );
@@ -394,27 +395,17 @@ fn the_cause_reader_reads_hypotheses_not_established() {
         ),
         (
             json!({"type": "hypotheses-not-established",
-                   "hypothesis": node("quire.package.semantic/v2", "dc".repeat(32)), "result": "refuted"}),
-            invalid("/cause/hypothesis/domain"),
+                   "hypothesis": {"package": "", "path": ["clause"], "ordinal": 0}, "result": "refuted"}),
+            invalid("/cause/hypothesis"),
         ),
         (
             json!({"type": "hypotheses-not-established",
-                   "hypothesis": node(domain, "DC".repeat(32)), "result": "refuted"}),
-            invalid("/cause/hypothesis/digest"),
-        ),
-        (
-            json!({"type": "hypotheses-not-established",
-                   "hypothesis": {"domain": domain, "digest": "dc".repeat(32), "extra": 1}, "result": "refuted"}),
-            unknown("/cause/hypothesis/extra"),
-        ),
-        (
-            json!({"type": "hypotheses-not-established",
-                   "hypothesis": node(domain, "dc".repeat(32)), "result": "undefined"}),
+                   "hypothesis": node(1), "result": "undefined"}),
             invalid("/cause/result"),
         ),
         (
             json!({"type": "hypotheses-not-established",
-                   "hypothesis": node(domain, "dc".repeat(32)), "result": 1}),
+                   "hypothesis": node(1), "result": 1}),
             wrong("/cause/result"),
         ),
     ];

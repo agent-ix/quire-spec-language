@@ -317,7 +317,7 @@ mod tests {
     #[test]
     fn a_population_argument_is_equal_to_itself_and_not_to_another() {
         use quire_exact::{Integer, PopulationId};
-        let population = |fill| Value::Population(PopulationId::from_digest([fill; 32]));
+        let population = |fill| Value::Population(PopulationId::new(crate::fixture_node(fill)));
         assert!(same_value(&population(1), &population(1)));
         assert!(!same_value(&population(1), &population(2)));
         let integer = |value: i64| Value::Integer(Integer::from(value));

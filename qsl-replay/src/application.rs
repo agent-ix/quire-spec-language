@@ -1708,7 +1708,7 @@ mod tests {
         let mut meter = meter(1000);
         let result = registry.begin_call(
             &selection,
-            vec![Value::Population(PopulationId::from_digest([7; 32]))],
+            vec![Value::Population(PopulationId::new(crate::fixture_node(7)))],
             &environment,
             &mut meter,
         );
