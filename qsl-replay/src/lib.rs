@@ -175,7 +175,7 @@ pub use identity::{
 };
 pub use limits::{AccountingLimits, CallerLimits, EngineLimits, PrepareLimits, RenderLimits};
 pub use model_check::counterexample::{
-    deadlock_freedom_clause, race_freedom_clause, time_lock_freedom_clause, undefined_finding,
+    undefined_finding,
     ClaimPredicate, CounterexampleKind, Lasso, MappingSite, ModelStep,
     ObservedTemporalCounterexample, ObservedTemporalKind, ObservedTemporalStep, Race,
     TemporalCounterexample, TimedPoint, UndefinedEvaluation, UndefinedLocus, UndefinedSite,

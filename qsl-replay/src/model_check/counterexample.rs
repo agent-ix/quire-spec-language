@@ -18,70 +18,18 @@ use qsl_eval::temporal::TemporalPosition;
 use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::bound::TemporalInterval;
 use qsl_foundation::digest::DigestRecord;
-use qsl_semantics::library::LibraryName;
-use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::check::FormulaNodeId;
 use qsl_semantics::model::observation::DocumentRef;
-use quire_exact::{InvalidNodeKey, NodeKey, Origin, PathSegment, Rational, Role};
+use quire_exact::Rational;
 use quire_semantic_value::fairness::FairnessConstraint;
 use quire_semantic_value::model_transition::ModelTransition;
 
 use crate::refinement::{MappingRowRef, ObjectKey, RefinementFailure};
 use crate::witness::FamilyPayload;
 
-/// The node and occurrence key of the derived item `role` of `package`.
-fn derived_item(
-    role: &str,
-    package: &LibraryName,
-) -> Result<(NodeKey, OccurrenceKey), InvalidNodeKey> {
-    let node = NodeKey::new(
-        package.as_str(),
-        vec![PathSegment::Text(role.to_owned())],
-        0,
-    )?;
-    let occurrence = OccurrenceKey::new(node.clone(), Origin::new(Role::new(role), 0));
-    Ok((node, occurrence))
-}
-
-/// The occurrence role of the derived deadlock-freedom item.
-const DEADLOCK_FREEDOM_ROLE: &str = "deadlock-freedom";
-
-/// The envelope identity of the deadlock-freedom item of the package
-/// `package` (FR-128 "The envelope names the clause, or the
-/// deadlock-freedom item, by its clause node and occurrence key"), with the
-/// role `deadlock-freedom` and ordinal 0. The subject is bound by the envelope's obligation
-/// identity (FR-124), not here.
-pub fn deadlock_freedom_clause(
-    package: &LibraryName,
-) -> Result<(NodeKey, OccurrenceKey), InvalidNodeKey> {
-    derived_item(DEADLOCK_FREEDOM_ROLE, package)
-}
-
-/// The occurrence role of the derived time-lock-freedom item.
-const TIME_LOCK_FREEDOM_ROLE: &str = "time-lock-freedom";
-
-/// The envelope identity of the time-lock-freedom item of the package
-/// `package` (FR-232), as [`deadlock_freedom_clause`] names the
-/// deadlock-freedom item's, with the role `time-lock-freedom`.
-pub fn time_lock_freedom_clause(
-    package: &LibraryName,
-) -> Result<(NodeKey, OccurrenceKey), InvalidNodeKey> {
-    derived_item(TIME_LOCK_FREEDOM_ROLE, package)
-}
-
-/// The occurrence role of the derived race-freedom item.
-const RACE_FREEDOM_ROLE: &str = "race-freedom";
-
-/// The envelope identity of the race-freedom item of the package
-/// `package`, as [`deadlock_freedom_clause`] names the deadlock-freedom
-/// item's, with the role `race-freedom`. The subject and its
-/// resolved models are bound by the envelope's obligation identity
-/// (FR-224), not here.
-pub fn race_freedom_clause(
-    package: &LibraryName,
-) -> Result<(NodeKey, OccurrenceKey), InvalidNodeKey> {
-    derived_item(RACE_FREEDOM_ROLE, package)
-}
+// BLOCKED-BY QSL-1309 (owner: planner titan:QSL:plan): node tag and form for package-level freedom-clause items
+// The deadlock-freedom, time-lock-freedom and race-freedom items have no
+// node identity here until that tag and form are defined.
 
 /// One step of a behaviour: the transition identity it took (FR-120's for a
 /// model subject, ADR-027 TS-2's for a protocol subject) and its

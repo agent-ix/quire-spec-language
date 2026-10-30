@@ -22,10 +22,8 @@
 //!   at its locus, with its cause.
 //!
 //! The envelope's `clause_node` and `occurrence_key` resolve the item
-//! before any admission. The deadlock-freedom item's identity is
-//! [`deadlock_freedom_clause`] of the recompiled package; a payload
-//! only that item has, under any other identity, or an authored payload
-//! under that identity, refuses `stale_dependency`/`content-mismatch`. Any
+//! before any admission. A payload only a package-level freedom item has
+//! refuses `unsupported_construct`/`not-yet-implemented`. Any
 //! other identity names an authored clause: the recompiled package's
 //! temporal clause node of that `clause_node`, whose `claim` occurrence the
 //! envelope's `occurrence_key` must equal, and whose fairness set the
@@ -79,7 +77,7 @@ pub(super) use self::timed::timed_prefix;
 use crate::bounds::ReplayLimits;
 use crate::execute::{recompile, request_limits, ReplayRefusal};
 use crate::model_check::counterexample::{
-    deadlock_freedom_clause, race_freedom_clause, time_lock_freedom_clause, undefined_finding,
+    undefined_finding,
     CounterexampleKind, Lasso, TemporalCounterexample, UndefinedEvaluation, UndefinedLocus,
     UndefinedSite,
 };
@@ -277,6 +275,10 @@ pub enum ModelTraceRefusal {
         /// The occurrence key the payload's item has.
         expected_key: Box<OccurrenceKey>,
     },
+    /// The payload's item is a package-level freedom item, which has no node
+    /// identity to resolve.
+    #[error("unsupported_construct/not-yet-implemented: replay of a package-level freedom item")]
+    UnsupportedDerivedItem,
     /// The payload's fairness set is not the recompiled clause's.
     #[error("stale_dependency/content-mismatch: the payload's fairness set {payload:?} is not the recompiled clause's {recompiled:?}")]
     FairnessSet {
@@ -481,7 +483,7 @@ impl ModelTraceRefusal {
             | Self::SendRecord { .. }
             | Self::MemoryComponent { .. } => Code::StaleDependency,
             Self::FairnessSet { .. } | Self::ProtocolFairnessSet { .. } => Code::StaleDependency,
-            Self::HyperProjected => Code::UnsupportedConstruct,
+            Self::HyperProjected | Self::UnsupportedDerivedItem => Code::UnsupportedConstruct,
             Self::Protocol(refusal) => refusal.code(),
             Self::NotSimulated(refusal) => not_simulated_code(refusal),
             Self::Automaton(qsl_eval::automaton::AutomatonError::KeyEncodingLimit { .. })
@@ -540,7 +542,7 @@ impl ModelTraceRefusal {
             | Self::PostState { .. }
             | Self::SendRecord { .. }
             | Self::MemoryComponent { .. } => "content-mismatch",
-            Self::HyperProjected => "not-yet-implemented",
+            Self::HyperProjected | Self::UnsupportedDerivedItem => "not-yet-implemented",
             Self::Protocol(refusal) => refusal.cause(),
             Self::NotSimulated(refusal) => match refusal.catalog_code() {
                 Some(code) => code.cause(),
@@ -720,7 +722,7 @@ pub fn replay_model_trace(
         envelope,
         replay_limits,
         |package, simulation, meter| {
-            let clause = resolve_item(envelope, package.0, &package.1, |clause| {
+            let clause = resolve_item(envelope, package.0, |clause| {
                 let payload = envelope.family_payload();
                 if payload.fairness == clause.fairness() {
                     return Ok(());
@@ -822,7 +824,7 @@ pub fn replay_protocol_trace(
         |package, simulation, meter| {
             // The fairness set depends on the protocol system, so it is
             // compared in `ProtocolReplay::settle`.
-            let clause = resolve_item(envelope, package.0, &package.1, |_| Ok(()))?;
+            let clause = resolve_item(envelope, package.0, |_| Ok(()))?;
             let payload = envelope.family_payload();
             let simulation = simulation(&subject.model);
             let protocol = package
@@ -1043,12 +1045,9 @@ pub(super) fn refused(refusal: ModelTraceRefusal) -> ReplayRefusal {
 }
 
 /// FR-128: resolve the envelope's item by its `clause_node` and
-/// `occurrence_key` against the recompiled package `package`. The
-/// derived deadlock-freedom item's identity is [`deadlock_freedom_clause`]
-/// and the derived race-freedom item's [`race_freedom_clause`]; the payload
-/// must be one only that item has, and a payload of that shape under any
-/// other identity, or an authored payload under a derived identity, refuses
-/// [`ModelTraceRefusal::ItemIdentity`]. Any other identity names an authored
+/// `occurrence_key` against the recompiled package `package`. A payload only
+/// a package-level freedom item has refuses
+/// [`ModelTraceRefusal::UnsupportedDerivedItem`]. Any other identity names an authored
 /// clause: the package's temporal clause node of that `clause_node`, whose
 /// `claim` occurrence the envelope must carry; the caller's
 /// `check_fairness` compares the payload's fairness set with the subject's
@@ -1057,25 +1056,13 @@ pub(super) fn refused(refusal: ModelTraceRefusal) -> ReplayRefusal {
 fn resolve_item<'p, T: SubjectTransition>(
     envelope: &WitnessEnvelope<TemporalCounterexample<T>>,
     package: &'p CheckedPackage,
-    package_name: &LibraryName,
     check_fairness: impl FnOnce(&CheckedTemporalClause) -> Result<(), ReplayRefusal>,
 ) -> Result<Option<&'p CheckedTemporalClause>, ReplayRefusal> {
-    let derived = |result: Result<_, quire_exact::InvalidNodeKey>| {
-        result.map_err(|_| fault("a-derived-item-identity-is-admissible"))
-    };
-    let (deadlock_node, deadlock_key) = derived(deadlock_freedom_clause(package_name))?;
-    let (race_node, race_key) = derived(race_freedom_clause(package_name))?;
-    let (lock_node, lock_key) = derived(time_lock_freedom_clause(package_name))?;
-    let names = |node: &NodeKey, key: &OccurrenceKey| {
-        envelope.clause_node() == node && envelope.occurrence_key() == key
-    };
-    let on_deadlock = names(&deadlock_node, &deadlock_key);
-    let on_race = names(&race_node, &race_key);
-    let on_lock = names(&lock_node, &lock_key);
     let (for_deadlock, for_race) = derived_items(envelope.family_payload());
     let for_lock = matches!(envelope.family_payload().kind, CounterexampleKind::TimeLock);
-    if (on_deadlock && for_deadlock) || (on_race && for_race) || (on_lock && for_lock) {
-        return Ok(None);
+    // BLOCKED-BY QSL-1309 (owner: planner titan:QSL:plan): node tag and form for package-level freedom-clause items
+    if for_deadlock || for_race || for_lock {
+        return Err(refused(ModelTraceRefusal::UnsupportedDerivedItem));
     }
     let identity_mismatch = |expected_node, expected_key| {
         refused(ModelTraceRefusal::ItemIdentity {
@@ -1085,21 +1072,6 @@ fn resolve_item<'p, T: SubjectTransition>(
             expected_key: Box::new(expected_key),
         })
     };
-    if for_deadlock {
-        return Err(identity_mismatch(deadlock_node, deadlock_key));
-    }
-    if for_race {
-        return Err(identity_mismatch(race_node, race_key));
-    }
-    if for_lock {
-        return Err(identity_mismatch(lock_node, lock_key));
-    }
-    if on_deadlock || on_race || on_lock {
-        return Err(identity_mismatch(
-            envelope.clause_node().clone(),
-            envelope.occurrence_key().clone(),
-        ));
-    }
     let found = package.graph().temporal_clauses().iter().find(|candidate| {
         candidate.identity() == envelope.clause_node()
     });
