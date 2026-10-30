@@ -23,10 +23,10 @@
 //! ([`super::node_key::group_keys`]), and two groups whose members' keys
 //! coincide refuse. Every key comes from
 //! [`super::node_key::node_key`], which runs once per distinct content: a
-//! node built again takes the key its content was given. Laws come only
-//! from the package's lock evidence ([`LockEvidence`]); a law it does not
-//! supply refuses the node (`missing_declaration`/`missing-selection`),
-//! never a constant.
+//! node built again takes the key its content was given. The text law is
+//! QSL's own text profile; the protocol law is the profile the unit's header
+//! selected, and a protocol node with none refuses
+//! (`missing_declaration`/`missing-selection`).
 //!
 //! FR-094 keys the rest (`model`): the model declaration nodes a
 //! `Reference<T>` or a model row's member names, the `Reference<T>` and
@@ -134,54 +134,6 @@ pub(crate) use temporal::{
 };
 pub(crate) use terminal::{terminal_location, terminal_site, TerminalInput, TerminalSite};
 pub(crate) use timed_clause::TimedClauseInput;
-
-/// The package's lock evidence as the lowering reads it (ADR-011 §2.4): the
-/// `DefinitionRef` the `text_profile` law role selects. The `ieee_profile`
-/// law is the package's one admitted IEEE profile
-/// (`PackageDeclarations::ieee_profile`, admitted against the local
-/// definition policy by `admit_ieee_profile`), so the two
-/// cannot disagree.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct LockEvidence {
-    text_profile: Option<DefinitionReference>,
-    protocol_profile: Option<DefinitionReference>,
-}
-
-impl LockEvidence {
-    /// Lock evidence selecting `definition` for the `text_profile` role.
-    pub fn with_text_profile(mut self, definition: DefinitionReference) -> Self {
-        self.text_profile = Some(definition);
-        self
-    }
-
-    /// Lock evidence selecting `definition` for the `protocol_profile` role,
-    /// the clause profile the unit's header selected (FR-110). Only the
-    /// assembler calls it, from the header's catalog resolution; a caller
-    /// cannot supply the selection.
-    pub(crate) fn with_protocol_profile(mut self, definition: DefinitionReference) -> Self {
-        self.protocol_profile = Some(definition);
-        self
-    }
-
-    /// These lock evidence's caller-supplied roles, with the
-    /// `protocol_profile` the unit's own header selected carried over from
-    /// `assembled` (FR-110): a unit that selects none keeps none.
-    pub fn with_header_selection_of(mut self, assembled: &Self) -> Self {
-        self.protocol_profile
-            .clone_from(&assembled.protocol_profile);
-        self
-    }
-
-    fn text_profile(&self) -> Option<&DefinitionReference> {
-        self.text_profile.as_ref()
-    }
-
-    /// The `protocol_profile` the unit's header selected, when it selected
-    /// one.
-    pub(crate) fn protocol_profile(&self) -> Option<&DefinitionReference> {
-        self.protocol_profile.as_ref()
-    }
-}
 
 /// A node's place in its recursion group (FR-092 "Recursion groups"): the
 /// group digest, the node's ordinal and the number of the group's nodes.
@@ -614,7 +566,8 @@ pub(crate) struct Lowering<'a> {
     /// Each model declaration node keyed, one-to-one with its
     /// `DeclarationKey` (FR-303).
     correspondence: ModelCorrespondence,
-    lock: &'a LockEvidence,
+    /// The `protocol_profile` the unit's header selected (FR-110).
+    protocol_profile: Option<&'a DefinitionReference>,
     graph: SemanticGraph,
     occurrences: &'a mut OccurrenceMap<Location>,
     /// Each lowered function's key, by function index.
@@ -1607,7 +1560,7 @@ impl<'a> Lowering<'a> {
         owner: &SourceOwner,
         models: &'a [AdmittedModel],
         units: UnitTable,
-        lock: &'a LockEvidence,
+        protocol_profile: Option<&'a DefinitionReference>,
         function_count: usize,
         occurrences: &'a mut OccurrenceMap<Location>,
         meter: &'a mut Meter,
@@ -1619,7 +1572,7 @@ impl<'a> Lowering<'a> {
             models,
             units,
             correspondence: ModelCorrespondence::default(),
-            lock,
+            protocol_profile,
             graph: SemanticGraph::default(),
             occurrences,
             functions: vec![None; function_count],
@@ -2537,10 +2490,14 @@ impl<'a> Lowering<'a> {
         }
     }
 
-    /// The law of `role` the lock evidence selects, or the FR-093 refusal.
+    /// The law of `role`, or the FR-093 refusal.
     fn law(&self, role: LawRole, location: &Location) -> Result<OperationLaw, CheckRefusal> {
         let definition = match role {
-            LawRole::TextProfile => self.lock.text_profile().cloned(),
+            LawRole::TextProfile => Some(
+                DefinitionLock::pinned()
+                    .entry(CatalogRole::TextProfile)
+                    .reference(),
+            ),
             LawRole::IeeeProfile => self
                 .scope
                 .ieee_profile
@@ -2558,7 +2515,7 @@ impl<'a> Lowering<'a> {
                 };
                 role.reference()
             }),
-            LawRole::ProtocolProfile => self.lock.protocol_profile().cloned(),
+            LawRole::ProtocolProfile => self.protocol_profile.cloned(),
             LawRole::TemporalProfile => None,
         };
         definition

@@ -38,7 +38,6 @@ fn program_source(program: &[u8]) -> Value {
 #[test]
 #[trace("TC-773", "FR-289-AC-1")]
 fn front_end_package_is_independent_of_provider_registry() {
-    use qsl_foundation::digest::ByteDigest;
     use qsl_foundation::BackendId;
     use qsl_route::{
         descriptor_from_manifest, Candidate, ManifestMembers, ProviderOrigin, Registry,
@@ -53,7 +52,7 @@ fn front_end_package_is_independent_of_provider_registry() {
     );
     let empty = Registry::new();
     let mut populated = Registry::new();
-    for (index, (identity, capability, mode, origin)) in [
+    for (identity, capability, mode, origin) in [
         (
             "provider-a",
             "value-validity",
@@ -72,18 +71,12 @@ fn front_end_package_is_independent_of_provider_registry() {
             "bounded",
             ProviderOrigin::Linked,
         ),
-    ]
-    .into_iter()
-    .enumerate()
-    {
+    ] {
         populated
             .register(
                 descriptor_from_manifest(
                     Candidate::new(BackendId::new(identity)),
                     origin,
-                    qsl_route::ManifestDigest::from_digest(
-                        ByteDigest::of(format!("fr-289-manifest-{index}").as_bytes()).as_bytes(),
-                    ),
                     [(Some(capability), Some(mode))],
                     ManifestMembers {
                         domains: Some(&["collection"]),

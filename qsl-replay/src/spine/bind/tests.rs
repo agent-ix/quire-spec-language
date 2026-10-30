@@ -17,7 +17,7 @@ use crate::scalar::{ScalarOperand, ScalarOperation};
 use crate::spine::call::tests::{lookup_driver_context, lookup_driver_fixture};
 use crate::spine::{
     check, default_accounting, package as emit, parse, run, select as select_models, CallArgument,
-    CallOutcome, DependencyInput, LockEvidence, ParseRequest, SpineLimits,
+    CallOutcome, DependencyInput, ParseRequest, SpineLimits,
 };
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
@@ -63,16 +63,9 @@ fn compile_with(
     let models = select_models(&parsed, &packages, limits.model, &cancel)
         .expect("the models select")
         .into_value();
-    let checked = check(
-        &parsed,
-        &models,
-        &dependencies,
-        &LockEvidence::default(),
-        limits,
-        &cancel,
-    )
-    .expect("the unit checks")
-    .into_value();
+    let checked = check(&parsed, &models, &dependencies, limits, &cancel)
+        .expect("the unit checks")
+        .into_value();
     let emitted = emit(&checked, Default::default(), &cancel)
         .expect("the unit emits")
         .into_value();

@@ -9,20 +9,15 @@ use ix_trace_rs::trace;
 use qsl_foundation::bound::DomainKind;
 use qsl_foundation::BackendId;
 use qsl_route::{
-    descriptor_from_manifest, BackendDescriptor, Candidate, CandidateOutcome, ManifestDigest,
-    ManifestMembers, Mode, ProviderOrigin, RegistrationCause, Registry,
+    descriptor_from_manifest, BackendDescriptor, Candidate, CandidateOutcome, ManifestMembers,
+    Mode, ProviderOrigin, RegistrationCause, Registry,
 };
 use qsl_semantics::check::Capability;
-
-fn manifest_digest() -> ManifestDigest {
-    ManifestDigest::from_digest([7; 32])
-}
 
 fn kani(origin: ProviderOrigin) -> BackendDescriptor {
     BackendDescriptor::new(
         Candidate::new(BackendId::new("kani")),
         origin,
-        manifest_digest(),
         [(Capability::OperationContract, Mode::Bounded)],
         Some(BTreeSet::from([DomainKind::Collection])),
         None,
@@ -45,7 +40,6 @@ fn descriptor_holds_the_origin_it_was_built_with() {
     let admitted = descriptor_from_manifest(
         Candidate::new(BackendId::new("plug")),
         ProviderOrigin::Process,
-        manifest_digest(),
         [(Some("value-validity"), Some("bounded"))],
         ManifestMembers {
             domains: Some(&["collection"]),
@@ -60,8 +54,7 @@ fn descriptor_holds_the_origin_it_was_built_with() {
 }
 
 /// FR-288-AC-6: Linked and Process registrations of one identity conflict
-/// in either order; both are withdrawn and the one manifest digest is
-/// recorded.
+/// in either order; the identity is refused and withdrawn.
 #[test]
 #[trace("TC-772", "FR-288-AC-6")]
 fn origin_differing_registrations_conflict_in_either_order() {
@@ -73,12 +66,11 @@ fn origin_differing_registrations_conflict_in_either_order() {
         };
         let mut registry = Registry::new();
         registry.register(first).expect("first registration holds");
-        let refusals = registry
+        let refusal = registry
             .register(second)
             .expect_err("a differing origin conflicts");
-        assert_eq!(refusals.len(), 1);
-        assert_eq!(refusals[0].cause(), &RegistrationCause::DuplicateBackend);
-        assert_eq!(refusals[0].manifest_digest(), manifest_digest());
+        assert_eq!(refusal.identity().as_str(), "kani");
+        assert_eq!(refusal.cause(), &RegistrationCause::DuplicateBackend);
         assert_eq!(registry.descriptors().count(), 0);
         assert!(matches!(
             registry.candidates(Capability::OperationContract, Some(&BackendId::new("kani"))),

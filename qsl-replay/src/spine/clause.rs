@@ -865,7 +865,6 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
             &parsed,
             &models,
             &request.dependencies,
-            &super::LockEvidence::default(),
             request.limits,
             &cancel,
         )?

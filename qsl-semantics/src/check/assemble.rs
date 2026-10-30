@@ -4225,7 +4225,7 @@ impl PackageDeclarations {
             .iter()
             .find_map(|profile| super::profile::protocol_profile(&profile.identity))
         {
-            package.lock_evidence = package.lock_evidence.with_protocol_profile(definition);
+            package.protocol_profile = Some(definition);
         }
         package.header_layers = selections
             .profiles

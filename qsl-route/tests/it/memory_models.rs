@@ -10,8 +10,8 @@ use qsl_foundation::BackendId;
 use qsl_foundation::MemoryModelName::{self, Ra, Sc, Tso};
 use qsl_route::{
     descriptor_from_manifest, descriptor_from_manifest_with_dynamics, BackendDescriptor, Candidate,
-    CandidateOutcome, DynamicsMember, FairnessKindsMember, FairnessLabel, ManifestDigest,
-    ManifestMembers, MemoryModelsDefect, Mode, ProviderOrigin, RegistrationCause, Registry,
+    CandidateOutcome, DynamicsMember, FairnessKindsMember, FairnessLabel, ManifestMembers,
+    MemoryModelsDefect, Mode, ProviderOrigin, RegistrationCause, Registry,
 };
 use qsl_semantics::check::Capability;
 use quire_semantic_value::fairness::FairnessKind::Weak;
@@ -21,11 +21,10 @@ fn candidate(id: &str) -> Candidate {
 }
 
 /// A temporal backend advertising weak fairness and `models`.
-fn temporal(id: &str, seed: u8, models: &[MemoryModelName]) -> BackendDescriptor {
+fn temporal(id: &str, models: &[MemoryModelName]) -> BackendDescriptor {
     BackendDescriptor::new(
         candidate(id),
         ProviderOrigin::Linked,
-        ManifestDigest::from_digest([seed; 32]),
         [(Capability::TemporalSatisfaction, Mode::Unbounded)],
         None,
         None,
@@ -66,8 +65,8 @@ fn candidates(registry: &Registry, model: MemoryModelName) -> Vec<Candidate> {
 #[trace("TC-671")]
 #[test]
 fn a_weak_item_is_given_only_backends_advertising_its_resolved_model() {
-    let en1 = || temporal("EN-1", 1, &[Sc, Tso, Ra]);
-    let sc_only = || temporal("sc-only", 2, &[Sc]);
+    let en1 = || temporal("EN-1", &[Sc, Tso, Ra]);
+    let sc_only = || temporal("sc-only", &[Sc]);
 
     let both = registry([en1(), sc_only()]);
     assert_eq!(candidates(&both, Tso), [candidate("EN-1")]);
@@ -81,11 +80,11 @@ fn a_weak_item_is_given_only_backends_advertising_its_resolved_model() {
     assert_eq!(candidates(&alone, Tso), []);
     assert_eq!(candidates(&alone, Sc), [candidate("sc-only")]);
 
-    let unadvertised = registry([temporal("plain", 3, &[])]);
+    let unadvertised = registry([temporal("plain", &[])]);
     assert_eq!(candidates(&unadvertised, Sc), [candidate("plain")]);
     assert_eq!(candidates(&unadvertised, Tso), []);
     assert_eq!(candidates(&unadvertised, Ra), []);
-    let tso_only = registry([temporal("tso-only", 4, &[Tso])]);
+    let tso_only = registry([temporal("tso-only", &[Tso])]);
     assert_eq!(candidates(&tso_only, Sc), []);
 }
 
@@ -96,11 +95,10 @@ fn a_weak_item_is_given_only_backends_advertising_its_resolved_model() {
 #[trace("TC-671", "FR-226-AC-2")]
 #[test]
 fn a_manifest_memory_models_member_is_read_and_its_absence_advertises_sc_only() {
-    let converted = |id: &str, seed: u8, models: Option<&[MemoryModelName]>| {
+    let converted = |id: &str, models: Option<&[MemoryModelName]>| {
         descriptor_from_manifest(
             candidate(id),
             ProviderOrigin::Linked,
-            ManifestDigest::from_digest([seed; 32]),
             [(Some("temporal-satisfaction"), Some("unbounded"))],
             ManifestMembers {
                 domains: None,
@@ -112,9 +110,9 @@ fn a_manifest_memory_models_member_is_read_and_its_absence_advertises_sc_only() 
         )
         .expect("a well-formed manifest")
     };
-    let with = converted("with", 1, Some(&[Sc, Tso, Ra]));
+    let with = converted("with", Some(&[Sc, Tso, Ra]));
     assert_eq!(with.memory_models(), &BTreeSet::from([Sc, Tso, Ra]));
-    let without = converted("without", 2, None);
+    let without = converted("without", None);
     assert!(without.memory_models().is_empty());
 
     let routed = registry([with, without]);
@@ -136,7 +134,6 @@ fn a_defective_memory_models_member_refuses_the_registration() {
         descriptor_from_manifest(
             candidate("m"),
             ProviderOrigin::Linked,
-            ManifestDigest::from_digest([3; 32]),
             [(Some(kind), Some("unbounded"))],
             ManifestMembers {
                 domains: None,
@@ -180,7 +177,6 @@ fn a_provider_with_dynamics_keeps_its_memory_models() {
     let descriptor = descriptor_from_manifest_with_dynamics(
         candidate("both"),
         ProviderOrigin::Linked,
-        ManifestDigest::from_digest([4; 32]),
         [(Some("temporal-satisfaction"), Some("unbounded"))],
         ManifestMembers {
             domains: None,
@@ -205,7 +201,6 @@ fn memory_models_are_judged_after_evidence_kinds() {
     let refusal = descriptor_from_manifest(
         candidate("late"),
         ProviderOrigin::Linked,
-        ManifestDigest::from_digest([5; 32]),
         [(Some("probabilistic-satisfaction"), Some("unbounded"))],
         ManifestMembers {
             domains: None,

@@ -126,7 +126,7 @@ impl Lowering<'_> {
         clauses: &[TransitionClause<'_>],
     ) -> Result<(), CheckRefusal> {
         // The lock must select the protocol profile (QSpec FR-341 `laws`).
-        if self.lock.protocol_profile().is_none() {
+        if self.protocol_profile.is_none() {
             return Ok(());
         }
         let mut operations: BTreeMap<(EffectiveId, &str), Vec<&TransitionClause<'_>>> =

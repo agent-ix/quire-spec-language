@@ -272,7 +272,6 @@ mod tests {
             &parsed,
             &models,
             &DependencyInput::default(),
-            &spine::LockEvidence::default(),
             limits,
             &cancel,
         )

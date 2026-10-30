@@ -75,7 +75,7 @@ impl RegistrySnapshot {
         mut register: impl FnMut(
             &mut RegistrySnapshotBuilder,
             BackendDescriptor,
-        ) -> Result<(), Vec<RegistrationRefusal>>,
+        ) -> Result<(), RegistrationRefusal>,
     ) -> Result<Self, RegistryBuildError> {
         let mut builder = RegistrySnapshotBuilder::new();
         for descriptor in registrations {
@@ -90,7 +90,7 @@ impl RegistrySnapshot {
         register: impl FnMut(
             &mut RegistrySnapshotBuilder,
             BackendDescriptor,
-        ) -> Result<(), Vec<RegistrationRefusal>>,
+        ) -> Result<(), RegistrationRefusal>,
     ) -> Result<Self, RegistryBuildError> {
         Self::build_registrations(source()?, register)
     }
@@ -104,8 +104,8 @@ pub enum RegistryBuildError {
     #[error("linked engine descriptor source refused: {0}")]
     DescriptorSource(#[source] RegistrationRefusal),
     /// The registry refused one of the linked engine descriptors.
-    #[error("linked engine registration refused: {0:?}")]
-    Registration(Vec<RegistrationRefusal>),
+    #[error("linked engine registration refused: {0}")]
+    Registration(#[source] RegistrationRefusal),
 }
 
 /// Build one registry snapshot from registrations supplied by the caller.
@@ -126,10 +126,7 @@ impl RegistrySnapshotBuilder {
     }
 
     /// Add one already-admitted backend registration (FR-075/FR-290).
-    pub fn register(
-        &mut self,
-        descriptor: BackendDescriptor,
-    ) -> Result<(), Vec<RegistrationRefusal>> {
+    pub fn register(&mut self, descriptor: BackendDescriptor) -> Result<(), RegistrationRefusal> {
         self.registry.register(descriptor)
     }
 
@@ -506,7 +503,6 @@ pub fn compile_unit(input: &UnitInput) -> Compilation {
         &parsed,
         &models,
         &input.dependencies,
-        &qsl_semantics::check::LockEvidence::default(),
         input.limits,
         &cancellation,
     ) {
@@ -1139,7 +1135,7 @@ mod tests {
     use qsl_foundation::digest::ByteDigest;
     use qsl_foundation::BackendId;
     use qsl_route::EvidenceKind;
-    use qsl_route::{BackendDescriptor, Candidate, ManifestDigest, Mode, ProviderOrigin};
+    use qsl_route::{BackendDescriptor, Candidate, Mode, ProviderOrigin};
     use qsl_semantics::check::Capability;
     use serde_json::json;
     use std::collections::BTreeSet;
@@ -1195,7 +1191,6 @@ mod tests {
         let descriptor = BackendDescriptor::new(
             Candidate::new(BackendId::new("backend-a")),
             ProviderOrigin::Linked,
-            ManifestDigest::from_digest(ByteDigest::of(b"manifest").as_bytes()),
             [(Capability::OperationContract, Mode::Bounded)],
             Some(BTreeSet::from([DomainKind::Collection])),
             None,
@@ -1217,7 +1212,6 @@ mod tests {
         qsl_route::descriptor_from_manifest(
             Candidate::new(BackendId::new("injected-invalid")),
             ProviderOrigin::Linked,
-            ManifestDigest::from_digest([0; 32]),
             [(Some("unknown-kind"), Some("bounded"))],
             qsl_route::ManifestMembers::default(),
         )
@@ -1225,7 +1219,7 @@ mod tests {
     }
 
     /// FR-489-AC-1/2/4/5: the production snapshot contains exactly the real
-    /// EN-1, EN-4 and EN-6 registrations and leaves the missing witness kinds empty.
+    /// EN-1, EN-4 and EN-6 registrations and the two witness arms.
     #[trace("TC-1272", "FR-489-AC-1", "FR-489-AC-2", "FR-489-AC-4", "FR-489-AC-5")]
     #[test]
     fn production_snapshot_contains_only_linked_engine_registrations() {
@@ -1283,11 +1277,22 @@ mod tests {
         let CandidateOutcome::Candidates(contract) =
             first.candidates(Capability::OperationContract)
         else {
-            panic!("an unregistered kind returns its empty candidate set");
+            panic!("the operation-contract arm gives a candidate set");
         };
-        assert!(
-            contract.is_empty(),
-            "unexpected provider for OperationContract"
+        assert_eq!(
+            contract
+                .candidates()
+                .iter()
+                .map(|candidate| candidate.id().as_str())
+                .collect::<Vec<_>>(),
+            ["contract-checker"]
+        );
+        assert_eq!(
+            registrations
+                .iter()
+                .map(|descriptor| descriptor.id().as_str())
+                .collect::<Vec<_>>(),
+            ["en-1", "en-4", "en-6", "value-checker", "contract-checker"]
         );
     }
 
@@ -1316,7 +1321,7 @@ mod tests {
             || Ok(descriptors),
             |builder, descriptor| {
                 if descriptor.id().as_str() == "en-4" {
-                    Err(vec![registration_refusal.clone()])
+                    Err(registration_refusal.clone())
                 } else {
                     builder.register(descriptor)
                 }
@@ -1324,7 +1329,7 @@ mod tests {
         );
         assert!(matches!(
             registration_result,
-            Err(RegistryBuildError::Registration(found)) if found == vec![registration_refusal]
+            Err(RegistryBuildError::Registration(found)) if found == registration_refusal
         ));
     }
 
@@ -1373,7 +1378,6 @@ mod tests {
         let descriptor = BackendDescriptor::new(
             Candidate::new(BackendId::new("backend-a")),
             ProviderOrigin::Linked,
-            ManifestDigest::from_digest(ByteDigest::of(b"manifest").as_bytes()),
             [
                 (Capability::OperationContract, Mode::Bounded),
                 (Capability::ValueValidity, Mode::Bounded),

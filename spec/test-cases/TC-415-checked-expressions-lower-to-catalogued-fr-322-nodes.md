@@ -14,7 +14,7 @@ Verify the FR-093 lowering: one node per checked expression, shared by equal
 content, with each source occurrence recorded; each application's operator,
 semantic form, operation identity, member, mode, laws, leaves and arguments
 per the lowering table; FR-149 classification of conversions; binder levels;
-the text-leaf list of a structural comparison, recursive composites
+and the text-leaf list of a structural comparison, recursive composites
 included.
 
 This catches a lowering that inlines operands (losing occurrences), a
@@ -51,7 +51,8 @@ selection whose alias is `v`, and is checked under owner (`a`, `u`).
    nodes.
 5. Check `q` of FR-093-AC-5 and read the levels of `x`, `y` and `z` and the
    `forall` argument list.
-6. Check `function te using v(p: Text[0, 8; nfc], r: Text[0, 8; nfc]): Boolean pure { p = r }`.
+6. Check `function te using v(p: Text[0, 8; nfc], r: Text[0, 8; nfc]): Boolean pure { p = r }`
+   and read its law.
 7. Scan the lowering `match` over `NodeKind` for a `_` arm.
 8. Withdrawn: the step read node keys that were digests of preimages (FR-093-AC-10, withdrawn); the step number is not reused.
 9. Check structural equality over `R`, `S`, `W`, `Tree2` and `Two` of
