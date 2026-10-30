@@ -64,7 +64,8 @@ left undecided, never guessed.
 - `Holds`: an exhaustive state-graph proof, with its certificate;
 - `HoldsReduced { reductions, witnesses }`: a proof from a completed graph
   under the reductions admitted for the claim, with the applied reductions
-  in ADR-022 GR-1's canonical order (symmetry, then partial-order reduction).
+  in FR-159's selected-reduction order: symmetry, then partial-order
+  reduction.
   For SG-1 `Possible`, `witnesses` is `Some(paths)`, one concrete
   `ModelPath` and source per initial state, as for `Witnessed`; for SG-2
   `AlwaysPossible`, it is `None`. No state-graph certificate is returned
