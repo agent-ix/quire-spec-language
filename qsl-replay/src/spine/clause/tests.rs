@@ -582,9 +582,9 @@ fn evaluate_clause_refuses_observations_admitted_for_another_clause() {
     // disagrees.
     assert_ne!(
         clause.identity(),
-        quire_exact::NodeKey::from_digest([9; 32])
+        quire_exact::NodeKey::new("fixture", vec![quire_exact::PathSegment::Text("node".into())], 9).expect("a fixture key")
     );
-    let wrong_identity = quire_exact::NodeKey::from_digest([9; 32]);
+    let wrong_identity = quire_exact::NodeKey::new("fixture", vec![quire_exact::PathSegment::Text("node".into())], 9).expect("a fixture key");
     let observations = no_cycle_observations(
         wrong_identity,
         environment,
@@ -3882,10 +3882,7 @@ fn s4_emitted_frame_node_lists_configversion_in_dependencies() {
         })
         .expect("ConfigVersion's own object_type node is in the graph")
         .key();
-    let expected_id = json!({
-        "domain": quire_exact::NODE_KEY_DOMAIN,
-        "digest": config_version_node.to_string(),
-    });
+    let expected_id = wire_node_id(config_version_node.clone());
 
     let wire: serde_json::Value =
         serde_json::from_slice(compiled.emitted.bytes()).expect("emitted bytes are JSON");
@@ -4112,12 +4109,14 @@ fn find_field_read_member<'g>(
         .member()
 }
 
-/// `key`'s wire `node_id` object (`quire.checked-semantic-node/v1`).
-fn wire_node_id(key: NodeKey) -> serde_json::Value {
-    json!({
-        "domain": quire_exact::NODE_KEY_DOMAIN,
-        "digest": key.to_string(),
-    })
+/// `key`'s wire `node_id` object: the structural `{package, path, ordinal}` form.
+fn wire_node_id(key: impl std::borrow::Borrow<NodeKey>) -> serde_json::Value {
+    let bytes = quire_canonical::to_vec(
+        &qsl_semantics::check::node_wire::NodeRef(key.borrow().clone()),
+        quire_canonical::Limits::new(u64::MAX),
+    )
+    .expect("a node id encodes");
+    serde_json::from_slice(&bytes).expect("a node id encodes as JSON")
 }
 
 /// Every occurrence of `key` as a `(role, ordinal)` pair (`claim`, `anchor`,
@@ -4163,7 +4162,7 @@ fn emitted_dependencies_of(compiled: &ComposedUnit, key: NodeKey) -> Vec<serde_j
     nodes
         .iter()
         .find(|node| node["node_id"] == id)
-        .unwrap_or_else(|| panic!("node {key} is in the emitted wire"))["dependencies"]
+        .unwrap_or_else(|| panic!("node {key:?} is in the emitted wire"))["dependencies"]
         .as_array()
         .expect("dependencies is an array")
         .clone()
@@ -4277,7 +4276,7 @@ fn s4_state_clause_and_anchor_dependencies_beyond_the_frame() {
     assert_eq!(names, ["self", "result"], "self, then result");
     let mut expected: Vec<serde_json::Value> = parameters
         .iter()
-        .map(|(key, _)| wire_node_id(*key))
+        .map(|(key, _)| wire_node_id(key))
         .collect();
     expected.push(wire_node_id(anchor_key));
     expected.push(wire_node_id(clause_condition_node(version_unchanged)));
@@ -4297,8 +4296,8 @@ fn s4_state_clause_and_anchor_dependencies_beyond_the_frame() {
         assert_eq!(
             sorted_json(emitted_dependencies_of(&compiled, invariant.key())),
             sorted_json(vec![
-                wire_node_id(*self_key),
-                wire_node_id(config_version_node),
+                wire_node_id(self_key),
+                wire_node_id(&config_version_node),
                 wire_node_id(clause_condition_node(invariant)),
             ]),
             "{name} depends on exactly self, ConfigVersion (its anchor) and its condition"
@@ -4308,7 +4307,7 @@ fn s4_state_clause_and_anchor_dependencies_beyond_the_frame() {
     assert_eq!(
         sorted_json(emitted_dependencies_of(&compiled, anchor_key)),
         sorted_json(vec![
-            wire_node_id(config_version_node),
+            wire_node_id(&config_version_node),
             wire_node_id(frame_key)
         ]),
         "the operation_anchor's own dependencies are exactly its two reference bindings: \
@@ -4355,7 +4354,7 @@ fn s4_state_clause_and_anchor_dependencies_beyond_the_frame() {
     assert_eq!(
         sorted_json(emitted_dependencies_of(&compiled, field_read.key())),
         sorted_json(vec![
-            wire_node_id(config_version_node),
+            wire_node_id(&config_version_node),
             wire_node_id(receiver.0),
         ]),
         "the versionNumber field read depends on exactly ConfigVersion (its member's \

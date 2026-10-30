@@ -19,11 +19,11 @@ use crate::spine::OperationName;
 use crate::FrameOperation;
 use crate::{
     call_site, CallSite, CallSiteRefusal, ClauseName, ClauseSite, OccurrenceKey, OperationSite,
-    Origin, QualifiedName, Role, WireNodeId,
+    Origin, QualifiedName, Role, NodeKey,
 };
 
-fn wire(node: NodeKey) -> WireNodeId {
-    WireNodeId::from_digest(*node.as_bytes())
+fn wire(node: NodeKey) -> NodeKey {
+    node.clone()
 }
 
 fn operation(model: &str, object: &str, operation: &str) -> OperationName {
@@ -144,7 +144,7 @@ fn locate<S: crate::CallSiteSelection>(
 }
 
 /// The node keys of `graph`'s state clauses of `kind`, in graph order.
-fn clause_nodes_of(graph: &qsl_semantics::check::CheckedGraph, kind: &str) -> Vec<WireNodeId> {
+fn clause_nodes_of(graph: &qsl_semantics::check::CheckedGraph, kind: &str) -> Vec<NodeKey> {
     state_clause_nodes(graph)
         .into_iter()
         .filter(|(_, found)| *found == kind)
@@ -152,7 +152,7 @@ fn clause_nodes_of(graph: &qsl_semantics::check::CheckedGraph, kind: &str) -> Ve
         .collect()
 }
 
-fn claim(node: WireNodeId) -> OccurrenceKey {
+fn claim(node: NodeKey) -> OccurrenceKey {
     OccurrenceKey::new(node, Origin::new(Role::new("claim"), 0))
 }
 
@@ -187,7 +187,7 @@ fn call_site_locates_an_operations_anchor_frame_and_clauses() {
         OccurrenceKey::new(frame, Origin::new(Role::new("generated"), 0))
     );
 
-    let posts: Vec<WireNodeId> = state_clause_nodes(graph)
+    let posts: Vec<NodeKey> = state_clause_nodes(graph)
         .into_iter()
         .filter(|(_, kind)| *kind == "postcondition")
         .map(|(node, _)| wire(node.key()))
@@ -383,7 +383,7 @@ fn call_site_locates_a_state_clause_by_name() {
 fn function_nodes_declaring(
     graph: &qsl_semantics::check::CheckedGraph,
     name: &str,
-) -> Vec<WireNodeId> {
+) -> Vec<NodeKey> {
     graph
         .semantic_graph()
         .nodes()

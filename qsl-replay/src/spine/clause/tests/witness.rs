@@ -22,7 +22,7 @@ use crate::{
     WitnessEnvelope, WitnessFailure, WitnessSettlement,
 };
 use qsl_eval::value::ClauseEvaluation;
-use qsl_foundation::digest::WireNodeId;
+use quire_exact::NodeKey;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::check::{ApplicationTerm, BodyTerm, Operator};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -876,7 +876,7 @@ fn occurrence(unit: &Unit, clause: &str, path: &[usize], operator: Operator) -> 
                 )
         })
         .map(|(key, origin, _)| {
-            OccurrenceKey::new(WireNodeId::from_digest(*key.as_bytes()), origin)
+            OccurrenceKey::new(key.clone(), origin)
         })
         .unwrap_or_else(|| panic!("{clause} has a {operator:?} node at {path:?}"))
 }
@@ -1402,7 +1402,7 @@ fn replay_case(
         target.clone(),
     );
     let declaration = unit.compiled.package.graph().state_clause(clause).unwrap();
-    let node = WireNodeId::from_digest(*declaration.identity().as_bytes());
+    let node = declaration.identity().clone();
     let payload = StateClauseCounterexample {
         observation: config_version_current_selection(clause, label, self_key).input,
         witness,
@@ -2119,7 +2119,7 @@ fn tc_744_every_deciding_element_kind_round_trips() {
         &unit,
         Value::Quantity(Quantity::new(
             rational(5, 2),
-            UnitId::declared(quire_exact::NodeKey::from_digest([6; 32])),
+            UnitId::declared(quire_exact::NodeKey::new("fixture", vec![quire_exact::PathSegment::Text("node".into())], 6).expect("a fixture key")),
         )),
     )
     .to_json(None)
@@ -2179,32 +2179,31 @@ fn metre_package() -> (qsl_package::CheckedPackage, quire_exact::UnitId) {
         "terms": [],
     }))
     .expect("a base dimension");
-    let length_key = quire_exact::NodeKey::from_digest(
-        length
-            .digest(qsl_foundation::IdentityLimits::default())
-            .unwrap(),
-    );
+    let length_key = quire_exact::NodeKey::new(
+        "example",
+        vec![quire_exact::PathSegment::Text("Length".to_owned())],
+        0,
+    )
+    .expect("a base dimension key");
     let metre = UnitPreimage::from_json(json!({
         "version": "quire.unit-node/v1",
         "owner": owner,
         "qualified_declaration": ["Example", "metre"],
-        "dimension_node_id": {
-            "domain": quire_exact::NODE_KEY_DOMAIN,
-            "digest": hex(length_key.as_bytes()),
-        },
+        "dimension_node_id": {"package": "example", "path": ["Length"], "ordinal": 0},
         "target_unit_node_id": null,
         "scale": {"numerator": "1", "denominator": "1"},
         "offset": {"numerator": "0", "denominator": "1"},
     }))
     .expect("a root unit");
-    let metre_key = quire_exact::NodeKey::from_digest(
-        metre
-            .digest(qsl_foundation::IdentityLimits::default())
-            .unwrap(),
-    );
+    let metre_key = quire_exact::NodeKey::new(
+        "example",
+        vec![quire_exact::PathSegment::Text("metre".to_owned())],
+        0,
+    )
+    .expect("a root unit key");
     let graph = admit_unit_graph(
         [(length, length_key)],
-        [(metre, metre_key)],
+        [(metre, metre_key.clone())],
         &OwnerSelection::new([NodeOwner::Definition(OwnerSubject {
             authority: "agent-ix".into(),
             identity: "example".into(),

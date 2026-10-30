@@ -31,7 +31,7 @@ use qsl_foundation::source::provenance::{OccurrenceKey, RawSourceRef};
 use qsl_foundation::{LocatedSpan, RequestIndex};
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::observation::AdmissionFailure;
-use quire_exact::CancelCause;
+use quire_exact::{CancelCause, NodeKey};
 use quire_semantic_value::catalog::Category;
 use serde::{Serialize, Serializer};
 use std::collections::{BTreeMap, BTreeSet};
@@ -222,11 +222,51 @@ pub struct ParityReason {
     replayed: Option<&'static str>,
 }
 
-/// A checked-package node id on the wire: its domain and hex digest.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct WireNode {
-    domain: &'static str,
-    digest: String,
+/// A checked-package node id on the wire: the structural
+/// `{"package", "path", "ordinal"}` object (QSpec FR-322), a path segment
+/// being a string or a nested node id.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WireNode(NodeKey);
+
+impl WireNode {
+    pub(crate) fn of(key: &NodeKey) -> Self {
+        Self(key.clone())
+    }
+}
+
+impl WireNode {
+    pub(crate) fn into_key(self) -> NodeKey {
+        self.0
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for WireNode {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        // Read through the canonical event reader, which reads a node id from
+        // an explicit stack, so a deep key meets no recursion limit here.
+        let raw = <Box<serde_json::value::RawValue> as serde::Deserialize>::deserialize(deserializer)?;
+        let document = quire_canonical::read(raw.get().as_bytes(), u64::MAX)
+            .map_err(serde::de::Error::custom)?;
+        qsl_semantics::check::read_node_key(document.root())
+            .map(Self)
+            .map_err(serde::de::Error::custom)
+    }
+}
+
+impl Serialize for WireNode {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        // Written by the one node-id writer from an explicit stack, then
+        // emitted as the raw JSON text it is.
+        let bytes = quire_canonical::to_vec(
+            &qsl_semantics::check::node_wire::NodeRef(self.0.clone()),
+            quire_canonical::Limits::new(u64::MAX),
+        )
+        .map_err(serde::ser::Error::custom)?;
+        let text = String::from_utf8(bytes).map_err(serde::ser::Error::custom)?;
+        serde_json::value::RawValue::from_string(text)
+            .map_err(serde::ser::Error::custom)?
+            .serialize(serializer)
+    }
 }
 
 /// The typed cause an item's terminal record carries: its FR-331 spelling in
@@ -491,10 +531,7 @@ impl ItemCause {
                 hypothesis,
                 result,
             }) => {
-                item.hypothesis = Some(WireNode {
-                    domain: quire_exact::NODE_KEY_DOMAIN,
-                    digest: hypothesis.to_string(),
-                });
+                item.hypothesis = Some(WireNode::of(hypothesis));
                 item.result = Some(*result);
             }
             ReportedInconclusiveCause::Cause(
@@ -1567,6 +1604,27 @@ mod tests {
 
     use super::*;
     use crate::identity::QualifiedName;
+
+    /// QSL-381: a node id nested 200 deep, past serde_json's 128-level
+    /// recursion limit, writes and reads back without a depth cap.
+    #[test]
+    fn a_wire_node_nested_two_hundred_deep_round_trips() {
+        let mut key = NodeKey::new("fixture", vec![quire_exact::PathSegment::Text("leaf".into())], 0)
+            .expect("a fixture key");
+        for ordinal in 1..=200 {
+            key = NodeKey::new(
+                "fixture",
+                vec![quire_exact::PathSegment::Node(Box::new(key))],
+                ordinal,
+            )
+            .expect("a nested key");
+        }
+        let text = serde_json::to_string(&WireNode::of(&key)).expect("writes");
+        let mut deserializer = serde_json::Deserializer::from_str(&text);
+        deserializer.disable_recursion_limit();
+        let read = <WireNode as serde::Deserialize>::deserialize(&mut deserializer).expect("reads");
+        assert_eq!(read.into_key(), key);
+    }
     use crate::proof_result::{IncompleteCause, ProofRefusalCause, UnavailabilityCause};
     use crate::result::{DisagreementCause, EvaluatedValue, InputArmResult, Verdict, WitnessCheck};
     use crate::spine::{
@@ -2243,14 +2301,14 @@ mod tests {
             ),
             (
                 TerminalValue::Inconclusive(InconclusiveCause::HypothesesNotEstablished {
-                    hypothesis: qsl_foundation::digest::WireNodeId::from_digest([0xdc; 32]),
+                    hypothesis: quire_exact::NodeKey::new("fixture", vec![quire_exact::PathSegment::Text("node".into())], 0xdc).expect("a fixture key"),
                     result: ItemLabel::Refuted,
                 }),
                 json!({
                     "result": "inconclusive",
                     "cause": {
                         "kind": "hypotheses-not-established",
-                        "hypothesis": {"domain": "quire.checked-semantic-node/v1", "digest": "dc".repeat(32)},
+                        "hypothesis": {"package": "fixture", "path": ["node"], "ordinal": 0xdc},
                         "result": "refuted",
                     },
                     "category": "inconclusive",

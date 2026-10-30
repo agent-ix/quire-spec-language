@@ -17,7 +17,8 @@ use crate::{
     ReplayResult, ReplaySource, ReplayTarget, SnapshotValue, StateClauseCounterexample,
     StateClauseKind, StateClauseReplayResult, Verdict, WitnessEnvelope, WitnessSettlement,
 };
-use qsl_foundation::digest::WireNodeId;
+use qsl_foundation::digest::{DigestDomain};
+use quire_exact::NodeKey;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_exact::Identifier;
@@ -33,7 +34,7 @@ fn clause_target(clause: &str) -> ReplayTarget {
 }
 
 /// `clause`'s node and `claim` occurrence in `unit`'s compiled package.
-fn clause_identity(unit: &Unit, clause: &str) -> (WireNodeId, OccurrenceKey) {
+fn clause_identity(unit: &Unit, clause: &str) -> (NodeKey, OccurrenceKey) {
     let clause = unit
         .compiled
         .package
@@ -223,7 +224,7 @@ fn case_with(
     clause: &str,
     documents: Documents,
     source: ReplaySource,
-    adjust: impl FnOnce(&mut ReplayRequestWire, &mut (WireNodeId, OccurrenceKey)),
+    adjust: impl FnOnce(&mut ReplayRequestWire, &mut (NodeKey, OccurrenceKey)),
 ) -> Case {
     case_targeting(
         unit,
@@ -245,7 +246,7 @@ fn case_targeting(
     source: ReplaySource,
     request_target: ReplayTarget,
     envelope_target: ReplayTarget,
-    adjust: impl FnOnce(&mut ReplayRequestWire, &mut (WireNodeId, OccurrenceKey)),
+    adjust: impl FnOnce(&mut ReplayRequestWire, &mut (NodeKey, OccurrenceKey)),
 ) -> Case {
     let package_id = package_digest(unit.compiled.emitted.package_id());
     let mut identity = clause_identity(&unit, clause);
@@ -471,7 +472,7 @@ fn an_exhausted_evaluation_budget_is_inconclusive_with_no_value() {
 /// the provision when `drop_invocation`.
 fn stale_identity(
     drop_invocation: bool,
-    adjust: impl FnOnce(&mut (WireNodeId, OccurrenceKey)),
+    adjust: impl FnOnce(&mut (NodeKey, OccurrenceKey)),
 ) -> ReplayRefusal {
     let documents = changed_version();
     let invocation = documents.read[0].clone();

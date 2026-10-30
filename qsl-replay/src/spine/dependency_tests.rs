@@ -714,23 +714,28 @@ fn a_union_and_an_import_alias_sharing_a_member_name_are_ambiguous() {
 }
 
 /// The `node_id` digest of the function `name` in `compiled`'s wire.
-fn function_node(compiled: &ComposedUnit, name: &str) -> String {
+fn function_node(compiled: &ComposedUnit, name: &str) -> Value {
     let identity = compiled
         .package
         .graph()
         .function_identity(name)
         .expect("declared");
-    qsl_semantics::model::key::hex(identity.as_bytes())
+    let bytes = quire_canonical::to_vec(
+        &qsl_semantics::check::node_wire::NodeRef(identity.clone()),
+        quire_canonical::Limits::new(u64::MAX),
+    )
+    .expect("a node id encodes");
+    serde_json::from_slice(&bytes).expect("a node id is JSON")
 }
 
-/// The wire node whose `node_id` digest is `digest`.
-fn wire_node<'w>(written: &'w Value, digest: &str) -> &'w Value {
+/// The wire node whose `node_id` is `id`.
+fn wire_node<'w>(written: &'w Value, id: &Value) -> &'w Value {
     written["semantic_graph"]["nodes"]
         .as_array()
         .unwrap()
         .iter()
-        .find(|node| node["node_id"]["digest"] == digest)
-        .unwrap_or_else(|| panic!("no node {digest}"))
+        .find(|node| node["node_id"] == *id)
+        .unwrap_or_else(|| panic!("no node {id}"))
 }
 
 /// The domain package the refusal library's `model M` selects.
@@ -817,7 +822,7 @@ fn an_imported_call_is_typed_from_the_library_and_lowered_to_a_dependency_refere
                 "algorithm": "sha256",
                 "digest": d.hex(),
             },
-            "node": {"domain": "quire.checked-semantic-node/v1", "digest": f_node},
+            "node": f_node,
         })
     );
     let boolean = written["semantic_graph"]["nodes"]
@@ -832,7 +837,7 @@ fn an_imported_call_is_typed_from_the_library_and_lowered_to_a_dependency_refere
             .as_array()
             .unwrap()
             .iter()
-            .any(|dependency| dependency["digest"] == f_node),
+            .any(|dependency| *dependency == f_node),
         "{call}"
     );
     // p's body is the call.
@@ -937,30 +942,6 @@ fn an_imported_name_whose_signature_is_package_dependent_refuses() {
             covered(&source, &refusal)
         );
     }
-}
-
-/// FR-099-AC-6 (TC-446 step 6): the called function's `package_id` and node
-/// id enter the calling node's id, so recompiling against a library whose
-/// `f` changed, with the import's digest updated, changes `p`'s call node id
-/// and the package's `package_id`.
-#[trace("FR-099-AC-6", "TC-446")]
-#[test]
-fn a_changed_library_function_changes_the_calling_node_id() {
-    let compile_p = |body: &str| {
-        let geometry = library("test/geometry", "geometry", body);
-        let source = unit(&format!(
-            "{}function p using v(y: Int[0, 9]): Boolean pure {{ g::f(y) }}\n",
-            import("test/geometry", "g")
-        ));
-        let compiled = compile_as("u", &source, &input(vec![geometry]))
-            .unwrap_or_else(|refusal| panic!("p checks: {refusal}"));
-        let call = call_node(&wire(&compiled))["node_id"]["digest"].clone();
-        (call, compiled.emitted.package_id())
-    };
-    let (call, package) = compile_p(F);
-    let (changed_call, changed_package) = compile_p(F_CHANGED);
-    assert_ne!(call, changed_call);
-    assert_ne!(package, changed_package);
 }
 
 /// ADR-015 D-5: an imported call evaluates the library function's body

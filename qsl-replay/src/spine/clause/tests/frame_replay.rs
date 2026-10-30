@@ -15,7 +15,8 @@ use crate::{
     ReplayRequestRefusal, ReplayRequestWire, ReplayResult, ReplaySource, ReplayTarget,
     StateEnvironment, Verdict, Witness, WitnessEnvelope, WitnessPacket, WitnessSettlement,
 };
-use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
+use qsl_foundation::digest::{DigestDomain, DigestRecord};
+use quire_exact::NodeKey;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::observation::{AdmissionFailure, FrameChange, SelectedObject};
@@ -79,13 +80,13 @@ fn parent_modifying_unit() -> Unit {
     unit_for(unit, document)
 }
 
-pub(super) fn wire(node: quire_exact::NodeKey) -> WireNodeId {
-    WireNodeId::from_digest(*node.as_bytes())
+pub(super) fn wire(node: quire_exact::NodeKey) -> NodeKey {
+    node.clone()
 }
 
 /// `attemptUpdate`'s anchor node, frame node and frame occurrence in
 /// `unit`'s compiled package.
-fn identities(unit: &Unit) -> (WireNodeId, WireNodeId, OccurrenceKey) {
+fn identities(unit: &Unit) -> (NodeKey, NodeKey, OccurrenceKey) {
     let graph = unit.compiled.package.graph();
     let selection = graph
         .resolve_operation(
@@ -321,7 +322,7 @@ pub(super) fn packet<P: FamilyPayload>(
     _source_bytes: &[u8],
     package_id: DigestRecord,
     source: ReplaySource,
-    clause_node: WireNodeId,
+    clause_node: NodeKey,
     occurrence_key: OccurrenceKey,
     payload: P,
     target: ReplayTarget,
@@ -628,7 +629,7 @@ fn a_stale_frame_identity_refuses_before_admission() {
 #[trace("TC-515", "FR-116-AC-3")]
 #[test]
 fn a_stale_anchor_or_occurrence_refuses_content_mismatch() {
-    let stale_anchor = WireNodeId::from_digest([0xAA; 32]);
+    let stale_anchor = quire_exact::NodeKey::new("fixture", vec![quire_exact::PathSegment::Text("node".into())], 0xAA).expect("a fixture key");
     let refusal = replay(case_with(
         forbidden_parent_change(),
         child_change("parent"),
@@ -1078,7 +1079,7 @@ fn a_frame_replay_refuses_other_targets_before_the_recompile() {
             );
             if replace_node {
                 let mut packet = case.envelope.to_packet();
-                packet.clause_node = Some(WireNodeId::from_digest([9; 32]));
+                packet.clause_node = Some(quire_exact::NodeKey::new("fixture", vec![quire_exact::PathSegment::Text("node".into())], 9).expect("a fixture key"));
                 case.envelope =
                     WitnessEnvelope::reconstruct(packet, crate::ReplayLimits::default()).unwrap();
             }

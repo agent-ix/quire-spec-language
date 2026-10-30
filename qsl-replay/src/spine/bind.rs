@@ -12,7 +12,7 @@
 //! the function.
 
 use qsl_foundation::diagnostic::Code;
-use qsl_foundation::digest::WireNodeId;
+use quire_exact::NodeKey;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::{checked_node_id, checked_occurrence, CheckedPackage};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
@@ -38,7 +38,7 @@ pub struct ScalarOccurrence {
     /// [`Call::function`].
     pub function: String,
     /// The scalar application node.
-    pub application: WireNodeId,
+    pub application: NodeKey,
     /// The occurrence key of that node.
     pub occurrence: OccurrenceKey,
 }
@@ -130,7 +130,7 @@ pub enum OperandSource {
         /// The parameter's declared name.
         parameter: String,
         /// The parameter node the operand references.
-        node: WireNodeId,
+        node: NodeKey,
         /// The parameter node's declared level, as decimal text.
         level: String,
     },
@@ -154,12 +154,12 @@ pub enum BindIdentityCause {
     /// called function's body.
     Node {
         /// The claimed application node.
-        node: WireNodeId,
+        node: NodeKey,
     },
     /// The node is no application of `add`, `sub`, `mul` or `negate`.
     Operator {
         /// The claimed application node.
-        node: WireNodeId,
+        node: NodeKey,
     },
     /// The occurrence is not one of the node's occurrences in the called
     /// function's body.
@@ -408,18 +408,19 @@ fn locate(
             called: call.function.clone(),
         }));
     }
-    let node = occurrence.application;
-    let not_a_node = || identity(BindIdentityCause::Node { node });
+    let node = occurrence.application.clone();
+    let not_a_node = || {
+        identity(BindIdentityCause::Node {
+            node: node.clone(),
+        })
+    };
     let graph = checked.graph().semantic_graph();
-    let semantic = graph
-        .resolve_wire(node)
-        .and_then(|key| graph.node(key))
-        .ok_or_else(not_a_node)?;
+    let semantic = graph.node(&node).ok_or_else(not_a_node)?;
     let callable = checked
         .graph()
         .callable(&call.function)
         .ok_or_else(not_a_node)?;
-    if !in_body(graph, callable.identity, semantic.key()) {
+    if !in_body(graph, &callable.identity, semantic.key()) {
         return Err(not_a_node());
     }
     if !ScalarOperator::ALL
@@ -463,7 +464,7 @@ struct Resolver<'a> {
     /// The called function's parameters in declared order.
     parameters: &'a [(String, ValueType)],
     /// Their node ids, in the same order.
-    parameter_nodes: Vec<WireNodeId>,
+    parameter_nodes: Vec<NodeKey>,
     /// The admitted argument values, in declared parameter order.
     arguments: &'a [Value],
     /// Their indices in `Call.arguments`, in declared parameter order.
@@ -485,7 +486,7 @@ impl<'a> Resolver<'a> {
         let parameter_nodes = callable_parameter_keys(checked, &callable)
             .map_err(|fault| Box::new(RunRefusal::Fault(fault)))?
             .into_iter()
-            .map(|key| WireNodeId::from_digest(*key.as_bytes()))
+            .map(|key| key.clone())
             .collect();
         Ok(Self {
             ir: package.admitted,
@@ -540,8 +541,10 @@ impl<'a> Resolver<'a> {
             }
             CheckedScalarOperandChild::GraphChild(id) => id,
         };
-        let node = WireNodeId::from_hex(&id.digest)
-            .ok_or_else(|| Halt::Run(fault("operand-child-id-is-a-wire-node-id")))?;
+        // DEPENDENCY: the migrated `CheckedNodeId { package, path, ordinal }`
+        // reads as a structural key through `NodeKey::try_from`.
+        let node = NodeKey::try_from(id)
+            .map_err(|_| Halt::Run(fault("operand-child-id-is-a-wire-node-id")))?;
         let declaration = self
             .ir
             .parameter_declaration(id)

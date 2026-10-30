@@ -365,14 +365,14 @@ fn clause_names(site: &OperationSite) -> Vec<&str> {
 
 /// The `semantic_form` of the node `site.anchor` is the operation anchor of
 /// (its `context`), in the graph compiled from `unit`.
-fn anchor_context_form(unit: &str, document: &[u8], anchor: crate::WireNodeId) -> String {
+fn anchor_context_form(unit: &str, document: &[u8], anchor: crate::NodeKey) -> String {
     let packages = qsl_semantics::model::intake::package_input([document]).unwrap();
     let compiled = compile_config_version_unit(unit, &packages);
     let graph = compiled.package.graph();
     let node = graph
         .semantic_graph()
         .nodes()
-        .find(|node| crate::WireNodeId::from_digest(*node.key().as_bytes()) == anchor)
+        .find(|node| crate::node.key().clone() == anchor)
         .expect("the anchor is a node of the compiled graph");
     assert_eq!(node.semantic_form(), "operation_anchor");
     let context = node.semantic_type().expect("an anchor has a context");
@@ -393,7 +393,7 @@ fn assert_generated_frame(unit: &str, document: &[u8], site: &OperationSite, own
     let frame = graph
         .semantic_graph()
         .nodes()
-        .find(|node| crate::WireNodeId::from_digest(*node.key().as_bytes()) == site.frame)
+        .find(|node| crate::node.key().clone() == site.frame)
         .expect("the frame is a node of the compiled graph");
     assert_eq!(frame.semantic_form(), "frame");
     let checked = graph
@@ -586,7 +586,7 @@ fn a_call_site_frame_operation_resolves_as_a_replay_frame_target() {
         let (context, frame) = resolve_target(graph, &site.site.frame_operation, package_id)
             .unwrap_or_else(|refusal| panic!("{owner}::{name}: {refusal:?}"));
         assert_eq!(
-            crate::WireNodeId::from_digest(*frame.frame().as_bytes()),
+            crate::frame.frame().clone(),
             site.site.frame
         );
         assert_eq!(frame.operation().declaring, context);

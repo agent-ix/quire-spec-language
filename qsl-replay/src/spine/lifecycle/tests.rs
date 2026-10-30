@@ -1737,7 +1737,7 @@ fn an_internal_invariant_failure_is_a_fault() {
 fn a_rebound_model_node_leaves_the_front_end_as_an_internal_failure_with_no_package() {
     use qsl_semantics::check::{CheckCause, CheckRefusal, CorrespondenceConflict, KeyFault};
     use quire_checked::key::DeclarationKey;
-    let node = quire_exact::NodeKey::from_digest([7_u8; 32]);
+    let node = quire_exact::NodeKey::new("fixture", vec![quire_exact::PathSegment::Text("node".into())], 7).expect("a fixture key");
     let (d1, d2) = (
         DeclarationKey::fixture("ix://test/orders/Invoice"),
         DeclarationKey::fixture("ix://test/orders/Order"),

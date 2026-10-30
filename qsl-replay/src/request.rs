@@ -948,7 +948,8 @@ mod tests {
     use crate::identity::QualifiedName;
     use crate::target::ReplayTargetMembers;
     use ix_trace_rs::trace;
-    use qsl_foundation::digest::{DigestDomain, WireNodeId};
+    use qsl_foundation::digest::{DigestDomain};
+use quire_exact::NodeKey;
     use qsl_foundation::source::provenance::OccurrenceKey as OccurrenceKeyForTest;
     use quire_exact::Identifier;
 
@@ -1005,7 +1006,7 @@ mod tests {
                 crate::target::test_key(),
             ),
             source: ReplaySource::Input(vec![crate::witness::CanonicalAssignment {
-                parameter: WireNodeId::from_digest([9; 32]),
+                parameter: quire_exact::NodeKey::new("fixture", vec![quire_exact::PathSegment::Text("node".into())], 9).expect("a fixture key"),
                 value: crate::witness::WitnessValue::Integer(42),
             }]),
             obligation_identity: [1; 32],
@@ -1324,7 +1325,7 @@ mod tests {
         ReplaySource::ModelGraph(Box::new(crate::GraphEvidenceEnvelope::new(
             ObligationIdentity::from_digest([2; 32]),
             crate::target::test_key(),
-            WireNodeId::from_digest([3; 32]),
+            quire_exact::NodeKey::new("fixture", vec![quire_exact::PathSegment::Text("node".into())], 3).expect("a fixture key"),
             DigestRecord::mint(DigestDomain::PackageSemanticV2, [4; 32]),
             Vec::new(),
             wire(1).accounting_limits,
@@ -1371,7 +1372,7 @@ mod tests {
     #[test]
     fn tc_185_a_function_request_round_trips_its_occurrence_key() {
         let function = QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap();
-        let node = WireNodeId::from_digest([5; 32]);
+        let node = quire_exact::NodeKey::new("fixture", vec![quire_exact::PathSegment::Text("node".into())], 5).expect("a fixture key");
         for key in [
             OccurrenceKeyForTest::new(node, quire_exact::Origin::new("declaration".into(), 0)),
             OccurrenceKeyForTest::new(node, quire_exact::Origin::new("expression".into(), 1)),
@@ -1607,7 +1608,7 @@ mod tests {
         // `Input` arm.
         let distinctive_value: i128 = 918_273_645;
         request_wire.source = ReplaySource::Input(vec![crate::witness::CanonicalAssignment {
-            parameter: WireNodeId::from_digest([42; 32]),
+            parameter: quire_exact::NodeKey::new("fixture", vec![quire_exact::PathSegment::Text("node".into())], 42).expect("a fixture key"),
             value: crate::witness::WitnessValue::Integer(distinctive_value),
         }]);
         let request = ReplayRequest::decode(request_wire, crate::ReplayLimits::default()).unwrap();

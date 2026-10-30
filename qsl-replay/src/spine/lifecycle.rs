@@ -837,14 +837,14 @@ thread_local! {
 /// Remember the `declaration` occurrence of each function of `package`.
 #[cfg(test)]
 fn record_declarations(package: &pkg::CheckedPackage, package_id: &str) {
-    use qsl_foundation::digest::WireNodeId;
+    use quire_exact::NodeKey;
     use qsl_foundation::source::provenance::OccurrenceKey;
     use quire_exact::{Origin, Role};
     let graph = package.graph();
     for state in (0..).map_while(|index| graph.function_state(index)) {
         if let Some(callable) = graph.callable(state.name) {
             let key = OccurrenceKey::new(
-                WireNodeId::from_digest(*callable.identity.as_bytes()),
+                callable.identity.clone(),
                 Origin::new(Role::new("declaration"), 0),
             );
             DECLARATIONS.with(|declarations| {

@@ -167,8 +167,8 @@ fn refused(unit: &Unit, call: &Call, occurrence: &ScalarOccurrence) -> BindRefus
     }
 }
 
-fn wire(key: quire_exact::NodeKey) -> WireNodeId {
-    WireNodeId::from_digest(*key.as_bytes())
+fn wire(key: quire_exact::NodeKey) -> NodeKey {
+    key.clone()
 }
 
 /// Every occurrence in `function`'s body of a node `keep` accepts.
@@ -204,7 +204,7 @@ fn the_application(unit: &Unit, function: &str, operator: ScalarOperator) -> Sca
     found.remove(0)
 }
 
-fn parameter_node(unit: &Unit, function: &str, name: &str) -> WireNodeId {
+fn parameter_node(unit: &Unit, function: &str, name: &str) -> NodeKey {
     let package = unit.checked.package();
     let callable = package.graph().callable(function).expect("declared");
     let keys = callable_parameter_keys(package, &callable).expect("parameter nodes");
@@ -222,7 +222,7 @@ fn bound_range(lower: i128, upper: i128) -> CheckedScalarOperandRange {
 
 /// The source of the argument at `index` for parameter `parameter`: a
 /// parameter's level is its declared position.
-fn argument_source(index: usize, parameter: &str, node: WireNodeId) -> OperandSource {
+fn argument_source(index: usize, parameter: &str, node: NodeKey) -> OperandSource {
     OperandSource::Argument {
         argument: index,
         parameter: parameter.to_owned(),
@@ -496,9 +496,7 @@ fn tc_1053_step_3_mistyped_arguments_equal_runs() {
 #[trace("TC-1053", "FR-367-AC-4")]
 #[test]
 fn tc_1053_step_3_reference_admission_equals_runs() {
-    let fixture = lookup_driver_fixture(
-        "function mk using v(r: M::Gadget, a: Int[0, 9]): Int[1, 10] pure { a + 1 }",
-    );
+    let fixture = lookup_driver_fixture();
     let unit = compile_source(fixture.source.clone(), fixture.packages.clone());
     let (objects, _, present, _) = lookup_driver_context(&fixture);
     let occurrence = the_application(&unit, "mk", ScalarOperator::Add);
@@ -622,7 +620,7 @@ fn tc_1053_step_4_occurrence_identity_refusals() {
     );
 
     // A node absent from the package.
-    let absent = WireNodeId::from_digest([0xee; 32]);
+    let absent = quire_exact::NodeKey::new("fixture", vec![quire_exact::PathSegment::Text("node".into())], 0xee).expect("a fixture key");
     let absent = ScalarOccurrence {
         application: absent,
         occurrence: OccurrenceKey::new(absent, sub.occurrence.origin().clone()),
@@ -843,7 +841,7 @@ fn tc_1053_step_8_binding_is_the_operator_claims_operand_list() {
             })
             .collect();
         let preimage = {
-            let node = graph.node(graph.resolve_wire(occurrence.application).unwrap());
+            let node = graph.node(&occurrence.application);
             serde_json::from_slice::<serde_json::Value>(node.unwrap().preimage()).unwrap()
         };
         (bound, operands, preimage, occurrence)

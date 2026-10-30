@@ -59,7 +59,7 @@ pub(in crate::spine) struct LookupDriverFixture {
     pub(in crate::spine) packages: qsl_semantics::model::intake::PackageInput,
 }
 
-pub(in crate::spine) fn lookup_driver_fixture(functions: &str) -> LookupDriverFixture {
+pub(in crate::spine) fn lookup_driver_fixture() -> LookupDriverFixture {
     let mut document: serde_json::Value = serde_json::from_slice(include_bytes!(
         "../../../../tests/fixtures/spine-model.semantic-ir.json"
     ))
@@ -229,9 +229,7 @@ pub(in crate::spine) fn lookup_driver_context(
 #[test]
 #[trace("TC-792", "FR-100-AC-14", "FR-100-AC-16", "FR-100-AC-17")]
 fn tc_792_source_compiled_lookup_driver_preserves_present_and_absent_paths() {
-    let fixture = lookup_driver_fixture(
-        "function query using v(p: Population<M::Gadget>[1], r: M::Gadget): M::Gadget pure { lookup<M::Gadget>(p, r) absent refused }",
-    );
+    let fixture = lookup_driver_fixture();
     let (objects, population, present, absent) = lookup_driver_context(&fixture);
     let invoke = |reference| {
         run(
@@ -277,9 +275,7 @@ fn tc_792_source_compiled_lookup_driver_preserves_present_and_absent_paths() {
 #[test]
 #[trace("TC-792", "FR-100-AC-14", "FR-100-AC-16")]
 fn tc_792_source_driver_admits_unused_parameters_before_body_evaluation() {
-    let fixture = lookup_driver_fixture(
-        "function unused using v(p: Population<M::Gadget>[1], r: M::Gadget): Boolean pure { true }",
-    );
+    let fixture = lookup_driver_fixture();
     let (objects, population, _, present) = lookup_driver_context(&fixture);
     let foreign_universe = quire_exact::ObjectReference::new(
         UniverseId::from_digest([0xa5; 32]),
@@ -322,9 +318,7 @@ fn tc_792_source_driver_admits_unused_parameters_before_body_evaluation() {
 #[test]
 #[trace("TC-792", "FR-100-AC-14", "FR-100-AC-16")]
 fn tc_792_source_driver_binding_precedence_precedes_value_admission() {
-    let fixture = lookup_driver_fixture(
-        "function query using v(p: Population<M::Gadget>[1], r: M::Gadget): M::Gadget pure { lookup<M::Gadget>(p, r) absent refused }",
-    );
+    let fixture = lookup_driver_fixture();
     let (objects, _, _, _) = lookup_driver_context(&fixture);
     let refusal = run(
         source(),
@@ -355,9 +349,7 @@ fn tc_792_source_driver_binding_precedence_precedes_value_admission() {
 #[test]
 #[trace("TC-792", "FR-100-AC-14", "FR-100-AC-16")]
 fn tc_792_source_driver_cancellation_returns_no_lookup_result() {
-    let fixture = lookup_driver_fixture(
-        "function query using v(p: Population<M::Gadget>[1], r: M::Gadget): M::Gadget pure { lookup<M::Gadget>(p, r) absent refused }",
-    );
+    let fixture = lookup_driver_fixture();
     let (objects, population, _, _) = lookup_driver_context(&fixture);
     let cancel = Cancel::new();
     cancel.cancel(quire_exact::CancelCause::Requested);

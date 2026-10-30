@@ -658,7 +658,8 @@ fn observed_replay_request(
         ReplayOverBinding, ReplaySource, ReplayTarget, TracePosition, Witness, WitnessEnvelope,
         WitnessPacket,
     };
-    use qsl_foundation::digest::{DigestDomain, WireNodeId};
+    use qsl_foundation::digest::{DigestDomain};
+use quire_exact::NodeKey;
     use qsl_foundation::source::provenance::OccurrenceKey;
 
     let (base, packages) = unit_and_packages(OPERATIONS);
@@ -688,7 +689,7 @@ fn observed_replay_request(
         .iter()
         .find(|node| node.clause().name() == name)
         .expect("the fixture temporal clause exists");
-    let node = WireNodeId::from_digest(*clause_node.identity().as_bytes());
+    let node = clause_node.identity().clone();
     let occurrence = OccurrenceKey::new(node, clause_node.claim().clone());
     let domain_document = packages.values().next().expect("one model package");
     let documents: Vec<(DocumentRef, Vec<u8>)> = values
