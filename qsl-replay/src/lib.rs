@@ -248,7 +248,7 @@ pub use model_check::step_settle::{
     settle_step_simulation, BackendCertificate, OtherBackendResult, StepBackendOutcome,
     StepSimulationSettlement, STEP_INDUCTION_DEPTH,
 };
-pub use model_check::subject_identity::{SubjectIdentity, SubjectIdentityRefusal};
+pub use model_check::subject_identity::SubjectIdentity;
 pub use monitor_plan::{
     plan_obligations, AtomId, ClockBindingKey, MonitorAtom, MonitorPlanRefusal, MonitorProgram,
     MonitorSubject, MonitorTarget, PlanId, SubformulaId, TickInterval, TimedMonitorPlan,

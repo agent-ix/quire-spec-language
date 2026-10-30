@@ -10,10 +10,9 @@ use crate::bounds::ReplayLimits;
 use crate::execute::{request_limits, run_spine_with_execution_points, Recompiled, ReplayRefusal};
 use crate::request::StageLimits;
 use crate::spine::{self, DependencyInput};
-use crate::DigestRecord;
 
 /// One source unit compiled and emitted: its `quire.checked-package/v2`
-/// bytes and the `package_id` they declare.
+/// bytes.
 #[derive(Clone, Debug)]
 pub struct CompiledPackage {
     emitted: spine::EmittedUnit,
@@ -29,10 +28,6 @@ impl CompiledPackage {
         self.emitted.package().bytes()
     }
 
-    /// The `quire.package.semantic/v2` `package_id` the bytes declare.
-    pub fn package_id(&self) -> DigestRecord {
-        self.emitted.package().package_id().record()
-    }
 }
 
 /// Compile `bytes`, displayed as `path` and labelled `source`, with

@@ -89,7 +89,7 @@ fn the_identity_is_the_clause_the_subjects_and_the_instance() {
     );
     assert_eq!(
         base.subjects(),
-        [SubjectIdentity::of(&world.subject()).expect("emits")]
+        [SubjectIdentity::of(&world.subject())]
     );
     assert_eq!(base.instance(), instance("v"));
 

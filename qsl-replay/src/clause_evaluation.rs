@@ -264,8 +264,6 @@ pub fn evaluate_clause(request: ClauseEvaluationRequest) -> ClauseEvaluation {
             name: clause,
             input,
         }),
-        expected_package_id: None,
-        expected_package_id_claim: None,
         limits,
         observation_limits,
         accounting,
