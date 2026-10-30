@@ -264,6 +264,33 @@ fn tc_044_unmapped_native_paths_refuse_and_legacy_profile_is_preserved() {
 }
 
 #[test]
+#[trace("TC-042", "FR-015-AC-3")]
+fn tc_042_native_selection_requires_its_declared_package_identity() {
+    let models = [parts().model()];
+    let own = models[0]
+        .environment()
+        .owner()
+        .package()
+        .as_str()
+        .to_owned();
+    let admitted = link_native(
+        read(&document(&models[0], &invariant("true"))),
+        &models,
+        LinkLimits::default(),
+    );
+    assert!(admitted.is_ok(), "the model's own identity selects it");
+    for foreign in [
+        format!("{own}-foreign"),
+        "example/foreign".to_owned(),
+        String::new(),
+    ] {
+        let text = document(&models[0], &invariant("true")).replace(&own, &foreign);
+        let error = link_native(read(&text), &models, LinkLimits::default()).unwrap_err();
+        assert_eq!(error.diagnostic.code, Code::MissingImport, "{foreign:?}");
+    }
+}
+
+#[test]
 #[trace("TC-044", "FR-015-AC-5")]
 fn tc_044_enum_identity_is_not_a_reference_and_parameters_are_operation_scoped() {
     let model =

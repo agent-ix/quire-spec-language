@@ -813,6 +813,30 @@ mod tc_282_duplicate_backend_identity {
         }
     }
 
+    /// FR-075-AC-4: a conflict is not special-cased to exactly two unequal
+    /// descriptors. Three unequal descriptors of one identity leave the
+    /// identity unregistered with one refusal for `a`, under every order.
+    #[test]
+    #[trace("TC-447", "FR-075-AC-4")]
+    fn three_way_conflict_unregisters_the_identity_under_every_order() {
+        let pool = [a1(), a2(), a1_prime()];
+        let orderings = permutations(pool.len());
+        assert_eq!(orderings.len(), 6, "3! = 6 orderings");
+        let baseline_registry = build(&orderings[0], &pool).0;
+
+        for order in &orderings {
+            let (registry, _) = build(order, &pool);
+            assert_eq!(registry, baseline_registry, "order {order:?}");
+            assert_eq!(refusal_ids(&registry), ["a"], "order {order:?}");
+            assert!(registry.backends().next().is_none(), "order {order:?}");
+            assert_eq!(
+                registry.candidates(Capability::ValueValidity, Some(&BackendId::new("a"))),
+                CandidateOutcome::UnknownBackend(BackendId::new("a")),
+                "order {order:?}"
+            );
+        }
+    }
+
     /// DB-04: `A1`, `A2`, `B` -- as DB-03 for `a`; `b` is held; the unnamed
     /// item's candidates are exactly `b`; the item naming `b` holds `b`.
     #[test]

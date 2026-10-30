@@ -3405,3 +3405,109 @@ mod helpers {
         AdmissionRecord::new(code, cause)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ix_trace_rs::trace;
+
+    /// `check_document_valid` over one read of `bytes` under the default
+    /// limits, as admission makes it.
+    fn check(bytes: &[u8]) -> Result<(), AdmissionFailure> {
+        let limits = ObservationLimits::default();
+        let read = quire_canonical::read(bytes, limits.document_bytes);
+        check_document_valid(&read, limits)
+    }
+
+    /// FR-106 check 1.3: a repeated member name is malformed JSON, which the
+    /// check leaves to check 1.4; a lone surrogate escape or a byte that is
+    /// not UTF-8 refuses `invalid_runtime_input`/`invalid-value` at the root.
+    #[trace("TC-465", "FR-106-AC-3")]
+    #[test]
+    fn the_shared_reader_settles_a_text_it_refuses_at_check_1_3() {
+        assert_eq!(check(br#"{"a":1,"a":2}"#), Ok(()));
+        let invalid_value = || {
+            Err(refuse(
+                AdmissionRecord::new(Code::InvalidRuntimeInput, "invalid-value")
+                    .with("document_pointer", ""),
+            ))
+        };
+        assert_eq!(check(br#"{"s":"\ud800"}"#), invalid_value());
+        assert_eq!(check(b"{\"s\":\"\xC0\"}"), invalid_value());
+    }
+
+    /// FR-056: a number with no finite double refuses `noncanonical_wire` at
+    /// its pointer: `1e400` and `-1e400` are `inexact-integer`, `1e-400` is
+    /// `inexact-number`.
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn a_number_with_no_finite_double_refuses_noncanonical_wire_at_its_pointer() {
+        let wide = format!("1{}.5", "0".repeat(400));
+        let wide_whole = format!("1{}e-1", "0".repeat(400));
+        for (text, cause, pointer) in [
+            (r#"{"n":1e400}"#, "inexact-integer", "/n"),
+            (r#"{"a":[0,-1e400]}"#, "inexact-integer", "/a/1"),
+            ("1e400", "inexact-integer", ""),
+            (r#"{"a":{"n":1e-400}}"#, "inexact-number", "/a/n"),
+            (r#"{"a":1,"a":2,"n":1e400}"#, "inexact-integer", "/n"),
+            ("[1e400", "inexact-integer", "/0"),
+            (r#"{"x":[1e-400,1e400]}"#, "inexact-integer", "/x/1"),
+            (wide.as_str(), "inexact-number", ""),
+            (wide_whole.as_str(), "inexact-integer", ""),
+        ] {
+            assert_eq!(
+                check(text.as_bytes()),
+                Err(refuse(
+                    AdmissionRecord::new(Code::NoncanonicalWire, cause)
+                        .with("document_pointer", pointer)
+                )),
+                "{text}"
+            );
+        }
+    }
+
+    /// A repeated member name the reader detects before it reaches an
+    /// underflowing number is the reader's refusal, left to check 1.4.
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn a_repeated_name_before_an_underflow_is_left_to_check_1_4() {
+        assert_eq!(check(br#"{"a":1,"a":2,"n":1e-400}"#), Ok(()));
+    }
+
+    /// FR-261-AC-2 (TC-733 step 2): on a 512 KiB stack, check 1.3 over a
+    /// document holding a value nested 100,000 deep reads the document.
+    #[trace("TC-733", "FR-261-AC-2")]
+    #[test]
+    fn a_document_nested_100_000_deep_is_read_on_content() {
+        let outcome = std::thread::Builder::new()
+            .stack_size(512 * 1024)
+            .spawn(|| {
+                let depth = 100_000;
+                let text = format!("{{\"a\":{}{}}}", "[".repeat(depth), "]".repeat(depth));
+                check(text.as_bytes())
+            })
+            .expect("the test thread spawns")
+            .join()
+            .expect("the read does not overflow the stack");
+        assert_eq!(outcome, Ok(()));
+    }
+
+    /// The reader's allocation failure refuses `resource_exhausted`/
+    /// `allocation-failed` carrying `requested`, and a byte error is check
+    /// 1.2's `input-bytes-exceeded`.
+    #[trace("TC-729", "FR-259-AC-5")]
+    #[test]
+    fn an_allocation_failure_refuses_allocation_failed() {
+        let expected = refuse(
+            AdmissionRecord::new(Code::ResourceExhausted, "allocation-failed")
+                .with("requested", "4096"),
+        );
+        assert_eq!(
+            read_error_refusal(
+                &quire_canonical::ReadError::Allocation { requested: 4096 },
+                ObservationLimits::default()
+            ),
+            Some(expected)
+        );
+    }
+}
