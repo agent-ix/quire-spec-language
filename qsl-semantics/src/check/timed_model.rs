@@ -3728,7 +3728,7 @@ fn state_alternatives(
             presences,
             predicate: PredicateDraft {
                 context: context.clone(),
-                population,
+                population: population.clone(),
                 predicate: data,
             },
         });
@@ -4320,7 +4320,7 @@ fn state_view<'v>(
         context: Some(draft.context.clone()),
         receiver: Some(("self", ValueType::Reference(draft.context.clone()))),
         operation: None,
-        context_population: draft.population,
+        context_population: draft.population.clone(),
         frame_population: None,
         binders: &[],
         presence_places,
@@ -4367,8 +4367,8 @@ fn check_part(
                 context: Some(clause.context.clone()),
                 receiver: Some(("self", ValueType::Reference(clause.context.clone()))),
                 operation: Some(operation),
-                context_population: clause.context_population,
-                frame_population: clause.frame_population,
+                context_population: clause.context_population.clone(),
+                frame_population: clause.frame_population.clone(),
                 binders: &binders,
                 presence_places: checking.presence_places,
                 body: &form.expression,
