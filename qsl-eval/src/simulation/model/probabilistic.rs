@@ -589,7 +589,10 @@ impl ModelSystem<'_> {
         &self,
         state: &ModelSimState,
     ) -> Result<Result<Vec<Action>, UndecidedSuccessor>, ExpansionStop> {
-        let (expansion, enabled) = expand_enabled(self, state)?;
+        // No post-state presences: a postcondition's `present(self.v)`
+        // read fails closed with `place-presence-unrecorded`. Dense timed
+        // models route only to EN-6, so nothing reaches it here today.
+        let (expansion, enabled) = expand_enabled(self, state, None)?;
         if expansion
             .findings
             .iter()
