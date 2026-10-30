@@ -553,7 +553,6 @@ pub fn check_model(
     refuse_capture_read(request.item)?;
     let mut run = Run {
         system: &system,
-        package: request.subject.simulation.package,
         fairness: item.fairness(),
         reducer: Some(&system),
         item: &item,
@@ -733,7 +732,6 @@ pub fn check_protocol(
     refuse_capture_read(request.item)?;
     let protocol_run = ProtocolRun {
         item: &item,
-        package: subject.model.simulation.package,
         instances: &instances,
         root_cancelled,
         no_initial,
@@ -905,7 +903,6 @@ fn check_protocol_liveness(
 /// model the subject's resolved models need.
 struct ProtocolRun<'r> {
     item: &'r Item<'r>,
-    package: &'r qsl_package::CheckedPackage,
     instances: &'r [Instance],
     root_cancelled: Option<quire_exact::CancelCause>,
     no_initial: bool,
@@ -936,7 +933,6 @@ impl ProtocolRun<'_> {
         };
         let mut run = Run {
             system,
-            package: self.package,
             fairness: &fairness,
             reducer: None,
             item: self.item,
@@ -1100,7 +1096,6 @@ fn check_reduced(
         };
         let mut run = Run {
             system: &system,
-            package: request.subject.simulation.package,
             fairness: item.fairness(),
             reducer: Some(&system),
             item: &item,
@@ -1502,7 +1497,6 @@ impl Reducer<ModelSimState> for ModelSystem<'_> {
 
 struct Run<'r, S: SubjectSystem> {
     system: &'r S,
-    package: &'r qsl_package::CheckedPackage,
     /// The item's fairness set over the subject, which every counterexample
     /// carries: empty for the deadlock-freedom item (FR-123, FR-212).
     fairness: &'r [<S::TransitionId as SubjectTransition>::Fairness],
