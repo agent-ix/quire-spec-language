@@ -10,7 +10,6 @@ use super::protocol_graph::{flow_over, model};
 use super::protocol_reference::{clause_argument, node_by_id, node_of};
 use super::reachability::{lower_with, Lowered};
 use super::*;
-use crate::checked_v2::tests::rekey_stale;
 
 const PROFILES: &str = "profile p = \"quire.protocol.finite-global/v1\";\n\
                      profile t = \"quire.temporal.infinite-trace/v1\";\n";
@@ -50,12 +49,12 @@ fn protocol_requirements_reference_deduplicated_temporal_clause_nodes() {
         .protocol_activation_relation();
     assert_eq!(rows.len(), 1);
     assert_eq!(
-        rows[0].clause.digest.as_ref(),
-        clause["node_id"]["digest"].as_str().unwrap()
+        serde_json::to_value(&rows[0].clause).unwrap(),
+        clause["node_id"]
     );
     assert_eq!(
-        rows[0].required_temporal.digest.as_ref(),
-        target["node_id"]["digest"].as_str().unwrap()
+        serde_json::to_value(&rows[0].required_temporal).unwrap(),
+        target["node_id"]
     );
     assert_eq!(
         rows[0].activation,
@@ -73,14 +72,12 @@ fn protocol_clause_index(wire: &Value) -> usize {
 }
 
 /// The reader's verdict on `valid` after `edit` to its clause node, with the
-/// clause's node id (and everything that names it) recomputed, so the
-/// refusal is the reader's rule on the edited content and not a stale-key
-/// refusal at the clause's node id.
+/// clause's structural node key retained, so the refusal is the reader's
+/// rule on the edited content.
 fn clause_edit_verdict(valid: &Lowered, edit: impl FnOnce(&mut Value)) -> String {
     let mut wire = valid.wire.clone();
     let index = protocol_clause_index(&wire);
     edit(&mut wire["semantic_graph"]["nodes"][index]);
-    rekey_stale(&mut wire);
     verdict(valid, &wire)
 }
 
@@ -99,18 +96,11 @@ fn sort_dependencies(clause: &mut Value) {
     clause["dependencies"]
         .as_array_mut()
         .unwrap()
-        .sort_by(|left, right| {
-            left["digest"]
-                .as_str()
-                .unwrap()
-                .cmp(right["digest"].as_str().unwrap())
-        });
+        .sort_by_key(|value| qsl_foundation::node_wire::node_key_from_json(value).unwrap());
 }
 
-/// FR-383-AC-2, AC-13: each mutated clause is rekeyed, so the package is
-/// refused by the reader's own requirements-set rule for that mutation and
-/// not by a stale node id. The unmutated, rekeyed wire is admitted, which
-/// shows the rekey itself introduces no refusal.
+/// FR-383-AC-2, AC-13: each mutated clause is refused by the reader's own
+/// requirements-set rule; the unmutated wire is admitted.
 #[trace("FR-383-AC-2", "FR-383-AC-13", "TC-1062")]
 #[test]
 fn requirement_wire_mutations_refuse() {
@@ -163,7 +153,7 @@ fn requirement_wire_mutations_refuse() {
     };
     let wrong_form = clause_edit_verdict(&valid, retarget(non_temporal));
     let mut unknown = original_target.clone();
-    unknown["digest"] = json!("0000000000000000000000000000000000000000000000000000000000000000");
+    unknown["path"] = json!(["absent"]);
     let unknown_key = clause_edit_verdict(&valid, retarget(unknown));
 
     let clause_path = format!("/semantic_graph/nodes/{clause_index}");
@@ -193,7 +183,7 @@ fn requirement_wire_mutations_refuse() {
 
 #[trace("FR-383-AC-13", "TC-1062")]
 #[test]
-fn requirement_order_does_not_change_the_protocol_package_identity() {
+fn requirement_order_does_not_change_the_emitted_set() {
     let declarations = "temporal Due using t over (c: M::Order) clock \"model-steps\" \
                         on origin { always true }\n\
                         temporal Later using t over (c: M::Order) clock \"model-steps\" \
@@ -216,29 +206,29 @@ fn requirement_order_does_not_change_the_protocol_package_identity() {
     let second = compile("requires temporal Later;\nrequires temporal Due;");
     assert!(first.verified, "{}", first.text);
     assert!(second.verified, "{}", second.text);
-    assert_eq!(first.wire["package_id"], second.wire["package_id"]);
-
     let clause = node_of(&first.wire, "protocol", "protocol_clause");
     let requirements = clause_argument(clause, "requirements")["members"]
         .as_array()
         .unwrap();
-    let digests: Vec<_> = requirements
+    let keys: Vec<_> = requirements
         .iter()
-        .map(|reference| reference["target"]["digest"].as_str().unwrap())
+        .map(|reference| {
+            qsl_foundation::node_wire::node_key_from_json(&reference["target"]).unwrap()
+        })
         .collect();
     assert_eq!(requirements.len(), 2);
     // The expected order comes from the wire's own temporal nodes, sorted
     // here, not from the order lowering or the source wrote them in.
-    let mut temporal_digests: Vec<&str> = first.wire["semantic_graph"]["nodes"]
+    let mut temporal_keys: Vec<NodeKey> = first.wire["semantic_graph"]["nodes"]
         .as_array()
         .unwrap()
         .iter()
         .filter(|node| node["semantic_form"] == "temporal_clause")
-        .map(|node| node["node_id"]["digest"].as_str().unwrap())
+        .map(|node| qsl_foundation::node_wire::node_key_from_json(&node["node_id"]).unwrap())
         .collect();
-    temporal_digests.sort_unstable();
-    assert_eq!(temporal_digests.len(), 2);
-    assert_eq!(digests, temporal_digests);
+    temporal_keys.sort_unstable();
+    assert_eq!(temporal_keys.len(), 2);
+    assert_eq!(keys, temporal_keys);
     let second_clause = node_of(&second.wire, "protocol", "protocol_clause");
     assert_eq!(
         clause_argument(second_clause, "requirements"),
@@ -260,7 +250,7 @@ fn requirement_order_does_not_change_the_protocol_package_identity() {
     assert_eq!(rows.len(), 2);
     assert!(rows
         .windows(2)
-        .all(|pair| pair[0].required_temporal.digest < pair[1].required_temporal.digest));
+        .all(|pair| pair[0].required_temporal < pair[1].required_temporal));
 }
 
 /// FR-093: a function that reads a protocol clause is keyed after the
@@ -338,7 +328,7 @@ fn a_protocol_requirement_changes_the_clause_key_and_empty_set_has_no_row() {
         .unwrap()
         .iter()
         .any(|key| { node_by_id(&empty.wire, key)["semantic_form"] == "temporal_clause" }));
-    assert_ne!(empty_clause["node_id"], required_clause["node_id"]);
+    assert_ne!(empty_clause["body"], required_clause["body"]);
 }
 
 /// FR-464-AC-13: the activation relation binds a required temporal clause to
@@ -379,10 +369,7 @@ fn a_required_clause_relation_carries_the_each_trigger() {
     else {
         panic!("an each activation row: {:?}", rows[0]);
     };
-    assert_eq!(
-        row_trigger.digest.as_ref(),
-        trigger["digest"].as_str().unwrap()
-    );
+    assert_eq!(serde_json::to_value(row_trigger).unwrap(), *trigger);
 }
 
 /// FR-383-AC-17: a unit that selects no protocol profile emits no protocol
