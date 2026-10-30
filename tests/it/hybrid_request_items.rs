@@ -54,7 +54,7 @@ fn graph() -> CheckedGraph {
         qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
     )
     .expect("the model is admitted");
-    PackageDeclarations::assemble(raw, unit, models, Vec::new())
+    PackageDeclarations::assemble(raw, "fixture".to_string(), unit, models, Vec::new())
         .expect("the unit assembles")
         .check(CheckingLimits::default())
         .expect("the unit checks")

@@ -69,7 +69,7 @@ fn a_members_item_bounds_build_a_request_that_replays() {
         qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
     )
     .expect("the model is admitted");
-    let graph = PackageDeclarations::assemble(raw, unit, models, Vec::new())
+    let graph = PackageDeclarations::assemble(raw, "fixture".to_string(), unit, models, Vec::new())
         .expect("the unit assembles")
         .check(CheckingLimits::default())
         .expect("the unit checks");

@@ -116,6 +116,7 @@ fn a_claim_inside_a_case_arm_is_requested_as_a_value_validity_item() {
     let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
     let graph = qsl_semantics::check::PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_string(),
         unit,
         Vec::new(),
         Vec::new(),

@@ -190,6 +190,7 @@ fn protocol_attempt_identity(declarations: &str) {
         let forms = qsl_forms::build_unit(&parsed).unwrap();
         let declarations = qsl_semantics::check::PackageDeclarations::assemble(
             parsed.source().reference().clone(),
+            "fixture".to_string(),
             forms,
             vec![protocol_attempt_fixture::m_actor_model()],
             Vec::new(),
@@ -871,6 +872,7 @@ fn ieee_fixture_identity(text: &str) {
         let built = qsl_forms::build_unit(&parsed).unwrap();
         let mut declarations = PackageDeclarations::assemble(
             parsed.source().reference().clone(),
+            "fixture".to_string(),
             built,
             Vec::new(),
             Vec::new(),
@@ -1485,6 +1487,7 @@ fn longest_admitted_and_chain_keeps_format_identity() {
         };
         PackageDeclarations::assemble(
             parsed.source().reference().clone(),
+            "fixture".to_string(),
             forms,
             Vec::new(),
             Vec::new(),

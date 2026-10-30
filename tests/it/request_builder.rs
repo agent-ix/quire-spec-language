@@ -68,6 +68,7 @@ pub(super) fn check(declarations: &str) -> CheckedGraph {
     let unit = build_unit(&parsed).expect("S2 builds the unit");
     PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_string(),
         unit,
         Vec::new(),
         Vec::new(),
