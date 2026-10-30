@@ -717,7 +717,7 @@ mod tests {
                 package: "p".to_owned(),
                 node: "a".to_owned(),
             },
-            order_key: quire_exact::NodeKey::from_digest([0xff; 32]),
+            order_key: crate::fixture_node(0xff),
             concrete_population: DeclarationKey {
                 package: "c".to_owned(),
                 node: "first".to_owned(),
@@ -728,7 +728,7 @@ mod tests {
                 package: "p".to_owned(),
                 node: "z".to_owned(),
             },
-            order_key: quire_exact::NodeKey::from_digest([0x01; 32]),
+            order_key: crate::fixture_node(0x01),
             concrete_population: DeclarationKey {
                 package: "c".to_owned(),
                 node: "second".to_owned(),

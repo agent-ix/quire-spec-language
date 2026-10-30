@@ -493,7 +493,11 @@ fn fmt_input_source(
 ) -> fmt::Result {
     let mut buf = Vec::with_capacity(assignments.len() * 40);
     for assignment in assignments {
-        buf.extend_from_slice(assignment.parameter.as_bytes());
+        buf.extend_from_slice(
+            parameter_name(&assignment.parameter)
+                .unwrap_or_default()
+                .as_bytes(),
+        );
         match &assignment.value {
             WitnessValue::Boolean(value) => buf.extend_from_slice(&[0, u8::from(*value)]),
             WitnessValue::Integer(value) => {

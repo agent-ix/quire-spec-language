@@ -275,8 +275,9 @@ pub fn select_contract(
         Some(
             graph
                 .semantic_graph()
-                .resolve_wire(claim.node())
-                .ok_or(ContractSelection::NoForm)?,
+                .node(claim.node())
+                .ok_or(ContractSelection::NoForm)?
+                .key(),
         )
     };
     let relation = package.abstraction();
@@ -455,7 +456,7 @@ fn not_step_simulable(
             && usize::try_from(ordinal).is_ok_and(|ordinal| ordinal <= refinement.steps().len())
             && refinement
                 .v2_emission()
-                .is_ok_and(|emission| emission.identity.as_bytes() == claim.node().as_bytes())
+                .is_ok_and(|emission| emission.identity == *claim.node())
     });
     if names {
         Ok(())

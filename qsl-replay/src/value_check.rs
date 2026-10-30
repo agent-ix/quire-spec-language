@@ -261,11 +261,9 @@ impl<'p> ValueTarget<'p> {
             if !owned {
                 return Err(Selection::NoForm);
             }
-            let node = semantic
-                .resolve_wire(claim.node())
-                .ok_or(Selection::MissingNode)?;
+            semantic.node(claim.node()).ok_or(Selection::MissingNode)?;
             graph
-                .occurrence(node, claim.origin())
+                .occurrence(claim.node(), claim.origin())
                 .ok_or(Selection::MissingNode)?;
             ClaimForm::ScalarOperation
         };
