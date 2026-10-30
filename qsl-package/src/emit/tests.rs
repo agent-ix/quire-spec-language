@@ -12,10 +12,9 @@ use qsl_forms::{
     BinaryOperator, BuiltinType, DeclarationSpans, Expression, ExpressionSpans,
     FunctionDeclaration, TypeForm,
 };
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::{OccurrenceKey, RawSourceRef, SourceRegion};
 use qsl_semantics::check::PackageDeclarations;
-use qsl_semantics::library::{LibraryName, PinnedRequest};
+use qsl_semantics::library::LibraryName;
 use qsl_semantics::value::{always_roles, native_diagnostics_catalog, DefinitionRole};
 use quire_contract_model::CheckedPackageEvidence;
 use quire_exact::{
@@ -43,7 +42,6 @@ mod envelope_adoption;
 mod golden;
 mod hybrid;
 mod hyper_clause;
-mod identity_depth;
 mod large_cycle;
 mod navigation;
 mod option_value;
@@ -246,8 +244,8 @@ fn library() -> LibraryName {
     LibraryName::new("pkg").unwrap()
 }
 
-/// QSL's full I2 read of `emission`, pinned at its own `package_id`, with
-/// the emitted lock's required features as evidence.
+/// QSL's full I2 read of `emission` with the emitted lock's required
+/// features as evidence.
 fn read_back(emission: &Emission) -> Read {
     read_with(emission, &read_evidence(emission))
 }
@@ -262,46 +260,34 @@ fn read_evidence(emission: &Emission) -> CheckedPackageEvidence {
     evidence
 }
 
-/// QSL's full I2 read of `emission` against `evidence`, pinned at its own
-/// `package_id`.
+/// QSL's full I2 read of `emission` against `evidence`.
 fn read_with(emission: &Emission, evidence: &CheckedPackageEvidence) -> Read {
-    let pinned: PinnedRequest =
-        qsl_semantics::library::fixtures::single_pin(library(), emission.package.package_id());
     read_v2(
         emission.package.bytes(),
         library(),
         V2ReadLimits::default(),
         evidence,
-        &pinned,
     )
 }
 
-/// The verified package's exports: declared name to node id hex.
+/// The verified package's exports: declared name to structural node identity.
 fn verified_exports(emission: &Emission) -> BTreeMap<String, String> {
     match read_back(emission) {
         Read::Verified { package, .. } => {
-            assert_eq!(package.package_id(), emission.package.package_id());
+            assert_eq!(package.library(), &library());
             package
                 .into_import_view()
                 .exports()
-                .map(|(name, key)| (name.to_owned(), key.node.to_string()))
+                .map(|(name, key)| (name.to_owned(), key.to_string()))
                 .collect()
         }
         other => panic!("expected Verified, got {other:?}"),
     }
 }
 
-/// The emission path mints the identity preimage under the FR-322 version
-/// label, written out here rather than read from the constant it pins.
-#[trace("TC-253", "FR-087-AC-3")]
-#[test]
-fn the_emission_identity_preimage_carries_its_literal_version() {
-    assert_eq!(IDENTITY_PREIMAGE_V2, "quire.checked-package-id/v2");
-}
-
 /// The small checked producer's envelope is canonical, carries the identity
 /// the emitter minted, is deterministic, and is admitted by the independent
-/// V2 reader. Two different packages never share an identity.
+/// V2 reader.
 #[trace("TC-253", "FR-087-AC-3")]
 #[test]
 fn emitted_package_envelope_is_canonical_deterministic_and_self_identifying() {
@@ -313,18 +299,14 @@ fn emitted_package_envelope_is_canonical_deterministic_and_self_identifying() {
         serde_json::to_vec(&wire).expect("a Value serializes"),
         bytes
     );
-    assert_eq!(wire["package_id"]["algorithm"], "sha256");
-    assert_eq!(
-        wire["package_id"]["digest"],
-        emission.package.package_id().hex()
-    );
-    // Deterministic, and identity-separating.
+    assert_eq!(emission.package.name(), "pkg");
+    // Deterministic bytes and independently admitted structure.
     assert_eq!(emit(&package(vec![f()])).package.bytes(), bytes);
     let other = emit(&package(vec![f(), t()]));
-    assert_ne!(other.package.package_id(), emission.package.package_id());
+    assert_ne!(other.package.bytes(), emission.package.bytes());
     match read_back(&emission) {
         Read::Verified { package, .. } => {
-            assert_eq!(package.package_id(), emission.package.package_id());
+            assert_eq!(package.library(), &library());
         }
         other => panic!("the golden envelope must be reader-admitted: {other:?}"),
     }
@@ -471,14 +453,11 @@ fn an_inline_nested_application_argument_is_a_malformed_wire() {
         .expect("the float addition is an application node");
     let inline = node["body"].clone();
     node["body"]["arguments"][0] = inline;
-    let pinned: PinnedRequest =
-        qsl_semantics::library::fixtures::single_pin(library(), emission.package.package_id());
     let outcome = read_v2(
         &jcs(&tampered),
         library(),
         V2ReadLimits::default(),
         &read_evidence(&emission),
-        &pinned,
     );
     match outcome {
         Read::Refused(crate::checked_v2::V2ReadRefusal::Envelope { refusal, .. }) => {
@@ -2470,7 +2449,6 @@ fn emit_model_unit(unit: &str, evidence_identity: Option<&str>) -> (Emission, Va
         library(),
         V2ReadLimits::default(),
         &evidence,
-        &qsl_semantics::library::fixtures::single_pin(library(), emission.package.package_id()),
     );
     (emission, wire, read)
 }
