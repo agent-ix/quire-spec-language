@@ -3325,6 +3325,7 @@ pub fn check_hyper_clauses(
             scope: &scope,
             selections: &package.temporal_selections,
             source: &package.source,
+            package_name: &package.package_name,
             embedding: None,
             position_limit: 10_000,
             models: &package.models,
