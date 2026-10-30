@@ -377,7 +377,7 @@ fn snapshot(
     package: &str,
     document: &[u8],
     populations: Vec<Json>,
-    snapshots: &mut BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: &mut BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
 ) -> DocumentRef {
     let model_digest = *package_input([document])
         .keys()
@@ -399,7 +399,10 @@ fn snapshot(
     let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
         .expect("canonical fixture")
         .as_bytes();
-    snapshots.insert(digest, bytes);
+    snapshots.insert(
+        qsl_foundation::SourceIdentity::new("test", name.clone(), "fixture", "fixture:1"),
+        bytes,
+    );
     DocumentRef {
         authority: "test".to_owned(),
         identity: name,
@@ -413,7 +416,7 @@ fn snapshot(
 pub struct RingWorld {
     package: CheckedPackage,
     packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
     queue_initial: DocumentRef,
     ring_initial: DocumentRef,
 }
@@ -708,7 +711,7 @@ pub fn custom_state(
 pub struct MapWorld {
     package: CheckedPackage,
     packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
 }
 
 impl MapWorld {

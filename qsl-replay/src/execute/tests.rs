@@ -205,8 +205,9 @@ fn request(
         object_environment: None,
         declared_domains: Vec::new(),
         byte_provision: vec![(
-            Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-            digest.hex(),
+            crate::request::ProvisionIdentity::Source(qsl_foundation::SourceIdentity::new(
+                AUTHORITY, IDENTITY, NAMESPACE, REVISION,
+            )),
             bytes.to_vec(),
         )],
     }
@@ -381,16 +382,17 @@ fn tc_759_the_emitted_provision_replays_to_the_same_package_id() {
         .iter()
         .map(|source| {
             (
-                Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-                source.reference().digest().hex(),
+                crate::request::ProvisionIdentity::Source(source.identity().clone()),
                 source.text().as_bytes().to_vec(),
             )
         })
         .collect();
     assert_eq!(
-        provision.iter().map(|entry| &entry.1).collect::<Vec<_>>(),
-        vec![&source_digest(source.as_bytes()).hex()],
-        "the provision names the unit's one source by its digest"
+        provision.iter().map(|entry| &entry.0).collect::<Vec<_>>(),
+        vec![&crate::request::ProvisionIdentity::Source(
+            qsl_foundation::SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION,)
+        )],
+        "the provision names the unit's one source by its labels"
     );
 
     let compiled = spine(&source, &packages);
@@ -614,15 +616,17 @@ fn tc_444_a_presentation_edit_refuses_by_source_digest() {
         name(&["small"]),
         input(x, 7),
     );
-    let edited_digest = source_digest(edited.as_bytes());
     absent.byte_provision = vec![(
-        Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-        edited_digest.hex(),
+        crate::request::ProvisionIdentity::Source(qsl_foundation::SourceIdentity::new(
+            AUTHORITY,
+            "different-source",
+            NAMESPACE,
+            REVISION,
+        )),
         edited.as_bytes().to_vec(),
     )];
     let refused = replay(absent, ReplayLimits::default()).unwrap_err();
     assert_eq!(refused.code(), Code::MissingImport);
-    let original = source_digest(source.as_bytes());
     let ReplayRefusal::Request(ReplayRequestRefusal::IncompleteByteProvision {
         requested,
         named_by,
@@ -632,7 +636,7 @@ fn tc_444_a_presentation_edit_refuses_by_source_digest() {
     };
     assert_eq!(
         requested,
-        &format!("{} {}", original.domain().as_str(), original.hex())
+        &format!("{AUTHORITY}/{IDENTITY}/{NAMESPACE}/{REVISION}")
     );
     assert_eq!(named_by, "source_digests[0]");
     assert!(refused
@@ -645,19 +649,16 @@ fn tc_444_a_presentation_edit_refuses_by_source_digest() {
         name(&["small"]),
         input(x, 7),
     );
-    mismatched.byte_provision[0].2 = edited.clone().into_bytes();
-    let refused = replay(mismatched, ReplayLimits::default()).unwrap_err();
-    let ReplayRefusal::Request(ReplayRequestRefusal::ByteDigestMismatch { declared, actual }) =
-        &refused
-    else {
-        panic!("expected a byte digest mismatch, got {refused:?}");
-    };
-    assert_eq!(declared, &format!("{:?}", source_digest(source.as_bytes())));
-    assert_eq!(actual, &format!("{:?}", source_digest(edited.as_bytes())));
+    mismatched.byte_provision[0].1 = edited.clone().into_bytes();
+    let outcome = replay(mismatched, ReplayLimits::default());
+    assert!(
+        !matches!(outcome, Err(ReplayRefusal::Request(_))),
+        "same source labels consume the newly supplied bytes: {outcome:?}"
+    );
 }
 
 /// FR-098-AC-1, FR-098-AC-4: a domain package reaches I1 only from the byte
-/// provision, under its `sha256-jcs` digest. With it the unit that selects
+/// provision, under its declared package identity. With it the unit that selects
 /// it replays; without it the recompile refuses at I1 (`missing_import`).
 #[trace("TC-444", "FR-098-AC-1", "FR-098-AC-4")]
 #[test]
@@ -687,11 +688,9 @@ fn tc_444_a_domain_package_comes_from_the_byte_provision() {
     };
 
     let mut with_package = wire();
-    with_package.byte_provision.push((
-        Some(DigestDomain::Sha256Jcs.as_str().to_owned()),
-        hex.clone(),
-        document,
-    ));
+    with_package
+        .byte_provision
+        .push((crate::request::ProvisionIdentity::DomainPackage, document));
     let ReplayResult::Input(result) = replay(with_package, ReplayLimits::default()).unwrap() else {
         panic!("Input arm");
     };
@@ -1001,33 +1000,25 @@ fn tc_444_stage_limits_bound_the_recompile() {
     assert_eq!(refused.code(), Code::StageLimitExceeded);
 }
 
-/// FR-098-AC-1 (FR-001): the recompile runs under the package reference's
-/// four labels, so a whitespace-only label refuses at S1 with
-/// `invalid_source_identity`.
-#[trace("TC-444", "FR-098-AC-1", "FR-001-AC-6")]
+/// FR-098-AC-1 and FR-071-AC-2: a whitespace-only source selector is refused
+/// as an invalid FR-001 identity before a byte-provision lookup.
+#[trace("TC-444", "FR-098-AC-1", "FR-071-AC-2")]
 #[test]
-fn tc_444_a_blank_label_refuses_at_the_source_stage() {
+fn tc_444_a_blank_label_refuses_before_provision_lookup() {
     let mut blank = small(7);
     blank.source_digests[0].0 = "   ".to_owned();
     let refused = replay(blank, ReplayLimits::default()).unwrap_err();
-    let ReplayRefusal::Recompile(refusal) = &refused else {
-        panic!("expected a recompile refusal, got {refused:?}");
+    let ReplayRefusal::Request(crate::ReplayRequestRefusal::BlankSourceIdentity {
+        label,
+        named_by,
+    }) = &refused
+    else {
+        panic!("expected an invalid source identity refusal, got {refused:?}");
     };
-    assert_eq!(refusal.stage(), SpineStage::Source);
-    assert_eq!(refusal.code(), Code::InvalidSourceIdentity);
-    // FR-001-AC-6: the cause is `blank-label` and names the whitespace-only
-    // authority; the refusal names no region.
-    let CompileRefusal::Source(diagnostic) = &**refusal else {
-        panic!("expected an S1 refusal, got {refusal:?}");
-    };
-    assert_eq!(
-        diagnostic.cause,
-        qsl_cst::CompleteCause::Host(qsl_cst::HostCause::BlankLabel {
-            label: qsl_foundation::SourceLabel::Authority
-        })
-    );
-    assert_eq!(diagnostic.cause.as_str(), "blank-label");
-    assert_eq!(diagnostic.region, None);
+    assert_eq!(*label, "authority");
+    assert_eq!(named_by, "source_digests[0]");
+    assert_eq!(refused.code(), Code::InvalidSourceIdentity);
+    assert!(refused.to_string().contains("blank-label"));
 }
 
 /// FR-098-AC-1: the package reference names exactly one source, and only
@@ -1051,8 +1042,12 @@ fn tc_444_the_package_reference_names_one_source() {
         digest.hex(),
     ));
     with_definition.byte_provision.push((
-        Some(DigestDomain::DefinitionBytesV1.as_str().to_owned()),
-        digest.hex(),
+        crate::request::ProvisionIdentity::Source(qsl_foundation::SourceIdentity::new(
+            AUTHORITY,
+            "edition-def",
+            NAMESPACE,
+            REVISION,
+        )),
         definition,
     ));
     let refused = replay(with_definition, ReplayLimits::default()).unwrap_err();
@@ -1073,8 +1068,12 @@ fn tc_444_the_package_reference_names_one_source() {
         other_digest.hex(),
     ));
     two.byte_provision.push((
-        Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-        other_digest.hex(),
+        crate::request::ProvisionIdentity::Source(qsl_foundation::SourceIdentity::new(
+            AUTHORITY,
+            "test:other",
+            NAMESPACE,
+            REVISION,
+        )),
         other,
     ));
     assert!(matches!(
@@ -1221,17 +1220,29 @@ impl Importing {
             name(&["q"]),
             input(parameter(&self.compiled, "q", 0), 3),
         );
+        let sources: Vec<_> = entries
+            .iter()
+            .flat_map(|entry| entry.sources.iter().cloned())
+            .collect();
+        assert!(
+            provision.len() <= sources.len(),
+            "every provision row has a dependency source selector"
+        );
         wire.dependencies = entries;
-        for bytes in provision {
-            let digest = source_digest(bytes);
-            if !wire
-                .byte_provision
-                .iter()
-                .any(|(_, hex, _)| *hex == digest.hex())
-            {
+        let mut provisioned: std::collections::BTreeSet<_> = wire
+            .byte_provision
+            .iter()
+            .filter_map(|(identity, _)| match identity {
+                crate::request::ProvisionIdentity::Source(identity) => Some(identity.clone()),
+                crate::request::ProvisionIdentity::DomainPackage => None,
+            })
+            .collect();
+        for (source, bytes) in sources.into_iter().zip(provision) {
+            let identity =
+                qsl_foundation::SourceIdentity::new(source.0, source.1, source.2, source.3);
+            if provisioned.insert(identity.clone()) {
                 wire.byte_provision.push((
-                    Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-                    digest.hex(),
+                    crate::request::ProvisionIdentity::Source(identity),
                     bytes.to_vec(),
                 ));
             }
@@ -1406,16 +1417,24 @@ fn transitive_only_library_source_reaches_replay() {
     ];
     for bytes in [b.as_bytes(), c.as_bytes()] {
         wire.byte_provision.push((
-            Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-            source_digest(bytes).hex(),
+            crate::request::ProvisionIdentity::Source(qsl_foundation::SourceIdentity::new(
+                AUTHORITY,
+                if bytes == b.as_bytes() {
+                    "test:b"
+                } else {
+                    "test:c"
+                },
+                NAMESPACE,
+                REVISION,
+            )),
             bytes.to_vec(),
         ));
     }
     assert_eq!(wire.dependencies.len(), 2);
-    assert!(wire
-        .byte_provision
-        .iter()
-        .any(|(_, digest, _)| *digest == source_digest(c.as_bytes()).hex()));
+    assert!(wire.byte_provision.iter().any(|(identity, _)| identity
+        == &crate::request::ProvisionIdentity::Source(qsl_foundation::SourceIdentity::new(
+            AUTHORITY, "test:c", NAMESPACE, REVISION
+        ))));
     let ReplayResult::Input(result) =
         replay(wire, ReplayLimits::default()).expect("transitive C reaches the executor")
     else {
@@ -1771,7 +1790,7 @@ fn tc_444_dependency_entries_refuse_by_the_d4_rules() {
     let mut unit_owner = units.clone();
     unit_owner.sources = vec![source_ref(IDENTITY, "r2", importing.units.as_bytes())];
     let refused = replay(
-        importing.request(vec![unit_owner], provision),
+        importing.request(vec![unit_owner], &[importing.units.as_bytes()]),
         ReplayLimits::default(),
     )
     .expect_err("the unit's owner is not a library's");
@@ -1836,8 +1855,12 @@ fn tc_444_dependency_entries_refuse_by_the_d4_rules() {
     )];
     let mut wire = importing.request(vec![document], &[]);
     wire.byte_provision.push((
-        Some(DigestDomain::DefinitionBytesV1.as_str().to_owned()),
-        digest.hex(),
+        crate::request::ProvisionIdentity::Source(qsl_foundation::SourceIdentity::new(
+            AUTHORITY,
+            UNITS_IDENTITY,
+            NAMESPACE,
+            REVISION,
+        )),
         definition,
     ));
     let refused = replay(wire, ReplayLimits::default()).expect_err("a definition document");

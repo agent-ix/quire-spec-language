@@ -86,8 +86,8 @@ fn bump_request(selection: ClauseRunSelection) -> ClauseRunRequest {
 /// its digest is taken.
 struct BumpInvocation {
     invocation: DocumentRef,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
-    invocations: BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
+    invocations: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
 }
 
 fn bump_invocation(
@@ -126,8 +126,11 @@ fn bump_invocation(
     });
     BumpInvocation {
         invocation: invocation.clone(),
-        snapshots: BTreeMap::from([(pre.digest, pre_bytes), (post.digest, post_bytes)]),
-        invocations: BTreeMap::from([(invocation.digest, invocation_bytes)]),
+        snapshots: BTreeMap::from([
+            (pre.source_identity(), pre_bytes),
+            (post.source_identity(), post_bytes),
+        ]),
+        invocations: BTreeMap::from([(invocation.source_identity(), invocation_bytes)]),
     }
 }
 
@@ -221,17 +224,16 @@ fn an_invocation_carrying_a_replacement_frame_is_refused_not_obeyed() {
             document["model"]["digest"] = json!(format!("sha256-jcs:{model_digest_hex}"));
             document.to_string().into_bytes()
         });
-        input.snapshots.insert(post.digest, post_bytes);
+        input.snapshots.insert(post.source_identity(), post_bytes);
         let (invocation, invocation_bytes) = document_ref_and_bytes("bump-invocation", |label| {
-            let pre = input
+            let pre_ref = config_version_document_ref("bump-pre");
+            let pre_bytes = input
                 .snapshots
-                .keys()
-                .find(|digest| **digest != post.digest)
-                .copied()
+                .get(&pre_ref.source_identity())
                 .expect("the pre snapshot");
             let pre_ref = DocumentRef {
-                digest: pre,
-                ..config_version_document_ref("bump-pre")
+                digest: document_digest(pre_bytes),
+                ..pre_ref
             };
             let mut document: serde_json::Value =
                 serde_json::from_slice(&config_version_invocation_bytes(
@@ -249,7 +251,7 @@ fn an_invocation_carrying_a_replacement_frame_is_refused_not_obeyed() {
             document.to_string().into_bytes()
         });
         input.invocation = invocation.clone();
-        input.invocations = BTreeMap::from([(invocation.digest, invocation_bytes)]);
+        input.invocations = BTreeMap::from([(invocation.source_identity(), invocation_bytes)]);
         input
     };
 

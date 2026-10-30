@@ -4,7 +4,7 @@
 //! O-27, C-13). It depends on layers 1 to 5, F and K, as §6.1 allows.
 //!
 //! Its public API is the compile entry [`compile_package`] and the replay executor entry [`replay`] (ADR-013 TK-01,
-//! C-13; FR-098), which recompiles a request's digest-addressed source
+//! C-13; FR-098), which recompiles a request's source-label-selected inputs
 //! through the spine ([`spine::parse`], [`spine::select`], [`spine::check`]
 //! and [`spine::package`], S1 to E4) and calls the selected
 //! function through S6a (`CheckedPackageEvaluation::call`), and the four
@@ -348,8 +348,8 @@ pub use qsl_semantics::model::accounting::ModelNormalizationLimits;
 pub use qsl_semantics::model::domain_package::DomainPackageRef;
 pub use quire_exact::{EmptyInterval, Incomplete, Integer, IntegerInterval};
 pub use request::{
-    ByteProvision, DependencyEntry, DependencyEntryWire, ReplayRequest, ReplayRequestRefusal,
-    ReplayRequestWire, StageLimitNameRefusal, StageLimits, StateEnvironment,
+    ByteProvision, DependencyEntry, DependencyEntryWire, ProvisionIdentity, ReplayRequest,
+    ReplayRequestRefusal, ReplayRequestWire, StageLimitNameRefusal, StageLimits, StateEnvironment,
 };
 pub use result::{
     read_bounded, CauseCodecError, DisagreementCause, EvaluatedValue, HybridTraceDisagreement,
@@ -426,19 +426,19 @@ mod redaction_tests {
         }
     }
 
-    /// FR-073-AC-3 (TC-211): a `stale_dependency`/`byte-digest-mismatch`
-    /// refusal from the replay request, and a malformed-transcript refusal
+    /// FR-073-AC-3 (TC-211): a duplicate source-provision refusal from the
+    /// replay request, and a malformed-transcript refusal
     /// from the witness envelope, each render with no unredacted content --
     /// and a separately, validly constructed value carrying the same
     /// content stays fully readable through its typed accessor.
     #[trace("TC-211", "FR-073-AC-3")]
     #[test]
     fn tc_211_refusal_causes_redact_while_typed_accessors_stay_readable() {
-        // Half 1: replay request byte-digest mismatch.
+        // Half 1: duplicate provision labels refuse without rendering bytes.
         let entry_x: Vec<u8> = (0..4096u32).map(|i| (i % 241) as u8).collect();
         let correct_digest = ByteDigest::of(&entry_x).as_bytes();
-        let mut mismatched_bytes = entry_x.clone();
-        mismatched_bytes[0] ^= 0xFF;
+        let mut second_copy = entry_x.clone();
+        second_copy[0] ^= 0xFF;
 
         let source_digest_record = DigestRecord::mint(DigestDomain::SourceBytesV1, correct_digest);
         let wire = ReplayRequestWire {
@@ -472,20 +472,27 @@ mod redaction_tests {
             supplied_limits: None,
             object_environment: None,
             declared_domains: Vec::new(),
-            byte_provision: vec![(
-                Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-                source_digest_record.hex(),
-                mismatched_bytes,
-            )],
+            byte_provision: vec![
+                (
+                    request::ProvisionIdentity::Source(qsl_foundation::SourceIdentity::new(
+                        "registry", "pkg-a", "git", "rev-1",
+                    )),
+                    entry_x.clone(),
+                ),
+                (
+                    request::ProvisionIdentity::Source(qsl_foundation::SourceIdentity::new(
+                        "registry", "pkg-a", "git", "rev-1",
+                    )),
+                    second_copy,
+                ),
+            ],
         };
         let refusal = ReplayRequest::decode(wire, crate::ReplayLimits::default()).unwrap_err();
         let rendered = format!("{refusal:?} {refusal}");
         assert!(!contains_bytes(&rendered, &entry_x));
 
-        // A separately, validly constructed request whose byte provision
-        // carries entry X's exact bytes under their own correct digest (no
-        // mismatch) still returns the full content through the typed
-        // accessor.
+        // A separately, validly constructed request carries the source once
+        // and returns its bytes through the typed accessor.
         let valid_wire = ReplayRequestWire {
             profile_selections: vec![],
             package_id: (
@@ -518,8 +525,9 @@ mod redaction_tests {
             object_environment: None,
             declared_domains: Vec::new(),
             byte_provision: vec![(
-                Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-                source_digest_record.hex(),
+                request::ProvisionIdentity::Source(qsl_foundation::SourceIdentity::new(
+                    "registry", "pkg-a", "git", "rev-1",
+                )),
                 entry_x.clone(),
             )],
         };
@@ -527,7 +535,9 @@ mod redaction_tests {
             ReplayRequest::decode(valid_wire, crate::ReplayLimits::default()).unwrap();
         let looked_up = valid_request
             .byte_provision()
-            .get(source_digest_record)
+            .get(&qsl_foundation::SourceIdentity::new(
+                "registry", "pkg-a", "git", "rev-1",
+            ))
             .unwrap();
         assert_eq!(looked_up, entry_x.as_slice());
 

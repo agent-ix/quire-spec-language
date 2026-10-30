@@ -471,7 +471,9 @@ pub(super) fn current_report(clause: &str, root: i64, child: i64) -> ClauseRunRe
     let label = DocumentRef { digest, ..label };
     let selection = config_version_current_selection(clause, label, "child");
     let mut request = config_version_request(ClauseRunSelection::Clause(selection));
-    request.snapshots.insert(digest, bytes);
+    request
+        .snapshots
+        .insert(super::observation_identity_from_bytes(&bytes), bytes);
     run_clause(request).expect("a well-formed request always reports")
 }
 
@@ -563,7 +565,9 @@ fn an_exhausted_budget_is_incomplete_naming_work_units() {
     let label = DocumentRef { digest, ..label };
     let selection = config_version_current_selection("ParentOrder", label, "child");
     let mut request = config_version_request(ClauseRunSelection::Clause(selection));
-    request.snapshots.insert(digest, bytes);
+    request
+        .snapshots
+        .insert(super::observation_identity_from_bytes(&bytes), bytes);
     request.accounting = default_accounting(0);
     let report = run_clause(request).unwrap();
     let classified = assert_run(
@@ -848,7 +852,9 @@ fn child_snapshot_report(identity: &str, complete: bool, parent_key: &str) -> Cl
     let label = DocumentRef { digest, ..label };
     let selection = config_version_current_selection("ParentOrder", label, "child");
     let mut request = config_version_request(ClauseRunSelection::Clause(selection));
-    request.snapshots.insert(digest, bytes);
+    request
+        .snapshots
+        .insert(super::observation_identity_from_bytes(&bytes), bytes);
     run_clause(request).unwrap()
 }
 

@@ -19,7 +19,7 @@ struct Fixture {
     source: String,
     compiled: ComposedUnit,
     /// Byte provision entries beyond the source: the model package.
-    provision: Vec<(Option<String>, String, Vec<u8>)>,
+    provision: Vec<(crate::request::ProvisionIdentity, Vec<u8>)>,
 }
 
 fn fixture(body: &str) -> Fixture {
@@ -84,15 +84,10 @@ fn model_fixture(body: &str) -> Fixture {
     );
     let packages = package_input([document.as_slice()]);
     let compiled = spine(&source, &packages);
-    let record = DigestRecord::mint(DigestDomain::Sha256Jcs, digest);
     Fixture {
         source,
         compiled,
-        provision: vec![(
-            Some(DigestDomain::Sha256Jcs.as_str().to_owned()),
-            record.hex(),
-            document,
-        )],
+        provision: vec![(crate::request::ProvisionIdentity::DomainPackage, document)],
     }
 }
 

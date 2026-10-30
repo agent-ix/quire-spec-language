@@ -155,7 +155,7 @@ fn run_current(clause: &str, history: &[i64]) -> super::super::ClauseRunReport {
         label.clone(),
         "mid",
     ));
-    request.snapshots.insert(label.digest, bytes);
+    request.snapshots.insert(label.source_identity(), bytes);
     run_clause(request).expect("a well-formed request always reports")
 }
 
@@ -172,7 +172,7 @@ fn run_pre_call(history: &[i64]) -> super::super::ClauseRunReport {
             parameters: BTreeMap::new(),
         },
     });
-    request.snapshots.insert(label.digest, bytes);
+    request.snapshots.insert(label.source_identity(), bytes);
     run_clause(request).expect("a well-formed request always reports")
 }
 
@@ -192,11 +192,15 @@ fn run_invocation(history: &[i64]) -> super::super::ClauseRunReport {
         "MemberPre",
         invocation_label.clone(),
     ));
-    request.snapshots.insert(pre_label.digest, pre_bytes);
-    request.snapshots.insert(post_label.digest, post_bytes);
+    request
+        .snapshots
+        .insert(pre_label.source_identity(), pre_bytes);
+    request
+        .snapshots
+        .insert(post_label.source_identity(), post_bytes);
     request
         .invocations
-        .insert(invocation_label.digest, invocation_bytes);
+        .insert(invocation_label.source_identity(), invocation_bytes);
     run_clause(request).expect("a well-formed request always reports")
 }
 

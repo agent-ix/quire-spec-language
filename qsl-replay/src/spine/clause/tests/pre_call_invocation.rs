@@ -120,21 +120,23 @@ fn run_invocation(
     let mut request = request(ClauseRunSelection::Clause(
         config_version_invocation_selection(PARENT_PRESENT, invocation.clone()),
     ));
-    request.snapshots.insert(pre.digest, pre_bytes);
+    request.snapshots.insert(pre.source_identity(), pre_bytes);
     match post {
         PostProvision::Snapshot => {
-            request.snapshots.insert(post_label.digest, post_bytes);
+            request
+                .snapshots
+                .insert(post_label.source_identity(), post_bytes);
         }
         PostProvision::Absent => {}
         PostProvision::Malformed => {
             request
                 .snapshots
-                .insert(post_label.digest, b"not json {".to_vec());
+                .insert(post_label.source_identity(), b"not json {".to_vec());
         }
     }
     request
         .invocations
-        .insert(invocation.digest, invocation_bytes);
+        .insert(invocation.source_identity(), invocation_bytes);
     run_clause(request).expect("a well-formed request always reports")
 }
 
@@ -150,7 +152,7 @@ fn run_pre_call() -> ClauseDisposition {
             parameters: BTreeMap::new(),
         },
     }));
-    request.snapshots.insert(pre.digest, pre_bytes);
+    request.snapshots.insert(pre.source_identity(), pre_bytes);
     run_clause(request)
         .expect("a well-formed request always reports")
         .disposition
@@ -234,11 +236,13 @@ fn a_precondition_over_an_invocation_reads_no_result_value() {
     ));
     over_invocation
         .snapshots
-        .insert(pre.digest, pre_bytes.clone());
-    over_invocation.snapshots.insert(post.digest, post_bytes);
+        .insert(pre.source_identity(), pre_bytes.clone());
+    over_invocation
+        .snapshots
+        .insert(post.source_identity(), post_bytes);
     over_invocation
         .invocations
-        .insert(invocation.digest, invocation_bytes);
+        .insert(invocation.source_identity(), invocation_bytes);
 
     let mut pre_call = config_version_step3_request(ClauseRunSelection::Clause(ClauseSelection {
         name: "ReachesTarget".to_owned(),
@@ -257,7 +261,7 @@ fn a_precondition_over_an_invocation_reads_no_result_value() {
             )]),
         },
     }));
-    pre_call.snapshots.insert(pre.digest, pre_bytes);
+    pre_call.snapshots.insert(pre.source_identity(), pre_bytes);
 
     let run = |request| {
         run_clause(request)

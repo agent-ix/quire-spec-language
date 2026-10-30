@@ -18,11 +18,11 @@ use crate::execute::{process_provider_obligation, BoundEntries, IdentityEncodeEr
 use crate::identity::{DeclaredDomain, QualifiedName, RawSourceRef};
 use crate::limits::CallerLimits;
 use crate::outcome::OutcomeDiagnostic;
-use crate::request::{DependencyEntryWire, ReplayRequestWire, StateEnvironment};
+use crate::request::{DependencyEntryWire, ProvisionIdentity, ReplayRequestWire, StateEnvironment};
 use crate::spine::{AdmittedModels, CheckedUnit, EmittedUnit};
 use crate::witness::{CanonicalAssignment, ReplaySource};
 use qsl_foundation::bound::ProofBound;
-use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
+use qsl_foundation::digest::{DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::source::{Source, SourceLabel};
 use qsl_foundation::{BackendId, Code, RequestIndex, Setting, SettingLimits};
@@ -69,7 +69,7 @@ pub struct PluginReplayContext {
     /// application claim it is when `replay` can select that function by
     /// name: a `value-validity` record owned by a callable function.
     requirements: BTreeMap<OccurrenceKey, Option<Identifier>>,
-    byte_provision: Vec<(Option<String>, String, Vec<u8>)>,
+    byte_provision: Vec<(ProvisionIdentity, Vec<u8>)>,
     stage_limits: BTreeMap<String, u64>,
     accounting_limits: ScalarLimits,
 }
@@ -126,28 +126,15 @@ impl PluginReplayContext {
             .collect();
         let sources = emitted.sources().iter().map(|source| {
             (
-                source.reference().digest(),
+                ProvisionIdentity::Source(source.identity().clone()),
                 source.text().as_bytes().to_vec(),
             )
         });
-        let documents = models.packages().iter().map(|(digest, bytes)| {
-            (
-                DigestRecord::mint(DigestDomain::Sha256Jcs, *digest),
-                bytes.clone(),
-            )
-        });
-        let byte_provision = sources
-            .chain(documents)
-            .collect::<BTreeMap<_, _>>()
-            .into_iter()
-            .map(|(digest, bytes)| {
-                (
-                    Some(digest.domain().as_str().to_owned()),
-                    digest.hex(),
-                    bytes,
-                )
-            })
-            .collect();
+        let documents = models
+            .packages()
+            .values()
+            .map(|bytes| (ProvisionIdentity::DomainPackage, bytes.clone()));
+        let byte_provision = sources.chain(documents).collect();
         let stage_limits = limits
             .bounds()
             .into_iter()

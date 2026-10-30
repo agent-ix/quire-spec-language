@@ -27,8 +27,8 @@ fn unit() -> Unit {
 
 /// The documents of the TC-1039 invocations and the current snapshot.
 pub(super) struct Documents {
-    pub(super) snapshots: BTreeMap<[u8; 32], Vec<u8>>,
-    pub(super) invocations: BTreeMap<[u8; 32], Vec<u8>>,
+    pub(super) snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
+    pub(super) invocations: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
 }
 
 impl Documents {
@@ -45,9 +45,9 @@ impl Documents {
         let (invocation, bytes) = document_ref_and_bytes(name, |label| {
             config_version_invocation_bytes(label, &digest, &pre, &post, "child")
         });
-        self.snapshots.insert(pre.digest, pre_bytes);
-        self.snapshots.insert(post.digest, post_bytes);
-        self.invocations.insert(invocation.digest, bytes);
+        self.snapshots.insert(pre.source_identity(), pre_bytes);
+        self.snapshots.insert(post.source_identity(), post_bytes);
+        self.invocations.insert(invocation.source_identity(), bytes);
         invocation
     }
 
@@ -68,7 +68,7 @@ impl Documents {
         let (current, bytes) = document_ref_and_bytes(name, |label| {
             config_version_snapshot(label, &digest, root_version, child_version)
         });
-        self.snapshots.insert(current.digest, bytes);
+        self.snapshots.insert(current.source_identity(), bytes);
         current
     }
 }

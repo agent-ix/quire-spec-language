@@ -32,9 +32,10 @@ defined by QSpec FR-364. This is a typed request arm, not an untyped
 extension map. The type SHALL make it structurally impossible to obtain a
 recompilation input other than by lookup in the request's byte provision.
 The request SHALL carry a byte provision (QSpec FR-323 `byte_provision`,
-ADR-013 QC-1) whose source and definition entries are keyed by their FR-001
-labels (authority and identity) and whose domain package entries are keyed by
-package identity. The type SHALL have
+ADR-013 QC-1) whose source and definition entries are keyed by all four
+QSL FR-001 labels (`authority`, `identity`, `revision_namespace`, and
+`revision`) and whose domain-package entries are selected by their declared
+package identity after intake. The type SHALL have
 no field, accessor or constructor argument typed as a filesystem path,
 environment variable name, or search location.
 
@@ -65,8 +66,9 @@ key or request `over` member on that arm.
   (FR-106) in the byte provision.
 - The byte provision (QSpec FR-323 `byte_provision`): every source, definition
   and domain-package input the replay would recompile. A source or definition
-  entry is keyed by its FR-001 labels (authority, identity); a domain package
-  entry by its package identity. An observed-trace or object-environment
+  entry is keyed by all four FR-001 labels (`authority`, `identity`,
+  `revision_namespace`, and `revision`); a domain-package entry by its
+  declared package identity after intake. An observed-trace or object-environment
   snapshot document entry is keyed by the document's `identity` label set. No
   entry carries or is keyed by a content digest.
 - For observed temporal replay, the common `WitnessEnvelope` and QSpec
@@ -86,7 +88,7 @@ key or request `over` member on that arm.
   packet plus the FR-070 envelope members) and SHALL invent no additional
   member; a construct → serialize → read round trip SHALL preserve the
   package reference (`package_id`, every source
-  (authority, identity) pair), the replay members (`ReplaySource`, `QualifiedName`, a `function`
+  four-label source identity), the replay members (`ReplaySource`, `QualifiedName`, a `function`
   request's occurrence key, arguments
   keyed by parameter node id, profile selections, proof bounds and declared
   domains, trace position, `backend`), the byte provision, and the limits
@@ -95,7 +97,7 @@ key or request `over` member on that arm.
   lookup in its byte provision, by source labels or package identity; the
   request type SHALL define no path-typed, environment-variable-typed, or
   search-location-typed member, and a byte-provision entry whose key is
-  neither a source label pair, a package identity nor a document `identity`
+  neither four FR-001 source labels, a package identity nor a document `identity`
   label set SHALL refuse at decode. Two entries under
   one key refuse `invalid_package`/`conflicting-definition`, naming both.
 - The package reference SHALL carry QSpec FR-323's `sources` and
@@ -105,15 +107,15 @@ key or request `over` member on that arm.
   `{identity, package_id, sources}` (ADR-015 D-4). `identity` is a
   `LibraryName`, and the entry names the dependency package by that identity
   and QSpec FR-323's `package_id` member; an empty identity refuses at decode. Every source of every entry
-  is a source reference (authority, identity) the byte provision SHALL cover,
+  is a source reference (all four FR-001 labels) the byte provision SHALL cover,
   as the proved package's are.
 - The package reference and each `dependencies` entry SHALL carry an
   optional `refinement_internals` member (QSpec FR-323), a JSON value kept
   exactly as decoded. The decoder SHALL NOT validate it; an absent member is
   the empty list, and its defects surface from the recompile (FR-098,
   FR-147).
-- Each package-reference source entry SHALL carry FR-001's two source labels
-  (authority and identity) and no digest, so the executor (FR-098) recompiles
+- Each package-reference source entry SHALL carry all four FR-001 labels and
+  no digest, so the executor (FR-098) recompiles
   a source under exactly the labels the proving run used (ADR-013 §7 S-4b).
   This requirement checks no source byte.
 - The request decoder SHALL NOT read the bytes of any byte-provision entry:
@@ -136,7 +138,7 @@ key or request `over` member on that arm.
   the wrong JSON kind; `missing-member` for a missing `identity`; and
   `unknown-member` for any other member, naming the first in document order.
 - The byte provision SHALL be complete at construction: every source
-  (authority, identity) the package reference names SHALL have a matching
+  four-label source identity the package reference names SHALL have a matching
   byte-provision entry; a request whose package reference names a source
   with no corresponding entry SHALL refuse at construction rather than
   admitting an incomplete provision for a later consumer to discover.
@@ -215,13 +217,13 @@ key or request `over` member on that arm.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-071-AC-1 | A function, frame or state-clause request carries exactly its O-26 members; an observed temporal request additionally carries its typed counterexample arm. Construct → encode → decode preserves the applicable package reference, replay members, byte provision and limits. | Test (TC-185) |
-| FR-071-AC-2 | The request type has no path-, environment-variable-, or search-location-typed field or accessor; a byte-provision entry keyed by anything other than a source label pair, a package identity or a document `identity` label set refuses at decode, and two entries under one source label pair or package identity refuse `invalid_package`/`conflicting-definition`. | Test (TC-186) |
+| FR-071-AC-2 | The request type has no path-, environment-variable-, or search-location-typed field or accessor; a byte-provision entry keyed by anything other than all four FR-001 labels, the closed domain-package selector, or a document `identity` label set refuses at decode, a source reference with a blank FR-001 label refuses `invalid_source_identity`/`blank-label` before provision lookup, and two source entries under one four-label identity refuse `invalid_package`/`conflicting-definition`. Domain-package identity conflicts are decided by FR-056 intake after the document is read. | Test (TC-186, TC-444) |
 | FR-071-AC-3 | No public constructor or decoder of the request accepts a bare `&str` or `String` for function selection, and no implicit conversion from a string to `QualifiedName` exists; an attempted call site passing a string literal in that position fails to compile. | Test (TC-187) |
-| FR-071-AC-5 | A request whose package reference names a source (authority, identity) with no matching byte-provision entry refuses at construction with `missing_import`/`missing-selection`, naming the source labels and where the package reference names it; no incomplete request is returned for a later consumer to discover the gap. | Test (TC-186) |
+| FR-071-AC-5 | A request whose package reference names a source with no matching byte-provision entry under all four FR-001 labels refuses at construction with `missing_import`/`missing-selection`, naming the source labels and where the package reference names it; no incomplete request is returned for a later consumer to discover the gap. | Test (TC-186) |
 | FR-071-AC-6 | **RETIRED (source digest removed).** A byte-provision entry carries no digest, so decode checks no entry's bytes. | Test (TC-186), retired |
 | FR-071-AC-7 | A request whose encoded size exceeds the configured reader bound refuses, and no truncated or partially-populated request is returned. | Test (TC-186) |
 | FR-071-AC-8 | An observed temporal request round trip preserves the shared `WitnessEnvelope<TemporalCounterexample>` and its observed payload, including `ReplaySource::Witness`, clause identity, document identities, fairness, interval and trace position; a missing document entry refuses `missing_import`/`missing-selection` naming its document identity, a trace-position mismatch refuses `invalid_runtime_input`/`invalid-value` at `/replay/observed_counterexample/trace_position`, `ReplaySource::Input` refuses `invalid_runtime_input`/`invalid-value` at `/replay/source`, a model variant refuses `invalid_runtime_input`/`invalid-value` at `/replay/observed_counterexample/trace`, and a non-state-clause target refuses `invalid_runtime_input`/`unknown-member` at `/replay/observed_counterexample`; each refusal occurs before document admission and returns no partial request. | Test (TC-847) |
-| FR-071-AC-9 | A request whose package reference carries two `dependencies` entries round-trips them exactly, in order; an entry whose source (authority, identity) has no byte-provision entry refuses at construction, as AC-5 states; an entry with an empty identity, refuses at decode. | Test (TC-186) |
+| FR-071-AC-9 | A request whose package reference carries two `dependencies` entries round-trips them exactly, in order; an entry whose source has no byte-provision entry under all four FR-001 labels refuses at construction, as AC-5 states; an entry with an empty identity refuses at decode. | Test (TC-186) |
 | FR-071-AC-10 | A request whose semantic profile selection names a profile outside the closed known set refuses at decode with `unknown_profile`/`unsupported-selection`, keeping the supplied selection and its role, and refuses so before the byte provision is read. | Test (TC-186) |
 | FR-071-AC-11 | **RETIRED (domain-package digest removed).** Withdrawn with no replacement. | Test (TC-186), retired |
 | FR-071-AC-12 | A request whose `object_environment` is `{"identity": {...}}` round-trips it exactly. Each of these refuses at decode with `invalid_runtime_input`, naming the member: a string for `object_environment` (`wrong-value-kind`); an object without `identity` (`missing-member` naming `object_environment.identity`); an `identity` that is not an object (`wrong-value-kind`); a second member of any name (`unknown-member`). A request whose `object_environment` identity has no byte-provision entry constructs: the entry is read at admission, not at decode. | Test (TC-1042) |

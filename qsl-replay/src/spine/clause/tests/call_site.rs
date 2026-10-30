@@ -566,8 +566,8 @@ fn call_site_refusal_codes_for_operations_clauses_and_intake() {
             Some(crate::target::test_key()),
         ),
     );
-    wire.byte_provision.retain(|(domain, _, _)| {
-        domain.as_deref() != Some(qsl_foundation::digest::DigestDomain::Sha256Jcs.as_str())
+    wire.byte_provision.retain(|(identity, _)| {
+        !matches!(identity, crate::request::ProvisionIdentity::DomainPackage)
     });
     let replayed = crate::replay(wire, crate::ReplayLimits::default())
         .expect_err("no domain package is provided");

@@ -838,10 +838,10 @@ pub fn read_clause_run_request(
     for observation in parts.observations.into_values() {
         match observation.format.as_str() {
             "quire.state.snapshot/v1" => {
-                snapshots.insert(observation.reference.digest, observation.bytes);
+                snapshots.insert(observation.reference.source_identity(), observation.bytes);
             }
             "quire.state.invocation/v1" => {
-                invocations.insert(observation.reference.digest, observation.bytes);
+                invocations.insert(observation.reference.source_identity(), observation.bytes);
             }
             _ => return Err(invalid("observation", "unsupported document format")),
         }

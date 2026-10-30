@@ -14,7 +14,7 @@
 
 use std::collections::BTreeMap;
 
-use qsl_foundation::digest::{DigestDomain, WireNodeId};
+use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::check::{CheckedGraph, CheckedOperationFrame};
 use qsl_semantics::library::PackageId;
@@ -234,11 +234,15 @@ pub fn replay_frame(
     let packages = domain_packages(&request);
     // FR-106 reads the invocation and its snapshots only from the byte
     // provision, by their `sha256-jcs` digests.
-    let documents: BTreeMap<[u8; 32], Vec<u8>> = request
+    let documents: BTreeMap<_, Vec<u8>> = request
         .byte_provision()
         .entries()
-        .filter(|(digest, _)| digest.domain() == DigestDomain::Sha256Jcs)
-        .map(|(digest, bytes)| (*digest.as_bytes(), bytes.to_vec()))
+        .filter_map(|(identity, bytes)| match identity {
+            crate::request::ProvisionIdentity::Source(identity) => {
+                Some((identity.clone(), bytes.to_vec()))
+            }
+            crate::request::ProvisionIdentity::DomainPackage => None,
+        })
         .collect();
     let mut sources = Vec::with_capacity(1 + compiled.checked.libraries().len());
     sources.push(compiled.checked.source().clone());

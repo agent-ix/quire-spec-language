@@ -25,6 +25,7 @@ use std::fmt;
 
 use qsl_foundation::bound::{DomainKey, FiniteBound, ProofBound};
 use qsl_foundation::digest::{DigestRecord, InvalidDigestRecord};
+use qsl_foundation::SourceIdentity;
 use quire_exact::Identifier;
 
 /// ADR-013 O-09: the digest identifying one obligation. For a clause, an
@@ -210,6 +211,16 @@ impl RawSourceRef {
     /// The selected revision of that identity, within its namespace.
     pub fn revision(&self) -> &str {
         &self.revision
+    }
+
+    /// The document selector formed by the four FR-001 identity labels.
+    pub fn source_identity(&self) -> SourceIdentity {
+        SourceIdentity::new(
+            self.authority.clone(),
+            self.identity.clone(),
+            self.revision_namespace.clone(),
+            self.revision.clone(),
+        )
     }
 
     /// The source's digest.

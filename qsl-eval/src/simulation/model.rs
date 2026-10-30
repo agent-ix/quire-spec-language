@@ -37,7 +37,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::digest::{DigestRecord, WireNodeId};
 use qsl_foundation::selection::DefinitionRef;
-use qsl_foundation::IdentityLimits;
+use qsl_foundation::{IdentityLimits, SourceIdentity};
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::OperationKey;
 use qsl_semantics::family::ClassifyFailure;
@@ -135,7 +135,7 @@ pub struct ModelSimulationRequest<'a> {
     /// The normalization limits FR-106 admission takes.
     pub normalization: ModelNormalizationLimits,
     /// An FR-106 snapshot provision.
-    pub snapshots: &'a BTreeMap<[u8; 32], Vec<u8>>,
+    pub snapshots: &'a BTreeMap<SourceIdentity, Vec<u8>>,
     /// The initial states: documents of `snapshots`.
     pub initial: Vec<DocumentRef>,
     /// For each simulated population, its finite key set.

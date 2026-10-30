@@ -31,6 +31,7 @@ use std::collections::{BTreeMap, HashMap};
 use qsl_forms::StateClauseKind;
 use qsl_foundation::diagnostic::{BudgetDenial, Code, LimitExceeded, ALLOCATION_FAILED};
 use qsl_foundation::Setting;
+use qsl_foundation::SourceIdentity;
 use quire_exact::{
     CollectionKind, EffectiveId, Identifier, ObjectId, ObjectReference, UniverseId, Value,
 };
@@ -226,6 +227,18 @@ pub struct DocumentRef {
     pub revision: String,
     /// The document's `sha256-jcs` digest.
     pub digest: [u8; 32],
+}
+
+impl DocumentRef {
+    /// The document selector formed by its four FR-001 labels.
+    pub fn source_identity(&self) -> SourceIdentity {
+        SourceIdentity::new(
+            self.authority.clone(),
+            self.identity.clone(),
+            self.revision_namespace.clone(),
+            self.revision.clone(),
+        )
+    }
 }
 
 /// The anchor an invariant's current snapshot names: `{kind, name}`.
@@ -1905,13 +1918,14 @@ mod digest_tests {
 // Provisions
 // ---------------------------------------------------------------------------
 
-/// FR-106's snapshot and invocation provisions: maps from `sha256-jcs`
-/// digest to document bytes.
+/// FR-106's snapshot and invocation provisions, selected by the four FR-001
+/// identity labels. The selected document's digest remains a separate
+/// admission check.
 pub struct Provisions<'a> {
     /// The snapshot provision.
-    pub snapshots: &'a BTreeMap<[u8; 32], Vec<u8>>,
+    pub snapshots: &'a BTreeMap<SourceIdentity, Vec<u8>>,
     /// The invocation provision.
-    pub invocations: &'a BTreeMap<[u8; 32], Vec<u8>>,
+    pub invocations: &'a BTreeMap<SourceIdentity, Vec<u8>>,
 }
 
 /// FR-109's `Function` selection: admit the one current snapshot's
@@ -1925,7 +1939,7 @@ pub fn admit_current_snapshot(
     types: &TypeEnvironment,
     packages: &BTreeMap<[u8; 32], Vec<u8>>,
     model_limits: ModelNormalizationLimits,
-    provision: &BTreeMap<[u8; 32], Vec<u8>>,
+    provision: &BTreeMap<SourceIdentity, Vec<u8>>,
     selected: &DocumentRef,
     limits: ObservationLimits,
 ) -> Result<(ObjectEnvironment, AdmissionUsage), AdmissionFailure> {
@@ -1954,7 +1968,7 @@ pub fn admit_trace_snapshot(
     types: &TypeEnvironment,
     packages: &BTreeMap<[u8; 32], Vec<u8>>,
     model_limits: ModelNormalizationLimits,
-    provision: &BTreeMap<[u8; 32], Vec<u8>>,
+    provision: &BTreeMap<SourceIdentity, Vec<u8>>,
     selected: &DocumentRef,
     limits: ObservationLimits,
     required: &[String],
@@ -1980,7 +1994,7 @@ pub fn admit_object_environment(
     types: &TypeEnvironment,
     packages: &BTreeMap<[u8; 32], Vec<u8>>,
     model_limits: ModelNormalizationLimits,
-    provision: &BTreeMap<[u8; 32], Vec<u8>>,
+    provision: &BTreeMap<SourceIdentity, Vec<u8>>,
     selected: &DocumentRef,
     limits: ObservationLimits,
     arguments: &[ObjectReference],
@@ -2002,7 +2016,7 @@ fn admit_current_environment(
     types: &TypeEnvironment,
     (packages, model_limits): (&BTreeMap<[u8; 32], Vec<u8>>, ModelNormalizationLimits),
     (provision, selected, limits): (
-        &BTreeMap<[u8; 32], Vec<u8>>,
+        &BTreeMap<SourceIdentity, Vec<u8>>,
         &DocumentRef,
         ObservationLimits,
     ),

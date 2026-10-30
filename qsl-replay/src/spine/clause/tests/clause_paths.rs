@@ -180,9 +180,9 @@ fn a_parameter_read_is_rooted_at_the_invocation_and_absent_without_one() {
         config_version_probe_invocation_bytes(label, &digest, &w, &post, "a", "b")
     });
     let mut docs = documents();
-    docs.snapshots.insert(w.digest, w_bytes);
-    docs.snapshots.insert(post.digest, post_bytes);
-    docs.invocations.insert(i1.digest, i1_bytes);
+    docs.snapshots.insert(w.source_identity(), w_bytes);
+    docs.snapshots.insert(post.source_identity(), post_bytes);
+    docs.invocations.insert(i1.source_identity(), i1_bytes);
 
     let by_invocation = admit(
         &unit,

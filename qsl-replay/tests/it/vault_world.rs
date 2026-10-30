@@ -304,7 +304,7 @@ fn declarations(documents: &[&[u8]], text: &str) -> PackageDeclarations {
 /// each vault of a busy world has `busy` as its flag.
 fn snapshot(
     document: &[u8],
-    snapshots: &mut BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: &mut BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
     name: &str,
     vaults: &[(&str, (i64, i64))],
     busy: Option<i64>,
@@ -341,7 +341,10 @@ fn snapshot(
     let hash = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
         .expect("canonical fixture")
         .as_bytes();
-    snapshots.insert(hash, bytes);
+    snapshots.insert(
+        qsl_foundation::SourceIdentity::new("test", name, "fixture", "fixture:1"),
+        bytes,
+    );
     DocumentRef {
         authority: "test".to_owned(),
         identity: name.to_owned(),
@@ -382,9 +385,9 @@ pub struct World {
     /// The same clause as S3 checked it, before any package assembled it.
     pub unassembled: CheckedHyperClause,
     packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
     /// A provision that holds no document.
-    no_snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    no_snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
     initial: Vec<DocumentRef>,
     /// The keys of the universe of `vaults`.
     pub universe: Vec<String>,

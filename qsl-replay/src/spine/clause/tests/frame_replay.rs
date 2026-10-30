@@ -8,6 +8,7 @@
 
 use super::frame::{identifier, object, snapshot};
 use super::*;
+use crate::request::ProvisionIdentity;
 use crate::spine::OperationName;
 use crate::{
     replay_frame, ClaimedChange, DisagreementCause, FamilyPayload, FrameCounterexample,
@@ -254,32 +255,20 @@ pub(super) fn request(
     target: ReplayTarget,
 ) -> ReplayRequestWire {
     let source = source_digest(source_bytes);
-    let jcs = qsl_semantics::model::intake::PackageDocument::parse(
-        domain_document,
-        qsl_foundation::IntakeLimits::default(),
-    )
-    .expect("the domain package parses")
-    .jcs_digest();
-    let sha256_jcs = |digest: [u8; 32]| {
-        (
-            Some(DigestDomain::Sha256Jcs.as_str().to_owned()),
-            DigestRecord::mint(DigestDomain::Sha256Jcs, digest).hex(),
-        )
-    };
     let mut byte_provision = vec![
         (
-            Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-            source.hex(),
+            ProvisionIdentity::Source(qsl_foundation::SourceIdentity::new(
+                AUTHORITY, IDENTITY, "git", "1",
+            )),
             source_bytes.to_vec(),
         ),
-        {
-            let (domain, hex) = sha256_jcs(jcs);
-            (domain, hex, domain_document.to_vec())
-        },
+        (ProvisionIdentity::DomainPackage, domain_document.to_vec()),
     ];
     for (reference, bytes) in documents {
-        let (domain, hex) = sha256_jcs(reference.digest);
-        byte_provision.push((domain, hex, bytes.clone()));
+        byte_provision.push((
+            ProvisionIdentity::Source(reference.source_identity()),
+            bytes.clone(),
+        ));
     }
     ReplayRequestWire {
         profile_selections: Vec::new(),
@@ -642,8 +631,9 @@ fn a_stale_frame_identity_refuses_before_admission() {
         payload.anchor = other_anchor;
         payload.frame = other_frame;
         payload.occurrence = other_occurrence;
-        let pre_hex = DigestRecord::mint(DigestDomain::Sha256Jcs, pre.digest).hex();
-        wire.byte_provision.retain(|(_, hex, _)| *hex != pre_hex);
+        let pre_identity = ProvisionIdentity::Source(pre.source_identity());
+        wire.byte_provision
+            .retain(|(identity, _)| *identity != pre_identity);
     });
     let (recompiled_anchor, recompiled_frame) = recompiled.unwrap();
     assert_ne!(other_frame, recompiled_frame);
@@ -1126,8 +1116,11 @@ fn a_frame_replay_refuses_other_targets_before_the_recompile() {
                             target,
                         );
                     }
-                    Source::EntryRemoved => wire.byte_provision.retain(|(domain, _, _)| {
-                        domain.as_deref() != Some(DigestDomain::SourceBytesV1.as_str())
+                    Source::EntryRemoved => wire.byte_provision.retain(|(identity, _)| {
+                        *identity
+                            != ProvisionIdentity::Source(qsl_foundation::SourceIdentity::new(
+                                AUTHORITY, IDENTITY, "git", "1",
+                            ))
                     }),
                 },
             );
@@ -1183,9 +1176,10 @@ fn a_frame_replay_refuses_other_targets_before_the_recompile() {
 #[test]
 fn an_absent_pre_snapshot_refuses_with_the_admission_record() {
     let input = forbidden_parent_change();
-    let pre_hex = DigestRecord::mint(DigestDomain::Sha256Jcs, input.pre.digest).hex();
+    let pre_identity = ProvisionIdentity::Source(input.pre.source_identity());
     let refusal = replay(case_with(input, child_change("parent"), |wire, _| {
-        wire.byte_provision.retain(|(_, hex, _)| *hex != pre_hex);
+        wire.byte_provision
+            .retain(|(identity, _)| *identity != pre_identity.clone());
     }))
     .unwrap_err();
     let ReplayRefusal::Admission(AdmissionFailure::Incomplete(record)) = &refusal else {
@@ -1195,53 +1189,30 @@ fn an_absent_pre_snapshot_refuses_with_the_admission_record() {
     assert_eq!(refusal.code(), record.code);
 }
 
-/// TC-515 step 4 (FR-116-AC-4): invocation bytes edited under their own
-/// digest refuse `stale_dependency`/`content-mismatch`.
+/// TC-515 step 4 (FR-116-AC-4): the row is selected by its labels, then
+/// FR-106 checks the observation's content identity at admission.
 #[trace("TC-515", "FR-116-AC-4")]
 #[test]
-fn edited_invocation_bytes_refuse_content_mismatch() {
+fn edited_invocation_bytes_are_selected_then_checked_at_admission() {
     let input = forbidden_parent_change();
-    let selected_digest = input.invocation.digest;
-    let invocation_hex = DigestRecord::mint(DigestDomain::Sha256Jcs, selected_digest).hex();
-    let mut edited_digest = [0_u8; 32];
-    let refusal = replay(case_with(input, child_change("parent"), |wire, _| {
+    let invocation_identity = ProvisionIdentity::Source(input.invocation.source_identity());
+    let outcome = replay(case_with(input, child_change("parent"), |wire, _| {
         let entry = wire
             .byte_provision
             .iter_mut()
-            .find(|(_, hex, _)| *hex == invocation_hex)
+            .find(|(identity, _)| *identity == invocation_identity)
             .expect("the invocation is provided");
-        entry.2 = String::from_utf8(entry.2.clone())
+        entry.1 = String::from_utf8(entry.1.clone())
             .expect("UTF-8")
             .replace("\"boolean\":true", "\"boolean\":false")
             .into_bytes();
-        edited_digest = document_digest(&entry.2);
-    }))
-    .unwrap_err();
-    let ReplayRefusal::Request(ReplayRequestRefusal::ContentMismatch {
-        selected,
-        recomputed,
-    }) = &refusal
-    else {
-        panic!("expected a content mismatch, got {refusal:?}");
-    };
-    assert_eq!(
-        selected,
-        &format!(
-            "{:?}",
-            DigestRecord::mint(DigestDomain::Sha256Jcs, selected_digest)
-        )
-    );
-    assert_eq!(
-        recomputed,
-        &format!(
-            "{:?}",
-            DigestRecord::mint(DigestDomain::Sha256Jcs, edited_digest)
-        )
-    );
-    assert_eq!(refusal.code(), qsl_foundation::Code::StaleDependency);
-    assert!(refusal
-        .to_string()
-        .starts_with("stale_dependency/content-mismatch"));
+    }));
+    assert!(matches!(
+        outcome,
+        Err(ReplayRefusal::Admission(AdmissionFailure::Refused(refusal)))
+            if refusal.code == qsl_foundation::Code::StaleDependency
+                && refusal.cause == "content-mismatch"
+    ));
 }
 
 /// TC-515 step 5 (FR-116-AC-5): replaying step 1's envelope twice gives
@@ -1306,10 +1277,10 @@ fn a_check_time_frame_violation_replays_to_the_same_witness() {
     for (reference, bytes) in &input.documents {
         clause_request
             .snapshots
-            .insert(reference.digest, bytes.clone());
+            .insert(reference.source_identity(), bytes.clone());
         clause_request
             .invocations
-            .insert(reference.digest, bytes.clone());
+            .insert(reference.source_identity(), bytes.clone());
     }
     let report = run_clause(clause_request).expect("a well-formed request reports");
     let ClauseDisposition::FrameViolation(witness) = &report.disposition else {
@@ -1341,8 +1312,12 @@ fn wrapping_debit() -> Invocation {
 /// `request` with every document of `input` provided.
 fn provide(mut request: ClauseRunRequest, input: &Invocation) -> ClauseRunRequest {
     for (reference, bytes) in &input.documents {
-        request.snapshots.insert(reference.digest, bytes.clone());
-        request.invocations.insert(reference.digest, bytes.clone());
+        request
+            .snapshots
+            .insert(reference.source_identity(), bytes.clone());
+        request
+            .invocations
+            .insert(reference.source_identity(), bytes.clone());
     }
     request
 }

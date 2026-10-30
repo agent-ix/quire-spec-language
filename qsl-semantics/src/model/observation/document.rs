@@ -317,12 +317,12 @@ fn first_blank_label(identity: &DocumentRef) -> Option<&'static str> {
 /// digest, running the seven ordered conditions.
 pub(super) fn read_document(
     kind: DocumentKind,
-    provision: &BTreeMap<[u8; 32], Vec<u8>>,
+    provision: &BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
     selected: &DocumentRef,
     limits: ObservationLimits,
 ) -> Result<ReadDocument, AdmissionFailure> {
     // 1.1
-    let bytes = provision.get(&selected.digest).ok_or_else(|| {
+    let bytes = provision.get(&selected.source_identity()).ok_or_else(|| {
         incomplete(admission_record(
             Code::UnavailableObservation,
             "missing-required-artifact",

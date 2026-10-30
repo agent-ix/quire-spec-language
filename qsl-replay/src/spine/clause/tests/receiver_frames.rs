@@ -150,11 +150,11 @@ fn run_selected(
             invocation.clone(),
         ),
     );
-    request.snapshots.insert(pre.digest, pre_bytes);
-    request.snapshots.insert(post.digest, post_bytes);
+    request.snapshots.insert(pre.source_identity(), pre_bytes);
+    request.snapshots.insert(post.source_identity(), post_bytes);
     request
         .invocations
-        .insert(invocation.digest, invocation_bytes);
+        .insert(invocation.source_identity(), invocation_bytes);
     run_clause(request).expect("a well-formed request always reports")
 }
 

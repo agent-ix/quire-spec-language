@@ -296,6 +296,13 @@ fn document_digest(bytes: &[u8]) -> [u8; 32] {
         .as_bytes()
 }
 
+fn observation_identity_from_bytes(bytes: &[u8]) -> qsl_foundation::SourceIdentity {
+    crate::spine::SuppliedObservation::from_document("fixture", bytes.to_vec())
+        .expect("fixture observation has source labels")
+        .reference
+        .source_identity()
+}
+
 fn model_header_json(model_digest_hex: &str) -> serde_json::Value {
     json!({
         "identity": PACKAGE_IDENTITY,
@@ -804,7 +811,9 @@ fn no_cycle_request(chain: &[(&str, Option<&str>)]) -> (ClauseRunRequest, Docume
     let selection = no_cycle_selection(label.clone(), "a");
 
     let mut request = request(ClauseRunSelection::Clause(selection));
-    request.snapshots.insert(digest, bytes);
+    request
+        .snapshots
+        .insert(observation_identity_from_bytes(&bytes), bytes);
     (request, label)
 }
 
@@ -965,7 +974,9 @@ fn run_clause_reports_missing_name_for_an_unknown_clause() {
     selection.name = "NoSuchClause".to_owned();
 
     let mut request = request(ClauseRunSelection::Clause(selection));
-    request.snapshots.insert(digest, bytes);
+    request
+        .snapshots
+        .insert(observation_identity_from_bytes(&bytes), bytes);
     let report = run_clause(request).unwrap();
     assert!(matches!(
         report.disposition,
@@ -1000,7 +1011,9 @@ fn run_clause_evaluates_a_function_selection_with_an_integer_argument() {
         }],
         snapshot: label,
     });
-    request.snapshots.insert(digest, bytes);
+    request
+        .snapshots
+        .insert(observation_identity_from_bytes(&bytes), bytes);
     let report = run_clause(request).unwrap();
     match report.disposition {
         ClauseDisposition::Evaluate(super::CallOutcome::Completed(super::CallValue::Boolean(
@@ -1041,7 +1054,9 @@ fn run_clause_evaluates_a_function_selection_with_a_reference_argument() {
         }],
         snapshot: label,
     });
-    request.snapshots.insert(digest, bytes);
+    request
+        .snapshots
+        .insert(observation_identity_from_bytes(&bytes), bytes);
     let report = run_clause(request).unwrap();
     match report.disposition {
         ClauseDisposition::Evaluate(super::CallOutcome::Completed(super::CallValue::Boolean(
@@ -1082,7 +1097,9 @@ fn run_clause_refuses_an_unresolved_reference_argument() {
         }],
         snapshot: label,
     });
-    request.snapshots.insert(digest, bytes);
+    request
+        .snapshots
+        .insert(observation_identity_from_bytes(&bytes), bytes);
     let report = run_clause(request).unwrap();
     assert_eq!(report.disposition.stage(), ClauseRunStage::Admit);
     match report.disposition {
@@ -1121,7 +1138,9 @@ fn run_clause_reports_not_a_predicate_for_an_integer_function() {
         arguments: Vec::new(),
         snapshot: label,
     });
-    request.snapshots.insert(digest, bytes);
+    request
+        .snapshots
+        .insert(observation_identity_from_bytes(&bytes), bytes);
     let report = run_clause(request).unwrap();
     assert!(matches!(
         report.disposition,
@@ -1333,7 +1352,9 @@ fn run_clause_reports_the_document_order_first_unknown_member_not_the_alphabetic
     let selection = no_cycle_selection(label, "a");
 
     let mut request = request(ClauseRunSelection::Clause(selection));
-    request.snapshots.insert(digest, bytes);
+    request
+        .snapshots
+        .insert(observation_identity_from_bytes(&bytes), bytes);
     let report = run_clause(request).expect("a well-formed request always reports");
     match report.disposition {
         ClauseDisposition::Admit(super::AdmissionFailure::Refused(record)) => {
@@ -1464,7 +1485,9 @@ fn run_clause_refuses_a_model_with_a_missing_digest() {
     let selection = no_cycle_selection(label, "a");
 
     let mut request = request(ClauseRunSelection::Clause(selection));
-    request.snapshots.insert(digest, bytes);
+    request
+        .snapshots
+        .insert(observation_identity_from_bytes(&bytes), bytes);
     let report = run_clause(request).expect("a well-formed request always reports");
     match report.disposition {
         ClauseDisposition::Admit(super::AdmissionFailure::Refused(record)) => {
@@ -1509,7 +1532,9 @@ fn run_clause_refuses_a_model_digest_with_the_wrong_prefix() {
     let selection = no_cycle_selection(label, "a");
 
     let mut request = request(ClauseRunSelection::Clause(selection));
-    request.snapshots.insert(digest, bytes);
+    request
+        .snapshots
+        .insert(observation_identity_from_bytes(&bytes), bytes);
     let report = run_clause(request).expect("a well-formed request always reports");
     match report.disposition {
         ClauseDisposition::Admit(super::AdmissionFailure::Refused(record)) => {
@@ -1957,7 +1982,9 @@ fn run_config_version_current(
     let selection = config_version_current_selection(clause_name, label, self_key);
 
     let mut request = config_version_request(ClauseRunSelection::Clause(selection));
-    request.snapshots.insert(digest, bytes);
+    request
+        .snapshots
+        .insert(observation_identity_from_bytes(&bytes), bytes);
     run_clause(request)
         .expect("a well-formed request always reports")
         .disposition
@@ -1987,7 +2014,9 @@ fn config_version_function_request(name: &str, arguments: Vec<ClauseArgument>) -
         arguments,
         snapshot: label,
     });
-    request.snapshots.insert(digest, bytes);
+    request
+        .snapshots
+        .insert(observation_identity_from_bytes(&bytes), bytes);
     request
 }
 
@@ -2012,7 +2041,9 @@ fn run_clause_reports_missing_name_selecting_absent_clause() {
     let selection = config_version_current_selection("Absent", label, "root");
 
     let mut request = config_version_request(ClauseRunSelection::Clause(selection));
-    request.snapshots.insert(digest, bytes);
+    request
+        .snapshots
+        .insert(observation_identity_from_bytes(&bytes), bytes);
     let report = run_clause(request).unwrap();
     assert!(matches!(
         report.disposition,
@@ -2036,7 +2067,9 @@ fn run_clause_reports_missing_name_for_a_clause_selection_naming_a_function() {
     let selection = config_version_current_selection("sameIdentity", label, "root");
 
     let mut request = config_version_request(ClauseRunSelection::Clause(selection));
-    request.snapshots.insert(digest, bytes);
+    request
+        .snapshots
+        .insert(observation_identity_from_bytes(&bytes), bytes);
     let report = run_clause(request).unwrap();
     assert!(matches!(
         report.disposition,
@@ -2118,7 +2151,9 @@ fn run_clause_refuses_a_dangling_parent_reference() {
     let selection = config_version_current_selection("ParentOrder", label, "child");
 
     let mut request = config_version_request(ClauseRunSelection::Clause(selection));
-    request.snapshots.insert(digest, bytes);
+    request
+        .snapshots
+        .insert(observation_identity_from_bytes(&bytes), bytes);
     let report = run_clause(request).unwrap();
     assert_eq!(report.disposition.stage(), ClauseRunStage::Admit);
     match &report.disposition {
@@ -2175,7 +2210,9 @@ fn run_clause_reports_incomplete_for_an_incomplete_population() {
     let selection = config_version_current_selection("ParentOrder", label, "child");
 
     let mut request = config_version_request(ClauseRunSelection::Clause(selection));
-    request.snapshots.insert(digest, bytes);
+    request
+        .snapshots
+        .insert(observation_identity_from_bytes(&bytes), bytes);
     let report = run_clause(request).unwrap();
     assert_eq!(report.disposition.stage(), ClauseRunStage::Admit);
     match &report.disposition {
@@ -2210,7 +2247,9 @@ fn run_clause_reports_incomplete_when_work_units_are_exhausted() {
     let selection = config_version_current_selection("ParentOrder", label, "child");
 
     let mut request = config_version_request(ClauseRunSelection::Clause(selection));
-    request.snapshots.insert(digest, bytes);
+    request
+        .snapshots
+        .insert(observation_identity_from_bytes(&bytes), bytes);
     request.accounting = default_accounting(0);
     let report = run_clause(request).unwrap();
     assert_eq!(report.disposition.stage(), ClauseRunStage::Evaluate);
@@ -2379,7 +2418,9 @@ fn run_clause_refuses_a_snapshot_edited_after_its_digest_was_taken() {
     );
 
     let mut request = config_version_request(ClauseRunSelection::Clause(selection));
-    request.snapshots.insert(digest, edited);
+    request
+        .snapshots
+        .insert(observation_identity_from_bytes(&edited), edited);
     let report = run_clause(request).unwrap();
     assert_eq!(report.disposition.stage(), ClauseRunStage::Admit);
     match &report.disposition {
@@ -2824,11 +2865,15 @@ fn run_config_version_invocation_report(
 
     let selection = config_version_invocation_selection(clause_name, invocation_label.clone());
     let mut request = request_builder(ClauseRunSelection::Clause(selection));
-    request.snapshots.insert(pre_label.digest, pre_bytes);
-    request.snapshots.insert(post_label.digest, post_bytes);
+    request
+        .snapshots
+        .insert(pre_label.source_identity(), pre_bytes);
+    request
+        .snapshots
+        .insert(post_label.source_identity(), post_bytes);
     request
         .invocations
-        .insert(invocation_label.digest, invocation_bytes);
+        .insert(invocation_label.source_identity(), invocation_bytes);
     run_clause(request).expect("a well-formed request always reports")
 }
 
@@ -3187,12 +3232,12 @@ fn config_version_probe_invocation_bytes(
 
 /// One `probe` invocation's provisioned documents: the invocation's own
 /// label (what a `ReachesTarget` selection names), and the snapshot and
-/// invocation provisions keyed by digest, ready for a `ClauseRunRequest`
+/// invocation provisions keyed by source labels, ready for a `ClauseRunRequest`
 /// or a hand-built `Provisions`.
 struct ProbeDocuments {
     invocation: DocumentRef,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
-    invocations: BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
+    invocations: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
 }
 
 /// Builds a `probe` invocation over `objects` (chain or loop), naming
@@ -3225,10 +3270,10 @@ fn probe_documents(
 
     ProbeDocuments {
         snapshots: BTreeMap::from([
-            (pre_label.digest, pre_bytes),
-            (post_label.digest, post_bytes),
+            (pre_label.source_identity(), pre_bytes),
+            (post_label.source_identity(), post_bytes),
         ]),
-        invocations: BTreeMap::from([(invocation_label.digest, invocation_bytes)]),
+        invocations: BTreeMap::from([(invocation_label.source_identity(), invocation_bytes)]),
         invocation: invocation_label,
     }
 }
@@ -3427,8 +3472,11 @@ fn a_postcondition_with_only_a_pre_observation_faults() {
     let (invocation, invocation_bytes) = document_ref_and_bytes("only-invocation", |label| {
         config_version_invocation_bytes(label, &model_digest_hex, &pre, &post, "child")
     });
-    let snapshots = BTreeMap::from([(pre.digest, pre_bytes), (post.digest, post_bytes)]);
-    let invocations = BTreeMap::from([(invocation.digest, invocation_bytes)]);
+    let snapshots = BTreeMap::from([
+        (pre.source_identity(), pre_bytes),
+        (post.source_identity(), post_bytes),
+    ]);
+    let invocations = BTreeMap::from([(invocation.source_identity(), invocation_bytes)]);
     let clause = package
         .graph()
         .state_clause("VersionUnchanged")

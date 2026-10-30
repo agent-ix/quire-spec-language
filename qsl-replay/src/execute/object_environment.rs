@@ -6,8 +6,9 @@
 use std::collections::BTreeSet;
 
 use qsl_foundation::diagnostic::Code;
-use qsl_foundation::digest::DigestDomain;
+use qsl_foundation::digest::ByteDigest;
 use qsl_foundation::source::provenance::RawSourceRef;
+use qsl_foundation::SourceIdentity;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::observation::{
     admit_object_environment, AdmissionFailure, BundleKey, DocumentRef, ObservationOrigin,
@@ -191,19 +192,42 @@ pub(super) fn admit(
         return Err(fault("environment-admitted-only-when-named"));
     };
     let package = compiled.checked.package();
+    let labels = named.identity();
+    let identity = SourceIdentity::new(
+        labels.authority.clone(),
+        labels.identity.clone(),
+        labels.revision_namespace.clone(),
+        labels.revision.clone(),
+    );
     let provision = request
         .byte_provision()
         .entries()
-        .filter(|(digest, _)| digest.domain() == DigestDomain::Sha256Jcs)
-        .map(|(digest, bytes)| (*digest.as_bytes(), bytes.to_vec()))
-        .collect();
-    let labels = named.identity();
+        .filter_map(|(identity, bytes)| match identity {
+            crate::request::ProvisionIdentity::Source(identity) => {
+                Some((identity.clone(), bytes.to_vec()))
+            }
+            crate::request::ProvisionIdentity::DomainPackage => None,
+        })
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let digest = provision.get(&identity).map_or([0; 32], |bytes| {
+        match quire_canonical::read(bytes, limits.observation.document_bytes) {
+            Ok(document) => quire_canonical::sha256(
+                &document,
+                quire_canonical::Limits::new(limits.observation.document_bytes),
+            )
+            .map_or_else(
+                |_| ByteDigest::of(bytes).as_bytes(),
+                |digest| *digest.as_bytes(),
+            ),
+            Err(_) => ByteDigest::of(bytes).as_bytes(),
+        }
+    });
     let selected = DocumentRef {
         authority: labels.authority.clone(),
         identity: labels.identity.clone(),
         revision_namespace: labels.revision_namespace.clone(),
         revision: labels.revision.clone(),
-        digest: *named.digest().as_bytes(),
+        digest,
     };
     let held: Vec<ObjectReference> = references
         .iter()

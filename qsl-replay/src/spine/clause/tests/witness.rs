@@ -184,14 +184,17 @@ impl Snapshot {
 }
 
 /// `clause` over `snapshot`, self `self_key`: the selection and the
-/// snapshot's bytes by digest.
+/// snapshot's bytes by FR-001 labels.
 fn selection(
     clause: &str,
     snapshot: Snapshot,
     self_key: &str,
-) -> (ClauseSelection, BTreeMap<[u8; 32], Vec<u8>>) {
+) -> (
+    ClauseSelection,
+    BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
+) {
     let (label, bytes) = snapshot.document();
-    let snapshots = BTreeMap::from([(label.digest, bytes)]);
+    let snapshots = BTreeMap::from([(label.source_identity(), bytes)]);
     (
         config_version_current_selection(clause, label, self_key),
         snapshots,
@@ -1265,7 +1268,7 @@ fn parent_order_request(
     });
     let selection = config_version_current_selection("ParentOrder", label.clone(), "child");
     let mut request = config_version_request(ClauseRunSelection::Clause(selection));
-    request.snapshots.insert(label.digest, bytes);
+    request.snapshots.insert(label.source_identity(), bytes);
     request
 }
 

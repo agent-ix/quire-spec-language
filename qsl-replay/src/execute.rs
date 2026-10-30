@@ -4,7 +4,7 @@
 //!
 //! It reads the request (FR-071), recompiles the one source unit the
 //! package reference names through the spine ([`crate::spine::parse`],
-//! S1 to S4) from the digest-addressed byte provision, requires the
+//! S1 to S4) from the identity-selected byte provision, requires the
 //! recompiled `package_id` to equal the request's, selects the function by
 //! its `QualifiedName` in the recompiled package's declarations, joins the
 //! replay source's arguments to the function's parameters by parameter node
@@ -783,8 +783,7 @@ pub enum DependencySelectionsCause {
 /// #   object_environment: None,
 /// #   declared_domains: Vec::new(),
 /// #   byte_provision: vec![(
-/// #       Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-/// #       digest.hex(),
+/// #       ProvisionIdentity::Source(SourceIdentity::new("a", "u", "git", "1")),
 /// #       unit.as_bytes().to_vec(),
 /// #   )],
 ///     // ...every other member names the proved package and its input.
@@ -856,8 +855,7 @@ pub enum DependencySelectionsCause {
 /// #   object_environment: None,
 /// #   declared_domains: Vec::new(),
 /// #   byte_provision: vec![(
-/// #       Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-/// #       digest.hex(),
+/// #       ProvisionIdentity::Source(SourceIdentity::new("a", "u", "git", "1")),
 /// #       unit.as_bytes().to_vec(),
 /// #   )],
 ///     // ...every other member names the proved package and its input.
@@ -1005,12 +1003,16 @@ fn replay_observed_temporal(
         ));
     }
 
-    let mut snapshots = std::collections::BTreeMap::new();
-    for (digest, bytes) in request.byte_provision().entries() {
-        if digest.domain() == DigestDomain::Sha256Jcs {
-            snapshots.insert(*digest.as_bytes(), bytes.to_vec());
-        }
-    }
+    let snapshots = request
+        .byte_provision()
+        .entries()
+        .filter_map(|(identity, bytes)| match identity {
+            crate::request::ProvisionIdentity::Source(identity) => {
+                Some((identity.clone(), bytes.to_vec()))
+            }
+            crate::request::ProvisionIdentity::DomainPackage => None,
+        })
+        .collect::<std::collections::BTreeMap<_, _>>();
     let mut environments = Vec::with_capacity(documents.len());
     for document in &documents {
         let (environment, _) = admit_trace_snapshot(
@@ -1558,7 +1560,7 @@ pub(crate) fn recompile(
     let provided = |reference: &RawSourceRef| {
         request
             .byte_provision()
-            .get(reference.digest())
+            .get(&reference.source_identity())
             .ok_or_else(|| {
                 // `ReplayRequest::decode` refuses an incomplete provision.
                 ReplayRefusal::Fault(InternalFault::new(
@@ -1639,16 +1641,17 @@ pub(crate) fn recompile(
     Ok(compiled)
 }
 
-/// I1's package input: every entry the byte provision carries under a
-/// `sha256-jcs` digest (QC-1). A state document there is keyed by its raw
-/// bytes' digest, which no model selection names.
+/// I1's package input: intake derives package identities from each supplied
+/// document. The request's byte provision itself stays selected by labels.
 fn domain_packages(request: &ReplayRequest) -> std::collections::BTreeMap<[u8; 32], Vec<u8>> {
     package_input(
         request
             .byte_provision()
             .entries()
-            .filter(|(digest, _)| digest.domain() == DigestDomain::Sha256Jcs)
-            .map(|(_, bytes)| bytes),
+            .filter_map(|(identity, bytes)| {
+                matches!(identity, crate::request::ProvisionIdentity::DomainPackage)
+                    .then_some(bytes)
+            }),
     )
 }
 

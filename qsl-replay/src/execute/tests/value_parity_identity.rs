@@ -677,8 +677,9 @@ fn make_unrecompilable(wire: &mut ReplayRequestWire) {
     let digest = source_digest(bytes);
     wire.source_digests[0].5 = digest.hex();
     wire.byte_provision = vec![(
-        Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-        digest.hex(),
+        crate::request::ProvisionIdentity::Source(qsl_foundation::SourceIdentity::new(
+            AUTHORITY, IDENTITY, NAMESPACE, REVISION,
+        )),
         bytes.to_vec(),
     )];
 }

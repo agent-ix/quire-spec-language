@@ -203,9 +203,9 @@ pub struct ClauseRunRequest {
     /// FR-099's dependency input.
     pub dependencies: DependencyInput,
     /// FR-106's snapshot provision.
-    pub snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    pub snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
     /// FR-106's invocation provision.
-    pub invocations: BTreeMap<[u8; 32], Vec<u8>>,
+    pub invocations: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
     /// The selection.
     pub selection: ClauseRunSelection,
     /// An optional expected `package_id` (FR-098's stale package rule).

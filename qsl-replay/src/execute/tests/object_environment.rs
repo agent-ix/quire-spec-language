@@ -165,10 +165,9 @@ fn sha256_jcs(bytes: &[u8]) -> [u8; 32] {
         .jcs_digest()
 }
 
-/// A snapshot document of the environment, with its `sha256-jcs` digest.
+/// A snapshot document of the environment.
 struct Document {
     bytes: Vec<u8>,
-    digest: [u8; 32],
 }
 
 /// How a variant of S1 differs from it.
@@ -314,8 +313,7 @@ impl Graph {
             });
         }
         let bytes = document.to_string().into_bytes();
-        let digest = sha256_jcs(&bytes);
-        Document { bytes, digest }
+        Document { bytes }
     }
 
     fn s1(&self) -> Document {
@@ -333,7 +331,10 @@ impl Graph {
             name(&[function]),
             source,
         );
-        wire.byte_provision.push(entry(&self.package));
+        wire.byte_provision.push((
+            crate::request::ProvisionIdentity::DomainPackage,
+            self.package.clone(),
+        ));
         wire
     }
 
@@ -352,11 +353,16 @@ impl Graph {
     }
 }
 
-/// A `sha256-jcs` byte-provision entry for the document `bytes`.
-fn entry(bytes: &[u8]) -> (Option<String>, String, Vec<u8>) {
+/// A source-label byte-provision entry for the object-environment snapshot.
+fn entry(bytes: &[u8]) -> (crate::request::ProvisionIdentity, Vec<u8>) {
+    let labels = labels();
     (
-        Some(DigestDomain::Sha256Jcs.as_str().to_owned()),
-        DigestRecord::mint(DigestDomain::Sha256Jcs, sha256_jcs(bytes)).hex(),
+        crate::request::ProvisionIdentity::Source(qsl_foundation::SourceIdentity::new(
+            labels.authority,
+            labels.identity,
+            labels.revision_namespace,
+            labels.revision,
+        )),
         bytes.to_vec(),
     )
 }
@@ -371,18 +377,7 @@ fn environment(
     if provided {
         wire.byte_provision.push(entry(&document.bytes));
     }
-    wire.object_environment = Some(
-        ObjectEnvironmentRef::new(
-            EnvironmentLabels {
-                authority: "agent-ix".to_owned(),
-                identity: "ix://test/graph/environment".to_owned(),
-                revision_namespace: "git".to_owned(),
-                revision: "1".to_owned(),
-            },
-            DigestRecord::mint(DigestDomain::Sha256Jcs, document.digest),
-        )
-        .expect("a sha256-jcs digest"),
-    );
+    wire.object_environment = Some(ObjectEnvironmentRef::new(labels()));
     wire
 }
 
@@ -520,7 +515,7 @@ fn labels() -> EnvironmentLabels {
     }
 }
 
-fn member(digest: &str) -> Value {
+fn member() -> Value {
     json!({
         "identity": {
             "authority": "agent-ix",
@@ -528,7 +523,6 @@ fn member(digest: &str) -> Value {
             "revision_namespace": "git",
             "revision": "1",
         },
-        "digest": digest,
     })
 }
 
@@ -546,7 +540,6 @@ fn tc_1042_row_01_the_member_constructs_and_round_trips() {
     let wire = environment(graph.input("fa", graph.node("a")), &s1, false);
     let request = ReplayRequest::decode(wire, ReplayLimits::default()).expect("constructs");
     let named = request.object_environment().expect("the member");
-    assert_eq!(named.digest().as_bytes(), &s1.digest);
     assert_eq!(named.identity(), &labels());
     assert_eq!(&read_object_environment(&named.to_value()).unwrap(), named);
     let again = ReplayRequest::decode(request.to_wire(), ReplayLimits::default()).unwrap();
@@ -570,17 +563,20 @@ fn tc_1042_row_02_a_string_member_is_the_wrong_value_kind() {
     );
 }
 
-/// Row 3: no `digest`.
+/// Row 3: no `revision` label.
 #[trace("TC-1042", "FR-071-AC-12")]
 #[test]
-fn tc_1042_row_03_a_missing_digest_is_a_missing_member() {
-    let mut value = member("sha256-jcs:00");
-    value.as_object_mut().unwrap().remove("digest");
+fn tc_1042_row_03_a_missing_label_is_a_missing_member() {
+    let mut value = member();
+    value["identity"]
+        .as_object_mut()
+        .unwrap()
+        .remove("revision");
     let refusal = read_object_environment(&value).unwrap_err();
     assert_eq!(
         refusal,
         ObjectEnvironmentRefusal::MissingMember {
-            member: "object_environment.digest".to_owned()
+            member: "object_environment.identity.revision".to_owned()
         }
     );
     assert_eq!(
@@ -593,13 +589,13 @@ fn tc_1042_row_03_a_missing_digest_is_a_missing_member() {
 #[trace("TC-1042", "FR-071-AC-12")]
 #[test]
 fn tc_1042_row_04_a_third_member_is_an_unknown_member() {
-    let mut value = member(&format!("sha256-jcs:{}", "a".repeat(64)));
-    value["role"] = json!("current");
+    let mut value = member();
+    value["identity"]["role"] = json!("current");
     let refusal = read_object_environment(&value).unwrap_err();
     assert_eq!(
         refusal,
         ObjectEnvironmentRefusal::UnknownMember {
-            member: "object_environment.role".to_owned()
+            member: "object_environment.identity.role".to_owned()
         }
     );
     assert_eq!(
@@ -608,27 +604,23 @@ fn tc_1042_row_04_a_third_member_is_an_unknown_member() {
     );
 }
 
-/// Row 5: a digest outside `sha256-jcs`, and one of 63 hex digits.
+/// Row 5: a label with the wrong JSON kind.
 #[trace("TC-1042", "FR-071-AC-12")]
 #[test]
-fn tc_1042_row_05_a_bad_digest_is_an_invalid_value() {
-    for digest in [
-        format!("quire.source.bytes/v1:{}", "a".repeat(64)),
-        format!("sha256-jcs:{}", "a".repeat(63)),
-    ] {
-        let refusal = read_object_environment(&member(&digest)).unwrap_err();
-        assert_eq!(
-            refusal,
-            ObjectEnvironmentRefusal::InvalidValue {
-                member: "object_environment.digest".to_owned()
-            },
-            "{digest}"
-        );
-        assert_eq!(
-            (refusal.code(), refusal.cause()),
-            (Code::InvalidRuntimeInput, "invalid-value")
-        );
-    }
+fn tc_1042_row_05_a_non_string_label_is_wrong_kind() {
+    let mut value = member();
+    value["identity"]["revision"] = json!(3);
+    let refusal = read_object_environment(&value).unwrap_err();
+    assert_eq!(
+        refusal,
+        ObjectEnvironmentRefusal::WrongValueKind {
+            member: "object_environment.identity.revision".to_owned()
+        }
+    );
+    assert_eq!(
+        (refusal.code(), refusal.cause()),
+        (Code::InvalidRuntimeInput, "wrong-value-kind")
+    );
 }
 
 fn reference_text(universe: &str, object_type: &str, identity: &str) -> String {
@@ -1191,27 +1183,23 @@ fn tc_1042_row_33_a_present_reference_is_not_named() {
 // The writer, the labels, and the fault mapping
 // ---------------------------------------------------------------------------
 
-/// FR-071: admission selects the document by digest alone, so labels that
-/// are not the document's own identity change nothing.
+/// FR-071: admission selects the document by all four identity labels.
 #[test]
-fn the_member_labels_are_not_compared_with_the_documents_identity() {
+fn the_member_labels_select_the_documents_identity() {
     let graph = graph();
     let s1 = graph.s1();
     let mut wire = graph.input("fa", graph.node("a"));
     wire.byte_provision.push(entry(&s1.bytes));
-    wire.object_environment = Some(
-        ObjectEnvironmentRef::new(
-            EnvironmentLabels {
-                authority: "elsewhere".to_owned(),
-                identity: "ix://elsewhere/other".to_owned(),
-                revision_namespace: "svn".to_owned(),
-                revision: "9".to_owned(),
-            },
-            DigestRecord::mint(DigestDomain::Sha256Jcs, s1.digest),
-        )
-        .expect("a sha256-jcs digest"),
-    );
-    assert_completes_false(run(wire), false);
+    wire.object_environment = Some(ObjectEnvironmentRef::new(EnvironmentLabels {
+        authority: "elsewhere".to_owned(),
+        identity: "ix://elsewhere/other".to_owned(),
+        revision_namespace: "svn".to_owned(),
+        revision: "9".to_owned(),
+    }));
+    assert!(matches!(
+        run(wire),
+        Err(ReplayRefusal::ObjectEnvironment(_))
+    ));
 }
 
 /// The builder's document is the one admission reads: `Node.items` of length
@@ -1255,10 +1243,6 @@ fn a_written_environment_document_round_trips_through_admission() {
             }],
         )
         .expect("the document is written");
-        assert_eq!(
-            sha256_jcs(document.bytes()),
-            *document.member().digest().as_bytes()
-        );
         let mut wire = graph.input("fa", graph.node("a"));
         wire.byte_provision.push(document.provision_entry());
         wire.object_environment = Some(document.member().clone());

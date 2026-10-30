@@ -897,8 +897,9 @@ mod tests {
             object_environment: None,
             declared_domains: Vec::new(),
             byte_provision: vec![(
-                Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-                source_digest_record.hex(),
+                crate::request::ProvisionIdentity::Source(SourceIdentity::new(
+                    "a", "u", "git", "1",
+                )),
                 bytes.to_vec(),
             )],
         }

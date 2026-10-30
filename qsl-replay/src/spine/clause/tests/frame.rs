@@ -97,11 +97,11 @@ pub(super) fn frame_input(
         operation: operation(operation_name),
         invocation: invocation.clone(),
     });
-    request.snapshots.insert(pre.digest, pre_bytes);
-    request.snapshots.insert(post.digest, post_bytes);
+    request.snapshots.insert(pre.source_identity(), pre_bytes);
+    request.snapshots.insert(post.source_identity(), post_bytes);
     request
         .invocations
-        .insert(invocation.digest, invocation_bytes);
+        .insert(invocation.source_identity(), invocation_bytes);
     FrameInput {
         invocation,
         pre,
@@ -791,7 +791,7 @@ fn stale_or_mismatched_documents_refuse_at_admit() {
     let bytes = edited
         .request
         .invocations
-        .get_mut(&edited.invocation.digest)
+        .get_mut(&edited.invocation.source_identity())
         .expect("the invocation is provided");
     *bytes = String::from_utf8(bytes.clone())
         .expect("UTF-8")
@@ -888,7 +888,7 @@ fn an_unknown_or_unnamed_operation_refuses_at_select() {
 #[test]
 fn an_absent_pre_snapshot_is_incomplete_not_a_violation() {
     let mut input = changed_version();
-    input.request.snapshots.remove(&input.pre.digest);
+    input.request.snapshots.remove(&input.pre.source_identity());
     let report = run(input);
     assert!(
         matches!(

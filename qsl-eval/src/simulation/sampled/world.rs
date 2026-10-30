@@ -205,7 +205,7 @@ impl Model {
 pub(crate) struct World {
     pub(crate) package: CheckedPackage,
     packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
     initial: DocumentRef,
     universe: PopulationUniverse,
 }
@@ -289,17 +289,18 @@ impl World {
             package: model.package.to_owned(),
             node: model.ident(model.population),
         };
+        let initial = DocumentRef {
+            authority: "test".to_owned(),
+            identity: "s0".to_owned(),
+            revision_namespace: "fixture".to_owned(),
+            revision: "fixture:1".to_owned(),
+            digest: snapshot_digest,
+        };
         Self {
             package: CheckedPackage::link(graph),
             packages,
-            snapshots: BTreeMap::from([(snapshot_digest, snapshot)]),
-            initial: DocumentRef {
-                authority: "test".to_owned(),
-                identity: "s0".to_owned(),
-                revision_namespace: "fixture".to_owned(),
-                revision: "fixture:1".to_owned(),
-                digest: snapshot_digest,
-            },
+            snapshots: BTreeMap::from([(initial.source_identity(), snapshot)]),
+            initial,
             universe: PopulationUniverse {
                 population,
                 keys: vec![model.key.to_owned()],

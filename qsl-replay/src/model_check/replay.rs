@@ -60,7 +60,7 @@ use qsl_eval::temporal::{
 };
 use qsl_eval::temporal::{AtomReading, CaptureReading};
 use qsl_foundation::diagnostic::Code;
-use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
+use qsl_foundation::digest::{DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId};
@@ -1029,11 +1029,15 @@ fn replay_on<P: crate::witness::FamilyPayload>(
             recompiled: package_id,
         });
     }
-    let documents: BTreeMap<[u8; 32], Vec<u8>> = request
+    let documents: BTreeMap<_, Vec<u8>> = request
         .byte_provision()
         .entries()
-        .filter(|(digest, _)| digest.domain() == DigestDomain::Sha256Jcs)
-        .map(|(digest, bytes)| (*digest.as_bytes(), bytes.to_vec()))
+        .filter_map(|(identity, bytes)| match identity {
+            crate::request::ProvisionIdentity::Source(identity) => {
+                Some((identity.clone(), bytes.to_vec()))
+            }
+            crate::request::ProvisionIdentity::DomainPackage => None,
+        })
         .collect();
     let meter = request.accounting_limits();
     let package = compiled.checked.package();

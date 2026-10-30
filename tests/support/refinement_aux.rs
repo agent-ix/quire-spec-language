@@ -607,7 +607,7 @@ fn snapshot(
     (package, document): (&str, &[u8]),
     name: &str,
     fields: &Json,
-    snapshots: &mut BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: &mut BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
 ) -> DocumentRef {
     let model_digest = *package_input([document])
         .keys()
@@ -632,7 +632,10 @@ fn snapshot(
     let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
         .expect("canonical fixture")
         .as_bytes();
-    snapshots.insert(digest, bytes);
+    snapshots.insert(
+        qsl_foundation::SourceIdentity::new("test", identity.clone(), "fixture", "fixture:1"),
+        bytes,
+    );
     DocumentRef {
         authority: "test".to_owned(),
         identity,
@@ -647,7 +650,7 @@ pub struct World<'u> {
     unit: &'u Unit,
     package: CheckedPackage,
     packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
     abstract_initial: DocumentRef,
     abstract_extra: Vec<DocumentRef>,
     concrete_initials: Vec<DocumentRef>,

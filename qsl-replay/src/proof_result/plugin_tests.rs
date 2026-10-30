@@ -873,7 +873,7 @@ fn tc_774_function_contract_and_application_items_replay() {
     assert!(wire.state_environment.entries().is_empty());
     assert!(wire.object_environment.is_none());
     assert_eq!(wire.byte_provision.len(), 1);
-    assert_eq!(wire.byte_provision[0].2, SOURCE.as_bytes());
+    assert_eq!(wire.byte_provision[0].1, SOURCE.as_bytes());
     let replayed = crate::replay(wire.clone(), ReplayLimits::default());
     let Ok(ReplayResult::Input(arm)) = &replayed else {
         panic!("expected an input replay, got {replayed:?}");

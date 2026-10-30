@@ -11,13 +11,14 @@ use super::frame_replay::{
     witness_source, Unit, IDENTITY,
 };
 use super::*;
+use crate::request::ProvisionIdentity;
 use crate::{
     replay_state_clause, ClauseIdentityMismatch, DisagreementCause, EvaluatedValue, FamilyPayload,
     InputSettlement, ObservationForm, ReplayRefusal, ReplayRequestRefusal, ReplayRequestWire,
     ReplayResult, ReplaySource, ReplayTarget, SnapshotValue, StateClauseCounterexample,
     StateClauseKind, StateClauseReplayResult, Verdict, WitnessEnvelope, WitnessSettlement,
 };
-use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
+use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_exact::Identifier;
@@ -314,8 +315,8 @@ fn witness_arm(result: &StateClauseReplayResult) -> &crate::WitnessArmResult {
 
 /// Removes `reference`'s bytes from the request's byte provision.
 fn without(wire: &mut ReplayRequestWire, reference: &DocumentRef) {
-    let hex = DigestRecord::mint(DigestDomain::Sha256Jcs, reference.digest).hex();
-    wire.byte_provision.retain(|(_, entry, _)| *entry != hex);
+    let identity = ProvisionIdentity::Source(reference.source_identity());
+    wire.byte_provision.retain(|(entry, _)| *entry != identity);
 }
 
 /// Replays `case` and checks it reproduced with an evaluated witness, whose
@@ -743,12 +744,15 @@ fn probe_invocation() -> Documents {
     let documents = probe_documents(&config_version_step3_chain_objects(), "a", "c");
     let mut bytes: Vec<(DocumentRef, Vec<u8>)> = Vec::new();
     let mut read = vec![documents.invocation.clone()];
-    for (digest, document) in documents.invocations.iter().chain(&documents.snapshots) {
+    for (identity, document) in documents.invocations.iter().chain(&documents.snapshots) {
         let reference = DocumentRef {
-            digest: *digest,
-            ..documents.invocation.clone()
+            authority: identity.authority.clone(),
+            identity: identity.identity.clone(),
+            revision_namespace: identity.revision_namespace.clone(),
+            revision: identity.revision.clone(),
+            digest: document_digest(document),
         };
-        if *digest != documents.invocation.digest {
+        if reference.source_identity() != documents.invocation.source_identity() {
             read.push(reference.clone());
         }
         bytes.push((reference, document.clone()));
@@ -863,17 +867,14 @@ fn an_absent_pre_snapshot_refuses_with_the_admission_record() {
     assert_eq!(refusal.code(), record.code);
 }
 
-/// TC-517 step 5 (FR-122-AC-5): changed-version with its invocation bytes
-/// edited under the same digest refuses `stale_dependency`/
-/// `content-mismatch`.
+/// TC-517 step 5 (FR-122-AC-5): labels select the invocation provision; FR-106
+/// then checks its content identity at admission.
 #[trace("TC-517", "FR-122-AC-5")]
 #[test]
-fn edited_invocation_bytes_refuse_content_mismatch() {
+fn edited_invocation_bytes_are_selected_then_checked_at_admission() {
     let documents = changed_version();
-    let selected_digest = documents.read[0].digest;
-    let invocation = DigestRecord::mint(DigestDomain::Sha256Jcs, selected_digest).hex();
-    let mut edited_digest = [0_u8; 32];
-    let refusal = replay(case_with(
+    let invocation = ProvisionIdentity::Source(documents.read[0].source_identity());
+    let outcome = replay(case_with(
         config_version_unit(),
         "VersionUnchanged",
         documents,
@@ -882,40 +883,20 @@ fn edited_invocation_bytes_refuse_content_mismatch() {
             let entry = wire
                 .byte_provision
                 .iter_mut()
-                .find(|(_, hex, _)| *hex == invocation)
+                .find(|(identity, _)| *identity == invocation)
                 .expect("the invocation is provided");
-            entry.2 = String::from_utf8(entry.2.clone())
+            entry.1 = String::from_utf8(entry.1.clone())
                 .expect("UTF-8")
                 .replace("\"boolean\":true", "\"boolean\":false")
                 .into_bytes();
-            edited_digest = document_digest(&entry.2);
         },
-    ))
-    .unwrap_err();
-    let ReplayRefusal::Request(ReplayRequestRefusal::ContentMismatch {
-        selected,
-        recomputed,
-    }) = &refusal
-    else {
-        panic!("expected a content mismatch, got {refusal:?}");
-    };
-    assert_eq!(
-        selected,
-        &format!(
-            "{:?}",
-            DigestRecord::mint(DigestDomain::Sha256Jcs, selected_digest)
-        )
-    );
-    assert_eq!(
-        recomputed,
-        &format!(
-            "{:?}",
-            DigestRecord::mint(DigestDomain::Sha256Jcs, edited_digest)
-        )
-    );
-    assert!(refusal
-        .to_string()
-        .starts_with("stale_dependency/content-mismatch"));
+    ));
+    assert!(matches!(
+        outcome,
+        Err(ReplayRefusal::Admission(AdmissionFailure::Refused(refusal)))
+            if refusal.code == qsl_foundation::Code::StaleDependency
+                && refusal.cause == "content-mismatch"
+    ));
 }
 
 /// TC-517 step 5 (FR-122-AC-5): `ParentOrder` over incomplete-population's
@@ -1048,8 +1029,11 @@ fn a_replay_target_the_entry_does_not_read_refuses_before_the_recompile() {
                             target,
                         );
                     }
-                    Source::EntryRemoved => wire.byte_provision.retain(|(domain, _, _)| {
-                        domain.as_deref() != Some(DigestDomain::SourceBytesV1.as_str())
+                    Source::EntryRemoved => wire.byte_provision.retain(|(identity, _)| {
+                        *identity
+                            != ProvisionIdentity::Source(qsl_foundation::SourceIdentity::new(
+                                "agent-ix", IDENTITY, "git", "1",
+                            ))
                     }),
                 },
             ))

@@ -27,7 +27,6 @@ use crate::model_check::state_graph::{GraphEvidence, ModelPath, TrapClosure, Wit
 use crate::request::{ReplayRequest, ReplayRequestWire};
 use crate::result::{DisagreementCause, Verdict};
 use crate::witness::ReplaySource;
-use qsl_foundation::digest::DigestDomain;
 use quire_exact::Cancel;
 
 /// Replay a model-graph evidence request through FR-120's `ModelSystem`.
@@ -153,8 +152,12 @@ pub fn replay_model_graph_with_cancel(
     let documents = request
         .byte_provision()
         .entries()
-        .filter(|(digest, _)| digest.domain() == DigestDomain::Sha256Jcs)
-        .map(|(digest, bytes)| (*digest.as_bytes(), bytes.to_vec()))
+        .filter_map(|(identity, bytes)| match identity {
+            crate::request::ProvisionIdentity::Source(identity) => {
+                Some((identity.clone(), bytes.to_vec()))
+            }
+            crate::request::ProvisionIdentity::DomainPackage => None,
+        })
         .collect::<BTreeMap<_, _>>();
     let simulation = ModelSimulationRequest {
         package,

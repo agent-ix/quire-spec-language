@@ -340,7 +340,7 @@ mod tests {
             .expect("an application item");
         assert_eq!(wire.package_id.1, package_id.hex());
         assert_eq!(wire.replay_target.occurrence_key.as_ref(), Some(&key));
-        assert_eq!(wire.byte_provision[0].2, SOURCE.as_bytes());
+        assert_eq!(wire.byte_provision[0].1, SOURCE.as_bytes());
         assert_eq!(wire.stage_limits["s1.tokens"], 200_000);
         assert_eq!(wire.stage_limits["library.definitions"], 9000);
         assert_eq!(wire.accounting_limits.work_units, 5000);
