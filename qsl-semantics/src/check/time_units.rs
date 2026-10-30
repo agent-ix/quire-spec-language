@@ -79,7 +79,9 @@ impl TimeUnits {
                 continue;
             };
             let dependencies = match &node.form {
-                NominalUnitForm::Dimension { terms } => terms.iter().map(|(key, _)| key.clone()).collect(),
+                NominalUnitForm::Dimension { terms } => {
+                    terms.iter().map(|(key, _)| key.clone()).collect()
+                }
                 NominalUnitForm::Unit {
                     dimension, target, ..
                 } => std::iter::once(dimension.clone())
@@ -95,7 +97,6 @@ impl TimeUnits {
                         NominalUnitForm::Unit { .. } => "unit",
                     }
                     .to_owned(),
-                    preimage: node.declaration.preimage.clone(),
                     dependencies,
                 },
             );
@@ -137,16 +138,15 @@ impl TimeUnits {
                 let preimage =
                     DimensionPreimage::new(owner, vec![dimension.name.clone()], vec![]).ok()?;
                 let key = nominal_key(&preimage, identity).ok()?;
-                Some((key, preimage.preimage_bytes(identity).ok()?))
+                Some(key)
             });
-            let time_key = time_node.as_ref().map(|(key, _)| key.clone());
-            if let Some((time_key, preimage)) = time_node {
+            let time_key = time_node.clone();
+            if let Some(time_key) = time_node {
                 nominal_nodes.insert(
                     time_key.clone(),
                     TimeNominalNode {
                         key: time_key,
                         form: "dimension".to_owned(),
-                        preimage,
                         dependencies: Vec::new(),
                     },
                 );
@@ -239,9 +239,11 @@ impl TimeUnits {
             .ok_or_else(|| TimeUnitCause::UnknownUnit {
                 name: name.to_owned(),
             })?;
-        unit.dimension.clone().ok_or(TimeUnitCause::NotTimeDimension {
-            name: name.to_owned(),
-        })
+        unit.dimension
+            .clone()
+            .ok_or(TimeUnitCause::NotTimeDimension {
+                name: name.to_owned(),
+            })
     }
 
     /// The time unit `name` as a conversion target: the reciprocal of its
@@ -393,12 +395,10 @@ fn package_unit_nominal_nodes(
         )
         .ok()?;
         let key = nominal_key(&preimage, identity).ok()?;
-        let preimage = preimage.preimage_bytes(identity).ok()?;
         let mut nodes = target_nodes;
         nodes.push(TimeNominalNode {
             key,
             form: "unit".to_owned(),
-            preimage,
             dependencies: std::iter::once(dimension).chain(target).collect(),
         });
         Some(nodes)
