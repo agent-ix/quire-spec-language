@@ -522,7 +522,7 @@ fn expected_transition(operation: &str, receiver: &ObjectReference, arguments: &
     let receiver = {
         let enc = format!(
             r#"{{"identity":"{}","object_type":{},"type":"reference","universe":{}}}"#,
-            hex_bytes(receiver.object().as_str().as_bytes()),
+            receiver.object().as_str(),
             crate::support::ids::effective_json(receiver.object_type()),
             crate::support::ids::node_json(receiver.universe().root_type()),
         );
@@ -533,10 +533,6 @@ fn expected_transition(operation: &str, receiver: &ObjectReference, arguments: &
         arguments.join(","),
         serde_json::to_string(&operation_text(operation)).expect("a JSON string"),
     )
-}
-
-fn hex_bytes(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 fn int_arg(value: i64) -> String {
@@ -761,7 +757,7 @@ fn the_state_key_is_the_simulation_state_envelope() {
     let own = json!({"type": "reference",
         "universe": crate::support::ids::node_json(reference.universe().root_type()),
         "object_type": crate::support::ids::effective_json(reference.object_type()),
-        "identity": "6331"});
+        "identity": "c1"});
     let record = |label: i64, next: Json| {
         json!({"type": "record", "name": counter_text(), "fields": [
             {"name": "value", "value": {"type": "integer", "value": "0"}},
@@ -777,7 +773,7 @@ fn the_state_key_is_the_simulation_state_envelope() {
                     "key": {"type": "reference",
                         "universe": crate::support::ids::node_json(reference.universe().root_type()),
                         "object_type": crate::support::ids::effective_json(reference.object_type()),
-                        "identity": "6331"},
+                        "identity": "c1"},
                     "value": record(label, next)}]}}]},
             "control": empty, "queues": empty, "roles": empty, "observations": empty,
             "bounds": empty, "memory": empty})
@@ -1252,14 +1248,14 @@ fn effect_of(
 ) -> StepEffect {
     let initial = system.initial();
     let expansion = system.successors(&initial[index]).expect("expands");
-    let receiver_text = hex_bytes(receiver.object().as_str().as_bytes());
+    let receiver_text = receiver.object().as_str();
     expansion
         .successors
         .iter()
         .filter(|(transition, _)| {
             transition
                 .receiver()
-                .is_some_and(|text| text.contains(&receiver_text))
+                .is_some_and(|text| text.contains(receiver_text))
         })
         .find(|(_, state)| pick(&ModelStateView(state.state().clone())))
         .and_then(|(_, state)| state.reached_by().cloned())

@@ -21,7 +21,6 @@ use qsl_package::CheckedPackage;
 use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
 use quire_checked::key::DeclarationKey;
 use quire_exact::{Integer, Rational, ScalarLimits};
@@ -4146,7 +4145,7 @@ fn a_clock_parameter_has_one_instance_per_place() {
         let object = timed.places()[zeros[0]].object();
         let named = format!(
             "\"identity\":\"{}\"",
-            hex(object.object().as_str().as_bytes())
+            object.object().as_str()
         );
         assert!(place.contains(&named), "{place} names {object:?}");
     }
@@ -4298,7 +4297,7 @@ fn two_clock_parameters_bind_every_pair_of_places() {
                 };
                 let named = format!(
                     "\"identity\":\"{}\"",
-                    hex(timed.places()[zero].object().object().as_str().as_bytes())
+                    timed.places()[zero].object().object().as_str()
                 );
                 assert!(c.contains(&named), "{c} names the reset place");
             }
@@ -4366,7 +4365,7 @@ fn a_permutation_renames_a_clock_place_argument() {
                     let [place] = transition.arguments() else {
                         panic!("one place argument");
                     };
-                    place.contains(&format!("\"identity\":\"{}\"", hex(key.as_bytes())))
+                    place.contains(&format!("\"identity\":\"{}\"", key))
                 };
                 for (from, to) in [("c1", "c2"), ("c2", "c1")] {
                     if named(transition, from) {

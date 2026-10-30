@@ -449,12 +449,7 @@ const UNLIMITED: ScalarLimits = ScalarLimits {
 fn reference_text(reference: &ObjectReference) -> String {
     format!(
         r#"{{"identity":"{}","object_type":{},"type":"reference","universe":{}}}"#,
-        reference
-            .object()
-            .as_str()
-            .bytes()
-            .map(|byte| format!("{byte:02x}"))
-            .collect::<String>(),
+        reference.object().as_str(),
         crate::support::ids::effective_json(reference.object_type()),
         crate::support::ids::node_json(reference.universe().root_type()),
     )
@@ -1407,23 +1402,18 @@ fn the_footprint_hook_takes_no_state_and_covers_absent_objects() {
     assert_eq!(bump_d.writes, locations([field_at(&d, "Counter/v")]));
 }
 
-/// A transition text that is not the canonical text of a reference, or whose
-/// arguments do not match the operation's parameters, names no footprint.
+/// A transition whose arguments do not match the operation's parameters
+/// names no footprint.
 #[test]
-fn a_non_canonical_or_miscounted_transition_has_no_footprint() {
+fn a_miscounted_transition_has_no_footprint() {
     let mut subject = counters_subject();
     let start = counters_start(&mut subject);
     let system = subject.system(start, &COUNTER_KEYS);
     let a = subject.reference("Counter", "a");
     let operation = transition("Counter", "bump", &a, Vec::new());
 
-    // The identity `j` is hex `6a`; the same object spelled `6A` or `+1` is
-    // not canonical text.
     let j = subject.reference("Counter", "j");
     let canonical = reference_text(&j);
-    assert!(canonical.contains("\"6a\""));
-    let shouting = canonical.replace("\"6a\"", "\"6A\"");
-    let signed = canonical.replace("\"6a\"", "\"+1\"");
     let with_receiver = |receiver: String, arguments: Vec<String>| {
         ModelTransition::new(
             operation.operation().to_owned(),
@@ -1436,14 +1426,6 @@ fn a_non_canonical_or_miscounted_transition_has_no_footprint() {
     assert!(system
         .footprint(&with_receiver(canonical, Vec::new()))
         .is_ok());
-    let upper = shouting;
-    let shouting = signed;
-    for receiver in [shouting, upper] {
-        assert_eq!(
-            system.footprint(&with_receiver(receiver, Vec::new())),
-            Err(qsl_eval::simulation::model::FootprintError::UnknownTransition)
-        );
-    }
     assert_eq!(
         system.footprint(&with_receiver(reference_text(&a), vec![reference_text(&a)])),
         Err(qsl_eval::simulation::model::FootprintError::UnknownTransition)

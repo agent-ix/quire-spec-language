@@ -251,7 +251,7 @@ fn located_dependency() -> CheckedPackage {
             functions: vec![declaration],
             ..PackageDeclarations::new(
                 source,
-                "fixture".to_owned(),
+                "lib.g".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
             )
         }
