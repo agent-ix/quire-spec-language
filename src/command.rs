@@ -446,8 +446,8 @@ pub fn run_with_limits(
     path: &Path,
     limits: RunLimits,
 ) -> std::result::Result<RunResult, Box<RunError>> {
-    with_request_limits(path, limits.request_bytes, |directory, bytes, digest| {
-        run_bytes(directory, bytes, digest, limits.dependent_bytes)
+    with_request_limits(path, limits.request_bytes, |directory, bytes, _digest| {
+        run_bytes(directory, bytes, limits.dependent_bytes)
     })
 }
 
@@ -831,12 +831,7 @@ fn intake_with_bytes(directory: &Path, counts: FileCounts, maximum: usize) -> Re
     })
 }
 
-fn run_bytes(
-    directory: &Path,
-    bytes: &[u8],
-    digest: ByteDigest,
-    dependent_bytes: usize,
-) -> Result<RunResult> {
+fn run_bytes(directory: &Path, bytes: &[u8], dependent_bytes: usize) -> Result<RunResult> {
     let request: wire::Request = request(bytes)?;
     let mut intake = intake_with_bytes(
         directory,
@@ -874,14 +869,13 @@ fn run_bytes(
             member: "edition".to_owned(),
             reason: "native run is retired".to_owned(),
         }),
-        Edition::Complete => run_complete(&digest, &mut intake, &request, source),
+        Edition::Complete => run_complete(&mut intake, &request, source),
     }
 }
 
 /// FR-100: run a `1-draft` program's named function through the spine.
 /// `source` is the program source, already read by `run_bytes`.
 fn run_complete(
-    digest: &ByteDigest,
     intake: &mut Intake<'_>,
     request: &wire::Request,
     source: FormalSource,
@@ -1010,7 +1004,7 @@ fn run_complete(
         }
         other => RunCause::SpineRun(Box::new(other)),
     })?;
-    output::spine_run_result(*digest, package_id, &source, &call.function, outcome)
+    output::spine_run_result(package_id, &source, &call.function, outcome)
 }
 
 /// The call's accounting limits (FR-100): each named counter uses the

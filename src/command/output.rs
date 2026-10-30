@@ -8,7 +8,7 @@ mod types;
 use super::{LimitKind, RunCause, RunError, RunResult};
 use crate::formal_source::FormalSource;
 use qsl_foundation::source::SourceReadCause;
-use qsl_foundation::{ByteDigest, Diagnostic};
+use qsl_foundation::Diagnostic;
 use quire_contract_model as ir;
 use serde_json::Value;
 
@@ -390,7 +390,6 @@ fn spine_locus(locus: qsl_replay::spine::CallLocus) -> types::SpineLocus {
 /// FR-100: render `spine-run-result/1`, the outcome mapping's stdout
 /// document and FR-301 exit status, from `qsl_replay::spine::run`'s result.
 pub(super) fn spine_run_result(
-    digest: ByteDigest,
     package_id: qsl_semantics::library::PackageId,
     source: &FormalSource,
     function: &str,
@@ -442,7 +441,6 @@ pub(super) fn spine_run_result(
     };
     let document = types::SpineRunReport {
         format: types::Format::SpineRunResult,
-        request_digest: digest.to_string(),
         package_id: package_id.hex(),
         source: types::RunSource {
             identity: source.source().identity(),
@@ -495,10 +493,8 @@ mod tests {
     /// tests cover that distinction.
     fn assert_undefined_renders(reason: &'static str) {
         let source = formal_source();
-        let digest = ByteDigest::of(b"request");
         let package_id = PackageId::of_preimage(b"package");
         let result = spine_run_result(
-            digest,
             package_id,
             &source,
             "seven",
@@ -510,7 +506,6 @@ mod tests {
             result.value.as_value(),
             &serde_json::json!({
                 "format": "spine-run-result/1",
-                "request_digest": digest.to_string(),
                 "package_id": package_id.hex(),
                 "source": {
                     "authority": "agent-ix",
@@ -568,7 +563,6 @@ mod tests {
 
     fn render(outcome: CallOutcome) -> RunResult {
         spine_run_result(
-            ByteDigest::of(b"request"),
             PackageId::of_preimage(b"package"),
             &formal_source(),
             "seven",

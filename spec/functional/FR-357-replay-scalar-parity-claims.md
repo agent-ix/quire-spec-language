@@ -90,7 +90,7 @@ request the default refuses (TC-904).
   identity, the scalar node and its occurrence key, the obligation kind, the
   operator, the operands with their identities and ranges, the result range,
   the limits and the native outcome. The function identity
-  is the obligation identity, the package identity as supplied, the `function`
+  is the obligation identity, the `function`
   replay target as the request's `function` member sent it (absent when the
   request carries no `function` member), the
   occurrence key as the request sent it (absent when it carries none), the
@@ -140,7 +140,7 @@ request the default refuses (TC-904).
   (`invalid_runtime_input`/`unknown-member`), after the replay-target check
   and before the recompile, as FR-484 states: a value-parity claim has no
   proving run, and the clause-profile definitions bind through
-  `package_id`.
+  the request's package.
 - The function entry SHALL refuse a function declared `Boolean` with
   `ReplayRefusal::NotAValueFunction`, before any call.
 - The function entry SHALL then check the request's occurrence key against
