@@ -27,17 +27,15 @@ fn read(text: &str) -> ParsedUnit {
     .expect("valid native syntax before testing linkage")
 }
 
-fn document(model: &NativeModel, digest: &str, clauses: &str) -> String {
+fn document(model: &NativeModel, clauses: &str) -> String {
     format!(
-        "language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = {} version \"{}\" digest {};\n{clauses}\n",
+        "language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = {};\n{clauses}\n",
         serde_json::to_string(model.environment().owner().package().as_str()).unwrap(),
-        model.environment().owner().revision().get(),
-        serde_json::to_string(digest).unwrap(),
     )
 }
 
 fn unit(model: &NativeModel, clauses: &str) -> ParsedUnit {
-    read(&document(model, &model.digest().to_string(), clauses))
+    read(&document(model, clauses))
 }
 
 fn invariant(expression: &str) -> String {
@@ -74,7 +72,7 @@ fn authored_model(edit: impl FnOnce(&mut serde_json::Value)) -> NativeModel {
 fn tc_044_native_reference_fields_and_operations_keep_declared_targets() {
     let models = [parts().model()];
     let clauses = "invariant Parent on M::Node at current { let p = self.parent in present(p) implies deref(value(p)).n <= self.n and reaches(self, other, parent) }\npre Before on M::Node::step { self.n >= 0 }\npost After on M::Node::step { result and self.n = pre(self.n) }";
-    let text = document(&models[0], &models[0].digest().to_string(), clauses);
+    let text = document(&models[0], clauses);
     let linked = link_native(read(&text), &models, LinkLimits::default()).unwrap();
     assert_eq!(linked.binding_profile(), "native-state-model/1");
     assert_eq!(linked.unit().source().text(), text);
@@ -213,24 +211,14 @@ fn tc_044_unmapped_native_paths_refuse_and_legacy_profile_is_preserved() {
         );
     }
     let environments = [models[0].environment().clone()];
-    let canonical = environments[0]
-        .canonical_declaration(ir::CanonicalProfile::V1)
-        .unwrap();
-    let digest = ByteDigest::of(canonical.bytes().as_slice());
     let legacy = link(
-        read(&document(
-            &models[0],
-            &digest.to_string(),
-            &invariant("self.n"),
-        )),
+        read(&document(&models[0], &invariant("self.n"))),
         &environments,
         LinkLimits::default(),
     )
     .unwrap();
     assert_eq!(legacy.binding_profile(), "native-formal-environment/1");
     assert!(legacy.models()[0].native_model().is_none());
-    assert_eq!(legacy.models()[0].digest(), digest);
-    assert_ne!(digest, models[0].digest());
     for (clause, code) in [
         (invariant("deref(self.peer).n"), Code::InvalidModelBinding),
         (
@@ -244,7 +232,7 @@ fn tc_044_unmapped_native_paths_refuse_and_legacy_profile_is_preserved() {
     ] {
         assert_eq!(
             link(
-                read(&document(&models[0], &digest.to_string(), &clause)),
+                read(&document(&models[0], &clause)),
                 &environments,
                 LinkLimits::default()
             )
@@ -253,67 +241,6 @@ fn tc_044_unmapped_native_paths_refuse_and_legacy_profile_is_preserved() {
             .code,
             code,
             "{clause}"
-        );
-    }
-}
-
-#[test]
-#[trace("TC-042", "FR-015-AC-3")]
-fn tc_042_native_selection_requires_its_own_exact_artifact_and_revision() {
-    let models = [parts().model()];
-    let canonical = models[0]
-        .environment()
-        .canonical_declaration(ir::CanonicalProfile::V1)
-        .unwrap();
-    let mut foreign = parts();
-    foreign.roles.objects[0].universe = symbol("otherUniverse");
-    for digest in [
-        ByteDigest::of(canonical.bytes().as_slice()),
-        foreign.model().digest(),
-        ByteDigest::of(b"foreign"),
-    ] {
-        let error = link_native(
-            read(&document(
-                &models[0],
-                &digest.to_string(),
-                &invariant("true"),
-            )),
-            &models,
-            LinkLimits::default(),
-        )
-        .unwrap_err();
-        assert_eq!(error.diagnostic.code, Code::StaleDependency);
-    }
-    for revision in ["01", "0", "2"] {
-        let text = document(
-            &models[0],
-            &models[0].digest().to_string(),
-            &invariant("true"),
-        )
-        .replace("version \"1\"", &format!("version \"{revision}\""));
-        assert_eq!(
-            link_native(read(&text), &models, LinkLimits::default())
-                .unwrap_err()
-                .diagnostic
-                .code,
-            Code::StaleDependency
-        );
-    }
-    let semantic_digest = canonical.digest().to_string();
-    for (digest, expected) in [
-        (semantic_digest.clone(), Code::InvalidModelBinding),
-        (format!("sha256:{semantic_digest}"), Code::StaleDependency),
-    ] {
-        assert_eq!(
-            link_native(
-                read(&document(&models[0], &digest, &invariant("true"))),
-                &models,
-                LinkLimits::default()
-            )
-            .unwrap_err()
-            .diagnostic
-            .code,
-            expected
         );
     }
 }
@@ -546,17 +473,10 @@ fn tc_045_native_link_hard_inventory_syntax_and_depth_limits_cannot_be_raised() 
     for count in [64, 65] {
         let imports: String = (1..count)
             .map(|index| {
-                format!(
-                    "model Alias{index} = \"example/rule-tests\" version \"1\" digest \"{}\";\n",
-                    model.digest()
-                )
+                format!("model Alias{index} = \"example/rule-tests\";\n")
             })
             .collect();
-        let text = document(
-            &model,
-            &model.digest().to_string(),
-            &(imports + &invariant("true")),
-        );
+        let text = document(&model, &(imports + &invariant("true")));
         let result = link_native(read(&text), &models, permissive);
         if count == 64 {
             assert_eq!(result.unwrap().models().len(), 64);
