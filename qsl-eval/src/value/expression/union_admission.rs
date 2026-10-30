@@ -12,10 +12,9 @@ use std::cmp::Ordering;
 
 use super::*;
 use ix_trace_rs::trace;
-use qsl_semantics::check::mint_union_member_key;
 use qsl_semantics::check::union_fixture as fixture;
 use quire_exact::{
-    compare_keys, Identifier, Integer, ObjectId, UnionMember, UnionValue, UniverseId,
+    compare_keys, Integer, ObjectId, UnionMember, UnionValue,
 };
 
 /// The model object type `T` that `Holder` references; the kernel
@@ -61,11 +60,7 @@ fn refused_as_wrong_kind(result: Result<(), CallFailure>, case: &str) {
 /// declaration does not list.
 fn undeclared_member(union: &str, name: &str, payload: Vec<Value>) -> Value {
     UnionValue::from_admitted(
-        UnionMember::from_admitted(
-            fixture::settled(union),
-            mint_union_member_key(fixture::settled(union), name),
-            Identifier::new(name).expect("an identifier"),
-        ),
+        UnionMember::from_admitted(fixture::settled(union), name).expect("a member name"),
         payload,
     )
 }

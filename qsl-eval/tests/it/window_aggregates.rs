@@ -23,13 +23,12 @@ use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_exact::{
     Charge, ChargePoint, ComparisonOperator, EffectiveId, FieldValue, Integer, IntegerInterval,
     LimitKind, Meter, ObjectId, ObjectReference, Presence, Rational, RationalDomain, ScalarLimits,
-    Undefined, UniverseId, Value, ValueType,
+    Undefined, Value, ValueType,
 };
 use quire_semantic_value::catalog::{Category, InternalFault};
 use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 use quire_semantic_value::declaration::{FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment};
 use quire_semantic_value::object_closure::ObjectClosure;
-use sha2::{Digest, Sha256};
 
 const UNLIMITED: u64 = u64::MAX;
 
@@ -779,7 +778,7 @@ impl Observed {
     fn new(xs: &[i64]) -> Self {
         let effective = crate::support::ids::effective_id(b"M::E");
         let declaration = ObjectTypeDeclaration::new(
-            effective,
+            effective.clone(),
             "M::E",
             vec![
                 FieldDeclaration::new("x", ValueType::Integer, Presence::Required),
@@ -814,7 +813,7 @@ impl Observed {
             .expect("the package checks");
         let over = ObjectReference::new(
             crate::support::ids::universe_id([0x42]),
-            effective,
+            effective.clone(),
             ObjectId::new("e1").expect("an object id"),
         );
         let environments = xs
@@ -842,7 +841,7 @@ impl Observed {
 
     /// The checked expression over the parameter `e`.
     fn check(&self, expression: &Expression, expected: Option<&ValueType>) -> CheckedExpression {
-        let parameter = ValueType::Reference(self.object_type);
+        let parameter = ValueType::Reference(self.object_type.clone());
         self.package
             .graph()
             .check_expression(

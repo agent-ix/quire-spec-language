@@ -6,6 +6,9 @@
 
 pub(crate) mod support;
 
+/// The package name test fixtures assemble under.
+const TEST_PACKAGE_NAME: &str = "qsl-eval-integration-tests";
+
 #[path = "../../../qsl-semantics/tests/support/tc235_k2.rs"]
 #[allow(dead_code)]
 mod tc235_k2;

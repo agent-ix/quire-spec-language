@@ -802,7 +802,7 @@ mod tests {
         let outer = crate::test_ids::node_key([3]);
         let declarations = [
             CompositeDeclaration::new(
-                inner,
+                inner.clone(),
                 "Inner",
                 CompositeShape::Record(vec![
                     FieldDeclaration::new("e", ValueType::Boolean, Presence::Required),
@@ -810,10 +810,10 @@ mod tests {
                 ]),
             ),
             CompositeDeclaration::new(
-                outer,
+                outer.clone(),
                 "Outer",
                 CompositeShape::Record(vec![
-                    FieldDeclaration::new("inner", ValueType::Composite(inner), Presence::Required),
+                    FieldDeclaration::new("inner", ValueType::Composite(inner.clone()), Presence::Required),
                     FieldDeclaration::new("flag", ValueType::Boolean, Presence::Required),
                 ]),
             ),
@@ -847,7 +847,7 @@ mod tests {
             .expect("a finite domain")
         };
         assert_eq!(values(inner, &mut charged).len(), 6);
-        assert_eq!(values(outer, &mut charged).len(), 12);
+        assert_eq!(values(outer.clone(), &mut charged).len(), 12);
         assert_eq!(charged, 18);
         let all = values(outer, &mut charged);
         let distinct: std::collections::BTreeSet<String> = all
@@ -867,21 +867,17 @@ mod tests {
     /// written as FR-120's union form.
     #[test]
     fn a_union_attempt_type_enumerates_every_member() {
-        use quire_exact::{Identifier, UnionMember};
+        use quire_exact::UnionMember;
         use quire_semantic_value::declaration::UnionMemberDeclaration;
         let union = crate::test_ids::node_key([5]);
-        let member = |name: &str, key: u8, positions: Vec<ValueType>| {
+        let member = |name: &str, _key: u8, positions: Vec<ValueType>| {
             UnionMemberDeclaration::from_verified(
-                UnionMember::from_admitted(
-                    union,
-                    crate::test_ids::node_key([key]),
-                    Identifier::new(name).expect("an identifier"),
-                ),
+                UnionMember::from_admitted(union.clone(), name).expect("a member name"),
                 positions,
             )
         };
         let declaration = CompositeDeclaration::new(
-            union,
+            union.clone(),
             "Choice",
             CompositeShape::Union(vec![
                 member("Flag", 6, vec![ValueType::Boolean]),
@@ -890,7 +886,7 @@ mod tests {
             ]),
         );
         let types = TypeEnvironment::new([declaration], []).expect("the declaration admits");
-        assert!(enumerable_in(&ValueType::Composite(union), &types));
+        assert!(enumerable_in(&ValueType::Composite(union.clone()), &types));
         let values = composite_values::<()>(
             &ValueType::Composite(union),
             &[],
@@ -909,8 +905,9 @@ mod tests {
         assert_eq!(
             String::from_utf8(written).expect("UTF-8"),
             format!(
-                r#"{{"components":[{{"type":"boolean","value":true}}],"member":"Flag","name":"{}","type":"union"}}"#,
-                "05".repeat(32)
+                r#"{{"components":[{{"type":"boolean","value":true}}],"member":"Flag","name":{},"type":"union"}}"#,
+                qsl_foundation::node_wire::node_key_to_json(&crate::test_ids::node_key([5]))
+                    .expect("a node key encodes")
             )
         );
     }
@@ -921,19 +918,15 @@ mod tests {
     #[trace("TC-1270")]
     #[test]
     fn a_variant_union_orders_its_cases_by_name() {
-        use quire_exact::{Identifier, UnionMember};
+        use quire_exact::UnionMember;
         use quire_semantic_value::declaration::UnionMemberDeclaration;
         let union = crate::test_ids::node_key([12]);
-        let case = |byte: u8, name: &str| {
-            UnionMember::from_admitted(
-                union,
-                crate::test_ids::node_key([byte]),
-                Identifier::new(name).expect("an identifier"),
-            )
+        let case = |_byte: u8, name: &str| {
+            UnionMember::from_admitted(union.clone(), name).expect("a member name")
         };
         let (zed, alpha) = (case(13, "Zed"), case(14, "Alpha"));
         let declaration = CompositeDeclaration::new(
-            union,
+            union.clone(),
             "Ordered",
             CompositeShape::Union(vec![
                 UnionMemberDeclaration::from_verified(zed.clone(), vec![]),
@@ -950,7 +943,7 @@ mod tests {
         .expect("a finite domain");
         let names: Vec<String> = (0..domain.len())
             .map(|index| match domain.nth(index) {
-                Some(Value::Union(value)) => value.member().identifier().as_str().to_owned(),
+                Some(Value::Union(value)) => value.member().identifier().to_owned(),
                 other => panic!("a union value: {other:?}"),
             })
             .collect();
@@ -962,21 +955,13 @@ mod tests {
     #[trace("TC-1270", "FR-120-AC-25")]
     #[test]
     fn a_variant_union_adds_nullary_and_payload_case_domains() {
-        use quire_exact::{Identifier, UnionMember};
+        use quire_exact::UnionMember;
         use quire_semantic_value::declaration::UnionMemberDeclaration;
         let union = crate::test_ids::node_key([9]);
-        let empty = UnionMember::from_admitted(
-            union,
-            crate::test_ids::node_key([10]),
-            Identifier::new("Empty").expect("an identifier"),
-        );
-        let enabled = UnionMember::from_admitted(
-            union,
-            crate::test_ids::node_key([11]),
-            Identifier::new("Enabled").expect("an identifier"),
-        );
+        let empty = UnionMember::from_admitted(union.clone(), "Empty").expect("a member name");
+        let enabled = UnionMember::from_admitted(union.clone(), "Enabled").expect("a member name");
         let declaration = CompositeDeclaration::new(
-            union,
+            union.clone(),
             "Choice",
             CompositeShape::Union(vec![
                 UnionMemberDeclaration::from_verified(empty.clone(), vec![]),
@@ -984,7 +969,7 @@ mod tests {
             ]),
         );
         let types = TypeEnvironment::new([declaration], []).expect("the declaration admits");
-        assert!(enumerable_in(&ValueType::Composite(union), &types));
+        assert!(enumerable_in(&ValueType::Composite(union.clone()), &types));
         let values = composite_values::<()>(
             &ValueType::Composite(union),
             &[],
@@ -1019,12 +1004,12 @@ mod tests {
     fn a_tuple_value_domain_is_the_ordered_product_of_its_positions() {
         let tuple = crate::test_ids::node_key([12]);
         let declaration = CompositeDeclaration::new(
-            tuple,
+            tuple.clone(),
             "Pair",
             CompositeShape::Tuple(vec![ValueType::Boolean, int(0, 1)]),
         );
         let types = TypeEnvironment::new([declaration], []).expect("the declaration admits");
-        assert!(enumerable_in(&ValueType::Composite(tuple), &types));
+        assert!(enumerable_in(&ValueType::Composite(tuple.clone()), &types));
         let values = composite_values::<()>(
             &ValueType::Composite(tuple),
             &[],
@@ -1066,7 +1051,7 @@ mod tests {
     fn a_record_value_is_written_in_fr_120_s_record_form() {
         let (types, inner, _) = nested();
         let first = composite_values::<()>(
-            &ValueType::Composite(inner),
+            &ValueType::Composite(inner.clone()),
             &[],
             &types,
             &RecordOrders::new(),
@@ -1080,11 +1065,13 @@ mod tests {
             quire_canonical::Limits::new(u64::MAX),
         )
         .expect("encodes");
-        let name = "02".repeat(32);
+        let name = qsl_foundation::node_wire::node_key_to_json(&inner)
+            .expect("a node key encodes")
+            .to_string();
         assert_eq!(
             String::from_utf8(written).expect("UTF-8"),
             format!(
-                r#"{{"fields":[{{"name":"e","value":{{"type":"boolean","value":false}}}},{{"name":"o","value":null}}],"name":"{name}","type":"record"}}"#
+                r#"{{"fields":[{{"name":"e","value":{{"type":"boolean","value":false}}}},{{"name":"o","value":null}}],"name":{name},"type":"record"}}"#
             )
         );
     }

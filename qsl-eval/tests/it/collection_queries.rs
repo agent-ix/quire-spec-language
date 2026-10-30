@@ -27,7 +27,6 @@ use quire_semantic_value::declaration::{
 };
 use quire_semantic_value::location::Location;
 use quire_semantic_value::object_closure::ObjectClosure;
-use sha2::{Digest, Sha256};
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
     integer_bits: u64::MAX,

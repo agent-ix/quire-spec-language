@@ -35,7 +35,6 @@ use quire_semantic_value::enumeration::EnumMemberIndex;
 use quire_semantic_value::object_closure::{
     ObjectClosure, ObjectClosureCause, ObjectClosureRefusal,
 };
-use serde_json::json;
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
     integer_bits: u64::MAX,
@@ -731,7 +730,7 @@ fn unknown_supertype_refuses_at_admission() {
         [],
         [
             ObjectTypeDeclaration::new(object_type("M::Sub"), "Sub", vec![])
-                .with_supertypes(vec![unknown]),
+                .with_supertypes(vec![unknown.clone()]),
         ],
     )
     .unwrap_err()

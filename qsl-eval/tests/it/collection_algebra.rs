@@ -23,7 +23,6 @@ use quire_semantic_value::declaration::{
     ObjectTypeDeclaration, TypeEnvironment,
 };
 use quire_semantic_value::enumeration::EnumMemberIndex;
-use sha2::{Digest, Sha256};
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
     integer_bits: u64::MAX,
@@ -604,7 +603,7 @@ mod checked {
     use quire_semantic_value::checking::{CheckMode, CheckingLimits};
     use quire_semantic_value::object_closure::ObjectClosure;
     use quire_semantic_value::semantic_node::SemanticGraphCause;
-    use serde_json::json;
+    
 
     fn name(spelling: &str) -> Expression {
         Expression::name(spelling.to_owned())

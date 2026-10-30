@@ -31,7 +31,7 @@ use qsl_semantics::value::DefinitionRole;
 use quire_exact::{admit_text, TextPayload, TextProfile, TextType};
 use quire_exact::{
     CardinalityBound, CollectionKind, CollectionType, EffectiveId, FieldValue, Integer, Meter,
-    ObjectId, ObjectReference, OptionValue, Outcome, Presence, ScalarLimits, UniverseId, Value,
+    ObjectId, ObjectReference, OptionValue, Outcome, Presence, ScalarLimits, Value,
     ValueType,
 };
 use quire_semantic_value::call::WrongSnapshotCause;
@@ -40,7 +40,6 @@ use quire_semantic_value::declaration::{
     CompositeDeclaration, CompositeShape, FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment,
 };
 use quire_semantic_value::object_closure::ObjectClosure;
-use sha2::{Digest, Sha256};
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
     integer_bits: u64::MAX,
@@ -406,7 +405,7 @@ pub(crate) fn lifecycle_selection_with(
         kind: checked.kind(),
         context: checked.context(),
         operation: checked.operation().map(|operation| OperationFacts {
-            declaring: operation.declaring,
+            declaring: operation.declaring.clone(),
             declaration: operation.declaration.clone(),
         }),
         operations: package.graph().scope().operations().clone(),
@@ -637,11 +636,11 @@ fn tc235_m02_record_values_compare_every_field_at_runtime() {
             .record(money_declaration.key(), fields)
             .expect("Money value constructs")
     };
-    let order_type = view.type_identities()[&declaration("Order")];
+    let order_type = view.type_identities()[&declaration("Order")].clone();
     let universe = view
         .object_universe_of(&declaration("Order"))
         .expect("Order has an object universe")
-        .identity();
+        .identity().expect("the universe has an identity");
     let o1 = ObjectReference::new(universe, order_type, ObjectId::new("o1").unwrap());
 
     let truth_for = |quoted: Value| {
@@ -829,7 +828,7 @@ fn unresolved_object_reference_refuses_at_input_admission() {
     let types = TypeEnvironment::new(
         [],
         [ObjectTypeDeclaration::new(
-            event,
+            event.clone(),
             "OrderPlaced",
             vec![field("occurred_at", ValueType::Boolean)],
         )],
@@ -849,7 +848,7 @@ fn unresolved_object_reference_refuses_at_input_admission() {
     );
     let reference = ObjectReference::new(
         crate::support::ids::universe_id([4]),
-        event,
+        event.clone(),
         ObjectId::new("event-absent").unwrap(),
     );
     let checked = package
@@ -1261,7 +1260,7 @@ fn lifecycle_receiver_and_parameter_boolean_components() {
     let types = TypeEnvironment::new(
         [flags],
         [ObjectTypeDeclaration::new(
-            lifecycle,
+            lifecycle.clone(),
             "OrderLifecycle",
             vec![
                 field("placed", ValueType::Boolean),
@@ -1284,7 +1283,7 @@ fn lifecycle_receiver_and_parameter_boolean_components() {
     );
     let receiver = ObjectReference::new(
         crate::support::ids::universe_id([2]),
-        lifecycle,
+        lifecycle.clone(),
         ObjectId::new("i1").unwrap(),
     );
     let objects = ObjectEnvironment::new(
@@ -1417,18 +1416,18 @@ fn process_observation(
     let fulfilment = view.type_identities()[&quire_checked::key::DeclarationKey {
         package: crate::tc235_k2::PACKAGE.to_owned(),
         node: crate::tc235_k2::id("Fulfilment"),
-    }];
+    }].clone();
     let universe = view
         .object_universe_of(&quire_checked::key::DeclarationKey {
             package: crate::tc235_k2::PACKAGE.to_owned(),
             node: crate::tc235_k2::id("Fulfilment"),
         })
         .expect("Fulfilment has an object universe")
-        .identity();
+        .identity().expect("the universe has an identity");
     let references: Vec<_> = runs
         .iter()
         .map(|(object, _)| {
-            ObjectReference::new(universe, fulfilment, ObjectId::new(*object).unwrap())
+            ObjectReference::new(universe.clone(), fulfilment.clone(), ObjectId::new(*object).unwrap())
         })
         .collect();
     let objects = references
@@ -1951,7 +1950,7 @@ fn lifecycle_pre_call(
         kind: checked.kind(),
         context: checked.context(),
         operation: checked.operation().map(|operation| OperationFacts {
-            declaring: operation.declaring,
+            declaring: operation.declaring.clone(),
             declaration: operation.declaration.clone(),
         }),
         operations: Default::default(),

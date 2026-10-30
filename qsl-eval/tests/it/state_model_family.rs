@@ -127,7 +127,7 @@ fn view_over(wobble: bool) -> EffectiveView {
 }
 
 fn object_type(view: &EffectiveView) -> EffectiveId {
-    view.type_identities()[&key(A)]
+    view.type_identities()[&key(A)].clone()
 }
 
 /// Compile real source into declarations against an existing admitted model
@@ -174,7 +174,7 @@ fn declarations_over(
     clauses.member.insert(key(READY), "ready".to_owned());
     clauses.parameters.insert(
         key(READY),
-        vec![("self".to_owned(), ValueType::Reference(a))],
+        vec![("self".to_owned(), ValueType::Reference(a.clone()))],
     );
     clauses.result.insert(key(READY), ValueType::Boolean);
     clauses.own_body.insert(
@@ -241,7 +241,7 @@ fn declarations_over(
             for index in &mut candidate.precondition_clauses {
                 *index += offset;
             }
-            DispatchTable::new(vec![(a, candidate)], table.candidate_count())
+            DispatchTable::new(vec![(a.clone(), candidate)], table.candidate_count())
         })
         .collect();
     (declarations, view, source)
@@ -551,8 +551,8 @@ fn objects(
     view: &EffectiveView,
 ) -> (ObjectEnvironment, ObjectReference, ObjectReference) {
     let a = object_type(view);
-    let universe = view.object_universe_of(&key(A)).unwrap().identity();
-    let present = ObjectReference::new(universe, a, ObjectId::new("present").unwrap());
+    let universe = view.object_universe_of(&key(A)).unwrap().identity().expect("the universe has an identity");
+    let present = ObjectReference::new(universe.clone(), a.clone(), ObjectId::new("present").unwrap());
     let absent = ObjectReference::new(universe, a, ObjectId::new("absent").unwrap());
     let world = [present.clone(), absent.clone()]
         .into_iter()
@@ -730,7 +730,7 @@ fn observations(graph: &CheckedGraph, view: &EffectiveView) -> AdmittedObservati
         kind: clause.kind(),
         context: clause.context(),
         operation: clause.operation().map(|operation| OperationFacts {
-            declaring: operation.declaring,
+            declaring: operation.declaring.clone(),
             declaration: operation.declaration.clone(),
         }),
         operations: Default::default(),
@@ -905,7 +905,7 @@ fn parameter_type_node(graph: &CheckedGraph) -> quire_exact::NodeKey {
         .and_then(|function| function.function_parameters())
         .expect("F's function node");
     semantic
-        .node(parameters[0])
+        .node(parameters[0].clone())
         .and_then(|parameter| parameter.semantic_type())
         .expect("a typed parameter")
 }

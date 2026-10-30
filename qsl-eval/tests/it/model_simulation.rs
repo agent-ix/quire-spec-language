@@ -20,7 +20,6 @@ use qsl_package::CheckedPackage;
 use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::observation::{
     declared_type_universe_for, AdmissionFailure, AnchorKind, DocumentRef, ObservationLimits,
     SelectedAnchor,
@@ -522,10 +521,10 @@ fn stats(exploration: &Exploration<ModelFinding>) -> (usize, usize, usize) {
 fn expected_transition(operation: &str, receiver: &ObjectReference, arguments: &[&str]) -> String {
     let receiver = {
         let enc = format!(
-            r#"{{"identity":"{}","object_type":"{}","type":"reference","universe":"{}"}}"#,
+            r#"{{"identity":"{}","object_type":{},"type":"reference","universe":{}}}"#,
             hex_bytes(receiver.object().as_str().as_bytes()),
-            hex(receiver.object_type().as_bytes()),
-            hex(receiver.universe().as_bytes()),
+            crate::support::ids::effective_json(receiver.object_type()),
+            crate::support::ids::node_json(receiver.universe().root_type()),
         );
         enc
     };
@@ -760,8 +759,8 @@ fn the_state_key_is_the_simulation_state_envelope() {
     // QSpec FR-181: an absent presence-optional field is a plain `null`
     // entry; a present one is its bare encoded value.
     let own = json!({"type": "reference",
-        "universe": hex(reference.universe().as_bytes()),
-        "object_type": hex(reference.object_type().as_bytes()),
+        "universe": crate::support::ids::node_json(reference.universe().root_type()),
+        "object_type": crate::support::ids::effective_json(reference.object_type()),
         "identity": "6331"});
     let record = |label: i64, next: Json| {
         json!({"type": "record", "name": counter_text(), "fields": [
@@ -776,8 +775,8 @@ fn the_state_key_is_the_simulation_state_envelope() {
                 "key": {"type": "text", "value": population_text()},
                 "value": {"type": "map", "entries": [{
                     "key": {"type": "reference",
-                        "universe": hex(reference.universe().as_bytes()),
-                        "object_type": hex(reference.object_type().as_bytes()),
+                        "universe": crate::support::ids::node_json(reference.universe().root_type()),
+                        "object_type": crate::support::ids::effective_json(reference.object_type()),
                         "identity": "6331"},
                     "value": record(label, next)}]}}]},
             "control": empty, "queues": empty, "roles": empty, "observations": empty,
@@ -1066,117 +1065,6 @@ fn root_key(key: &DeclarationKey) -> qsl_foundation::bound::DomainKey {
     qsl_foundation::bound::DomainKey::Node {
         node: qsl_semantics::model::key::population_node_key(key)
             .expect("a population key is well formed"),
-        path: Vec::new(),
-    }
-}
-
-/// FR-120-AC-7 (TC-472): the checks `ModelSystem::new` makes, in order.
-#[trace("TC-472", "FR-120-AC-7")]
-#[test]
-fn a_system_refuses_what_is_not_an_initialization_or_not_in_its_universe() {
-    let mut world = world(vec![increment()], "");
-    let pre = world.snapshot(
-        "pre",
-        "pre",
-        json!({"kind": "initialization", "name": "start"}),
-        &[Obj("c1", 0, 0, None)],
-    );
-    let validate = world.snapshot(
-        "validate",
-        "current",
-        json!({"kind": "handler", "name": "validate"}),
-        &[Obj("c1", 0, 0, None)],
-    );
-    let other = world.snapshot(
-        "other",
-        "current",
-        json!({"kind": "other", "name": "x"}),
-        &[Obj("c1", 0, 0, None)],
-    );
-    let c3 = world.start("c3", &[Obj("c3", 0, 0, None)]);
-    let ok = world.start("ok", &[Obj("c1", 0, 0, None)]);
-    let new = |world: &World, initial: DocumentRef, universes| {
-        ModelSystem::new(request(world, vec![initial], universes, UNLIMITED, 1000)).err()
-    };
-    assert_eq!(
-        refusal_of(new(&world, pre, universe(&["c1", "c2"]))),
-        (Code::WrongSnapshot, "wrong-observation")
-    );
-    assert_eq!(
-        refusal_of(new(&world, validate, universe(&["c1", "c2"]))),
-        (Code::WrongSnapshot, "wrong-anchor")
-    );
-    assert_eq!(
-        refusal_of(new(&world, other, universe(&["c1", "c2"]))),
-        (Code::InvalidRuntimeInput, "wrong-value-kind")
-    );
-    assert_eq!(
-        refusal_of(new(&world, c3, universe(&["c1", "c2"]))),
-        (Code::InvalidRuntimeInput, "invalid-value")
-    );
-    assert_eq!(
-        refusal_of(new(&world, ok.clone(), universe(&["c1", "c1"]))),
-        (Code::InvalidRuntimeInput, "conflicting-identity")
-    );
-    let unknown = vec![PopulationUniverse {
-        population: key("elsewhere"),
-        keys: vec!["x".to_owned()],
-    }];
-    assert_eq!(
-        refusal_of(new(&world, ok, unknown)),
-        (Code::InvalidRuntimeInput, "wrong-role-mapping")
-    );
-}
-
-/// FR-120-AC-7 (TC-472): a universe population the snapshot omits is
-/// incomplete, and a population without a universe is a requires-bound root.
-#[trace("TC-472", "FR-120-AC-7")]
-#[test]
-fn an_unbounded_population_requires_a_bound() {
-    let mut world = world(vec![increment()], "");
-    let s0 = world.start("s0", &[Obj("c1", 0, 0, None)]);
-    let unbounded = ModelSystem::new(request(
-        &world,
-        vec![s0.clone()],
-        Vec::new(),
-        UNLIMITED,
-        1000,
-    ))
-    .expect("a system with no universe admits");
-    let Err(NotSimulated::RequiresBound(bound)) =
-        explore_model(&unbounded, 10_000, Limits::default(), || false)
-    else {
-        panic!("a population with no universe is unbounded")
-    };
-    assert!(
-        bound
-            .domains
-            .iter()
-            .any(|(key, _)| *key == root_key(&counters())),
-        "the population root is its structural population node"
-    );
-    let sampler = sampler();
-    assert!(matches!(
-        sample_model(&unbounded, 10_000, &sampler, 424_242, 0, 4),
-        Err(ModelSampleError::NotSimulated(NotSimulated::RequiresBound(
-            _
-        )))
-    ));
-}
-
-fn declaration_naming(key: &DeclarationKey) -> Json {
-    json!({"node": key.node, "package": key.package})
-}
-
-/// The requires-bound domain key FR-120 "Bounds" gives the root named by
-/// `naming`: the SHA-256 of its JCS bytes.
-fn root_key(naming: &Json) -> qsl_foundation::bound::DomainKey {
-    let read = quire_canonical::read(naming.to_string().as_bytes(), u64::MAX).expect("reads");
-    let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(1 << 20))
-        .expect("hashes")
-        .as_bytes();
-    qsl_foundation::bound::DomainKey::Node {
-        node: qsl_foundation::digest::WireNodeId::from_digest(digest),
         path: Vec::new(),
     }
 }

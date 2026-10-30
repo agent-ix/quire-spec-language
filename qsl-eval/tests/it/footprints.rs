@@ -19,7 +19,6 @@ use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::clause_observation::Observation;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::observation::{
     declared_type_universe_for, DocumentRef, ObservationLimits,
 };
@@ -400,7 +399,7 @@ impl Subject {
         } = graph
             .scope()
             .operations()
-            .resolve(graph.scope().types(), identity, operation)
+            .resolve(graph.scope().types(), identity.clone(), operation)
         else {
             panic!("{object_type} declares no operation {operation}");
         };
@@ -409,7 +408,7 @@ impl Subject {
             .iter()
             .filter_map(|(name, value_type)| {
                 let declared = match value_type {
-                    quire_exact::ValueType::Reference(declared) => *declared,
+                    quire_exact::ValueType::Reference(declared) => declared.clone(),
                     _ => return None,
                 };
                 let actual = bound
@@ -449,15 +448,15 @@ const UNLIMITED: ScalarLimits = ScalarLimits {
 /// reference argument.
 fn reference_text(reference: &ObjectReference) -> String {
     format!(
-        r#"{{"identity":"{}","object_type":"{}","type":"reference","universe":"{}"}}"#,
+        r#"{{"identity":"{}","object_type":{},"type":"reference","universe":{}}}"#,
         reference
             .object()
             .as_str()
             .bytes()
             .map(|byte| format!("{byte:02x}"))
             .collect::<String>(),
-        hex(reference.object_type().as_bytes()),
-        hex(reference.universe().as_bytes()),
+        crate::support::ids::effective_json(reference.object_type()),
+        crate::support::ids::node_json(reference.universe().root_type()),
     )
 }
 

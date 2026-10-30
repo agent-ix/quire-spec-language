@@ -213,7 +213,7 @@ fn describe(value: &Value) -> (String, Vec<Integer>) {
         panic!("a union value, not {value:?}");
     };
     (
-        union.member().identifier().as_str().to_owned(),
+        union.member().identifier().to_owned(),
         union.payload().iter().map(integer).collect(),
     )
 }

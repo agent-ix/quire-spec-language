@@ -16,7 +16,7 @@
 
 use ix_trace_rs::trace;
 use qsl_eval::automaton::{
-    BoundedTranslation, BuchiPhase, BuchiState, BuchiStates, Configuration, ContextActivation,
+    BuchiPhase, BuchiState, BuchiStates, Configuration, ContextActivation,
     DistanceBucket, HistoryOperand, KeyRefusal, Letter, Obligation, Occurrence, PastMemory,
     PastOperator, Polarity, SafetyState, SafetyStates, SafetyTranslation, StateContext,
     SubjectKind, TranslationRefusal, Window,
@@ -57,11 +57,6 @@ fn clause(body: &str, ordinal: u64) -> SafetyTranslation {
     let context = StateContext::clause(&fixture.clause, occurrence(ordinal), Vec::new());
     SafetyTranslation::reachable_invariant(&fixture.clause, &context)
         .unwrap_or_else(|why| panic!("{body}: {why}"))
-}
-
-fn text(translation: &SafetyTranslation, state: SafetyState) -> String {
-    let key = translation.key(state).expect("the key encodes");
-    String::from_utf8(key.as_bytes().to_vec()).expect("a key is UTF-8")
 }
 
 /// The state is a function of the facts read, not of the order or path
@@ -273,8 +268,6 @@ fn root() -> Obligation {
 }
 
 const FUTURE: &str = "always (holds(c.level = 1) implies eventually[0,3] holds(c.level = 2))";
-const TWO_FUTURES: &str =
-    "eventually[0,3] holds(c.level = 1) and eventually[0,3] holds(c.level = 2)";
 const SHIFTED: &str = "always (holds(c.level = 1) implies eventually[1,3] holds(c.level = 2))";
 
 /// Each member kind a key can carry is admitted back as the facts that
@@ -651,8 +644,6 @@ fn safety_states_refuse_foreign_contexts_and_other_forms() {
 }
 
 const OPEN: &str = "always (holds(c.level = 1) implies always[2,*] holds(c.level = 2))";
-const TWO_SETS: &str =
-    "eventually holds(c.level = 1) and (always holds(c.level = 2) and always holds(c.level = 3))";
 
 /// An `[a,open]` occurrence's shift entry ends at zero, and its unbounded
 /// obligation `[o,s]` takes its place: that state is admitted and written,

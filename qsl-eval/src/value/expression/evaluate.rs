@@ -1339,7 +1339,7 @@ impl<'a, 'm> Machine<'a, 'm> {
         self.frame_guard_provenance
             .last()
             .and_then(|frame| frame.get(slot))
-            .copied()
+            .cloned()
             .ok_or_else(|| invariant("evaluation-local-provenance-unbound"))
     }
 
@@ -2661,7 +2661,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 return components
                     .environments
                     .get(*component)
-                    .copied()
+                    .cloned()
                     .ok_or_else(|| invariant("component-environment-resolved"));
             }
         }
@@ -4174,7 +4174,7 @@ mod tests {
             types: TypeEnvironment::new(
                 [],
                 [ObjectTypeDeclaration::new(
-                    context_type,
+                    context_type.clone(),
                     "Context",
                     vec![FieldDeclaration::new(
                         "items",
@@ -4197,7 +4197,7 @@ mod tests {
         let checked = package
             .graph()
             .check_clause_expression(
-                vec![("self".to_owned(), ValueType::Reference(context_type))],
+                vec![("self".to_owned(), ValueType::Reference(context_type.clone()))],
                 &Expression::binary(qsl_forms::BinaryOperator::Equal, field(), field()),
                 None,
                 qsl_forms::ClauseKind::Postcondition,
@@ -4215,11 +4215,11 @@ mod tests {
         let reference = |universe| {
             ObjectReference::new(
                 crate::test_ids::universe_id([universe]),
-                context_type,
+                context_type.clone(),
                 quire_exact::ObjectId::new("i1").unwrap(),
             )
         };
-        let pre_receiver = reference(1);
+        let pre_receiver = reference(1).clone();
         let receiver = reference(2);
         let pre_items = quire_exact::from_admitted(
             collection_type.clone(),
@@ -4375,7 +4375,7 @@ mod tests {
         let a = view
             .type_identities()
             .get(&DeclarationKey::fixture("model.A"))
-            .copied()
+            .cloned()
             .expect("model.A has a type-level effective declaration");
         let types = quire_semantic_value::declaration::TypeEnvironment::new(
             [],
@@ -4582,7 +4582,7 @@ mod tests {
             NormalizeOutcome::Completed(view) => view
                 .type_identities()
                 .get(&DeclarationKey::fixture("model.A"))
-                .copied()
+                .cloned()
                 .expect("model.A has a type-level effective declaration"),
             other => panic!("expected a completed effective view, got {other:?}"),
         };
@@ -4590,7 +4590,7 @@ mod tests {
             .check_expression(
                 vec![
                     ("p".to_owned(), ValueType::Population(Some(3))),
-                    ("r".to_owned(), ValueType::Reference(a)),
+                    ("r".to_owned(), ValueType::Reference(a.clone())),
                 ],
                 &Expression::lookup(
                     TypeForm::name("M::A", SPAN),
@@ -4676,13 +4676,13 @@ mod tests {
         let a = view
             .type_identities()
             .get(&DeclarationKey::fixture("model.A"))
-            .copied()
+            .cloned()
             .expect("model.A has a type-level effective declaration");
         let types = quire_semantic_value::declaration::TypeEnvironment::new(
             [],
             [
                 quire_semantic_value::declaration::ObjectTypeDeclaration::new(
-                    a,
+                    a.clone(),
                     "M::A",
                     vec![quire_semantic_value::declaration::FieldDeclaration::new(
                         "x",
@@ -4709,7 +4709,7 @@ mod tests {
 
         let expression = graph
             .check_expression(
-                vec![("r".to_owned(), ValueType::Reference(a))],
+                vec![("r".to_owned(), ValueType::Reference(a.clone()))],
                 &Expression::field(
                     Expression::deref(Expression::name("r".to_owned())),
                     "x".to_owned(),
@@ -4788,13 +4788,13 @@ mod tests {
         let a = view
             .type_identities()
             .get(&DeclarationKey::fixture("model.A"))
-            .copied()
+            .cloned()
             .expect("model.A has a type-level effective declaration");
         let types = quire_semantic_value::declaration::TypeEnvironment::new(
             [],
             [
                 quire_semantic_value::declaration::ObjectTypeDeclaration::new(
-                    a,
+                    a.clone(),
                     "M::A",
                     vec![quire_semantic_value::declaration::FieldDeclaration::new(
                         "x",
@@ -4821,7 +4821,7 @@ mod tests {
 
         let expression = graph
             .check_expression(
-                vec![("r".to_owned(), ValueType::Reference(a))],
+                vec![("r".to_owned(), ValueType::Reference(a.clone()))],
                 &Expression::field(
                     Expression::deref(Expression::name("r".to_owned())),
                     "x".to_owned(),
@@ -4912,7 +4912,7 @@ mod tests {
             quire_exact::CollectionType::new(CollectionKind::Sequence, ValueType::Integer, None);
         let point = crate::test_ids::node_key([4]);
         let record = CompositeDeclaration::new(
-            point,
+            point.clone(),
             "Holder",
             CompositeShape::Record(vec![DeclaredField::new(
                 "items",

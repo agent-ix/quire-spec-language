@@ -26,7 +26,7 @@ use quire_exact::{
 use quire_exact::{CollectionType, FieldValue, OptionValue, RationalDomain, Value, ValueType};
 use quire_exact::{
     Decimal, DecimalType, IeeeValue, IeeeWidth, IllTypedCause, ObjectId, ObjectReference, Presence,
-    Rational, RoundingMode, UniverseId,
+    Rational, RoundingMode,
 };
 use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 use quire_semantic_value::declaration::{
@@ -36,7 +36,6 @@ use quire_semantic_value::location::{Location, Origin};
 use quire_semantic_value::loss::{LocatedLoss, ValueLoss};
 use quire_semantic_value::object_closure::ObjectClosure;
 
-use sha2::{Digest, Sha256};
 
 /// FR-090: `CheckedPackage::call`/`evaluate` return `Evaluation { outcome:
 /// FamilyOutcome, .. }` (FR-090-OQ-3, ruled option A); every fixture in this

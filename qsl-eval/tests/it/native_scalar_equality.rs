@@ -183,13 +183,13 @@ fn timestamp_equality_is_nanosecond_count_equality() {
 }
 
 fn event(fixture: &Fixture, id: &str, at: &str, label: &str) -> Value {
-    let ValueType::Composite(key) = event_type(fixture) else {
+    let ValueType::Composite(ref key) = event_type(fixture) else {
         panic!("Event is a composite");
     };
     fixture
         .types
         .record(
-            key,
+            key.clone(),
             vec![
                 ("id", FieldValue::Present(uuid(id))),
                 ("moment", FieldValue::Present(timestamp(at))),

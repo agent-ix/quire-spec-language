@@ -1016,7 +1016,7 @@ fn state_limit_mid_successors_places_the_blocked_key_after_the_queue() {
 fn requires_bound_refuses_before_any_transition_system_call() {
     let node = crate::support::ids::node_key([7]);
     let unbounded = ValueType::Integer;
-    let domains = [(node, &unbounded)];
+    let domains = [(node.clone(), &unbounded)];
     let types = empty_types();
 
     // A tight `Limits` first, then a generous one: AC-8's "raising
@@ -1044,7 +1044,7 @@ fn requires_bound_refuses_before_any_transition_system_call() {
         assert_eq!(
             domain_key,
             &qsl_foundation::bound::DomainKey::Node {
-                node,
+                node: node.clone(),
                 path: Vec::new()
             }
         );

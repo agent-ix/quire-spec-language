@@ -1707,7 +1707,7 @@ mod tests {
     use qsl_forms::{Expression, FunctionDeclaration, TypeForm};
     use qsl_semantics::check::{PackageDeclarations, SCALAR_LIMITS_UNLIMITED};
     use quire_eval::{EvalOutcome, FamilyOutcome};
-    use quire_exact::{Integer, NodeKey};
+    use quire_exact::Integer;
     use quire_semantic_value::catalog::Category;
     use quire_semantic_value::checking::CheckingLimits;
     use quire_semantic_value::declaration::EnvironmentFailure;

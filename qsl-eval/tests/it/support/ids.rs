@@ -33,3 +33,18 @@ pub(crate) fn universe_id(seed: impl AsRef<[u8]>) -> UniverseId {
 pub(crate) fn variant_id(seed: impl AsRef<[u8]>) -> VariantId {
     VariantId::new(node_key(seed), "case").expect("a fixture variant case is non-empty")
 }
+
+/// A node identity as its wire JSON.
+pub(crate) fn node_json(key: &NodeKey) -> serde_json::Value {
+    qsl_foundation::node_wire::node_key_to_json(key).expect("a fixture node key encodes")
+}
+
+/// An effective declaration identity as FR-201's recursive record.
+pub(crate) fn effective_json(id: &EffectiveId) -> serde_json::Value {
+    id.owner_chain()
+        .iter()
+        .fold(serde_json::Value::Null, |owner, original| {
+            serde_json::json!({"original": {"node": original.node(), "package": original.package()},
+                "owner_effective_type": owner})
+        })
+}

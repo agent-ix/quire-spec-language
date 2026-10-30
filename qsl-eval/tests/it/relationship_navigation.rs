@@ -31,8 +31,7 @@ use quire_eval::Evaluation;
 use quire_eval::{FamilyOutcome, FamilyResult};
 use quire_exact::{
     from_admitted, BoundViolation, ChargePoint, CollectionKind, CollectionType, EffectiveId,
-    LimitKind, Meter, ObjectId, ObjectReference, OptionValue, Outcome, Refusal, ScalarLimits,
-    UniverseId, Value, ValueType,
+    LimitKind, Meter, ObjectId, ObjectReference, OptionValue, Outcome, Refusal, ScalarLimits, Value, ValueType,
 };
 use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 use quire_semantic_value::object_closure::ObjectClosure;
@@ -352,7 +351,7 @@ impl Orders {
             .package
             .graph()
             .check_expression(
-                vec![("r".to_owned(), ValueType::Reference(receiver.object_type()))],
+                vec![("r".to_owned(), ValueType::Reference(receiver.object_type().clone()))],
                 &Expression::field(Expression::name("r".to_owned()), role),
                 None,
                 CheckMode::Kernel,
@@ -955,7 +954,7 @@ fn the_first_missing_target_in_key_order_decides_between_dangling_and_undecidabl
         );
         let (evaluation, meter) = orders.navigate("holds", &s1, &objects, UNLIMITED);
         let (code, cause, fields) = refusal(evaluation);
-        let first_is_undecidable = first.object_type() == orders.id(undecidable_type);
+        let first_is_undecidable = first.object_type() == &orders.id(undecidable_type);
         let expected = if first_is_undecidable {
             ("incomplete_population", "incomplete-scope")
         } else {

@@ -386,7 +386,7 @@ fn application<'a>(
         })
         .collect();
     assert_eq!(nodes.len(), 1, "one {identity} application");
-    nodes[0]
+    nodes[0].clone()
 }
 
 /// Trace: FR-091-AC-39, TC-394

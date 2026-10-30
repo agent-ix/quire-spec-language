@@ -30,7 +30,7 @@ use quire_eval::Evaluation;
 use quire_eval::{FamilyOutcome, FamilyResult};
 use quire_exact::{
     ChargePoint, EffectiveId, FieldValue, LimitKind, Meter, ObjectId, ObjectReference, Outcome,
-    Presence, ScalarLimits, UniverseId, Value,
+    Presence, ScalarLimits, Value,
 };
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::object_closure::ObjectClosure;

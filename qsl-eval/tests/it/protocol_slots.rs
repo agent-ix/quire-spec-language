@@ -183,9 +183,9 @@ fn evaluates_a_protocol_slot_and_refuses_an_unread_binder_before_charging() {
         .iter()
         .find(|control| control.kind.label() == "check")
         .expect("checked check control");
-    let node = *keys.nodes.get(&check.node).expect("emitted check node");
+    let node = keys.nodes.get(&check.node).expect("emitted check node").clone();
     let slot = ProtocolSlot {
-        node,
+        node: node.clone(),
         member: "condition".to_owned(),
         index: None,
     };
@@ -213,12 +213,12 @@ fn evaluates_a_protocol_slot_and_refuses_an_unread_binder_before_charging() {
         .binders
         .first()
         .expect("the protocol has a declared binder")
-        .node;
+        .node.clone();
     let before = meter.clone();
     let failure = package.evaluate_protocol_slot(
         &slot,
         &ProtocolSupply {
-            binders: vec![(unused, SuppliedValue::Value(Value::Boolean(true)))],
+            binders: vec![(unused.clone(), SuppliedValue::Value(Value::Boolean(true)))],
             observation: None,
         },
         &mut meter,
@@ -230,7 +230,7 @@ fn evaluates_a_protocol_slot_and_refuses_an_unread_binder_before_charging() {
         payload.as_ref(),
         CallAdmissionFailure::Refused(record)
             if record.code == CatalogCode::new("invalid_runtime_input", "unknown-member")
-                && record.locus == CallAdmissionLocus::Binder(unused)
+                && record.locus == CallAdmissionLocus::Binder(unused.clone())
     ));
     assert_eq!(
         meter, before,
@@ -241,8 +241,8 @@ fn evaluates_a_protocol_slot_and_refuses_an_unread_binder_before_charging() {
         &slot,
         &ProtocolSupply {
             binders: vec![
-                (unused, SuppliedValue::Value(Value::Boolean(true))),
-                (unused, SuppliedValue::Value(Value::Boolean(false))),
+                (unused.clone(), SuppliedValue::Value(Value::Boolean(true))),
+                (unused.clone(), SuppliedValue::Value(Value::Boolean(false))),
             ],
             observation: None,
         },
@@ -255,7 +255,7 @@ fn evaluates_a_protocol_slot_and_refuses_an_unread_binder_before_charging() {
         payload.as_ref(),
         CallAdmissionFailure::Refused(record)
             if record.code == CatalogCode::new("invalid_runtime_input", "duplicate-member")
-                && record.locus == CallAdmissionLocus::Binder(unused)
+                && record.locus == CallAdmissionLocus::Binder(unused.clone())
     ));
 
     for (invalid, expected_locus) in [
@@ -334,7 +334,7 @@ fn evaluates_a_protocol_slot_and_refuses_an_unread_binder_before_charging() {
     ));
 
     let activation = ProtocolSlot {
-        node: keys.clause.expect("protocol clause key"),
+        node: keys.clause.clone().expect("protocol clause key"),
         member: "activation.guard".to_owned(),
         index: None,
     };
@@ -343,14 +343,14 @@ fn evaluates_a_protocol_slot_and_refuses_an_unread_binder_before_charging() {
         .iter()
         .find(|binder| binder.name == "opened")
         .expect("activation binder identity")
-        .node;
+        .node.clone();
     let unavailable_cause = CatalogCode::new("incomplete_population", "incomplete-scope");
     let mut unavailable_meter = Meter::new(UNLIMITED);
     let unavailable = package
         .evaluate_protocol_slot(
             &activation,
             &ProtocolSupply {
-                binders: vec![(opened, SuppliedValue::Unavailable(unavailable_cause))],
+                binders: vec![(opened.clone(), SuppliedValue::Unavailable(unavailable_cause))],
                 observation: None,
             },
             &mut unavailable_meter,
@@ -381,13 +381,13 @@ fn evaluates_a_protocol_slot_and_refuses_an_unread_binder_before_charging() {
         payload.as_ref(),
         CallAdmissionFailure::Refused(record)
             if record.code == CatalogCode::new("invalid_runtime_input", "missing-member")
-                && record.locus == CallAdmissionLocus::Binder(opened)
+                && record.locus == CallAdmissionLocus::Binder(opened.clone())
     ));
 
     let unknown_before_missing = package.evaluate_protocol_slot(
         &activation,
         &ProtocolSupply {
-            binders: vec![(unused, SuppliedValue::Value(Value::Boolean(true)))],
+            binders: vec![(unused.clone(), SuppliedValue::Value(Value::Boolean(true)))],
             observation: None,
         },
         &mut activation_meter,
@@ -405,7 +405,7 @@ fn evaluates_a_protocol_slot_and_refuses_an_unread_binder_before_charging() {
     let wrong_kind = package.evaluate_protocol_slot(
         &activation,
         &ProtocolSupply {
-            binders: vec![(opened, SuppliedValue::Value(Value::Integer(1_i64.into())))],
+            binders: vec![(opened.clone(), SuppliedValue::Value(Value::Integer(1_i64.into())))],
             observation: None,
         },
         &mut activation_meter,
@@ -417,7 +417,7 @@ fn evaluates_a_protocol_slot_and_refuses_an_unread_binder_before_charging() {
         payload.as_ref(),
         CallAdmissionFailure::Refused(record)
             if record.code == CatalogCode::new("invalid_runtime_input", "wrong-value-kind")
-                && record.locus == CallAdmissionLocus::Binder(opened)
+                && record.locus == CallAdmissionLocus::Binder(opened.clone())
     ));
 
     let admitted = package
@@ -450,7 +450,7 @@ fn an_unavailable_protocol_binder_is_not_observed_after_a_false_short_circuit() 
         .protocol_node_keys("P")
         .expect("the protocol's emitted identity map");
     let slot = ProtocolSlot {
-        node: keys.clause.expect("protocol clause key"),
+        node: keys.clause.clone().expect("protocol clause key"),
         member: "activation.guard".to_owned(),
         index: None,
     };
@@ -459,7 +459,7 @@ fn an_unavailable_protocol_binder_is_not_observed_after_a_false_short_circuit() 
         .iter()
         .find(|binder| binder.name == "opened")
         .expect("activation binder identity")
-        .node;
+        .node.clone();
     let mut meter = Meter::new(UNLIMITED);
     let result = package
         .evaluate_protocol_slot(
@@ -504,13 +504,13 @@ fn evaluates_compensation_capture_trigger_retry_and_recovery_from_checked_nodes(
             .iter()
             .find(|binder| binder.name == name)
             .unwrap_or_else(|| panic!("the protocol emits binder {name}"))
-            .node
+            .node.clone()
     };
     let mut meter = Meter::new(UNLIMITED);
     let saved = match package
         .evaluate_protocol_slot(
             &ProtocolSlot {
-                node: keys.compensations[0],
+                node: keys.compensations[0].clone(),
                 member: "registration_captures".to_owned(),
                 index: Some(0),
             },
@@ -536,7 +536,7 @@ fn evaluates_compensation_capture_trigger_retry_and_recovery_from_checked_nodes(
     let trigger = package
         .evaluate_protocol_slot(
             &ProtocolSlot {
-                node: keys.compensations[0],
+                node: keys.compensations[0].clone(),
                 member: "trigger.guard".to_owned(),
                 index: None,
             },
@@ -563,7 +563,7 @@ fn evaluates_compensation_capture_trigger_retry_and_recovery_from_checked_nodes(
     let activation = package
         .evaluate_protocol_slot(
             &ProtocolSlot {
-                node: keys.compensations[0],
+                node: keys.compensations[0].clone(),
                 member: "activation_captures".to_owned(),
                 index: Some(0),
             },
@@ -587,7 +587,7 @@ fn evaluates_compensation_capture_trigger_retry_and_recovery_from_checked_nodes(
     let retry = package
         .evaluate_protocol_slot(
             &ProtocolSlot {
-                node: keys.compensations[0],
+                node: keys.compensations[0].clone(),
                 member: "retry.relation".to_owned(),
                 index: None,
             },
@@ -619,7 +619,7 @@ fn evaluates_compensation_capture_trigger_retry_and_recovery_from_checked_nodes(
     let recovery = package
         .evaluate_protocol_slot(
             &ProtocolSlot {
-                node: keys.compensations[0],
+                node: keys.compensations[0].clone(),
                 member: "recovery.predicate".to_owned(),
                 index: None,
             },
@@ -668,9 +668,9 @@ fn protocol_slot_calls_share_meter_usage_and_obey_work_boundaries() {
         .iter()
         .find(|binder| binder.name == "opened")
         .expect("activation binder identity")
-        .node;
+        .node.clone();
     let slot = ProtocolSlot {
-        node: keys.clause.expect("protocol clause key"),
+        node: keys.clause.clone().expect("protocol clause key"),
         member: "activation.guard".to_owned(),
         index: None,
     };

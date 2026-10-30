@@ -29,7 +29,7 @@ use qsl_semantics::model::observation::{
 };
 use quire_checked::key::DeclarationKey;
 use quire_exact::{
-    EffectiveId, FieldValue, Integer, Meter, ObjectId, ObjectReference, Presence, UniverseId, Value,
+    EffectiveId, FieldValue, Integer, Meter, ObjectId, ObjectReference, Presence, Value,
 };
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::object_closure::ObjectClosure;

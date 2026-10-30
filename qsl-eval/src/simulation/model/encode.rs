@@ -1036,7 +1036,7 @@ mod tests {
     /// with the nullary member `none` and the member `tagged(Tag)` (`33…`),
     /// and the values `Tag { sku }`, `Pair(true, -3)` and `none`.
     fn declared() -> (TypeEnvironment, impl Fn(i64) -> Value, Value, Value) {
-        use quire_exact::{from_admitted_slots, Identifier, Presence, UnionMember, UnionValue};
+        use quire_exact::{from_admitted_slots, Presence, UnionMember, UnionValue};
         use quire_semantic_value::declaration::{
             CompositeDeclaration, FieldDeclaration, UnionMemberDeclaration,
         };
@@ -1045,15 +1045,11 @@ mod tests {
             crate::test_ids::node_key([0x22]),
             crate::test_ids::node_key([0x33]),
         );
-        let none = UnionMember::from_admitted(
-            shape,
-            crate::test_ids::node_key([0x34]),
-            Identifier::new("none").expect("an identifier"),
-        );
+        let none = UnionMember::from_admitted(shape.clone(), "none").expect("a member name");
         let types = TypeEnvironment::new(
             [
                 CompositeDeclaration::new(
-                    tag,
+                    tag.clone(),
                     "Tag",
                     CompositeShape::Record(vec![
                         FieldDeclaration::new("sku", ValueType::Integer, Presence::Required),
@@ -1061,12 +1057,12 @@ mod tests {
                     ]),
                 ),
                 CompositeDeclaration::new(
-                    pair,
+                    pair.clone(),
                     "Pair",
                     CompositeShape::Tuple(vec![ValueType::Boolean, ValueType::Integer]),
                 ),
                 CompositeDeclaration::new(
-                    shape,
+                    shape.clone(),
                     "Shape",
                     CompositeShape::Union(vec![UnionMemberDeclaration::from_verified(
                         none.clone(),
@@ -1079,7 +1075,7 @@ mod tests {
         .expect("the declarations admit");
         let tag_value = move |sku: i64| {
             from_admitted_slots(
-                tag,
+                tag.clone(),
                 vec![
                     FieldValue::Present(Value::Integer(Integer::from(sku))),
                     FieldValue::Absent,

@@ -587,7 +587,7 @@ fn clause_facts(package: &CheckedPackage, name: &str) -> ClauseFacts {
         kind: checked.kind(),
         context: checked.context(),
         operation: checked.operation().map(|operation| OperationFacts {
-            declaring: operation.declaring,
+            declaring: operation.declaring.clone(),
             declaration: operation.declaration.clone(),
         }),
         operations: package.graph().scope().operations().clone(),
