@@ -1517,7 +1517,7 @@ pub(crate) fn view_of(views: &[ModelView], effective: EffectiveId) -> Option<&Mo
 /// with the `document_pointer` of the first such number) refuse here. A number
 /// with no finite double is the reader's own refusal, classified from its
 /// lexeme: it is named when the reader reaches it, so ahead of an earlier
-/// inexact number. Any other reader refusal is the document being no JSON
+/// inexact number. A lone surrogate escape or non-UTF-8 bytes refuse `invalid-value` at the root. Any other reader refusal is the document being no JSON
 /// object, which check 1.4 refuses.
 fn check_document_valid(
     read: &Result<quire_canonical::Document, quire_canonical::ReadError>,
@@ -1568,6 +1568,16 @@ fn read_error_refusal(
                 )
             })
         }
+        // A lone UTF-16 surrogate escape or bytes that are not UTF-8 are texts
+        // the shared reader refuses, which check 1.3 settles at the document
+        // root before any value is read (FR-106-AC-32, FR-106-AC-38).
+        quire_canonical::ReadError::Malformed {
+            kind: quire_canonical::Malformed::InvalidUtf8 | quire_canonical::Malformed::LoneSurrogate,
+            ..
+        } => Some(refuse(
+            AdmissionRecord::new(Code::InvalidRuntimeInput, "invalid-value")
+                .with("document_pointer", ""),
+        )),
         _ => None,
     }
 }
