@@ -26,7 +26,6 @@ use quire_semantic_value::declaration::{
     CompositeDeclaration, CompositeShape, FieldDeclaration, TypeEnvironment,
 };
 use serde_json::{json, Value};
-use sha2::{Digest as _, Sha256};
 
 use super::*;
 use crate::checked_v2::{read_v2, Read, V2ReadLimits};
@@ -245,10 +244,6 @@ pub(super) fn wire(emission: &Emission) -> Value {
 
 fn jcs(value: &Value) -> Vec<u8> {
     serde_json::to_vec(value).unwrap()
-}
-
-fn sha256_hex(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
 }
 
 fn library() -> LibraryName {
@@ -1010,8 +1005,7 @@ fn status_enum(owner: Value, name: &str) -> qsl_semantics::check::EnumBinding {
 /// nodes it names by key. A package with a record, a tuple, an enum
 /// `Status` owned by the checked unit, `ready(): Status { Status::Ready }`
 /// (an enum literal) and `keep(s: Status): Status { s }` (an enum-typed
-/// parameter) reads back Verified: IR re-derives each nominal node's key
-/// from its `nominal_identity_preimage`. Each member depends on the
+/// parameter) reads back Verified. Each member depends on the
 /// declaration, and no node names an absent one. `keep` and its parameter
 /// are written (IR-280). An enum owned by a definition the lock does not
 /// select is omitted, and the rest is still written.
@@ -1090,16 +1084,6 @@ fn enum_declaration_and_member_nodes_are_written() {
     assert_eq!(declaration["semantic_form"], "enum");
     assert_eq!(declaration["semantic_type"], declaration["node_id"]);
     assert_eq!(declaration["dependencies"], json!([]));
-    assert_eq!(
-        declaration["nominal_identity_preimage"],
-        json!({
-            "version": "quire.enum-declaration-node/v1",
-            "owner": {"kind": "source", "authority": "a", "identity": "u"},
-            "qualified_declaration": ["Status"],
-            "ordered": true,
-            "members": ["Ready", "Done"],
-        })
-    );
     let members: Vec<&Value> = nodes(&wire)
         .iter()
         .filter(|node| node["semantic_form"] == "enum_value")
@@ -1125,10 +1109,6 @@ fn enum_declaration_and_member_nodes_are_written() {
     for member in members {
         assert_eq!(member["semantic_type"], declaration["node_id"]);
         assert_eq!(member["dependencies"], json!([declaration["node_id"]]));
-        assert_eq!(
-            member["nominal_identity_preimage"]["declaration_node_id"],
-            declaration["node_id"]
-        );
         assert!(member.get("declaration").is_none());
     }
 }

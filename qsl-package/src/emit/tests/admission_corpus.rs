@@ -1264,7 +1264,9 @@ fn a_concrete_protocol_gives_a_model_refinement_its_class_catalog() {
         "channel"
     );
     let mut sorted = dependencies.clone();
-    sorted.sort_by(|left, right| left["digest"].as_str().cmp(&right["digest"].as_str()));
+    sorted.sort_by_key(|dependency| {
+        qsl_foundation::node_wire::node_key_from_json(dependency).expect("a node id")
+    });
     assert_eq!(&sorted, dependencies, "dependencies ascend");
 
     // With the clause over the abstract model instead, the concrete side
@@ -2428,7 +2430,7 @@ fn protocol_step_rows_order_by_node_then_class_spelling() {
             .iter()
             .map(|step| {
                 (
-                    step["source_node"]["digest"]
+                    step["source_node"]
                         .as_str()
                         .expect("a node")
                         .to_owned(),
@@ -2664,22 +2666,32 @@ fn a_refinement_row_or_header_key_of_the_wrong_kind_or_absent_refuses_at_its_mem
     );
 
     let mut absent = wire.clone();
-    let root = absent["semantic_graph"]["nodes"][position]["body"]["abstract"]["digest"]
-        .as_str()
-        .expect("a local abstract key")
-        .to_owned();
-    let missing = "0".repeat(64);
+    let root = absent["semantic_graph"]["nodes"][position]["body"]["abstract"].clone();
+    let foreign = |package: &str| {
+        qsl_foundation::node_wire::node_key_to_json(
+            &NodeKey::new(
+                package.to_owned(),
+                vec![quire_exact::PathSegment::Text("missing".to_owned())],
+                0,
+            )
+            .expect("a fixture key is a valid structural identity"),
+        )
+        .expect("a structural node id")
+    };
+    let missing = foreign(root["package"].as_str().expect("a package name"));
     let node = &mut absent["semantic_graph"]["nodes"][position];
-    node["body"]["abstract"]["digest"] = json!(missing);
+    node["body"]["abstract"] = missing.clone();
     for dependency in node["dependencies"].as_array_mut().expect("dependencies") {
-        if dependency["digest"] == root {
-            dependency["digest"] = json!(missing);
+        if *dependency == root {
+            *dependency = missing.clone();
         }
     }
     node["dependencies"]
         .as_array_mut()
         .expect("dependencies")
-        .sort_by(|left, right| left["digest"].as_str().cmp(&right["digest"].as_str()));
+        .sort_by_key(|dependency| {
+            qsl_foundation::node_wire::node_key_from_json(dependency).expect("a node id")
+        });
     let verdict = refinement_verdict(&emitted, &absent, position);
     assert!(
         verdict.starts_with("MissingDeclaration at ")
@@ -2693,10 +2705,7 @@ fn a_refinement_row_or_header_key_of_the_wrong_kind_or_absent_refuses_at_its_mem
     let mut external = wire.clone();
     let node = &mut external["semantic_graph"]["nodes"][position];
     let local = node["body"]["abstract"].clone();
-    node["body"]["abstract"] = json!({
-        "package": {"domain": "quire.package", "algorithm": "sha256", "digest": "1".repeat(64)},
-        "node": local,
-    });
+    node["body"]["abstract"] = foreign("elsewhere");
     node["dependencies"]
         .as_array_mut()
         .expect("dependencies")

@@ -16,7 +16,6 @@ use crate::checked_v2::V2ReadRefusal;
 #[path = "../../../../qsl-semantics/tests/support/receiver_frames.rs"]
 pub(super) mod fixture;
 
-const NODE_DOMAIN: &str = "quire.checked-semantic-node/v1";
 
 struct Emitted {
     wire: Value,
@@ -134,7 +133,7 @@ impl Emitted {
 
 /// The NodeRef object `<Counter>` stands for.
 fn node_ref(id: &Value) -> Value {
-    json!({"digest": id["digest"], "domain": NODE_DOMAIN})
+    id.clone()
 }
 
 /// The frame body vectors W1 to W6 over `counter` (`<Counter>`).

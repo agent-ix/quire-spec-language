@@ -318,7 +318,7 @@ fn a_boolean_field_constrained_by_one_postcondition_gets_one_transition() {
 /// derived `precondition` and one derived `postcondition` node holding the
 /// left fold of `quire.op.boolean.and` over the authored conditions in
 /// ascending clause-name order; the authored nodes stay; swapping the source
-/// order of `Q1` and `Q2` changes no node id and not the `package_id`.
+/// order of `Q1` and `Q2` changes no node id.
 #[trace("TC-1271", "FR-105-AC-14", "FR-105-AC-15")]
 #[test]
 fn several_clauses_are_bound_by_an_exact_conjunction_in_clause_name_order() {
@@ -654,7 +654,10 @@ fn a_fault_on_the_transition_or_a_derived_node_refuses_the_compile() {
 fn masked(value: &Value) -> Value {
     match value {
         Value::Object(map)
-            if map.len() == 2 && map.contains_key("digest") && map.contains_key("domain") =>
+            if map.len() == 3
+                && map.contains_key("package")
+                && map.contains_key("path")
+                && map.contains_key("ordinal") =>
         {
             json!("<node>")
         }

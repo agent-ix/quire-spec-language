@@ -91,10 +91,7 @@ fn finish_level(wire: &Value) -> String {
 
 /// The clause key.
 fn key(lowered: &Lowered) -> String {
-    clause(&lowered.wire)["node_id"]["digest"]
-        .as_str()
-        .unwrap()
-        .to_owned()
+    clause(&lowered.wire)["node_id"].to_string()
 }
 
 /// FR-464 "Binders", "Level", FR-383: under `on origin` the captures are

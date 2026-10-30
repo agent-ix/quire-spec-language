@@ -325,7 +325,7 @@ fn reference_key(text: &str) -> (String, Value) {
     assert!(matches!(read, Read::Verified { .. }), "{read:?}");
     let reference = node_of(&wire, "protocol", "protocol_reference").clone();
     (
-        reference["node_id"]["digest"].as_str().unwrap().to_owned(),
+        reference["node_id"].to_string(),
         wire,
     )
 }
@@ -411,7 +411,7 @@ fn a_reference_emits_the_target_node_and_one_carrier_the_reader_admits() {
         reference["occurrences"],
         json!([{"role": "expression", "ordinal": 0}])
     );
-    for absent in ["declaration", "owner", "nominal_identity_preimage"] {
+    for absent in ["declaration", "owner"] {
         assert!(
             reference.get(absent).is_none_or(Value::is_null),
             "{absent}: {reference}"
@@ -508,9 +508,11 @@ fn a_trigger_nested_runs_roles_and_scheduling_emit_what_the_reader_admits() {
     let roles = clause_argument(clause, "roles")["members"]
         .as_array()
         .unwrap();
-    let digests: Vec<&str> = roles
+    let digests: Vec<quire_exact::NodeKey> = roles
         .iter()
-        .map(|role| role["target"]["digest"].as_str().unwrap())
+        .map(|role| {
+            qsl_foundation::node_wire::node_key_from_json(&role["target"]).expect("a node id")
+        })
         .collect();
     assert_eq!(digests.len(), 2);
     assert!(
@@ -657,7 +659,7 @@ fn a_clause_key_is_distinct_per_protocol_and_independent_of_declaration_order() 
                         .as_str()
                         .unwrap()
                         .to_owned(),
-                    node["node_id"]["digest"].as_str().unwrap().to_owned(),
+                    node["node_id"].to_string(),
                 )
             })
             .collect()
@@ -669,8 +671,7 @@ fn a_clause_key_is_distinct_per_protocol_and_independent_of_declaration_order() 
     assert_eq!(forward, keys_of(&format!("{drain}{fill}")));
 }
 
-/// FR-092-AC-17 (TC-1021 step 6): the reference's key is the digest of its
-/// `quire.structural-node/v1` preimage, follows the bound target, repeats for
+/// FR-092-AC-17 (TC-1021 step 6): the reference's key follows the bound target, repeats for
 /// the same unit and changes with the target's key.
 #[trace("FR-092-AC-17", "TC-1021")]
 #[test]
@@ -680,23 +681,11 @@ fn a_references_key_follows_its_bound_target() {
     let against_drain = selecting(&format!(
         "function refers using v(): Boolean pure {{ protocol Drain }}\n{both}"
     ));
-    let (fill, fill_wire) = reference_key(&against_fill);
+    let (fill, _) = reference_key(&against_fill);
     let (drain, _) = reference_key(&against_drain);
     let (again, _) = reference_key(&against_fill);
     assert_ne!(fill, drain, "different targets, different keys");
     assert_eq!(fill, again, "the same unit, the same key");
-
-    let carrier = node_of(&fill_wire, "protocol", "protocol_reference");
-    let preimage = json!({
-        "version": "quire.structural-node/v1",
-        "node_tag": "protocol",
-        "semantic_form": "protocol_reference",
-        "semantic_type": carrier["semantic_type"],
-        "declaration": null,
-        "recursion": null,
-        "body": {"term": "reference", "target": carrier["body"]["target"]},
-    });
-    assert_eq!(fill, sha256_hex(&jcs(&preimage)));
 
     // `Fill` renamed: its node key changes, so the reference's does too.
     let renamed =
