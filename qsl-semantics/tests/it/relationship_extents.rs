@@ -20,7 +20,7 @@ use qsl_semantics::model::observation::{
 };
 use quire_checked::key::DeclarationKey;
 use quire_exact::{
-    EffectiveId, NodeKey, ObjectId, ObjectReference, OriginalDeclarationKey, UniverseId,
+    EffectiveId, ObjectId, ObjectReference, OriginalDeclarationKey, UniverseId,
 };
 use quire_semantic_value::declaration::TypeEnvironment;
 use quire_semantic_value::object_closure::ObjectClosure;
@@ -939,7 +939,7 @@ fn the_key_order_decides_between_dangling_and_undecidable_targets() {
         let undecidable_type = orders.id(incomplete_member);
         assert_eq!(
             resolution,
-            if first.object_type() == undecidable_type {
+            if first.object_type() == &undecidable_type {
                 Resolution::Undecidable
             } else {
                 Resolution::Dangling

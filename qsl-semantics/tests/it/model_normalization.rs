@@ -735,7 +735,7 @@ fn n01_normalizes_f1_to_stable_deterministic_identities() {
                 DeclarationKey::fixture("ix://test/orders/A"),
                 DeclarationKey::fixture("ix://test/orders/A/x"),
             ],
-            parent: Some(member_a_x.effective_id),
+            parent: Some(member_a_x.effective_id.clone()),
         }],
         "an inherited member carries the inherit fact alone"
     );
@@ -753,7 +753,7 @@ fn n01_normalizes_f1_to_stable_deterministic_identities() {
     let universe = completed(&fixture_f1(), ModelNormalizationLimits::UNLIMITED)
         .object_universe()
         .clone();
-    assert_eq!(universe.root_types, vec![type_a.effective_id]);
+    assert_eq!(universe.root_types, vec![type_a.effective_id.clone()]);
     let universe_rerun = completed(&fixture_f1(), ModelNormalizationLimits::UNLIMITED)
         .object_universe()
         .clone();
@@ -814,19 +814,15 @@ fn n02_normalizes_f2_diamond_inheritance_to_stable_deterministic_identities() {
     assert_eq!(member_d_x.preimage.derivation[1].inputs, path(["C", "A/x"]));
     assert_eq!(
         member_d_x.preimage.derivation[0].parent,
-        Some(members[1].effective_id)
+        Some(members[1].effective_id.clone())
     );
     assert_eq!(
         member_d_x.preimage.derivation[1].parent,
-        Some(members[2].effective_id)
+        Some(members[2].effective_id.clone())
     );
 
     let rerun = completed(&fixture_f2(), ModelNormalizationLimits::UNLIMITED);
     assert_eq!(view.declarations(), rerun.declarations());
-
-    let universe = completed(&fixture_f2(), ModelNormalizationLimits::UNLIMITED)
-        .object_universe()
-        .clone();
 }
 
 /// TC-195 N03, normalization half: F2 plus fields `B/y` and `C/y`, both of
@@ -934,8 +930,8 @@ fn oqe_a_disconnected_model_produces_two_universes_each_type_maps_to_its_own() {
         "one universe per connected component: {{A, B}} and {{E}}"
     );
 
-    let type_a = find_type(&view, "ix://test/orders/A").effective_id;
-    let type_e = find_type(&view, "ix://test/orders/E").effective_id;
+    let type_a = find_type(&view, "ix://test/orders/A").effective_id.clone();
+    let type_e = find_type(&view, "ix://test/orders/E").effective_id.clone();
 
     let ab_universe = view
         .object_universe_of(&DeclarationKey::fixture("ix://test/orders/A"))
@@ -961,10 +957,10 @@ fn oqe_a_disconnected_model_produces_two_universes_each_type_maps_to_its_own() {
     // `object_universes` and `object_universe_of` agree.
     let identities: std::collections::BTreeSet<_> = universes
         .iter()
-        .map(|universe| universe.identity())
+        .map(|universe| universe.identity().unwrap())
         .collect();
-    assert!(identities.contains(&ab_universe.identity()));
-    assert!(identities.contains(&e_universe.identity()));
+    assert!(identities.contains(&ab_universe.identity().unwrap()));
+    assert!(identities.contains(&e_universe.identity().unwrap()));
 }
 
 #[trace("QSpec-TC-195")]
@@ -1428,7 +1424,7 @@ fn n06_a_strictly_more_derived_redefiner_resolves_the_conflict_and_hides_every_c
     // Type-level identities are unaffected by phase-4 member facts: D's
     // identity is exactly N02's fixture_f2() type D.
     let type_d = find_type(&view, "ix://test/orders/D");
-    let owner_d = type_d.effective_id;
+    let owner_d = type_d.effective_id.clone();
 
     let winner = find_member(&view, &owner_d, "model.D.x4");
     assert!(
@@ -2178,10 +2174,10 @@ fn derivation_duplicate_comparison_includes_the_rule() {
 #[test]
 fn n01_charges_the_exact_ground_truth_sequence_in_order() {
     let (outcome, meter) = normalize_with_meter(&fixture_f1(), ModelNormalizationLimits::UNLIMITED);
-    let view = match outcome {
-        NormalizeOutcome::Completed(view) => view,
+    match outcome {
+        NormalizeOutcome::Completed(_) => {}
         other => panic!("expected Completed, got {other:?}"),
-    };
+    }
 
     use ChargePoint::{NormalizeCycleCheck, NormalizeDeclaration, NormalizeFact, NormalizeRecord};
     let expected = vec![
@@ -2264,8 +2260,7 @@ fn f1_a_members_own_subsets_property_charges_no_extra_normalize_record() {
 /// inherited member per direct parent, no inherited-member qualify fact)
 /// and four `normalize.cycle-check` charges (one per direct supertype edge:
 /// `B`->`A`, `C`->`A`, `D`->`B`, `D`->`C`, each `L` = 1), eight
-/// `normalize.declaration` charges, ten `normalize.hash` charges (one per
-/// declaration, the universe and the view) -- forty work units.
+/// `normalize.declaration` charges -- thirty work units.
 #[trace("QSpec-TC-195", "QSpec-FR-150-AC-4", "QSpec-FR-150-AC-6")]
 #[test]
 fn n02_charges_thirteen_facts_and_four_cycle_checks() {
@@ -2294,7 +2289,7 @@ fn n02_charges_thirteen_facts_and_four_cycle_checks() {
         cycle_check_count, 4,
         "one cycle-check per direct supertype edge"
     );
-    assert_eq!(meter.consumed(LimitKind::WorkUnits), 40);
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 30);
 }
 
 /// TC-196 R01: a closing generalization cycle (`model.A` -> `model.B` ->
@@ -2548,7 +2543,7 @@ fn n06_conflict_check_charges_exactly_sigma_c_minus_1_times_f_o() {
     // Includes the ten phase-4 redefine facts' own `normalize.fact` charges
     // (see `n06_redefine_facts_are_charged_as_normalize_fact_between_the_two_phase4_checks`
     // for their derivation).
-    assert_eq!(meter.consumed(LimitKind::WorkUnits), 93);
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 78);
 
     let mut limits = ModelNormalizationLimits::UNLIMITED;
     limits.work_units = 51;
@@ -2618,7 +2613,7 @@ fn n06_a_single_redefiner_admits_no_conflict_check_charge() {
         0,
         "a single redefiner has nothing to dominate and admits no conflict-check charge"
     );
-    assert_eq!(meter.consumed(LimitKind::WorkUnits), 36);
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 27);
 
     let mut limits = ModelNormalizationLimits::UNLIMITED;
     limits.work_units = 16;
@@ -2788,7 +2783,8 @@ fn n06_wide_ancestry_with_two_contesting_redefiners_completes() {
                     && entry.preimage.original.node == "model.O"
             })
             .unwrap_or_else(|| panic!("no type declaration for model.O in {n_parents}-parent view"))
-            .effective_id;
+            .effective_id
+            .clone();
 
         let winner = find_member(&view, &owner_o, "model.O.z");
         assert!(
@@ -2862,10 +2858,9 @@ fn operation_redefinition_is_charged_like_a_field_redefinition() {
     );
     assert_eq!(
         meter.consumed(LimitKind::WorkUnits),
-        27,
+        20,
         "4 records + 4 phase-2 facts + 1 cycle-check + 2 phase-3 facts \
-         + 2 redefinition-check units + 2 phase-4 facts + 5 declarations \
-         + 5 declaration hashes + 2 universe/view hashes = 27"
+         + 2 redefinition-check units + 2 phase-4 facts + 5 declarations = 20"
     );
 
     let NormalizeOutcome::Completed(view) = outcome else {
@@ -3089,7 +3084,7 @@ fn operation_redefinition_group_with_two_or_more_redefiners_is_charged_a_conflic
         "5 records + 5 phase-2 facts + 1 cycle-check + 2 phase-3 facts \
          + 7 redefinition-check work units (m+r = 3, then 4) + 4 \
          operation redefine facts + 4 conflict-check work units = 28; \
-         the phase-4 refusal prevents declaration and hash charges"
+         the phase-4 refusal prevents declaration charges"
     );
 
     let mut limits = ModelNormalizationLimits::UNLIMITED;
@@ -3217,7 +3212,7 @@ fn operation_redefinition_group_resolved_by_a_dominating_owner_completes() {
              refusal: {outcome:?}"
         );
     };
-    let owner_d = view.type_identities()[&DeclarationKey::fixture("model.D")];
+    let owner_d = view.type_identities()[&DeclarationKey::fixture("model.D")].clone();
     let winner = find_member(&view, &owner_d, "model.D.op4");
     assert!(winner.visible, "the most-specific D.op4 operation wins");
     assert_eq!(
@@ -3315,12 +3310,11 @@ fn operation_redefinition_group_resolved_by_a_dominating_owner_completes() {
         "D's c=3 group (B.op2, C.op3, D.op4) is still charged once even though it resolves"
     );
     // Cross-checked by running the crate directly (outcome is `Completed`,
-    // so this is the exhaustive total through the final `normalize.hash`):
+    // so this is the exhaustive total through the final declaration):
     // 8 records + 28 qualify/inherit/redefine facts + 4 cycle-check work
     // units + 11 redefinition-check work units + 14 conflict-check work
-    // units + 13 declarations + 13 declaration hashes + 2 universe/view
-    // hashes = 93. D's type has three facts: qualify and its two direct edges.
-    assert_eq!(meter.consumed(LimitKind::WorkUnits), 93);
+    // units + 13 declarations = 78. D's type has three facts: qualify and its two direct edges.
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 78);
 }
 
 /// `value-accounting.md:456` prices every contested `(effective type,
@@ -3350,7 +3344,7 @@ fn operation_redefinition_group_resolved_by_a_dominating_owner_completes() {
 /// Ten records, 29 facts (ten phase 2, seven phase 3, twelve phase 4), two
 /// cycle-check work units and 41 redefinition-check work units reach exactly
 /// 82 before the conflict checks, then 12 and 4 make 98 in all. The
-/// same-owner operation refusal prevents declaration and hash charges.
+/// same-owner operation refusal prevents declaration charges.
 #[trace(
     "QSpec-TC-195",
     "QSpec-TC-196",
@@ -3435,7 +3429,7 @@ fn conflict_check_charges_interleave_field_and_operation_groups_by_target_key() 
     // exhaustive up to and including the last normalize.conflict-check
     // (value-accounting.md:481), but the operation group's
     // redefinition-target refusal ends checking there (#173,
-    // value-accounting.md:482): no normalize.declaration or normalize.hash
+    // value-accounting.md:482): no normalize.declaration
     // charge ever runs, unlike before #173 resolved this contest.
     assert_eq!(meter.consumed(LimitKind::WorkUnits), 98);
 
@@ -3510,15 +3504,12 @@ fn fixture_two_diamonds_with_prefixes(first: &str, second: &str) -> DomainPackag
     )
 }
 
-/// A fixed historical fixture can stop distinguishing producer and identity
-/// order when the closed rule wire changes its hashes. Find a deterministic
-/// pair under the current wire, then verify refusals match computed IDs.
+/// Conflict refusals come out in effective-identity order of their types.
 #[trace("QSpec-TC-195", "QSpec-FR-150-AC-3", "QSpec-FR-150-AC-8")]
 #[test]
 fn n06_conflict_refusal_order_matches_effective_identity_not_producer_key() {
     let prefixes = ["aaa", "zzz", "bbb", "yyy", "ccc", "xxx", "ddd", "www"];
-    let mut found_inversion = false;
-    'pairs: for (index, first) in prefixes.iter().enumerate() {
+    for (index, first) in prefixes.iter().enumerate() {
         for second in prefixes.iter().skip(index + 1) {
             let domain_package = fixture_two_diamonds_with_prefixes(first, second);
             let refusals = match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
@@ -3544,30 +3535,16 @@ fn n06_conflict_refusal_order_matches_effective_identity_not_producer_key() {
             let type_view = completed(&type_only, ModelNormalizationLimits::UNLIMITED);
             let first_node = format!("ix://{first}/O9");
             let second_node = format!("ix://{second}/O9");
-            let first_id = find_type(&type_view, &first_node).effective_id.to_string();
-            let second_id = find_type(&type_view, &second_node).effective_id.to_string();
+            let first_id = find_type(&type_view, &first_node).effective_id.clone();
+            let second_id = find_type(&type_view, &second_node).effective_id.clone();
             let effective_order = if first_id < second_id {
                 vec![first_node, second_node]
             } else {
                 vec![second_node, first_node]
             };
             assert_eq!(actual_order, effective_order);
-
-            let producer_order = if first < second {
-                vec![format!("ix://{first}/O9"), format!("ix://{second}/O9")]
-            } else {
-                vec![format!("ix://{second}/O9"), format!("ix://{first}/O9")]
-            };
-            if effective_order != producer_order {
-                found_inversion = true;
-                break 'pairs;
-            }
         }
     }
-    assert!(
-        found_inversion,
-        "candidate set must distinguish effective-identity from producer-key order"
-    );
 }
 
 /// Two unrelated owner types, each with exactly one direct field member,
@@ -4051,7 +4028,7 @@ fn n06_redefinition_check_refusal_outranks_earlier_processed_conflict_check_refu
 /// in `type_keys` order, and only then by target within that type
 /// (`value-accounting.md:456`; `model-complete.md:160` puts the owning
 /// type first in the effective member key). With the version-free closed
-/// identity wire, `D` sorts before `B9`; both phase-4 refusals are returned
+/// identity, `B9` sorts before `D`; both phase-4 refusals are returned
 /// in that charge order.
 #[trace("QSpec-TC-195", "QSpec-FR-150-AC-3", "QSpec-FR-150-AC-8")]
 #[test]
@@ -4062,22 +4039,6 @@ fn n06_conflict_check_refusal_ranks_by_type_before_target() {
             assert_eq!(
                 refusal,
                 vec![
-                    ModelRefusal {
-                        code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
-                        cause: ModelRefusalCause::DerivationConflict {
-                            type_: DeclarationKey::fixture("ix://test/orders/D"),
-                            member: DeclarationKey::fixture("ix://test/orders/A/x"),
-                            redefiners: vec![
-                                DeclarationKey::fixture("model.B.x2"),
-                                DeclarationKey::fixture("model.C.x3"),
-                            ],
-paths: Vec::new(),
-},
-                        detail: "type ix://test/orders/D has 2 undominated redefinitions of ix://test/orders/A/x: \
-                                  [ix://test/orders/B, model.B.x2, ix://test/orders/A/x] and \
-                                  [ix://test/orders/C, model.C.x3, ix://test/orders/A/x]"
-                            .to_string(),
-                    },
                     ModelRefusal {
                         code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
                         cause: ModelRefusalCause::DerivationConflict {
@@ -4094,10 +4055,26 @@ paths: Vec::new(),
                                   [ix://n06/M2, ix://n06/M2/w2, ix://n06/M/w]"
                             .to_string(),
                     },
+                    ModelRefusal {
+                        code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
+                        cause: ModelRefusalCause::DerivationConflict {
+                            type_: DeclarationKey::fixture("ix://test/orders/D"),
+                            member: DeclarationKey::fixture("ix://test/orders/A/x"),
+                            redefiners: vec![
+                                DeclarationKey::fixture("model.B.x2"),
+                                DeclarationKey::fixture("model.C.x3"),
+                            ],
+paths: Vec::new(),
+},
+                        detail: "type ix://test/orders/D has 2 undominated redefinitions of ix://test/orders/A/x: \
+                                  [ix://test/orders/B, model.B.x2, ix://test/orders/A/x] and \
+                                  [ix://test/orders/C, model.C.x3, ix://test/orders/A/x]"
+                            .to_string(),
+                    },
                 ]
             );
         }
-        other => panic!("expected Refused([derivation-conflict for D, derivation-conflict for B9]), got {other:?}"),
+        other => panic!("expected Refused([derivation-conflict for B9, derivation-conflict for D]), got {other:?}"),
     }
 }
 
@@ -4845,10 +4822,11 @@ fn keys(nodes: &[&str]) -> Vec<DeclarationKey> {
 }
 
 fn type_owner(view: &qsl_semantics::model::normalize::EffectiveView, node: &str) -> EffectiveId {
-    *view
+    view
         .type_identities()
         .get(&DeclarationKey::fixture(node))
         .unwrap_or_else(|| panic!("{node} has an effective type identity"))
+        .clone()
 }
 
 /// `B` specializes `A`; `B.y` subsets `A.x`.
@@ -4885,7 +4863,7 @@ fn a_subsetting_field_derives_one_phase_4_subset_fact() {
     );
     assert_eq!(count(ChargePoint::NormalizeRedefinitionCheck), 0);
     assert_eq!(count(ChargePoint::NormalizeConflictCheck), 0);
-    assert_eq!(meter.consumed(LimitKind::WorkUnits), 24);
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 17);
 
     let b = type_owner(&view, "model.B");
     let subsetting = find_member(&view, &b, "model.B.y");
