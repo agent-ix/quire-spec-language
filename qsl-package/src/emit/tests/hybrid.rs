@@ -131,7 +131,7 @@ fn idtext(id: &Value) -> String {
 fn node_with<'w>(wire: &'w Value, digest: impl AsRef<str>) -> &'w Value {
     nodes(wire)
         .iter()
-        .find(|node| idtext(&node["node_id"]) == digest)
+        .find(|node| idtext(&node["node_id"]) == digest.as_ref())
         .unwrap_or_else(|| panic!("a node {}", digest.as_ref()))
 }
 
@@ -544,7 +544,7 @@ fn braking2_restored_nodes_match_qspec_vectors() {
     assert_eq!(actual_ids, expected_ids, "complete restored node set");
     for node in expected {
         let id = idtext(&node["node_id"]);
-        let mut actual = node_with(&wire, id).clone();
+        let mut actual = node_with(&wire, &id).clone();
         let mut expected = node.clone();
         // A package's source map may attach more occurrences to a shared
         // semantic node; it does not change the node's semantic content.
@@ -870,7 +870,7 @@ fn the_i2_read_refuses_each_fr_481_defect_at_its_locus() {
         .expect("SlowEnough");
     let (refusal, path) = refuse(&edited(
         &wire,
-        idtext(&claim["node_id"]),
+        &idtext(&claim["node_id"]),
         |node| node["body"]["arguments"][1]["value"] = json!("wall"),
     ));
     assert_eq!(refusal.code, CheckedPackageRefusalCode::InvalidPackage);
@@ -958,7 +958,7 @@ fn the_i2_read_refuses_each_fr_481_defect_at_its_locus() {
     };
     let (refusal, _) = refuse(&edited(
         &wire,
-        idtext(&fair["node_id"]),
+        &idtext(&fair["node_id"]),
         |node| node["body"]["operation"]["member"]["name"] = json!("Halted"),
     ));
     assert_eq!(refusal.code, CheckedPackageRefusalCode::MissingDeclaration);

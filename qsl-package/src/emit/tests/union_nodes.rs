@@ -70,16 +70,16 @@ fn the_union_keeps_its_id_and_its_members_their_identities_through_emission_and_
         panic!("Shape is a union")
     };
     for member in members {
-        let variant = member.member().expect("sealed").variant();
+        let variant = member.member().expect("sealed").variant().clone();
         assert_eq!(
             variant,
             qsl_semantics::value::enumeration::mint_union_variant_id(
                 union_id.clone(),
-                member.identifier().as_str(),
+                member.identifier(),
             )
             .expect("a union variant"),
             "{}",
-            member.identifier().as_str()
+            member.identifier()
         );
     }
 

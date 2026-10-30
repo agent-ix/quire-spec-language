@@ -218,7 +218,7 @@ fn a_terminal_declaration_emits_its_node_and_the_i2_read_returns_it() {
     };
     let (package, terminals, model) = model_of(&when);
     let model = model.expect("one terminal");
-    let [read] = terminals[..] else {
+    let [read] = &terminals[..] else {
         panic!("one terminal: {terminals:?}");
     };
     assert_eq!(read.node, key(&terminal_node(&when.wire)["node_id"]));
@@ -238,7 +238,7 @@ fn a_terminal_declaration_emits_its_node_and_the_i2_read_returns_it() {
     );
 
     let (package, terminals, any_model) = model_of(&any);
-    let [read] = terminals[..] else {
+    let [read] = &terminals[..] else {
         panic!("one terminal: {terminals:?}");
     };
     assert_eq!(read.declaration, ReadTerminalDeclaration::Any);
@@ -395,7 +395,7 @@ fn resolution_follows_the_node_not_the_checked_declaration() {
             .expect("the package checks")
     };
     let mut graph = checked();
-    let [node] = graph.terminal_nodes()[..] else {
+    let [node] = &graph.terminal_nodes()[..] else {
         panic!("one terminal node");
     };
     assert_eq!(
@@ -404,7 +404,7 @@ fn resolution_follows_the_node_not_the_checked_declaration() {
             .len(),
         1
     );
-    assert!(graph.semantic_graph_mut().remove(node.node).is_some());
+    assert!(graph.semantic_graph_mut().remove(node.node.clone()).is_some());
     assert_eq!(
         resolve_terminals(&CheckedPackage::link(graph)).err(),
         Some(TerminalResolveRefusal::Disagrees {

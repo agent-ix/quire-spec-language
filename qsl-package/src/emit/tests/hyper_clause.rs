@@ -411,9 +411,9 @@ fn the_occurrence_round_trips_and_the_wrapper_is_no_clause_root() {
     let [clause] = &compiled.graph_clauses[..] else {
         panic!("one clause");
     };
-    assert_eq!(clause.occurrence(), roots[0].occurrence());
     assert_eq!(clause.assembled_occurrence(), Some(roots[0].occurrence()));
-    let resolved = resolve_hyper_root(&admitted, clause.occurrence()).expect("resolves");
+    let occurrence = clause.assembled_occurrence().expect("an assembled clause");
+    let resolved = resolve_hyper_root(&admitted, occurrence).expect("resolves");
     assert_eq!(&resolved, &roots[0]);
 
     let wrapper = roots[0].body().expect("a body wrapper").clone();

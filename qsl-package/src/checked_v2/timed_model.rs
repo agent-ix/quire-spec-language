@@ -1509,7 +1509,10 @@ mod intake_proofs {
         let text_type = literal_type(binding(&source.body, "kind").unwrap()).unwrap();
         let text = |value: &str| CheckedTerm::literal_text(text_type.clone(), value);
         let integer = |value| CheckedTerm::literal_integer(text_type.clone(), value);
-        let integer_type = || checked_id(qsl_semantics::check::builtin_integer_type_key());
+        let integer_type = || checked_id(
+            qsl_semantics::check::builtin_integer_type_key(&source.node_id.package)
+                .expect("the built-in integer key"),
+        );
         let step = |kind: &str, name: &str, value| {
             CheckedTerm::aggregate(vec![
                 CheckedTerm::binding("kind", text(kind)),

@@ -337,7 +337,6 @@ fn the_i2_lookup_resolves_the_triple_and_each_lookup_takes_only_its_own_form() {
             NodeKey::new("pkg", vec![PathSegment::Text("missing".into())], 0).unwrap(),
             ordinal,
         ),
-        claim_at(key(temporal), 0),
         claim_at(triple.node().clone(), ordinal + 1),
     ] {
         assert_eq!(

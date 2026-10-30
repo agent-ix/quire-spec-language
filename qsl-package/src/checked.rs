@@ -873,7 +873,7 @@ mod tests {
         else {
             panic!("the one-type domain package normalizes");
         };
-        let a = view.type_identities()[&declaration];
+        let a = view.type_identities()[&declaration].clone();
         let span = qsl_foundation::Span { start: 0, end: 0 };
         let graph = PackageDeclarations {
             types: TypeEnvironment::new([], [ObjectTypeDeclaration::new(a, "M::A", vec![])])

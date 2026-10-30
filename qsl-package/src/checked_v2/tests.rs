@@ -3217,7 +3217,7 @@ fn frame_fixture(frame_body: impl FnOnce(&Value) -> (Vec<Value>, Vec<Value>, Vec
     let frame = frame_node(
         "pkg::Frame",
         &object_ref,
-        vec![object_ref],
+        vec![object_ref.clone()],
         modifies,
         creates,
         deletes,

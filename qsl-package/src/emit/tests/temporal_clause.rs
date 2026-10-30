@@ -799,7 +799,7 @@ fn an_on_each_clause_emits_its_trigger_and_guard() {
         let sought = node_key(wire_key);
         graph
             .occurrences()
-            .filter(|(key, origin, _)| key == sought && origin.role().as_str() == role)
+            .filter(|(key, origin, _)| key == &sought && origin.role().as_str() == role)
             .map(|(_, _, location)| regions.region(location).expect("a region").start())
             .collect()
     };
@@ -837,7 +837,7 @@ fn an_on_each_clause_emits_its_trigger_and_guard() {
     let guard_key = node_key(&truth_guard["node_id"]);
     let guard_at: Vec<_> = truth_graph
         .occurrences()
-        .filter(|(key, origin, _)| key == guard_key && origin.role().as_str() == "expression")
+        .filter(|(key, origin, _)| *key == guard_key && origin.role().as_str() == "expression")
         .map(|(_, _, location)| truth_regions.region(location).expect("a region").start())
         .collect();
     let literal_at = truth_text.find("when (true)").unwrap() + "when (".len();
@@ -1311,7 +1311,9 @@ fn the_captures_aggregate_and_nodes_are_emitted() {
     assert_eq!(m["body"]["members"][1]["value"]["value"], "3");
     assert_eq!(n["semantic_type"], m["semantic_type"]);
     assert_ne!(n["semantic_type"], over["semantic_type"]);
-    let key = |node: &Value| &node["node_id"];
+    fn key(node: &Value) -> &Value {
+        &node["node_id"]
+    }
     assert!(reaches(wire, &members[0]["value"], key(over)));
     assert!(!reaches(wire, &members[0]["value"], key(trigger)));
     assert!(reaches(wire, &members[1]["value"], key(trigger)));
@@ -1331,7 +1333,7 @@ fn the_captures_aggregate_and_nodes_are_emitted() {
         let sought = node_key(wire_key);
         graph
             .occurrences()
-            .filter(|(key, origin, _)| key == sought && origin.role().as_str() == role)
+            .filter(|(key, origin, _)| key == &sought && origin.role().as_str() == role)
             .map(|(_, _, location)| regions.region(location).expect("a region").start())
             .collect()
     };

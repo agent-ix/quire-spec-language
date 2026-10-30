@@ -198,7 +198,7 @@ fn tree() -> CheckedPackage {
     let tree = fixture_type_key("Tree");
     let kids = ValueType::collection(CollectionType::new(
         CollectionKind::Sequence,
-        ValueType::Composite(tree),
+        ValueType::Composite(tree.clone()),
         Some(CardinalityBound::new(0, 3).unwrap()),
     ));
     let types = TypeEnvironment::new(
@@ -290,14 +290,10 @@ fn read_with(emission: &Emission, evidence: &CheckedPackageEvidence) -> Read {
 /// The verified package's exports: declared name to structural node identity.
 fn verified_exports(emission: &Emission) -> BTreeMap<String, String> {
     match read_back(emission) {
-        Read::Verified { package, .. } => {
-            assert_eq!(package.library(), &library());
-            package
-                .into_import_view()
-                .exports()
-                .map(|(name, key)| (name.to_owned(), key.to_string()))
-                .collect()
-        }
+        Read::Verified { package, .. } => package
+            .exports()
+            .map(|(name, key)| (name.to_owned(), key.to_string()))
+            .collect(),
         other => panic!("expected Verified, got {other:?}"),
     }
 }
@@ -321,12 +317,10 @@ fn emitted_package_envelope_is_canonical_deterministic_and_self_identifying() {
     assert_eq!(emit(&package(vec![f()])).package.bytes(), bytes);
     let other = emit(&package(vec![f(), t()]));
     assert_ne!(other.package.bytes(), emission.package.bytes());
-    match read_back(&emission) {
-        Read::Verified { package, .. } => {
-            assert_eq!(package.library(), &library());
-        }
-        other => panic!("the golden envelope must be reader-admitted: {other:?}"),
-    }
+    assert!(
+        matches!(read_back(&emission), Read::Verified { .. }),
+        "the golden envelope must be reader-admitted"
+    );
 }
 
 pub(super) fn nodes(wire: &Value) -> &[Value] {
@@ -635,7 +629,10 @@ fn written_nodes(package: &CheckedPackage) -> Vec<Value> {
     let candidates: Vec<Candidate<'_>> = graph
         .semantic_graph()
         .nodes()
-        .map(|node| Candidate::of(node, recorded.remove(&node.key()).unwrap_or_default()))
+        .map(|node| {
+            Candidate::of(node, recorded.remove(&node.key()).unwrap_or_default())
+                .expect("a candidate")
+        })
         .collect();
     let all: Vec<&Candidate<'_>> = candidates.iter().collect();
     graph_order(&all)
@@ -982,7 +979,7 @@ fn a_declaration_without_its_occurrence_is_omitted() {
                     occurrence.role != CheckedOccurrenceRole::Declaration
                 });
             }
-            let candidate = Candidate::of(node, occurrences);
+            let candidate = Candidate::of(node, occurrences).expect("a candidate");
             (candidate.id.clone(), candidate)
         })
         .collect();
@@ -1392,7 +1389,7 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
             Err(EmitRefusal::UnlocatedRefinementDeclaration) => {
                 Seen::UnlocatedRefinementDeclaration
             }
-            Err(EmitRefusal::SourceMapInvariant) => {
+            Err(EmitRefusal::SourceMapInvariant | EmitRefusal::UnresolvedNodeReference) => {
                 panic!("the typed inspection source map matches the emitted entries")
             }
             Err(EmitRefusal::Cancelled { .. }) => panic!("no handle was cancelled"),
@@ -1656,7 +1653,7 @@ fn call_identity_and_location(
         .expect("the call node was lowered");
     let origin = Origin::new(Role::new("expression"), 0);
     let location = checked
-        .occurrence(identity, &origin)
+        .occurrence(identity.clone(), &origin)
         .expect("check records the call's own occurrence")
         .clone();
     (identity, origin, location)
@@ -1986,7 +1983,6 @@ fn metre_units_owned_by(owner: Value) -> (quire_semantic_value::quantity::UnitTa
         [(length, length_key)],
         [(metre, metre_key.clone())],
         &OwnerSelection::new([selection]),
-        qsl_foundation::IdentityLimits::default(),
     )
     .expect("the unit graph admits");
     (
@@ -2066,12 +2062,13 @@ fn a_compound_unit_is_omitted_only_for_its_omitted_unit() {
         "the I2 read exports t and not q"
     );
     let t_key = exports["t"].clone();
-    let q_key = graph
+    let q_node = graph
         .nodes()
         .filter(|node| node.semantic_form() == "pure_function")
         .find(|node| node.key().to_string() != t_key)
-        .map(|node| node_id(node.key()))
         .expect("q's declaration node");
+    let q_text = q_node.key().to_string();
+    let q_key = node_id(q_node.key());
     let metre_id = node_id(definition_metre_units().1);
     let cause_of = |id: &CheckedNodeId| {
         emission
@@ -2130,9 +2127,14 @@ fn a_compound_unit_is_omitted_only_for_its_omitted_unit() {
         .map(|omission| omission.node.clone())
         .collect();
     assert_eq!(omitted, expected);
-    assert!(omitted.iter().all(|id| *id.digest != *t_key));
+    let t_id = graph
+        .nodes()
+        .find(|node| node.key().to_string() == t_key)
+        .map(|node| node_id(node.key()))
+        .expect("t's declaration node");
+    assert!(!omitted.contains(&t_id));
     // `q` is absent from the wire's exports, `t` is present.
-    assert!(!exports.values().any(|key| **key == *q_key.digest));
+    assert!(!exports.values().any(|key| *key == q_text));
 }
 
 /// FR-062-AC-9 (TC-160 step 8, second half): the same package with an
@@ -2449,9 +2451,7 @@ fn a_model_bearing_unit_emits_its_model_selection_and_reads_back_verified() {
     assert_eq!(last_entry["ordinal"], 0);
     match read {
         Read::Verified { package, .. } => {
-            assert_eq!(package.library(), &library());
             let exports: BTreeSet<String> = package
-                .into_import_view()
                 .exports()
                 .map(|(name, _)| name.to_owned())
                 .collect();
@@ -2479,9 +2479,7 @@ fn inherited_field_access_is_accepted_by_the_i2_read() {
     let (emission, .., read) = emit_model_unit(&unit, None);
     match read {
         Read::Verified { package, .. } => {
-            assert_eq!(package.library(), &library());
             let exports: BTreeSet<String> = package
-                .into_import_view()
                 .exports()
                 .map(|(name, _)| name.to_owned())
                 .collect();
@@ -2504,9 +2502,7 @@ fn conforming_reference_equality_is_accepted_by_the_i2_read() {
     let (emission, .., read) = emit_model_unit(&unit, None);
     match read {
         Read::Verified { package, .. } => {
-            assert_eq!(package.library(), &library());
             let exports: BTreeSet<String> = package
-                .into_import_view()
                 .exports()
                 .map(|(name, _)| name.to_owned())
                 .collect();
