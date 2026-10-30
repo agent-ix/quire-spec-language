@@ -473,123 +473,6 @@ fn an_inline_nested_application_argument_is_a_malformed_wire() {
     }
 }
 
-/// FR-322's `application_node_preimage` of a wire node, or FR-092's
-/// structural preimage under the owner the wire node's own `owner` member
-/// names, rebuilt by the test from the wire alone. `group` is the node's recursion group in graph order.
-pub(crate) fn rebuilt_key(node: &Value, group: &[&Value]) -> String {
-    sha256_hex(&jcs(&rebuilt_preimage(node, group, true)))
-}
-
-/// The digest of a node's structural preimage, even for node families whose
-/// normal key is derived from an application preimage.
-pub(crate) fn rebuilt_structural_key(node: &Value, group: &[&Value]) -> String {
-    sha256_hex(&jcs(&rebuilt_preimage_as(node, group, true, Some(false))))
-}
-
-/// The preimage [`rebuilt_key`] hashes. With `labelled` false, a recursion
-/// group member's preimage omits `recursion.group`: its group-local form,
-/// whose digests the group label hashes. The owner is read from the wire
-/// node's own `owner` member, never from the owner the checked unit carries.
-pub(super) fn rebuilt_preimage(node: &Value, group: &[&Value], labelled: bool) -> Value {
-    rebuilt_preimage_as(node, group, labelled, None)
-}
-
-fn rebuilt_preimage_as(
-    node: &Value,
-    group: &[&Value],
-    labelled: bool,
-    application_override: Option<bool>,
-) -> Value {
-    let ordinal = |id: &Value| group.iter().position(|member| member["node_id"] == *id);
-    let in_group = |term: &Value| -> Value {
-        fn walk(term: &Value, ordinal: &dyn Fn(&Value) -> Option<usize>) -> Value {
-            match term {
-                Value::Object(members) => {
-                    if members.get("term") == Some(&json!("reference")) {
-                        if let Some(position) = ordinal(&members["target"]) {
-                            return json!({"term": "group_reference", "ordinal": position});
-                        }
-                    }
-                    Value::Object(
-                        members
-                            .iter()
-                            .map(|(key, value)| (key.clone(), walk(value, ordinal)))
-                            .collect(),
-                    )
-                }
-                Value::Array(items) => {
-                    Value::Array(items.iter().map(|item| walk(item, ordinal)).collect())
-                }
-                other => other.clone(),
-            }
-        }
-        walk(term, &ordinal)
-    };
-    let body = in_group(&node["body"]);
-    let application = application_override.unwrap_or_else(|| {
-        (node["node_tag"] == "value" && node["semantic_form"] == "union_value")
-            || serde_json::to_string(&body)
-                .unwrap()
-                .contains("\"application\"")
-    });
-    let declaration = node.get("declaration").cloned().unwrap_or(Value::Null);
-    let recursion = node.get("recursion_group").map(|label| {
-        let position = ordinal(&node["node_id"]).unwrap();
-        if application || !labelled {
-            json!({"ordinal": position, "size": group.len()})
-        } else {
-            json!({"group": label, "ordinal": position, "size": group.len()})
-        }
-    });
-    let semantic_type = if node["semantic_type"] == node["node_id"] && !application {
-        Value::Null
-    } else {
-        match ordinal(&node["semantic_type"]) {
-            Some(position) => json!({"term": "group_reference", "ordinal": position}),
-            None => node["semantic_type"].clone(),
-        }
-    };
-    let mut preimage = json!({
-        "version": if application { "quire.application-node/v1" } else { "quire.structural-node/v1" },
-        "node_tag": node["node_tag"],
-        "semantic_form": node["semantic_form"],
-        "semantic_type": semantic_type,
-        "declaration": declaration,
-        "recursion": recursion.unwrap_or(Value::Null),
-        "body": body,
-    });
-    if !application {
-        if let Some(owner) = node.get("owner") {
-            preimage["owner"] = owner.clone();
-        }
-    }
-    // QSpec FR-464 "owner_model": a protocol clause's identity-bound edge
-    // enters its application preimage, read from the wire node.
-    if application {
-        if let Some(owner_model) = node.get("owner_model") {
-            preimage["owner_model"] = owner_model.clone();
-        }
-    }
-    preimage
-}
-
-/// Each node with the members of its recursion group in graph order.
-fn with_groups(nodes: &[Value]) -> Vec<(&Value, Vec<&Value>)> {
-    nodes
-        .iter()
-        .map(|node| {
-            let group = match node.get("recursion_group") {
-                Some(label) => nodes
-                    .iter()
-                    .filter(|member| member.get("recursion_group") == Some(label))
-                    .collect(),
-                None => Vec::new(),
-            };
-            (node, group)
-        })
-        .collect()
-}
-
 /// `f(x: Int[0, 9])`, FR-092's self-recursive G4 to G6.
 fn recursive_f() -> CheckedPackage {
     let recursive = FunctionDeclaration::new(
@@ -1929,12 +1812,6 @@ fn source_text_compiles_through_the_spine_and_reads_back_verified() {
     }
 }
 
-/// The `metre` unit of dimension `Length`, owned by a definition, as the
-/// quantity table `check` types a `Length` quantity against.
-pub(super) fn metre_units() -> quire_semantic_value::quantity::UnitTable {
-    definition_metre_units().0
-}
-
 fn definition_metre_units() -> (quire_semantic_value::quantity::UnitTable, NodeKey) {
     metre_units_owned_by(json!({
         "kind": "definition", "authority": "agent-ix", "identity": "example-model",
@@ -2388,7 +2265,7 @@ fn a_model_bearing_unit_emits_its_model_selection_and_reads_back_verified() {
     assert!(declarations.types.conforms(gadget.clone(), widget.clone()));
     assert!(!declarations.types.conforms(widget, gadget));
 
-    let (emission, wire, read) = emit_model_unit(&unit, None);
+    let (_emission, wire, read) = emit_model_unit(&unit, None);
     assert!(wire["lock"].get("model_selections").is_none());
     assert!(wire["lock"].get("model_selections").is_none());
     assert!(
@@ -2476,7 +2353,7 @@ fn a_model_bearing_unit_emits_its_model_selection_and_reads_back_verified() {
 #[test]
 fn inherited_field_access_is_accepted_by_the_i2_read() {
     let unit = spine_model_without(&[CONFORMING_EQUALITY]);
-    let (emission, .., read) = emit_model_unit(&unit, None);
+    let (_emission, .., read) = emit_model_unit(&unit, None);
     match read {
         Read::Verified { package, .. } => {
             let exports: BTreeSet<String> = package
@@ -2499,7 +2376,7 @@ fn inherited_field_access_is_accepted_by_the_i2_read() {
 #[test]
 fn conforming_reference_equality_is_accepted_by_the_i2_read() {
     let unit = spine_model_without(&[FIELD_ACCESS]);
-    let (emission, .., read) = emit_model_unit(&unit, None);
+    let (_emission, .., read) = emit_model_unit(&unit, None);
     match read {
         Read::Verified { package, .. } => {
             let exports: BTreeSet<String> = package

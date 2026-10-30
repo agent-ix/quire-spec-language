@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-093-AC-21 and AC-22 (TC-416 steps 12 and 13): the v2 emission writes each
-//! structural node's `owner` onto the node, exactly where the node's
-//! `quire.structural-node/v1` preimage carries one. Each key is recomputed
-//! from the wire node alone, and every package is read back through IR's v2
-//! reader.
+//! structural node's `owner` onto the node under FR-322's presence rule, and
+//! every package is read back through IR's v2 reader.
 
 use qsl_semantics::check::{
     checked_dispatch_operation, AdmittedModel, DispatchRoot, OperationClauses,
@@ -20,13 +18,6 @@ use quire_exact::{EffectiveId, Integer};
 use quire_semantic_value::declaration::ObjectTypeDeclaration;
 
 use super::*;
-
-fn source_of(authority: &str, identity: &str) -> RawSourceRef {
-    qsl_semantics::check::admitted_source(
-        qsl_foundation::SourceIdentity::new(authority, identity, "git", "1"),
-        TEXT,
-    )
-}
 
 /// The owner kind FR-322's presence rule requires of a wire node.
 fn required_kind(node: &Value) -> Option<&'static str> {

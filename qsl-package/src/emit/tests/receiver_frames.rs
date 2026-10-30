@@ -19,7 +19,6 @@ pub(super) mod fixture;
 const NODE_DOMAIN: &str = "quire.checked-semantic-node/v1";
 
 struct Emitted {
-    emission: Emission,
     wire: Value,
     evidence: CheckedPackageEvidence,
 }
@@ -77,7 +76,6 @@ fn emit(operations: &[&str], overrides: &[(&str, Value)]) -> Emitted {
         .insert_domain_package_document(package_identity(&document), document.as_slice())
         .expect("a fresh evidence key");
     Emitted {
-        emission,
         wire,
         evidence,
     }
