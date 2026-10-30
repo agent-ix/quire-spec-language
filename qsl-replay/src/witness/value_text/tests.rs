@@ -346,19 +346,19 @@ fn tc_905_an_input_value_counts_at_its_escaped_text_length() {
 #[test]
 fn tc_905_entries_must_ascend_by_parameter_node_id() {
     let (a, b) = (id(0x0a), id(0x0b));
-    let ascending = witness(&[(a, "1"), (b, "2")]);
+    let ascending = witness(&[(a.clone(), "1"), (b.clone(), "2")]);
     assert_eq!(
-        ascending.decode(&[scalar(a), scalar(b)]).unwrap(),
+        ascending.decode(&[scalar(a.clone()), scalar(b.clone())]).unwrap(),
         vec![WitnessValue::Integer(1), WitnessValue::Integer(2)]
     );
-    let descending = witness(&[(b, "2"), (a, "1")]);
+    let descending = witness(&[(b.clone(), "2"), (a.clone(), "1")]);
     assert_eq!(
-        descending.decode(&[scalar(a), scalar(b)]),
+        descending.decode(&[scalar(a.clone()), scalar(b.clone())]),
         Err(DecodeRefusal::EntryOrder(a.to_string()))
     );
-    let repeated = witness(&[(a, "1"), (a, "2")]);
+    let repeated = witness(&[(a.clone(), "1"), (a.clone(), "2")]);
     assert_eq!(
-        repeated.decode(&[scalar(a), scalar(b)]),
+        repeated.decode(&[scalar(a.clone()), scalar(b)]),
         Err(DecodeRefusal::Duplicate(a))
     );
 }
@@ -368,7 +368,7 @@ fn tc_905_entries_must_ascend_by_parameter_node_id() {
 fn list(depth: usize, head_name: &str, tail_name: &str) -> WitnessValue {
     let declaration = id(0x77);
     let mut value = WitnessValue::Record {
-        declaration,
+        declaration: declaration.clone(),
         fields: vec![
             present(head_name, int(1)),
             field(tail_name, WitnessSlot::Absent),

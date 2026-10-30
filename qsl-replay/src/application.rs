@@ -1082,7 +1082,7 @@ mod tests {
                 .lookup_callable(handle.package_name(), &lib_wire)
                 .err(),
             Some(CallableLookupRefusal::Foreign(
-                lib_acquired.handle().package_name()
+                lib_acquired.handle().package_name().clone()
             ))
         );
         let dependency = handle
@@ -1384,7 +1384,7 @@ mod tests {
                 g.signature(),
                 Host {
                     begun: Arc::clone(&begun),
-                    child: Some(f.key())
+                    child: Some(f.key().clone())
                 }
             ),
             Ok(Admission::Accepted)
@@ -1426,7 +1426,7 @@ mod tests {
         let own_location = handle
             .package
             .graph()
-            .function_by_identity(selection.key())
+            .function_by_identity(selection.key().clone())
             .expect("own checked function")
             .body
             .location()
@@ -1442,7 +1442,7 @@ mod tests {
             .expect("imported function");
         let imported_location = imported_package
             .graph()
-            .function_by_identity(imported.key())
+            .function_by_identity(imported.key().clone())
             .expect("imported checked function")
             .body
             .location()
@@ -1764,7 +1764,7 @@ mod tests {
             }
             let wire = node.key().clone();
             for ordinal in 0..16 {
-                let occurrence = NestedCallOccurrence::new(wire, ordinal);
+                let occurrence = NestedCallOccurrence::new(wire.clone(), ordinal);
                 if let Ok(site) = handle.nested_call_site(caller, occurrence) {
                     found.push((occurrence, site));
                 }
@@ -1777,7 +1777,7 @@ mod tests {
         let mut pending = vec![
             package
                 .graph()
-                .function_by_identity(callable.key())
+                .function_by_identity(callable.key().clone())
                 .expect("checked caller")
                 .body,
         ];
@@ -1886,7 +1886,7 @@ mod tests {
                 caller,
                 caller.signature(),
                 SitedHost {
-                    callee: Some(callee.key()),
+                    callee: Some(callee.key().clone()),
                     site: site.clone(),
                 },
             ),
@@ -1919,7 +1919,7 @@ mod tests {
         assert_eq!(sorted(&sites), oracle(&package, &twice));
         let root = package
             .graph()
-            .function_by_identity(twice.key())
+            .function_by_identity(twice.key().clone())
             .expect("twice")
             .body
             .location()
@@ -2035,7 +2035,7 @@ mod tests {
             [
                 NestedCallSiteRefusal::WrongAcquisition,
                 NestedCallSiteRefusal::ForeignCall(dependency_id),
-                NestedCallSiteRefusal::ForeignCall(own),
+                NestedCallSiteRefusal::ForeignCall(own.clone()),
                 NestedCallSiteRefusal::Unreachable,
                 NestedCallSiteRefusal::WrongKind,
                 NestedCallSiteRefusal::UnknownCall,
@@ -2087,7 +2087,7 @@ mod tests {
                 &g,
                 g.signature(),
                 SitedHost {
-                    callee: Some(f.key()),
+                    callee: Some(f.key().clone()),
                     site: before.location().clone(),
                 },
             ),
@@ -2280,7 +2280,7 @@ mod tests {
         assert_eq!(boxed_member.variant(), *boxed_variant);
         assert_eq!(
             boxed_payload,
-            &[ValueType::Composite(pair.key()), ValueType::Boolean]
+            &[ValueType::Composite(pair.key().clone()), ValueType::Boolean]
         );
 
         // The returned checked record and tuple data is directly usable by the
@@ -2288,7 +2288,7 @@ mod tests {
         let types = TypeEnvironment::new(
             [
                 CompositeDeclaration::new(
-                    pair.key(),
+                    pair.key().clone(),
                     "Pair",
                     CompositeShape::Tuple(
                         pair.members()
@@ -2303,7 +2303,7 @@ mod tests {
                     ),
                 ),
                 CompositeDeclaration::new(
-                    holder.key(),
+                    holder.key().clone(),
                     "Holder",
                     CompositeShape::Record(
                         holder
@@ -2324,7 +2324,7 @@ mod tests {
                     ),
                 ),
                 CompositeDeclaration::new(
-                    shape.key(),
+                    shape.key().clone(),
                     "Shape",
                     CompositeShape::Union(
                         shape
@@ -2352,7 +2352,7 @@ mod tests {
         let mut types = types;
         types
             .seal_union_verified(
-                shape.key(),
+                shape.key().clone(),
                 shape.node(),
                 shape
                     .members()
@@ -2366,9 +2366,9 @@ mod tests {
                     .collect(),
             )
             .expect("the retained union bindings seal the declared union");
-        assert_eq!(types.composite(holder.key()).unwrap().name(), "Holder");
-        assert_eq!(types.composite(shape.key()).unwrap().name(), "Shape");
-        assert_eq!(*pair_key, pair.key());
+        assert_eq!(types.composite(holder.key().clone()).unwrap().name(), "Holder");
+        assert_eq!(types.composite(shape.key().clone()).unwrap().name(), "Shape");
+        assert_eq!(*pair_key, pair.key().clone());
         assert_eq!(holder.members().len(), 3);
     }
 
@@ -2427,7 +2427,7 @@ mod tests {
             .expect("imported composite");
         assert_eq!(
             handle.nominal_declaration(&own_selection, &imported_node),
-            Err(NominalDeclarationRefusal::Foreign(dependency_record))
+            Err(NominalDeclarationRefusal::Foreign(dependency_record.clone()))
         );
         let imported_selection = handle
             .lookup_callable(&dependency_record, &wire(dependency, "imported"))

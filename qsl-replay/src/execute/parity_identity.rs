@@ -534,7 +534,7 @@ mod tests {
         );
         let digest = argument_digest(
             &sequence_argument(),
-            node(),
+            &node(),
             &Origin::new(Role::new("expression"), 0),
             0,
         )

@@ -793,7 +793,7 @@ mod witness_tests {
     fn tc_180_exactly_one_field_and_derived_facts_track_the_stored_transcript() {
         let x = crate::fixture_node(1);
         let y = crate::fixture_node(2);
-        let bindings = [integer(x), integer(y)];
+        let bindings = [integer(x.clone()), integer(y.clone())];
         let text = assertion(
             "harness_a",
             "x == 1",
@@ -885,7 +885,7 @@ mod witness_tests {
         );
         let witness = Witness::parse(assertion("h", "c", &values)).unwrap();
         assert_eq!(
-            witness.decode(&[boolean(flag), integer(low), integer(high)]),
+            witness.decode(&[boolean(flag.clone()), integer(low), integer(high)]),
             Ok(vec![
                 WitnessValue::Boolean(true),
                 WitnessValue::Integer(i128::MIN),
@@ -918,26 +918,26 @@ mod witness_tests {
         };
 
         assert_eq!(
-            decode(format!("{x}=1", x = pn_(&x)), &[integer(x), boolean(b)]),
-            Err(DecodeRefusal::Missing(b))
+            decode(format!("{x}=1", x = pn_(&x)), &[integer(x.clone()), boolean(b.clone())]),
+            Err(DecodeRefusal::Missing(b.clone()))
         );
         assert_eq!(
-            decode(format!("{x}=1;{x}=2", x = pn_(&x)), &[integer(x)]),
-            Err(DecodeRefusal::Duplicate(x))
+            decode(format!("{x}=1;{x}=2", x = pn_(&x)), &[integer(x.clone())]),
+            Err(DecodeRefusal::Duplicate(x.clone()))
         );
         assert_eq!(
             decode(
                 format!("{x}=1;{b}=0", x = pn_(&x), b = pn_(&b)),
-                &[integer(x)]
+                &[integer(x.clone())]
             ),
             Err(DecodeRefusal::Unbound(b.to_string()))
         );
         assert_eq!(
-            decode(format!("{x}=1;junk", x = pn_(&x)), &[integer(x)]),
+            decode(format!("{x}=1;junk", x = pn_(&x)), &[integer(x.clone())]),
             Err(DecodeRefusal::MalformedEntry("junk".to_owned()))
         );
         assert_eq!(
-            decode(format!("{b}=2", b = pn_(&b)), &[boolean(b)]),
+            decode(format!("{b}=2", b = pn_(&b)), &[boolean(b.clone())]),
             Err(DecodeRefusal::Malformed {
                 parameter: b,
                 value_type: WitnessValueType::Boolean,
@@ -947,7 +947,7 @@ mod witness_tests {
         let past_max = format!("{}0", i128::MAX);
         for text in ["not-a-number", past_max.as_str()] {
             assert_eq!(
-                decode(format!("{x}={text}", x = pn_(&x)), &[integer(x)]),
+                decode(format!("{x}={text}", x = pn_(&x)), &[integer(x.clone())]),
                 Err(DecodeRefusal::Malformed {
                     parameter: x,
                     value_type: WitnessValueType::I128,
@@ -1377,11 +1377,11 @@ mod envelope_tests {
         // at its element: distinct by their domain keys.
         let parameter = crate::fixture_node(6);
         let whole = DomainKey::Node {
-            node: parameter,
+            node: parameter.clone(),
             path: Vec::new(),
         };
         let element = DomainKey::Node {
-            node: parameter,
+            node: parameter.clone(),
             path: vec![0],
         };
         packet.declared_domains = Some(vec![

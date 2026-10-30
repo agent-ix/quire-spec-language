@@ -267,7 +267,7 @@ fn tc_1252_call_site_mints_the_identity_of_a_value_function_only() {
         let mut text = String::from("{\"arguments\":[");
         for (position, (_, parameter)) in located.parameters.iter().enumerate() {
             let declared = semantic
-                .node(parameter)
+                .node(parameter.clone())
                 .and_then(|node| node.semantic_type())
                 .expect("a typed parameter");
             let declared = declared.clone();
@@ -353,7 +353,7 @@ fn tc_1252_a_wrong_identity_refuses_obligation_before_the_argument_join() {
     retyped.arguments[0].semantic_type = crate::fixture_node(0x44);
     let retyped = value_parity_obligation(&retyped).unwrap();
     let add_identity = add.value_parity.as_ref().unwrap().obligation_identity;
-    let stray = add.parameters[1].1;
+    let stray = &add.parameters[1].1;
     for (claimed, extra) in [
         (*add_identity.as_bytes(), false),
         ([0; 32], false),
@@ -367,7 +367,7 @@ fn tc_1252_a_wrong_identity_refuses_obligation_before_the_argument_join() {
                 panic!("an input source");
             };
             assignments.push(CanonicalAssignment {
-                parameter: stray,
+                parameter: stray.clone(),
                 value: WitnessValue::Integer(1),
             });
         }

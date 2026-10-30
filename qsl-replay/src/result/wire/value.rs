@@ -196,11 +196,11 @@ mod tests {
         let types = package.graph().scope().types();
         let int = |value: i64| Value::Integer(Integer::from(value));
         let plain = types
-            .record(money, vec![("amount", FieldValue::Present(int(1)))])
+            .record(money.clone(), vec![("amount", FieldValue::Present(int(1)))])
             .unwrap();
         let child = types
             .record(
-                taxed,
+                taxed.clone(),
                 vec![
                     ("amount", FieldValue::Present(int(1))),
                     ("tax", FieldValue::Present(int(2))),
@@ -216,7 +216,7 @@ mod tests {
                 ],
             )
             .unwrap();
-        let option = OptionValue::from_admitted(ValueType::Composite(money), Some(child.clone()));
+        let option = OptionValue::from_admitted(ValueType::Composite(money.clone()), Some(child.clone()));
         let collection = quire_exact::from_admitted(
             CollectionType::new(
                 CollectionKind::Sequence,

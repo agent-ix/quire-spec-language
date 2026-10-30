@@ -121,7 +121,7 @@ fn converted(value: WitnessValue, declared: ValueType) -> Result<Value, usize> {
 
 fn declaration_of(value: &Value) -> NodeKey {
     match value {
-        Value::Composite(composite) => composite.declaration(),
+        Value::Composite(composite) => composite.declaration().clone(),
         other => panic!("a record, not {other:?}"),
     }
 }

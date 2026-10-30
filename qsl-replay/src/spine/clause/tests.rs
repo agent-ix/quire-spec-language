@@ -3739,7 +3739,7 @@ fn a_fault_on_the_frame_node_refuses_the_whole_config_version_package() {
         })
         .expect("exactly one frame node (asserted by s4_emits_exactly_the_fr_105_state_nodes)")
         .key();
-    let frame_id = qsl_package::checked_node_id_of(frame_key);
+    let frame_id = qsl_package::checked_node_id_of(&frame_key);
     let fault_reason = "fault injection (test): forced encoding failure at the frame node";
 
     let refusal = qsl_package::emit_checked_with_fault(&compiled.package, |id| {
@@ -4067,7 +4067,7 @@ fn emitted_dependencies_of(compiled: &ComposedUnit, key: NodeKey) -> Vec<serde_j
     let nodes = wire["semantic_graph"]["nodes"]
         .as_array()
         .expect("semantic_graph.nodes is an array");
-    let id = wire_node_id(key);
+    let id = wire_node_id(&key);
     nodes
         .iter()
         .find(|node| node["node_id"] == id)

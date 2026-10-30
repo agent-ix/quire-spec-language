@@ -788,7 +788,7 @@ fn context(fixture: &Fixture, limits: CallerLimits) -> PluginReplayContext {
 fn declaration(fixture: &Fixture, name: &str) -> (OccurrenceKey, NodeKey) {
     let graph = fixture.checked.package().graph();
     let callable = graph.callable(name).expect("declared");
-    let parameter = crate::execute::callable_parameter_keys(fixture.checked.package(), &callable)
+    let parameter = &crate::execute::callable_parameter_keys(fixture.checked.package(), &callable)
         .expect("a function node")[0];
     let node = callable.identity.clone();
     (
@@ -836,9 +836,9 @@ fn tc_774_function_contract_and_application_items_replay() {
     let fixture = fixture();
     let context = context(&fixture, CallerLimits::default());
     let (p, p_x) = declaration(&fixture, "p");
-    let bounds = [bound_at(p_x)];
+    let bounds = [bound_at(p_x.clone())];
     let wire = context
-        .request(&p, &bounds, &plugin(), input(p_x, 0))
+        .request(&p, &bounds, &plugin(), input(p_x.clone(), 0))
         .expect("a function-contract item");
     assert_eq!(
         wire.replay_target
@@ -878,11 +878,11 @@ fn tc_774_function_contract_and_application_items_replay() {
         .expect("p's application has a requirement record");
     assert_ne!(p_application, p);
     assert!(matches!(
-        settle(&context, &p_application, &bounds, input(p_x, 0)).value(),
+        settle(&context, &p_application, &bounds, input(p_x.clone(), 0)).value(),
         TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(_))
     ));
 
-    let refuted = settle(&context, &p, &bounds, input(p_x, 0));
+    let refuted = settle(&context, &p, &bounds, input(p_x.clone(), 0));
     assert_eq!(refuted.value(), &TerminalValue::Refuted);
     assert_eq!(refuted.backend(), Some(&plugin()));
     let parity = settle(&context, &p, &bounds, input(p_x, 5));
@@ -916,14 +916,14 @@ fn tc_774_function_contract_and_application_items_replay() {
         // The item's identity is the process-provider preimage of its node
         // and occurrence.
         let wire = context
-            .request(application, &[bound_at(r_x)], &plugin(), input(r_x, 0))
+            .request(application, &[bound_at(r_x.clone())], &plugin(), input(r_x.clone(), 0))
             .expect("an application item");
-        let entries = BoundEntries::new(vec![bound_at(r_x)]).unwrap();
+        let entries = BoundEntries::new(vec![bound_at(r_x.clone())]).unwrap();
         let identity =
             process_provider_obligation(application.node(), application.origin(), &entries)
                 .unwrap();
         assert_eq!(wire.obligation_identity, *identity.as_bytes());
-        let record = settle(&context, application, &[bound_at(r_x)], input(r_x, 0));
+        let record = settle(&context, application, &[bound_at(r_x.clone())], input(r_x.clone(), 0));
         assert!(
             matches!(
                 record.value(),
@@ -934,7 +934,7 @@ fn tc_774_function_contract_and_application_items_replay() {
         assert_eq!(record.backend(), Some(&plugin()));
     }
     assert_eq!(
-        settle(&context, &r, &[bound_at(r_x)], input(r_x, 0)).value(),
+        settle(&context, &r, &[bound_at(r_x.clone())], input(r_x, 0)).value(),
         &TerminalValue::Refuted
     );
 
@@ -951,7 +951,7 @@ fn tc_774_function_contract_and_application_items_replay() {
         .map(|(key, _)| key.clone())
         .expect("q's application has a requirement record");
     let wire = context
-        .request(&application, &[bound_at(q_x)], &plugin(), input(q_x, 9))
+        .request(&application, &[bound_at(q_x.clone())], &plugin(), input(q_x.clone(), 9))
         .expect("an application item");
     assert_eq!(
         wire.replay_target
@@ -965,11 +965,11 @@ fn tc_774_function_contract_and_application_items_replay() {
         wire.replay_target.occurrence_key.as_ref(),
         Some(&application)
     );
-    let entries = BoundEntries::new(vec![bound_at(q_x)]).unwrap();
+    let entries = BoundEntries::new(vec![bound_at(q_x.clone())]).unwrap();
     let identity =
         process_provider_obligation(application.node(), application.origin(), &entries).unwrap();
     assert_eq!(wire.obligation_identity, *identity.as_bytes());
-    let record = settle(&context, &application, &[bound_at(q_x)], input(q_x, 9));
+    let record = settle(&context, &application, &[bound_at(q_x.clone())], input(q_x.clone(), 9));
     assert!(matches!(
         record.value(),
         TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(_))
@@ -979,14 +979,14 @@ fn tc_774_function_contract_and_application_items_replay() {
     // A function declaration whose result is not `Boolean` is no
     // function-contract item.
     let refusal = context
-        .request(&q, &[bound_at(q_x)], &plugin(), input(q_x, 9))
+        .request(&q, &[bound_at(q_x.clone())], &plugin(), input(q_x.clone(), 9))
         .err()
         .expect("a non-predicate declaration");
     assert_eq!(
         refusal,
         PluginReplayRefusal::NotReplayable { key: q.clone() }
     );
-    let record = settle(&context, &q, &[bound_at(q_x)], input(q_x, 9));
+    let record = settle(&context, &q, &[bound_at(q_x.clone())], input(q_x, 9));
     assert_eq!(
         record.value(),
         &TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(
@@ -1016,11 +1016,11 @@ fn tc_774_an_undefined_application_item_is_refuted() {
         .find(|(_, record)| record.owner() == Some("m"))
         .map(|(key, _)| key.clone())
         .expect("m's application has a requirement record");
-    let bounds = [bound_at(x)];
-    let refuted = settle(&context, &application, &bounds, input(x, 0));
+    let bounds = [bound_at(x.clone())];
+    let refuted = settle(&context, &application, &bounds, input(x.clone(), 0));
     assert_eq!(refuted.value(), &TerminalValue::Refuted);
     assert_eq!(refuted.backend(), Some(&plugin()));
-    let defined = settle(&context, &application, &bounds, input(x, 3));
+    let defined = settle(&context, &application, &bounds, input(x.clone(), 3));
     assert!(matches!(
         defined.value(),
         TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(_))
@@ -1039,10 +1039,10 @@ fn tc_774_process_provider_preimage_encodes_and_digests() {
     let node = crate::fixture_node(0x11);
     let origin = Origin::new(Role::new("declaration"), 0);
     let bound = bound_at(crate::fixture_node(0x22));
-    let with = process_provider_obligation(node, &origin, &BoundEntries::new(vec![bound]).unwrap())
+    let with = process_provider_obligation(&node, &origin, &BoundEntries::new(vec![bound]).unwrap())
         .unwrap();
     let without =
-        process_provider_obligation(node, &origin, &BoundEntries::new(Vec::new()).unwrap())
+        process_provider_obligation(&node, &origin, &BoundEntries::new(Vec::new()).unwrap())
             .unwrap();
     // The identity is the SHA-256 of the RFC 8785 text of the item's
     // proof bounds, node, kind and occurrence, written out by hand here and
@@ -1116,7 +1116,7 @@ fn tc_774_limits_flow_into_the_request_and_refusals_are_ordered() {
         })
     );
     // Only the `declaration` occurrence at ordinal 0 names a function.
-    let off_ordinal = OccurrenceKey::new(p.node(), Origin::new(Role::new("declaration"), 1));
+    let off_ordinal = OccurrenceKey::new(p.node().clone(), Origin::new(Role::new("declaration"), 1));
     assert_eq!(
         context
             .request(&off_ordinal, &[], &plugin(), Vec::new())
@@ -1227,7 +1227,7 @@ fn tc_774_a_transitive_dependency_replays() {
     let context = context(&fixture, CallerLimits::default());
     let (q, q_x) = declaration(&fixture, "q");
     let wire = context
-        .request(&q, &[bound_at(q_x)], &plugin(), input(q_x, 0))
+        .request(&q, &[bound_at(q_x.clone())], &plugin(), input(q_x.clone(), 0))
         .expect("a function-contract item");
     let identities: Vec<&str> = wire
         .dependencies
@@ -1236,11 +1236,11 @@ fn tc_774_a_transitive_dependency_replays() {
         .collect();
     assert_eq!(identities, ["test/b", "test/c"]);
     assert_eq!(
-        settle(&context, &q, &[bound_at(q_x)], input(q_x, 0)).value(),
+        settle(&context, &q, &[bound_at(q_x.clone())], input(q_x.clone(), 0)).value(),
         &TerminalValue::Refuted
     );
     assert!(matches!(
-        settle(&context, &q, &[bound_at(q_x)], input(q_x, 7)).value(),
+        settle(&context, &q, &[bound_at(q_x.clone())], input(q_x, 7)).value(),
         TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(_))
     ));
 }
