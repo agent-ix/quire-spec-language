@@ -109,7 +109,7 @@ use qsl_semantics::model::intake::{
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::value::identity_limit;
 use quire_eval::{CallFailure, Evaluation};
-use quire_exact::{Cancel, Meter, NodeKey, ScalarLimits, Value};
+use quire_exact::{Cancel, Meter, ScalarLimits, Value};
 use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::semantic_node::IdentityRefusal;
 
@@ -253,10 +253,10 @@ fn limit_of(
             refusal: ImportRefusal::View { refusal, .. },
             ..
         } => match &**refusal {
-            ImportViewRefusal::Read {
-                refusal: StageFailure::Limit(limit),
-                ..
-            } => Some(limit.clone()),
+            ImportViewRefusal::Read { refusal, .. } => match refusal.as_ref() {
+                StageFailure::Limit(limit) => Some(limit.clone()),
+                _ => None,
+            },
             _ => None,
         },
         CompileRefusal::Limit(limit) => Some(limit.clone()),
@@ -844,7 +844,7 @@ thread_local! {
     /// The `declaration` occurrence of each function of each composed
     /// package, by the callable's own node key: the key a `function` replay
     /// request carries for the predicate claim (FR-098).
-    static DECLARATIONS: std::cell::RefCell<BTreeMap<NodeKey, qsl_foundation::source::provenance::OccurrenceKey>> =
+    static DECLARATIONS: std::cell::RefCell<BTreeMap<quire_exact::NodeKey, qsl_foundation::source::provenance::OccurrenceKey>> =
         const { std::cell::RefCell::new(BTreeMap::new()) };
 }
 
@@ -871,7 +871,7 @@ fn record_declarations(package: &pkg::CheckedPackage) {
 
 /// Whether a callable with this node key was [`compose`]d on this thread.
 #[cfg(test)]
-pub(crate) fn composed_here(callable: &NodeKey) -> bool {
+pub(crate) fn composed_here(callable: &quire_exact::NodeKey) -> bool {
     DECLARATIONS.with(|declarations| declarations.borrow().contains_key(callable))
 }
 
@@ -879,7 +879,7 @@ pub(crate) fn composed_here(callable: &NodeKey) -> bool {
 /// [`compose`]d on this thread.
 #[cfg(test)]
 pub(crate) fn composed_declaration(
-    callable: &NodeKey,
+    callable: &quire_exact::NodeKey,
 ) -> Option<qsl_foundation::source::provenance::OccurrenceKey> {
     DECLARATIONS.with(|declarations| declarations.borrow().get(callable).cloned())
 }
