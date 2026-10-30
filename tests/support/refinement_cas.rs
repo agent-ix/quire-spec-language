@@ -517,7 +517,7 @@ fn snapshot(
         .map(|key| json!({"key": key, "type": ident(package, "Counter"), "fields": fields}))
         .collect();
     let header = json!({"identity": package});
-    let name = format!("{package}/start");
+    let name = format!("{package}/start/{fields}/{}", keys.join(","));
     let snapshot = json!({
         "format": "quire.state.snapshot/v1",
         "identity": {"authority": "test", "identity": name, "revision_namespace": "fixture",

@@ -25,8 +25,10 @@ cases.
    dependency. Confirm the workspace still contains `qsl-source` and
    `qsl-replay` declares its own `quire-extraction` feature.
 3. Before removing the root feature, run
-   `cargo test -p quire-spec-language --features quire-extraction,qsl-replay/quire-extraction --test config_version_spine --test spine_run`
-   to exercise the current root-owned cases. The code change moves those
+   `cargo test -p quire-spec-language --features quire-extraction,qsl-replay/quire-extraction --test it -- spine`
+   to exercise the current root-owned cases. The root crate has one integration
+   target named `it`; the `spine` name filter selects both the
+   `config_version_spine` and `spine_run` modules. The code change moves those
    cases from `tests/it/config_version_spine.rs` and `tests/it/spine_run.rs`
    into `qsl-replay` or `qsl-source` tests before deleting their former
    locations. In the resulting test sources, locate passing tests whose

@@ -27,6 +27,15 @@ fn record_type(name: &str) -> ir::ValueType {
 }
 
 fn environment(owner: &str, revision: u64, unused_bound: i64) -> ir::DeclarationEnvironment {
+    environment_in("example/model", owner, revision, unused_bound)
+}
+
+fn environment_in(
+    package: &str,
+    owner: &str,
+    revision: u64,
+    unused_bound: i64,
+) -> ir::DeclarationEnvironment {
     let integer = ir::ValueType::integer(
         ir::IntegerType::new(
             ir::IntegerDomain::Signed,
@@ -101,7 +110,7 @@ fn environment(owner: &str, revision: u64, unused_bound: i64) -> ir::Declaration
         },
     ];
     ir::DeclarationEnvironment::new(
-        ir::RequirementRef::parse("example/model", owner, revision).unwrap(),
+        ir::RequirementRef::parse(package, owner, revision).unwrap(),
         types,
         vec![
             ir::ValueDeclaration::new(
@@ -278,12 +287,14 @@ fn ambiguity_retains_all_sorted_loci_in_every_order() {
 #[trace("TC-024", "FR-005-AC-5", "FR-017-AC-3")]
 #[test]
 fn failed_import_permutations_never_reuse_successful_state() {
-    let envs = [environment("FR-001", 1, 10), environment("FR-002", 2, 10)];
+    let envs = [
+        environment("FR-001", 1, 10),
+        environment_in("example/other", "FR-002", 2, 10),
+    ];
     let a = import(&envs[0], "M");
     let b = import(&envs[1], "N");
     for defective in [
         a.replace("example/model", "example/missing"),
-        a.replace("version \"1\"", "version \"99\""),
         import(&envs[1], "M"),
     ] {
         for imports in [

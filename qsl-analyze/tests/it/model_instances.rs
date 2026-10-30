@@ -331,7 +331,7 @@ impl World {
         let run = check_state_graph(
             StateGraphRequest {
                 subject: self.subject(&package, universes),
-                items: vec![StateGraphItem { claim }],
+                items: vec![StateGraphItem::new(claim)],
                 reductions: Default::default(),
                 deadlock_freedom: false,
                 max_depth: None,
