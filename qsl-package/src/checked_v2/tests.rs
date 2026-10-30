@@ -10,8 +10,7 @@
 use ix_trace_rs::trace;
 use quire_contract_model::{
     CheckedArtifactRef, CheckedExtensionDefinition, CheckedPackageEvidence,
-    CheckedPackageRefusalCause, CheckedPackageRefusalCode, 
-    CHECKED_PACKAGE_V2,
+    CheckedPackageRefusalCause, CheckedPackageRefusalCode, CHECKED_PACKAGE_V2,
 };
 use serde_json::{json, Value};
 
@@ -961,6 +960,22 @@ fn qspec_v2_fixtures() -> Option<(std::path::PathBuf, Vec<std::path::PathBuf>)> 
     Some((directory, paths))
 }
 
+/// Published fixtures read with their selected domain documents, as
+/// paths relative to QSpec's `proposals/checked-package-v2`.
+const ALL_FAMILIES: &str = "fixtures/positive-all-families.json";
+const TIMED_MODEL_NODES: &str = "fixtures/positive-timed-model-nodes.json";
+const TICK_TIMED_MODEL_NODES: &str = "fixtures/positive-tick-timed-model-nodes.json";
+
+/// The path of the published fixture at `path` relative to QSpec's
+/// `proposals/checked-package-v2`, as `selected-documents.json` keys it.
+fn published_fixture(path: &std::path::Path) -> String {
+    let file = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .expect("a fixture file name");
+    format!("fixtures/{file}")
+}
+
 fn read_fixture(path: &std::path::Path) -> Value {
     let bytes =
         std::fs::read(path).unwrap_or_else(|error| panic!("reading {}: {error}", path.display()));
@@ -1038,16 +1053,17 @@ fn supply_qspec_dependency_packages(evidence: &mut CheckedPackageEvidence, envel
         };
         // A selection naming no published fixture supplies nothing, so the
         // reader's missing-import refusal remains observable.
-        let Some(library) = fixtures
+        let Some((path, library)) = fixtures
             .iter()
-            .map(|path| read_fixture(path))
-            .find(|candidate| candidate["name"].as_str() == Some(identity_text))
+            .map(|path| (path, read_fixture(path)))
+            .find(|(_, candidate)| candidate["name"].as_str() == Some(identity_text))
         else {
             continue;
         };
         // The dependency is read against its own whole evidence, the
         // domain packages of its selected models included.
-        let inner = fixture_evidence(&library, &library, &[]);
+        let library_fixture = published_fixture(path);
+        let inner = fixture_evidence(Some(&library_fixture), &library, &library, &[]);
         let admitted = read_checked_package_v2(
             &fixture_wire_bytes(&library),
             identity(identity_text),
@@ -1068,31 +1084,37 @@ fn fixture_wire_bytes(envelope: &Value) -> Vec<u8> {
     jcs(envelope)
 }
 
-/// QSL's whole I2 read of the fixture under its declared name. Evidence treats
-/// the fixture's required features as supported. The published fixture is
-/// pretty-printed; the wire is its canonical form.
-fn read_fixture_wire(envelope: &Value) -> (String, Read) {
-    read_fixture_wire_withholding(envelope, &[])
+/// QSL's whole I2 read of `envelope`, the published fixture `fixture` (a
+/// path relative to QSpec's `proposals/checked-package-v2`) or a mutation
+/// of it, under its declared name. Evidence treats the fixture's required
+/// features as supported. The published fixture is pretty-printed; the
+/// wire is its canonical form.
+fn read_fixture_wire(fixture: &str, envelope: &Value) -> (String, Read) {
+    read_fixture_wire_withholding(fixture, envelope, &[])
 }
 
 /// [`read_fixture_wire`] with the extension definitions named by
 /// `withheld` left out of the held evidence (QSpec FR-469 "Published
 /// definitions": the withheld-definition control).
 fn read_fixture_wire_withholding(
+    fixture: &str,
     envelope: &Value,
     withheld: &[CheckedArtifactRef],
 ) -> (String, Read) {
-    read_fixture_wire_holding(envelope, envelope, withheld)
+    read_fixture_wire_holding(Some(fixture), envelope, envelope, withheld)
 }
 
 /// [`read_fixture_wire_withholding`] holding the published definitions
-/// that `selecting`'s lock selects, rather than `envelope`'s own.
+/// that `selecting`'s lock selects, rather than `envelope`'s own. A locally
+/// built envelope derives from no published `fixture` and selects no domain
+/// document.
 fn read_fixture_wire_holding(
+    fixture: Option<&str>,
     envelope: &Value,
     selecting: &Value,
     withheld: &[CheckedArtifactRef],
 ) -> (String, Read) {
-    let evidence = fixture_evidence(envelope, selecting, withheld);
+    let evidence = fixture_evidence(fixture, envelope, selecting, withheld);
     let name = envelope["name"].as_str().expect("fixture name").to_owned();
     let outcome = read_v2(
         &fixture_wire_bytes(envelope),
@@ -1104,9 +1126,12 @@ fn read_fixture_wire_holding(
 }
 
 /// The evidence `envelope` is read against: the published definitions that
-/// `selecting`'s lock selects, minus `withheld`, the required features, and
-/// the domain and dependency packages `envelope` selects.
+/// `selecting`'s lock selects, minus `withheld`, the required features, the
+/// dependency packages `envelope` selects, and the domain document that
+/// QSpec pairs with `fixture` when `envelope` has a model root of its
+/// identity.
 fn fixture_evidence(
+    fixture: Option<&str>,
     envelope: &Value,
     selecting: &Value,
     withheld: &[CheckedArtifactRef],
@@ -1117,102 +1142,55 @@ fn fixture_evidence(
         evidence.support_feature(feature.as_str().unwrap());
     }
     supply_qspec_dependency_packages(&mut evidence, envelope);
-    let Some(nodes) = envelope["semantic_graph"]["nodes"].as_array() else {
+    let Some((identity, document)) = fixture.and_then(selected_domain_document) else {
         return evidence;
     };
-    for node in nodes {
-        if node["semantic_form"] != "model_root" {
-            continue;
-        }
-        let Some(identity) = node["owner"]["identity"].as_str() else {
-            continue;
-        };
-        if let Some(document) = selected_domain_document(envelope, identity) {
-            evidence
-                .insert_domain_package_document(identity, document)
-                .expect("unique domain document");
-        }
+    let selects_document = envelope["semantic_graph"]["nodes"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .any(|node| {
+            node["semantic_form"] == "model_root"
+                && node["owner"]["identity"].as_str() == Some(&*identity)
+        });
+    if selects_document {
+        evidence
+            .insert_domain_package_document(identity, document)
+            .expect("unique domain document");
     }
     evidence
 }
 
-/// QSpec TC-233's selected domain document of each published positive
-/// fixture whose model root is owned by an identity that more than one
-/// published `domain-package-*.json` document carries (`acme/orders`): "a
-/// fixture is checked against its own document only".
-const TC_233_SELECTED_DOCUMENTS: &[(&str, &str)] = &[
-    ("positive-all-families.json", "domain-package-acme-orders.json"),
-    ("positive-clause-operations.json", "domain-package-acme-orders.json"),
-    ("positive-dependency-library.json", "domain-package-acme-orders.json"),
-    ("positive-operation-identities.json", "domain-package-acme-orders.json"),
-    ("positive-state-transition.json", "domain-package-acme-orders.json"),
-    ("positive-timed-model-nodes.json", "domain-package-acme-timed-slots.json"),
-    ("positive-tick-timed-model-nodes.json", "domain-package-acme-timed-slots.json"),
-    ("positive-timed-slot-nodes.json", "domain-package-acme-timed-slots.json"),
-    ("positive-timed-clause-nodes.json", "domain-package-acme-timed-clauses.json"),
-];
-
-/// The node ids of `envelope`'s semantic graph, as JSON text.
-fn node_id_set(envelope: &Value) -> std::collections::BTreeSet<String> {
-    envelope["semantic_graph"]["nodes"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .map(|node| node["node_id"].to_string())
-        .collect()
+/// The published domain package document QSpec's
+/// `proposals/checked-package-v2/selected-documents.json` pairs with
+/// `fixture` (TC-233: several documents carry `acme/orders`, so a fixture,
+/// and a mutation of it, is read against its own document only), with the
+/// identity that document carries. `None` for a fixture with no entry.
+fn selected_domain_document(fixture: &str) -> Option<(String, Vec<u8>)> {
+    let proposals = qspec_directory()?.join("proposals/checked-package-v2");
+    let pairing = read_fixture(&proposals.join("selected-documents.json"));
+    let document = pairing["selected_documents"]
+        .get(fixture)?
+        .as_str()
+        .unwrap_or_else(|| panic!("{fixture}: the selected document is a path"));
+    let path = proposals.join(document);
+    let bytes =
+        std::fs::read(&path).unwrap_or_else(|error| panic!("reading {}: {error}", path.display()));
+    let decoded: Value = serde_json::from_slice(&bytes)
+        .unwrap_or_else(|error| panic!("parsing {}: {error}", path.display()));
+    let identity = decoded["package"]["identity"]
+        .as_str()
+        .unwrap_or_else(|| panic!("{document} carries a package identity"))
+        .to_owned();
+    Some((identity, bytes))
 }
 
-/// The published domain package document `envelope` selects for the model
-/// root owned by `identity`. When one published document carries
-/// `identity`, it is that document. When several do, it is the document
-/// TC-233 names for `envelope`'s base: the listed fixture whose node ids
-/// are nearest `envelope`'s (Jaccard similarity), so a vector mutation of a
-/// published fixture keeps its base's document.
-fn selected_domain_document(envelope: &Value, identity: &str) -> Option<Vec<u8>> {
-    let (fixtures, _) = qspec_v2_fixtures()?;
-    let proposals = fixtures.parent().expect("the proposal directory");
-    let mut candidates = BTreeMap::new();
-    for entry in std::fs::read_dir(proposals).expect("QSpec proposal directory") {
-        let path = entry.expect("QSpec directory entry").path();
-        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
-            continue;
-        };
-        if !name.starts_with("domain-package-") {
-            continue;
-        }
-        let document = std::fs::read(&path).expect("QSpec domain document");
-        let decoded: Value = serde_json::from_slice(&document).expect("QSpec domain JSON");
-        if decoded["package"]["identity"].as_str() == Some(identity) {
-            candidates.insert(name.to_owned(), document);
-        }
-    }
-    if candidates.len() <= 1 {
-        return candidates.into_values().next();
-    }
-    let ids = node_id_set(envelope);
-    let (_, selected) = TC_233_SELECTED_DOCUMENTS
-        .iter()
-        .map(|(fixture, document)| {
-            let base = node_id_set(&read_fixture(&fixtures.join(fixture)));
-            let shared = ids.intersection(&base).count();
-            let union = ids.union(&base).count();
-            ((shared, union), *document)
-        })
-        // Greatest shared / union, compared without division.
-        .max_by(|((a_shared, a_union), _), ((b_shared, b_union), _)| {
-            (a_shared * b_union).cmp(&(b_shared * a_union))
-        })
-        .expect("TC-233 lists fixtures");
-    Some(
-        candidates
-            .remove(selected)
-            .unwrap_or_else(|| panic!("{selected} carries {identity}")),
-    )
-}
-
-/// IR's admitted package for the admitted fixture `envelope`.
-fn admitted_fixture(envelope: &Value) -> std::sync::Arc<quire_contract_model::CheckedPackageV2> {
-    let evidence = fixture_evidence(envelope, envelope, &[]);
+/// IR's admitted package for `envelope`, the admitted published fixture `fixture`.
+fn admitted_fixture(
+    fixture: &str,
+    envelope: &Value,
+) -> std::sync::Arc<quire_contract_model::CheckedPackageV2> {
+    let evidence = fixture_evidence(Some(fixture), envelope, envelope, &[]);
     let read = read_checked_package_v2(
         &fixture_wire_bytes(envelope),
         identity(envelope["name"].as_str().unwrap_or("pkg")),
@@ -1243,7 +1221,7 @@ fn conformance_c14_source_map_lookup_over_qspec_positive_fixtures() {
     let mut looked_up = 0_usize;
     for path in &paths {
         let envelope = read_fixture(path);
-        let source_map = match read_fixture_wire(&envelope).1 {
+        let source_map = match read_fixture_wire(&published_fixture(path), &envelope).1 {
             Read::Verified { source_map, .. } => source_map,
             other => panic!("{}: expected Verified, got {other:?}", path.display()),
         };
@@ -1328,7 +1306,7 @@ fn qspec_union_value_application_keys_are_admitted_by_i2() {
         members["Rect"]["body"]["members"][0]["value"]["term"], "aggregate",
         "reference-payload vector keeps its aggregate payload"
     );
-    match read_fixture_wire(&envelope) {
+    match read_fixture_wire("fixtures/positive-union-nodes.json", &envelope) {
         (name, Read::Verified { admitted, .. }) => assert_eq!(admitted.name(), name),
         (_, other) => panic!("expected I2 to admit union vectors, got {other:?}"),
     }
@@ -1361,7 +1339,7 @@ fn conformance_i2_read_over_qspec_checked_package_v2_fixtures() {
         if !keys.is_sorted() {
             unsorted += 1;
         }
-        match read_fixture_wire(&envelope) {
+        match read_fixture_wire(&published_fixture(path), &envelope) {
             (name, Read::Verified { admitted, .. }) => {
                 assert_eq!(admitted.name(), name, "{}", path.display());
             }
@@ -1393,7 +1371,7 @@ fn conformance_i2_read_over_qspec_checked_package_v2_fixtures() {
         *candidate
             .pointer_mut(mutation["pointer"].as_str().unwrap())
             .unwrap_or_else(|| panic!("{id}: pointer exists")) = mutation["replacement"].clone();
-        let (_, outcome) = read_fixture_wire(&candidate);
+        let (_, outcome) = read_fixture_wire(ALL_FAMILIES, &candidate);
         // FR-096: an unknown contract version is `unknown_wire`, located at
         // `/contract_version`; every other IR refusal keeps IR's code.
         let refused_as_expected = match &outcome {
@@ -1447,7 +1425,7 @@ fn conformance_hybrid_nodes_are_admitted_and_a_swapped_model_body_is_refused() {
         hybrid, 3,
         "the fixture holds Tank's model, mode and transition"
     );
-    match read_fixture_wire(&base) {
+    match read_fixture_wire(ALL_FAMILIES, &base) {
         (_, Read::Verified { .. }) => {}
         (_, other) => panic!("hybrid fixture: expected Verified, got {other:?}"),
     }
@@ -1461,7 +1439,7 @@ fn conformance_hybrid_nodes_are_admitted_and_a_swapped_model_body_is_refused() {
         .as_array_mut()
         .unwrap()
         .swap(0, 1);
-    match read_fixture_wire(&swapped) {
+    match read_fixture_wire(ALL_FAMILIES, &swapped) {
         (_, Read::Refused(V2ReadRefusal::Envelope { refusal, .. })) => {
             assert_eq!(refusal.code, CheckedPackageRefusalCode::MalformedWire);
         }
@@ -1485,7 +1463,7 @@ fn conformance_tank_reads_back_with_a_bare_variable_rate_and_reset() {
         return;
     };
     let base = read_fixture(&directory.join("positive-all-families.json"));
-    let package = admitted_fixture(&base);
+    let package = admitted_fixture(ALL_FAMILIES, &base);
     let read = super::read_hybrids(&package, 10_000).expect("the fixture reads back");
     let name = |text: &str| quire_exact::Identifier::new(text).expect("an identifier");
     let [tank] = read.models.as_slice() else {
@@ -1557,7 +1535,7 @@ fn conformance_a_model_with_every_variable_clocked_is_refused_at_a_class_literal
     for variable in variables {
         variable["members"][1]["value"]["value"] = json!("clock");
     }
-    match read_fixture_wire(&candidate) {
+    match read_fixture_wire(ALL_FAMILIES, &candidate) {
         (_, Read::Refused(V2ReadRefusal::Envelope { refusal, .. })) => {
             assert_eq!(refusal.code, CheckedPackageRefusalCode::InvalidPackage);
             assert_eq!(
@@ -1584,7 +1562,7 @@ fn conformance_timed_model_nodes_are_retained_by_i2() {
         return;
     };
     let envelope = read_fixture(&directory.join("positive-timed-model-nodes.json"));
-    let (name, outcome) = read_fixture_wire(&envelope);
+    let (name, outcome) = read_fixture_wire(TIMED_MODEL_NODES, &envelope);
     let Read::Verified {
         admitted,
         timed_models,
@@ -1668,7 +1646,7 @@ fn conformance_tick_timed_model_has_operation_anchor_and_no_clock_places() {
         return;
     };
     let envelope = read_fixture(&directory.join("positive-tick-timed-model-nodes.json"));
-    let (name, outcome) = read_fixture_wire(&envelope);
+    let (name, outcome) = read_fixture_wire(TICK_TIMED_MODEL_NODES, &envelope);
     let Read::Verified {
         admitted,
         timed_models,
@@ -1716,7 +1694,7 @@ fn conformance_typed_timed_model_writer_emits_an_admitted_package() {
         return;
     };
     let original = read_fixture(&directory.join("positive-timed-model-nodes.json"));
-    let (_, read_outcome) = read_fixture_wire(&original);
+    let (_, read_outcome) = read_fixture_wire(TIMED_MODEL_NODES, &original);
     let Read::Verified {
         admitted,
         timed_models,
@@ -1759,7 +1737,7 @@ fn conformance_typed_timed_model_writer_emits_an_admitted_package() {
     let emitted_package: Value =
         serde_json::from_slice(emission.package().bytes()).expect("writer emits a v2 package");
     assert_eq!(emission.package().name(), emitted_package["name"]);
-    let (_, writer_outcome) = read_fixture_wire(&emitted_package);
+    let (_, writer_outcome) = read_fixture_wire(TIMED_MODEL_NODES, &emitted_package);
     assert!(
         matches!(writer_outcome, Read::Verified { .. }),
         "QSL typed timed-model writer output is admitted as a complete package: {writer_outcome:?}"
@@ -1858,7 +1836,7 @@ fn a_no_clock_dense_timed_model_needs_no_integer_literal_type() {
         }
     }
 
-    let (_, outcome) = read_fixture_wire(&envelope);
+    let (_, outcome) = read_fixture_wire(TIMED_MODEL_NODES, &envelope);
     let Read::Verified {
         admitted,
         timed_models,
@@ -1877,7 +1855,7 @@ fn a_no_clock_dense_timed_model_needs_no_integer_literal_type() {
     let emission = crate::emit::emit_timed_models(&admitted, &timed_models)
         .expect("a no-clock model writes without an integer literal type");
     let emitted: Value = serde_json::from_slice(emission.package().bytes()).unwrap();
-    let (_, round_trip) = read_fixture_wire(&emitted);
+    let (_, round_trip) = read_fixture_wire(TIMED_MODEL_NODES, &emitted);
     let Read::Verified {
         timed_models: reread,
         ..
@@ -1946,7 +1924,7 @@ fn changed_timed_inputs_rekey_and_read_back_the_mutated_model() {
         map.push(alternate_map);
         alternate_id
     };
-    let (_, base_outcome) = read_fixture_wire(&base_wire);
+    let (_, base_outcome) = read_fixture_wire(TIMED_MODEL_NODES, &base_wire);
     let Read::Verified {
         admitted,
         timed_models,
@@ -2022,7 +2000,7 @@ fn changed_timed_inputs_rekey_and_read_back_the_mutated_model() {
             .unwrap_or_else(|error| panic!("{case} mutation emits: {error}"));
         let wire: Value = serde_json::from_slice(emission.package().bytes()).unwrap();
         assert_eq!(wire["name"], base_wire["name"], "{case} keeps package name");
-        let (_, outcome) = read_fixture_wire(&wire);
+        let (_, outcome) = read_fixture_wire(TIMED_MODEL_NODES, &wire);
         if case == "path" {
             // FR-322-AC-148: a slot selector is the symbolic type node of its
             // domain. The fixture's map admits only the one `Text` type node,
@@ -2092,7 +2070,7 @@ fn changed_timed_inputs_rekey_and_read_back_the_mutated_model() {
     }
 
     let tick_wire = read_fixture(&directory.join("positive-tick-timed-model-nodes.json"));
-    let (_, tick_outcome) = read_fixture_wire(&tick_wire);
+    let (_, tick_outcome) = read_fixture_wire(TICK_TIMED_MODEL_NODES, &tick_wire);
     let Read::Verified {
         admitted: tick_admitted,
         timed_models: tick_models,
@@ -2111,7 +2089,10 @@ fn changed_timed_inputs_rekey_and_read_back_the_mutated_model() {
             .expect("changed tick period emits");
     let changed_tick_wire: Value = serde_json::from_slice(tick_emission.package().bytes()).unwrap();
     assert_eq!(changed_tick_wire["name"], tick_wire["name"]);
-    let (_, changed_tick_outcome) = read_fixture_wire(&changed_tick_wire);
+    let (_, changed_tick_outcome) = read_fixture_wire(
+        "fixtures/positive-tick-timed-model-nodes.json",
+        &changed_tick_wire,
+    );
     let Read::Verified {
         admitted: reread_tick,
         timed_models: reread_tick_models,
@@ -2180,7 +2161,7 @@ fn conformance_hybrid_and_timed_positive_references_close_and_units_match_dimens
             name,
             envelope["name"].as_str().unwrap(),
         );
-        let (_, outcome) = read_fixture_wire(&envelope);
+        let (_, outcome) = read_fixture_wire(&format!("fixtures/{name}"), &envelope);
         let Read::Verified { admitted, .. } = outcome else {
             panic!("{name}: complete positive read expected, got {outcome:?}");
         };
@@ -2245,7 +2226,7 @@ fn conformance_timed_model_vectors_keep_their_published_refusal_loci() {
             &format!("/nodes/{}", row["node"].as_str().unwrap()),
             &format!("/nodes/{node_index}"),
         );
-        let (_, outcome) = read_fixture_wire(&candidate);
+        let (_, outcome) = read_fixture_wire(TIMED_MODEL_NODES, &candidate);
         assert_timed_refusal(
             &outcome,
             "malformed_wire",
@@ -2480,7 +2461,15 @@ fn conformance_timed_model_vectors_keep_their_published_refusal_loci() {
                 .unwrap_or_else(|_| panic!("{}: unrecognized cause {cause}", row["id"]))
         });
         assert_timed_refusal(
-            &read_fixture_wire(&candidate).1,
+            &read_fixture_wire(
+                if is_tick {
+                    "fixtures/positive-tick-timed-model-nodes.json"
+                } else {
+                    "fixtures/positive-timed-model-nodes.json"
+                },
+                &candidate,
+            )
+            .1,
             row["expected_code"].as_str().unwrap(),
             expected_cause,
             row["locus"].as_str().unwrap(),
@@ -2533,12 +2522,12 @@ fn conformance_timed_clause_vectors_keep_their_published_outcomes() {
     let mut replayed = 0_usize;
     for case in vectors["cases"].as_array().expect("CL cases") {
         let id = &case["id"];
-        let mut package =
-            read_fixture(&proposals.join(case["fixture"].as_str().expect("a fixture")));
+        let fixture = case["fixture"].as_str().expect("a fixture");
+        let mut package = read_fixture(&proposals.join(fixture));
         if let Some(patch) = case.get("patch") {
             apply_json_patch(&mut package, patch);
         }
-        let (_, outcome) = read_fixture_wire(&package);
+        let (_, outcome) = read_fixture_wire(fixture, &package);
         let locus = case["locus"].as_str().unwrap_or_default();
         match case["expected"].as_str().expect("an outcome") {
             "admitted" => assert!(
@@ -2636,7 +2625,7 @@ fn unknown_temporal_profile_is_unknown_profile(base: &Value) {
     let mut package = base.clone();
     package["semantic_graph"]["nodes"][clause]["body"]["operation"]["laws"][0]["definition"]
         ["identity"] = json!("quire.fixture.temporal-profile/v1");
-    let (_, outcome) = read_fixture_wire(&package);
+    let (_, outcome) = read_fixture_wire(ALL_FAMILIES, &package);
     let Read::Refused(refusal @ V2ReadRefusal::Envelope { refusal: ir, .. }) = &outcome else {
         panic!("expected an unknown_profile refusal, got {outcome:?}");
     };
@@ -2661,14 +2650,8 @@ fn conformance_dependency_selection_vectors() {
         return;
     };
     let vectors = read_fixture(&directory.join("../dependency-selection-vectors.json"));
-    let base = read_fixture(
-        &directory.join(
-            vectors["base"]
-                .as_str()
-                .unwrap()
-                .trim_start_matches("fixtures/"),
-        ),
-    );
+    let fixture = vectors["base"].as_str().unwrap();
+    let base = read_fixture(&directory.join("..").join(fixture));
     let with = |entries: &Value| {
         let mut package = base.clone();
         package["lock"]["dependency_selections"] = entries.clone();
@@ -2689,7 +2672,7 @@ fn conformance_dependency_selection_vectors() {
     };
     let selections = &vectors["dependency_selections"];
     let normal = with(selections);
-    let (code, _, pointer) = refused_at(&read_fixture_wire(&normal).1);
+    let (code, _, pointer) = refused_at(&read_fixture_wire(fixture, &normal).1);
     assert_eq!(code, CheckedPackageRefusalCode::MissingImport);
     assert_eq!(pointer, "/lock/dependency_selections/0");
 
@@ -2697,7 +2680,7 @@ fn conformance_dependency_selection_vectors() {
         let id = mutation["id"].as_str().unwrap();
         let mut entries = selections.clone();
         entries[0] = mutation["entry"].clone();
-        let (code, _, pointer) = refused_at(&read_fixture_wire(&with(&entries)).1);
+        let (code, _, pointer) = refused_at(&read_fixture_wire(fixture, &with(&entries)).1);
         let expected = match mutation["outcome"].as_str().unwrap() {
             "refused:malformed_wire" => CheckedPackageRefusalCode::MalformedWire,
             "refused:unknown_member" => CheckedPackageRefusalCode::UnknownMember,
@@ -2712,7 +2695,7 @@ fn conformance_dependency_selection_vectors() {
 
     for vector in vectors["order_vectors"].as_array().unwrap() {
         let id = vector["id"].as_str().unwrap();
-        let outcome = read_fixture_wire(&with(&vector["dependency_selections"])).1;
+        let outcome = read_fixture_wire(fixture, &with(&vector["dependency_selections"])).1;
         let expected = vector["outcome"].as_str().unwrap();
         if expected == "admitted" {
             let (code, _, pointer) = refused_at(&outcome);
@@ -2730,15 +2713,23 @@ fn conformance_dependency_selection_vectors() {
             other => panic!("{id}: unknown outcome {other}"),
         };
         assert_eq!(cause, Some(expected_cause), "{id}");
-        assert_eq!(
-            Some(pointer.as_str()),
-            vector["loci"]
-                .as_array()
-                .unwrap()
-                .last()
-                .and_then(Value::as_str),
-            "{id}"
-        );
+        let Read::Refused(V2ReadRefusal::Envelope { refusal: ir, .. }) = &outcome else {
+            unreachable!("{id}: refused_at matched an envelope refusal");
+        };
+        let loci: Vec<&str> = ir
+            .loci
+            .iter()
+            .filter_map(|location| location.path.as_ref())
+            .map(|path| path.as_str())
+            .collect();
+        let expected_loci: Vec<&str> = vector["loci"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|locus| locus.as_str().unwrap())
+            .collect();
+        assert_eq!(loci, expected_loci, "{id}");
+        assert_eq!(Some(&pointer.as_str()), expected_loci.first(), "{id}");
     }
 }
 
@@ -3083,7 +3074,7 @@ fn conformance_fr340_frame_mutations_match_qspec_vectors() {
             .or_else(|| mutation.get("expected_locus"))
             .expect("published structural locus");
 
-        let (_, outcome) = read_fixture_wire(&candidate);
+        let (_, outcome) = read_fixture_wire(ALL_FAMILIES, &candidate);
         match outcome {
             Read::Refused(V2ReadRefusal::Envelope { refusal, .. }) => {
                 assert_eq!(refusal.code, expected_code, "{name}: code");
@@ -3234,7 +3225,7 @@ fn frame_fixture(frame_body: impl FnOnce(&Value) -> (Vec<Value>, Vec<Value>, Vec
 }
 
 fn read_frame_fixture(envelope: &Value) -> Read {
-    let (_, outcome) = read_fixture_wire(envelope);
+    let (_, outcome) = read_fixture_wire_holding(None, envelope, envelope, &[]);
     outcome
 }
 
@@ -3371,10 +3362,11 @@ fn a_dependency_closure_of_any_length_is_held_on_a_small_stack() {
 /// vector's code, no cause, `locus` and `document_pointer`.
 fn assert_extension_vector(directory: &std::path::Path, vector: &Value) {
     let id = vector["id"].as_str().unwrap();
-    let envelope = read_fixture(&directory.join(vector["fixture"].as_str().unwrap()));
+    let fixture = vector["fixture"].as_str().unwrap();
+    let envelope = read_fixture(&directory.join(fixture));
     let withheld: Vec<CheckedArtifactRef> =
         serde_json::from_value(vector["withheld"].clone()).expect("withheld refs");
-    let outcome = read_fixture_wire_withholding(&envelope, &withheld).1;
+    let outcome = read_fixture_wire_withholding(fixture, &envelope, &withheld).1;
     let expected = &vector["expected"];
     match (expected["result"].as_str().unwrap(), outcome) {
         ("admitted", Read::Verified { .. }) => {}
@@ -3451,6 +3443,7 @@ fn extension_definition_absent_from_selections_refuses_missing_selection() {
         println!("skipped: QSPEC_DIR not set");
         return;
     };
+    let fixture = "fixtures/positive-extension-nodes.json";
     let original = read_fixture(&directory.join("positive-extension-nodes.json"));
     let mut mutated = original.clone();
     {
@@ -3476,8 +3469,14 @@ fn extension_definition_absent_from_selections_refuses_missing_selection() {
     // The first reader holds `retention` (its selection source is the
     // original lock); the second holds nothing of it.
     for (holds, outcome) in [
-        (true, read_fixture_wire_holding(&mutated, &original, &[]).1),
-        (false, read_fixture_wire_withholding(&mutated, &[held]).1),
+        (
+            true,
+            read_fixture_wire_holding(Some(fixture), &mutated, &original, &[]).1,
+        ),
+        (
+            false,
+            read_fixture_wire_withholding(fixture, &mutated, &[held]).1,
+        ),
     ] {
         let Read::Refused(V2ReadRefusal::Envelope { refusal, .. }) = outcome else {
             panic!("holds={holds}: expected a refusal, got {outcome:?}");
