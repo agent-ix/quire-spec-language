@@ -34,7 +34,7 @@ quire-exact = { workspace = true }
 # `DeclineCode::Std001`: the STD-001 registry code type a `declined` result
 # carries (re-exported at the crate root, so CG, which depends on this crate
 # alone, builds the arm).
-quire-contract-model = { git = "https://github.com/agent-ix/quire-contract-ir", rev = "0fa7cfdcd067eae9a8f0f2f7c8f48b081ceda221" }
+quire-contract-model = { git = "https://github.com/agent-ix/quire-contract-ir", branch = "main" }
 # ADR-011 §6.1 layer C: the checked terms the evaluator reads (FR-400).
 quire-checked = { workspace = true }
 # ADR-011 §6.1 layer SV: the call-admission `InputRefusal` and expression

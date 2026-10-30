@@ -7,7 +7,7 @@
 //! that selects it as `M` with their contracts, protocols over it, and the
 //! snapshots and protocol subjects the protocol tests build from it.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use qsl_eval::model_subject::{ModelInstance, ModelSubject, ProtocolSubject, RoleBinding};
 use qsl_eval::simulation::model::{
@@ -18,7 +18,7 @@ use qsl_eval::simulation::protocol::{
     MemoryModel, ProtocolState, ProtocolSystem, ProtocolTransition, ResolvedMemory, Sc, StepKind,
 };
 use qsl_eval::simulation::{SubjectSystem, TransitionSystem};
-use qsl_foundation::SourceIdentity;
+use qsl_foundation::{digest::DigestRecord, SourceIdentity};
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -568,22 +568,32 @@ pub(crate) fn class_of<M: MemoryModel>(
 /// Every reachable state of `system`, breadth-first from its initial states,
 /// each once by its state key, successors in the engine's order.
 pub(crate) fn reachable<M: MemoryModel>(system: &ProtocolSystem<'_, M>) -> Vec<Reached<M>> {
-    let mut known: BTreeMap<Vec<u8>, usize> = BTreeMap::new();
+    // The digest is already computed with each canonical key. Indexing by its
+    // fixed-size value avoids hashing and repeatedly comparing the much larger
+    // canonical bytes; retain and compare those bytes within each digest
+    // bucket so a digest collision can never merge distinct states.
+    let mut known: HashMap<DigestRecord, Vec<usize>> = HashMap::new();
+    let mut keys: Vec<Vec<u8>> = Vec::new();
     let mut reached: Vec<Reached<M>> = Vec::new();
     let mut queue = std::collections::VecDeque::new();
     let mut admit = |state: ProtocolState<M>,
                      reached: &mut Vec<Reached<M>>,
                      queue: &mut std::collections::VecDeque<usize>|
      -> usize {
-        let (key, _) = SubjectSystem::state_key(system, &state).expect("a key");
-        *known.entry(key).or_insert_with(|| {
-            reached.push(Reached {
-                state,
-                steps: Vec::new(),
-            });
-            queue.push_back(reached.len() - 1);
-            reached.len() - 1
-        })
+        let (key, digest) = SubjectSystem::state_key(system, &state).expect("a key");
+        let bucket = known.entry(digest).or_default();
+        if let Some(index) = bucket.iter().copied().find(|index| keys[*index] == key) {
+            return index;
+        }
+        let index = reached.len();
+        keys.push(key);
+        bucket.push(index);
+        reached.push(Reached {
+            state,
+            steps: Vec::new(),
+        });
+        queue.push_back(index);
+        index
     };
     for state in system.initial() {
         admit(state, &mut reached, &mut queue);
