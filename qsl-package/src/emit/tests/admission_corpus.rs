@@ -2496,6 +2496,30 @@ fn protocol_step_rows_read_back() {
     assert!(admitted.is_ok(), "the rows read back: {admitted:?}");
 }
 
+/// QSpec FR-375-AC-19 (the declaration-naming rows): a protocol subject
+/// writes one `steps` entry per row, each naming its class catalog node.
+#[trace("FR-375-AC-19", "TC-310")]
+#[test]
+fn protocol_step_rows_name_their_class_catalog_node() {
+    let (unit, documents) = protocol_rows(&PROTOCOL_ROWS);
+    let package = modelled_with_documents(&unit, &documents, Vec::new());
+    let emission = emit_checked(&package).expect("the protocol rows emit");
+    let node = refinement_node(&emission);
+    let catalog = node["body"]["class_catalog"]["concrete"]
+        .as_array()
+        .expect("a concrete catalog");
+    let steps = node["body"]["steps"].as_array().expect("steps");
+    assert_eq!(steps.len(), PROTOCOL_ROWS.len());
+    for step in steps {
+        assert!(step.get("source_node").is_some(), "{step}");
+        let entry = catalog
+            .iter()
+            .find(|entry| entry["class"] == step["source_class"])
+            .unwrap_or_else(|| panic!("{} is catalogued", step["source_class"]));
+        assert_eq!(entry["node"], step["source_node"]);
+    }
+}
+
 /// [`PROTOCOL_ROWS`] with a `tso` parallel `Par` in `Impl`'s run: its
 /// `fork`/`join` rows and the `memory drain` and `memory flush` rows.
 const MEMORY_RUN: &str = "sequence Main { parallel Par memory tso { branch a sequence Ay { } \
@@ -2520,6 +2544,30 @@ fn memory_emission(run: &str, rows: &[&str]) -> Emitted {
         emission,
         documents,
     }
+}
+
+/// QSpec FR-375-AC-19 (the memory rows, QSL-1181): the `memory drain` and
+/// `memory flush` rows name no declaration, so they carry no
+/// `source_node`; every other row carries one.
+#[trace("FR-375-AC-19", "TC-310")]
+#[test]
+fn memory_rows_carry_no_source_node() {
+    let emitted = memory_emission(MEMORY_RUN, &MEMORY_ROWS);
+    let node = refinement_node(&emitted.emission);
+    let steps = node["body"]["steps"].as_array().expect("steps");
+    assert_eq!(steps.len(), MEMORY_ROWS.len());
+    let mut memory: Vec<&str> = Vec::new();
+    for step in steps {
+        let class = step["source_class"].as_str().expect("a class");
+        if class.starts_with("memory ") {
+            assert!(step.get("source_node").is_none(), "{step}");
+            memory.push(class);
+        } else {
+            assert!(step.get("source_node").is_some(), "{step}");
+        }
+    }
+    memory.sort_unstable();
+    assert_eq!(memory, ["memory drain", "memory flush"]);
 }
 
 /// QSpec FR-375-AC-23 and AC-26: over `parallel` controls defaulting to
