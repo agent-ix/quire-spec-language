@@ -154,7 +154,7 @@ fn linked(types: TypeEnvironment, functions: Vec<FunctionDeclaration>) -> Checke
             types,
             functions,
             ieee_profile: Some(ieee_profile()),
-            ..PackageDeclarations::new(source(), qsl_foundation::IdentityLimits::default())
+            ..PackageDeclarations::new(source(), "pkg", qsl_foundation::IdentityLimits::default())
         }
         .check(CheckingLimits::default())
         .expect("the fixture functions check"),

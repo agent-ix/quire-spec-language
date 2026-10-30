@@ -104,6 +104,7 @@ fn deep_declarations(source: &str) -> PackageDeclarations {
     let forms = qsl_forms::build_unit(&parsed).expect("the deep source has forms");
     PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "pkg".to_owned(),
         forms,
         Vec::new(),
         Vec::new(),
@@ -297,6 +298,7 @@ fn and_chain(levels: usize) -> Option<PackageDeclarations> {
     let forms = qsl_forms::build_unit(&parsed).ok()?;
     PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "pkg".to_owned(),
         forms,
         Vec::new(),
         Vec::new(),

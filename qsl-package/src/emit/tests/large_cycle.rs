@@ -12,7 +12,8 @@ fn a_100000_node_cycle_emits_and_reads_back_under_supplied_limits() {
     let keys: Vec<NodeKey> = names
         .iter()
         .map(|name| {
-            NodeKey::from_digest(qsl_foundation::ByteDigest::of(name.as_bytes()).as_bytes())
+            NodeKey::new("pkg", vec![quire_exact::PathSegment::Text(name.clone())], 0)
+                .expect("a fixture node identity")
         })
         .collect();
     let records = (0..RECORDS).map(|index| {
@@ -34,7 +35,7 @@ fn a_100000_node_cycle_emits_and_reads_back_under_supplied_limits() {
     let limits = CheckingLimits::new(500_000).with_work_budget(u64::MAX);
     let checked = PackageDeclarations {
         types,
-        ..PackageDeclarations::new(source(), qsl_foundation::IdentityLimits::default())
+        ..PackageDeclarations::new(source(), "pkg", qsl_foundation::IdentityLimits::default())
     }
     .check(limits)
     .unwrap_or_else(|refusals| {
@@ -60,14 +61,11 @@ fn a_100000_node_cycle_emits_and_reads_back_under_supplied_limits() {
         .with_edges(1_000_000)
         .with_occurrences(500_000)
         .with_work(u64::MAX);
-    let pinned =
-        qsl_semantics::library::fixtures::single_pin(library(), emission.package.package_id());
     let read = read_v2(
         emission.package.bytes(),
         library(),
         limits,
         &read_evidence(&emission),
-        &pinned,
     );
     assert!(matches!(read, Read::Verified { .. }), "I2 read: {read:?}");
     assert!(

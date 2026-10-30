@@ -99,6 +99,7 @@ fn compile_checked(declarations: &str) -> (Emission, Value, Checked) {
     let form = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
     let graph = PackageDeclarations::assemble(
         raw,
+        "pkg".to_owned(),
         form,
         qsl_semantics::model::intake::SelectedModels::default(),
         Vec::new(),

@@ -774,6 +774,7 @@ fn a_point_qualified_clock_clause_refuses_at_the_clause() {
     };
     let refusals = PackageDeclarations::assemble_with_execution_points_and_cancel(
         raw,
+        "pkg".to_owned(),
         built,
         models,
         Vec::new(),

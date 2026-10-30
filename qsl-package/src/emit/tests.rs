@@ -174,7 +174,7 @@ fn h() -> FunctionDeclaration {
 fn graph_of(functions: Vec<FunctionDeclaration>) -> qsl_semantics::check::CheckedGraph {
     PackageDeclarations {
         functions,
-        ..PackageDeclarations::new(source(), qsl_foundation::IdentityLimits::default())
+        ..PackageDeclarations::new(source(), "pkg", qsl_foundation::IdentityLimits::default())
     }
     .check(CheckingLimits::default())
     .expect("the fixture functions check")
@@ -208,7 +208,7 @@ fn tree() -> CheckedPackage {
     CheckedPackage::link(
         PackageDeclarations {
             types,
-            ..PackageDeclarations::new(source(), qsl_foundation::IdentityLimits::default())
+            ..PackageDeclarations::new(source(), "pkg", qsl_foundation::IdentityLimits::default())
         }
         .check(CheckingLimits::default())
         .expect("Tree checks"),
@@ -345,7 +345,7 @@ fn a_function_identity_survives_emission_and_the_i2_read() {
     let checked = |functions| {
         PackageDeclarations {
             functions,
-            ..PackageDeclarations::new(source(), qsl_foundation::IdentityLimits::default())
+            ..PackageDeclarations::new(source(), "pkg", qsl_foundation::IdentityLimits::default())
         }
         .check(CheckingLimits::default())
         .expect("t and f check")
@@ -920,7 +920,7 @@ fn declared_types(
             types: point_and_pair_types(),
             enums,
             functions,
-            ..PackageDeclarations::new(source(), qsl_foundation::IdentityLimits::default())
+            ..PackageDeclarations::new(source(), "pkg", qsl_foundation::IdentityLimits::default())
         }
         .check(CheckingLimits::default())
         .expect("the declared types check"),
@@ -1053,7 +1053,7 @@ fn a_declared_name_segment_that_is_no_identifier_refuses_by_that_segment() {
     .expect("the environment admits the shape");
     let refusals = PackageDeclarations {
         types,
-        ..PackageDeclarations::new(source(), qsl_foundation::IdentityLimits::default())
+        ..PackageDeclarations::new(source(), "pkg", qsl_foundation::IdentityLimits::default())
     }
     .check(CheckingLimits::default())
     .expect_err("the name has no identifier segments");
@@ -1669,7 +1669,11 @@ fn call_source() -> RawSourceRef {
 fn checked_call_package(functions: Vec<FunctionDeclaration>) -> qsl_semantics::check::CheckedGraph {
     PackageDeclarations {
         functions,
-        ..PackageDeclarations::new(call_source(), qsl_foundation::IdentityLimits::default())
+        ..PackageDeclarations::new(
+            call_source(),
+            "pkg",
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
     .check(CheckingLimits::default())
     .expect("g and f check cleanly")
@@ -1829,7 +1833,7 @@ fn generated_nodes_are_placed_at_their_enclosing_declaration() {
     let package = CheckedPackage::link(
         PackageDeclarations {
             functions: vec![inc_read_from_text()],
-            ..PackageDeclarations::new(source, qsl_foundation::IdentityLimits::default())
+            ..PackageDeclarations::new(source, "pkg", qsl_foundation::IdentityLimits::default())
         }
         .check(CheckingLimits::default())
         .expect("inc checks"),
@@ -1894,6 +1898,7 @@ fn source_text_compiles_through_the_spine_and_reads_back_verified() {
     let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
     let declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "pkg".to_owned(),
         unit,
         Vec::new(),
         Vec::new(),
@@ -2069,7 +2074,7 @@ pub(super) fn q_and_t_package_over(
             types: TypeEnvironment::default().with_units(units),
             aliases: vec![("Length".to_owned(), ValueType::Quantity(metre))],
             functions: vec![q, t()],
-            ..PackageDeclarations::new(source(), qsl_foundation::IdentityLimits::default())
+            ..PackageDeclarations::new(source(), "pkg", qsl_foundation::IdentityLimits::default())
         }
         .check(CheckingLimits::default())
         .expect("q checks"),
@@ -2378,7 +2383,7 @@ fn spine_compile_package() -> CheckedPackage {
     assert_eq!(parsed.diagnostics(), []);
     let raw = parsed.source().reference().clone();
     let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
-    let graph = PackageDeclarations::assemble(raw, unit, Vec::new(), Vec::new())
+    let graph = PackageDeclarations::assemble(raw, "pkg".to_owned(), unit, Vec::new(), Vec::new())
         .expect("the unit assembles")
         .check(CheckingLimits::default())
         .expect("the package checks");
@@ -2413,7 +2418,7 @@ fn assemble_with_models(
         qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
     )
     .map_err(|refusal| format!("intake: {refusal:?}"))?;
-    PackageDeclarations::assemble(raw, unit, models, Vec::new())
+    PackageDeclarations::assemble(raw, "pkg".to_owned(), unit, models, Vec::new())
         .map_err(|refusal| format!("{refusal:?}"))
 }
 
@@ -2661,6 +2666,7 @@ fn an_unknown_model_type_refuses_at_the_assembler_and_a_missing_package_at_intak
     .unwrap();
     let refusal = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "pkg".to_owned(),
         unit,
         models,
         Vec::new(),
@@ -2721,6 +2727,7 @@ fn a_model_declaration_with_no_admitted_package_refuses_at_the_assembler() {
     let unit = qsl_forms::build_unit(&parsed).unwrap();
     let refusal = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "pkg".to_owned(),
         unit,
         Vec::new(),
         Vec::new(),
@@ -3258,9 +3265,15 @@ fn check_attempt_unit_revision(
     assert_eq!(parsed.diagnostics(), []);
     let raw = parsed.source().reference().clone();
     let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
-    PackageDeclarations::assemble(raw, unit, vec![config_version_model(with_sub)], Vec::new())
-        .expect("the unit assembles")
-        .check(CheckingLimits::default())
+    PackageDeclarations::assemble(
+        raw,
+        "pkg".to_owned(),
+        unit,
+        vec![config_version_model(with_sub)],
+        Vec::new(),
+    )
+    .expect("the unit assembles")
+    .check(CheckingLimits::default())
 }
 
 /// What FR-114's emission assertions read from one attempt unit: the
@@ -3656,7 +3669,7 @@ pub(crate) fn package_from_text(declarations: &str) -> (String, CheckedPackage) 
     assert_eq!(parsed.diagnostics(), []);
     let raw = parsed.source().reference().clone();
     let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
-    let graph = PackageDeclarations::assemble(raw, unit, Vec::new(), Vec::new())
+    let graph = PackageDeclarations::assemble(raw, "pkg".to_owned(), unit, Vec::new(), Vec::new())
         .expect("the unit assembles")
         .check(CheckingLimits::default())
         .expect("the package checks");

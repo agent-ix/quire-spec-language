@@ -28,7 +28,7 @@ fn emitted(declarations: &str) -> Emission {
     assert_eq!(parsed.diagnostics(), []);
     let raw = parsed.source().reference().clone();
     let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
-    let graph = PackageDeclarations::assemble(raw, unit, Vec::new(), Vec::new())
+    let graph = PackageDeclarations::assemble(raw, "pkg".to_owned(), unit, Vec::new(), Vec::new())
         .expect("the unit assembles")
         .check(CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"));
@@ -387,7 +387,7 @@ fn a_converted_quantity_equality_converts_the_quantity_operand() {
                 ("Km".to_owned(), kilometre.clone()),
             ],
             functions: vec![declared],
-            ..PackageDeclarations::new(source(), qsl_foundation::IdentityLimits::default())
+            ..PackageDeclarations::new(source(), "pkg", qsl_foundation::IdentityLimits::default())
         }
         .check(CheckingLimits::default())
         .expect("the package checks");
@@ -465,9 +465,10 @@ fn a_guard_over_an_integer_conversion_bounds_only_what_it_states() {
         .expect("S1 admits the unit");
         let raw = parsed.source().reference().clone();
         let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
-        let refused = PackageDeclarations::assemble(raw, unit, Vec::new(), Vec::new())
-            .expect("the unit assembles")
-            .check(CheckingLimits::default());
+        let refused =
+            PackageDeclarations::assemble(raw, "pkg".to_owned(), unit, Vec::new(), Vec::new())
+                .expect("the unit assembles")
+                .check(CheckingLimits::default());
         assert!(refused.is_err(), "{body}: the body is not in [0, 3]");
     }
 }

@@ -801,6 +801,7 @@ fn an_execution_point_on_a_clause_of_the_operation_gives_no_transition() {
         .expect("intake admits the package");
         let graph = PackageDeclarations::assemble_with_execution_points_and_cancel(
             raw,
+            "pkg".to_owned(),
             built,
             models,
             Vec::new(),
