@@ -18,11 +18,12 @@ use qsl_eval::simulation::{
 };
 use qsl_foundation::bound::DomainKind;
 use qsl_foundation::diagnostic::{LimitExceeded, LimitKind};
-use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
+use qsl_foundation::digest::{DigestDomain, DigestRecord};
 use qsl_foundation::selection::DefinitionRef;
 use qsl_foundation::IdentityLimits;
 use qsl_semantics::family::ClassifyFailure;
 use quire_canonical::{Document, FixedShape};
+use quire_exact::NodeKey;
 use quire_exact::{Integer, IntegerInterval, ValueType};
 use quire_semantic_value::catalog::{CatalogCode, CatalogCoded, InternalFault};
 use quire_semantic_value::declaration::TypeEnvironment;
@@ -304,7 +305,7 @@ fn generous_limits() -> Limits {
 /// `explore_request` with no horizon, keeping only the outcome.
 fn explore_outcome<S: TransitionSystem>(
     system: &S,
-    domains: &[(WireNodeId, &ValueType)],
+    domains: &[(NodeKey, &ValueType)],
     types: &TypeEnvironment,
     position_limit: u64,
     limits: Limits,
@@ -348,7 +349,7 @@ fn never_cancels() -> bool {
     false
 }
 
-const NO_DOMAINS: &[(WireNodeId, &ValueType)] = &[];
+const NO_DOMAINS: &[(NodeKey, &ValueType)] = &[];
 
 /// The `quire.simulation.sampler/v1` `DefinitionRef` TC-454's vectors run
 /// under.

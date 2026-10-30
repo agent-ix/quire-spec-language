@@ -1028,7 +1028,7 @@ fn a_system_refuses_what_is_not_an_initialization_or_not_in_its_universe() {
 /// incomplete, and a population without a universe is a requires-bound root.
 #[trace("TC-472", "FR-120-AC-7")]
 #[test]
-fn an_unbounded_population_or_parameter_requires_a_bound() {
+fn an_unbounded_population_requires_a_bound() {
     let mut world = world(vec![increment()], "");
     let s0 = world.start("s0", &[Obj("c1", 0, 0, None)]);
     let unbounded = ModelSystem::new(request(
@@ -1048,8 +1048,8 @@ fn an_unbounded_population_or_parameter_requires_a_bound() {
         bound
             .domains
             .iter()
-            .any(|(key, _)| *key == root_key(&declaration_naming(&counters()))),
-        "the population root is named by the hash of its declaration identity"
+            .any(|(key, _)| *key == root_key(&counters())),
+        "the population root is its structural population node"
     );
     let sampler = sampler();
     assert!(matches!(
@@ -1058,35 +1058,110 @@ fn an_unbounded_population_or_parameter_requires_a_bound() {
             _
         )))
     ));
+}
 
-    let integer_parameter = operation(
-        "add",
-        &[("n", "ix://quire/native/Integer")],
-        None,
-        frame(&["value"], false, false),
+/// The requires-bound domain key FR-120 "Bounds" gives the population
+/// `key` names: its structural population node.
+fn root_key(key: &DeclarationKey) -> qsl_foundation::bound::DomainKey {
+    qsl_foundation::bound::DomainKey::Node {
+        node: qsl_semantics::model::key::population_node_key(key)
+            .expect("a population key is well formed"),
+        path: Vec::new(),
+    }
+}
+
+/// FR-120-AC-7 (TC-472): the checks `ModelSystem::new` makes, in order.
+#[trace("TC-472", "FR-120-AC-7")]
+#[test]
+fn a_system_refuses_what_is_not_an_initialization_or_not_in_its_universe() {
+    let mut world = world(vec![increment()], "");
+    let pre = world.snapshot(
+        "pre",
+        "pre",
+        json!({"kind": "initialization", "name": "start"}),
+        &[Obj("c1", 0, 0, None)],
     );
-    let mut world = self::world(vec![integer_parameter], "");
-    let s0 = world.start("s0", &[Obj("c1", 0, 0, None)]);
-    let system = self::system(&world, vec![s0], &["c1"], UNLIMITED);
-    let Err(NotSimulated::RequiresBound(bound)) =
-        explore_model(&system, 10_000, Limits::default(), || false)
-    else {
-        panic!("an Integer parameter is unbounded")
+    let validate = world.snapshot(
+        "validate",
+        "current",
+        json!({"kind": "handler", "name": "validate"}),
+        &[Obj("c1", 0, 0, None)],
+    );
+    let other = world.snapshot(
+        "other",
+        "current",
+        json!({"kind": "other", "name": "x"}),
+        &[Obj("c1", 0, 0, None)],
+    );
+    let c3 = world.start("c3", &[Obj("c3", 0, 0, None)]);
+    let ok = world.start("ok", &[Obj("c1", 0, 0, None)]);
+    let new = |world: &World, initial: DocumentRef, universes| {
+        ModelSystem::new(request(world, vec![initial], universes, UNLIMITED, 1000)).err()
     };
-    assert_eq!(bound.domains.len(), 1);
-    let naming = json!({
-        "operation": declaration_naming(&key("Counter/add")),
-        "parameter": "n",
-    });
     assert_eq!(
+        refusal_of(new(&world, pre, universe(&["c1", "c2"]))),
+        (Code::WrongSnapshot, "wrong-observation")
+    );
+    assert_eq!(
+        refusal_of(new(&world, validate, universe(&["c1", "c2"]))),
+        (Code::WrongSnapshot, "wrong-anchor")
+    );
+    assert_eq!(
+        refusal_of(new(&world, other, universe(&["c1", "c2"]))),
+        (Code::InvalidRuntimeInput, "wrong-value-kind")
+    );
+    assert_eq!(
+        refusal_of(new(&world, c3, universe(&["c1", "c2"]))),
+        (Code::InvalidRuntimeInput, "invalid-value")
+    );
+    assert_eq!(
+        refusal_of(new(&world, ok.clone(), universe(&["c1", "c1"]))),
+        (Code::InvalidRuntimeInput, "conflicting-identity")
+    );
+    let unknown = vec![PopulationUniverse {
+        population: key("elsewhere"),
+        keys: vec!["x".to_owned()],
+    }];
+    assert_eq!(
+        refusal_of(new(&world, ok, unknown)),
+        (Code::InvalidRuntimeInput, "wrong-role-mapping")
+    );
+}
+
+/// FR-120-AC-7 (TC-472): a universe population the snapshot omits is
+/// incomplete, and a population without a universe is a requires-bound root.
+#[trace("TC-472", "FR-120-AC-7")]
+#[test]
+fn an_unbounded_population_requires_a_bound() {
+    let mut world = world(vec![increment()], "");
+    let s0 = world.start("s0", &[Obj("c1", 0, 0, None)]);
+    let unbounded = ModelSystem::new(request(
+        &world,
+        vec![s0.clone()],
+        Vec::new(),
+        UNLIMITED,
+        1000,
+    ))
+    .expect("a system with no universe admits");
+    let Err(NotSimulated::RequiresBound(bound)) =
+        explore_model(&unbounded, 10_000, Limits::default(), || false)
+    else {
+        panic!("a population with no universe is unbounded")
+    };
+    assert!(
         bound
             .domains
             .iter()
-            .map(|(key, _)| key.clone())
-            .collect::<Vec<_>>(),
-        vec![root_key(&naming)],
-        "the parameter root is named by the hash of its naming object"
+            .any(|(key, _)| *key == root_key(&counters())),
+        "the population root is its structural population node"
     );
+    let sampler = sampler();
+    assert!(matches!(
+        sample_model(&unbounded, 10_000, &sampler, 424_242, 0, 4),
+        Err(ModelSampleError::NotSimulated(NotSimulated::RequiresBound(
+            _
+        )))
+    ));
 }
 
 fn declaration_naming(key: &DeclarationKey) -> Json {

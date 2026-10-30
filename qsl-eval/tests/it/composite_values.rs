@@ -11,9 +11,7 @@ use std::cell::Cell;
 
 use ix_trace_rs::trace;
 use qsl_eval::value::QualifiedName;
-use qsl_semantics::library::{
-    resolve_libraries, ImportDeclaration, LibraryName, LibraryPackage, PackageId,
-};
+use qsl_semantics::library::{resolve_libraries, ImportDeclaration, LibraryName, LibraryPackage};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_exact::EffectiveId;
 use quire_exact::NodeKey;
@@ -38,7 +36,6 @@ use quire_semantic_value::object_closure::{
     ObjectClosure, ObjectClosureCause, ObjectClosureRefusal,
 };
 use serde_json::json;
-use sha2::{Digest, Sha256};
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
     integer_bits: u64::MAX,
@@ -1235,52 +1232,13 @@ mod checked {
 mod library_import {
     use super::*;
 
-    fn hex(label: &str) -> String {
-        Sha256::digest(label.as_bytes())
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect()
-    }
-
-    /// The JCS `quire.checked-package-id/v2` preimage of `label`, whose one
-    /// projection node declares `R` when `exports` is set.
-    fn preimage(label: &str, exports: bool) -> Box<[u8]> {
-        let reference = json!({"digest": hex(label), "domain": "quire.checked-semantic-node/v1"});
-        let mut node = json!({
-            "body": {"members": [], "term": "aggregate"},
-            "dependencies": [],
-            "node_id": reference,
-            "node_tag": "composite_type",
-            "schema_version": "quire.checked-semantic-graph/v2",
-            "semantic_form": "record",
-            "semantic_type": reference,
-        });
-        if exports {
-            node["nominal_identity_preimage"] = json!({"qualified_declaration": ["R"]});
-            node["declaration"] = json!({"qualified_name": ["R"]});
-        }
-        let value = json!({
-            "definition_selections": [],
-            "dependency_selections": [],
-            "edition": {"role": "edition"},
-            "identity_projection": [node],
-            "profile_selections": [],
-            "required_features": ["quire.value.complete/v1"],
-            "version": "quire.checked-package-id/v2",
-        });
-        serde_json::to_vec(&value).unwrap().into_boxed_slice()
-    }
-
     fn name(library: &str) -> LibraryName {
         LibraryName::new(library).unwrap()
     }
 
     fn package(library: &str, imports: &[&str], exports: bool) -> LibraryPackage {
-        let bytes = preimage(library, exports);
         LibraryPackage {
             library: name(library),
-            package_id: PackageId::of_preimage(&bytes),
-            identity_preimage: bytes,
             imports: imports
                 .iter()
                 .map(|imported| ImportDeclaration {
@@ -1289,7 +1247,15 @@ mod library_import {
                 })
                 .collect(),
             exports: if exports {
-                vec!["R".to_owned()]
+                vec![(
+                    "R".to_owned(),
+                    NodeKey::new(
+                        "lib",
+                        vec![quire_exact::PathSegment::Text(format!("{library}::R"))],
+                        0,
+                    )
+                    .unwrap(),
+                )]
             } else {
                 Vec::new()
             },
@@ -1324,7 +1290,7 @@ mod library_import {
         let l_selections: Vec<_> = lock
             .selections()
             .into_iter()
-            .filter(|(library, _)| *library == name("L"))
+            .filter(|library| *library == name("L"))
             .collect();
         assert_eq!(
             l_selections.len(),

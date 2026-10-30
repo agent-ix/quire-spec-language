@@ -601,7 +601,6 @@ mod checked {
         AdmittedEnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
     };
     use qsl_semantics::value::{NodeOwner, OwnerSelection, OwnerSubject};
-    use quire_exact::NODE_KEY_DOMAIN;
     use quire_semantic_value::checking::{CheckMode, CheckingLimits};
     use quire_semantic_value::object_closure::ObjectClosure;
     use quire_semantic_value::semantic_node::SemanticGraphCause;
@@ -693,34 +692,6 @@ mod checked {
             .count()
     }
 
-    fn jcs(value: &serde_json::Value) -> String {
-        match value {
-            serde_json::Value::Array(items) => {
-                format!("[{}]", items.iter().map(jcs).collect::<Vec<_>>().join(","))
-            }
-            serde_json::Value::Object(members) => {
-                let mut entries: Vec<_> = members.iter().collect();
-                entries.sort_by(|(a, _), (b, _)| a.encode_utf16().cmp(b.encode_utf16()));
-                let body: Vec<_> = entries
-                    .into_iter()
-                    .map(|(key, item)| {
-                        format!("{}:{}", serde_json::Value::from(key.as_str()), jcs(item))
-                    })
-                    .collect();
-                format!("{{{}}}", body.join(","))
-            }
-            other => other.to_string(),
-        }
-    }
-
-    fn preimage_key(preimage: &serde_json::Value) -> NodeKey {
-        key_of_bytes(jcs(preimage).as_bytes())
-    }
-
-    fn key_of_bytes(bytes: &[u8]) -> NodeKey {
-        crate::support::ids::node_key(bytes)
-    }
-
     fn owners() -> OwnerSelection {
         OwnerSelection::new([NodeOwner::Definition(OwnerSubject::new(
             "agent-ix",
@@ -729,43 +700,34 @@ mod checked {
         ))])
     }
 
-    fn declaration_preimage(label: &str, ordered: bool, members: &[&str]) -> serde_json::Value {
-        json!({
-            "version": "quire.enum-declaration-node/v1",
-            "owner": {"kind": "definition", "authority": "agent-ix", "identity": "example-model"},
-            "qualified_declaration": ["Example", label],
-            "ordered": ordered,
-            "members": members,
-        })
+    fn owner() -> NodeOwner {
+        NodeOwner::Definition(OwnerSubject::new("agent-ix", "example-model", "fixture"))
+    }
+
+    fn declaration_preimage(
+        label: &str,
+        ordered: bool,
+        members: &[&str],
+    ) -> EnumDeclarationPreimage {
+        EnumDeclarationPreimage::new(
+            owner(),
+            vec!["Example".to_owned(), label.to_owned()],
+            ordered,
+            members.iter().map(|member| (*member).to_owned()).collect(),
+        )
+        .unwrap()
     }
 
     fn admit(label: &str, ordered: bool, members: &[&str]) -> EnumBinding {
         let preimage = declaration_preimage(label, ordered, members);
-        let declaration = AdmittedEnumDeclaration::admit(
-            EnumDeclarationPreimage::from_json(preimage.clone()).unwrap(),
-            preimage_key(&preimage),
-            &owners(),
-            qsl_foundation::IdentityLimits::default(),
-        )
-        .unwrap();
+        let key = preimage.key().unwrap();
+        let declaration = AdmittedEnumDeclaration::admit(preimage, key, &owners()).unwrap();
         let members = members
             .iter()
             .map(|case| {
-                let member = json!({
-                    "version": "quire.enum-member-node/v1",
-                    "declaration_node_id": {
-                        "domain": NODE_KEY_DOMAIN,
-                        "digest": declaration.key().to_string(),
-                    },
-                    "case": case,
-                });
-                declaration
-                    .admit_member(
-                        &EnumMemberPreimage::from_json(member.clone()).unwrap(),
-                        preimage_key(&member),
-                        qsl_foundation::IdentityLimits::default(),
-                    )
-                    .unwrap()
+                let member = EnumMemberPreimage::new(declaration.key(), *case).unwrap();
+                let key = member.key().unwrap();
+                declaration.admit_member(&member, key).unwrap()
             })
             .collect();
         EnumBinding {
@@ -849,9 +811,9 @@ mod checked {
         let reordered = declaration_preimage("Color", false, &["green", "red", "blue"]);
         assert!(matches!(
             AdmittedEnumDeclaration::admit(
-                EnumDeclarationPreimage::from_json(reordered.clone()).unwrap(),
-                preimage_key(&reordered),
-                &owners(), qsl_foundation::IdentityLimits::default())
+                reordered.clone(),
+                reordered.key().unwrap(),
+                &owners())
             .unwrap_err(),
             qsl_semantics::value::NominalRefusal::Graph(invalid)
                 if invalid.cause == SemanticGraphCause::UnsortedUnorderedMembers
