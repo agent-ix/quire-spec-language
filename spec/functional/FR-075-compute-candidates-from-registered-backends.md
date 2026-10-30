@@ -59,9 +59,7 @@ whose members are the twelve labels FR-290 fixes and FR-057 admits into QSL.
   `bounded` or `unbounded` (ADR-012 §7.1). `BackendId` is the backend
   identity alone (ADR-013 O-19); origin, pairs, domains, evidence kinds,
   dynamics and state-graph forms are descriptor members, not identity
-  components (FR-288-AC-5/6). The descriptor holds no copy of the manifest;
-  the `duplicate-backend` refusal is keyed by `BackendId`.
-  The registry's
+  components (FR-288-AC-5/6). The descriptor holds no copy of the manifest. The registry's
   uniqueness key is `BackendId` (FR-290 "Candidate set and negotiation": "a
   backend identity is unique within a registry"), so a second registration
   under an already-held `BackendId` is judged against the held descriptor:
