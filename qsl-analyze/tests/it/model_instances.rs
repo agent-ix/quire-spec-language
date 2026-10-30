@@ -422,8 +422,7 @@ fn instance(population: &str, key: &str) -> ModelInstance {
 /// The requires-bound root of `population`: the digest of its declaration
 /// identity, as FR-120 names a population root.
 fn population_root(population: &str) -> DomainKey {
-    let naming = json!({"digest_domain": "sha256-jcs", "node": ident(population),
-        "package": PACKAGE});
+    let naming = json!({"node": ident(population), "package": PACKAGE});
     let read = quire_canonical::read(naming.to_string().as_bytes(), u64::MAX).expect("JSON");
     let digest =
         quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX)).expect("canonical");
