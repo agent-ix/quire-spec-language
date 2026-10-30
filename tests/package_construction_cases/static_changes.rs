@@ -15,7 +15,7 @@ fn change(expected: &mut vectors::Expected, before: &str, after: &str) {
 
 #[test]
 #[trace("TC-082", "TC-091", "FR-019-AC-3", "FR-021-AC-3")]
-fn used_context_unused_declarations_and_selected_roles_change_the_expected_identity() {
+fn used_context_unused_declarations_and_selected_roles_change_the_expected_content() {
     let baseline_models = [vectors::model()];
     let baseline = NativePackage::new(
         minimal(
@@ -107,6 +107,7 @@ fn used_context_unused_declarations_and_selected_roles_change_the_expected_ident
             expected.canonical.len(),
             "{name}"
         );
+        assert_ne!(package.bytes(), baseline.bytes(), "{name}");
         assert_ne!(
             models[0].artifact_bytes(),
             baseline_models[0].artifact_bytes()

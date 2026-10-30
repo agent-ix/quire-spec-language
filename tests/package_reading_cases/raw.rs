@@ -5,7 +5,6 @@ use serde::{
     ser::{SerializeMap, SerializeSeq},
     Serialize, Serializer,
 };
-use sha2::{Digest, Sha256};
 
 #[test]
 #[trace("TC-083", "FR-020-AC-2")]

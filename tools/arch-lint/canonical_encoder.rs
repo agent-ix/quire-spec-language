@@ -1460,10 +1460,9 @@ pub(super) fn digest_of(value: &serde_json::Value) -> [u8; 32] {
         );
         let outcome = evaluate(dir.path()).unwrap();
         assert!(outcome.passed(), "{}", report(&outcome));
-        for kind in [ExemptionKind::NotAnIdentity] {
-            let listed = EXEMPT.iter().filter(|e| e.kind == kind).count();
-            assert_eq!(outcome.allowed_of(kind).len(), listed, "{kind:?}");
-        }
+        let kind = ExemptionKind::NotAnIdentity;
+        let listed = EXEMPT.iter().filter(|e| e.kind == kind).count();
+        assert_eq!(outcome.allowed_of(kind).len(), listed, "{kind:?}");
     }
 
     /// A serializer and a hasher inside `#[cfg(test)]` code, in an
