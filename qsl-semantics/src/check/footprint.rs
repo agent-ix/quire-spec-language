@@ -516,10 +516,10 @@ impl<'a> Reader<'a> {
         self.populations
             .iter()
             .filter(move |population| {
-                population
-                    .members
-                    .iter()
-                    .any(|member| self.conforms(target.clone(), member.clone()) || self.conforms(member.clone(), target.clone()))
+                population.members.iter().any(|member| {
+                    self.conforms(target.clone(), member.clone())
+                        || self.conforms(member.clone(), target.clone())
+                })
             })
             .map(|population| &population.key)
     }
@@ -899,7 +899,10 @@ impl Derivation<'_> {
         let mut found = Vec::new();
         for declaration in self.reader.types.object_types() {
             let identity = declaration.key();
-            if holder.clone().is_some_and(|holder| !self.reader.conforms(identity.clone(), holder)) {
+            if holder
+                .clone()
+                .is_some_and(|holder| !self.reader.conforms(identity.clone(), holder))
+            {
                 continue;
             }
             let Some(type_key) = self.reader.model.type_key(identity) else {

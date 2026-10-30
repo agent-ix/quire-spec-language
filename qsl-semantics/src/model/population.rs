@@ -140,8 +140,7 @@ use std::sync::Arc;
 
 use crate::model::dispatch::GeneralizationClosure;
 use crate::model::domain_package::{
-    DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, FieldMemberRecord,
-    OperationEffect,
+    DomainPackageRecord, DomainPackageRef, Extent, FieldMemberRecord, OperationEffect,
 };
 use crate::model::index::ModelIndex;
 use crate::model::key::EffectiveId;
@@ -2064,7 +2063,9 @@ fn node_key_refusal(error: &quire_exact::InvalidNodeKey) -> ModelRefusal {
 }
 
 /// The refusal for a universe that has no structural identity.
-fn universe_identity_refusal(error: &crate::model::normalize::UniverseIdentityError) -> ModelRefusal {
+fn universe_identity_refusal(
+    error: &crate::model::normalize::UniverseIdentityError,
+) -> ModelRefusal {
     crate::model::key::universe_identity_refusal(error)
 }
 
@@ -2164,7 +2165,7 @@ mod tests {
 
     use super::*;
     use crate::model::accounting::ModelNormalizationLimits;
-    use crate::model::domain_package::{ObjectTypeRecord, PopulationRecord};
+    use crate::model::domain_package::{DomainPackage, ObjectTypeRecord, PopulationRecord};
     use crate::model::normalize::{build_calls, normalize, NormalizeOutcome};
 
     /// A production `AdmissionMeter` and `AdmissionCharge`

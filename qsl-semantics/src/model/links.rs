@@ -168,11 +168,9 @@ impl<'v> Links<'v> {
                 *member == preimage.original
                     && *member == parent.preimage.original
                     && *supertype == parent_owner_entry.preimage.original
-                    && owner_entry
-                        .preimage
-                        .derivation
-                        .iter()
-                        .any(|fact| fact.rule == RULE_INHERIT && fact.parent == Some(parent_owner.clone()))
+                    && owner_entry.preimage.derivation.iter().any(|fact| {
+                        fact.rule == RULE_INHERIT && fact.parent == Some(parent_owner.clone())
+                    })
             }
             _ => false,
         }
@@ -228,7 +226,8 @@ impl<'v> Links<'v> {
     ) -> Result<(), ExpandError> {
         let member = entry
             .preimage
-            .owner_effective_type.clone()
+            .owner_effective_type
+            .clone()
             .map(|_| &entry.preimage.original);
         let Some(first) = parent.and_then(|id| self.by_id.get(&id)).copied() else {
             return Ok(());
@@ -254,7 +253,12 @@ impl<'v> Links<'v> {
             if let Some(frame) = stack.last_mut() {
                 frame.1 = position + 1;
             }
-            let Some(child) = fact.parent.clone().and_then(|id| self.by_id.get(&id)).copied() else {
+            let Some(child) = fact
+                .parent
+                .clone()
+                .and_then(|id| self.by_id.get(&id))
+                .copied()
+            else {
                 continue;
             };
             types.push(self.supertype_key(child, member));

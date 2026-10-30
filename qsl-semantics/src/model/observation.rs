@@ -2727,7 +2727,11 @@ fn check_operation(
     }
     let invoked = document::find_declaration(receiver.views, &call.context)
         .and_then(|(view, key)| view.view.type_identities().get(&key).cloned())
-        .filter(|invoked| receiver.types.conforms(invoked.clone(), receiver.context.clone()))
+        .filter(|invoked| {
+            receiver
+                .types
+                .conforms(invoked.clone(), receiver.context.clone())
+        })
         .ok_or_else(wrong_invocation)?;
     match source {
         OperationSource::Clause(operation) if call.operation == operation.declaration.name() => {
@@ -3358,7 +3362,8 @@ fn population_universe(
     views: &[ModelView],
     type_identity: EffectiveId,
 ) -> Result<UniverseId, AdmissionFailure> {
-    let view = view_of(views, type_identity.clone()).ok_or_else(|| fault("object-type-unresolved"))?;
+    let view =
+        view_of(views, type_identity.clone()).ok_or_else(|| fault("object-type-unresolved"))?;
     let key = view
         .declaration_key(type_identity)
         .ok_or_else(|| fault("object-type-unresolved"))?;

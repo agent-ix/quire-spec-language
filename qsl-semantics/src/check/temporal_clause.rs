@@ -60,11 +60,11 @@ use qsl_foundation::bound::{
     TimedIntervalKey,
 };
 use qsl_foundation::diagnostic::{LimitExceeded, Locus, StageFailure, Staged};
-use quire_exact::NodeKey;
 use qsl_foundation::selection::DefinitionRef;
 use qsl_foundation::source::provenance::RawSourceRef;
 use qsl_foundation::source_map::SourceMap;
 use qsl_foundation::{Setting, Span};
+use quire_exact::NodeKey;
 use quire_exact::{Integer, Rational, ValueType};
 use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::fairness::{
@@ -1218,12 +1218,14 @@ fn check_clause(
         .collect();
     let formula = build_formula(&form.formula, &intervals)?;
     let populations: Vec<PopulationDomain> = match types.first() {
-        Some(ValueType::Reference(object)) => {
-            populations_overlapping(declarations.models, object.clone(), declarations.scope.types())
-                .into_iter()
-                .filter(|domain| domain.maximum.is_none())
-                .collect()
-        }
+        Some(ValueType::Reference(object)) => populations_overlapping(
+            declarations.models,
+            object.clone(),
+            declarations.scope.types(),
+        )
+        .into_iter()
+        .filter(|domain| domain.maximum.is_none())
+        .collect(),
         _ => Vec::new(),
     };
     let property_form = property_form(profile, model_subject, &formula);

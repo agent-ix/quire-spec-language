@@ -1528,7 +1528,11 @@ impl<S> OccurrenceMap<S> {
     pub(crate) fn iter(&self) -> impl Iterator<Item = (NodeKey, Origin, &S)> {
         self.spans.iter().flat_map(|((identity, role), spans)| {
             (0_u64..).zip(spans).map(move |(ordinal, span)| {
-                (identity.clone(), Origin::new(role.kernel_role(), ordinal), span)
+                (
+                    identity.clone(),
+                    Origin::new(role.kernel_role(), ordinal),
+                    span,
+                )
             })
         })
     }
@@ -1544,7 +1548,11 @@ impl<S> OccurrenceMap<S> {
             .filter(move |((_, recorded), _)| *recorded == role)
             .flat_map(|((identity, role), spans)| {
                 (0_u64..).zip(spans).map(move |(ordinal, span)| {
-                    (identity.clone(), Origin::new(role.kernel_role(), ordinal), span)
+                    (
+                        identity.clone(),
+                        Origin::new(role.kernel_role(), ordinal),
+                        span,
+                    )
                 })
             })
     }

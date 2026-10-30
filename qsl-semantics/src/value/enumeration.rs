@@ -20,7 +20,7 @@ use super::semantic_node::{
     is_qualified_name, refuse, NodeIdDocument, NodeOwner, NominalRefusal, OwnerSelection,
 };
 use quire_exact::is_identifier;
-use quire_exact::{EmptyVariantName, NodeKey, VariantId};
+use quire_exact::{EmptyVariantName, InvalidNodeKey, NodeKey, PathSegment, VariantId};
 use quire_semantic_value::enumeration::{is_member_list, EnumDeclaration, EnumValue};
 use quire_semantic_value::semantic_node::{InvalidSemanticGraph, SemanticGraphCause};
 
@@ -101,6 +101,15 @@ impl EnumDeclarationPreimage {
         })
     }
 
+    /// The declaration's structural node key: its owner and qualified name.
+    ///
+    /// # Errors
+    ///
+    /// [`InvalidNodeKey`] when the key cannot be built.
+    pub fn key(&self) -> Result<NodeKey, InvalidNodeKey> {
+        self.owner.declaration_key(&self.qualified_declaration)
+    }
+
     /// The owner projection.
     pub fn owner(&self) -> &NodeOwner {
         &self.owner
@@ -158,10 +167,25 @@ impl EnumMemberPreimage {
         if !is_identifier(&case) {
             return Err(refuse(SemanticGraphCause::NonCanonicalPreimage));
         }
-        Ok(Self {
-            declaration,
-            case,
-        })
+        Ok(Self { declaration, case })
+    }
+
+    /// The member's structural node key: its declaration's key nested as the
+    /// first path segment, then the case name.
+    ///
+    /// # Errors
+    ///
+    /// [`InvalidNodeKey`] when the key cannot be built or cloned.
+    pub fn key(&self) -> Result<NodeKey, InvalidNodeKey> {
+        let package = self.declaration.view().package().to_owned();
+        NodeKey::new(
+            package,
+            vec![
+                PathSegment::Node(self.declaration.try_clone()?),
+                PathSegment::Text(self.case.clone()),
+            ],
+            0,
+        )
     }
 
     /// The referenced declaration node id, as read.

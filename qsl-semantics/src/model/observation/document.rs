@@ -1959,8 +1959,9 @@ fn admit_value<'a: 'w, 'w>(
                         if !types.composite_conforms(own.clone(), slot.clone()) {
                             return Err(refuse_at("wrong-value-kind", &path));
                         }
-                        let Some(CompositeShape::Record(declared)) =
-                            types.composite(own.clone()).map(|declaration| declaration.shape())
+                        let Some(CompositeShape::Record(declared)) = types
+                            .composite(own.clone())
+                            .map(|declaration| declaration.shape())
                         else {
                             return Err(refuse_at("wrong-value-kind", &path));
                         };
@@ -2267,7 +2268,8 @@ pub(super) fn record_field_type<'t>(
     identity: &str,
     field: &str,
 ) -> Option<&'t quire_exact::ValueType> {
-    let CompositeShape::Record(declared) = types.composite(keys.get(identity)?.clone())?.shape() else {
+    let CompositeShape::Record(declared) = types.composite(keys.get(identity)?.clone())?.shape()
+    else {
         return None;
     };
     declared
@@ -2560,7 +2562,8 @@ pub(super) fn admit_population_values<'t>(
                 .view
                 .type_identities()
                 .get(&object_key)
-                .ok_or_else(|| fault("object-type-has-no-effective-id"))?.clone();
+                .ok_or_else(|| fault("object-type-has-no-effective-id"))?
+                .clone();
 
             let declared = types.attributes(effective_type.clone()).ok_or_else(|| {
                 AdmissionFailure::Fault(quire_semantic_value::catalog::InternalFault::new(
@@ -2795,7 +2798,8 @@ fn admit_contexts<'t>(
             .view
             .type_identities()
             .get(&key)
-            .ok_or_else(|| fault("context-machine-has-no-effective-id"))?.clone();
+            .ok_or_else(|| fault("context-machine-has-no-effective-id"))?
+            .clone();
         let declared = types
             .attributes(effective.clone())
             .ok_or_else(|| fault("context-machine-has-no-checked-attributes"))?;
@@ -2880,7 +2884,10 @@ fn admit_contexts<'t>(
             }));
             attributes.push((name, value));
         }
-        if read_machine.as_ref().is_some_and(|clause| types.conforms(effective.clone(), clause.clone())) {
+        if read_machine
+            .as_ref()
+            .is_some_and(|clause| types.conforms(effective.clone(), clause.clone()))
+        {
             read.push(ReadContext {
                 machine: machine.to_owned(),
                 entry,

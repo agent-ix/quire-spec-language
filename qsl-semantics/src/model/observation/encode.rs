@@ -162,8 +162,10 @@ impl ValueEncoder {
                 }
                 Work::Read(Value::Composite(composite), canonical) => {
                     let type_identity = self.records.get(&composite.declaration())?;
-                    let CompositeShape::Record(declared) =
-                        self.types.composite(composite.declaration().clone())?.shape()
+                    let CompositeShape::Record(declared) = self
+                        .types
+                        .composite(composite.declaration().clone())?
+                        .shape()
                     else {
                         return None;
                     };

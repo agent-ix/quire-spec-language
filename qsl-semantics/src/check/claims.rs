@@ -1074,7 +1074,10 @@ pub(crate) fn key_claims(
             extent_roots,
         };
         if records
-            .insert(OccurrenceKey::new(wire(key.clone()), origin.clone()), record)
+            .insert(
+                OccurrenceKey::new(wire(key.clone()), origin.clone()),
+                record,
+            )
             .is_some()
         {
             return Err(unkeyable());

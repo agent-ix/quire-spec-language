@@ -349,10 +349,13 @@ pub fn classify_extent(
                 "domain-root-classified",
             )));
         };
-        domains.insert(DomainKey::Node {
-            node: node.clone(),
-            path,
-        }, kind);
+        domains.insert(
+            DomainKey::Node {
+                node: node.clone(),
+                path,
+            },
+            kind,
+        );
     }
     Ok(ClaimExtent::from_domains(domains))
 }
@@ -916,8 +919,7 @@ mod tests {
     #[trace("TC-437", "FR-097-AC-2")]
     #[test]
     fn tc_437_a_quantity_is_an_unboundable_domain() {
-        let metre =
-            ValueType::Quantity(quire_exact::UnitId::declared(node(5)));
+        let metre = ValueType::Quantity(quire_exact::UnitId::declared(node(5)));
         let extent = extent(&metre);
         assert_eq!(extent, unbounded(&[(vec![], DomainKind::Quantity)]));
         let ClaimExtent::Unbounded(domains) = extent else {
@@ -950,8 +952,7 @@ mod tests {
         let map =
             |values| ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(values, None)));
         assert_eq!(extent(&map(int_0_9())), ClaimExtent::Bounded);
-        let metre =
-            ValueType::Quantity(quire_exact::UnitId::declared(node(5)));
+        let metre = ValueType::Quantity(quire_exact::UnitId::declared(node(5)));
         assert_eq!(
             extent(&map(metre)),
             unbounded(&[(vec![0], DomainKind::Quantity)])

@@ -1096,7 +1096,11 @@ impl Checker<'_, '_> {
         form: &CompensationForm,
         operation: &ClauseOperation,
     ) -> Option<Option<PopulationDomain>> {
-        match population_of(self.input.models, operation.declaring.clone(), self.scope().types()) {
+        match population_of(
+            self.input.models,
+            operation.declaring.clone(),
+            self.scope().types(),
+        ) {
             Ok(domain) => Some(domain),
             Err(populations) => {
                 self.refuse(ObligationCause::AmbiguousPopulation {

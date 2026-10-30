@@ -131,7 +131,8 @@ fn wire_object<'a>(
         .view
         .type_identities()
         .get(&type_identity)
-        .ok_or_else(|| fault("frame-object-type-has-no-effective-id"))?.clone();
+        .ok_or_else(|| fault("frame-object-type-has-no-effective-id"))?
+        .clone();
     let (fields, names) = wire_fields(context, effective_type.clone(), &object.fields)?;
     Ok((
         FrameObject {
@@ -367,7 +368,11 @@ fn run<'a>(
                 let facts = side
                     .facts_of(key)
                     .ok_or_else(|| fault("frame-delta-object-unresolved"))?;
-                into.push(object_reference(context.views, facts.effective_type.clone(), key)?);
+                into.push(object_reference(
+                    context.views,
+                    facts.effective_type.clone(),
+                    key,
+                )?);
             }
         }
     }
@@ -439,8 +444,9 @@ pub(super) fn enforce_contexts<'a>(
 ) -> Result<(), AdmissionFailure> {
     const RECEIVER: &str = "context";
     let side = |snapshot: &'a SnapshotDocument| -> Result<_, AdmissionFailure> {
-        let (raw, effective) = read_context(context.views, context.types, snapshot, machine.clone())
-            .ok_or_else(|| fault("frame-read-context-missing"))?;
+        let (raw, effective) =
+            read_context(context.views, context.types, snapshot, machine.clone())
+                .ok_or_else(|| fault("frame-read-context-missing"))?;
         let type_identity = view_of(context.views, effective.clone())
             .and_then(|view| view.declaration_key(effective.clone()))
             .cloned()

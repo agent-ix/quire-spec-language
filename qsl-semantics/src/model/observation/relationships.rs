@@ -786,7 +786,8 @@ fn side_extents(
                 .view
                 .type_identities()
                 .get(&declaration)
-                .ok_or_else(|| fault("frame-link-object-type-has-no-effective-id"))?.clone();
+                .ok_or_else(|| fault("frame-link-object-type-has-no-effective-id"))?
+                .clone();
             listed.insert(
                 (population.population.as_str(), object.key.as_str()),
                 effective_type,
@@ -798,7 +799,8 @@ fn side_extents(
         // state-machine context object has no object universe.
         let effective_type = listed
             .get(&(raw.population.as_str(), raw.key.as_str()))
-            .ok_or_else(|| fault("frame-link-end-unlisted"))?.clone();
+            .ok_or_else(|| fault("frame-link-end-unlisted"))?
+            .clone();
         Ok((
             object_reference(views, effective_type, &raw.key)?,
             raw.clone(),

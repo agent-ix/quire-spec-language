@@ -18,10 +18,8 @@
 //! `quire-exact::identity` landed in S-1 ahead of the checker that will use
 //! them, with tests as their only caller until then.
 
-use super::counter::Counter;
-
 use qsl_forms::StateClauseKind;
-use qsl_foundation::bound::{TemporalInterval, TemporalUpper};
+use qsl_foundation::bound::TemporalInterval;
 use quire_contract_model::ExecutionPoint;
 use quire_exact::Identifier;
 use quire_exact::NodeKey;
@@ -36,8 +34,6 @@ use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
 ///
 /// quire:canonical
 #[derive(Clone, Debug, Eq, PartialEq)]
-#[cfg_attr(test, derive(serde::Deserialize))]
-#[serde(transparent)]
 pub struct AcceptedPoint(ExecutionPoint);
 
 impl AcceptedPoint {
@@ -219,7 +215,6 @@ impl Member {
             | Self::Fairness { .. } => None,
         }
     }
-
 }
 
 #[cfg(test)]

@@ -14,7 +14,7 @@ use serde::Deserialize;
 
 use qsl_foundation::diagnostic::LimitExceeded;
 use qsl_foundation::Setting;
-use quire_exact::{Integer, NodeKey, PathSegment};
+use quire_exact::{Integer, InvalidNodeKey, NodeKey, PathSegment};
 use quire_semantic_value::semantic_node::{InvalidSemanticGraph, SemanticGraphCause};
 
 /// The stable subject projection of the exact admitted owner of a nominal
@@ -51,6 +51,44 @@ pub struct ModelSubject {
 }
 
 impl NodeOwner {
+    /// The structural key of the declaration `path` under this owner: the
+    /// owner supplies the package and the leading path segments, the
+    /// declaration path follows, and the ordinal is 0. A source or
+    /// definition owner is package `authority` with path `[kind, identity,
+    /// ..path]`; a model owner is package `identity` with path `["model",
+    /// node, ..path]`. The owner's strings are never parsed or hashed.
+    ///
+    /// # Errors
+    ///
+    /// [`InvalidNodeKey`] when the key cannot be built.
+    pub fn declaration_key(&self, path: &[String]) -> Result<NodeKey, InvalidNodeKey> {
+        let (package, kind, identity) = match self {
+            Self::Source(subject) => (&subject.authority, "source", &subject.identity),
+            Self::Definition(subject) => (&subject.authority, "definition", &subject.identity),
+            Self::Model(subject) => (&subject.identity, "model", &subject.node),
+        };
+        let mut segments = Vec::new();
+        segments
+            .try_reserve_exact(path.len().saturating_add(2))
+            .map_err(|_| InvalidNodeKey::Allocation {
+                requested: path.len().saturating_add(2),
+            })?;
+        segments.push(PathSegment::Text(kind.to_owned()));
+        segments.push(PathSegment::Text(identity.clone()));
+        segments.extend(path.iter().cloned().map(PathSegment::Text));
+        NodeKey::new(package.clone(), segments, 0)
+    }
+
+    /// The structural handle of the record or tuple `name` declared under
+    /// this owner, which `ValueType::Composite` carries before lowering.
+    ///
+    /// # Errors
+    ///
+    /// [`InvalidNodeKey`] when the key cannot be built.
+    pub fn declared_type_handle(&self, name: &str) -> Result<NodeKey, InvalidNodeKey> {
+        self.declaration_key(&[name.to_owned()])
+    }
+
     pub(crate) fn is_well_formed(&self) -> bool {
         match self {
             Self::Source(subject) | Self::Definition(subject) => {

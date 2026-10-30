@@ -173,7 +173,11 @@ pub(crate) fn simulation_records(
         StepSimulationEntry::new(
             inputs.node.clone(),
             0,
-            StepSimulationRecord::new(inputs.node.clone(), StepObligation::Initial, hypotheses.clone()),
+            StepSimulationRecord::new(
+                inputs.node.clone(),
+                StepObligation::Initial,
+                hypotheses.clone(),
+            ),
         ),
         initial,
     ));
@@ -198,7 +202,14 @@ pub(crate) fn simulation_records(
             .ok_or_else(|| fault(location))?;
         let mut populations: BTreeSet<PopulationDomain> = read.clone();
         populations.extend(context.clone());
-        populations.extend(inputs.contracts.get(operation).into_iter().flatten().cloned());
+        populations.extend(
+            inputs
+                .contracts
+                .get(operation)
+                .into_iter()
+                .flatten()
+                .cloned(),
+        );
         let record = extent_record(
             Some((anchor, types)),
             &populations,
@@ -236,11 +247,16 @@ fn extent_record(
     let location = inputs.location;
     let populations: Vec<(PopulationDomain, NodeKey)> = populations
         .iter()
-        .map(|domain| (inputs.object_node)(domain.object.clone()).map(|object| (domain.clone(), object)))
+        .map(|domain| {
+            (inputs.object_node)(domain.object.clone()).map(|object| (domain.clone(), object))
+        })
         .collect::<Option<_>>()
         .ok_or_else(|| fault(location))?;
     let (anchor, types) = match roots {
-        Some((anchor, types)) => (anchor.clone(), types.iter().map(|value| (anchor.clone(), value)).collect()),
+        Some((anchor, types)) => (
+            anchor.clone(),
+            types.iter().map(|value| (anchor.clone(), value)).collect(),
+        ),
         None => (inputs.node.clone(), Vec::new()),
     };
     let references = ModelReferences::new(

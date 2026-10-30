@@ -82,10 +82,7 @@ pub fn population_node_key(key: &DeclarationKey) -> Result<NodeKey, InvalidNodeK
 
 /// The structural effective identity of `original` under `owner`.
 #[must_use]
-pub fn effective_id_of(
-    owner: Option<EffectiveId>,
-    original: &DeclarationKey,
-) -> EffectiveId {
+pub fn effective_id_of(owner: Option<EffectiveId>, original: &DeclarationKey) -> EffectiveId {
     EffectiveId::new(
         owner,
         OriginalDeclarationKey::new(original.package.clone(), original.node.clone()),
@@ -260,7 +257,9 @@ pub fn node_key_refusal(error: &InvalidNodeKey) -> ModelRefusal {
 
 /// The refusal for an object universe that has no structural identity.
 #[must_use]
-pub fn universe_identity_refusal(error: &crate::model::normalize::UniverseIdentityError) -> ModelRefusal {
+pub fn universe_identity_refusal(
+    error: &crate::model::normalize::UniverseIdentityError,
+) -> ModelRefusal {
     match error {
         crate::model::normalize::UniverseIdentityError::Key(key) => node_key_refusal(key),
         crate::model::normalize::UniverseIdentityError::NoRootType => ModelRefusal {

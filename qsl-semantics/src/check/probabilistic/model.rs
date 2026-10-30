@@ -629,7 +629,11 @@ impl<'a> ProbabilisticInput<'a> {
             [found] => found,
             _ => return Err(Unresolved::Ambiguous),
         };
-        let context = self.object_types.get(key).ok_or(Unresolved::Missing)?.clone();
+        let context = self
+            .object_types
+            .get(key)
+            .ok_or(Unresolved::Missing)?
+            .clone();
         let (declaring, declaration) =
             match self
                 .scope

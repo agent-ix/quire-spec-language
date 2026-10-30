@@ -4179,7 +4179,6 @@ impl<'m> Charges<'m> {
         self.declarations = next;
         Ok(())
     }
-
 }
 
 /// Normalize `domain_package` under `limits`: FR-150 phases 1, 2, 3, 4 and 5.

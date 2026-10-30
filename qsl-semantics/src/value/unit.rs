@@ -22,14 +22,10 @@ use super::semantic_node::{
     is_qualified_name, refuse, NodeIdDocument, NodeOwner, NominalRefusal, OwnerSelection,
     RationalDocument,
 };
-use qsl_foundation::IdentityLimits;
-use quire_exact::{Integer, NodeKey, Rational, UnitId};
-use quire_semantic_value::semantic_node::{
-    IdentityRefusal, InvalidSemanticGraph, SemanticGraphCause,
-};
+use quire_exact::{Integer, InvalidNodeKey, NodeKey, Rational, UnitId};
+use quire_semantic_value::semantic_node::{InvalidSemanticGraph, SemanticGraphCause};
 use quire_semantic_value::unit::{
-    compound_unit_id, CompoundUnitCause, DimensionNode, InvalidCompoundUnit, NominalDeclaration,
-    UnitGraph, UnitNode,
+    CompoundUnitCause, DimensionNode, InvalidCompoundUnit, NominalDeclaration, UnitGraph, UnitNode,
 };
 
 const DIMENSION_VERSION: &str = "quire.dimension-node/v1";
@@ -141,6 +137,15 @@ impl DimensionPreimage {
 }
 
 impl DimensionPreimage {
+    /// The dimension's structural node key: its owner and qualified name.
+    ///
+    /// # Errors
+    ///
+    /// [`InvalidNodeKey`] when the key cannot be built.
+    pub fn key(&self) -> Result<NodeKey, InvalidNodeKey> {
+        self.owner.declaration_key(&self.qualified_declaration)
+    }
+
     /// The dimension's qualified name, which lowering builds its node from
     /// (FR-094).
     fn nominal_declaration(&self) -> NominalDeclaration {
@@ -341,6 +346,15 @@ impl UnitPreimage {
 }
 
 impl UnitPreimage {
+    /// The unit's structural node key: its owner and qualified name.
+    ///
+    /// # Errors
+    ///
+    /// [`InvalidNodeKey`] when the key cannot be built.
+    pub fn key(&self) -> Result<NodeKey, InvalidNodeKey> {
+        self.owner.declaration_key(&self.qualified_declaration)
+    }
+
     /// Refuse an unreduced rational, then a zero scale or a non-identity root
     /// ([`UnitNode::checked`]). The node keeps `declaration`.
     fn check_semantics(
@@ -386,9 +400,8 @@ pub fn admit_unit_graph(
     let mut keys = BTreeSet::new();
     let mut admitted_dimensions = BTreeMap::new();
     for (preimage, key) in dimensions {
-        let node =
-            DimensionNode::checked(preimage.terms.clone(), preimage.nominal_declaration())
-                .map_err(refuse)?;
+        let node = DimensionNode::checked(preimage.terms.clone(), preimage.nominal_declaration())
+            .map_err(refuse)?;
         if !keys.insert(key.clone()) {
             return Err(refuse(SemanticGraphCause::DuplicateNode).into());
         }
@@ -460,17 +473,14 @@ impl CompoundUnitPreimage {
         &self.terms
     }
 
-    /// The compound-arm [`UnitId`] of exactly these spelled terms, under
-    /// `identity`'s byte limit.
-    ///
-    /// # Errors
-    ///
-    /// As [`compound_unit_id`]: the preimage's bytes reached the identity
-    /// byte limit, or a heap reservation failed.
-    pub fn id(&self, identity: IdentityLimits) -> Result<UnitId, IdentityRefusal> {
-        compound_unit_id(
-            self.terms.iter().map(|(id, exponent)| (id, exponent)),
-            quire_canonical::Limits::new(identity.input_bytes),
-        )
+    /// The compound-arm [`UnitId`] of exactly these spelled terms
+    /// (`UnitId::compound`), or `None` when a term key cannot be cloned.
+    pub fn id(&self) -> Option<UnitId> {
+        let terms = self
+            .terms
+            .iter()
+            .map(|(id, exponent)| Some((id.try_clone().ok()?, exponent.clone())))
+            .collect::<Option<Vec<_>>>()?;
+        Some(UnitId::compound(terms))
     }
 }

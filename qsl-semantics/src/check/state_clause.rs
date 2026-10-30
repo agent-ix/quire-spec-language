@@ -948,9 +948,10 @@ fn check_clause_in(
     for node in body.root().descendants() {
         if let Some(object) = walked_object(node, input.scope) {
             let end_form = matches!(node.kind(), NodeKind::ReachesEnd { .. });
-            let walked =
-                population_of(input.models, object.clone(), input.scope.types()).map_err(|keys| {
-                    let refusal = ambiguous_population(input.scope, object.clone(), &keys, node.location());
+            let walked = population_of(input.models, object.clone(), input.scope.types()).map_err(
+                |keys| {
+                    let refusal =
+                        ambiguous_population(input.scope, object.clone(), &keys, node.location());
                     // FR-365: a reachability over an end refuses as a
                     // `StateModel` form; the field form's refusal is unchanged.
                     if end_form {
@@ -958,8 +959,13 @@ fn check_clause_in(
                     } else {
                         refusal
                     }
-                })?;
-            if end_form && walked.clone().is_some_and(|domain| domain.maximum.is_some()) {
+                },
+            )?;
+            if end_form
+                && walked
+                    .clone()
+                    .is_some_and(|domain| domain.maximum.is_some())
+            {
                 let bound = walked_bound(input.models, object, input.scope.types());
                 linked.extend(bound.map(|bound| (node.id(), bound)));
             }
@@ -1234,7 +1240,10 @@ pub(crate) fn record(
 /// The declaring object type and name of `operation`, as a record
 /// references it (ADR-017 AR-4).
 pub(crate) fn operation_reference(operation: &ClauseOperation) -> (EffectiveId, String) {
-    (operation.declaring.clone(), operation.declaration.name().to_owned())
+    (
+        operation.declaring.clone(),
+        operation.declaration.name().to_owned(),
+    )
 }
 
 /// `domain`'s ADR-012 §15.7 key, `object` being its member type's
@@ -1293,7 +1302,12 @@ pub(crate) fn frame_record(
 ) -> Result<RequirementRecord, CheckRefusal> {
     let receiver = ValueType::Reference(operation.declaring.clone());
     let mut roots: Vec<(NodeKey, &ValueType)> = vec![(frame.clone(), &receiver)];
-    roots.extend(operation.declaration.result().map(|result| (frame.clone(), result)));
+    roots.extend(
+        operation
+            .declaration
+            .result()
+            .map(|result| (frame.clone(), result)),
+    );
     roots.extend(
         operation
             .declaration

@@ -61,7 +61,10 @@ impl OperationClauseDeclaration {
             },
             complete_value: false,
             context: Some(self.context.clone()),
-            receiver: Some(("self", quire_exact::ValueType::Reference(self.context.clone()))),
+            receiver: Some((
+                "self",
+                quire_exact::ValueType::Reference(self.context.clone()),
+            )),
             operation: Some(&self.operation),
             context_population: None,
             frame_population: None,

@@ -40,8 +40,8 @@ use qsl_foundation::bound::{DomainKey, DomainKind};
 use qsl_foundation::selection::DefinitionRef;
 use qsl_foundation::Span;
 use quire_exact::{
-    Identifier, NodeKey, IllTypedCause, Integer, IntegerInterval, Meter, Quantity, Rational, RationalDomain,
-    UnitId, Value, ValueType,
+    Identifier, IllTypedCause, Integer, IntegerInterval, Meter, NodeKey, Quantity, Rational,
+    RationalDomain, UnitId, Value, ValueType,
 };
 use quire_semantic_value::fairness::{
     FairnessConstraint, FairnessGranularity, FairnessKind, FairnessOperation,
