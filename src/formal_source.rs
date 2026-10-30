@@ -41,7 +41,7 @@ impl FormalSource {
     }
 
     /// Map an exact-source span into IR coordinates using the existing source index.
-    /// Foreign labels, path or digest and invalid UTF-8 ranges refuse without a locus.
+    /// Foreign labels, identity or path and invalid UTF-8 ranges refuse without a locus.
     pub fn to_ir(&self, source: &Source, span: Span) -> Result<SourceSpan, Box<FormalSourceError>> {
         if source.identity() != self.source.identity() || source.path() != self.source.path() {
             return Err(self.failure("span request differs from the bound native source"));
