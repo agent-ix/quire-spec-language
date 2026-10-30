@@ -240,21 +240,58 @@ impl Witness {
     }
 }
 
-/// The parameter node a transcript entry's name spells: the node's compact
-/// JSON object.
+/// The parameter node a transcript entry's name spells: the percent-decoded
+/// name is the node's compact JSON object.
 pub(crate) fn parameter_node(name: &str) -> Option<NodeKey> {
-    let value: serde_json::Value = serde_json::from_str(name).ok()?;
+    let json = percent_decode(name)?;
+    let value: serde_json::Value = serde_json::from_str(&json).ok()?;
     let node = qsl_foundation::node_wire::node_key_from_json(&value);
     qsl_foundation::node_wire::discard_node_json(value);
     node.ok()
 }
 
-/// A parameter node's transcript name: its compact JSON object.
+/// A parameter node's transcript name: its compact JSON object with every
+/// byte the transcript grammar reads (`%`, `=`, `;`, `|`, `<`, `>`) or that
+/// is not printable ASCII-safe percent-escaped, so distinct nodes never
+/// share a name and the entry separators never occur inside one.
 pub(crate) fn parameter_name(node: &NodeKey) -> Option<String> {
     let value = qsl_foundation::node_wire::node_key_to_json(node).ok()?;
     let text = serde_json::to_string(&value).ok();
     qsl_foundation::node_wire::discard_node_json(value);
-    text
+    text.map(|json| percent_encode(&json))
+}
+
+fn percent_encode(text: &str) -> String {
+    let mut bytes = Vec::with_capacity(text.len());
+    for byte in text.bytes() {
+        if matches!(byte, b'%' | b'=' | b';' | b'|' | b'<' | b'>') || byte < 0x20 || byte == 0x7f {
+            bytes.extend_from_slice(format!("%{byte:02X}").as_bytes());
+        } else {
+            bytes.push(byte);
+        }
+    }
+    // Escapes are ASCII and every other byte is the input's own UTF-8.
+    String::from_utf8(bytes).unwrap_or_default()
+}
+
+fn percent_decode(text: &str) -> Option<String> {
+    let raw = text.as_bytes();
+    let mut bytes = Vec::with_capacity(raw.len());
+    let mut index = 0;
+    while let Some(&byte) = raw.get(index) {
+        if byte == b'%' {
+            let pair = text.get(index + 1..index + 3)?;
+            if !pair.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_lowercase()) {
+                return None;
+            }
+            bytes.push(u8::from_str_radix(pair, 16).ok()?);
+            index += 3;
+        } else {
+            bytes.push(byte);
+            index += 1;
+        }
+    }
+    String::from_utf8(bytes).ok()
 }
 
 /// The declared type of one harness argument (ADR-013 O-25): how its
@@ -677,6 +714,29 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
 
 #[cfg(test)]
 mod witness_tests {
+    /// A parameter name is an injective, reversible spelling: keys whose
+    /// text holds the transcript's separators and the escape character
+    /// round-trip and stay distinct, and no separator occurs in a name.
+    #[test]
+    fn parameter_names_are_injective_and_separator_free() {
+        let key = |text: &str| {
+            NodeKey::new("fixture", vec![quire_exact::PathSegment::Text(text.to_owned())], 0)
+                .expect("a node")
+        };
+        let texts = ["a=b", "a;b", "a|b", "a%3Db", "a%", "%25", "a<<<b>>>", "a=b;c|d%"];
+        let names: Vec<String> = texts.iter().map(|text| pn_(&key(text))).collect();
+        for (text, name) in texts.iter().zip(&names) {
+            assert!(!name.contains(['=', ';', '|', '<', '>']), "{name}");
+            assert_eq!(super::parameter_node(name), Some(key(text)), "{text}");
+        }
+        let distinct: std::collections::BTreeSet<_> = names.iter().collect();
+        assert_eq!(distinct.len(), names.len());
+    }
+
+    fn pn_(node: &NodeKey) -> String {
+        super::parameter_name(node).expect("a node spells")
+    }
+
     use super::*;
     use ix_trace_rs::trace;
 
@@ -724,7 +784,7 @@ mod witness_tests {
         let x = crate::fixture_node(1);
         let y = crate::fixture_node(2);
         let bindings = [integer(x), integer(y)];
-        let text = assertion("harness_a", "x == 1", &format!("{x}=1;{y}=2"));
+        let text = assertion("harness_a", "x == 1", &format!("{x}=1;{y}=2", x = pn_(&x), y = pn_(&y)));
         let witness = Witness::parse(text.clone()).unwrap();
         // Step 1: exhaustive destructure naming only `transcript`.
         let Witness { transcript } = witness;
@@ -748,7 +808,7 @@ mod witness_tests {
         assert_eq!(witness.harness_symbol(), second.harness_symbol());
 
         // Step 4: a differing transcript produces a differing derived value.
-        let third_text = assertion("harness_a", "x == 1", &format!("{x}=99;{y}=2"));
+        let third_text = assertion("harness_a", "x == 1", &format!("{x}=99;{y}=2", x = pn_(&x), y = pn_(&y)));
         let third = Witness::parse(third_text).unwrap();
         assert_ne!(witness.concrete_values(), third.concrete_values());
         assert_eq!(
@@ -797,7 +857,7 @@ mod witness_tests {
         let flag = crate::fixture_node(1);
         let low = crate::fixture_node(2);
         let high = crate::fixture_node(3);
-        let values = format!("{flag}=1;{low}={};{high}={}", i128::MIN, i128::MAX);
+        let values = format!("{}=1;{}={};{}={}", pn_(&flag), pn_(&low), i128::MIN, pn_(&high), i128::MAX);
         let witness = Witness::parse(assertion("h", "c", &values)).unwrap();
         assert_eq!(
             witness.decode(&[boolean(flag), integer(low), integer(high)]),
@@ -807,7 +867,7 @@ mod witness_tests {
                 WitnessValue::Integer(i128::MAX),
             ])
         );
-        let off = Witness::parse(assertion("h", "c", &format!("{flag}=0"))).unwrap();
+        let off = Witness::parse(assertion("h", "c", &format!("{flag}=0", flag = pn_(&flag)))).unwrap();
         assert_eq!(
             off.decode(&[boolean(flag)]),
             Ok(vec![WitnessValue::Boolean(false)])
@@ -832,23 +892,23 @@ mod witness_tests {
         };
 
         assert_eq!(
-            decode(format!("{x}=1"), &[integer(x), boolean(b)]),
+            decode(format!("{x}=1", x = pn_(&x)), &[integer(x), boolean(b)]),
             Err(DecodeRefusal::Missing(b))
         );
         assert_eq!(
-            decode(format!("{x}=1;{x}=2"), &[integer(x)]),
+            decode(format!("{x}=1;{x}=2", x = pn_(&x)), &[integer(x)]),
             Err(DecodeRefusal::Duplicate(x))
         );
         assert_eq!(
-            decode(format!("{x}=1;{b}=0"), &[integer(x)]),
+            decode(format!("{x}=1;{b}=0", x = pn_(&x), b = pn_(&b)), &[integer(x)]),
             Err(DecodeRefusal::Unbound(b.to_string()))
         );
         assert_eq!(
-            decode(format!("{x}=1;junk"), &[integer(x)]),
+            decode(format!("{x}=1;junk", x = pn_(&x)), &[integer(x)]),
             Err(DecodeRefusal::MalformedEntry("junk".to_owned()))
         );
         assert_eq!(
-            decode(format!("{b}=2"), &[boolean(b)]),
+            decode(format!("{b}=2", b = pn_(&b)), &[boolean(b)]),
             Err(DecodeRefusal::Malformed {
                 parameter: b,
                 value_type: WitnessValueType::Boolean,
@@ -858,7 +918,7 @@ mod witness_tests {
         let past_max = format!("{}0", i128::MAX);
         for text in ["not-a-number", past_max.as_str()] {
             assert_eq!(
-                decode(format!("{x}={text}"), &[integer(x)]),
+                decode(format!("{x}={text}", x = pn_(&x)), &[integer(x)]),
                 Err(DecodeRefusal::Malformed {
                     parameter: x,
                     value_type: WitnessValueType::I128,
