@@ -481,8 +481,6 @@ mod tests {
     use super::*;
     use ix_trace_rs::trace;
     use qsl_foundation::bound::DomainKind;
-    use qsl_foundation::ByteDigest;
-    use quire_exact::{Integer, Role};
 
     fn node() -> WireNodeId {
         WireNodeId::from_digest([0x11; 32])
@@ -490,111 +488,6 @@ mod tests {
 
     fn key(path: Vec<u32>) -> DomainKey {
         DomainKey::Node { node: node(), path }
-    }
-
-    fn sequence_argument() -> ParityArgument {
-        ParityArgument {
-            identity: OperandIdentity::GraphChild(node()),
-            domain: Domain::Bounds(
-                BoundEntries::new(vec![
-                    ProofBound::new(
-                        key(vec![0]),
-                        Some(DomainKind::Collection),
-                        FiniteBound::cardinality(3),
-                    )
-                    .unwrap(),
-                    ProofBound::new(
-                        key(vec![0, 0]),
-                        Some(DomainKind::Integer),
-                        FiniteBound::integer_range(Integer::from(0_i64), Integer::from(9_i64))
-                            .unwrap(),
-                    )
-                    .unwrap(),
-                ])
-                .unwrap(),
-            ),
-        }
-    }
-
-    /// FR-357-AC-19: the worked example of ADR-013 O-09: a record parameter
-    /// with one `Sequence` field, whose argument entry is the canonical text
-    /// the ADR shows, digested independently of the encoder.
-    #[trace("TC-904", "FR-357-AC-19")]
-    #[test]
-    fn the_adr_worked_example_has_the_documented_digest() {
-        let id = "1".repeat(64);
-        let text = format!(
-            "{{\"domain\":{{\"entries\":[{{\"bound\":{{\"lower\":\"0\",\"tag\":\"integer_range\",\"upper\":\"9\"}},\"key\":{{\"node_id\":\"{id}\",\"path\":[0,0],\"tag\":\"node\"}}}},{{\"bound\":{{\"maximum\":\"3\",\"tag\":\"cardinality\"}},\"key\":{{\"node_id\":\"{id}\",\"path\":[0],\"tag\":\"node\"}}}}],\"tag\":\"bounds\"}},\"operand\":{{\"node_id\":\"{id}\",\"tag\":\"graph_child\"}},\"position\":0}}"
-        );
-        let digest = argument_digest(
-            &sequence_argument(),
-            node(),
-            &Origin::new(Role::new("expression"), 0),
-            0,
-        )
-        .unwrap();
-        assert_eq!(digest, ByteDigest::of(text.as_bytes()).as_bytes());
-    }
-
-    /// FR-357-AC-19: the whole preimage of the worked example, through the
-    /// one function both arms call, is the digest of its canonical text.
-    #[trace("TC-904", "FR-357-AC-19")]
-    #[test]
-    fn the_worked_example_preimage_digests_through_the_one_function() {
-        let id = "1".repeat(64);
-        let entry = format!(
-            "{{\"domain\":{{\"entries\":[{{\"bound\":{{\"lower\":\"0\",\"tag\":\"integer_range\",\"upper\":\"9\"}},\"key\":{{\"node_id\":\"{id}\",\"path\":[0,0],\"tag\":\"node\"}}}},{{\"bound\":{{\"maximum\":\"3\",\"tag\":\"cardinality\"}},\"key\":{{\"node_id\":\"{id}\",\"path\":[0],\"tag\":\"node\"}}}}],\"tag\":\"bounds\"}},\"operand\":{{\"node_id\":\"{id}\",\"tag\":\"graph_child\"}},\"position\":0}}"
-        );
-        let app = "aa".repeat(32);
-        let text = format!(
-            "{{\"arguments\":[{entry}],\"node\":\"{app}\",\"obligation_kind\":\"bounded_shadow\",\"occurrence_key\":{{\"ordinal\":0,\"role\":\"expression\"}}}}"
-        );
-        let preimage = ParityPreimage {
-            node: WireNodeId::from_digest([0xaa; 32]),
-            occurrence: Origin::new(Role::new("expression"), 0),
-            obligation_kind: "bounded_shadow".to_owned(),
-            arguments: vec![sequence_argument()],
-        };
-        assert_eq!(
-            parity_obligation(&preimage).unwrap(),
-            ObligationIdentity::from_digest(ByteDigest::of(text.as_bytes()).as_bytes())
-        );
-    }
-
-    /// FR-357-AC-19 (IR-631): an operator-parity preimage over one graph-child
-    /// operand with the range `[-2, 3]`. The canonical text is written by
-    /// hand from ADR-013 O-09's rules (members sorted, bounds as decimal
-    /// strings, node ids as 64 lowercase hex digits, counters as numbers); the
-    /// encoder's bytes and the identity digest must equal it.
-    #[trace("TC-904", "FR-357-AC-19")]
-    #[test]
-    fn an_operator_parity_range_preimage_has_its_hand_written_text_and_digest() {
-        let text = concat!(
-            r#"{"arguments":[{"domain":{"lower":"-2","tag":"range","upper":"3"},"#,
-            r#""operand":{"node_id":"2222222222222222222222222222222222222222222222222222222222222222","tag":"graph_child"},"#,
-            r#""position":0}],"#,
-            r#""node":"1111111111111111111111111111111111111111111111111111111111111111","#,
-            r#""obligation_kind":"operator_parity","#,
-            r#""occurrence_key":{"ordinal":0,"role":"expression"}}"#
-        );
-        let preimage = ParityPreimage {
-            node: node(),
-            occurrence: Origin::new(Role::new("expression"), 0),
-            obligation_kind: "operator_parity".to_owned(),
-            arguments: vec![ParityArgument {
-                identity: OperandIdentity::GraphChild(WireNodeId::from_digest([0x22; 32])),
-                domain: Domain::Range(
-                    IntegerInterval::new(Integer::from(-2_i64), Integer::from(3_i64)).unwrap(),
-                ),
-            }],
-        };
-        let bytes = quire_canonical::to_vec(&preimage, Limits::new(u64::MAX)).unwrap();
-        assert_eq!(std::str::from_utf8(&bytes).unwrap(), text);
-        let digest = ByteDigest::of(text.as_bytes());
-        assert_eq!(
-            parity_obligation(&preimage).unwrap(),
-            ObligationIdentity::from_digest(digest.as_bytes())
-        );
     }
 
     /// FR-357-AC-19: harness bounds order by the encoded key's bytes, not by

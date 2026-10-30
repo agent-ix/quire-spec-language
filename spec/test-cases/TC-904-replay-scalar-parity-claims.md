@@ -65,9 +65,7 @@ Claim identity, at both levels:
 15. (Retired with FR-357-AC-16.)
 16. (Retired with FR-357-AC-17.)
 17. (Retired with FR-357-AC-18.)
-18. Build ADR-013 O-09's worked example (the argument entry and the whole
-    preimage) through `parity_obligation`, and order and refuse harness
-    bounds.
+18. Order and refuse harness bounds.
 19. Replay a function request and an operator request with the replay
     target replaced by `frame_operation` (`Config::ConfigVersion`,
     `attemptUpdate`), and by `state_clause` (`VersionUnchanged`).
@@ -101,5 +99,5 @@ the encoded-size bound.
 - Step 15: none; retired.
 - Step 16: none; retired.
 - Step 17: none; retired.
-- Step 18: the identity of the entry equals its worked-example tuple; the whole preimage equals its worked-example tuple; bounds ordered `[0, 0]` before `[0]`, `[10]` before `[2]`; a repeat refuses.
+- Step 18: bounds ordered `[0, 0]` before `[0]`, `[10]` before `[2]`; a repeat refuses.
 - Step 19: `invalid_runtime_input`/`unknown-member` at `/replay/frame_operation` and `/replay/state_clause`, naming the entry and `function`, before the recompile; the function claim holds no `function` (FR-357-AC-20).

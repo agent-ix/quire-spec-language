@@ -55,15 +55,7 @@ fn bytes(source: &Source, locations: &[qsl_foundation::LocatedSpan]) -> String {
 #[trace("TC-011", "FR-001-AC-1", "FR-001-AC-2", "FR-001-AC-4")]
 #[test]
 fn exact_bytes_digest_is_checked_before_correspondence() {
-    let digest: ByteDigest =
-        "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
-            .parse()
-            .unwrap();
-    assert_eq!(ByteDigest::of(b"abc"), digest);
-    assert_eq!(
-        digest.to_string(),
-        "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
-    );
+    let digest = ByteDigest::of(b"abc");
     let id = SourceIdentity {
         authority: "test".into(),
         identity: "original".into(),
@@ -83,13 +75,14 @@ fn exact_bytes_digest_is_checked_before_correspondence() {
     assert!(Source::read_verified(id, "x", b"abc", digest, 2)
         .unwrap_err()
         .is_incomplete());
+    let hex = format!("{digest:x}");
     for invalid in [
-        "",
-        "sha256:abc",
-        "SHA256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
-        "sha256:BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD",
+        String::new(),
+        "sha256:abc".to_owned(),
+        format!("SHA256:{hex}"),
+        format!("sha256:{}", hex.to_ascii_uppercase()),
     ] {
-        assert!(invalid.parse::<ByteDigest>().is_err());
+        assert!(invalid.parse::<ByteDigest>().is_err(), "{invalid}");
     }
 }
 

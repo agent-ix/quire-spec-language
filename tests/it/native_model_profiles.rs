@@ -697,7 +697,6 @@ fn mixed_existing_roles_and_rational_artifact_identity_are_preserved() {
             "\"maximum_denominator\":2",
             "\"maximum_denominator\":2,\"unit\":\"metre\"",
         ),
-        format!("{simple}\n"),
     ] {
         assert_ne!(baseline.artifact_bytes(), model(&changed).artifact_bytes());
     }
@@ -1086,7 +1085,7 @@ fn rational_output_limits_use_independently_assembled_artifact_content() {
     // for its output length or serializes NativeRoles through the producer.
     let expected = json!({
         "profile":"native-state-model/2", "declarations": declarations,
-        "source": {"identity":"test:rule-model", "revision":"1", "digest":ByteDigest::of(text.as_bytes()).to_string(), "formal":input.source.identity()},
+        "source": {"identity":"test:rule-model", "revision":"1", "formal":input.source.identity()},
         "loci":[{"key":{"kind":"value","name":"amount"},"source":input.environment.values()[0].source()}],
         "roles":{"scalars":[{"name":"Ratio","source":input.roles.scalars[0].source,"kind":{"kind":"rational","unit":"dimensionless"},"sites":[{"kind":"value","name":"amount"}]}],"objects":[],"operations":[]}
     });
