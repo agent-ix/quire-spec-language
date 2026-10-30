@@ -482,7 +482,7 @@ impl Lowering<'_> {
             return false;
         };
         wrapper.node_tag == NodeTag::Expression
-            && content(target.0.clone()).is_some_and(|literal| {
+            && target.admitted().cloned().and_then(&content).is_some_and(|literal| {
                 matches!(
                     &literal.body,
                     BodyTerm::Leaf(LeafTerm::Literal {

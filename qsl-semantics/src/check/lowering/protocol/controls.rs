@@ -765,7 +765,12 @@ impl Lowering<'_> {
         let mut nodes = Vec::with_capacity(visible.len());
         for body in visible {
             match self.scoped_body(controls, body, entry, location)? {
-                LeafTerm::Reference { target } => nodes.push(target.0),
+                LeafTerm::Reference { target } => nodes.push(
+                    target
+                        .admitted()
+                        .cloned()
+                        .ok_or_else(|| fault(location, KeyFault::UnresolvedDraft))?,
+                ),
                 LeafTerm::Literal { .. } | LeafTerm::DependencyReference { .. } => {
                     return Err(fault(location, KeyFault::UncheckedProtocolFact));
                 }

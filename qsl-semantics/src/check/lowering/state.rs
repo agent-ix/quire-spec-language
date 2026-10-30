@@ -382,7 +382,10 @@ impl Lowering<'_> {
             population_objects.push(object);
         }
         let condition = match condition {
-            LeafTerm::Reference { target } => target.0,
+            LeafTerm::Reference { target } => target
+                .admitted()
+                .cloned()
+                .ok_or_else(|| fault(location, KeyFault::UnresolvedDraft))?,
             LeafTerm::Literal { .. } | LeafTerm::DependencyReference { .. } => {
                 return Err(fault(
                     location,
@@ -529,7 +532,7 @@ impl Lowering<'_> {
             .into_iter()
             .map(|(declaration, name, scope)| match name {
                 Some(name) => FrameModifies::Field(FrameField::new(declaration, name, scope)),
-                None => FrameModifies::Relationship(NodeRef(declaration)),
+                None => FrameModifies::Relationship(NodeRef::Admitted(declaration)),
             })
             .collect();
         let creates = self.frame_objects(&effect.creates, location)?;

@@ -424,10 +424,14 @@ impl Lowering<'_> {
                             ),
                         ));
                     };
+                    let target = target
+                        .admitted()
+                        .cloned()
+                        .ok_or_else(|| fault(next.location, KeyFault::UnresolvedDraft))?;
                     built
                         .conjunctions
-                        .insert((condition, right), target.0.clone());
-                    target.0
+                        .insert((condition, right), target.clone());
+                    target
                 }
             };
         }
@@ -503,13 +507,13 @@ impl Lowering<'_> {
             .iter()
             .flat_map(MemberTerm::leaves)
             .find_map(|leaf| match leaf {
-                LeafTerm::Reference { target } => self.subject_read(
-                    target.0.clone(),
+                LeafTerm::Reference { target } => target.admitted().and_then(|target| self.subject_read(
+                    target.clone(),
                     self_parameter.clone(),
                     object.clone(),
                     field,
                     visited,
-                ),
+                )),
                 LeafTerm::Literal { .. } | LeafTerm::DependencyReference { .. } => None,
             })
     }
@@ -520,9 +524,9 @@ impl Lowering<'_> {
         let Some(MemberTerm::Leaf(LeafTerm::Reference { target })) = argument else {
             return false;
         };
-        let Some(application) = self
-            .graph
-            .node(target.0.clone())
+        let Some(application) = target
+            .admitted()
+            .and_then(|target| self.graph.node(target.clone()))
             .and_then(|node| node.content.body.application_term())
         else {
             return false;
@@ -530,7 +534,7 @@ impl Lowering<'_> {
         application.operator == Operator::Deref
             && matches!(
                 application.arguments.first(),
-                Some(MemberTerm::Leaf(LeafTerm::Reference { target })) if target.0 == self_parameter
+                Some(MemberTerm::Leaf(LeafTerm::Reference { target })) if target.admitted() == Some(&self_parameter)
             )
     }
 }
