@@ -172,15 +172,14 @@ fn variant_type_members(declaration: NodeKey, cases: &[String]) -> Option<Vec<En
         .collect()
 }
 
-/// The member's declared path extends its union or enum declaration path.
-/// The member name makes the path unique under its declaring node.
+/// The member's key (FR-322, a derived node): `["value", "enum_value",
+/// <declaration node>, <case>]` under the declaration's package, which is
+/// `EnumMemberPreimage::key`.
 fn declared_member_key(
     declaration: &NodeKey,
     case: &str,
 ) -> Result<NodeKey, quire_exact::InvalidNodeKey> {
-    let mut path = declaration.path();
-    path.push(quire_exact::PathSegment::Text(case.to_owned()));
-    NodeKey::new(declaration.package().to_owned(), path, 0)
+    crate::value::enumeration::enum_value_key(declaration, case)
 }
 
 /// A model variant type in the type environment (FR-056 "Variant types",

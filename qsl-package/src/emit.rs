@@ -564,8 +564,12 @@ impl<'g> Candidate<'g> {
         if node.node_tag() == NodeTag::BoundedDomain {
             dependencies.insert(semantic_type.clone());
         }
+        if node.node_tag() == NodeTag::Value && node.semantic_form() == "enum_value" {
+            dependencies.insert(semantic_type.clone());
+        }
         if let Some(nominal) = node.nominal_payload() {
             match nominal {
+                // An `enum_value` depends on its enumeration declaration.
                 NominalPayload::Enum(_) => {}
                 NominalPayload::Dimension(dimension) => {
                     dependencies.extend(dimension.terms().iter().map(|(base, _)| node_id(base)));

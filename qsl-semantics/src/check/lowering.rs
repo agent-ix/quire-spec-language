@@ -34,7 +34,7 @@ use std::ops::ControlFlow;
 
 use quire_exact::{
     ArithmeticOperator, Charge, ChargePoint, CollectionKind, CollectionType, EffectiveId,
-    Identifier, Integer, Meter, NodeKey, OrderingOperator, Origin as OccurrenceOrigin, PathSegment,
+    Identifier, Integer, Meter, NodeKey, OrderingOperator, Origin as OccurrenceOrigin,
     Presence, TextProfile, Value, ValueType,
 };
 
@@ -1925,9 +1925,9 @@ impl<'a> Lowering<'a> {
 
     /// The admitted keys of one recursion group's members, in member order.
     /// A declared member is keyed by its declaration's path; any other
-    /// member by the group's anchor (its first declared member) and its
-    /// own tag, form and position. A group with no declared member has no
-    /// anchor, which is an internal fault.
+    /// member by the anchor's (first declared member's) path with no
+    /// operand, the producer's ordinal telling the members apart. A group
+    /// with no declared member has no anchor, which is an internal fault.
     fn admitted_group_keys(
         &mut self,
         members: &[&Draft],
@@ -1947,27 +1947,29 @@ impl<'a> Lowering<'a> {
                 None => None,
             });
         }
-        let anchor = keys
+        // The group's anchor is its first declared member. The pinned
+        // reader (quire-contract-model `validate_recursion`) requires every
+        // undeclared member's path to equal the sole declared member's path.
+        let anchor_path: Vec<String> = keys
             .iter()
             .flatten()
             .next()
-            .cloned()
-            .ok_or_else(|| fault(location, KeyFault::InvalidGroup))?;
+            .ok_or_else(|| fault(location, KeyFault::InvalidGroup))?
+            .view()
+            .path()
+            .map(|segment| match segment {
+                quire_exact::PathSegmentView::Text(text) => Ok(text.to_owned()),
+                quire_exact::PathSegmentView::Node(_) => {
+                    Err(fault(location, KeyFault::InvalidGroup))
+                }
+            })
+            .collect::<Result<_, _>>()?;
         let mut admitted = Vec::with_capacity(members.len());
         for (draft, key) in members.iter().zip(keys) {
             admitted.push(match key {
                 Some(key) => key,
                 None => self.mint_key(&draft.location, |ordinal| {
-                    super::structural_node_key(
-                        &package,
-                        vec![
-                            PathSegment::Text("recursion_group".to_owned()),
-                            PathSegment::Node(anchor.clone()),
-                            PathSegment::Text(draft.content.node_tag.as_str().to_owned()),
-                            PathSegment::Text(draft.content.semantic_form.to_owned()),
-                        ],
-                        ordinal,
-                    )
+                    super::declared_node_key(package.clone(), anchor_path.clone(), ordinal)
                 })?,
             });
         }
@@ -2565,7 +2567,12 @@ impl<'a> Lowering<'a> {
         declaration: NodeKey,
         member: &EnumValue,
     ) -> Result<(), CheckRefusal> {
-        let key = member.member();
+        let key = crate::value::enumeration::enum_value_key_in(
+            &self.package_name,
+            &declaration,
+            member.case(),
+        )
+        .map_err(|_| fault(location, KeyFault::InvalidMemberKey(declaration.clone())))?;
         self.insert_nominal(
             location,
             key,
@@ -4828,7 +4835,11 @@ impl<'a> Lowering<'a> {
                 // type's nodes are built where it is first named, here.
                 self.type_ref(node.value_type(), node.location())?;
                 let variant = member.variant();
-                let key = super::sum_case::mint_union_member_key(variant.owner(), variant.case())
+                let key = crate::value::enumeration::enum_value_key_in(
+                    &self.package_name,
+                    variant.owner(),
+                    variant.case(),
+                )
                     .map_err(|_| {
                     fault(
                         node.location(),

@@ -170,36 +170,15 @@ impl EnumMemberPreimage {
         Ok(Self { declaration, case })
     }
 
-    /// The member's structural node key (FR-322: a declared node's path
-    /// equals its `declaration.qualified_name`): the declaration's package and
-    /// path with the case name as the last segment, ordinal 0.
+    /// The member's structural node key (FR-322, a derived node): the
+    /// declaration's package, the path `["value", "enum_value", <declaration
+    /// node>, <case>]` and ordinal 0.
     ///
     /// # Errors
     ///
-    /// [`InvalidNodeKey`] when the key cannot be built, or when the
-    /// declaration's path holds a nested node id: such a declaration has no
-    /// qualified-name path to extend.
+    /// [`InvalidNodeKey`] when the key cannot be built.
     pub fn key(&self) -> Result<NodeKey, InvalidNodeKey> {
-        let view = self.declaration.view();
-        let mut path = Vec::new();
-        for segment in view.path() {
-            match segment {
-                quire_exact::PathSegmentView::Text(text) => {
-                    path.try_reserve(1)
-                        .map_err(|_| InvalidNodeKey::Allocation {
-                            requested: std::mem::size_of::<PathSegment>(),
-                        })?;
-                    path.push(PathSegment::Text(text.to_owned()));
-                }
-                quire_exact::PathSegmentView::Node(_) => return Err(InvalidNodeKey::EmptyPath),
-            }
-        }
-        path.try_reserve(1)
-            .map_err(|_| InvalidNodeKey::Allocation {
-                requested: std::mem::size_of::<PathSegment>(),
-            })?;
-        path.push(PathSegment::Text(self.case.clone()));
-        NodeKey::new(view.package().to_owned(), path, 0)
+        enum_value_key(&self.declaration, &self.case)
     }
 
     /// The referenced declaration node id, as read.
@@ -292,6 +271,42 @@ impl AdmittedEnumDeclaration {
         }
         Ok(self.declaration.member(&preimage.case, key)?)
     }
+}
+
+/// The key of the `enum_value` node of `case` of the declaration keyed by
+/// `declaration` (FR-322, a derived node): the declaration's package, the
+/// path `["value", "enum_value", <declaration node>, <case>]`, ordinal 0.
+/// Any non-empty case name is kept as written (a model variant type's).
+///
+/// # Errors
+///
+/// [`InvalidNodeKey`] when the key cannot be built.
+pub fn enum_value_key(declaration: &NodeKey, case: &str) -> Result<NodeKey, InvalidNodeKey> {
+    enum_value_key_in(declaration.view().package(), declaration, case)
+}
+
+/// [`enum_value_key`] under `package`, the importing package: a model
+/// variant type's declaration sits in the model's package, its cases in the
+/// package that imports it.
+///
+/// # Errors
+///
+/// [`InvalidNodeKey`] when the key cannot be built.
+pub fn enum_value_key_in(
+    package: &str,
+    declaration: &NodeKey,
+    case: &str,
+) -> Result<NodeKey, InvalidNodeKey> {
+    NodeKey::new(
+        package.to_owned(),
+        vec![
+            PathSegment::Text("value".to_owned()),
+            PathSegment::Text("enum_value".to_owned()),
+            PathSegment::Node(declaration.clone()),
+            PathSegment::Text(case.to_owned()),
+        ],
+        0,
+    )
 }
 
 /// Mint the FR-141/OQ-F enum-member `VariantId` of a member `case` of the
