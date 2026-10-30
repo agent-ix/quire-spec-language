@@ -191,6 +191,11 @@ pub struct CheckedClosureHandle {
 }
 
 impl CheckedClosureHandle {
+    /// The retained checked package, for the replay facade's own entries.
+    pub(crate) fn checked_package(&self) -> &CheckedPackage {
+        &self.package
+    }
+
     /// The emitted unit's exact package identity.
     pub fn package_id(&self) -> DigestRecord {
         self.package_id

@@ -64,6 +64,7 @@ mod object_environment;
 mod outcome;
 mod proof_result;
 mod refinement;
+mod refinement_query;
 mod request;
 mod result;
 mod scalar;
@@ -251,6 +252,14 @@ pub use monitor_plan::{
     plan_obligations, AtomId, ClockBindingKey, MonitorAtom, MonitorPlanRefusal, MonitorProgram,
     MonitorSubject, MonitorTarget, PlanId, SubformulaId, TickInterval, TimedMonitorPlan,
     TimingObligation, TimingObligationSettings,
+};
+
+// FR-492: the refinement simulation query, its request and kind, as
+// replay-owned wrappers (FR-100-AC-8), so CG names neither `spine` nor
+// `qsl_eval` (ADR-011 FB-05, T-12).
+pub use refinement_query::{
+    encode_refinement_query, refinement_step_sources, RefinementKeyRefusal, RefinementQueryKind,
+    RefinementQueryRequest, RefinementQuerySubject, RefinementUniverse,
 };
 
 pub use refinement::{
