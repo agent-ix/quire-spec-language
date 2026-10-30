@@ -324,11 +324,11 @@ impl ModelCorrespondence {
         if let Some(recorded) = self.nodes.get(&declaration) {
             return Err(Box::new(CorrespondenceConflict::DeclarationRebound {
                 declaration,
-                recorded: *recorded,
+                recorded: recorded.clone(),
                 offered: node,
             }));
         }
-        self.nodes.insert(declaration.clone(), node);
+        self.nodes.insert(declaration.clone(), node.clone());
         self.entries.insert(node, declaration);
         Ok(())
     }
@@ -565,7 +565,7 @@ impl CheckedTypeNode {
             Self::Scalar { node, .. }
             | Self::Composite { node, .. }
             | Self::BoundedDomain { node, .. }
-            | Self::Sum { node, .. } => *node,
+            | Self::Sum { node, .. } => node.clone(),
         }
     }
 }
@@ -597,16 +597,16 @@ pub fn to_kernel_value_type(type_node: &CheckedTypeNode) -> ValueType {
             ScalarShape::Rational(domain) => ValueType::Rational(domain.clone()),
             ScalarShape::Decimal(decimal) => ValueType::Decimal(decimal.clone()),
             ScalarShape::Float(float) => ValueType::Float(*float),
-            ScalarShape::Quantity(unit) => ValueType::Quantity(*unit),
+            ScalarShape::Quantity(unit) => ValueType::Quantity(unit.clone()),
             ScalarShape::Text(text) => ValueType::Text(*text),
         },
-        CheckedTypeNode::Composite { declaration, .. } => ValueType::Composite(*declaration),
+        CheckedTypeNode::Composite { declaration, .. } => ValueType::Composite(declaration.clone()),
         CheckedTypeNode::BoundedDomain { bound, .. } => ValueType::Int(bound.clone()),
         CheckedTypeNode::Sum { node, variants } => ValueType::Enum(EnumShape::new(
             variants.is_ordered(),
             variants
                 .iter()
-                .map(|variant| mint_variant_id(*node, variant.name())),
+                .map(|variant| mint_variant_id(node.clone(), variant.name())),
         )),
     }
 }

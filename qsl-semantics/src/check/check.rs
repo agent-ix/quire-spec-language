@@ -162,14 +162,25 @@ impl ResolvedSignatures {
 /// repeats a name or has an empty name, which the model's intake refuses
 /// before a variant type is declared.
 fn variant_type_members(declaration: NodeKey, cases: &[String]) -> Option<Vec<EnumValue>> {
-    let runtime = EnumDeclaration::model_owned(declaration, cases.to_vec()).ok()?;
+    let runtime = EnumDeclaration::model_owned(declaration.clone(), cases.to_vec()).ok()?;
     cases
         .iter()
         .map(|case| {
-            let member = NodeKey::from_digest(*mint_variant_id(declaration, case).as_bytes());
+            let member = declared_member_key(&declaration, case).ok()?;
             runtime.member(case, member).ok()
         })
         .collect()
+}
+
+/// The member's declared path extends its union or enum declaration path.
+/// The member name makes the path unique under its declaring node.
+fn declared_member_key(
+    declaration: &NodeKey,
+    case: &str,
+) -> Result<NodeKey, quire_exact::InvalidNodeKey> {
+    let mut path = declaration.path();
+    path.push(quire_exact::PathSegment::Text(case.to_owned()));
+    NodeKey::new(declaration.package().to_owned(), path, 0)
 }
 
 /// A model variant type in the type environment (FR-056 "Variant types",
@@ -205,11 +216,11 @@ impl VariantTypeDeclaration {
     ) -> Option<Self> {
         cases.sort_by(|left, right| left.1.cmp(&right.1));
         let names: Vec<String> = cases.iter().map(|(_, case)| case.clone()).collect();
-        let members = variant_type_members(node, &names)?;
+        let members = variant_type_members(node.clone(), &names)?;
         let cases = cases
             .into_iter()
             .map(|(key, case)| {
-                let variant = mint_variant_id(node, &case);
+                let variant = mint_variant_id(node.clone(), &case);
                 VariantCaseDeclaration {
                     key,
                     name: case,
@@ -229,7 +240,7 @@ impl VariantTypeDeclaration {
 
     /// The variant type's effective identity.
     pub fn key(&self) -> EffectiveId {
-        self.key
+        self.key.clone()
     }
 
     /// The qualified name `M::<artifact id>`.
@@ -246,7 +257,7 @@ impl VariantTypeDeclaration {
     /// members" step 2), a function of the selected document's identity and
     /// the type node alone.
     pub fn node(&self) -> NodeKey {
-        self.node
+        self.node.clone()
     }
 
     /// The cases, ascending by the UTF-8 bytes of their names.
@@ -282,7 +293,7 @@ pub struct VariantCaseDeclaration {
 impl VariantCaseDeclaration {
     /// The case's effective identity.
     pub fn key(&self) -> EffectiveId {
-        self.key
+        self.key.clone()
     }
 
     /// The case name, compared as exact UTF-8 bytes.
@@ -293,7 +304,7 @@ impl VariantCaseDeclaration {
     /// The case's checked key: the FR-141 member identity over the variant
     /// type's checked node and the case name.
     pub fn variant(&self) -> VariantId {
-        self.variant
+        self.variant.clone()
     }
 }
 
@@ -929,7 +940,7 @@ fn unit_ids_by_name(
         .units()
         .filter_map(|unit| {
             let name = declared
-                .nominal_node(unit.key().as_bytes())
+                .nominal_node(&unit.key())
                 .map(|node| node.declaration.qualified_declaration.as_slice());
             match name {
                 Some([name]) => Some((name.clone(), unit.id())),
@@ -989,7 +1000,7 @@ impl ScopeIndex {
         for (position, binding) in enums.iter().enumerate() {
             let shape = binding.shape();
             if !index.enum_shapes.contains_key(&shape) {
-                let members = index.enum_member_index.filtered(shape.variants());
+                let members = index.enum_member_index.filtered(shape.variants().cloned());
                 index.enum_shapes.insert(shape, (position, members));
             }
         }
@@ -1104,10 +1115,10 @@ impl Scope {
                 ValueType::Option(payload) => pending.push(payload),
                 ValueType::Collection(collection) => pending.push(collection.element()),
                 ValueType::Map(map) => pending.push(map.values()),
-                ValueType::Composite(key) if seen.insert(*key) => {
+                ValueType::Composite(key) if seen.insert(key.clone()) => {
                     match self
                         .types
-                        .composite(*key)
+                        .composite(key.clone())
                         .map(|declaration| declaration.shape())
                     {
                         Some(CompositeShape::Record(fields)) => {
@@ -1235,7 +1246,7 @@ impl Scope {
 
     /// The unit the unit declares under `name`, as a quantity's unit id.
     pub(crate) fn unit_named(&self, name: &str) -> Option<quire_exact::UnitId> {
-        self.index.units.get(name).copied()
+        self.index.units.get(name).cloned()
     }
 
     /// This scope with the unit's protocol declarations named `names`, in
@@ -1370,13 +1381,16 @@ impl Scope {
     pub(crate) fn enum_members_of(&self, shape: &EnumShape) -> EnumMemberIndex {
         match self.index.enum_shapes.get(shape) {
             Some((_, members)) => members.clone(),
-            None => self.index.enum_member_index.filtered(shape.variants()),
+            None => self
+                .index
+                .enum_member_index
+                .filtered(shape.variants().cloned()),
         }
     }
 
     /// The first object type named `name`, by its effective identity.
     pub(crate) fn object_type_named(&self, name: &str) -> Option<EffectiveId> {
-        self.index.object_types.get(name).copied()
+        self.index.object_types.get(name).cloned()
     }
 
     /// ADR-013 T-6 (last sentence): the checked `VariantId -> EnumValue`
@@ -1416,7 +1430,7 @@ impl Scope {
                 quire_semantic_value::catalog::InternalFault::new("S3", invariant),
             ))),
         };
-        let unions: Vec<(quire_exact::NodeKey, Vec<quire_exact::Identifier>)> = self
+        let unions: Vec<(quire_exact::NodeKey, Vec<String>)> = self
             .types
             .composites()
             .filter_map(|declaration| match declaration.shape() {
@@ -1424,25 +1438,23 @@ impl Scope {
                     declaration.key(),
                     members
                         .iter()
-                        .map(|member| member.identifier().clone())
+                        .map(|member| member.identifier().to_owned())
                         .collect(),
                 )),
                 CompositeShape::Record(_) | CompositeShape::Tuple(_) => None,
             })
             .collect();
         for (handle, members) in unions {
-            let node = *nodes
+            let node = nodes
                 .get(&handle)
                 .ok_or_else(|| fault("union-node-missing"))?;
             let bindings = members
                 .into_iter()
-                .map(|member| {
-                    let key = super::sum_case::mint_union_member_key(node, member.as_str());
-                    quire_exact::UnionMember::from_admitted(node, key, member)
-                })
-                .collect();
+                .map(|member| quire_exact::UnionMember::from_admitted(node.clone(), member))
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|_| fault("union-empty-member"))?;
             self.types
-                .seal_union_verified(handle, node, bindings)
+                .seal_union_verified(handle, node.clone(), bindings)
                 .map_err(|_| fault("union-seal"))?;
         }
         Ok(())
@@ -1465,10 +1477,10 @@ impl Scope {
                     if self.model_records.events.contains(declaration) {
                         return true;
                     }
-                    if !seen.insert(*declaration) {
+                    if !seen.insert(declaration.clone()) {
                         continue;
                     }
-                    match self.types.composite(*declaration).map(|c| c.shape()) {
+                    match self.types.composite(declaration.clone()).map(|c| c.shape()) {
                         Some(CompositeShape::Record(fields)) => {
                             pending.extend(fields.iter().map(FieldDeclaration::value_type));
                         }
@@ -2064,7 +2076,10 @@ impl Typer<'_> {
             // constructor over a record is not covariant, so only the slot's
             // own record type reaches this arm.
             (ValueType::Composite(sub), ValueType::Composite(sup))
-                if self.scope.types.composite_conforms(*sub, *sup) =>
+                if self
+                    .scope
+                    .types
+                    .composite_conforms(sub.clone(), sup.clone()) =>
             {
                 Ok(node)
             }
@@ -3191,14 +3206,19 @@ impl<'a> Typer<'a> {
         all: bool,
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
-        let ValueType::Reference(object) = owner.value_type else {
+        let ValueType::Reference(object) = &owner.value_type else {
             return Err(mismatch(location));
         };
         let place = self
             .presence_places
             .iter()
             .find(|place| {
-                place.slot && place.field == field && self.scope.types.conforms(object, place.owner)
+                place.slot
+                    && place.field == field
+                    && self
+                        .scope
+                        .types
+                        .conforms(object.clone(), place.owner.clone())
             })
             .cloned()
             .ok_or_else(|| mismatch(location))?;
@@ -3232,7 +3252,10 @@ impl<'a> Typer<'a> {
                     !place.slot
                         && place.field == field
                         && place.case.as_deref() == case
-                        && self.scope.types.conforms(*object, place.owner)
+                        && self
+                            .scope
+                            .types
+                            .conforms(object.clone(), place.owner.clone())
                 })
                 .cloned(),
             _ => None,
@@ -3283,7 +3306,7 @@ impl<'a> Typer<'a> {
                     || self
                         .scope
                         .relationships()
-                        .navigable(&self.scope.types, *object, name)
+                        .navigable(&self.scope.types, object.clone(), name)
                         .next()
                         .is_some()
             }
@@ -3346,12 +3369,17 @@ impl<'a> Typer<'a> {
         location: &Location,
         derefed: bool,
     ) -> Result<Node, CheckRefusal> {
-        if let ValueType::Reference(object) = reference.value_type {
+        if let ValueType::Reference(object) = &reference.value_type {
             let history = self.history.iter().find(|history| {
-                history.name == field && self.scope.types.conforms(object, history.object_type)
+                history.name == field
+                    && self
+                        .scope
+                        .types
+                        .conforms(object.clone(), history.object_type.clone())
             });
             if let Some(history) = history {
-                let (object_type, value_type) = (history.object_type, history.value_type.clone());
+                let (object_type, value_type) =
+                    (history.object_type.clone(), history.value_type.clone());
                 return Ok(node(
                     NodeKind::History {
                         reference: self.push(reference),
@@ -3550,13 +3578,13 @@ impl<'a> Typer<'a> {
         field: &str,
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
-        let ValueType::Composite(key) = operand.value_type else {
+        let ValueType::Composite(key) = &operand.value_type else {
             return Err(mismatch(location));
         };
         let Some(CompositeShape::Record(fields)) = self
             .scope
             .types
-            .composite(key)
+            .composite(key.clone())
             .map(|declaration| declaration.shape())
         else {
             return Err(mismatch(location));
@@ -3574,7 +3602,7 @@ impl<'a> Typer<'a> {
         Ok(node(
             NodeKind::Field {
                 operand: self.push(operand),
-                field: RecordField::new(key, field),
+                field: RecordField::new(key.clone(), field),
                 optional,
             },
             value_type,
@@ -3667,7 +3695,7 @@ impl<'a> Typer<'a> {
         };
         let Some(CompositeShape::Record(declared)) = scope
             .types
-            .composite(key)
+            .composite(key.clone())
             .map(|declaration| declaration.shape())
         else {
             return Err(mismatch(location));
@@ -3727,7 +3755,7 @@ impl<'a> Typer<'a> {
         }
         Ok(node(
             NodeKind::Record {
-                declaration: key,
+                declaration: key.clone(),
                 slots,
             },
             ValueType::Composite(key),
