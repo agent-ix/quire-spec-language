@@ -2784,17 +2784,9 @@ fn normalization_refusals_and_limits_stop_intake_at_the_declaration() {
 }
 
 /// A checked graph of `t` read from [`TEXT`], so `emit_checked` places its
-/// occurrences: an E4 dependency's `package_id` is recomputed by emitting it.
+/// occurrences when E4 binds the named dependency.
 fn dependency(name: &str) -> CheckedPackage {
     CheckedPackage::link(graph_of_named(name, vec![t_read_from_text()]))
-}
-
-/// The `package_id` `package` emits under.
-fn emitted_id(package: &CheckedPackage) -> PackageId {
-    emit_checked(package)
-        .expect("the dependency emits")
-        .package
-        .package_id()
 }
 
 fn root_graph() -> qsl_semantics::check::CheckedGraph {
@@ -2835,18 +2827,12 @@ fn read_linked(package: &CheckedPackage) {
     assert!(matches!(outcome, Read::Verified { .. }), "{outcome:?}");
 }
 
-/// The closure of `package` as `(identity, package_id, path)`.
-fn closure(package: &CheckedPackage) -> Vec<(LibraryName, PackageId, Vec<LibraryName>)> {
+/// The closure of `package` as `(identity, path)`.
+fn closure(package: &CheckedPackage) -> Vec<(LibraryName, Vec<LibraryName>)> {
     package
         .dependency_selections()
         .iter()
-        .map(|(identity, resolved)| {
-            (
-                identity.clone(),
-                resolved.package_id,
-                resolved.path(identity),
-            )
-        })
+        .map(|(identity, resolved)| (identity.clone(), resolved.path(identity)))
         .collect()
 }
 
@@ -2854,13 +2840,12 @@ fn path(identities: &[&str]) -> Vec<LibraryName> {
     identities.iter().map(|identity| lib(identity)).collect()
 }
 
-/// Direct imports enter the lock and identity preimage; the recursive
+/// Direct imports enter the lock; the recursive
 /// closure remains available for linking and replay.
 #[trace("QSpec-FR-307-AC-7", "QSpec-TC-227")]
 #[trace("FR-093-AC-16", "TC-416")]
 #[test]
 fn the_lock_records_direct_imports_and_derives_the_closure() {
-    let d = emitted_id(&dependency("test/units"));
     let unlinked = emit(&CheckedPackage::link(root_graph()));
     let linked_root = CheckedPackage::link_with(
         root_graph(),
@@ -2869,24 +2854,18 @@ fn the_lock_records_direct_imports_and_derives_the_closure() {
             import("test/geometry", dependency("test/geometry")),
         ],
     )
-    .expect("two imports of one package link");
-    assert_eq!(linked_root.dependencies().keys().collect::<Vec<_>>(), [&d]);
+    .expect("two named imports link");
+    assert_eq!(
+        linked_root.dependencies().keys().collect::<Vec<_>>(),
+        [&lib("test/geometry"), &lib("test/units")]
+    );
     let emission = emit(&linked_root);
     read_linked(&linked_root);
     let written = wire(&emission);
-    let entry = |identity: &str| {
-        json!({
-            "identity": identity,
-            "package_id": {"domain": "quire.package.semantic/v2", "algorithm": "sha256", "digest": d.hex()},
-        })
-    };
+    let entry = |identity: &str| json!({"identity": identity});
     let expected = json!([entry("test/geometry"), entry("test/units")]);
     assert_eq!(written["lock"]["dependency_selections"], expected);
-    assert_eq!(
-        written["identity_preimage"]["dependency_selections"],
-        expected
-    );
-    assert_ne!(emission.package.package_id(), unlinked.package.package_id());
+    assert_ne!(emission.package.bytes(), unlinked.package.bytes());
 
     // A chain four packages deep: root -> b -> c -> units.
     let c = linked(
@@ -2897,7 +2876,6 @@ fn the_lock_records_direct_imports_and_derives_the_closure() {
         wire(&emit(&c))["lock"]["dependency_selections"][0]["identity"],
         "test/units"
     );
-    let c_id = emitted_id(&c);
     let b = linked("test/b", vec![import("test/c", c)]);
     assert_eq!(
         wire(&emit(&b))["lock"]["dependency_selections"][0]["identity"],
@@ -2910,19 +2888,14 @@ fn the_lock_records_direct_imports_and_derives_the_closure() {
             .len(),
         1
     );
-    let b_id = emitted_id(&b);
     let root = CheckedPackage::link_with(root_graph(), vec![import("test/b", b)])
         .expect("the root links through b and c");
     assert_eq!(
         closure(&root),
         [
-            (lib("test/b"), b_id, path(&["test/b"])),
-            (lib("test/c"), c_id, path(&["test/b", "test/c"])),
-            (
-                lib("test/units"),
-                d,
-                path(&["test/b", "test/c", "test/units"])
-            ),
+            (lib("test/b"), path(&["test/b"])),
+            (lib("test/c"), path(&["test/b", "test/c"])),
+            (lib("test/units"), path(&["test/b", "test/c", "test/units"])),
         ]
     );
     let emission = emit(&root);
@@ -2947,10 +2920,6 @@ fn the_lock_records_direct_imports_and_derives_the_closure() {
         .all(
             |selection| selection["identity"] != "test/c" && selection["identity"] != "test/units"
         ));
-    assert_eq!(
-        written["identity_preimage"]["dependency_selections"],
-        written["lock"]["dependency_selections"]
-    );
 }
 
 #[trace("QSpec-FR-307-AC-7", "QSpec-TC-227")]
@@ -3087,7 +3056,7 @@ fn dependency_selections_are_written_in_utf8_byte_order() {
 }
 
 /// ADR-011 §4 dependency binding at E4: FR-307's diamond rule refuses two
-/// selections of one identity with different `package_id`s as
+/// selections of one identity with different canonical content as
 /// `invalid_package`/`conflicting-definition` listing both dependency
 /// paths. A dependency that does not emit refuses too. None yields a
 /// package.
@@ -3095,17 +3064,25 @@ fn dependency_selections_are_written_in_utf8_byte_order() {
 #[trace("QSpec-FR-307-AC-2", "QSpec-TC-227")]
 #[test]
 fn e4_refuses_a_conflicting_diamond() {
-    let d = emitted_id(&dependency("test/units"));
+    let direct = dependency("test/units");
+    let direct_bytes = emit_checked(&direct)
+        .expect("direct dependency emits")
+        .package()
+        .bytes()
+        .to_vec();
 
-    // Two `package_id`s: mid's units is `dependency("test/units")`, and mid2's units is
-    // another package.
+    // Mid's units is the direct package; mid2's units has an additional import.
     let another = linked("test/units", vec![import("test/x", dependency("test/x"))]);
-    let another_id = emitted_id(&another);
-    assert_ne!(another_id, d);
-    let mid = linked(
-        "test/mid",
-        vec![import("test/units", dependency("test/units"))],
+    let another_bytes = emit_checked(&another)
+        .expect("other dependency emits")
+        .package()
+        .bytes()
+        .to_vec();
+    assert_ne!(
+        another_bytes, direct_bytes,
+        "the two selections differ in content"
     );
+    let mid = linked("test/mid", vec![import("test/units", direct)]);
     let mid2 = linked("test/mid2", vec![import("test/units", another)]);
     assert_eq!(
         wire(&emit(&mid))["lock"]["dependency_selections"][0]["identity"],
@@ -3119,7 +3096,7 @@ fn e4_refuses_a_conflicting_diamond() {
         root_graph(),
         vec![import("test/mid", mid), import("test/mid2", mid2)],
     )
-    .expect_err("one identity at two package_ids does not unify");
+    .expect_err("one identity at two different packages does not unify");
     let crate::LinkRefusal::ConflictingDefinition {
         identity,
         selections,
@@ -3128,19 +3105,16 @@ fn e4_refuses_a_conflicting_diamond() {
         panic!("expected ConflictingDefinition, got {split:?}");
     };
     assert_eq!(*identity, lib("test/units"));
-    assert_eq!(selections[0].package_id, d);
     assert_eq!(
         selections[0].path(identity),
         path(&["test/mid", "test/units"])
     );
-    assert_eq!(selections[1].package_id, another_id);
     assert_eq!(
         selections[1].path(identity),
         path(&["test/mid2", "test/units"])
     );
 
-    // A dependency whose occurrences have no source region does not emit,
-    // so its `package_id` cannot be recomputed.
+    // A dependency whose occurrences have no source region does not emit.
     let unplaced = CheckedPackage::link_with(
         root_graph(),
         vec![crate::Import {
@@ -3420,9 +3394,9 @@ fn only_node<'w>(wire: &'w Value, semantic_form: &str) -> &'w Value {
     node
 }
 
-/// `key`'s wire node id digest, as `node_id.digest` spells it.
-fn digest_of(key: quire_exact::NodeKey) -> String {
-    qsl_foundation::digest::WireNodeId::from_digest(*key.as_bytes()).to_string()
+/// `key` in the structural node-id wire shape.
+fn node_id_of(key: &quire_exact::NodeKey) -> Value {
+    qsl_foundation::node_wire::node_key_to_json(key).expect("an admitted node key")
 }
 
 /// TC-513 step 1/FR-114-AC-1: the checked attempt holds the identities of
@@ -3447,11 +3421,8 @@ fn an_attempt_and_its_clause_share_one_frame_node_through_emission() {
     assert_eq!(emitted.clauses.len(), 1);
     let anchor = only_node(&emitted.wire, "operation_anchor");
     let frame = only_node(&emitted.wire, "frame");
-    assert_eq!(
-        anchor["node_id"]["digest"],
-        digest_of(emitted.attempt.anchor)
-    );
-    assert_eq!(frame["node_id"]["digest"], digest_of(emitted.attempt.frame));
+    assert_eq!(anchor["node_id"], node_id_of(&emitted.attempt.anchor));
+    assert_eq!(frame["node_id"], node_id_of(&emitted.attempt.frame));
     assert_frame_modifies_version_number(frame);
     assert_eq!(emitted.frame_records, 1);
 }
@@ -3487,11 +3458,8 @@ fn an_operation_named_only_by_an_attempt_emits_its_anchor_frame_and_record() {
     assert!(emitted.clauses.is_empty());
     let anchor = only_node(&emitted.wire, "operation_anchor");
     let frame = only_node(&emitted.wire, "frame");
-    assert_eq!(
-        anchor["node_id"]["digest"],
-        digest_of(emitted.attempt.anchor)
-    );
-    assert_eq!(frame["node_id"]["digest"], digest_of(emitted.attempt.frame));
+    assert_eq!(anchor["node_id"], node_id_of(&emitted.attempt.anchor));
+    assert_eq!(frame["node_id"], node_id_of(&emitted.attempt.frame));
     assert_frame_modifies_version_number(frame);
     assert_eq!(emitted.frame_records, 1);
 }
@@ -3510,19 +3478,13 @@ fn an_inherited_operation_binds_its_declaring_types_anchor_and_frame() {
     );
     let anchor = only_node(&emitted.wire, "operation_anchor");
     let frame = only_node(&emitted.wire, "frame");
-    assert_eq!(
-        anchor["node_id"]["digest"],
-        digest_of(emitted.attempt.anchor)
-    );
-    assert_eq!(frame["node_id"]["digest"], digest_of(emitted.attempt.frame));
+    assert_eq!(anchor["node_id"], node_id_of(&emitted.attempt.anchor));
+    assert_eq!(frame["node_id"], node_id_of(&emitted.attempt.frame));
     // The context both nodes name is `ConfigVersion`'s own object node:
     // the node the same unit binds over the package without `Sub`, where no
     // other object type exists for it to be.
-    let context = &frame["semantic_type"]["digest"];
-    assert_eq!(
-        anchor["body"]["members"][0]["value"]["target"]["digest"],
-        *context
-    );
+    let context = &frame["semantic_type"];
+    assert_eq!(anchor["body"]["members"][0]["value"]["target"], *context);
     let without_sub = emit_attempt_unit(
         &attempt_frame_unit(
             VERSION_UNCHANGED,
@@ -3531,10 +3493,10 @@ fn an_inherited_operation_binds_its_declaring_types_anchor_and_frame() {
         ),
         false,
     );
-    let config_version = &only_node(&without_sub.wire, "frame")["semantic_type"]["digest"];
+    let config_version = &only_node(&without_sub.wire, "frame")["semantic_type"];
     assert_eq!(context, config_version);
     assert_eq!(
-        only_node(&without_sub.wire, "object_type")["node_id"]["digest"],
+        only_node(&without_sub.wire, "object_type")["node_id"],
         *context
     );
 }
@@ -3973,10 +3935,10 @@ fn a_package_remembers_its_emission_and_link_with_reuses_it() {
         }],
     )
     .expect("the root links");
-    assert_eq!(
-        linked.dependency_selections()[&lib("test/units")].package_id,
-        first.package().package_id()
-    );
+    assert!(Arc::ptr_eq(
+        &linked.dependencies()[&lib("test/units")],
+        &shared
+    ));
 
     let unemitted = Arc::new(dependency("test/units"));
     CheckedPackage::link_with(
