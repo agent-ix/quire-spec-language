@@ -217,6 +217,8 @@ pub struct InvocationDraft {
 
 /// Expected snapshot identity and complete byte digest, distinct from invocation.
 ///
+/// BLOCKED-BY PLAT-1205 (owner: planner titan:QSL:plan): the runtime `SnapshotRef` and `InvocationRef` digest.
+///
 /// The roles cannot be substituted at a call boundary:
 /// ```compile_fail,E0308
 /// use quire_spec_language::runtime::{InvocationRef, SnapshotRef};

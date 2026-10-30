@@ -24,7 +24,6 @@ const PARENT: &str = "present(self.parent) implies deref(value(self.parent)).n <
 fn reconstruct<'a>(checked: CheckedPackage<'a>, models: &'a [NativeModel]) -> NativePackage<'a> {
     let original = NativePackage::new(checked, PackageLimits::default()).unwrap();
     let bytes = original.bytes().to_vec();
-    let reference = original.reference();
     let identity = original.canonical_identity();
     let bindings = original.checked().bindings().clone();
     let manifest: Value = serde_json::from_slice(&bytes).unwrap();
@@ -68,7 +67,6 @@ fn reconstruct<'a>(checked: CheckedPackage<'a>, models: &'a [NativeModel]) -> Na
     drop(original);
     let package = NativePackage::read_verified(
         &bytes,
-        reference,
         bindings.clone(),
         models,
         &PackageSupport::default(),
@@ -76,7 +74,6 @@ fn reconstruct<'a>(checked: CheckedPackage<'a>, models: &'a [NativeModel]) -> Na
     )
     .unwrap();
     assert_eq!(package.bytes(), bytes);
-    assert_eq!(package.digest(), ByteDigest::of(&bytes));
     assert_eq!(package.canonical_identity(), identity);
     assert_eq!(
         package.checked().bindings().source.identity(),

@@ -37,7 +37,7 @@ fn source(source: &FormalSource, file: &str) -> Value {
 }
 
 /// Write licensed fixtures, propagating I/O failure separately from static setup defects.
-pub fn write(directory: &Path, case: Case) -> io::Result<(Value, String)> {
+pub fn write(directory: &Path, case: Case) -> io::Result<(Value, Vec<u8>)> {
     std::fs::create_dir_all(directory)?;
     let models = [match case {
         Case::Boolean { .. } => runtime::authored_model(|model| {
@@ -174,8 +174,7 @@ pub fn write(directory: &Path, case: Case) -> io::Result<(Value, String)> {
     let package = NativePackage::new(checked, PackageLimits::default()).unwrap();
     std::fs::write(directory.join("package.json"), package.bytes())?;
     let mut selected = job.clone();
-    selected["request"]["package"] =
-        json!({"file":"package.json","digest":package.digest().to_string()});
+    selected["request"]["package"] = json!({"file":"package.json","digest":qsl_foundation::ByteDigest::of(package.bytes()).to_string()});
     std::fs::write(
         directory.join("package-run.json"),
         serde_json::to_vec_pretty(&selected)?,
@@ -186,7 +185,7 @@ pub fn write(directory: &Path, case: Case) -> io::Result<(Value, String)> {
         directory.join("compile.json"),
         serde_json::to_vec_pretty(&compilation)?,
     )?;
-    Ok((job, package.digest().to_string()))
+    Ok((job, package.bytes().to_vec()))
 }
 
 /// Write an authored Markdown fixture and explicitly select its native body identity.

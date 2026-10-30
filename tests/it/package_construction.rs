@@ -116,13 +116,7 @@ fn minimum_admitted_unit_has_exact_independent_static_bytes() {
         std::str::from_utf8(package.bytes()).unwrap(),
         expected.artifact
     );
-    assert_eq!(
-        package.digest(),
-        ByteDigest::of(expected.artifact.as_bytes())
-    );
     assert_eq!(package.canonical_identity().to_string(), expected.digest);
-    assert_eq!(package.reference().digest(), package.digest());
-    assert_eq!(package.reference().format(), "native-linked-package/1");
     assert_eq!(package.checked().clauses().len(), 1);
     assert_eq!(package.checked().linked().models().len(), 1);
     let again = NativePackage::new(
@@ -178,14 +172,6 @@ fn canonical_unicode_controls_and_large_revision_are_exact() {
     assert_eq!(
         wire["source"]["formal"]["revision"].as_u64(),
         Some(9_007_199_254_740_992)
-    );
-    assert_ne!(
-        package
-            .digest()
-            .to_string()
-            .strip_prefix("sha256:")
-            .unwrap(),
-        expected.digest
     );
     assert_eq!(
         package.usage().canonical.as_ref().unwrap().output_bytes,

@@ -223,9 +223,9 @@ pub(super) fn admit(
     let key = BundleKey {
         source,
         clause: function,
-        documents: vec![selected.key()],
+        documents: vec![selected.clone()],
         role: ObservationRole::Current,
-        origin: ObservationOrigin::Document(selected.key()),
+        origin: ObservationOrigin::Document(selected.clone()),
     };
     let bundle = ResolveBundle::over(&environment, &key, package.graph().scope().types())
         .map_err(environment_refusal)?;

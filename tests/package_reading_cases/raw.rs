@@ -130,7 +130,6 @@ fn every_closed_record_rejects_raw_duplicate_members_before_typed_decoding() {
         .unwrap();
         let error = NativePackage::read_verified(
             &bytes,
-            NativePackageRef::new(ByteDigest::of(&bytes)),
             bindings.clone(),
             &models,
             &PackageSupport::default(),
@@ -161,7 +160,6 @@ fn maximum_revision_survives_and_fraction_exponent_or_overflow_spelling_refuses(
     let bindings = package.checked().bindings().clone();
     let success = NativePackage::read_verified(
         package.bytes(),
-        package.reference(),
         bindings.clone(),
         &models,
         &PackageSupport::default(),
@@ -197,7 +195,6 @@ fn maximum_revision_survives_and_fraction_exponent_or_overflow_spelling_refuses(
         let raw = text.replace(marker, &format!("\"revision\":{number}"));
         let error = NativePackage::read_verified(
             raw.as_bytes(),
-            NativePackageRef::new(ByteDigest::of(raw.as_bytes())),
             bindings.clone(),
             &models,
             &PackageSupport::default(),

@@ -692,8 +692,8 @@ fn no_value() -> ModelTraceSettlement {
 
 /// FR-128: replay `envelope`'s model counterexample over `subject`, with
 /// FR-098's request `wire` supplying the package reference, the byte
-/// provision (domain packages and initial-state snapshots by `sha256-jcs`
-/// digest) and the limits. `letters` reads the `holds` atoms of an authored
+/// provision (domain packages by package identity and initial-state snapshots by
+/// document labels) and the limits. `letters` reads the `holds` atoms of an authored
 /// clause at a replayed state (FR-125), as the engine that found the
 /// counterexample read them.
 ///

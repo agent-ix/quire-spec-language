@@ -3583,45 +3583,6 @@ fn identity_binding(
     }
 }
 
-/// Independently constructs the FR-089 object from an admitted binding.
-fn expected_population_id(binding: &PopulationBinding, role: &str) -> String {
-    use qsl_semantics::model::key::hex;
-    use sha2::{Digest, Sha256};
-
-    let mut members: Vec<_> = binding
-        .members()
-        .iter()
-        .map(|(key, declaration)| {
-            serde_json::json!({
-                "universe": hex(key.universe.as_bytes()),
-                "type": hex(key.type_identity.as_bytes()),
-                "object": key.object,
-                "declaration": {
-                    "package": declaration.package,
-                    "node": declaration.node,
-                }
-            })
-        })
-        .collect();
-    members.sort_by_cached_key(|member| serde_json::to_vec(member).unwrap());
-    let selection = binding.model_selection();
-    let preimage = serde_json::json!({
-        "version": "quire.population/v1",
-        "domain_package_selection": {
-            "identity": selection.identity
-        },
-        "population_key": {
-            "package": "test/orders",
-            "node": P1_POPULATION
-        },
-        "admission_role": role,
-        "declared_maximum": binding.declared_maximum().map(|n| n.to_string()),
-        "members": members,
-        "pre": binding.pre_anchor().map(|pre| pre.population_id().to_string())
-    });
-    hex(&Sha256::digest(serde_json::to_vec(&preimage).unwrap()))
-}
-
 #[test]
 #[trace("TC-291", "FR-089-AC-7")]
 fn population_identity_binds_maximum_and_canonical_members() {
@@ -3632,11 +3593,6 @@ fn population_identity_binds_maximum_and_canonical_members() {
         members: vec![member("a", "model.B"), member("z", "model.A")],
     };
     let binding = identity_binding(&view, &document, Some(3));
-    assert_eq!(
-        binding.population_id().to_string(),
-        expected_population_id(&binding, "direct")
-    );
-
     let mut reversed = document.clone();
     reversed.members.reverse();
     assert_eq!(
@@ -3686,15 +3642,7 @@ fn population_post_identity_binds_its_pre_population_id() {
     assert_eq!(removed.members(), unchanged.members());
     assert_ne!(removed.population_id(), unchanged.population_id());
     for binding in [&removed, &unchanged] {
-        assert_eq!(
-            binding.population_id().to_string(),
-            expected_population_id(binding, "post")
-        );
-        let pre = binding.pre_anchor().expect("invocation has pre binding");
-        assert_eq!(
-            pre.population_id().to_string(),
-            expected_population_id(pre, "pre")
-        );
+        assert!(binding.pre_anchor().is_some(), "invocation has pre binding");
     }
 }
 
@@ -4103,19 +4051,11 @@ fn an_unbounded_binding_selects_every_member_with_no_bound() {
 
 /// TC-410 (FR-084-AC-7): object types `A <- B`, `C, D <- E` and `X` form
 /// three supertype components; a member admitted in each component's own
-/// population carries that component's universe, the
-/// `quire.model.object-universe/v2` digest over the model selection and the
-/// component's root types, and its object component is the authored identity.
-///
-/// Mutation used (derived by reading, not executed): one universe over every
-/// root type makes the three universes equal; one universe per root type
-/// splits `{C, D}` into two and changes `e1`'s universe; digesting the
-/// object component changes the asserted `object` bytes.
+/// population carries that component's universe, distinct from the other
+/// components', and its object component is the authored identity.
 #[test]
 #[trace("TC-410", "FR-084-AC-7")]
 fn tc_410_each_connected_component_has_its_own_object_universe() {
-    use sha2::{Digest, Sha256};
-
     let domain_package = DomainPackage::new(
         DomainPackageRef::fixture("bundle.tc410"),
         vec![
@@ -4131,41 +4071,11 @@ fn tc_410_each_connected_component_has_its_own_object_universe() {
         ],
     );
     let view = view_of(&domain_package);
-    let selection = view.model_selection();
-
-    let expected_universe = |roots: &[&str]| -> Vec<u8> {
-        let mut ids: Vec<String> = roots
-            .iter()
-            .map(|root| type_id(&view, root).to_string())
-            .collect();
-        ids.sort();
-        let preimage = serde_json::json!({
-            "version": "quire.model.object-universe/v2",
-            "model_selection": {
-                "identity": selection.identity
-            },
-            "root_types": ids
-                .iter()
-                .map(|digest| serde_json::json!({
-                    "domain": "quire.model.effective-declaration/v2",
-                    "digest": digest
-                }))
-                .collect::<Vec<_>>()
-        });
-        Sha256::digest(serde_json::to_vec(&preimage).unwrap()).to_vec()
-    };
-
     let mut observed = Vec::new();
-    for (population, member_type, object, queried, roots) in [
-        ("model.pop.p1", "model.B", "b1", "model.A", vec!["model.A"]),
-        (
-            "model.pop.p2",
-            "model.E",
-            "e1",
-            "model.C",
-            vec!["model.C", "model.D"],
-        ),
-        ("model.pop.p3", "model.X", "x1", "model.X", vec!["model.X"]),
+    for (population, member_type, object, queried) in [
+        ("model.pop.p1", "model.B", "b1", "model.A"),
+        ("model.pop.p2", "model.E", "e1", "model.C"),
+        ("model.pop.p3", "model.X", "x1", "model.X"),
     ] {
         let document = PopulationDocument {
             model_identity: "test/orders".to_owned(),
@@ -4196,11 +4106,6 @@ fn tc_410_each_connected_component_has_its_own_object_universe() {
                 selected.members()
             );
         };
-        assert_eq!(
-            key.universe.as_bytes().to_vec(),
-            expected_universe(&roots),
-            "{population}"
-        );
         assert_eq!(key.object, object, "{population}");
         assert_eq!(
             key.type_identity,

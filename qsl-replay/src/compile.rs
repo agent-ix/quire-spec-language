@@ -37,7 +37,7 @@ impl CompiledPackage {
 
 /// Compile `bytes`, displayed as `path` and labelled `source`, with
 /// `packages` -- each a domain package document, keyed by its own
-/// `sha256-jcs` digest as [`crate::call_site`] and `replay` key theirs -- as
+/// package identity as [`crate::call_site`] and `replay` key theirs -- as
 /// I1's package input and `dependencies` as the dependency input, through the spine's parse, select, check and emit
 /// stages that [`crate::replay`] recompiles through, and return the emitted
 /// package.

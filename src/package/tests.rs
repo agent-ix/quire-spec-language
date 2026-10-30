@@ -102,7 +102,6 @@ fn runtime_populations_and_evaluator_budgets_do_not_enter_static_passes() {
             assert_eq!(canonical(&package), original_canonical);
             assert_eq!(canonical(&rebuilt), original_canonical);
             assert_eq!(rebuilt.bytes(), package.bytes());
-            assert_eq!(rebuilt.digest(), package.digest());
             assert_eq!(rebuilt.canonical_identity(), package.canonical_identity());
             assert_eq!(rebuilt.usage(), package.usage());
         }

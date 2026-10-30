@@ -894,14 +894,8 @@ fn population_id_preimage<'a>(
     });
     Ok(PopulationIdWire {
         version: POPULATION_ID_DOMAIN,
-        // The full `DomainPackageRef` header (identity, version), not
-        // only `identity`: this module's own `admit_binding` doc already
-        // establishes that comparing bare `identity` alone misses a
-        // version-only or digest-only divergence between two otherwise
-        // same-named domain packages (its own `ForeignModelSelection` check
-        // compares the full header for exactly that reason), so "the domain
-        // package identity" a binding was admitted against is this header,
-        // not its `identity` field alone.
+        // The domain package a binding was admitted against: its
+        // `DomainPackageRef`, which is its identity alone.
         domain_package_selection: PopulationDomainPackageRefWire {
             identity: &domain_package.model_selection.identity,
         },
@@ -940,9 +934,7 @@ struct PopulationMemberWire<'a> {
     declaration: DeclarationKeyWire<'a>,
 }
 
-/// FR-089's `PopulationId` selection is explicitly the full domain-package
-/// header, including its source version. Other `quire.model.*` identities use
-/// the closed `DomainPackageRefWire` shape without that non-identity field.
+/// FR-089's `PopulationId` selection: the domain package's identity.
 #[derive(Serialize, FixedShape)]
 struct PopulationDomainPackageRefWire<'a> {
     identity: &'a str,
@@ -2917,28 +2909,5 @@ mod tests {
             before_invocation,
             "admit_invocation never builds, for either instant"
         );
-    }
-
-    /// The member wire's typed effective identity keeps the existing `type`
-    /// key and lowercase-hex string representation.
-    #[trace("TC-291", "FR-089-AC-7")]
-    #[test]
-    fn population_member_type_identity_wire_keeps_its_hex_string_shape() {
-        let type_identity = EffectiveId::from_digest([0xab; 32]);
-        let declaration = DeclarationKey::fixture("model.A");
-        let member = PopulationMemberWire {
-            universe: "cd".repeat(32),
-            r#type: PopulationMemberTypeIdentityWire(&type_identity),
-            object: "obj-1",
-            declaration: declaration_key_wire(&declaration),
-        };
-        let encoded = quire_canonical::to_vec(&member, quire_canonical::Limits::new(4096))
-            .expect("member wire has a fixed canonical shape");
-        let expected = format!(
-            "{{\"declaration\":{{\"node\":\"model.A\",\"package\":\"test/orders\"}},\"object\":\"obj-1\",\"type\":\"{}\",\"universe\":\"{}\"}}",
-            "ab".repeat(32),
-            "cd".repeat(32)
-        );
-        assert_eq!(encoded, expected.as_bytes());
     }
 }

@@ -180,6 +180,7 @@
           "minLength": 1
         },
         "digest": {
+          "$comment": "BLOCKED-BY PLAT-1205 (owner: planner titan:QSL:plan): Source::digest, the schema source.digest member and wire.rs Source.digest.",
           "type": "string",
           "pattern": "^sha256:[0-9a-f]{64}$"
         },

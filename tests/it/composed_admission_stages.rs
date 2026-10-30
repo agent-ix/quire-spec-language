@@ -27,7 +27,7 @@ use quire_spec_language::linking::composed::{
 };
 use quire_spec_language::native_model::NativeModel;
 use quire_spec_language::package::{
-    NativePackage, NativePackageRef, PackageLimits, PackageReadLimits, PackageStage, PackageSupport,
+    NativePackage, PackageLimits, PackageReadLimits, PackageStage, PackageSupport,
 };
 use quire_spec_language::runtime::{
     ArtifactLimits, InputReadCause, InputReadStage, Snapshot, SnapshotRef,
@@ -870,7 +870,6 @@ fn read_relabelled(
     let bytes = serde_json::to_vec(value).unwrap();
     NativePackage::read_verified(
         &bytes,
-        NativePackageRef::new(ByteDigest::of(&bytes)),
         bindings,
         models,
         &PackageSupport::default(),
@@ -894,10 +893,8 @@ fn historical_package_identities_and_atomic_refusals_are_unchanged() {
             "{}",
             vector.name
         );
-        let reference = package.reference();
         let reread = NativePackage::read_verified(
             package.bytes(),
-            reference,
             bindings,
             &models,
             &PackageSupport::default(),
@@ -906,7 +903,6 @@ fn historical_package_identities_and_atomic_refusals_are_unchanged() {
         .expect("frozen historical bytes still read through the unchanged reader");
         assert_eq!(reread.bytes(), vector.artifact, "{}", vector.name);
         assert_eq!(reread.canonical_identity(), package.canonical_identity());
-        assert_eq!(reread.reference(), reference);
     }
 }
 
@@ -967,22 +963,20 @@ fn a_changed_profile_label_cannot_admit_composed_input_into_the_historical_reade
     assert_eq!(error.stage, PackageStage::Decode);
     assert_eq!(format!("{:?}", error.path), "[Field(\"format\")]");
 
-    // Relabelling under the original reference is a stale selection, atomically.
+    // Relabelled bytes are refused by the reader, atomically.
     let mut relabelled = original.clone();
     relabelled["semantics"]["syntax_profile"] = Value::from("composed-native/1-draft");
     let bytes = serde_json::to_vec(&relabelled).unwrap();
     let error = *NativePackage::read_verified(
         &bytes,
-        package.reference(),
         bindings,
         &models,
         &PackageSupport::default(),
         PackageReadLimits::default(),
     )
-    .expect_err("the historical reference cannot carry relabelled bytes");
-    assert_eq!(error.code, Code::StaleDependency);
+    .expect_err("the reader cannot accept relabelled bytes");
+    assert_eq!(error.code, Code::UnknownProfile);
     assert_eq!(error.stage, PackageStage::Decode);
-    assert!(error.path.is_empty());
 
     // The accepted fixture bytes and identities are untouched by every attempt.
     assert_eq!(package.bytes(), vector.artifact);

@@ -389,7 +389,7 @@ impl AdmittedModels {
         &self.models
     }
 
-    /// The supplied domain package documents, by their `sha256-jcs` digest.
+    /// The supplied domain package documents, by package identity.
     pub(crate) fn packages(&self) -> &qsl_semantics::model::intake::PackageInput {
         &self.packages
     }
@@ -494,7 +494,7 @@ pub fn parse(
 }
 
 /// I1: admit each domain package `parsed`'s `model` declarations select,
-/// from `packages`, the supplied documents by their `sha256-jcs` digest
+/// from `packages`, the supplied documents by package identity
 /// (FR-056, FR-278). Refuses at the first `model` declaration that does not
 /// admit.
 pub fn select(

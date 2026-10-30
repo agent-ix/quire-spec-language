@@ -10,9 +10,7 @@ use ix_trace_rs::trace;
 use qsl_foundation::{ByteDigest, Code};
 use quire_spec_language::native_model::NativeModel;
 use quire_spec_language::package::{NativePackage, PackageLimits};
-use quire_spec_language::package::{
-    NativePackageRef, PackageReadLimits, PackageStage, PackageSupport,
-};
+use quire_spec_language::package::{PackageReadLimits, PackageStage, PackageSupport};
 
 fn model() -> NativeModel {
     native_rule_model::from_text(
@@ -58,7 +56,6 @@ fn independently_frozen_packages_reconstruct_after_original_checker_is_dropped()
         drop(original);
         let package = NativePackage::read_verified(
             &vector.artifact,
-            NativePackageRef::new(ByteDigest::of(&vector.artifact)),
             bindings,
             &models,
             &PackageSupport::default(),
@@ -112,10 +109,8 @@ fn selected_raw_requests_preserve_admission_and_recognition_precedence() {
         (b"\xff", Code::InvalidUtf8),
     ];
     for (bytes, code) in requests {
-        let expected = NativePackageRef::new(ByteDigest::of(bytes));
         let failure = NativePackage::read_verified(
             bytes,
-            expected,
             bindings.clone(),
             &models,
             &PackageSupport::default(),
@@ -130,7 +125,6 @@ fn selected_raw_requests_preserve_admission_and_recognition_precedence() {
         limits.package.artifact_bytes = bytes.len() - 1;
         let limited = NativePackage::read_verified(
             bytes,
-            expected,
             bindings.clone(),
             &models,
             &PackageSupport::default(),
@@ -140,16 +134,5 @@ fn selected_raw_requests_preserve_admission_and_recognition_precedence() {
         assert_eq!(limited.code, Code::ResourceExhausted);
         assert_eq!(limited.usage.admitted_input_bytes, 0);
         assert!(limited.usage.recognition.is_none());
-        let stale = NativePackage::read_verified(
-            bytes,
-            NativePackageRef::new(ByteDigest::of(b"wrong")),
-            bindings.clone(),
-            &models,
-            &PackageSupport::default(),
-            PackageReadLimits::default(),
-        )
-        .unwrap_err();
-        assert_eq!(stale.code, Code::StaleDependency);
-        assert!(stale.usage.recognition.is_none());
     }
 }

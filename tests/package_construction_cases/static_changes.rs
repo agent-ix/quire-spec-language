@@ -121,10 +121,6 @@ fn used_context_unused_declarations_and_selected_roles_change_the_expected_ident
             expected.digest,
             "{name}"
         );
-        assert_eq!(
-            package.digest(),
-            ByteDigest::of(expected.artifact.as_bytes())
-        );
         assert_ne!(
             package.canonical_identity(),
             baseline.canonical_identity(),

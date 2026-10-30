@@ -6,9 +6,7 @@ use fixtures::runtime;
 
 use ix_trace_rs::trace;
 use qsl_foundation::ByteDigest;
-use quire_spec_language::package::{
-    NativePackage, NativePackageRef, PackageReadLimits, PackageSupport,
-};
+use quire_spec_language::package::{NativePackage, PackageReadLimits, PackageSupport};
 use serde_json::{json, Value};
 use std::{
     path::Path,
@@ -44,7 +42,7 @@ fn source_only_compilation_emits_exact_bytes_accepted_by_the_existing_reader() {
         ),
     ] {
         let generated = tempfile::tempdir().unwrap();
-        let (_, digest) = fixtures::write(generated.path(), case).unwrap();
+        let (_, package_bytes) = fixtures::write(generated.path(), case).unwrap();
         let request_bytes = std::fs::read(generated.path().join("compile.json")).unwrap();
         let job: Value = serde_json::from_slice(&request_bytes).unwrap();
         let directory = tempfile::tempdir().unwrap();
@@ -75,13 +73,12 @@ fn source_only_compilation_emits_exact_bytes_accepted_by_the_existing_reader() {
             String::from_utf8_lossy(&output.stderr)
         );
         assert!(output.stderr.is_empty());
-        assert_eq!(ByteDigest::of(&output.stdout).to_string(), digest);
+        assert_eq!(output.stdout, package_bytes);
         assert!(!output.stdout.ends_with(b"\n"));
         let models = [runtime::native_rule_model::parts().model()];
         let checked = runtime::checked_kind(&models, expression, kind);
         let read = NativePackage::read_verified(
             &output.stdout,
-            NativePackageRef::new(ByteDigest::of(&output.stdout)),
             checked.bindings().clone(),
             &models,
             &PackageSupport::default(),
@@ -90,7 +87,6 @@ fn source_only_compilation_emits_exact_bytes_accepted_by_the_existing_reader() {
         .unwrap();
         assert_eq!(read.bytes(), output.stdout);
         assert_eq!(read.checked().clauses().len(), 2);
-        assert_eq!(read.digest().to_string(), digest);
     }
 }
 

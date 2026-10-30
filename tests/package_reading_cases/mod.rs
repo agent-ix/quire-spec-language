@@ -22,7 +22,6 @@ fn read<'a>(
     let bytes = serde_json::to_vec(value).unwrap();
     NativePackage::read_verified(
         &bytes,
-        NativePackageRef::new(ByteDigest::of(&bytes)),
         bindings,
         models,
         &PackageSupport::default(),
@@ -240,7 +239,6 @@ fn selection_order_and_feature_sets_do_not_depend_on_object_order() {
     let raw = serde_json::to_vec_pretty(&changed).unwrap();
     let package = NativePackage::read_verified(
         &raw,
-        NativePackageRef::new(ByteDigest::of(&raw)),
         bindings.clone(),
         &models,
         &PackageSupport::default(),
@@ -249,7 +247,6 @@ fn selection_order_and_feature_sets_do_not_depend_on_object_order() {
     .unwrap();
     assert_eq!(package.bytes(), raw);
     assert_ne!(package.bytes(), vector.artifact);
-    assert_ne!(package.digest(), ByteDigest::of(&vector.artifact));
     assert_eq!(
         package.canonical_identity().to_string(),
         vector.digest.as_str()
@@ -272,7 +269,6 @@ fn selection_order_and_feature_sets_do_not_depend_on_object_order() {
     support.features.remove("boolean");
     let error = NativePackage::read_verified(
         &vector.artifact,
-        NativePackageRef::new(ByteDigest::of(&vector.artifact)),
         bindings,
         &models,
         &support,
@@ -371,7 +367,6 @@ fn real_frontend_limits_preserve_native_causes_and_retry_state() {
     for (dimension, limits) in requests {
         let error = NativePackage::read_verified(
             package.bytes(),
-            package.reference(),
             bindings.clone(),
             &models,
             &PackageSupport::default(),
@@ -411,7 +406,6 @@ fn real_frontend_limits_preserve_native_causes_and_retry_state() {
         assert!(error.usage.derive.is_none());
         let retry = NativePackage::read_verified(
             package.bytes(),
-            package.reference(),
             bindings.clone(),
             &models,
             &PackageSupport::default(),

@@ -58,7 +58,7 @@ pub fn unit_identity() -> qsl_foundation::SourceIdentity {
 }
 
 /// FR-108's own `1-draft` unit text ([`unit::unit_text`]) selecting
-/// [`DOMAIN_PACKAGE`] by its digest.
+/// [`DOMAIN_PACKAGE`] by its identity.
 pub fn unit_text() -> String {
     unit::unit_text()
 }
@@ -346,7 +346,8 @@ pub fn request(directory: &Path, case: Case) -> io::Result<ClauseRunRequest> {
     // leaves `models` empty in `request.json`.
     let packages = if case.spec().include_model {
         let package = std::fs::read(directory.join("spine-model.semantic-ir.json"))?;
-        qsl_semantics::model::intake::package_input([package.as_slice()]).unwrap()
+        qsl_semantics::model::intake::package_input([package.as_slice()])
+            .map_err(|refusal| io::Error::other(format!("{refusal:?}")))?
     } else {
         BTreeMap::new()
     };

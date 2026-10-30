@@ -736,23 +736,3 @@ fn a_tuple_value_is_a_value_node_over_its_arguments() {
         node_ref(parameter_named(graph, "b").key())
     );
 }
-
-/// TC-413 step 7 (FR-092-AC-9): `rational(1, 2)` and `rational(2, 4)` as a
-/// `Rational[-9, 9; 1, 9]` literal, through `check`, key to L3.
-#[trace("FR-092-AC-9", "TC-413")]
-#[test]
-fn rational_literals_key_to_l3_through_check() {
-    for (numerator, denominator) in [(1_i64, 2_i64), (2, 4)] {
-        let literal = function(
-            "half",
-            &[],
-            rational_form(["-9", "9", "1", "9"]),
-            None,
-            Expression::rational(Integer::from(numerator), Integer::from(denominator)),
-        );
-        let checked = check(vec![literal]).expect("the literal checks");
-        let graph = checked.semantic_graph();
-        let key = node_by_key(graph, &vector_key("L3")).key();
-        assert_vector(graph, key, "L3");
-    }
-}

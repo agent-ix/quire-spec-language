@@ -206,7 +206,6 @@ fn conflicting_unselected_inventory_is_not_hidden_by_wire_imports() {
     ] {
         let error = NativePackage::read_verified(
             package.bytes(),
-            package.reference(),
             package.checked().bindings().clone(),
             offered,
             &PackageSupport::default(),

@@ -995,7 +995,7 @@ fn cycle_walk(
 fn validate_selection(domain_package: &DomainPackage) -> Result<(), ModelRefusal> {
     // FR-321: "Missing required properties, duplicate keys, out-of-domain
     // values and non-canonical encodings refuse before consumption." An
-    // empty `identity`/`version` string is schema `minLength`-invalid (out
+    // empty `identity` string is schema `minLength`-invalid (out
     // of domain) under FR-321's own `ModelSelectionArtifact` shape.
     // `value-accounting.md:507-508`: "a refusal decided by an intake
     // admission check before a stage's first charge is reported first" --
@@ -1013,7 +1013,7 @@ fn validate_selection(domain_package: &DomainPackage) -> Result<(), ModelRefusal
             code: Code::InvalidModelBinding,
             cause: ModelRefusalCause::MalformedDeclaration,
             detail: format!(
-                "domain package selection has an empty identity or version: {:?}",
+                "domain package selection has an empty identity: {:?}",
                 domain_package.model_selection
             ),
         });
