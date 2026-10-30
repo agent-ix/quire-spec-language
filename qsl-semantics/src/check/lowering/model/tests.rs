@@ -660,23 +660,26 @@ mod quantities {
         .expect("a root unit")
     }
 
-    // Four distinct nominal nodes, by name; each stands for an arbitrary
-    // node key.
+    // Four nominal nodes, by name; each is admitted under the key its
+    // preimage gives (`admit` refuses a stale key).
     const LENGTH: &str = "dimension-length";
     const TIME: &str = "dimension-time";
     const METRE: &str = "unit-metre";
     const SECOND: &str = "unit-second";
 
-    /// `name_or_hex`, with a nominal node name replaced by its stand-in key.
+    /// `name_or_hex`, with a nominal node name replaced by the key its
+    /// preimage gives.
     fn resolved(name_or_hex: &str) -> String {
-        let byte = match name_or_hex {
-            LENGTH => "a1",
-            TIME => "a2",
-            METRE => "a3",
-            SECOND => "a4",
+        use crate::value::semantic_node::NodeIdentityPreimage;
+        let limits = qsl_foundation::IdentityLimits::default();
+        let digest = match name_or_hex {
+            LENGTH => dimension("Length").digest(limits),
+            TIME => dimension("Time").digest(limits),
+            METRE => unit("metre", LENGTH).digest(limits),
+            SECOND => unit("second", TIME).digest(limits),
             other => return other.to_owned(),
         };
-        byte.repeat(32)
+        crate::model::key::hex(&digest.expect("a nominal preimage keys"))
     }
 
     fn node_key(hex: &str) -> NodeKey {
@@ -688,10 +691,8 @@ mod quantities {
         NodeKey::from_digest(digest)
     }
 
-    /// QSpec's `dimension-length`, `dimension-time`, `unit-metre` and
-    /// `unit-second` nodes, admitted under their recomputed keys (`admit`
-    /// refuses a stale key, so the keys are QSpec's vector keys FR-094
-    /// names).
+    /// The `dimension-length`, `dimension-time`, `unit-metre` and
+    /// `unit-second` nodes, admitted under the keys their preimages give.
     fn units() -> UnitTable {
         UnitTable::declared(&unit_graph())
     }
@@ -713,7 +714,7 @@ mod quantities {
             })]),
             qsl_foundation::IdentityLimits::default(),
         )
-        .expect("the QSpec unit vectors admit")
+        .expect("the unit nodes admit")
     }
 
     fn quantity(hex: &str) -> ValueType {

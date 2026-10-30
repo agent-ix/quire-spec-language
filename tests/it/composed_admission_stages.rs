@@ -975,8 +975,8 @@ fn a_changed_profile_label_cannot_admit_composed_input_into_the_historical_reade
         PackageReadLimits::default(),
     )
     .expect_err("the reader cannot accept relabelled bytes");
-    assert_eq!(error.code, Code::InvalidPackage);
-    assert_eq!(error.stage, PackageStage::Compare);
+    assert_eq!(error.code, Code::UnknownProfile);
+    assert_eq!(error.stage, PackageStage::Decode);
 
     // The accepted fixture bytes and identities are untouched by every attempt.
     assert_eq!(package.bytes(), vector.artifact);
