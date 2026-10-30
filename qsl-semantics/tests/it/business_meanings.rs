@@ -5,11 +5,10 @@
 //! These authored wire inputs do not qualify artifact extraction or runtime.
 
 use ix_trace_rs::trace;
-use qsl_foundation::{ByteDigest, IntakeLimits};
+use qsl_foundation::IntakeLimits;
 use qsl_semantics::model::accounting::{ChargePoint, ModelNormalizationLimits};
 use qsl_semantics::model::domain_package::{DomainPackage, DomainPackageRecord};
 use qsl_semantics::model::intake::{admit, meaning, package_input, read_domain_package};
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::normalize::{normalize_with_meter, EffectiveView, NormalizeOutcome};
 use quire_checked::key::DeclarationKey;
 use serde_json::{json, Value};
@@ -100,24 +99,17 @@ fn clause(package: &str, owner: &str, name: &str, text: &str) -> Value {
     })
 }
 
-fn document(package: &str, version: &str, mut constructs: Vec<Value>, types: Vec<Value>) -> Value {
-    // The wire requires content digests even for generated test inputs. Bind
-    // them to these authored declarations; do not use a fixed digest catalog.
-    let source = serde_json::to_vec(&types).expect("authored declarations serialize");
-    let digest = format!("sha256:{}", hex(&ByteDigest::of(&source).as_bytes()));
-    for construct in &mut constructs {
-        construct["manifestDigest"] = json!(digest);
-    }
+fn document(package: &str, version: &str, constructs: Vec<Value>, types: Vec<Value>) -> Value {
     json!({
         "contractVersion": "2.0.0",
         "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
         "source": {
             "identity": identity(package, "spec"), "version": "1.0.0",
-            "dialect": "spec-bundle", "digest": digest,
+            "dialect": "spec-bundle"
         },
         "package": {
-            "identity": package, "version": version, "manifestDigest": digest,
-            "mappingVersions": [], "profileVersions": [], "lockDigest": digest,
+            "identity": package, "version": version,
+            "mappingVersions": [], "profileVersions": [],
         },
         "constructs": constructs, "types": types, "occurrences": [], "extensions": [],
     })

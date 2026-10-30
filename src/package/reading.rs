@@ -247,11 +247,6 @@ fn authority(
             Code::InvalidModelBinding,
         ),
         (
-            "digest",
-            wire.source.digest.0 == source.digest(),
-            Code::StaleDependency,
-        ),
-        (
             "formal",
             wire.source.formal.native() == *bindings.source.identity(),
             Code::InvalidModelBinding,

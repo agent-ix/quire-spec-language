@@ -96,15 +96,9 @@ fn incompatible_request_and_static_failures_emit_no_package_bytes() {
     enum Change {
         Format,
         Runtime,
-        Stale,
         Syntax,
     }
-    for change in [
-        Change::Format,
-        Change::Runtime,
-        Change::Stale,
-        Change::Syntax,
-    ] {
+    for change in [Change::Format, Change::Runtime, Change::Syntax] {
         let directory = tempfile::tempdir().unwrap();
         fixtures::write(directory.path(), fixtures::Case::Aggregate(2)).unwrap();
         let original = std::fs::read(directory.path().join("compile.json")).unwrap();
@@ -118,16 +112,9 @@ fn incompatible_request_and_static_failures_emit_no_package_bytes() {
                 changed["request"]["snapshots"] = json!([]);
                 (20, "invalid-request")
             }
-            Change::Stale => {
-                changed["request"]["program"]["source"]["digest"] =
-                    json!(ByteDigest::of(b"foreign").to_string());
-                (20, "source_digest_mismatch")
-            }
             Change::Syntax => {
                 let broken = b"language ?";
                 std::fs::write(directory.path().join("program.native"), broken).unwrap();
-                changed["request"]["program"]["source"]["digest"] =
-                    json!(ByteDigest::of(broken).to_string());
                 (20, "invalid_syntax")
             }
         };
@@ -322,7 +309,7 @@ fn spine_request(directory: &Path, program: &[u8]) {
     let request = json!({"format":"native-compile/1","request":{"models":[],"program":{
         "source":{"file":"program.native","authority":"agent-ix","identity":"test:spine",
         "revision_namespace":"fixture","revision":"fixture:1",
-        "digest":ByteDigest::of(program).to_string(),"document":"Spine","formal_revision":1}}}});
+        "document":"Spine","formal_revision":1}}}});
     std::fs::write(
         directory.join("compile.json"),
         serde_json::to_vec(&request).unwrap(),
@@ -429,11 +416,6 @@ fn an_edition_neither_compiler_reads_refuses() {
     );
     assert!(program.contains("\"7-draft\""));
     std::fs::write(&path, &program).unwrap();
-    let request = directory.path().join("compile.json");
-    let mut job: Value = serde_json::from_slice(&std::fs::read(&request).unwrap()).unwrap();
-    job["request"]["program"]["source"]["digest"] =
-        json!(ByteDigest::of(program.as_bytes()).to_string());
-    std::fs::write(&request, serde_json::to_vec(&job).unwrap()).unwrap();
     let output = compile(directory.path());
     assert_eq!(output.status.code(), Some(20));
     assert!(output.stdout.is_empty());
@@ -463,7 +445,6 @@ fn a_complete_v1_request_selecting_native_inputs_refuses() {
     std::fs::write(directory.path().join("program.native"), &program).unwrap();
     let request = directory.path().join("compile.json");
     let mut job: Value = serde_json::from_slice(&std::fs::read(&request).unwrap()).unwrap();
-    job["request"]["program"]["source"]["digest"] = json!(ByteDigest::of(&program).to_string());
     assert!(!job["request"]["models"].as_array().unwrap().is_empty());
     // Malformed model files: the edition is decided before any model is
     // read, so the refusal names the selection, not the files.
@@ -632,7 +613,7 @@ fn spine_model_request(directory: &Path, program: &[u8], document: &[u8]) {
     job["request"]["models"] = json!([{"format":"semantic-ir/2.0.0","source":{
         "file":"orders.json","authority":"agent-ix","identity":"acme/orders",
         "revision_namespace":"fixture","revision":"fixture:1",
-        "digest":ByteDigest::of(document).to_string(),"document":"Orders","formal_revision":1}}]);
+        "document":"Orders","formal_revision":1}}]);
     std::fs::write(&path, serde_json::to_vec(&job).unwrap()).unwrap();
 }
 
@@ -761,7 +742,7 @@ fn spine_library_request(directory: &Path, library: &[u8], identity: &str) -> Ve
     job["request"]["libraries"] = json!([{"identity":identity,"source":{
         "file":"geometry.native","authority":"agent-ix","identity":"test:geometry",
         "revision_namespace":"fixture","revision":"fixture:1",
-        "digest":ByteDigest::of(library).to_string(),"document":"Geometry","formal_revision":1}}]);
+        "document":"Geometry","formal_revision":1}}]);
     std::fs::write(&path, serde_json::to_vec(&job).unwrap()).unwrap();
     program
 }
@@ -877,11 +858,11 @@ fn a_library_refusal_renders_over_the_library_source() {
 
 /// A `libraries` row selecting `file` as `identity`, under the
 /// source identity `test:<file>`.
-fn library_row(file: &str, identity: &str, bytes: &[u8]) -> Value {
+fn library_row(file: &str, identity: &str) -> Value {
     json!({"identity":identity,"source":{
         "file":file,"authority":"agent-ix","identity":format!("test:{file}"),
         "revision_namespace":"fixture","revision":"fixture:1",
-        "digest":ByteDigest::of(bytes).to_string(),"document":"Library","formal_revision":1}})
+        "document":"Library","formal_revision":1}})
 }
 
 /// FR-027-AC-10: an import cycle between two supplied libraries is a
@@ -911,8 +892,8 @@ fn a_cycle_inside_the_libraries_renders_over_the_library_source() {
     let path = directory.path().join("compile.json");
     let mut job: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
     job["request"]["libraries"] = json!([
-        library_row("a.native", "test/a", &a),
-        library_row("b.native", "test/b", &b)
+        library_row("a.native", "test/a"),
+        library_row("b.native", "test/b")
     ]);
     std::fs::write(&path, serde_json::to_vec(&job).unwrap()).unwrap();
     let output = compile(directory.path());

@@ -562,8 +562,6 @@ pub fn tc465_document_with_archive_population_and_narrow_frame() -> Vec<u8> {
 }
 
 pub(super) const PACKAGE_IDENTITY: &str = "example/config-version";
-const PLACEHOLDER_DIGEST: &str =
-    "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 
 pub(super) fn wire_envelope(constructs: Value, types: Value, populations: Value) -> Value {
     json!({
@@ -573,15 +571,12 @@ pub(super) fn wire_envelope(constructs: Value, types: Value, populations: Value)
             "identity": format!("ix://{PACKAGE_IDENTITY}/spec"),
             "version": "1.0.0",
             "dialect": "spec-bundle",
-            "digest": PLACEHOLDER_DIGEST,
         },
         "package": {
             "identity": PACKAGE_IDENTITY,
             "version": "1.0.0",
-            "manifestDigest": PLACEHOLDER_DIGEST,
             "mappingVersions": [],
             "profileVersions": [],
-            "lockDigest": PLACEHOLDER_DIGEST,
         },
         "occurrences": [],
         "extensions": [],
@@ -595,7 +590,6 @@ pub(super) fn wire_construct(name: &str, meaning: &str, members: Value) -> Value
     json!({
         "kind": {"module": PACKAGE_IDENTITY, "name": name},
         "moduleVersion": "1.0.0",
-        "manifestDigest": PLACEHOLDER_DIGEST,
         "construct": {
             "identity": "none",
             "shape": "record",

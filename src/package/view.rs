@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-019/021: borrowed typed package views, preserving the specified record order.
 
-use std::{collections::BTreeSet, fmt};
+use std::collections::BTreeSet;
 
 use quire_contract_model as ir;
 use serde::{
@@ -11,7 +11,7 @@ use serde::{
 
 use crate::checking::{CheckedPackage, RuntimeRequirements, UniverseRequirement};
 use crate::linking::{DeclarationKey, DeclarationLocation, ResolutionTarget, ResolvedOccurrence};
-use qsl_foundation::{ByteDigest, Span};
+use qsl_foundation::Span;
 
 pub(super) const FORMAT: &str = qsl_foundation::wire_format::WireFormat::LinkedPackage.as_str();
 
@@ -36,21 +36,12 @@ impl Semantics {
     }
 }
 
-struct DisplayValue<T>(T);
-
-impl<T: fmt::Display> Serialize for DisplayValue<T> {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_str(&self.0)
-    }
-}
-
 #[derive(Serialize)]
 struct Source<'a> {
     authority: &'a str,
     identity: &'a str,
     revision_namespace: &'a str,
     revision: &'a str,
-    digest: DisplayValue<ByteDigest>,
     formal: &'a ir::SourceIdentity,
 }
 
@@ -80,7 +71,6 @@ impl<'a, 'model> Manifest<'a, 'model> {
                 identity: &original.identity().identity,
                 revision_namespace: &original.identity().revision_namespace,
                 revision: &original.identity().revision,
-                digest: DisplayValue(original.digest()),
                 formal: checked.bindings().source.identity(),
             },
             models: Models(checked),

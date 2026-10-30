@@ -31,7 +31,6 @@ use quire_semantic_value::relationship_extent::Resolution;
 use serde_json::{json, Value};
 
 const PACKAGE: &str = "test/orders";
-const DIGEST: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 
 fn identity(node: &str) -> String {
     format!("ix://{PACKAGE}/{node}")
@@ -138,11 +137,11 @@ fn envelope(constructs: Value, types: Value, populations: Value) -> Value {
         "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
         "source": {
             "identity": identity("spec"), "version": "1.0.0",
-            "dialect": "spec-bundle", "digest": DIGEST,
+            "dialect": "spec-bundle",
         },
         "package": {
-            "identity": PACKAGE, "version": "1.0.0", "manifestDigest": DIGEST,
-            "mappingVersions": [], "profileVersions": [], "lockDigest": DIGEST,
+            "identity": PACKAGE, "version": "1.0.0",
+            "mappingVersions": [], "profileVersions": [],
         },
         "occurrences": [],
         "extensions": [],
@@ -156,7 +155,6 @@ fn construct(name: &str, meaning: &str) -> Value {
     json!({
         "kind": {"module": PACKAGE, "name": name},
         "moduleVersion": "1.0.0",
-        "manifestDigest": DIGEST,
         "construct": {"identity": "none", "shape": "record", "members": {}, "meaning": meaning},
     })
 }

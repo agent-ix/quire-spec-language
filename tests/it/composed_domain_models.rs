@@ -223,7 +223,6 @@ pub(crate) fn admitted_with(
     constructs.push(serde_json::json!({
         "kind": {"module": "fixture/domain", "name": "population"},
         "moduleVersion": business["moduleVersion"],
-        "manifestDigest": business["manifestDigest"],
         "construct": {
             "identity": "none",
             "shape": "record",

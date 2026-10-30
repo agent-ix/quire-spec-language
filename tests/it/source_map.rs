@@ -54,7 +54,7 @@ fn bytes(source: &Source, locations: &[qsl_foundation::LocatedSpan]) -> String {
 
 #[trace("TC-011", "FR-001-AC-1", "FR-001-AC-2", "FR-001-AC-4")]
 #[test]
-fn exact_bytes_digest_is_checked_before_correspondence() {
+fn source_byte_ceiling_is_a_stage_limit_and_digest_text_is_strict() {
     let digest = ByteDigest::of(b"abc");
     let id = SourceIdentity {
         authority: "test".into(),
@@ -62,17 +62,11 @@ fn exact_bytes_digest_is_checked_before_correspondence() {
         revision_namespace: "test".into(),
         revision: "1".into(),
     };
-    let original = Source::read_verified(id.clone(), "x", b"abc", digest, 100).unwrap();
+    let original = Source::read(id.clone(), "x", b"abc", 100).unwrap();
     assert_eq!(original.digest(), digest);
-    assert_eq!(
-        Source::read_verified(id.clone(), "x", b"abd", digest, 100)
-            .unwrap_err()
-            .code,
-        Code::SourceDigestMismatch
-    );
     // The source's own byte ceiling is a stage limit
     // (`stage_limit_exceeded`), incomplete work (ADR-029 CB-4).
-    assert!(Source::read_verified(id, "x", b"abc", digest, 2)
+    assert!(Source::read(id, "x", b"abc", 2)
         .unwrap_err()
         .is_incomplete());
     let hex = format!("{digest:x}");

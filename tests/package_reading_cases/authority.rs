@@ -108,11 +108,6 @@ fn source_and_authored_axes_are_checked_against_external_bindings() {
             Code::InvalidModelBinding,
         ),
         (
-            "/source/digest",
-            json!(ByteDigest::of(b"foreign").to_string()),
-            Code::StaleDependency,
-        ),
-        (
             "/source/formal/document",
             json!("Foreign"),
             Code::InvalidModelBinding,
@@ -261,8 +256,7 @@ fn forged_checked_claims_cannot_bypass_real_parse_link_type_or_definedness_failu
         .unwrap();
         let mut external = bindings.clone();
         external.source = FormalSource::new(native.clone(), bindings.source.identity().clone());
-        let mut wire = original.clone();
-        wire["source"]["digest"] = json!(native.digest().to_string());
+        let wire = original.clone();
         let direct = parse(
             native.identity().clone(),
             native.path(),
