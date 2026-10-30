@@ -60,6 +60,7 @@ use super::refusal::{
 };
 use crate::value::definition::{DefinitionReference, DefinitionRole};
 use crate::value::member::Member;
+use crate::value::nominal_payload::{EnumPayload, NominalPayload};
 use quire_semantic_value::declaration::{
     CompositeShape, EqualityOperator, FieldDeclaration, TypeEnvironment, UnionMemberDeclaration,
 };
@@ -154,6 +155,7 @@ impl NodeRecursion {
 pub struct SemanticNode {
     key: NodeKey,
     recursion: Option<NodeRecursion>,
+    nominal: Option<NominalPayload>,
     /// Outside every recursion group, the content [`Self::key`] keys; a
     /// group member's names its group's members by their keys.
     content: NodeContent,
@@ -186,6 +188,7 @@ impl SemanticNode {
         Self {
             key,
             recursion: None,
+            nominal: None,
             content,
         }
     }
@@ -229,6 +232,13 @@ impl SemanticNode {
     /// `protocol_clause` node is declared over; `None` for every other node.
     pub fn owner_model(&self) -> Option<NodeKey> {
         self.content.owner_model.clone()
+    }
+
+    /// The facts a nominal declaration node carries beyond its key (an
+    /// enum's ordering and cases, a dimension's terms, a unit's dimension,
+    /// target and conversion); `None` for every other node.
+    pub fn nominal_payload(&self) -> Option<&NominalPayload> {
+        self.nominal.as_ref()
     }
 
     /// The node's recursion group, when it is in one.
@@ -1831,6 +1841,7 @@ impl<'a> Lowering<'a> {
             slot.insert(SemanticNode {
                 key: key.clone(),
                 recursion: None,
+                nominal: None,
                 content,
             });
         }
@@ -2522,6 +2533,9 @@ impl<'a> Lowering<'a> {
                 owner: None,
                 body: BodyTerm::aggregate(Vec::new()),
             },
+            Some(NominalPayload::Enum(EnumPayload::of(
+                &binding.declaration.preimage(),
+            ))),
         )?;
         // Two bindings of one admitted declaration are one node, declared
         // once.
@@ -2563,6 +2577,7 @@ impl<'a> Lowering<'a> {
                     LiteralValue::Enum(member.case().to_owned()),
                 ),
             },
+            None,
         )?;
         Ok(())
     }
@@ -2576,7 +2591,7 @@ impl<'a> Lowering<'a> {
         key: NodeKey,
         content: NodeContent,
     ) -> Result<NodeKey, CheckRefusal> {
-        self.insert_nominal(location, key.clone(), content)?;
+        self.insert_nominal(location, key.clone(), content, None)?;
         Ok(key)
     }
 
@@ -2588,6 +2603,7 @@ impl<'a> Lowering<'a> {
         location: &Location,
         key: NodeKey,
         content: NodeContent,
+        nominal: Option<NominalPayload>,
     ) -> Result<bool, CheckRefusal> {
         self.charge(1, location)?;
         match self.graph.nodes.entry(key.clone()) {
@@ -2596,6 +2612,7 @@ impl<'a> Lowering<'a> {
                 slot.insert(SemanticNode {
                     key,
                     recursion: None,
+                    nominal,
                     content,
                 });
                 Ok(true)
@@ -3065,6 +3082,7 @@ impl<'a> Lowering<'a> {
                         size: members.len(),
                         members: group.clone(),
                     }),
+                    nominal: None,
                     content: NodeContent {
                         owner_model: draft.content.owner_model.clone(),
                         node_tag: draft.content.node_tag,

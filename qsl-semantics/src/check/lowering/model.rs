@@ -30,6 +30,7 @@ use qsl_forms::{DeclaredClauseKind, NameForm};
 use quire_checked::key::DeclarationKey;
 use quire_semantic_value::location::Location;
 use quire_semantic_value::quantity::QuantityUnit;
+use crate::value::nominal_payload::{DimensionPayload, NominalPayload, UnitPayload};
 use quire_semantic_value::unit::{NominalDeclaration, NominalUnitForm};
 
 /// One step of a clock place's path below its object (FR-230 "Places"): a
@@ -2216,17 +2217,31 @@ impl<'a> Lowering<'a> {
                 qualified_declaration: qualified,
                 ..
             } = node.declaration;
-            let (kind, semantic_form, semantic_type) = match node.form {
+            let (kind, semantic_form, semantic_type, payload) = match node.form {
                 NominalUnitForm::Unit {
-                    dimension, target, ..
+                    dimension,
+                    target,
+                    scale,
+                    offset,
                 } => {
                     pending.push(dimension.clone());
-                    pending.extend(target);
-                    (QuantityKind::Unit, "unit", Some(dimension))
+                    pending.extend(target.clone());
+                    let payload = UnitPayload::new(dimension.clone(), target, scale, offset);
+                    (
+                        QuantityKind::Unit,
+                        "unit",
+                        Some(dimension),
+                        NominalPayload::Unit(payload),
+                    )
                 }
                 NominalUnitForm::Dimension { terms } => {
                     pending.extend(terms.iter().map(|(base, _)| base.clone()));
-                    (QuantityKind::Dimension, "dimension", None)
+                    (
+                        QuantityKind::Dimension,
+                        "dimension",
+                        None,
+                        NominalPayload::Dimension(DimensionPayload::new(terms)),
+                    )
                 }
             };
             let site = type_declaration(&quantity_origin(kind, &qualified.join(".")));
@@ -2243,6 +2258,7 @@ impl<'a> Lowering<'a> {
                     owner: None,
                     body: BodyTerm::aggregate(Vec::new()),
                 },
+                Some(payload),
             )?;
             if inserted {
                 self.record(key, OccurrenceRole::Declaration, site);
