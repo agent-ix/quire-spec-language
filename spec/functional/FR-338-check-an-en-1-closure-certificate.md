@@ -148,10 +148,7 @@ loci of its hyper checker; those failures are not all product-state failures.
 QSpec FR-331 carries a `CertificateRejection` as `certificate-rejected{rule,
 at}`, and its Certification table owns every spelling: each locus form, its
 `at` spelling, and the rules admitted at that form. QSL SHALL write a
-rejection with exactly those spellings and SHALL add none of its own. A
-`CertificateRule` variant is written as FR-331's kebab-case rule name, so
-`InitialMissing` is `initial-missing` and `ProofStepInvalid` is
-`proof-step-invalid`.
+rejection with exactly those spellings and SHALL add none of its own.
 
 Each `CertificateLocus` alternative is one FR-331 locus form, and only the
 checker named beside it returns that alternative:

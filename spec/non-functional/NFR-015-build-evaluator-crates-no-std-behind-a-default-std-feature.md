@@ -156,7 +156,7 @@ The wire representation is unchanged: QSpec FR-322 defines
 and QSL's emitter writes it. `package_id` is the QSpec FR-322 identity
 member of the `quire.checked-package-id/v2` identity preimage, encoded
 through `quire-canonical`, the one encoder (ADR-013 §2); QSL computes no hash
-of it (BLOCKED-BY STD-583 (owner: planner titan:QSL:plan)). When a `no_std`
+of it (BLOCKED-BY QSL-1282 (owner: planner titan:QSL:plan): the `package_id` hash computation and its `PackageId`/`verify_binding` deletion). When a `no_std`
 crate must read JSON, it reads through `quire-canonical`'s `read` (the one
 shared iterative reader, ADR-030 RU-2, which builds `no_std` + `alloc`),
 never through `serde_json` or a second reader, and it encodes identities
