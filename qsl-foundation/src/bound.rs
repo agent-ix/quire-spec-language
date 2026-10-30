@@ -21,17 +21,16 @@
 //! accounting limit (B-2), a stage limit (B-3), a backend tool budget (B-5)
 //! or a profile ceiling (B-6). A caller builds a [`FiniteBound`] explicitly.
 //!
-//! The module imports only K (`quire-exact`) and F's own `digest` and
-//! `selection`: `selection` because an [`IntervalKey`] names its profile by
+//! The module imports only K (`quire-exact`) and F's own `selection`:
+//! `selection` because an [`IntervalKey`] names its profile by
 //! [`DefinitionRef`].
 
 use alloc::{string::String, vec::Vec};
 use core::fmt;
 use core::num::NonZeroU64;
 
-use quire_exact::{EmptyInterval, Integer, IntegerInterval, Rational};
+use quire_exact::{EmptyInterval, Integer, IntegerInterval, NodeKey, Rational};
 
-use crate::digest::WireNodeId;
 use crate::selection::DefinitionRef;
 
 /// One unbounded domain of a requested item (ADR-014 §4 "Domain key"),
@@ -52,7 +51,7 @@ pub enum DomainKey {
     /// clause.
     Node {
         /// The checked node that carries the domain.
-        node: WireNodeId,
+        node: NodeKey,
         /// The child-index path into the node's type.
         path: Vec<u32>,
     },
@@ -62,7 +61,7 @@ pub enum DomainKey {
     /// order.
     Population {
         /// The population's canonical member type node.
-        member_type: WireNodeId,
+        member_type: NodeKey,
         /// The population's declaration ordinal.
         ordinal: u32,
     },
@@ -342,17 +341,14 @@ impl ProofBound {
 /// (ADR-014 TR-3, §10 scenario 5): (`lower`, `upper`, selected profile
 /// identity, clock binding). Equality is componentwise.
 ///
-/// `clock_binding` is the wire node id of the structural (non-nominal)
-/// clock-binding value node the interval's offsets count under; QSL-43
-/// confirms it. A structural node id is content-derived, so two bindings
-/// with equal components have equal ids, the componentwise equality QSpec
-/// FR-252 requires.
+/// `clock_binding` is the structural node id of the clock-binding value node
+/// the interval's offsets count under; equal identities have equal keys.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct IntervalKey {
     lower: u64,
     upper: u64,
     profile: DefinitionRef,
-    clock_binding: WireNodeId,
+    clock_binding: NodeKey,
 }
 
 /// An [`IntervalKey`] with `lower > upper` (QSpec FR-091, FR-255).
@@ -372,7 +368,7 @@ impl IntervalKey {
         lower: u64,
         upper: u64,
         profile: DefinitionRef,
-        clock_binding: WireNodeId,
+        clock_binding: NodeKey,
     ) -> Result<Self, InvertedInterval> {
         if lower > upper {
             return Err(InvertedInterval { lower, upper });
@@ -401,8 +397,8 @@ impl IntervalKey {
     }
 
     /// The clock-binding node the offsets count under.
-    pub fn clock_binding(&self) -> WireNodeId {
-        self.clock_binding
+    pub fn clock_binding(&self) -> &NodeKey {
+        &self.clock_binding
     }
 }
 
@@ -449,7 +445,7 @@ impl TemporalInterval {
     /// This interval's QSpec FR-255 key under `profile` and
     /// `clock_binding`, or `None` for an `[a, *]` interval: the key's upper
     /// offset is a number, and QSpec FR-255 names no key for an open end.
-    pub fn key(&self, profile: DefinitionRef, clock_binding: WireNodeId) -> Option<IntervalKey> {
+    pub fn key(&self, profile: DefinitionRef, clock_binding: NodeKey) -> Option<IntervalKey> {
         match self.upper {
             TemporalUpper::Finite(upper) => {
                 IntervalKey::new(self.lower, upper, profile, clock_binding).ok()
@@ -571,7 +567,7 @@ impl TimedInterval {
     /// This interval's QSpec FR-255 key under `profile` and
     /// `clock_binding`: its bounds and each end's openness, so `[a, b)` and
     /// `[a, b]` have different keys.
-    pub fn key(&self, profile: DefinitionRef, clock_binding: WireNodeId) -> TimedIntervalKey {
+    pub fn key(&self, profile: DefinitionRef, clock_binding: NodeKey) -> TimedIntervalKey {
         TimedIntervalKey {
             interval: self.clone(),
             profile,
@@ -587,7 +583,7 @@ impl TimedInterval {
 pub struct TimedIntervalKey {
     interval: TimedInterval,
     profile: DefinitionRef,
-    clock_binding: WireNodeId,
+    clock_binding: NodeKey,
 }
 
 impl TimedIntervalKey {
@@ -602,8 +598,8 @@ impl TimedIntervalKey {
     }
 
     /// The clock-binding node the bounds count under.
-    pub fn clock_binding(&self) -> WireNodeId {
-        self.clock_binding
+    pub fn clock_binding(&self) -> &NodeKey {
+        &self.clock_binding
     }
 }
 
@@ -615,7 +611,7 @@ mod tests {
     #[test]
     fn a_proof_bound_refuses_a_missing_or_mispaired_kind() {
         let domain = || DomainKey::Population {
-            member_type: WireNodeId::from_digest([1; 32]),
+            member_type: node(1),
             ordinal: 0,
         };
         assert!(ProofBound::new(
@@ -678,8 +674,13 @@ mod tests {
     use alloc::{borrow::ToOwned, format, string::ToString, vec, vec::Vec};
     use ix_trace_rs::trace;
 
-    fn node(fill: u8) -> WireNodeId {
-        WireNodeId::from_digest([fill; 32])
+    fn node(fill: u8) -> NodeKey {
+        NodeKey::new(
+            "test",
+            vec![quire_exact::PathSegment::Text(fill.to_string())],
+            0,
+        )
+        .expect("test node has a valid structural identity")
     }
 
     fn profile() -> DefinitionRef {

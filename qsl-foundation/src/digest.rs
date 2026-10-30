@@ -89,12 +89,6 @@ impl FromStr for ByteDigest {
 // that carries its own `algorithm` field (this type fixes SHA-256), and not
 // a domain outside FR-201's 21-member vocabulary.
 //
-// One real caller landed in this slice: `value::member::Member::to_wire`'s
-// `declaration_json` mints a `NodeKey`'s digest through
-// `DigestRecord::mint(DigestDomain::CheckedSemanticNodeV1, ...)` (#260
-// review item 5), in place of the bare `NODE_KEY_DOMAIN` constant plus raw
-// hex it used before.
-//
 // A hand-built enumeration of every other site meeting the criterion above
 // was attempted across three rounds of review on this one comment and was
 // wrong every time (3 candidates named, then corrected to 4, then corrected
@@ -414,7 +408,7 @@ fn lower_hex_nibble(digit: u8) -> Option<u8> {
 
 /// Parse exactly 64 lowercase-hex ASCII digits into 32 bytes (FR-201's
 /// exact-match rule: no case folding, no separators, no other length).
-/// Shared by [`DigestRecord::from_wire`], [`WireNodeId::from_hex`] and this
+/// Shared by [`DigestRecord::from_wire`] and this
 /// crate's downstream wire-digest parsers that need this exact encoding.
 pub fn parse_lower_hex32(hex: &str) -> Option<[u8; 32]> {
     let (pairs, []) = hex.as_bytes().as_chunks::<2>() else {
@@ -491,61 +485,6 @@ impl InvalidDigestRecord {
             self,
             Self::AbsentDomain | Self::UnknownDomain(_) | Self::WrongDomain { .. }
         )
-    }
-}
-
-/// A node id exactly as it travels on the wire (a v2 node key's 64
-/// lowercase-hex digest), before a checked-package lookup resolves it to a
-/// `quire_exact::NodeKey` (ADR-013 O-04). Relocated here from
-/// `replay::identity`, whose own module doc named this as a provisional,
-/// not-yet-canonical home: ADR-011 `:588` places the wire node id in the `F`
-/// foundation layer, alongside `digest` and before `wire_format`, not in the
-/// layer-6 `replay` facade -- `replay` (layer 6) importing `digest` (layer
-/// F) is the permitted direction; `package` (layer 4) or `library`
-/// (layer 3) importing `replay` would not be, which is exactly why
-/// `library::PackageNodeKey` (ADR-013 T-3) needs this type here rather than
-/// in `replay`. A wire-read node id stays a `WireNodeId`, never a
-/// `NodeKey`, until a lookup in an already-checked package resolves it, at
-/// E4 (the dependency's own checked package) or E9 (`replay`'s recompiled
-/// package) -- never by a conversion function, and none is defined here.
-///
-/// quire:canonical
-#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct WireNodeId([u8; 32]);
-
-impl WireNodeId {
-    /// Wrap an already-known wire node-id digest. Unlike the kernel
-    /// `NodeKey` constructor, this carries no "only `check` calls this"
-    /// restriction: a `WireNodeId` is exactly the unchecked wire spelling,
-    /// never a claim that the id resolves to a real node.
-    pub fn from_digest(digest: [u8; 32]) -> Self {
-        Self(digest)
-    }
-
-    /// Parse 64 lowercase hexadecimal digits, exactly as a wire node id
-    /// travels (a v2 node reference's `{domain, digest}` object's `digest`
-    /// member). Needed by `library::package_identity` to read
-    /// a wire node id out of an identity preimage without ever constructing
-    /// a `NodeKey` from it (R-10).
-    pub fn from_hex(digest: &str) -> Option<Self> {
-        parse_lower_hex32(digest).map(Self)
-    }
-
-    /// The raw digest bytes.
-    pub fn as_bytes(&self) -> &[u8; 32] {
-        &self.0
-    }
-}
-
-impl fmt::Display for WireNodeId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.iter().try_for_each(|byte| write!(f, "{byte:02x}"))
-    }
-}
-
-impl fmt::Debug for WireNodeId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "WireNodeId({self})")
     }
 }
 
