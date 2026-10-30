@@ -1340,7 +1340,7 @@ impl Scope {
     }
 
     /// The package's admitted enum declarations, in declaration order.
-    pub(crate) fn enums(&self) -> &[EnumBinding] {
+    pub fn enums(&self) -> &[EnumBinding] {
         &self.enums
     }
 
