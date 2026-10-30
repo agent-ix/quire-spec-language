@@ -1355,17 +1355,8 @@ fn validate_command_details(
                 let Node::Object(members) = node.node() else {
                     return false;
                 };
-                members.len() == 4
+                members.len() == 1
                     && matches!(node.get("identity").map(|value| value.node()), Some(Node::String(_)))
-                    && matches!(node.get("version").map(|value| value.node()), Some(Node::String(_)))
-                    && node.get("digest_domain").is_some_and(|value| {
-                        matches!(value.node(), Node::String(domain) if domain == "sha256-jcs")
-                    })
-                    && node
-                        .get("digest")
-                        .is_some_and(|value| {
-                            matches!(value.node(), Node::String(digest) if digest.len() == 64 && digest.bytes().all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase()))
-                        })
             };
             match cause {
                 "foreign-model-selection" => {
