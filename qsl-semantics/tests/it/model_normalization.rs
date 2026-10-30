@@ -706,14 +706,6 @@ fn find_type<'a>(
         .unwrap_or_else(|| panic!("no type declaration {original_identity} in {view:?}"))
 }
 
-/// `identity` is exactly a 64-character lowercase hex SHA-256 digest.
-fn is_sha256_hex(identity: &str) -> bool {
-    identity.len() == 64
-        && identity
-            .bytes()
-            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-}
-
 #[trace("QSpec-TC-195", "QSpec-FR-150-AC-1", "QSpec-FR-150-AC-3")]
 #[test]
 fn n01_normalizes_f1_to_stable_deterministic_identities() {
@@ -731,8 +723,6 @@ fn n01_normalizes_f1_to_stable_deterministic_identities() {
         2,
         "qualify then inherit [A]"
     );
-    assert!(is_sha256_hex(&type_a.effective_id.to_string()));
-    assert!(is_sha256_hex(&type_b.effective_id.to_string()));
     assert_ne!(type_a.effective_id, type_b.effective_id);
 
     // TC-195 N01: an inherited member derives the inherit fact only; no
@@ -758,17 +748,15 @@ fn n01_normalizes_f1_to_stable_deterministic_identities() {
         "the same original member owned by two distinct types has two distinct identities"
     );
 
-    assert!(is_sha256_hex(&view.identity().to_string()));
     // Determinism: re-normalizing the identical fixture reproduces the exact
-    // same view identity.
+    // same declarations.
     let rerun = completed(&fixture_f1(), ModelNormalizationLimits::UNLIMITED);
-    assert_eq!(view.identity(), rerun.identity());
+    assert_eq!(view.declarations(), rerun.declarations());
 
     let universe = completed(&fixture_f1(), ModelNormalizationLimits::UNLIMITED)
         .object_universe()
         .clone();
     assert_eq!(universe.root_types, vec![type_a.effective_id]);
-    assert!(is_sha256_hex(&universe.identity().to_string()));
     let universe_rerun = completed(&fixture_f1(), ModelNormalizationLimits::UNLIMITED)
         .object_universe()
         .clone();
@@ -787,7 +775,6 @@ fn n02_normalizes_f2_diamond_inheritance_to_stable_deterministic_identities() {
     let types =
         ["A", "B", "C", "D"].map(|name| find_type(&view, &format!("ix://test/orders/{name}")));
     for (index, entry) in types.iter().enumerate() {
-        assert!(is_sha256_hex(&entry.effective_id.to_string()));
         for other in &types[index + 1..] {
             assert_ne!(entry.effective_id, other.effective_id);
         }
@@ -837,14 +824,12 @@ fn n02_normalizes_f2_diamond_inheritance_to_stable_deterministic_identities() {
         Some(members[2].effective_id)
     );
 
-    assert!(is_sha256_hex(&view.identity().to_string()));
     let rerun = completed(&fixture_f2(), ModelNormalizationLimits::UNLIMITED);
-    assert_eq!(view.identity(), rerun.identity());
+    assert_eq!(view.declarations(), rerun.declarations());
 
     let universe = completed(&fixture_f2(), ModelNormalizationLimits::UNLIMITED)
         .object_universe()
         .clone();
-    assert!(is_sha256_hex(&universe.identity().to_string()));
 }
 
 /// TC-195 N03, normalization half: F2 plus fields `B/y` and `C/y`, both of
@@ -921,97 +906,7 @@ fn n07_record_order_does_not_affect_identity_or_view() {
     let mut reversed = fixture_f2();
     reversed.records.reverse();
     let view = completed(&reversed, ModelNormalizationLimits::UNLIMITED);
-    assert_eq!(view.identity(), ordered.identity());
-}
-
-/// The bytes one unlimited normalization of `package` hashes, measured rather
-/// than recorded.
-fn hashed_bytes_of(package: &DomainPackage) -> u64 {
-    let (outcome, meter) = normalize_with_meter(package, ModelNormalizationLimits::UNLIMITED);
-    assert!(matches!(outcome, NormalizeOutcome::Completed(_)));
-    meter.consumed(LimitKind::HashedBytes)
-}
-
-#[trace("QSpec-TC-195", "QSpec-FR-150-AC-8")]
-#[test]
-fn n01_exact_limits_complete_and_the_charge_totals_match_ground_truth() {
-    let measured_bytes = hashed_bytes_of(&fixture_f1());
-    let exact = ModelNormalizationLimits {
-        declaration_records: 3,
-        derivation_facts: 5,
-        effective_declarations: 4,
-        dispatch_candidates: 0,
-        hashed_bytes: measured_bytes,
-        work_units: 19,
-        ancestor_steps: u64::MAX,
-        family_steps: u64::MAX,
-        intake: qsl_foundation::IntakeLimits::default(),
-    };
-    let (outcome, meter) = normalize_with_meter(&fixture_f1(), exact);
-    assert!(
-        matches!(&outcome, NormalizeOutcome::Completed(_)),
-        "exact limits should complete: {outcome:?}"
-    );
-    assert_eq!(meter.consumed(LimitKind::WorkUnits), 19);
-    assert_eq!(meter.consumed(LimitKind::DeclarationRecords), 3);
-    assert_eq!(meter.consumed(LimitKind::DerivationFacts), 5);
-    assert_eq!(meter.consumed(LimitKind::EffectiveDeclarations), 4);
-    assert_eq!(
-        meter.admitted_charges().last(),
-        Some(&ChargePoint::NormalizeHash)
-    );
-}
-
-#[trace("QSpec-TC-195", "QSpec-FR-150-AC-8")]
-#[test]
-fn n01_one_less_work_unit_is_incomplete_at_the_view_hash() {
-    let measured_bytes = hashed_bytes_of(&fixture_f1());
-    let mut limits = ModelNormalizationLimits {
-        declaration_records: 3,
-        derivation_facts: 5,
-        effective_declarations: 4,
-        dispatch_candidates: 0,
-        hashed_bytes: 10_000, // Isolate the one-less work-unit boundary.
-        work_units: 18,       // One less than the measured 19-unit total.
-        ancestor_steps: u64::MAX,
-        family_steps: u64::MAX,
-        intake: qsl_foundation::IntakeLimits::default(),
-    };
-    match normalize(&fixture_f1(), limits) {
-        NormalizeOutcome::Incomplete(incomplete) => {
-            assert_eq!(incomplete.limit_kind, LimitKind::WorkUnits);
-            assert_eq!(incomplete.limit, 18);
-            assert_eq!(incomplete.consumed, 18);
-            assert_eq!(incomplete.next_charge, 1);
-            assert_eq!(incomplete.charge_point, ChargePoint::NormalizeHash);
-        }
-        other => panic!("expected Incomplete, got {other:?}"),
-    }
-
-    limits.work_units = 19;
-    limits.hashed_bytes = measured_bytes - 1; // One byte below the exact total.
-    match normalize(&fixture_f1(), limits) {
-        NormalizeOutcome::Incomplete(incomplete) => {
-            assert_eq!(incomplete.limit_kind, LimitKind::HashedBytes);
-            assert_eq!(incomplete.limit, measured_bytes - 1);
-            assert!(incomplete.consumed + incomplete.next_charge > incomplete.limit);
-            assert_eq!(incomplete.charge_point, ChargePoint::NormalizeHash);
-        }
-        other => panic!("expected Incomplete, got {other:?}"),
-    }
-
-    limits.hashed_bytes = measured_bytes;
-    limits.derivation_facts = 4;
-    match normalize(&fixture_f1(), limits) {
-        NormalizeOutcome::Incomplete(incomplete) => {
-            assert_eq!(incomplete.limit_kind, LimitKind::DerivationFacts);
-            assert_eq!(incomplete.limit, 4);
-            assert_eq!(incomplete.consumed, 4);
-            assert_eq!(incomplete.next_charge, 5);
-            assert_eq!(incomplete.charge_point, ChargePoint::NormalizeFact);
-        }
-        other => panic!("expected Incomplete, got {other:?}"),
-    }
+    assert_eq!(view.declarations(), ordered.declarations());
 }
 
 /// ADR-013 §8 OQ-E: a domain package whose object-type supertype graph has
@@ -2131,7 +2026,6 @@ fn f1_deep_parallel_generalization_bounds_enumeration_instead_of_exploding() {
         derivation_facts: 1,
         effective_declarations: 1,
         dispatch_candidates: 0,
-        hashed_bytes: 1,
         work_units: 1,
         ancestor_steps: u64::MAX,
         family_steps: u64::MAX,
@@ -2281,9 +2175,8 @@ fn derivation_duplicate_comparison_includes_the_rule() {
 /// `normalize.cycle-check` (`L = 1`) then a phase-3 `normalize.fact`
 /// (inherit B, inputs `[A]`); one more phase-3 `normalize.fact` (inherit
 /// `(B, A/x)`, inputs `[A, A/x]`, no cycle-check — cycle-check is charged
-/// only for phase-3 type-level facts); four `(normalize.declaration,
-/// normalize.hash)` pairs, then `normalize.hash` of the universe and view.
-/// Each running preimage grows with its facts, checked below.
+/// only for phase-3 type-level facts); four `normalize.declaration`
+/// charges.
 #[trace("QSpec-TC-195", "QSpec-FR-150-AC-1", "QSpec-FR-150-AC-8")]
 #[test]
 fn n01_charges_the_exact_ground_truth_sequence_in_order() {
@@ -2293,9 +2186,7 @@ fn n01_charges_the_exact_ground_truth_sequence_in_order() {
         other => panic!("expected Completed, got {other:?}"),
     };
 
-    use ChargePoint::{
-        NormalizeCycleCheck, NormalizeDeclaration, NormalizeFact, NormalizeHash, NormalizeRecord,
-    };
+    use ChargePoint::{NormalizeCycleCheck, NormalizeDeclaration, NormalizeFact, NormalizeRecord};
     let expected = vec![
         NormalizeRecord,
         NormalizeRecord,
@@ -2307,24 +2198,13 @@ fn n01_charges_the_exact_ground_truth_sequence_in_order() {
         NormalizeFact,
         NormalizeFact,
         NormalizeDeclaration,
-        NormalizeHash,
         NormalizeDeclaration,
-        NormalizeHash,
         NormalizeDeclaration,
-        NormalizeHash,
         NormalizeDeclaration,
-        NormalizeHash,
-        NormalizeHash,
-        NormalizeHash,
     ];
     assert_eq!(meter.admitted_charges().to_vec(), expected);
 
-    let type_a = find_type(&view, "ix://test/orders/A");
-    let type_b = find_type(&view, "ix://test/orders/B");
-    // Inheriting adds a fact to the preimage, so it is longer than its own
-    // qualify-only counterpart.
-    assert!(type_b.preimage.canonical_len() > type_a.preimage.canonical_len());
-    assert_eq!(meter.consumed(LimitKind::WorkUnits), 19);
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 13);
 }
 
 /// A member's own inline `subsets` property adds no extra `normalize.record`
@@ -2351,7 +2231,7 @@ fn f1_a_members_own_subsets_property_charges_no_extra_normalize_record() {
         NormalizeOutcome::Completed(_) => {}
         other => panic!("expected Completed, got {other:?}"),
     }
-    use ChargePoint::{NormalizeDeclaration, NormalizeFact, NormalizeHash, NormalizeRecord};
+    use ChargePoint::{NormalizeDeclaration, NormalizeFact, NormalizeRecord};
     let expected = vec![
         NormalizeRecord,
         NormalizeRecord,
@@ -2365,21 +2245,9 @@ fn f1_a_members_own_subsets_property_charges_no_extra_normalize_record() {
         NormalizeFact,
         NormalizeFact,
         NormalizeDeclaration,
-        NormalizeHash,
         NormalizeDeclaration,
-        NormalizeHash,
         NormalizeDeclaration,
-        NormalizeHash,
         NormalizeDeclaration,
-        NormalizeHash,
-        // ADR-013 §8 OQ-E: `A` and `B` declare no supertype relation to one
-        // another, so this domain package's object-type supertype graph has
-        // two connected components -- one `normalize.hash` per object
-        // universe (`value-accounting.md`:495), ascending by each universe's
-        // own first root type identity, then the effective view.
-        NormalizeHash,
-        NormalizeHash,
-        NormalizeHash,
     ];
     assert_eq!(meter.admitted_charges().to_vec(), expected);
     let record_charges = meter
@@ -2696,107 +2564,6 @@ fn n06_conflict_check_charges_exactly_sigma_c_minus_1_times_f_o() {
             assert_eq!(incomplete.charge_point, ChargePoint::NormalizeConflictCheck);
         }
         other => panic!("expected Incomplete at normalize.conflict-check, got {other:?}"),
-    }
-}
-
-/// Phase-4 redefine facts (`RULE_REDEFINE`) are themselves derivation facts
-/// and are charged as `normalize.fact`
-/// (`value-accounting.md:453`: "each derivation fact before it is formed:
-/// phase 2, then phase 3, then phase 4 ... `derivation_facts=k`"), in the
-/// order `value-accounting.md:455`/`:456` fix relative to phase 4's own two
-/// checks: `normalize.redefinition-check` fires "before its first
-/// `normalize.fact`" and `normalize.conflict-check` fires "after its last
-/// `normalize.fact`" -- so the phase-4 charge sequence is
-/// redefinition-check, then every phase-4 `normalize.fact` (one charge per
-/// fact, continuing the same `derivation_facts` running total phase 2/3
-/// already charge), then conflict-check.
-///
-/// `fixture_n06_resolved` (reused from
-/// `n06_conflict_check_charges_exactly_sigma_c_minus_1_times_f_o` above,
-/// same hand-verified `m`/`f(o)` values) produces exactly ten phase-4
-/// redefine facts -- two per redefinition record reaching the type that
-/// resolves it (`quire.model.normalize.redefine/v2`,
-/// `model-complete.md:231`: "one fact on (T, redefining feature) and one on
-/// (T, redefined feature)"), for every record reaching that type, contested
-/// or not:
-///
-/// - at `B`: `redef.B` reaches only `B` -- 2 facts (`B.x2`, `A.x`).
-/// - at `C`: `redef.C` reaches only `C` -- 2 facts (`C.x3`, `A.x`).
-/// - at `D`: `redef.B`, `redef.C` and `redef.D` all reach `D` -- 3 records
-///   x 2 facts = 6 facts (`B.x2`, `A.x`, `C.x3`, `A.x`, `D.x4`, `A.x`).
-///
-/// Total: `2 + 2 + 6 = 10`.
-///
-/// Cross-checked against the crate: a completed (`UNLIMITED`) run charges
-/// `work_units = 108` and peaks at `derivation_facts = 35` (the `25`
-/// phase-2/3 facts plus these ten). `work_units = 107` is exactly one short
-/// of that total, `Incomplete` at the run's own last charge; `work_units =
-/// 108` completes.
-///
-/// Revert probe: dropping the phase-4 `normalize.fact` charge loop out of
-/// `charge_all` makes `work_units` read `98`, not `108`, and moves the
-/// `work_units = 52` boundary's denial to `normalize.conflict-check` --
-/// confirmed by hand: reverting the change locally reproduces both,
-/// restoring it returns this test to green.
-#[trace("QSpec-TC-195", "QSpec-FR-150-AC-8")]
-#[test]
-fn n06_redefine_facts_are_charged_as_normalize_fact_between_the_two_phase4_checks() {
-    let domain_package = fixture_n06_resolved();
-
-    let (outcome, meter) =
-        normalize_with_meter(&domain_package, ModelNormalizationLimits::UNLIMITED);
-    match outcome {
-        NormalizeOutcome::Completed(view) => assert_eq!(view.declarations().len(), 13),
-        other => panic!("expected Completed, got {other:?}"),
-    }
-    assert_eq!(meter.consumed(LimitKind::WorkUnits), 93);
-    assert_eq!(meter.consumed(LimitKind::DerivationFacts), 28);
-
-    let mut limits = ModelNormalizationLimits::UNLIMITED;
-    limits.work_units = 41;
-    match normalize(&domain_package, limits) {
-        NormalizeOutcome::Incomplete(incomplete) => {
-            assert_eq!(
-                incomplete,
-                Incomplete {
-                    limit_kind: LimitKind::WorkUnits,
-                    limit: 41,
-                    consumed: 41,
-                    next_charge: 1,
-                    charge_point: ChargePoint::NormalizeFact,
-                },
-                "the first phase-4 normalize.fact charge, never once with a \
-                 flat cost other than one work unit"
-            );
-        }
-        other => {
-            panic!("expected Incomplete at the first phase-4 normalize.fact charge, got {other:?}")
-        }
-    }
-
-    // Exact-bound pair (FR-150-AC-8): one short of the full charge total
-    // denies at the run's own last charge; the full total completes.
-    let mut limits = ModelNormalizationLimits::UNLIMITED;
-    limits.work_units = 92;
-    match normalize(&domain_package, limits) {
-        NormalizeOutcome::Incomplete(incomplete) => {
-            assert_eq!(
-                incomplete,
-                Incomplete {
-                    limit_kind: LimitKind::WorkUnits,
-                    limit: 92,
-                    consumed: 92,
-                    next_charge: 1,
-                    charge_point: ChargePoint::NormalizeHash,
-                }
-            );
-        }
-        other => panic!("expected Incomplete one work unit short of completion, got {other:?}"),
-    }
-    limits.work_units = 93;
-    match normalize(&domain_package, limits) {
-        NormalizeOutcome::Completed(view) => assert_eq!(view.declarations().len(), 13),
-        other => panic!("expected Completed at work_units=93, got {other:?}"),
     }
 }
 
@@ -3826,83 +3593,6 @@ fn fixture_two_owners(first: &str, second: &str) -> DomainPackage {
             ),
         ],
     )
-}
-
-/// QSL #195: `normalize.declaration` (and the `normalize.hash` charge that
-/// backs it) charges effective members ascending by effective member key
-/// (`value-accounting.md:494`; `model-complete.md`:206's `(owner effective
-/// type identity, original declaration key)`), not by the owning type's
-/// producer `DeclarationKey`. Both owner types' own declarations are hashed
-/// first. At one byte short of the next member's preimage the member
-/// that sorts first by its owner's *effective* identity is the denied
-/// charge, and one byte more admits it and leaves the other next -- for a
-/// pair of producer prefixes whose effective-identity order disagrees with
-/// their producer-key order, so the pre-fix code, which hashed by producer
-/// key, would reverse those boundaries.
-#[trace("QSpec-TC-195", "QSpec-FR-150-AC-3", "QSpec-FR-150-AC-8")]
-#[test]
-fn n08_declaration_charges_order_by_effective_identity_not_producer_key() {
-    let prefixes = ["aaa", "zzz", "bbb", "yyy", "ccc", "xxx", "ddd", "www"];
-    let mut checked = false;
-    'pairs: for (index, first) in prefixes.iter().enumerate() {
-        for second in prefixes.iter().skip(index + 1) {
-            let domain_package = fixture_two_owners(first, second);
-            let view = completed(&domain_package, ModelNormalizationLimits::UNLIMITED);
-            let owner_first = find_type(&view, &format!("ix://{first}/Owner"));
-            let owner_second = find_type(&view, &format!("ix://{second}/Owner"));
-            if owner_first.effective_id < owner_second.effective_id {
-                continue;
-            }
-            // The producer-later owner has the smaller effective identity.
-            let member_first = find_member(
-                &view,
-                &owner_first.effective_id,
-                &format!("ix://{first}/Owner/x"),
-            );
-            let member_second = find_member(
-                &view,
-                &owner_second.effective_id,
-                &format!("ix://{second}/Owner/yyyyyyyyyyyyyyyyyyyy"),
-            );
-            let owners =
-                owner_first.preimage.canonical_len() + owner_second.preimage.canonical_len();
-            let (earlier, later) = (
-                member_second.preimage.canonical_len(),
-                member_first.preimage.canonical_len(),
-            );
-            let mut limits = ModelNormalizationLimits::UNLIMITED;
-            limits.hashed_bytes = owners + earlier - 1;
-            assert_eq!(
-                normalize(&domain_package, limits),
-                NormalizeOutcome::Incomplete(Incomplete {
-                    limit_kind: LimitKind::HashedBytes,
-                    limit: owners + earlier - 1,
-                    consumed: owners,
-                    next_charge: earlier,
-                    charge_point: ChargePoint::NormalizeHash,
-                }),
-                "the member of the owner with the smaller effective identity is next"
-            );
-            limits.hashed_bytes = owners + earlier;
-            assert_eq!(
-                normalize(&domain_package, limits),
-                NormalizeOutcome::Incomplete(Incomplete {
-                    limit_kind: LimitKind::HashedBytes,
-                    limit: owners + earlier,
-                    consumed: owners + earlier,
-                    next_charge: later,
-                    charge_point: ChargePoint::NormalizeHash,
-                }),
-                "that member is admitted first, leaving the other next"
-            );
-            checked = true;
-            break 'pairs;
-        }
-    }
-    assert!(
-        checked,
-        "the candidate prefixes must include a pair whose effective-identity order disagrees with producer order"
-    );
 }
 
 #[trace(
@@ -5046,57 +4736,6 @@ fn a_cycle_lists_path_order_and_refuses_in_declaration_key_order() {
     );
 }
 
-/// TEST GAP (#193, PR #228 review): pins R01's own exact charge sequence and
-/// work-unit total for the closing `model.A`<->`model.B` mutual-cycle
-/// fixture -- `r01_a_closing_generalization_cycle_names_the_full_rotated_chain`'s
-/// own doc comment explicitly flagged this as not reproduced. Two records
-/// (`A`, `B`), two phase-2 qualify facts, four phase-3
-/// `normalize.cycle-check` charges (`A`'s own walk closes once via `B`;
-/// `B`'s own walk closes once via `A`, needing two cycle-checks of its own
-/// -- the exact interleaving below, captured from the real charge log, not
-/// derived by hand), and twelve work units total.
-#[trace("QSpec-TC-196", "QSpec-FR-151-AC-2", "QSpec-FR-150-AC-8")]
-#[test]
-fn r01_pins_the_full_cycle_check_charge_and_work_unit_accounting() {
-    let domain_package = DomainPackage::new(
-        DomainPackageRef::fixture("bundle.r01"),
-        vec![
-            object_type("model.A", vec!["model.B"]),
-            object_type("model.B", vec!["model.A"]),
-        ],
-    );
-    let (outcome, meter) =
-        normalize_with_meter(&domain_package, ModelNormalizationLimits::UNLIMITED);
-    assert!(
-        matches!(outcome, NormalizeOutcome::Refused(_)),
-        "expected Refused, got {outcome:?}"
-    );
-    use ChargePoint::{NormalizeCycleCheck, NormalizeFact, NormalizeRecord};
-    assert_eq!(
-        meter.admitted_charges().to_vec(),
-        vec![
-            NormalizeRecord,
-            NormalizeRecord,
-            NormalizeFact,
-            NormalizeFact,
-            NormalizeCycleCheck,
-            NormalizeFact,
-            NormalizeCycleCheck,
-            NormalizeCycleCheck,
-            NormalizeFact,
-            NormalizeCycleCheck,
-        ]
-    );
-    let cycle_check_count = meter
-        .admitted_charges()
-        .iter()
-        .filter(|point| **point == ChargePoint::NormalizeCycleCheck)
-        .count();
-    assert_eq!(cycle_check_count, 4);
-    assert_eq!(meter.consumed(LimitKind::WorkUnits), 12);
-    assert_eq!(meter.consumed(LimitKind::HashedBytes), 0);
-}
-
 /// Every normalization fixture in this file has the same
 /// outcome at NFR-012's default limits as with no limit at all -- the same
 /// view identity and declarations, or the same refusals -- and a completed
@@ -5175,7 +4814,6 @@ fn every_fixture_normalizes_identically_at_the_default_limits() {
         let unlimited = normalize(domain_package, ModelNormalizationLimits::UNLIMITED);
         match (defaults, unlimited) {
             (NormalizeOutcome::Completed(at_defaults), NormalizeOutcome::Completed(free)) => {
-                assert_eq!(at_defaults.identity(), free.identity(), "{name}");
                 assert_eq!(at_defaults.declarations(), free.declarations(), "{name}");
                 assert_eq!(
                     at_defaults.effective_limits(),

@@ -374,7 +374,8 @@ fn finite_object_population_requires_explicit_closure() {
     let binding = admitted_binding(&view, &document);
     let a = type_id(&view, "model.A");
     let b = type_id(&view, "model.B");
-    let universe = view.object_universe()
+    let universe = view
+        .object_universe()
         .identity()
         .expect("the universe has a root type");
     let expected: BTreeSet<_> = [
@@ -436,7 +437,8 @@ fn finite_object_population_requires_explicit_closure() {
 fn l01_all_instances_selects_subtype_population_once() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
-    let universe = view_of(&domain_package).object_universe()
+    let universe = view_of(&domain_package)
+        .object_universe()
         .identity()
         .expect("the universe has a root type");
     let a = type_id(&view, "model.A");
@@ -996,7 +998,8 @@ fn admitted_binding(view: &EffectiveView, document: &PopulationDocument) -> Popu
 fn l03_lookup_undefined_mode() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
-    let universe = view_of(&domain_package).object_universe()
+    let universe = view_of(&domain_package)
+        .object_universe()
         .identity()
         .expect("the universe has a root type");
     let a = type_id(&view, "model.A");
@@ -1055,7 +1058,8 @@ fn l03_lookup_undefined_mode() {
 fn l03_lookup_empty_mode() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
-    let universe = view_of(&domain_package).object_universe()
+    let universe = view_of(&domain_package)
+        .object_universe()
         .identity()
         .expect("the universe has a root type");
     let a = type_id(&view, "model.A");
@@ -1107,7 +1111,8 @@ fn l03_lookup_empty_mode() {
 fn l03_lookup_refused_mode() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
-    let universe = view_of(&domain_package).object_universe()
+    let universe = view_of(&domain_package)
+        .object_universe()
         .identity()
         .expect("the universe has a root type");
     let a = type_id(&view, "model.A");
@@ -1151,7 +1156,8 @@ fn l03_lookup_refused_mode() {
 fn l03_lookup_refused_mode_malformed_identity_reports_hex_detail() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
-    let universe = view_of(&domain_package).object_universe()
+    let universe = view_of(&domain_package)
+        .object_universe()
         .identity()
         .expect("the universe has a root type");
     let a = type_id(&view, "model.A");
@@ -1196,7 +1202,8 @@ fn l03_lookup_refused_mode_malformed_identity_reports_hex_detail() {
 fn l03_lookup_present_member_found_through_the_raw_bytes_path() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
-    let universe = view_of(&domain_package).object_universe()
+    let universe = view_of(&domain_package)
+        .object_universe()
         .identity()
         .expect("the universe has a root type");
     let a = type_id(&view, "model.A");
@@ -1237,7 +1244,8 @@ fn l03_lookup_present_member_found_through_the_raw_bytes_path() {
 fn l03_lookup_type_mismatch_before_any_charge() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
-    let universe = view_of(&domain_package).object_universe()
+    let universe = view_of(&domain_package)
+        .object_universe()
         .identity()
         .expect("the universe has a root type");
     let a = type_id(&view, "model.A");
@@ -1282,7 +1290,8 @@ fn l04_lookup_foreign_universe_refuses() {
     let binding = admitted_binding(&view, &p1("test/orders"));
 
     let other = fixture_other_universe();
-    let foreign_universe = view_of(&other).object_universe()
+    let foreign_universe = view_of(&other)
+        .object_universe()
         .identity()
         .expect("the universe has a root type");
     assert_ne!(&foreign_universe, binding.universe());
@@ -2422,7 +2431,8 @@ fn invocation_context<'a>(
 fn l07_invocation_admits_a_declared_delete_and_attaches_the_pre_anchor() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
-    let universe = view_of(&domain_package).object_universe()
+    let universe = view_of(&domain_package)
+        .object_universe()
         .identity()
         .expect("the universe has a root type");
     let a = type_id(&view, "model.A");
@@ -3957,9 +3967,13 @@ fn qsl204_admission_reads_the_domain_package_the_view_was_normalized_from() {
         assert_eq!(view.domain_package(), domain_package);
         let binding = admitted_binding(&view, &p1("test/orders"));
         assert_eq!(binding.model_selection(), view.model_selection());
-        assert_eq!(binding.universe(), &view.object_universe()
-        .identity()
-        .expect("the universe has a root type"));
+        assert_eq!(
+            binding.universe(),
+            &view
+                .object_universe()
+                .identity()
+                .expect("the universe has a root type")
+        );
     }
     let forward_root = type_id(&view_of(&forward), "model.A");
     let reversed_root = type_id(&view_of(&reversed), "model.B");
@@ -3972,12 +3986,14 @@ fn qsl204_admission_reads_the_domain_package_the_view_was_normalized_from() {
         vec![reversed_root]
     );
     assert_ne!(
-        view_of(&forward).object_universe()
-        .identity()
-        .expect("the universe has a root type"),
-        view_of(&reversed).object_universe()
-        .identity()
-        .expect("the universe has a root type")
+        view_of(&forward)
+            .object_universe()
+            .identity()
+            .expect("the universe has a root type"),
+        view_of(&reversed)
+            .object_universe()
+            .identity()
+            .expect("the universe has a root type")
     );
 
     let mut cyclic = fixture_f1();
