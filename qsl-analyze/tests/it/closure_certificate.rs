@@ -411,55 +411,6 @@ fn a_proved_invariant_carries_a_certificate_the_core_accepts() {
     );
 }
 
-/// FR-282 package identity is checked before any closure rule: a certificate
-/// from another checked package is stale even when its listed states are
-/// malformed.
-#[trace("TC-525", "TC-1141", "FR-338-AC-11")]
-#[test]
-fn a_certificate_from_another_package_is_stale_before_closure_rules() {
-    let world = world(CONTRACT, &[("c", 0)]);
-    let invariant = world.invariant("always holds(c.value <= 3)", |v| Some(v <= 3));
-    let outcome = invariant.run(&world);
-    let request = invariant.request(&world, UNLIMITED);
-    let mut certificate = certificate(&outcome);
-    let recompiled = package_identity(&invariant.package);
-    let foreign = package_identity(&world.package);
-    assert_ne!(foreign, recompiled);
-    certificate.package_id = foreign;
-    certificate.states.clear();
-
-    assert_eq!(
-        check(&request, &certificate),
-        TemporalCertificateCheck::PackageMismatch {
-            certificate: foreign,
-            recompiled,
-        }
-    );
-
-    let ModelCheckOutcome::Holds { stats, .. } = &outcome else {
-        panic!("the proof outcome holds");
-    };
-    let stale_outcome = ModelCheckOutcome::Holds {
-        certificate: ProofCertificate::Closure(certificate),
-        stats: *stats,
-    };
-    let record = settle_model_check(
-        &stale_outcome,
-        &ModelCheckLimits::default(),
-        &invariant.package_id(&world),
-        &request,
-        &Cancel::new(),
-        |_| panic!("a proof replays nothing"),
-    );
-    assert_eq!(
-        record.value,
-        TerminalValue::Inconclusive(InconclusiveCause::StaleDependency {
-            requested: qsl_replay::StaleIdentity::Package(foreign.record()),
-            recompiled: qsl_replay::StaleIdentity::Package(recompiled.record()),
-        })
-    );
-}
-
 /// FR-338's rejected vectors on the two-counter subject: the certificate
 /// with model state (1, 0) removed for instance `a` is rejected
 /// `SuccessorMissing` at that product state, and with the initial (0, 0)
@@ -848,15 +799,6 @@ fn a_proof_settles_certified_only_when_its_certificate_is_accepted() {
             SettlementBasis::ClosedScope,
             Execution::Completed
         )
-    );
-
-    let elsewhere = DigestRecord::mint(DigestDomain::PackageSemanticV2, [9; 32]);
-    assert_eq!(
-        settle_at(&outcome, &elsewhere, &Cancel::new()).value,
-        TerminalValue::Inconclusive(InconclusiveCause::StaleDependency {
-            requested: qsl_replay::StaleIdentity::Package(elsewhere),
-            recompiled: qsl_replay::StaleIdentity::Package(package),
-        })
     );
 
     let ModelCheckOutcome::Holds { certificate, stats } = outcome else {

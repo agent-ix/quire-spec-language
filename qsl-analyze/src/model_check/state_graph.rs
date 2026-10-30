@@ -859,12 +859,11 @@ pub enum StateGraphPipelineRefusal {
 /// Run FR-166–FR-168 and settle every state-graph item instance under FR-169.
 ///
 /// `replay` is called only for evidence rows whose verdict requires replay;
-/// package identity and certificate checks remain in the core settlement map.
+/// certificate checks remain in the core settlement map.
 /// The optional deadlock-freedom result remains on `run` for its own FR-127
 /// settlement path.
 pub fn check_and_settle_state_graph(
     request: StateGraphRequest<'_>,
-    package_id: DigestRecord,
     cancel: &Cancel,
     mut replay: impl FnMut(&StateGraphInstanceOutcome) -> Result<GraphReplayResult, ReplayRefusal>,
 ) -> Result<SettledStateGraphRun, StateGraphPipelineRefusal> {
@@ -898,15 +897,9 @@ pub fn check_and_settle_state_graph(
             instances
                 .iter()
                 .map(|instance| {
-                    settle_state_graph(
-                        instance,
-                        &method,
-                        &package_id,
-                        &subject,
-                        claim,
-                        cancel,
-                        |_| replay(instance),
-                    )
+                    settle_state_graph(instance, &method, &subject, claim, cancel, |_| {
+                        replay(instance)
+                    })
                 })
                 .collect()
         })

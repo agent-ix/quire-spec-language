@@ -220,59 +220,6 @@ fn an_altered_certificate_is_rejected_at_the_rule_the_alteration_breaks() {
     );
 }
 
-/// FR-339-AC-4: the certificate carries the `package_id` of the package EN-1
-/// explored and is accepted. The same certificate with the `package_id` of
-/// the unit whose claim targets `c.versionNumber = 1` is `PackageMismatch`
-/// naming both identities and settles `inconclusive`, `StaleDependency`,
-/// never rejected and never proved; with AC-2's wrong witness as well, no
-/// rule is evaluated, so it is still `PackageMismatch`.
-#[trace("TC-526", "TC-1141", "FR-339-AC-4")]
-#[test]
-fn a_certificate_from_another_package_is_stale_before_any_component_rule() {
-    let (world, certificate, stats) = weak_each_proof();
-    let recompiled = package_id(&world);
-    assert_eq!(certificate.closure.package_id, recompiled);
-    assert_eq!(accepts(&world, &certificate), ACCEPTED);
-
-    let other = config_over(
-        false,
-        EACH,
-        "always eventually holds(c.versionNumber = 1)",
-        (0, 0),
-    );
-    let foreign = package_id(&other);
-    assert_ne!(foreign, recompiled);
-    let mut stale = certificate.clone();
-    stale.closure.package_id = foreign;
-    let mismatch = TemporalCertificateCheck::PackageMismatch {
-        certificate: foreign,
-        recompiled,
-    };
-    assert_eq!(accepts(&world, &stale), mismatch);
-    stale.components[1].witness = weak(1);
-    assert_eq!(accepts(&world, &stale), mismatch);
-
-    let letters = reaches_two(&world);
-    let record = settle_model_check(
-        &ModelCheckOutcome::Holds {
-            certificate: ProofCertificate::Component(stale),
-            stats,
-        },
-        &ModelCheckLimits::default(),
-        &recompiled.record(),
-        &config_request(&world, &letters, UNLIMITED),
-        &Cancel::new(),
-        |_| panic!("a proof replays nothing"),
-    );
-    assert_eq!(
-        record.value,
-        TerminalValue::Inconclusive(InconclusiveCause::StaleDependency {
-            requested: qsl_replay::StaleIdentity::Package(foreign.record()),
-            recompiled: qsl_replay::StaleIdentity::Package(recompiled.record()),
-        })
-    );
-}
-
 /// FR-126-AC-13 (TC-1085): the weak `each` claim, whose second phase finds no
 /// fair accepting cycle, is `Holds` with a component certificate the
 /// checker accepts, and the settlement of that outcome is `proved`,

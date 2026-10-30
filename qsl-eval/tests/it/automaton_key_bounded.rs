@@ -14,7 +14,6 @@ use qsl_eval::automaton::{
     bounded_shape, BoundedKind, BoundedState, BoundedTranslation, KeyRefusal, StateContext,
     TranslationRefusal,
 };
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use quire_exact::{Origin, Role};
 
@@ -47,10 +46,7 @@ fn text(translation: &BoundedTranslation, state: BoundedState) -> String {
 
 /// The context of `clause(_)` as FR-338 spells it.
 fn context() -> String {
-    format!(
-        r#"[[{{"digest":"{}","domain":"quire.checked-semantic-node/v1"}},"temporal","0"],"quire.temporal.event-position.false-extension/v1","origin",[]]"#,
-        "ab".repeat(32)
-    )
+    r#"[[{"ordinal":0,"package":"fixture","path":["[171]"]},"temporal","0"],"quire.temporal.event-position.false-extension/v1","origin",[]]"#.to_owned()
 }
 
 fn key(body: &str) -> String {

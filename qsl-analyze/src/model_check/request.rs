@@ -47,7 +47,7 @@ pub enum RequestRefusal {
 
 /// A model subject with its identity computed once, from which the items of
 /// any number of clauses are written. Building it emits the subject's checked
-/// package for its `package_id`; writing a clause's item does not.
+/// package for its identity; writing a clause's item does not.
 pub struct SubjectContext<'s, 'a> {
     subject: &'s ModelSubject<'a>,
     identity: SubjectIdentity,

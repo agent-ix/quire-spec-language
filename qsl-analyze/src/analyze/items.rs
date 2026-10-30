@@ -6,7 +6,6 @@
 
 use qsl_eval::simulation::model::{ClauseOutcome, DEFAULT_MAX_CLOCKS};
 use qsl_eval::simulation::protocol::ProtocolTransition;
-use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::RequestIndex;
 use qsl_replay::statistical::{settle_statistical, settle_statistical_refusal, SubjectLimits};
 use qsl_replay::{
@@ -65,16 +64,14 @@ const EXPRESSION_FORM: CatalogCode = CatalogCode::new("unsupported_construct", "
 const INVALID_VALUE: CatalogCode = CatalogCode::new("invalid_runtime_input", "invalid-value");
 
 /// An EN-1 item (FR-281 Inputs): the run, the certificate request that
-/// re-admits its subject for the closure checker, the `package_id` the run
-/// checked, and the replay of a counterexample (FR-128), which in production
-/// is `replay_model_trace` over the same source.
+/// re-admits its subject for the closure checker, and the replay of a
+/// counterexample (FR-128), which in production is `replay_model_trace` over
+/// the same source.
 pub struct ModelItem<'a> {
     /// The EN-1 run.
     pub request: ModelCheckRequest<'a>,
     /// The closure checker's request over the same subject and item.
     pub certificate: CertificateRequest<'a>,
-    /// The `package_id` of the package the run checked.
-    pub package_id: DigestRecord,
     /// Replays the run's counterexample.
     pub replay: Box<CounterexampleReplayFn<'a>>,
 }
@@ -96,7 +93,6 @@ pub fn model_item<'a>(index: RequestIndex, item: ModelItem<'a>) -> AnalyzeItem<'
             let ModelItem {
                 request,
                 certificate,
-                package_id,
                 replay,
             } = item;
             let limits = request.limits;
@@ -104,7 +100,6 @@ pub fn model_item<'a>(index: RequestIndex, item: ModelItem<'a>) -> AnalyzeItem<'
                 Ok(outcome) => EngineReport::Model(Box::new(qsl_replay::settle_model_check(
                     &outcome,
                     &limits,
-                    &package_id,
                     &certificate,
                     cancel,
                     replay,
@@ -116,8 +111,7 @@ pub fn model_item<'a>(index: RequestIndex, item: ModelItem<'a>) -> AnalyzeItem<'
 }
 
 /// An EN-1 item over a protocol subject (FR-215): the run, the certificate
-/// request that re-admits its subject for the protocol closure checker, the
-/// `package_id` the run checked, and the replay of a counterexample
+/// request that re-admits its subject for the protocol closure checker, and the replay of a counterexample
 /// (FR-217), which in production is `replay_protocol_trace` over the same
 /// source.
 pub struct ProtocolItem<'a> {
@@ -126,8 +120,6 @@ pub struct ProtocolItem<'a> {
     /// The protocol closure checker's request over the same subject and
     /// item.
     pub certificate: ProtocolCertificateRequest<'a>,
-    /// The `package_id` of the package the run checked.
-    pub package_id: DigestRecord,
     /// Replays the run's counterexample.
     pub replay: Box<ProtocolReplayFn<'a>>,
 }
@@ -152,7 +144,6 @@ pub fn protocol_item<'a>(index: RequestIndex, item: ProtocolItem<'a>) -> Analyze
             let ProtocolItem {
                 request,
                 certificate,
-                package_id,
                 replay,
             } = item;
             let limits = request.limits;
@@ -160,7 +151,6 @@ pub fn protocol_item<'a>(index: RequestIndex, item: ProtocolItem<'a>) -> Analyze
                 Ok(outcome) => EngineReport::Protocol(Box::new(qsl_replay::settle_protocol_check(
                     &outcome,
                     &limits,
-                    &package_id,
                     &certificate,
                     cancel,
                     replay,
@@ -203,7 +193,7 @@ pub fn statistical_item<'a>(
 
 /// An EN-6 item over a timed subject (FR-243): the zone search, the
 /// checker's request that re-admits the subject for FR-245's certificate
-/// check, the `package_id` the run checked, and the replay of a
+/// check, and the replay of a
 /// counterexample (FR-237), which in production is
 /// `replay_timed_counterexample` over the same source.
 pub struct TimedItem<'a, S> {
@@ -213,8 +203,6 @@ pub struct TimedItem<'a, S> {
     pub certificate: ZoneCertificateRequest<'a>,
     /// The checker's budgets.
     pub certificate_limits: CertificateCheckLimits,
-    /// The `package_id` of the package the run checked.
-    pub package_id: DigestRecord,
     /// Replays the run's counterexample.
     pub replay: Box<CounterexampleReplayFn<'a>>,
 }
@@ -237,14 +225,12 @@ pub fn zone_item<'a, S: Clone + Eq + 'a>(
                 request,
                 certificate,
                 certificate_limits,
-                package_id,
                 replay,
             } = item;
             let obligation = request.obligation.clone();
             match check_timed_model(request, cancel) {
                 Ok(outcome) => EngineReport::Zone(Box::new(settle_zone_check(
                     ZoneItem::Outcome(&outcome),
-                    &package_id,
                     cancel,
                     |proof| {
                         check_zone_certificate(

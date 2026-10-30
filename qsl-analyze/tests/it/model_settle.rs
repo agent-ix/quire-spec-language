@@ -893,23 +893,6 @@ fn a_disagreeing_or_refused_replay_never_settles_refuted() {
         TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(Code::StaleDependency))
     );
 
-    let elsewhere = DigestRecord::mint(DigestDomain::PackageSemanticV2, [9; 32]);
-    let stale = settle_model_check(
-        &violated(counterexample(&case)),
-        &ModelCheckLimits::default(),
-        &elsewhere,
-        &case.request(),
-        &Cancel::new(),
-        |payload| replay(&case, payload.clone()),
-    );
-    assert_eq!(
-        stale.value,
-        TerminalValue::Inconclusive(InconclusiveCause::StaleDependency {
-            requested: qsl_replay::StaleIdentity::Package(elsewhere),
-            recompiled: qsl_replay::StaleIdentity::Package(case.package_id),
-        })
-    );
-
     let failed = settle_model_check(
         &violated(counterexample(&case)),
         &ModelCheckLimits::default(),

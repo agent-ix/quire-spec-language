@@ -6,15 +6,15 @@ use num_integer::Integer as _;
 use num_traits::{One, ToPrimitive};
 use quire_exact::{Integer as ExactInteger, Rational};
 
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
-use qsl_package::{emit_checked, CheckedPackage};
+use qsl_package::CheckedPackage;
 use qsl_replay::{
     plan_obligations, AtomId, ClockBindingKey, MonitorAtom, MonitorPlanRefusal, MonitorProgram,
     MonitorSubject, MonitorTarget, SubformulaId, TickInterval, TimedMonitorPlan, TimingObligation,
     TimingObligationSettings,
 };
 use qsl_semantics::check::{CheckedInterval, CheckedTemporalClause, FormulaNode};
+use qsl_semantics::library::LibraryName;
 
 /// The FR-251 default event rate, `one event / microsecond`, expressed per
 /// target unit whose exact duration is `unit_seconds`.
@@ -56,6 +56,7 @@ fn validate_reading_gap(max_reading_gap: u64, width_bits: u32) -> Result<(), Mon
 /// clause in its checked package and a target premise.
 pub fn produce(
     package: &CheckedPackage,
+    library: LibraryName,
     clause: &CheckedTemporalClause,
     target: &MonitorTarget,
     settings: &TimingObligationSettings,
@@ -94,12 +95,10 @@ pub fn produce(
         return Err(MonitorPlanRefusal::InvalidBufferInputs);
     }
 
-    let emission =
-        emit_checked(package).map_err(|_| MonitorPlanRefusal::PackageIdentityUnavailable)?;
     let clause_node = node.identity().clone();
     let subject = MonitorSubject::new(
-        emission.package().package_id(),
-        clause_node,
+        library,
+        clause_node.clone(),
         OccurrenceKey::new(clause_node, node.claim().clone()),
         clause.name(),
     );

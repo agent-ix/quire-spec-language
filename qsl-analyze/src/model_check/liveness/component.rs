@@ -25,8 +25,6 @@ use qsl_replay::{
     Translation,
 };
 
-use crate::model_check::check::certificate_package_id;
-
 /// One binding's product states written as the checker writes them.
 type Refs = Vec<ProductStateRef>;
 
@@ -88,10 +86,7 @@ impl<S: LiveSubject> Run<'_, S> {
         states.sort();
         states.dedup();
         Ok(Ok(ComponentCertificate {
-            closure: ClosureCertificate {
-                package_id: certificate_package_id(self.certify.package)?,
-                states,
-            },
+            closure: ClosureCertificate { states },
             components,
         }))
     }

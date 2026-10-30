@@ -1561,19 +1561,6 @@ struct DeferredLocalAccess {
     shape: Box<WeakAccessShape>,
 }
 
-pub(super) fn certificate_package_id(
-    package: &qsl_package::CheckedPackage,
-) -> Result<qsl_semantics::library::PackageId, ModelCheckRefusal> {
-    package
-        .emitted_package_id()
-        .or_else(|| {
-            qsl_package::emit_checked(package)
-                .ok()
-                .map(|emission| emission.package().package_id())
-        })
-        .ok_or_else(|| fault("a-model-check-certificate-has-an-emitted-package-id"))
-}
-
 impl<S: SubjectSystem> Run<'_, S> {
     fn record_weak_access_classification(&mut self, findings: &[ModelFinding]) -> Step<()> {
         for finding in findings {
@@ -1685,10 +1672,7 @@ impl<S: SubjectSystem> Run<'_, S> {
         }
         states.sort();
         states.dedup();
-        Ok(ClosureCertificate {
-            package_id: certificate_package_id(self.package)?,
-            states,
-        })
+        Ok(ClosureCertificate { states })
     }
 
     fn poll(&self) -> Result<(), Finish> {

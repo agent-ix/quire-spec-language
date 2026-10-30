@@ -110,6 +110,7 @@ fn producer_keeps_checked_formula_atoms_and_converts_intervals_to_ticks() {
     };
     let (plan, obligations) = produce(
         &package,
+        qsl_semantics::library::LibraryName::new("fixture").expect("a library name"),
         clause,
         &target,
         &TimingObligationSettings::default(),
@@ -146,6 +147,7 @@ fn producer_sizes_the_ten_millisecond_past_window_as_twenty_one_events() {
     };
     let (plan, _) = produce(
         &package,
+        qsl_semantics::library::LibraryName::new("fixture").expect("a library name"),
         clause,
         &target,
         &TimingObligationSettings::default(),
@@ -170,6 +172,7 @@ fn producer_converts_the_default_one_per_microsecond_rate_to_target_units() {
     };
     let (plan, _) = produce(
         &package,
+        qsl_semantics::library::LibraryName::new("fixture").expect("a library name"),
         clause,
         &target,
         &TimingObligationSettings::default(),
@@ -195,6 +198,7 @@ fn producer_refuses_a_gap_at_least_one_full_counter_wrap() {
     assert_eq!(
         produce(
             &package,
+            qsl_semantics::library::LibraryName::new("fixture").expect("a library name"),
             clause,
             &target,
             &TimingObligationSettings::default()

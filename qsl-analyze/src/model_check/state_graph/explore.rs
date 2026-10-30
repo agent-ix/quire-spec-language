@@ -515,20 +515,7 @@ fn deadlock_certificate(
         .collect();
     states.sort();
     states.dedup();
-    let package_id = package
-        .emitted_package_id()
-        .or_else(|| {
-            qsl_package::emit_checked(package)
-                .ok()
-                .map(|emission| emission.package().package_id())
-        })
-        .ok_or_else(|| {
-            ModelCheckRefusal::Fault(quire_semantic_value::catalog::InternalFault::new(
-                "state-graph",
-                "a-deadlock-certificate-has-an-emitted-package-id",
-            ))
-        })?;
-    Ok(ClosureCertificate { package_id, states })
+    Ok(ClosureCertificate { states })
 }
 
 impl ExploredStateGraph {
