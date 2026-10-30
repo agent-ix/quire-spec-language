@@ -187,11 +187,11 @@ fn call_site_locates_an_operations_anchor_frame_and_clauses() {
         operation.frame_occurrence,
         OccurrenceKey::new(frame, Origin::new(Role::new("generated"), 0))
     );
-    assert_eq!(operation.obligation_identity.node(), &operation.frame);
-    assert_eq!(operation.obligation_identity.ordinal(), 0);
+    assert_eq!(operation.obligation_identity().node(), &operation.frame);
+    assert_eq!(operation.obligation_identity().ordinal(), 0);
     assert_eq!(
         operation
-            .obligation_identity
+            .obligation_identity()
             .model()
             .map(crate::ModelIdentity::as_str),
         Some(CONFIG_VERSION_PACKAGE_IDENTITY)
@@ -282,8 +282,8 @@ fn call_site_returns_only_the_selected_operations_clauses_in_declaration_order()
     assert_eq!(names, ["ProbeUnchanged"]);
     assert_ne!(attempt.site.frame, probe.site.frame);
     assert_ne!(
-        attempt.site.obligation_identity,
-        probe.site.obligation_identity
+        attempt.site.obligation_identity(),
+        probe.site.obligation_identity()
     );
 }
 
@@ -459,23 +459,23 @@ fn function_site_names_its_function_node_and_declaration_occurrence() {
         p.declaration,
         OccurrenceKey::new(p.function.clone(), Origin::new(Role::new("declaration"), 0))
     );
-    assert_eq!(p.obligation_identity.node(), &p.function);
-    assert_eq!(p.obligation_identity.model(), None);
-    assert_eq!(p.obligation_identity.ordinal(), 0);
+    assert_eq!(p.obligation_identity().node(), &p.function);
+    assert_eq!(p.obligation_identity().model(), None);
+    assert_eq!(p.obligation_identity().ordinal(), 0);
     assert_eq!(
         q.declaration,
         OccurrenceKey::new(q.function.clone(), Origin::new(Role::new("declaration"), 0))
     );
     assert_eq!(p.parameters, q.parameters, "one shared parameter node");
     assert_ne!(p.function, q.function);
-    assert_ne!(p.obligation_identity, q.obligation_identity);
+    assert_ne!(p.obligation_identity(), q.obligation_identity());
     assert_ne!(p.declaration, q.declaration);
 
     let shifted = PQ.replacen("function p", "// a comment\n\n\nfunction p", 1);
     let moved = site(&shifted, "p");
     assert_eq!(moved.function, p.function);
     assert_eq!(moved.declaration, p.declaration);
-    assert_eq!(moved.obligation_identity, p.obligation_identity);
+    assert_eq!(moved.obligation_identity(), p.obligation_identity());
 
     let (unit, document) = two_operation_unit(true);
     let same_identity = locate(
@@ -985,8 +985,8 @@ fn call_site_names_the_declaring_object_of_an_inherited_operation() {
         declared.site.frame_occurrence
     );
     assert_eq!(
-        inherited.site.obligation_identity,
-        declared.site.obligation_identity
+        inherited.site.obligation_identity(),
+        declared.site.obligation_identity()
     );
 }
 

@@ -33,8 +33,7 @@ use crate::execute::{
     callable_parameter_keys, declaration_occurrence, value_parity_obligation,
     value_parity_preimage, ValueParityPreimage,
 };
-use crate::identity::QualifiedName;
-use crate::identity::{ModelIdentity, ObligationIdentity};
+use crate::identity::{ModelIdentity, ObligationIdentity, QualifiedName};
 use crate::spine::{self, CompileRefusal, DependencyInput, DependencyInputRefusal, OperationName};
 use crate::FrameOperation;
 
@@ -161,7 +160,7 @@ pub struct FunctionSite {
     pub declaration: OccurrenceKey,
     /// The function-contract obligation at the declaration occurrence,
     /// issued by this compilation for a consumer to carry unchanged.
-    pub obligation_identity: ObligationIdentity,
+    obligation_identity: ObligationIdentity,
     /// The parameters, in declared order. Each pair is the parameter's
     /// declared name and the `NodeKey` a `CanonicalAssignment::parameter`
     /// or a witness transcript names to bind that parameter's argument --
@@ -185,6 +184,13 @@ pub struct ValueParitySite {
     pub obligation_identity: ObligationIdentity,
 }
 
+impl FunctionSite {
+    /// The QSL-issued function-contract obligation identity for this site.
+    pub fn obligation_identity(&self) -> &ObligationIdentity {
+        &self.obligation_identity
+    }
+}
+
 /// An operation's identities in the compiled package (FR-104, FR-105): the
 /// members a frame counterexample carries (FR-116) and the node and
 /// occurrence each state clause naming the operation is recorded under.
@@ -205,10 +211,17 @@ pub struct OperationSite {
     pub frame_occurrence: OccurrenceKey,
     /// The operation-contract obligation at the frame occurrence, issued
     /// by this compilation for a consumer to carry unchanged.
-    pub obligation_identity: ObligationIdentity,
+    obligation_identity: ObligationIdentity,
     /// Every `pre` and `post` clause of the unit whose operation resolves
     /// to this operation, in declaration order.
     pub clauses: Vec<ClauseSite>,
+}
+
+impl OperationSite {
+    /// The QSL-issued operation-frame obligation identity for this site.
+    pub fn obligation_identity(&self) -> &ObligationIdentity {
+        &self.obligation_identity
+    }
 }
 
 /// A state field's domain in the compiled package (ADR-012 §15.4).
