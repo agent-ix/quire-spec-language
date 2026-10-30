@@ -18,7 +18,6 @@ use quire_eval::Evaluation;
 use quire_eval::FamilyOutcome;
 use quire_exact::{EffectiveId, Presence, ValueType};
 use quire_exact::{Integer, Meter, Outcome, ScalarLimits, Value};
-use quire_exact::{NodeKey, NODE_KEY_DOMAIN};
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::{
     Admission, FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment, TypeEnvironmentLimits,
@@ -96,7 +95,11 @@ pub fn call_chain(functions: usize) -> PackageDeclarations {
         .collect();
     PackageDeclarations {
         functions: declarations,
-        ..PackageDeclarations::new(source(), "qsl-bench", qsl_foundation::IdentityLimits::default())
+        ..PackageDeclarations::new(
+            source(),
+            "qsl-bench",
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
 }
 
@@ -118,7 +121,11 @@ pub fn independent(functions: usize) -> PackageDeclarations {
         .collect();
     PackageDeclarations {
         functions: declarations,
-        ..PackageDeclarations::new(source(), "qsl-bench", qsl_foundation::IdentityLimits::default())
+        ..PackageDeclarations::new(
+            source(),
+            "qsl-bench",
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
 }
 
@@ -132,52 +139,32 @@ pub fn case_name(index: usize) -> String {
 /// # Panics
 ///
 /// Panics when the generated declaration or a member does not admit: a
-/// harness defect, since both are built from their own preimages' keys.
+/// harness defect, since both are built from their own structural keys.
 pub fn enum_binding(members: usize) -> EnumBinding {
-    let owners = OwnerSelection::new([NodeOwner::Definition(OwnerSubject {
+    let owner = NodeOwner::Definition(OwnerSubject {
         authority: "agent-ix".into(),
         identity: "qsl-bench".into(),
-    })]);
+    });
+    let owners = OwnerSelection::new([owner.clone()]);
     let cases: Vec<String> = (0..members).map(case_name).collect();
-    let preimage = EnumDeclarationPreimage::from_json(serde_json::json!({
-        "version": "quire.enum-declaration-node/v1",
-        "owner": {"kind": "definition", "authority": "agent-ix", "identity": "qsl-bench"},
-        "qualified_declaration": ["Bench", "E"],
-        "ordered": true,
-        "members": cases,
-    }))
-    .expect("a well-formed enum declaration preimage");
-    let key = NodeKey::from_digest(
-        preimage
-            .digest(qsl_foundation::IdentityLimits::default())
-            .expect("the preimage encodes"),
-    );
-    let declaration = AdmittedEnumDeclaration::admit(
-        preimage,
-        key,
-        &owners,
-        qsl_foundation::IdentityLimits::default(),
+    let preimage = EnumDeclarationPreimage::new(
+        owner,
+        vec!["Bench".to_owned(), "E".to_owned()],
+        true,
+        cases.clone(),
     )
-    .expect("the declaration admits");
+    .expect("a well-formed enum declaration preimage");
+    let key = preimage.key().expect("the declaration key builds");
+    let declaration =
+        AdmittedEnumDeclaration::admit(preimage, key, &owners).expect("the declaration admits");
     let members = cases
         .iter()
         .map(|case| {
-            let member = EnumMemberPreimage::from_json(serde_json::json!({
-                "version": "quire.enum-member-node/v1",
-                "declaration_node_id": {
-                    "domain": NODE_KEY_DOMAIN,
-                    "digest": declaration.key().to_string(),
-                },
-                "case": case,
-            }))
-            .expect("a well-formed enum member preimage");
-            let key = NodeKey::from_digest(
-                member
-                    .digest(qsl_foundation::IdentityLimits::default())
-                    .expect("the preimage encodes"),
-            );
+            let member = EnumMemberPreimage::new(declaration.key(), case)
+                .expect("a well-formed enum member preimage");
+            let key = member.key().expect("the member key builds");
             declaration
-                .admit_member(&member, key, qsl_foundation::IdentityLimits::default())
+                .admit_member(&member, key)
                 .expect("the member admits")
         })
         .collect();
@@ -216,7 +203,11 @@ pub fn enum_members(functions: usize, binding: &EnumBinding) -> PackageDeclarati
     PackageDeclarations {
         functions: declarations,
         enums: vec![binding.clone()],
-        ..PackageDeclarations::new(source(), "qsl-bench", qsl_foundation::IdentityLimits::default())
+        ..PackageDeclarations::new(
+            source(),
+            "qsl-bench",
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
 }
 
