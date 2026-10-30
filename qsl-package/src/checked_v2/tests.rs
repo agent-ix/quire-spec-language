@@ -1022,7 +1022,7 @@ fn supply_qspec_extension_definitions(
 /// `dependency_reference` callee is admitted when the dependency's admitted
 /// package is supplied under its identity). The package is the published
 /// `positive-*.json` fixture whose name the selection names, itself read
-/// with its own dependencies supplied first.
+/// against its own [`fixture_evidence`].
 fn supply_qspec_dependency_packages(evidence: &mut CheckedPackageEvidence, envelope: &Value) {
     let Some((_, fixtures)) = qspec_v2_fixtures() else {
         return;
@@ -1045,12 +1045,9 @@ fn supply_qspec_dependency_packages(evidence: &mut CheckedPackageEvidence, envel
         else {
             continue;
         };
-        let mut inner = CheckedPackageEvidence::new();
-        supply_qspec_extension_definitions(&mut inner, &library, &[]);
-        for feature in library["lock"]["required_features"].as_array().unwrap() {
-            inner.support_feature(feature.as_str().unwrap());
-        }
-        supply_qspec_dependency_packages(&mut inner, &library);
+        // The dependency is read against its own whole evidence, the
+        // domain packages of its selected models included.
+        let inner = fixture_evidence(&library, &library, &[]);
         let admitted = read_checked_package_v2(
             &fixture_wire_bytes(&library),
             identity(identity_text),
@@ -1120,39 +1117,97 @@ fn fixture_evidence(
         evidence.support_feature(feature.as_str().unwrap());
     }
     supply_qspec_dependency_packages(&mut evidence, envelope);
-    if let Some(directory) = qspec_directory() {
-        let directory = directory.join("proposals/checked-package-v2");
-        if let Some(nodes) = envelope["semantic_graph"]["nodes"].as_array() {
-            for node in nodes {
-                if node["semantic_form"] != "model_root" {
-                    continue;
-                }
-                let Some(identity) = node["owner"]["identity"].as_str() else {
-                    continue;
-                };
-                let entries = std::fs::read_dir(&directory).expect("QSpec proposal directory");
-                for entry in entries {
-                    let path = entry.expect("QSpec directory entry").path();
-                    if !path
-                        .file_name()
-                        .is_some_and(|name| name.to_string_lossy().starts_with("domain-package-"))
-                    {
-                        continue;
-                    }
-                    let document = std::fs::read(&path).expect("QSpec domain document");
-                    let decoded: Value =
-                        serde_json::from_slice(&document).expect("QSpec domain JSON");
-                    if decoded["package"]["identity"].as_str() == Some(identity) {
-                        evidence
-                            .insert_domain_package_document(identity, document)
-                            .expect("unique domain document");
-                        break;
-                    }
-                }
-            }
+    let Some(nodes) = envelope["semantic_graph"]["nodes"].as_array() else {
+        return evidence;
+    };
+    for node in nodes {
+        if node["semantic_form"] != "model_root" {
+            continue;
+        }
+        let Some(identity) = node["owner"]["identity"].as_str() else {
+            continue;
+        };
+        if let Some(document) = selected_domain_document(envelope, identity) {
+            evidence
+                .insert_domain_package_document(identity, document)
+                .expect("unique domain document");
         }
     }
     evidence
+}
+
+/// QSpec TC-233's selected domain document of each published positive
+/// fixture whose model root is owned by an identity that more than one
+/// published `domain-package-*.json` document carries (`acme/orders`): "a
+/// fixture is checked against its own document only".
+const TC_233_SELECTED_DOCUMENTS: &[(&str, &str)] = &[
+    ("positive-all-families.json", "domain-package-acme-orders.json"),
+    ("positive-clause-operations.json", "domain-package-acme-orders.json"),
+    ("positive-dependency-library.json", "domain-package-acme-orders.json"),
+    ("positive-operation-identities.json", "domain-package-acme-orders.json"),
+    ("positive-state-transition.json", "domain-package-acme-orders.json"),
+    ("positive-timed-model-nodes.json", "domain-package-acme-timed-slots.json"),
+    ("positive-tick-timed-model-nodes.json", "domain-package-acme-timed-slots.json"),
+    ("positive-timed-slot-nodes.json", "domain-package-acme-timed-slots.json"),
+    ("positive-timed-clause-nodes.json", "domain-package-acme-timed-clauses.json"),
+];
+
+/// The node ids of `envelope`'s semantic graph, as JSON text.
+fn node_id_set(envelope: &Value) -> std::collections::BTreeSet<String> {
+    envelope["semantic_graph"]["nodes"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|node| node["node_id"].to_string())
+        .collect()
+}
+
+/// The published domain package document `envelope` selects for the model
+/// root owned by `identity`. When one published document carries
+/// `identity`, it is that document. When several do, it is the document
+/// TC-233 names for `envelope`'s base: the listed fixture whose node ids
+/// are nearest `envelope`'s (Jaccard similarity), so a vector mutation of a
+/// published fixture keeps its base's document.
+fn selected_domain_document(envelope: &Value, identity: &str) -> Option<Vec<u8>> {
+    let (fixtures, _) = qspec_v2_fixtures()?;
+    let proposals = fixtures.parent().expect("the proposal directory");
+    let mut candidates = BTreeMap::new();
+    for entry in std::fs::read_dir(proposals).expect("QSpec proposal directory") {
+        let path = entry.expect("QSpec directory entry").path();
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if !name.starts_with("domain-package-") {
+            continue;
+        }
+        let document = std::fs::read(&path).expect("QSpec domain document");
+        let decoded: Value = serde_json::from_slice(&document).expect("QSpec domain JSON");
+        if decoded["package"]["identity"].as_str() == Some(identity) {
+            candidates.insert(name.to_owned(), document);
+        }
+    }
+    if candidates.len() <= 1 {
+        return candidates.into_values().next();
+    }
+    let ids = node_id_set(envelope);
+    let (_, selected) = TC_233_SELECTED_DOCUMENTS
+        .iter()
+        .map(|(fixture, document)| {
+            let base = node_id_set(&read_fixture(&fixtures.join(fixture)));
+            let shared = ids.intersection(&base).count();
+            let union = ids.union(&base).count();
+            ((shared, union), *document)
+        })
+        // Greatest shared / union, compared without division.
+        .max_by(|((a_shared, a_union), _), ((b_shared, b_union), _)| {
+            (a_shared * b_union).cmp(&(b_shared * a_union))
+        })
+        .expect("TC-233 lists fixtures");
+    Some(
+        candidates
+            .remove(selected)
+            .unwrap_or_else(|| panic!("{selected} carries {identity}")),
+    )
 }
 
 /// IR's admitted package for the admitted fixture `envelope`.
@@ -1984,7 +2039,6 @@ fn changed_timed_inputs_rekey_and_read_back_the_mutated_model() {
             continue;
         }
         let Read::Verified {
-            admitted: reread_package,
             timed_models: reread,
             ..
         } = outcome
@@ -2275,10 +2329,12 @@ fn conformance_timed_model_vectors_keep_their_published_refusal_loci() {
                     .as_array_mut()
                     .unwrap()
                     .push(json!({"term": "reference", "target": placeholder.clone()}));
-                root["dependencies"]
-                    .as_array_mut()
-                    .unwrap()
-                    .push(placeholder);
+                // The root's dependencies stay in node-id order, so the
+                // forged row, not an order defect, is the first refusal.
+                let dependencies = root["dependencies"].as_array_mut().unwrap();
+                dependencies.push(placeholder);
+                dependencies
+                    .sort_by_key(|value| node_key_from_json(value).expect("dependency identity"));
             }
             "repeated-clock-place-reference" => {
                 // QSpec FR-322-AC-260, TM-30: the first place's reference
