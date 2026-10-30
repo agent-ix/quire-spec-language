@@ -1927,6 +1927,9 @@ impl PackageDeclarations {
         let source = self.source;
         let package_name = self.package_name;
         let mut type_spans = self.declared_type_spans;
+        for (index, equivalence) in self.dimension_equivalences.iter().enumerate() {
+            type_spans.insert(lowering::equivalence_origin(index), equivalence.span);
+        }
         for refinement in &self.refinements {
             type_spans.insert(
                 refinement_origin(&refinement.form.name.name),
@@ -4843,6 +4846,11 @@ impl PackageDeclarations {
             if let Err(refusal) = lowering.enum_nodes(enum_binding) {
                 refusals.push(refusal);
             }
+        }
+        // FR-094 "Dimension equivalence": one node per admitted equivalence,
+        // whether or not a quantity type names either dimension.
+        if let Err(refusal) = lowering.dimension_equivalence_nodes(&self.dimension_equivalences) {
+            refusals.push(refusal);
         }
         // FR-375: each class catalog, lowered once its protocol clauses'
         // nodes exist; a node no other declaration located takes its one

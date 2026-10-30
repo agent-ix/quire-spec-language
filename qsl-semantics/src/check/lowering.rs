@@ -89,8 +89,8 @@ pub(crate) use hyper::{
 };
 pub(crate) use model::ParentSlotFailure;
 pub(crate) use model::{
-    bound_origin, model_declaration_key, quantity_origin, record_node_key, strictly_below,
-    QuantityKind,
+    bound_origin, equivalence_origin, model_declaration_key, quantity_origin, record_node_key,
+    strictly_below, QuantityKind,
 };
 pub use model::{
     collection_kind, model_root_key, AdmittedModel, AuthoredBound, CollectionShape, ForeignView,
@@ -2530,7 +2530,7 @@ impl<'a> Lowering<'a> {
                 semantic_form: "enum",
                 semantic_type: None,
                 declaration: Some(name),
-                owner: None,
+                owner: Some(Owner::Source(self.owner.clone())),
                 body: BodyTerm::aggregate(Vec::new()),
             },
             Some(NominalPayload::Enum(EnumPayload::of(
