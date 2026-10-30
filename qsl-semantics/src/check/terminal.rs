@@ -267,7 +267,7 @@ impl TerminalNode {
         let mode = TerminalMode::from_wire(mode)?;
         Some(Self {
             node,
-            model: target.0.clone(),
+            model: target.admitted()?.clone(),
             mode,
         })
     }

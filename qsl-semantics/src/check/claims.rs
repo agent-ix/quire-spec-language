@@ -946,7 +946,7 @@ fn unique_direct_narrow(
             graph.node(candidate.clone()).map(|node| node.body()),
             Some(BodyTerm::Application(ApplicationTerm { operation, arguments, .. }))
                 if operation_role(operation.identity()) == OperationRole::Narrow
-                    && matches!(arguments.as_slice(), [MemberTerm::Leaf(LeafTerm::Reference { target })] if target.0 == scalar)
+                    && matches!(arguments.as_slice(), [MemberTerm::Leaf(LeafTerm::Reference { target })] if target.admitted() == Some(&scalar))
         )
     });
     let (node, origin) = matches.next().ok_or(KeyFault::UnkeyableRequirements)?;
