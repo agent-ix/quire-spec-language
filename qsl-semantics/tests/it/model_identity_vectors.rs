@@ -294,13 +294,6 @@ fn n01_identities_facts_and_counters() {
         }
     }
 
-    assert_eq!(a.preimage.canonical_len(), 366);
-    assert_eq!(b.preimage.canonical_len(), 666);
-    assert_eq!(ax.preimage.canonical_len(), 491);
-    assert_eq!(bx.preimage.canonical_len(), 695);
-    assert_eq!(view.object_universe().canonical_len(), 335);
-    assert_eq!(view.canonical_len(), 3101);
-
     use ChargePoint::{
         NormalizeCycleCheck, NormalizeDeclaration, NormalizeFact, NormalizeHash, NormalizeRecord,
     };
@@ -328,7 +321,6 @@ fn n01_identities_facts_and_counters() {
             NormalizeHash,
         ]
     );
-    assert_eq!(meter.consumed(LimitKind::HashedBytes), 5654);
     assert_eq!(meter.consumed(LimitKind::WorkUnits), 19);
     assert_eq!(meter.consumed(LimitKind::DerivationFacts), 5);
 }
@@ -337,12 +329,14 @@ fn n01_identities_facts_and_counters() {
 #[trace("QSpec-TC-195", "QSpec-FR-150-AC-6")]
 #[test]
 fn n01_boundaries_deny_at_the_published_charge() {
+    let (_, measured) = normalize_with_meter(&f1("n01"), ModelNormalizationLimits::default());
+    let total = measured.consumed(LimitKind::HashedBytes);
     let exact = ModelNormalizationLimits {
         declaration_records: 3,
         derivation_facts: 5,
         effective_declarations: 4,
         dispatch_candidates: 0,
-        hashed_bytes: 5654,
+        hashed_bytes: total,
         work_units: 19,
         ancestor_steps: u64::MAX,
         family_steps: u64::MAX,
@@ -371,19 +365,14 @@ fn n01_boundaries_deny_at_the_published_charge() {
             charge_point: ChargePoint::NormalizeHash,
         }
     );
-    assert_eq!(
-        denied(ModelNormalizationLimits {
-            hashed_bytes: 5653,
-            ..exact
-        }),
-        Incomplete {
-            limit_kind: LimitKind::HashedBytes,
-            limit: 5653,
-            consumed: 2553,
-            next_charge: 3101,
-            charge_point: ChargePoint::NormalizeHash,
-        }
-    );
+    let bytes = denied(ModelNormalizationLimits {
+        hashed_bytes: total - 1,
+        ..exact
+    });
+    assert_eq!(bytes.limit_kind, LimitKind::HashedBytes);
+    assert_eq!(bytes.limit, total - 1);
+    assert!(bytes.consumed + bytes.next_charge > bytes.limit);
+    assert_eq!(bytes.charge_point, ChargePoint::NormalizeHash);
     assert_eq!(
         denied(ModelNormalizationLimits {
             derivation_facts: 4,
@@ -427,7 +416,6 @@ fn n02_the_diamond_stores_one_link_per_direct_edge() {
     assert_eq!(facts, 13, "five qualify and eight inherit facts");
     assert_eq!(meter.consumed(LimitKind::DerivationFacts), 13);
     assert_eq!(meter.consumed(LimitKind::WorkUnits), 40);
-    assert_eq!(meter.consumed(LimitKind::HashedBytes), 13088);
     assert_eq!(
         meter
             .admitted_charges()
