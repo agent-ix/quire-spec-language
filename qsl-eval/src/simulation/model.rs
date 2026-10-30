@@ -1080,8 +1080,8 @@ impl<'a> ModelSystem<'a> {
     /// A type this module cannot enumerate is listed as an unbounded domain.
     pub fn domains(&self) -> Vec<(NodeKey, ValueType)> {
         let mut roots = Vec::new();
-        let mut root = |package: &str, path: Vec<&str>, value_type: &ValueType| {
-            let Some(node) = root_node(package, path) else {
+        let mut root = |node: Option<NodeKey>, value_type: &ValueType| {
+            let Some(node) = node else {
                 return;
             };
             let bounded = if matches!(value_type, ValueType::Population(_))
@@ -1118,13 +1118,18 @@ impl<'a> ModelSystem<'a> {
                         continue;
                     }
                     root(
-                        &key.package,
-                        vec!["operation", &key.node, "parameter", name],
+                        root_node(
+                            &key.package,
+                            vec!["operation", &key.node, "parameter", name],
+                        ),
                         value_type,
                     );
                 }
                 if let Some(result) = operation.result() {
-                    root(&key.package, vec!["operation", &key.node, "result"], result);
+                    root(
+                        root_node(&key.package, vec!["operation", &key.node, "result"]),
+                        result,
+                    );
                 }
             }
         }
@@ -1151,7 +1156,10 @@ impl<'a> ModelSystem<'a> {
         // "Initial element count").
         for key in &granted {
             if let Some(value_type) = field_types.get(key) {
-                root(&key.package, vec!["declaration", &key.node], value_type);
+                root(
+                    root_node(&key.package, vec!["declaration", &key.node]),
+                    value_type,
+                );
             }
         }
         let held: BTreeSet<&DeclarationKey> = self
@@ -1165,8 +1173,7 @@ impl<'a> ModelSystem<'a> {
                 .get(population)
                 .map(|keys| u64::try_from(keys.len()).unwrap_or(u64::MAX));
             root(
-                &population.package,
-                vec!["declaration", &population.node],
+                qsl_semantics::model::key::population_node_key(population).ok(),
                 &ValueType::Population(bound),
             );
         }
@@ -1210,8 +1217,8 @@ impl<'a> ModelSystem<'a> {
         let mut unbounded = Vec::new();
         for (_, population) in &admitting {
             if !self.universes.contains_key(*population) {
-                let node = root_node(&population.package, vec!["declaration", &population.node])
-                    .ok_or_else(|| {
+                let node =
+                    qsl_semantics::model::key::population_node_key(population).map_err(|_| {
                         NotSimulated::Extent(ClassifyFailure::Fault(InternalFault::new(
                             "model-simulation",
                             "population-root-node",
