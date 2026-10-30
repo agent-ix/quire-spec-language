@@ -614,9 +614,18 @@ pub fn protocol_domains(
         .slots
         .binders
         .iter()
-        .enumerate()
-        .filter(|(_, binder)| binder.ranged)
-        .filter_map(|(level, binder)| {
+        .filter(|binder| binder.ranged)
+        .filter_map(|binder| {
+            // FR-464: the binder's level is the entry count of the control
+            // that introduces it, and the post-root readable count for
+            // `finish`.
+            let level = binder
+                .node
+                .and_then(|node| protocol.slots.entries.get(&node))
+                .map_or(
+                    protocol.slots.root_out.len(),
+                    std::collections::BTreeSet::len,
+                );
             let key = keys
                 .binders
                 .iter()
