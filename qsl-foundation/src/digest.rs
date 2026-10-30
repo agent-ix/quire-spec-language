@@ -551,7 +551,7 @@ mod digest_record_tests {
             ),
         ];
         assert_eq!(DigestDomain::ALL.len(), 19);
-        assert_eq!(labels.len(), 20);
+        assert_eq!(labels.len(), 19);
         for (domain, expected_label) in labels {
             assert_eq!(domain.as_str(), expected_label, "{domain:?}'s FR-201 label");
             let record = DigestRecord::mint(domain, bytes(0xab));
