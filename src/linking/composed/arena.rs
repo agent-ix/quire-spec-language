@@ -79,9 +79,9 @@ mod tests {
     fn real_parser_arenas_partition_by_declaration_despite_postorder_nodes() {
         // Unresolved selections are syntax inputs; this tests parser ownership.
         let text = r#"language "ix:native" edition "1-draft";
-            profile S = "syntax-only" version "1" digest "unresolved";
-            profile T = "syntax-only" version "1" digest "unresolved";
-            profile P = "syntax-only" version "1" digest "unresolved";
+            profile S = "syntax-only";
+            profile T = "syntax-only";
+            profile P = "syntax-only";
             predicate First using S (): Boolean { true and false }
             temporal Soon using T over (view: M::Node) clock "clock" on origin {
                 eventually[0,1] holds(true and false)

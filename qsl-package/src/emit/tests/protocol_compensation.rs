@@ -11,13 +11,13 @@ fn emitted_compensation_unit() -> (Emission, Value, Read) {
 
 /// The unit with `declarations` before `Flow`, whose `Partial` template's
 /// trigger guard is `guard` and retry relation is `retry`.
-fn unit_text(digest: &str, declarations: &str, guard: &str, retry: &str) -> String {
+fn unit_text(declarations: &str, guard: &str, retry: &str) -> String {
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
          profile p = \"quire.protocol.finite-global/v1\";\n\
          profile t = \"quire.temporal.infinite-trace/v1\";\n\
-         model M = {package:?} version \"1\" digest \"sha256-jcs:{digest}\";\n\
+         model M = {package:?};\n\
          {declarations}\n\
          temporal Due using t over (c: M::Ledger) clock \"steps\" on origin {{ always true }}\n\
          protocol Flow using v over (input: M::Ledger) on origin {{\n\
@@ -59,12 +59,8 @@ fn emitted_unit(
     retry: &str,
 ) -> Result<(Emission, Value, Read), Vec<CheckRefusal>> {
     let document = serde_json::to_vec(&fixture::document()).expect("fixture serializes");
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    let digest = qsl_semantics::model::key::hex(digest);
-    let unit = unit_text(&digest, declarations, guard, retry);
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
+    let unit = unit_text(declarations, guard, retry);
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("unit assembles")
         .check(CheckingLimits::default())?;
@@ -76,7 +72,7 @@ fn emitted_unit(
         evidence.support_feature(feature.as_str().unwrap());
     }
     evidence
-        .insert_domain_package_document(digest.as_str(), document.as_slice())
+        .insert_domain_package_document(package_identity(&document), document.as_slice())
         .expect("fresh evidence key");
     let read = read_v2(
         emission.package.bytes(),

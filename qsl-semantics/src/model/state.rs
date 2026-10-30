@@ -19,6 +19,7 @@ use quire_semantic_value::relationship_extent::RelationshipExtent;
 use crate::model::accounting::ModelNormalizationLimits;
 use crate::model::domain_package::{DomainPackageRecord, DomainPackageRef};
 use crate::model::index::ModelIndex;
+use crate::model::intake::PackageInput;
 use crate::model::normalize::EffectiveView;
 use crate::model::observation::{
     admit_initial_state, model_views, observe_state, state_fields, state_reference,
@@ -334,7 +335,7 @@ impl StateModel {
     pub fn new(
         model_selections: &[DomainPackageRef],
         types: &TypeEnvironment,
-        packages: &BTreeMap<[u8; 32], Vec<u8>>,
+        packages: &PackageInput,
         limits: ModelNormalizationLimits,
     ) -> Result<Self, AdmissionFailure> {
         Ok(Self {
@@ -370,7 +371,7 @@ impl StateModel {
     /// The first [`AdmissionFailure`] in check order.
     pub fn admit_initial(
         &self,
-        provision: &BTreeMap<[u8; 32], Vec<u8>>,
+        provision: &BTreeMap<DocumentRef, Vec<u8>>,
         selected: &DocumentRef,
         limits: ObservationLimits,
     ) -> Result<(ModelState, SelectedAnchor), AdmissionFailure> {

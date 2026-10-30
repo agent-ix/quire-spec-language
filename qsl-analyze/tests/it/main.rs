@@ -35,6 +35,7 @@ mod model_instances;
 mod model_settle;
 mod model_world;
 mod monitor_plan;
+mod operation_contract;
 mod partial_order;
 mod por_world;
 mod prob_world;

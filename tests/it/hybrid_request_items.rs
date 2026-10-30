@@ -7,13 +7,12 @@ use std::collections::BTreeSet;
 
 use ix_trace_rs::trace;
 use qsl_foundation::bound::DomainKind;
-use qsl_foundation::digest::ByteDigest;
 use qsl_foundation::{BackendId, SourceIdentity};
 use qsl_replay::{settle_hybrid_candidates, TerminalValue, UnavailabilityCause};
 use qsl_route::request::items_from_requirements;
 use qsl_route::{
-    BackendDescriptor, Candidate, CandidateOutcome, DynamicsKind, ManifestDigest, Mode,
-    ProviderOrigin, Registry, SolverBounds,
+    BackendDescriptor, Candidate, CandidateOutcome, DynamicsKind, Mode, ProviderOrigin, Registry,
+    SolverBounds,
 };
 use qsl_semantics::check::{Capability, CheckedGraph, PackageDeclarations};
 use quire_semantic_value::checking::CheckingLimits;
@@ -22,7 +21,7 @@ use quire_semantic_value::checking::CheckingLimits;
 /// a model that is not hybrid. `{}` is the model's digest.
 const SOURCE: &str = "language \"ix:native\" edition \"1-draft\";\n\
      profile p = \"quire.temporal.infinite-trace/v1\";\n\
-     model Config = \"example/config-version\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+     model Config = \"example/config-version\";\n\
      hybrid Braking using p {\n\
        mode Moving invariant { v >= 0 and v <= 20 and a >= 1 and a <= 2 }\n\
          flow { v' = -a; a' = 0; t' = 1; }\n\
@@ -37,9 +36,8 @@ const SOURCE: &str = "language \"ix:native\" edition \"1-draft\";\n\
 
 fn graph() -> CheckedGraph {
     let document = crate::support::config_version_spine::spine::DOMAIN_PACKAGE.as_bytes();
-    let packages = qsl_semantics::model::intake::package_input([document]);
-    let digest = packages.keys().next().expect("one package");
-    let text = SOURCE.replace("{}", &qsl_semantics::model::key::hex(digest));
+    let packages = qsl_semantics::model::intake::package_input([document]).unwrap();
+    let text = SOURCE.to_owned();
     let parsed = qsl_cst::parse(
         SourceIdentity::new("agent-ix", "test:hybrid", "fixture", "fixture:1"),
         "program.native",
@@ -66,7 +64,6 @@ fn discrete() -> BackendDescriptor {
     BackendDescriptor::new(
         Candidate::new(BackendId::new("qsl-model-check")),
         ProviderOrigin::Linked,
-        ManifestDigest::from_digest(ByteDigest::of(b"discrete").as_bytes()),
         [(Capability::TemporalSatisfaction, Mode::Bounded)],
         Some(BTreeSet::from([DomainKind::Collection])),
         None,
@@ -78,7 +75,6 @@ fn hybrid() -> BackendDescriptor {
     BackendDescriptor::new(
         Candidate::new(BackendId::new("hybrid-fixture")),
         ProviderOrigin::Linked,
-        ManifestDigest::from_digest(ByteDigest::of(b"hybrid").as_bytes()),
         [(Capability::TemporalSatisfaction, Mode::Bounded)],
         Some(BTreeSet::from([DomainKind::Collection])),
         None,

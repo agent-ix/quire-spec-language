@@ -76,14 +76,8 @@ fn every_value_kind_has_its_exact_tag_and_payload() {
 fn snapshot_metadata_preserves_duplicates_for_the_model_validator() {
     let mut draft = empty();
     draft.models = vec![
-        ModelBinding {
-            model: owner(),
-            digest: zero_digest(),
-        },
-        ModelBinding {
-            model: owner(),
-            digest: zero_digest(),
-        },
+        ModelBinding { model: owner() },
+        ModelBinding { model: owner() },
     ];
     let entry = ObjectEntry {
         key: "".into(),
@@ -114,7 +108,6 @@ fn snapshot_metadata_preserves_duplicates_for_the_model_validator() {
         2
     );
     assert_eq!(encoded["body"]["populations"][0]["objects"][0]["key"], "");
-    assert_eq!(encoded["body"]["models"][0]["digest"], "0".repeat(64));
     assert_eq!(
         encoded["body"]["values"],
         json!([
@@ -129,10 +122,7 @@ fn snapshot_metadata_preserves_duplicates_for_the_model_validator() {
 #[trace("TC-055", "FR-018-AC-1", "FR-018-AC-3", "FR-018-AC-4", "FR-018-AC-5")]
 fn invocation_encodes_every_original_binding_without_claiming_validity() {
     let mut draft = invocation();
-    draft.models.push(ModelBinding {
-        model: owner(),
-        digest: zero_digest(),
-    });
+    draft.models.push(ModelBinding { model: owner() });
     draft.parameters = vec![
         binding("arg_b", 0),
         binding("arg_a", 0),
@@ -146,14 +136,12 @@ fn invocation_encodes_every_original_binding_without_claiming_validity() {
     let artifact = Invocation::new(identity(), draft, ArtifactLimits::default()).unwrap();
     assert_eq!(artifact.draft(), &original);
     assert_eq!(artifact.identity(), &identity());
-    assert_eq!(artifact.digest(), ByteDigest::of(artifact.bytes()));
     assert_eq!(artifact.reference().identity(), artifact.identity());
-    assert_eq!(artifact.reference().digest(), artifact.digest());
     let model = json!({"package":"example/runtime","requirement":"RuntimeModel","revision":1});
     let object = json!({"model":model,"record":"Node","universe":"nodes","key":"new"});
-    let selection = json!({"identity":{"authority":"agent-ix","identity":"snapshot:current","revision_namespace":"git","revision":"1"},"digest":"0".repeat(64)});
+    let selection = json!({"identity":{"authority":"agent-ix","identity":"snapshot:current","revision_namespace":"git","revision":"1"}});
     let expected = json!({
-        "models":[{"model":model,"digest":"0".repeat(64)}],
+        "models":[{"model":model}],
         "context":{"model":model,"name":"Node"},
         "operation":"step","anchor":"step",
         "self_object":{"model":model,"record":"Node","universe":"nodes","key":""},

@@ -12,7 +12,7 @@
 //! here yet.
 
 use crate::composed_domain_models::{
-    admitted_with, admitted_with_bytes, admitted_with_populations, architecture_bundle, hex,
+    admitted_with, admitted_with_bytes, admitted_with_populations, architecture_bundle,
     pump_operations, record_value_type,
 };
 use crate::support::native_protocol::{Inputs, Unit};
@@ -145,8 +145,6 @@ fn domain_typed_declarations_emit_a_model_naming_the_domain_package() {
             let (domain_index, domain) = domain_model(&package.models);
             let naming = domain.domain_package.0.as_ref().expect("named");
             assert_eq!(naming.identity, selection.identity);
-            assert_eq!(naming.version, selection.version);
-            assert_eq!(naming.digest.0, selection.digest);
             assert_eq!(domain.profile, DOMAIN_PACKAGE_PROFILE);
             assert_eq!(
                 package.dependencies[domain.artifact as usize].artifact,
@@ -198,9 +196,7 @@ fn domain_typed_declarations_emit_a_model_naming_the_domain_package() {
                 serde_json::from_slice(emitted.bytes()).expect("JSON payload");
             let member = &decoded["models"][domain_index as usize]["domain_package"];
             assert_eq!(member["identity"], selection.identity.as_str());
-            assert_eq!(member["version"], selection.version.as_str());
-            assert_eq!(member["digest"], hex(&selection.digest).as_str());
-            assert_eq!(member.as_object().expect("an object").len(), 3, "{member}");
+            assert_eq!(member.as_object().expect("an object").len(), 1, "{member}");
             let read = inputs.read(proofs, &emitted);
             let read = read.result().expect("the strict reader admits the bytes");
             assert_eq!(read.package(), package);
@@ -235,12 +231,9 @@ fn a_substituted_domain_package_naming_refuses() {
                 .into_result()
                 .expect("emits");
             let text = std::str::from_utf8(emitted.bytes()).expect("UTF-8 payload");
-            let digest = hex(&selection.digest);
-            let mut changed = selection.digest;
-            changed[0] ^= 1;
             let naming = format!(
-                "\"domain_package\":{{\"identity\":\"{}\",\"version\":\"{}\",\"digest\":\"{digest}\"}}",
-                selection.identity, selection.version
+                "\"domain_package\":{{\"identity\":\"{}\"}}",
+                selection.identity
             );
             assert_eq!(text.matches(&naming).count(), 1, "{text}");
             let profile = format!("\"profile\":\"{DOMAIN_PACKAGE_PROFILE}\"");
@@ -249,12 +242,6 @@ fn a_substituted_domain_package_naming_refuses() {
             let span = format!("\"span\":{{\"start\":0,\"end\":{document_len}}}");
             assert!(text.contains(&span));
             for (mutated, expected) in [
-                // Only the naming's digest: the dependency seal over the same
-                // canonical bytes spells the same hex.
-                (
-                    text.replace(&naming, &naming.replace(&digest, &hex(&changed))),
-                    Invalid::Model,
-                ),
                 (
                     text.replace(&naming, "\"domain_package\":null"),
                     Invalid::Model,
@@ -279,10 +266,7 @@ fn a_substituted_domain_package_naming_refuses() {
             ] {
                 assert_ne!(mutated, text);
                 let bytes = mutated.into_bytes();
-                refused(
-                    &inputs.read_bytes(proofs, &bytes),
-                    Error::Invalid(expected),
-                );
+                refused(&inputs.read_bytes(proofs, &bytes), Error::Invalid(expected));
             }
         },
     );
@@ -642,13 +626,6 @@ fn domain_object_populations_and_operations_emit_and_read_back() {
 fn substituted_domain_population_and_operation_keys_refuse() {
     let run = emitted_run_export();
     let inputs = pump_inputs(run);
-    let selection = inputs
-        .domain
-        .as_ref()
-        .expect("domain input")
-        .package
-        .selection()
-        .clone();
     inputs.with_proofs(
         TypeLimits::default(),
         proofs::ProofLimits::default(),
@@ -660,16 +637,7 @@ fn substituted_domain_population_and_operation_keys_refuse() {
                 .into_result()
                 .expect("encodes");
             let text = std::str::from_utf8(emitted.bytes()).expect("UTF-8 payload");
-            let digest = hex(&selection.digest);
-            let mut changed = selection.digest;
-            changed[0] ^= 1;
-            let naming = format!("\"digest\":\"{digest}\"}}");
-            assert_eq!(text.matches(&naming).count(), 1, "{text}");
             for (mutated, expected) in [
-                (
-                    text.replace(&naming, &format!("\"digest\":\"{}\"}}", hex(&changed))),
-                    Invalid::Model,
-                ),
                 (
                     text.replace("[\"Pump\",\"Plant\"]", "[\"Pump\",\"Pond\"]"),
                     Invalid::Model,

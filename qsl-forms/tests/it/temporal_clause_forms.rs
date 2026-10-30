@@ -19,8 +19,7 @@ fn header(profile: &str, padding: usize) -> String {
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile t = \"{profile}\";\n\
-         model Config = \"example/config-version\" version \"1{}\" digest \
-         \"sha256-jcs:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n",
+         model Config = \"example/config-version{}\";\n",
         "v".repeat(padding)
     )
 }

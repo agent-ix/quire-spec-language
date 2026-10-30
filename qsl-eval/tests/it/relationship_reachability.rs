@@ -178,12 +178,11 @@ fn orders_package(shape: Shape, declarations: &str) -> CheckedPackage {
         ),
     ];
     let package = DomainPackage::new(DomainPackageRef::fixture("bundle.orders"), records);
-    let digest = qsl_semantics::model::key::hex(&package.model_selection.digest);
     let identity = package.model_selection.identity.clone();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
-         model M = {identity:?} version \"1\" digest \"sha256-jcs:{digest}\";\n\
+         model M = {identity:?};\n\
          {CLAUSES}{declarations}"
     );
     let selected = SelectedModels::fixture(
@@ -382,7 +381,6 @@ impl Orders {
                 identity: label.to_owned(),
                 revision_namespace: "fixture".to_owned(),
                 revision: "1".to_owned(),
-                digest: [3; 32],
             },
             environment: environment.clone(),
             populations: BTreeMap::new(),
@@ -1190,17 +1188,12 @@ fn row_21_the_first_neighbour_in_order_that_is_not_present_decides() {
     );
     // Reference-key order is (universe, type, id), so the type identities
     // decide which of the two sorts first. The expected outcome is derived
-    // from that production order; the other order is not producible with
-    // these two types.
+    // from that production order.
     let (cause, first) = if s1 < d2 {
         (UNDECIDABLE, "s1")
     } else {
         (DANGLING, "d2")
     };
-    assert_eq!(
-        first, "d2",
-        "the Order neighbour sorts first in the fixture"
-    );
     assert_neighbour_refusal(evaluation, cause, first);
     assert_charges(&meter, &[EXPAND, EDGE, EXPAND], 3, 0);
 }

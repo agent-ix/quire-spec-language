@@ -62,7 +62,7 @@ pub(crate) fn config_over(
     let clause = clause(OVER, fairness, formula);
     let text = if shipped {
         let header = "profile v = \"quire.model.complete/v1\";\n";
-        let shipped = shipped_unit_text(&domain.digest_hex());
+        let shipped = shipped_unit_text();
         assert!(shipped.contains(header), "the shipped unit's profile line");
         let shipped = shipped.replace(
             header,

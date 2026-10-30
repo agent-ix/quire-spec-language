@@ -13,15 +13,15 @@ use setup::*;
 mod value_cases;
 
 use ix_trace_rs::trace;
-use qsl_foundation::{ByteDigest, Code, Phase, SourceIdentity};
+use qsl_foundation::{Code, Phase, SourceIdentity};
 use quire_contract_model as ir;
 use quire_spec_language::formal_source::FormalSource;
 use quire_spec_language::linking::DeclarationKey;
 use quire_spec_language::native_model::NativeModel;
 use quire_spec_language::runtime::{
     validate, ArtifactLimits, FieldBinding, ModelBinding, ObjectEntry, ObjectIdentity,
-    ObservationSelection, Population, RuntimeInput, Snapshot, SnapshotDraft, SnapshotRef,
-    ValidationLimits, ValidationStatus, ValueBinding, ValueId, ValueNode,
+    ObservationSelection, Population, RuntimeInput, Snapshot, SnapshotDraft, ValidationLimits,
+    ValidationStatus, ValueBinding, ValueId, ValueNode,
 };
 use quire_spec_language::syntax::ClauseKind;
 
@@ -137,7 +137,7 @@ fn selection_refuses_foreign_clauses_stale_bytes_and_duplicate_inventory() {
     let models = [native_rule_model::parts().model()];
     let checked = checked(&models, "true");
     let artifact = snapshot(draft(&models[0]));
-    for variant in 0..5 {
+    for variant in 0..4 {
         let mut offered = input(artifact.clone());
         let mut selected = selection(&models[0], artifact.reference());
         let (status, code) = match variant {
@@ -151,21 +151,10 @@ fn selection_refuses_foreign_clauses_stale_bytes_and_duplicate_inventory() {
                 (ValidationStatus::Refused, Code::InvalidModelBinding)
             }
             2 => {
-                selected = selection(
-                    &models[0],
-                    SnapshotRef::new(
-                        artifact.identity().clone(),
-                        ByteDigest::of(b"different input bytes"),
-                    )
-                    .unwrap(),
-                );
-                (ValidationStatus::Refused, Code::StaleDependency)
-            }
-            3 => {
                 offered.snapshots.push(artifact.clone());
                 (ValidationStatus::Refused, Code::InvalidRuntimeInput)
             }
-            4 => {
+            3 => {
                 offered.snapshots.clear();
                 (ValidationStatus::Incomplete, Code::UnavailableObservation)
             }
@@ -222,7 +211,7 @@ fn conflicting_population_order_preserves_defects_and_actual_byte_provenance() {
                 quire_spec_language::runtime::RuntimeReference::Snapshot(expected.clone())
             );
             // Compare logical defects under each permutation's exact artifact
-            // correspondence; the byte-significant reordered payload has a new digest.
+            // correspondence; the byte-significant reordered payload is a new artifact.
             runtime.artifact =
                 quire_spec_language::runtime::RuntimeReference::Snapshot(baseline.clone());
         }

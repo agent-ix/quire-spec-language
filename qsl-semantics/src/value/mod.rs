@@ -59,7 +59,7 @@
 //! definition directly, not a re-export from here.
 //!
 //! Profile selection and misuse are refused at semantic admission by
-//! [`DefinitionLock`]. No host floating-point arithmetic or narrowing integer
+//! closed role-specific admission functions. No host floating-point arithmetic or narrowing integer
 //! conversion is used by any semantic path.
 //!
 //! ## FR-078: no `negotiate_*` copies (TC-201)
@@ -164,11 +164,12 @@ pub(crate) mod unit;
 // `quire_semantic_value::definition`'s (ADR-011 §6.1 layer SV); consumers
 // import them from there, not through a re-export here.
 pub use definition::{
-    divide, AdmittedIeeeProfile, AdmittedSelection, CatalogEntry, CatalogRole, DefinitionLock,
-    DefinitionReference, ModelEntry, ModelRole, TemporalEntry, TemporalRole, Trigger,
+    admit_ieee_profile, admit_integer_division, admit_selection, always_roles, divide,
+    qualification_roles, AdmittedIeeeProfile, AdmittedSelection, DefinitionReference,
+    DefinitionRole, ModelRole, TemporalRole, Trigger,
 };
 pub use diagnostics_catalog::{native_diagnostics_catalog, NATIVE_DIAGNOSTICS_IDENTITY};
-pub use layer::{HeaderLayer, LayerForm, LayerRow, WitnessKind, WitnessRequest};
+pub use layer::{HeaderLayer, LayerForm, WitnessKind, WitnessRequest};
 // `ExactScalar`, `IeeeOperand`, `IeeeProvenance`, `IeeeResult`,
 // `IeeeExact`, the five entry points (`evaluate_ieee`/
 // `compare_ieee`/`convert_ieee_width`/`ieee_to_exact`/`exact_to_ieee`) and

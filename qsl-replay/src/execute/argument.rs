@@ -46,7 +46,7 @@ use quire_semantic_value::supplied_stop::{
     AttemptedCount, SuppliedCause, SuppliedContext, SuppliedEvent, SuppliedFailure, SuppliedLimit,
     SuppliedLimitKind, SuppliedLocus, SuppliedPhase, SuppliedRun, SuppliedStop,
 };
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
 use super::ReplayRefusal;
 use crate::witness::{QuantityMagnitude, WitnessSlot, WitnessValue};
@@ -240,7 +240,7 @@ struct Converter<'a, 'r> {
 /// (FR-098: the universe of the declared `Reference<T>`'s object type).
 pub(crate) struct ReferenceModel<'a> {
     selections: &'a [DomainPackageRef],
-    packages: &'a BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &'a qsl_semantics::model::intake::PackageInput,
     limits: ModelNormalizationLimits,
 }
 
@@ -249,7 +249,7 @@ impl<'a> ReferenceModel<'a> {
     /// carries.
     pub(crate) fn new(
         package: &'a CheckedPackage,
-        packages: &'a BTreeMap<[u8; 32], Vec<u8>>,
+        packages: &'a qsl_semantics::model::intake::PackageInput,
         limits: ModelNormalizationLimits,
     ) -> Self {
         Self {
@@ -262,7 +262,8 @@ impl<'a> ReferenceModel<'a> {
     /// A call that selects no model: no reference type can be declared.
     #[cfg(test)]
     pub(super) fn unselected() -> Self {
-        const NONE: &BTreeMap<[u8; 32], Vec<u8>> = &BTreeMap::new();
+        const NONE: &qsl_semantics::model::intake::PackageInput =
+            &std::collections::BTreeMap::new();
         Self {
             selections: &[],
             packages: NONE,

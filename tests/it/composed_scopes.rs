@@ -18,7 +18,8 @@ use quire_spec_language::linking::composed::{
 };
 use quire_spec_language::Limits;
 
-const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\nprofile S = \"test:unresolved-definition\" version \"1\" digest \"unresolved\";\n";
+const HEADER: &str =
+    "language \"ix:native\" edition \"1-draft\";\nprofile S = \"test:unresolved-definition\";\n";
 fn program(body: &str) -> String {
     format!("{HEADER}{body}")
 }
@@ -501,11 +502,9 @@ fn actual_model_operation_inputs_result_and_pre_self_seed_the_state_scope() {
     .unwrap()
     .model();
     let source = format!(
-        "{HEADER}model M = \"{}\" version \"{}\" digest \"{}\";\n\
+        "{HEADER}model M = \"{}\";\n\
         post Changed using S on M::Node::step {{ self.n = pre(self.n) + delta and result }}",
-        model.environment().owner().package().as_str(),
-        model.environment().owner().revision().get(),
-        model.digest()
+        model.environment().owner().package().as_str()
     );
     with_namespace(&[source], |namespace| {
         let inputs = [ModelInput::Native(&model)];
@@ -568,12 +567,10 @@ fn an_undeclared_value_retains_its_missing_name_and_original_expression() {
 fn an_unavailable_model_operation_does_not_invent_missing_input_names() {
     let model = native_rule_model::parts().model();
     let source = format!(
-        "{HEADER}model M = \"{}\" version \"{}\" digest \"{}\";\n\
+        "{HEADER}model M = \"{}\";\n\
          pre Missing using S on M::Node::absent {{ invocationInput }}\n\
          post Available using S on M::Node::step {{ result }}",
-        model.environment().owner().package().as_str(),
-        model.environment().owner().revision().get(),
-        model.digest()
+        model.environment().owner().package().as_str()
     );
     with_namespace(&[source], |namespace| {
         let inputs = [ModelInput::Native(&model)];

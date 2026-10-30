@@ -399,17 +399,12 @@ fn domain_document() -> &'static [u8] {
 /// `declarations` over the ConfigVersion model (one operation,
 /// `attemptUpdate`), emitted and read back by IR; returns the wire.
 fn admitted_config(declarations: &str) -> Value {
-    let packages = qsl_semantics::model::intake::package_input([domain_document()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    let digest = qsl_semantics::model::key::hex(digest);
+    let packages = qsl_semantics::model::intake::package_input([domain_document()]).unwrap();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
          profile p = \"quire.protocol.finite-global/v1\";\n\
-         model Config = \"example/config-version\" version \"1.0.0\" \
-         digest \"sha256-jcs:{digest}\";\n{declarations}\n"
+         model Config = \"example/config-version\";\n{declarations}\n"
     );
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
@@ -423,7 +418,10 @@ fn admitted_config(declarations: &str) -> Value {
         evidence.support_feature(feature.as_str().unwrap());
     }
     evidence
-        .insert_domain_package_document(digest, domain_document().to_vec())
+        .insert_domain_package_document(
+            package_identity(domain_document()),
+            domain_document().to_vec(),
+        )
         .expect("a fresh evidence key");
     crate::checked_v2::read_checked_package_v2(
         emission.package.bytes(),
@@ -676,22 +674,17 @@ fn a_fence_emits_each_of_its_orderings() {
 #[trace("FR-383-AC-7", "TC-1061")]
 #[test]
 fn an_attempt_ordering_outside_a_parallel_is_refused_so_the_group_is_empty() {
-    let packages = qsl_semantics::model::intake::package_input([domain_document()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    let digest = qsl_semantics::model::key::hex(digest);
-    let unit = format!(
+    let packages = qsl_semantics::model::intake::package_input([domain_document()]).unwrap();
+    let unit = String::from(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
          profile p = \"quire.protocol.finite-global/v1\";\n\
-         model Config = \"example/config-version\" version \"1.0.0\" \
-         digest \"sha256-jcs:{digest}\";\n\
-         protocol Flow using v over (input: Config::ConfigVersion) on origin {{\n\
+         model Config = \"example/config-version\";\n\
+         protocol Flow using v over (input: Config::ConfigVersion) on origin {\n\
          role R on Config::ConfigVersion;\n\
          run attempt Update by R on Config::ConfigVersion::attemptUpdate \
-         ordering seq_cst contracts [] as (tried: Boolean) {{ true }};\n\
-         finish End as (outcome: Boolean) {{ true }};\n}}\n"
+         ordering seq_cst contracts [] as (tried: Boolean) { true };\n\
+         finish End as (outcome: Boolean) { true };\n}\n",
     );
     let refusals = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")

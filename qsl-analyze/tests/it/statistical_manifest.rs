@@ -11,21 +11,19 @@ use qsl_foundation::bound::DomainKind;
 use qsl_foundation::BackendId;
 use qsl_route::{
     descriptor_from_manifest, Candidate, CandidateOutcome, EvidenceKind, ItemEvidence,
-    ManifestDigest, ManifestMembers, Mode, ProviderOrigin, Registry,
+    ManifestMembers, Mode, ProviderOrigin, Registry,
 };
 use qsl_semantics::check::Capability;
 use std::collections::BTreeSet;
 
 fn en4() -> qsl_route::BackendDescriptor {
-    manifest::descriptor(ProviderOrigin::Linked, ManifestDigest::from_digest([4; 32]))
-        .expect("EN-4's own manifest is admitted")
+    manifest::descriptor(ProviderOrigin::Linked).expect("EN-4's own manifest is admitted")
 }
 
 fn exact_backend() -> qsl_route::BackendDescriptor {
     descriptor_from_manifest(
         Candidate::new(BackendId::new("exact-engine")),
         ProviderOrigin::Linked,
-        ManifestDigest::from_digest([5; 32]),
         [(
             Some(Capability::ProbabilisticSatisfaction.to_wire()),
             Some(Mode::Bounded.to_wire()),
@@ -95,9 +93,8 @@ fn a_registry_routes_by_evidence_kind_between_en4_and_an_exact_backend() {
 #[test]
 #[trace("TC-761", "FR-280-AC-4")]
 fn the_published_manifest_is_independent_of_the_provider_origin() {
-    let digest = ManifestDigest::from_digest([4; 32]);
-    let linked = manifest::descriptor(ProviderOrigin::Linked, digest).unwrap();
-    let process = manifest::descriptor(ProviderOrigin::Process, digest).unwrap();
+    let linked = manifest::descriptor(ProviderOrigin::Linked).unwrap();
+    let process = manifest::descriptor(ProviderOrigin::Process).unwrap();
     assert_eq!(linked.evidence_kinds(), process.evidence_kinds());
     assert_eq!(linked.domains(), process.domains());
     assert_ne!(linked, process);

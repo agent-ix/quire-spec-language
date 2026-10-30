@@ -16,11 +16,10 @@ use qsl_forms::{BinaryOperator, ClauseKind, Expression, FunctionDeclaration, Typ
 use qsl_foundation::selection::ProfileSelection;
 use qsl_foundation::IntakeLimits;
 use qsl_package::CheckedPackage;
-use qsl_semantics::check::{CheckCause, LockEvidence, PackageDeclarations};
+use qsl_semantics::check::{CheckCause, PackageDeclarations};
 use qsl_semantics::model::accounting::{ChargePoint, ModelNormalizationLimits};
 use qsl_semantics::model::domain_package::{DomainPackage, DomainPackageRef};
 use qsl_semantics::model::intake::{admit_unit, package_input, read_domain_package};
-use qsl_semantics::model::key::SHA256_JCS_DIGEST_DOMAIN;
 use qsl_semantics::model::normalize::{normalize_with_meter, EffectiveView, NormalizeOutcome};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::observation::{
@@ -28,7 +27,7 @@ use qsl_semantics::model::observation::{
     ClauseSelectionInput, ContextSide, DocumentRef, ObservationLimits, OperationFacts, Provisions,
 };
 use qsl_semantics::model::refusal::{MemberPath, MemberRoot};
-use qsl_semantics::value::{CatalogRole, DefinitionLock};
+use qsl_semantics::value::DefinitionRole;
 use quire_exact::{admit_text, TextPayload, TextProfile, TextType};
 use quire_exact::{
     CardinalityBound, CollectionKind, CollectionType, EffectiveId, FieldValue, Integer, Meter,
@@ -146,18 +145,14 @@ pub(crate) fn lifecycle_document_with(
 
 pub(crate) fn read_k2(
     document: &serde_json::Value,
-) -> (DomainPackage, BTreeMap<[u8; 32], Vec<u8>>) {
+) -> (DomainPackage, qsl_semantics::model::intake::PackageInput) {
     let bytes = serde_json::to_vec(document).expect("lifecycle fixture serializes");
-    let offered = package_input([bytes.as_slice()]);
-    let digest = *offered.keys().next().expect("one lifecycle package");
+    let offered = package_input([bytes.as_slice()]).unwrap();
     let selection = DomainPackageRef {
         identity: crate::tc235_k2::PACKAGE.to_owned(),
-        version: "1".to_owned(),
-        digest,
     };
     let (selection, admitted) = qsl_semantics::model::intake::admit(
-        &selection,
-        SHA256_JCS_DIGEST_DOMAIN,
+        selection.identity.as_str(),
         &offered,
         IntakeLimits::default(),
     )
@@ -168,7 +163,11 @@ pub(crate) fn read_k2(
     )
 }
 
-type LifecycleFixture = (CheckedPackage, EffectiveView, BTreeMap<[u8; 32], Vec<u8>>);
+type LifecycleFixture = (
+    CheckedPackage,
+    EffectiveView,
+    qsl_semantics::model::intake::PackageInput,
+);
 
 fn lifecycle_package(
     document: &serde_json::Value,
@@ -216,10 +215,8 @@ fn model_package_with(
             "TC-235 normalize.record charge count"
         );
     }
-    let digest = packages.keys().next().expect("lifecycle package digest");
     let unit = format!(
-        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\nmodel M = \"test/orders\" version \"1\" digest \"sha256-jcs:{}\";\n{}\n",
-        qsl_semantics::model::key::hex(digest),
+        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\nmodel M = \"test/orders\";\n{}\n",
         body,
     );
     let parsed = qsl_cst::parse(
@@ -256,17 +253,12 @@ fn model_package_with(
     Ok((CheckedPackage::link(graph), view, packages))
 }
 
-pub(crate) fn lifecycle_document_ref(label: &str, bytes: &[u8]) -> DocumentRef {
-    let document = quire_canonical::read(bytes, u64::MAX).expect("lifecycle document reads");
-    let digest = *quire_canonical::sha256(&document, quire_canonical::Limits::new(u64::MAX))
-        .expect("lifecycle document hashes")
-        .as_bytes();
+pub(crate) fn lifecycle_document_ref(label: &str) -> DocumentRef {
     DocumentRef {
         authority: "test".to_owned(),
         identity: label.to_owned(),
         revision_namespace: "tc235".to_owned(),
         revision: "1".to_owned(),
-        digest,
     }
 }
 
@@ -280,7 +272,6 @@ pub(crate) fn lifecycle_identity(reference: &DocumentRef) -> serde_json::Value {
 }
 
 pub(crate) fn lifecycle_observation(
-    model_digest: &[u8; 32],
     label: &str,
     observation: &str,
     contexts: &[(bool, bool)],
@@ -303,7 +294,6 @@ pub(crate) fn lifecycle_observation(
         identity: label.to_owned(),
         revision_namespace: "tc235".to_owned(),
         revision: "1".to_owned(),
-        digest: [0; 32],
     };
     let bytes = serde_json::to_vec(&serde_json::json!({
         "format": "quire.state.snapshot/v1",
@@ -312,25 +302,19 @@ pub(crate) fn lifecycle_observation(
         "model": {
             "identity": crate::tc235_k2::PACKAGE,
             "version": "1",
-            "digest": format!("sha256-jcs:{}", qsl_semantics::model::key::hex(model_digest)),
         },
         "populations": [],
         "contexts": contexts,
     }))
     .expect("lifecycle snapshot serializes");
-    (lifecycle_document_ref(label, &bytes), bytes)
+    (lifecycle_document_ref(label), bytes)
 }
 
-fn lifecycle_invocation(
-    model_digest: &[u8; 32],
-    pre: &DocumentRef,
-    post: &DocumentRef,
-) -> (DocumentRef, Vec<u8>) {
-    lifecycle_invocation_with(model_digest, pre, post, serde_json::json!({}))
+fn lifecycle_invocation(pre: &DocumentRef, post: &DocumentRef) -> (DocumentRef, Vec<u8>) {
+    lifecycle_invocation_with(pre, post, serde_json::json!({}))
 }
 
 pub(crate) fn lifecycle_invocation_with(
-    model_digest: &[u8; 32],
     pre: &DocumentRef,
     post: &DocumentRef,
     parameters: serde_json::Value,
@@ -340,12 +324,10 @@ pub(crate) fn lifecycle_invocation_with(
         identity: "i1".to_owned(),
         revision_namespace: "tc235".to_owned(),
         revision: "1".to_owned(),
-        digest: [0; 32],
     };
     let document_ref = |reference: &DocumentRef| {
         serde_json::json!({
             "identity": lifecycle_identity(reference),
-            "digest": format!("sha256-jcs:{}", qsl_semantics::model::key::hex(&reference.digest)),
         })
     };
     let bytes = serde_json::to_vec(&serde_json::json!({
@@ -354,7 +336,6 @@ pub(crate) fn lifecycle_invocation_with(
         "model": {
             "identity": crate::tc235_k2::PACKAGE,
             "version": "1",
-            "digest": format!("sha256-jcs:{}", qsl_semantics::model::key::hex(model_digest)),
         },
         "context": crate::tc235_k2::id("OrderLifecycle"),
         "operation": "place",
@@ -367,15 +348,15 @@ pub(crate) fn lifecycle_invocation_with(
         "deleted": [],
     }))
     .expect("lifecycle invocation serializes");
-    (lifecycle_document_ref("i1", &bytes), bytes)
+    (lifecycle_document_ref("i1"), bytes)
 }
 
 pub(crate) fn lifecycle_observations(
     package: &CheckedPackage,
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &qsl_semantics::model::intake::PackageInput,
     clause: &str,
-    snapshots: &BTreeMap<[u8; 32], Vec<u8>>,
-    invocations: &BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: &qsl_semantics::model::observation::DocumentProvision,
+    invocations: &qsl_semantics::model::observation::DocumentProvision,
     invocation: DocumentRef,
 ) -> Result<AdmittedObservations, AdmissionFailure> {
     lifecycle_selection(
@@ -391,10 +372,10 @@ pub(crate) fn lifecycle_observations(
 /// `clause` admitted from `input` over the lifecycle fixture's documents.
 pub(crate) fn lifecycle_selection(
     package: &CheckedPackage,
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &qsl_semantics::model::intake::PackageInput,
     clause: &str,
-    snapshots: &BTreeMap<[u8; 32], Vec<u8>>,
-    invocations: &BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: &qsl_semantics::model::observation::DocumentProvision,
+    invocations: &qsl_semantics::model::observation::DocumentProvision,
     input: ClauseSelectionInput,
 ) -> Result<AdmittedObservations, AdmissionFailure> {
     lifecycle_selection_with(
@@ -411,10 +392,10 @@ pub(crate) fn lifecycle_selection(
 /// [`lifecycle_selection`] under `limits`.
 pub(crate) fn lifecycle_selection_with(
     package: &CheckedPackage,
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &qsl_semantics::model::intake::PackageInput,
     clause: &str,
-    snapshots: &BTreeMap<[u8; 32], Vec<u8>>,
-    invocations: &BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: &qsl_semantics::model::observation::DocumentProvision,
+    invocations: &qsl_semantics::model::observation::DocumentProvision,
     input: ClauseSelectionInput,
     limits: ObservationLimits,
 ) -> Result<AdmittedObservations, AdmissionFailure> {
@@ -452,9 +433,9 @@ pub(crate) fn lifecycle_selection_with(
 /// `Context` selection.
 pub(crate) fn lifecycle_context(
     package: &CheckedPackage,
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: &BTreeMap<[u8; 32], Vec<u8>>,
-    invocations: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &qsl_semantics::model::intake::PackageInput,
+    snapshots: &qsl_semantics::model::observation::DocumentProvision,
+    invocations: &qsl_semantics::model::observation::DocumentProvision,
     invocation: &DocumentRef,
     side: qsl_semantics::model::observation::ContextSide,
 ) -> AdmittedObservations {
@@ -562,10 +543,7 @@ fn package_with_types(
                 index,
                 ProfileSelection {
                     alias: "text".to_owned(),
-                    identity: DefinitionLock::pinned()
-                        .entry(CatalogRole::TextProfile)
-                        .identity
-                        .to_owned(),
+                    identity: DefinitionRole::TextProfile.identity().to_owned(),
                     span: qsl_foundation::Span { start: 0, end: 0 },
                     identity_span: qsl_foundation::Span { start: 0, end: 0 },
                 },
@@ -577,11 +555,6 @@ fn package_with_types(
             types,
             functions,
             function_selections,
-            lock_evidence: LockEvidence::default().with_text_profile(
-                DefinitionLock::pinned()
-                    .entry(CatalogRole::TextProfile)
-                    .reference(),
-            ),
             ..PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
                 qsl_foundation::IdentityLimits::default(),
@@ -697,7 +670,6 @@ fn tc235_m02_record_values_compare_every_field_at_runtime() {
                 identity: "s1".to_owned(),
                 revision_namespace: "tc235".to_owned(),
                 revision: "1".to_owned(),
-                digest: [0; 32],
             },
             environment: ObjectEnvironment::new(closure),
             populations: BTreeMap::new(),
@@ -926,14 +898,12 @@ fn tc235_m15_lifecycle_invariant_keeps_receiver_context() {
     };
 
     let run = |pre: &[(bool, bool)], post: &[(bool, bool)]| {
-        let model_digest = packages.keys().next().expect("M15 K2 package");
-        let (pre_ref, pre_bytes) = lifecycle_observation(model_digest, "p1", "pre", pre);
-        let (post_ref, post_bytes) = lifecycle_observation(model_digest, "q1", "post", post);
-        let (invocation_ref, invocation_bytes) =
-            lifecycle_invocation(model_digest, &pre_ref, &post_ref);
+        let (pre_ref, pre_bytes) = lifecycle_observation("p1", "pre", pre);
+        let (post_ref, post_bytes) = lifecycle_observation("q1", "post", post);
+        let (invocation_ref, invocation_bytes) = lifecycle_invocation(&pre_ref, &post_ref);
         (
-            BTreeMap::from([(pre_ref.digest, pre_bytes), (post_ref.digest, post_bytes)]),
-            BTreeMap::from([(invocation_ref.digest, invocation_bytes)]),
+            BTreeMap::from([(pre_ref.clone(), pre_bytes), (post_ref.clone(), post_bytes)]),
+            BTreeMap::from([(invocation_ref.clone(), invocation_bytes)]),
             invocation_ref,
         )
     };
@@ -1489,7 +1459,6 @@ fn process_observation(
                 identity: label.to_owned(),
                 revision_namespace: "tc235".to_owned(),
                 revision: "1".to_owned(),
-                digest: [0; 32],
             },
             environment: ObjectEnvironment::new(closure),
             populations: BTreeMap::from([(crate::tc235_k2::id("PF"), true)]),
@@ -1751,9 +1720,9 @@ fn tc235_m16_run3_a_clause_set_reports_one_result_for_a_false_precondition() {
 /// selected invocation of [`orders_fixture`].
 type OrdersFixture = (
     CheckedPackage,
-    BTreeMap<[u8; 32], Vec<u8>>,
-    BTreeMap<[u8; 32], Vec<u8>>,
-    BTreeMap<[u8; 32], Vec<u8>>,
+    qsl_semantics::model::intake::PackageInput,
+    qsl_semantics::model::observation::DocumentProvision,
+    qsl_semantics::model::observation::DocumentProvision,
     DocumentRef,
 );
 
@@ -1793,11 +1762,9 @@ fn orders_fixture() -> OrdersFixture {
         25,
     )
     .expect("M22 checks");
-    let model_digest = packages.keys().next().expect("M22 package");
-    let (pre_ref, pre_bytes) = lifecycle_observation(model_digest, "p1", "pre", &[(false, false)]);
-    let (post_ref, post_bytes) = lifecycle_observation(model_digest, "q1", "post", &[(true, true)]);
+    let (pre_ref, pre_bytes) = lifecycle_observation("p1", "pre", &[(false, false)]);
+    let (post_ref, post_bytes) = lifecycle_observation("q1", "post", &[(true, true)]);
     let (invocation_ref, invocation_bytes) = lifecycle_invocation_with(
-        model_digest,
         &pre_ref,
         &post_ref,
         serde_json::json!({"flags": {"record": {
@@ -1808,8 +1775,8 @@ fn orders_fixture() -> OrdersFixture {
     (
         package,
         packages,
-        BTreeMap::from([(pre_ref.digest, pre_bytes), (post_ref.digest, post_bytes)]),
-        BTreeMap::from([(invocation_ref.digest, invocation_bytes)]),
+        BTreeMap::from([(pre_ref.clone(), pre_bytes), (post_ref.clone(), post_bytes)]),
+        BTreeMap::from([(invocation_ref.clone(), invocation_bytes)]),
         invocation_ref,
     )
 }
@@ -1941,10 +1908,9 @@ fn tc235_m22_receiver_and_parameter_reads_are_located_at_their_bindings() {
         ))]
     );
 
-    let model_digest = packages.keys().next().expect("M22 package");
-    let (pre_ref, pre_bytes) = lifecycle_observation(model_digest, "p1", "pre", &[(false, false)]);
+    let (pre_ref, pre_bytes) = lifecycle_observation("p1", "pre", &[(false, false)]);
     let mut snapshots = snapshots;
-    snapshots.insert(pre_ref.digest, pre_bytes);
+    snapshots.insert(pre_ref.clone(), pre_bytes);
     let pre_call = lifecycle_pre_call(
         &package,
         &packages,
@@ -1970,8 +1936,8 @@ fn tc235_m22_receiver_and_parameter_reads_are_located_at_their_bindings() {
 /// `clause` admitted from a pre-call `input`.
 fn lifecycle_pre_call(
     package: &CheckedPackage,
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &qsl_semantics::model::intake::PackageInput,
+    snapshots: &qsl_semantics::model::observation::DocumentProvision,
     clause: &str,
     input: ClauseSelectionInput,
 ) -> AdmittedObservations {
@@ -2044,9 +2010,8 @@ fn items_fixture() -> OrdersFixture {
         26,
     )
     .expect("the items package checks");
-    let model_digest = packages.keys().next().expect("the package");
     let with_items = |label: &str, observation: &str, contexts: &[(bool, bool)]| {
-        let (_, bytes) = lifecycle_observation(model_digest, label, observation, contexts);
+        let (_, bytes) = lifecycle_observation(label, observation, contexts);
         let mut document: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         let item = |placed: bool| {
             serde_json::json!({"record": {
@@ -2057,12 +2022,11 @@ fn items_fixture() -> OrdersFixture {
         document["contexts"][0]["fields"]["items"] =
             serde_json::json!({"sequence": [item(true), item(false)]});
         let bytes = serde_json::to_vec(&document).unwrap();
-        (lifecycle_document_ref(label, &bytes), bytes)
+        (lifecycle_document_ref(label), bytes)
     };
     let (pre_ref, pre_bytes) = with_items("p1", "pre", &[(false, false)]);
     let (post_ref, post_bytes) = with_items("q1", "post", &[(true, true)]);
     let (invocation_ref, invocation_bytes) = lifecycle_invocation_with(
-        model_digest,
         &pre_ref,
         &post_ref,
         serde_json::json!({"flags": {"record": {
@@ -2073,8 +2037,8 @@ fn items_fixture() -> OrdersFixture {
     (
         package,
         packages,
-        BTreeMap::from([(pre_ref.digest, pre_bytes), (post_ref.digest, post_bytes)]),
-        BTreeMap::from([(invocation_ref.digest, invocation_bytes)]),
+        BTreeMap::from([(pre_ref.clone(), pre_bytes), (post_ref.clone(), post_bytes)]),
+        BTreeMap::from([(invocation_ref.clone(), invocation_bytes)]),
         invocation_ref,
     )
 }
@@ -2119,18 +2083,12 @@ fn a_context_collection_read_under_pre_call_has_no_path() {
         ))
     );
 
-    let model_digest = packages.keys().next().expect("the package");
-    let _ = model_digest;
     let pre_ref = snapshots
         .iter()
         .find(|(_, bytes)| {
             serde_json::from_slice::<serde_json::Value>(bytes).unwrap()["observation"] == "pre"
         })
-        .map(|(digest, bytes)| {
-            let reference = lifecycle_document_ref("p1", bytes);
-            assert_eq!(&reference.digest, digest);
-            reference
-        })
+        .map(|_| lifecycle_document_ref("p1"))
         .expect("the pre snapshot");
     let by_pre_call = lifecycle_pre_call(
         &package,

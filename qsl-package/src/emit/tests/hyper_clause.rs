@@ -24,23 +24,14 @@ fn document() -> &'static [u8] {
     config_version_unit::DOMAIN_PACKAGE.as_bytes()
 }
 
-fn document_digest() -> String {
-    let packages = qsl_semantics::model::intake::package_input([document()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    qsl_semantics::model::key::hex(digest)
-}
-
 /// A unit selecting the ConfigVersion model, then `declarations`.
 fn unit(profile: &str, declarations: &str) -> String {
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
          profile t = \"{profile}\";\n\
-         model Config = \"example/config-version\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
-         {declarations}\n",
-        document_digest()
+         model Config = \"example/config-version\";\n\
+         {declarations}\n"
     )
 }
 
@@ -71,7 +62,7 @@ struct Compiled {
 }
 
 fn compile(unit: &str) -> Compiled {
-    let packages = qsl_semantics::model::intake::package_input([document()]);
+    let packages = qsl_semantics::model::intake::package_input([document()]).unwrap();
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
         .check(CheckingLimits::default())
@@ -89,7 +80,7 @@ fn compile(unit: &str) -> Compiled {
 
 /// The refusals of `unit`'s check.
 fn refusals(unit: &str) -> Vec<qsl_semantics::check::CheckRefusal> {
-    let packages = qsl_semantics::model::intake::package_input([document()]);
+    let packages = qsl_semantics::model::intake::package_input([document()]).unwrap();
     assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
         .check(CheckingLimits::default())
@@ -102,7 +93,7 @@ fn evidence(wire: &Value) -> CheckedPackageEvidence {
         evidence.support_feature(feature.as_str().unwrap());
     }
     evidence
-        .insert_domain_package_document(document_digest(), document().to_vec())
+        .insert_domain_package_document(package_identity(document()), document().to_vec())
         .expect("a fresh evidence key");
     evidence
 }
@@ -538,14 +529,6 @@ fn alias_identity(alias: &str) -> &'static str {
     }
 }
 
-fn digest_of_document(document: &[u8]) -> String {
-    let packages = qsl_semantics::model::intake::package_input([document]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    qsl_semantics::model::key::hex(digest)
-}
-
 /// A unit over the models `aliases` under `profile`, then `declarations`.
 fn world_unit(profile: &str, aliases: &[&str], declarations: &str) -> (String, Vec<Vec<u8>>) {
     let mut text = format!(
@@ -557,10 +540,7 @@ fn world_unit(profile: &str, aliases: &[&str], declarations: &str) -> (String, V
     for alias in aliases {
         let identity = alias_identity(alias);
         let document = vault(identity);
-        text.push_str(&format!(
-            "model {alias} = \"{identity}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n",
-            digest_of_document(&document)
-        ));
+        text.push_str(&format!("model {alias} = \"{identity}\";\n"));
         documents.push(document);
     }
     text.push_str(declarations);
@@ -568,8 +548,8 @@ fn world_unit(profile: &str, aliases: &[&str], declarations: &str) -> (String, V
     (text, documents)
 }
 
-fn packages_of(documents: &[Vec<u8>]) -> BTreeMap<[u8; 32], Vec<u8>> {
-    qsl_semantics::model::intake::package_input(documents.iter().map(Vec::as_slice))
+fn packages_of(documents: &[Vec<u8>]) -> qsl_semantics::model::intake::PackageInput {
+    qsl_semantics::model::intake::package_input(documents.iter().map(Vec::as_slice)).unwrap()
 }
 
 /// A built world: the checked clauses, the emission, the wire and the
@@ -617,7 +597,7 @@ fn admitted(built: &Built) -> std::sync::Arc<quire_contract_model::CheckedPackag
     }
     for document in &built.documents {
         evidence
-            .insert_domain_package_document(digest_of_document(document), document.clone())
+            .insert_domain_package_document(package_identity(&document.clone()), document.clone())
             .expect("a fresh evidence key");
     }
     crate::checked_v2::read_checked_package_v2(

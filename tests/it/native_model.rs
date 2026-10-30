@@ -5,7 +5,7 @@ use crate::support::native_rule_model;
 
 use ix_trace_rs::trace;
 use native_rule_model::{parts, symbol};
-use qsl_foundation::{ByteDigest, Code, Phase};
+use qsl_foundation::{Code, Phase};
 use quire_contract_model as ir;
 use quire_spec_language::native_model::{ModelLimits, NativeModel, ScalarKind, ScalarSite, Unit};
 
@@ -97,7 +97,6 @@ fn tc_040_source_derived_rule_model() {
     );
     let data: serde_json::Value = serde_json::from_slice(model.artifact_bytes()).unwrap();
     assert_eq!(data["profile"], "native-state-model/1");
-    assert_eq!(model.digest(), ByteDigest::of(model.artifact_bytes()));
     assert_eq!(model.source().source().text(), native_rule_model::fixture());
 }
 
@@ -187,8 +186,8 @@ fn tc_042_artifact_binds_semantics_and_provenance() {
             _ => unreachable!(),
         }
         assert_ne!(
-            original.digest(),
-            changed.model().digest(),
+            original.artifact_bytes(),
+            changed.model().artifact_bytes(),
             "mutation {mutation}"
         );
     }
@@ -198,7 +197,7 @@ fn tc_042_artifact_binds_semantics_and_provenance() {
             .model();
     assert_eq!(original.artifact_bytes(), relocated.artifact_bytes());
     assert_ne!(
-        original.digest(),
+        original.artifact_bytes(),
         native_rule_model::from_text(
             native_rule_model::fixture(),
             "native-rule-model.json",
@@ -206,7 +205,7 @@ fn tc_042_artifact_binds_semantics_and_provenance() {
         )
         .unwrap()
         .model()
-        .digest()
+        .artifact_bytes()
     );
 }
 

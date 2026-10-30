@@ -377,8 +377,6 @@ fn store_buffering_model() -> SelectedModel {
     let package = DomainPackage::new(
         DomainPackageRef {
             identity: PACKAGE.to_owned(),
-            version: "1".to_owned(),
-            digest: [0_u8; 32],
         },
         vec![
             object("Actor"),

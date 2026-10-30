@@ -41,8 +41,8 @@ fn checked(
     String,
     Result<qsl_semantics::check::CheckedGraph, Vec<qsl_semantics::check::CheckRefusal>>,
 ) {
-    let packages = qsl_semantics::model::intake::package_input([document]);
-    let unit = clocked_unit(&packages, body);
+    let packages = qsl_semantics::model::intake::package_input([document]).unwrap();
+    let unit = clocked_unit(body);
     let checked = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
         .check(CheckingLimits::default());
@@ -750,9 +750,8 @@ fn an_unwritten_guard_refuses_at_its_member() {
 fn a_point_qualified_clock_clause_refuses_at_the_clause() {
     use quire_contract_model::{AnchorName, ExecutionPoint};
     let document = document(false);
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let unit = clocked_unit(
-        &packages,
         "pre Late using v on Config::ConfigVersion::attemptUpdate { self.x >= 1 ms }\n",
     );
     let parsed = qsl_cst::parse(
@@ -888,10 +887,7 @@ fn excluded(document: &[u8], body: &str) -> (qsl_semantics::check::ExcludedClaus
 #[trace("TC-685", "QSpec-FR-322-AC-267")]
 #[test]
 fn an_indexed_element_write_is_refused() {
-    let document = timer_document();
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
     let unit = clocked_unit(
-        &packages,
         "post P using v on Config::ConfigVersion::attemptUpdate { \
          self.ts[0] = Config::Timer { x: 0 ms, n: 1 } }\n",
     );
@@ -974,22 +970,63 @@ fn a_reset_selected_by_presence_conditions_on_its_presence_read() {
 }
 
 /// QSpec FR-322-AC-267 `CW-05`: `post present(self.v)` is a postcondition
-/// `presence_read` with no clause node. S3 keeps the requirement out of the
-/// lowered postcondition (the evaluator reads it through the reset's
-/// `requires`), so the model is refused `not-yet-implemented` at the
-/// postcondition rather than emitted without the requirement.
+/// predicate, a `presence_read` of `v`'s place at `self`, and not a write:
+/// the package carries no clause node for it.
 #[trace("TC-685", "FR-230-AC-50", "QSpec-FR-322-AC-267")]
 #[test]
-fn a_postcondition_presence_requirement_is_not_written_yet() {
-    let (member, text) = unwritten(
+fn a_postcondition_presence_requirement_is_a_presence_read_with_no_clause_node() {
+    let (_, wire) = emitted(
         &dropping_document(),
         "post P using v on Config::ConfigVersion::attemptUpdate { present(self.v) }\n",
     );
+    for form in [
+        "clock_reset",
+        "clock_guard",
+        "clock_constraint",
+        "time_invariant",
+    ] {
+        assert!(timed(&wire, form).is_empty(), "no {form}");
+    }
+    let v = place_of(&wire, "v");
+    let (_, without) = emitted(&dropping_document(), "");
+    let reads = |wire: &Value| -> Vec<Value> {
+        nodes(wire)
+            .iter()
+            .filter(|node| node["semantic_form"] == "presence_read")
+            .cloned()
+            .collect()
+    };
+    let before = reads(&without);
+    let added: Vec<Value> = reads(&wire)
+        .into_iter()
+        .filter(|read| !before.contains(read))
+        .collect();
+    let [read] = &added[..] else {
+        panic!("one presence read: {added:?}");
+    };
+    assert_self(
+        &wire,
+        &json!({"target": assert_presence(&wire, read, v)["node_id"]}),
+    );
+    assert_declared_order(&wire);
+}
+
+/// A presence requirement spelled as a comparison with `absent`, `self.v
+/// != absent`, has no `presence_read` written yet: the model is refused
+/// `not-yet-implemented` at the comparison rather than emitted without the
+/// requirement.
+#[trace("TC-685", "FR-230-AC-50")]
+#[test]
+fn a_presence_requirement_compared_with_absent_is_not_written_yet() {
+    let (member, text) = unwritten(
+        &dropping_document(),
+        "post P using v on Config::ConfigVersion::attemptUpdate { self.v != absent }\n",
+    );
     assert_eq!(
         member,
-        qsl_semantics::check::UnwrittenTimedMember::PresenceRequirement
+        qsl_semantics::check::UnwrittenTimedMember::ComparedPresence
     );
-    assert!(text.starts_with("post P"), "{text}");
+    assert_eq!(text, "self.v != absent");
 }
 
 /// [`presence_document`] whose `attemptUpdate` frame names `v`.

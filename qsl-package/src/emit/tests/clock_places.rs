@@ -44,11 +44,8 @@ pub(super) fn clocked_document_with(collection: bool) -> Vec<u8> {
 
 /// The unit selecting [`clocked_document`] under a dense time source, with
 /// `body` after it.
-pub(super) fn clocked_unit(packages: &BTreeMap<[u8; 32], Vec<u8>>, body: &str) -> String {
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    let unit = config_version_unit::unit_text(&qsl_semantics::model::key::hex(digest)).replace(
+pub(super) fn clocked_unit(body: &str) -> String {
+    let unit = config_version_unit::unit_text().replace(
         "profile v = \"quire.model.complete/v1\";\n",
         "profile v = \"quire.model.complete/v1\";\n\
          profile t = \"quire.temporal.complete/v1\";\n",
@@ -115,8 +112,8 @@ fn steps(path: &Value) -> Vec<Vec<(String, String)>> {
 #[test]
 fn a_clock_collection_emits_one_template_place() {
     let document = clocked_document();
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
-    let graph = assemble_with_models(clocked_unit(&packages, "").as_bytes(), &packages)
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
+    let graph = assemble_with_models(clocked_unit("").as_bytes(), &packages)
         .expect("the unit assembles")
         .check(CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("a model of clocks alone checks: {refusals:?}"));
@@ -242,11 +239,8 @@ fn a_clock_collection_emits_one_template_place() {
 /// The emitted package over `document` with no further unit text, read back
 /// through I2 into its typed timed models.
 fn read_back(document: &[u8]) -> Result<Vec<CheckedTimedModel>, String> {
-    let packages = qsl_semantics::model::intake::package_input([document]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    let graph = assemble_with_models(clocked_unit(&packages, "").as_bytes(), &packages)
+    let packages = qsl_semantics::model::intake::package_input([document]).unwrap();
+    let graph = assemble_with_models(clocked_unit("").as_bytes(), &packages)
         .expect("the unit assembles")
         .check(CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("a model of clocks alone checks: {refusals:?}"));
@@ -257,7 +251,7 @@ fn read_back(document: &[u8]) -> Result<Vec<CheckedTimedModel>, String> {
         evidence.support_feature(feature.as_str().unwrap());
     }
     evidence
-        .insert_domain_package_document(qsl_semantics::model::key::hex(digest), document.to_vec())
+        .insert_domain_package_document(package_identity(document), document.to_vec())
         .expect("a fresh evidence key");
     let read = read_checked_package_v2(
         emission.package.bytes(),
@@ -421,8 +415,8 @@ fn conformance_the_template_places_match_the_slot_selector_vectors() {
     )
     .expect("the vectors are JSON");
     let document = vector_document();
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
-    let graph = assemble_with_models(clocked_unit(&packages, "").as_bytes(), &packages)
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
+    let graph = assemble_with_models(clocked_unit("").as_bytes(), &packages)
         .expect("the unit assembles")
         .check(CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("a model of clocks alone checks: {refusals:?}"));
@@ -493,11 +487,8 @@ fn conformance_the_template_places_match_the_slot_selector_vectors() {
 
 /// [`read_back`] of the unit with `body` after [`clocked_unit`]'s text.
 fn read_back_with(document: &[u8], body: &str) -> Result<Vec<CheckedTimedModel>, String> {
-    let packages = qsl_semantics::model::intake::package_input([document]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    let graph = assemble_with_models(clocked_unit(&packages, body).as_bytes(), &packages)
+    let packages = qsl_semantics::model::intake::package_input([document]).unwrap();
+    let graph = assemble_with_models(clocked_unit(body).as_bytes(), &packages)
         .expect("the unit assembles")
         .check(CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
@@ -508,7 +499,7 @@ fn read_back_with(document: &[u8], body: &str) -> Result<Vec<CheckedTimedModel>,
         evidence.support_feature(feature.as_str().unwrap());
     }
     evidence
-        .insert_domain_package_document(qsl_semantics::model::key::hex(digest), document.to_vec())
+        .insert_domain_package_document(package_identity(document), document.to_vec())
         .expect("a fresh evidence key");
     let read = read_checked_package_v2(
         emission.package.bytes(),
@@ -567,10 +558,10 @@ fn urgency_declarations_emit_and_read_back() {
 #[test]
 fn an_urgency_predicate_is_a_located_expression_node() {
     let document = clocked_document_with(false);
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let body = "urgent Prompt Config::ConfigVersion::attemptUpdate;\n\
                 urgent Busy when { self.versionNumber > 0 };\n";
-    let unit = clocked_unit(&packages, body);
+    let unit = clocked_unit(body);
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
         .check(CheckingLimits::default())
@@ -662,8 +653,8 @@ fn reached<'w>(wire: &'w Value, from: &'w Value) -> Vec<&'w Value> {
 
 /// The emitted wire of [`clocked_unit`] over `document` with `body`.
 fn emitted(document: &[u8], body: &str) -> (String, Value) {
-    let packages = qsl_semantics::model::intake::package_input([document]);
-    let unit = clocked_unit(&packages, body);
+    let packages = qsl_semantics::model::intake::package_input([document]).unwrap();
+    let unit = clocked_unit(body);
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
         .check(CheckingLimits::default())
@@ -784,11 +775,8 @@ fn an_urgency_reading_element_presences_is_not_emitted() {
     q["origin"]["generated"]["inputIdentities"] = json!([identity]);
     fields.push(q);
     let document = serde_json::to_vec(&document).expect("JSON");
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
-    let unit = clocked_unit(
-        &packages,
-        "urgent All when { forall(e in self.q : present(e)) };\n",
-    );
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
+    let unit = clocked_unit("urgent All when { forall(e in self.q : present(e)) };\n");
     let refusals = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
         .check(CheckingLimits::default())

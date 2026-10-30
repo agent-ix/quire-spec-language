@@ -255,16 +255,6 @@ fn schema_checks_kind_pairing_identifiers_and_exact_representable_scalar_bounds(
     ] {
         adverse.push(("/body/models/0/model/package", json!(package)));
     }
-    for digest in [
-        "0".repeat(63),
-        "0".repeat(65),
-        "A".repeat(64),
-        "g".repeat(64),
-        format!("sha256:{}", "0".repeat(64)),
-        format!("{}\n", "0".repeat(64)),
-    ] {
-        adverse.push(("/body/models/0/digest", json!(digest)));
-    }
     for (pointer, replacement) in adverse {
         let mut changed = original.clone();
         *changed.pointer_mut(pointer).unwrap() = replacement.clone();
@@ -327,8 +317,8 @@ fn schema_pass_does_not_replace_raw_byte_selection_or_arena_admission() {
         assert!(text.contains(fragment));
         let bytes = text.replacen(fragment, replacement, 1).into_bytes();
         assert!(schema.is_valid(&serde_json::from_slice(&bytes).unwrap()));
-        let failure = Snapshot::read_verified(&selected(&bytes), &bytes, ArtifactLimits::default())
-            .unwrap_err();
+        let failure =
+            Snapshot::read_verified(&selected(), &bytes, ArtifactLimits::default()).unwrap_err();
         assert_eq!(failure.code, Code::InvalidRuntimeInput);
         assert_eq!(failure.stage, stage);
         match (stage, failure.cause) {
@@ -337,21 +327,13 @@ fn schema_pass_does_not_replace_raw_byte_selection_or_arena_admission() {
             (stage, cause) => panic!("{stage:?} produced the wrong typed cause: {cause:?}"),
         }
     }
-    let stale = SnapshotRef::new(original.identity().clone(), ByteDigest::of(b"stale")).unwrap();
     assert!(schema.is_valid(&serde_json::from_slice(original.bytes()).unwrap()));
-    let failure =
-        Snapshot::read_verified(&stale, original.bytes(), ArtifactLimits::default()).unwrap_err();
-    assert_eq!(failure.stage, InputReadStage::Selection);
-    assert!(matches!(
-        failure.cause,
-        InputReadCause::DigestMismatch { .. }
-    ));
     let mut cyclic: Value = serde_json::from_slice(original.bytes()).unwrap();
     cyclic["body"]["arena"][0] = json!({"kind": "present", "value": 0});
     assert!(schema.is_valid(&cyclic));
     let bytes = serde_json::to_vec(&cyclic).unwrap();
     let failure =
-        Snapshot::read_verified(&selected(&bytes), &bytes, ArtifactLimits::default()).unwrap_err();
+        Snapshot::read_verified(&selected(), &bytes, ArtifactLimits::default()).unwrap_err();
     assert_eq!(failure.stage, InputReadStage::Construction);
     assert_eq!(failure.code, Code::InvalidRuntimeInput);
     assert!(matches!(failure.cause, InputReadCause::Construction(_)));

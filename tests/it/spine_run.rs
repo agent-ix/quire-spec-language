@@ -38,7 +38,6 @@ fn program_source(program: &[u8]) -> Value {
 #[test]
 #[trace("TC-773", "FR-289-AC-1")]
 fn front_end_package_is_independent_of_provider_registry() {
-    use qsl_foundation::digest::ByteDigest;
     use qsl_foundation::BackendId;
     use qsl_route::{
         descriptor_from_manifest, Candidate, ManifestMembers, ProviderOrigin, Registry,
@@ -53,7 +52,7 @@ fn front_end_package_is_independent_of_provider_registry() {
     );
     let empty = Registry::new();
     let mut populated = Registry::new();
-    for (index, (identity, capability, mode, origin)) in [
+    for (identity, capability, mode, origin) in [
         (
             "provider-a",
             "value-validity",
@@ -72,18 +71,12 @@ fn front_end_package_is_independent_of_provider_registry() {
             "bounded",
             ProviderOrigin::Linked,
         ),
-    ]
-    .into_iter()
-    .enumerate()
-    {
+    ] {
         populated
             .register(
                 descriptor_from_manifest(
                     Candidate::new(BackendId::new(identity)),
                     origin,
-                    qsl_route::ManifestDigest::from_digest(
-                        ByteDigest::of(format!("fr-289-manifest-{index}").as_bytes()).as_bytes(),
-                    ),
                     [(Some(capability), Some(mode))],
                     ManifestMembers {
                         domains: Some(&["collection"]),
@@ -951,22 +944,10 @@ fn tc_450_step_6_libraries_and_models_both_present_runs() {
     const LIBRARY: &str = "function f using v(x: Int[0, 9]): Boolean pure { x < 5 }\n";
     let library = format!("{HEADER}{LIBRARY}").into_bytes();
     let document = std::fs::read("tests/fixtures/spine-model.semantic-ir.json").unwrap();
-    // The domain package's `sha256-jcs` digest, computed from the document:
-    // the SHA-256 of its RFC 8785 encoding.
-    let model_digest = {
-        use sha2::{Digest, Sha256};
-        let parsed: serde_json::Value = serde_json::from_slice(&document).unwrap();
-        let canonical = serde_json_canonicalizer::to_vec(&parsed).unwrap();
-        let hex: String = Sha256::digest(&canonical)
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect();
-        format!("sha256-jcs:{hex}")
-    };
     let program = format!(
         "{HEADER}\
          import \"test/geometry\" as g;\n\
-         model M = \"acme/orders\" version \"1.0.0\" digest \"{model_digest}\";\n\
+         model M = \"acme/orders\";\n\
          function seven using v(): Integer pure {{ 7 }}\n"
     )
     .into_bytes();

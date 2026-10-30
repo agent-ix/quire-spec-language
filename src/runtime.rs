@@ -28,7 +28,7 @@ pub use input::{
     SnapshotDraft, SnapshotRef, ValueBinding, ValueId, ValueNode,
 };
 
-use qsl_foundation::{ByteDigest, SourceIdentity};
+use qsl_foundation::SourceIdentity;
 
 /// Immutable byte-bound snapshot, awaiting model-aware runtime validation.
 #[derive(Clone, Debug)]
@@ -66,11 +66,6 @@ impl Snapshot {
         &self.artifact.bytes
     }
 
-    /// SHA-256 of the complete retained artifact bytes.
-    pub const fn digest(&self) -> ByteDigest {
-        self.artifact.digest
-    }
-
     /// Original structurally checked draft, exposed immutably.
     pub fn draft(&self) -> &SnapshotDraft {
         &self.artifact.draft
@@ -83,7 +78,7 @@ impl Snapshot {
 
     /// Owned exact selector; copying labels detaches the selector from this borrow.
     pub fn reference(&self) -> SnapshotRef {
-        SnapshotRef::from_artifact(self.identity().clone(), self.digest())
+        SnapshotRef::from_artifact(self.identity().clone())
     }
 }
 
@@ -127,11 +122,6 @@ impl Invocation {
         &self.artifact.bytes
     }
 
-    /// SHA-256 of the complete retained artifact bytes.
-    pub const fn digest(&self) -> ByteDigest {
-        self.artifact.digest
-    }
-
     /// Original structurally checked draft, exposed immutably.
     pub fn draft(&self) -> &InvocationDraft {
         &self.artifact.draft
@@ -144,6 +134,6 @@ impl Invocation {
 
     /// Owned exact selector, distinct from a snapshot selector.
     pub fn reference(&self) -> InvocationRef {
-        InvocationRef::from_artifact(self.identity().clone(), self.digest())
+        InvocationRef::from_artifact(self.identity().clone())
     }
 }

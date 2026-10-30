@@ -1,6 +1,6 @@
 ---
 id: Task-046
-title: "Adopt the frozen complete-V1 baseline"
+title: "Adopt the complete-V1 baseline"
 type: Task
 status: done
 track: A00
@@ -9,7 +9,7 @@ relationships:
   - target: ix://agent-ix/quire-specification/Task-010
     type: references
 ---
-# Task-046: Adopt the frozen complete-V1 baseline
+# Task-046: Adopt the complete-V1 baseline
 
 ## Scope
 

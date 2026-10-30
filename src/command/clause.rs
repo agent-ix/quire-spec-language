@@ -59,7 +59,8 @@ pub(super) fn read(
         documents
             .iter()
             .map(|document| document.source().text().as_bytes()),
-    );
+    )
+    .map_err(|refusal| invalid("models", refusal.detail))?;
     let libraries = request
         .libraries
         .iter()

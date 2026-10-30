@@ -2,7 +2,7 @@
 //! FR-024: the public record itself owns closed decoding at every nesting level.
 
 use super::*;
-use quire_spec_language::runtime::{InvocationDraft, InvocationRef, ModelBinding};
+use quire_spec_language::runtime::InvocationDraft;
 use serde::{de::DeserializeOwned, Serialize};
 use std::fmt::Debug;
 
@@ -72,7 +72,7 @@ fn public_runtime_records_own_closed_object_decoding() {
         draft,
         &["observation", "models", "populations", "values", "arena"],
     );
-    closed_record(&draft.models[0], &["model", "digest"]);
+    closed_record(&draft.models[0], &["model"]);
     closed_record(
         &draft.populations[0],
         &["model", "record", "universe", "complete", "objects"],
@@ -87,7 +87,7 @@ fn public_runtime_records_own_closed_object_decoding() {
         &setup::object(&model, "self"),
         &["model", "record", "universe", "key"],
     );
-    closed_record(&snapshot.reference(), &["identity", "digest"]);
+    closed_record(&snapshot.reference(), &["identity"]);
     let (offered, _) = setup::recorded(
         &model,
         setup::draft(&model),
@@ -103,7 +103,7 @@ fn public_runtime_records_own_closed_object_decoding() {
     );
     assert_eq!(offered.invocations.len(), 1);
     let invocation = &offered.invocations[0];
-    closed_record(&invocation.reference(), &["identity", "digest"]);
+    closed_record(&invocation.reference(), &["identity"]);
     closed_record(
         invocation.draft(),
         &[
@@ -155,7 +155,7 @@ fn all_value_variants_own_closed_object_decoding() {
 
 #[test]
 #[trace("TC-099", "TC-100", "FR-024-AC-3")]
-fn nullable_result_and_native_digest_keep_their_exact_wire_domains() {
+fn nullable_result_keeps_its_exact_wire_domain() {
     let model = setup::native_rule_model::parts().model();
     let (offered, _) = setup::recorded(&model, setup::draft(&model), setup::draft(&model), |_| {});
     let original = &offered.invocations[0];
@@ -180,41 +180,4 @@ fn nullable_result_and_native_digest_keep_their_exact_wire_domains() {
     }
     assert!(value.as_object_mut().unwrap().remove("result").is_some());
     assert!(serde_json::from_value::<InvocationDraft>(value).is_err());
-
-    let mut binding = original.draft().models[0].clone();
-    binding.digest = ByteDigest::of(b"");
-    let empty_digest = format!("{:x}", binding.digest);
-    assert_eq!(binding.digest.to_string(), format!("sha256:{empty_digest}"));
-    assert_eq!(
-        binding.digest.to_string().parse::<ByteDigest>().unwrap(),
-        binding.digest
-    );
-    assert!(empty_digest.parse::<ByteDigest>().is_err());
-    let mut wire = serde_json::to_value(&binding).unwrap();
-    assert_eq!(wire["digest"], empty_digest);
-    assert_eq!(
-        serde_json::from_value::<ModelBinding>(wire.clone()).unwrap(),
-        binding
-    );
-    for invalid in [
-        "".to_owned(),
-        "0".repeat(63),
-        "0".repeat(65),
-        "é".repeat(32),
-        "g".repeat(64),
-        empty_digest.to_uppercase(),
-        format!("sha256:{empty_digest}"),
-    ] {
-        wire["digest"] = json!(invalid);
-        assert!(
-            serde_json::from_value::<ModelBinding>(wire.clone()).is_err(),
-            "{invalid}"
-        );
-        let mut reference = serde_json::to_value(original.reference()).unwrap();
-        reference["digest"] = json!(invalid);
-        assert!(
-            serde_json::from_value::<InvocationRef>(reference).is_err(),
-            "{invalid}"
-        );
-    }
 }

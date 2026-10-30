@@ -15,7 +15,6 @@ use qsl_foundation::diagnostic::Code;
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::{checked_node_id, checked_occurrence, CheckedPackage};
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_contract_model::{
     CheckedNodeId, CheckedPackageEvidence, CheckedPackageV2, CheckedParameterDeclarationError,
@@ -63,9 +62,9 @@ pub fn admission_evidence(
     imports: qsl_package::V2ReadLimits,
 ) -> Result<CheckedPackageEvidence, Box<RunRefusal>> {
     let mut evidence = emitted.evidence().clone();
-    for (digest, document) in models.packages() {
+    for (identity, document) in models.packages() {
         evidence
-            .insert_domain_package_document(hex(digest), document.as_slice())
+            .insert_domain_package_document(identity.as_str(), document.as_slice())
             .map_err(|_| fault("domain-package-documents-do-not-conflict"))?;
     }
     qsl_package::supply_closure(checked.package(), models.packages(), imports, &mut evidence)

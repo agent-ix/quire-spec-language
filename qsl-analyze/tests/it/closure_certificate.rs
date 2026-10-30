@@ -151,7 +151,7 @@ impl World {
 
     /// The `package_id` FR-098's recompile of the unit with `body` gives.
     fn package_id_of(&self, body: &str) -> DigestRecord {
-        let unit = unit_text(&self.documents.document, body);
+        let unit = unit_text(body);
         compile_package(
             SourceIdentity::new("agent-ix", "counter", "git", "1"),
             "counter.native",

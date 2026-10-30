@@ -51,26 +51,21 @@ pub(crate) fn model() -> NativeModel {
         .model()
 }
 
-pub(crate) fn source_prefix(model: &NativeModel) -> String {
-    format!(
-        "{}model M = \"example/package-model\" version \"1\" digest \"{}\";\n",
-        super::HEADER,
-        model.digest()
-    )
+pub(crate) fn source_prefix() -> String {
+    format!("{}model M = \"example/package-model\";\n", super::HEADER)
 }
 
-pub(crate) fn source(model: &NativeModel) -> String {
-    format!("{}{CLAUSE}\n", source_prefix(model))
+pub(crate) fn source() -> String {
+    format!("{}{CLAUSE}\n", source_prefix())
 }
 
-pub(crate) fn source_multiple(model: &NativeModel) -> String {
-    format!("{}{CLAUSE}\n{SECOND_CLAUSE}\n", source_prefix(model))
+pub(crate) fn source_multiple() -> String {
+    format!("{}{CLAUSE}\n{SECOND_CLAUSE}\n", source_prefix())
 }
 
 pub(crate) struct Expected {
     pub canonical: String,
     pub artifact: String,
-    pub digest: String,
 }
 
 pub(crate) fn expected(
@@ -98,11 +93,11 @@ fn expected_inner(
     formal_revision: u64,
     multiple: bool,
 ) -> Expected {
-    let native_prefix = source_prefix(model);
+    let native_prefix = source_prefix();
     let original = if multiple {
-        source_multiple(model)
+        source_multiple()
     } else {
-        source(model)
+        source()
     };
     let original_digest = format!("sha256:{:x}", Sha256::digest(original.as_bytes()));
     let record_start = MODEL_PREFIX.len();
@@ -182,7 +177,7 @@ fn expected_inner(
             "{{\"format\":\"native-linked-package/1\",\"semantics\":{SEMANTICS},",
             "\"required_features\":[\"boolean\",\"object\",\"reference\",\"text\"],",
             "\"source\":{{\"authority\":\"agent-ix\",\"identity\":{identity_json},\"revision_namespace\":\"draft\",\"revision\":{revision_json},\"digest\":\"{original_digest}\",\"formal\":{{\"document\":\"PackageSource\",\"revision\":{formal_revision}}}}},",
-            "\"models\":[{{\"alias\":\"M\",\"owner\":{OWNER},\"digest\":\"{model_digest}\",\"artifact\":{model_string}}}],\"clauses\":["
+            "\"models\":[{{\"alias\":\"M\",\"owner\":{OWNER},\"artifact\":{model_string}}}],\"clauses\":["
         ),
         SEMANTICS = SEMANTICS,
         OWNER = OWNER,
@@ -190,26 +185,12 @@ fn expected_inner(
         revision_json = revision_json,
         original_digest = original_digest,
         formal_revision = formal_revision,
-        model_digest = model.digest(),
         model_string = model_string,
     );
     let canonical = format!("{prefix}{}]}}", canonical_clauses.join(","));
-    let mut hash = Sha256::new();
-    hash.update(b"quire-spec-language\0quire.native.bound-package/v1\0linked-package\0");
-    hash.update(canonical.as_bytes());
-    let digest = format!("{:x}", hash.finalize());
-    let artifact = format!(
-        concat!(
-            "{prefix}{clauses}],",
-            "\"canonical_identity\":{{\"domain\":\"quire.native.bound-package\",\"version\":\"v1\",\"algorithm\":\"sha256\",\"digest\":\"{digest}\"}}}}"
-        ),
-        prefix = prefix,
-        clauses = full_clauses.join(","),
-        digest = digest,
-    );
+    let artifact = format!("{prefix}{}]}}", full_clauses.join(","));
     Expected {
         canonical,
         artifact,
-        digest,
     }
 }

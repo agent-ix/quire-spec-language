@@ -16,23 +16,22 @@ use qsl_eval::model_subject::{ModelInstance, ModelSubject};
 use qsl_eval::simulation::model::{
     ExpansionLimits, ModelSimState, ModelSimulationRequest, PopulationUniverse,
 };
-use qsl_foundation::digest::{DigestDomain, DigestRecord};
-use qsl_foundation::{BackendId, ByteDigest, SourceIdentity};
+use qsl_foundation::digest::DigestDomain;
+use qsl_foundation::{BackendId, SourceIdentity};
 use qsl_package::CheckedPackage;
 use qsl_replay::{
     GraphEvidence, GraphEvidenceEnvelope, GraphReplayResult, ModelCheckLimits, ModelPath,
-    ModelTraceSubject, ObligationIdentity, RawSourceRef, ReplayLimits, ReplayRequestWire,
-    ReplayResult, ReplaySource, RequestTargetWire, StateEnvironment, WitnessPath, WitnessSource,
+    ModelTraceSubject, ObligationIdentity, ReplayLimits, ReplayRequestWire, ReplayResult,
+    ReplaySource, RequestTargetWire, StateEnvironment, WitnessPath, WitnessSource,
 };
 use qsl_semantics::check::{CheckedStateGraphClaim, PackageDeclarations};
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::observation::{
     declared_type_universe_for, DocumentRef, ObservationLimits,
 };
-use qsl_semantics::value::{CatalogRole, DefinitionLock};
+use qsl_semantics::value::{admit_integer_division, DefinitionRole};
 use quire_checked::key::DeclarationKey;
 use quire_exact::{ObjectId, ObjectReference, ScalarLimits, Value};
 use quire_semantic_value::checking::CheckingLimits;
@@ -223,13 +222,9 @@ pub(crate) struct World {
     pub(crate) package: CheckedPackage,
     document: Vec<u8>,
     source: Vec<u8>,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
+    snapshots: qsl_semantics::model::observation::DocumentProvision,
     pub(crate) initial: Vec<DocumentRef>,
-}
-
-fn digest_of(document: &[u8]) -> [u8; 32] {
-    *package_input([document]).keys().next().expect("one model")
 }
 
 impl World {
@@ -237,15 +232,24 @@ impl World {
     /// initial snapshot per entry of `starts`, each `(key, [(field,
     /// value)])` per object.
     pub(crate) fn new(model: Model, body: &str, starts: &[&[Object<'_>]]) -> Self {
+        Self::with_profiles(model, "", body, starts)
+    }
+
+    /// As [`Self::new`], with `profiles` (header `profile` lines) after the
+    /// value profile.
+    pub(crate) fn with_profiles(
+        model: Model,
+        profiles: &str,
+        body: &str,
+        starts: &[&[Object<'_>]],
+    ) -> Self {
         let document = model.document();
-        let packages = package_input([document.as_slice()]);
+        let packages = package_input([document.as_slice()]).unwrap();
         let text = format!(
             "language \"ix:native\" edition \"1-draft\";\n\
-             profile v = \"quire.value.complete/v1\";\n\
-             model {} = \"{}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n{body}",
-            model.alias,
-            model.package,
-            hex(&digest_of(&document))
+             profile v = \"quire.value.complete/v1\";\n{profiles}\
+             model {} = \"{}\";\n{body}",
+            model.alias, model.package
         );
         let parsed = qsl_cst::parse(
             SourceIdentity::new("agent-ix", "graph", "git", "1"),
@@ -274,12 +278,9 @@ impl World {
         )
         .expect("the unit assembles");
         // `div` reads truncating integer division.
-        let lock = DefinitionLock::pinned();
         declarations.integer_division = Some(
-            lock.admit_integer_division(
-                &[lock
-                    .entry(CatalogRole::IntegerDivisionTruncating)
-                    .reference()],
+            admit_integer_division(
+                &[DefinitionRole::IntegerDivisionTruncating.reference()],
                 None,
             )
             .expect("the division profile admits"),
@@ -319,8 +320,7 @@ impl World {
                 json!({"key": key, "type": object_type, "fields": fields})
             })
             .collect();
-        let header = json!({"identity": self.model.package, "version": "1.0.0",
-            "digest": format!("sha256-jcs:{}", hex(&digest_of(&self.document)))});
+        let header = json!({"identity": self.model.package});
         let document = json!({
             "format": "quire.state.snapshot/v1",
             "identity": {"authority": "test", "identity": name, "revision_namespace": "fixture",
@@ -331,17 +331,16 @@ impl World {
                 "complete": true, "objects": objects}],
         });
         let bytes = document.to_string().into_bytes();
-        let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-        let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-            .expect("canonical fixture")
-            .as_bytes();
-        self.snapshots.insert(digest, bytes);
+        self.snapshots.insert(
+            qsl_semantics::model::observation::document_reference(&bytes)
+                .expect("a document names itself"),
+            bytes,
+        );
         DocumentRef {
             authority: "test".to_owned(),
             identity: name.to_owned(),
             revision_namespace: "fixture".to_owned(),
             revision: "fixture:1".to_owned(),
-            digest,
         }
     }
 
@@ -385,40 +384,20 @@ impl World {
         source: WitnessSource,
         keys: &[&str],
     ) -> GraphReplayResult {
-        let source_record = DigestRecord::mint(
-            DigestDomain::SourceBytesV1,
-            ByteDigest::of(&self.source).as_bytes(),
-        );
-        let source_wire: (String, String, String, String, Option<String>, String) = (
+        let source_wire: (String, String, String, String) = (
             "agent-ix".to_owned(),
             "graph".to_owned(),
             "git".to_owned(),
             "1".to_owned(),
-            Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-            source_record.hex(),
         );
         let package_id = self.package_id().record();
-        let sha256_jcs = |digest: [u8; 32]| {
-            (
-                Some(DigestDomain::Sha256Jcs.as_str().to_owned()),
-                DigestRecord::mint(DigestDomain::Sha256Jcs, digest).hex(),
-            )
-        };
-        let mut byte_provision = vec![
-            (
-                Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-                source_record.hex(),
-                self.source.clone(),
-            ),
-            {
-                let (domain, hex) = sha256_jcs(digest_of(&self.document));
-                (domain, hex, self.document.clone())
-            },
-        ];
-        byte_provision.extend(self.snapshots.iter().map(|(digest, bytes)| {
-            let (domain, hex) = sha256_jcs(*digest);
-            (domain, hex, bytes.clone())
-        }));
+        let byte_provision = vec![(
+            "agent-ix".to_owned(),
+            "graph".to_owned(),
+            self.source.clone(),
+        )];
+        let mut documents = vec![self.document.clone()];
+        documents.extend(self.snapshots.values().cloned());
         let obligation = [3; 32];
         let occurrence = claim
             .occurrence()
@@ -428,13 +407,6 @@ impl World {
             occurrence.clone(),
             occurrence.node(),
             package_id,
-            vec![RawSourceRef::new(
-                "agent-ix".to_owned(),
-                "graph".to_owned(),
-                "git".to_owned(),
-                "1".to_owned(),
-                source_record,
-            )],
             Vec::new(),
             UNLIMITED,
             Vec::new(),
@@ -450,7 +422,7 @@ impl World {
                 Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
                 package_id.hex(),
             ),
-            source_digests: vec![source_wire],
+            sources: vec![source_wire],
             dependencies: Vec::new(),
             replay_target: RequestTargetWire::default(),
             source: ReplaySource::ModelGraph(Box::new(envelope)),
@@ -463,6 +435,7 @@ impl World {
             object_environment: None,
             declared_domains: Vec::new(),
             byte_provision,
+            documents,
         };
         let subject = ModelTraceSubject {
             timed: None,

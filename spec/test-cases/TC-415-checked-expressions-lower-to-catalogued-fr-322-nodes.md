@@ -14,7 +14,7 @@ Verify the FR-093 lowering: one node per checked expression, shared by equal
 content, with each source occurrence recorded; each application's operator,
 semantic form, operation identity, member, mode, laws, leaves and arguments
 per the lowering table; FR-149 classification of conversions; binder levels;
-the text-leaf list of a structural comparison, recursive composites
+and the text-leaf list of a structural comparison, recursive composites
 included.
 
 This catches a lowering that inlines operands (losing occurrences), a
@@ -24,7 +24,7 @@ invented from a constant, a `NodeKind` added without a lowering arm, a leaf
 walk that runs a recursive composite past its first reentry, and an
 optional field's leaf path without `inner`.
 
-Scope: FR-093-AC-1 to FR-093-AC-6, FR-093-AC-8, FR-093-AC-10,
+Scope: FR-093-AC-1 to FR-093-AC-6, FR-093-AC-8,
 FR-093-AC-11, FR-093-AC-14, FR-093-AC-15, FR-093-AC-30, FR-093-AC-31,
 FR-093-AC-32, FR-093-CON-1.
 
@@ -51,13 +51,10 @@ selection whose alias is `v`, and is checked under owner (`a`, `u`).
    nodes.
 5. Check `q` of FR-093-AC-5 and read the levels of `x`, `y` and `z` and the
    `forall` argument list.
-6. Check `function te using v(p: Text[0, 8; nfc], r: Text[0, 8; nfc]): Boolean pure { p = r }`.
+6. Check `function te using v(p: Text[0, 8; nfc], r: Text[0, 8; nfc]): Boolean pure { p = r }`
+   and read its law.
 7. Scan the lowering `match` over `NodeKind` for a `_` arm.
-8. Check `Node`, `A` and `B`, and `eq`, `has`, `eqa`
-   and `eqo` of those vectors. Read the preimage bytes and keys of the
-   `a = b`, `contains(s, b)`, `x = y` and `a = b` nodes, and of the type,
-   group and parameter nodes they name. Check again with `B` declared before
-   `A`.
+8. Withdrawn: the step read node keys that were digests of preimages (FR-093-AC-10, withdrawn); the step number is not reused.
 9. Check structural equality over `R`, `S`, `W`, `Tree2` and `Two` of
    FR-093-AC-11, and structural equality and `contains` over FR-092's
    `List`, and read each operation's `leaves`. Check `eq` of step 8 with a
@@ -128,9 +125,7 @@ The node-limit step's test (`check/lowering/tests/leaves.rs`) asserts
 - Step 6: the node carries law `text_profile` with the layer table's
   text-profile `DefinitionRef` and mode `nfc`.
 - Step 7: no `_` arm.
-- Step 8: every check succeeds; the four nodes key to E14 to E17 with the
-  vectors' preimage bytes, the others to T13, T14, G16 to G21, S4, S5 and
-  P10 to P16; declaring `B` first gives the same keys.
+- Step 8: withdrawn.
 - Step 9: `R` and `S` each give one leaf at `field:t`, `inner`, and `W` one
   at `field:t`; `Tree2` and `Two` give the lists FR-093-AC-11 states;
   `List` gives `[]` for both operations; `eq` under the node limit refuses with

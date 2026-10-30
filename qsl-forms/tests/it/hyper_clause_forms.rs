@@ -13,12 +13,9 @@ use qsl_foundation::{SourceIdentity, Span};
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
      profile inf = \"quire.temporal.infinite-trace/v1\";\n\
-     model V = \"example/vault\" version \"1\" digest \
-     \"sha256-jcs:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n\
-     model S = \"example/device-saving\" version \"1\" digest \
-     \"sha256-jcs:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\";\n\
-     model N = \"example/device-normal\" version \"1\" digest \
-     \"sha256-jcs:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\";\n";
+     model V = \"example/vault\";\n\
+     model S = \"example/device-saving\";\n\
+     model N = \"example/device-normal\";\n";
 
 /// ADR-023 section 1's noninterference clause.
 pub const NON_INTERFERENCE: &str =

@@ -7,7 +7,7 @@ use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{BodyTerm, CheckCause, CheckedGraph, LawRole, PackageDeclarations};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
-use qsl_semantics::value::{CatalogRole, DefinitionLock};
+use qsl_semantics::value::{admit_integer_division, DefinitionRole};
 use quire_eval::FamilyOutcome;
 use quire_exact::{
     DivisionProfile, Integer, Meter, Outcome, ScalarLimits, Undefined, Value, ValueType,
@@ -178,13 +178,11 @@ fn admitted_integer_division(
     profile: DivisionProfile,
 ) -> quire_checked::integer_division::AdmittedIntegerDivision {
     let role = match profile {
-        DivisionProfile::Truncating => CatalogRole::IntegerDivisionTruncating,
-        DivisionProfile::Floor => CatalogRole::IntegerDivisionFloor,
-        DivisionProfile::Euclidean => CatalogRole::IntegerDivisionEuclidean,
+        DivisionProfile::Truncating => DefinitionRole::IntegerDivisionTruncating,
+        DivisionProfile::Floor => DefinitionRole::IntegerDivisionFloor,
+        DivisionProfile::Euclidean => DefinitionRole::IntegerDivisionEuclidean,
     };
-    let lock = DefinitionLock::pinned();
-    lock.admit_integer_division(&[lock.entry(role).reference()], None)
-        .unwrap()
+    admit_integer_division(&[role.reference()], None).unwrap()
 }
 
 fn call_integer(package: &CheckedPackage, a: i128, b: i128) -> Outcome<Value> {

@@ -4,7 +4,6 @@
 //!
 //! [`provenance`] holds ADR-013 O-07/O-12's occurrence key, source region
 //! and package source map.
-use crate::digest::{DigestDomain, DigestRecord};
 use crate::ByteDigest;
 use alloc::sync::Arc;
 use alloc::{boxed::Box, format, string::String, vec, vec::Vec};
@@ -106,20 +105,16 @@ impl SourceIdentity {
         }
     }
 
-    /// The `RawSourceRef` of bytes with `digest` under these labels.
+    /// The `RawSourceRef` under these labels.
     /// Provenance refuses only an empty label, which is a blank one, so a
     /// blank label is named first and a provenance refusal after it is an
     /// established-invariant break ([`ReferenceError::Provenance`]).
-    fn reference(&self, digest: ByteDigest) -> Result<RawSourceRef, ReferenceError> {
+    fn reference(&self) -> Result<RawSourceRef, ReferenceError> {
         if let Some(label) = self.first_blank_label() {
             return Err(ReferenceError::Blank(label));
         }
-        RawSourceRef::new(
-            self.authority.clone(),
-            self.identity.clone(),
-            DigestRecord::mint(DigestDomain::SourceBytesV1, digest.as_bytes()),
-        )
-        .map_err(ReferenceError::Provenance)
+        RawSourceRef::new(self.authority.clone(), self.identity.clone())
+            .map_err(ReferenceError::Provenance)
     }
 }
 
@@ -299,14 +294,10 @@ const BOM: &str = "\u{feff}";
 
 /// FR-001: render `region` over `bytes`, the bytes its `RawSourceRef` names,
 /// deriving one-based lines and Unicode scalar columns from the longest
-/// valid UTF-8 prefix of those bytes. Returns `None` when the bytes are not
-/// the ones the region's reference names, or when an end is not a scalar
+/// valid UTF-8 prefix of those bytes. Returns `None` when an end is not a scalar
 /// boundary inside that prefix. This is how a refusal region over offered
 /// bytes that were never admitted is rendered.
 pub fn render_offered(bytes: &[u8], region: &SourceRegion) -> Option<LocatedSpan> {
-    if region.source().digest().as_bytes() != &ByteDigest::of(bytes).as_bytes() {
-        return None;
-    }
     let text = match core::str::from_utf8(bytes) {
         Ok(text) => text,
         Err(error) => core::str::from_utf8(bytes.get(..error.valid_up_to())?).ok()?,
@@ -379,7 +370,7 @@ impl Source {
         let digest = ByteDigest::of(bytes);
         // Every label is non-blank here, so the reference is minted unless
         // provenance itself refuses the values.
-        let reference = match identity.reference(digest) {
+        let reference = match identity.reference() {
             Ok(reference) => reference,
             Err(ReferenceError::Blank(label)) => {
                 return Err(refuse(
@@ -428,6 +419,9 @@ impl Source {
         Ok(Self::admit(identity, reference, path, text, digest))
     }
 
+    // BLOCKED-BY PLAT-1205 (owner: planner titan:QSL:plan): Source::digest (this verified intake and
+    // `Source::digest`), the schema `source.digest` member and the `Source`
+    // record's `digest` in `src/package/wire.rs`.
     /// Verified intake: [`Source::read_typed`], then the admitted bytes'
     /// digest against the independently selected one. A mismatch concerns
     /// the bytes as a whole and refuses with no region (FR-001).
@@ -478,10 +472,10 @@ impl Source {
 
     /// FR-001: render a region of this source, deriving the one-based line
     /// and Unicode scalar column of each end from the admitted bytes. Returns
-    /// `None` for a region under another source's bytes, or one whose ends
+    /// `None` for a region under another source, or one whose ends
     /// are not scalar boundaries of this source.
     pub fn render(&self, region: &SourceRegion) -> Option<LocatedSpan> {
-        if region.source().digest() != self.0.reference.digest() {
+        if region.source() != &self.0.reference {
             return None;
         }
         self.locate(Span {
@@ -609,9 +603,8 @@ mod tests {
     }
 
     /// FR-001-AC-5: admission mints a `RawSourceRef` of the authority and
-    /// identity labels and the `quire.source.bytes/v1` digest of the bytes
-    /// (the type has no other member); other bytes under the same labels
-    /// change only the digest.
+    /// identity labels (the type has no other member); other bytes under the
+    /// same labels name the same reference.
     #[trace("TC-424", "FR-001-AC-5")]
     #[test]
     fn admission_mints_the_caller_named_source_reference() {
@@ -628,20 +621,10 @@ mod tests {
         let reference = first.reference();
         assert_eq!(reference.authority(), "agent-ix");
         assert_eq!(reference.identity(), "specs/a.quire");
-        assert_eq!(reference.digest().domain(), DigestDomain::SourceBytesV1);
-        assert_eq!(
-            reference.digest().as_bytes(),
-            &ByteDigest::of(b"b").as_bytes()
-        );
 
         let second = admit(b"b'");
         let other = second.reference();
-        assert_ne!(reference, other);
-        assert_eq!(
-            (other.authority(), other.identity()),
-            (reference.authority(), reference.identity())
-        );
-        assert_eq!(other.digest().as_bytes(), &ByteDigest::of(b"b'").as_bytes());
+        assert_eq!(reference, other);
     }
 
     /// FR-001-AC-6: exactly one empty, single-space or U+3000 label refuses
@@ -727,10 +710,6 @@ mod tests {
             assert_eq!((region.start(), region.end()), (start, end));
             let reference = region.source();
             assert_eq!((reference.authority(), reference.identity()), ("a", "u"));
-            assert_eq!(
-                reference.digest().as_bytes(),
-                &ByteDigest::of(bytes).as_bytes()
-            );
         }
     }
 
@@ -797,6 +776,7 @@ mod tests {
         let region = refused.error.region.expect("a located refusal");
         let rendered = render_offered(b"a\n\xffb", &region).expect("rendered");
         assert_eq!((rendered.start.line, rendered.start.column), (2, 1));
-        assert_eq!(render_offered(b"other", &region), None);
+        // A region outside the offered bytes' valid prefix refuses.
+        assert_eq!(render_offered(b"a", &region), None);
     }
 }

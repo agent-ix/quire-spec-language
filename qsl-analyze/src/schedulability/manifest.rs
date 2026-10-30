@@ -13,8 +13,8 @@
 //! kind, evidence kind or memory model.
 
 use qsl_route::{
-    descriptor_from_manifest, BackendDescriptor, Candidate, ManifestDigest, ManifestMembers, Mode,
-    ProviderOrigin, RegistrationRefusal,
+    descriptor_from_manifest, BackendDescriptor, Candidate, ManifestMembers, Mode, ProviderOrigin,
+    RegistrationRefusal,
 };
 use qsl_semantics::check::Capability;
 
@@ -28,21 +28,17 @@ pub const ADVERTISED: [(Option<&str>, Option<&str>); 1] = [(
 )];
 
 /// EN-7's routed descriptor, converted from [`ADVERTISED`] by FR-288's
-/// conversion. `origin` and `manifest_digest` are the host's facts
+/// conversion. `origin` is the host's fact
 /// (ADR-029 PV-1).
 ///
 /// # Errors
 ///
 /// Only if the registry's admission rules refuse this module's own data, which
 /// the tests of this module rule out.
-pub fn descriptor(
-    origin: ProviderOrigin,
-    manifest_digest: ManifestDigest,
-) -> Result<BackendDescriptor, RegistrationRefusal> {
+pub fn descriptor(origin: ProviderOrigin) -> Result<BackendDescriptor, RegistrationRefusal> {
     descriptor_from_manifest(
         Candidate::new(qsl_foundation::BackendId::new(BACKEND_ID)),
         origin,
-        manifest_digest,
         ADVERTISED,
         ManifestMembers {
             domains: None,

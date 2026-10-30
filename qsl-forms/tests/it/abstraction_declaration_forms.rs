@@ -12,8 +12,7 @@ use qsl_foundation::{SourceIdentity, Span};
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
      profile t = \"quire.value.complete/v1\";\n\
-     model Config = \"example/config-version\" version \"1\" digest \
-     \"sha256-jcs:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n";
+     model Config = \"example/config-version\";\n";
 
 fn build(declarations: &str) -> (String, ParsedUnit) {
     let text = format!("{HEADER}{declarations}\n");

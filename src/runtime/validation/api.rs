@@ -9,7 +9,7 @@ use super::super::{
 };
 use crate::checking::{CheckedClause, CheckedPackage};
 use crate::linking::DeclarationLocation;
-use qsl_foundation::{ByteDigest, Diagnostic, SourceIdentity};
+use qsl_foundation::{Diagnostic, SourceIdentity};
 
 #[cfg(test)]
 #[path = "../../../tests/support/runtime_evaluation_invariants.rs"]
@@ -70,22 +70,12 @@ impl RuntimeReference {
         }
     }
 
-    /// Supplied or expected complete byte digest.
-    pub fn digest(&self) -> ByteDigest {
-        match self {
-            Self::Snapshot(value) => value.digest(),
-            Self::Invocation(value) => value.digest(),
-        }
-    }
-
     pub(super) fn compare(&self, other: &Self) -> Ordering {
         let kind = |value: &Self| match value {
             Self::Snapshot(_) => 0,
             Self::Invocation(_) => 1,
         };
-        (kind(self), self.identity())
-            .cmp(&(kind(other), other.identity()))
-            .then_with(|| self.digest().to_string().cmp(&other.digest().to_string()))
+        (kind(self), self.identity()).cmp(&(kind(other), other.identity()))
     }
 }
 

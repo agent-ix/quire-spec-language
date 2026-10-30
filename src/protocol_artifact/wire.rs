@@ -6,7 +6,6 @@
 
 use super::{NumberError, NumberWire, ProtocolNumber};
 use qsl_foundation::serde_object::from_object;
-use qsl_foundation::ByteDigest;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 // Unlike a derived struct's default decoder, every record below requires an
@@ -142,31 +141,6 @@ impl Serialize for Integer {
                 Err(serde::ser::Error::custom("expected integer numeric kind"))
             }
         }
-    }
-}
-
-/// A `sha256-jcs` digest (FR-056-CON-4): 64 lowercase hex digits, with no
-/// `sha256:` prefix, so a raw-byte [`ByteDigest`] spelling cannot occupy it.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct JcsDigest(pub [u8; 32]);
-
-impl Serialize for JcsDigest {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        use std::fmt::Write as _;
-        let mut text = String::with_capacity(64);
-        for byte in self.0 {
-            write!(text, "{byte:02x}").map_err(serde::ser::Error::custom)?;
-        }
-        serializer.serialize_str(&text)
-    }
-}
-
-impl<'de> Deserialize<'de> for JcsDigest {
-    fn deserialize<D: Deserializer<'de>>(decoder: D) -> Result<Self, D::Error> {
-        // `from_hex` admits exactly 64 lowercase hex digits and no prefix.
-        ByteDigest::from_hex(&String::deserialize(decoder)?)
-            .map(|digest| Self(digest.as_bytes()))
-            .map_err(de::Error::custom)
     }
 }
 
@@ -364,11 +338,7 @@ record! { /// Located producer export, whose kind/path must exist in its admitte
 record! { /// FR-042/FR-056: the exact domain package a model was linked against.
     DomainPackage {
         /// The domain package's own identity.
-        identity: String,
-        /// The domain package's own version.
-        version: String,
-        /// The `sha256-jcs` digest of its Semantic IR 2.0.0 document.
-        digest: JcsDigest
+        identity: String
     }
 }
 record! { /// Selected model artifact and exports, naming its domain package directly.

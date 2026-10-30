@@ -15,10 +15,8 @@ use quire_exact::Integer;
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
      profile inf = \"quire.temporal.infinite-trace/v1\";\n\
-     model Spec = \"example/counter-spec\" version \"1\" digest \
-     \"sha256-jcs:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n\
-     model Impl = \"example/counter-cas\" version \"1\" digest \
-     \"sha256-jcs:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\";\n";
+     model Spec = \"example/counter-spec\";\n\
+     model Impl = \"example/counter-cas\";\n";
 
 const CAS_REFINES_COUNTER: &str =
     "refinement CasRefinesCounter using inf abstract Spec concrete Impl {\n\

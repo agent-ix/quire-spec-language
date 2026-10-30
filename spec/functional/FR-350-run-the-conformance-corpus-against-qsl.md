@@ -83,7 +83,10 @@ QSL reads capability applicability from each
 `coverage.primary[*].applicability` and vector applicability from each
 `vectors[*].applicability`. A primary capability is in the default scope
 (FR-351) when its `consumer_types` includes a QSL consumer type and one of
-its `semantic_profiles` is in QSL's definition catalog. A vector SHALL run
+its `semantic_profiles` is a profile identity supported by QSL under FR-110,
+FR-230, or FR-361. The supported set is resolved from those closed typed
+profile roles; this requirement does not define or compare a second definition
+catalog. A vector SHALL run
 when its `capability_id` selects that primary row, its own
 `applicability.consumer_types` includes its `subject.consumer_type`, and
 that subject maps to a QSL entry point in the table above. Vectors of an

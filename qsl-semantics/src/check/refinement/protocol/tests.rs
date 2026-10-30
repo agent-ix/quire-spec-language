@@ -134,8 +134,6 @@ fn abstract_model() -> SelectedModel {
     let package = DomainPackage::new(
         DomainPackageRef {
             identity: ABSTRACT.to_owned(),
-            version: "1".to_owned(),
-            digest: [0_u8; 32],
         },
         records,
     );
@@ -162,10 +160,7 @@ fn header(protocol_profile: bool) -> String {
         ""
     };
     HEADER.replacen("model M", &format!("{profile}model M"), 1)
-        + &format!(
-            "model A = \"{ABSTRACT}\" version \"1\" digest \
-             \"sha256-jcs:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\";\n"
-        )
+        + &format!("model A = \"{ABSTRACT}\";\n")
 }
 
 /// A refusal with the text of the unit it is located at.

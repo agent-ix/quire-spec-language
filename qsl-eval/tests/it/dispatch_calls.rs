@@ -2210,9 +2210,8 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
         dispatch_expression(),
         Expression::integer(1_i64),
     );
-    let profile_identity = qsl_semantics::value::DefinitionLock::pinned()
-        .entry(qsl_semantics::value::CatalogRole::Root)
-        .identity
+    let profile_identity = qsl_semantics::value::DefinitionRole::Root
+        .identity()
         .to_owned();
     let add_invariant = |name: &str, body: Expression| StateClauseDeclaration {
         kind: StateClauseKind::Invariant,
@@ -2232,6 +2231,7 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
         context_population: None,
         frame_population: None,
         spans: expression_spans(&body),
+        presence_places: Vec::new(),
         body,
     };
     declarations_a.state_clauses.extend([
@@ -2264,7 +2264,6 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
             identity: "tc-196-d01-current".to_owned(),
             revision_namespace: "fixture".to_owned(),
             revision: "1".to_owned(),
-            digest: [0; 32],
         },
         environment: objects.clone(),
         populations: BTreeMap::new(),

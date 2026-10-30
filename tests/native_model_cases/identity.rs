@@ -56,7 +56,11 @@ fn tc_042_generated_semantic_mutations_bind_the_changed_payload() {
     for (case, mutate) in mutations.iter().enumerate() {
         let model = authored(mutate).model();
         let artifact: Value = serde_json::from_slice(model.artifact_bytes()).unwrap();
-        assert_ne!(model.digest(), baseline.digest(), "case {case}");
+        assert_ne!(
+            model.artifact_bytes(),
+            baseline.artifact_bytes(),
+            "case {case}"
+        );
         let declarations: Value =
             serde_json::from_str(artifact["declarations"].as_str().unwrap()).unwrap();
         match case {
@@ -176,7 +180,7 @@ fn tc_042_set_inventories_are_permutation_invariant_but_parameters_are_ordered()
     let mut reordered = extra_inventory();
     reordered.roles.operations[0].parameters.reverse();
     let reordered = reordered.model();
-    assert_ne!(reordered.digest(), baseline.digest());
+    assert_ne!(reordered.artifact_bytes(), baseline.artifact_bytes());
     let step = reordered
         .roles()
         .operations
@@ -217,7 +221,7 @@ fn tc_042_native_source_labels_and_formal_owner_participate_in_identity() {
         .unwrap();
         input.source = FormalSource::new(native, input.source.identity().clone());
         let model = input.model();
-        assert_ne!(model.digest(), baseline.digest());
+        assert_ne!(model.artifact_bytes(), baseline.artifact_bytes());
         let artifact: Value = serde_json::from_slice(model.artifact_bytes()).unwrap();
         assert_eq!(artifact["source"]["identity"], identity);
         assert_eq!(artifact["source"]["revision"], revision);
@@ -235,5 +239,5 @@ fn tc_042_native_source_labels_and_formal_owner_participate_in_identity() {
         Vec::new(),
     )
     .unwrap();
-    assert_ne!(input.model().digest(), baseline.digest());
+    assert_ne!(input.model().artifact_bytes(), baseline.artifact_bytes());
 }

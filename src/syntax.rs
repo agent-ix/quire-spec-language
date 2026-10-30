@@ -266,10 +266,6 @@ pub struct ModelImport {
     pub alias: Spanned<String>,
     /// Decoded package label.
     pub package: Spanned<String>,
-    /// Decoded version label.
-    pub version: Spanned<String>,
-    /// Decoded digest label; parser success does not validate a model digest.
-    pub digest: Spanned<String>,
     /// Complete import declaration range.
     pub span: Span,
 }
