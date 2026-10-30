@@ -9,10 +9,9 @@
 
 use ix_trace_rs::trace;
 use qsl_foundation::source::provenance::OccurrenceKey;
-use qsl_foundation::SourceIdentity;
 use qsl_replay::{
-    compile_package, replay_model_trace, settle_model_check, CertificateRequest,
-    CounterexampleKind, DependencyInput, DigestRecord, ModelCheckItem, ModelCheckLimits,
+    replay_model_trace, settle_model_check, CertificateRequest,
+    CounterexampleKind, ModelCheckItem, ModelCheckLimits,
     ModelCheckOutcome, ModelCheckRecord, ModelTraceReplayResult, ModelTraceSettlement,
     ModelTraceSubject, ReplayLimits, ResultLabel, StrongFairnessHint, TemporalCounterexample,
     TerminalValue,
@@ -45,27 +44,15 @@ fn settled(
     outcome: &ModelCheckOutcome,
 ) -> (ModelTraceReplayResult, ModelCheckRecord) {
     let letters = Versions::new(world, vec![is_two]);
-    let id: DigestRecord = compile_package(
-        SourceIdentity::new("agent-ix", "counter", "git", "1"),
-        "counter.native",
-        &world.unit,
-        [world.domain.document.as_slice()],
-        &DependencyInput::default(),
-        qsl_replay::StageLimits::default(),
-        ReplayLimits::default(),
-    )
-    .expect("the unit compiles")
-    .package_id();
     let node = &world.package.graph().temporal_clauses()[0];
     let clause_node = node.identity().clone();
-    let occurrence = OccurrenceKey::new(clause_node, node.claim().clone());
+    let occurrence = OccurrenceKey::new(clause_node.clone(), node.claim().clone());
     let replay = |counterexample: &TemporalCounterexample| {
         replay_model_trace(
             request(
                 &world.domain.document,
                 world.snapshots.iter(),
                 &world.unit,
-                id,
             ),
             &ModelTraceSubject {
                 timed: None,
@@ -73,7 +60,7 @@ fn settled(
                 universes: world.unlimited().simulation.universes,
                 expansion: world.unlimited().simulation.expansion,
             },
-            &envelope_at(id, counterexample.clone(), clause_node, occurrence.clone()),
+            &envelope_at(counterexample.clone(), clause_node.clone(), occurrence.clone()),
             &letters,
             ReplayLimits::default(),
         )
@@ -81,7 +68,6 @@ fn settled(
     let record = settle_model_check(
         outcome,
         &ModelCheckLimits::default(),
-        &id,
         &CertificateRequest {
             subject: world.unlimited(),
             item: ModelCheckItem::Clause {

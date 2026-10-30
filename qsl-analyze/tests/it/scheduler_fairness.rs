@@ -196,13 +196,12 @@ impl Chatter {
         payload: TemporalCounterexample<ProtocolTransition>,
     ) -> Result<ModelTraceReplayResult, ReplayRefusal> {
         let unit = unit_text(&self.body).into_bytes();
-        let id = package_id(&self.body);
         let node = &self.checked.graph().temporal_clauses()[0];
         let clause_node = node.identity().clone();
-        let occurrence = OccurrenceKey::new(clause_node, node.claim().clone());
+        let occurrence = OccurrenceKey::new(clause_node.clone(), node.claim().clone());
         let subject = self.subject();
         replay_protocol_trace(
-            request(&document(), self.documents.snapshots.iter(), &unit, id),
+            request(&document(), self.documents.snapshots.iter(), &unit),
             &ProtocolTraceSubject {
                 model: ModelTraceSubject {
                     timed: None,
@@ -220,7 +219,7 @@ impl Chatter {
                 max_messages: None,
                 max_live_instances: None,
             },
-            &envelope_at(id, payload, clause_node, occurrence),
+            &envelope_at(payload, clause_node, occurrence),
             self.letters,
             ReplayLimits::default(),
         )
@@ -234,7 +233,6 @@ impl Chatter {
         settle_protocol_check(
             outcome,
             &ModelCheckLimits::default(),
-            &package_id(&self.body),
             &ProtocolCertificateRequest {
                 subject: self.subject(),
                 item: self.item(),

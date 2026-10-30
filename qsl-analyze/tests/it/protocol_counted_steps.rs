@@ -37,8 +37,7 @@ use quire_exact::{Cancel, Meter};
 
 use crate::counter::UNLIMITED;
 use crate::fill::{
-    attempt, contracts, document, fill_unit, instance, model_subject, package, package_id,
-    protocol, reachable, sc_system, subject, unit_text, universe, v, Documents, Reached,
+    attempt, contracts, document, fill_unit, instance, model_subject, package, protocol, reachable, sc_system, subject, unit_text, universe, v, Documents, Reached,
 };
 use crate::model_settle::{envelope_at, request};
 use crate::protocol_compensation::pay;
@@ -119,15 +118,14 @@ impl Case {
         letters: &dyn ModelLetters,
         outcome: &ModelCheckOutcome<ProtocolTransition>,
     ) -> ResultLabel {
-        let id = package_id(&self.body);
         let unit = unit_text(&self.body).into_bytes();
         let node = &self.checked.graph().temporal_clauses()[0];
         let clause_node = node.identity().clone();
-        let occurrence = OccurrenceKey::new(clause_node, node.claim().clone());
+        let occurrence = OccurrenceKey::new(clause_node.clone(), node.claim().clone());
         let replay = |payload: &TemporalCounterexample<ProtocolTransition>| {
             let subject = self.subject(protocol);
             replay_protocol_trace(
-                request(&document(), self.documents.snapshots.iter(), &unit, id),
+                request(&document(), self.documents.snapshots.iter(), &unit),
                 &ProtocolTraceSubject {
                     model: ModelTraceSubject {
                         timed: None,
@@ -145,7 +143,7 @@ impl Case {
                     max_messages: None,
                     max_live_instances: None,
                 },
-                &envelope_at(id, payload.clone(), clause_node, occurrence.clone()),
+                &envelope_at(payload.clone(), clause_node.clone(), occurrence.clone()),
                 letters,
                 ReplayLimits::default(),
             )
@@ -153,7 +151,6 @@ impl Case {
         let record = settle_protocol_check(
             outcome,
             &ModelCheckLimits::default(),
-            &id,
             &ProtocolCertificateRequest {
                 subject: self.subject(protocol),
                 item: ModelCheckItem::Clause {

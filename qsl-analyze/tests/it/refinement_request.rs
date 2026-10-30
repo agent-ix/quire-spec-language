@@ -118,7 +118,7 @@ fn a_refinement_writes_one_temporal_record_routed_to_the_explicit_state_provider
 fn derived(terminal: &str) -> (SubjectIdentity, Vec<SubjectIdentity>) {
     let world = World::new(&format!("{terminal}{}", cas_refines_counter()));
     let subject = subject(&world);
-    let identity = SubjectIdentity::of(&subject).expect("the package emits");
+    let identity = SubjectIdentity::of(&subject);
     let initial = [world.abstract_initial()];
     let item = ModelRefinementItem {
         refinement: world.refinement(),
@@ -163,7 +163,7 @@ fn a_temporal_and_a_refinement_item_share_the_concrete_deadlock_item() {
     ] {
         let world = World::new(&format!("{terminal}{}", cas_refines_counter()));
         let subject = subject(&world);
-        let identity = SubjectIdentity::of(&subject).expect("the package emits");
+        let identity = SubjectIdentity::of(&subject);
         let clause = OccurrenceKey::new(
             crate::fixture_ids::node_key([3]),
             quire_exact::Origin::new(quire_exact::Role::new("temporal"), 0),
@@ -262,16 +262,9 @@ fn the_abstract_initial_states_are_part_of_the_obligation() {
         Some(PropertyForm::Refinement { liveness: true })
     );
     // QSpec FR-368-AC-19, FR-377-AC-17: the refinement item carries its
-    // abstract subject, the abstract package's id and its initial states.
+    // abstract subject, its library and its initial states.
     assert_eq!(item.item_kind(), Some(ItemKind::Refinement));
     let abstract_subject = item.abstract_subject().expect("an abstract subject");
-    assert_eq!(
-        abstract_subject.package_id,
-        qsl_package::emit_checked(world.package())
-            .expect("the package emits")
-            .package()
-            .package_id()
-    );
     assert_eq!(abstract_subject.initial_states, std::slice::from_ref(&one));
 
     assert_eq!(settle(&world, &one), TerminalValue::Refuted);

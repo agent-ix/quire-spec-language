@@ -1793,7 +1793,6 @@ fn protocol_run<'c>(
             max_messages: None,
             max_live_instances: None,
         },
-        package_id: case.package_id(),
         replay: Box::new(move |payload| {
             if race {
                 case.replay_race(selection, payload.clone())

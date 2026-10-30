@@ -28,7 +28,7 @@ use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::MemoryModelName;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
-    deadlock_freedom_clause, replay_protocol_trace, settle_protocol_check, CounterexampleKind,
+    replay_protocol_trace, settle_protocol_check, CounterexampleKind,
     InconclusiveCause, ModelCheckItem, ModelCheckLimits, ModelCheckOutcome, ModelCheckRecord,
     ModelStep, ModelTraceRefusal, ModelTraceReplayResult, ModelTraceSettlement, ModelTraceSubject,
     ProofBasis, ProtocolCertificateRequest, ProtocolTraceSubject, ReplayLimits, ReplayRefusal,
@@ -44,11 +44,10 @@ use serde_json::{json, Value as Json};
 use crate::counter::Letters;
 use crate::derived_request::{derived_subjects, protocol_request};
 use crate::fill::{
-    attempt, compiled, contracts, document, fill_unit, instance, json_of, package, package_id,
-    projections, protocol, reachable, sc_system, subject, unit_text, universe, v, Documents,
+    attempt, compiled, contracts, document, fill_unit, instance, json_of, package, projections, protocol, reachable, sc_system, subject, unit_text, universe, v, Documents,
     Reached, PACKAGE,
 };
-use crate::model_settle::{envelope_at, request};
+use crate::model_settle::{deadlock_freedom_clause, envelope_at, request};
 
 /// A replay that reads no atom: the deadlock-freedom item has none.
 const NO_ATOMS: Letters = Letters { atom: |_| None };
@@ -118,33 +117,16 @@ impl Case {
         .expect("the protocol subject checks")
     }
 
-    /// FR-217's replay of `payload` against this case.
+    /// FR-217's replay of `payload` against this case's unit and documents.
     fn replay(
         &self,
         protocol: &str,
         payload: TemporalCounterexample<ProtocolTransition>,
     ) -> Result<ModelTraceReplayResult, ReplayRefusal> {
-        self.replay_against(self, protocol, payload)
-    }
-
-    /// FR-217's replay of `payload`, recorded over `recorded`'s package,
-    /// against this case's unit and documents.
-    fn replay_against(
-        &self,
-        recorded: &Case,
-        protocol: &str,
-        payload: TemporalCounterexample<ProtocolTransition>,
-    ) -> Result<ModelTraceReplayResult, ReplayRefusal> {
         let unit = unit_text(&self.body).into_bytes();
-        let recorded_id = package_id(&recorded.body);
-        let (node, occurrence) = deadlock_freedom_clause(&recorded_id);
+        let (node, occurrence) = deadlock_freedom_clause();
         replay_protocol_trace(
-            request(
-                &document(),
-                self.documents.snapshots.iter(),
-                &unit,
-                package_id(&self.body),
-            ),
+            request(&document(), self.documents.snapshots.iter(), &unit),
             &ProtocolTraceSubject {
                 model: ModelTraceSubject {
                     timed: None,
@@ -162,7 +144,7 @@ impl Case {
                 max_messages: None,
                 max_live_instances: None,
             },
-            &envelope_at(recorded_id, payload, node, occurrence),
+            &envelope_at(payload, node, occurrence),
             &NO_ATOMS,
             ReplayLimits::default(),
         )
@@ -178,7 +160,6 @@ impl Case {
         settle_protocol_check(
             outcome,
             &ModelCheckLimits::default(),
-            &package_id(&self.body),
             &ProtocolCertificateRequest {
                 subject: self.subject(protocol),
                 item: ModelCheckItem::DeadlockFreedom,
@@ -1068,7 +1049,7 @@ fn a_protocol_deadlock_names_its_blocked_threads_and_settles_refuted() {
 
     let any = Case::new(&fill_unit("self.v = 0", "terminal any;"), &[0]);
     let protocol = any.checked.graph().protocol("Fill").expect("Fill");
-    let occurrence = deadlock_freedom_clause(&package_id(&any.body)).1;
+    let occurrence = deadlock_freedom_clause().1;
     let items = [ProtocolTemporalItem {
         occurrence: &occurrence,
         subject: &"Fill",
@@ -1266,7 +1247,7 @@ fn the_repaired_fill_is_deadlock_free_over_ten_states() {
         "{record:?}"
     );
     let protocol = case.checked.graph().protocol("Fill").expect("Fill");
-    let occurrence = deadlock_freedom_clause(&package_id(&case.body)).1;
+    let occurrence = deadlock_freedom_clause().1;
     let other = OccurrenceKey::generated(crate::fixture_ids::node_key([9]));
     let item = |occurrence| ProtocolTemporalItem {
         occurrence,
@@ -1498,9 +1479,7 @@ fn sc_is_the_identity_of_the_memory_seam() {
 /// its second step's post-state digest refuses `stale_dependency`/
 /// `content-mismatch` naming the step, the recorded digest and the digest
 /// the step reaches; replacing the second
-/// step with `join(Both)` refuses `invalid_runtime_input`/`invalid-value`;
-/// replaying the steps against the repaired `Fill` refuses on the package
-/// identity.
+/// step with `join(Both)` refuses `invalid_runtime_input`/`invalid-value`.
 #[trace("TC-662", "FR-217-AC-2")]
 #[test]
 fn a_protocol_replay_refuses_a_stale_or_disabled_step() {
@@ -1540,11 +1519,6 @@ fn a_protocol_replay_refuses_a_stale_or_disabled_step() {
         (refusal.code(), refusal.cause()),
         (Code::InvalidRuntimeInput, "invalid-value")
     );
-    let repaired = Case::new(&fill_unit("self.v <= 1", ""), &[0]);
-    assert!(matches!(
-        repaired.replay_against(&case, "Fill", counterexample),
-        Err(ReplayRefusal::PackageIdMismatch { .. })
-    ));
 }
 
 /// FR-217-AC-5 and FR-217-AC-6 (TC-662, ADR-027 PX-1, PX-2): a deadlock
@@ -1771,15 +1745,12 @@ fn check_protocol_refuses_an_unstepped_construct() {
 /// `ambiguous_declaration`/`ambiguous-name`, and a `terminal when` predicate
 /// that reads binder `a` refuses `missing_declaration`/`missing-name`, as
 /// FR-104 refuses a non-state read in an invariant. Not covered: the three
-/// packages' pairwise different identities. The compiled `package_id` does
-/// not bind the `terminal` member until FR-383 emits it, so today the three
-/// identities are equal.
+/// packages' pairwise different identities.
 #[test]
 fn fill_checks_under_each_terminal_form() {
     for form in ["", "terminal when { k.v = 1 };", "terminal any;"] {
         let body = fill_unit("self.v = 0", form);
         package(&body);
-        package_id(&body);
     }
     let refusal = |members: &str| {
         let refusal = compiled(&fill_unit("self.v = 0", members))
