@@ -1874,18 +1874,18 @@ impl<'a> Lowering<'a> {
             return Ok(key.clone());
         }
         let package = self.package_name.clone();
+        let operands = derived_operands(content);
         let key = self.mint_key(location, |ordinal| match &content.declaration {
             Some(names) => super::declared_node_key(
                 package.clone(),
                 names.iter().map(|name| name.as_str().to_owned()).collect(),
                 ordinal,
             ),
-            // BLOCKED-BY QSL-1312 (owner: planner titan:QSL:plan): shareable operand representation for derived node keys (FR-322 embeds the operand node ids in the path; interim is tag, form and producer ordinal)
             None => super::derived_node_key(
                 &package,
                 content.node_tag,
                 content.semantic_form,
-                Vec::new(),
+                operands.clone(),
                 ordinal,
             ),
         })?;
@@ -5250,6 +5250,77 @@ fn strongly_connected_metered(
         }
     }
     Ok(components)
+}
+
+/// The operand segments of a derived node's path (QSpec FR-322: `[node_tag,
+/// semantic_form, ...operands]`, each operand a string or an operand node's
+/// key). A `reference`, `option` or collection type names its target; a
+/// bounded domain names each bound (`min`, the integer type once, the bound's
+/// text, and so on), then its base collection for `collection_bounds`.
+/// Every other derived node has no operands: equal content is one node, and
+/// a repeat of its path takes the next producer ordinal.
+fn derived_operands(content: &NodeContent) -> Vec<quire_exact::PathSegment> {
+    use quire_exact::PathSegment;
+    let BodyTerm::Aggregate(aggregate) = &content.body else {
+        return Vec::new();
+    };
+    match content.node_tag {
+        NodeTag::CompositeType => aggregate
+            .members
+            .iter()
+            .filter_map(|member| match member {
+                MemberTerm::Leaf(LeafTerm::Reference {
+                    target: NodeRef::Admitted(key),
+                }) => Some(PathSegment::Node(key.clone())),
+                _ => None,
+            })
+            .collect(),
+        NodeTag::BoundedDomain => {
+            let mut operands = Vec::new();
+            let mut previous: Option<&NodeRef> = None;
+            for member in &aggregate.members {
+                let MemberTerm::Binding(binding) = member else {
+                    continue;
+                };
+                let BindingValue::Leaf(LeafTerm::Literal { ty, value }) = &binding.value else {
+                    continue;
+                };
+                operands.push(PathSegment::Text(binding.name.clone()));
+                if previous != Some(ty) {
+                    if let NodeRef::Admitted(key) = ty {
+                        operands.push(PathSegment::Node(key.clone()));
+                    }
+                }
+                previous = Some(ty);
+                operands.push(PathSegment::Text(literal_operand_text(value)));
+            }
+            if content.semantic_form == "collection_bounds" {
+                if let Some(NodeRef::Admitted(key)) = &content.semantic_type {
+                    operands.push(PathSegment::Node(key.clone()));
+                }
+            }
+            operands
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// A literal's text as a path operand.
+fn literal_operand_text(value: &LiteralValue) -> String {
+    match value {
+        LiteralValue::Boolean(value) => value.to_string(),
+        LiteralValue::Integer(value) => value.to_string(),
+        LiteralValue::Count(value) => value.to_string(),
+        LiteralValue::Rational(value) | LiteralValue::Quantity(value) => value.to_string(),
+        LiteralValue::Float32Bits(bits) => format!("{bits:08x}"),
+        LiteralValue::Float64Bits(bits) => format!("{bits:016x}"),
+        LiteralValue::Text(text) | LiteralValue::String(text) | LiteralValue::Enum(text) => {
+            text.clone()
+        }
+        LiteralValue::Uuid(value) => value.to_string(),
+        LiteralValue::Timestamp(value) => value.to_string(),
+        LiteralValue::None => "none".to_owned(),
+    }
 }
 
 /// The location of the `declaration` occurrence of the type declared as
