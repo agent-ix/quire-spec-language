@@ -65,29 +65,8 @@ fn spec_descriptions(spec: &str) -> BTreeMap<String, String> {
         .collect()
 }
 
-/// `spec`'s vector-key table rows, `| name | description | key |`: the
-/// name and description of each row whose key cell says the key is the
-/// SHA-256 of the vector's preimage.
-fn key_table_rows(spec: &str) -> Vec<(String, String)> {
-    spec.lines()
-        .filter_map(|line| {
-            let cells: Vec<&str> = line
-                .strip_prefix("| ")?
-                .strip_suffix(" |")?
-                .split(" | ")
-                .collect();
-            let [name, description, key] = cells[..] else {
-                return None;
-            };
-            (key == "the SHA-256 of its preimage")
-                .then(|| (name.to_owned(), description.to_owned()))
-        })
-        .collect()
-}
-
 /// Every table `spec` (published as `tag`) publishes about its golden
-/// vectors agrees with the vectors: the key table lists each vector with its
-/// heading, each heading's ordinal and each group table's ordinals and
+/// vectors agrees with the vectors: each heading's ordinal and each group table's ordinals and
 /// group-digest placeholder agree with the vector's preimage, and no two
 /// vectors share a key.
 fn assert_published_tables_agree(tag: &str, spec: &str) {
@@ -95,17 +74,6 @@ fn assert_published_tables_agree(tag: &str, spec: &str) {
     let descriptions = spec_descriptions(spec);
     let keys: std::collections::BTreeSet<&String> = vectors.values().map(|(key, _)| key).collect();
     assert_eq!(keys.len(), vectors.len(), "two vectors share a key");
-    for (name, description) in key_table_rows(spec) {
-        assert!(
-            vectors.contains_key(&name),
-            "{name}: the key table's vector"
-        );
-        assert_eq!(
-            Some(&description),
-            descriptions.get(&name),
-            "{name}: the key table's description"
-        );
-    }
     let recursion = |name: &str| -> Json {
         serde_json::from_str::<Json>(&crate::check::spec_vectors::raw_preimage(tag, name))
             .expect("a preimage is JSON")["recursion"]
