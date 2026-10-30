@@ -163,6 +163,10 @@ fn the_context_holds_every_case_with_the_keys_the_check_minted() {
     )
     .expect("compile_package compiles the unit");
     assert_eq!(admitted.package().bytes(), plain.bytes());
+    assert_eq!(
+        admitted.context().package_bytes(),
+        admitted.package().bytes()
+    );
     assert_eq!(admitted.context().package_name().as_str(), "fixture");
 
     let expected = spine_enums(&text);
@@ -183,6 +187,25 @@ fn the_context_holds_every_case_with_the_keys_the_check_minted() {
         .map(|c| (c.case().as_str().to_owned(), c.key().clone()))
         .collect();
     assert_eq!(&keys, cases);
+}
+
+/// A context binds the entire emitted package, so equal names cannot make
+/// different checked bodies interchangeable before a consumer looks up nodes.
+#[trace("FR-394-AC-1")]
+#[test]
+fn admitted_context_exposes_exact_package_bytes() {
+    let colors = admit_ok(&format!("{HEADER}{COLORS}"));
+    let shades = admit_ok(&format!("{HEADER}{SHADES}"));
+    assert_eq!(
+        colors.context().package_name(),
+        shades.context().package_name()
+    );
+    assert_eq!(colors.context().package_bytes(), colors.package().bytes());
+    assert_eq!(shades.context().package_bytes(), shades.package().bytes());
+    assert_ne!(
+        colors.context().package_bytes(),
+        shades.context().package_bytes()
+    );
 }
 
 /// A declaration and a case are found by wire node id; an id nobody admitted
