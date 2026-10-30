@@ -1422,7 +1422,7 @@ pub(crate) struct Recompiled {
     pub(crate) checked: spine::CheckedUnit,
     /// The recompiled package's v2 bytes and `package_id`.
     pub(crate) emitted: spine::EmittedUnit,
-    /// The domain packages the recompile read, by `sha256-jcs` digest.
+    /// The domain packages the recompile read, by package identity.
     pub(crate) packages: qsl_semantics::model::intake::PackageInput,
     /// The limits the models were normalized under.
     pub(crate) model_limits: qsl_semantics::model::accounting::ModelNormalizationLimits,
@@ -1523,7 +1523,7 @@ pub(crate) fn spine_run_count() -> u64 {
 
 /// Recompile the request's one source unit from the byte provision against
 /// the dependency input its `dependencies` entries build, with every domain
-/// package the provision carries under its `sha256-jcs` digest as I1's
+/// package the provision carries under its package identity as I1's
 /// package input, applying ADR-015 D-4's seven rules in order: each rule
 /// over every entry, in entry order, before the next.
 pub(crate) fn recompile(

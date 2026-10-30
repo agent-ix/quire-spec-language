@@ -894,14 +894,8 @@ fn population_id_preimage<'a>(
     });
     Ok(PopulationIdWire {
         version: POPULATION_ID_DOMAIN,
-        // The full `DomainPackageRef` header (identity, version), not
-        // only `identity`: this module's own `admit_binding` doc already
-        // establishes that comparing bare `identity` alone misses a
-        // version-only or digest-only divergence between two otherwise
-        // same-named domain packages (its own `ForeignModelSelection` check
-        // compares the full header for exactly that reason), so "the domain
-        // package identity" a binding was admitted against is this header,
-        // not its `identity` field alone.
+        // The domain package a binding was admitted against: its
+        // `DomainPackageRef`, which is its identity alone.
         domain_package_selection: PopulationDomainPackageRefWire {
             identity: &domain_package.model_selection.identity,
         },
@@ -940,9 +934,7 @@ struct PopulationMemberWire<'a> {
     declaration: DeclarationKeyWire<'a>,
 }
 
-/// FR-089's `PopulationId` selection is explicitly the full domain-package
-/// header, including its source version. Other `quire.model.*` identities use
-/// the closed `DomainPackageRefWire` shape without that non-identity field.
+/// FR-089's `PopulationId` selection: the domain package's identity.
 #[derive(Serialize, FixedShape)]
 struct PopulationDomainPackageRefWire<'a> {
     identity: &'a str,

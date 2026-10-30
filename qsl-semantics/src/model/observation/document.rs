@@ -340,8 +340,7 @@ pub(super) fn read_document(
     let read = quire_canonical::read(bytes, limits.document_bytes);
     // 1.3: document validity, before any member is read.
     check_document_valid(&read, limits)?;
-    // Bytes that matched the expected digest raw (never parsed as JSON at
-    // all) or that parsed but are not a JSON object trivially hold no
+    // Bytes that parsed but are not a JSON object trivially hold no
     // `format` member at all: absent is not the expected format string, so
     // check 1.4 (which comes before 1.5's member-presence check, FR-106's
     // own order) refuses it here, never 1.5's `missing-member` (SR-750

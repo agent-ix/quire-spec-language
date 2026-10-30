@@ -194,7 +194,7 @@ impl<'a> BoundDeclaration<'a> {
     pub fn package(&self) -> &'a AdmittedPackage {
         self.package
     }
-    /// The selection (identity, version, `sha256-jcs` digest) it was bound under.
+    /// The selection (its identity) it was bound under.
     pub fn selection(&self) -> &'a DomainPackageRef {
         self.package.selection()
     }

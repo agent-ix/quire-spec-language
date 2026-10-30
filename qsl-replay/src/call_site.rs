@@ -414,8 +414,8 @@ impl CallSiteRefusal {
 
 /// Compile `bytes` (labelled `source`, displayed as `path`) through S1 to S4
 /// under the default spine stage limits, with `packages` -- each a domain
-/// package document, keyed by its own `sha256-jcs` digest as `replay` keys
-/// the documents of its byte provision -- as I1's package input and
+/// package document, keyed by its package identity as `replay` keys the
+/// documents of its byte provision -- as I1's package input and
 /// `dependencies` as the dependency input, and locate `selection` in the
 /// result.
 ///

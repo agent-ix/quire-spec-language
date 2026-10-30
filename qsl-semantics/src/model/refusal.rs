@@ -923,9 +923,8 @@ pub enum ModelRefusalCause {
     },
     /// FR-056: a domain package document carries a number with no exact
     /// RFC 8785 spelling. RFC 8785 encodes every number as the shortest
-    /// round-trip text of its nearest double, so the document's
-    /// `sha256-jcs` digest would be the digest of a different value;
-    /// intake's read refuses it before the digest is taken.
+    /// round-trip text of its nearest double, so the document would be read
+    /// as a different value; intake's read refuses it.
     NoncanonicalNumber {
         /// Why the number has no exact spelling; its cause tag.
         inexact: Inexact,
