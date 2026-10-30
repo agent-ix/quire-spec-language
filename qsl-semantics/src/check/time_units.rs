@@ -24,7 +24,7 @@ use crate::check::lowering::AdmittedModel;
 use crate::check::node_key::NodeTag;
 use crate::check::temporal_clause::TimeNominalNode;
 use crate::model::domain_package::PackageUnitRecord;
-use qsl_foundation::IdentityLimits;
+use crate::value::{ModelSubject, NodeOwner, OwnerSubject};
 
 use super::refusal::TimeUnitCause;
 
@@ -66,8 +66,14 @@ impl TimeUnits {
         keys: impl IntoIterator<Item = NodeKey>,
         models: &[AdmittedModel],
         equivalences: &[DimensionEquivalence],
-        _identity: IdentityLimits,
+        source: &qsl_foundation::source::provenance::RawSourceRef,
+        package_name: &str,
     ) -> Self {
+        let source_owner = NodeOwner::Source(OwnerSubject::new(
+            source.authority(),
+            source.identity(),
+            package_name,
+        ));
         let table = UnitTable::declared(graph);
         let mut time = None;
         let mut time_dimensions = BTreeMap::new();
@@ -96,6 +102,8 @@ impl TimeUnits {
                         NominalUnitForm::Unit { .. } => "unit",
                     }
                     .to_owned(),
+                    qualified_declaration: node.declaration.qualified_declaration.clone(),
+                    owner: source_owner.clone(),
                     dependencies,
                 },
             );
@@ -138,6 +146,13 @@ impl TimeUnits {
                     TimeNominalNode {
                         key: time_key,
                         form: "dimension".to_owned(),
+                        qualified_declaration: vec![TIME_DIMENSION.to_owned()],
+                        owner: NodeOwner::Model(ModelSubject {
+                            identity: package.identity.clone(),
+                            node: dimension
+                                .map(|dimension| dimension.key.node.clone())
+                                .unwrap_or_default(),
+                        }),
                         dependencies: Vec::new(),
                     },
                 );
@@ -153,7 +168,7 @@ impl TimeUnits {
                 let package_nodes = dimension.and_then(|dimension| {
                     let time_key = time_key.clone()?;
                     (unit.dimension == dimension.key)
-                        .then(|| package_unit_nominal_nodes(unit, &model.units, time_key))?
+                        .then(|| package_unit_nominal_nodes(unit, &model.units, time_key, &package.identity))?
                 });
                 if let Some(package_nodes) = &package_nodes {
                     for node in package_nodes {
@@ -361,11 +376,13 @@ fn package_unit_nominal_nodes(
     start: &PackageUnitRecord,
     units: &[PackageUnitRecord],
     dimension: NodeKey,
+    identity: &str,
 ) -> Option<Vec<TimeNominalNode>> {
     fn resolve(
         unit: &PackageUnitRecord,
         units: &[PackageUnitRecord],
         dimension: NodeKey,
+        identity: &str,
         seen: &mut BTreeSet<quire_checked::key::DeclarationKey>,
     ) -> Option<Vec<TimeNominalNode>> {
         if !seen.insert(unit.key.clone()) {
@@ -374,7 +391,7 @@ fn package_unit_nominal_nodes(
         let target_nodes = match &unit.target {
             Some(key) => {
                 let target = units.iter().find(|candidate| candidate.key == *key)?;
-                resolve(target, units, dimension.clone(), seen)?
+                resolve(target, units, dimension.clone(), identity, seen)?
             }
             None => Vec::new(),
         };
@@ -387,12 +404,17 @@ fn package_unit_nominal_nodes(
         nodes.push(TimeNominalNode {
             key,
             form: "unit".to_owned(),
+            qualified_declaration: vec![unit.name.clone()],
+            owner: NodeOwner::Model(ModelSubject {
+                identity: identity.to_owned(),
+                node: unit.key.node.clone(),
+            }),
             dependencies: std::iter::once(dimension).chain(target).collect(),
         });
         Some(nodes)
     }
 
-    resolve(start, units, dimension, &mut BTreeSet::new())
+    resolve(start, units, dimension, identity, &mut BTreeSet::new())
 }
 
 /// A canonical FCD integer or `n/d` coefficient as an exact rational.

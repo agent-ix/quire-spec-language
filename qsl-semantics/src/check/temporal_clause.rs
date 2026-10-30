@@ -1899,7 +1899,8 @@ pub fn check_clauses(
         package.nominal_spans.keys().cloned(),
         &package.models,
         &package.dimension_equivalences,
-        package.identity,
+        &package.source,
+        &package.package_name,
     );
     let declarations = TemporalDeclarations {
         scope: &scope,

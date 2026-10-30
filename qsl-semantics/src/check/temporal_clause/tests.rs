@@ -77,7 +77,8 @@ fn check(package: &PackageDeclarations) -> Outcome {
         package.nominal_spans.keys().copied(),
         &package.models,
         &package.dimension_equivalences,
-        package.identity,
+        &package.source,
+        &package.package_name,
     );
     let scope = Scope::new(
         package.types.clone(),

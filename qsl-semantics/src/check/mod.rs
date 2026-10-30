@@ -1173,7 +1173,8 @@ impl PackageDeclarations {
                 self.nominal_spans.keys().cloned(),
                 &self.models,
                 &self.dimension_equivalences,
-                self.identity,
+                &self.source,
+                &self.package_name,
             );
             // The model a `time invariant` or `urgent` declaration belongs
             // to (FR-230 "Timed facet gate"): the one model the unit's
@@ -1455,7 +1456,8 @@ impl PackageDeclarations {
                 self.nominal_spans.keys().cloned(),
                 &self.models,
                 &self.dimension_equivalences,
-                self.identity,
+                &self.source,
+                &self.package_name,
             );
             timed_model::prepare(
                 &timed_model::Inputs {
@@ -1504,7 +1506,8 @@ impl PackageDeclarations {
                     self.nominal_spans.keys().cloned(),
                     &self.models,
                     &self.dimension_equivalences,
-                    self.identity,
+                    &self.source,
+                    &self.package_name,
                 );
                 let checked = task_set::check(&self.task_set_forms, &units, limits.rational_bits());
                 for finding in checked.findings {
@@ -3319,7 +3322,8 @@ impl PackageDeclarations {
             self.nominal_spans.keys().cloned(),
             &models,
             &self.dimension_equivalences,
-            self.identity,
+            &source,
+            &package_name,
         );
         let temporal_declarations = temporal_clause::TemporalDeclarations {
             scope: &scope,
