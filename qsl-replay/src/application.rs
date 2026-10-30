@@ -7,6 +7,7 @@ use std::sync::Arc;
 use qsl_eval::value::PackageClosure;
 use qsl_foundation::SourceIdentity;
 use qsl_package::CheckedPackage;
+use qsl_semantics::library::LibraryName;
 use qsl_semantics::check::{CheckedExpression, CheckedNode, NodeKind};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_eval::{
@@ -25,7 +26,6 @@ use crate::bounds::ReplayLimits;
 use crate::compile::{recompile_unit, CompiledPackage};
 use crate::request::StageLimits;
 use crate::spine::DependencyInput;
-use crate::DigestRecord;
 
 /// The checked form of a nominal declaration available through the closure facade.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -70,10 +70,10 @@ pub enum NominalDeclarationMember {
 /// Consumers cannot forge one:
 ///
 /// ```compile_fail
-/// fn forge(package_id: qsl_replay::DigestRecord, node: quire_exact::NodeKey) {
+/// fn forge(package: qsl_semantics::library::LibraryName, node: quire_exact::NodeKey) {
 ///     let _ = qsl_replay::NominalDeclaration {
-///         package_id,
-///         node,
+///         package,
+///         node: node.clone(),
 ///         key: node,
 ///         qualified_name: vec![],
 ///         form: qsl_replay::NominalDeclarationForm::Record,
@@ -83,7 +83,7 @@ pub enum NominalDeclarationMember {
 /// ```
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NominalDeclaration {
-    package_id: DigestRecord,
+    package: LibraryName,
     node: NodeKey,
     key: NodeKey,
     qualified_name: Vec<Identifier>,
@@ -93,18 +93,18 @@ pub struct NominalDeclaration {
 
 impl NominalDeclaration {
     /// The package that checked and owns this declaration.
-    pub fn package_id(&self) -> DigestRecord {
-        self.package_id
+    pub fn package_name(&self) -> &LibraryName {
+        &self.package
     }
 
     /// The exact checked `composite_type` node id.
-    pub fn node(&self) -> NodeKey {
-        self.node
+    pub fn node(&self) -> &NodeKey {
+        &self.node
     }
 
     /// The exact admitted kernel declaration key used by `ValueType::Composite`.
-    pub fn key(&self) -> NodeKey {
-        self.key
+    pub fn key(&self) -> &NodeKey {
+        &self.key
     }
 
     /// The checked qualified declaration name.
@@ -124,14 +124,14 @@ impl NominalDeclaration {
 }
 
 /// Why a checked nominal declaration view could not be issued.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum NominalDeclarationRefusal {
     /// The selection was issued by a different checked acquisition.
     #[error("selection belongs to another checked acquisition")]
     WrongAcquisition,
     /// The node is owned by exactly one other package in the closure.
     #[error("nominal declaration belongs to another package {0:?}")]
-    Foreign(DigestRecord),
+    Foreign(LibraryName),
     /// No declaration reachable from this selected callable was found.
     #[error("unknown nominal declaration")]
     Unknown,
@@ -185,7 +185,7 @@ impl CheckedClosureCompilation {
 #[derive(Clone)]
 pub struct CheckedClosureHandle {
     package: Arc<CheckedPackage>,
-    package_id: DigestRecord,
+    package_name: LibraryName,
     acquisition: Arc<()>,
 }
 
@@ -195,36 +195,36 @@ impl CheckedClosureHandle {
         &self.package
     }
 
-    /// The emitted unit's exact package identity.
-    pub fn package_id(&self) -> DigestRecord {
-        self.package_id
+    /// The compiled unit's package name.
+    pub fn package_name(&self) -> &LibraryName {
+        &self.package_name
     }
 
     /// Look up a check-minted callable in the selected owner of this closure.
     pub fn lookup_callable(
         &self,
-        owner_package_id: DigestRecord,
-        wire_node_id: NodeKey,
+        owner: &LibraryName,
+        node: &NodeKey,
     ) -> Result<CallableSelection, CallableLookupRefusal> {
-        let mut packages = vec![(self.package_id, self.package.as_ref())];
+        let mut packages = vec![(self.package_name.clone(), self.package.as_ref())];
         let mut visited = BTreeSet::new();
         let mut selected = None;
         let mut other_owner = None;
         let mut ambiguous = false;
         while let Some((id, package)) = packages.pop() {
-            if !visited.insert(id) {
+            if !visited.insert(id.clone()) {
                 continue;
             }
-            if id == owner_package_id {
+            if id == *owner {
                 selected = Some(package);
-            } else if has_node(package, wire_node_id) && other_owner.replace(id).is_some() {
+            } else if has_node(package, node) && other_owner.replace(id).is_some() {
                 ambiguous = true;
             }
             packages.extend(
                 package
                     .dependencies()
                     .iter()
-                    .map(|(id, dependency)| (id.record(), dependency.as_ref())),
+                    .map(|(id, dependency)| (id.clone(), dependency.as_ref())),
             );
         }
         let Some(package) = selected else {
@@ -235,12 +235,12 @@ impl CheckedClosureHandle {
                 .graph()
                 .semantic_graph()
                 .nodes()
-                .map(|node| node.key())
-                .find(|key| key.as_bytes() == wire_node_id.as_bytes())
+                .map(|node| node.key().clone())
+                .find(|key| key == node)
             {
-                if let Some(function) = package.graph().callable_by_identity(key) {
+                if let Some(function) = package.graph().callable_by_identity(&key) {
                     return Ok(CallableSelection {
-                        owner_package_id,
+                        owner: owner.clone(),
                         key,
                         signature: Signature::new(
                             function
@@ -269,7 +269,7 @@ impl CheckedClosureHandle {
     pub fn nominal_declaration(
         &self,
         selection: &CallableSelection,
-        declaration: NodeKey,
+        declaration: &NodeKey,
     ) -> Result<NominalDeclaration, NominalDeclarationRefusal> {
         if !Arc::ptr_eq(&self.acquisition, &selection.acquisition) {
             return Err(NominalDeclarationRefusal::WrongAcquisition);
@@ -277,7 +277,7 @@ impl CheckedClosureHandle {
         let packages = self.closure_packages();
         let Some(owner) = packages
             .iter()
-            .find(|(id, _)| *id == selection.owner_package_id)
+            .find(|(id, _)| *id == selection.owner)
             .map(|(_, package)| *package)
         else {
             return Err(NominalDeclarationRefusal::Unknown);
@@ -286,17 +286,15 @@ impl CheckedClosureHandle {
             .graph()
             .semantic_graph()
             .nodes()
-            .find(|node| node.key().as_bytes() == declaration.as_bytes())
+            .find(|node| node.key() == declaration)
         else {
             let foreign: Vec<_> = packages
                 .iter()
-                .filter(|(id, package)| {
-                    *id != selection.owner_package_id && has_node(package, declaration)
-                })
-                .map(|(id, _)| *id)
+                .filter(|(id, package)| *id != selection.owner && has_node(package, declaration))
+                .map(|(id, _)| id.clone())
                 .collect();
             return match foreign.as_slice() {
-                [package] => Err(NominalDeclarationRefusal::Foreign(*package)),
+                [package] => Err(NominalDeclarationRefusal::Foreign(package.clone())),
                 _ => Err(NominalDeclarationRefusal::Unknown),
             };
         };
@@ -316,7 +314,7 @@ impl CheckedClosureHandle {
         else {
             return Err(NominalDeclarationRefusal::WrongKind);
         };
-        if *checked_node != node.key()
+        if checked_node != node.key()
             || node.node_tag() != qsl_semantics::check::NodeTag::CompositeType
         {
             return Err(NominalDeclarationRefusal::Inconsistent);
@@ -324,7 +322,7 @@ impl CheckedClosureHandle {
         let Some(qualified_name) = node.declaration() else {
             return Err(NominalDeclarationRefusal::Inconsistent);
         };
-        let Some(composite) = graph.scope().types().composite(*key) else {
+        let Some(composite) = graph.scope().types().composite(key) else {
             return Err(NominalDeclarationRefusal::Inconsistent);
         };
         let declaration_form = nominal_declaration_form(*form, composite.shape())?;
@@ -361,7 +359,7 @@ impl CheckedClosureHandle {
                     let binding = member
                         .member()
                         .ok_or(NominalDeclarationRefusal::Inconsistent)?;
-                    if binding.declaration() != *checked_node
+                    if binding.declaration() != checked_node
                         || binding.identifier() != member.identifier()
                     {
                         return Err(NominalDeclarationRefusal::Inconsistent);
@@ -375,9 +373,9 @@ impl CheckedClosureHandle {
                 .collect::<Result<Vec<_>, NominalDeclarationRefusal>>()?,
         };
         Ok(NominalDeclaration {
-            package_id: selection.owner_package_id,
-            node: *checked_node,
-            key: *key,
+            package: selection.owner.clone(),
+            node: checked_node.clone(),
+            key: key.clone(),
             qualified_name: qualified_name.to_vec(),
             form: declaration_form,
             members,
@@ -402,7 +400,7 @@ impl CheckedClosureHandle {
         // closure; were either absent, no occurrence could be reached from it.
         let Some(owner) = packages
             .iter()
-            .find(|(id, _)| *id == caller.owner_package_id)
+            .find(|(id, _)| *id == caller.owner)
             .map(|(_, package)| *package)
         else {
             return Err(NestedCallSiteRefusal::Unreachable);
@@ -411,14 +409,12 @@ impl CheckedClosureHandle {
         let Some(node) = graph
             .semantic_graph()
             .nodes()
-            .find(|node| node.key().as_bytes() == call.call_node.as_bytes())
+            .find(|node| *node.key() == call.call_node)
         else {
             let owners: Vec<_> = packages
                 .iter()
-                .filter(|(id, package)| {
-                    *id != caller.owner_package_id && has_node(package, call.call_node)
-                })
-                .map(|(id, _)| *id)
+                .filter(|(id, package)| *id != caller.owner && has_node(package, &call.call_node))
+                .map(|(id, _)| id.clone())
                 .collect();
             return Err(foreign_or_unknown(&owners));
         };
@@ -431,25 +427,25 @@ impl CheckedClosureHandle {
         ) else {
             return Err(NestedCallSiteRefusal::UnknownOccurrence);
         };
-        let Some(caller_function) = graph.function_by_identity(caller.key) else {
+        let Some(caller_function) = graph.function_by_identity(&caller.key) else {
             return Err(NestedCallSiteRefusal::Unreachable);
         };
         if !body_holds_call_at(caller_function.body, site) {
             return Err(NestedCallSiteRefusal::Unreachable);
         }
         Ok(NestedCallSite {
-            owner_package_id: caller.owner_package_id,
+            owner: caller.owner.clone(),
             location: site.clone(),
         })
     }
 
     /// Every distinct checked package of the closure with its exact id.
-    fn closure_packages(&self) -> Vec<(DigestRecord, &CheckedPackage)> {
-        let mut pending = vec![(self.package_id, self.package.as_ref())];
+    fn closure_packages(&self) -> Vec<(LibraryName, &CheckedPackage)> {
+        let mut pending = vec![(self.package_name.clone(), self.package.as_ref())];
         let mut visited = BTreeSet::new();
         let mut packages = Vec::new();
         while let Some((id, package)) = pending.pop() {
-            if !visited.insert(id) {
+            if !visited.insert(id.clone()) {
                 continue;
             }
             packages.push((id, package));
@@ -457,7 +453,7 @@ impl CheckedClosureHandle {
                 package
                     .dependencies()
                     .iter()
-                    .map(|(id, dependency)| (id.record(), dependency.as_ref())),
+                    .map(|(id, dependency)| (id.clone(), dependency.as_ref())),
             );
         }
         packages
@@ -472,12 +468,12 @@ impl CheckedClosureHandle {
     }
 }
 
-fn has_node(package: &CheckedPackage, node: NodeKey) -> bool {
+fn has_node(package: &CheckedPackage, node: &NodeKey) -> bool {
     package
         .graph()
         .semantic_graph()
         .nodes()
-        .any(|candidate| candidate.key().as_bytes() == node.as_bytes())
+        .any(|candidate| candidate.key() == node)
 }
 
 /// Collect the composite declaration keys reachable through one admitted
@@ -502,13 +498,13 @@ fn reachable_composites(
             // still name a composite declaration, so the walk follows it.
             ValueType::Map(map) => pending.push(map.values().clone()),
             ValueType::Composite(key) => {
-                if !reachable.insert(*key) {
+                if !reachable.insert(key.clone()) {
                     continue;
                 }
                 let checked = graph
                     .checked_type_nodes()
                     .find(|type_node| {
-                        matches!(type_node, qsl_semantics::check::CheckedTypeNode::Composite { declaration, .. } if *declaration == *key)
+                        matches!(type_node, qsl_semantics::check::CheckedTypeNode::Composite { declaration, .. } if declaration == key)
                     })
                     .ok_or(())?;
                 let qsl_semantics::check::CheckedTypeNode::Composite {
@@ -519,14 +515,14 @@ fn reachable_composites(
                 else {
                     return Err(());
                 };
-                if *declaration != *key
-                    || graph.semantic_graph().node(*node).is_none_or(|node| {
+                if declaration != key
+                    || graph.semantic_graph().node(node).is_none_or(|node| {
                         node.node_tag() != qsl_semantics::check::NodeTag::CompositeType
                     })
                 {
                     return Err(());
                 }
-                let composite = graph.scope().types().composite(*key).ok_or(())?;
+                let composite = graph.scope().types().composite(key).ok_or(())?;
                 if nominal_declaration_form(*form, composite.shape()).is_err() {
                     return Err(());
                 }
@@ -538,7 +534,7 @@ fn reachable_composites(
                     CompositeShape::Union(members) => {
                         for member in members {
                             if member.member().is_none_or(|binding| {
-                                binding.declaration() != *node
+                                binding.declaration() != node
                                     || binding.identifier() != member.identifier()
                             }) {
                                 return Err(());
@@ -585,9 +581,9 @@ fn nominal_declaration_form(
 
 /// The refusal for a node the caller's package lacks: its one actual owner, and
 /// never an arbitrary one of several.
-fn foreign_or_unknown(owners: &[DigestRecord]) -> NestedCallSiteRefusal {
+fn foreign_or_unknown(owners: &[LibraryName]) -> NestedCallSiteRefusal {
     match owners {
-        [owner] => NestedCallSiteRefusal::ForeignCall(*owner),
+        [owner] => NestedCallSiteRefusal::ForeignCall(owner.clone()),
         _ => NestedCallSiteRefusal::UnknownCall,
     }
 }
@@ -624,7 +620,7 @@ fn is_call_form(form: &str) -> bool {
 /// ```
 #[derive(Clone)]
 pub struct CallableSelection {
-    owner_package_id: DigestRecord,
+    owner: LibraryName,
     key: NodeKey,
     signature: Signature,
     acquisition: Arc<()>,
@@ -632,12 +628,12 @@ pub struct CallableSelection {
 
 impl CallableSelection {
     /// The package that owns this callable.
-    pub fn owner_package_id(&self) -> DigestRecord {
-        self.owner_package_id
+    pub fn owner_package_name(&self) -> &LibraryName {
+        &self.owner
     }
     /// The check-minted key, for generated-body diagnostics only.
-    pub fn key(&self) -> NodeKey {
-        self.key
+    pub fn key(&self) -> &NodeKey {
+        &self.key
     }
     /// The exact admitted signature.
     pub fn signature(&self) -> &Signature {
@@ -646,14 +642,14 @@ impl CallableSelection {
 }
 
 /// Why a callable lookup did not issue a selection.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum CallableLookupRefusal {
     /// The owner or node is absent, or several other packages own the node.
     #[error("unknown callable")]
     Unknown,
     /// Exactly one other package in the closure owns the node.
     #[error("callable belongs to package {0:?}")]
-    Foreign(DigestRecord),
+    Foreign(LibraryName),
     /// The selected package owns the node but it is not callable by name.
     #[error("node is not callable by name")]
     WrongKind,
@@ -663,7 +659,7 @@ pub enum CallableLookupRefusal {
 /// node's wire id and the ordinal of its `expression` occurrence, the same
 /// pair its checked-package source map records. It names nothing by itself;
 /// [`CheckedClosureHandle::nested_call_site`] resolves it inside a selected caller.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NestedCallOccurrence {
     call_node: NodeKey,
     ordinal: u64,
@@ -688,20 +684,20 @@ impl NestedCallOccurrence {
 /// The struct is exported, so a literal fails only because its fields are private:
 ///
 /// ```compile_fail
-/// fn forge(owner: qsl_replay::DigestRecord, location: quire_semantic_value::location::Location) {
-///     let _ = qsl_replay::NestedCallSite { owner_package_id: owner, location };
+/// fn forge(owner: qsl_semantics::library::LibraryName, location: quire_semantic_value::location::Location) {
+///     let _ = qsl_replay::NestedCallSite { owner, location };
 /// }
 /// ```
 #[derive(Clone, Debug)]
 pub struct NestedCallSite {
-    owner_package_id: DigestRecord,
+    owner: LibraryName,
     location: Location,
 }
 
 impl NestedCallSite {
     /// The declaring package whose checked body holds the call.
-    pub fn owner_package_id(&self) -> DigestRecord {
-        self.owner_package_id
+    pub fn owner_package_name(&self) -> &LibraryName {
+        &self.owner
     }
     /// The exact checked location of the call expression, for the leaf
     /// `ChildRequest::site`.
@@ -711,7 +707,7 @@ impl NestedCallSite {
 }
 
 /// Why no call site was issued.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum NestedCallSiteRefusal {
     /// The caller selection was issued by another acquisition.
     #[error("caller selection belongs to another acquisition")]
@@ -721,7 +717,7 @@ pub enum NestedCallSiteRefusal {
     UnknownCall,
     /// Exactly one other package in the closure owns the node.
     #[error("call node belongs to package {0:?}")]
-    ForeignCall(DigestRecord),
+    ForeignCall(LibraryName),
     /// The caller's package owns the node but it is not a function call.
     #[error("node is not a call")]
     WrongKind,
@@ -737,6 +733,7 @@ pub enum NestedCallSiteRefusal {
 /// Acquire and retain the checked closure from the one shared compilation path.
 pub fn acquire_checked_closure<'a>(
     source: SourceIdentity,
+    package_name: String,
     path: &str,
     bytes: &[u8],
     packages: impl IntoIterator<Item = &'a [u8]>,
@@ -746,6 +743,7 @@ pub fn acquire_checked_closure<'a>(
 ) -> Result<CheckedClosureCompilation, AdmittedRefusal> {
     let compiled = recompile_unit(
         source,
+        package_name,
         path,
         bytes,
         packages,
@@ -753,15 +751,15 @@ pub fn acquire_checked_closure<'a>(
         limits,
         replay_limits,
     )?;
-    let package_id = compiled.emitted.package().package_id();
-    let context =
-        context_of(compiled.checked.package(), package_id).map_err(AdmittedRefusal::Fault)?;
+    let package_name = compiled.package.clone();
+    let context = context_of(compiled.checked.package(), &package_name)
+        .map_err(AdmittedRefusal::Fault)?;
     Ok(CheckedClosureCompilation {
         package: CompiledPackage::new(compiled.emitted),
         context,
         handle: CheckedClosureHandle {
             package: Arc::clone(compiled.checked.shared_package()),
-            package_id: package_id.record(),
+            package_name,
             acquisition: Arc::new(()),
         },
     })
@@ -813,7 +811,7 @@ impl ApplicationRegistry {
         if !Arc::ptr_eq(&self.acquisition, &selection.acquisition) {
             return Err(SelectionRefusal::WrongAcquisition);
         }
-        Ok(self.inner.register(selection.key, signature, factory))
+        Ok(self.inner.register(selection.key.clone(), signature, factory))
     }
 
     /// Begin a call under the leaf's admission and permanent sealing rules.
@@ -828,7 +826,7 @@ impl ApplicationRegistry {
             return Err(ApplicationBeginRefusal::WrongAcquisition);
         }
         self.inner
-            .begin_call(selection.key, arguments, &environment.0, meter)
+            .begin_call(selection.key.clone(), arguments, &environment.0, meter)
             .map(|inner| CheckedApplicationSession { inner })
             .map_err(ApplicationBeginRefusal::Call)
     }

@@ -147,6 +147,9 @@ pub enum ReplayRefusal {
         .0.reader
     )]
     LimitAboveReader(LimitAboveReader),
+    /// The package name is not a library name (it is empty).
+    #[error("invalid-request: the package name is not a library name: {0}")]
+    InvalidPackageName(qsl_semantics::library::InvalidLibraryName),
     /// The package reference does not name exactly one source unit. The
     /// spine recompiles one unit: a package over more than one waits on
     /// E3 import resolution (FR-087-AC-13).
@@ -482,6 +485,7 @@ impl ReplayRefusal {
             Self::Request(refusal) => refusal.code(),
             Self::LimitAboveReader(_) => Code::InvalidRequest,
             Self::SourceCount(_) => Code::InvalidRequest,
+            Self::InvalidPackageName(_) => Code::InvalidRequest,
             Self::Recompile(refusal) => refusal.code(),
             Self::DomainPackages(refusal) => refusal.code,
             Self::DependencySelections(_) => Code::InvalidPackage,
@@ -1374,6 +1378,7 @@ impl Recompiled {
 /// both run it, so a compile and a replay's recompile refuse alike.
 pub(crate) fn run_spine(
     unit: &SourceIdentity,
+    package: &LibraryName,
     path: &str,
     bytes: &[u8],
     packages: &qsl_semantics::model::intake::PackageInput,
@@ -1382,6 +1387,7 @@ pub(crate) fn run_spine(
 ) -> Result<Recompiled, ReplayRefusal> {
     run_spine_with_execution_points(
         unit,
+        package,
         path,
         bytes,
         packages,
@@ -1395,6 +1401,7 @@ pub(crate) fn run_spine(
 /// (FR-104-AC-15), checked through `spine::check_with_execution_points`.
 pub(crate) fn run_spine_with_execution_points(
     unit: &SourceIdentity,
+    package: &LibraryName,
     path: &str,
     bytes: &[u8],
     packages: &qsl_semantics::model::intake::PackageInput,
@@ -1436,16 +1443,10 @@ pub(crate) fn run_spine_with_execution_points(
     let emitted = spine::package(&checked, spine::PackageLimits::default(), &cancel)
         .map_err(refusal)?
         .into_value();
-    let package = LibraryName::new(unit.identity()).map_err(|_| {
-        ReplayRefusal::Fault(InternalFault::new(
-            "replay",
-            "source-unit-names-a-package",
-        ))
-    })?;
     Ok(Recompiled {
         checked,
         emitted,
-        package,
+        package: package.clone(),
         packages: packages.clone(),
         model_limits: limits.model,
     })
@@ -1523,6 +1524,7 @@ pub(crate) fn recompile(
     // Rule 4: the recompile.
     let compiled = run_spine(
         &labels(source),
+        request.package_name(),
         source.identity(),
         bytes,
         &packages,
