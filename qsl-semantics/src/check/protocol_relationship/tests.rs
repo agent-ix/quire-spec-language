@@ -126,6 +126,7 @@ fn check(text: &str) -> Result<CheckedGraph, Vec<CheckRefusal>> {
     let unit = build_unit(&parsed).expect("S2 builds the unit");
     PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         unit,
         vec![obligation_model_with(extra())],
         Vec::new(),
