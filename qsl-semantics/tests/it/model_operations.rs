@@ -566,7 +566,7 @@ pub(super) const PACKAGE_IDENTITY: &str = "example/config-version";
 pub(super) fn wire_envelope(constructs: Value, types: Value, populations: Value) -> Value {
     json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
         "source": {
             "identity": format!("ix://{PACKAGE_IDENTITY}/spec"),
             "version": "1.0.0",

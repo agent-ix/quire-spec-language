@@ -117,7 +117,7 @@ fn variant_type(name: &str, cases: Vec<Value>) -> Value {
 fn document(constructs: Vec<Value>, types: Vec<Value>) -> Value {
     json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
         "source": {
             "identity": id("spec"), "version": "1.0.0",
             "dialect": "spec-bundle"

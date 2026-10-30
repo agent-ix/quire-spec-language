@@ -102,7 +102,7 @@ fn clause(package: &str, owner: &str, name: &str, text: &str) -> Value {
 fn document(package: &str, version: &str, constructs: Vec<Value>, types: Vec<Value>) -> Value {
     json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
         "source": {
             "identity": identity(package, "spec"), "version": "1.0.0",
             "dialect": "spec-bundle"

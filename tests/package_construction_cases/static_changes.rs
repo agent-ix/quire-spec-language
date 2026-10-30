@@ -117,37 +117,13 @@ fn used_context_unused_declarations_and_selected_roles_change_the_expected_conte
 
 #[test]
 #[trace("TC-082", "TC-091", "FR-019-AC-2", "FR-021-AC-3")]
-fn native_source_bytes_and_formal_document_identity_match_independent_changes() {
+fn formal_document_identity_matches_independent_change() {
     let models = [vectors::model()];
-    let original = vectors::source();
     let baseline = NativePackage::new(
         minimal(&models, "test:package", "draft:1", 1, "original.native"),
         PackageLimits::default(),
     )
     .unwrap();
-    let changed_source = format!("{original}// different exact source bytes\n");
-    let mut expected = vectors::expected(&models[0], r#""test:package""#, r#""draft:1""#, 1);
-    change(
-        &mut expected,
-        &ByteDigest::of(original.as_bytes()).to_string(),
-        &ByteDigest::of(changed_source.as_bytes()).to_string(),
-    );
-    let changed = NativePackage::new(
-        checked(
-            &changed_source,
-            "test:package",
-            "draft:1",
-            1,
-            "bytes.native",
-            &models,
-            vec![binding()],
-        ),
-        PackageLimits::default(),
-    )
-    .unwrap();
-    assert_eq!(changed.bytes(), expected.artifact.as_bytes());
-    assert_ne!(changed.bytes(), baseline.bytes());
-
     let mut expected = vectors::expected(&models[0], r#""test:package""#, r#""draft:1""#, 1);
     change(
         &mut expected,

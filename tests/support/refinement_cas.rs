@@ -225,7 +225,7 @@ fn document_with(
     }
     json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
         "source": {"identity": ident(package, "spec"), "version": "1.0.0",
             "dialect": "spec-bundle"},
         "package": {"identity": package, "version": "1.0.0",

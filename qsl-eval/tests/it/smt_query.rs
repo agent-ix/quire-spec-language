@@ -140,7 +140,7 @@ fn document(object: &str, fields: Vec<Json>, operations: Vec<Json>) -> Vec<u8> {
     let population = ident("objects");
     json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
         "source": {"identity": ident("spec"), "version": "1.0.0", "dialect": "spec-bundle"},
         "package": {"identity": PACKAGE, "version": "1.0.0",
             "mappingVersions": [], "profileVersions": []},
