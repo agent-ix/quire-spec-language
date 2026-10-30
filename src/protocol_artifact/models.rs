@@ -120,7 +120,7 @@ pub(super) fn validate(
         ] {
             work.bytes(text.len())?;
         }
-        let correspondence = (source.identity(), source.path(), source.digest());
+        let correspondence = (source.identity(), source.path());
         if sources
             .insert(formal.identity(), correspondence)
             .is_some_and(|prior| prior != correspondence)

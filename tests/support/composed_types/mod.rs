@@ -298,7 +298,6 @@ pub fn with_binding_inputs_and_inventory<T>(
             .map(|source| ExpectedSource {
                 authority: source.identity().identity.clone(),
                 identity: source.identity().clone(),
-                digest: source.digest(),
             })
             .collect(),
     };

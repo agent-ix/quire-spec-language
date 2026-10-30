@@ -3,7 +3,7 @@
 
 use crate::support::native_rule_model;
 use ix_trace_rs::trace;
-use qsl_foundation::{ByteDigest, Code, Source, SourceIdentity, Span, Spanned};
+use qsl_foundation::{Code, Source, SourceIdentity, Span, Spanned};
 use quire_contract_model as ir;
 use quire_spec_language::checking::NativeType;
 use quire_spec_language::formal_source::FormalSource;
@@ -201,10 +201,6 @@ fn integer_and_text_source_meanings_agree_across_explicit_profiles() {
     let selected = selected.admit(ModelLimits::default()).unwrap();
     assert_eq!(old.environment(), selected.environment());
     assert_eq!(old.roles(), selected.roles());
-    assert_eq!(
-        old.source().source().digest(),
-        selected.source().source().digest()
-    );
     let mut expected: Value = serde_json::from_slice(old.artifact_bytes()).unwrap();
     expected["profile"] = json!("native-state-model/2");
     assert_eq!(
@@ -403,10 +399,6 @@ fn rational_wire_variant_is_closed_and_never_rounds_numbers() {
         );
         assert_eq!(error.code(), Code::InvalidModelBinding);
         assert_eq!(error.source().source().text(), text);
-        assert_eq!(
-            error.source().source().digest(),
-            ByteDigest::of(text.as_bytes())
-        );
         assert!(!error.is_incomplete());
     }
 }
@@ -793,7 +785,6 @@ fn with_namespace(text: &str, inspect: impl FnOnce(&SyntaxNamespace)) {
         units: vec![ExpectedSource {
             authority: "native:composed".into(),
             identity: sources[0].identity().clone(),
-            digest: sources[0].digest(),
         }],
     };
     let report = admit_namespace(

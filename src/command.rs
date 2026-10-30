@@ -14,7 +14,7 @@ use crate::formal_source::FormalSource;
 use crate::model_source::ModelSourceError;
 use crate::package::PackageError;
 use qsl_foundation::serde_object::Object;
-use qsl_foundation::{ByteDigest, Code, Diagnostic, Source};
+use qsl_foundation::{Code, Diagnostic, Source};
 use qsl_semantics::model::domain_package::DOMAIN_PACKAGE_PROFILE;
 use quire_contract_model as ir;
 use std::{
@@ -186,9 +186,6 @@ pub enum RunCause {
     /// A command intake ceiling stopped the request.
     #[error("{0} limit exceeded")]
     Limit(LimitKind),
-    /// Selected digest spelling is invalid.
-    #[error("{0}")]
-    Digest(#[from] qsl_foundation::digest::InvalidDigest),
     /// Existing IR identifier validation failed.
     #[error("invalid request identifier: {0:?}")]
     Identifier(ir::Diagnostic),
@@ -310,7 +307,6 @@ impl RunCause {
             #[cfg(feature = "quire-extraction")]
             Self::Extraction(error) => error.code(),
             Self::Limit(_) => Code::ResourceExhausted,
-            Self::Digest(_) => Code::InvalidDigest,
             Self::Identifier(_) => Code::InvalidIdentifier,
             Self::Native(error) => error.code,
             Self::Linking(error) => error.diagnostic.code,
@@ -347,12 +343,10 @@ impl RunCause {
     }
 }
 
-/// Failed command retaining the exact request byte identity when it was read.
+/// Failed command with its typed cause.
 #[derive(Debug, thiserror::Error)]
 #[error("{cause}")]
 pub struct RunError {
-    /// Exact request bytes; absent when bounded request intake itself failed.
-    pub request_digest: Option<ByteDigest>,
     /// Original typed failure.
     #[source]
     pub cause: RunCause,
@@ -450,20 +444,20 @@ pub fn run_with_limits(
     path: &Path,
     limits: RunLimits,
 ) -> std::result::Result<RunResult, Box<RunError>> {
-    with_request_limits(path, limits.request_bytes, |directory, bytes, digest| {
-        run_bytes(directory, bytes, digest, limits.dependent_bytes)
+    with_request_limits(path, limits.request_bytes, |directory, bytes| {
+        run_bytes(directory, bytes, limits.dependent_bytes)
     })
 }
 
 /// FR-312's request reader, returning the exact typed input the spine runs.
-/// A refusal retains the request digest and its located command cause.
+/// A refusal retains its located command cause.
 pub type ClauseRunRequestRefusal = Box<RunError>;
 
 /// Read a closed clause-run request and every selected file exactly once.
 pub fn read_clause_run_request(
     path: &Path,
 ) -> std::result::Result<qsl_replay::spine::ClauseRunRequest, ClauseRunRequestRefusal> {
-    with_request(path, |directory, bytes, _digest| {
+    with_request(path, |directory, bytes| {
         let request: wire::Request = request(bytes)?;
         let clause = request
             .clause
@@ -509,7 +503,7 @@ pub fn read_clause_run_request(
 /// native-linked-package/1 bytes. No runtime artifact is read or executed;
 /// failures expose no partial artifact.
 pub fn compile(path: &Path) -> std::result::Result<Vec<u8>, Box<RunError>> {
-    with_request(path, |directory, bytes, _digest| {
+    with_request(path, |directory, bytes| {
         let request: wire::CompileRequest = request(bytes)?;
         compilation::source_only(&request.program)?;
         let mut intake = intake(
@@ -590,7 +584,7 @@ impl Edition {
 
 /// Spine-compile a `1-draft` program. Each selected model is a domain
 /// package document (format [`DOMAIN_PACKAGE_PROFILE`], the Semantic IR
-/// contract it is admitted under), read under its source digest and handed
+/// contract it is admitted under), read under its source reference and handed
 /// to the spine as FR-056's package input; the program's `model`
 /// declarations select from it. Native rule models and clause bindings
 /// select native constructs, which a complete-V1 program does not take. The
@@ -624,7 +618,7 @@ fn complete(
     })?;
     let libraries = library_sources(request, intake)?;
     // A refusal is rendered over the source its region is in, by that
-    // region's source digest: the program's or one library's, wherever in
+    // region's source reference: the program's or one library's, wherever in
     // the closure it arose. A refusal with no region names the program.
     let spine_failure = |refusal: qsl_replay::spine::CompileRefusal| {
         let located = refusal
@@ -746,10 +740,9 @@ impl std::fmt::Display for LibrarySelection {
     }
 }
 
-// Every command retains the same exact request identity on any later failure.
 fn with_request<T>(
     path: &Path,
-    action: impl FnOnce(&Path, &[u8], ByteDigest) -> Result<T>,
+    action: impl FnOnce(&Path, &[u8]) -> Result<T>,
 ) -> std::result::Result<T, Box<RunError>> {
     with_request_limits(path, REQUEST_BYTES, action).map_err(|mut error| {
         if matches!(error.cause, RunCause::Limit(LimitKind::RequestBytes { .. })) {
@@ -762,7 +755,7 @@ fn with_request<T>(
 fn with_request_limits<T>(
     path: &Path,
     request_bytes: usize,
-    action: impl FnOnce(&Path, &[u8], ByteDigest) -> Result<T>,
+    action: impl FnOnce(&Path, &[u8]) -> Result<T>,
 ) -> std::result::Result<T, Box<RunError>> {
     let bytes = read_file(path, request_bytes).map_err(|cause| {
         let cause = match cause {
@@ -771,18 +764,10 @@ fn with_request_limits<T>(
             }),
             cause => cause,
         };
-        Box::new(RunError {
-            request_digest: None,
-            cause,
-        })
+        Box::new(RunError { cause })
     })?;
-    let digest = ByteDigest::of(&bytes);
-    action(path.parent().unwrap_or(Path::new(".")), &bytes, digest).map_err(|cause| {
-        Box::new(RunError {
-            request_digest: Some(digest),
-            cause,
-        })
-    })
+    action(path.parent().unwrap_or(Path::new(".")), &bytes)
+        .map_err(|cause| Box::new(RunError { cause }))
 }
 
 fn request<T: wire::RequestKind>(bytes: &[u8]) -> Result<T> {
@@ -835,12 +820,7 @@ fn intake_with_bytes(directory: &Path, counts: FileCounts, maximum: usize) -> Re
     })
 }
 
-fn run_bytes(
-    directory: &Path,
-    bytes: &[u8],
-    digest: ByteDigest,
-    dependent_bytes: usize,
-) -> Result<RunResult> {
+fn run_bytes(directory: &Path, bytes: &[u8], dependent_bytes: usize) -> Result<RunResult> {
     let request: wire::Request = request(bytes)?;
     let mut intake = intake_with_bytes(
         directory,
@@ -878,14 +858,13 @@ fn run_bytes(
             member: "edition".to_owned(),
             reason: "native run is retired".to_owned(),
         }),
-        Edition::Complete => run_complete(&digest, &mut intake, &request, source),
+        Edition::Complete => run_complete(&mut intake, &request, source),
     }
 }
 
 /// FR-100: run a `1-draft` program's named function through the spine.
 /// `source` is the program source, already read by `run_bytes`.
 fn run_complete(
-    digest: &ByteDigest,
     intake: &mut Intake<'_>,
     request: &wire::Request,
     source: FormalSource,
@@ -997,7 +976,7 @@ fn run_complete(
         accounting: call_accounting(&call.accounting),
         supplied: request.limits.supplied.unwrap_or_default(),
     };
-    let (package_id, outcome) = qsl_replay::spine::run(
+    let (_, outcome) = qsl_replay::spine::run(
         source.source().identity().clone(),
         source.source().path(),
         source.source().text().as_bytes(),
@@ -1014,7 +993,7 @@ fn run_complete(
         }
         other => RunCause::SpineRun(Box::new(other)),
     })?;
-    output::spine_run_result(*digest, package_id, &source, &call.function, outcome)
+    output::spine_run_result(&source, &call.function, outcome)
 }
 
 /// The call's accounting limits (FR-100): each named counter uses the
@@ -1061,7 +1040,6 @@ mod tests {
 
     fn fault_error(stage: &'static str, invariant: &'static str) -> RunError {
         RunError {
-            request_digest: Some(ByteDigest::of(b"request")),
             cause: RunCause::SpineRun(Box::new(qsl_replay::spine::RunRefusal::Fault(
                 InternalFault::new(stage, invariant),
             ))),

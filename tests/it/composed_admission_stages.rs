@@ -100,7 +100,6 @@ fn inventory(sources: &[Source]) -> SourceInventory {
             .map(|source| ExpectedSource {
                 authority: source.identity().identity.clone(),
                 identity: source.identity().clone(),
-                digest: source.digest(),
             })
             .collect(),
     }
@@ -327,18 +326,12 @@ fn changing_a_required_profile_selection_changes_the_static_subject() {
     let queries = subject_of(&model, R::StateQueries);
 
     assert_ne!(queries, graph);
-    // The selection is authored in the state unit's own text, so that unit's
-    // bytes move with it and so do the source regions its roles retain. The
-    // model and native dependency components are untouched by the change.
+    // The profile selection changes the subject and binding requirements;
+    // the source identity itself is unchanged.
     assert_eq!(
         queries.differences(&graph),
-        vec![
-            ComponentKind::Sources,
-            ComponentKind::Profiles,
-            ComponentKind::BindingRequirements,
-        ]
+        vec![ComponentKind::Profiles, ComponentKind::BindingRequirements]
     );
-    assert_ne!(queries.sources()[0].digest, graph.sources()[0].digest);
     assert_eq!(queries.sources()[1..], graph.sources()[1..]);
     assert_eq!(queries.models(), graph.models());
     assert_eq!(queries.dependencies(), graph.dependencies());

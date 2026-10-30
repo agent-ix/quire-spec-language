@@ -21,7 +21,7 @@ pub fn parse(
     parse_source(source, limits)
 }
 
-/// Parse a historical source already loaded (and optionally digest-verified).
+/// Parse a historical source already loaded.
 pub fn parse_source(source: Source, limits: Limits) -> Result<ParsedUnit, Box<Diagnostic>> {
     if source.text().len() > limits.source_bytes {
         return Err(qsl_foundation::diagnostic::resource_exhausted(
@@ -64,7 +64,7 @@ pub fn parse_native(
     parse_native_source(source, limits)
 }
 
-/// Edition-dispatched parsing of an immutable, optionally digest-verified source.
+/// Edition-dispatched parsing of an immutable source.
 pub fn parse_native_source(
     source: Source,
     limits: Limits,

@@ -89,9 +89,7 @@ pub(super) fn catalog<'a>(
         let native = model.source().source();
         if let Some(previous) = sources.insert(formal, model) {
             let previous_source = previous.source().source();
-            if previous_source.identity() != native.identity()
-                || previous_source.digest() != native.digest()
-            {
+            if previous_source.identity() != native.identity() {
                 return Err(conflict(
                     model,
                     previous,

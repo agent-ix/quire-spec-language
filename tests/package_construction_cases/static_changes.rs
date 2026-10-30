@@ -117,7 +117,7 @@ fn used_context_unused_declarations_and_selected_roles_change_the_expected_conte
 
 #[test]
 #[trace("TC-082", "TC-091", "FR-019-AC-2", "FR-021-AC-3")]
-fn formal_document_identity_matches_independent_change() {
+fn formal_document_identity_changes_the_package_source_record() {
     let models = [vectors::model()];
     let baseline = NativePackage::new(
         minimal(&models, "test:package", "draft:1", 1, "original.native"),

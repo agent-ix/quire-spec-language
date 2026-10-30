@@ -726,7 +726,7 @@ fn exhaustion_preserves_earlier_types_but_never_admits_an_unfinished_forward_dep
                 .namespace()
                 .units()
                 .iter()
-                .map(|unit| unit.source().digest())
+                .map(|unit| unit.source().identity().clone())
                 .collect();
             // One bounded IR rational normalization reserves exactly 128 steps,
             // independent of gcd input values. The Boolean/call nodes need none.
@@ -787,7 +787,7 @@ fn exhaustion_preserves_earlier_types_but_never_admits_an_unfinished_forward_dep
                         .namespace()
                         .units()
                         .iter()
-                        .map(|unit| unit.source().digest())
+                        .map(|unit| unit.source().identity().clone())
                         .collect::<Vec<_>>(),
                     original
                 );

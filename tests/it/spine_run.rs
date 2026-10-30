@@ -2,7 +2,6 @@
 //! FR-100: CLI `run` routes a `1-draft` program through the spine.
 
 use ix_trace_rs::trace;
-use qsl_foundation::ByteDigest;
 use serde_json::{json, Value};
 use std::{
     path::Path,
@@ -241,7 +240,7 @@ fn native_result_two_reader_refuses_invalid_command_error_members() {
 }
 
 /// FR-100-AC-1 (TC-450 step 1): `seven()` completes integer `7`, and the
-/// document's `package_id`, `source` and `request_digest` agree with a
+/// document's `source` agrees with a
 /// composition of the `qsl_replay::spine` operations.
 #[test]
 #[trace("TC-450", "FR-100-AC-1")]
@@ -258,33 +257,12 @@ fn tc_450_step_1_seven_completes_through_the_spine() {
     );
     assert!(output.stderr.is_empty());
     assert!(output.stdout.ends_with(b"\n"), "{output:?}");
-    let request_bytes = std::fs::read(directory.path().join("request.json")).unwrap();
     let document: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(document["format"], "spine-run-result/1");
-    assert_eq!(
-        document["request_digest"],
-        ByteDigest::of(&request_bytes).to_string()
-    );
-    let compiled = crate::support::front_end::emitted(
-        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-run", "fixture", "fixture:1"),
-        "program.native",
-        &program,
-        &std::collections::BTreeMap::new(),
-        &qsl_replay::spine::DependencyInput::default(),
-    )
-    .unwrap();
-    assert_eq!(
-        document["package_id"],
-        compiled.package().package_id().hex()
-    );
     assert_eq!(document["source"]["authority"], "agent-ix");
     assert_eq!(document["source"]["identity"], "test:spine-run");
     assert_eq!(document["source"]["revision_namespace"], "fixture");
     assert_eq!(document["source"]["revision"], "fixture:1");
-    assert_eq!(
-        document["source"]["digest"],
-        ByteDigest::of(&program).to_string()
-    );
     assert_eq!(document["source"]["path"], "program.native");
     assert_eq!(document["function"], "seven");
     assert_eq!(
@@ -298,14 +276,11 @@ fn tc_450_step_1_seven_completes_through_the_spine() {
         document,
         json!({
             "format": "spine-run-result/1",
-            "request_digest": ByteDigest::of(&request_bytes).to_string(),
-            "package_id": compiled.package().package_id().hex(),
             "source": {
                 "authority": "agent-ix",
                 "identity": "test:spine-run",
                 "revision_namespace": "fixture",
                 "revision": "fixture:1",
-                "digest": ByteDigest::of(&program).to_string(),
                 "path": "program.native",
             },
             "function": "seven",

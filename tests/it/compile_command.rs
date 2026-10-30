@@ -5,7 +5,6 @@ use crate::support::standalone_setup as fixtures;
 use fixtures::runtime;
 
 use ix_trace_rs::trace;
-use qsl_foundation::ByteDigest;
 use quire_spec_language::package::{NativePackage, PackageReadLimits, PackageSupport};
 use serde_json::{json, Value};
 use std::{
@@ -128,11 +127,6 @@ fn incompatible_request_and_static_failures_emit_no_package_bytes() {
         assert!(output.stdout.is_empty());
         let failure: Value = serde_json::from_slice(&output.stderr).unwrap();
         assert_eq!(failure["code"], code, "{failure}");
-        assert_eq!(
-            failure["request_digest"],
-            ByteDigest::of(&std::fs::read(directory.path().join("compile.json")).unwrap())
-                .to_string()
-        );
     }
 }
 
@@ -879,7 +873,7 @@ fn a_cycle_inside_the_libraries_renders_over_the_library_source() {
     };
     let a = format!("{SPINE_HEADER}{}", import("test/b")).into_bytes();
     let b = format!("{SPINE_HEADER}{}", import("test/a")).into_bytes();
-    // The program's bytes differ from b.native's, so the two digests do.
+    // The program and library source text are distinct.
     let program = format!(
         "{SPINE_HEADER}{}function u using v(): Boolean pure {{ false }}\n",
         import("test/a")
