@@ -141,7 +141,7 @@ mod tests {
     fn money_package() -> (CheckedPackage, [quire_exact::NodeKey; 3]) {
         use quire_semantic_value::declaration::FieldDeclaration;
         let [money, taxed, pair] =
-            [1, 2, 3].map(|byte| quire_exact::NodeKey::from_digest([byte; 32]));
+            [1, 2, 3].map(crate::fixture_node);
         let field =
             |name: &str, value_type| FieldDeclaration::new(name, value_type, Presence::Required);
         let types = TypeEnvironment::new(
@@ -244,7 +244,9 @@ mod tests {
         }
         // The child's own declaration is what the document names.
         let encoded = encode_element(&child).unwrap();
-        assert!(encoded.get().contains(&hex(taxed.as_bytes())));
+        let spelled = crate::id_text::node_text(&taxed).unwrap();
+        let escaped = serde_json::to_string(&spelled).unwrap();
+        assert!(encoded.get().contains(escaped.trim_matches('"')));
     }
 
     #[trace("FR-056-AC-23")]
