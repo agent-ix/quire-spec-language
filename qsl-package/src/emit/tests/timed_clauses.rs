@@ -133,14 +133,23 @@ fn assert_self(wire: &Value, reference: &Value) {
 /// The emitted package's timed aggregates are in QSpec FR-322's declared
 /// order.
 fn assert_declared_order(wire: &Value) {
-    let nodes: Vec<quire_contract_model::CheckedSemanticNodeV2> =
-        serde_json::from_value(wire["semantic_graph"]["nodes"].clone()).expect("nodes");
-    let source_map: Vec<quire_contract_model::CheckedSourceMapEntry> =
-        serde_json::from_value(wire["source_map"].clone()).expect("source map");
+    let (nodes, source_map) = admitted_graph(wire);
     assert_eq!(
         crate::emit::timed_order::first_out_of_order(&nodes, &source_map),
         Ok(None)
     );
+}
+
+/// The typed nodes and source map the last emission on this thread built.
+fn admitted_graph(
+    _wire: &Value,
+) -> (
+    Vec<quire_contract_model::CheckedSemanticNodeV2>,
+    Vec<quire_contract_model::CheckedSourceMapEntry>,
+) {
+    crate::emit::TIMED_GRAPH
+        .with(|held| held.borrow().clone())
+        .expect("the emission built a timed graph")
 }
 
 /// FR-230-AC-54, QSpec FR-322-AC-261, FR-322-AC-263 and
@@ -631,8 +640,11 @@ fn a_presence_reads_the_place_template_at_its_owner() {
     let places = timed(&wire, "clock_place");
     assert_eq!(places.len(), 2);
     for place in &places {
-        let node: quire_contract_model::CheckedSemanticNodeV2 =
-            serde_json::from_value((*place).clone()).expect("a node");
+        let node = admitted_graph(&wire)
+            .0
+            .into_iter()
+            .find(|node| serde_json::to_value(&node.node_id).unwrap() == place["node_id"])
+            .expect("a node");
         assert_eq!(
             crate::emit::timed_model_node_id(&node).expect("a key"),
             node.node_id,

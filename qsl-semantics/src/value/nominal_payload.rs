@@ -8,6 +8,7 @@
 use quire_exact::{Integer, NodeKey, Rational};
 
 use super::enumeration::EnumDeclarationPreimage;
+use super::semantic_node::NodeOwner;
 use super::unit::{DimensionEquivalencePreimage, DimensionPreimage, UnitPreimage};
 
 /// The payload of one nominal node.
@@ -23,23 +24,42 @@ pub enum NominalPayload {
     DimensionEquivalence(DimensionEquivalencePayload),
 }
 
+impl NominalPayload {
+    /// The declaring owner a preimage-read payload retains.
+    pub fn owner(&self) -> Option<&NodeOwner> {
+        match self {
+            Self::Enum(payload) => payload.owner(),
+            Self::Dimension(payload) => payload.owner(),
+            Self::Unit(payload) => payload.owner(),
+            Self::DimensionEquivalence(_) => None,
+        }
+    }
+}
+
 /// An enum declaration's ordering and cases.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EnumPayload {
     ordered: bool,
     members: Vec<String>,
+    owner: Option<NodeOwner>,
 }
 
 impl EnumPayload {
     /// An enum that is `ordered` or not, with `members` (the case texts in
     /// declaration order, or sorted for an unordered enum).
     pub fn new(ordered: bool, members: Vec<String>) -> Self {
-        Self { ordered, members }
+        Self {
+            ordered,
+            members,
+            owner: None,
+        }
     }
 
     /// The payload of `preimage`.
     pub fn of(preimage: &EnumDeclarationPreimage) -> Self {
-        Self::new(preimage.is_ordered(), preimage.members().to_vec())
+        let mut payload = Self::new(preimage.is_ordered(), preimage.members().to_vec());
+        payload.owner = Some(preimage.owner().clone());
+        payload
     }
 
     /// Whether the enum selects ordered semantics.
@@ -51,6 +71,11 @@ impl EnumPayload {
     pub fn members(&self) -> &[String] {
         &self.members
     }
+
+    /// The declaring owner, when the payload was read from a preimage.
+    pub fn owner(&self) -> Option<&NodeOwner> {
+        self.owner.as_ref()
+    }
 }
 
 /// A dimension: its `(base dimension node, exponent)` terms, empty for a
@@ -58,22 +83,30 @@ impl EnumPayload {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DimensionPayload {
     terms: Vec<(NodeKey, Integer)>,
+    owner: Option<NodeOwner>,
 }
 
 impl DimensionPayload {
     /// A dimension over `terms`; empty terms declare a base dimension.
     pub fn new(terms: Vec<(NodeKey, Integer)>) -> Self {
-        Self { terms }
+        Self { terms, owner: None }
     }
 
     /// The payload of `preimage`.
     pub fn of(preimage: &DimensionPreimage) -> Self {
-        Self::new(preimage.terms().to_vec())
+        let mut payload = Self::new(preimage.terms().to_vec());
+        payload.owner = Some(preimage.owner().clone());
+        payload
     }
 
     /// The `(dimension node, exponent)` terms, strictly ascending by key.
     pub fn terms(&self) -> &[(NodeKey, Integer)] {
         &self.terms
+    }
+
+    /// The declaring owner, when the payload was read from a preimage.
+    pub fn owner(&self) -> Option<&NodeOwner> {
+        self.owner.as_ref()
     }
 
     /// Whether this is a base dimension.
@@ -90,6 +123,7 @@ pub struct UnitPayload {
     target: Option<NodeKey>,
     factor: Rational,
     offset: Rational,
+    owner: Option<NodeOwner>,
 }
 
 impl UnitPayload {
@@ -106,6 +140,7 @@ impl UnitPayload {
             target,
             factor,
             offset,
+            owner: None,
         }
     }
 
@@ -114,12 +149,19 @@ impl UnitPayload {
     pub fn of(preimage: &UnitPreimage) -> Option<Self> {
         let (scale_n, scale_d) = preimage.scale();
         let (offset_n, offset_d) = preimage.offset();
-        Some(Self::new(
+        let mut payload = Self::new(
             preimage.dimension().clone(),
             preimage.target().cloned(),
             Rational::new(scale_n.clone(), scale_d.clone()).ok()?,
             Rational::new(offset_n.clone(), offset_d.clone()).ok()?,
-        ))
+        );
+        payload.owner = Some(preimage.owner().clone());
+        Some(payload)
+    }
+
+    /// The declaring owner, when the payload was read from a preimage.
+    pub fn owner(&self) -> Option<&NodeOwner> {
+        self.owner.as_ref()
     }
 
     /// The dimension node of the unit.

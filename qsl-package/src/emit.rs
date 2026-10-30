@@ -273,6 +273,15 @@ pub enum OmissionCause {
     NamesOmittedNode(CheckedNodeId),
 }
 
+/// The typed timed graph the last emission on this thread built, for tests:
+/// IR's typed bodies cannot be decoded from JSON outside its reader.
+#[cfg(test)]
+thread_local! {
+    pub(crate) static TIMED_GRAPH: std::cell::RefCell<
+        Option<(Vec<CheckedSemanticNodeV2>, Vec<CheckedSourceMapEntry>)>,
+    > = const { std::cell::RefCell::new(None) };
+}
+
 /// The emitted package and the nodes it omits.
 #[derive(Clone, Debug)]
 pub struct Emission {
@@ -1204,13 +1213,38 @@ fn wire_owner(owner: &Owner) -> CheckedNodeOwner {
     }
 }
 
+/// Whether the lock the emitter writes selects the owner `node` joins. A
+/// node without a nominal payload (an enum member, a lowering-built unit or
+/// dimension aside) joins trivially; a nominal node joins only when its
+/// owner is the checked unit's `source`, the one lock entry it can always
+/// join (FR-322).
+fn owner_is_locked(node: &SemanticNode, source: &RawSourceRef) -> bool {
+    if node.nominal_payload().is_none() {
+        return !matches!(node.semantic_form(), "dimension" | "unit");
+    }
+    // The declaring owner the payload retains is the truth; a payload built
+    // without one (the timed path) joins by the node's own owner.
+    match node.nominal_payload().and_then(NominalPayload::owner) {
+        Some(owner) => matches!(
+            owner,
+            NodeOwner::Source(subject)
+                if subject.authority == source.authority() && subject.identity == source.identity()
+        ),
+        None => matches!(
+            node.owner(),
+            Some(Owner::Source(subject))
+                if subject.authority() == source.authority() && subject.identity() == source.identity()
+        ),
+    }
+}
+
 /// Which candidates the wire omits, and why: an unsupported form, a
 /// declaration without its occurrence, a nominal owner the lock does not
 /// select, a name outside the graph, and then, transitively, a name of an
 /// omitted node.
 fn omissions(
     candidates: &BTreeMap<CheckedNodeId, Candidate<'_>>,
-    _source: &RawSourceRef,
+    source: &RawSourceRef,
     decodes: &dyn Fn(CheckedNodeTag, &str) -> bool,
     external: &BTreeSet<CheckedNodeId>,
 ) -> Vec<OmittedNode> {
@@ -1223,6 +1257,8 @@ fn omissions(
             })
         } else if !candidate.declaration_matches_occurrences() {
             Some(OmissionCause::DeclarationOccurrenceMismatch)
+        } else if !owner_is_locked(candidate.node, source) {
+            Some(OmissionCause::UnlockedOwner)
         } else {
             candidate
                 .names
@@ -2919,6 +2955,8 @@ fn emit_package_inner(
         {
             rekey_timed_model_nodes(&mut nodes, &mut source_map)?;
         }
+        #[cfg(test)]
+        TIMED_GRAPH.with(|held| *held.borrow_mut() = Some((nodes.clone(), source_map.clone())));
     }
     append_model_roots(
         graph.model_roots(),
