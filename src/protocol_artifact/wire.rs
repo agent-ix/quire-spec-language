@@ -267,7 +267,7 @@ record! { /// Wire identity/version, separate from semantic definition revision.
 }
 record! { /// Narrow representation of the exact shared ArtifactRef/3 object.
     ArtifactRef {
-        /// The ArtifactRef schema's own version, distinct from `revision` below.
+        /// The ArtifactRef schema's own version.
         #[serde(rename = "refVersion")] ref_version: String,
         /// The referenced artifact's closed kind (`ArtifactKind`).
         kind: ArtifactKind,
@@ -275,8 +275,6 @@ record! { /// Narrow representation of the exact shared ArtifactRef/3 object.
         authority: String,
         /// The artifact's own identity string, unique within `authority`.
         identity: String,
-        /// The artifact's selected revision.
-        revision: Revision,
         /// The wire schema this artifact reference itself conforms to.
         wire: Wire
     }

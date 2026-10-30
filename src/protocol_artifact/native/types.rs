@@ -688,10 +688,6 @@ fn copy_artifact(value: &w::ArtifactRef, work: &mut Work) -> Result<w::ArtifactR
         kind: value.kind,
         authority: text(&value.authority, work)?,
         identity: text(&value.identity, work)?,
-        revision: w::Revision {
-            namespace: text(&value.revision.namespace, work)?,
-            value: text(&value.revision.value, work)?,
-        },
         wire: w::Wire {
             identity: text(&value.wire.identity, work)?,
             version: text(&value.wire.version, work)?,

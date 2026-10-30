@@ -560,17 +560,14 @@ fn reference(
     authority: &str,
     kind: w::ArtifactKind,
     identity: &str,
-    revision: w::Revision,
     wire: &str,
     version: &str,
-    _bytes: &[u8],
 ) -> w::ArtifactRef {
     w::ArtifactRef {
         ref_version: "ix.artifact-ref/3-draft".into(),
         kind,
         authority: authority.into(),
         identity: identity.into(),
-        revision,
         wire: w::Wire {
             identity: wire.into(),
             version: version.into(),
@@ -892,13 +889,8 @@ impl UnitInput {
                 AUTHORITY,
                 w::ArtifactKind::Source,
                 recipe.identity,
-                revision(
-                    "native-source-revision",
-                    &source.source().identity().revision,
-                ),
                 "ix:native",
                 "1-draft",
-                source.source().text().as_bytes(),
             ),
             mapping: CheckBindings { source, clauses },
         })
@@ -993,10 +985,8 @@ impl SelectedInputs {
             AUTHORITY,
             w::ArtifactKind::Source,
             "quire.compiled-protocol/1",
-            revision("compiled-protocol-contract", "1"),
             "text/markdown",
             "1",
-            CONTRACT,
         );
         let producer = w::Producer {
             implementation: "quire-spec-language/native_protocol_handoff".into(),
@@ -1006,25 +996,15 @@ impl SelectedInputs {
             AUTHORITY,
             w::ArtifactKind::ModelPackage,
             model.environment().owner().package().as_str(),
-            revision(
-                REQUIREMENT_NAMESPACE,
-                &model.environment().owner().revision().get().to_string(),
-            ),
             "native-state-model",
             "2",
-            model.artifact_bytes(),
         );
         let foreign_ref = reference(
             AUTHORITY,
             w::ArtifactKind::Source,
             &model.source().source().identity().identity,
-            revision(
-                "native-source-revision",
-                &model.source().source().identity().revision,
-            ),
             "native-rule-model",
             "2",
-            model.source().source().text().as_bytes(),
         );
 
         let dependencies = selected_dependencies(inputs, &contract, &model_ref)?;
@@ -1053,10 +1033,8 @@ impl SelectedInputs {
             AUTHORITY,
             w::ArtifactKind::Source,
             "quire.compiled-protocol/2",
-            revision("compiled-protocol-contract", "2"),
             "text/markdown",
             "1",
-            CONTRACT_V2,
         );
         let contract_dependency = selected
             .dependencies
@@ -1122,10 +1100,8 @@ fn selected_dependencies(
                 STANDARD,
                 w::ArtifactKind::Source,
                 definition.identity(),
-                revision(DEFINITION_NAMESPACE, definition.revision()),
                 "text/markdown",
                 "1",
-                definition.bytes(),
             ),
             bytes: Cow::Borrowed(definition.bytes()),
             requires: Vec::new(),
@@ -1138,10 +1114,8 @@ fn selected_dependencies(
                 STANDARD,
                 w::ArtifactKind::Source,
                 rule.path,
-                revision("selected-rule-source", "1"),
                 "text/markdown",
                 "1",
-                rule.bytes,
             ),
             bytes: Cow::Borrowed(rule.bytes),
             requires: Vec::new(),
@@ -1487,10 +1461,8 @@ fn emit_and_read(
         AUTHORITY,
         w::ArtifactKind::LinkedPackage,
         "examples/protocol-handoff/workflow",
-        revision("example-output", "1"),
         "quire.compiled-protocol",
         "1",
-        emitted.bytes(),
     );
     let expected_units = selected_sources
         .iter()
@@ -1638,10 +1610,8 @@ fn emit_and_read_v2(
         AUTHORITY,
         w::ArtifactKind::LinkedPackage,
         "examples/protocol-handoff/workflow-v2",
-        revision("example-output", "2"),
         "quire.compiled-protocol",
         "2",
-        emitted.bytes(),
     );
 
     let expected_units = selected_sources
@@ -1871,13 +1841,11 @@ fn artifact_result<T>(stage: &'static str, report: artifact::Report<T>) -> Resul
     })
 }
 
-fn dependency_key(reference: &w::ArtifactRef) -> (&str, &str, &str, &str, &str, &str, &str) {
+fn dependency_key(reference: &w::ArtifactRef) -> (&str, &str, &str, &str, &str) {
     (
         reference.kind.as_str(),
         &reference.authority,
         &reference.identity,
-        &reference.revision.namespace,
-        &reference.revision.value,
         &reference.wire.identity,
         &reference.wire.version,
     )
@@ -1972,10 +1940,8 @@ fn mutation_fixtures(
             AUTHORITY,
             w::ArtifactKind::LinkedPackage,
             "examples/protocol-handoff/workflow-v2",
-            revision("example-output", "2"),
             "quire.compiled-protocol",
             "2",
-            &bytes,
         );
         files.push((file.clone(), bytes));
         cases.push(MutationCase {
@@ -2380,10 +2346,8 @@ fn mutation_fixtures(
             AUTHORITY,
             w::ArtifactKind::LinkedPackage,
             "examples/protocol-handoff/workflow-v2",
-            revision("example-output", "2"),
             "quire.compiled-protocol",
             "2",
-            &bytes,
         );
         files.push((file.clone(), bytes));
         cases.push(MutationCase {

@@ -33,14 +33,12 @@ pub fn reference(
     identity: &str,
     wire: &str,
     version: &str,
-    _bytes: &[u8],
 ) -> w::ArtifactRef {
     w::ArtifactRef {
         ref_version: "ix.artifact-ref/3-draft".into(),
         kind,
         authority: "test:protocol-reader".into(),
         identity: identity.into(),
-        revision: revision("fixture-1"),
         wire: w::Wire {
             identity: wire.into(),
             version: version.into(),
@@ -107,14 +105,12 @@ impl Fixture {
         registry.sort_by_key(|definition| definition.identity());
         let mut inputs = BTreeMap::<String, (w::ArtifactRef, Vec<u8>)>::new();
         for definition in &registry {
-            let mut selected = reference(
+            let selected = reference(
                 w::ArtifactKind::Source,
                 definition.path(),
                 "text/markdown",
                 "1",
-                definition.bytes(),
             );
-            selected.revision = revision(definition.revision());
             inputs.insert(
                 definition.path().into(),
                 (selected, definition.bytes().to_vec()),
@@ -122,13 +118,7 @@ impl Fixture {
             for rule in definition.rules() {
                 inputs.entry(rule.path.into()).or_insert_with(|| {
                     (
-                        reference(
-                            w::ArtifactKind::Source,
-                            rule.path,
-                            "text/markdown",
-                            "1",
-                            rule.path.as_bytes(),
-                        ),
+                        reference(w::ArtifactKind::Source, rule.path, "text/markdown", "1"),
                         rule.path.as_bytes().to_vec(),
                     )
                 });
@@ -140,7 +130,6 @@ impl Fixture {
             "compiled-protocol-contract",
             "text/markdown",
             "1",
-            contract_bytes,
         );
         let baseline_bytes = b"independently selected protocol reader baseline";
         let baseline = reference(
@@ -148,14 +137,12 @@ impl Fixture {
             "accepted-baseline",
             "test:baseline",
             "1",
-            baseline_bytes,
         );
         let model_ref = reference(
             w::ArtifactKind::ModelPackage,
             "rule-model",
             model.profile().as_str(),
             "1",
-            model.artifact_bytes(),
         );
         for (key, selected, bytes) in [
             ("contract", contract.clone(), contract_bytes.as_slice()),
@@ -239,7 +226,6 @@ impl Fixture {
                 "native-protocol",
                 "ix:native",
                 "1-draft",
-                text.as_bytes(),
             ),
             native: w::NativeSource {
                 authority: "test".into(),
@@ -284,7 +270,6 @@ impl Fixture {
             "rule-model-source",
             "native-rule-model",
             "1",
-            model.source().source().text().as_bytes(),
         );
         let foreign_formal = w::Formal {
             document: "RuleModelSource".into(),
@@ -1572,13 +1557,12 @@ impl Fixture {
         fixture
     }
 
-    pub fn seal(bytes: &[u8]) -> w::ArtifactRef {
+    pub fn selected_artifact() -> w::ArtifactRef {
         reference(
             w::ArtifactKind::LinkedPackage,
             "compiled-reader-fixture",
             "quire.compiled-protocol",
             "1",
-            bytes,
         )
     }
 
@@ -1659,11 +1643,15 @@ impl Fixture {
         artifact::read(bytes, &expected, limits)
     }
 
-    /// Select adverse bytes explicitly so tests reach validation past the seal;
+    /// Select adverse bytes explicitly so tests reach validation past identity matching;
     /// all producer/source/dependency selections still come from the baseline.
     pub fn offered(&self, package: &w::Package) -> artifact::Report<artifact::AdmittedPackage> {
         let bytes = serde_json::to_vec(package).unwrap();
-        self.read(&bytes, &Self::seal(&bytes), artifact::Limits::default())
+        self.read(
+            &bytes,
+            &Self::selected_artifact(),
+            artifact::Limits::default(),
+        )
     }
 
     pub fn json(&self) -> serde_json::Value {
@@ -1672,7 +1660,11 @@ impl Fixture {
 
     pub fn raw(&self, value: &serde_json::Value) -> artifact::Report<artifact::AdmittedPackage> {
         let bytes = serde_json::to_vec(value).unwrap();
-        self.read(&bytes, &Self::seal(&bytes), artifact::Limits::default())
+        self.read(
+            &bytes,
+            &Self::selected_artifact(),
+            artifact::Limits::default(),
+        )
     }
 }
 

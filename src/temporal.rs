@@ -210,8 +210,8 @@ pub fn evaluate_with_progress_v2(
 /// than the declaration's own profile. The strict reader already refuses such a
 /// package, so that second refusal is a re-check that keeps the evidence from
 /// ever naming a definition the classifier did not use. The classification
-/// retains the authenticated package digest, definition identity, namespaced
-/// revision and definition artifact digest. It takes no trace, so it
+/// retains the declaration and authenticated definition identity and revision.
+/// It takes no trace, so it
 /// authenticates no clock parameter map and retains none.
 pub fn mapping_support_v2(
     package: &v2::AdmittedPackage,
@@ -300,7 +300,7 @@ fn authenticated_selection<'a>(
         .ok_or(Refusal::Reference { subject })?;
     Ok((
         binding,
-        AuthenticatedSelection::new(package.digest(), declaration, definition),
+        AuthenticatedSelection::new(declaration, definition),
     ))
 }
 
@@ -606,7 +606,6 @@ fn authenticate_v2(
     // One derivation for both version-2 entry points: the evaluation binding
     // restates the classification's selection and adds the clock it checked.
     Ok(progress::AuthenticatedBinding {
-        package_digest: selection.package_digest().to_string(),
         declaration: selection.declaration(),
         definition_identity: selection.definition_identity().into(),
         definition_revision: selection.definition_revision().value.clone(),

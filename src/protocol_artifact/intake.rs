@@ -3,25 +3,14 @@
 
 use super::{wire::*, work::Work, *};
 use crate::linking::composed::definition_source::RegisteredDefinition as Registered;
-use qsl_foundation::ByteDigest;
 
-type Key<'a> = (
-    &'a str,
-    &'a str,
-    &'a str,
-    &'a str,
-    &'a str,
-    &'a str,
-    &'a str,
-);
+type Key<'a> = (&'a str, &'a str, &'a str, &'a str, &'a str);
 
 pub(super) fn key(reference: &ArtifactRef) -> Key<'_> {
     (
         reference.kind.as_str(),
         &reference.authority,
         &reference.identity,
-        &reference.revision.namespace,
-        &reference.revision.value,
         &reference.wire.identity,
         &reference.wire.version,
     )
@@ -53,7 +42,7 @@ pub(super) fn reference(value: &ArtifactRef) -> Result<(), Error> {
     ] {
         name(text)?;
     }
-    revision(&value.revision)
+    Ok(())
 }
 
 fn reference_bytes(value: &ArtifactRef) -> usize {
@@ -61,8 +50,6 @@ fn reference_bytes(value: &ArtifactRef) -> usize {
         + value.kind.as_str().len()
         + value.authority.len()
         + value.identity.len()
-        + value.revision.namespace.len()
-        + value.revision.value.len()
         + value.wire.identity.len()
         + value.wire.version.len()
 }
@@ -82,10 +69,6 @@ pub(super) fn retained_reference(value: &ArtifactRef) -> Result<ArtifactRef, Err
         kind: value.kind,
         authority: retained_text(&value.authority)?,
         identity: retained_text(&value.identity)?,
-        revision: Revision {
-            namespace: retained_text(&value.revision.namespace)?,
-            value: retained_text(&value.revision.value)?,
-        },
         wire: Wire {
             identity: retained_text(&value.wire.identity)?,
             version: retained_text(&value.wire.version)?,
@@ -505,7 +488,6 @@ pub fn read(bytes: &[u8], expected: &Expected<'_>, limits: Limits) -> Report<Adm
     let result = (|| {
         work.charge(Dimension::PayloadBytes, bytes.len())?;
         work.bytes(bytes.len())?;
-        let digest = ByteDigest::of(bytes);
         let package = super::decode::package(bytes, &mut work)?;
         headers(&package, expected, &mut work)?;
         let supplied = selected(&package, expected, &mut work)?;
@@ -527,7 +509,6 @@ pub fn read(bytes: &[u8], expected: &Expected<'_>, limits: Limits) -> Report<Adm
         Ok(AdmittedPackage {
             clocks: super::ClockNames::of(&package),
             package,
-            digest,
             artifact: retained_reference(expected.artifact)?,
         })
     })();

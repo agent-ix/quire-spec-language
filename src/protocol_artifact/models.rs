@@ -18,15 +18,7 @@ use crate::native_model::{
 };
 use qsl_semantics::model::domain_package::DOMAIN_PACKAGE_PROFILE;
 
-type RefKey<'a> = (
-    &'a str,
-    &'a str,
-    &'a str,
-    &'a str,
-    &'a str,
-    &'a str,
-    &'a str,
-);
+type RefKey<'a> = (&'a str, &'a str, &'a str, &'a str, &'a str);
 type ExportKey = (String, Vec<String>);
 
 #[derive(Clone, Copy)]
@@ -488,8 +480,6 @@ fn ref_key(value: &w::ArtifactRef) -> RefKey<'_> {
         value.kind.as_str(),
         &value.authority,
         &value.identity,
-        &value.revision.namespace,
-        &value.revision.value,
         &value.wire.identity,
         &value.wire.version,
     )
@@ -501,14 +491,12 @@ fn charge_ref(value: &w::ArtifactRef, work: &mut Work) -> Result<(), Error> {
         &value.ref_version,
         &value.authority,
         &value.identity,
-        &value.revision.namespace,
-        &value.revision.value,
         &value.wire.identity,
         &value.wire.version,
     ] {
         work.bytes(text.len())?;
     }
-    work.bytes(32)
+    Ok(())
 }
 
 fn same_ref(left: &w::ArtifactRef, right: &w::ArtifactRef, work: &mut Work) -> Result<(), Error> {

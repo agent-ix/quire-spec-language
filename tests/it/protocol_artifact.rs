@@ -6,7 +6,6 @@
 use crate::support::protocol_artifact as setup;
 
 use ix_trace_rs::trace;
-use qsl_foundation::ByteDigest;
 use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
 use quire_spec_language::protocol_artifact::{
     self as artifact, wire as w, Dimension, Error, Invalid, Limits, NumberComponent, NumberError,
@@ -30,12 +29,10 @@ fn failure<T>(report: &artifact::Report<T>, expected: Error) {
 fn complete_wire_candidate_binds_real_model_and_independent_original_inventory() {
     let fixture = Fixture::new();
     let candidate = fixture.candidate();
-    let selected = Fixture::seal(candidate.bytes());
+    let selected = Fixture::selected_artifact();
     let report = fixture.read(candidate.bytes(), &selected, Limits::default());
     let admitted = report.result().expect("complete reader fixture");
     assert_eq!(admitted.package(), &fixture.package);
-    assert_eq!(admitted.digest(), ByteDigest::of(candidate.bytes()));
-    assert_eq!(candidate.digest(), admitted.digest());
     assert_eq!(
         report.accounting_version(),
         "quire.protocol.artifact-work/1"
@@ -114,7 +111,7 @@ fn fixed_member_order_and_serde_escaping_have_one_selected_byte_spelling() {
         assert_ne!(offered.as_bytes(), bytes);
         let report = fixture.read(
             offered.as_bytes(),
-            &Fixture::seal(offered.as_bytes()),
+            &Fixture::selected_artifact(),
             Limits::default(),
         );
         failure(&report, Error::Invalid(Invalid::Canonical));
@@ -125,10 +122,9 @@ fn fixed_member_order_and_serde_escaping_have_one_selected_byte_spelling() {
 #[trace("TC-121", "FR-042-AC-3")]
 fn independent_header_and_source_selections_refuse_single_axis_substitution() {
     let fixture = Fixture::new();
-    let mutations: [fn(&mut w::Package); 10] = [
+    let mutations: [fn(&mut w::Package); 9] = [
         |p| p.producer.implementation.push_str("-other"),
         |p| p.producer.revision.namespace.push_str("-other"),
-        |p| p.baseline.revision.value.push_str("-other"),
         |p| p.contract.identity.push_str("-other"),
         |p| p.language.edition.push_str("-other"),
         |p| p.sources[0].native.identity.push_str("-other"),
@@ -190,13 +186,7 @@ fn unknown_wire_is_classified_before_its_foreign_dependency_inventory() {
     let mut offered = fixture.package.clone();
     offered.wire = "quire.compiled-protocol/2".into();
     offered.dependencies.push(w::Dependency {
-        artifact: setup::reference(
-            w::ArtifactKind::Source,
-            "future-input",
-            "test:future",
-            "2",
-            b"additional future input",
-        ),
+        artifact: setup::reference(w::ArtifactKind::Source, "future-input", "test:future", "2"),
         requires: vec![],
     });
     failure(
@@ -298,6 +288,9 @@ fn object_only_closed_shapes_refuse_missing_duplicate_unknown_and_wrong_fields()
     let mut value = base.clone();
     value["sources"][0]["artifact"]["kind"] = json!({"source":null});
     invalid.push(value);
+    let mut value = base.clone();
+    value["dependencies"][0]["artifact"]["revision"] = json!({"namespace":"legacy", "value":"1"});
+    invalid.push(value);
     for value in invalid {
         assert!(matches!(
             fixture.raw(&value).result(),
@@ -323,7 +316,7 @@ fn object_only_closed_shapes_refuse_missing_duplicate_unknown_and_wrong_fields()
         fixture
             .read(
                 duplicate.as_bytes(),
-                &Fixture::seal(duplicate.as_bytes()),
+                &Fixture::selected_artifact(),
                 Limits::default()
             )
             .result(),
@@ -530,7 +523,7 @@ fn model_names_its_domain_package_directly_and_refuses_the_deleted_producer_shap
     let admitted = fixture
         .read(
             candidate.bytes(),
-            &Fixture::seal(candidate.bytes()),
+            &Fixture::selected_artifact(),
             Limits::default(),
         )
         .result()
@@ -610,7 +603,7 @@ fn selected_name_bounds_are_utf8_bytes_with_no_truncation() {
     assert!(fixture
         .read(
             candidate.bytes(),
-            &Fixture::seal(candidate.bytes()),
+            &Fixture::selected_artifact(),
             Limits::default()
         )
         .result()
@@ -620,7 +613,7 @@ fn selected_name_bounds_are_utf8_bytes_with_no_truncation() {
     failure(
         &fixture.read(
             candidate.bytes(),
-            &Fixture::seal(candidate.bytes()),
+            &Fixture::selected_artifact(),
             Limits::default(),
         ),
         Error::Invalid(Invalid::Name),
@@ -630,7 +623,7 @@ fn selected_name_bounds_are_utf8_bytes_with_no_truncation() {
     failure(
         &fixture.read(
             candidate.bytes(),
-            &Fixture::seal(candidate.bytes()),
+            &Fixture::selected_artifact(),
             Limits::default(),
         ),
         Error::Invalid(Invalid::Name),
@@ -688,7 +681,7 @@ fn independently_counted_peak_limits_distinguish_exact_from_one_short() {
     let fixture = Fixture::new();
     // This oracle uses authored bytes and table lengths, never observed usage.
     let bytes = serde_json::to_vec(&fixture.package).unwrap();
-    let selected = Fixture::seal(&bytes);
+    let selected = Fixture::selected_artifact();
     for (dimension, exact) in [
         (Dimension::PayloadBytes, bytes.len()),
         (Dimension::OutputBytes, bytes.len()),
@@ -738,7 +731,7 @@ fn independently_counted_peak_limits_distinguish_exact_from_one_short() {
 fn every_zero_limit_refuses_without_disabling_the_limit_and_fresh_retry_is_clean() {
     let fixture = Fixture::new();
     let bytes = serde_json::to_vec(&fixture.package).unwrap();
-    let selected = Fixture::seal(&bytes);
+    let selected = Fixture::selected_artifact();
     for dimension in [
         Dimension::PayloadBytes,
         Dimension::OutputBytes,
@@ -881,7 +874,7 @@ fn repeated_control_names_keep_distinct_branch_paths_and_selected_owners() {
     let candidate = fixture.candidate();
     let report = fixture.read(
         candidate.bytes(),
-        &Fixture::seal(candidate.bytes()),
+        &Fixture::selected_artifact(),
         Limits::default(),
     );
     let package = report.result().expect("separate branch scopes").package();
@@ -978,7 +971,7 @@ fn real_model_values_and_all_declaration_families_preserve_exact_references() {
     let candidate = fixture.candidate();
     let report = fixture.read(
         candidate.bytes(),
-        &Fixture::seal(candidate.bytes()),
+        &Fixture::selected_artifact(),
         Limits::default(),
     );
     let package = report
@@ -1175,7 +1168,7 @@ fn choice_repeat_await_and_operation_events_preserve_static_edges_and_binding_ki
     let candidate = fixture.candidate();
     let report = fixture.read(
         candidate.bytes(),
-        &Fixture::seal(candidate.bytes()),
+        &Fixture::selected_artifact(),
         Limits::default(),
     );
     let package = report
@@ -1375,18 +1368,18 @@ fn choice_repeat_await_and_operation_events_preserve_static_edges_and_binding_ki
 
 #[test]
 #[trace("TC-121", "FR-042-AC-3", "FR-042-AC-7")]
-fn an_admitted_producer_reference_is_retained_without_a_byte_seal() {
+fn an_admitted_producer_reference_is_retained_without_payload_digest() {
     let fixture = Fixture::new();
     let candidate = fixture.candidate();
     let report = fixture.read(
         candidate.bytes(),
-        &Fixture::seal(candidate.bytes()),
+        &Fixture::selected_artifact(),
         Limits::default(),
     );
     let admitted = report.result().expect("complete reader fixture");
     let package = admitted.package();
     // The retained reference carries its source identity; artifact bytes are
-    // not sealed into the shared reference envelope.
+    // are not members of the shared reference envelope.
     let model = &package.dependencies[package.models[0].artifact as usize].artifact;
     assert_eq!(
         model,
@@ -1394,7 +1387,6 @@ fn an_admitted_producer_reference_is_retained_without_a_byte_seal() {
     );
     let source = &package.sources[0];
     assert_eq!(source.text, fixture.package.sources[0].text);
-    assert_eq!(admitted.digest(), ByteDigest::of(candidate.bytes()));
     // Re-encoding the admitted package reproduces the exact offered bytes, so
     // admission recanonicalized no retained reference.
     assert_eq!(

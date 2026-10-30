@@ -13,7 +13,6 @@
 use crate::support::native_protocol as setup;
 
 use ix_trace_rs::trace;
-use qsl_foundation::ByteDigest;
 use quire_spec_language::checking::composed::{proofs, TypeLimits};
 use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
 use quire_spec_language::protocol_artifact::{
@@ -193,10 +192,8 @@ fn definition_artifact<'a>(
 
 /// Compile the fixture once and hand the test the strict version-1 and
 /// strict version-2 admissions of the same proofs and selections, with the
-/// raw-byte digest of the emitted version-2 package computed here.
-fn with_both(
-    test: impl FnOnce(&native::Selections<'_>, &AdmittedPackage, &v2::AdmittedPackage, ByteDigest),
-) {
+/// strict version-1 and strict version-2 admissions.
+fn with_both(test: impl FnOnce(&native::Selections<'_>, &AdmittedPackage, &v2::AdmittedPackage)) {
     let inputs = inputs();
     inputs.with_proofs(
         TypeLimits::default(),
@@ -279,12 +276,7 @@ fn with_both(
                 .into_result()
                 .expect("strict version-1 reader");
 
-            test(
-                selected,
-                &admitted_v1,
-                &admitted_v2,
-                ByteDigest::of(emitted_v2.bytes()),
-            );
+            test(selected, &admitted_v1, &admitted_v2);
         },
     );
 }
@@ -298,13 +290,12 @@ fn position(declarations: &[w::Declaration], name: &str) -> usize {
 
 /// FR-045-AC-6: a strict version-2 classification returns the same disposition
 /// as the version-1 classification of the same declaration under both requested
-/// closures, and additionally retains the authenticated package digest,
-/// declaration, definition identity, revision and definition artifact digest.
+/// closures, and additionally retains its declaration and definition selection.
 /// The version-1 classification retains no authenticated selection.
 #[trace("TC-125", "FR-045-AC-6")]
 #[test]
 fn a_version_two_classification_retains_its_authenticated_definition_selection() {
-    with_both(|selected, v1_package, v2_package, emitted_digest| {
+    with_both(|selected, v1_package, v2_package| {
         for (name, definition, kind) in DECLARATIONS {
             let v1_at = position(&v1_package.package().declarations, name);
             let v2_at = position(&v2_package.inherited().declarations, name);
@@ -366,11 +357,6 @@ fn a_version_two_classification_retains_its_authenticated_definition_selection()
                 let selection = authenticated
                     .authenticated()
                     .unwrap_or_else(|| panic!("{name}: a version-2 selection is retained"));
-                assert_eq!(
-                    selection.package_digest(),
-                    emitted_digest,
-                    "{name}: the digest of the emitted package bytes",
-                );
                 assert_eq!(selection.declaration(), v2_at);
                 assert_eq!(selection.definition_identity(), definition.identity());
                 assert_eq!(
@@ -393,7 +379,7 @@ fn a_version_two_classification_retains_its_authenticated_definition_selection()
 #[trace("TC-125", "FR-045-AC-6")]
 #[test]
 fn a_version_two_request_outside_the_package_or_not_temporal_is_refused() {
-    with_both(|_, _, v2_package, _| {
+    with_both(|_, _, v2_package| {
         let at = |declaration| Subject {
             declaration,
             ..Subject::default()

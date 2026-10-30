@@ -15,7 +15,7 @@ use std::{
 };
 
 use ix_trace_rs::trace;
-use qsl_foundation::{ByteDigest, Source, SourceIdentity};
+use qsl_foundation::{Source, SourceIdentity};
 use quire_contract_model as ir;
 use quire_spec_language::{
     formal_source::FormalSource,
@@ -221,11 +221,10 @@ fn write_v1_handoff_admits_from_its_files_through_the_strict_v1_reader() {
     let offer = fs::read(root.join(PUBLISHED_V1_OFFER_FILE)).expect("written v1 offer");
 
     let loaded = Loaded::new(&root, selection);
-    let admitted = loaded
+    loaded
         .with_expected(|expected| artifact::read(&offer, &expected, artifact::Limits::default()))
         .into_result()
         .expect("the strict v1 reader admits the written handoff");
-    assert_eq!(admitted.digest(), ByteDigest::of(&offer));
 }
 
 #[test]

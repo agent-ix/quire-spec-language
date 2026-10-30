@@ -45,8 +45,6 @@ pub(super) fn copy_reference(
     let bytes = value.ref_version.len()
         + value.authority.len()
         + value.identity.len()
-        + value.revision.namespace.len()
-        + value.revision.value.len()
         + value.wire.identity.len()
         + value.wire.version.len();
     work.bytes(bytes)?;

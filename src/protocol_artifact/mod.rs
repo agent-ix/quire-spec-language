@@ -42,7 +42,6 @@ pub use occurrence::{
 pub use work::{Accumulation, Dimension, Exhaustion, Limits, Usage, ACCOUNTING_VERSION};
 
 use crate::native_model::NativeModel;
-use qsl_foundation::ByteDigest;
 
 /// The clock name of each temporal declaration of an admitted package, read
 /// once from the wire's `clock:` binding name at admission (ADR-012 section 9):
@@ -129,9 +128,9 @@ pub const ENCODING: &str = "quire.protocol.compact-json/1";
 /// One independently supplied immutable dependency and its exact direct closure.
 #[derive(Clone, Copy, Debug)]
 pub struct SuppliedDependency<'a> {
-    /// Independently selected role, identity, revision, wire and raw-byte digest.
+    /// Independently selected identity and exact artifact bytes.
     pub artifact: &'a wire::ArtifactRef,
-    /// Complete original artifact bytes, never canonically reconstructed.
+    /// Original bytes used to verify selected native or domain-package models.
     pub bytes: &'a [u8],
     /// Exact direct prerequisites; caller order need not be canonical wire order.
     pub requires: &'a [wire::ArtifactRef],
@@ -195,7 +194,7 @@ pub struct ExpectedSource<'a> {
 /// Independent acceptance selections. Nothing here is obtained from the offer.
 #[derive(Clone, Copy, Debug)]
 pub struct Expected<'a> {
-    /// External compiled-artifact seal selected before inspecting the offer.
+    /// External compiled-artifact identity selected before inspecting the offer.
     pub artifact: &'a wire::ArtifactRef,
     /// Accepted compiled-protocol contract artifact.
     pub contract: &'a wire::ArtifactRef,
@@ -494,17 +493,12 @@ fn report<T>(work: work::Work, result: Result<T, Error>) -> Report<T> {
 #[derive(Debug)]
 pub struct Candidate {
     bytes: Vec<u8>,
-    digest: ByteDigest,
 }
 
 impl Candidate {
     /// Exact canonical candidate bytes; this is not a production emission proof.
     pub fn bytes(&self) -> &[u8] {
         &self.bytes
-    }
-    /// SHA-256 of those complete raw bytes.
-    pub fn digest(&self) -> ByteDigest {
-        self.digest
     }
 }
 
@@ -551,7 +545,6 @@ impl Candidate {
 #[derive(Debug)]
 pub struct AdmittedPackage {
     package: wire::Package,
-    digest: ByteDigest,
     artifact: wire::ArtifactRef,
     clocks: ClockNames,
 }
@@ -564,10 +557,6 @@ impl AdmittedPackage {
     /// Read-only wire data admitted against the supplied selection context.
     pub fn package(&self) -> &wire::Package {
         &self.package
-    }
-    /// Digest of the exact admitted canonical bytes.
-    pub fn digest(&self) -> ByteDigest {
-        self.digest
     }
     /// Independently selected compiled artifact identity admitted by the reader.
     pub fn artifact(&self) -> &wire::ArtifactRef {

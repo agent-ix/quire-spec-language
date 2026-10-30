@@ -7,7 +7,6 @@ use super::{
 };
 use crate::protocol_artifact::{self as artifact, v2, work::Work};
 use crate::protocol_artifact::{Candidate, Dimension, Error, Invalid, Limits, Report};
-use qsl_foundation::ByteDigest;
 
 #[ix_trace_rs::string_edge]
 fn headers(
@@ -209,7 +208,6 @@ pub fn read(bytes: &[u8], expected: &Expected<'_>, limits: Limits) -> Report<Adm
     let result = (|| {
         work.charge(Dimension::PayloadBytes, bytes.len())?;
         work.bytes(bytes.len())?;
-        let digest = ByteDigest::of(bytes);
         let package: wire::Package = artifact::decode::bounded(bytes, &mut work)?;
         headers(&package, &expected.inherited.inherited, &mut work)?;
         v2::intake::validate(
@@ -241,7 +239,6 @@ pub fn read(bytes: &[u8], expected: &Expected<'_>, limits: Limits) -> Report<Adm
         }
         Ok(AdmittedPackage {
             package,
-            digest,
             artifact: Some(artifact::intake::retained_reference(
                 expected.inherited.inherited.artifact,
             )?),
