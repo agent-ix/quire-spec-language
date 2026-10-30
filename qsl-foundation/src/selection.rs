@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Definition and compiled-model selections: the definition identities a
-//! source's `profile` declarations select, the identity, version and digest
+//! source's `profile` declarations select, the identity
 //! a source's `import` and `model` declarations select, the source-located
 //! selection lists a parse recovers, and the profile inventory authoring
 //! tools check a selection against.
@@ -13,8 +13,7 @@
 use alloc::collections::BTreeSet;
 use alloc::{string::String, vec::Vec};
 
-use crate::digest::InvalidDigest;
-use crate::{ByteDigest, Span};
+use crate::Span;
 
 /// A definition selection by identity: the publishing authority and the
 /// definition identity. A definition resolves by identity alone; no version
@@ -75,119 +74,6 @@ impl DefinitionRef {
     }
 }
 
-/// The digest a source `model` declaration selects its model by. The
-/// prefix names the slot: `sha256:` is the SHA-256 of a compiled-model
-/// artifact's raw bytes, and `sha256-jcs:` the SHA-256 of a domain
-/// package's RFC 8785 document (QSL FR-056-CON-4). Neither spelling selects
-/// the other kind of model.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub enum ModelDigest {
-    /// `sha256:<hex>`: a compiled-model artifact's raw bytes.
-    Artifact(ByteDigest),
-    /// `sha256-jcs:<hex>`: a domain package's RFC 8785 document.
-    DomainPackage(ByteDigest),
-}
-
-impl ModelDigest {
-    /// Parse the canonical `sha256:` or `sha256-jcs:` spelling selected by
-    /// source.
-    #[ix_trace_rs::string_edge]
-    pub fn parse(value: &str) -> Result<Self, InvalidDigest> {
-        match value.strip_prefix("sha256-jcs:") {
-            Some(hex) => ByteDigest::from_hex(hex).map(Self::DomainPackage),
-            None => value.parse().map(Self::Artifact),
-        }
-    }
-
-    /// An already-computed compiled-model artifact's raw-byte digest.
-    pub fn artifact(digest: ByteDigest) -> Self {
-        Self::Artifact(digest)
-    }
-
-    /// The SHA-256 value, in whichever slot it selects.
-    pub fn digest(self) -> ByteDigest {
-        match self {
-            Self::Artifact(digest) | Self::DomainPackage(digest) => digest,
-        }
-    }
-}
-
-impl core::fmt::Display for ModelDigest {
-    /// The source spelling: `sha256:<hex>` or `sha256-jcs:<hex>`.
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::Artifact(digest) => write!(f, "{digest}"),
-            Self::DomainPackage(digest) => write!(f, "sha256-jcs:{digest:x}"),
-        }
-    }
-}
-
-/// Exact compiled-model identity/version/digest triple.
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct ModelRef {
-    identity: String,
-    version: String,
-    digest: ModelDigest,
-}
-
-impl ModelRef {
-    /// Validate a non-empty exact compiled-model selection.
-    pub fn new(
-        identity: impl Into<String>,
-        version: impl Into<String>,
-        digest: ModelDigest,
-    ) -> Result<Self, InvalidModelComponent> {
-        let (identity, version) = (identity.into(), version.into());
-        Self::validate_components(&identity, &version)?;
-        Ok(Self::from_validated(identity, version, digest))
-    }
-
-    /// Check an identity/version pair against [`Self::new`]'s bounds without
-    /// building a reference, so a parser can locate the failing component
-    /// before it reads the digest.
-    pub fn validate_components(identity: &str, version: &str) -> Result<(), InvalidModelComponent> {
-        if !valid_selection_identity(identity) {
-            return Err(InvalidModelComponent::Identity);
-        }
-        if version.is_empty() || version.len() > 256 {
-            return Err(InvalidModelComponent::Version);
-        }
-        Ok(())
-    }
-
-    fn from_validated(identity: String, version: String, digest: ModelDigest) -> Self {
-        Self {
-            identity,
-            version,
-            digest,
-        }
-    }
-
-    /// Opaque compiled-model identity.
-    pub fn identity(&self) -> &str {
-        &self.identity
-    }
-
-    /// Exact selected version.
-    pub fn version(&self) -> &str {
-        &self.version
-    }
-
-    /// Exact selected model digest.
-    pub fn digest(&self) -> ModelDigest {
-        self.digest
-    }
-}
-
-/// Why an identity/version pair failed [`ModelRef::new`].
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum InvalidModelComponent {
-    /// Identity was empty or exceeded 512 bytes.
-    Identity,
-    /// Version was empty or exceeded 256 bytes.
-    Version,
-}
-
 /// Source-located header profile selection: `profile <alias> = "<identity>";`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProfileSelection {
@@ -217,15 +103,18 @@ pub struct ImportSelection {
     pub identity_span: Span,
 }
 
-/// Source-located formal model selection.
+/// Source-located formal model selection: `model <alias> = "<identity>";`.
+/// The domain package is selected by its identity alone.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ModelSelection {
     /// Local model alias.
     pub alias: String,
-    /// Exact compiled-model document selection.
-    pub model: ModelRef,
+    /// Domain package identity, within [`MAX_SELECTION_IDENTITY_BYTES`].
+    pub identity: String,
     /// Full model declaration range.
     pub span: Span,
+    /// Exact identity literal range used for located refusals.
+    pub identity_span: Span,
 }
 
 /// Exact package-relevant selections recovered from the admitted syntax.

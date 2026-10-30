@@ -484,6 +484,14 @@ pub enum UnavailabilityCause {
         /// The reason.
         reason: ValueCheckUnsupported,
     },
+    /// QSpec FR-483 arm outcome `unsupported`: the operation-contract arm
+    /// does not decide the claim's form or an element it reads.
+    ContractCheck {
+        /// The claim form.
+        form: crate::contract_check::ContractForm,
+        /// The reason.
+        reason: crate::contract_check::ContractCheckUnsupported,
+    },
 }
 
 /// One wire failure in FR-220's `WeakAccessShape.failures` list.
@@ -565,7 +573,9 @@ impl UnavailabilityCause {
             Self::WeakAccessShape { .. } => "weak-access-shape",
             Self::RecoveryView { .. } => "recovery-view",
             Self::PunctualInterval { .. } => "punctual-interval",
-            Self::ValueCheck { .. } => "unsupported-requested-capability",
+            Self::ValueCheck { .. } | Self::ContractCheck { .. } => {
+                "unsupported-requested-capability"
+            }
         }
     }
 
@@ -589,7 +599,8 @@ impl UnavailabilityCause {
             | Self::UnsupportedSmtFragment
             | Self::StrongAbstractFairness
             | Self::StatisticalRequest(_)
-            | Self::ValueCheck { .. } => Some("unsupported_projection"),
+            | Self::ValueCheck { .. }
+            | Self::ContractCheck { .. } => Some("unsupported_projection"),
         }
     }
 
@@ -1302,6 +1313,16 @@ impl TerminalRecord {
         Self::with_backend(request_index, backend, TerminalValue::Refuted)
     }
 
+    /// QSpec FR-483: a `refuted` record whose `contract-counterexample` the
+    /// native replay reproduced. The token is the only evidence accepted.
+    pub fn refuted_by_contract(
+        request_index: RequestIndex,
+        backend: BackendId,
+        _reproduced: &crate::contract_check::ReproducedContractViolation,
+    ) -> Self {
+        Self::with_backend(request_index, backend, TerminalValue::Refuted)
+    }
+
     /// Build a tested record with the producing backend identity.
     pub fn tested(request_index: RequestIndex, backend: BackendId) -> Self {
         Self::with_backend(request_index, backend, TerminalValue::Tested)
@@ -1740,7 +1761,7 @@ mod tests {
     use crate::scalar::{ScalarClaim, ScalarOutcome};
     use crate::witness::{CanonicalAssignment, WitnessValue};
     use ix_trace_rs::trace;
-    use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
+    use qsl_foundation::digest::WireNodeId;
     use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
     use quire_contract_model::std001_code;
 
@@ -2245,12 +2266,7 @@ mod tests {
     }
 
     fn refuted_source_with_region(authority: &str, identity: String) -> BackendProviderSource {
-        let source_ref = RawSourceRef::new(
-            authority,
-            identity,
-            DigestRecord::mint(DigestDomain::SourceBytesV1, [1; 32]),
-        )
-        .unwrap();
+        let source_ref = RawSourceRef::new(authority, identity).unwrap();
         let region = SourceRegion::new(source_ref, 0, 1).unwrap();
         let replay = ReplayResult::Witness(crate::WitnessArmResult::settle_range_violation(
             None,
@@ -2599,17 +2615,7 @@ mod tests {
             );
         }
 
-        let region = SourceRegion::new(
-            RawSourceRef::new(
-                "a",
-                "i",
-                DigestRecord::mint(DigestDomain::SourceBytesV1, [1; 32]),
-            )
-            .unwrap(),
-            0,
-            1,
-        )
-        .unwrap();
+        let region = SourceRegion::new(RawSourceRef::new("a", "i").unwrap(), 0, 1).unwrap();
         let input = |regions| {
             ReplayResult::Input(crate::InputArmResult::settle_range_violation(
                 None,

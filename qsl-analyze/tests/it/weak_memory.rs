@@ -335,7 +335,7 @@ impl Case {
         replay_protocol_trace(
             request(&document(), self.documents.snapshots.iter(), &unit, id),
             &self.trace_subject(selection),
-            &envelope_at(&unit, id, payload, node, occurrence),
+            &envelope_at(id, payload, node, occurrence),
             self.letters,
             ReplayLimits::default(),
         )
@@ -392,7 +392,7 @@ impl Case {
         replay_protocol_trace(
             request(&document(), self.documents.snapshots.iter(), &unit, id),
             &self.trace_subject(selection),
-            &envelope_at(&unit, id, payload, clause_node, occurrence),
+            &envelope_at(id, payload, clause_node, occurrence),
             self.letters,
             ReplayLimits::default(),
         )

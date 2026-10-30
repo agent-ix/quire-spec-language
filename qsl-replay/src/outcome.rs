@@ -739,6 +739,9 @@ impl OutcomeItem {
                     UnavailabilityCause::ValueCheck { reason, .. } => {
                         item.refusal = Some(reason.as_str());
                     }
+                    UnavailabilityCause::ContractCheck { reason, .. } => {
+                        item.refusal = Some(reason.as_str());
+                    }
                     UnavailabilityCause::SolverAbsent
                     | UnavailabilityCause::HybridProviderAbsent
                     | UnavailabilityCause::BackendAbsent
@@ -890,8 +893,8 @@ pub enum OutcomeLocus {
     },
     /// A region rendered over its source, as an evaluation records it.
     Located {
-        /// The `sha256:` digest of the source.
-        source_digest: String,
+        /// The authored path of the source.
+        file: String,
         /// The region's span.
         span: LocatedSpan,
     },
@@ -978,7 +981,7 @@ impl OutcomeDiagnostic {
             CallRefusal::Record {
                 locus: Some(locus), ..
             } => Some(OutcomeLocus::Located {
-                source_digest: locus.source_digest.clone(),
+                file: locus.file.clone(),
                 span: locus.span,
             }),
             CallRefusal::Record { locus: None, .. } | CallRefusal::Family { .. } => None,
@@ -1494,8 +1497,8 @@ fn replay_stage(refusal: &ReplayRefusal) -> Option<OutcomeStage> {
         | ReplayRefusal::ObservedTemporalRefusal(qsl_eval::temporal::TemporalRefusal::Fault(_))
         | ReplayRefusal::Admission(AdmissionFailure::Fault(_)) => None,
         ReplayRefusal::Request(_)
+        | ReplayRefusal::DomainPackages(_)
         | ReplayRefusal::LimitAboveReader(_)
-        | ReplayRefusal::NotASource(_)
         | ReplayRefusal::SourceCount(_)
         | ReplayRefusal::DependencySelections(_)
         | ReplayRefusal::DependencyInput(_)
@@ -1568,7 +1571,7 @@ mod tests {
     use crate::result::{DisagreementCause, EvaluatedValue, InputArmResult, Verdict, WitnessCheck};
     use crate::spine::{
         check, default_accounting, package, parse, run, select, Call, CallLocus, DependencyInput,
-        LockEvidence, PackageLimits, ParseRequest, SpineLimits,
+        PackageLimits, ParseRequest, SpineLimits,
     };
 
     const FIXTURE: &str = include_str!("../../tests/fixtures/spine-compile.native");
@@ -1600,7 +1603,6 @@ mod tests {
             &parsed,
             &models,
             &DependencyInput::default(),
-            &LockEvidence::default(),
             limits,
             &cancel,
         );
@@ -2550,7 +2552,6 @@ mod tests {
             &parsed,
             &models,
             &DependencyInput::default(),
-            &LockEvidence::default(),
             limits,
             &cancelled,
         );
@@ -2638,7 +2639,6 @@ mod tests {
             fields: BTreeMap::new(),
             locus: Some(CallLocus {
                 file: "fixture.native".to_owned(),
-                source_digest: "sha256:ab".to_owned(),
                 span,
             }),
             location: None,
@@ -2651,7 +2651,7 @@ mod tests {
             document["diagnostics"][0]["locus"],
             json!({
                 "kind": "located",
-                "source_digest": "sha256:ab",
+                "file": "fixture.native",
                 "span": serde_json::to_value(span).expect("a span"),
             })
         );

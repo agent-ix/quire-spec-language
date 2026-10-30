@@ -13,8 +13,7 @@ use qsl_foundation::{SourceIdentity, Span};
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
      profile t = \"quire.temporal.infinite-trace/v1\";\n\
-     model Config = \"example/config-version\" version \"1\" digest \
-     \"sha256-jcs:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n";
+     model Config = \"example/config-version\";\n";
 
 fn parse(text: &str) -> qsl_cst::ParsedSource {
     qsl_cst::parse(

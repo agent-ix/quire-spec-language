@@ -161,17 +161,7 @@ mod tests {
     use crate::source::provenance::{OccurrenceKey, RawSourceRef};
 
     fn region(start: u64, end: u64) -> SourceRegion {
-        SourceRegion::new(
-            RawSourceRef::new(
-                "a",
-                "u",
-                DigestRecord::mint(DigestDomain::SourceBytesV1, [7; 32]),
-            )
-            .unwrap(),
-            start,
-            end,
-        )
-        .unwrap()
+        SourceRegion::new(RawSourceRef::new("a", "u").unwrap(), start, end).unwrap()
     }
 
     fn origin(ordinal: u64) -> Origin {

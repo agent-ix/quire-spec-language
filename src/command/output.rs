@@ -68,32 +68,6 @@ fn diagnostic_with_upstream<'a>(
     }
 }
 
-fn package_path(value: &crate::package::PackagePathSegment) -> types::PackagePath<'_> {
-    match value {
-        crate::package::PackagePathSegment::Field(name) => types::PackagePath::Field(name),
-        crate::package::PackagePathSegment::Index(index) => types::PackagePath::Index(*index),
-    }
-}
-
-fn package_cause(value: &crate::package::PackageCause) -> types::PackageCause<'_> {
-    match value {
-        crate::package::PackageCause::Native(value) => {
-            types::PackageCause::Native(diagnostic(value))
-        }
-        crate::package::PackageCause::Linking(value) => types::PackageCause::Native(
-            diagnostic_with_upstream(&value.diagnostic, value.upstream.as_deref()),
-        ),
-        crate::package::PackageCause::Checking(value) => types::PackageCause::Native(
-            diagnostic_with_upstream(&value.diagnostic, value.upstream.as_deref()),
-        ),
-        crate::package::PackageCause::Json(value) => types::PackageCause::Json {
-            line: value.line(),
-            column: value.column(),
-            message: value.to_string(),
-        },
-    }
-}
-
 pub(super) fn error(error: &RunError, artifact: bool) -> Result<Value, serde_json::Error> {
     let (stage, details) = match &error.cause {
         #[cfg(feature = "quire-extraction")]
@@ -189,23 +163,6 @@ pub(super) fn error(error: &RunError, artifact: bool) -> Result<Value, serde_jso
                 stage: error.stage.to_string(),
             },
         ),
-        RunCause::SelectedPackage {
-            file,
-            expected,
-            error,
-        } => (
-            types::Stage::SelectedPackage,
-            types::Details::SelectedPackage {
-                file,
-                expected: types::PackageReference {
-                    format: expected.format(),
-                    digest: expected.digest().to_string(),
-                },
-                stage: error.stage.to_string(),
-                path: error.path.iter().map(package_path).collect(),
-                cause: error.cause.as_ref().map(package_cause),
-            },
-        ),
         RunCause::CompleteSelection(_)
         | RunCause::Libraries(_)
         | RunCause::CompleteRunSelection(_)
@@ -255,9 +212,6 @@ pub(super) fn error(error: &RunError, artifact: bool) -> Result<Value, serde_jso
                         } => {
                             let expected = types::AdmissionModelSelection {
                                 identity: expected.identity.clone(),
-                                version: expected.version.clone(),
-                                digest_domain: "sha256-jcs",
-                                digest: qsl_semantics::model::key::hex(&expected.digest),
                             };
                             match actual {
                                 qsl_semantics::model::refusal::OfferedSelection::Document(
@@ -428,10 +382,10 @@ fn spine_location(location: &quire_semantic_value::location::Location) -> types:
 }
 
 /// FR-096/FR-100: a record's resolved locus, rendered as
-/// `{source_digest, span}`.
+/// `{file, span}`.
 fn spine_locus(locus: qsl_replay::spine::CallLocus) -> types::SpineLocus {
     types::SpineLocus {
-        source_digest: locus.source_digest,
+        file: locus.file,
         span: locus.span,
     }
 }
@@ -734,9 +688,6 @@ mod tests {
                 "model_identity": "foreign-model",
                 "expected": {
                     "identity": expected.identity,
-                    "version": expected.version,
-                    "digest_domain": "sha256-jcs",
-                    "digest": qsl_semantics::model::key::hex(&expected.digest),
                 },
             })
         );
@@ -838,7 +789,7 @@ mod tests {
     }
 
     /// FR-100-AC-9 (TC-452 step 4, FND-019): a record refusal's `locus`
-    /// renders `{source_digest, span}` exactly -- the TC-452 fixture-F
+    /// renders `{file, span}` exactly -- the TC-452 fixture-F
     /// values -- and `location` renders on both a record refusal and a
     /// family refusal.
     #[test]
@@ -858,20 +809,8 @@ mod tests {
                 column: 55,
             },
         };
-        // The digest is opaque to rendering: the refusal's `locus` carries
-        // whatever the call recorded. It is the SHA-256 of the fixture's
-        // own source text, so input and expectation share one value.
-        let source_digest = {
-            use sha2::{Digest, Sha256};
-            let hex: String = Sha256::digest(b"fixture.native source")
-                .iter()
-                .map(|byte| format!("{byte:02x}"))
-                .collect();
-            format!("sha256:{hex}")
-        };
         let locus = CallLocus {
             file: "fixture.native".to_owned(),
-            source_digest: source_digest.clone(),
             span,
         };
         let location = Location::at(
@@ -901,7 +840,7 @@ mod tests {
                 "cause": "absent-key",
                 "fields": fields,
                 "locus": {
-                    "source_digest": source_digest,
+                    "file": "fixture.native",
                     "span": {
                         "start": {"byte": 225, "line": 3, "column": 54},
                         "end": {"byte": 226, "line": 3, "column": 55},

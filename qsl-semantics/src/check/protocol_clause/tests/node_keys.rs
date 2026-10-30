@@ -19,8 +19,7 @@ fn protocol_nodes_under(
          finish End as (outcome: Boolean) { true };\n\
          }",
     );
-    assembled.lock_evidence =
-        crate::check::LockEvidence::default().with_protocol_profile(protocol.clone());
+    assembled.protocol_profile = Some(protocol.clone());
     let graph = assembled
         .check(CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("{refusals:?}"));
@@ -36,7 +35,7 @@ fn protocol_nodes_under(
     [node("protocol_clause"), node("protocol_reference")]
 }
 
-/// QSL-780 AC-3: the `protocol_profile` binding the lock evidence names is
+/// QSL-780 AC-3: the `protocol_profile` binding the package names is
 /// part of the protocol node's identity. The same protocol and reference
 /// lowered under two bindings key differently, the reference follows its
 /// target's key, and the same binding keys identically (so the difference

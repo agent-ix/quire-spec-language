@@ -105,8 +105,8 @@ pub(super) fn validate(
         work.bytes(owner.package().as_str().len())?;
         work.bytes(owner.requirement().as_str().len())?;
         if owners
-            .insert(owner, model.model.digest())
-            .is_some_and(|digest| digest != model.model.digest())
+            .insert(owner, model.model.artifact_bytes())
+            .is_some_and(|bytes| bytes != model.model.artifact_bytes())
         {
             return Err(Error::Invalid(Invalid::Model));
         }
@@ -375,12 +375,10 @@ fn domain_model<'a>(
     let Some(naming) = &model.domain_package.0 else {
         return Err(Error::Invalid(Invalid::Model));
     };
-    work.bytes(naming.identity.len().saturating_add(naming.version.len()))?;
+    work.bytes(naming.identity.len())?;
     if artifact.kind != w::ArtifactKind::ModelPackage
         || model.profile != DOMAIN_PACKAGE_PROFILE
         || naming.identity != selection.identity
-        || naming.version != selection.version
-        || naming.digest.0 != selection.digest
     {
         return Err(Error::Invalid(Invalid::Model));
     }
@@ -1063,7 +1061,8 @@ fn domain_field<'a>(
 }
 
 fn same_model(left: &NativeModel, right: &NativeModel) -> bool {
-    left.environment().owner() == right.environment().owner() && left.digest() == right.digest()
+    left.environment().owner() == right.environment().owner()
+        && left.artifact_bytes() == right.artifact_bytes()
 }
 
 fn matches_native(

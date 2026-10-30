@@ -398,7 +398,6 @@ fn admitted_float_arithmetic_and_rational_conversion_evaluate_through_the_source
                 &parsed,
                 &models,
                 &DependencyInput::default(),
-                &spine::LockEvidence::default(),
                 limits,
                 &cancel,
             )

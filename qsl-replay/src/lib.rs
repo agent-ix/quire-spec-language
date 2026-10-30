@@ -53,6 +53,7 @@ mod certificate;
 mod clause_evaluation;
 mod compile;
 mod composite;
+pub mod contract_check;
 mod execute;
 mod hybrid;
 mod hybrid_replay;
@@ -425,7 +426,7 @@ mod redaction_tests {
     use ix_trace_rs::trace;
 
     use super::*;
-    use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord, WireNodeId};
+    use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
     use quire_exact::Identifier;
 
     fn scalar_limits(seed: u64) -> quire_exact::ScalarLimits {
@@ -443,79 +444,28 @@ mod redaction_tests {
         }
     }
 
-    /// FR-073-AC-3 (TC-211): a `stale_dependency`/`byte-digest-mismatch`
-    /// refusal from the replay request, and a malformed-transcript refusal
-    /// from the witness envelope, each render with no unredacted content --
-    /// and a separately, validly constructed value carrying the same
-    /// content stays fully readable through its typed accessor.
+    /// FR-073-AC-3 (TC-211): a malformed-transcript refusal from the witness
+    /// envelope renders with no unredacted content, and a separately,
+    /// validly constructed value carrying the same content stays fully
+    /// readable through its typed accessor.
     #[trace("TC-211", "FR-073-AC-3")]
     #[test]
     fn tc_211_refusal_causes_redact_while_typed_accessors_stay_readable() {
-        // Half 1: replay request byte-digest mismatch.
+        // Half 1: a validly constructed request whose byte provision
+        // carries entry X's exact bytes.
         let entry_x: Vec<u8> = (0..4096u32).map(|i| (i % 241) as u8).collect();
-        let correct_digest = ByteDigest::of(&entry_x).as_bytes();
-        let mut mismatched_bytes = entry_x.clone();
-        mismatched_bytes[0] ^= 0xFF;
-
-        let source_digest_record = DigestRecord::mint(DigestDomain::SourceBytesV1, correct_digest);
-        let wire = ReplayRequestWire {
-            profile_selections: vec![],
-            package_id: (
-                Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
-                DigestRecord::mint(DigestDomain::PackageSemanticV2, [1; 32]).hex(),
-            ),
-            source_digests: vec![(
-                "registry".to_owned(),
-                "pkg-a".to_owned(),
-                "git".to_owned(),
-                "rev-1".to_owned(),
-                Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-                source_digest_record.hex(),
-            )],
-            dependencies: Vec::new(),
-            replay_target: crate::RequestTargetWire::function(
-                QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap(),
-                crate::target::test_key(),
-            ),
-            source: ReplaySource::Input(vec![CanonicalAssignment {
-                parameter: WireNodeId::from_digest([9; 32]),
-                value: WitnessValue::Integer(1),
-            }]),
-            obligation_identity: [2; 32],
-            backend: "kani-backend-1".to_owned(),
-            state_environment: StateEnvironment::new(vec![]),
-            accounting_limits: scalar_limits(1),
-            stage_limits: std::collections::BTreeMap::new(),
-            supplied_limits: None,
-            object_environment: None,
-            declared_domains: Vec::new(),
-            byte_provision: vec![(
-                Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-                source_digest_record.hex(),
-                mismatched_bytes,
-            )],
-        };
-        let refusal = ReplayRequest::decode(wire, crate::ReplayLimits::default()).unwrap_err();
-        let rendered = format!("{refusal:?} {refusal}");
-        assert!(!contains_bytes(&rendered, &entry_x));
-
-        // A separately, validly constructed request whose byte provision
-        // carries entry X's exact bytes under their own correct digest (no
-        // mismatch) still returns the full content through the typed
-        // accessor.
+        // It returns the full content through the typed accessor.
         let valid_wire = ReplayRequestWire {
             profile_selections: vec![],
             package_id: (
                 Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
                 DigestRecord::mint(DigestDomain::PackageSemanticV2, [1; 32]).hex(),
             ),
-            source_digests: vec![(
+            sources: vec![(
                 "registry".to_owned(),
                 "pkg-a".to_owned(),
                 "git".to_owned(),
                 "rev-1".to_owned(),
-                Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-                source_digest_record.hex(),
             )],
             dependencies: Vec::new(),
             replay_target: crate::RequestTargetWire::function(
@@ -534,17 +484,19 @@ mod redaction_tests {
             supplied_limits: None,
             object_environment: None,
             declared_domains: Vec::new(),
-            byte_provision: vec![(
-                Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-                source_digest_record.hex(),
-                entry_x.clone(),
-            )],
+            byte_provision: vec![("registry".to_owned(), "pkg-a".to_owned(), entry_x.clone())],
+            documents: vec![],
         };
         let valid_request =
             ReplayRequest::decode(valid_wire, crate::ReplayLimits::default()).unwrap();
         let looked_up = valid_request
             .byte_provision()
-            .get(source_digest_record)
+            .get(&crate::RawSourceRef::new(
+                "registry".to_owned(),
+                "pkg-a".to_owned(),
+                "git".to_owned(),
+                "rev-1".to_owned(),
+            ))
             .unwrap();
         assert_eq!(looked_up, entry_x.as_slice());
 
@@ -562,13 +514,5 @@ mod redaction_tests {
             .concrete_values()
             .iter()
             .any(|(name, _)| name == marker));
-    }
-
-    /// Whether `haystack` contains `needle`'s bytes reinterpreted as a
-    /// lossy UTF-8 string (the shape a `{:?}`/`{}` rendering of a `Vec<u8>`
-    /// field would produce if it leaked raw bytes through `derive(Debug)`).
-    fn contains_bytes(haystack: &str, needle: &[u8]) -> bool {
-        let needle_text = String::from_utf8_lossy(needle);
-        haystack.contains(needle_text.as_ref())
     }
 }

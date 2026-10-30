@@ -340,7 +340,7 @@ mod tests {
     use ix_trace_rs::trace;
     use qsl_foundation::{
         diagnostic::StageFailure,
-        digest::{DigestDomain, DigestRecord, WireNodeId},
+        digest::WireNodeId,
         source::provenance::{RawSourceRef, SourceRegion},
     };
     use qsl_semantics::model::observation::DocumentRef;
@@ -354,8 +354,7 @@ mod tests {
             authority: String::from("tests"),
             identity: String::from("snapshot"),
             revision_namespace: String::from("test"),
-            revision: String::from("1"),
-            digest: [digest; 32],
+            revision: digest.to_string(),
         }
     }
 
@@ -450,12 +449,7 @@ mod tests {
     #[trace("TC-782", "FR-297-AC-6")]
     #[test]
     fn outcome_region_locus_is_retained_without_source_bytes() {
-        let source = RawSourceRef::new(
-            "tests",
-            "source",
-            DigestRecord::mint(DigestDomain::SourceBytesV1, [3; 32]),
-        )
-        .unwrap();
+        let source = RawSourceRef::new("tests", "source").unwrap();
         let region = SourceRegion::new(source.clone(), 4, 11).unwrap();
         let diagnostic = qsl_replay::OutcomeDiagnostic::new(
             None,

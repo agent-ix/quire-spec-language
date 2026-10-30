@@ -52,13 +52,11 @@ fn artifact_ref(label: &str) -> Value {
     json!({"authority": "pkg", "identity": label})
 }
 
-/// A QSpec `RawSourceRef`: authority, identity and the digest of its bytes.
+/// A QSpec `RawSourceRef`: authority and identity.
 fn source_ref(label: &str) -> Value {
     json!({
         "authority": "pkg",
         "identity": label,
-        "digest_domain": SOURCE_DOMAIN,
-        "digest": hex(label),
     })
 }
 
@@ -153,7 +151,6 @@ fn identity_preimage(dependency_selections: Vec<Value>) -> Value {
         "dependency_selections": dependency_selections,
         "edition": selection("edition", "edition-def"),
         "identity_projection": [projection_node("pkg::R", "R")],
-        "model_selections": [],
         "profile_selections": [],
         "required_features": [],
         "version": "quire.checked-package-id/v2",
@@ -166,7 +163,6 @@ fn lock(dependency_selections: Vec<Value>) -> Value {
         "edition": selection("edition", "edition-def"),
         "definition_selections": [],
         "dependency_selections": dependency_selections,
-        "model_selections": [],
         "profile_selections": [],
         "required_features": [],
     })
@@ -659,7 +655,7 @@ fn refuses_unrecognized_top_level_member() {
 }
 
 /// A definition reference is exactly `{authority, identity}` and a source
-/// reference exactly `{authority, identity, digest_domain, digest}`: a
+/// reference exactly `{authority, identity}`: a
 /// `revision`, `digest_domain` or `digest` on the edition, a definition
 /// selection or the diagnostics catalog, or a `revision` on a source row or
 /// a region's source, refuses `unknown_member`. There is no reader for the
@@ -704,6 +700,11 @@ fn an_old_reference_shape_refuses_unknown_member() {
     let mut source_row = envelope.clone();
     source_row["lock"]["sources"][0]["revision"] = revision.clone();
     mutations.push(("lock.sources.0 revision".to_owned(), source_row));
+    for (member, value) in [("digest_domain", &domain), ("digest", &digest)] {
+        let mut source_row = envelope.clone();
+        source_row["lock"]["sources"][0][member] = value.clone();
+        mutations.push((format!("lock.sources.0 {member}"), source_row));
+    }
     let mut region_source = envelope.clone();
     region_source["source_map"][0]["regions"][0]["source"]["revision"] = revision;
     mutations.push(("region source revision".to_owned(), region_source));
@@ -1166,7 +1167,6 @@ fn a_verified_read_carries_the_wire_source_map() {
         for region in regions {
             let source = region.source();
             assert_eq!((source.authority(), source.identity()), ("pkg", "src"));
-            assert_eq!(source.digest().hex(), hex("src"));
         }
         assert_eq!(
             source_map
@@ -1288,39 +1288,6 @@ fn read_fixture(path: &std::path::Path) -> Value {
         .unwrap_or_else(|error| panic!("parsing {}: {error}", path.display()))
 }
 
-/// Supplies, as domain package evidence, each QSpec semantic IR document
-/// (`domain-package-*.json` under the QSpec checkout) whose digest one of
-/// `envelope`'s `model_selections` rows selects (QSpec FR-322 "Model-owned
-/// members" step 1).
-fn supply_qspec_domain_package(evidence: &mut CheckedPackageEvidence, envelope: &Value) {
-    let Some(qspec) = qspec_directory() else {
-        return;
-    };
-    let directory = std::path::Path::new(&qspec).join("proposals/checked-package-v2");
-    let mut paths: Vec<_> = std::fs::read_dir(&directory)
-        .unwrap_or_else(|error| panic!("reading {}: {error}", directory.display()))
-        .map(|entry| entry.expect("a directory entry").path())
-        .filter(|path| {
-            path.file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| name.starts_with("domain-package-") && name.ends_with(".json"))
-        })
-        .collect();
-    paths.sort();
-    for path in paths {
-        let bytes = jcs(&read_fixture(&path));
-        let digest = format!("{:x}", Sha256::digest(&bytes));
-        let selected = envelope["lock"]["model_selections"]
-            .as_array()
-            .is_some_and(|rows| rows.iter().any(|row| row["digest"] == digest.as_str()));
-        if selected {
-            evidence
-                .insert_domain_package_document(digest.as_str(), &bytes[..])
-                .expect("a fresh evidence key");
-        }
-    }
-}
-
 /// Supplies, as extension definition evidence, every definition QSpec
 /// publishes in `extension-definitions.json` under `the QSpec checkout` for a
 /// `definition_selections` entry of `envelope`, except those in `withheld`
@@ -1407,7 +1374,6 @@ fn supply_qspec_dependency_packages(evidence: &mut CheckedPackageEvidence, envel
         for feature in library["lock"]["required_features"].as_array().unwrap() {
             inner.support_feature(feature.as_str().unwrap());
         }
-        supply_qspec_domain_package(&mut inner, &library);
         supply_qspec_dependency_packages(&mut inner, &library);
         let admitted = read_checked_package_v2(
             &fixture_wire_bytes(&library),
@@ -1503,7 +1469,6 @@ fn fixture_evidence(
     for feature in envelope["lock"]["required_features"].as_array().unwrap() {
         evidence.support_feature(feature.as_str().unwrap());
     }
-    supply_qspec_domain_package(&mut evidence, envelope);
     supply_qspec_dependency_packages(&mut evidence, envelope);
     evidence
 }
@@ -1568,7 +1533,6 @@ fn conformance_c14_source_map_lookup_over_qspec_positive_fixtures() {
                 let source = region.source();
                 assert_eq!(source.authority(), wire["source"]["authority"]);
                 assert_eq!(source.identity(), wire["source"]["identity"]);
-                assert_eq!(source.digest().hex(), wire["source"]["digest"]);
             }
             *per_node.entry(node).or_default() += 1;
             looked_up += 1;
@@ -4029,7 +3993,6 @@ fn valid_envelope_over(nodes: Vec<Value>) -> Value {
         "dependency_selections": [],
         "edition": selection("edition", "edition-def"),
         "identity_projection": projection,
-        "model_selections": [],
         "profile_selections": [],
         "required_features": [],
         "version": "quire.checked-package-id/v2",

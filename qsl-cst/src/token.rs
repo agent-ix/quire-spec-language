@@ -144,7 +144,7 @@ macro_rules! vocabulary {
 
 vocabulary! {
     Language => "language", Edition => "edition", Profile => "profile", Model => "model",
-    Version => "version", Digest => "digest", Invariant => "invariant", Constraint => "constraint", On => "on", At => "at",
+    Invariant => "invariant", Constraint => "constraint", On => "on", At => "at",
     Current => "current", Pre => "pre", Post => "post", Let => "let", In => "in", If => "if",
     Then => "then", Else => "else", Implies => "implies", Or => "or", And => "and", Not => "not",
     Div => "div", Rem => "rem", SelfValue => "self", ResultValue => "result", True => "true",
@@ -332,8 +332,6 @@ impl Kind {
             | Self::Edition
             | Self::Profile
             | Self::Model
-            | Self::Version
-            | Self::Digest
             | Self::Invariant
             | Self::Constraint
             | Self::On

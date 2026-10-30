@@ -5,7 +5,6 @@ use serde::{
     ser::{SerializeMap, SerializeSeq},
     Serialize, Serializer,
 };
-use sha2::{Digest, Sha256};
 
 #[test]
 #[trace("TC-083", "FR-020-AC-2")]
@@ -35,38 +34,6 @@ fn wire_inventory_cardinality_is_closed_before_rebinding() {
                 assert!(error.usage.decode.is_some());
             }
         }
-    }
-}
-
-#[test]
-#[trace("TC-091", "FR-021-AC-5")]
-fn raw_ir_and_jcs_digests_cannot_replace_native_static_identity() {
-    let models = [model()];
-    let [vector, _, _] = package_vector_setup::cases(&models[0]);
-    let bindings = package_vector_setup::checked(&vector, &models)
-        .bindings()
-        .clone();
-    let original: Value = serde_json::from_slice(&vector.artifact).unwrap();
-    let declaration = models[0]
-        .environment()
-        .canonical_declaration(ir::CanonicalProfile::V1)
-        .unwrap();
-    // This independent JCS document contains only one integer and one ASCII key,
-    // so its canonical bytes are fixed without another canonicalizer.
-    for digest in [
-        format!("{:x}", Sha256::digest(&vector.artifact)),
-        declaration.digest().to_string(),
-        format!("{:x}", Sha256::digest(br#"{"a":1}"#)),
-    ] {
-        assert_ne!(digest, vector.digest.as_str());
-        let mut changed = original.clone();
-        changed["canonical_identity"]["digest"] = json!(digest);
-        let error = read(&changed, bindings.clone(), &models).unwrap_err();
-        assert_eq!(
-            (error.code, error.stage),
-            (Code::InvalidPackage, PackageStage::Compare)
-        );
-        assert!(error.usage.checking.is_some());
     }
 }
 
@@ -135,7 +102,6 @@ fn every_closed_record_rejects_raw_duplicate_members_before_typed_decoding() {
         .unwrap();
         let error = NativePackage::read_verified(
             &bytes,
-            NativePackageRef::new(ByteDigest::of(&bytes)),
             bindings.clone(),
             &models,
             &PackageSupport::default(),
@@ -166,7 +132,6 @@ fn maximum_revision_survives_and_fraction_exponent_or_overflow_spelling_refuses(
     let bindings = package.checked().bindings().clone();
     let success = NativePackage::read_verified(
         package.bytes(),
-        package.reference(),
         bindings.clone(),
         &models,
         &PackageSupport::default(),
@@ -202,7 +167,6 @@ fn maximum_revision_survives_and_fraction_exponent_or_overflow_spelling_refuses(
         let raw = text.replace(marker, &format!("\"revision\":{number}"));
         let error = NativePackage::read_verified(
             raw.as_bytes(),
-            NativePackageRef::new(ByteDigest::of(raw.as_bytes())),
             bindings.clone(),
             &models,
             &PackageSupport::default(),

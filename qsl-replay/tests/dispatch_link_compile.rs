@@ -123,15 +123,16 @@ fn package(operations: Vec<Value>, subtypes: &[(&str, &str, Vec<Value>)]) -> Vec
 
 /// The unit selecting `document` as model `Config`, then `declarations`, and
 /// its package input.
-fn unit(document: &[u8], declarations: &str) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
-    let packages = package_input([document]);
-    let digest = packages.keys().next().expect("one package");
+fn unit(
+    document: &[u8],
+    declarations: &str,
+) -> (String, qsl_semantics::model::intake::PackageInput) {
+    let packages = package_input([document]).unwrap();
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
-         model Config = {PACKAGE:?} version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
-         {declarations}\n",
-        qsl_semantics::model::key::hex(digest)
+         model Config = {PACKAGE:?};\n\
+         {declarations}\n"
     );
     (text, packages)
 }
@@ -166,7 +167,6 @@ fn compile(
         &parsed,
         &models,
         &DependencyInput::default(),
-        &spine::LockEvidence::default(),
         limits,
         &cancel,
     )
@@ -186,7 +186,7 @@ fn compile_with_execution_points(
 
 fn compile_text_with_execution_points(
     text: &str,
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &qsl_semantics::model::intake::PackageInput,
     execution_points: &spine::StateClauseExecutionPoints,
     limits: SpineLimits,
 ) -> Result<CheckedUnit, Box<CompileRefusal>> {
@@ -214,7 +214,6 @@ fn compile_text_with_execution_points(
         execution_points,
         &models,
         &DependencyInput::default(),
-        &spine::LockEvidence::default(),
         limits,
         &cancel,
     )
@@ -1369,7 +1368,6 @@ fn run_pre(
                 identity: "pre".to_owned(),
                 revision_namespace: "ns".to_owned(),
                 revision: "1".to_owned(),
-                digest: [0; 32],
             },
             environment,
             populations: BTreeMap::new(),
@@ -1525,7 +1523,6 @@ fn a_synthesized_owners_application_item_is_not_replayable() {
         &parsed,
         &models,
         &DependencyInput::default(),
-        &spine::LockEvidence::default(),
         limits,
         &cancel,
     )

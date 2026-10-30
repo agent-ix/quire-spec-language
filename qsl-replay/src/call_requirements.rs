@@ -182,7 +182,7 @@ pub fn run_with_requirements(
     source: SourceIdentity,
     path: &str,
     bytes: &[u8],
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &qsl_semantics::model::intake::PackageInput,
     dependencies: &DependencyInput,
     limits: SpineLimits,
     call: &Call,
@@ -275,7 +275,6 @@ mod tests {
             &parsed,
             &models,
             &DependencyInput::default(),
-            &spine::LockEvidence::default(),
             limits,
             &cancel,
         )

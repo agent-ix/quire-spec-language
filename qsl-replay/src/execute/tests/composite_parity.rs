@@ -44,10 +44,7 @@ struct Unit {
 }
 
 fn unit() -> Unit {
-    use crate::spine::{
-        check, package, parse, select, DependencyInput, LockEvidence, ParseRequest,
-    };
-    use qsl_semantics::value::DefinitionRole;
+    use crate::spine::{check, package, parse, select, DependencyInput, ParseRequest};
     use quire_exact::Cancel;
 
     let source = format!("language \"ix:native\" edition \"1-draft\";\n{PROFILE}{UNIT}");
@@ -68,12 +65,10 @@ fn unit() -> Unit {
     let models = select(&parsed, &BTreeMap::new(), limits.model, &cancel)
         .expect("the unit selects")
         .into_value();
-    let text_profile = DefinitionRole::TextProfile.reference();
     let checked = check(
         &parsed,
         &models,
         &DependencyInput::default(),
-        &LockEvidence::default().with_text_profile(text_profile),
         limits,
         &cancel,
     )

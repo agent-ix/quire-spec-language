@@ -12,7 +12,7 @@ pub use output::NativeResult;
 
 use crate::formal_source::FormalSource;
 use crate::model_source::ModelSourceError;
-use crate::package::{NativePackageRef, PackageError};
+use crate::package::PackageError;
 use qsl_foundation::serde_object::Object;
 use qsl_foundation::{ByteDigest, Code, Diagnostic, Source};
 use qsl_semantics::model::domain_package::DOMAIN_PACKAGE_PROFILE;
@@ -207,17 +207,6 @@ pub enum RunCause {
     /// Existing native package failure.
     #[error("{0}")]
     Package(#[from] Box<PackageError>),
-    /// The selected package failed its verified reader; source compilation is not a fallback.
-    #[error("selected package {file}: {error}")]
-    SelectedPackage {
-        /// Request-selected package file.
-        file: String,
-        /// Exact expected package byte reference.
-        expected: NativePackageRef,
-        /// Original reader failure.
-        #[source]
-        error: Box<PackageError>,
-    },
     /// A `1-draft` program's request selects what spine compile does not
     /// take.
     #[error("a complete-V1 program compiles alone; the request selects {0}")]
@@ -327,7 +316,7 @@ impl RunCause {
             Self::Linking(error) => error.diagnostic.code,
             Self::Checking(error) => error.diagnostic.code,
             Self::Model(error) => error.code(),
-            Self::Package(error) | Self::SelectedPackage { error, .. } => error.code,
+            Self::Package(error) => error.code,
             Self::CompleteSelection(_)
             | Self::Libraries(_)
             | Self::CompleteRunSelection(_)
@@ -635,7 +624,11 @@ fn complete(
         documents
             .iter()
             .map(|document| document.source().text().as_bytes()),
-    );
+    )
+    .map_err(|refusal| RunCause::ClauseRequest {
+        member: "models".to_owned(),
+        reason: refusal.detail,
+    })?;
     let libraries = library_sources(request, intake)?;
     // A refusal is rendered over the source its region is in, by that
     // region's source digest: the program's or one library's, wherever in
@@ -646,7 +639,7 @@ fn complete(
             .and_then(|region| {
                 std::iter::once(source)
                     .chain(libraries.iter().map(|(_, read)| read.source()))
-                    .find(|candidate| candidate.reference().digest() == region.source().digest())
+                    .find(|candidate| candidate.reference() == region.source())
             })
             .unwrap_or(source);
         RunCause::Spine(Box::new(SpineFailure {
@@ -690,16 +683,9 @@ fn complete(
     let models = qsl_replay::spine::select(&parsed, &packages, limits.model, &cancel)
         .map_err(failure)?
         .into_value();
-    let checked = qsl_replay::spine::check(
-        &parsed,
-        &models,
-        &dependencies,
-        &qsl_replay::spine::LockEvidence::default(),
-        limits,
-        &cancel,
-    )
-    .map_err(failure)?
-    .into_value();
+    let checked = qsl_replay::spine::check(&parsed, &models, &dependencies, limits, &cancel)
+        .map_err(failure)?
+        .into_value();
     let emitted = qsl_replay::spine::package(
         &checked,
         qsl_replay::spine::PackageLimits::default(),
@@ -978,7 +964,11 @@ fn run_complete(
         documents
             .iter()
             .map(|document| document.source().text().as_bytes()),
-    );
+    )
+    .map_err(|refusal| RunCause::ClauseRequest {
+        member: "models".to_owned(),
+        reason: refusal.detail,
+    })?;
     let libraries = request
         .libraries
         .iter()
@@ -1057,9 +1047,7 @@ fn spine_run_failure(
         .and_then(|region| {
             std::iter::once(source)
                 .chain(libraries.iter().map(|(_, read)| read))
-                .find(|candidate| {
-                    candidate.source().reference().digest() == region.source().digest()
-                })
+                .find(|candidate| candidate.source().reference() == region.source())
         })
         .unwrap_or(source);
     RunCause::Spine(Box::new(SpineFailure {

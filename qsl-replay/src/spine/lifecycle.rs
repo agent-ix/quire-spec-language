@@ -34,13 +34,12 @@
 //! right type compiles:
 //!
 //! ```compile_fail
-//! # use qsl_replay::spine::{check, AdmittedModels, DependencyInput, LockEvidence, SpineLimits};
+//! # use qsl_replay::spine::{check, AdmittedModels, DependencyInput, SpineLimits};
 //! # use quire_exact::Cancel;
 //! let _ = check(
 //!     b"language \"ix:native\" edition \"1-draft\";",
 //!     &AdmittedModels::default(),
 //!     &DependencyInput::default(),
-//!     &LockEvidence::default(),
 //!     SpineLimits::default(),
 //!     &Cancel::new(),
 //! );
@@ -48,7 +47,7 @@
 //!
 //! ```
 //! # use qsl_replay::spine::{
-//! #     check, AdmittedModels, DependencyInput, LockEvidence, ParsedSource, SpineLimits,
+//! #     check, AdmittedModels, DependencyInput, ParsedSource, SpineLimits,
 //! # };
 //! # use quire_exact::Cancel;
 //! fn control(parsed: &ParsedSource) {
@@ -56,7 +55,6 @@
 //!         parsed,
 //!         &AdmittedModels::default(),
 //!         &DependencyInput::default(),
-//!         &LockEvidence::default(),
 //!         SpineLimits::default(),
 //!         &Cancel::new(),
 //!     );
@@ -101,7 +99,7 @@ use qsl_package::{
 };
 use qsl_semantics::check::{
     resolve_profiles, AdmittedImport, AssemblyCause, CheckCause, CorrespondenceConflict, KeyFault,
-    LockEvidence, PackageDeclarations,
+    PackageDeclarations,
 };
 use qsl_semantics::library::{ImportView, LibraryName};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -382,7 +380,7 @@ impl ParsedSource {
 #[derive(Clone, Debug, Default)]
 pub struct AdmittedModels {
     models: SelectedModels,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
 }
 
 impl AdmittedModels {
@@ -391,8 +389,8 @@ impl AdmittedModels {
         &self.models
     }
 
-    /// The supplied domain package documents, by their `sha256-jcs` digest.
-    pub(crate) fn packages(&self) -> &BTreeMap<[u8; 32], Vec<u8>> {
+    /// The supplied domain package documents, by package identity.
+    pub(crate) fn packages(&self) -> &qsl_semantics::model::intake::PackageInput {
         &self.packages
     }
 }
@@ -496,12 +494,12 @@ pub fn parse(
 }
 
 /// I1: admit each domain package `parsed`'s `model` declarations select,
-/// from `packages`, the supplied documents by their `sha256-jcs` digest
+/// from `packages`, the supplied documents by package identity
 /// (FR-056, FR-278). Refuses at the first `model` declaration that does not
 /// admit.
 pub fn select(
     parsed: &ParsedSource,
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &qsl_semantics::model::intake::PackageInput,
     limits: ModelNormalizationLimits,
     cancel: &Cancel,
 ) -> Result<Staged<AdmittedModels>, FrontEndFailure> {
@@ -516,16 +514,14 @@ pub fn select(
     })
 }
 
-/// S3 and S4: check and link `parsed` against `models`, the dependency
-/// input (ADR-015 D-1, FR-099) and the package's lock evidence (ADR-011
-/// §2.4, FR-278). The S4 source resolution compiles
+/// S3 and S4: check and link `parsed` against `models` and the dependency
+/// input (ADR-015 D-1, FR-099, FR-278). The S4 source resolution compiles
 /// each library the unit's `import`s reach, against the same package input,
 /// dependency input and `limits`.
 pub fn check(
     parsed: &ParsedSource,
     models: &AdmittedModels,
     dependencies: &DependencyInput,
-    lock: &LockEvidence,
     limits: SpineLimits,
     cancel: &Cancel,
 ) -> Result<Staged<CheckedUnit>, FrontEndFailure> {
@@ -534,7 +530,6 @@ pub fn check(
         &BTreeMap::new(),
         models,
         dependencies,
-        lock,
         limits,
         cancel,
     )
@@ -548,7 +543,6 @@ pub fn check_with_execution_points(
     execution_points: &super::StateClauseExecutionPoints,
     models: &AdmittedModels,
     dependencies: &DependencyInput,
-    lock: &LockEvidence,
     limits: SpineLimits,
     cancel: &Cancel,
 ) -> Result<Staged<CheckedUnit>, FrontEndFailure> {
@@ -579,12 +573,8 @@ pub fn check_with_execution_points(
             admitted: AdmittedPackages::default(),
             work: StageWork::default(),
         };
-        let package = resolution.check_unit(
-            parsed,
-            models.models.clone(),
-            lock,
-            execution_points.clone(),
-        )?;
+        let package =
+            resolution.check_unit(parsed, models.models.clone(), execution_points.clone())?;
         *work = resolution.work;
         let (library_names, libraries) = resolution
             .compiled
@@ -703,7 +693,7 @@ fn parse_unit(
 /// I1 over one unit's `model` declarations.
 fn select_models(
     parsed: &ParsedSource,
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &qsl_semantics::model::intake::PackageInput,
     limits: ModelNormalizationLimits,
     cancel: &Cancel,
 ) -> Result<SelectedModels, Box<CompileRefusal>> {
@@ -798,7 +788,7 @@ pub(crate) fn compose(
     source: SourceIdentity,
     path: &str,
     bytes: &[u8],
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &qsl_semantics::model::intake::PackageInput,
     dependencies: &DependencyInput,
     limits: SpineLimits,
 ) -> Result<ComposedUnit, Box<CompileRefusal>> {
@@ -821,16 +811,9 @@ pub(crate) fn compose(
     let models = select(&parsed, packages, limits.model, &cancel)
         .map_err(refusal)?
         .into_value();
-    let checked = check(
-        &parsed,
-        &models,
-        dependencies,
-        &LockEvidence::default(),
-        limits,
-        &cancel,
-    )
-    .map_err(refusal)?
-    .into_value();
+    let checked = check(&parsed, &models, dependencies, limits, &cancel)
+        .map_err(refusal)?
+        .into_value();
     let emitted = package(&checked, PackageLimits::default(), &cancel)
         .map_err(refusal)?
         .into_value();
@@ -917,7 +900,7 @@ struct ResolvedLibrary {
 /// One compile's S4 source resolution state (ADR-015 D-1).
 struct Resolution<'a> {
     dependencies: &'a DependencyInput,
-    packages: &'a BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &'a qsl_semantics::model::intake::PackageInput,
     limits: SpineLimits,
     cancel: &'a Cancel,
     /// The libraries whose compile is in progress, outermost first.
@@ -946,7 +929,6 @@ struct Frame {
     raw: RawSourceRef,
     unit: ParsedUnit,
     models: SelectedModels,
-    lock: LockEvidence,
     /// Accepted points supplied for the root unit. Library frames always
     /// carry an empty map because they compile independently.
     execution_points: super::StateClauseExecutionPoints,
@@ -960,7 +942,6 @@ impl Frame {
     fn new(
         parsed: &ParsedSource,
         models: SelectedModels,
-        lock: LockEvidence,
         execution_points: super::StateClauseExecutionPoints,
     ) -> Self {
         let imports = parsed.unit.selections().imports.len();
@@ -968,7 +949,6 @@ impl Frame {
             raw: parsed.source().reference().clone(),
             unit: parsed.unit.clone(),
             models,
-            lock,
             execution_points,
             next: 0,
             admitted: Vec::with_capacity(imports),
@@ -1049,17 +1029,11 @@ impl<'a> Resolution<'a> {
             select_models(&parsed, packages, limits.model, cancel)
         })?;
         // A library is compiled independently of whoever imports it, so its
-        // recomputed `package_id` cannot depend on the importer: it is
-        // checked under the default lock evidence, never the importer's.
+        // recomputed `package_id` cannot depend on the importer.
         Ok(Library {
             identity,
             source: parsed.source().clone(),
-            frame: Frame::new(
-                &parsed,
-                models,
-                LockEvidence::default(),
-                super::StateClauseExecutionPoints::new(),
-            ),
+            frame: Frame::new(&parsed, models, super::StateClauseExecutionPoints::new()),
         })
     }
 
@@ -1112,12 +1086,6 @@ impl<'a> Resolution<'a> {
                 refusal,
             })
         })?;
-        // The caller's lock evidence supplies the value laws; the protocol
-        // profile stays the one the unit's header selected (FR-110).
-        declarations.lock_evidence = frame
-            .lock
-            .clone()
-            .with_header_selection_of(&declarations.lock_evidence);
         // FR-302: link the dispatch table of each family a dispatched call's
         // member name may name, under the caller's model normalization
         // limits, before `check` types the calls against them. A family
@@ -1169,10 +1137,9 @@ impl<'a> Resolution<'a> {
         &mut self,
         parsed: &ParsedSource,
         models: SelectedModels,
-        lock: &LockEvidence,
         execution_points: super::StateClauseExecutionPoints,
     ) -> Result<pkg::CheckedPackage, Box<CompileRefusal>> {
-        let mut root = Frame::new(parsed, models, lock.clone(), execution_points);
+        let mut root = Frame::new(parsed, models, execution_points);
         let mut libraries: Vec<Library> = Vec::new();
         loop {
             let frame = current(&mut root, &mut libraries);

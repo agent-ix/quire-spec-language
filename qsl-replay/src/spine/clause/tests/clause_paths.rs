@@ -163,7 +163,6 @@ fn a_parameter_read_is_rooted_at_the_invocation_and_absent_without_one() {
         ),
         config_version_step3_domain_document(),
     );
-    let digest = config_version_step3_model_digest_hex();
     let version = |key: &str, version: &str| {
         let mut object = config_version_step3_object(key, None);
         object["fields"]["versionNumber"] = json!({"integer": version});
@@ -171,18 +170,18 @@ fn a_parameter_read_is_rooted_at_the_invocation_and_absent_without_one() {
     };
     let objects = [version("a", "1"), version("b", "2")];
     let (w, w_bytes) = document_ref_and_bytes("W", |label| {
-        config_version_step3_snapshot(label, &digest, "pre", &objects)
+        config_version_step3_snapshot(label, "pre", &objects)
     });
     let (post, post_bytes) = document_ref_and_bytes("W-post", |label| {
-        config_version_step3_snapshot(label, &digest, "post", &objects)
+        config_version_step3_snapshot(label, "post", &objects)
     });
     let (i1, i1_bytes) = document_ref_and_bytes("i1", |label| {
-        config_version_probe_invocation_bytes(label, &digest, &w, &post, "a", "b")
+        config_version_probe_invocation_bytes(label, &w, &post, "a", "b")
     });
     let mut docs = documents();
-    docs.snapshots.insert(w.digest, w_bytes);
-    docs.snapshots.insert(post.digest, post_bytes);
-    docs.invocations.insert(i1.digest, i1_bytes);
+    docs.snapshots.insert(w.clone(), w_bytes);
+    docs.snapshots.insert(post.clone(), post_bytes);
+    docs.invocations.insert(i1.clone(), i1_bytes);
 
     let by_invocation = admit(
         &unit,

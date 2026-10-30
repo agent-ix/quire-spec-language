@@ -21,22 +21,13 @@ fn document() -> &'static [u8] {
     config_version_unit::DOMAIN_PACKAGE.as_bytes()
 }
 
-fn document_digest() -> String {
-    let packages = qsl_semantics::model::intake::package_input([document()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    qsl_semantics::model::key::hex(digest)
-}
-
 /// A unit selecting the ConfigVersion model, then `declarations`.
 fn unit(declarations: &str) -> String {
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
-         model Config = \"example/config-version\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
-         {declarations}\n",
-        document_digest()
+         model Config = \"example/config-version\";\n\
+         {declarations}\n"
     )
 }
 
@@ -48,7 +39,7 @@ struct Compiled {
 
 fn compile(declarations: &str) -> Compiled {
     let text = unit(declarations);
-    let packages = qsl_semantics::model::intake::package_input([document()]);
+    let packages = qsl_semantics::model::intake::package_input([document()]).unwrap();
     let graph = assemble_with_models(text.as_bytes(), &packages)
         .expect("the unit assembles")
         .check(CheckingLimits::default())
@@ -69,7 +60,7 @@ fn evidence(wire: &Value) -> CheckedPackageEvidence {
         evidence.support_feature(feature.as_str().unwrap());
     }
     evidence
-        .insert_domain_package_document(document_digest(), document().to_vec())
+        .insert_domain_package_document(package_identity(document()), document().to_vec())
         .expect("a fresh evidence key");
     evidence
 }
@@ -398,7 +389,7 @@ fn a_packages_terminals_resolve_through_their_emitted_nodes() {
 
     let resolved = |declaration: &str| {
         let text = unit(declaration);
-        let packages = qsl_semantics::model::intake::package_input([document()]);
+        let packages = qsl_semantics::model::intake::package_input([document()]).unwrap();
         let graph = assemble_with_models(text.as_bytes(), &packages)
             .expect("the unit assembles")
             .check(CheckingLimits::default())
@@ -436,7 +427,7 @@ fn a_packages_terminals_resolve_through_their_emitted_nodes() {
 fn resolution_follows_the_node_not_the_checked_declaration() {
     use crate::checked_v2::{resolve_terminals, TerminalResolveRefusal};
 
-    let packages = qsl_semantics::model::intake::package_input([document()]);
+    let packages = qsl_semantics::model::intake::package_input([document()]).unwrap();
     let checked = || {
         assemble_with_models(unit(WHEN).as_bytes(), &packages)
             .expect("the unit assembles")

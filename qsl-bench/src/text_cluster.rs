@@ -13,8 +13,7 @@
 //! for the node ceiling, but each under a long path of long field names.
 
 use qsl_forms::{BinaryOperator, BuiltinType, Expression, FunctionDeclaration, TypeForm};
-use qsl_semantics::check::{LockEvidence, PackageDeclarations};
-use qsl_semantics::value::{DefinitionReference, DefinitionRole};
+use qsl_semantics::check::PackageDeclarations;
 use quire_exact::{NodeKey, Presence, TextProfile, TextType, ValueType};
 use quire_semantic_value::declaration::{
     CompositeDeclaration, CompositeShape, FieldDeclaration, TypeEnvironment,
@@ -51,11 +50,6 @@ fn record(index: usize, records: usize) -> CompositeDeclaration {
         format!("R{index}"),
         CompositeShape::Record(fields),
     )
-}
-
-/// QSpec's text-profile definition, the law each text leaf names.
-fn text_profile() -> DefinitionReference {
-    DefinitionRole::TextProfile.reference()
 }
 
 /// `records` mutually referencing, Text-reachable records and one
@@ -137,7 +131,6 @@ fn equality_package(
     PackageDeclarations {
         types: TypeEnvironment::new(declarations, []).expect("FR-143 admits the records"),
         functions: vec![eq],
-        lock_evidence: LockEvidence::default().with_text_profile(text_profile()),
         ..PackageDeclarations::new(source(), qsl_foundation::IdentityLimits::default())
     }
 }

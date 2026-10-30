@@ -35,7 +35,6 @@ use qsl_route::reductions::Reductions;
 use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId, PackageDeclarations};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
 use quire_checked::key::DeclarationKey;
 use quire_exact::{Cancel, Identifier, Meter, ScalarLimits, Value};
@@ -199,14 +198,13 @@ pub(crate) struct Clause<'c> {
 pub(crate) struct World {
     pub(crate) package: CheckedPackage,
     pub(crate) clauses: Vec<CheckedTemporalClause>,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
+    snapshots: qsl_semantics::model::observation::DocumentProvision,
     pub(crate) initial: Vec<DocumentRef>,
     /// The universe of `counters`; `None` gives the subject no universe.
     pub(crate) keys: Option<Vec<String>>,
     /// The subject's evaluation meter.
     pub(crate) meter: ScalarLimits,
-    digest: [u8; 32],
     document: Vec<u8>,
     text: String,
 }
@@ -223,8 +221,7 @@ impl World {
         keys: &[&str],
     ) -> Self {
         let document = document(shape);
-        let packages = package_input([document.as_slice()]);
-        let digest = *packages.keys().next().expect("one model");
+        let packages = package_input([document.as_slice()]).unwrap();
         let declared = clauses
             .iter()
             .enumerate()
@@ -251,9 +248,8 @@ impl World {
         let text = format!(
             "language \"ix:native\" edition \"1-draft\";\n\
              profile v = \"quire.value.complete/v1\";\n{profile}\
-             model M = \"{PACKAGE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
-             function Noop using v(): Boolean pure {{ true }}\n{body}{declared}",
-            hex(&digest)
+             model M = \"{PACKAGE}\";\n\
+             function Noop using v(): Boolean pure {{ true }}\n{body}{declared}"
         );
         let parsed = qsl_cst::parse(
             SourceIdentity::new("agent-ix", "reduction", "git", "1"),
@@ -297,7 +293,6 @@ impl World {
             initial: Vec::new(),
             keys: Some(keys.iter().map(|key| (*key).to_owned()).collect()),
             meter: UNLIMITED,
-            digest,
             document,
             text,
         };
@@ -313,8 +308,7 @@ impl World {
             .iter()
             .map(|(key, fields)| json!({"key": key, "type": ident("Counter"), "fields": fields}))
             .collect();
-        let header = json!({"identity": PACKAGE, "version": "1.0.0",
-            "digest": format!("sha256-jcs:{}", hex(&self.digest))});
+        let header = json!({"identity": PACKAGE});
         let document = json!({
             "format": "quire.state.snapshot/v1",
             "identity": {"authority": "test", "identity": name, "revision_namespace": "fixture",
@@ -325,17 +319,16 @@ impl World {
                 "objects": objects}],
         });
         let bytes = document.to_string().into_bytes();
-        let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-        let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-            .expect("canonical fixture")
-            .as_bytes();
-        self.snapshots.insert(digest, bytes);
+        self.snapshots.insert(
+            qsl_semantics::model::observation::document_reference(&bytes)
+                .expect("a document names itself"),
+            bytes,
+        );
         DocumentRef {
             authority: "test".to_owned(),
             identity: name.to_owned(),
             revision_namespace: "fixture".to_owned(),
             revision: "fixture:1".to_owned(),
-            digest,
         }
     }
 
@@ -438,23 +431,14 @@ impl World {
 
 const AUTHORITY: &str = "agent-ix";
 
-fn source_digest(bytes: &[u8]) -> DigestRecord {
-    DigestRecord::mint(
-        DigestDomain::SourceBytesV1,
-        qsl_foundation::ByteDigest::of(bytes).as_bytes(),
-    )
-}
+type SourceWire = (String, String, String, String);
 
-type SourceWire = (String, String, String, String, Option<String>, String);
-
-fn source_wire(identity: &str, bytes: &[u8]) -> SourceWire {
+fn source_wire(identity: &str) -> SourceWire {
     (
         AUTHORITY.to_owned(),
         identity.to_owned(),
         "git".to_owned(),
         "1".to_owned(),
-        Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-        source_digest(bytes).hex(),
     )
 }
 
@@ -481,7 +465,7 @@ pub(crate) struct ReplayUnit<'u> {
     pub(crate) path: &'u str,
     pub(crate) text: &'u [u8],
     pub(crate) document: &'u [u8],
-    pub(crate) snapshots: &'u BTreeMap<[u8; 32], Vec<u8>>,
+    pub(crate) snapshots: &'u qsl_semantics::model::observation::DocumentProvision,
 }
 
 /// The node and occurrence of `package`'s temporal clause `index`, as an
@@ -535,30 +519,14 @@ pub(crate) fn replay_unit_result(
     letters: &dyn ModelLetters,
 ) -> Result<qsl_replay::ModelTraceReplayResult, qsl_replay::ReplayRefusal> {
     let package_id = unit_package_id(unit);
-    let sha256_jcs = |bytes: &[u8]| {
-        let digest = *package_input([bytes]).keys().next().expect("one package");
-        (
-            Some(DigestDomain::Sha256Jcs.as_str().to_owned()),
-            DigestRecord::mint(DigestDomain::Sha256Jcs, digest).hex(),
-        )
-    };
-    let mut byte_provision = vec![
-        (
-            Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-            source_digest(unit.text).hex(),
-            unit.text.to_vec(),
-        ),
-        {
-            let (domain, hex) = sha256_jcs(unit.document);
-            (domain, hex, unit.document.to_vec())
-        },
-    ];
-    for (digest, bytes) in unit.snapshots {
-        byte_provision.push((
-            Some(DigestDomain::Sha256Jcs.as_str().to_owned()),
-            DigestRecord::mint(DigestDomain::Sha256Jcs, *digest).hex(),
-            bytes.clone(),
-        ));
+    let byte_provision = vec![(
+        AUTHORITY.to_owned(),
+        unit.identity.to_owned(),
+        unit.text.to_vec(),
+    )];
+    let mut documents = vec![unit.document.to_vec()];
+    for bytes in unit.snapshots.values() {
+        documents.push(bytes.clone());
     }
     let wire = ReplayRequestWire {
         profile_selections: Vec::new(),
@@ -566,7 +534,7 @@ pub(crate) fn replay_unit_result(
             Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
             package_id.hex(),
         ),
-        source_digests: vec![source_wire(unit.identity, unit.text)],
+        sources: vec![source_wire(unit.identity)],
         dependencies: Vec::new(),
         replay_target: qsl_replay::RequestTargetWire::function(
             selected(),
@@ -585,6 +553,7 @@ pub(crate) fn replay_unit_result(
         object_environment: None,
         declared_domains: Vec::new(),
         byte_provision,
+        documents,
     };
     let (node, occurrence) = clause.unwrap_or_else(|| deadlock_freedom_clause(&package_id));
     let envelope = WitnessEnvelope::reconstruct(
@@ -597,7 +566,6 @@ pub(crate) fn replay_unit_result(
                 Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
                 package_id.hex(),
             )),
-            source_digests: Some(vec![source_wire(unit.identity, unit.text)]),
             profile_selections: Some(Vec::new()),
             run_limits: Some(UNLIMITED),
             declared_domains: Some(Vec::new()),

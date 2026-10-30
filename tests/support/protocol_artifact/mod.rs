@@ -196,28 +196,16 @@ impl Fixture {
             .collect();
         let mut text = "language \"ix:native\" edition \"1-draft\";\n".to_owned();
         for (alias, selected) in [("P", R::Protocol), ("S", R::StateCore)] {
-            text.push_str(&format!(
-                "profile {alias} = \"{}\" version \"{}\" digest \"{}\";\n",
-                selected.identity(),
-                selected.revision(),
-                selected.selection().digest
-            ));
+            text.push_str(&format!("profile {alias} = \"{}\";\n", selected.identity()));
         }
         if !additional.is_empty() {
             for (alias, selected) in [("Q", R::StateQueries), ("T", R::EventPosition)] {
-                text.push_str(&format!(
-                    "profile {alias} = \"{}\" version \"{}\" digest \"{}\";\n",
-                    selected.identity(),
-                    selected.revision(),
-                    selected.selection().digest
-                ));
+                text.push_str(&format!("profile {alias} = \"{}\";\n", selected.identity()));
             }
         }
         text.push_str(&format!(
-            "model M = \"{}\" version \"{}\" digest \"{}\";\n",
-            model.environment().owner().package().as_str(),
-            model.environment().owner().revision().get(),
-            model.digest()
+            "model M = \"{}\";\n",
+            model.environment().owner().package().as_str()
         ));
         text.push_str("// Unicode café / and escaped control: \t\nprotocol Demo using P over (view: M::Node) on origin {\n  run check Good using S { true };\n  finish Closed as (closed: M::Node) { true };\n}\n");
         let source = w::Source {

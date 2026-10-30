@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Syntax fixture: exact model/profile selections are deliberately unresolved.
 language "ix:native" edition "1-draft";
-profile S = "quire.state.graph/v1" version "test:state" digest "unresolved-state";
-profile T = "quire.temporal.timestamped-event.finite-window/v1" version "test:temporal" digest "unresolved-temporal";
-profile P = "quire.protocol.finite-global/v1" version "test:protocol" digest "unresolved-protocol";
-model M = "test:orders-and-refunds" version "test:model" digest "unresolved-model";
+profile S = "quire.state.graph/v1";
+profile T = "quire.temporal.timestamped-event.finite-window/v1";
+profile P = "quire.protocol.finite-global/v1";
+model M = "test:orders-and-refunds";
 
 protocol Orders using P over (view: M::WorkflowView)
 on each (started: M::StartView) when (started.ready) {

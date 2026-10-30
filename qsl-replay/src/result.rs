@@ -1140,14 +1140,8 @@ mod tests {
     use ix_trace_rs::trace;
 
     fn regions() -> Vec<SourceRegion> {
-        use qsl_foundation::digest::{DigestDomain, DigestRecord};
         use qsl_foundation::source::provenance::RawSourceRef;
-        let source = RawSourceRef::new(
-            "registry",
-            "pkg-a",
-            DigestRecord::mint(DigestDomain::SourceBytesV1, [3; 32]),
-        )
-        .unwrap();
+        let source = RawSourceRef::new("registry", "pkg-a").unwrap();
         vec![SourceRegion::new(source, 10, 20).unwrap()]
     }
 
@@ -1647,7 +1641,6 @@ mod tests {
                         )
                         .hex(),
                     )),
-                    source_digests: Some(vec![]),
                     profile_selections: Some(vec![]),
                     run_limits: Some(charges()),
                     declared_domains: Some(vec![]),

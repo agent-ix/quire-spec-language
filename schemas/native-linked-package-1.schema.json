@@ -12,8 +12,7 @@
     "required_features",
     "source",
     "models",
-    "clauses",
-    "canonical_identity"
+    "clauses"
   ],
   "properties": {
     "format": {
@@ -66,17 +65,6 @@
         "$ref": "#/$defs/clause"
       },
       "maxItems": 256
-    },
-    "canonical_identity": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["domain", "version", "algorithm", "digest"],
-      "properties": {
-        "domain": {"const": "quire.native.bound-package"},
-        "version": {"const": "v1"},
-        "algorithm": {"const": "sha256"},
-        "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
-      }
     }
   },
   "$defs": {
@@ -180,6 +168,7 @@
           "minLength": 1
         },
         "digest": {
+          "$comment": "BLOCKED-BY PLAT-1205 (owner: planner titan:QSL:plan): Source::digest, the schema source.digest member and wire.rs Source.digest.",
           "type": "string",
           "pattern": "^sha256:[0-9a-f]{64}$"
         },
@@ -194,7 +183,6 @@
       "required": [
         "alias",
         "owner",
-        "digest",
         "artifact"
       ],
       "properties": {
@@ -204,10 +192,6 @@
         },
         "owner": {
           "$ref": "#/$defs/owner"
-        },
-        "digest": {
-          "type": "string",
-          "pattern": "^sha256:[0-9a-f]{64}$"
         },
         "artifact": {
           "type": "string",

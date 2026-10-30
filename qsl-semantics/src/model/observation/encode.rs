@@ -14,6 +14,7 @@ use super::{
     RawNativeKind, RawNode, SnapshotValue,
 };
 use crate::model::domain_package::DomainPackageRef;
+use crate::model::intake::PackageInput;
 
 /// Writes kernel values as snapshot value forms, naming each variant value by
 /// the IR node identity of its variant type and its exact case name.
@@ -35,7 +36,7 @@ impl ValueEncoder {
     pub fn over(
         model_selections: &[DomainPackageRef],
         types: &TypeEnvironment,
-        packages: &BTreeMap<[u8; 32], Vec<u8>>,
+        packages: &PackageInput,
         limits: ModelNormalizationLimits,
     ) -> Result<Self, AdmissionFailure> {
         let views = model_views(model_selections, packages, limits)?;

@@ -61,7 +61,7 @@ fn field(name: &str) -> DeclarationKey {
 /// An operation's declaration identity text (FR-120 "Identities").
 fn operation_text(name: &str) -> String {
     format!(
-        r#"{{"digest_domain":"sha256-jcs","node":"{}","package":"{PACKAGE}"}}"#,
+        r#"{{"node":"{}","package":"{PACKAGE}"}}"#,
         ident(&format!("Counter/{name}"))
     )
 }
@@ -231,9 +231,9 @@ pub(crate) fn counters_document(operations: Vec<Json>, extras: bool) -> Vec<u8> 
 struct World {
     extras: bool,
     package: CheckedPackage,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
     header: Json,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: qsl_semantics::model::observation::DocumentProvision,
 }
 
 /// The fixture package with `operations`, checked with `clauses` as its unit.
@@ -261,12 +261,10 @@ fn build_world(
     extras: bool,
 ) -> Result<World, Vec<qsl_semantics::check::CheckRefusal>> {
     let document = counters_document(operations, extras);
-    let packages = package_input([document.as_slice()]);
-    let digest = *packages.keys().next().expect("one model");
+    let packages = package_input([document.as_slice()]).unwrap();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\n\
-         model M = \"{PACKAGE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\nfunction Noop using v(): Boolean pure {{ true }}\n{clauses}\n",
-        hex(&digest)
+         model M = \"{PACKAGE}\";\nfunction Noop using v(): Boolean pure {{ true }}\n{clauses}\n",
     );
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("test", "fr-120", "fixture", "1"),
@@ -298,8 +296,7 @@ fn build_world(
     Ok(World {
         extras,
         package: CheckedPackage::link(graph),
-        header: json!({"identity": PACKAGE, "version": "1.0.0",
-            "digest": format!("sha256-jcs:{}", hex(&digest))}),
+        header: json!({"identity": PACKAGE}),
         packages,
         snapshots: BTreeMap::new(),
     })
@@ -345,17 +342,16 @@ impl World {
             document["anchor"] = anchor;
         }
         let bytes = document.to_string().into_bytes();
-        let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-        let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-            .expect("canonical fixture")
-            .as_bytes();
-        self.snapshots.insert(digest, bytes);
+        self.snapshots.insert(
+            qsl_semantics::model::observation::document_reference(&bytes)
+                .expect("a document names itself"),
+            bytes,
+        );
         DocumentRef {
             authority: "test".to_owned(),
             identity: name.to_owned(),
             revision_namespace: "fixture".to_owned(),
             revision: "fixture:1".to_owned(),
-            digest,
         }
     }
 
@@ -802,15 +798,12 @@ fn the_state_key_is_the_simulation_state_envelope() {
 }
 
 fn counter_text() -> String {
-    format!(
-        r#"{{"digest_domain":"sha256-jcs","node":"{}","package":"{PACKAGE}"}}"#,
-        ident("Counter")
-    )
+    format!(r#"{{"node":"{}","package":"{PACKAGE}"}}"#, ident("Counter"))
 }
 
 fn population_text() -> String {
     format!(
-        r#"{{"digest_domain":"sha256-jcs","node":"{}","package":"{PACKAGE}"}}"#,
+        r#"{{"node":"{}","package":"{PACKAGE}"}}"#,
         ident("counters")
     )
 }
@@ -1096,7 +1089,7 @@ fn an_unbounded_population_or_parameter_requires_a_bound() {
 }
 
 fn declaration_naming(key: &DeclarationKey) -> Json {
-    json!({"digest_domain": "sha256-jcs", "node": key.node, "package": key.package})
+    json!({"node": key.node, "package": key.package})
 }
 
 /// The requires-bound domain key FR-120 "Bounds" gives the root named by
@@ -1127,17 +1120,16 @@ fn a_universe_population_the_snapshot_omits_is_incomplete() {
         "populations": [],
     });
     let bytes = document.to_string().into_bytes();
-    let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-    let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-        .expect("canonical fixture")
-        .as_bytes();
-    world.snapshots.insert(digest, bytes);
+    world.snapshots.insert(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    );
     let omitted = DocumentRef {
         authority: "test".to_owned(),
         identity: "empty".to_owned(),
         revision_namespace: "fixture".to_owned(),
         revision: "fixture:1".to_owned(),
-        digest,
     };
     let failure = ModelSystem::new(request(
         &world,
@@ -1460,8 +1452,8 @@ fn ambient_reads_refuse_before_a_package_exists() {
 /// snapshot `t1` and its universe.
 struct OrdersWorld {
     package: CheckedPackage,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
+    snapshots: qsl_semantics::model::observation::DocumentProvision,
     reference: DocumentRef,
 }
 
@@ -1475,14 +1467,12 @@ impl OrdersWorld {
     fn over(body: &str, wobble: bool) -> Self {
         let (package, packages) =
             crate::state_model_family::simulation_package_over(body, false, wobble);
-        let digest = *packages.keys().next().expect("one model");
         let document = json!({
             "format": "quire.state.snapshot/v1",
             "identity": {"authority": "test", "identity": "t1", "revision_namespace": "fixture",
                 "revision": "fixture:1"},
             "observation": "current",
-            "model": {"identity": "test/orders", "version": "1.0.0",
-                "digest": format!("sha256-jcs:{}", hex(&digest))},
+            "model": {"identity": "test/orders"},
             "anchor": {"kind": "initialization", "name": "start"},
             "populations": [{"population": "ix://test/orders/pop", "complete": true,
                 "objects": [{"key": "t1", "type": "ix://test/orders/A",
@@ -1491,18 +1481,16 @@ impl OrdersWorld {
                             "key": "t1"}}}}]}],
         });
         let bytes = document.to_string().into_bytes();
-        let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-        let snapshot_digest =
-            *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-                .expect("canonical fixture")
-                .as_bytes();
-        let snapshots = BTreeMap::from([(snapshot_digest, bytes)]);
+        let snapshots = BTreeMap::from([(
+            qsl_semantics::model::observation::document_reference(&bytes)
+                .expect("a document names itself"),
+            bytes,
+        )]);
         let reference = DocumentRef {
             authority: "test".to_owned(),
             identity: "t1".to_owned(),
             revision_namespace: "fixture".to_owned(),
             revision: "fixture:1".to_owned(),
-            digest: snapshot_digest,
         };
         Self {
             package,

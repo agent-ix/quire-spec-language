@@ -49,7 +49,6 @@ pub use lifecycle::{
     check, check_with_execution_points, package, parse, refusal_or_fault, select, AdmittedModels,
     CheckedUnit, EmittedUnit, FrontEndFailure, PackageLimits, ParseRequest, ParsedSource,
 };
-pub use qsl_semantics::check::LockEvidence;
 
 /// Accepted execution points keyed by the exact authored state-clause name
 /// (FR-104-AC-15). An absent entry means no point was supplied.
@@ -502,9 +501,6 @@ fn forms_message(refusal: &FormsRefusal) -> String {
 /// A readable account of an I1 refusal.
 pub(crate) fn intake_message(cause: &UnitIntakeCause) -> String {
     match cause {
-        UnitIntakeCause::ArtifactDigest => {
-            "a `sha256:` digest selects a compiled-model artifact, not a domain package".to_owned()
-        }
         UnitIntakeCause::Refused(refusals) => {
             let first = &refusals[0];
             with_more(

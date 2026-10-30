@@ -1263,7 +1263,6 @@ mod library_import {
             "dependency_selections": [],
             "edition": {"role": "edition"},
             "identity_projection": [node],
-            "model_selections": [],
             "profile_selections": [],
             "required_features": ["quire.value.complete/v1"],
             "version": "quire.checked-package-id/v2",

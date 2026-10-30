@@ -242,15 +242,7 @@ impl Inputs {
     fn with_models(units: &[Unit<'_>], model: NativeModel, domain: Option<DomainInput>) -> Self {
         let import = domain.as_ref().map_or_else(String::new, |domain| {
             let selection = domain.package.selection();
-            let digest: String = selection
-                .digest
-                .iter()
-                .map(|byte| format!("{byte:02x}"))
-                .collect();
-            format!(
-                "model D = \"{}\" version \"{}\" digest \"sha256-jcs:{digest}\";\n",
-                selection.identity, selection.version
-            )
+            format!("model D = \"{}\";\n", selection.identity)
         });
         let sources: Vec<_> = units
             .iter()

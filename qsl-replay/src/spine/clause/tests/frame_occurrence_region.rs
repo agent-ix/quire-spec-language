@@ -7,7 +7,7 @@ use super::*;
 
 const REFERENCE: &str = "Config::ConfigVersion::attemptUpdate";
 
-fn compile(unit: &str, packages: &BTreeMap<[u8; 32], Vec<u8>>) -> ComposedUnit {
+fn compile(unit: &str, packages: &qsl_semantics::model::intake::PackageInput) -> ComposedUnit {
     compose(
         source(),
         "frame-occurrence-region.native",

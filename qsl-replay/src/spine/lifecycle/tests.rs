@@ -29,8 +29,8 @@ use quire_semantic_value::supplied_stop::SuppliedLimits;
 
 use super::{
     check, execute, failure_of, package, parse, refusal_or_fault, select, AdmittedModels,
-    CheckedUnit, EmittedUnit, ExecuteRequest, FrontEndFailure, LockEvidence, PackageLimits,
-    ParseRequest, ParsedSource,
+    CheckedUnit, EmittedUnit, ExecuteRequest, FrontEndFailure, PackageLimits, ParseRequest,
+    ParsedSource,
 };
 use crate::bounds::ReplayLimits;
 use crate::limits::CallerLimits;
@@ -83,22 +83,14 @@ struct Chain {
 
 fn chain_of(
     bytes: &[u8],
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &qsl_semantics::model::intake::PackageInput,
     dependencies: &DependencyInput,
     limits: SpineLimits,
 ) -> Result<Chain, FrontEndFailure> {
     let cancel = Cancel::new();
     let parsed = parse(&request(bytes), limits.source, &cancel)?.into_value();
     let models = select(&parsed, packages, limits.model, &cancel)?.into_value();
-    let checked = check(
-        &parsed,
-        &models,
-        dependencies,
-        &LockEvidence::default(),
-        limits,
-        &cancel,
-    )?
-    .into_value();
+    let checked = check(&parsed, &models, dependencies, limits, &cancel)?.into_value();
     let emitted = package(&checked, PackageLimits::default(), &cancel)?.into_value();
     Ok(Chain {
         parsed,
@@ -190,7 +182,6 @@ fn each_operation_takes_exactly_its_predecessors_output() {
         &chain.parsed,
         &chain.models,
         &DependencyInput::default(),
-        &LockEvidence::default(),
         SpineLimits::default(),
         &cancel,
     )
@@ -441,7 +432,6 @@ fn a_handle_cancelled_before_the_call_stops_every_operation() {
         &chain.parsed,
         &chain.models,
         &DependencyInput::default(),
-        &LockEvidence::default(),
         limits,
         &cancelled,
     ));
@@ -470,12 +460,12 @@ fn assert_requested<T>(outcome: Result<Staged<T>, FrontEndFailure>) {
     }
 }
 
-/// The digest of each source `emitted` carries, in order.
-fn references(emitted: &EmittedUnit) -> Vec<qsl_foundation::digest::DigestRecord> {
+/// The text of each source `emitted` carries, in order.
+fn references(emitted: &EmittedUnit) -> Vec<Vec<u8>> {
     emitted
         .sources()
         .iter()
-        .map(|source| source.reference().digest())
+        .map(|source| source.text().as_bytes().to_vec())
         .collect()
 }
 
@@ -529,14 +519,7 @@ fn assert_check_cancelled_at(
 ) {
     let gate = gated(Some(at));
     let outcome = gate.run(cause, |cancel| {
-        check(
-            parsed,
-            models,
-            &DependencyInput::default(),
-            &LockEvidence::default(),
-            *limits,
-            cancel,
-        )
+        check(parsed, models, &DependencyInput::default(), *limits, cancel)
     });
     match outcome {
         Err(StageFailure::Cancelled(seen)) => assert_eq!(seen, cause),
@@ -570,7 +553,6 @@ fn a_check_cancelled_from_another_thread_stops_within_one_charge() {
             &unit.0,
             &unit.1,
             &DependencyInput::default(),
-            &LockEvidence::default(),
             unit.2,
             cancel,
         )
@@ -613,7 +595,6 @@ fn a_cancel_inside_one_large_body_stops_within_one_charge() {
             &unit.0,
             &unit.1,
             &DependencyInput::default(),
-            &LockEvidence::default(),
             unit.2,
             cancel,
         )
@@ -633,7 +614,7 @@ fn a_cancel_inside_one_large_body_stops_within_one_charge() {
 #[trace("TC-757", "FR-276-AC-2")]
 #[test]
 fn a_cancel_inside_select_stops_within_one_charge() {
-    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]);
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]).unwrap();
     let limits = SpineLimits::default();
     let live = Cancel::new();
     let parsed = parse(
@@ -664,7 +645,7 @@ fn a_cancel_inside_select_stops_within_one_charge() {
 #[trace("TC-732", "FR-260-AC-4", "FR-255-AC-1")]
 #[test]
 fn select_names_the_intake_limit_for_an_oversize_document() {
-    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]);
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]).unwrap();
     let mut limits = SpineLimits::default();
     let size = u64::try_from(MODEL_DOCUMENT.len()).expect("a small document");
     limits.model.intake = qsl_foundation::IntakeLimits::default().with_input_bytes(size - 1);
@@ -813,7 +794,6 @@ fn a_cancel_tripped_mid_run_is_cancelled_with_its_cause_never_a_fault() {
             &parsed,
             &models,
             &DependencyInput::default(),
-            &LockEvidence::default(),
             limits,
             cancel,
         )?
@@ -869,7 +849,7 @@ fn the_composition_emits_packages_the_i2_reader_reads_back() {
 
     // A domain-package request: the unit's `model` names the document by
     // its `sha256-jcs` digest.
-    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]);
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]).unwrap();
     let model = chain_of(
         spine_model::unit().as_bytes(),
         &packages,
@@ -907,7 +887,7 @@ fn the_composition_emits_packages_the_i2_reader_reads_back() {
 }
 
 /// `chain`'s emitted bytes through the I2 reader, as `identity`.
-fn read_back(chain: &Chain, packages: &BTreeMap<[u8; 32], Vec<u8>>, identity: &str) {
+fn read_back(chain: &Chain, packages: &qsl_semantics::model::intake::PackageInput, identity: &str) {
     let emission = emit_checked(chain.checked.package()).expect("the package emits");
     assert_eq!(emission.package(), chain.emitted.package());
     read_import_view(
@@ -975,15 +955,8 @@ fn each_operation_refuses_at_the_stage_that_owns_the_defect() {
         .expect("a unit with no model selects nothing")
         .into_value();
     let refused = refusal(
-        check(
-            &parsed,
-            &models,
-            &DependencyInput::default(),
-            &LockEvidence::default(),
-            limits,
-            &live,
-        )
-        .expect_err("the unit is ill typed"),
+        check(&parsed, &models, &DependencyInput::default(), limits, &live)
+            .expect_err("the unit is ill typed"),
     );
     assert_eq!(refused.code().as_str(), "ill_typed");
     assert_eq!(refused.stage(), SpineStage::Check);
@@ -1013,7 +986,7 @@ fn the_producer_refuses_profile_version_and_digest_tails_as_invalid_syntax() {
 }
 
 /// FR-278-AC-3 (TC-759 step 3): the `EmittedUnit` carries a source
-/// provision whose digests name every source the package was compiled from.
+/// provision that carries every source the package was compiled from.
 /// (Replaying through that provision is checked beside the replay executor.)
 #[trace("TC-759", "FR-278-AC-3")]
 #[test]
@@ -1031,16 +1004,10 @@ fn the_provision_names_every_source_the_package_was_compiled_from() {
     )
     .unwrap_or_else(|failure| panic!("the importing unit compiles: {failure:?}"));
 
-    let digests = references(&chain.emitted);
-    let unit_digest = qsl_foundation::digest::DigestRecord::mint(
-        qsl_foundation::digest::DigestDomain::SourceBytesV1,
-        qsl_foundation::digest::ByteDigest::of(unit.as_bytes()).as_bytes(),
+    assert_eq!(
+        references(&chain.emitted),
+        vec![unit.as_bytes().to_vec(), geometry.bytes.clone()]
     );
-    let library_digest = qsl_foundation::digest::DigestRecord::mint(
-        qsl_foundation::digest::DigestDomain::SourceBytesV1,
-        qsl_foundation::digest::ByteDigest::of(&geometry.bytes).as_bytes(),
-    );
-    assert_eq!(digests, vec![unit_digest, library_digest]);
 }
 
 /// FR-275-AC-5 (TC-755 step 7): each operation reports the work of its own
@@ -1069,7 +1036,6 @@ fn each_operation_reports_the_work_of_its_own_stages() {
         &parsed,
         &models,
         &DependencyInput::default(),
-        &LockEvidence::default(),
         limits,
         &cancel,
     )
@@ -1283,7 +1249,7 @@ fn parse_names_the_source_limit_field_it_reached() {
 #[trace("TC-758", "FR-277-AC-1", "FR-255-AC-1")]
 #[test]
 fn select_names_the_model_limit_field_it_reached() {
-    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]);
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]).unwrap();
     let live = Cancel::new();
     let parsed = parse(
         &request(spine_model::unit().as_bytes()),
@@ -1348,7 +1314,7 @@ fn select_names_the_model_limit_field_it_reached() {
 #[trace("TC-758", "FR-255-AC-1")]
 #[test]
 fn select_retains_the_denied_charge_of_a_normalization_ceiling() {
-    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]);
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]).unwrap();
     let parsed = parse(
         &request(spine_model::unit().as_bytes()),
         SpineLimits::default().source,
@@ -1407,7 +1373,6 @@ fn check_names_the_checking_limit_field_it_reached() {
                 &chain.parsed,
                 &chain.models,
                 &DependencyInput::default(),
-                &LockEvidence::default(),
                 limits,
                 &Cancel::new(),
             ))
@@ -1494,7 +1459,6 @@ fn check_names_the_identity_limit_it_reached() {
             &chain.parsed,
             &chain.models,
             &DependencyInput::default(),
-            &LockEvidence::default(),
             limits,
             &Cancel::new(),
         ))
@@ -1542,7 +1506,6 @@ fn a_reached_limit_is_raised_by_the_settings_operation_and_by_a_request() {
             &chain.parsed,
             &chain.models,
             &DependencyInput::default(),
-            &LockEvidence::default(),
             limits,
             &Cancel::new(),
         ))
@@ -1586,7 +1549,6 @@ fn a_reached_limit_is_raised_by_the_settings_operation_and_by_a_request() {
                     &long.parsed,
                     &long.models,
                     &DependencyInput::default(),
-                    &LockEvidence::default(),
                     identity(value)[entry],
                     &Cancel::new(),
                 ))
@@ -1617,7 +1579,6 @@ fn the_effective_limits_a_checked_package_records_are_the_defaults() {
         &chain.parsed,
         &chain.models,
         &DependencyInput::default(),
-        &LockEvidence::default(),
         limits,
         &Cancel::new(),
     )
@@ -1634,7 +1595,7 @@ fn the_effective_limits_a_checked_package_records_are_the_defaults() {
 #[trace("TC-758", "FR-277-AC-1")]
 #[test]
 fn check_names_the_type_environment_limit_field_it_reached() {
-    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]);
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]).unwrap();
     let model = chain_of(
         spine_model::unit().as_bytes(),
         &packages,
@@ -1651,7 +1612,6 @@ fn check_names_the_type_environment_limit_field_it_reached() {
                 &model.parsed,
                 &model.models,
                 &DependencyInput::default(),
-                &LockEvidence::default(),
                 limits,
                 &Cancel::new(),
             ))
@@ -1708,14 +1668,7 @@ fn check_names_the_dependency_limit_field_it_reached() {
                 &mut limits,
                 usize::try_from(value).expect("a test bound fits usize"),
             );
-            reached(check(
-                parsed,
-                models,
-                dependencies,
-                &LockEvidence::default(),
-                limits,
-                &Cancel::new(),
-            ))
+            reached(check(parsed, models, dependencies, limits, &Cancel::new()))
         }
     };
     assert_field(
@@ -1830,103 +1783,11 @@ fn a_rebound_model_node_leaves_the_front_end_as_an_internal_failure_with_no_pack
     );
 }
 
-/// FR-278: a library is compiled independently of whoever imports it. One
-/// library imported by two units that pass different lock evidence is the
-/// same package, whose `package_id` the import digest names; and a library
-/// that needs a lock the default evidence lacks is refused even when its
-/// importer's evidence supplies it.
-#[trace("TC-759", "FR-278-AC-1")]
-#[test]
-fn a_library_is_checked_under_its_own_lock_evidence_not_its_importers() {
-    use qsl_semantics::value::DefinitionRole;
-    let text_profile =
-        || LockEvidence::default().with_text_profile(DefinitionRole::TextProfile.reference());
-    let limits = SpineLimits::default();
-    let importer = |library: &SuppliedLibrary, lock: &LockEvidence| {
-        let unit = format!(
-            "{HEADER}import \"test/geometry\" as g;\n\
-             function h using v(): Boolean pure {{ true }}\n"
-        );
-        let dependencies = DependencyInput::new(vec![library.clone()]).expect("admissible");
-        let live = Cancel::new();
-        let parsed = parse(&request(unit.as_bytes()), limits.source, &live)
-            .expect("the importing unit parses")
-            .into_value();
-        check(
-            &parsed,
-            &AdmittedModels::default(),
-            &dependencies,
-            lock,
-            limits,
-            &live,
-        )
-        .map(|checked| checked.into_value())
-    };
-
-    let geometry = geometry();
-    for lock in [LockEvidence::default(), text_profile()] {
-        importer(&geometry, &lock)
-            .unwrap_or_else(|failure| panic!("the import resolves under {lock:?}: {failure:?}"));
-    }
-
-    // A library comparing text needs the text law. Its importer supplies it,
-    // but the library is checked under the default evidence and refuses.
-    let texty = SuppliedLibrary {
-        bytes: format!(
-            "{HEADER}function f using v(a: Text[0, 8; nfc], b: Text[0, 8; nfc]): Boolean pure \
-             {{ a = b }}\n"
-        )
-        .into_bytes(),
-        ..geometry
-    };
-    let refusal = refusal(
-        importer(&texty, &text_profile())
-            .expect_err("the library lacks the text law under its own evidence"),
-    );
-    assert_eq!(refusal.code().as_str(), "missing_declaration");
-}
-
-/// FR-278 (TC-759 step 1): `check` takes the package's lock evidence. A unit
-/// that compares two text values has a text law to select, so without lock
-/// evidence naming the text profile the check refuses, and with it the unit
-/// checks.
-#[trace("TC-759", "FR-278-AC-1")]
-#[test]
-fn check_takes_the_lock_evidence_the_text_law_comes_from() {
-    use qsl_semantics::value::DefinitionRole;
-    let unit = format!(
-        "{HEADER}function same using v(a: Text[0, 8; nfc], b: Text[0, 8; nfc]): Boolean pure \
-         {{ a = b }}\n"
-    );
-    let limits = SpineLimits::default();
-    let live = Cancel::new();
-    let parsed = parse(&request(unit.as_bytes()), limits.source, &live)
-        .expect("the unit parses")
-        .into_value();
-    let models = select(&parsed, &BTreeMap::new(), limits.model, &live)
-        .expect("a unit with no model selects nothing")
-        .into_value();
-    let run = |lock: &LockEvidence| {
-        check(
-            &parsed,
-            &models,
-            &DependencyInput::default(),
-            lock,
-            limits,
-            &live,
-        )
-    };
-    let without = run(&LockEvidence::default()).expect_err("no text law is selected");
-    let refusal = refusal(without);
-    assert_eq!(refusal.code().as_str(), "missing_declaration");
-    let text_profile = DefinitionRole::TextProfile.reference();
-    run(&LockEvidence::default().with_text_profile(text_profile))
-        .expect("the lock evidence selects the text law");
-}
-
 /// The model fixture with an operation `touch` on `Widget` whose `pre`
 /// holds `clauses` (`language`, `text`), and the unit selecting it.
-fn widget_with_touch(clauses: &[(&str, &str)]) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
+fn widget_with_touch(
+    clauses: &[(&str, &str)],
+) -> (String, qsl_semantics::model::intake::PackageInput) {
     let mut document: serde_json::Value =
         serde_json::from_slice(MODEL_DOCUMENT).expect("the model fixture is JSON");
     let generated = |identity: &str| {
@@ -1963,18 +1824,19 @@ fn widget_with_touch(clauses: &[(&str, &str)]) -> (String, BTreeMap<[u8; 32], Ve
 }
 
 /// The unit selecting `document`, the model fixture with its digest.
-fn offered_model(document: &serde_json::Value) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
+fn offered_model(
+    document: &serde_json::Value,
+) -> (String, qsl_semantics::model::intake::PackageInput) {
     let bytes = serde_json::to_vec(document).expect("the document serializes");
-    let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()]);
-    let digest = packages.keys().next().expect("one package");
-    (spine_model::unit_selecting(digest), packages)
+    let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()]).unwrap();
+    (spine_model::unit(), packages)
 }
 
 /// The model fixture with the clauses `clauses` (`name`, `language`, `text`)
 /// on the type `Widget`, and the unit selecting it.
 fn widget_with_type_clauses(
     clauses: &[(&str, &str, &str)],
-) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
+) -> (String, qsl_semantics::model::intake::PackageInput) {
     let mut document: serde_json::Value =
         serde_json::from_slice(MODEL_DOCUMENT).expect("the model fixture is JSON");
     let widget = document["types"]

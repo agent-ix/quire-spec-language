@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Public-API qualification of the native-formal-environment/1 binding profile.
 use ix_trace_rs::trace;
-use qsl_foundation::{ByteDigest, Code, Phase, SourceIdentity};
+use qsl_foundation::{Code, SourceIdentity};
 use quire_contract_model as ir;
 use quire_spec_language::linking::{DeclarationKey, ResolutionTarget};
 use quire_spec_language::{link, parse, Limits, LinkLimits, ParsedUnit};
@@ -27,6 +27,15 @@ fn record_type(name: &str) -> ir::ValueType {
 }
 
 fn environment(owner: &str, revision: u64, unused_bound: i64) -> ir::DeclarationEnvironment {
+    environment_in("example/model", owner, revision, unused_bound)
+}
+
+fn environment_in(
+    package: &str,
+    owner: &str,
+    revision: u64,
+    unused_bound: i64,
+) -> ir::DeclarationEnvironment {
     let integer = ir::ValueType::integer(
         ir::IntegerType::new(
             ir::IntegerDomain::Signed,
@@ -101,7 +110,7 @@ fn environment(owner: &str, revision: u64, unused_bound: i64) -> ir::Declaration
         },
     ];
     ir::DeclarationEnvironment::new(
-        ir::RequirementRef::parse("example/model", owner, revision).unwrap(),
+        ir::RequirementRef::parse(package, owner, revision).unwrap(),
         types,
         vec![
             ir::ValueDeclaration::new(
@@ -128,12 +137,7 @@ fn canonical(env: &ir::DeclarationEnvironment) -> ir::CanonicalOutput {
 }
 
 fn import(env: &ir::DeclarationEnvironment, alias: &str) -> String {
-    format!(
-        "model {alias} = \"{}\" version \"{}\" digest \"{}\";\n",
-        env.owner().package(),
-        env.owner().revision().get(),
-        ByteDigest::of(canonical(env).bytes().as_slice())
-    )
+    format!("model {alias} = \"{}\";\n", env.owner().package(),)
 }
 
 fn clause(name: &str, expression: &str) -> String {
@@ -175,10 +179,6 @@ fn exact_source_owner_field_and_digest_domains() {
     assert_eq!(linked.unit().source().identity(), source.identity());
     assert_eq!(linked.unit().source().digest(), source.digest());
     assert!(std::ptr::eq(linked.models()[0].environment(), &envs[0]));
-    assert_eq!(
-        linked.models()[0].digest(),
-        ByteDigest::of(canonical(&envs[0]).bytes().as_slice())
-    );
     let c = &linked.clauses()[0];
     assert_eq!(c.model(), 0);
     assert_eq!(c.context().identity.owner, *envs[0].owner());
@@ -222,26 +222,11 @@ fn exact_source_owner_field_and_digest_domains() {
     }
     assert_eq!(occurrences[0].expression, None);
     assert!(occurrences[1].expression.is_some());
-    let exact = linked.models()[0].digest().to_string();
-    for replacement in [
-        format!("sha256:{}", canonical(&envs[0]).digest()),
-        ByteDigest::of(canonical(&environment("FR-002", 1, 10)).bytes().as_slice()).to_string(),
-    ] {
-        assert_ne!(replacement, exact);
-        let error = link(
-            read(&source.text().replace(&exact, &replacement)),
-            &envs,
-            LinkLimits::default(),
-        )
-        .unwrap_err();
-        assert_eq!(error.diagnostic.code, Code::StaleDependency);
-        assert_eq!(error.diagnostic.phase, Phase::Link);
-    }
 }
 
 #[trace("TC-021", "TC-023", "FR-005-AC-2", "FR-005-AC-4", "FR-017-AC-3")]
 #[test]
-fn missing_stale_unused_declaration_and_malformed_digest() {
+fn a_missing_model_is_refused_at_its_import() {
     let original = environment("FR-001", 1, 10);
     let source = unit(&original, "self.count").source().clone();
     let missing = link(read(source.text()), &[], LinkLimits::default()).unwrap_err();
@@ -250,40 +235,6 @@ fn missing_stale_unused_declaration_and_malformed_digest() {
         missing.diagnostic.span.start.byte,
         source.text().find("\"example/model\"").unwrap()
     );
-    for changed in [environment("FR-001", 2, 10), environment("FR-001", 1, 11)] {
-        assert_eq!(
-            link(read(source.text()), &[changed], LinkLimits::default())
-                .unwrap_err()
-                .diagnostic
-                .code,
-            Code::StaleDependency
-        );
-    }
-    let envs = [original];
-    assert_eq!(
-        link(
-            read(&source.text().replace("version \"1\"", "version \"01\"")),
-            &envs,
-            LinkLimits::default()
-        )
-        .unwrap_err()
-        .diagnostic
-        .code,
-        Code::StaleDependency
-    );
-    let parsed = read(source.text());
-    let raw = source.slice(parsed.imports()[0].digest.span).unwrap();
-    let error = link(
-        read(&source.text().replace(raw, "\"invalid\"")),
-        &envs,
-        LinkLimits::default(),
-    )
-    .unwrap_err();
-    assert_eq!(error.diagnostic.code, Code::InvalidModelBinding);
-    assert_eq!(
-        error.diagnostic.span.start.byte,
-        parsed.imports()[0].digest.span.start
-    );
 }
 
 #[trace("TC-022", "TC-034", "FR-005-AC-3", "FR-013-AC-6", "FR-017-AC-3")]
@@ -291,29 +242,26 @@ fn missing_stale_unused_declaration_and_malformed_digest() {
 fn ambiguity_retains_all_sorted_loci_in_every_order() {
     let a = environment("FR-001", 1, 10);
     let b = environment("FR-002", 2, 10);
+    // One package offered by two inventory entries is ambiguous at its import,
+    // whichever order the inventory lists them in.
     let mut expected = None;
+    let imports = import(&a, "M");
+    let text = document(&imports, &clause("P", "self.count"));
     for envs in [[a.clone(), b.clone()], [b.clone(), a.clone()]] {
-        for imports in [
-            import(&a, "M") + &import(&b, "M"),
-            import(&b, "M") + &import(&a, "M"),
-        ] {
-            let text = document(&imports, &clause("P", "self.count"));
-            let error = link(read(&text), &envs, LinkLimits::default()).unwrap_err();
-            assert_eq!(error.diagnostic.code, Code::AmbiguousDeclaration);
-            assert_eq!(
-                &text[error.diagnostic.span.start.byte..error.diagnostic.span.end.byte],
-                "BoundedCounter"
-            );
-            assert_eq!(error.related.len(), 2);
-            assert_eq!(error.related[0].identity.owner, *a.owner());
-            assert_eq!(error.related[1].identity.owner, *b.owner());
-            assert_eq!(error.related[0].source, locus(1, 0));
-            assert_eq!(error.related[1].source, locus(2, 0));
-            if let Some(prior) = &expected {
-                assert_eq!(&error.related, prior);
-            }
-            expected = Some(error.related);
+        let error = link(read(&text), &envs, LinkLimits::default()).unwrap_err();
+        assert_eq!(error.diagnostic.code, Code::AmbiguousDeclaration);
+        assert_eq!(
+            &text[error.diagnostic.span.start.byte..error.diagnostic.span.end.byte],
+            imports.trim_end()
+        );
+        assert_eq!(error.related.len(), 2 * a.types().len());
+        assert!(error.related.windows(2).all(|pair| pair[0] <= pair[1]));
+        assert!(error.related.iter().any(|l| l.identity.owner == *a.owner()));
+        assert!(error.related.iter().any(|l| l.identity.owner == *b.owner()));
+        if let Some(prior) = &expected {
+            assert_eq!(&error.related, prior);
         }
+        expected = Some(error.related);
     }
     let error = link(
         unit(&a, "true"),
@@ -329,12 +277,14 @@ fn ambiguity_retains_all_sorted_loci_in_every_order() {
 #[trace("TC-024", "FR-005-AC-5", "FR-017-AC-3")]
 #[test]
 fn failed_import_permutations_never_reuse_successful_state() {
-    let envs = [environment("FR-001", 1, 10), environment("FR-002", 2, 10)];
+    let envs = [
+        environment("FR-001", 1, 10),
+        environment_in("example/other", "FR-002", 2, 10),
+    ];
     let a = import(&envs[0], "M");
     let b = import(&envs[1], "N");
     for defective in [
         a.replace("example/model", "example/missing"),
-        a.replace("version \"1\"", "version \"99\""),
         import(&envs[1], "M"),
     ] {
         for imports in [
@@ -511,7 +461,10 @@ fn unmapped_forms_refuse_while_linking_makes_no_type_judgment() {
 #[trace("TC-033", "FR-013-AC-5", "FR-017-AC-3")]
 #[test]
 fn inclusive_lowered_and_zero_limits_are_enforced_independently() {
-    let envs = [environment("FR-001", 1, 10), environment("FR-002", 2, 10)];
+    let envs = [
+        environment("FR-001", 1, 10),
+        environment_in("example/other", "FR-002", 2, 10),
+    ];
     let text = document(
         &(import(&envs[0], "M") + &import(&envs[1], "N")),
         &clause("P", "self.count >= 0"),
@@ -661,7 +614,7 @@ fn explicit_context_and_neighboring_clauses_cannot_be_guessed() {
             Code::InvalidModelBinding
         );
     }
-    let envs = [original, environment("FR-002", 2, 10)];
+    let envs = [original, environment_in("example/other", "FR-002", 2, 10)];
     for (name, expected) in [
         ("Color", Code::InvalidModelBinding),
         ("Absent", Code::MissingDeclaration),
@@ -720,7 +673,7 @@ fn explicit_context_and_neighboring_clauses_cannot_be_guessed() {
 fn padded_environment(owner: &str, emitted_bytes: usize) -> ir::DeclarationEnvironment {
     let make = |name: String| {
         ir::DeclarationEnvironment::new(
-            ir::RequirementRef::parse("example/padded", owner, 1).unwrap(),
+            ir::RequirementRef::parse(&format!("example/padded-{owner}"), owner, 1).unwrap(),
             vec![ir::TypeDeclaration::Record {
                 declaration: ir::RecordDeclaration::new(
                     symbol("BoundedCounter"),

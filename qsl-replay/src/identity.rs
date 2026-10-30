@@ -24,7 +24,6 @@
 use std::fmt;
 
 use qsl_foundation::bound::{DomainKey, FiniteBound, ProofBound};
-use qsl_foundation::digest::{DigestRecord, InvalidDigestRecord};
 use quire_exact::Identifier;
 
 /// ADR-013 O-09: the digest identifying one obligation. For a clause, an
@@ -112,84 +111,66 @@ impl fmt::Display for QualifiedName {
 }
 
 /// The wire shape a [`RawSourceRef`] decodes from: `(authority, identity,
-/// revision namespace, revision, digest domain, digest hex)` -- FR-001's
-/// four source labels and the digest. Named once here and reused by every
-/// envelope's wire struct (`replay::witness::WitnessPacket`,
-/// `replay::request::ReplayRequestWire`) that carries a list of these, and
+/// revision namespace, revision)` -- FR-001's four source labels. Named once
+/// here and reused by every envelope's wire struct
+/// (`replay::request::ReplayRequestWire`) that carries a list of these, and
 /// read and written only by [`RawSourceRef::from_wire`] and
 /// [`RawSourceRef::to_wire`].
-pub type SourceDigestWire = (String, String, String, String, Option<String>, String);
+pub type SourceRefWire = (String, String, String, String);
 
-/// One entry of an envelope's `source_digests` list (QSpec FR-323: "the
-/// `RawSourceRef` digest of every source and definition document a replay
-/// recompiles") -- FR-001's four labels (authority, identity, revision
-/// namespace, revision) and the digest. The replay executor recompiles a
-/// source under exactly these labels (ADR-013 §7 S-4b: "The replay
-/// executor's recompilation under the reference's labels (FR-001) is
-/// TK-01's"). It admits any FR-201 domain, so it is not the O-07
-/// `qsl_foundation::source::provenance::RawSourceRef`, whose digest is
-/// `quire.source.bytes/v1` only: FR-323 calls a definition document's
-/// digest a `RawSourceRef` digest while QSpec's `RawSourceRef` schema
-/// admits only `quire.source.bytes/v1`; the two types stay apart until
-/// QSpec settles that.
+/// One entry of a replay request's `sources` list: FR-001's four labels
+/// (authority, identity, revision namespace, revision). The replay executor
+/// recompiles a source under exactly these labels (ADR-013 §7 S-4b: "The
+/// replay executor's recompilation under the reference's labels (FR-001) is
+/// TK-01's"). It is not the O-07
+/// `qsl_foundation::source::provenance::RawSourceRef`, which names a source
+/// by authority and identity alone.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RawSourceRef {
     authority: String,
     identity: String,
     revision_namespace: String,
     revision: String,
-    digest: DigestRecord,
 }
 
 impl RawSourceRef {
-    /// Name a source document by its four labels and its digest.
+    /// Name a source document by its four labels.
     pub fn new(
         authority: String,
         identity: String,
         revision_namespace: String,
         revision: String,
-        digest: DigestRecord,
     ) -> Self {
         Self {
             authority,
             identity,
             revision_namespace,
             revision,
-            digest,
         }
     }
 
-    /// Read one wire entry. Refuses only its digest; the labels are carried
-    /// as given, and a blank one refuses where the source is admitted.
-    pub fn from_wire(wire: SourceDigestWire) -> Result<Self, InvalidDigestRecord> {
-        let (authority, identity, revision_namespace, revision, domain, hex) = wire;
-        let digest = DigestRecord::from_wire(domain.as_deref(), &hex)?;
-        Ok(Self::new(
-            authority,
-            identity,
-            revision_namespace,
-            revision,
-            digest,
-        ))
+    /// Read one wire entry. The labels are carried as given, and a blank one
+    /// refuses where the source is admitted.
+    pub fn from_wire(wire: SourceRefWire) -> Self {
+        let (authority, identity, revision_namespace, revision) = wire;
+        Self::new(authority, identity, revision_namespace, revision)
     }
 
     /// This reference as one wire entry, the inverse of [`Self::from_wire`].
-    pub fn to_wire(&self) -> SourceDigestWire {
+    pub fn to_wire(&self) -> SourceRefWire {
         (
             self.authority.clone(),
             self.identity.clone(),
             self.revision_namespace.clone(),
             self.revision.clone(),
-            Some(self.digest.domain().as_str().to_owned()),
-            self.digest.hex(),
         )
     }
 
-    /// A wire entry's variable-length bytes: its four labels and its hex
-    /// digest, as the #231 readers measure them against the reader bound.
-    pub(crate) fn wire_len(wire: &SourceDigestWire) -> usize {
-        let (authority, identity, revision_namespace, revision, _, hex) = wire;
-        authority.len() + identity.len() + revision_namespace.len() + revision.len() + hex.len()
+    /// A wire entry's variable-length bytes: its four labels, as the #231
+    /// readers measure them against the reader bound.
+    pub(crate) fn wire_len(wire: &SourceRefWire) -> usize {
+        let (authority, identity, revision_namespace, revision) = wire;
+        authority.len() + identity.len() + revision_namespace.len() + revision.len()
     }
 
     /// The source's authority (e.g. a registry or repository host).
@@ -210,11 +191,6 @@ impl RawSourceRef {
     /// The selected revision of that identity, within its namespace.
     pub fn revision(&self) -> &str {
         &self.revision
-    }
-
-    /// The source's digest.
-    pub fn digest(&self) -> DigestRecord {
-        self.digest
     }
 }
 

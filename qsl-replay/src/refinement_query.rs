@@ -17,14 +17,13 @@
 //! for each position, the zero-based position of the same row among the
 //! refinement's rows as written.
 
-use std::collections::BTreeMap;
-
 use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::simulation::model::{ExpansionLimits, ModelSimulationRequest, PopulationUniverse};
 use qsl_eval::smt::{self, RefinementCertificateRequest};
 use qsl_foundation::bound::ProofBound;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
-use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
+use qsl_semantics::model::intake::PackageInput;
+use qsl_semantics::model::observation::{DocumentProvision, DocumentRef, ObservationLimits};
 use quire_checked::key::DeclarationKey;
 use quire_exact::{NodeKey, ScalarLimits};
 
@@ -52,9 +51,9 @@ pub struct RefinementUniverse {
 #[non_exhaustive]
 pub struct RefinementQuerySubject<'a> {
     /// FR-056's domain package input.
-    pub packages: &'a BTreeMap<[u8; 32], Vec<u8>>,
+    pub packages: &'a PackageInput,
     /// The FR-106 snapshot provision.
-    pub snapshots: &'a BTreeMap<[u8; 32], Vec<u8>>,
+    pub snapshots: &'a DocumentProvision,
     /// The initial states: documents of `snapshots`.
     pub initial: Vec<DocumentRef>,
     /// For each simulated population, its finite key set.
@@ -97,8 +96,8 @@ impl<'a> RefinementQuerySubject<'a> {
     /// observation limits are their defaults and there are no proof bounds;
     /// set the public fields to change them.
     pub fn new(
-        packages: &'a BTreeMap<[u8; 32], Vec<u8>>,
-        snapshots: &'a BTreeMap<[u8; 32], Vec<u8>>,
+        packages: &'a PackageInput,
+        snapshots: &'a DocumentProvision,
         initial: Vec<DocumentRef>,
         universes: Vec<RefinementUniverse>,
         max_candidates: u64,

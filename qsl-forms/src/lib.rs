@@ -115,8 +115,7 @@ mod stack_charge_tests {
 
     const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
         profile v = \"quire.value.complete/v1\";\n\
-        model Config = \"example/config-version\" version \"1\" digest \
-        \"sha256-jcs:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n";
+        model Config = \"example/config-version\";\n";
 
     /// Build `declarations` under S1 limits raised to fit them, returning
     /// the unit and the CST node count S1 charged.

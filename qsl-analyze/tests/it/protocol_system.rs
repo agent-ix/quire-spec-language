@@ -163,7 +163,7 @@ impl Case {
                 max_messages: None,
                 max_live_instances: None,
             },
-            &envelope_at(&unit, recorded_id, payload, node, occurrence),
+            &envelope_at(recorded_id, payload, node, occurrence),
             &NO_ATOMS,
             ReplayLimits::default(),
         )

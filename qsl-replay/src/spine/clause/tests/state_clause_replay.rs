@@ -7,8 +7,8 @@
 
 use super::frame::object;
 use super::frame_replay::{
-    config_version_unit, package_digest, packet, request, source_digest, unit_for, wire,
-    witness_source, Unit, IDENTITY,
+    config_version_unit, package_digest, packet, request, unit_for, wire, witness_source, Unit,
+    IDENTITY,
 };
 use super::*;
 use crate::{
@@ -17,7 +17,7 @@ use crate::{
     ReplayResult, ReplaySource, ReplayTarget, SnapshotValue, StateClauseCounterexample,
     StateClauseKind, StateClauseReplayResult, Verdict, WitnessEnvelope, WitnessSettlement,
 };
-use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
+use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_exact::Identifier;
@@ -72,13 +72,7 @@ fn invocation(pre_objects: &[serde_json::Value], post_objects: &[serde_json::Val
         super::frame::snapshot(label, "post", post_objects)
     });
     let (invocation, invocation_bytes) = document_ref_and_bytes("clause-invocation", |label| {
-        config_version_invocation_bytes(
-            label,
-            &config_version_model_digest_hex(),
-            &pre,
-            &post,
-            "child",
-        )
+        config_version_invocation_bytes(label, &pre, &post, "child")
     });
     Documents {
         observation: ClauseSelectionInput::Invocation {
@@ -123,12 +117,7 @@ fn forbidden_parent_change() -> Documents {
 /// with `config_history` marked `complete`.
 fn current(identity: &str, root_version: i64, child_version: i64, complete: bool) -> Documents {
     let (snapshot, bytes) = document_ref_and_bytes(identity, |label| {
-        let bytes = config_version_snapshot(
-            label,
-            &config_version_model_digest_hex(),
-            root_version,
-            Some(child_version),
-        );
+        let bytes = config_version_snapshot(label, root_version, Some(child_version));
         let mut document: serde_json::Value =
             serde_json::from_slice(&bytes).expect("the fixture is JSON");
         document["populations"][0]["complete"] = json!(complete);
@@ -186,12 +175,7 @@ fn private_probe_source_keeps_format_identity() {
 /// `target` naming `target`.
 fn pre_call(target: &str) -> Documents {
     let (snapshot, bytes) = document_ref_and_bytes("chain-pre", |label| {
-        config_version_step3_snapshot(
-            label,
-            &config_version_step3_model_digest_hex(),
-            "pre",
-            &config_version_step3_chain_objects(),
-        )
+        config_version_step3_snapshot(label, "pre", &config_version_step3_chain_objects())
     });
     Documents {
         observation: ClauseSelectionInput::PreCall {
@@ -314,8 +298,7 @@ fn witness_arm(result: &StateClauseReplayResult) -> &crate::WitnessArmResult {
 
 /// Removes `reference`'s bytes from the request's byte provision.
 fn without(wire: &mut ReplayRequestWire, reference: &DocumentRef) {
-    let hex = DigestRecord::mint(DigestDomain::Sha256Jcs, reference.digest).hex();
-    wire.byte_provision.retain(|(_, entry, _)| *entry != hex);
+    super::frame_replay::withhold(wire, reference);
 }
 
 /// Replays `case` and checks it reproduced with an evaluated witness, whose
@@ -324,7 +307,7 @@ fn without(wire: &mut ReplayRequestWire, reference: &DocumentRef) {
 /// `package_id`, the clause, the envelope's identities and every document
 /// admission read.
 fn assert_reproduces_keeping_identities(case: Case, clause: &str) -> StateClauseReplayResult {
-    let unit_bytes = case.unit.bytes.clone();
+    let _unit_bytes = case.unit.bytes.clone();
     let package_id = case.unit.compiled.emitted.package_id();
     let (node, occurrence) = (
         case.envelope.clause_node(),
@@ -346,7 +329,6 @@ fn assert_reproduces_keeping_identities(case: Case, clause: &str) -> StateClause
     // FR-122-AC-1, FR-268-AC-4: neither clause reaches a decisive
     // occurrence (FR-265), so the result carries no QSpec FR-351 record.
     assert!(arm.record().is_none());
-    assert_eq!(result.source().digest(), source_digest(&unit_bytes));
     assert_eq!(result.source().identity(), IDENTITY);
     assert_eq!(result.package_id(), package_id);
     assert_eq!(result.clause().to_string(), clause);
@@ -384,7 +366,7 @@ fn an_input_arm_envelope_reproduces_without_a_witness() {
         ReplaySource::Input(Vec::new()),
         |_, _| {},
     );
-    let unit_bytes = case.unit.bytes.clone();
+    let _unit_bytes = case.unit.bytes.clone();
     let package_id = case.unit.compiled.emitted.package_id();
     let (node, occurrence) = clause_identity(&case.unit, "VersionUnchanged");
     let result = replay(case).expect("the replay settles");
@@ -393,7 +375,6 @@ fn an_input_arm_envelope_reproduces_without_a_witness() {
     };
     assert_eq!(arm.settlement(), InputSettlement::ReproducedWithoutWitness);
     assert_eq!(arm.value(), Some(EvaluatedValue::Boolean(false)));
-    assert_eq!(result.source().digest(), source_digest(&unit_bytes));
     assert_eq!(result.package_id(), package_id);
     assert_eq!(result.clause().to_string(), "VersionUnchanged");
     assert_eq!(result.clause_node(), node);
@@ -743,12 +724,9 @@ fn probe_invocation() -> Documents {
     let documents = probe_documents(&config_version_step3_chain_objects(), "a", "c");
     let mut bytes: Vec<(DocumentRef, Vec<u8>)> = Vec::new();
     let mut read = vec![documents.invocation.clone()];
-    for (digest, document) in documents.invocations.iter().chain(&documents.snapshots) {
-        let reference = DocumentRef {
-            digest: *digest,
-            ..documents.invocation.clone()
-        };
-        if *digest != documents.invocation.digest {
+    for (key, document) in documents.invocations.iter().chain(&documents.snapshots) {
+        let reference = key.clone();
+        if *key != documents.invocation {
             read.push(reference.clone());
         }
         bytes.push((reference, document.clone()));
@@ -861,61 +839,6 @@ fn an_absent_pre_snapshot_refuses_with_the_admission_record() {
     assert_eq!(record.code.as_str(), "unavailable_observation");
     assert_eq!(record.cause, "missing-required-artifact");
     assert_eq!(refusal.code(), record.code);
-}
-
-/// TC-517 step 5 (FR-122-AC-5): changed-version with its invocation bytes
-/// edited under the same digest refuses `stale_dependency`/
-/// `content-mismatch`.
-#[trace("TC-517", "FR-122-AC-5")]
-#[test]
-fn edited_invocation_bytes_refuse_content_mismatch() {
-    let documents = changed_version();
-    let selected_digest = documents.read[0].digest;
-    let invocation = DigestRecord::mint(DigestDomain::Sha256Jcs, selected_digest).hex();
-    let mut edited_digest = [0_u8; 32];
-    let refusal = replay(case_with(
-        config_version_unit(),
-        "VersionUnchanged",
-        documents,
-        witness_source(),
-        |wire, _| {
-            let entry = wire
-                .byte_provision
-                .iter_mut()
-                .find(|(_, hex, _)| *hex == invocation)
-                .expect("the invocation is provided");
-            entry.2 = String::from_utf8(entry.2.clone())
-                .expect("UTF-8")
-                .replace("\"boolean\":true", "\"boolean\":false")
-                .into_bytes();
-            edited_digest = document_digest(&entry.2);
-        },
-    ))
-    .unwrap_err();
-    let ReplayRefusal::Request(ReplayRequestRefusal::ContentMismatch {
-        selected,
-        recomputed,
-    }) = &refusal
-    else {
-        panic!("expected a content mismatch, got {refusal:?}");
-    };
-    assert_eq!(
-        selected,
-        &format!(
-            "{:?}",
-            DigestRecord::mint(DigestDomain::Sha256Jcs, selected_digest)
-        )
-    );
-    assert_eq!(
-        recomputed,
-        &format!(
-            "{:?}",
-            DigestRecord::mint(DigestDomain::Sha256Jcs, edited_digest)
-        )
-    );
-    assert!(refusal
-        .to_string()
-        .starts_with("stale_dependency/content-mismatch"));
 }
 
 /// TC-517 step 5 (FR-122-AC-5): `ParentOrder` over incomplete-population's
@@ -1048,9 +971,7 @@ fn a_replay_target_the_entry_does_not_read_refuses_before_the_recompile() {
                             target,
                         );
                     }
-                    Source::EntryRemoved => wire.byte_provision.retain(|(domain, _, _)| {
-                        domain.as_deref() != Some(DigestDomain::SourceBytesV1.as_str())
-                    }),
+                    Source::EntryRemoved => wire.byte_provision.clear(),
                 },
             ))
             .unwrap_err();

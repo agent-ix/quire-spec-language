@@ -6,7 +6,7 @@ use quire_spec_language::syntax::{BinaryOp as B, ExprId, ExprKind as E};
 use quire_spec_language::{parse, Limits, ParsedUnit};
 
 fn document(expression: &str) -> String {
-    format!("language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"test/model\" version \"1\" digest \"unresolved\";\ninvariant Test on M::Thing at current {{ {expression} }}\n")
+    format!("language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"test/model\";\ninvariant Test on M::Thing at current {{ {expression} }}\n")
 }
 fn read(bytes: &[u8], limits: Limits) -> Result<ParsedUnit, Box<qsl_foundation::Diagnostic>> {
     parse(
@@ -383,7 +383,8 @@ fn every_import_and_name_reference_keeps_its_exact_token_locus() {
     };
     let import = &u.imports()[0];
     check(&import.alias);
-    for literal in [&import.package, &import.version, &import.digest] {
+    {
+        let literal = &import.package;
         let raw = u.source().slice(literal.span).unwrap();
         assert_eq!(serde_json::from_str::<String>(raw).unwrap(), literal.value);
         assert!(raw.starts_with('"') && raw.ends_with('"'));

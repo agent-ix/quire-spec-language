@@ -2735,10 +2735,9 @@ pub enum CheckCause {
     InvalidDispatchDeclaration(Box<InvalidDispatchDeclaration>),
     /// `missing_declaration` / `missing-selection` (FR-093): a lowered
     /// operation or leaf needs a profile law whose `DefinitionRef` the
-    /// package's lock evidence does not supply. `check` writes no law from a
-    /// constant (ADR-011 §2.4), so the node is not built.
+    /// package does not select, so the node is not built.
     MissingSelection {
-        /// The law role the lock evidence does not select.
+        /// The law role the package does not select.
         role: super::node_key::LawRole,
     },
     /// `unknown_required_feature` / `unsupported-feature` (FR-092 "Recursion

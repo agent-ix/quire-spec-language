@@ -15,7 +15,7 @@ use quire_contract_model::{
 use crate::native_model::{NativeModel, NativeModelProfile, ObjectRole, OperationRole};
 use crate::syntax::{BinaryOp, Builtin, Clause, ClauseKind, ExprId, ExprKind, UnaryOp};
 use crate::ParsedUnit;
-use qsl_foundation::{ByteDigest, Code, Diagnostic, Phase, Span};
+use qsl_foundation::{Code, Diagnostic, Phase, Span};
 
 /// Caller-lowered ceilings for native formal linkage.
 #[derive(Clone, Copy, Debug)]
@@ -135,11 +135,10 @@ pub struct ResolvedOccurrence {
     pub target: ResolutionTarget,
 }
 
-/// One exact native import's formal environment and artifact byte digest.
+/// One exact native import's formal environment.
 #[derive(Clone, Copy, Debug)]
 pub struct LinkedModel<'a> {
     environment: &'a DeclarationEnvironment,
-    digest: ByteDigest,
     native: Option<&'a NativeModel>,
 }
 
@@ -147,10 +146,6 @@ impl<'a> LinkedModel<'a> {
     /// The immutable, constructor-validated formal environment.
     pub fn environment(&self) -> &'a DeclarationEnvironment {
         self.environment
-    }
-    /// Raw SHA-256 of its artifact under the selected binding profile.
-    pub fn digest(&self) -> ByteDigest {
-        self.digest
     }
     /// Explicit native correspondence; absent for the original formal profile.
     pub fn native_model(&self) -> Option<&'a NativeModel> {
@@ -417,7 +412,6 @@ fn formal_catalog<'a>(
         emitted += output.bytes().as_slice().len();
         catalog.push(LinkedModel {
             environment,
-            digest: ByteDigest::of(output.bytes().as_slice()),
             native: None,
         });
     }
@@ -432,14 +426,6 @@ fn select_models<'a>(
 ) -> Result<Vec<LinkedModel<'a>>, Box<LinkingError>> {
     let mut models = Vec::with_capacity(unit.imports().len());
     for import in unit.imports() {
-        let expected: ByteDigest = import.digest.value.parse().map_err(|_| {
-            failure(
-                unit,
-                Code::InvalidModelBinding,
-                import.digest.span,
-                "expected a sha256 byte digest",
-            )
-        })?;
         let same_package: Vec<_> = catalog
             .iter()
             .filter(|model| model.environment.owner().package().as_str() == import.package.value)
@@ -452,28 +438,13 @@ fn select_models<'a>(
                 "selected package is absent",
             ));
         }
-        let exact: Vec<_> = same_package
-            .into_iter()
-            .filter(|model| {
-                model.environment.owner().revision().get().to_string() == import.version.value
-                    && model.digest == expected
-            })
-            .collect();
-        match exact.as_slice() {
-            [] => {
-                return Err(failure(
-                    unit,
-                    Code::StaleDependency,
-                    import.span,
-                    format!("package {} revision {} digest {expected} has no exact formal declaration artifact", import.package.value, import.version.value),
-                ))
-            }
+        match same_package.as_slice() {
             [model] => models.push(**model),
             _ => {
                 return Err(ambiguous(
                     unit,
                     import.span,
-                    exact
+                    same_package
                         .iter()
                         .flat_map(|model| {
                             model.environment.types().iter().map(|declaration| {
@@ -1060,10 +1031,7 @@ mod profile_tests {
             ModelLimits::default(),
         )
         .unwrap();
-        let text = format!(
-            "language \"ix:native\" edition \"0-draft\"; profile \"state-finite/0-draft\"; model M = \"example/rule-tests\" version \"1\" digest \"{}\"; invariant Rule on M::Node at current {{ true }}",
-            model.digest()
-        );
+        let text = "language \"ix:native\" edition \"0-draft\"; profile \"state-finite/0-draft\"; model M = \"example/rule-tests\"; invariant Rule on M::Node at current { true }";
         let unit = parse(
             SourceIdentity {
                 authority: "test".into(),
@@ -1089,7 +1057,6 @@ mod profile_tests {
         };
         let selected = LinkedModel {
             environment: model.environment(),
-            digest: model.digest(),
             native: Some(&model),
         };
         for (models, expected, at) in [

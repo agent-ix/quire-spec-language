@@ -60,17 +60,12 @@ fn integer(spelling: &str) -> Value {
 }
 
 /// A document's reference: its identity and the digest of its bytes.
-fn document_ref(label: &str, bytes: &[u8]) -> DocumentRef {
-    let document = quire_canonical::read(bytes, u64::MAX).expect("the document is JSON");
-    let digest = *quire_canonical::sha256(&document, quire_canonical::Limits::new(u64::MAX))
-        .expect("the document is canonical")
-        .as_bytes();
+fn document_ref(label: &str) -> DocumentRef {
     DocumentRef {
         authority: "test".to_owned(),
         identity: label.to_owned(),
         revision_namespace: "fixture".to_owned(),
         revision: "1".to_owned(),
-        digest,
     }
 }
 
@@ -85,7 +80,7 @@ fn identity_json(reference: &DocumentRef) -> Value {
 struct Replay {
     declarations: PackageDeclarations,
     graph: CheckedGraph,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
     model: Value,
     /// The field values of `Item.i1` in the base snapshot.
     base: Vec<(String, Value)>,
@@ -128,15 +123,11 @@ fn replay_of(document: Value, base: Vec<(String, Value)>) -> Replay {
 /// [`replay_of`] with `declarations` added to the source unit.
 fn replay_with(document: Value, base: Vec<(String, Value)>, declarations: &str) -> Replay {
     let bytes = serde_json::to_vec(&document).expect("the fixture serializes");
-    let packages = package_input([bytes.as_slice()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one model package");
-    };
-    let digest = qsl_semantics::model::key::hex(digest);
+    let packages = package_input([bytes.as_slice()]).unwrap();
     let source = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
-         model Config = {package:?} version \"1\" digest \"sha256-jcs:{digest}\";\n\
+         model Config = {package:?};\n\
          {declarations}\
          function keep using v(): Boolean pure {{ true }}\n",
         package = fixture::PACKAGE,
@@ -171,7 +162,6 @@ fn replay_with(document: Value, base: Vec<(String, Value)>, declarations: &str) 
         .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
     let model = json!({
         "identity": fixture::PACKAGE, "version": "1",
-        "digest": format!("sha256-jcs:{digest}"),
     });
     let collections = base.iter().any(|(name, _)| name == "peers");
     Replay {
@@ -305,7 +295,7 @@ fn snapshot(
     fields: &[(String, Value)],
 ) -> (DocumentRef, Vec<u8>) {
     let bytes = snapshot_text(replay, observation, label, fields).into_bytes();
-    (document_ref(label, &bytes), bytes)
+    (document_ref(label), bytes)
 }
 
 /// A refusal as its typed parts.
@@ -398,7 +388,7 @@ impl Replay {
         limits: ObservationLimits,
     ) -> Result<ObjectClosure, AdmissionFailure> {
         let (reference, bytes) = snapshot(self, "current", "current", fields);
-        let provision = BTreeMap::from([(reference.digest, bytes)]);
+        let provision = BTreeMap::from([(reference.clone(), bytes)]);
         admit_current_snapshot(
             self.graph.model_selections(),
             self.graph.scope().types(),
@@ -414,7 +404,7 @@ impl Replay {
     /// `fields` as the current snapshot, admitted with its usage.
     fn values_used(&self, fields: &[(String, Value)]) -> u64 {
         let (reference, bytes) = snapshot(self, "current", "current", fields);
-        let provision = BTreeMap::from([(reference.digest, bytes)]);
+        let provision = BTreeMap::from([(reference.clone(), bytes)]);
         admit_current_snapshot(
             self.graph.model_selections(),
             self.graph.scope().types(),
@@ -468,25 +458,17 @@ impl Replay {
         parameters: Value,
         result: Value,
     ) -> Invoked {
-        let (pre, pre_bytes) = (document_ref("pre", pre.as_bytes()), pre.as_bytes().to_vec());
-        let (post, post_bytes) = (
-            document_ref("post", post.as_bytes()),
-            post.as_bytes().to_vec(),
-        );
+        let (pre, pre_bytes) = (document_ref("pre"), pre.as_bytes().to_vec());
+        let (post, post_bytes) = (document_ref("post"), post.as_bytes().to_vec());
         let call = DocumentRef {
             authority: "test".to_owned(),
             identity: "call".to_owned(),
             revision_namespace: "fixture".to_owned(),
             revision: "1".to_owned(),
-            digest: [0; 32],
         };
         let reference = |document: &DocumentRef| {
             json!({
                 "identity": identity_json(document),
-                "digest": format!(
-                    "sha256-jcs:{}",
-                    qsl_semantics::model::key::hex(&document.digest)
-                ),
             })
         };
         let bytes = serde_json::to_vec(&json!({
@@ -504,10 +486,10 @@ impl Replay {
             "deleted": [],
         }))
         .expect("the invocation serializes");
-        let call = document_ref("call", &bytes);
+        let call = document_ref("call");
         Invoked {
-            snapshots: BTreeMap::from([(pre.digest, pre_bytes), (post.digest, post_bytes)]),
-            invocations: BTreeMap::from([(call.digest, bytes)]),
+            snapshots: BTreeMap::from([(pre.clone(), pre_bytes), (post.clone(), post_bytes)]),
+            invocations: BTreeMap::from([(call.clone(), bytes)]),
             call,
         }
     }
@@ -579,8 +561,8 @@ impl Replay {
         &self,
         operation: &str,
         selected: Selected,
-        snapshots: &BTreeMap<[u8; 32], Vec<u8>>,
-        invocations: &BTreeMap<[u8; 32], Vec<u8>>,
+        snapshots: &qsl_semantics::model::observation::DocumentProvision,
+        invocations: &qsl_semantics::model::observation::DocumentProvision,
         input: ClauseSelectionInput,
         limits: ObservationLimits,
     ) -> Result<AdmittedObservations, AdmissionFailure> {
@@ -620,7 +602,7 @@ impl Replay {
         parameters: Vec<(&str, SnapshotValue)>,
     ) -> Result<AdmittedObservations, AdmissionFailure> {
         let (reference, bytes) = snapshot(self, "pre", "pre", &self.base);
-        let snapshots = BTreeMap::from([(reference.digest, bytes)]);
+        let snapshots = BTreeMap::from([(reference.clone(), bytes)]);
         let parameters = parameters
             .into_iter()
             .map(|(name, value)| (Identifier::new(name).expect("an identifier"), value))
@@ -692,8 +674,8 @@ impl Replay {
 
 /// An invocation document, its two snapshots and its reference.
 struct Invoked {
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
-    invocations: BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: qsl_semantics::model::observation::DocumentProvision,
+    invocations: qsl_semantics::model::observation::DocumentProvision,
     call: DocumentRef,
 }
 
@@ -1296,9 +1278,9 @@ fn any_scalar_sequence_admits_as_a_string_unchanged() {
         let text = snapshot_text(&replay, "current", "current", &base_fields())
             .replace("\"ready\"", "\"\\ud83d\\ude00\"");
         let bytes = text.into_bytes();
-        (document_ref("current", &bytes), bytes)
+        (document_ref("current"), bytes)
     };
-    let provision = BTreeMap::from([(reference.digest, bytes)]);
+    let provision = BTreeMap::from([(reference.clone(), bytes)]);
     let (environment, _) = admit_current_snapshot(
         replay.graph.model_selections(),
         replay.graph.scope().types(),
@@ -1602,7 +1584,7 @@ fn a_string_object_counts_as_one_value() {
 
 /// TC-1036 step 9 (FR-106-AC-32): a lone surrogate escape or an invalid UTF-8
 /// byte in a `label` text is a document the shared reader refuses at check
-/// 1.3 (`stale_dependency`/`byte-digest-mismatch`) before any value is read,
+/// 1.3 (`invalid_runtime_input`/`invalid-value`) before any value is read,
 /// even beside a wrong-kind `token`; a text past the byte limit refuses
 /// `input-bytes-exceeded` at check 1.2.
 #[trace("TC-1036", "FR-106-AC-32")]
@@ -1611,7 +1593,7 @@ fn the_document_edge_refuses_before_any_value_is_read() {
     let replay = replay();
     let (base, _) = snapshot(&replay, "current", "current", &base_fields());
     let admit_bytes = |bytes: Vec<u8>| {
-        let provision = BTreeMap::from([(base.digest, bytes)]);
+        let provision = BTreeMap::from([(base.clone(), bytes)]);
         admit_current_snapshot(
             replay.graph.model_selections(),
             replay.graph.scope().types(),
@@ -1643,8 +1625,10 @@ fn the_document_edge_refuses_before_any_value_is_read() {
         let Err(AdmissionFailure::Refused(record)) = admit_bytes(bytes) else {
             panic!("a refusal");
         };
-        assert_eq!(record.code, Code::StaleDependency);
-        assert_eq!(record.cause, "byte-digest-mismatch");
+        assert_eq!(
+            (record.code, record.cause),
+            (Code::InvalidRuntimeInput, "invalid-value")
+        );
     }
     let huge = text.replace("\"ready\"", &format!("\"{}\"", "a".repeat(1_048_576)));
     let Err(AdmissionFailure::Refused(record)) = admit_bytes(huge.into_bytes()) else {
@@ -1827,9 +1811,7 @@ fn the_base_snapshot_admits_a_text() {
         .replace("\",\"", "\" , \"")
         .replace(":{", ": {");
     let (plain, _) = snapshot(&replay, "current", "current", &replay.base);
-    let (respelled, _) = snapshot(&replay, "current", "current", &reordered);
-    assert_eq!(plain.digest, respelled.digest, "the digest is canonical");
-    let provision = BTreeMap::from([(plain.digest, spaced.into_bytes())]);
+    let provision = BTreeMap::from([(plain.clone(), spaced.into_bytes())]);
     let (environment, _) = admit_current_snapshot(
         replay.graph.model_selections(),
         replay.graph.scope().types(),
@@ -2024,8 +2006,7 @@ fn a_text_object_counts_as_one_value() {
 }
 
 /// TC-1038 step 10 (FR-106-AC-38): a `title` text holding a lone surrogate
-/// escape or the byte `0xC0`, selected under the base snapshot's digest,
-/// refuses `byte-digest-mismatch` before any value is read (a wrong-kind
+/// escape or the byte `0xC0`, refuses `invalid_runtime_input`/`invalid-value` before any value is read (a wrong-kind
 /// `token` elsewhere changes nothing); a document over the byte limit refuses
 /// `input-bytes-exceeded` naming `observation.input_bytes`.
 #[trace("TC-1038", "FR-106-AC-38")]
@@ -2034,7 +2015,7 @@ fn the_document_edge_refuses_a_title_before_any_value_is_read() {
     let replay = text_replay();
     let (base, _) = snapshot(&replay, "current", "current", &replay.base);
     let admit_bytes = |bytes: Vec<u8>| {
-        let provision = BTreeMap::from([(base.digest, bytes)]);
+        let provision = BTreeMap::from([(base.clone(), bytes)]);
         admit_current_snapshot(
             replay.graph.model_selections(),
             replay.graph.scope().types(),
@@ -2066,8 +2047,10 @@ fn the_document_edge_refuses_a_title_before_any_value_is_read() {
         let Err(AdmissionFailure::Refused(record)) = admit_bytes(bytes) else {
             panic!("a refusal");
         };
-        assert_eq!(record.code, Code::StaleDependency);
-        assert_eq!(record.cause, "byte-digest-mismatch");
+        assert_eq!(
+            (record.code, record.cause),
+            (Code::InvalidRuntimeInput, "invalid-value")
+        );
     }
     let huge = text_of.replace("\"Ready\"", &format!("\"{}\"", "a".repeat(1_048_576)));
     let Err(AdmissionFailure::Refused(record)) = admit_bytes(huge.into_bytes()) else {
@@ -2313,12 +2296,6 @@ fn set_bag_and_ordered_set_fields_admit_with_their_element_order() {
             "{name} is one value in either array order"
         );
     }
-    let (first, _) = snapshot(&replay, "current", "current", &written);
-    let (second, _) = snapshot(&replay, "current", "current", &reversed);
-    assert_ne!(
-        first.digest, second.digest,
-        "the document digest keeps array order"
-    );
 
     let turned = with(
         written.clone(),

@@ -22,8 +22,9 @@ disposition. These are compiler controls, not temporal-engine qualification.
    assessment population, window, trace and backend selections independently.
 2. Change only a compile resource limit. Require unchanged static meaning and a
    changed retained configuration. Then explicitly change a required profile or
-   model selection and require a different static selection; stale dependencies
-   must refuse rather than inherit the new meaning.
+   model selection and require a different static selection. Withdrawn: the
+   clause requiring stale dependencies to refuse rather than inherit the new
+   meaning; QSL has no staleness check (FR-005-AC-4).
 3. Request two required pairs, `operation-contract` and
    `temporal-satisfaction`. Supply `negotiate_*` settlements as fixture records:
    `operation-contract` settles `supported` and `temporal-satisfaction` settles

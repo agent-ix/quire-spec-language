@@ -6,7 +6,7 @@ use serde::Deserialize;
 
 use super::ValueId;
 use qsl_foundation::serde_object::Object;
-use qsl_foundation::{ByteDigest, SourceIdentity};
+use qsl_foundation::SourceIdentity;
 
 // The foreign RequirementRef decoder permits unknown keys. Keep the native
 // record closed, then delegate identifier semantics to its existing constructor.
@@ -69,20 +69,6 @@ impl TryFrom<Object<Labels>> for Identity {
     }
 }
 
-#[derive(Deserialize)]
-#[serde(try_from = "String")]
-struct Digest(ByteDigest);
-
-impl TryFrom<String> for Digest {
-    type Error = &'static str;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        ByteDigest::from_hex(&value)
-            .map(Self)
-            .map_err(|_| "expected 64 lowercase hexadecimal digits")
-    }
-}
-
 // Deserialize the field through deserialize_any, not deserialize_option: Serde
 // supplies a special missing-field deserializer which otherwise becomes None.
 // A present JSON null is still the explicit no-result representation.
@@ -113,14 +99,12 @@ impl From<Object<QualifiedName>> for super::QualifiedName {
 #[serde(deny_unknown_fields)]
 pub(super) struct ModelBinding {
     model: Requirement,
-    digest: Digest,
 }
 
 impl From<Object<ModelBinding>> for super::ModelBinding {
     fn from(Object(value): Object<ModelBinding>) -> Self {
         Self {
             model: value.model.0,
-            digest: value.digest.0,
         }
     }
 }
@@ -345,14 +329,12 @@ impl From<Object<InvocationDraft>> for super::InvocationDraft {
 #[serde(deny_unknown_fields)]
 pub(super) struct Reference {
     identity: Identity,
-    digest: Digest,
 }
 
 impl From<Object<Reference>> for super::SnapshotRef {
     fn from(Object(value): Object<Reference>) -> Self {
         Self {
             identity: value.identity.0,
-            digest: value.digest.0,
         }
     }
 }
@@ -361,7 +343,6 @@ impl From<Object<Reference>> for super::InvocationRef {
     fn from(Object(value): Object<Reference>) -> Self {
         Self {
             identity: value.identity.0,
-            digest: value.digest.0,
         }
     }
 }

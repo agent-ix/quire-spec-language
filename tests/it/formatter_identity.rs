@@ -1007,7 +1007,7 @@ fn emitter_authored_units_keep_format_identity() {
     let field = source_literal(fixture, "FIELD_ACCESS");
     let equality = source_literal(fixture, "CONFORMING_EQUALITY");
     let document = include_bytes!("../fixtures/spine-model.semantic-ir.json");
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     for removed in [
         &[field.as_str(), equality.as_str()][..],
         &[field.as_str()][..],
@@ -1204,7 +1204,6 @@ fn lifecycle_generated_bodies_keep_format_identity() {
             &BTreeMap::new(),
             &DependencyInput::default(),
             limits,
-            &qsl_replay::spine::LockEvidence::default(),
         )
         .unwrap()
     };
@@ -1327,7 +1326,6 @@ fn lifecycle_large_declaration_unit_keeps_format_identity() {
         &BTreeMap::new(),
         &DependencyInput::default(),
         limits,
-        &qsl_replay::spine::LockEvidence::default(),
     )
     .unwrap();
 }
@@ -1383,7 +1381,6 @@ fn deep_source_generator_keeps_format_identity(label: &str) {
         &BTreeMap::new(),
         &DependencyInput::default(),
         limits,
-        &qsl_replay::spine::LockEvidence::default(),
     )
     .unwrap_or_else(|refusal| {
         panic!("{label}: actual 100,000-level fixture must check: {refusal}")
@@ -1451,7 +1448,6 @@ fn replay_large_source_generator_keeps_format_identity() {
         &BTreeMap::new(),
         &DependencyInput::default(),
         limits,
-        &qsl_replay::spine::LockEvidence::default(),
     )
     .unwrap();
 }
@@ -1573,8 +1569,7 @@ fn replay_composite_and_model_units_keep_format_identity() {
         "{header}function t using v(b: Boolean): Boolean pure {{ b }}\n"
     ));
     let document = include_bytes!("../fixtures/spine-model.semantic-ir.json");
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
-    let digest = qsl_semantics::model::key::hex(packages.keys().next().unwrap());
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let body = function_literal(
         fixture,
         "tc_906_a_reference_replays_by_identity_and_a_dereference_completes_no_value",
@@ -1586,11 +1581,7 @@ fn replay_composite_and_model_units_keep_format_identity() {
     );
     let source = fixture_text(
         function_literal(fixture, "model_fixture", "language "),
-        &[
-            ("MODEL_PROFILE", &model_profile),
-            ("hex", &digest),
-            ("body", &body),
-        ],
+        &[("MODEL_PROFILE", &model_profile), ("body", &body)],
     );
     emitted(
         SourceIdentity::new("agent-ix", "test:replay", "git", "r1"),
@@ -1606,7 +1597,7 @@ fn replay_composite_and_model_units_keep_format_identity() {
             "tc_444_a_domain_package_comes_from_the_byte_provision",
             "language ",
         ),
-        &[("PROFILE", &profile), ("hex", &digest)],
+        &[("PROFILE", &profile)],
     );
     emitted(
         SourceIdentity::new("agent-ix", "test:replay", "git", "r1"),
@@ -1616,40 +1607,6 @@ fn replay_composite_and_model_units_keep_format_identity() {
         &DependencyInput::default(),
     )
     .unwrap();
-}
-
-#[trace("TC-885", "FR-003-AC-9")]
-#[test]
-fn lifecycle_text_law_fixture_keeps_format_identity() {
-    use qsl_replay::spine::{LockEvidence, SpineLimits};
-    use qsl_semantics::value::DefinitionRole;
-    let fixture = include_str!("../../qsl-replay/src/spine/lifecycle/tests.rs");
-    let header = source_literal(fixture, "HEADER");
-    let source = fixture_text(
-        function_literal(
-            fixture,
-            "check_takes_the_lock_evidence_the_text_law_comes_from",
-            "{HEADER}",
-        ),
-        &[("HEADER", &header)],
-    );
-    let lock = LockEvidence::default().with_text_profile(DefinitionRole::TextProfile.reference());
-    let compile = |lock: &LockEvidence| {
-        crate::support::front_end::emitted_with_authority(
-            SourceIdentity::new("agent-ix", "test:lifecycle", "fixture", "fixture:1"),
-            "unit.native",
-            source.as_bytes(),
-            &BTreeMap::new(),
-            &DependencyInput::default(),
-            SpineLimits::default(),
-            lock,
-        )
-    };
-    assert!(
-        compile(&LockEvidence::default()).is_err(),
-        "original control lacks the text law"
-    );
-    compile(&lock).expect("owning lock evidence admits original and formatted text unit");
 }
 
 #[trace("TC-885", "FR-003-AC-9")]
@@ -1900,7 +1857,6 @@ fn checker_family_authored_units_keep_format_identity() {
         &BTreeMap::new(),
         &DependencyInput::default(),
         limits,
-        &qsl_replay::spine::LockEvidence::default(),
     )
     .expect("the owning 5,000-node limit admits the original sum");
 }
@@ -1932,15 +1888,14 @@ fn compile_facade_authored_units_keep_format_identity() {
         plain_fixture(&format!("{header}{}", source_literal(fixture, constant)));
     }
     let document = include_bytes!("../fixtures/spine-model.semantic-ir.json");
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
-    let hex = qsl_semantics::model::key::hex(packages.keys().next().unwrap());
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let source = fixture_text(
         function_literal(
             fixture,
             "a_domain_package_is_the_i1_input_as_in_the_spine",
             "{HEADER}model ",
         ),
-        &[("HEADER", &header), ("hex", &hex)],
+        &[("HEADER", &header)],
     );
     emitted(
         SourceIdentity::new("a", "u", "git", "1"),
@@ -1968,15 +1923,14 @@ fn admission_corpus_authored_units_keep_format_identity() {
         ));
     }
     let document = include_bytes!("../fixtures/systems-interface.semantic-ir.json");
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
-    let digest = qsl_semantics::model::key::hex(packages.keys().next().unwrap());
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let source = fixture_text(
         format!(
             "{}{}",
             source_literal(fixture, "COMPLETE_V1_HEADER"),
             source_literal(fixture, "SYSTEMS_INTERFACE_UNIT"),
         ),
-        &[("", &digest)],
+        &[],
     );
     emitted(
         SourceIdentity::new("agent-ix", "test:spine-model", "fixture", "fixture:1"),
@@ -1993,30 +1947,20 @@ fn admission_corpus_authored_units_keep_format_identity() {
 fn package_dependent_library_keeps_format_identity() {
     let fixture = include_str!("../../qsl-replay/src/spine/dependency_tests.rs");
     let document = include_bytes!("../fixtures/spine-model.semantic-ir.json");
-    let digest = qsl_semantics::model::intake::PackageDocument::parse(
-        document,
-        qsl_foundation::IntakeLimits::default(),
-    )
-    .unwrap()
-    .jcs_digest();
-    let model_digest = qsl_semantics::model::key::hex(&digest);
     let body = fixture_text(
         function_literal(
             fixture,
             "an_imported_name_whose_signature_is_package_dependent_refuses",
             "model M =",
         ),
-        &[
-            ("model_digest", &model_digest),
-            ("F", &source_literal(fixture, "F")),
-        ],
+        &[("F", &source_literal(fixture, "F"))],
     );
     let source = format!("{}{body}", source_literal(fixture, "HEADER"));
     emitted(
         SourceIdentity::new("a", "geometry", "git", "1"),
         "geometry.native",
         source.as_bytes(),
-        &qsl_semantics::model::intake::package_input([document.as_slice()]),
+        &qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap(),
         &DependencyInput::default(),
     )
     .expect("the reached library checks under its original selected model");
@@ -2042,8 +1986,7 @@ fn evaluator_source_call_fixture_keeps_checked_identity() {
 #[trace("TC-885", "FR-003-AC-9")]
 #[test]
 fn replay_composite_fixture_keeps_checked_identity() {
-    use qsl_replay::spine::{LockEvidence, SpineLimits};
-    use qsl_semantics::value::DefinitionRole;
+    use qsl_replay::spine::SpineLimits;
     let profile = source_literal(
         include_str!("../../qsl-replay/src/execute/tests.rs"),
         "PROFILE",
@@ -2053,7 +1996,6 @@ fn replay_composite_fixture_keeps_checked_identity() {
         "UNIT",
     );
     let source = format!("language \"ix:native\" edition \"1-draft\";\n{profile}{body}");
-    let lock = LockEvidence::default().with_text_profile(DefinitionRole::TextProfile.reference());
     crate::support::front_end::emitted_with_authority(
         SourceIdentity::new("agent-ix", "test:replay", "git", "r1"),
         "test:replay",
@@ -2061,7 +2003,6 @@ fn replay_composite_fixture_keeps_checked_identity() {
         &BTreeMap::new(),
         &DependencyInput::default(),
         SpineLimits::default(),
-        &lock,
     )
     .expect("the recursive-record, sequence, enum and text fixture checks");
 }
@@ -2098,7 +2039,7 @@ fn wide_integer_fixture_units_keep_checked_identity() {
 fn checked_file_fixtures_keep_package_identity_and_second_pass_bytes() {
     let spine_model = crate::support::spine_model::unit();
     let document = include_bytes!("../fixtures/spine-model.semantic-ir.json");
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     for (name, bytes) in [
         (
             "spine-compile.native",
@@ -2133,7 +2074,10 @@ fn generated_config_version_unit_keeps_checked_identity() {
         crate::support::config_version_spine::spine::unit_identity(),
         "config-version.native",
         source.as_bytes(),
-        &crate::support::config_version_spine::spine::domain_packages(),
+        &qsl_semantics::model::intake::package_input([
+            crate::support::config_version_spine::spine::DOMAIN_PACKAGE.as_bytes(),
+        ])
+        .unwrap(),
         &DependencyInput::default(),
     )
     .expect("ConfigVersion fixture checks before and after formatting");

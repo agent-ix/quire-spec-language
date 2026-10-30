@@ -30,6 +30,4 @@ mod refinement_unmapped;
 #[path = "../../../tests/support/ring_world.rs"]
 mod ring_world;
 mod script_search;
-#[path = "../../../tests/support/spine_model.rs"]
-mod spine_model;
 mod vault_world;

@@ -44,7 +44,6 @@ use qsl_semantics::check::{
 };
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
 use qsl_semantics::value::{admit_integer_division, DefinitionRole};
 use quire_checked::key::DeclarationKey;
@@ -285,29 +284,19 @@ fn document(busy: bool, reset: bool) -> Vec<u8> {
 
 /// The unit text: the header selecting the domain package as `V`, the `step`
 /// contract of `vault`, and `body`.
-fn unit_text(
-    document: &[u8],
-    other: Option<&[u8]>,
-    vault: Vault,
-    reset: bool,
-    body: &str,
-) -> String {
-    let digest = *package_input([document]).keys().next().expect("one model");
-    let second = other.map_or_else(String::new, |other| {
-        let digest = *package_input([other]).keys().next().expect("one model");
-        format!(
-            "model {OTHER_ALIAS} = \"{OTHER}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n",
-            hex(&digest)
-        )
-    });
+fn unit_text(other: Option<&[u8]>, vault: Vault, reset: bool, body: &str) -> String {
+    let second = if other.is_some() {
+        format!("model {OTHER_ALIAS} = \"{OTHER}\";\n")
+    } else {
+        String::new()
+    };
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
          profile inf = \"quire.temporal.infinite-trace/v1\";\n\
          profile p = \"quire.protocol.finite-global/v1\";\n\
-         model V = \"{PACKAGE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         model V = \"{PACKAGE}\";\n\
          {second}function Noop using v(): Boolean pure {{ true }}\n{}{body}",
-        hex(&digest),
         vault.contracts(reset),
     )
 }
@@ -322,7 +311,7 @@ fn other_document(document: &[u8]) -> Vec<u8> {
 }
 
 fn declarations(documents: &[&[u8]], text: &str) -> PackageDeclarations {
-    let packages = package_input(documents.iter().copied());
+    let packages = package_input(documents.iter().copied()).unwrap();
     let parsed = qsl_cst::parse(
         SourceIdentity::new("agent-ix", "hyper", "git", "1"),
         "hyper.native",
@@ -363,16 +352,13 @@ fn declarations(documents: &[&[u8]], text: &str) -> PackageDeclarations {
 /// One snapshot of the vaults `(key, (h, l))`, provisioned in `snapshots`;
 /// each vault of a busy world has `busy` as its flag.
 fn snapshot(
-    document: &[u8],
-    snapshots: &mut BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: &mut qsl_semantics::model::observation::DocumentProvision,
     name: &str,
     vaults: &[(&str, (i64, i64))],
     busy: Option<i64>,
     second: Option<&[(&str, (i64, i64))]>,
 ) -> DocumentRef {
-    let digest = *package_input([document]).keys().next().expect("one model");
-    let header = json!({"identity": PACKAGE, "version": "1.0.0",
-        "digest": format!("sha256-jcs:{}", hex(&digest))});
+    let header = json!({"identity": PACKAGE});
     let population = |package: &str, vaults: &[(&str, (i64, i64))]| {
         let ident = |suffix: &str| format!("ix://{package}/{suffix}");
         json!({"population": ident("vaults"), "complete": true,
@@ -397,17 +383,16 @@ fn snapshot(
         "populations": populations,
     });
     let bytes = body.to_string().into_bytes();
-    let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-    let hash = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-        .expect("canonical fixture")
-        .as_bytes();
-    snapshots.insert(hash, bytes);
+    snapshots.insert(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    );
     DocumentRef {
         authority: "test".to_owned(),
         identity: name.to_owned(),
         revision_namespace: "fixture".to_owned(),
         revision: "fixture:1".to_owned(),
-        digest: hash,
     }
 }
 
@@ -446,8 +431,8 @@ pub(crate) struct World {
     pub(crate) text: String,
     pub(crate) package: CheckedPackage,
     pub(crate) clause: CheckedHyperClause,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
+    snapshots: qsl_semantics::model::observation::DocumentProvision,
     initial: Vec<DocumentRef>,
     pub(crate) max_candidates: u64,
     /// The search horizon of an HP-2, HP-3 or HP-6 run (`max_depth`).
@@ -615,12 +600,12 @@ impl World {
             } else {
                 String::new()
             };
-        let base = unit_text(&document, other, vault, reset, &ieee_package_clause);
+        let base = unit_text(other, vault, reset, &ieee_package_clause);
         let graph = declarations(&documents, &base)
             .check(CheckingLimits::default())
             .unwrap_or_else(|refusals| panic!("{base}: the unit checks: {refusals:?}"));
         let package = CheckedPackage::link(graph);
-        let text = unit_text(&document, other, vault, reset, &format!("{declaration}\n"));
+        let text = unit_text(other, vault, reset, &format!("{declaration}\n"));
         let mut checked = check_hyper_clauses(&declarations(&documents, &text));
         let clause = match checked.pop() {
             Some(Ok(CheckedHyper::Behaviours(clause))) if checked.is_empty() => *clause,
@@ -633,7 +618,6 @@ impl World {
             .map(|(index, start)| {
                 let busy = vault.busy().then(|| flags.get(index).copied().unwrap_or(0));
                 snapshot(
-                    &document,
                     &mut snapshots,
                     &format!("s{index}"),
                     start,
@@ -648,7 +632,7 @@ impl World {
             text,
             package,
             clause,
-            packages: package_input(documents.iter().copied()),
+            packages: package_input(documents.iter().copied()).unwrap(),
             snapshots,
             initial,
             max_candidates: 1_000_000,

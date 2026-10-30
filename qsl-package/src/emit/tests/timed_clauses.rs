@@ -41,8 +41,8 @@ fn checked(
     String,
     Result<qsl_semantics::check::CheckedGraph, Vec<qsl_semantics::check::CheckRefusal>>,
 ) {
-    let packages = qsl_semantics::model::intake::package_input([document]);
-    let unit = clocked_unit(&packages, body);
+    let packages = qsl_semantics::model::intake::package_input([document]).unwrap();
+    let unit = clocked_unit(body);
     let checked = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
         .check(CheckingLimits::default());
@@ -750,9 +750,8 @@ fn an_unwritten_guard_refuses_at_its_member() {
 fn a_point_qualified_clock_clause_refuses_at_the_clause() {
     use quire_contract_model::{AnchorName, ExecutionPoint};
     let document = document(false);
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let unit = clocked_unit(
-        &packages,
         "pre Late using v on Config::ConfigVersion::attemptUpdate { self.x >= 1 ms }\n",
     );
     let parsed = qsl_cst::parse(
@@ -888,10 +887,7 @@ fn excluded(document: &[u8], body: &str) -> (qsl_semantics::check::ExcludedClaus
 #[trace("TC-685", "QSpec-FR-322-AC-267")]
 #[test]
 fn an_indexed_element_write_is_refused() {
-    let document = timer_document();
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
     let unit = clocked_unit(
-        &packages,
         "post P using v on Config::ConfigVersion::attemptUpdate { \
          self.ts[0] = Config::Timer { x: 0 ms, n: 1 } }\n",
     );

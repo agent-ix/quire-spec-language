@@ -16,8 +16,8 @@ the source-derived Rust producer and successfully constructed actual IR inputs.
 
 ## Test Procedure
 
-Give a valid source-bound IR model a false line, column, split-scalar or foreign source/revision locus, including an unused field/variant and a native role. Then supply two individually valid models whose formal source identity denotes different native labels/revision/bytes, or whose same formal RequirementRef denotes different native artifacts. Include two identical copies and two independent valid owners as controls.
+Give a valid source-bound IR model a false line, column, split-scalar or foreign source/revision locus, including an unused field/variant and a native role. Then supply two individually valid models whose formal source identity denotes different native labels/revision/bytes, or whose same package identity denotes different native artifacts. Include two identical copies and two independent valid owners as controls.
 
 ## Expected Results
 
-False/foreign loci refuse model construction. Conflicting identity bindings refuse the linked inventory as invalid_model_binding. Identical candidate copies retain the existing ambiguous_declaration outcome for an exact import, and independent valid owners are accepted. No first/last-wins reconciliation or partial LinkedPackage is exposed.
+False/foreign loci refuse model construction. Conflicting source-identity bindings refuse the linked inventory as invalid_model_binding. Two artifacts of one package identity, owner-conflicting or identical copies, give an exact import the `AmbiguousSelection` outcome (the `ConflictingModel` outcome for an owner conflict is withdrawn), and independent valid owners are accepted. No first/last-wins reconciliation or partial LinkedPackage is exposed.

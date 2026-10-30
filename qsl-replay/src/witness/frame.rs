@@ -169,7 +169,7 @@ pub struct FrameCounterexample {
     pub occurrence: OccurrenceKey,
     /// The `quire.state.invocation/v1` document (FR-106); it and its pre
     /// and post snapshots are read from the replay request's byte provision
-    /// by their `sha256-jcs` digests.
+    /// by their document labels.
     pub invocation: DocumentRef,
     /// The change the counterexample claims.
     pub change: ClaimedChange,
@@ -188,7 +188,6 @@ mod tests {
             identity: name.to_owned(),
             revision_namespace: "ns".to_owned(),
             revision: "1".to_owned(),
-            digest: [7; 32],
         }
     }
 

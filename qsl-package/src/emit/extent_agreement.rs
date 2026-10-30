@@ -218,6 +218,7 @@ fn ir_lowering(package: &CheckedPackageV2, id: &CheckedNodeId) -> CompleteLoweri
         },
         supported_tags: CheckedNodeTag::ALL.iter().copied().collect(),
         require_bounds: true,
+        required_source_selections: Vec::new(),
         work_limit: u64::MAX,
     };
     package

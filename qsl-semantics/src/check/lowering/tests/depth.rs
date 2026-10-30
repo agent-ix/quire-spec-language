@@ -31,6 +31,8 @@ fn a_100000_vertex_cycle_is_found_on_a_small_stack() {
     assert_eq!(result[0].len(), COUNT);
 }
 
+// BLOCKED-BY QSL-1282 (owner: planner titan:QSL:plan): NodeKey::from_digest, the only
+// `NodeKey` constructor in the locked quire-exact; removed in the swap.
 fn handle(label: &str) -> NodeKey {
     NodeKey::from_digest(qsl_foundation::ByteDigest::of(label.as_bytes()).as_bytes())
 }
@@ -69,14 +71,6 @@ pub(super) fn chain(length: usize) -> Vec<CompositeDeclaration> {
     records
 }
 
-/// A text-profile definition for the equality's text leaf.
-fn text_definition() -> DefinitionReference {
-    DefinitionReference {
-        authority: "agent-ix".to_owned(),
-        identity: "unicode-text".to_owned(),
-    }
-}
-
 /// `function eq(a: T, b: T): Boolean { a = b }`, each `T` built by
 /// `operand`.
 fn equality_over(operand: fn() -> TypeForm) -> FunctionDeclaration {
@@ -107,7 +101,6 @@ pub(super) fn check_on_small_stack(
             PackageDeclarations {
                 types: TypeEnvironment::new(records, []).expect("FR-143 admits the chain"),
                 functions,
-                lock_evidence: LockEvidence::default().with_text_profile(text_definition()),
                 ..PackageDeclarations::new(
                     fixture_source(),
                     qsl_foundation::IdentityLimits::default(),

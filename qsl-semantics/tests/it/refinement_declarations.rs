@@ -511,18 +511,12 @@ fn unit_text(
     profiles: &str,
     models: &[(&str, &str, &[u8])],
     body: &str,
-) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
+) -> (String, qsl_semantics::model::intake::PackageInput) {
     let mut packages = BTreeMap::new();
     let mut selections = String::new();
     for (alias, identity, bytes) in models {
-        let single = package_input([*bytes]);
-        let [(digest, _)] = single.iter().collect::<Vec<_>>()[..] else {
-            panic!("one supplied document");
-        };
-        selections.push_str(&format!(
-            "model {alias} = {identity:?} version \"1.0.0\" digest \"sha256-jcs:{}\";\n",
-            qsl_semantics::model::key::hex(digest)
-        ));
+        let single = package_input([*bytes]).unwrap();
+        selections.push_str(&format!("model {alias} = {identity:?};\n"));
         packages.extend(single);
     }
     let text = format!(

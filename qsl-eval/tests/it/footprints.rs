@@ -204,20 +204,18 @@ fn document(types: Vec<Json>, populations: &[(&str, &str)]) -> Vec<u8> {
 
 struct Subject {
     package: CheckedPackage,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
     header: Json,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: qsl_semantics::model::observation::DocumentProvision,
 }
 
 /// The fixture `document` checked with `clauses` as its unit.
 fn subject(document: Vec<u8>, clauses: &[&str]) -> Subject {
-    let packages = package_input([document.as_slice()]);
-    let digest = *packages.keys().next().expect("one model");
+    let packages = package_input([document.as_slice()]).unwrap();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\n\
-         model M = \"{PACKAGE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         model M = \"{PACKAGE}\";\n\
          function Noop using v(): Boolean pure {{ true }}\n{}\n",
-        hex(&digest),
         clauses.join("\n"),
     );
     let parsed = qsl_cst::parse(
@@ -251,8 +249,7 @@ fn subject(document: Vec<u8>, clauses: &[&str]) -> Subject {
         .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
     Subject {
         package: CheckedPackage::link(graph),
-        header: json!({"identity": PACKAGE, "version": "1.0.0",
-            "digest": format!("sha256-jcs:{}", hex(&digest))}),
+        header: json!({"identity": PACKAGE}),
         packages,
         snapshots: BTreeMap::new(),
     }
@@ -312,17 +309,16 @@ impl Subject {
             "populations": listed,
         });
         let bytes = document.to_string().into_bytes();
-        let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-        let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-            .expect("canonical fixture")
-            .as_bytes();
-        self.snapshots.insert(digest, bytes);
+        self.snapshots.insert(
+            qsl_semantics::model::observation::document_reference(&bytes)
+                .expect("a document names itself"),
+            bytes,
+        );
         DocumentRef {
             authority: "test".to_owned(),
             identity: name.to_owned(),
             revision_namespace: "fixture".to_owned(),
             revision: "fixture:1".to_owned(),
-            digest,
         }
     }
 
@@ -473,7 +469,7 @@ fn transition(
     arguments: Vec<String>,
 ) -> ModelTransition {
     let operation = format!(
-        r#"{{"digest_domain":"sha256-jcs","node":"{}","package":"{PACKAGE}"}}"#,
+        r#"{{"node":"{}","package":"{PACKAGE}"}}"#,
         ident(&format!("{object_type}/{operation}"))
     );
     ModelTransition::new(

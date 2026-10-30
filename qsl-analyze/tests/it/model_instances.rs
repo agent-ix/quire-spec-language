@@ -37,7 +37,6 @@ use qsl_semantics::check::{CheckedTemporalClause, FormulaNode, FormulaNodeId};
 use qsl_semantics::family::ClaimExtent;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{meaning, package_input};
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::observation::{AdmissionFailure, DocumentRef, ObservationLimits};
 use quire_checked::key::DeclarationKey;
 use quire_exact::{Cancel, Meter};
@@ -45,9 +44,7 @@ use quire_semantic_value::catalog::{UndefinedReason, UndefinedRecord};
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
 
-use crate::counter::{
-    declarations_in, declarations_with_model_profile, document_digest, UNLIMITED,
-};
+use crate::counter::{declarations_in, declarations_with_model_profile, UNLIMITED};
 
 const PACKAGE: &str = "test/things";
 const PLACEHOLDER: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
@@ -170,8 +167,8 @@ type Held<'a> = (&'a str, &'a [(&'a str, &'a str)]);
 struct World {
     document: Vec<u8>,
     package: CheckedPackage,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
+    snapshots: qsl_semantics::model::observation::DocumentProvision,
     initial: Vec<DocumentRef>,
 }
 
@@ -203,26 +200,24 @@ fn world(populations: &[(&str, &[&str])], held: &[Held<'_>]) -> World {
         "identity": {"authority": "test", "identity": "s0", "revision_namespace": "fixture",
             "revision": "fixture:1"},
         "observation": "current",
-        "model": {"identity": PACKAGE, "version": "1.0.0",
-            "digest": format!("sha256-jcs:{}", hex(&document_digest(&document)))},
+        "model": {"identity": PACKAGE},
         "anchor": {"kind": "initialization", "name": "start"},
         "populations": populations,
     })
     .to_string()
     .into_bytes();
-    let read = quire_canonical::read(&snapshot, u64::MAX).expect("JSON fixture");
-    let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-        .expect("canonical fixture")
-        .as_bytes();
     World {
-        packages: package_input([document.as_slice()]),
-        snapshots: BTreeMap::from([(digest, snapshot)]),
+        packages: package_input([document.as_slice()]).unwrap(),
+        snapshots: BTreeMap::from([(
+            qsl_semantics::model::observation::document_reference(&snapshot)
+                .expect("a document names itself"),
+            snapshot,
+        )]),
         initial: vec![DocumentRef {
             authority: "test".to_owned(),
             identity: "s0".to_owned(),
             revision_namespace: "fixture".to_owned(),
             revision: "fixture:1".to_owned(),
-            digest,
         }],
         document,
         package,
@@ -427,8 +422,7 @@ fn instance(population: &str, key: &str) -> ModelInstance {
 /// The requires-bound root of `population`: the digest of its declaration
 /// identity, as FR-120 names a population root.
 fn population_root(population: &str) -> DomainKey {
-    let naming = json!({"digest_domain": "sha256-jcs", "node": ident(population),
-        "package": PACKAGE});
+    let naming = json!({"node": ident(population), "package": PACKAGE});
     let read = quire_canonical::read(naming.to_string().as_bytes(), u64::MAX).expect("JSON");
     let digest =
         quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX)).expect("canonical");
@@ -1452,14 +1446,9 @@ fn two_state_world() -> World {
         .expect("utf8")
         .replace("\"s0\"", "\"s1\"")
         .into_bytes();
-    let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-    let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-        .expect("canonical fixture")
-        .as_bytes();
-    first.snapshots.insert(digest, bytes);
-    let mut reference = first.initial[0].clone();
-    reference.identity = "s1".to_owned();
-    reference.digest = digest;
+    let reference = qsl_semantics::model::observation::document_reference(&bytes)
+        .expect("a document names itself");
+    first.snapshots.insert(reference.clone(), bytes);
     first.initial.push(reference);
     first
 }

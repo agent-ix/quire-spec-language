@@ -179,6 +179,18 @@ pub(super) struct ContractFinding {
     pub(super) candidate: Option<Vec<u8>>,
     pub(super) clause: String,
     pub(super) finding: ModelFinding,
+    /// The receiver, arguments and, for a postcondition, the candidate
+    /// post-state and result the finding was made at (QSpec FR-485 reads
+    /// them for a counterexample).
+    pub(super) case: Box<FindingCase>,
+}
+
+/// Where a contract finding was made: the application's receiver and
+/// arguments and, for a postcondition, the candidate post-state and result.
+pub(super) struct FindingCase {
+    pub(super) receiver: ObjectReference,
+    pub(super) arguments: Vec<Value>,
+    pub(super) post: Option<(qsl_semantics::model::state::ModelState, Option<Value>)>,
 }
 
 /// One successor of one application (FR-120 "Applications and transition

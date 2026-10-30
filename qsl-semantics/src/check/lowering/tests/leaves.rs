@@ -1,38 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! TC-415 steps 8 and 9 (FR-093-AC-10, FR-093-AC-11): FR-093's text-leaf
-//! walk, checked against its Recursive text-leaf vectors, read from this
-//! repository's own FR-093 text at compile time.
+//! TC-415 step 9 (FR-093-AC-11): FR-093's text-leaf
+//! walk over declared records, unions and recursion groups.
 
 use super::*;
-use crate::value::definition::DefinitionRole;
-
-const FR_093: &str = include_str!(
-    "../../../../../spec/functional/FR-093-lower-checked-value-expressions-to-fr-322-terms.md"
-);
-
-/// FR-093's Recursive text-leaf vectors by name: `(key, preimage)`.
-fn fr093_vectors() -> BTreeMap<String, (String, String)> {
-    let vectors = spec_vectors("FR-093");
-    assert_eq!(vectors.len(), 21, "FR-093 publishes 21 golden vectors");
-    vectors
-}
-
-/// Assert `graph` holds FR-093 vector `name`, bytes and key.
-fn assert_fr093(graph: &SemanticGraph, name: &str) {
-    let (key, preimage) = &fr093_vectors()[name];
-    let node = node_by_key(graph, key);
-    assert_eq!(
-        std::str::from_utf8(node.preimage()).expect("UTF-8"),
-        preimage,
-        "{name}: preimage bytes"
-    );
-}
-
-/// QSpec's text definition that the Recursive text-leaf vectors name: the
-/// lock's `text_profile` row.
-fn vector_text_definition() -> DefinitionReference {
-    DefinitionRole::TextProfile.reference()
-}
 
 fn text(max: u64, profile: TextProfile) -> ValueType {
     ValueType::Text(TextType::new(0, max, profile).unwrap())
@@ -69,6 +39,21 @@ fn node_record() -> CompositeDeclaration {
     )
 }
 
+fn named(name: &str) -> TypeForm {
+    TypeForm::name(name, SPAN)
+}
+
+/// `function <name>(<left>: T, <right>: T): Boolean { <left> = <right> }`.
+fn equality(name: &str, (left, right): (&str, &str), operand: TypeForm) -> FunctionDeclaration {
+    function(
+        name,
+        &[(left, operand.clone()), (right, operand)],
+        boolean(),
+        None,
+        binary(BinaryOperator::Equal, name_expr(left), name_expr(right)),
+    )
+}
+
 fn record_a() -> CompositeDeclaration {
     record(
         "A",
@@ -89,23 +74,10 @@ fn record_b() -> CompositeDeclaration {
     )
 }
 
-fn named(name: &str) -> TypeForm {
-    TypeForm::name(name, SPAN)
-}
-
-/// `function <name>(<left>: T, <right>: T): Boolean { <left> = <right> }`.
-fn equality(name: &str, (left, right): (&str, &str), operand: TypeForm) -> FunctionDeclaration {
-    function(
-        name,
-        &[(left, operand.clone()), (right, operand)],
-        boolean(),
-        None,
-        binary(BinaryOperator::Equal, name_expr(left), name_expr(right)),
-    )
-}
-
-/// `eq`, `has`, `eqa` and `eqo` of FR-093's Recursive text-leaf vectors.
-fn vector_functions() -> Vec<FunctionDeclaration> {
+/// `eq`, `has`, `eqa` and `eqo`: equality over a recursive record, a
+/// sequence membership test, equality over a mutually recursive record, and
+/// equality over `Option<Node>`.
+fn recursive_functions() -> Vec<FunctionDeclaration> {
     let nodes = TypeForm::collection(CollectionKind::Sequence, SPAN)
         .with_arguments(vec![named("Node")])
         .with_bounds(vec!["0".into(), "3".into()]);
@@ -125,122 +97,24 @@ fn vector_functions() -> Vec<FunctionDeclaration> {
     ]
 }
 
-/// A package declaring `records` and holding `functions`, under `lock`.
+/// A package declaring `records` and holding `functions`.
 fn package(
     records: Vec<CompositeDeclaration>,
     functions: Vec<FunctionDeclaration>,
-    lock: LockEvidence,
 ) -> PackageDeclarations {
     PackageDeclarations {
         types: TypeEnvironment::new(records, []).expect("FR-143 admits the records"),
         functions,
-        lock_evidence: lock,
         ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
     }
-}
-
-fn vector_lock() -> LockEvidence {
-    LockEvidence::default().with_text_profile(vector_text_definition())
-}
-
-/// FR-093's key table, headings, ordinals, group tables and vectors agree.
-#[trace("FR-093-AC-10", "TC-415")]
-#[test]
-fn fr_093_published_tables_agree_with_its_vectors() {
-    assert_published_tables_agree("FR-093", FR_093);
-}
-
-/// The node of `graph` a recursion-group vector's label names: `record X`
-/// or `Option<X>`, found by what it declares and holds, not by its key.
-fn named_group_node<'g>(graph: &'g SemanticGraph, label: &str) -> Option<&'g SemanticNode> {
-    let record = |name: &str| {
-        graph.nodes().find(|node| {
-            node.semantic_form() == "record"
-                && node.recursion().is_some()
-                && preimage(node)["declaration"]["qualified_name"] == json!([name])
-        })
-    };
-    match label
-        .strip_prefix("Option<")
-        .and_then(|rest| rest.strip_suffix('>'))
-    {
-        Some(inner) => {
-            let member = preimage(record(inner)?);
-            graph.nodes().find(|node| {
-                let held = preimage(node);
-                node.semantic_form() == "option"
-                    && held["recursion"]["group"] == member["recursion"]["group"]
-                    && held["body"]["members"][0]
-                        == json!({"ordinal": member["recursion"]["ordinal"], "term": "group_reference"})
-            })
-        }
-        None => record(label.strip_prefix("record ")?),
-    }
-}
-
-/// The label a vector heading puts in backticks: `Option<A>` of
-/// "`Option<A>`, ordinal 0".
-fn heading_label(description: &str) -> &str {
-    description
-        .split('`')
-        .nth(1)
-        .expect("a heading names its node in backticks")
-}
-
-/// TC-415 step 8 (FR-093-AC-10): `eq`, `has`, `eqa` and `eqo` check, and
-/// their nodes key to the Recursive text-leaf vectors, with `A` declared
-/// before `B` and after it.
-#[trace("FR-093-AC-10", "TC-415")]
-#[test]
-fn recursive_text_leaf_vectors_check_and_key() {
-    let all = [
-        "T13", "T14", "G16", "G17", "G18", "G19", "G20", "G21", "S4", "S5", "P10", "P11", "P12",
-        "P13", "P14", "P15", "P16", "E14", "E15", "E16", "E17",
-    ];
-    let mut keys = Vec::new();
-    for records in [
-        vec![node_record(), record_a(), record_b()],
-        vec![node_record(), record_b(), record_a()],
-    ] {
-        let checked = package(records, vector_functions(), vector_lock())
-            .check(CheckingLimits::default())
-            .unwrap_or_else(|refusals| panic!("the vector functions check: {refusals:?}"));
-        let graph = checked.semantic_graph();
-        for vector in all {
-            assert_fr093(graph, vector);
-        }
-        // Each recursion-group vector is the node its heading names, found
-        // in the graph by what it declares and holds, never by its own key.
-        let descriptions = spec_descriptions(FR_093);
-        for vector in ["G16", "G17", "G18", "G19", "G20", "G21"] {
-            let label = heading_label(&descriptions[vector]);
-            let node = named_group_node(graph, label)
-                .unwrap_or_else(|| panic!("{vector}: the graph holds no {label}"));
-            let (key, text) = &fr093_vectors()[vector];
-            assert_eq!(&node.key().to_string(), key, "{vector} ({label}): key");
-            assert_eq!(
-                std::str::from_utf8(node.preimage()).expect("UTF-8"),
-                text,
-                "{vector} ({label}): preimage bytes"
-            );
-        }
-        keys.push(graph.nodes().map(SemanticNode::key).collect::<Vec<_>>());
-    }
-    assert_eq!(keys[0], keys[1], "declaring B before A gives the same keys");
-    // Every vector FR-093 publishes is asserted above.
-    assert_eq!(fr093_vectors().len(), all.len());
 }
 
 /// The leaf paths of the one structural equality of `records`' `R`-typed
 /// `eq`, each joined by `/`, with its mode or `recursion`.
 fn equality_leaves(records: Vec<CompositeDeclaration>, compared: &str) -> Vec<String> {
-    let checked = package(
-        records,
-        vec![equality("eq", ("a", "b"), named(compared))],
-        vector_lock(),
-    )
-    .check(CheckingLimits::default())
-    .unwrap_or_else(|refusals| panic!("eq over {compared} checks: {refusals:?}"));
+    let checked = package(records, vec![equality("eq", ("a", "b"), named(compared))])
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("eq over {compared} checks: {refusals:?}"));
     let node = application(checked.semantic_graph(), "quire.op.structural.eq");
     node["body"]["operation"]["leaves"]
         .as_array()
@@ -334,7 +208,7 @@ fn leaf_paths_follow_fr093_text_leaves() {
         None,
         Expression::contains(name_expr("s"), name_expr("b")),
     );
-    let checked = package(vec![list()], vec![has], vector_lock())
+    let checked = package(vec![list()], vec![has])
         .check(CheckingLimits::default())
         .expect("contains over List checks");
     let contains = application(checked.semantic_graph(), "quire.op.collection.contains");
@@ -419,95 +293,6 @@ fn union_leaf_paths_follow_member_then_position() {
     assert!(equality_leaves(vec![list], "List").is_empty());
 }
 
-/// FR-092 "Recursion groups" (FR-093-AC-10's P15 and P16): `Option<Node>`
-/// is G17 wherever it is named, whichever function names it first, and
-/// the vectors key the same under every order of the functions.
-#[trace("FR-093-AC-10", "TC-415")]
-#[test]
-fn an_in_group_type_is_its_member_in_every_declaration_order() {
-    let keys_of = |functions: Vec<FunctionDeclaration>| {
-        let checked = package(
-            vec![node_record(), record_a(), record_b()],
-            functions,
-            vector_lock(),
-        )
-        .check(CheckingLimits::default())
-        .unwrap_or_else(|refusals| panic!("the functions check: {refusals:?}"));
-        let graph = checked.semantic_graph();
-        for vector in ["G17", "P15", "P16"] {
-            assert_fr093(graph, vector);
-        }
-        // P15 and P16 name their type by key, so their preimage bytes pin
-        // both parameters to G17; no second `Option<Node>` names G16.
-        let vectors = fr093_vectors();
-        let g17 = node_by_key(graph, &vectors["G17"].0).key();
-        let g16 = vectors["G16"].0.as_bytes();
-        let options = graph
-            .nodes()
-            .filter(|node| {
-                node.semantic_form() == "option"
-                    && (node.key() == g17 || node.preimage().windows(g16.len()).any(|w| w == g16))
-            })
-            .map(SemanticNode::key)
-            .collect::<Vec<_>>();
-        assert_eq!(options, [g17]);
-        graph.nodes().map(SemanticNode::key).collect::<Vec<_>>()
-    };
-    let eqo = || vector_functions().remove(3);
-    keys_of(vec![eqo()]);
-    keys_of(vec![eqo(), vector_functions().remove(0)]);
-    let forward = keys_of(vector_functions());
-    let mut reversed = vector_functions();
-    reversed.reverse();
-    assert_eq!(keys_of(reversed), forward);
-    let mut rotated = vector_functions();
-    rotated.rotate_left(2);
-    assert_eq!(keys_of(rotated), forward);
-}
-
-/// FR-092 G8: a `Sequence<Tree>` named after `Tree`'s group is keyed, with
-/// any bound, is over the group's `sequence` member, not a second
-/// `sequence` node.
-#[trace("FR-092-AC-11", "TC-413")]
-#[test]
-fn a_collection_over_a_recursive_record_reuses_the_group_base() {
-    let tree = record(
-        "Tree",
-        vec![required(
-            "kids",
-            sequence(ValueType::Composite(handle("Tree")), Some((0, 3))),
-        )],
-    );
-    let trees = TypeForm::collection(CollectionKind::Sequence, SPAN)
-        .with_arguments(vec![named("Tree")])
-        .with_bounds(vec!["0".into(), "5".into()]);
-    let wide = function(
-        "wide",
-        &[("s", trees)],
-        boolean(),
-        None,
-        Expression::boolean(true),
-    );
-    let checked = package(vec![tree], vec![wide], vector_lock())
-        .check(CheckingLimits::default())
-        .expect("the parameter checks");
-    let graph = checked.semantic_graph();
-    let g8 = node_by_key(graph, &vector_key("G8")).key();
-    let sequences: Vec<NodeKey> = graph
-        .nodes()
-        .filter(|node| node.semantic_form() == "sequence")
-        .map(SemanticNode::key)
-        .collect();
-    assert_eq!(sequences, [g8]);
-    assert_eq!(
-        parameter_named(graph, "s")
-            .semantic_type()
-            .and_then(|bounds| graph.node(bounds))
-            .and_then(SemanticNode::semantic_type),
-        Some(g8)
-    );
-}
-
 /// FR-093 "Text leaves" rule 4: a composite from which no text type is
 /// reachable is not entered, so a cluster of twelve text-free records that
 /// each hold an optional field of every other adds no leaf and no walk, and
@@ -548,22 +333,13 @@ fn a_text_free_recursive_cluster_is_not_walked() {
 fn eq_over(
     records: Vec<CompositeDeclaration>,
     compared: &str,
-    lock: LockEvidence,
     limits: CheckingLimits,
 ) -> Result<CheckedGraph, Vec<CheckRefusal>> {
-    package(
-        records,
-        vec![equality("eq", ("a", "b"), named(compared))],
-        lock,
-    )
-    .check(limits)
+    package(records, vec![equality("eq", ("a", "b"), named(compared))]).check(limits)
 }
 
-fn eq_over_node(
-    lock: LockEvidence,
-    limits: CheckingLimits,
-) -> Result<CheckedGraph, Vec<CheckRefusal>> {
-    eq_over(vec![node_record()], "Node", lock, limits)
+fn eq_over_node(limits: CheckingLimits) -> Result<CheckedGraph, Vec<CheckRefusal>> {
+    eq_over(vec![node_record()], "Node", limits)
 }
 
 fn node_limit(nodes: u64) -> CheckingLimits {
@@ -585,24 +361,13 @@ fn smallest_limit(checks: impl Fn(u64) -> bool) -> u64 {
     admitted
 }
 
-/// TC-415 step 9 (FR-093-AC-11): `eq` over `Node` with no text-profile
-/// evidence refuses `missing-selection`; under a node limit that admits the
-/// package's nodes but not also its two leaves, it refuses on the node
-/// limit, before `missing-selection`, and yields no node.
+/// TC-415 step 9 (FR-093-AC-11): `eq` over `Node` charges its two leaves
+/// to the node limit: under a limit that admits the package's nodes but not
+/// also its two leaves, it refuses on the node limit and yields no node.
 #[trace("FR-093-AC-11", "TC-415")]
 #[test]
-fn a_leaf_walk_charges_the_node_limit_before_the_law_is_read() {
-    let refusals = eq_over_node(LockEvidence::default(), CheckingLimits::default())
-        .expect_err("no text-profile evidence refuses");
-    assert_eq!(
-        refusals[0].cause,
-        CheckCause::MissingSelection {
-            role: LawRole::TextProfile
-        }
-    );
-    assert_eq!(refusals[0].cause.cause(), Some("missing-selection"));
-
-    let admitted = smallest_limit(|limit| eq_over_node(vector_lock(), node_limit(limit)).is_ok());
+fn a_leaf_walk_charges_the_node_limit() {
+    let admitted = smallest_limit(|limit| eq_over_node(node_limit(limit)).is_ok());
     // The same `eq` over a record with no text leaf types the same nodes:
     // `Node`'s two leaves are the last two units.
     let plain = record(
@@ -612,15 +377,8 @@ fn a_leaf_walk_charges_the_node_limit_before_the_law_is_read() {
             optional("next", ValueType::Composite(handle("Plain"))),
         ],
     );
-    let typed = smallest_limit(|limit| {
-        eq_over(
-            vec![plain.clone()],
-            "Plain",
-            vector_lock(),
-            node_limit(limit),
-        )
-        .is_ok()
-    });
+    let typed =
+        smallest_limit(|limit| eq_over(vec![plain.clone()], "Plain", node_limit(limit)).is_ok());
     assert_eq!(admitted, typed + 2);
 
     let exhausted = |refusals: Vec<CheckRefusal>, limit: u64| {
@@ -637,20 +395,10 @@ fn a_leaf_walk_charges_the_node_limit_before_the_law_is_read() {
     };
     for limit in [admitted - 1, typed] {
         exhausted(
-            eq_over_node(vector_lock(), node_limit(limit)).expect_err("the leaves pass the limit"),
-            limit,
-        );
-        // The walk refuses before the missing law is read.
-        exhausted(
-            eq_over_node(LockEvidence::default(), node_limit(limit))
-                .expect_err("the leaves pass the limit"),
+            eq_over_node(node_limit(limit)).expect_err("the leaves pass the limit"),
             limit,
         );
     }
-    // With the limit met, the missing law refuses instead.
-    let refusals = eq_over_node(LockEvidence::default(), node_limit(admitted))
-        .expect_err("no text-profile evidence refuses");
-    assert_eq!(refusals[0].cause.cause(), Some("missing-selection"));
 }
 
 /// `n` records `R0` .. `R{n-1}`, each with a `label` text field and an
@@ -679,13 +427,8 @@ fn text_cluster(n: usize) -> Vec<CompositeDeclaration> {
 #[trace("NFR-011-M-1", "TC-423")]
 #[test]
 fn a_text_reachable_cluster_refuses_on_the_default_node_ceiling() {
-    let refusals = eq_over(
-        text_cluster(9),
-        "R0",
-        vector_lock(),
-        CheckingLimits::default(),
-    )
-    .expect_err("the nine-record cluster's leaves pass the default node ceiling");
+    let refusals = eq_over(text_cluster(9), "R0", CheckingLimits::default())
+        .expect_err("the nine-record cluster's leaves pass the default node ceiling");
     assert_eq!(
         refusals[0].cause,
         CheckCause::ResourceExhausted(Box::new(StageLimitCause {
@@ -698,13 +441,8 @@ fn a_text_reachable_cluster_refuses_on_the_default_node_ceiling() {
     );
     assert_eq!(refusals[0].cause.code().as_str(), "stage_limit_exceeded");
     assert_eq!(refusals[0].cause.cause(), Some("node-count-exceeded"));
-    eq_over(
-        text_cluster(6),
-        "R0",
-        vector_lock(),
-        CheckingLimits::default(),
-    )
-    .expect("the six-record cluster checks at the default limits");
+    eq_over(text_cluster(6), "R0", CheckingLimits::default())
+        .expect("the six-record cluster checks at the default limits");
 }
 
 /// TC-423 step 3 (NFR-011-M-1 to NFR-011-M-4): a checked package and a
@@ -723,7 +461,7 @@ fn a_checked_result_records_its_effective_limits() {
         ),
         (100_000, 16_777_216, 16_777_216)
     );
-    let checked = eq_over_node(vector_lock(), defaults).expect("eq over Node checks");
+    let checked = eq_over_node(defaults).expect("eq over Node checks");
     assert_eq!(checked.effective_limits(), defaults);
 
     let raised = CheckingLimits::new(u64::MAX)
@@ -733,7 +471,7 @@ fn a_checked_result_records_its_effective_limits() {
         .with_work_budget(5_000)
         .with_input_bytes(4_096);
     for limits in [raised, lowered] {
-        let checked = eq_over_node(vector_lock(), limits).expect("eq over Node checks");
+        let checked = eq_over_node(limits).expect("eq over Node checks");
         assert_eq!(checked.effective_limits(), limits);
         let expression = checked
             .check_expression(
@@ -803,13 +541,8 @@ fn deep_wide(chain: usize, levels: usize, name: &str) -> Vec<CompositeDeclaratio
 #[test]
 fn long_leaf_paths_refuse_on_the_default_work_budget() {
     let name = format!("n{}", "x".repeat(255));
-    let refusals = eq_over(
-        deep_wide(1, 17, &name),
-        "C0",
-        vector_lock(),
-        CheckingLimits::default(),
-    )
-    .expect_err("the leaves' key bytes pass the default work budget");
+    let refusals = eq_over(deep_wide(1, 17, &name), "C0", CheckingLimits::default())
+        .expect_err("the leaves' key bytes pass the default work budget");
     assert!(
         matches!(
             refusals[0].cause,
@@ -824,11 +557,76 @@ fn long_leaf_paths_refuse_on_the_default_work_budget() {
     assert_eq!(refusals[0].cause.code().as_str(), "stage_limit_exceeded");
     assert_eq!(refusals[0].cause.cause(), Some("work-budget-exceeded"));
     // The same shape with one-letter names and a shorter tree fits.
-    eq_over(
-        deep_wide(4, 5, "n"),
-        "C0",
-        vector_lock(),
-        CheckingLimits::default(),
-    )
-    .expect("sixteen short leaves check");
+    eq_over(deep_wide(4, 5, "n"), "C0", CheckingLimits::default())
+        .expect("sixteen short leaves check");
+}
+
+/// TC-415 step 8 (FR-093-AC-11): `eq`, `has`, `eqa` and `eqo` check over
+/// recursive text-leaf records, and their nodes key the same with `A`
+/// declared before `B` and after it.
+#[trace("FR-093-AC-11", "TC-415")]
+#[test]
+fn recursive_text_leaf_functions_check_and_key_in_either_order() {
+    let mut keys = Vec::new();
+    for records in [
+        vec![node_record(), record_a(), record_b()],
+        vec![node_record(), record_b(), record_a()],
+    ] {
+        let checked = package(records, recursive_functions())
+            .check(CheckingLimits::default())
+            .unwrap_or_else(|refusals| panic!("the recursive functions check: {refusals:?}"));
+        keys.push(
+            checked
+                .semantic_graph()
+                .nodes()
+                .map(SemanticNode::key)
+                .collect::<Vec<_>>(),
+        );
+    }
+    assert_eq!(keys[0], keys[1], "declaring B before A gives the same keys");
+}
+
+/// FR-092 "Recursion groups" (FR-092-AC-11): `Option<Node>` is one node
+/// wherever it is named, whichever function names it first, and the nodes key
+/// the same under every order of the functions.
+#[trace("FR-092-AC-11", "TC-413")]
+#[test]
+fn an_in_group_type_is_its_member_in_every_declaration_order() {
+    let keys_of = |functions: Vec<FunctionDeclaration>| {
+        let checked = package(vec![node_record(), record_a(), record_b()], functions)
+            .check(CheckingLimits::default())
+            .unwrap_or_else(|refusals| panic!("the functions check: {refusals:?}"));
+        let graph = checked.semantic_graph();
+        let node_record = graph
+            .nodes()
+            .find(|node| {
+                node.semantic_form() == "record"
+                    && node.recursion().is_some()
+                    && preimage(node)["declaration"]["qualified_name"] == json!(["Node"])
+            })
+            .expect("the graph holds record Node");
+        let member = preimage(node_record);
+        let options = graph
+            .nodes()
+            .filter(|node| {
+                let held = preimage(node);
+                node.semantic_form() == "option"
+                    && held["recursion"]["group"] == member["recursion"]["group"]
+                    && held["body"]["members"][0]
+                        == json!({"ordinal": member["recursion"]["ordinal"], "term": "group_reference"})
+            })
+            .count();
+        assert_eq!(options, 1, "exactly one Option<Node> option node");
+        graph.nodes().map(SemanticNode::key).collect::<Vec<_>>()
+    };
+    let eqo = || recursive_functions().remove(3);
+    keys_of(vec![eqo()]);
+    keys_of(vec![eqo(), recursive_functions().remove(0)]);
+    let forward = keys_of(recursive_functions());
+    let mut reversed = recursive_functions();
+    reversed.reverse();
+    assert_eq!(keys_of(reversed), forward);
+    let mut rotated = recursive_functions();
+    rotated.rotate_left(2);
+    assert_eq!(keys_of(rotated), forward);
 }

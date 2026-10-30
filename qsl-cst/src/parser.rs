@@ -14,8 +14,7 @@ use super::{CompleteCode, CompleteDiagnostic, ParsedSource};
 use crate::lexer::Limits;
 use crate::token::{Kind, LexError};
 use qsl_foundation::selection::{
-    valid_selection_identity, ImportSelection, InvalidModelComponent, ModelDigest, ModelRef,
-    ModelSelection, ProfileSelection, SourceSelections,
+    valid_selection_identity, ImportSelection, ModelSelection, ProfileSelection, SourceSelections,
 };
 use qsl_foundation::{Phase, Source, Span, SyntaxLimit};
 use quire_exact::Cancel;
@@ -243,8 +242,6 @@ fn extract_selections(
     struct SelectionCapture<'a> {
         alias: Option<&'a Significant>,
         identity: &'a Significant,
-        version: Option<&'a Significant>,
-        digest: Option<&'a Significant>,
     }
 
     #[ix_trace_rs::string_edge]
@@ -256,8 +253,6 @@ fn extract_selections(
         let mut cursor = 0_usize;
         let mut alias = None;
         let mut identity = None;
-        let mut version = None;
-        let mut digest = None;
         for part in schema {
             use grammar::SelectionPart;
             match part {
@@ -276,14 +271,6 @@ fn extract_selections(
                     identity = Some(selected.get(cursor)?);
                     cursor += 1;
                 }
-                SelectionPart::Version => {
-                    version = Some(selected.get(cursor)?);
-                    cursor += 1;
-                }
-                SelectionPart::Digest => {
-                    digest = Some(selected.get(cursor)?);
-                    cursor += 1;
-                }
                 SelectionPart::OptionalAlias => {
                     if selected
                         .get(cursor)
@@ -298,8 +285,6 @@ fn extract_selections(
         (cursor == selected.len()).then_some(SelectionCapture {
             alias,
             identity: identity?,
-            version,
-            digest,
         })
     }
 
@@ -342,38 +327,17 @@ fn extract_selections(
             })
     }
 
-    fn model<'a>(
-        identity: &'a Significant,
-        version: &'a Significant,
-        digest: &'a Significant,
-    ) -> Result<ModelRef, InvalidDefinition<'a>> {
-        let invalid_identity = || InvalidDefinition {
-            token: identity,
-            cause: HostCause::SelectionIdentity,
-            message: "compiled-model identity must be non-empty and at most 512 bytes",
-        };
-        let invalid_version = || InvalidDefinition {
-            token: version,
-            cause: HostCause::SelectionVersion,
-            message: "compiled-model version must be non-empty and at most 256 bytes",
-        };
-        let invalid_digest = || InvalidDefinition {
-            token: digest,
-            cause: HostCause::SelectionDigest,
-            message: "model digest must be canonical `sha256:` or `sha256-jcs:` SHA-256",
-        };
-        let identity_value = text(identity).ok_or_else(invalid_identity)?;
-        let version_value = text(version).ok_or_else(invalid_version)?;
-        let invalid_component = |component| match component {
-            InvalidModelComponent::Identity => invalid_identity(),
-            InvalidModelComponent::Version => invalid_version(),
-        };
-        // Components first, so an invalid identity or version is located
-        // before the digest is read.
-        ModelRef::validate_components(identity_value, version_value).map_err(invalid_component)?;
-        let digest_value = ModelDigest::parse(text(digest).ok_or_else(invalid_digest)?)
-            .map_err(|_| invalid_digest())?;
-        ModelRef::new(identity_value, version_value, digest_value).map_err(invalid_component)
+    /// A `model` selection: the domain package identity alone (QSpec
+    /// FR-154). It carries no version and no digest.
+    fn model_identity(identity: &Significant) -> Result<String, InvalidDefinition<'_>> {
+        text(identity)
+            .filter(|value| valid_selection_identity(value))
+            .map(str::to_owned)
+            .ok_or(InvalidDefinition {
+                token: identity,
+                cause: HostCause::SelectionIdentity,
+                message: "model identity must be a non-empty string of at most 512 bytes",
+            })
     }
 
     fn record_invalid(
@@ -398,6 +362,22 @@ fn extract_selections(
         let end = tokens.partition_point(|token| token.span.start < node.span.end);
         let selected = &tokens[start..end];
         let Some(captured) = capture(node.production, selected) else {
+            // A selection node whose tokens do not fit its schema is never
+            // dropped silently: it is located at the declaration.
+            if matches!(
+                node.production,
+                Production::Profile | Production::ImportDeclaration | Production::Model
+            ) {
+                diagnostics.push(*super::diagnostic::error(
+                    source,
+                    HostCause::SelectionIdentity.code(),
+                    CompleteCause::Host(HostCause::SelectionIdentity),
+                    Phase::Profile,
+                    node.span.start,
+                    node.span.end,
+                    "selection declaration does not carry its identity string",
+                ));
+            }
             continue;
         };
         match node.production {
@@ -428,14 +408,12 @@ fn extract_selections(
                 let Some(alias) = captured.alias else {
                     continue;
                 };
-                let (Some(version), Some(digest)) = (captured.version, captured.digest) else {
-                    continue;
-                };
-                match model(captured.identity, version, digest) {
-                    Ok(model) => selections.models.push(ModelSelection {
+                match model_identity(captured.identity) {
+                    Ok(identity) => selections.models.push(ModelSelection {
                         alias: alias.spelling.to_string(),
-                        model,
+                        identity,
                         span: node.span,
+                        identity_span: captured.identity.span,
                     }),
                     Err(invalid) => record_invalid(source, invalid, diagnostics),
                 }

@@ -36,11 +36,10 @@
 //! mode is admitted under the same exact-label rules as a requested pair,
 //! and an absent or unknown kind or an unknown mode refuses the whole
 //! registration, keyed by backend identity. A candidate is the ADR-013
-//! O-19 `backend` value: the backend identity alone ([`Candidate`]). The
-//! digest of a backend's FR-331 provider manifest ([`ManifestDigest`],
-//! domain `quire.tool-manifest.jcs/v1`) stays here, on the descriptor and
-//! on the `duplicate-backend` refusal, as the key for one refusal per
-//! distinct manifest (FR-290); it is no part of the `backend` wire member.
+//! O-19 `backend` value: the backend identity alone ([`Candidate`]). Two
+//! registrations of one identity are told apart by identity alone: a
+//! differing second registration conflicts and the identity is refused
+//! once (`duplicate-backend`, FR-290).
 //!
 //! The registry is an ordinary value (FR-075 "The registry is an ordinary
 //! value, not ambient state"; FR-075-CON-1): it is built by the
@@ -57,7 +56,6 @@ pub mod request;
 pub mod routing;
 
 use qsl_foundation::bound::DomainKind;
-pub use qsl_foundation::digest::ManifestDigest;
 use qsl_foundation::{BackendId, MemoryModelName, ReductionKind};
 #[cfg(test)]
 use qsl_foundation::{Code, EmptyBackendIdentity};
@@ -222,13 +220,6 @@ impl ItemEvidence {
     }
 }
 
-// `ManifestDigest` (ADR-013 O-19's `quire.tool-manifest.jcs/v1`-typed
-// backend digest) and its refusal live in `qsl_foundation::digest`:
-// `route` (layer R) and `replay` (layer 6) cannot depend on each other
-// (ADR-011 §6.1), but both depend on `qsl_foundation` (layer F), so the one
-// domain-first-checked type lives there and both readers share it instead of
-// each carrying its own copy of the same "not just any FR-201 domain" check.
-
 /// A candidate: the backend identity of a registered backend (FR-290
 /// "Candidate set and negotiation": "A candidate is the backend identity of
 /// a registered backend"), which is also the ADR-013 O-19 `backend` value.
@@ -263,13 +254,11 @@ pub enum ProviderOrigin {
 }
 
 /// One backend's registration (FR-075 Inputs): its identity, its
-/// [`ProviderOrigin`], the digest of its own FR-331 provider manifest, and
-/// the `(capability kind, mode)` pairs it advertises, and the boundable
-/// domain kinds its manifest accepts a finite bound for (`domains`). Two descriptors of one
-/// identity that differ in origin differ in a member, so they conflict like
-/// any other differing pair (FR-288-AC-6). The manifest digest only tells
-/// two registrations of one identity apart, so a conflict is refused once
-/// per distinct manifest (FR-290); it is never part of the candidate.
+/// [`ProviderOrigin`], the `(capability kind, mode)` pairs it advertises,
+/// and the boundable domain kinds its manifest accepts a finite bound for
+/// (`domains`). Two descriptors of one identity that differ in origin
+/// differ in a member, so they conflict like any other differing pair
+/// (FR-288-AC-6).
 ///
 /// `BackendDescriptor`, the candidate set and `Capability` cross repository
 /// boundaries as QSpec data, never through a shared Rust crate
@@ -278,7 +267,6 @@ pub enum ProviderOrigin {
 pub struct BackendDescriptor {
     backend: Candidate,
     origin: ProviderOrigin,
-    manifest_digest: ManifestDigest,
     advertises: HashSet<(Capability, Mode)>,
     domains: Option<BTreeSet<DomainKind>>,
     fairness_kinds: BTreeSet<FairnessKind>,
@@ -351,7 +339,6 @@ pub struct ManifestMembers<'a> {
 pub fn descriptor_from_manifest<'a>(
     backend: Candidate,
     origin: ProviderOrigin,
-    manifest_digest: ManifestDigest,
     advertised: impl IntoIterator<Item = (Option<&'a str>, Option<&'a str>)>,
     members: ManifestMembers<'_>,
 ) -> Result<BackendDescriptor, RegistrationRefusal> {
@@ -364,7 +351,6 @@ pub fn descriptor_from_manifest<'a>(
     } = members;
     let refuse = |cause| RegistrationRefusal {
         backend: backend.clone(),
-        manifest_digest,
         cause,
     };
     let mut advertises = HashSet::new();
@@ -406,7 +392,6 @@ pub fn descriptor_from_manifest<'a>(
     Ok(BackendDescriptor {
         backend,
         origin,
-        manifest_digest,
         advertises,
         domains,
         fairness_kinds,
@@ -488,13 +473,11 @@ pub enum DynamicsMember<'a> {
 pub fn descriptor_from_manifest_with_max_cases<'a>(
     backend: Candidate,
     origin: ProviderOrigin,
-    manifest_digest: ManifestDigest,
     advertised: impl IntoIterator<Item = (Option<&'a str>, Option<&'a str>)>,
     members: ManifestMembers<'_>,
     max_cases: MaxCasesMember,
 ) -> Result<BackendDescriptor, RegistrationRefusal> {
-    let descriptor =
-        descriptor_from_manifest(backend, origin, manifest_digest, advertised, members)?;
+    let descriptor = descriptor_from_manifest(backend, origin, advertised, members)?;
     if !(descriptor.advertises_kind(Capability::ValueValidity)
         || descriptor.advertises_kind(Capability::OperationContract))
     {
@@ -510,7 +493,6 @@ pub fn descriptor_from_manifest_with_max_cases<'a>(
     };
     Err(RegistrationRefusal {
         backend: descriptor.backend.clone(),
-        manifest_digest,
         cause: RegistrationCause::InvalidMaxCases(defect),
     })
 }
@@ -521,14 +503,12 @@ pub fn descriptor_from_manifest_with_max_cases<'a>(
 pub fn descriptor_from_manifest_with_dynamics<'a>(
     backend: Candidate,
     origin: ProviderOrigin,
-    manifest_digest: ManifestDigest,
     advertised: impl IntoIterator<Item = (Option<&'a str>, Option<&'a str>)>,
     members: ManifestMembers<'_>,
     dynamics: Option<DynamicsMember<'_>>,
     bounds: Option<SolverBounds>,
 ) -> Result<BackendDescriptor, RegistrationRefusal> {
-    let descriptor =
-        descriptor_from_manifest(backend, origin, manifest_digest, advertised, members)?;
+    let descriptor = descriptor_from_manifest(backend, origin, advertised, members)?;
     if !descriptor.advertises_kind(Capability::TemporalSatisfaction) {
         return Ok(descriptor);
     }
@@ -627,16 +607,13 @@ fn admit_fairness_kinds(
 
 impl BackendDescriptor {
     /// Build a descriptor from already-typed FR-331 provider-manifest
-    /// fields. A backend supplies one descriptor per registration, so its
-    /// identity carries exactly one manifest digest at a time (FR-075
-    /// Inputs). `domains` is the manifest's `domains`, `None` when it has
-    /// none.
+    /// fields (FR-075 Inputs). `domains` is the manifest's `domains`,
+    /// `None` when it has none.
     ///
     /// The same `domains` rules as [`descriptor_from_manifest`] apply: an
     /// absent set while a `bounded` pair is advertised, an empty set, or a
     /// kind that is not boundable refuses `invalid_capability`/
-    /// `invalid-domains`, keyed by `backend` and `manifest_digest`. (A set
-    /// holds no repeat.)
+    /// `invalid-domains`, keyed by `backend`. (A set holds no repeat.)
     ///
     /// `evidence_kinds` is required and nonempty exactly when a
     /// `probabilistic-satisfaction` pair is advertised, else
@@ -645,7 +622,6 @@ impl BackendDescriptor {
     pub fn new(
         backend: Candidate,
         origin: ProviderOrigin,
-        manifest_digest: ManifestDigest,
         advertises: impl IntoIterator<Item = (Capability, Mode)>,
         domains: Option<BTreeSet<DomainKind>>,
         evidence_kinds: Option<BTreeSet<EvidenceKind>>,
@@ -657,7 +633,6 @@ impl BackendDescriptor {
         check_domains(domains.as_ref(), advertises_bounded).map_err(|defect| {
             RegistrationRefusal {
                 backend: backend.clone(),
-                manifest_digest,
                 cause: RegistrationCause::InvalidDomains(defect),
             }
         })?;
@@ -665,7 +640,6 @@ impl BackendDescriptor {
             check_evidence_kinds(evidence_kinds.as_ref()).map_err(|defect| {
                 RegistrationRefusal {
                     backend: backend.clone(),
-                    manifest_digest,
                     cause: RegistrationCause::UnknownEvidenceKind(defect),
                 }
             })?;
@@ -676,7 +650,6 @@ impl BackendDescriptor {
         Ok(Self {
             backend,
             origin,
-            manifest_digest,
             advertises,
             domains,
             fairness_kinds: BTreeSet::new(),
@@ -770,7 +743,6 @@ impl BackendDescriptor {
     fn dynamics_refusal(&self, defect: DynamicsDefect) -> RegistrationRefusal {
         RegistrationRefusal {
             backend: self.backend.clone(),
-            manifest_digest: self.manifest_digest,
             cause: RegistrationCause::InvalidDynamics(defect),
         }
     }
@@ -895,11 +867,6 @@ impl BackendDescriptor {
     /// process (ADR-029 PV-1, PV-4).
     pub fn origin(&self) -> ProviderOrigin {
         self.origin
-    }
-
-    /// The digest of this backend's own FR-331 provider manifest.
-    pub fn manifest_digest(&self) -> ManifestDigest {
-        self.manifest_digest
     }
 
     /// Every advertised `(kind, mode)` pair, in no particular order: the
@@ -1209,15 +1176,12 @@ impl RegistrationCause {
 /// a caller cannot mistake a registration refusal for an empty candidate
 /// set or an unknown-backend marker by pattern-matching alone.
 ///
-/// Carries the refused registration's manifest digest beside its
-/// [`Candidate`], so refusals order as FR-290 reports them: bytewise by
-/// backend identity, then by manifest digest (`Ord` is derived over
-/// `(backend, manifest_digest, cause)` in that field order).
+/// Refusals order as FR-290 reports them: bytewise by backend identity
+/// (`Ord` is derived over `(backend, cause)` in that field order).
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, thiserror::Error)]
 #[error("invalid_capability/{}: registration of {} refused", cause.as_str(), backend.id)]
 pub struct RegistrationRefusal {
     backend: Candidate,
-    manifest_digest: ManifestDigest,
     cause: RegistrationCause,
 }
 
@@ -1230,11 +1194,6 @@ impl RegistrationRefusal {
     /// The refused registration's candidate.
     pub fn backend(&self) -> &Candidate {
         &self.backend
-    }
-
-    /// The digest of the refused registration's manifest.
-    pub fn manifest_digest(&self) -> ManifestDigest {
-        self.manifest_digest
     }
 
     /// Why it was refused.
@@ -1367,12 +1326,11 @@ pub enum CandidateOutcome {
 /// conflicting registration of one identity (FR-075-AC-2, FR-290-AC-9/AC-10).
 /// This holds because `held` is a `BTreeMap` keyed by `BackendId` (whose
 /// iteration and equality are already order-independent), `conflicts` is a
-/// `BTreeMap` of `BTreeSet`s (a union, so also order-independent), and each
-/// descriptor's `advertises` set is a `HashSet` (also order-independent);
-/// candidate output is explicitly sorted (see [`Registry::candidates`]).
+/// `BTreeSet` (also order-independent), and each descriptor's `advertises`
+/// set is a `HashSet` (also order-independent); candidate output is
+/// explicitly sorted (see [`Registry::candidates`]).
 ///
-/// `conflicts` records, per conflicted `BackendId`, every distinct manifest
-/// digest an admitted registration of it has carried (FR-290 "Candidate set
+/// `conflicts` records every conflicted `BackendId` (FR-290 "Candidate set
 /// and negotiation"). Once an identity appears here it is permanently
 /// unregistered: `held` never holds that identity again, so `candidates`
 /// reports it as [`CandidateOutcome::UnknownBackend`] for the rest of the
@@ -1382,7 +1340,7 @@ pub enum CandidateOutcome {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Registry {
     held: BTreeMap<BackendId, BackendDescriptor>,
-    conflicts: BTreeMap<BackendId, BTreeSet<ManifestDigest>>,
+    conflicts: BTreeSet<BackendId>,
 }
 
 impl Registry {
@@ -1390,96 +1348,67 @@ impl Registry {
     pub fn new() -> Self {
         Self {
             held: BTreeMap::new(),
-            conflicts: BTreeMap::new(),
+            conflicts: BTreeSet::new(),
         }
     }
 
-    /// Register one backend (FR-290 "Candidate set and negotiation").
+    /// Register one backend (FR-290 "Candidate set and negotiation"),
+    /// telling registrations apart by backend identity.
     ///
     /// - When `descriptor`'s identity is already conflicted, this
-    ///   registration is refused on arrival: its manifest digest is added to
-    ///   the identity's recorded conflict digests, and `held` is left
-    ///   untouched (it already holds nothing for this identity).
+    ///   registration is refused on arrival, and `held` is left untouched
+    ///   (it already holds nothing for this identity).
     /// - When the identity is held with an equal descriptor (same identity,
-    ///   manifest digest, origin, advertised pairs, `domains`, fairness kinds,
-    ///   memory models and evidence kinds), the repeat is one registration and
-    ///   is not refused (FR-290-AC-9).
+    ///   origin, advertised pairs, `domains`, fairness kinds, memory models
+    ///   and evidence kinds), the repeat is one registration and is not
+    ///   refused (FR-290-AC-9).
     /// - When the identity is held with a descriptor that differs in any
-    ///   member, the two conflict: the held registration is withdrawn, both
-    ///   registrations' manifest digests are recorded, and every refusal
-    ///   this call produces is returned (FR-290-AC-10) -- one per distinct
-    ///   digest, since a same-digest conflict (differing only in some other
-    ///   member) has one refusal to report, not two.
+    ///   member, the two conflict: the held registration is withdrawn, the
+    ///   identity is recorded as conflicted and refused (FR-290-AC-10).
     /// - Otherwise the descriptor is newly held.
-    ///
-    /// The `Err` vector, when returned, is never empty: it holds at least
-    /// the refusal for `descriptor`'s own arrival. Its entries can repeat a
-    /// key (`identity`, digest) [`Registry::refusals`] already reports from
-    /// an earlier call -- one call's refusals are what that call caused or
-    /// observed, not a diff against the registry's prior state.
     ///
     /// A capability kind outside the FR-290 vocabulary, or a mode other than
     /// `bounded`/`unbounded`, cannot reach this function at all: a
     /// [`BackendDescriptor`] holds only typed [`Capability`] and [`Mode`]
     /// values, and [`descriptor_from_manifest`] refuses such labels before a
     /// descriptor exists.
-    pub fn register(
-        &mut self,
-        descriptor: BackendDescriptor,
-    ) -> Result<(), Vec<RegistrationRefusal>> {
+    ///
+    /// # Errors
+    ///
+    /// The identity's `duplicate-backend` refusal when the registration
+    /// conflicts or arrives for a conflicted identity.
+    pub fn register(&mut self, descriptor: BackendDescriptor) -> Result<(), RegistrationRefusal> {
         let id = descriptor.id().clone();
-
-        if let Some(digests) = self.conflicts.get_mut(&id) {
-            let digest = descriptor.manifest_digest();
-            digests.insert(digest);
-            return Err(vec![RegistrationRefusal {
-                backend: Candidate::new(id),
-                manifest_digest: digest,
-                cause: RegistrationCause::DuplicateBackend,
-            }]);
+        let refusal = |id: BackendId| RegistrationRefusal {
+            backend: Candidate::new(id),
+            cause: RegistrationCause::DuplicateBackend,
+        };
+        if self.conflicts.contains(&id) {
+            return Err(refusal(id));
         }
-
         match self.held.get(&id) {
             None => {
                 self.held.insert(id, descriptor);
                 Ok(())
             }
             Some(existing) if *existing == descriptor => Ok(()),
-            Some(existing) => {
-                let mut digests = BTreeSet::new();
-                digests.insert(existing.manifest_digest());
-                digests.insert(descriptor.manifest_digest());
-                // Ascending because `digests` is a `BTreeSet`, so this is
-                // already in `Registry::refusals`' (identity, digest) order
-                // -- no separate sort needed.
-                let refusals: Vec<RegistrationRefusal> = digests
-                    .iter()
-                    .map(|&digest| RegistrationRefusal {
-                        backend: Candidate::new(id.clone()),
-                        manifest_digest: digest,
-                        cause: RegistrationCause::DuplicateBackend,
-                    })
-                    .collect();
+            Some(_) => {
                 self.held.remove(&id);
-                self.conflicts.insert(id, digests);
-                Err(refusals)
+                self.conflicts.insert(id.clone());
+                Err(refusal(id))
             }
         }
     }
 
     /// Every `duplicate-backend` refusal the registry currently holds, one
-    /// per distinct manifest digest recorded against a conflicted identity,
-    /// ordered bytewise by `(identity, manifest digest)` (FR-290 "Candidate
-    /// set and negotiation", FR-290-AC-10). Stable for as long as the
-    /// conflict stands, independent of registration order or of how many
-    /// further registrations of the identity have since arrived.
+    /// per conflicted identity, ordered bytewise by identity (FR-290
+    /// "Candidate set and negotiation", FR-290-AC-10). Stable for as long as
+    /// the conflict stands, independent of registration order or of how
+    /// many further registrations of the identity have since arrived.
     pub fn refusals(&self) -> impl Iterator<Item = RegistrationRefusal> + '_ {
-        self.conflicts.iter().flat_map(|(id, digests)| {
-            digests.iter().map(move |&digest| RegistrationRefusal {
-                backend: Candidate::new(id.clone()),
-                manifest_digest: digest,
-                cause: RegistrationCause::DuplicateBackend,
-            })
+        self.conflicts.iter().map(|id| RegistrationRefusal {
+            backend: Candidate::new(id.clone()),
+            cause: RegistrationCause::DuplicateBackend,
         })
     }
 
@@ -1761,13 +1690,11 @@ mod tests {
 
     fn descriptor(
         id: &str,
-        digest_byte: u8,
         advertises: impl IntoIterator<Item = (Capability, Mode)>,
     ) -> BackendDescriptor {
         BackendDescriptor::new(
             candidate(id),
             ProviderOrigin::Linked,
-            ManifestDigest::from_digest([digest_byte; 32]),
             advertises,
             Some(BTreeSet::from([DomainKind::Collection])),
             None,
@@ -1782,20 +1709,20 @@ mod tests {
     #[test]
     #[trace("TC-193", "FR-075-AC-5")]
     fn advertises_kind_matches_only_the_exact_capability() {
-        let backend = descriptor("A", 1, [(Capability::ValueValidity, Mode::Bounded)]);
+        let backend = descriptor("A", [(Capability::ValueValidity, Mode::Bounded)]);
         assert!(backend.advertises_kind(Capability::ValueValidity));
         assert!(!backend.advertises_kind(Capability::OperationContract));
     }
 
     /// FR-075-AC-7 (quire-specification TC-282 DB-01, FR-290-AC-9):
-    /// repeating an identical registration -- same id, manifest digest and
-    /// advertised pairs -- is one registration and is never refused.
+    /// repeating an identical registration -- same id and advertised pairs
+    /// -- is one registration and is never refused.
     #[test]
     #[trace("TC-448", "FR-075-AC-7")]
     fn identical_repeat_registration_is_idempotent_and_not_refused() {
-        let a1 = descriptor("A", 1, [(Capability::ValueValidity, Mode::Bounded)]);
-        let a2 = descriptor("A", 1, [(Capability::ValueValidity, Mode::Bounded)]);
-        let b = descriptor("B", 2, [(Capability::OperationContract, Mode::Bounded)]);
+        let a1 = descriptor("A", [(Capability::ValueValidity, Mode::Bounded)]);
+        let a2 = descriptor("A", [(Capability::ValueValidity, Mode::Bounded)]);
+        let b = descriptor("B", [(Capability::OperationContract, Mode::Bounded)]);
 
         // B, the unrelated identity, arrives before both A repeats, between
         // them, and after both -- the result must not depend on where.
@@ -1838,26 +1765,23 @@ mod tests {
     fn conflicting_descriptors_refuse_both_and_withdraw_the_held_registration() {
         for reversed in [false, true] {
             let mut registry = Registry::new();
-            let a1 = descriptor("A", 1, [(Capability::ValueValidity, Mode::Bounded)]);
-            let a2 = descriptor("A", 2, [(Capability::OperationContract, Mode::Bounded)]);
+            let a1 = descriptor("A", [(Capability::ValueValidity, Mode::Bounded)]);
+            let a2 = descriptor("A", [(Capability::OperationContract, Mode::Bounded)]);
             let (first, second) = if reversed { (a2, a1) } else { (a1, a2) };
 
             registry
                 .register(first)
                 .expect("the first registration of a fresh identity succeeds");
-            let refusals = registry
+            let refusal = registry
                 .register(second)
-                .expect_err("a conflicting descriptor under one identity refuses both");
+                .expect_err("a conflicting descriptor under one identity is refused");
 
-            assert_eq!(refusals.len(), 2, "reversed={reversed}");
-            for refusal in &refusals {
-                assert_eq!(refusal.identity().as_str(), "A", "reversed={reversed}");
-                assert_eq!(
-                    refusal.catalog_code().to_string(),
-                    "invalid_capability/duplicate-backend",
-                    "reversed={reversed}"
-                );
-            }
+            assert_eq!(refusal.identity().as_str(), "A", "reversed={reversed}");
+            assert_eq!(
+                refusal.catalog_code().to_string(),
+                "invalid_capability/duplicate-backend",
+                "reversed={reversed}"
+            );
 
             assert!(
                 registry.descriptors().next().is_none(),
@@ -1868,7 +1792,7 @@ mod tests {
                 CandidateOutcome::UnknownBackend(BackendId::new("A")),
                 "reversed={reversed}"
             );
-            assert_eq!(registry.refusals().count(), 2, "reversed={reversed}");
+            assert_eq!(registry.refusals().count(), 1, "reversed={reversed}");
         }
     }
 
@@ -1891,7 +1815,6 @@ mod tests {
         registry
             .register(descriptor(
                 "A",
-                1,
                 [(Capability::ValueValidity, Mode::Bounded)],
             ))
             .unwrap();
@@ -1913,14 +1836,12 @@ mod tests {
         registry
             .register(descriptor(
                 "B",
-                2,
                 [(Capability::ValueValidity, Mode::Bounded)],
             ))
             .unwrap();
         registry
             .register(descriptor(
                 "A",
-                1,
                 [(Capability::ValueValidity, Mode::Bounded)],
             ))
             .unwrap();

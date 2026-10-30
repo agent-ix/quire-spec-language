@@ -25,9 +25,8 @@
 //! - `profile_selections` holds one row per clause-profile law a node body
 //!   names (`protocol_profile`, FR-092); it is empty for a package of
 //!   `Value`-family nodes only.
-//! - `model_selections` is `CheckedGraph::model_selections`: each domain
-//!   package the package was checked against, by identity and
-//!   `sha256-jcs` digest (ADR-011 §2.4).
+//! - Each domain package the package was checked against appears as a
+//!   `model_root` node named by its identity (ADR-011 §2.4).
 //! - `dependency_selections` is [`CheckedPackage::dependency_selections`]:
 //!   the resolved library closure, one `{identity, package_id}`
 //!   entry per library identity in ascending UTF-8 byte order of `identity`
@@ -88,14 +87,14 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use quire_contract_model::{
     derive_structural_candidates, encode_checked_package_v2, CheckedArtifactRef, CheckedCapability,
     CheckedCapabilityDisposition, CheckedDeclaration, CheckedDependencySelection,
-    CheckedDiagnosticsV2, CheckedDomainPackageRef, CheckedNodeId, CheckedNodeKind,
-    CheckedNodeOwner, CheckedNodeTag, CheckedOccurrence, CheckedOccurrenceRole,
-    CheckedOperationAnchorBody, CheckedPackageEvidence, CheckedPackageIdentityPreimageRefV2,
-    CheckedPackageLockV2, CheckedPackageSourceCorrespondenceRef, CheckedPackageV2, CheckedRational,
+    CheckedDiagnosticsV2, CheckedNodeId, CheckedNodeKind, CheckedNodeOwner, CheckedNodeTag,
+    CheckedOccurrence, CheckedOccurrenceRole, CheckedOperationAnchorBody, CheckedPackageEvidence,
+    CheckedPackageIdentityPreimageRefV2, CheckedPackageLockV2,
+    CheckedPackageSourceCorrespondenceRef, CheckedPackageV2, CheckedRational,
     CheckedRefinementStepRowRegion, CheckedSelection, CheckedSelectionRole, CheckedSemanticGraphV2,
     CheckedSemanticId, CheckedSemanticNodeV2, CheckedSourceMapEntry, CheckedSourceRef,
     CheckedSourceRegion, CheckedTerm, ExecutionPoint, NominalIdentityPreimage, NominalOwner,
-    ProtocolForm, StateForm, ValueForm, DOMAIN_PACKAGE_DIGEST, PACKAGE_DOMAIN_V2,
+    ProtocolForm, StateForm, ValueForm, PACKAGE_DOMAIN_V2,
 };
 use serde::Deserialize;
 
@@ -110,7 +109,6 @@ use qsl_semantics::check::{
     LeafTerm, NodeTag, NominalNode, OperationLaw, Owner, SemanticNode, TemporalProfile,
 };
 use qsl_semantics::library::PackageId;
-use qsl_semantics::model::key::hex;
 use qsl_semantics::value::{
     native_diagnostics_catalog, DefinitionReference, DefinitionRole, HeaderLayer, Member,
     ModelRole, NodeOwner, TemporalRole,
@@ -751,7 +749,6 @@ fn wire_owner(owner: &Owner) -> CheckedNodeOwner {
         },
         Owner::ModelRoot(subject) => CheckedNodeOwner::ModelRoot {
             identity: subject.identity().into(),
-            digest: subject.digest().into(),
         },
     }
 }
@@ -1034,15 +1031,11 @@ fn artifact(reference: &DefinitionReference) -> CheckedArtifactRef {
     }
 }
 
-/// `source` as the wire's `RawSourceRef`: authority, identity and the
-/// digest of its bytes.
+/// `source` as the wire's `RawSourceRef`: authority and identity.
 fn source_artifact(source: &RawSourceRef) -> CheckedSourceRef {
-    let digest = source.digest();
     CheckedSourceRef {
         authority: source.authority().into(),
         identity: source.identity().into(),
-        digest_domain: digest.domain().to_string().into(),
-        digest: digest.hex().into(),
     }
 }
 
@@ -1693,8 +1686,8 @@ fn timed_model_node_id(node: &CheckedSemanticNodeV2) -> Result<CheckedNodeId, Em
 }
 
 /// QSpec FR-322 `model_root`, FR-322-AC-132 and AC-134: for each selected
-/// domain package, in `model_selections` order, one self-typed `model` node
-/// keyed by the selection's identity and digest alone, appended after every
+/// domain package, in `CheckedGraph::model_selections` order, one self-typed `model` node
+/// keyed by the selection's identity alone, appended after every
 /// other node, with one `generated` source-map entry appended after every
 /// other entry. The selection records no selecting occurrence, so the entry's
 /// region is the first byte of the checked unit (QSpec: the entry is a
@@ -1752,7 +1745,6 @@ fn model_root_node(
         declaration: None,
         owner: Some(CheckedNodeOwner::ModelRoot {
             identity: selection.identity.as_str().into(),
-            digest: hex(&selection.digest).into(),
         }),
         body: CheckedTerm::Aggregate {
             members: Vec::new(),
@@ -1868,7 +1860,6 @@ pub fn emit_timed_models(
         edition: &identity.edition,
         profile_selections: &identity.profile_selections,
         definition_selections: &identity.definition_selections,
-        model_selections: &identity.model_selections,
         required_features: &identity.required_features,
         dependency_selections: &identity.dependency_selections,
         identity_projection: &semantic_graph.nodes,
@@ -2573,22 +2564,12 @@ fn emit_package_inner(
     }
 
     let (edition, definition_selections) = catalog_selections(graph.header_layers(), &laws);
-    let model_selections: Vec<CheckedDomainPackageRef> = graph
-        .model_selections()
-        .iter()
-        .map(|selection| CheckedDomainPackageRef {
-            identity: selection.identity.as_str().into(),
-            digest_domain: DOMAIN_PACKAGE_DIGEST.into(),
-            digest: hex(&selection.digest).into(),
-        })
-        .collect();
     let root = DefinitionRole::Root.identity();
     let lock = CheckedPackageLockV2 {
         sources: sources.into_iter().collect(),
         edition: edition.clone(),
         profile_selections: profile_selections.clone(),
         definition_selections: definition_selections.clone(),
-        model_selections: model_selections.clone(),
         required_features: vec![root.into()],
         dependency_selections: dependency_selections(package),
     };
@@ -2602,7 +2583,6 @@ fn emit_package_inner(
         edition: &edition,
         profile_selections: &profile_selections,
         definition_selections: &definition_selections,
-        model_selections: &model_selections,
         required_features: &lock.required_features,
         dependency_selections: &lock.dependency_selections,
         identity_projection: &semantic_graph.nodes,

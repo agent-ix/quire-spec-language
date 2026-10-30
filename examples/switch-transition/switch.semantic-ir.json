@@ -146,6 +146,53 @@
           ],
           "post": [],
           "pre": []
+        },
+        {
+          "frame": {
+            "creates": [],
+            "deletes": [],
+            "modifies": [
+              "ix://test/orders/Switch/on"
+            ]
+          },
+          "identity": "ix://test/orders/Switch/adjust",
+          "name": "adjust",
+          "origin": {
+            "generated": {
+              "generatorIdentity": "ix://test/orders/Switch/adjust",
+              "generatorVersion": "1.0.0",
+              "inputIdentities": [
+                "ix://test/orders/Switch/adjust"
+              ]
+            }
+          },
+          "params": [
+            {
+              "defaultKind": "none",
+              "identity": "ix://test/orders/Switch/adjust/flag",
+              "multiplicity": {
+                "lower": 1,
+                "ordered": false,
+                "unique": true,
+                "upper": 1
+              },
+              "name": "flag",
+              "nullable": false,
+              "origin": {
+                "generated": {
+                  "generatorIdentity": "ix://test/orders/Switch/adjust/flag",
+                  "generatorVersion": "1.0.0",
+                  "inputIdentities": [
+                    "ix://test/orders/Switch/adjust/flag"
+                  ]
+                }
+              },
+              "presence": "required",
+              "typeRef": "ix://quire/native/Boolean"
+            }
+          ],
+          "post": [],
+          "pre": []
         }
       ],
       "origin": {
