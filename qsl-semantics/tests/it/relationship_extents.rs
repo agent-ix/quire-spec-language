@@ -987,7 +987,7 @@ fn condition_three_checks_the_type_of_an_end_whose_object_is_absent() {
 
 fn bundle_key(label: &str) -> BundleKey {
     BundleKey {
-        source: source("s", 1),
+        source: source("s"),
         clause: NodeKey::from_digest([3; 32]),
         documents: vec![],
         role: ObservationRole::Pre,
@@ -995,7 +995,7 @@ fn bundle_key(label: &str) -> BundleKey {
     }
 }
 
-fn source(identity: &str, _digest: u8) -> RawSourceRef {
+fn source(identity: &str) -> RawSourceRef {
     RawSourceRef::new("authority", identity).expect("a source reference")
 }
 
@@ -1032,9 +1032,9 @@ fn a_part_with_another_key_is_refused_before_it_can_classify_anything() {
         )
     };
 
-    // Another source digest under the same authority and identity.
+    // Another source identity under the same authority.
     let other_source = BundleKey {
-        source: source("s", 2),
+        source: source("t"),
         ..selected.clone()
     };
     let refusal = build(&selected, &selected, &other_source).expect_err("types differ");

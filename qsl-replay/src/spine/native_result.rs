@@ -850,10 +850,6 @@ pub struct SourceRefRead {
     pub authority: String,
     /// Source identity.
     pub identity: String,
-    /// Domain of the source digest.
-    pub digest_domain: String,
-    /// Lowercase source digest.
-    pub digest: String,
 }
 
 #[derive(Deserialize)]

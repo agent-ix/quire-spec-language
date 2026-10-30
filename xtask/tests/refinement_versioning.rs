@@ -346,8 +346,6 @@ fn a_well_formed_pair_reports_one_result_per_case() {
         for side in ["prior", "superseding"] {
             assert_eq!(name[side]["authority"], AUTHORITY);
             assert_eq!(name[side]["identity"], IDENTITY);
-            assert_eq!(name[side]["digest_domain"], "quire.source.bytes/v1");
-            assert_eq!(name[side]["digest"].as_str().unwrap().len(), 64);
         }
         assert_eq!(name["selection"]["clause"]["name"], "ParentOrder");
     }
@@ -572,14 +570,6 @@ fn a_seeded_regression_fails_the_gate_naming_exactly_that_case() {
     assert_eq!(seeded["superseding"]["class"], "refused");
     assert_eq!(seeded["superseding"]["stage"], "evaluate");
     assert_eq!(seeded["superseding"]["codes"], json!([]));
-    // The tightened pair's two sources differ in digest, so its name differs
-    // from the identity pair's, whose two sources are the same bytes.
-    assert_ne!(seeded["name"]["prior"], seeded["name"]["superseding"]);
-    let identity_cases = entries
-        .iter()
-        .filter(|entry| entry["name"]["prior"] == entry["name"]["superseding"])
-        .count();
-    assert_eq!(identity_cases, 2);
     let others: Vec<String> = entries
         .iter()
         .filter(|entry| *entry != seeded)

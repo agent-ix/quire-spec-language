@@ -924,6 +924,7 @@ fn tc_444_stage_limits_bound_the_recompile() {
 fn tc_444_a_blank_label_refuses_at_the_source_stage() {
     let mut blank = small(7);
     blank.sources[0].0 = "   ".to_owned();
+    blank.byte_provision[0].0 = "   ".to_owned();
     let refused = replay(blank, ReplayLimits::default()).unwrap_err();
     let ReplayRefusal::Recompile(refusal) = &refused else {
         panic!("expected a recompile refusal, got {refused:?}");
