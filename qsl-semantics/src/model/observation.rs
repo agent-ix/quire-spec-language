@@ -2530,14 +2530,12 @@ fn admit_invocation_documents(
             }
             let receiver_pre = pre_values.attach_read_context(
                 context_name,
-                ObservationRole::Pre,
                 &documents.pre.identity,
                 selected,
             )?;
             let receiver_post = if post_self {
                 Some(post_values.attach_read_context(
                     context_name,
-                    ObservationRole::Post,
                     &documents.post.identity,
                     selected,
                 )?)
@@ -2905,7 +2903,6 @@ fn admit_pre_call(
         }
         let reference = values.attach_read_context(
             context.context_name,
-            ObservationRole::Current,
             &input.pre.identity,
             &receiver_identity,
         )?;

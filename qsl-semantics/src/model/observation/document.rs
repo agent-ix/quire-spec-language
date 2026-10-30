@@ -2371,7 +2371,6 @@ impl<'t> PopulationValues<'t> {
     pub(super) fn attach_read_context(
         &mut self,
         machine: &str,
-        role: ObservationRole,
         snapshot: &DocumentRef,
         receiver: &DocumentRef,
     ) -> Result<ObjectReference, AdmissionFailure> {
@@ -2398,12 +2397,10 @@ impl<'t> PopulationValues<'t> {
             )
         })?;
         let reference = ObjectReference::new(
-            // BLOCKED-BY QSL-1309 (owner: planner titan:QSL:plan): declared object
-            // universe for observation read contexts. A state-machine context
-            // object has no declared object universe, yet `ObjectReference::new`
-            // takes a `UniverseId` (a root type node); the observation's role
-            // names the universe until that contract exists.
-            UniverseId::new(role_universe_key(role)?),
+            // QSpec FR-208 "Context universe key": the universe of a
+            // state-machine context is the model declaration node of the
+            // most-specific machine; no node is added for it.
+            UniverseId::new(context_universe_key(&context.effective)?),
             context.effective,
             object,
         );
@@ -3647,20 +3644,20 @@ pub(super) fn admit_result(
     }
 }
 
-/// The structural node a read-context object's universe takes for one
-/// observation role.
-fn role_universe_key(role: ObservationRole) -> Result<quire_exact::NodeKey, AdmissionFailure> {
-    let name = match role {
-        ObservationRole::Current => "current",
-        ObservationRole::Pre => "pre",
-        ObservationRole::Post => "post",
-    };
-    crate::check::declared_node_key(
-        "observation".to_owned(),
-        vec!["role".to_owned(), name.to_owned()],
-        0,
+/// The universe of a state-machine context object (FR-208-AC-20): the model
+/// declaration node of the most-specific machine,
+/// `{package, ["model", "state_machine", <machine identity>], 0}`.
+fn context_universe_key(
+    effective: &quire_exact::EffectiveId,
+) -> Result<quire_exact::NodeKey, AdmissionFailure> {
+    let original = effective.original();
+    crate::model::key::model_node_key(
+        original.package(),
+        "model",
+        "state_machine",
+        original.node(),
     )
-    .map_err(|_| fault("observation-role-universe-unkeyed"))
+    .map_err(|_| fault("context-universe-unkeyed"))
 }
 
 #[cfg(test)]

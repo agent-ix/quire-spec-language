@@ -2145,7 +2145,7 @@ pub fn lookup(
     match mode {
         AbsenceMode::Undefined => LookupOutcome::Undefined,
         AbsenceMode::Refused => LookupOutcome::Refused(ModelRefusal::absent_key(
-            format!("{:?}", binding.population_id()),
+            binding.population_id().to_string(),
             r.object.clone(),
         )),
         AbsenceMode::Empty => {
