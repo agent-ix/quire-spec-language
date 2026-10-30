@@ -625,11 +625,12 @@ impl PackageDeclarations {
     #[cfg(any(test, feature = "test-support"))]
     pub fn fixture_with_selected_models(
         source: qsl_foundation::source::provenance::RawSourceRef,
+        package_name: impl Into<String>,
         identity: qsl_foundation::IdentityLimits,
         selected: crate::model::intake::SelectedModels,
     ) -> Self {
         let (entries, meter) = selected.into_parts();
-        let mut declarations = Self::new(source, identity);
+        let mut declarations = Self::new(source, package_name, identity);
         declarations.models = entries
             .iter()
             .map(|entry| super::AdmittedModel::from_view(&entry.view))
@@ -4345,7 +4346,7 @@ mod holds_float_tests {
         assert!(!holds_float(&map(ValueType::Boolean)));
         let bounded = ValueType::BoundedQuantity(std::sync::Arc::new(
             quire_exact::BoundedQuantityType::new(
-                quire_exact::UnitId::compound([5; 32]),
+                quire_exact::UnitId::compound(Vec::new()),
                 None,
                 None,
             )

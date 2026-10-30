@@ -128,6 +128,7 @@ pub mod environment_stage;
 pub(crate) mod layer;
 pub(crate) mod member;
 pub mod model_query;
+pub mod nominal_payload;
 pub(crate) mod semantic_node;
 pub(crate) mod unit;
 

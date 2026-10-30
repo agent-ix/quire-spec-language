@@ -9,8 +9,8 @@ pub(crate) enum Code {
     Io,
     CargoMetadata,
     InvalidMetadata,
-    /// FR-060 T12-B/T12-C/T12-D's scan (`#[cfg(test)]` exclusion, token
-    /// matching, debt-list function resolution) could not parse or tokenize
+    /// FR-060 T12-G's scan (`#[cfg(test)]` exclusion, token
+    /// matching, enclosing-function resolution) could not parse or tokenize
     /// a source file as Rust.
     SourceParse,
 }

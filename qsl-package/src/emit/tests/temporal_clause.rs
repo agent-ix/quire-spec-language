@@ -551,9 +551,22 @@ fn the_i2_read_refuses_each_fr370_defect_at_its_locus() {
     );
 }
 
-/// `key` as a wire node id.
-fn wire_id(key: NodeKey) -> WireNodeId {
-    WireNodeId::from_digest(*key.as_bytes())
+/// The wire `digest` text the emitter writes for `key`.
+fn digest_of(key: &NodeKey) -> String {
+    serde_json::to_value(crate::emit::node_id(key)).expect("a node id serialises")["digest"]
+        .as_str()
+        .expect("a node id digest")
+        .to_owned()
+}
+
+/// A structural key no emitted node carries.
+fn foreign_key() -> NodeKey {
+    NodeKey::new(
+        "fixture".to_owned(),
+        vec![quire_exact::PathSegment::Text("foreign".to_owned())],
+        0,
+    )
+    .expect("a fixture key is a valid structural identity")
 }
 
 /// FR-337-AC-5 (TC-1079 steps 1 and 2): for ADR-018 §6's `ReachesTwo` the
@@ -572,15 +585,9 @@ fn the_i2_lookup_returns_the_clause_triple_and_its_over_node() {
         panic!("one emitted clause");
     };
     let clause = clause_node(&compiled.wire);
-    assert_eq!(
-        clause["node_id"]["digest"],
-        wire_id(checked.identity()).to_string()
-    );
+    assert_eq!(clause["node_id"]["digest"], digest_of(&checked.identity()));
     let over = node_with(&compiled.wire, target(&clause["body"]["arguments"][0]));
-    assert_eq!(
-        over["node_id"]["digest"],
-        wire_id(checked.over()).to_string()
-    );
+    assert_eq!(over["node_id"]["digest"], digest_of(&checked.over()));
 
     let admitted = admit(&compiled);
     let [root] = clause_roots(&admitted)
@@ -588,10 +595,10 @@ fn the_i2_lookup_returns_the_clause_triple_and_its_over_node() {
         .try_into()
         .unwrap_or_else(|roots: Vec<ClauseRoot>| panic!("one root: {roots:?}"));
     let triple = root.occurrence().clone();
-    assert_eq!(triple.node(), wire_id(checked.identity()));
+    assert_eq!(triple.node(), &checked.identity());
     assert_eq!(triple.origin().role().as_str(), "claim");
     assert_eq!(triple.origin(), checked.claim());
-    assert_eq!(root.over(), Some(wire_id(checked.over())));
+    assert_eq!(root.over(), Some(&checked.over()));
 
     let recompiled = admit(&compile(&text));
     assert_eq!(resolve_clause_root(&recompiled, &triple), Ok(root));
@@ -628,9 +635,7 @@ fn identical_declarations_share_one_node_and_keep_their_own_triples() {
     let triples: Vec<&OccurrenceKey> = roots.iter().map(ClauseRoot::occurrence).collect();
     let declared: Vec<OccurrenceKey> = [first, second]
         .iter()
-        .map(|declaration| {
-            OccurrenceKey::new(wire_id(declaration.identity()), declaration.claim().clone())
-        })
+        .map(|declaration| OccurrenceKey::new(declaration.identity(), declaration.claim().clone()))
         .collect();
     assert_eq!(triples, declared.iter().collect::<Vec<_>>());
     for (root, declaration) in roots.iter().zip([first, second]) {
@@ -638,7 +643,7 @@ fn identical_declarations_share_one_node_and_keep_their_own_triples() {
             resolve_clause_root(&admitted, root.occurrence()),
             Ok(root.clone())
         );
-        assert_eq!(root.over(), Some(wire_id(declaration.over())));
+        assert_eq!(root.over(), Some(&declaration.over()));
     }
 }
 
@@ -653,13 +658,13 @@ fn a_foreign_clause_root_is_unresolved_at_its_triple() {
         panic!("one emitted clause");
     };
     let admitted = admit(&compiled);
-    let node = wire_id(checked.identity());
+    let node = checked.identity();
     let ordinal = checked.claim().ordinal();
     let claim = |ordinal| Origin::new(Role::new("claim"), ordinal);
     let foreign = [
-        OccurrenceKey::new(WireNodeId::from_digest([7; 32]), claim(ordinal)),
-        OccurrenceKey::new(wire_id(checked.over()), claim(0)),
-        OccurrenceKey::new(node, Origin::new(Role::new("invariant"), ordinal)),
+        OccurrenceKey::new(foreign_key(), claim(ordinal)),
+        OccurrenceKey::new(checked.over(), claim(0)),
+        OccurrenceKey::new(node.clone(), Origin::new(Role::new("invariant"), ordinal)),
         OccurrenceKey::new(node, claim(ordinal + 1)),
     ];
     for triple in foreign {
@@ -695,10 +700,10 @@ fn record_of(
         panic!("one emitted clause");
     };
     let clause = qsl_foundation::bound::DomainKey::Node {
-        node: wire_id(checked.identity()),
+        node: checked.identity(),
         path: Vec::new(),
     };
-    let key = OccurrenceKey::new(wire_id(checked.identity()), checked.claim().clone());
+    let key = OccurrenceKey::new(checked.identity(), checked.claim().clone());
     let record = graph.requirements().get(&key).expect("the clause's record");
     let requirements = record.requirements().clone();
     (graph, clause, requirements)
@@ -846,7 +851,7 @@ fn an_on_each_clause_emits_its_trigger_and_guard() {
         graph
             .occurrences()
             .filter(|(key, origin, _)| {
-                key.to_string() == digest && origin.role().to_string() == role
+                digest_of(key) == digest && origin.role().to_string() == role
             })
             .map(|(_, _, location)| regions.region(location).expect("a region").start())
             .collect()
@@ -890,7 +895,7 @@ fn an_on_each_clause_emits_its_trigger_and_guard() {
     let guard_at: Vec<_> = truth_graph
         .occurrences()
         .filter(|(key, origin, _)| {
-            key.to_string() == guard_digest && origin.role().to_string() == "expression"
+            digest_of(key) == guard_digest && origin.role().to_string() == "expression"
         })
         .map(|(_, _, location)| truth_regions.region(location).expect("a region").start())
         .collect();
@@ -929,8 +934,8 @@ fn an_on_each_clause_emits_its_trigger_and_guard() {
             .expect("the roots read")
             .try_into()
             .unwrap_or_else(|roots: Vec<ClauseRoot>| panic!("one root: {roots:?}"));
-        assert_eq!(root.occurrence().node(), wire_id(checked.identity()));
-        assert_eq!(root.over(), Some(wire_id(checked.over())));
+        assert_eq!(root.occurrence().node(), &checked.identity());
+        assert_eq!(root.over(), Some(&checked.over()));
     }
 }
 
@@ -1414,7 +1419,7 @@ fn the_captures_aggregate_and_nodes_are_emitted() {
         graph
             .occurrences()
             .filter(|(key, origin, _)| {
-                key.to_string() == digest && origin.role().to_string() == role
+                digest_of(key) == digest && origin.role().to_string() == role
             })
             .map(|(_, _, location)| regions.region(location).expect("a region").start())
             .collect()
@@ -1455,8 +1460,8 @@ fn the_captures_aggregate_and_nodes_are_emitted() {
             .expect("the roots read")
             .try_into()
             .unwrap_or_else(|roots: Vec<ClauseRoot>| panic!("one root: {roots:?}"));
-        assert_eq!(root.occurrence().node(), wire_id(checked.identity()));
-        assert_eq!(root.over(), Some(wire_id(checked.over())));
+        assert_eq!(root.occurrence().node(), &checked.identity());
+        assert_eq!(root.over(), Some(&checked.over()));
     }
 }
 
@@ -1525,7 +1530,7 @@ fn the_requirement_node_is_the_clause_node_and_changes_with_the_captures() {
             panic!("one emitted clause");
         };
         assert_eq!(checked.identity(), compiled.clauses[0].identity());
-        assert!(format!("{:?}", wire_id(checked.identity())).contains(&digest[digest.len() - 8..]));
+        assert_eq!(digest_of(&checked.identity()), digest);
         clause
     };
     let captured = requirement(&activation, CAPTURES);

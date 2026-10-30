@@ -421,7 +421,7 @@ impl CheckedPackage {
     /// A refusal yields no package.
     #[cfg(feature = "std")]
     pub fn link_with(graph: CheckedGraph, imports: Vec<Import>) -> Result<Self, LinkRefusal> {
-        let mut dependencies = BTreeMap::new();
+        let mut dependencies: BTreeMap<LibraryName, Arc<CheckedPackage>> = BTreeMap::new();
         let mut selections: BTreeMap<LibraryName, ResolvedDependency> = BTreeMap::new();
         let direct_imports = imports
             .iter()

@@ -20,7 +20,7 @@ use quire_contract_model::{
 use qsl_foundation::diagnostic::{
     Code, JsonPointer, LimitExceeded, Locus, RefusalRecord, StageFailure, Staged,
 };
-use qsl_foundation::digest::{DigestRecord, InvalidDigestRecord};
+use qsl_foundation::digest::InvalidDigestRecord;
 use qsl_foundation::source::provenance::{
     InvalidProvenance, OccurrenceKey, PackageSourceMap, RawSourceRef, SourceRegion,
 };
@@ -253,10 +253,10 @@ pub enum V2ReadRefusal {
     /// IR's I04 `checked_package` reader refused the wire, carrying its own
     /// closed refusal code, the pointer of the value it refused, and (where
     /// IR determined one) the paired cause tag and offending node key.
-    /// Covers envelope-shape, digest-domain, canonical-form, semantic-graph
+    /// Covers envelope-shape, canonical-form, semantic-graph
     /// and lock refusals -- every I04 refusal this slice does not classify
     /// more specifically than IR itself already does. `malformed_wire`,
-    /// `duplicate_member`, `unknown_member` and `digest_domain_mismatch`
+    /// `duplicate_member` and `unknown_member`
     /// all name defects in the wire's own envelope shape and share
     /// `Code::InvalidPackage`; `noncanonical_wire` is the native catalog's
     /// own code (QSpec FR-271) and maps to `Code::NoncanonicalWire`. This
@@ -394,7 +394,7 @@ impl V2ReadRefusal {
 
     /// Where in the artifact the refusal was raised (FR-096). `None` for an
     /// IR refusal at no value, and for the refusals this reader raises
-    /// against the caller's pins or its own re-encoding, which name no
+    /// against the caller's selected package name or its own re-encoding, which name no
     /// position in the bytes.
     pub fn locus(&self) -> Option<&Locus> {
         match self {
@@ -432,16 +432,14 @@ impl V2ReadRefusal {
 /// native catalog's own `noncanonical_wire` (QSpec FR-271, FR-056), shared
 /// with intake's refusal of a model document number with no exact RFC 8785
 /// spelling. Every other envelope-shape code (malformed wire, duplicate or
-/// unknown member, digest-domain mismatch) collapses to the crate's own
+/// unknown member) collapses to the crate's own
 /// pre-existing `Code::InvalidPackage`, exactly as `UnsupportedNodeTag`
 /// already does -- no per-IR-variant `Code` is minted to mirror IR's own
 /// closed vocabulary (team decision, no-copy rule). IR's full
-/// `CheckedPackageRefusal` (code, path, cause, locus) is still carried
+/// `CheckedPackageRefusal` (code, loci, cause, locus) is still carried
 /// whole in [`V2ReadRefusal::Envelope`] for callers that want more than
 /// this coarse `Code`.
 ///
-/// IR's `StaleDependency` covers dependency content that disagrees with the
-/// selected library name, and maps to [`Code::StaleDependency`].
 fn map_refusal_code(code: CheckedPackageRefusalCode) -> Code {
     match code {
         CheckedPackageRefusalCode::UnknownContractVersion => Code::UnknownWire,
@@ -449,11 +447,9 @@ fn map_refusal_code(code: CheckedPackageRefusalCode) -> Code {
         CheckedPackageRefusalCode::MalformedWire
         | CheckedPackageRefusalCode::DuplicateMember
         | CheckedPackageRefusalCode::UnknownMember
-        | CheckedPackageRefusalCode::DigestDomainMismatch
         | CheckedPackageRefusalCode::UnsupportedNodeTag
         | CheckedPackageRefusalCode::InvalidSemanticGraph
         | CheckedPackageRefusalCode::InvalidPackage => Code::InvalidPackage,
-        CheckedPackageRefusalCode::StaleDependency => Code::StaleDependency,
         CheckedPackageRefusalCode::UnknownRequiredCapability => Code::UnknownRequiredFeature,
         CheckedPackageRefusalCode::InvalidSourceMap => Code::InvalidSourceMap,
         CheckedPackageRefusalCode::MissingDeclaration => Code::MissingDeclaration,
@@ -515,20 +511,17 @@ const fn limit_setting(kind: CheckedPackageLimit) -> Setting {
 /// IR reported a pointer that is not RFC 6901 text.
 const IR_POINTER_FAULT: InternalFault = InternalFault::new("I2", "ir-pointer-is-rfc-6901");
 
-/// The supplied bytes' `raw-artifact-digest` record, and the loci it names.
-struct Artifact(DigestRecord);
+/// The loci named by a supplied artifact's reader refusals.
+struct Artifact;
 
 impl Artifact {
-    fn of(bytes: &[u8]) -> Self {
-        Self(DigestRecord::raw_artifact(bytes))
+    fn of(_bytes: &[u8]) -> Self {
+        Self
     }
 
     /// `Locus::Artifact` at `pointer`.
     fn at(&self, pointer: JsonPointer) -> Locus {
-        Locus::Artifact {
-            digest: self.0,
-            pointer,
-        }
+        Locus::Artifact { pointer }
     }
 
     /// `Locus::Artifact` at the pointer IR reported, or `None` when IR
@@ -597,8 +590,7 @@ pub(crate) fn read_checked_package_v2(
     evidence: &CheckedPackageEvidence,
 ) -> V2ReadOutcome {
     if bytes.len() > limits.artifact_bytes {
-        // No locus: the ceiling refuses without hashing the oversized bytes,
-        // and a digest over them is the only name the artifact has (FR-096).
+        // No locus: the byte ceiling refuses before the artifact is decoded.
         return Err(StageFailure::Limit(LimitExceeded::new(
             Setting::I2InputBytes,
             u64::try_from(limits.artifact_bytes).unwrap_or(u64::MAX),
@@ -663,10 +655,11 @@ pub(crate) fn read_checked_package_v2(
         }
         CheckedPackageDispatchResult::Refused(refusal) => {
             let artifact = Artifact::of(bytes);
-            let locus = match artifact.at_ir(refusal.path.as_ref()) {
-                Ok(locus) => locus.map(Box::new),
-                Err(fault) => return refused(V2ReadRefusal::Fault(fault)),
-            };
+            let locus =
+                match artifact.at_ir(refusal.loci.first().and_then(|locus| locus.path.as_ref())) {
+                    Ok(locus) => locus.map(Box::new),
+                    Err(fault) => return refused(V2ReadRefusal::Fault(fault)),
+                };
             refused(match (refusal.code, &refusal.contract_version, locus) {
                 (CheckedPackageRefusalCode::UnknownContractVersion, Some(actual), Some(locus)) => {
                     V2ReadRefusal::UnsupportedVersion {

@@ -27,10 +27,6 @@ use quire_semantic_value::model_transition::ModelTransition;
 use crate::refinement::{MappingRowRef, ObjectKey, RefinementFailure};
 use crate::witness::FamilyPayload;
 
-// BLOCKED-BY QSL-1309 (owner: planner titan:QSL:plan): node tag and form for package-level freedom-clause items
-// The deadlock-freedom, time-lock-freedom and race-freedom items have no
-// node identity here until that tag and form are defined.
-
 /// One step of a behaviour: the transition identity it took (FR-120's for a
 /// model subject, ADR-027 TS-2's for a protocol subject) and its
 /// post-state's `quire.simulation.state-key/v1` digest, which selects the

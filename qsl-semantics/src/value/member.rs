@@ -181,6 +181,21 @@ pub struct TimedMember {
 }
 
 impl Member {
+    /// The closed wire spelling of a state clause member's kind (FR-341):
+    /// `invariant`, `constraint`, `precondition` or `postcondition`; `None`
+    /// for any other member kind.
+    pub fn state_clause_wire_kind(&self) -> Option<&'static str> {
+        match self {
+            Self::StateClause { clause, .. } => Some(match clause {
+                StateClauseKind::Invariant => "invariant",
+                StateClauseKind::Constraint => "constraint",
+                StateClauseKind::Precondition => "precondition",
+                StateClauseKind::Postcondition => "postcondition",
+            }),
+            _ => None,
+        }
+    }
+
     /// The declaring node this member names, or `None` for a member kind
     /// that names none.
     pub fn declaration(&self) -> Option<NodeKey> {

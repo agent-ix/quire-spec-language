@@ -438,7 +438,7 @@ fn the_occurrence_round_trips_and_the_wrapper_is_no_clause_root() {
     let resolved = resolve_hyper_root(&admitted, clause.occurrence()).expect("resolves");
     assert_eq!(&resolved, &roots[0]);
 
-    let wrapper = roots[0].body().expect("a body wrapper");
+    let wrapper = roots[0].body().expect("a body wrapper").clone();
     let wrapper_triple = quire_exact::Origin::new(quire_exact::Role::new("claim"), 0);
     let wrapper_key = OccurrenceKey::new(wrapper, wrapper_triple.clone());
     assert_eq!(
@@ -1052,21 +1052,16 @@ fn lookups_of_what_is_no_hyper_clause_are_unresolved() {
             quire_exact::Origin::new(quire_exact::Role::new(role), ordinal),
         )
     };
-    let slot = qsl_foundation::digest::WireNodeId::from_hex(
-        slots(&built.wire)["slot_sc_sa"]["node_id"]["digest"]
-            .as_str()
-            .unwrap(),
+    let foreign = quire_exact::NodeKey::new(
+        "fixture".to_owned(),
+        vec![quire_exact::PathSegment::Text("foreign".to_owned())],
+        0,
     )
-    .unwrap();
+    .expect("a fixture key is a valid structural identity");
     for key in [
-        claim(
-            qsl_foundation::digest::WireNodeId::from_digest([9; 32]),
-            "claim",
-            0,
-        ),
-        claim(slot, "claim", 0),
-        claim(root.occurrence().node(), "invariant", 0),
-        claim(root.occurrence().node(), "claim", 9),
+        claim(foreign, "claim", 0),
+        claim(root.occurrence().node().clone(), "invariant", 0),
+        claim(root.occurrence().node().clone(), "claim", 9),
     ] {
         assert_eq!(
             resolve_hyper_root(&package, &key),

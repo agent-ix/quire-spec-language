@@ -11,7 +11,7 @@ use ix_trace_rs::trace;
 use qsl_replay::{
     run_with_requirements, Call, CallArgument, CallIncomplete, CallLocus, CallOutcome, CallRefusal,
     CallValue, Cancel, CancelCause, CompileRefusal, DependencyInput, Integer, ObjectEnvironment,
-    PackageId, RunRefusal, ScalarLimits, SourceIdentity, SpineLimits, Value,
+    LibraryName, RunRefusal, ScalarLimits, SourceIdentity, SpineLimits, Value,
 };
 use quire_semantic_value::supplied_stop::SuppliedLimits;
 
@@ -45,7 +45,7 @@ fn run(source: &str, cancel: &Cancel) -> Result<qsl_replay::RunWithRequirements,
         supplied: SuppliedLimits::default(),
     };
     run_with_requirements(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u", "git", "1"), "fixture".to_owned(),
         "unit.native",
         source.as_bytes(),
         &BTreeMap::new(),
@@ -63,10 +63,9 @@ fn run(source: &str, cancel: &Cancel) -> Result<qsl_replay::RunWithRequirements,
 #[test]
 fn a_consumer_calls_and_reads_through_the_crate_root() {
     let result = run(SOURCE, &Cancel::new()).expect("the call runs");
-    let package_id: PackageId = result.package_id();
-    let (id, outcome, requirements) = result.into_parts();
-    assert_eq!(id, package_id);
-    assert_eq!(requirements.package_id(), package_id);
+    let name: LibraryName = result.package_name().clone();
+    let (outcome, requirements) = result.into_parts();
+    assert_eq!(requirements.package_name(), &name);
     let CallOutcome::Completed(CallValue::Integer(value)) = outcome else {
         panic!("a completed integer, not {outcome:?}");
     };

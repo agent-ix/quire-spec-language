@@ -275,10 +275,6 @@ pub enum ModelTraceRefusal {
         /// The occurrence key the payload's item has.
         expected_key: Box<OccurrenceKey>,
     },
-    /// The payload's item is a package-level freedom item, which has no node
-    /// identity to resolve.
-    #[error("unsupported_construct/not-yet-implemented: replay of a package-level freedom item")]
-    UnsupportedDerivedItem,
     /// The payload's fairness set is not the recompiled clause's.
     #[error("stale_dependency/content-mismatch: the payload's fairness set {payload:?} is not the recompiled clause's {recompiled:?}")]
     FairnessSet {
@@ -483,7 +479,7 @@ impl ModelTraceRefusal {
             | Self::SendRecord { .. }
             | Self::MemoryComponent { .. } => Code::StaleDependency,
             Self::FairnessSet { .. } | Self::ProtocolFairnessSet { .. } => Code::StaleDependency,
-            Self::HyperProjected | Self::UnsupportedDerivedItem => Code::UnsupportedConstruct,
+            Self::HyperProjected => Code::UnsupportedConstruct,
             Self::Protocol(refusal) => refusal.code(),
             Self::NotSimulated(refusal) => not_simulated_code(refusal),
             Self::Automaton(qsl_eval::automaton::AutomatonError::KeyEncodingLimit { .. })
@@ -542,7 +538,7 @@ impl ModelTraceRefusal {
             | Self::PostState { .. }
             | Self::SendRecord { .. }
             | Self::MemoryComponent { .. } => "content-mismatch",
-            Self::HyperProjected | Self::UnsupportedDerivedItem => "not-yet-implemented",
+            Self::HyperProjected => "not-yet-implemented",
             Self::Protocol(refusal) => refusal.cause(),
             Self::NotSimulated(refusal) => match refusal.catalog_code() {
                 Some(code) => code.cause(),
@@ -722,7 +718,7 @@ pub fn replay_model_trace(
         envelope,
         replay_limits,
         |package, simulation, meter| {
-            let clause = resolve_item(envelope, package.0, |clause| {
+            let clause = resolve_item(envelope, package.0, DerivedAnchors::Model, |clause| {
                 let payload = envelope.family_payload();
                 if payload.fairness == clause.fairness() {
                     return Ok(());
@@ -824,7 +820,12 @@ pub fn replay_protocol_trace(
         |package, simulation, meter| {
             // The fairness set depends on the protocol system, so it is
             // compared in `ProtocolReplay::settle`.
-            let clause = resolve_item(envelope, package.0, |_| Ok(()))?;
+            let clause = resolve_item(
+                envelope,
+                package.0,
+                DerivedAnchors::Protocol(&subject.protocol),
+                |_| Ok(()),
+            )?;
             let payload = envelope.family_payload();
             let simulation = simulation(&subject.model);
             let protocol = package
@@ -1046,23 +1047,75 @@ pub(super) fn refused(refusal: ModelTraceRefusal) -> ReplayRefusal {
 
 /// FR-128: resolve the envelope's item by its `clause_node` and
 /// `occurrence_key` against the recompiled package `package`. A payload only
-/// a package-level freedom item has refuses
-/// [`ModelTraceRefusal::UnsupportedDerivedItem`]. Any other identity names an authored
-/// clause: the package's temporal clause node of that `clause_node`, whose
+/// a package-level freedom item has (deadlock, time-lock or race freedom) is
+/// keyed by its anchor node (QSpec FR-368, FR-331, AC-277): the `model_root`
+/// node with the `generated` occurrence 0 for a model subject, the
+/// `protocol_clause` node with the `declaration` occurrence 0 for a protocol
+/// subject. An anchor the package does not hold refuses
+/// [`ModelTraceRefusal::UnknownTemporalClause`] and another occurrence
+/// [`ModelTraceRefusal::ItemIdentity`]; the item resolves to no clause. Any
+/// other identity names an authored clause: the package's temporal clause node of that `clause_node`, whose
 /// `claim` occurrence the envelope must carry; the caller's
 /// `check_fairness` compares the payload's fairness set with the subject's
 /// before the clause's own refusals. A package with no such node refuses
 /// [`ModelTraceRefusal::UnknownTemporalClause`].
+/// Which subject a package-level freedom item is anchored under.
+#[derive(Clone, Copy)]
+enum DerivedAnchors<'a> {
+    /// A model subject: the selected model's `model_root` node.
+    Model,
+    /// A protocol subject: the named protocol's `protocol_clause` node.
+    Protocol(&'a str),
+}
+
 fn resolve_item<'p, T: SubjectTransition>(
     envelope: &WitnessEnvelope<TemporalCounterexample<T>>,
     package: &'p CheckedPackage,
+    anchors: DerivedAnchors<'_>,
     check_fairness: impl FnOnce(&CheckedTemporalClause) -> Result<(), ReplayRefusal>,
 ) -> Result<Option<&'p CheckedTemporalClause>, ReplayRefusal> {
     let (for_deadlock, for_race) = derived_items(envelope.family_payload());
     let for_lock = matches!(envelope.family_payload().kind, CounterexampleKind::TimeLock);
-    // BLOCKED-BY QSL-1309 (owner: planner titan:QSL:plan): node tag and form for package-level freedom-clause items
     if for_deadlock || for_race || for_lock {
-        return Err(refused(ModelTraceRefusal::UnsupportedDerivedItem));
+        let (candidates, role) = match anchors {
+            DerivedAnchors::Model => (
+                package
+                    .graph()
+                    .model_selections()
+                    .iter()
+                    .filter_map(|selection| qsl_semantics::check::model_root_key(selection).ok())
+                    .collect::<Vec<_>>(),
+                "generated",
+            ),
+            DerivedAnchors::Protocol(name) => (
+                package
+                    .graph()
+                    .protocol_node_keys(name)
+                    .and_then(|keys| keys.clause.clone())
+                    .into_iter()
+                    .collect::<Vec<_>>(),
+                "declaration",
+            ),
+        };
+        let clause_node = envelope.clause_node();
+        if !candidates.contains(clause_node) {
+            return Err(refused(ModelTraceRefusal::UnknownTemporalClause {
+                clause_node: clause_node.clone(),
+            }));
+        }
+        let expected = OccurrenceKey::new(
+            clause_node.clone(),
+            quire_exact::Origin::new(quire_exact::Role::new(role), 0),
+        );
+        if expected != *envelope.occurrence_key() {
+            return Err(refused(ModelTraceRefusal::ItemIdentity {
+                clause_node: clause_node.clone(),
+                occurrence_key: Box::new(envelope.occurrence_key().clone()),
+                expected_node: clause_node.clone(),
+                expected_key: Box::new(expected),
+            }));
+        }
+        return Ok(None);
     }
     let identity_mismatch = |expected_node, expected_key| {
         refused(ModelTraceRefusal::ItemIdentity {

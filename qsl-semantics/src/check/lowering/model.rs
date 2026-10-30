@@ -16,9 +16,11 @@ use std::collections::BTreeMap;
 use quire_exact::{EffectiveId, Integer, NodeKey, UnitDomain, UnitId, ValueType};
 
 use super::{identifiers, refuse, require_admitted, type_declaration, Lowering, NodeContent};
+use crate::check::assemble::DimensionEquivalence;
 use crate::check::family::OccurrenceRole;
 use crate::check::node_key::{
-    Binding, BodyTerm, GroupMember, GroupTerm, LeafTerm, MemberTerm, ModelOwner, NodeTag, Owner,
+    Binding, BodyTerm, GroupMember, GroupTerm, LeafTerm, MemberTerm, ModelOwner, NodeRef, NodeTag,
+    Owner,
 };
 use crate::check::refusal::{CheckCause, CheckRefusal, KeyFault};
 use crate::check::VariantTypeDeclaration;
@@ -26,6 +28,9 @@ use crate::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, PopulationRecord,
 };
 use crate::model::normalize::EffectiveView;
+use crate::value::nominal_payload::{
+    DimensionEquivalencePayload, DimensionPayload, NominalPayload, UnitPayload,
+};
 use qsl_forms::{DeclaredClauseKind, NameForm};
 use quire_checked::key::DeclarationKey;
 use quire_semantic_value::location::Location;
@@ -1841,22 +1846,6 @@ pub(crate) fn record_node_key(
     model_declaration_key(&key.package, node_tag, form, &key.node).map(Some)
 }
 
-/// The key of the model declaration node of the variant type `record`
-/// declares (FR-360 item 11); `None` for a record that declares no variant
-/// type.
-///
-/// # Errors
-///
-/// As [`record_node_key`].
-pub(crate) fn variant_type_node_key(
-    record: &DomainPackageRecord,
-) -> Result<Option<NodeKey>, quire_exact::InvalidNodeKey> {
-    match record {
-        DomainPackageRecord::Enum(_) => record_node_key(record),
-        _ => Ok(None),
-    }
-}
-
 /// A domain package record's model node tag and form, or `None` for a
 /// record kind no checked node names (FR-094 "Model declaration nodes";
 /// one arm per record kind, FR-094-CON-1).
@@ -2232,21 +2221,38 @@ impl<'a> Lowering<'a> {
                 qualified_declaration: qualified,
                 ..
             } = node.declaration;
-            let (kind, semantic_form, semantic_type) = match node.form {
+            let (kind, semantic_form, semantic_type, payload) = match node.form {
                 NominalUnitForm::Unit {
-                    dimension, target, ..
+                    dimension,
+                    target,
+                    scale,
+                    offset,
                 } => {
                     pending.push(dimension.clone());
-                    pending.extend(target);
-                    (QuantityKind::Unit, "unit", Some(dimension))
+                    pending.extend(target.clone());
+                    let payload = UnitPayload::new(dimension.clone(), target, scale, offset);
+                    (
+                        QuantityKind::Unit,
+                        "unit",
+                        Some(dimension),
+                        NominalPayload::Unit(payload),
+                    )
                 }
                 NominalUnitForm::Dimension { terms } => {
                     pending.extend(terms.iter().map(|(base, _)| base.clone()));
-                    (QuantityKind::Dimension, "dimension", None)
+                    (
+                        QuantityKind::Dimension,
+                        "dimension",
+                        None,
+                        NominalPayload::Dimension(DimensionPayload::new(terms)),
+                    )
                 }
             };
             let site = type_declaration(&quantity_origin(kind, &qualified.join(".")));
             let declaration = identifiers(qualified.iter().map(String::as_str), &site)?;
+            // FR-322: a node this unit declares carries its `SourceOwner`.
+            let owner = (key.package() == self.package_name)
+                .then(|| Owner::Source(self.owner.clone()));
             let inserted = self.insert_nominal(
                 &site,
                 key.clone(),
@@ -2256,12 +2262,65 @@ impl<'a> Lowering<'a> {
                     semantic_form,
                     semantic_type: semantic_type.map(Into::into),
                     declaration: Some(declaration),
-                    owner: None,
+                    owner,
                     body: BodyTerm::aggregate(Vec::new()),
                 },
+                Some(payload),
             )?;
             if inserted {
                 self.record(key, OccurrenceRole::Declaration, site);
+            }
+        }
+        Ok(())
+    }
+
+    /// FR-094 "Dimension equivalence", FR-322-AC-118: one
+    /// `scalar_type`/`dimension_equivalence` node per admitted equivalence,
+    /// in source order: self-typed, no `declaration`, the unit's source
+    /// owner, a body referencing its two dimension nodes in ascending key
+    /// order, its `root_scale` in the nominal payload, and one `anchor`
+    /// occurrence whose ordinal is the declaration's place. The two
+    /// dimension nodes it depends on are built as a declared unit's are.
+    pub(crate) fn dimension_equivalence_nodes(
+        &mut self,
+        equivalences: &[DimensionEquivalence],
+    ) -> Result<(), CheckRefusal> {
+        for (index, equivalence) in equivalences.iter().enumerate() {
+            let site = type_declaration(&equivalence_origin(index));
+            for dimension in &equivalence.dimensions {
+                self.unit_nodes(dimension.clone(), &site)?;
+            }
+            let key = equivalence.key.clone();
+            let inserted = self.insert_nominal(
+                &site,
+                key.clone(),
+                NodeContent {
+                    owner_model: None,
+                    node_tag: NodeTag::ScalarType,
+                    semantic_form: "dimension_equivalence",
+                    semantic_type: Some(NodeRef::Admitted(key.clone())),
+                    declaration: None,
+                    owner: Some(Owner::Source(self.owner.clone())),
+                    body: BodyTerm::aggregate(
+                        equivalence
+                            .dimensions
+                            .iter()
+                            .cloned()
+                            .map(|dimension| {
+                                MemberTerm::reference_node(NodeRef::Admitted(dimension))
+                            })
+                            .collect(),
+                    ),
+                },
+                Some(NominalPayload::DimensionEquivalence(
+                    DimensionEquivalencePayload::new(
+                        equivalence.dimensions.clone(),
+                        equivalence.root_scale.clone(),
+                    ),
+                )),
+            )?;
+            if inserted {
+                self.record(key, OccurrenceRole::Anchor, site);
             }
         }
         Ok(())
@@ -2277,6 +2336,12 @@ impl<'a> Lowering<'a> {
         let spelling = self.text_literal(clause_spelling(clause.kind), location)?;
         Ok((Owner::Model(owner), MemberTerm::bound("clause", spelling)))
     }
+}
+
+/// The `Origin` name of the `index`th dimension-equivalence declaration, the
+/// key its anchor occurrence's region resolves under.
+pub(crate) fn equivalence_origin(index: usize) -> String {
+    format!("dimension equivalence {index}")
 }
 
 fn mismatch(location: &Location) -> CheckRefusal {

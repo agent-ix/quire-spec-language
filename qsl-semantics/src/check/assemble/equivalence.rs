@@ -17,7 +17,7 @@ use quire_exact::{Integer, NodeKey, PathSegment, Rational};
 use super::units::{Assembled, Provisional};
 use super::{AssemblyCause, AssemblyError, AssemblyLimits};
 use crate::check::lowering::AdmittedModel;
-use crate::check::node_key::SourceOwner;
+use crate::check::node_key::{NodeTag, SourceOwner};
 use crate::check::time_units::package_unit_scale;
 use crate::value::unit::DimensionEquivalencePreimage;
 use quire_checked::key::DeclarationKey;
@@ -638,14 +638,11 @@ pub(super) fn assemble(
         let preimage = DimensionEquivalencePreimage::new(node_owner.clone(), first, second, &ratio)
             .ok_or_else(non_canonical)?;
         let [first, second] = preimage.dimensions();
-        let key = NodeKey::new(
+        let key = crate::check::derived_node_key(
             package_name,
-            vec![
-                PathSegment::Text("scalar_type".to_owned()),
-                PathSegment::Text("dimension_equivalence".to_owned()),
-                PathSegment::Node(first),
-                PathSegment::Node(second),
-            ],
+            NodeTag::ScalarType,
+            "dimension_equivalence",
+            vec![PathSegment::Node(first), PathSegment::Node(second)],
             0,
         )
         .map_err(|refusal| fault(AssemblyCause::nominal(super::nominal_key_refusal(refusal))))?;

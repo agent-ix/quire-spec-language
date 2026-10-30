@@ -3,6 +3,7 @@
 //! ones included, and refuse a pending image for an operation member's node.
 
 use super::*;
+use quire_exact::PathSegment;
 
 fn key(name: &str) -> NodeKey {
     NodeKey::new("pkg", vec![PathSegment::Text(name.to_owned())], 0).expect("a key")

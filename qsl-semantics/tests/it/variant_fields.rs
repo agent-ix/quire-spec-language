@@ -1678,7 +1678,8 @@ fn a_variant_type_with_non_identifier_cases_has_an_enum_shape_over_the_exact_nam
     for case in odd.cases() {
         assert_eq!(
             case.variant(),
-            qsl_semantics::value::enumeration::mint_variant_id(odd.node(), case.name()),
+            qsl_semantics::value::enumeration::mint_variant_id(odd.node(), case.name())
+                .expect("a declared case has a name"),
             "{}",
             case.name()
         );

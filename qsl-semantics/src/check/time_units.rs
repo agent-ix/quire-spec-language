@@ -24,6 +24,7 @@ use crate::check::lowering::AdmittedModel;
 use crate::check::node_key::NodeTag;
 use crate::check::temporal_clause::TimeNominalNode;
 use crate::model::domain_package::PackageUnitRecord;
+use crate::value::nominal_payload::{DimensionPayload, NominalPayload, UnitPayload};
 use crate::value::{ModelSubject, NodeOwner, OwnerSubject};
 
 use super::refusal::TimeUnitCause;
@@ -102,8 +103,24 @@ impl TimeUnits {
                         NominalUnitForm::Unit { .. } => "unit",
                     }
                     .to_owned(),
-                    qualified_declaration: node.declaration.qualified_declaration.clone(),
+                    qualified_declaration: Some(node.declaration.qualified_declaration.clone()),
                     owner: source_owner.clone(),
+                    nominal: Some(match &node.form {
+                        NominalUnitForm::Dimension { terms } => {
+                            NominalPayload::Dimension(DimensionPayload::new(terms.clone()))
+                        }
+                        NominalUnitForm::Unit {
+                            dimension,
+                            target,
+                            scale,
+                            offset,
+                        } => NominalPayload::Unit(UnitPayload::new(
+                            dimension.clone(),
+                            target.clone(),
+                            scale.clone(),
+                            offset.clone(),
+                        )),
+                    }),
                     dependencies,
                 },
             );
@@ -146,7 +163,7 @@ impl TimeUnits {
                     TimeNominalNode {
                         key: time_key,
                         form: "dimension".to_owned(),
-                        qualified_declaration: vec![TIME_DIMENSION.to_owned()],
+                        qualified_declaration: None,
                         owner: NodeOwner::Model(ModelSubject {
                             identity: package.identity.clone(),
                             node: dimension
@@ -154,6 +171,9 @@ impl TimeUnits {
                                 .unwrap_or_default(),
                         }),
                         dependencies: Vec::new(),
+                        nominal: Some(NominalPayload::Dimension(DimensionPayload::new(
+                            Vec::new(),
+                        ))),
                     },
                 );
             }
@@ -397,19 +417,25 @@ fn package_unit_nominal_nodes(
             None => Vec::new(),
         };
         let target = target_nodes.last().map(|node| node.key.clone());
-        rational(&unit.scale)?;
-        rational(&unit.offset)?;
+        let factor = rational(&unit.scale)?;
+        let offset = rational(&unit.offset)?;
         let key = model_declaration_key(&unit.key.package, NodeTag::Model, "unit", &unit.key.node)
             .ok()?;
         let mut nodes = target_nodes;
         nodes.push(TimeNominalNode {
             key,
             form: "unit".to_owned(),
-            qualified_declaration: vec![unit.name.clone()],
+            qualified_declaration: None,
             owner: NodeOwner::Model(ModelSubject {
                 identity: identity.to_owned(),
                 node: unit.key.node.clone(),
             }),
+            nominal: Some(NominalPayload::Unit(UnitPayload::new(
+                dimension.clone(),
+                target.clone(),
+                factor,
+                offset,
+            ))),
             dependencies: std::iter::once(dimension).chain(target).collect(),
         });
         Some(nodes)
