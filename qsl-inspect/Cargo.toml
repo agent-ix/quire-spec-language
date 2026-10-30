@@ -14,7 +14,7 @@ qsl-replay = { path = "../qsl-replay" }
 qsl-analyze = { path = "../qsl-analyze" }
 qsl-eval = { path = "../qsl-eval" }
 quire-exact = { workspace = true }
-quire-contract-model = { git = "https://github.com/agent-ix/quire-contract-ir", rev = "eaffc67c3db4eb12b32393e8c7426f62085f8975" }
+quire-contract-model = { git = "https://github.com/agent-ix/quire-contract-ir", rev = "0fa7cfdcd067eae9a8f0f2f7c8f48b081ceda221" }
 quire-semantic-value = { git = "https://github.com/agent-ix/quire-semantic-value", branch = "main" }
 [dev-dependencies]
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
