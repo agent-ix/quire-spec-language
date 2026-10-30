@@ -139,11 +139,7 @@ fn assert_closed_formulas(nodes: &[Node]) {
 #[test]
 fn n13_counters_equal_the_published_figures() {
     let one = counters(&chain(99, 2));
-    assert_eq!(
-        (one.facts, one.work_units),
-        (199, 600),
-        "chain of 99 edges"
-    );
+    assert_eq!((one.facts, one.work_units), (199, 600), "chain of 99 edges");
     let two = counters(&ladder(50, 2));
     assert_eq!(
         (two.facts, two.work_units),
