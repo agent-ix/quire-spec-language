@@ -271,9 +271,8 @@ pub enum V2ReadRefusal {
         /// bytes at no value (malformed JSON, non-canonical bytes).
         locus: Option<Box<Locus>>,
     },
-    /// `library`'s verified-binding entry point refused the candidate
-    /// derived from an admitted wire (its identity preimage's declared
-    /// names, never its already-IR-checked `package_id`).
+    /// `library` refused the structural import view derived from an admitted
+    /// package's declaration names and node identities.
     /// Boxed: `LibraryRefusal` is the largest refusal, and every read's
     /// `Result` carries this type.
     #[error(transparent)]
@@ -441,9 +440,8 @@ impl V2ReadRefusal {
 /// whole in [`V2ReadRefusal::Envelope`] for callers that want more than
 /// this coarse `Code`.
 ///
-/// IR's `StaleDependency` covers content that does not match the identity
-/// it names, so a `package_id` that does not recompute maps to
-/// [`Code::StaleDependency`].
+/// IR's `StaleDependency` covers dependency content that disagrees with the
+/// selected library name, and maps to [`Code::StaleDependency`].
 fn map_refusal_code(code: CheckedPackageRefusalCode) -> Code {
     match code {
         CheckedPackageRefusalCode::UnknownContractVersion => Code::UnknownWire,
@@ -554,10 +552,8 @@ impl Artifact {
     }
 }
 
-/// An I2 read that admitted the bytes: the three ADR-011 §4
-/// verified-binding conditions held (FR-087-AC-1, AC-3): a supported schema
-/// version, a recomputed `package_id` equal to the declared one, and an
-/// identity listed in the caller's `pinned` library lock or pinned request.
+/// An I2 read that admitted canonical v2 bytes and matched the requested
+/// library name to the package's manifest name (FR-087-AC-1, AC-3).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct V2Read {
     /// The admitted package's structural exports.
@@ -713,7 +709,7 @@ pub enum ImportViewRefusal {
         /// The emitter's refusal, or `None` when the emission omits nodes.
         refusal: Option<EmitRefusal>,
     },
-    /// A closure entry names a `package_id` no package of the closure has.
+    /// A closure entry names a library no package of the closure has.
     /// A broken invariant of `CheckedPackage::link_with`, which records
     /// only recomputed ids of packages it holds.
     #[error("the dependency {identity} is not held by the closure")]
@@ -823,14 +819,14 @@ pub fn read_import_view(
     Ok(read.package)
 }
 
-/// The packages [`read_import_view`] calls have admitted, by `package_id`:
+/// The packages [`read_import_view`] calls have admitted, by library name:
 /// one compile's reads share it, so each package of the closure is read
 /// once.
 #[derive(Debug, Default)]
 pub struct AdmittedPackages(BTreeMap<LibraryName, Arc<CheckedPackageV2>>);
 
 impl AdmittedPackages {
-    /// The package a [`read_import_view`] call admitted at `package_id`.
+    /// The package a [`read_import_view`] call admitted at `name`.
     pub fn package(&self, name: &LibraryName) -> Option<&CheckedPackageV2> {
         self.0.get(name).map(Arc::as_ref)
     }
@@ -858,7 +854,7 @@ pub fn supply_closure(
 }
 
 /// Every package of `package`'s dependency closure, by recomputed
-/// `package_id`.
+/// library name.
 fn hold_closure<'p>(
     package: &'p CheckedPackage,
     held: &mut BTreeMap<LibraryName, &'p CheckedPackage>,

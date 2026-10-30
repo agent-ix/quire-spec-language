@@ -33,8 +33,8 @@
 //! emitter (`CheckedPackage` -> these bytes, C-03), ADR-011 T-8 (M-4,
 //! #242): [`super::emit`], a sibling module of this one, so
 //! it stays within this crate's `pub(super)` reach without being
-//! reachable from outside `qsl-package` (ADR-013 O-02: `package_id` is
-//! computed from the package, never accepted from a caller).
+//! reachable from outside `qsl-package` (ADR-013 O-02: the package name
+//! comes from the checked manifest, never from a caller).
 
 use alloc::collections::BTreeMap;
 #[cfg(feature = "std")]
@@ -53,8 +53,8 @@ use qsl_semantics::check::{
 };
 use qsl_semantics::library::LibraryName;
 
-/// The limits the E4 emitter encodes a package's identity preimage and its
-/// `quire.checked-package/v2` bytes under: no byte bound of their own. Both
+/// The limits the E4 emitter encodes `quire.checked-package/v2` bytes under:
+/// no byte bound of its own. The bytes
 /// project a checked graph the check stage already bounded (`checking.nodes`,
 /// `checking.input_bytes`), the stage budget FR-259 Behavior 3 has the site
 /// pass; a bound here could only refuse a package `check` admitted, with no
@@ -133,8 +133,8 @@ use crate::emit::{emit_checked, Emission, EmitRefusal};
 pub struct CheckedPackage {
     graph: Arc<CheckedGraph>,
     /// E4's checked dependency closure: each directly imported package's
-    /// own checked package, compiled from its digest-addressed source, by
-    /// its recomputed `package_id` ([`Self::link_with`]). Shared: one
+    /// own checked package, compiled from its source, by library name
+    /// ([`Self::link_with`]). Shared: one
     /// library compile serves every import that reaches it (ADR-015 D-1).
     dependencies: BTreeMap<LibraryName, Arc<CheckedPackage>>,
     /// The resolved library closure (FR-307):
@@ -152,7 +152,7 @@ pub struct CheckedPackage {
     /// declares one. The checked package is its only authority.
     abstraction: Option<CheckedAbstractionRelation>,
     /// This package's checked emission, set only by the emitter
-    /// ([`Self::remember_emission`]; the `package_id` stays the emitter's own
+    /// ([`Self::remember_emission`]; the bytes stay the emitter's own
     /// output, ADR-013 O-02) so a package reached again, as a dependency or
     /// by another emit, is not emitted again. Reset when the package changes.
     #[cfg(feature = "std")]
@@ -266,7 +266,7 @@ pub enum LinkRefusal {
         actual: Box<str>,
     },
     /// FR-307 diamond rule: two dependency paths select one library
-    /// identity with a different `package_id`
+    /// identity with different canonical package bytes
     /// (`invalid_package`/`conflicting-definition`), listing both paths.
     #[error(
         "invalid_package/conflicting-definition: {} and {} select {identity} differently",
@@ -279,7 +279,7 @@ pub enum LinkRefusal {
         /// The earlier selection and its path, then the conflicting one.
         selections: Box<[ResolvedDependency; 2]>,
     },
-    /// A dependency's `package_id` could not be recomputed: its emission
+    /// A dependency's complete v2 bytes could not be emitted: emission
     /// refused, or would omit nodes (ADR-011 §2.3 partial output).
     #[error("the dependency {identity} does not emit a complete package")]
     DependencyEmission {
@@ -414,12 +414,10 @@ impl CheckedPackage {
 
     /// The E4 link step with a dependency closure (ADR-011 §2.1 E4, §4
     /// dependency binding): `graph` linked with each import's checked
-    /// package. Each dependency's `package_id` is recomputed by emitting it
-    /// (ADR-013 O-02: never accepted from a caller) and is the identity the
-    /// lock binds the library's content to.
-    /// The closure takes the imports and every dependency's own closure; two
-    /// selections of one identity unify only when their `package_id`s
-    /// are equal (FR-307), else [`LinkRefusal::ConflictingDefinition`].
+    /// package. The closure takes the imports and every dependency's own
+    /// closure; two selections of one library name unify only when their
+    /// canonical package bytes are equal (FR-307), else
+    /// [`LinkRefusal::ConflictingDefinition`].
     /// A refusal yields no package.
     #[cfg(feature = "std")]
     pub fn link_with(graph: CheckedGraph, imports: Vec<Import>) -> Result<Self, LinkRefusal> {
@@ -544,7 +542,7 @@ impl CheckedPackage {
         self.emission.get()
     }
 
-    /// The `package_id` the emitter computed for this package, if it was
+    /// The name the emitter used for this package, if it was
     /// emitted through `emit_checked` or `emit_checked_with_cancel`, which
     /// record the emission: the identity Contract IR's admission of those
     /// bytes declares. A package emitted only through `emit_package` has
@@ -730,7 +728,7 @@ impl EmittedPackage {
 }
 
 /// A chain of `length` packages over one empty checked graph, each
-/// depending on the next under a distinct `package_id`: the shape a
+/// depending on the next under a distinct library name: the shape a
 /// `length`-long library import chain links to, for the stack-depth tests.
 #[cfg(test)]
 #[cfg(feature = "std")]
