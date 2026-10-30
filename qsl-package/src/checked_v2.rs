@@ -253,10 +253,10 @@ pub enum V2ReadRefusal {
     /// IR's I04 `checked_package` reader refused the wire, carrying its own
     /// closed refusal code, the pointer of the value it refused, and (where
     /// IR determined one) the paired cause tag and offending node key.
-    /// Covers envelope-shape, digest-domain, canonical-form, semantic-graph
+    /// Covers envelope-shape, canonical-form, semantic-graph
     /// and lock refusals -- every I04 refusal this slice does not classify
     /// more specifically than IR itself already does. `malformed_wire`,
-    /// `duplicate_member`, `unknown_member` and `digest_domain_mismatch`
+    /// `duplicate_member` and `unknown_member`
     /// all name defects in the wire's own envelope shape and share
     /// `Code::InvalidPackage`; `noncanonical_wire` is the native catalog's
     /// own code (QSpec FR-271) and maps to `Code::NoncanonicalWire`. This
@@ -394,7 +394,7 @@ impl V2ReadRefusal {
 
     /// Where in the artifact the refusal was raised (FR-096). `None` for an
     /// IR refusal at no value, and for the refusals this reader raises
-    /// against the caller's pins or its own re-encoding, which name no
+    /// against the caller's selected package name or its own re-encoding, which name no
     /// position in the bytes.
     pub fn locus(&self) -> Option<&Locus> {
         match self {
@@ -432,16 +432,14 @@ impl V2ReadRefusal {
 /// native catalog's own `noncanonical_wire` (QSpec FR-271, FR-056), shared
 /// with intake's refusal of a model document number with no exact RFC 8785
 /// spelling. Every other envelope-shape code (malformed wire, duplicate or
-/// unknown member, digest-domain mismatch) collapses to the crate's own
+/// unknown member) collapses to the crate's own
 /// pre-existing `Code::InvalidPackage`, exactly as `UnsupportedNodeTag`
 /// already does -- no per-IR-variant `Code` is minted to mirror IR's own
 /// closed vocabulary (team decision, no-copy rule). IR's full
-/// `CheckedPackageRefusal` (code, path, cause, locus) is still carried
+/// `CheckedPackageRefusal` (code, loci, cause, locus) is still carried
 /// whole in [`V2ReadRefusal::Envelope`] for callers that want more than
 /// this coarse `Code`.
 ///
-/// IR's `StaleDependency` covers dependency content that disagrees with the
-/// selected library name, and maps to [`Code::StaleDependency`].
 fn map_refusal_code(code: CheckedPackageRefusalCode) -> Code {
     match code {
         CheckedPackageRefusalCode::UnknownContractVersion => Code::UnknownWire,
@@ -592,8 +590,7 @@ pub(crate) fn read_checked_package_v2(
     evidence: &CheckedPackageEvidence,
 ) -> V2ReadOutcome {
     if bytes.len() > limits.artifact_bytes {
-        // No locus: the ceiling refuses without hashing the oversized bytes,
-        // and a digest over them is the only name the artifact has (FR-096).
+        // No locus: the byte ceiling refuses before the artifact is decoded.
         return Err(StageFailure::Limit(LimitExceeded::new(
             Setting::I2InputBytes,
             u64::try_from(limits.artifact_bytes).unwrap_or(u64::MAX),

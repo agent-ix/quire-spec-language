@@ -14,7 +14,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use quire_contract_model::{
     encode_checked_package_v2, ApplicationOperator, CheckedAbstractionField,
     CheckedAbstractionFrame, CheckedAbstractionObject, CheckedAbstractionParameter,
-    CheckedAbstractionPopulation, CheckedArtifactRef, CheckedBindingName, CheckedCapability,
+    CheckedAbstractionPopulation, CheckedArtifactRef, CheckedCapability,
     CheckedCapabilityDisposition, CheckedDeclaration, CheckedDependencySelection,
     CheckedDiagnosticsV2, CheckedFieldScope, CheckedFrameModification, CheckedNodeId,
     CheckedNodeKind, CheckedNodeOwner, CheckedNodePathSegment, CheckedNodeTag, CheckedOccurrence,
@@ -22,8 +22,8 @@ use quire_contract_model::{
     CheckedPackageLockV2, CheckedPackageSourceCorrespondenceRef, CheckedPackageV2, CheckedRational,
     CheckedRefinementStepRowRegion, CheckedScopedDeletion, CheckedSelection, CheckedSelectionRole,
     CheckedSemanticGraphV2, CheckedSemanticNodeV2, CheckedSourceMapEntry, CheckedSourceRef,
-    CheckedSourceRegion, CheckedTerm, ExecutionPoint, LiteralKind, NominalIdentityPreimage,
-    NominalOwner, ProtocolForm, StateForm, ValueForm,
+    CheckedSourceRegion, CheckedTerm, DimensionTerm, LiteralKind, NominalBody, ProtocolForm,
+    StateForm, ValueForm,
 };
 use serde::Deserialize;
 
@@ -35,15 +35,16 @@ use qsl_foundation::Code;
 use qsl_semantics::check::{
     AbstractionNodeRefusal, AbstractionNodes, BindingValue, BodyTerm, CheckedGraph,
     CheckedRefinement, FrameDeletesScoped, FrameModifies, FrameScope, FrameTerm, GroupMember,
-    GroupTerm, LawRole, LeafTerm, LiteralValue, MemberTerm, NodeRef, NodeTag, NominalNode,
-    OperationLaw, Operator, Owner, SemanticNode, TemporalProfile, TupleMember, TupleTerm,
+    GroupTerm, LawRole, LeafTerm, LiteralValue, MemberTerm, NodeRef, NodeTag, OperationLaw,
+    Operator, Owner, SemanticNode, TemporalProfile, TupleMember, TupleTerm,
 };
+use qsl_semantics::value::nominal_payload::NominalPayload;
 use qsl_semantics::value::{
     native_diagnostics_catalog, DefinitionReference, DefinitionRole, HeaderLayer, Member,
     ModelRole, NodeOwner, TemporalRole,
 };
 use quire_exact::{
-    Cancel, Integer, NodeKey, NodeKeyView, NodePathIter, Origin, PathSegment, PathSegmentView, Role,
+    Cancel, NodeKey, NodeKeyView, NodePathIter, Origin, PathSegment, PathSegmentView, Role,
 };
 use quire_semantic_value::location::Location;
 
@@ -290,7 +291,7 @@ pub enum OmissionCause {
 /// The emitted package and the nodes it omits.
 #[derive(Clone, Debug)]
 pub struct Emission {
-    /// The v2 bytes and their `package_id`.
+    /// The v2 bytes and their manifest package name.
     pub(crate) package: EmittedPackage,
     /// Every node of the checked graph the wire omits, ascending by node id.
     pub(crate) omitted: Vec<OmittedNode>,
@@ -305,7 +306,7 @@ pub struct Emission {
 }
 
 impl Emission {
-    /// The v2 bytes and their `package_id`.
+    /// The v2 bytes and their manifest package name.
     pub fn package(&self) -> &EmittedPackage {
         &self.package
     }
@@ -511,7 +512,7 @@ impl BodyNames {
             BodyTerm::Abstraction(term) => {
                 names
                     .dependencies
-                    .extend(term.targets().into_iter().map(node_id));
+                    .extend(term.targets().map_err(encoding)?.iter().map(node_id));
             }
             BodyTerm::Leaf(_) | BodyTerm::Aggregate(_) => {}
         }
@@ -550,7 +551,7 @@ struct Candidate<'g> {
     id: CheckedNodeId,
     tag: CheckedNodeTag,
     semantic_type: CheckedNodeId,
-    /// FR-093 rules 1 to 3, ascending by digest.
+    /// FR-093 rules 1 to 3, ascending by structural node identity.
     dependencies: BTreeSet<CheckedNodeId>,
     /// Every node the written node names: its dependencies, its semantic
     /// type and its body's type annotations.
@@ -559,13 +560,10 @@ struct Candidate<'g> {
     /// The occurrences `check` recorded for the node, each with the
     /// location it was recorded at.
     occurrences: Recorded<'g>,
-    /// The QSpec nominal preimage the node is keyed by, when it is nominal.
-    nominal: Option<NominalIdentityPreimage>,
 }
 
 impl<'g> Candidate<'g> {
     fn of(node: &'g SemanticNode, occurrences: Recorded<'g>) -> Result<Self, EmitRefusal> {
-        let nominal = nominal_preimage(node);
         let id = node_id(node.key());
         // A self-typed node names itself as its semantic type (FR-322).
         let semantic_type = node_id(node.semantic_type().unwrap_or(node.key()));
@@ -581,31 +579,20 @@ impl<'g> Candidate<'g> {
         if node.node_tag() == NodeTag::BoundedDomain {
             dependencies.insert(semantic_type.clone());
         }
-        // FR-093 rule 4, QSpec's nominal joins: an enum member node depends
-        // on its declaration, a dimension on its base dimensions, and a unit
-        // on its dimension and target unit.
-        match &nominal {
-            Some(NominalIdentityPreimage::EnumMember(member)) => {
-                dependencies.insert(member.declaration_node_id.clone());
+        if let Some(nominal) = node.nominal_payload() {
+            match nominal {
+                NominalPayload::Enum(_) => {}
+                NominalPayload::Dimension(dimension) => {
+                    dependencies.extend(dimension.terms().iter().map(|(base, _)| node_id(base)));
+                }
+                NominalPayload::Unit(unit) => {
+                    dependencies.insert(node_id(unit.dimension()));
+                    dependencies.extend(unit.target().map(node_id));
+                }
+                NominalPayload::DimensionEquivalence(equivalence) => {
+                    dependencies.extend(equivalence.dimensions().iter().map(node_id));
+                }
             }
-            Some(NominalIdentityPreimage::Dimension(dimension)) => {
-                dependencies.extend(
-                    dimension
-                        .terms
-                        .iter()
-                        .map(|term| term.dimension_node_id.clone()),
-                );
-            }
-            Some(NominalIdentityPreimage::Unit(unit)) => {
-                dependencies.insert(unit.dimension_node_id.clone());
-                dependencies.extend(unit.target_unit_node_id.clone());
-            }
-            Some(NominalIdentityPreimage::DimensionEquivalence(equivalence)) => {
-                // QSpec FR-322: an equivalence depends on exactly the two
-                // dimension nodes it relates.
-                dependencies.extend(equivalence.dimension_node_ids.iter().cloned());
-            }
-            Some(NominalIdentityPreimage::EnumDeclaration(_)) | None => {}
         }
         let mut names = dependencies.clone();
         names.extend(annotations);
@@ -620,7 +607,6 @@ impl<'g> Candidate<'g> {
             names,
             laws,
             occurrences,
-            nominal,
         })
     }
 
@@ -679,8 +665,16 @@ impl<'g> Candidate<'g> {
                 .iter()
                 .map(|(occurrence, _)| occurrence.clone())
                 .collect(),
-            recursion_group: node.recursion().map(|group| group.label().into()),
-            nominal_identity_preimage: self.nominal.clone(),
+            recursion_group: node
+                .recursion()
+                .map(|group| {
+                    let value = qsl_foundation::node_wire::node_key_to_json(group.anchor())
+                        .map_err(encoding)?;
+                    let label = serde_json::to_string(&value);
+                    qsl_foundation::node_wire::discard_node_json(value);
+                    Ok::<Box<str>, EmitRefusal>(label.map_err(encoding)?.into())
+                })
+                .transpose()?,
             declaration: node.declaration().map(|segments| CheckedDeclaration {
                 qualified_name: segments
                     .iter()
@@ -697,6 +691,9 @@ impl<'g> Candidate<'g> {
 /// Convert the checked body grammar to IR's typed term vocabulary.  Every
 /// reference is required to have an admitted structural identity here.
 fn checked_body(node: &SemanticNode, tag: CheckedNodeTag) -> Result<CheckedTerm, EmitRefusal> {
+    if let Some(nominal) = node.nominal_payload() {
+        return Ok(nominal_term(nominal));
+    }
     let BodyTerm::Aggregate(aggregate) = node.body() else {
         return checked_term(node.body());
     };
@@ -732,6 +729,49 @@ fn checked_body(node: &SemanticNode, tag: CheckedNodeTag) -> Result<CheckedTerm,
         )));
     }
     checked_term(node.body())
+}
+
+fn checked_rational(value: &quire_exact::Rational) -> CheckedRational {
+    CheckedRational {
+        numerator: value.numerator().to_string().into(),
+        denominator: value.denominator().to_string().into(),
+    }
+}
+
+/// Convert admitted nominal facts without reading an identity back out of a
+/// structural key. Enum ordering and conversion factors are payload facts.
+fn nominal_term(payload: &NominalPayload) -> CheckedTerm {
+    let body = match payload {
+        NominalPayload::Enum(enumeration) => NominalBody::Enum {
+            ordered: enumeration.is_ordered(),
+            members: enumeration
+                .members()
+                .iter()
+                .map(|member| member.as_str().into())
+                .collect(),
+        },
+        NominalPayload::Dimension(dimension) => NominalBody::Dimension {
+            terms: dimension
+                .terms()
+                .iter()
+                .map(|(base, exponent)| DimensionTerm {
+                    dimension_node_id: node_id(base),
+                    exponent: exponent.to_string().into(),
+                })
+                .collect(),
+        },
+        NominalPayload::Unit(unit) => NominalBody::Unit {
+            dimension_node_id: node_id(unit.dimension()),
+            target_unit_node_id: unit.target().map(node_id),
+            scale: checked_rational(unit.factor()),
+            offset: checked_rational(unit.offset()),
+        },
+        NominalPayload::DimensionEquivalence(equivalence) => NominalBody::DimensionEquivalence {
+            dimension_node_ids: equivalence.dimensions().each_ref().map(node_id),
+            root_scale: checked_rational(equivalence.scale()),
+        },
+    };
+    CheckedTerm::NominalBody(Box::new(body))
 }
 
 fn checked_term(term: &BodyTerm) -> Result<CheckedTerm, EmitRefusal> {
@@ -792,7 +832,7 @@ fn group_term(group: &GroupTerm) -> Result<CheckedTerm, EmitRefusal> {
             .map(|member| match member {
                 GroupMember::Leaf(leaf) => leaf_term(leaf),
                 GroupMember::Binding(binding) => Ok(CheckedTerm::Binding {
-                    name: CheckedBindingName::from(binding.name.as_str()),
+                    name: binding.name.as_str().into(),
                     value: Box::new(leaf_term(&binding.value)?),
                 }),
             })
@@ -836,7 +876,7 @@ fn member_term(member: &MemberTerm) -> Result<CheckedTerm, EmitRefusal> {
                 }
             };
             CheckedTerm::Binding {
-                name: CheckedBindingName::from(binding.name.as_str()),
+                name: binding.name.as_str().into(),
                 value: Box::new(value),
             }
         }
@@ -953,7 +993,7 @@ fn operation_term(
             json!({"path":path, "laws":laws(&leaf.laws), "mode":mode(leaf.mode.as_ref())})
         })
         .collect::<Vec<_>>();
-    let member = operation.member().map(member_value);
+    let member = operation.member().map(member_value).transpose()?;
     quire_contract_model::CheckedApplicationOperation::deserialize(json!({
         "identity": operation.identity(), "laws": laws(operation.laws()),
         "mode": mode(operation.mode()), "member": member, "leaves": leaves,
@@ -961,9 +1001,9 @@ fn operation_term(
     .map_err(encoding)
 }
 
-fn member_value(member: &Member) -> serde_json::Value {
+fn member_value(member: &Member) -> Result<serde_json::Value, EmitRefusal> {
     use serde_json::json;
-    match member {
+    Ok(match member {
         Member::Field { declaration, name } => {
             json!({"kind":"field","declaration":node_id(declaration),"name":name.as_str()})
         }
@@ -995,15 +1035,11 @@ fn member_value(member: &Member) -> serde_json::Value {
             json!({"kind":"profile_operator","operator":operator.as_str()})
         }
         Member::StateClause {
-            clause,
-            execution_point,
+            execution_point, ..
         } => {
-            let clause = match clause {
-                qsl_forms::StateClauseKind::Invariant => "invariant",
-                qsl_forms::StateClauseKind::Constraint => "constraint",
-                qsl_forms::StateClauseKind::Precondition => "precondition",
-                qsl_forms::StateClauseKind::Postcondition => "postcondition",
-            };
+            let clause = member
+                .state_clause_wire_kind()
+                .ok_or_else(|| encoding("a state clause member has no checked wire kind"))?;
             let mut record = json!({"kind":"state_clause","clause":clause});
             if let Some(point) = execution_point {
                 record["execution_point"] = json!(point.point());
@@ -1045,7 +1081,7 @@ fn member_value(member: &Member) -> serde_json::Value {
             "granularity":match granularity { quire_semantic_value::fairness::FairnessGranularity::Whole => "whole", quire_semantic_value::fairness::FairnessGranularity::Each => "each" },
             "declaration":node_id(declaration), "name":name.as_str(),
         }),
-    }
+    })
 }
 
 fn frame_term(frame: &FrameTerm) -> Result<CheckedTerm, EmitRefusal> {
@@ -1160,8 +1196,7 @@ fn abstraction_term(
     })
 }
 
-/// A structural node's `owner` as the v2 wire writes it (FR-093): exactly the
-/// owner its `quire.structural-node/v1` preimage carries.
+/// A structural node's admitted `owner` as the v2 wire writes it (FR-093).
 fn wire_owner(owner: &Owner) -> CheckedNodeOwner {
     match owner {
         Owner::Source(subject) => CheckedNodeOwner::Source {
@@ -1178,120 +1213,13 @@ fn wire_owner(owner: &Owner) -> CheckedNodeOwner {
     }
 }
 
-/// The node's QSpec nominal preimage as the v2 wire writes it, or `None`
-/// for a node that is not nominal or whose owner the check did not read
-/// back.
-fn nominal_preimage(node: &SemanticNode) -> Option<NominalIdentityPreimage> {
-    let preimage = match node.nominal() {
-        None => return None,
-        Some(NominalNode::EnumDeclaration(preimage)) => NominalIdentityPreimage::EnumDeclaration(
-            quire_contract_model::EnumDeclarationPreimage {
-                owner: nominal_owner(preimage.owner()),
-                qualified_declaration: preimage
-                    .qualified_declaration()
-                    .iter()
-                    .map(|segment| segment.as_str().into())
-                    .collect(),
-                ordered: preimage.is_ordered(),
-                members: preimage
-                    .members()
-                    .iter()
-                    .map(|case| case.as_str().into())
-                    .collect(),
-            },
-        ),
-        Some(NominalNode::EnumMember { declaration, case }) => {
-            NominalIdentityPreimage::EnumMember(quire_contract_model::EnumMemberPreimage {
-                declaration_node_id: node_id(declaration),
-                case: case.as_str().into(),
-            })
-        }
-        Some(NominalNode::Dimension(Some(preimage))) => {
-            NominalIdentityPreimage::Dimension(quire_contract_model::DimensionPreimage {
-                owner: nominal_owner(preimage.owner()),
-                qualified_declaration: qualified(preimage.qualified_declaration()),
-                terms: preimage
-                    .terms()
-                    .iter()
-                    .map(|(base, exponent)| quire_contract_model::DimensionTerm {
-                        dimension_node_id: node_id(base),
-                        exponent: exponent.to_string().into(),
-                    })
-                    .collect(),
-            })
-        }
-        Some(NominalNode::Unit(Some(preimage))) => {
-            let rational = |(numerator, denominator): (&Integer, &Integer)| CheckedRational {
-                numerator: numerator.to_string().into(),
-                denominator: denominator.to_string().into(),
-            };
-            NominalIdentityPreimage::Unit(quire_contract_model::UnitPreimage {
-                owner: nominal_owner(preimage.owner()),
-                qualified_declaration: qualified(preimage.qualified_declaration()),
-                dimension_node_id: node_id(preimage.dimension()),
-                target_unit_node_id: preimage.target().map(node_id),
-                scale: rational(preimage.scale()),
-                offset: rational(preimage.offset()),
-            })
-        }
-        // Another owner's dimension or unit: the emission omits it
-        // (`owner_is_locked`), so no preimage is written for it.
-        Some(NominalNode::Dimension(None) | NominalNode::Unit(None)) => return None,
-    };
-    Some(preimage)
-}
-
-/// A nominal preimage's qualified declaration as the wire spells it.
-fn qualified(segments: &[String]) -> Vec<Box<str>> {
-    segments
-        .iter()
-        .map(|segment| segment.as_str().into())
-        .collect()
-}
-
-fn nominal_owner(owner: &NodeOwner) -> NominalOwner {
-    match owner {
-        NodeOwner::Source(subject) => NominalOwner::Source {
-            authority: subject.authority.as_str().into(),
-            identity: subject.identity.as_str().into(),
-        },
-        NodeOwner::Definition(subject) => NominalOwner::Definition {
-            authority: subject.authority.as_str().into(),
-            identity: subject.identity.as_str().into(),
-        },
-        NodeOwner::Model(subject) => NominalOwner::Model {
-            identity: subject.identity.as_str().into(),
-            node: subject.node.as_str().into(),
-        },
-    }
-}
-
-/// Whether the lock the emitter writes selects `nominal`'s owner: a nominal
-/// node without an owner joins trivially; one with an owner joins only when
-/// that owner is the checked unit's `source`, the one lock entry it can
-/// always join (FR-322).
-fn owner_is_locked(nominal: Option<&NominalNode>, source: &RawSourceRef) -> bool {
-    let owner = match nominal {
-        None | Some(NominalNode::EnumMember { .. }) => return true,
-        Some(NominalNode::Dimension(None) | NominalNode::Unit(None)) => return false,
-        Some(NominalNode::EnumDeclaration(preimage)) => preimage.owner(),
-        Some(NominalNode::Dimension(Some(preimage))) => preimage.owner(),
-        Some(NominalNode::Unit(Some(preimage))) => preimage.owner(),
-    };
-    matches!(
-        owner,
-        NodeOwner::Source(subject)
-            if subject.authority == source.authority() && subject.identity == source.identity()
-    )
-}
-
 /// Which candidates the wire omits, and why: an unsupported form, a
 /// declaration without its occurrence, a nominal owner the lock does not
 /// select, a name outside the graph, and then, transitively, a name of an
 /// omitted node.
 fn omissions(
     candidates: &BTreeMap<CheckedNodeId, Candidate<'_>>,
-    source: &RawSourceRef,
+    _source: &RawSourceRef,
     decodes: &dyn Fn(CheckedNodeTag, &str) -> bool,
     external: &BTreeSet<CheckedNodeId>,
 ) -> Vec<OmittedNode> {
@@ -1304,8 +1232,6 @@ fn omissions(
             })
         } else if !candidate.declaration_matches_occurrences() {
             Some(OmissionCause::DeclarationOccurrenceMismatch)
-        } else if !owner_is_locked(candidate.node.nominal(), source) {
-            Some(OmissionCause::UnlockedOwner)
         } else {
             candidate
                 .names
@@ -1410,13 +1336,13 @@ fn stale_protocol_reference(
 /// group's members are written together, in ordinal order, where the group's
 /// first member by node id would be.
 fn graph_order<'c, 'g>(kept: &[&'c Candidate<'g>]) -> Vec<&'c Candidate<'g>> {
-    let mut groups: HashMap<[u8; 32], Vec<Option<&'c Candidate<'g>>>> = HashMap::new();
+    let mut groups: HashMap<NodeKey, Vec<Option<&'c Candidate<'g>>>> = HashMap::new();
     for candidate in kept {
         let Some(recursion) = candidate.node.recursion() else {
             continue;
         };
         let members = groups
-            .entry(*recursion.group())
+            .entry(recursion.anchor().clone())
             .or_insert_with(|| vec![None; recursion.size()]);
         if let Some(member) = members.get_mut(recursion.ordinal()) {
             *member = Some(*candidate);
@@ -1428,7 +1354,7 @@ fn graph_order<'c, 'g>(kept: &[&'c Candidate<'g>]) -> Vec<&'c Candidate<'g>> {
         match candidate.node.recursion() {
             None => order.push(*candidate),
             Some(recursion) => {
-                let group = *recursion.group();
+                let group = recursion.anchor().clone();
                 if emitted_groups.insert(group) {
                     if let Some(members) = groups.remove(&group) {
                         order.extend(members.into_iter().flatten());
@@ -1527,11 +1453,11 @@ fn recorded_occurrences(
     let mut by_node: BTreeMap<NodeKey, Recorded<'_>> = BTreeMap::new();
     for (key, origin, location) in graph.occurrences() {
         let occurrence = CheckedOccurrence {
-            role: occurrence_role(key, &origin)?,
+            role: occurrence_role(&key, &origin)?,
             ordinal: origin.ordinal(),
         };
-        let location = if graph.parameter_span(key, &origin).is_some() {
-            RecordedLocation::Parameter(graph.occurrence_region(key, &origin))
+        let location = if graph.parameter_span(key.clone(), &origin).is_some() {
+            RecordedLocation::Parameter(graph.occurrence_region(key.clone(), &origin))
         } else {
             RecordedLocation::Expression(location)
         };
@@ -1705,7 +1631,6 @@ fn refinement_node(
                 .map(|(occurrence, _)| occurrence)
                 .collect(),
             recursion_group: None,
-            nominal_identity_preimage: None,
             declaration: None,
             owner: None,
             body: emission.body,
@@ -1716,10 +1641,10 @@ fn refinement_node(
 }
 
 /// `origin`'s role as FR-322 spells it.
-fn occurrence_role(node: NodeKey, origin: &Origin) -> Result<CheckedOccurrenceRole, EmitRefusal> {
+fn occurrence_role(node: &NodeKey, origin: &Origin) -> Result<CheckedOccurrenceRole, EmitRefusal> {
     crate::checked_v2::occurrence_role(origin.role().as_str()).ok_or_else(|| {
         EmitRefusal::UnknownOccurrenceRole {
-            node,
+            node: node.clone(),
             role: origin.role().to_string(),
         }
     })
@@ -1770,7 +1695,6 @@ fn clause_metadata(id: CheckedNodeId) -> TimedNodeMetadata {
             ordinal: 0,
         }],
         recursion_group: None,
-        nominal_identity_preimage: None,
         declaration: None,
         owner: None,
     }
@@ -1899,7 +1823,7 @@ fn write_clauses(
                 }
             }
             parts.push(CheckedGuardPart {
-                predicate: node_id(part.predicate),
+                predicate: node_id(&part.predicate),
                 constraints,
             });
         }
@@ -1907,7 +1831,7 @@ fn write_clauses(
         occur(&mut metadata, span_region(guard.span), regions, true);
         model.guards.push(CheckedClockGuard {
             metadata,
-            operation: node_id(guard.operation),
+            operation: node_id(&guard.operation),
             parts,
         });
     }
@@ -1919,7 +1843,7 @@ fn write_clauses(
                 bounds.push(id);
             }
         }
-        let predicate = node_id(invariant.predicate);
+        let predicate = node_id(&invariant.predicate);
         let region = span_region(invariant.span);
         if let Some(held) = model
             .invariants
@@ -2014,7 +1938,6 @@ fn push_scalar_type(
         dependencies: Vec::new(),
         occurrences: vec![occurrence],
         recursion_group: None,
-        nominal_identity_preimage: None,
         declaration: None,
         owner: None,
         body: CheckedTerm::Aggregate {
@@ -2193,7 +2116,6 @@ fn model_root_node(
             ordinal: 0,
         }],
         recursion_group: None,
-        nominal_identity_preimage: None,
         declaration: None,
         owner: Some(CheckedNodeOwner::ModelRoot {
             identity: selection.identity.as_str().into(),
@@ -2204,7 +2126,7 @@ fn model_root_node(
     }
 }
 
-/// The unique digest-ascending reference targets directly named by a body.
+/// The unique structural reference targets directly named by a body.
 fn body_reference_targets(body: &CheckedTerm) -> Vec<CheckedNodeId> {
     let mut targets = body
         .reference_targets()
@@ -2560,8 +2482,8 @@ fn is_compensation_node(node: &CheckedSemanticNodeV2) -> bool {
 /// node would be written; every production call site is `emit_package`,
 /// which passes `|_| None`, so this behaves exactly as `emit_package`
 /// always has for every non-test caller.
-/// `#[string_edge]`: the nominal preimage's `form` wire discriminator selects
-/// the unit-node emission branch.
+/// `#[string_edge]`: the admitted timed nominal form selects the unit-node
+/// emission branch.
 #[string_edge]
 fn emit_package_inner(
     package: &CheckedPackage,
@@ -2649,9 +2571,17 @@ fn emit_package_inner(
     step_rows
         .sort_by(|left, right| (&left.node_id, left.ordinal).cmp(&(&right.node_id, right.ordinal)));
     if !graph.time_sources().is_empty() {
-        let text_type = literal_type(&nodes, "text")
-            .unwrap_or_else(|| node_id(qsl_semantics::check::builtin_text_type_key()));
-        let rational_type = node_id(qsl_semantics::check::builtin_rational_type_key());
+        let text_type = match literal_type(&nodes, "text") {
+            Some(id) => id,
+            None => node_id(
+                qsl_semantics::check::builtin_text_type_key(graph.package_name())
+                    .map_err(encoding)?,
+            ),
+        };
+        let rational_type = node_id(
+            qsl_semantics::check::builtin_rational_type_key(graph.package_name())
+                .map_err(encoding)?,
+        );
         for (index, source) in graph.time_sources().iter().enumerate() {
             let placeholder = |kind: &str| {
                 qsl_semantics::check::structural_node_key(
@@ -2704,7 +2634,10 @@ fn emit_package_inner(
             // QSpec FR-322 "Timed-model nodes": the template `clock_place`
             // of each clock path, which S3 wrote so that a `presence_read`
             // names it, read back from its emitted node.
-            let integer_type = node_id(qsl_semantics::check::builtin_integer_type_key());
+            let integer_type = node_id(
+                qsl_semantics::check::builtin_integer_type_key(graph.package_name())
+                    .map_err(encoding)?,
+            );
             model.clock_places = graph
                 .timed_models()
                 .iter()
@@ -2747,7 +2680,6 @@ fn emit_package_inner(
                             ordinal: 0,
                         }],
                         recursion_group: None,
-                        nominal_identity_preimage: None,
                         declaration: None,
                         owner: None,
                     };
@@ -2865,21 +2797,53 @@ fn emit_package_inner(
                 if nodes.iter().any(|node| node.node_id == id) {
                     continue;
                 }
-                let preimage = NominalIdentityPreimage::deserialize(
-                    nominal.preimage_value().map_err(encoding)?,
-                )
-                .map_err(encoding)?;
-                let declaration_name = match &preimage {
-                    NominalIdentityPreimage::Dimension(preimage) => {
-                        preimage.qualified_declaration.clone()
-                    }
-                    NominalIdentityPreimage::Unit(preimage) => {
-                        preimage.qualified_declaration.clone()
-                    }
-                    _ => {
+                let declaration = nominal.declaration().map(|segments| CheckedDeclaration {
+                    qualified_name: segments
+                        .iter()
+                        .map(|segment| segment.as_str().into())
+                        .collect(),
+                });
+                let (owner, source_owned) = match nominal.owner() {
+                    NodeOwner::Source(subject) => (
+                        CheckedNodeOwner::Source {
+                            authority: subject.authority.as_str().into(),
+                            identity: subject.identity.as_str().into(),
+                        },
+                        true,
+                    ),
+                    NodeOwner::Model(subject) => (
+                        CheckedNodeOwner::Model {
+                            identity: subject.identity.as_str().into(),
+                            node: subject.node.as_str().into(),
+                        },
+                        false,
+                    ),
+                    NodeOwner::Definition(_) => {
                         return Err(EmitRefusal::TimedModelWriterInvariant(
-                            "a timed unit graph node must be a dimension or unit",
+                            "a timed unit graph node must be owned by a source or model",
                         ));
+                    }
+                };
+                if source_owned != declaration.is_some() {
+                    return Err(EmitRefusal::TimedModelWriterInvariant(
+                        "a timed nominal declaration must agree with its owner",
+                    ));
+                }
+                let body = if source_owned {
+                    match (nominal.form.as_str(), nominal.nominal_payload()) {
+                        ("dimension", Some(payload @ NominalPayload::Dimension(_)))
+                        | ("unit", Some(payload @ NominalPayload::Unit(_))) => {
+                            nominal_term(payload)
+                        }
+                        _ => {
+                            return Err(EmitRefusal::TimedModelWriterInvariant(
+                                "a source-owned timed nominal must carry its typed body",
+                            ));
+                        }
+                    }
+                } else {
+                    CheckedTerm::Aggregate {
+                        members: Vec::new(),
                     }
                 };
                 let semantic_type = if nominal.form == "unit" {
@@ -2895,16 +2859,21 @@ fn emit_package_inner(
                     role: CheckedOccurrenceRole::Declaration,
                     ordinal: 0,
                 };
-                source_map.push(CheckedSourceMapEntry {
-                    node_id: id.clone(),
-                    role: occurrence.role.clone(),
-                    ordinal: occurrence.ordinal,
-                    regions: vec![CheckedSourceRegion {
-                        source: source_artifact(graph.source()),
-                        start: source_region.start(),
-                        end: source_region.end(),
-                    }],
-                });
+                if source_owned {
+                    // FR-322 follow-up: this is the timed source's region,
+                    // not yet the nominal declaration's own region. Replace
+                    // it when TimeNominalNode exposes that exact span.
+                    source_map.push(CheckedSourceMapEntry {
+                        node_id: id.clone(),
+                        role: occurrence.role.clone(),
+                        ordinal: occurrence.ordinal,
+                        regions: vec![CheckedSourceRegion {
+                            source: source_artifact(graph.source()),
+                            start: source_region.start(),
+                            end: source_region.end(),
+                        }],
+                    });
+                }
                 nodes.push(CheckedSemanticNodeV2 {
                     owner_model: None,
                     node_id: id.clone(),
@@ -2913,16 +2882,15 @@ fn emit_package_inner(
                     semantic_form: nominal.form.as_str().into(),
                     semantic_type,
                     dependencies: nominal.dependencies.iter().map(node_id).collect(),
-                    occurrences: vec![occurrence],
-                    recursion_group: None,
-                    nominal_identity_preimage: Some(preimage),
-                    declaration: Some(CheckedDeclaration {
-                        qualified_name: declaration_name,
-                    }),
-                    owner: None,
-                    body: CheckedTerm::Aggregate {
-                        members: Vec::new(),
+                    occurrences: if source_owned {
+                        vec![occurrence]
+                    } else {
+                        Vec::new()
                     },
+                    recursion_group: None,
+                    declaration,
+                    owner: Some(owner),
+                    body,
                 });
             }
             for node in model
