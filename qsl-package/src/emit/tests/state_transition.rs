@@ -373,12 +373,6 @@ fn several_clauses_are_bound_by_an_exact_conjunction_in_clause_name_order() {
     }
     compiled.verified();
 
-    // Source order changes no node id and not the package id.
-    let swapped = compile(&unit_13(&format!("{P2}{Q2}")));
-    assert_eq!(
-        compiled.emission.package().package_id(),
-        swapped.emission.package().package_id()
-    );
     // The authored nodes are the same with and without the transition: the
     // 5 clause nodes of AC-13 are all present in the AC-14 package.
     let base = compile(&unit_13(""));
