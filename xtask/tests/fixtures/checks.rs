@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Required selections and synthetic completion output for the process double.
 
-pub(super) const CHECKS: [(&str, &str); 12] = [
+pub(super) const CHECKS: [(&str, &str); 10] = [
     ("check::node_key::tests::conformance_fr322_application_keys_match_qspec_operation_vectors", "conformance: 1 of 1 QSpec operation vectors match (process double)"),
     ("check::node_key::tests::conformance_fr092_nominal_enum_keys_match_qspec_vectors", "conformance: 2 nominal enum vectors match (process double)"),
     ("quantities::tc_411_compound_unit_ids_match_qspec_vectors", "conformance: 1 compound-unit vectors"),
@@ -11,7 +11,5 @@ pub(super) const CHECKS: [(&str, &str); 12] = [
     ("checked_v2::tests::conformance_shipped_projection_cases_are_refused_and_admitted_once_removed", "conformance: 1 shipped-projection cases refused and admitted once removed"),
     ("checked_v2::tests::conformance_dependency_selection_vectors", "conformance: 1 dependency-selection entry mutations and 1 order vectors"),
     ("emit::tests::golden::conformance_emitted_application_nodes_match_qspec_positive_fixtures", "conformance: 1 emitted application nodes match QSpec's positive fixtures"),
-    ("complete_value_lock::conformance_catalog_matches_qspec_complete_value_lock", "conformance: 1 catalog rows match QSpec's lock"),
-    ("complete_value_lock::conformance_catalog_matches_qspec_complete_model_lock", "conformance: 1 model catalog rows match QSpec's lock"),
     ("complete_value_lock::conformance_admit_selection_matches_qspec_selection_vectors", "conformance: 1 accepted and 1 refused selection vectors"),
 ];

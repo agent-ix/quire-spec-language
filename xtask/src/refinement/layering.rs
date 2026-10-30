@@ -23,7 +23,7 @@ use qsl_route::{
 };
 use qsl_semantics::check::Capability;
 use qsl_semantics::check::CheckedStateClause;
-use qsl_semantics::value::{DefinitionLock, HeaderLayer, WitnessKind, WitnessRequest};
+use qsl_semantics::value::{HeaderLayer, WitnessKind, WitnessRequest};
 use serde::{Deserialize, Serialize};
 
 use super::compare::CaseResult;
@@ -1001,7 +1001,7 @@ fn witness_result(
             result: CaseResult::ToolFailure,
         };
     };
-    let witness_request = DefinitionLock::pinned().layer_row(layer).witness_request;
+    let witness_request = layer.row().witness_request;
     let capability = match witness_request.kind {
         WitnessKind::OperationContract => Capability::OperationContract,
         WitnessKind::ValueValidity => Capability::ValueValidity,
@@ -1408,11 +1408,11 @@ mod tests {
     #[trace("TC-868", "FR-345-AC-4", "FR-345-AC-7")]
     #[test]
     fn the_edge_table_has_the_six_fr453_pairs() {
-        let lock = DefinitionLock::pinned();
         let expected: Vec<(HeaderLayer, HeaderLayer)> = HeaderLayer::ALL
             .into_iter()
             .flat_map(|child| {
-                lock.layer_row(child)
+                child
+                    .row()
                     .requires
                     .iter()
                     .copied()

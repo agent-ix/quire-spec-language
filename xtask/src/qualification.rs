@@ -133,7 +133,6 @@ struct Capability {
 #[serde(deny_unknown_fields)]
 struct CapabilityApplicability {
     consumer_types: Vec<ConsumerType>,
-    semantic_profiles: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -318,7 +317,6 @@ pub fn run(workspace_root: &Path, operands: &[OsString]) -> Result<Outcome> {
     })?;
     validate_semantics(&corpus)?;
 
-    let profiles = qsl_profiles();
     let all_capabilities = corpus
         .coverage
         .primary
@@ -336,11 +334,6 @@ pub fn run(workspace_root: &Path, operands: &[OsString]) -> Result<Outcome> {
                     .consumer_types
                     .iter()
                     .any(|kind| qsl_consumer(*kind))
-                    && cap
-                        .applicability
-                        .semantic_profiles
-                        .iter()
-                        .any(|profile| profiles.contains(profile))
             })
             .collect::<Vec<_>>()
     } else {
@@ -608,36 +601,6 @@ fn validate_semantics(corpus: &Corpus) -> Result<()> {
         }
     }
     Ok(())
-}
-
-fn qsl_profiles() -> BTreeSet<String> {
-    let lock = qsl_semantics::value::DefinitionLock::pinned();
-    let mut profiles = lock
-        .catalog()
-        .iter()
-        .map(|entry| entry.identity.to_owned())
-        .collect::<BTreeSet<_>>();
-    profiles.extend(
-        lock.model_catalog()
-            .iter()
-            .map(|entry| entry.identity.to_owned()),
-    );
-    profiles.extend(
-        lock.temporal_catalog()
-            .iter()
-            .map(|entry| entry.identity.to_owned()),
-    );
-    profiles.extend(
-        qsl_semantics::value::HeaderLayer::ALL
-            .into_iter()
-            .map(|layer| layer.identity().to_owned()),
-    );
-    profiles.extend(
-        qsl_semantics::check::TemporalProfile::ALL
-            .into_iter()
-            .map(|profile| profile.identity().to_owned()),
-    );
-    profiles
 }
 
 fn qsl_consumer(value: ConsumerType) -> bool {

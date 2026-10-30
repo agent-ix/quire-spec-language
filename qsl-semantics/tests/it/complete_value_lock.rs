@@ -1,17 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! The `Value` family's definition catalog and its package-selection
-//! admission. The conformance tests compare them with QSpec's
-//! `complete-value-lock.json` and its package-selection vectors, read at run
-//! time from the quire-specification checkout `QSPEC_DIR` names (`make
-//! conformance`); nothing of QSpec is copied into this repository.
+//! The `Value` family's local definition admission and selection-vector
+//! behavior. The tests that need QSpec vectors read only those vectors from
+//! the checkout named by `QSPEC_DIR`; they do not compare a local catalog
+//! with QSpec definition catalogs.
 
 use std::collections::BTreeSet;
 use std::path::Path;
 
 use ix_trace_rs::trace;
-use qsl_semantics::value::{
-    CatalogRole, DefinitionLock, HeaderLayer, LayerForm, ModelRole, TemporalRole, Trigger,
-};
+use qsl_semantics::value::{CatalogRole, DefinitionLock, HeaderLayer, LayerForm, Trigger};
 use quire_semantic_value::definition::SelectionRefusalCode;
 use serde_json::Value;
 
@@ -22,8 +19,6 @@ fn lock() -> DefinitionLock {
     DefinitionLock::pinned()
 }
 
-/// QSpec's definition document `name`, read from `$QSPEC_DIR`; `None` when
-/// `QSPEC_DIR` is unset.
 fn qspec_document(name: &str) -> Option<Value> {
     let qspec = std::env::var_os("QSPEC_DIR")?;
     let path = Path::new(&qspec).join(DEFINITIONS).join(name);
@@ -66,183 +61,6 @@ fn the_catalog_covers_every_role_exactly_once() {
             serde_json::json!({"authority": entry.authority, "identity": entry.identity})
         );
     }
-}
-
-/// The catalog is QSpec's lock: every `qualification_catalog` row's role,
-/// authority and identity, in order, every package-selection rule, the
-/// trigger vocabulary and the selection refusal codes. Skipped (and
-/// passing) when `QSPEC_DIR` is unset; `make conformance` requires it.
-#[trace("TC-490", "FR-110-AC-9")]
-#[test]
-fn conformance_catalog_matches_qspec_complete_value_lock() {
-    let Some(document) = qspec_document("complete-value-lock.json") else {
-        println!("skipped: QSPEC_DIR not set");
-        return;
-    };
-    let lock = lock();
-    let rows: Vec<(&str, &str, &str)> = document["qualification_catalog"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|row| {
-            (
-                row["role"].as_str().unwrap(),
-                row["definition"]["authority"].as_str().unwrap(),
-                row["definition"]["identity"].as_str().unwrap(),
-            )
-        })
-        .collect();
-    let catalog: Vec<(&str, &str, &str)> = lock
-        .catalog()
-        .iter()
-        .map(|entry| (entry.role.as_str(), entry.authority, entry.identity))
-        .collect();
-    assert_eq!(catalog, rows);
-
-    let selection = &document["package_selection"];
-    let always: Vec<&str> = lock.always_roles().iter().map(|r| r.as_str()).collect();
-    assert_eq!(always, strings(&selection["always"]));
-    let conditional: Vec<(&str, &str)> = lock
-        .conditional_roles()
-        .iter()
-        .map(|(trigger, role)| (trigger.as_str(), role.as_str()))
-        .collect();
-    let expected: Vec<(&str, &str)> = selection["conditional"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|rule| {
-            (
-                rule["trigger"].as_str().unwrap(),
-                rule["role"].as_str().unwrap(),
-            )
-        })
-        .collect();
-    assert_eq!(conditional, expected);
-    let exactly_one: Vec<(&str, Vec<&str>)> = lock
-        .exactly_one_roles()
-        .iter()
-        .map(|(trigger, roles)| (trigger.as_str(), roles.iter().map(|r| r.as_str()).collect()))
-        .collect();
-    let expected: Vec<(&str, Vec<&str>)> = selection["exactly_one"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|rule| (rule["trigger"].as_str().unwrap(), strings(&rule["roles"])))
-        .collect();
-    assert_eq!(exactly_one, expected);
-
-    let vocabulary: BTreeSet<&str> = strings(&document["trigger_vocabulary"])
-        .into_iter()
-        .collect();
-    assert_eq!(
-        vocabulary,
-        Trigger::ALL.into_iter().map(Trigger::as_str).collect()
-    );
-    let refusals: BTreeSet<&str> = strings(&document["selection_refusal_codes"])
-        .into_iter()
-        .collect();
-    assert_eq!(
-        refusals,
-        SelectionRefusalCode::ALL
-            .into_iter()
-            .map(SelectionRefusalCode::as_str)
-            .collect()
-    );
-    println!(
-        "conformance: {} catalog rows match QSpec's lock",
-        catalog.len()
-    );
-}
-
-/// FR-361-AC-10: the rows of the catalog that come from QSpec's
-/// complete-model lock equal that lock: each `qualification_catalog` row's
-/// role, authority and identity, in order, and its `package_selection`.
-/// Skipped (and passing) when `QSPEC_DIR` is unset; `make conformance`
-/// requires it.
-#[trace("FR-361-AC-10", "TC-1017")]
-#[test]
-fn conformance_catalog_matches_qspec_complete_model_lock() {
-    let Some(document) = qspec_document("complete-model-lock.json") else {
-        println!("skipped: QSPEC_DIR not set");
-        return;
-    };
-    let rows: Vec<(&str, &str, &str)> = document["qualification_catalog"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|row| {
-            (
-                row["role"].as_str().unwrap(),
-                row["definition"]["authority"].as_str().unwrap(),
-                row["definition"]["identity"].as_str().unwrap(),
-            )
-        })
-        .collect();
-    let lock = lock();
-    let catalog: Vec<(&str, &str, &str)> = lock
-        .model_catalog()
-        .iter()
-        .map(|entry| (entry.role.as_str(), entry.authority, entry.identity))
-        .collect();
-    assert_eq!(catalog, rows);
-    let selection = &document["package_selection"];
-    let always: Vec<&str> = ModelRole::ALL.iter().map(|role| role.as_str()).collect();
-    assert_eq!(always, strings(&selection["always"]));
-    assert!(selection["conditional"].as_array().unwrap().is_empty());
-    assert!(selection["exactly_one"].as_array().unwrap().is_empty());
-    // The root is the model layer and `state_graph` the state-graph layer.
-    assert_eq!(
-        ModelRole::Root.identity(),
-        HeaderLayer::ModelComplete.identity()
-    );
-    assert_eq!(
-        ModelRole::StateGraph.identity(),
-        HeaderLayer::StateGraph.identity()
-    );
-    println!(
-        "conformance: {} model catalog rows match QSpec's lock",
-        catalog.len()
-    );
-}
-
-/// The complete-temporal lock's qualification rows and unconditional
-/// selection match the QSpec checkout named by `QSPEC_DIR`.
-#[trace("FR-361-AC-15", "TC-1017")]
-#[test]
-fn conformance_catalog_matches_qspec_complete_temporal_lock() {
-    let Some(document) = qspec_document("complete-temporal-lock.json") else {
-        println!("skipped: QSPEC_DIR not set");
-        return;
-    };
-    let rows: Vec<(&str, &str, &str)> = document["qualification_catalog"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|row| {
-            (
-                row["role"].as_str().unwrap(),
-                row["definition"]["authority"].as_str().unwrap(),
-                row["definition"]["identity"].as_str().unwrap(),
-            )
-        })
-        .collect();
-    let lock = lock();
-    let catalog: Vec<(&str, &str, &str)> = lock
-        .temporal_catalog()
-        .iter()
-        .map(|entry| (entry.role.as_str(), entry.authority, entry.identity))
-        .collect();
-    assert_eq!(catalog, rows);
-    let selection = &document["package_selection"];
-    let always: Vec<&str> = TemporalRole::ALL.iter().map(|role| role.as_str()).collect();
-    assert_eq!(always, strings(&selection["always"]));
-    assert!(selection["conditional"].as_array().unwrap().is_empty());
-    assert!(selection["exactly_one"].as_array().unwrap().is_empty());
-    assert_eq!(
-        TemporalRole::Root.identity(),
-        HeaderLayer::TemporalComplete.identity()
-    );
 }
 
 /// The vector's selected roles: the always roles less any omitted, then its
@@ -320,10 +138,6 @@ fn conformance_admit_selection_matches_qspec_selection_vectors() {
         accepted.len(),
         refused.len()
     );
-}
-
-fn layer(identity: &str) -> HeaderLayer {
-    HeaderLayer::from_identity(identity).unwrap_or_else(|| panic!("no layer {identity}"))
 }
 
 /// FR-110-AC-7: a selected layer's closure holds the layer and every layer
@@ -429,46 +243,4 @@ fn the_qualification_rows_follow_the_value_complete_layer() {
         lock.qualification_roles(&lock.closure(&[HeaderLayer::StateGraph])),
         [CatalogRole::Edition]
     );
-}
-
-/// The layer rows are QSpec's `header_selectable_layers`: each row's
-/// identity, `requires`, admitted-form file and witness request, in order,
-/// and the lock's `package_selection.layer` and `without_layer`. Skipped
-/// (and passing) when `QSPEC_DIR` is unset; `make conformance` requires it.
-#[trace("TC-490", "FR-110-AC-9")]
-#[test]
-fn conformance_layer_rows_match_qspec_complete_value_lock() {
-    let Some(document) = qspec_document("complete-value-lock.json") else {
-        println!("skipped: QSPEC_DIR not set");
-        return;
-    };
-    let lock = lock();
-    let rows = document["header_selectable_layers"].as_array().unwrap();
-    assert_eq!(rows.len(), lock.layers().len());
-    for (row, ours) in rows.iter().zip(lock.layers()) {
-        assert_eq!(row["identity"], ours.layer.identity());
-        let requires: Vec<&str> = ours.requires.iter().map(|l| l.identity()).collect();
-        assert_eq!(strings(&row["requires"]), requires);
-        assert_eq!(row["admitted_forms"], ours.admitted_forms);
-        assert_eq!(
-            row["witness_request"]["kind"],
-            ours.witness_request.kind.as_str()
-        );
-        assert_eq!(
-            row["witness_request"]["extent"],
-            ours.witness_request.extent
-        );
-        assert_eq!(layer(ours.layer.identity()), ours.layer);
-    }
-    let selection = &document["package_selection"];
-    assert_eq!(
-        layer(selection["layer"].as_str().unwrap()),
-        HeaderLayer::ValueComplete
-    );
-    let without: Vec<&str> = lock
-        .qualification_roles(&[])
-        .iter()
-        .map(|role| role.as_str())
-        .collect();
-    assert_eq!(without, strings(&selection["without_layer"]));
 }

@@ -136,14 +136,11 @@ pub(crate) use terminal::{terminal_location, terminal_site, TerminalInput, Termi
 pub(crate) use timed_clause::TimedClauseInput;
 
 /// The package's lock evidence as the lowering reads it (ADR-011 §2.4): the
-/// `DefinitionRef` the `text_profile` law role selects. QSpec publishes no
-/// `complete-value-lock.json` accessor yet, so every production package
-/// supplies none, and each text-law operation refuses
-/// (`missing_declaration`/`missing-selection`, FR-093-AC-6). The
-/// `ieee_profile` law is the package's one admitted IEEE profile
-/// (`PackageDeclarations::ieee_profile`, admitted against the definition
-/// lock by `DefinitionLock::admit_ieee_profile`), so the two cannot
-/// disagree.
+/// `DefinitionRef` the `text_profile` law role selects. The `ieee_profile`
+/// law is the package's one admitted IEEE profile
+/// (`PackageDeclarations::ieee_profile`, admitted against the local
+/// definition policy by `DefinitionLock::admit_ieee_profile`), so the two
+/// cannot disagree.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct LockEvidence {
     text_profile: Option<DefinitionReference>,

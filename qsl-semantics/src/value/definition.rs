@@ -30,17 +30,13 @@
 //! `selection_refusal_codes`; definition-closure refusals use the I04
 //! `invalid_package` code with its closed `cause_tag` vocabulary.
 //!
-//! [`DefinitionLock::pinned`] is the catalog ADR-011 §2.4 names: each
-//! [`CatalogRole`] names the definition the QSL build implements for it, by
-//! authority and identity ([`CatalogRole::identity`]), and each role's
-//! package-selection rule is QSpec FR-001's. A definition is named by its
-//! authority and identity alone, so the catalog holds no revision, no digest
-//! and no QSpec document. Admission recognizes a caller-supplied [`DefinitionReference`]
-//! by authority and identity. The v2 emitter writes each row as the package
-//! lock's edition and definition selections ([`CatalogEntry::reference`]).
-//! `make conformance` compares the catalog and its selection rules with
-//! QSpec's `complete-value-lock.json`, `complete-model-lock.json` and
-//! `complete-temporal-lock.json`, read at run time.
+//! [`DefinitionLock::pinned`] supplies the local semantic roles and
+//! package-selection rules used by admission. A definition is named by its
+//! authority and identity alone; this local table contains no revision,
+//! digest or QSpec document. Admission recognizes a caller-supplied
+//! [`DefinitionReference`] by authority and identity. The v2 emitter writes
+//! each row as the package lock's edition and definition selections
+//! ([`CatalogEntry::reference`]).
 
 use std::collections::BTreeSet;
 
@@ -134,12 +130,9 @@ pub enum CatalogRole {
     RuleFr149,
 }
 
-/// A role of QSpec's `complete-model-lock.json` `qualification_catalog`; each
-/// variant is the lock role of the same name (FR-361 item 3). The lock
-/// requires the complete-value lock, so these rows come beside
-/// [`CatalogRole`]'s. The model lock's `root` is the `quire.model.complete/v1`
-/// layer and its `state_graph` is the `quire.state.graph/v1` layer; neither
-/// is the complete-value lock's `root` ([`CatalogRole::Root`]).
+/// A closed semantic role for model-level selections (FR-361 item 3). The
+/// model root is `quire.model.complete/v1`; its state graph role is
+/// `quire.state.graph/v1`.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ModelRole {
     /// QSpec's `root` role.

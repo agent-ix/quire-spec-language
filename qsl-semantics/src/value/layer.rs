@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-110 "Layer selection": the header-selectable layers of QSpec AD-003's
-//! state and value/model hierarchy, as the `header_selectable_layers` rows
-//! of QSpec's `complete-value-lock.json` name them.
+//! state and value/model hierarchy.
 //!
-//! A [`HeaderLayer`] is one row: its identity, the layers it `requires`, the
-//! definition file that states its admitted forms, and the witness request
-//! it names. [`DefinitionLock::layer_row`](super::DefinitionLock::layer_row)
-//! reads the row; [`DefinitionLock::closure`](super::DefinitionLock::closure)
+//! A [`HeaderLayer`] is one local policy row: its identity, the layers it
+//! `requires`, the definition file that states its admitted forms, and the
+//! witness request it names. [`DefinitionLock::closure`](super::DefinitionLock::closure)
 //! computes a selection's `requires` closure; and
 //! [`DefinitionLock::admits`](super::DefinitionLock::admits) answers whether a
 //! [`LayerForm`] is in the admitted-form set of a closure. QSpec states the
@@ -59,6 +57,15 @@ impl HeaderLayer {
             Self::ModelComplete => "quire.model.complete/v1",
             Self::TemporalComplete => "quire.temporal.complete/v1",
         }
+    }
+
+    /// The layer's local policy row. The lookup is total because the row
+    /// table and this closed enum are maintained together.
+    pub fn row(self) -> &'static LayerRow {
+        LAYER_ROWS
+            .iter()
+            .find(|row| row.layer == self)
+            .expect("every header layer has one policy row")
     }
 
     /// The layer a header identity names, if it names one.
