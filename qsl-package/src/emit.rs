@@ -85,14 +85,16 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
 use quire_contract_model::{
-    derive_structural_candidates, encode_checked_package_v2, CheckedArtifactRef, CheckedCapability,
-    CheckedCapabilityDisposition, CheckedDeclaration, CheckedDependencySelection,
-    CheckedDiagnosticsV2, CheckedNodeId, CheckedNodeKind, CheckedNodeOwner, CheckedNodePathSegment,
-    CheckedNodeTag, CheckedOccurrence, CheckedOccurrenceRole, CheckedOperationAnchorBody,
-    CheckedPackageEvidence, CheckedPackageLockV2, CheckedPackageSourceCorrespondenceRef,
-    CheckedPackageV2, CheckedRational, CheckedRefinementStepRowRegion, CheckedSelection,
-    CheckedSelectionRole, CheckedSemanticGraphV2, CheckedSemanticNodeV2, CheckedSourceMapEntry,
-    CheckedSourceRef, CheckedSourceRegion, CheckedTerm, ExecutionPoint, NominalIdentityPreimage,
+    derive_structural_candidates, encode_checked_package_v2, ApplicationOperator,
+    CheckedArtifactRef, CheckedBindingName, CheckedCapability, CheckedCapabilityDisposition,
+    CheckedDeclaration, CheckedDependencySelection, CheckedDiagnosticsV2, CheckedFieldScope,
+    CheckedFrameModification, CheckedNodeId, CheckedNodeKind, CheckedNodeOwner,
+    CheckedNodePathSegment, CheckedNodeTag, CheckedOccurrence, CheckedOccurrenceRole,
+    CheckedOperationAnchorBody, CheckedPackageEvidence, CheckedPackageLockV2,
+    CheckedPackageSourceCorrespondenceRef, CheckedPackageV2, CheckedRational,
+    CheckedRefinementStepRowRegion, CheckedScopedDeletion, CheckedSelection, CheckedSelectionRole,
+    CheckedSemanticGraphV2, CheckedSemanticNodeV2, CheckedSourceMapEntry, CheckedSourceRef,
+    CheckedSourceRegion, CheckedTerm, ExecutionPoint, LiteralKind, NominalIdentityPreimage,
     NominalOwner, ProtocolForm, StateForm, ValueForm,
 };
 use serde::Deserialize;
@@ -103,8 +105,10 @@ use qsl_foundation::source::provenance::{
 };
 use qsl_foundation::Code;
 use qsl_semantics::check::{
-    AbstractionNodeRefusal, AbstractionNodes, BodyTerm, CheckedGraph, CheckedRefinement, LawRole,
-    LeafTerm, NodeRef, NodeTag, NominalNode, OperationLaw, Owner, SemanticNode, TemporalProfile,
+    AbstractionNodeRefusal, AbstractionNodes, BindingValue, BodyTerm, CheckedGraph,
+    CheckedRefinement, FrameDeletesScoped, FrameModifies, FrameScope, FrameTerm, GroupMember,
+    GroupTerm, LawRole, LeafTerm, LiteralValue, MemberTerm, NodeRef, NodeTag, NominalNode,
+    OperationLaw, Operator, Owner, SemanticNode, TemporalProfile, TupleMember, TupleTerm,
 };
 use qsl_semantics::value::{
     native_diagnostics_catalog, DefinitionReference, DefinitionRole, HeaderLayer, Member,
@@ -171,7 +175,9 @@ pub enum EmitRefusal {
     /// A protocol reference is bound to a key that is not the key of a node
     /// the emitter writes (FR-218 stale target): a reference binds a key,
     /// never a name, and a name is never looked up again.
-    #[error("protocol reference {} is bound to {}, which no written node carries", reference.digest, target.digest)]
+    #[error(
+        "protocol reference {reference:?} is bound to {target:?}, which no written node carries"
+    )]
     StaleProtocolReference {
         /// The reference's node.
         reference: CheckedNodeId,
@@ -760,54 +766,402 @@ impl<'g> Candidate<'g> {
     }
 }
 
-/// The point-bearing operation-anchor body is a contextual bare-value
-/// binding in V2, not an ordinary expression term. Decode it through IR's
-/// typed body so emission and read-back use the same closed carrier.
-/// `#[string_edge]`: node-kind and member discriminators select this one
-/// contextual V2 body shape.
-#[string_edge]
+/// Convert the checked body grammar to IR's typed term vocabulary.  Every
+/// reference is required to have an admitted structural identity here.
 fn checked_body(node: &SemanticNode, tag: CheckedNodeTag) -> Result<CheckedTerm, EmitRefusal> {
-    let body = node.wire_body().map_err(encoding)?;
+    let BodyTerm::Aggregate(aggregate) = node.body() else {
+        return checked_term(node.body());
+    };
     if CheckedNodeKind::decode(tag, node.semantic_form())
         == Some(CheckedNodeKind::State(StateForm::OperationAnchor))
-        && body["members"].as_array().is_some_and(|members| {
-            members.len() == 4
-                && members.last().is_some_and(|member| {
-                    member["term"] == "binding" && member["name"] == "execution_point"
-                })
-        })
+        && matches!(aggregate.members.last(), Some(MemberTerm::Binding(binding)) if
+            binding.name == "execution_point")
     {
-        let members = body["members"]
-            .as_array()
-            .ok_or_else(|| encoding("operation-anchor body members are not an array"))?;
-        let [context, operation, frame, point] = members.as_slice() else {
+        let [context, operation, frame, point] = aggregate.members.as_slice() else {
             return Err(encoding(
                 "point-bearing operation-anchor body does not have four members",
             ));
         };
-        let execution_point = point
-            .get("value")
-            .cloned()
-            .ok_or_else(|| encoding("operation-anchor execution point has no value"))?;
-        let execution_point: ExecutionPoint =
-            ExecutionPoint::deserialize(execution_point).map_err(encoding)?;
-        let members = [context, operation, frame]
-            .into_iter()
-            .cloned()
-            .map(CheckedTerm::deserialize)
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(encoding)?;
-        let [context, operation, frame] = members.try_into().map_err(|_| {
-            encoding("operation-anchor body does not have three expression members")
-        })?;
+        let MemberTerm::Binding(point) = point else {
+            return Err(encoding(
+                "operation-anchor execution point is not a binding",
+            ));
+        };
+        let BindingValue::ExecutionPoint(point) = &point.value else {
+            return Err(encoding(
+                "operation-anchor execution point has no typed point",
+            ));
+        };
         return Ok(CheckedTerm::OperationAnchorBody(Box::new(
             CheckedOperationAnchorBody {
-                members: [context, operation, frame],
-                execution_point: Some(execution_point),
+                members: [
+                    member_term(context)?,
+                    member_term(operation)?,
+                    member_term(frame)?,
+                ],
+                execution_point: Some(point.point().clone()),
             },
         )));
     }
-    CheckedTerm::deserialize(body).map_err(encoding)
+    checked_term(node.body())
+}
+
+fn checked_term(term: &BodyTerm) -> Result<CheckedTerm, EmitRefusal> {
+    match term {
+        BodyTerm::Leaf(leaf) => leaf_term(leaf),
+        BodyTerm::Aggregate(aggregate) => Ok(CheckedTerm::Aggregate {
+            members: aggregate
+                .members
+                .iter()
+                .map(member_term)
+                .collect::<Result<_, _>>()?,
+        }),
+        BodyTerm::Application(application) => Ok(CheckedTerm::Application {
+            operator: application_operator(application.operator),
+            operation: operation_term(&application.operation)?,
+            result_type: admitted_id(&application.result_type)?,
+            arguments: application
+                .arguments
+                .iter()
+                .map(member_term)
+                .collect::<Result<_, _>>()?,
+        }),
+        BodyTerm::Frame(frame) => frame_term(frame),
+        BodyTerm::Abstraction(abstraction) => abstraction_term(abstraction),
+    }
+}
+
+fn leaf_term(leaf: &LeafTerm) -> Result<CheckedTerm, EmitRefusal> {
+    Ok(match leaf {
+        LeafTerm::Literal { ty, value } => {
+            let (value_kind, value) = literal_value(value);
+            CheckedTerm::Literal {
+                type_id: admitted_id(ty)?,
+                value_kind,
+                value,
+            }
+        }
+        LeafTerm::Reference { target } => CheckedTerm::Reference {
+            target: admitted_id(target)?,
+        },
+        LeafTerm::DependencyReference { node } => {
+            let key = node
+                .admitted()
+                .ok_or(EmitRefusal::UnresolvedNodeReference)?;
+            CheckedTerm::DependencyReference {
+                package: key.view().package().into(),
+                node: node_id(key),
+            }
+        }
+    })
+}
+
+fn group_term(group: &GroupTerm) -> Result<CheckedTerm, EmitRefusal> {
+    Ok(CheckedTerm::Aggregate {
+        members: group
+            .members
+            .iter()
+            .map(|member| match member {
+                GroupMember::Leaf(leaf) => leaf_term(leaf),
+                GroupMember::Binding(binding) => Ok(CheckedTerm::Binding {
+                    name: CheckedBindingName::from(binding.name.as_str()),
+                    value: Box::new(leaf_term(&binding.value)?),
+                }),
+            })
+            .collect::<Result<_, _>>()?,
+    })
+}
+
+fn tuple_term(tuple: &TupleTerm) -> Result<CheckedTerm, EmitRefusal> {
+    Ok(CheckedTerm::Aggregate {
+        members: tuple
+            .members
+            .iter()
+            .map(|member| match member {
+                TupleMember::Leaf(leaf) => leaf_term(leaf),
+                TupleMember::Group(group) => group_term(group),
+            })
+            .collect::<Result<_, _>>()?,
+    })
+}
+
+fn member_term(member: &MemberTerm) -> Result<CheckedTerm, EmitRefusal> {
+    Ok(match member {
+        MemberTerm::Leaf(leaf) => leaf_term(leaf)?,
+        MemberTerm::Group(group) => group_term(group)?,
+        MemberTerm::Binding(binding) => {
+            let value = match &binding.value {
+                BindingValue::Leaf(leaf) => leaf_term(leaf)?,
+                BindingValue::Group(group) => group_term(group)?,
+                BindingValue::Tuple(tuple) => tuple_term(tuple)?,
+                BindingValue::Aggregate(aggregate) => CheckedTerm::Aggregate {
+                    members: aggregate
+                        .members
+                        .iter()
+                        .map(member_term)
+                        .collect::<Result<_, _>>()?,
+                },
+                BindingValue::ExecutionPoint(_) => {
+                    return Err(encoding(
+                        "execution point appears outside operation-anchor body",
+                    ))
+                }
+            };
+            CheckedTerm::Binding {
+                name: CheckedBindingName::from(binding.name.as_str()),
+                value: Box::new(value),
+            }
+        }
+    })
+}
+
+fn literal_value(value: &LiteralValue) -> (LiteralKind, serde_json::Value) {
+    use serde_json::json;
+    fn rational(value: &quire_exact::Rational) -> String {
+        if value.is_integer() {
+            value.numerator().to_string()
+        } else {
+            format!("{}/{}", value.numerator(), value.denominator())
+        }
+    }
+    match value {
+        LiteralValue::Boolean(value) => (LiteralKind::Boolean, json!(value)),
+        LiteralValue::Integer(value) => (LiteralKind::Integer, json!(value.to_string())),
+        LiteralValue::Count(value) => (LiteralKind::Integer, json!(value)),
+        LiteralValue::Rational(value) => (LiteralKind::Rational, json!(rational(value))),
+        LiteralValue::Float32Bits(value) => {
+            (LiteralKind::Float32Bits, json!(format!("{value:08x}")))
+        }
+        LiteralValue::Float64Bits(value) => {
+            (LiteralKind::Float64Bits, json!(format!("{value:016x}")))
+        }
+        LiteralValue::Quantity(value) => (LiteralKind::Quantity, json!(rational(value))),
+        LiteralValue::Text(value) => (LiteralKind::Text, json!(value)),
+        LiteralValue::String(value) => (LiteralKind::String, json!(value)),
+        LiteralValue::Uuid(value) => (LiteralKind::Uuid, json!(value.to_string())),
+        LiteralValue::Timestamp(value) => (LiteralKind::Timestamp, json!(value.to_string())),
+        LiteralValue::None => (LiteralKind::None, serde_json::Value::Null),
+        LiteralValue::Enum(value) => (LiteralKind::Enum, json!(value)),
+    }
+}
+
+fn application_operator(operator: Operator) -> ApplicationOperator {
+    match operator {
+        Operator::Call => ApplicationOperator::Call,
+        Operator::Unary => ApplicationOperator::Unary,
+        Operator::Binary => ApplicationOperator::Binary,
+        Operator::Conditional => ApplicationOperator::Conditional,
+        Operator::Let => ApplicationOperator::Let,
+        Operator::Quantify => ApplicationOperator::Quantify,
+        Operator::Collection => ApplicationOperator::Collection,
+        Operator::Query => ApplicationOperator::Query,
+        Operator::Convert => ApplicationOperator::Convert,
+        Operator::Pre => ApplicationOperator::Pre,
+        Operator::Present => ApplicationOperator::Present,
+        Operator::Value => ApplicationOperator::Value,
+        Operator::Deref => ApplicationOperator::Deref,
+        Operator::Reaches => ApplicationOperator::Reaches,
+        Operator::Temporal => ApplicationOperator::Temporal,
+        Operator::TemporalFormula => ApplicationOperator::TemporalFormula,
+        Operator::TemporalFairness => ApplicationOperator::TemporalFairness,
+        Operator::ProtocolControl => ApplicationOperator::ProtocolControl,
+        Operator::StateTransition => ApplicationOperator::StateTransition,
+        Operator::StateClause => ApplicationOperator::StateClause,
+        Operator::Claim => ApplicationOperator::Claim,
+        Operator::Case => ApplicationOperator::Case,
+    }
+}
+
+fn operation_term(
+    operation: &qsl_semantics::check::Operation,
+) -> Result<quire_contract_model::CheckedApplicationOperation, EmitRefusal> {
+    use serde_json::json;
+    let laws = |laws: &[OperationLaw]| {
+        laws.iter()
+            .map(|law| {
+                json!({
+                    "role": law.role.as_str(),
+                    "definition": law.definition,
+                })
+            })
+            .collect::<Vec<_>>()
+    };
+    let mode = |mode: Option<&qsl_semantics::check::OperationMode>| {
+        mode.map(|mode| match mode {
+            qsl_semantics::check::OperationMode::Rounding(value) => {
+                json!({"kind":"rounding", "value":value.as_str()})
+            }
+            qsl_semantics::check::OperationMode::TextProfile(value) => {
+                json!({"kind":"text_profile", "value":value.as_str()})
+            }
+            qsl_semantics::check::OperationMode::Absence(value) => {
+                json!({"kind":"absence", "value":value.as_str()})
+            }
+        })
+    };
+    let leaves = operation
+        .leaves()
+        .iter()
+        .map(|leaf| {
+            let path = leaf
+                .path
+                .iter()
+                .map(|segment| match segment {
+                    qsl_semantics::check::LeafSegment::Field(name) => {
+                        format!("field:{}", name.as_str())
+                    }
+                    qsl_semantics::check::LeafSegment::Position(position) => {
+                        format!("position:{position}")
+                    }
+                    qsl_semantics::check::LeafSegment::Inner => "inner".into(),
+                    qsl_semantics::check::LeafSegment::Member(name) => {
+                        format!("member:{}", name.as_str())
+                    }
+                    qsl_semantics::check::LeafSegment::Recursion(depth) => {
+                        format!("recursion:{depth}")
+                    }
+                })
+                .collect::<Vec<_>>();
+            json!({"path":path, "laws":laws(&leaf.laws), "mode":mode(leaf.mode.as_ref())})
+        })
+        .collect::<Vec<_>>();
+    let member = operation.member().map(member_value);
+    quire_contract_model::CheckedApplicationOperation::deserialize(json!({
+        "identity": operation.identity(), "laws": laws(operation.laws()),
+        "mode": mode(operation.mode()), "member": member, "leaves": leaves,
+    }))
+    .map_err(encoding)
+}
+
+fn member_value(member: &Member) -> serde_json::Value {
+    use serde_json::json;
+    match member {
+        Member::Field { declaration, name } => {
+            json!({"kind":"field","declaration":node_id(declaration),"name":name.as_str()})
+        }
+        Member::Position {
+            declaration,
+            position,
+        } => json!({"kind":"position","declaration":node_id(declaration),"position":position}),
+        Member::Element { declaration } => {
+            json!({"kind":"element","declaration":node_id(declaration)})
+        }
+        Member::RelationshipEnd {
+            declaration,
+            name,
+            population,
+        } => {
+            let mut record = json!({"kind":"relationship_end","declaration":node_id(declaration),"name":name.as_str()});
+            if let Some(population) = population {
+                record["population"] = json!(node_id(population));
+            }
+            record
+        }
+        Member::Operation { declaration, name } => {
+            json!({"kind":"operation","declaration":node_id(declaration),"name":name.as_str()})
+        }
+        Member::TypeArgument { declaration } => {
+            json!({"kind":"type_argument","declaration":node_id(declaration)})
+        }
+        Member::ProfileOperator { operator } => {
+            json!({"kind":"profile_operator","operator":operator.as_str()})
+        }
+        Member::StateClause {
+            clause,
+            execution_point,
+        } => {
+            let clause = match clause {
+                qsl_forms::StateClauseKind::Invariant => "invariant",
+                qsl_forms::StateClauseKind::Constraint => "constraint",
+                qsl_forms::StateClauseKind::Precondition => "precondition",
+                qsl_forms::StateClauseKind::Postcondition => "postcondition",
+            };
+            let mut record = json!({"kind":"state_clause","clause":clause});
+            if let Some(point) = execution_point {
+                record["execution_point"] = json!(point.point());
+            }
+            record
+        }
+        Member::TemporalInterval { interval } => json!({
+            "kind":"temporal_interval",
+            "interval":interval.map(|interval| json!({
+                "lower":interval.lower().to_string(),
+                "upper": match interval.upper() {
+                    qsl_foundation::bound::TemporalUpper::Finite(value) => Some(value.to_string()),
+                    qsl_foundation::bound::TemporalUpper::Open => None,
+                },
+            })),
+        }),
+        Member::TimedInterval(timed) => {
+            let rational = |value: &quire_exact::Rational| {
+                json!({
+                    "numerator":value.numerator().to_string(),
+                    "denominator":value.denominator().to_string(),
+                })
+            };
+            json!({"kind":"temporal_interval","interval":{
+                "lower":rational(&timed.lower),
+                "lower_end":if timed.lower_closed {"closed"} else {"open"},
+                "upper":timed.upper.as_ref().map(rational),
+                "upper_end":if timed.upper_closed {"closed"} else {"open"},
+            }})
+        }
+        Member::Fairness {
+            kind,
+            granularity,
+            declaration,
+            name,
+        } => json!({
+            "kind":"fairness",
+            "fairness_kind":match kind { quire_semantic_value::fairness::FairnessKind::Weak => "weak", quire_semantic_value::fairness::FairnessKind::Strong => "strong" },
+            "granularity":match granularity { quire_semantic_value::fairness::FairnessGranularity::Whole => "whole", quire_semantic_value::fairness::FairnessGranularity::Each => "each" },
+            "declaration":node_id(declaration), "name":name.as_str(),
+        }),
+    }
+}
+
+fn frame_term(frame: &FrameTerm) -> Result<CheckedTerm, EmitRefusal> {
+    let modifies = frame
+        .modifies
+        .iter()
+        .map(|entry| match entry {
+            FrameModifies::Field(field) => Ok(CheckedFrameModification::Field {
+                declaration: admitted_id(&field.declaration())?,
+                name: field.name().into(),
+                scope: match field.scope() {
+                    FrameScope::EveryObject => CheckedFieldScope::EveryObject,
+                    FrameScope::Receiver => CheckedFieldScope::Receiver,
+                },
+            }),
+            FrameModifies::Relationship(target) => Ok(CheckedFrameModification::Relationship {
+                declaration: admitted_id(target)?,
+            }),
+        })
+        .collect::<Result<Vec<_>, EmitRefusal>>()?;
+    let deletes_scoped = frame
+        .deletes_scoped
+        .iter()
+        .map(|entry| match entry {
+            FrameDeletesScoped::Receiver => CheckedScopedDeletion::Receiver,
+            FrameDeletesScoped::Parameter(name) => CheckedScopedDeletion::Parameter {
+                name: name.as_str().into(),
+            },
+        })
+        .collect();
+    Ok(CheckedTerm::Frame {
+        modifies,
+        creates: frame
+            .creates
+            .iter()
+            .map(admitted_id)
+            .collect::<Result<_, _>>()?,
+        deletes: frame
+            .deletes
+            .iter()
+            .map(admitted_id)
+            .collect::<Result<_, _>>()?,
+        deletes_scoped,
+    })
 }
 
 /// A structural node's `owner` as the v2 wire writes it (FR-093): exactly the
@@ -1815,7 +2169,7 @@ fn body_reference_targets(body: &CheckedTerm) -> Vec<CheckedNodeId> {
         .into_iter()
         .cloned()
         .collect::<Vec<_>>();
-    targets.sort_by(|left, right| left.digest.cmp(&right.digest));
+    targets.sort();
     targets.dedup();
     targets
 }
@@ -2243,19 +2597,15 @@ fn emit_package_inner(
             });
         }
         step_rows.extend(rows);
-        let insertion = nodes.partition_point(|existing| {
-            existing.node_id.digest.as_bytes() < node.node_id.digest.as_bytes()
-        });
+        let insertion = nodes.partition_point(|existing| existing.node_id < node.node_id);
         nodes.insert(insertion, node.clone());
         source_map.extend(entries);
         sources.insert(source_artifact(region.source()));
         emitted_refinements.push(refinement);
     }
     // FR-322: the sidecar is ordered by owner node id, then ordinal.
-    step_rows.sort_by(|left, right| {
-        (left.node_id.digest.as_bytes(), left.ordinal)
-            .cmp(&(right.node_id.digest.as_bytes(), right.ordinal))
-    });
+    step_rows
+        .sort_by(|left, right| (&left.node_id, left.ordinal).cmp(&(&right.node_id, right.ordinal)));
     if !graph.time_sources().is_empty() {
         let text_type = literal_type(&nodes, "text")
             .unwrap_or_else(|| node_id(qsl_semantics::check::builtin_text_type_key()));
