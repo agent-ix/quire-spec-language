@@ -400,19 +400,15 @@ fn check_protocol(
     cancel: &Cancel,
 ) -> Result<TemporalCertificateCheck, ClosureRefusal> {
     let model = admit(request.subject.model.simulation.clone())?;
-    let protocol = request
-        .subject
-        .model
-        .simulation
-        .package
-        .graph()
+    let graph = request.subject.model.simulation.package.graph();
+    let protocol = graph
         .protocol(&request.subject.protocol)
         .ok_or_else(|| {
             ClosureRefusal::Protocol(ProtocolRefusal::UnknownProtocol {
                 protocol: request.subject.protocol.clone(),
             })
         })?;
-    check_protocol_bounds(&model, protocol, BOUND_POSITIONS)
+    check_protocol_bounds(&model, protocol, graph, BOUND_POSITIONS)
         .map_err(|refusal| ClosureRefusal::NotSimulated(Box::new(refusal)))?;
     let subject = &request.subject;
     let item = &request.item;

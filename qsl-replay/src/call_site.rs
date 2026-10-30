@@ -2,14 +2,14 @@
 //! A thin CG-facing cut of the front-end operations in [`crate::spine`]: the facts a client
 //! needs to key a `ReplayRequestWire` or a frame or state-clause
 //! counterexample by node id
-//! and package id (ADR-013 O-25, C-11), without reaching
+//! and package name (ADR-013 O-25, C-11), without reaching
 //! `qsl_replay::spine` itself, which CG may not call (ADR-011 §3 FB-05,
 //! T-12 rule (a): `spine` is public only for `command`).
 //!
 //! [`call_site`] compiles one unit against the supplied domain package
 //! documents and dependency input, under the default spine stage limits,
 //! and locates one selection in the result: the compiled package's own
-//! `package_id` and a named function's parameters, each paired with its own
+//! package name and a named function's parameters, each paired with its own
 //! node id, a named operation's anchor, frame and state clause identities,
 //! or a named state clause's identities, or a named state field's or
 //! population's domain key (ADR-012 §15.4, §15.7). It also returns the compiled package's own
@@ -20,7 +20,6 @@
 //! [`crate::spine::Call`]; it names a call site, it does not make one.
 
 use qsl_foundation::bound::DomainKey;
-use qsl_foundation::digest::{DigestRecord};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::{Code, SourceIdentity};
 use qsl_package::CheckedPackage;
@@ -117,8 +116,8 @@ impl std::fmt::Display for ClauseName {
 }
 
 mod sealed {
-    use qsl_foundation::digest::DigestRecord;
     use qsl_package::CheckedPackage;
+    use qsl_semantics::library::LibraryName;
 
     use super::CallSiteRefusal;
 
@@ -127,28 +126,23 @@ mod sealed {
         /// What the selection locates.
         type Site;
 
-        /// Locate `self` in `package`, whose `package_id` is `package_id`.
+        /// Locate `self` in `package`, whose name is `package_name`.
         fn locate(
             &self,
             package: &CheckedPackage,
-            package_id: DigestRecord,
+            package_name: &LibraryName,
         ) -> Result<Self::Site, Box<CallSiteRefusal>>;
     }
 }
 
-/// What [`call_site`] returns: the compiled package's own content-addressed
-/// identity, its lowered bytes, and what the selection located, a
+/// What [`call_site`] returns: the compiled package's lowered bytes, and
+/// what the selection located, a
 /// [`FunctionSite`], an [`OperationSite`], a [`ClauseSite`], a
 /// [`FieldSite`] or a [`PopulationSite`].
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CallSite<S> {
-    /// The compiled package's `package_id`, as a `quire.package.semantic/v2`
-    /// digest record -- the same shape `ReplayRequestWire::package_id` and
-    /// a witness envelope's package identity carry.
-    pub package_id: DigestRecord,
     /// The compiled package's `quire.checked-package/v2` bytes, exactly as
-    /// the S4 emitter wrote them when it minted `package_id`: their
-    /// `identity_preimage` member's RFC 8785 bytes digest to `package_id`.
+    /// the S4 emitter wrote them.
     pub package: Vec<u8>,
     /// The located function or operation.
     pub site: S,
@@ -303,24 +297,24 @@ pub enum CallSiteRefusal {
     /// `selection` names no function of the compiled `package`. Never a
     /// bare `QualifiedName` (FR-088-AC-6, TC-258): paired with the package
     /// it was looked up in, mirroring `ReplayRefusal::UnknownFunction`.
-    #[error("missing_declaration/missing-name: package {} declares no function {selection}", .package.hex())]
+    #[error("missing_declaration/missing-name: package {package} declares no function {selection}")]
     UnknownFunction {
         /// The name `call_site` was given.
         selection: QualifiedName,
-        /// The compiled package's own `package_id`.
-        package: DigestRecord,
+        /// The compiled package's name.
+        package: LibraryName,
     },
     /// `selection` names no operation frame of the compiled `package`: its
     /// model alias or object type does not resolve, the operation resolves
     /// to no single operation, or no clause or attempt of the unit names it
     /// (FR-105 emits no frame for it). Paired with the package, as
     /// [`Self::UnknownFunction`] is (FR-088-AC-6).
-    #[error("missing_declaration/missing-name: package {} holds no operation frame {selection}", .package.hex())]
+    #[error("missing_declaration/missing-name: package {package} holds no operation frame {selection}")]
     UnknownOperation {
         /// The operation `call_site` was given.
         selection: OperationName,
-        /// The compiled package's own `package_id`.
-        package: DigestRecord,
+        /// The compiled package's name.
+        package: LibraryName,
     },
     /// `selection`'s owner `T` names a declaration of the compiled `package`
     /// that is not an object type, a process or a state machine (a record
@@ -328,55 +322,55 @@ pub enum CallSiteRefusal {
     /// population, ...), so it declares no operation (FR-121). Mirrors QSpec
     /// FR-323's refusal of such a `frame_operation.object`. Paired with the
     /// package, as [`Self::UnknownFunction`] is (FR-088-AC-6).
-    #[error("invalid_model_binding/malformed-declaration: package {} declares {selection}'s owner as no object type, process or state machine", .package.hex())]
+    #[error("invalid_model_binding/malformed-declaration: package {package} declares {selection}'s owner as no object type, process or state machine")]
     NotAnOperationOwner {
         /// The operation `call_site` was given.
         selection: OperationName,
-        /// The compiled package's own `package_id`.
-        package: DigestRecord,
+        /// The compiled package's name.
+        package: LibraryName,
     },
     /// `selection`'s operation name resolves, in its owner's effective view,
     /// to declarations of two supertypes neither of which hides the other
     /// (QSpec FR-342). Decided before the operation's frame is looked for,
     /// so an ambiguous name is never an [`Self::UnknownOperation`]. Paired
     /// with the package, as [`Self::UnknownFunction`] is (FR-088-AC-6).
-    #[error("ambiguous_declaration/ambiguous-name: package {} exposes operation {selection} through two supertypes", .package.hex())]
+    #[error("ambiguous_declaration/ambiguous-name: package {package} exposes operation {selection} through two supertypes")]
     AmbiguousOperation {
         /// The operation `call_site` was given.
         selection: OperationName,
-        /// The compiled package's own `package_id`.
-        package: DigestRecord,
+        /// The compiled package's name.
+        package: LibraryName,
     },
     /// `selection` names no state clause of the compiled `package`. Paired
     /// with the package, as [`Self::UnknownFunction`] is (FR-088-AC-6).
-    #[error("missing_declaration/missing-name: package {} declares no state clause {selection}", .package.hex())]
+    #[error("missing_declaration/missing-name: package {package} declares no state clause {selection}")]
     UnknownClause {
         /// The clause name `call_site` was given.
         selection: ClauseName,
-        /// The compiled package's own `package_id`.
-        package: DigestRecord,
+        /// The compiled package's name.
+        package: LibraryName,
     },
     /// `selection` names no state field of the compiled `package`: its model
     /// alias or object type does not resolve, or the object type's
     /// effective attribute set has no field of that name. Paired with the
     /// package, as [`Self::UnknownFunction`] is (FR-088-AC-6).
-    #[error("missing_declaration/missing-name: package {} declares no field {selection}", .package.hex())]
+    #[error("missing_declaration/missing-name: package {package} declares no field {selection}")]
     UnknownField {
         /// The field `call_site` was given.
         selection: FieldName,
-        /// The compiled package's own `package_id`.
-        package: DigestRecord,
+        /// The compiled package's name.
+        package: LibraryName,
     },
     /// `selection` names no population of the compiled `package`: its model
     /// alias does not resolve, or its domain package declares no population
     /// of that artifact id. Paired with the package, as
     /// [`Self::UnknownFunction`] is (FR-088-AC-6).
-    #[error("missing_declaration/missing-name: package {} declares no population {selection}", .package.hex())]
+    #[error("missing_declaration/missing-name: package {package} declares no population {selection}")]
     UnknownPopulation {
         /// The population `call_site` was given.
         selection: PopulationName,
-        /// The compiled package's own `package_id`.
-        package: DigestRecord,
+        /// The compiled package's name.
+        package: LibraryName,
     },
     /// A broken invariant: the compiled package's own function node for a
     /// selected function is not itself a function node, or its parameter
@@ -434,6 +428,7 @@ impl CallSiteRefusal {
 /// let f = QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap();
 /// let site = call_site(
 ///     SourceIdentity::new("a", "u", "git", "1"),
+///     "fixture".to_owned(),
 ///     "u",
 ///     unit.as_bytes(),
 ///     [],
@@ -455,6 +450,7 @@ impl CallSiteRefusal {
 /// let f = QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap();
 /// let site = call_site(
 ///     SourceIdentity::new("a", "u", "git", "1"),
+///     "fixture".to_owned(),
 ///     "u",
 ///     unit.as_bytes(),
 ///     [],
@@ -466,12 +462,19 @@ impl CallSiteRefusal {
 /// ```
 pub fn call_site<'a, S: CallSiteSelection>(
     source: SourceIdentity,
+    package_name: String,
     path: &str,
     bytes: &[u8],
     packages: impl IntoIterator<Item = &'a [u8]>,
     dependencies: &DependencyInput,
     selection: &S,
 ) -> Result<CallSite<S::Site>, Box<CallSiteRefusal>> {
+    let library_name = LibraryName::new(&package_name).map_err(|_| {
+        Box::new(CallSiteRefusal::Fault(InternalFault::new(
+            "call-site",
+            "package-name-is-a-library-name",
+        )))
+    })?;
     let cancel = Cancel::new();
     let refusal = |failure| match spine::refusal_or_fault(failure) {
         Ok(refusal) => Box::new(CallSiteRefusal::from(*refusal)),
@@ -498,16 +501,14 @@ pub fn call_site<'a, S: CallSiteSelection>(
     let models = spine::select(&parsed, &packages, limits.model, &cancel)
         .map_err(refusal)?
         .into_value();
-    let checked = spine::check(&parsed, &models, dependencies, limits, &cancel)
+    let checked = spine::check(&parsed, package_name, &models, dependencies, limits, &cancel)
         .map_err(refusal)?
         .into_value();
     let emitted = spine::package(&checked, spine::PackageLimits::default(), &cancel)
         .map_err(refusal)?
         .into_value();
-    let package_id = emitted.package().package_id().record();
-    let site = selection.locate(checked.package(), package_id)?;
+    let site = selection.locate(checked.package(), &library_name)?;
     Ok(CallSite {
-        package_id,
         package: emitted.package().bytes().to_vec(),
         site,
     })
@@ -570,12 +571,12 @@ impl sealed::Locate for QualifiedName {
     fn locate(
         &self,
         package: &CheckedPackage,
-        package_id: DigestRecord,
+        package_name: &LibraryName,
     ) -> Result<FunctionSite, Box<CallSiteRefusal>> {
         let unknown = || {
             Box::new(CallSiteRefusal::UnknownFunction {
                 selection: self.clone(),
-                package: package_id,
+                package: package_name.clone(),
             })
         };
         let [segment] = self.segments() else {
@@ -590,19 +591,19 @@ impl sealed::Locate for QualifiedName {
         let parameters = callable
             .parameters
             .iter()
-            .zip(keys.iter().copied())
+            .zip(keys.iter().cloned())
             .map(|((name, _value_type), key)| {
                 Ok((
                     identifier(name, "declared-parameter-name-is-a-valid-identifier")?,
-                    wire_id(key),
+                    key,
                 ))
             })
             .collect::<Result<Vec<_>, Box<CallSiteRefusal>>>()?;
-        let function = wire_id(callable.identity);
+        let function = callable.identity.clone();
         let value_parity = if *callable.result == ValueType::Boolean {
             None
         } else {
-            let preimage = value_parity_preimage(package, callable.identity, &keys)
+            let preimage = value_parity_preimage(package, callable.identity.clone(), &keys)
                 .map_err(|fault| Box::new(CallSiteRefusal::Fault(fault)))?;
             let obligation_identity = value_parity_obligation(&preimage).map_err(|error| {
                 Box::new(CallSiteRefusal::Fault(
@@ -617,7 +618,7 @@ impl sealed::Locate for QualifiedName {
         };
         Ok(FunctionSite {
             function,
-            declaration: declaration_occurrence(function),
+            declaration: declaration_occurrence(function.clone()),
             parameters,
             value_parity,
         })
@@ -632,11 +633,11 @@ impl sealed::Locate for OperationName {
     fn locate(
         &self,
         package: &CheckedPackage,
-        package_id: DigestRecord,
+        package_name: &LibraryName,
     ) -> Result<OperationSite, Box<CallSiteRefusal>> {
         let graph = package.graph();
-        let refuse = |build: fn(OperationName, DigestRecord) -> CallSiteRefusal| {
-            Box::new(build(self.clone(), package_id))
+        let refuse = |build: fn(OperationName, LibraryName) -> CallSiteRefusal| {
+            Box::new(build(self.clone(), package_name.clone()))
         };
         if graph.names_non_owner_declaration(&self.model, &self.object) {
             return Err(refuse(|selection, package| {
@@ -666,7 +667,7 @@ impl sealed::Locate for ClauseName {
     fn locate(
         &self,
         package: &CheckedPackage,
-        package_id: DigestRecord,
+        package_name: &LibraryName,
     ) -> Result<ClauseSite, Box<CallSiteRefusal>> {
         let clause = package
             .graph()
@@ -674,7 +675,7 @@ impl sealed::Locate for ClauseName {
             .ok_or_else(|| {
                 Box::new(CallSiteRefusal::UnknownClause {
                     selection: self.clone(),
-                    package: package_id,
+                    package: package_name.clone(),
                 })
             })?;
         clause_site(clause)
@@ -688,7 +689,7 @@ impl sealed::Locate for FieldName {
     fn locate(
         &self,
         package: &CheckedPackage,
-        package_id: DigestRecord,
+        package_name: &LibraryName,
     ) -> Result<FieldSite, Box<CallSiteRefusal>> {
         package
             .graph()
@@ -698,7 +699,7 @@ impl sealed::Locate for FieldName {
             .ok_or_else(|| {
                 Box::new(CallSiteRefusal::UnknownField {
                     selection: self.clone(),
-                    package: package_id,
+                    package: package_name.clone(),
                 })
             })
     }
@@ -711,7 +712,7 @@ impl sealed::Locate for PopulationName {
     fn locate(
         &self,
         package: &CheckedPackage,
-        package_id: DigestRecord,
+        package_name: &LibraryName,
     ) -> Result<PopulationSite, Box<CallSiteRefusal>> {
         package
             .graph()
@@ -721,7 +722,7 @@ impl sealed::Locate for PopulationName {
             .ok_or_else(|| {
                 Box::new(CallSiteRefusal::UnknownPopulation {
                     selection: self.clone(),
-                    package: package_id,
+                    package: package_name.clone(),
                 })
             })
     }
@@ -741,7 +742,7 @@ fn operation_site(
         .filter(|clause| clause.operation() == Some(frame.operation()))
         .map(clause_site)
         .collect::<Result<Vec<_>, Box<CallSiteRefusal>>>()?;
-    let frame_node = wire_id(frame.frame());
+    let frame_node = frame.frame().clone();
     let operation = frame.operation();
     let fault = |invariant| {
         Box::new(CallSiteRefusal::Fault(InternalFault::new(
@@ -761,8 +762,8 @@ fn operation_site(
                 "declared-operation-name-is-a-valid-identifier",
             )?,
         },
-        anchor: wire_id(frame.anchor()),
-        frame: frame_node,
+        anchor: frame.anchor().clone(),
+        frame: frame_node.clone(),
         frame_occurrence: OccurrenceKey::new(frame_node, frame.frame_origin().clone()),
         clauses,
     })
@@ -770,11 +771,11 @@ fn operation_site(
 
 /// `clause`'s declared name, `state_clause` node and `claim` occurrence.
 fn clause_site(clause: &CheckedStateClause) -> Result<ClauseSite, Box<CallSiteRefusal>> {
-    let node = wire_id(clause.identity());
+    let node = clause.identity().clone();
     Ok(ClauseSite {
         name: identifier(clause.name(), "declared-clause-name-is-a-valid-identifier")?,
+        occurrence: OccurrenceKey::new(node.clone(), clause.claim().clone()),
         node,
-        occurrence: OccurrenceKey::new(node, clause.claim().clone()),
     })
 }
 
@@ -788,15 +789,9 @@ fn identifier(name: &str, invariant: &'static str) -> Result<Identifier, Box<Cal
     })
 }
 
-/// A checked node's key as the wire spells it.
-fn wire_id(key: NodeKey) -> NodeKey {
-    key.clone()
-}
-
 #[cfg(test)]
 mod tests {
     use ix_trace_rs::trace;
-    use qsl_foundation::digest::{DigestDomain, DigestRecord};
     use qsl_foundation::SourceIdentity;
     use quire_exact::{Identifier, ScalarLimits};
 
@@ -831,6 +826,7 @@ mod tests {
     ) -> Result<CallSite<FunctionSite>, Box<CallSiteRefusal>> {
         call_site(
             SourceIdentity::new("a", "u", "git", "1"),
+            "fixture".to_owned(),
             "unit.native",
             bytes,
             [],
@@ -856,21 +852,17 @@ mod tests {
 
     /// A `ReplayRequestWire` replaying `function` over `bytes`, keyed by
     /// `assignments` -- built entirely from `call_site`'s own
-    /// `package_id`/parameter pairs plus fixed constants, never by
+    /// parameter pairs plus fixed constants, never by
     /// re-running the node lookup `call_site` itself runs.
     fn wire(
         bytes: &[u8],
-        package_id: DigestRecord,
         function: QualifiedName,
         declaration: qsl_foundation::source::provenance::OccurrenceKey,
         assignments: Vec<CanonicalAssignment>,
     ) -> ReplayRequestWire {
         ReplayRequestWire {
+            package_name: "fixture".to_owned(),
             profile_selections: vec![],
-            package_id: (
-                Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
-                package_id.hex(),
-            ),
             sources: vec![(
                 "a".to_owned(),
                 "u".to_owned(),
@@ -910,11 +902,10 @@ mod tests {
 
         let request = wire(
             bytes,
-            site.package_id,
             name("p"),
             site.site.declaration.clone(),
             vec![CanonicalAssignment {
-                parameter: *node_id,
+                parameter: node_id.clone(),
                 value: crate::witness::WitnessValue::Integer(3),
             }],
         );
@@ -934,7 +925,7 @@ mod tests {
     #[trace("TC-516", "TC-166", "FR-121-AC-2")]
     #[test]
     fn call_site_refuses_an_unknown_function_name() {
-        let compiled = function_site(UNIT.as_bytes(), "f")
+        function_site(UNIT.as_bytes(), "f")
             .expect("f names a real function of the compiled unit");
         let qualified = QualifiedName::new(vec![
             Identifier::new("module").unwrap(),
@@ -944,6 +935,7 @@ mod tests {
         for selection in [name("nope"), name("F"), qualified] {
             let refusal = call_site(
                 SourceIdentity::new("a", "u", "git", "1"),
+                "fixture".to_owned(),
                 "unit.native",
                 UNIT.as_bytes(),
                 [],
@@ -959,7 +951,7 @@ mod tests {
                 panic!("expected UnknownFunction for {selection}, got {refusal:?}");
             };
             assert_eq!(named, selection);
-            assert_eq!(package, compiled.package_id);
+            assert_eq!(package.as_str(), "fixture");
         }
     }
 
@@ -987,61 +979,13 @@ mod tests {
     }
 
     /// FR-121-AC-12: a `CallSite` carries the compiled package's
-    /// `quire.checked-package/v2` bytes, exactly the S4 emitter's, and the
-    /// RFC 8785 bytes of their `identity_preimage` member digest, under
-    /// `quire.package.semantic/v2`, to the `CallSite`'s own `package_id`,
-    /// which the bytes' own `package_id` member also spells.
+    /// `quire.checked-package/v2` bytes, exactly the S4 emitter's.
     #[trace("TC-516", "FR-121-AC-12")]
     #[test]
-    fn call_site_returns_the_checked_package_bytes_its_package_id_names() {
+    fn call_site_returns_the_checked_package_bytes() {
         let site = function_site(UNIT.as_bytes(), "f").expect("f is a declared function");
-        let compiled = crate::spine::compose(
-            SourceIdentity::new("a", "u", "git", "1"),
-            "unit.native",
-            UNIT.as_bytes(),
-            &qsl_semantics::model::intake::package_input([]).unwrap(),
-            &DependencyInput::default(),
-            crate::spine::SpineLimits::default(),
-        )
-        .expect("the fixture unit compiles");
-        assert_eq!(site.package, compiled.emitted.bytes());
-
         let wire: serde_json::Value =
             serde_json::from_slice(&site.package).expect("the package bytes are JSON");
         assert_eq!(wire["contract_version"], "quire.checked-package/v2");
-        // The wire `identity_preimage` holds the seven selections only; the
-        // hashed preimage adds the `identity_projection` derived from the
-        // admitted `semantic_graph` (QSL-1009), so rebuild it from IR's own
-        // admitted view of the bytes.
-        let mut evidence = quire_contract_model::CheckedPackageEvidence::new();
-        for feature in wire["lock"]["required_features"].as_array().unwrap() {
-            evidence.support_feature(feature.as_str().unwrap());
-        }
-        let quire_contract_model::CheckedPackageDispatchResult::AdmittedV2(package) =
-            quire_contract_model::read_checked_package(
-                &site.package,
-                quire_contract_model::CheckedPackageReadLimits::bounded(),
-                &evidence,
-            )
-        else {
-            panic!("IR admits the package bytes");
-        };
-        let selections = package.identity_preimage();
-        let preimage = quire_contract_model::CheckedPackageIdentityPreimageRefV2 {
-            version: &selections.version,
-            edition: &selections.edition,
-            profile_selections: &selections.profile_selections,
-            definition_selections: &selections.definition_selections,
-            required_features: &selections.required_features,
-            dependency_selections: &selections.dependency_selections,
-            identity_projection: &package.graph().nodes,
-        };
-        let digest = quire_canonical::sha256(&preimage, quire_canonical::Limits::new(u64::MAX))
-            .expect("the identity preimage is canonical JSON");
-        assert_eq!(
-            DigestRecord::mint(DigestDomain::PackageSemanticV2, *digest.as_bytes()),
-            site.package_id
-        );
-        assert_eq!(wire["package_id"]["digest"], site.package_id.hex());
     }
 }

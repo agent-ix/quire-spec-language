@@ -839,7 +839,7 @@ pub fn replay_protocol_trace(
                     ))
                 })?;
             let model = ModelSystem::new(simulation.clone()).map_err(ReplayRefusal::Admission)?;
-            check_protocol_bounds(&model, protocol, BOUND_POSITIONS)
+            check_protocol_bounds(&model, protocol, package.0.graph(), BOUND_POSITIONS)
                 .map_err(|refusal| refused(ModelTraceRefusal::NotSimulated(Box::new(refusal))))?;
             let protocol_subject = ProtocolSubject {
                 model: ModelSubject {
