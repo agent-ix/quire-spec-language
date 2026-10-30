@@ -54,9 +54,9 @@ struct Settling {
 }
 
 impl Settling {
-    /// A run of `world`'s own package under `limits`, whose evidence
+    /// A run under `limits`, whose evidence
     /// replays as reproduced against that package.
-    fn of(world: &World, limits: ModelCheckLimits) -> Self {
+    fn of(limits: ModelCheckLimits) -> Self {
         Self {
             method: method(limits),
             cancel: Cancel::new(),
@@ -105,14 +105,7 @@ fn settle(
     limits: ModelCheckLimits,
     replays: &mut u32,
 ) -> StateGraphRecord {
-    settle_with(
-        world,
-        keys,
-        claim,
-        instance,
-        &Settling::of(world, limits),
-        replays,
-    )
+    settle_with(world, keys, claim, instance, &Settling::of(limits), replays)
 }
 
 /// One stand-in witness per initial state, for a hand-built outcome whose
@@ -912,7 +905,7 @@ fn horizon_limit_undecided_and_empty_runs_settle_their_rows() {
             max_depth: Some(3),
             ..method(no_samples())
         },
-        ..Settling::of(&game, no_samples())
+        ..Settling::of(no_samples())
     };
     let mut replays = 0;
     let trap = settle_with(
@@ -1036,7 +1029,7 @@ fn a_disagreeing_or_stopped_replay_never_settles_decisively() {
         &result.items[0][0],
         &Settling {
             replay: GraphReplaySettlement::Inconclusive(disagrees.clone()),
-            ..Settling::of(&world, no_samples())
+            ..Settling::of(no_samples())
         },
         &mut replays,
     );
@@ -1058,7 +1051,7 @@ fn a_disagreeing_or_stopped_replay_never_settles_decisively() {
         &result.items[0][0],
         &Settling {
             replay: GraphReplaySettlement::Stopped(reached),
-            ..Settling::of(&world, no_samples())
+            ..Settling::of(no_samples())
         },
         &mut replays,
     );
@@ -1267,7 +1260,7 @@ fn a_cancelled_request_settles_incomplete_before_any_replay() {
     ));
     let instance = &result.items[0][0];
     let mut replays = 0;
-    let live = Settling::of(&world, no_samples());
+    let live = Settling::of(no_samples());
     let proved = settle_with(&world, AB, "ReachesTwo", instance, &live, &mut replays);
     assert!(
         matches!(proved.value, TerminalValue::Proved { .. }),
@@ -1276,7 +1269,7 @@ fn a_cancelled_request_settles_incomplete_before_any_replay() {
     );
     assert_eq!(replays, 1);
 
-    let cancelled = Settling::of(&world, no_samples());
+    let cancelled = Settling::of(no_samples());
     cancelled.cancel.cancel(CancelCause::Requested);
     let mut replays = 0;
     let record = settle_with(&world, AB, "ReachesTwo", instance, &cancelled, &mut replays);

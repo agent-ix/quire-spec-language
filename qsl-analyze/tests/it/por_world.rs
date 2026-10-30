@@ -560,7 +560,6 @@ impl Fixture {
         replay_unit(
             &ReplayUnit {
                 identity: "por",
-                path: "por.native",
                 text: self.text.as_bytes(),
                 document: &self.document,
                 snapshots: &self.snapshots,

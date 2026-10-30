@@ -48,7 +48,7 @@ fn a_verified_certificate_settles_every_record_certified() {
         .record()
         .hypotheses
         .iter()
-        .map(|clause| (*clause, proved(Certification::Certified)))
+        .map(|clause| (clause.clone(), proved(Certification::Certified)))
         .collect();
     with_request(&world, |request| {
         let valid = certificate(request, 7);
@@ -189,7 +189,7 @@ fn the_hypothesis_items_decide_the_half() {
             TerminalValue::Inconclusive(qsl_replay::InconclusiveCause::InductionNotClosed {
                 depth: 1,
             });
-        let settled = settle(request, holding(), None, vec![(*cas_inv, unproved)])
+        let settled = settle(request, holding(), None, vec![(cas_inv.clone(), unproved)])
             .expect("the records settle");
         assert_eq!(
             settled.safety.value,
@@ -207,7 +207,7 @@ fn the_hypothesis_items_decide_the_half() {
             request,
             holding(),
             None,
-            vec![(*cas_inv, proved(Certification::Uncertified))],
+            vec![(cas_inv.clone(), proved(Certification::Uncertified))],
         )
         .expect("the records settle");
         assert_eq!(settled.safety.value, proved(Certification::Uncertified));

@@ -20,8 +20,8 @@ use qsl_foundation::{BackendId, SourceIdentity};
 use qsl_package::CheckedPackage;
 use qsl_replay::{
     GraphEvidence, GraphEvidenceEnvelope, GraphReplayResult, ModelCheckLimits, ModelPath,
-    ModelTraceSubject, ObligationIdentity, ReplayLimits, ReplayRequestWire, ReplayResult,
-    ReplaySource, RequestTargetWire, StateEnvironment, WitnessPath, WitnessSource,
+    ModelTraceSubject, ReplayLimits, ReplayRequestWire, ReplayResult, ReplaySource,
+    RequestTargetWire, StateEnvironment, WitnessPath, WitnessSource,
 };
 use qsl_semantics::check::{CheckedStateGraphClaim, PackageDeclarations};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -388,13 +388,12 @@ impl World {
         )];
         let mut documents = vec![self.document.clone()];
         documents.extend(self.snapshots.values().cloned());
-        let obligation = [3; 32];
+        let obligation = crate::fixture_ids::obligation_identity();
         let occurrence = claim
             .occurrence()
             .expect("a checked claim has an occurrence");
         let envelope = GraphEvidenceEnvelope::new(
-            // Waits on codex3's structural obligation identity {node, model, ordinal}.
-            ObligationIdentity::from_digest(obligation),
+            obligation.clone(),
             occurrence.clone(),
             occurrence.node().clone(),
             Vec::new(),

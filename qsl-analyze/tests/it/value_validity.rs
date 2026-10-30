@@ -791,14 +791,7 @@ fn an_undefined_subexpression_is_located_at_its_own_occurrence() {
     );
     let package_location = package
         .graph()
-        .occurrence(
-            package
-                .graph()
-                .semantic_graph()
-                .resolve_wire(at.locus.node())
-                .unwrap(),
-            at.locus.origin(),
-        )
+        .occurrence(at.locus.node().clone(), at.locus.origin())
         .expect("the locus is an occurrence of the package");
     assert_eq!(package_location, &expected);
     assert_ne!(at.locus, key);
@@ -831,14 +824,7 @@ fn an_undefinedness_inside_a_callee_is_located_in_the_callees_body() {
     let at = found.reproduced.violation().undefined.as_ref().unwrap();
     let location = package
         .graph()
-        .occurrence(
-            package
-                .graph()
-                .semantic_graph()
-                .resolve_wire(at.locus.node())
-                .unwrap(),
-            at.locus.origin(),
-        )
+        .occurrence(at.locus.node().clone(), at.locus.origin())
         .unwrap();
     // The call site is not a second locus: the locus lies in the callee.
     assert!(
@@ -1349,7 +1335,13 @@ fn a_location_holds_one_candidate_expression_occurrence() {
             if origin.role().as_str() != "expression" {
                 continue;
             }
-            if graph.semantic_graph().node(node).unwrap().node_tag() == NodeTag::Value {
+            if graph
+                .semantic_graph()
+                .node(node.clone())
+                .unwrap()
+                .node_tag()
+                == NodeTag::Value
+            {
                 continue;
             }
             let at = format!("{:?}{:?}", location.origin, location.path());

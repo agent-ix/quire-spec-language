@@ -294,7 +294,7 @@ fn an_unbound_frame_item_is_unsupported_with_no_contract_level_reading() {
         .expect("CONFIG_CONTRACT's postcondition");
     let operation = clause.operation().expect("a post names its operation");
     let anchor = graph
-        .operation_anchor_of(operation.declaring, operation.declaration.name())
+        .operation_anchor_of(operation.declaring.clone(), operation.declaration.name())
         .expect("the operation has an anchor");
     let claim = OccurrenceKey::new(anchor.clone(), Origin::new(Role::new("anchor"), 0));
     let record = run(&world, &claim, None);
@@ -782,7 +782,7 @@ fn a_bound_step_relation_is_unsupported_with_no_implementation_engine() {
         .requirements()
         .iter()
         .filter(|(occurrence, record)| {
-            occurrence.node() == node
+            occurrence.node() == &node
                 && record.requirements().kind()
                     == qsl_semantics::check::Capability::OperationContract
         })

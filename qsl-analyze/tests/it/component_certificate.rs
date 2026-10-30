@@ -25,17 +25,17 @@ use qsl_eval::temporal::{AtomReading, UndefinedCause};
 use qsl_replay::{
     check_closure, check_components, settle_model_check, CertificateLocus, CertificateRejection,
     CertificateRequest, CertificateRule, Certification, ClosureCertificate, ClosureRefusal,
-    Component, ComponentCertificate, ComponentWitness, Execution, IncompleteCause,
-    InconclusiveCause, ModelCheckItem, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome,
-    ProductStateRef, ProofBasis, ProofCertificate, ResultLabel, RunStats, SettlementBasis,
-    SmtEncodingLimits, TemporalCertificateCheck, TerminalValue,
+    Component, ComponentCertificate, ComponentWitness, Execution, IncompleteCause, ModelCheckItem,
+    ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ProductStateRef, ProofBasis,
+    ProofCertificate, ResultLabel, RunStats, SettlementBasis, SmtEncodingLimits,
+    TemporalCertificateCheck, TerminalValue,
 };
 use qsl_semantics::check::{FormulaNodeId, TemporalClauseNode};
 use quire_exact::{Cancel, CancelCause, Meter, ScalarLimits};
 use serde_json::json;
 
 use crate::counter::{UNLIMITED, ZERO};
-use crate::example_units::{config, config_over, decide, reaches_two, EACH};
+use crate::example_units::{config, decide, reaches_two, EACH};
 use crate::liveness::{counter, is_three};
 use crate::por_world::{
     field, integer, level, number, object_type, operation, type_ref, writes, Atom, Fixture, Obj,

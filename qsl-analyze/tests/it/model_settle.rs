@@ -187,7 +187,7 @@ pub(crate) fn request<'a>(
             ),
         ),
         source: witness_source(),
-        obligation_identity: [3; 32],
+        obligation_identity: crate::fixture_ids::obligation_identity(),
         backend: "qsl-en-1".to_owned(),
         state_environment: StateEnvironment::new(Vec::new()),
         accounting_limits: UNLIMITED,
@@ -225,7 +225,7 @@ pub(crate) fn envelope_at<T: SubjectTransition>(
 ) -> WitnessEnvelope<TemporalCounterexample<T>> {
     WitnessEnvelope::reconstruct(
         WitnessPacket {
-            obligation_identity: Some([3; 32]),
+            obligation_identity: Some(crate::fixture_ids::obligation_identity()),
             occurrence_key: Some(occurrence),
             clause_node: Some(node),
             replay_target: qsl_replay::ReplayTargetMembers::function(selected()),
@@ -407,28 +407,32 @@ fn a_counterexample_resolves_its_item_by_clause_node_and_occurrence_key() {
         )
     };
     assert!(matches!(
-        replay_at(payload.clone(), node, occurrence.clone())
+        replay_at(payload.clone(), node.clone(), occurrence.clone())
             .expect("replays")
             .settlement,
         ModelTraceSettlement::Reproduced { .. }
     ));
 
     let authored = crate::fixture_ids::node_key([7]);
-    let authored_key = OccurrenceKey::new(authored, Origin::new(Role::new("temporal"), 0));
-    let (cause, code, tag) = refusal(replay_at(payload.clone(), authored, authored_key.clone()));
+    let authored_key = OccurrenceKey::new(authored.clone(), Origin::new(Role::new("temporal"), 0));
+    let (cause, code, tag) = refusal(replay_at(
+        payload.clone(),
+        authored.clone(),
+        authored_key.clone(),
+    ));
     assert_eq!(
         cause,
         ModelTraceRefusal::ItemIdentity {
-            clause_node: authored,
+            clause_node: authored.clone(),
             occurrence_key: Box::new(authored_key.clone()),
-            expected_node: node,
+            expected_node: node.clone(),
             expected_key: Box::new(occurrence.clone()),
         }
     );
     assert_eq!((code, tag), (Code::StaleDependency, "content-mismatch"));
 
-    let other_key = OccurrenceKey::new(node, Origin::new(Role::new("deadlock-freedom"), 1));
-    let (cause, _, _) = refusal(replay_at(payload.clone(), node, other_key));
+    let other_key = OccurrenceKey::new(node.clone(), Origin::new(Role::new("deadlock-freedom"), 1));
+    let (cause, _, _) = refusal(replay_at(payload.clone(), node.clone(), other_key));
     assert!(
         matches!(cause, ModelTraceRefusal::ItemIdentity { .. }),
         "{cause:?}"
@@ -436,13 +440,13 @@ fn a_counterexample_resolves_its_item_by_clause_node_and_occurrence_key() {
 
     let mut formula = payload;
     formula.kind = CounterexampleKind::Formula;
-    let (cause, code, tag) = refusal(replay_at(formula.clone(), node, occurrence));
+    let (cause, code, tag) = refusal(replay_at(formula.clone(), node.clone(), occurrence));
     assert!(
         matches!(cause, ModelTraceRefusal::ItemIdentity { .. }),
         "{cause:?}"
     );
     assert_eq!((code, tag), (Code::StaleDependency, "content-mismatch"));
-    let (cause, code, tag) = refusal(replay_at(formula, authored, authored_key));
+    let (cause, code, tag) = refusal(replay_at(formula, authored.clone(), authored_key));
     assert_eq!(
         cause,
         ModelTraceRefusal::UnknownTemporalClause {
@@ -861,7 +865,6 @@ fn a_disagreeing_or_refused_replay_never_settles_refuted() {
 }
 
 const TERMINAL_WHEN: &str = "terminal Done using v on M when { 6 mod (3 - self.value) = 0 };\n";
-const TERMINAL_ANY: &str = "terminal Halt using v on M any;\n";
 
 fn with_terminal(terminal: &str) -> String {
     format!("{CONTRACT}{terminal}")

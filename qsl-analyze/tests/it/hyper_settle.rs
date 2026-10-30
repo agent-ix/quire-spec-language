@@ -661,7 +661,7 @@ fn routed_hp4_hyper_item_settles_unsupported_requested_capability() {
     let reason = HyperUnsupported::ExistentialBeforeUniversal;
     let form = HyperForm::Other { reason };
     let node = crate::fixture_ids::node_key([17]);
-    let occurrence = OccurrenceKey::new(node, Origin::new(Role::new("claim"), 0));
+    let occurrence = OccurrenceKey::new(node.clone(), Origin::new(Role::new("claim"), 0));
     let extent = ClaimExtent::from_domains(
         [(
             DomainKey::Node {

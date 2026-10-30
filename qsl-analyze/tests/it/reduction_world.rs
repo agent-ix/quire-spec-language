@@ -461,11 +461,10 @@ fn selected() -> QualifiedName {
     QualifiedName::new(vec![Identifier::new("Noop").expect("an identifier")]).expect("a name")
 }
 
-/// A compiled unit as FR-128 recompiles it: its source identity and path,
+/// A compiled unit as FR-128 recompiles it: its source identity,
 /// its text, its one domain package and the snapshots it provisions.
 pub(crate) struct ReplayUnit<'u> {
     pub(crate) identity: &'u str,
-    pub(crate) path: &'u str,
     pub(crate) text: &'u [u8],
     pub(crate) document: &'u [u8],
     pub(crate) snapshots: &'u qsl_semantics::model::observation::DocumentProvision,
@@ -525,7 +524,7 @@ pub(crate) fn replay_unit_result(
             ),
         ),
         source: witness_source(),
-        obligation_identity: [3; 32],
+        obligation_identity: crate::fixture_ids::obligation_identity(),
         backend: "qsl-en-1".to_owned(),
         state_environment: StateEnvironment::new(Vec::new()),
         accounting_limits: UNLIMITED,
@@ -539,7 +538,7 @@ pub(crate) fn replay_unit_result(
     let (node, occurrence) = clause.unwrap_or_else(crate::model_settle::deadlock_freedom_clause);
     let envelope = WitnessEnvelope::reconstruct(
         WitnessPacket {
-            obligation_identity: Some([3; 32]),
+            obligation_identity: Some(crate::fixture_ids::obligation_identity()),
             occurrence_key: Some(occurrence),
             clause_node: Some(node),
             replay_target: qsl_replay::ReplayTargetMembers::function(selected()),
@@ -561,7 +560,6 @@ impl World {
     fn replay_unit(&self) -> ReplayUnit<'_> {
         ReplayUnit {
             identity: "reduction",
-            path: "reduction.native",
             text: self.text.as_bytes(),
             document: &self.document,
             snapshots: &self.snapshots,

@@ -33,3 +33,8 @@ pub(crate) fn universe_id(seed: impl AsRef<[u8]>) -> UniverseId {
 pub(crate) fn variant_id(seed: impl AsRef<[u8]>) -> VariantId {
     VariantId::new(node_key(seed), "case").expect("a fixture variant case is non-empty")
 }
+
+/// A structural fixture obligation identity.
+pub(crate) fn obligation_identity() -> qsl_replay::ObligationIdentity {
+    qsl_replay::ObligationIdentity::new(node_key([3]), None, 0)
+}

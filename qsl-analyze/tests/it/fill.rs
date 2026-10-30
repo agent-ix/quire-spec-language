@@ -287,7 +287,6 @@ pub(crate) fn package_with(profiles: &str, body: &str) -> CheckedPackage {
     let packages = package_input([document.as_slice()]).unwrap();
     let parsed = qsl_cst::parse(
         SourceIdentity::new("agent-ix", "counter", "git", "1"),
-        "counter".to_owned(),
         "counter.native",
         text.as_bytes(),
         qsl_cst::Limits::default(),

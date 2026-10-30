@@ -10,7 +10,7 @@ use qsl_replay::{MonitorPlanRefusal, MonitorTarget, TimingObligation, TimingObli
 use qsl_semantics::check::{ModelTimeSource, PackageDeclarations, TemporalProfile, TimeSourceKind};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::admit_unit;
-use quire_exact::{Integer, NodeKey, Rational};
+use quire_exact::{Integer, Rational};
 
 use crate::units::Domain;
 

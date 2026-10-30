@@ -18,7 +18,7 @@ use qsl_replay::{
 use qsl_semantics::check::FormulaNodeId;
 use quire_exact::{Cancel, Meter};
 
-use crate::litmus::{attempt, contracts, document, field, package, protocol, unit_text, Documents};
+use crate::litmus::{attempt, contracts, field, package, protocol, Documents};
 use crate::weak_memory::select;
 
 const CLAIM: &str = "temporal Eventually using t0 over (k: M::Core) clock \"model-steps\" \
@@ -54,7 +54,6 @@ static READS_ONE: ReadsValue = ReadsValue(1);
 static READS_THREE: ReadsValue = ReadsValue(3);
 
 struct Fixture {
-    body: String,
     checked: qsl_package::CheckedPackage,
     documents: Documents,
     memory: Vec<MemorySelection>,
@@ -111,7 +110,6 @@ impl Fixture {
             + claim;
         let checked = package(&body);
         Self {
-            body,
             checked,
             documents: Documents::new(),
             memory: vec![select("SB::Both", MemoryModelName::Tso)],

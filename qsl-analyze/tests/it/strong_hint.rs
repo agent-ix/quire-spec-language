@@ -483,7 +483,7 @@ fn operation_names(base_name: &str, reversed: bool, admitted: &str) -> (Vec<Stri
         operations
             .iter()
             .find(|(_, name, _)| *name == wanted)
-            .map(|(id, ..)| *id)
+            .map(|(id, ..)| id.clone())
             .expect("the operation is listed")
     };
     let first = id_of("zap") < id_of("inc");

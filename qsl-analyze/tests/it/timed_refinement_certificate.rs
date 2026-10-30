@@ -122,7 +122,7 @@ fn the_treq_certificate_is_a_refinement_form_the_checker_accepts() {
     let ObligationKind::Refinement { occurrence, .. } = &obligation(&world).kind else {
         panic!("a refinement obligation");
     };
-    assert_eq!(part.refinement_node, occurrence.node());
+    assert_eq!(&part.refinement_node, occurrence.node());
     assert_eq!(certificate.initials.len(), 1);
     assert_eq!(certificate.obligation, obligation(&world));
     assert!(certificate

@@ -412,15 +412,16 @@ fn instance(population: &str, key: &str) -> ModelInstance {
     }
 }
 
-/// The requires-bound root of `population`: the digest of its declaration
-/// identity, as FR-120 names a population root.
+/// The requires-bound root of `population`: its declaration node, as FR-120
+/// names a population root.
 fn population_root(population: &str) -> DomainKey {
-    let naming = json!({"node": ident(population), "package": PACKAGE});
-    let read = quire_canonical::read(naming.to_string().as_bytes(), u64::MAX).expect("JSON");
-    let digest =
-        quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX)).expect("canonical");
     DomainKey::Node {
-        node: digest.clone(),
+        node: quire_exact::NodeKey::new(
+            PACKAGE,
+            vec![quire_exact::PathSegment::Text(ident(population))],
+            0,
+        )
+        .expect("a population node is admissible"),
         path: Vec::new(),
     }
 }

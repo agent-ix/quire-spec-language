@@ -35,8 +35,8 @@ use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::{Cancel, CancelCause, ObjectReference, ScalarLimits, Value};
 
 use crate::counter::{
-    clause_text, document, package, package_with_clauses, reference, subject, unit_text, value,
-    Documents, Letters, CONTRACT, UNLIMITED, ZERO,
+    document, package, package_with_clauses, reference, subject, value, Documents, Letters,
+    CONTRACT, UNLIMITED, ZERO,
 };
 
 const GUARDED: &str = "pre CanInc using v on M::Counter::inc { 6 mod (2 - self.value) >= 0 }\n\
@@ -66,10 +66,8 @@ pub(crate) fn world(body: &str, start: &[(&'static str, i64)]) -> World {
 }
 
 /// A TP-1 clause with its letters, declared in a package of its own: the
-/// clause is a declaration of that package, whose `body` the unit text ends
-/// with.
+/// clause is a declaration of that package.
 pub(crate) struct Invariant {
-    body: String,
     package: CheckedPackage,
     clause: CheckedTemporalClause,
     letters: Letters,
@@ -81,15 +79,13 @@ impl World {
         let declared = [("C", "", formula)];
         let (package, mut clauses) =
             package_with_clauses(&self.documents.document, &self.body, &declared);
-        let body = format!("{}{}", self.body, clause_text("C", "", formula));
-        self.declared(body, package, clauses.remove(0), atom)
+        self.declared(package, clauses.remove(0), atom)
     }
 
-    /// `clause`, declared by `package` whose unit body is `body`, with
-    /// letters over this world's objects.
+    /// `clause`, declared by `package`, with letters over this world's
+    /// objects.
     fn declared(
         &self,
-        body: String,
         package: CheckedPackage,
         clause: CheckedTemporalClause,
         atom: fn(i64) -> Option<bool>,
@@ -98,7 +94,6 @@ impl World {
             ClauseIdentity::resolve(&package, &self.documents.packages, &clause, &Cancel::new())
                 .expect("the package declares the clause");
         Invariant {
-            body,
             package,
             clause,
             letters: Letters { atom },
@@ -539,12 +534,6 @@ fn the_checker_resolves_each_clause_s_identity_from_the_package() {
         &world.body,
         &[("C", "", formula), ("D", "", formula)],
     );
-    let body = format!(
-        "{}{}{}",
-        world.body,
-        clause_text("C", "", formula),
-        clause_text("D", "", formula)
-    );
     let [c, d] = clauses.as_slice() else {
         panic!("two declared clauses");
     };
@@ -558,7 +547,7 @@ fn the_checker_resolves_each_clause_s_identity_from_the_package() {
             .expect("the package declares the clause")
     };
     for (identity, node) in [(at(c), node_c), (at(d), node_d)] {
-        assert_eq!(identity.occurrence().node(), node.identity().clone());
+        assert_eq!(*identity.occurrence().node(), node.identity());
         assert_eq!(identity.occurrence().origin(), node.claim());
         assert_eq!(identity.occurrence().origin().role().as_str(), "claim");
         assert_eq!(identity.over(), Some(node.over().clone()));
@@ -568,13 +557,13 @@ fn the_checker_resolves_each_clause_s_identity_from_the_package() {
         at(d).occurrence().origin().ordinal()
     );
 
-    let c = world.declared(body.clone(), package, c.clone(), |v| Some(v <= 3));
+    let c = world.declared(package, c.clone(), |v| Some(v <= 3));
     let (package, _) = package_with_clauses(
         &world.documents.document,
         &world.body,
         &[("C", "", formula), ("D", "", formula)],
     );
-    let d = world.declared(body, package, d.clone(), |v| Some(v <= 3));
+    let d = world.declared(package, d.clone(), |v| Some(v <= 3));
     let own = certificate(&c.run(&world));
     let reachable = world.reachable();
     let mut expected = closure(&reachable, &c.translation(&world.objects()[0])).states;
