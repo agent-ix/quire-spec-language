@@ -982,66 +982,50 @@ mod quantities {
     use crate::value::unit::{admit_unit_graph, DimensionPreimage, UnitPreimage};
     use quire_semantic_value::quantity::UnitTable;
 
-    fn owner_json() -> Json {
-        json!({"kind": "definition", "authority": "agent-ix", "identity": "example-model"})
-    }
-
-    fn node_id(key: &str) -> Json {
-        json!({"domain": "quire.checked-semantic-node/v1", "digest": resolved(key)})
+    fn owner() -> NodeOwner {
+        NodeOwner::Definition(OwnerSubject::new(
+            "agent-ix",
+            "example-model",
+            "example-model",
+        ))
     }
 
     fn dimension(name: &str) -> DimensionPreimage {
-        DimensionPreimage::from_json(json!({
-            "version": "quire.dimension-node/v1",
-            "owner": owner_json(),
-            "qualified_declaration": ["Example", name],
-            "terms": [],
-        }))
+        DimensionPreimage::new(
+            owner(),
+            vec!["Example".to_owned(), name.to_owned()],
+            Vec::new(),
+        )
         .expect("a base dimension")
     }
 
     fn unit(name: &str, dimension: &str) -> UnitPreimage {
-        UnitPreimage::from_json(json!({
-            "version": "quire.unit-node/v1",
-            "owner": owner_json(),
-            "qualified_declaration": ["Example", name],
-            "dimension_node_id": node_id(dimension),
-            "target_unit_node_id": null,
-            "scale": {"numerator": "1", "denominator": "1"},
-            "offset": {"numerator": "0", "denominator": "1"},
-        }))
+        UnitPreimage::new(
+            owner(),
+            vec!["Example".to_owned(), name.to_owned()],
+            node_key(dimension),
+            None,
+            &Rational::from(1),
+            &Rational::from(0),
+        )
         .expect("a root unit")
     }
 
-    // Four nominal nodes, by name; each is admitted under the key its
-    // preimage gives (`admit` refuses a stale key).
+    // Four nominal nodes, by name; each is admitted under its structural key.
     const LENGTH: &str = "dimension-length";
     const TIME: &str = "dimension-time";
     const METRE: &str = "unit-metre";
     const SECOND: &str = "unit-second";
 
-    /// `name_or_hex`, with a nominal node name replaced by the key its
-    /// preimage gives.
-    fn resolved(name_or_hex: &str) -> String {
-        use crate::value::semantic_node::NodeIdentityPreimage;
-        let limits = qsl_foundation::IdentityLimits::default();
-        let digest = match name_or_hex {
-            LENGTH => dimension("Length").digest(limits),
-            TIME => dimension("Time").digest(limits),
-            METRE => unit("metre", LENGTH).digest(limits),
-            SECOND => unit("second", TIME).digest(limits),
-            other => return other.to_owned(),
-        };
-        crate::model::key::hex(&digest.expect("a nominal preimage keys"))
-    }
-
-    fn node_key(hex: &str) -> NodeKey {
-        let hex = &resolved(hex);
-        let mut digest = [0_u8; 32];
-        for (index, byte) in digest.iter_mut().enumerate() {
-            *byte = u8::from_str_radix(&hex[2 * index..2 * index + 2], 16).expect("hex");
+    fn node_key(name: &str) -> NodeKey {
+        match name {
+            LENGTH => dimension("Length").key(),
+            TIME => dimension("Time").key(),
+            METRE => unit("metre", LENGTH).key(),
+            SECOND => unit("second", TIME).key(),
+            other => panic!("unknown nominal node {other}"),
         }
-        NodeKey::from_digest(digest)
+        .expect("a nominal preimage keys")
     }
 
     /// The `dimension-length`, `dimension-time`, `unit-metre` and
@@ -1061,11 +1045,7 @@ mod quantities {
                 (unit("metre", LENGTH), node_key(METRE)),
                 (unit("second", TIME), node_key(SECOND)),
             ],
-            &OwnerSelection::new([NodeOwner::Definition(OwnerSubject {
-                authority: "agent-ix".into(),
-                identity: "example-model".into(),
-            })]),
-            qsl_foundation::IdentityLimits::default(),
+            &OwnerSelection::new([owner()]),
         )
         .expect("the unit nodes admit")
     }
@@ -1190,22 +1170,16 @@ mod quantities {
     #[trace("FR-093-AC-3", "TC-415")]
     #[test]
     fn a_quantity_conversion_is_exact() {
-        use crate::value::semantic_node::NodeIdentityPreimage;
-        let kilometre = UnitPreimage::from_json(json!({
-            "version": "quire.unit-node/v1",
-            "owner": owner_json(),
-            "qualified_declaration": ["Example", "kilometre"],
-            "dimension_node_id": node_id(LENGTH),
-            "target_unit_node_id": node_id(METRE),
-            "scale": {"numerator": "1000", "denominator": "1"},
-            "offset": {"numerator": "0", "denominator": "1"},
-        }))
+        let kilometre = UnitPreimage::new(
+            owner(),
+            vec!["Example".to_owned(), "kilometre".to_owned()],
+            node_key(LENGTH),
+            Some(node_key(METRE)),
+            &Rational::from(1000),
+            &Rational::from(0),
+        )
         .expect("a derived unit");
-        let km = NodeKey::from_digest(
-            kilometre
-                .digest(qsl_foundation::IdentityLimits::default())
-                .expect("the unit digests"),
-        );
+        let km = kilometre.key().expect("the unit keys");
         let graph = admit_unit_graph(
             [
                 (dimension("Length"), node_key(LENGTH)),
@@ -1214,16 +1188,12 @@ mod quantities {
             [
                 (unit("metre", LENGTH), node_key(METRE)),
                 (unit("second", TIME), node_key(SECOND)),
-                (kilometre, km),
+                (kilometre, km.clone()),
             ],
-            &OwnerSelection::new([NodeOwner::Definition(OwnerSubject {
-                authority: "agent-ix".into(),
-                identity: "example-model".into(),
-            })]),
-            qsl_foundation::IdentityLimits::default(),
+            &OwnerSelection::new([owner()]),
         )
         .expect("metre, second and kilometre admit");
-        let km_type = ValueType::Quantity(UnitId::declared(km));
+        let km_type = ValueType::Quantity(UnitId::declared(km.clone()));
         let checked = check_declarations(PackageDeclarations {
             types: TypeEnvironment::default().with_units(UnitTable::declared(&graph)),
             aliases: vec![

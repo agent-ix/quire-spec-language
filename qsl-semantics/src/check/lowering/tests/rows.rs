@@ -539,54 +539,24 @@ fn enum_binding(name: &str, cases: &[&str]) -> EnumBinding {
     use crate::value::enumeration::{
         AdmittedEnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
     };
-    use crate::value::semantic_node::{
-        NodeIdentityPreimage, NodeOwner, OwnerSelection, OwnerSubject,
-    };
-    let owners = OwnerSelection::new([NodeOwner::Definition(OwnerSubject {
-        authority: "agent-ix".to_owned(),
-        identity: "example-model".to_owned(),
-    })]);
-    let preimage = EnumDeclarationPreimage::from_json(json!({
-        "version": "quire.enum-declaration-node/v1",
-        "owner": {"kind": "definition", "authority": "agent-ix", "identity": "example-model"},
-        "qualified_declaration": ["Example", name],
-        "ordered": false,
-        "members": cases,
-    }))
-    .unwrap();
-    let key = NodeKey::from_digest(
-        preimage
-            .digest(qsl_foundation::IdentityLimits::default())
-            .unwrap(),
-    );
-    let declaration = AdmittedEnumDeclaration::admit(
-        preimage,
-        key,
-        &owners,
-        qsl_foundation::IdentityLimits::default(),
+    use crate::value::semantic_node::{NodeOwner, OwnerSelection, OwnerSubject};
+    let subject = OwnerSubject::new("agent-ix", "example-model", "example-model");
+    let owners = OwnerSelection::new([NodeOwner::Definition(subject.clone())]);
+    let preimage = EnumDeclarationPreimage::new(
+        NodeOwner::Definition(subject),
+        vec!["Example".to_owned(), name.to_owned()],
+        false,
+        cases.iter().map(|case| (*case).to_owned()).collect(),
     )
     .unwrap();
+    let key = preimage.key().unwrap();
+    let declaration = AdmittedEnumDeclaration::admit(preimage, key.clone(), &owners).unwrap();
     let members = cases
         .iter()
         .map(|case| {
-            let member = EnumMemberPreimage::from_json(json!({
-                "version": "quire.enum-member-node/v1",
-                "declaration_node_id": node_ref(key),
-                "case": case,
-            }))
-            .unwrap();
-            let member_key = NodeKey::from_digest(
-                member
-                    .digest(qsl_foundation::IdentityLimits::default())
-                    .unwrap(),
-            );
-            declaration
-                .admit_member(
-                    &member,
-                    member_key,
-                    qsl_foundation::IdentityLimits::default(),
-                )
-                .unwrap()
+            let member = EnumMemberPreimage::new(key.clone(), *case).unwrap();
+            let member_key = member.key().unwrap();
+            declaration.admit_member(&member, member_key).unwrap()
         })
         .collect();
     EnumBinding {
