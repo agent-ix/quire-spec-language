@@ -4690,9 +4690,15 @@ impl<'a> Lowering<'a> {
                 // key is its `VariantId` (ADR-013 O-14). A model variant
                 // type's nodes are built where it is first named, here.
                 self.type_node(node.value_type(), node.location())?;
-        // BLOCKED-BY QSL-1282 (owner: planner titan:QSL:plan): enum_value node key needs the structural path/ordinal source for a VariantId (owner NodeKey + case)
-                let key = NodeKey::from_digest(*member.variant().as_bytes());
-                self.record(key, OccurrenceRole::Expression, node.location().clone());
+                let variant = member.variant();
+                let key = super::sum_case::mint_union_member_key(variant.owner(), variant.case())
+                    .map_err(|_| {
+                        fault(
+                            node.location(),
+                            KeyFault::NonCanonicalNominal(variant.owner().clone()),
+                        )
+                    })?;
+                self.record(key.clone(), OccurrenceRole::Expression, node.location().clone());
                 return Ok(LeafTerm::reference(key));
             }
             // FR-093-AC-33: a quantity literal is a `quantity` literal typed
@@ -4717,7 +4723,7 @@ impl<'a> Lowering<'a> {
         self.value_node(
             node,
             "literal",
-            semantic_type,
+            semantic_type.clone(),
             BodyTerm::literal(semantic_type, literal),
         )
     }

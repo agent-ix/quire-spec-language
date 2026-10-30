@@ -2242,8 +2242,7 @@ impl<'a> Lowering<'a> {
             if self.graph.nodes.contains_key(&key) {
                 continue;
             }
-        // BLOCKED-BY QSL-1282 (owner: planner titan:QSL:plan): unit table lookup by structural NodeKey (E's unit table) replaces the preimage-byte lookup
-            let Some(node) = self.units.nominal_node(key.as_bytes()).cloned() else {
+            let Some(node) = self.units.nominal_node(&key).cloned() else {
                 return Err(fault(location, KeyFault::UnheldNominal(key)));
             };
             let NominalDeclaration {
@@ -2258,12 +2257,12 @@ impl<'a> Lowering<'a> {
                     scale,
                     offset,
                 } => {
-                    pending.push(dimension);
-                    pending.extend(target);
+                    pending.push(dimension.clone());
+                    pending.extend(target.clone());
                     let preimage = UnitPreimage::new(
                         owner.clone(),
                         qualified.clone(),
-                        dimension,
+                        dimension.clone(),
                         target,
                         &scale,
                         &offset,
@@ -2278,7 +2277,7 @@ impl<'a> Lowering<'a> {
                     )
                 }
                 NominalUnitForm::Dimension { terms } => {
-                    pending.extend(terms.iter().map(|(base, _)| *base));
+                    pending.extend(terms.iter().map(|(base, _)| base.clone()));
                     let preimage = DimensionPreimage::new(owner.clone(), qualified.clone(), terms)
                         .ok()
                         .filter(|preimage| own(preimage.preimage_bytes(self.identity)));
@@ -2294,7 +2293,7 @@ impl<'a> Lowering<'a> {
             let declaration = identifiers(qualified.iter().map(String::as_str), &site)?;
             let inserted = self.insert_nominal(
                 &site,
-                key,
+                key.clone(),
                 bytes,
                 NodeContent {
                     owner_model: None,
