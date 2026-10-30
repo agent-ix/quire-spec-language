@@ -1285,16 +1285,12 @@ impl Scope {
         self.index.types.contains_key(name)
     }
 
-    /// The checked graph of the admitted import whose library has
-    /// `package_id` `package` (ADR-015 D-5): where an imported call's callee
-    /// is evaluated.
-    pub fn imported_graph(
-        &self,
-        package: crate::library::PackageId,
-    ) -> Option<&super::CheckedGraph> {
+    /// The checked graph of the admitted import exporting `callee`, where an
+    /// imported call to that structural function identity is evaluated.
+    pub fn imported_graph(&self, callee: &quire_exact::NodeKey) -> Option<&super::CheckedGraph> {
         self.imports
             .values()
-            .find(|import| import.view.package() == package)
+            .find(|import| import.view.exports().any(|(_, node)| node == callee))
             .map(|import| import.graph.as_ref())
     }
 
