@@ -2158,7 +2158,6 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
     declarations: &'c ClauseDeclarations<'a>,
     cx: &mut CheckContext<'a, ClauseDeclarations<'a>>,
     env: &RefinementEnv<'c>,
-    identity: qsl_foundation::IdentityLimits,
 ) -> (RefinementCheck<'f>, u64) {
     let form = &declaration.form;
     let mut findings = Findings {
@@ -2266,7 +2265,6 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
         protocols,
         abstract_side,
         concrete_side,
-        identity,
         findings,
         nodes: &mut nodes,
         lifting: BTreeMap::new(),
@@ -2397,7 +2395,6 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
         // not wait on them (FR-136 "Order of the checks").
         Some((selection, rows)) => RefinementCheck::Protocol(Box::new(ProtocolRefinement {
             checked,
-            identity,
             operations,
             written,
             selection,
@@ -2608,7 +2605,6 @@ struct Checker<'c, 'a> {
     protocols: &'c [ProtocolDeclarationForm],
     abstract_side: Side<'c>,
     concrete_side: Side<'c>,
-    identity: qsl_foundation::IdentityLimits,
     findings: Findings,
     nodes: &'c mut u64,
     /// Each abstract object type an object row maps, with the concrete type
