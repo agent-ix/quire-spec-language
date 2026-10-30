@@ -5298,12 +5298,26 @@ fn strongly_connected_metered(
 /// The operand segments of a derived node's path (QSpec FR-322: `[node_tag,
 /// semantic_form, ...operands]`, each operand a string or an operand node's
 /// key). A `reference`, `option` or collection type names its target; a
-/// bounded domain names each bound (`min`, the integer type once, the bound's
-/// text, and so on), then its base collection for `collection_bounds`.
-/// Every other derived node has no operands: equal content is one node, and
-/// a repeat of its path takes the next producer ordinal.
+/// compound unit names each `(unit, exponent)` term. A value, expression,
+/// temporal, hybrid or bounded-domain node names, in first-occurrence order
+/// and without repeats, what its body walks: binding names, a literal's type
+/// node and text, referenced nodes, an application's operation identity, a
+/// fairness member's declaration and name, its laws' definition identities,
+/// its operator and result type, and last the node's semantic type. Every
+/// other derived node has no operands: equal content is one node, and a
+/// repeat of its path takes the next producer ordinal.
 fn derived_operands(content: &NodeContent) -> Vec<quire_exact::PathSegment> {
     use quire_exact::PathSegment;
+    if matches!(
+        content.node_tag,
+        NodeTag::Value
+            | NodeTag::Expression
+            | NodeTag::Temporal
+            | NodeTag::Hybrid
+            | NodeTag::BoundedDomain
+    ) {
+        return walked_operands(content);
+    }
     let BodyTerm::Aggregate(aggregate) = &content.body else {
         return Vec::new();
     };
@@ -5318,32 +5332,6 @@ fn derived_operands(content: &NodeContent) -> Vec<quire_exact::PathSegment> {
                 _ => None,
             })
             .collect(),
-        NodeTag::BoundedDomain => {
-            let mut operands = Vec::new();
-            let mut previous: Option<&NodeRef> = None;
-            for member in &aggregate.members {
-                let MemberTerm::Binding(binding) = member else {
-                    continue;
-                };
-                let BindingValue::Leaf(LeafTerm::Literal { ty, value }) = &binding.value else {
-                    continue;
-                };
-                operands.push(PathSegment::Text(binding.name.clone()));
-                if previous != Some(ty) {
-                    if let NodeRef::Admitted(key) = ty {
-                        operands.push(PathSegment::Node(key.clone()));
-                    }
-                }
-                previous = Some(ty);
-                operands.push(PathSegment::Text(literal_operand_text(value)));
-            }
-            if content.semantic_form == "collection_bounds" {
-                if let Some(NodeRef::Admitted(key)) = &content.semantic_type {
-                    operands.push(PathSegment::Node(key.clone()));
-                }
-            }
-            operands
-        }
         NodeTag::ScalarType if content.semantic_form == "compound_unit" => {
             // QSpec FR-322: one `(unit node, exponent)` pair per term, in
             // ascending root-unit node key.
@@ -5387,13 +5375,125 @@ fn derived_operands(content: &NodeContent) -> Vec<quire_exact::PathSegment> {
     }
 }
 
+/// The body-walk operands of [`derived_operands`].
+fn walked_operands(content: &NodeContent) -> Vec<quire_exact::PathSegment> {
+    use quire_exact::PathSegment;
+    struct Walk {
+        seen: HashSet<PathSegment>,
+        operands: Vec<PathSegment>,
+    }
+    impl Walk {
+        fn push(&mut self, segment: PathSegment) {
+            if self.seen.insert(segment.clone()) {
+                self.operands.push(segment);
+            }
+        }
+        fn text(&mut self, text: &str) {
+            self.push(PathSegment::Text(text.to_owned()));
+        }
+        fn node(&mut self, node: &NodeRef) {
+            if let NodeRef::Admitted(key) = node {
+                self.push(PathSegment::Node(key.clone()));
+            }
+        }
+        fn leaf(&mut self, leaf: &LeafTerm) {
+            match leaf {
+                LeafTerm::Literal { ty, value } => {
+                    self.node(ty);
+                    self.text(&literal_operand_text(value));
+                }
+                LeafTerm::Reference { target } => self.node(target),
+                LeafTerm::DependencyReference { node } => self.node(node),
+            }
+        }
+        fn group(&mut self, group: &GroupTerm) {
+            for member in &group.members {
+                match member {
+                    GroupMember::Leaf(leaf) => self.leaf(leaf),
+                    GroupMember::Binding(binding) => {
+                        self.text(&binding.name);
+                        self.leaf(&binding.value);
+                    }
+                }
+            }
+        }
+        fn member(&mut self, member: &MemberTerm) {
+            match member {
+                MemberTerm::Leaf(leaf) => self.leaf(leaf),
+                MemberTerm::Group(group) => self.group(group),
+                MemberTerm::Binding(binding) => {
+                    self.text(&binding.name);
+                    match &binding.value {
+                        BindingValue::Leaf(leaf) => self.leaf(leaf),
+                        BindingValue::Group(group) => self.group(group),
+                        BindingValue::Tuple(tuple) => {
+                            for member in &tuple.members {
+                                match member {
+                                    TupleMember::Leaf(leaf) => self.leaf(leaf),
+                                    TupleMember::Group(group) => self.group(group),
+                                }
+                            }
+                        }
+                        BindingValue::Aggregate(aggregate) => {
+                            for member in &aggregate.members {
+                                self.member(member);
+                            }
+                        }
+                        BindingValue::ExecutionPoint(_) => {}
+                    }
+                }
+            }
+        }
+    }
+    let mut walk = Walk {
+        seen: HashSet::new(),
+        operands: Vec::new(),
+    };
+    match &content.body {
+        BodyTerm::Leaf(leaf) => walk.leaf(leaf),
+        BodyTerm::Aggregate(aggregate) => {
+            for member in &aggregate.members {
+                walk.member(member);
+            }
+        }
+        BodyTerm::Application(application) => {
+            for argument in &application.arguments {
+                walk.member(argument);
+            }
+            let operation = &application.operation;
+            walk.text(operation.identity());
+            if let Some(Member::Fairness {
+                declaration, name, ..
+            }) = operation.member()
+            {
+                walk.push(PathSegment::Node(declaration.clone()));
+                walk.text(name.as_str());
+            }
+            for law in operation.laws() {
+                walk.text(&law.definition.identity);
+            }
+            walk.text(application.operator.wire_name());
+            walk.node(&application.result_type);
+        }
+        BodyTerm::Frame(_) | BodyTerm::Abstraction(_) => {}
+    }
+    if let Some(semantic_type) = &content.semantic_type {
+        walk.node(semantic_type);
+    }
+    walk.operands
+}
+
 /// A literal's text as a path operand.
 fn literal_operand_text(value: &LiteralValue) -> String {
     match value {
         LiteralValue::Boolean(value) => value.to_string(),
         LiteralValue::Integer(value) => value.to_string(),
         LiteralValue::Count(value) => value.to_string(),
-        LiteralValue::Rational(value) | LiteralValue::Quantity(value) => value.to_string(),
+        LiteralValue::Rational(value) | LiteralValue::Quantity(value) => {
+            // A whole rational reads as its integer, as the wire writes it.
+            let text = value.to_string();
+            text.strip_suffix("/1").map_or_else(|| text.clone(), str::to_owned)
+        }
         LiteralValue::Float32Bits(bits) => format!("{bits:08x}"),
         LiteralValue::Float64Bits(bits) => format!("{bits:016x}"),
         LiteralValue::Text(text) | LiteralValue::String(text) | LiteralValue::Enum(text) => {

@@ -1287,6 +1287,34 @@ pub enum Operator {
 }
 
 impl Operator {
+    /// The operator class's schema spelling (`application.operator`).
+    pub(crate) fn wire_name(self) -> &'static str {
+        match self {
+            Self::Call => "call",
+            Self::Unary => "unary",
+            Self::Binary => "binary",
+            Self::Conditional => "conditional",
+            Self::Let => "let",
+            Self::Quantify => "quantify",
+            Self::Collection => "collection",
+            Self::Query => "query",
+            Self::Convert => "convert",
+            Self::Pre => "pre",
+            Self::Present => "present",
+            Self::Value => "value",
+            Self::Deref => "deref",
+            Self::Reaches => "reaches",
+            Self::Temporal => "temporal",
+            Self::TemporalFormula => "temporal_formula",
+            Self::TemporalFairness => "temporal_fairness",
+            Self::ProtocolControl => "protocol_control",
+            Self::StateTransition => "state_transition",
+            Self::StateClause => "state_clause",
+            Self::Claim => "claim",
+            Self::Case => "case",
+        }
+    }
+
     /// The `semantic_form` an application node rooted at this operator class
     /// carries (FR-093 "One node per checked expression").
     pub(crate) fn semantic_form(self) -> &'static str {
