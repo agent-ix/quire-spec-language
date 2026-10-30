@@ -2408,7 +2408,9 @@ impl<'t> PopulationValues<'t> {
         })?;
         let reference = ObjectReference::new(
             // BLOCKED-BY IR-1141 (owner: planner titan:QSL:plan): UniverseId::from_digest.
-            // `quire_exact::UniverseId` is constructible only from `[u8; 32]`;
+            // quire-exact d278fe4 `UniverseId::from_digest([u8; 32])`
+            // (src/identity.rs:65) is the only constructor, and
+            // `ObjectReference::new` (src/reference.rs:26) takes a `UniverseId`;
             // the token is the observation's role ordinal, not a hash.
             UniverseId::from_digest(role_token(role)),
             context.effective,

@@ -7,12 +7,12 @@ use serde_json::value::RawValue;
 
 use super::construction::{Artifact, Body};
 use super::{ArtifactLimits, InputError, RuntimeReference};
-use qsl_foundation::{ByteDigest, Code, SourceIdentity};
+use qsl_foundation::{Code, SourceIdentity};
 
 /// Actual stage of a native artifact read failure.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum InputReadStage {
-    /// Input byte limit or selected digest preflight.
+    /// Input byte limit preflight.
     Selection,
     /// Closed envelope, version, kind or identity selection.
     Envelope,
@@ -43,19 +43,13 @@ impl std::fmt::Display for InputReadStage {
 /// Original read failure, without recovering fields from a formatted message.
 #[derive(Debug, thiserror::Error)]
 pub enum InputReadCause {
-    /// Input bytes exceeded the effective clamped ceiling, before hashing.
+    /// Input bytes exceeded the effective clamped ceiling.
     #[error("native input byte limit exceeded")]
     ByteLimit {
         /// Original input byte length.
         actual: usize,
         /// Effective caller-lowered or implementation ceiling.
         maximum: usize,
-    },
-    /// Computed input digest differs from the separately retained selected reference.
-    #[error("selected digest differs from input bytes")]
-    DigestMismatch {
-        /// Digest of the actual input bytes.
-        actual: ByteDigest,
     },
     /// Envelope version differs from the admitted native input format.
     #[error("native input version is not admitted")]
@@ -92,7 +86,6 @@ impl InputReadCause {
     fn classification(&self) -> (InputReadStage, Code) {
         match self {
             Self::ByteLimit { .. } => (InputReadStage::Selection, Code::ResourceExhausted),
-            Self::DigestMismatch { .. } => (InputReadStage::Selection, Code::StaleDependency),
             Self::Version { .. } => (InputReadStage::Envelope, Code::UnknownWire),
             Self::ArtifactKind { .. } | Self::Envelope(_) => {
                 (InputReadStage::Envelope, Code::InvalidRuntimeInput)
@@ -104,7 +97,7 @@ impl InputReadCause {
     }
 }
 
-/// Failed input read retaining the selected role, identity and digest.
+/// Failed input read retaining the selected role and identity.
 #[derive(Debug, thiserror::Error)]
 #[error("{code}: {cause}")]
 pub struct InputReadError {
@@ -165,10 +158,6 @@ fn read_selected<T: Body + DeserializeOwned>(
             maximum,
         });
     }
-    let digest = ByteDigest::of(bytes);
-    if digest != expected.digest() {
-        return Err(InputReadCause::DigestMismatch { actual: digest });
-    }
     // Preserve Serde's default recursion limit on both untrusted decode phases.
     let Object(envelope): Object<Envelope<'_>> =
         serde_json::from_slice(bytes).map_err(InputReadCause::Envelope)?;
@@ -189,6 +178,6 @@ fn read_selected<T: Body + DeserializeOwned>(
         });
     }
     let draft = serde_json::from_str(envelope.body.get()).map_err(InputReadCause::Body)?;
-    Artifact::from_external(envelope.identity.0, draft, bytes, digest, limits)
+    Artifact::from_external(envelope.identity.0, draft, bytes, limits)
         .map_err(InputReadCause::Construction)
 }

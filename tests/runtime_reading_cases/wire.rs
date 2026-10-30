@@ -2,7 +2,7 @@
 //! FR-024: the public record itself owns closed decoding at every nesting level.
 
 use super::*;
-use quire_spec_language::runtime::{InvocationDraft, InvocationRef};
+use quire_spec_language::runtime::InvocationDraft;
 use serde::{de::DeserializeOwned, Serialize};
 use std::fmt::Debug;
 
@@ -87,7 +87,7 @@ fn public_runtime_records_own_closed_object_decoding() {
         &setup::object(&model, "self"),
         &["model", "record", "universe", "key"],
     );
-    closed_record(&snapshot.reference(), &["identity", "digest"]);
+    closed_record(&snapshot.reference(), &["identity"]);
     let (offered, _) = setup::recorded(
         &model,
         setup::draft(&model),
@@ -103,7 +103,7 @@ fn public_runtime_records_own_closed_object_decoding() {
     );
     assert_eq!(offered.invocations.len(), 1);
     let invocation = &offered.invocations[0];
-    closed_record(&invocation.reference(), &["identity", "digest"]);
+    closed_record(&invocation.reference(), &["identity"]);
     closed_record(
         invocation.draft(),
         &[
@@ -155,7 +155,7 @@ fn all_value_variants_own_closed_object_decoding() {
 
 #[test]
 #[trace("TC-099", "TC-100", "FR-024-AC-3")]
-fn nullable_result_and_native_digest_keep_their_exact_wire_domains() {
+fn nullable_result_keeps_its_exact_wire_domain() {
     let model = setup::native_rule_model::parts().model();
     let (offered, _) = setup::recorded(&model, setup::draft(&model), setup::draft(&model), |_| {});
     let original = &offered.invocations[0];
@@ -180,27 +180,4 @@ fn nullable_result_and_native_digest_keep_their_exact_wire_domains() {
     }
     assert!(value.as_object_mut().unwrap().remove("result").is_some());
     assert!(serde_json::from_value::<InvocationDraft>(value).is_err());
-
-    let empty_digest = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
-    let digest = ByteDigest::of(b"");
-    assert_eq!(format!("{digest:x}"), empty_digest);
-    assert_eq!(digest.to_string(), format!("sha256:{empty_digest}"));
-    assert_eq!(digest.to_string().parse::<ByteDigest>().unwrap(), digest);
-    assert!(empty_digest.parse::<ByteDigest>().is_err());
-    for invalid in [
-        "".to_owned(),
-        "0".repeat(63),
-        "0".repeat(65),
-        "é".repeat(32),
-        "g".repeat(64),
-        empty_digest.to_uppercase(),
-        format!("sha256:{empty_digest}"),
-    ] {
-        let mut reference = serde_json::to_value(original.reference()).unwrap();
-        reference["digest"] = json!(invalid);
-        assert!(
-            serde_json::from_value::<InvocationRef>(reference).is_err(),
-            "{invalid}"
-        );
-    }
 }

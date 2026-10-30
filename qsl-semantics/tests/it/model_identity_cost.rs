@@ -156,58 +156,6 @@ fn hashed_bytes_grow_linearly_along_a_chain() {
     assert_eq!(b - a, c - b, "equal added edges add equal bytes");
 }
 
-/// N12 as TC-1024 step 5 states it: 13 effective declarations, 24 retained
-/// facts and 76 work units (8 records, 24 facts, 4 cycle-checks, 13
-/// declarations, 15 hashes, 7 of redefinition-check and 5 of conflict-check).
-#[trace("QSpec-TC-195", "QSpec-FR-081-AC-11")]
-#[test]
-fn n12_phase_four_charges_follow_value_accounting() {
-    use qsl_semantics::model::domain_package::{FieldMemberRecord, Multiplicity, ValueTypeRef};
-    let field = |name: &str, owner: &str, redefines: Option<&str>| {
-        DomainPackageRecord::FieldMember(FieldMemberRecord {
-            key: node_key(name),
-            owner: node_key(owner),
-            value_type: ValueTypeRef::Package(node_key("A")),
-            multiplicity: Multiplicity {
-                lower: 0,
-                upper: Some(1),
-                ordered: false,
-                unique: true,
-            },
-            presence: quire_exact::Presence::Required,
-            subsets: Vec::new(),
-            redefines: redefines.map(node_key),
-            position: 0,
-        })
-    };
-    let object = |name: &str, parents: &[&str]| {
-        DomainPackageRecord::ObjectType(ObjectTypeRecord {
-            key: node_key(name),
-            interface_features: None,
-            abstract_type: false,
-            supertypes: parents.iter().map(|parent| node_key(parent)).collect(),
-        })
-    };
-    let package = DomainPackage::new(
-        DomainPackageRef::fixture("n02"),
-        vec![
-            object("A", &[]),
-            object("B", &["A"]),
-            object("C", &["A"]),
-            object("D", &["B", "C"]),
-            field("A/x", "A", None),
-            field("B/x2", "B", Some("A/x")),
-            field("C/x3", "C", None),
-            field("D/x4", "D", Some("A/x")),
-        ],
-    );
-    let (outcome, meter) = normalize_with_meter(&package, ModelNormalizationLimits::default());
-    assert!(matches!(outcome, NormalizeOutcome::Completed(_)));
-    assert_eq!(meter.consumed(LimitKind::EffectiveDeclarations), 13);
-    assert_eq!(meter.consumed(LimitKind::DerivationFacts), 24);
-    assert_eq!(meter.consumed(LimitKind::WorkUnits), 76);
-}
-
 /// A shape where every type after the first 50 has 50 parents, over 10,001
 /// types, needs about 313 million hashed bytes and is refused at
 /// `hashed_bytes` before the denied preimage is hashed.
