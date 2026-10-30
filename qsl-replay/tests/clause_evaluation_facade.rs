@@ -3,8 +3,7 @@
 //! state clause at a kind-correct current or pre-call observation and returns
 //! a typed `Completed`, `Undefined`, `Refused` or `Incomplete` result. The
 //! calls and result types reach only the `qsl_replay` root (FR-491-AC-6);
-//! this file names no `qsl_replay::spine` item; only its model fixture (the
-//! digest the unit's `model` statement names) reads `qsl_semantics`. The unit is the
+//! this file names no `qsl_replay::spine` item. The unit is the
 //! `example/config-version` model.
 
 use std::collections::BTreeMap;
@@ -20,26 +19,17 @@ use serde_json::{json, Value};
 const PACKAGE: &str = "example/config-version";
 const MODEL: &str = include_str!("../../examples/config-version/model.semantic-ir.json");
 
-fn model_digest_hex() -> String {
-    let packages = qsl_semantics::model::intake::package_input([MODEL.as_bytes()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied package");
-    };
-    qsl_semantics::model::key::hex(digest)
-}
-
 fn unit() -> String {
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
-         model Config = {PACKAGE:?} version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         model Config = {PACKAGE:?};\n\
          invariant ParentOrder using v on Config::ConfigVersion at current {{ \
          present(self.parent) implies deref(value(self.parent)).versionNumber < self.versionNumber }}\n\
          invariant Quotient using v on Config::ConfigVersion at current {{ \
          10 mod self.versionNumber >= 0 }}\n\
          pre ParentPresent using v on Config::ConfigVersion::attemptUpdate {{ \
-         present(self.parent) }}\n",
-        model_digest_hex()
+         present(self.parent) }}\n"
     )
 }
 
@@ -69,8 +59,7 @@ fn snapshot(role: &str, rows: &[(&str, i64, Option<&str>)]) -> Vec<u8> {
         "identity": {"authority": "t", "identity": format!("ix://t/{role}"),
             "revision_namespace": "ns", "revision": "1"},
         "observation": role,
-        "model": {"identity": PACKAGE, "version": "1.0.0",
-            "digest": format!("sha256-jcs:{}", model_digest_hex())},
+        "model": {"identity": PACKAGE},
         "populations": [{"population": population(), "complete": true, "objects": objects}],
     });
     if role == "current" {

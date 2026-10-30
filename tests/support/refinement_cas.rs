@@ -611,12 +611,12 @@ impl World {
     }
 
     /// The domain package provision.
-    pub fn package_provision(&self) -> &BTreeMap<[u8; 32], Vec<u8>> {
+    pub fn package_provision(&self) -> &qsl_semantics::model::intake::PackageInput {
         &self.packages
     }
 
     /// The snapshot provision.
-    pub fn snapshot_provision(&self) -> &BTreeMap<[u8; 32], Vec<u8>> {
+    pub fn snapshot_provision(&self) -> &qsl_semantics::model::observation::DocumentProvision {
         &self.snapshots
     }
 

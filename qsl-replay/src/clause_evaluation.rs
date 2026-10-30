@@ -239,15 +239,26 @@ pub fn evaluate_clause(request: ClauseEvaluationRequest) -> ClauseEvaluation {
             parameters,
         },
     };
+    let packages = match package_input(packages.iter().map(Vec::as_slice)) {
+        Ok(packages) => packages,
+        Err(refusal) => {
+            return coded(
+                ClauseRunStage::Compile,
+                refusal.code.category(),
+                refusal.code.as_str(),
+                "",
+            );
+        }
+    };
     let run = ClauseRunRequest {
         source: ClauseRunSource::Program {
             identity: source,
             path,
             bytes,
         },
-        packages: package_input(packages.iter().map(Vec::as_slice)),
+        packages,
         dependencies,
-        snapshots: BTreeMap::from([(reference.digest, supplied.bytes)]),
+        snapshots: BTreeMap::from([(reference, supplied.bytes)]),
         invocations: BTreeMap::new(),
         selection: ClauseRunSelection::Clause(ClauseSelection {
             name: clause,
