@@ -1657,7 +1657,7 @@ mod tests {
         FairnessConstraint::new(
             kind,
             FairnessOperation::new(
-                quire_exact::EffectiveId::from_digest([7; 32]),
+                crate::fixture_effective(7),
                 name.to_owned(),
             ),
             granularity,

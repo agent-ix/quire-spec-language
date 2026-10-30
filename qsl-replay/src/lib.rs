@@ -432,6 +432,21 @@ pub(crate) fn fixture_node(fill: u8) -> NodeKey {
     .expect("a fixture node is admissible")
 }
 
+/// A universe identity for a test fixture, distinct per `fill`.
+#[cfg(test)]
+pub(crate) fn fixture_universe(fill: u8) -> quire_exact::UniverseId {
+    quire_exact::UniverseId::new(fixture_node(fill))
+}
+
+/// An effective declaration identity for a test fixture, distinct per `fill`.
+#[cfg(test)]
+pub(crate) fn fixture_effective(fill: u8) -> quire_exact::EffectiveId {
+    quire_exact::EffectiveId::new(
+        None,
+        quire_exact::OriginalDeclarationKey::new("fixture", format!("node{fill}")),
+    )
+}
+
 #[cfg(test)]
 mod redaction_tests {
     use ix_trace_rs::trace;

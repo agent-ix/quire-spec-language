@@ -361,8 +361,8 @@ mod tests {
             transition: ScheduledIdentity {
                 operation: "tick".to_owned(),
                 receiver: ObjectReference::new(
-                    UniverseId::from_digest([1; 32]),
-                    EffectiveId::from_digest([2; 32]),
+                    crate::fixture_universe(1),
+                    crate::fixture_effective(2),
                     ObjectId::new("n").expect("a key"),
                 ),
                 arguments: Vec::new(),

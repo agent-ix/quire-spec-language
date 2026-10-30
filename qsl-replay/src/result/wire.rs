@@ -867,7 +867,7 @@ struct OccurrenceWire {
 impl OccurrenceWire {
     fn of(occurrence: &OccurrenceKey) -> Self {
         Self {
-            node_id: hex(occurrence.node().as_bytes()),
+            node_id: crate::id_text::node_text(occurrence.node()).unwrap_or_default(),
             role: occurrence.origin().role().as_str().to_owned(),
             ordinal: occurrence.origin().ordinal(),
         }
@@ -875,7 +875,7 @@ impl OccurrenceWire {
 
     fn read(self) -> Result<OccurrenceKey, CauseCodecError> {
         Ok(OccurrenceKey::new(
-            NodeKey::from_digest(digest(&self.node_id, "node_id")?),
+            spelled(crate::id_text::node_from_text, &self.node_id, "node_id")?,
             Origin::new(Role::new(self.role), self.ordinal),
         ))
     }
@@ -969,8 +969,8 @@ impl PathWire {
                 object_type,
                 object_identity,
             } => {
-                digest(universe, "universe")?;
-                digest(object_type, "type")?;
+                spelled(crate::id_text::universe_from_text, universe, "universe")?;
+                spelled(crate::id_text::effective_from_text, object_type, "type")?;
                 quire_exact::ObjectId::new(object_identity.clone())
                     .map_err(|_| CauseCodecError::Empty("object_identity"))?;
             }
@@ -1007,8 +1007,8 @@ impl PathWire {
         }
         for step in &self.steps {
             if let StepWire::Reference { object } = step {
-                digest(&object.universe, "universe")?;
-                digest(&object.object_type, "type")?;
+                spelled(crate::id_text::universe_from_text, &object.universe, "universe")?;
+                spelled(crate::id_text::effective_from_text, &object.object_type, "type")?;
                 quire_exact::ObjectId::new(object.object_identity.clone())
                     .map_err(|_| CauseCodecError::Empty("object_identity"))?;
             }
@@ -1029,8 +1029,8 @@ impl PathWire {
                 },
                 subject: match &path.subject {
                     ValuePathSubject::Object(object) => SubjectWire::Object {
-                        universe: hex(object.universe().as_bytes()),
-                        object_type: hex(object.object_type().as_bytes()),
+                        universe: crate::id_text::universe_text(object.universe()).unwrap_or_default(),
+                        object_type: crate::id_text::effective_text(object.object_type()).unwrap_or_default(),
                         object_identity: object.object().as_str().to_owned(),
                     },
                     ValuePathSubject::Invocation {
@@ -1070,8 +1070,8 @@ impl PathWire {
                     ValuePathStep::Index(index) => StepWire::Index { index: *index },
                     ValuePathStep::Reference(object) => StepWire::Reference {
                         object: ObjectWire {
-                            universe: hex(object.universe().as_bytes()),
-                            object_type: hex(object.object_type().as_bytes()),
+                            universe: crate::id_text::universe_text(object.universe()).unwrap_or_default(),
+                            object_type: crate::id_text::effective_text(object.object_type()).unwrap_or_default(),
                             object_identity: object.object().as_str().to_owned(),
                         },
                     },
@@ -1415,16 +1415,14 @@ pub(super) fn same_encoding(left: &Value, right: &Value) -> bool {
     )
 }
 
-/// `bytes` as 64 lowercase hexadecimal digits.
-fn hex(bytes: &[u8; 32]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
-}
-
-/// A 32-byte digest from exactly 64 lowercase hexadecimal digits.
-fn digest(text: &str, member: &'static str) -> Result<[u8; 32], CauseCodecError> {
-    NodeKey::from_hex(text)
-        .map(|id| *id.as_bytes())
-        .ok_or(CauseCodecError::Digest(member))
+/// A structural identity read back from its text spelling, or the refusal
+/// naming the member.
+fn spelled<T>(
+    read: fn(&str) -> Option<T>,
+    text: &str,
+    member: &'static str,
+) -> Result<T, CauseCodecError> {
+    read(text).ok_or(CauseCodecError::Digest(member))
 }
 
 #[cfg(test)]
@@ -1477,8 +1475,8 @@ mod tc235_path_tests {
         let process = RuntimeValuePath {
             observation: identity("q1"),
             subject: ValuePathSubject::Object(quire_exact::ObjectReference::new(
-                quire_exact::UniverseId::from_digest([1; 32]),
-                quire_exact::EffectiveId::from_digest([2; 32]),
+                crate::fixture_universe(1),
+                crate::fixture_effective(2),
                 quire_exact::ObjectId::new("r1").unwrap(),
             )),
             steps: vec![ValuePathStep::Member("attempts".to_owned())],
@@ -1516,8 +1514,8 @@ mod tc235_path_tests {
     fn a_reference_step_serializes_the_referenced_object_identity() {
         let object = |key: &str| {
             quire_exact::ObjectReference::new(
-                quire_exact::UniverseId::from_digest([1; 32]),
-                quire_exact::EffectiveId::from_digest([2; 32]),
+                crate::fixture_universe(1),
+                crate::fixture_effective(2),
                 quire_exact::ObjectId::new(key).unwrap(),
             )
         };
@@ -1540,8 +1538,8 @@ mod tc235_path_tests {
             serde_json::json!({
                 "tag": "reference",
                 "object": {
-                    "universe": hex(&[1; 32]),
-                    "type": hex(&[2; 32]),
+                    "universe": crate::id_text::universe_text(&crate::fixture_universe(1)).unwrap(),
+                    "type": crate::id_text::effective_text(&crate::fixture_effective(2)).unwrap(),
                     "object_identity": "root",
                 },
             })

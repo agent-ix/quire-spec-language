@@ -308,8 +308,8 @@ pub fn object_reference_witness(
             .map_err(ObjectReferenceError::Admission)?
             .ok_or_else(|| ObjectReferenceError::UndeclaredType(type_identity.clone()))?;
     Ok(WitnessValue::Reference {
-        universe: *universe.as_bytes(),
-        object_type: *object_type.as_bytes(),
+        universe,
+        object_type,
         identity: key.as_bytes().to_vec(),
     })
 }

@@ -45,7 +45,7 @@ use quire_semantic_value::supplied_stop::{
     AttemptedCount, SuppliedCause, SuppliedContext, SuppliedEvent, SuppliedFailure, SuppliedLimit,
     SuppliedLimitKind, SuppliedLocus, SuppliedPhase, SuppliedRun, SuppliedStop,
 };
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use super::ReplayRefusal;
 use crate::witness::{QuantityMagnitude, WitnessSlot, WitnessValue};
