@@ -8,15 +8,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use ix_trace_rs::trace;
 use qsl_forms::build_unit;
 use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound};
-use qsl_foundation::digest::{ByteDigest, WireNodeId};
+use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::{BackendId, SourceIdentity};
 use qsl_package::CheckedPackage;
 use qsl_route::request::{
     items_from_requirements, ExtentClassification, RequestWriter, RequirementItem,
 };
-use qsl_route::{
-    BackendDescriptor, Candidate, CandidateOutcome, ManifestDigest, Mode, ProviderOrigin, Registry,
-};
+use qsl_route::{BackendDescriptor, Candidate, CandidateOutcome, Mode, ProviderOrigin, Registry};
 use qsl_semantics::check::{
     ApplicationTerm, BodyTerm, Capability, CheckedGraph, LeafTerm, MemberTerm, PackageDeclarations,
 };
@@ -88,7 +86,6 @@ fn backend(id: &str, advertises: (Capability, Mode)) -> BackendDescriptor {
     BackendDescriptor::new(
         Candidate::new(BackendId::new(id)),
         ProviderOrigin::Linked,
-        ManifestDigest::from_digest(ByteDigest::of(id.as_bytes()).as_bytes()),
         [advertises],
         Some(BTreeSet::from([DomainKind::Collection])),
         None,

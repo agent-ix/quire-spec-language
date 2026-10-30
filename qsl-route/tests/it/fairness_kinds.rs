@@ -8,8 +8,8 @@ use ix_trace_rs::trace;
 use qsl_foundation::BackendId;
 use qsl_route::{
     descriptor_from_manifest, BackendDescriptor, Candidate, CandidateOutcome, CandidateSet,
-    FairnessKindsDefect, FairnessKindsMember, FairnessLabel, ManifestDigest, ManifestMembers, Mode,
-    ProviderOrigin, RegistrationCause, Registry,
+    FairnessKindsDefect, FairnessKindsMember, FairnessLabel, ManifestMembers, Mode, ProviderOrigin,
+    RegistrationCause, Registry,
 };
 use qsl_semantics::check::Capability;
 use quire_semantic_value::catalog::CatalogCode;
@@ -22,11 +22,10 @@ fn candidate(id: &str) -> Candidate {
 
 /// A temporal backend advertising (`temporal-satisfaction`, `unbounded`)
 /// and the given fairness kinds.
-fn temporal(id: &str, seed: u8, kinds: &[FairnessKind]) -> BackendDescriptor {
+fn temporal(id: &str, kinds: &[FairnessKind]) -> BackendDescriptor {
     BackendDescriptor::new(
         candidate(id),
         ProviderOrigin::Linked,
-        ManifestDigest::from_digest([seed; 32]),
         [(Capability::TemporalSatisfaction, Mode::Unbounded)],
         None,
         None,
@@ -57,8 +56,8 @@ fn set_for(registry: &Registry, required: &[FairnessKind]) -> CandidateSet {
 #[trace("TC-535", "FR-134-AC-1")]
 fn a_backend_without_the_requested_kind_is_not_a_candidate() {
     let registry = registry([
-        temporal("EN-1", 1, &[Weak, Strong]),
-        temporal("weak-only", 2, &[Weak]),
+        temporal("EN-1", &[Weak, Strong]),
+        temporal("weak-only", &[Weak]),
     ]);
 
     let weak = set_for(&registry, &[Weak]);
@@ -86,8 +85,8 @@ fn a_backend_without_the_requested_kind_is_not_a_candidate() {
 #[trace("TC-535", "FR-134-AC-1")]
 fn every_kind_in_the_fairness_set_must_be_advertised() {
     let registry = registry([
-        temporal("strong-only", 1, &[Strong]),
-        temporal("both", 2, &[Weak, Strong]),
+        temporal("strong-only", &[Strong]),
+        temporal("both", &[Weak, Strong]),
     ]);
     assert_eq!(
         set_for(&registry, &[Weak, Strong]).candidates(),
@@ -99,10 +98,7 @@ fn every_kind_in_the_fairness_set_must_be_advertised() {
 /// kind, so a backend advertising none stays a candidate.
 #[test]
 fn an_item_without_fairness_keeps_every_capable_backend() {
-    let registry = registry([
-        temporal("plain", 1, &[]),
-        temporal("EN-1", 2, &[Weak, Strong]),
-    ]);
+    let registry = registry([temporal("plain", &[]), temporal("EN-1", &[Weak, Strong])]);
     let set = set_for(&registry, &[]);
     assert_eq!(set.candidates(), [candidate("EN-1"), candidate("plain")]);
     assert!(set.missing_fairness_kinds().is_empty());
@@ -115,7 +111,7 @@ fn an_item_without_fairness_keeps_every_capable_backend() {
 #[test]
 #[trace("TC-535")]
 fn an_emptied_set_names_the_missing_fairness_kind() {
-    let registry = registry([temporal("weak-only", 1, &[Weak])]);
+    let registry = registry([temporal("weak-only", &[Weak])]);
     let set = set_for(&registry, &[Strong]);
     assert!(set.is_empty());
     assert_eq!(set.kind(), Capability::TemporalSatisfaction);
@@ -137,10 +133,10 @@ fn backend_absence_names_no_missing_fairness_kind() {
 fn registrations_differing_in_fairness_kinds_conflict() {
     let mut registry = Registry::new();
     registry
-        .register(temporal("EN-1", 1, &[Weak]))
+        .register(temporal("EN-1", &[Weak]))
         .expect("first admitted");
     assert!(registry
-        .register(temporal("EN-1", 1, &[Weak, Strong]))
+        .register(temporal("EN-1", &[Weak, Strong]))
         .is_err());
     assert_eq!(registry.backends().count(), 0);
 }
@@ -160,7 +156,6 @@ fn admit(
     descriptor_from_manifest(
         candidate(id),
         ProviderOrigin::Process,
-        ManifestDigest::from_digest([9; 32]),
         pairs.iter().map(|&(kind, mode)| (Some(kind), Some(mode))),
         ManifestMembers {
             domains,
@@ -179,11 +174,10 @@ fn listed(labels: &[FairnessLabel<'_>]) -> Admission {
     admit("b", TEMPORAL, None, Some(FairnessKindsMember::List(labels)))
 }
 
-fn manifest(id: &str, seed: u8, labels: &[FairnessLabel<'_>]) -> BackendDescriptor {
+fn manifest(id: &str, labels: &[FairnessLabel<'_>]) -> BackendDescriptor {
     descriptor_from_manifest(
         candidate(id),
         ProviderOrigin::Process,
-        ManifestDigest::from_digest([seed; 32]),
         [(Some("temporal-satisfaction"), Some("unbounded"))],
         ManifestMembers {
             domains: None,
@@ -338,7 +332,7 @@ fn v16_v17_a_pair_or_domains_defect_wins_over_a_fairness_defect() {
 #[test]
 #[trace("TC-535", "FR-134-AC-5")]
 fn a_refusal_leaves_the_earlier_registration_standing() {
-    let registry = registry([manifest("b", 1, &[Text("weak"), Text("strong")])]);
+    let registry = registry([manifest("b", &[Text("weak"), Text("strong")])]);
     for member in [
         Some(FairnessKindsMember::List(&[Text("Weak")])),
         Some(FairnessKindsMember::List(&[Text("weak"), Text("weak")])),
@@ -371,8 +365,8 @@ fn a_non_temporal_backend_ignores_the_fairness_member() {
 #[trace("TC-535")]
 fn manifest_fairness_kinds_filter_candidates() {
     let registry = registry([
-        manifest("both", 1, &[Text("weak"), Text("strong")]),
-        manifest("weak-only", 2, &[Text("weak")]),
+        manifest("both", &[Text("weak"), Text("strong")]),
+        manifest("weak-only", &[Text("weak")]),
     ]);
     assert_eq!(
         set_for(&registry, &[Strong]).candidates(),

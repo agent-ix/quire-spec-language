@@ -9,16 +9,13 @@ pub(super) fn document() -> &'static [u8] {
     config_version_unit::DOMAIN_PACKAGE.as_bytes()
 }
 
-
 fn relation_unit() -> String {
-    format!(
-        "language \"ix:native\" edition \"1-draft\";\n\
+    String::from("language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
          profile t = \"quire.temporal.infinite-trace/v1\";\n\
          model Config = \"example/config-version\";\n\
          relation Det using t over (x: Config::ConfigVersion::attemptUpdate, y: Config::ConfigVersion::attemptUpdate) \
-         {{ x.result = y.result and pre(x.self.versionNumber) = pre(y.self.versionNumber) implies x.self.versionNumber = y.self.versionNumber }}\n"
-    )
+         { x.result = y.result and pre(x.self.versionNumber) = pre(y.self.versionNumber) implies x.self.versionNumber = y.self.versionNumber }\n")
 }
 
 pub(super) fn checked_graph() -> qsl_semantics::check::CheckedGraph {
@@ -85,7 +82,7 @@ fn a_step_relation_emits_and_reads_back_its_execution_body() {
         evidence.support_feature(feature.as_str().unwrap());
     }
     evidence
-        .insert_domain_package_document(package_identity(&document()), document().to_vec())
+        .insert_domain_package_document(package_identity(document()), document().to_vec())
         .expect("the fixture evidence is unique");
     let admitted = crate::checked_v2::read_checked_package_v2(
         emission.package.bytes(),

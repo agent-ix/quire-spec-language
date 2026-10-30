@@ -14,7 +14,9 @@ use qsl_semantics::check::{
     FrameBinding, MalformedEntry, ModelFamily, ObjectBinding, OperationKey, OwnerKind,
     PopulationBinding, ProfileCause, RustField, RustPath, RustReceiver,
 };
-use qsl_semantics::value::{CatalogRole, DefinitionLock, HeaderLayer, LayerForm};
+use qsl_semantics::value::{
+    always_roles, DefinitionRole, HeaderLayer, LayerForm, ModelRole, TemporalRole,
+};
 
 const CORE: &str = "quire.state.core/v1";
 const QUERIES: &str = "quire.state.queries/v1";
@@ -61,7 +63,10 @@ fn size_operation() -> serde_json::Value {
 
 /// The header of a unit selecting `profiles` (alias, identity) and the
 /// `Config` model, with the packages that supply it.
-fn header(profiles: &[(&str, &str)], imports: &str) -> (String, qsl_semantics::model::intake::PackageInput) {
+fn header(
+    profiles: &[(&str, &str)],
+    imports: &str,
+) -> (String, qsl_semantics::model::intake::PackageInput) {
     let document = config_version_domain_document_with_operations(vec![
         size_operation(),
         config_version_probe_operation(),
@@ -356,22 +361,20 @@ fn the_model_layer_selects_its_closure_and_both_locks_rows() {
         .iter()
         .map(|row| row["identity"].as_str().unwrap().to_owned())
         .collect();
-    let lock = DefinitionLock::pinned();
-    let mut expected: BTreeSet<String> = lock
-        .closure(&[HeaderLayer::ModelComplete])
+    let mut expected: BTreeSet<String> = HeaderLayer::closure(&[HeaderLayer::ModelComplete])
         .into_iter()
         .map(|layer| layer.identity().to_owned())
         .collect();
     expected.extend(
-        lock.always_roles()
+        always_roles()
             .iter()
-            .filter(|role| **role != CatalogRole::Edition)
-            .map(|role| lock.entry(*role).identity.to_owned()),
+            .filter(|role| **role != DefinitionRole::Edition)
+            .map(|role| role.identity().to_owned()),
     );
     expected.extend(
-        lock.model_catalog()
-            .iter()
-            .map(|entry| entry.identity.to_owned()),
+        ModelRole::ALL
+            .into_iter()
+            .map(|role| role.identity().to_owned()),
     );
     assert_eq!(selected, expected);
 }
@@ -393,20 +396,18 @@ fn the_temporal_layer_admits_model_constructs_through_its_closure() {
         .iter()
         .map(|row| row["identity"].as_str().unwrap())
         .collect();
-    let lock = DefinitionLock::pinned();
-    let mut expected: BTreeSet<&str> = lock
-        .closure(&[HeaderLayer::TemporalComplete])
+    let mut expected: BTreeSet<&str> = HeaderLayer::closure(&[HeaderLayer::TemporalComplete])
         .into_iter()
         .map(HeaderLayer::identity)
         .collect();
     expected.extend(
-        lock.always_roles()
+        always_roles()
             .iter()
-            .filter(|role| **role != CatalogRole::Edition)
-            .map(|role| lock.entry(*role).identity),
+            .filter(|role| **role != DefinitionRole::Edition)
+            .map(|role| role.identity()),
     );
-    expected.extend(lock.model_catalog().iter().map(|entry| entry.identity));
-    expected.extend(lock.temporal_catalog().iter().map(|entry| entry.identity));
+    expected.extend(ModelRole::ALL.into_iter().map(ModelRole::identity));
+    expected.extend(TemporalRole::ALL.into_iter().map(TemporalRole::identity));
     assert_eq!(selected, expected);
 }
 

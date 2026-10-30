@@ -19,7 +19,8 @@ use super::*;
 
 /// The refusals of `unit` over `documents`, which must not check.
 fn refusals(unit: &str, documents: &[Vec<u8>]) -> Vec<CheckRefusal> {
-    let packages = qsl_semantics::model::intake::package_input(documents.iter().map(Vec::as_slice)).unwrap();
+    let packages =
+        qsl_semantics::model::intake::package_input(documents.iter().map(Vec::as_slice)).unwrap();
     assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
         .check(CheckingLimits::default())

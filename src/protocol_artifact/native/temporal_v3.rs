@@ -30,11 +30,6 @@ impl AdmissionV3 {
         self.candidate.bytes()
     }
 
-    /// Raw-byte digest of the complete canonical version-3 payload.
-    pub fn digest(&self) -> qsl_foundation::ByteDigest {
-        self.candidate.digest()
-    }
-
     /// Strict source-authorized admitted view backed by these exact bytes.
     pub fn admitted(&self) -> &v3::AdmittedPackage {
         &self.admitted
@@ -81,7 +76,6 @@ pub fn admit_v3(
         let candidate = artifact::encoding::candidate(&package, &mut work)?;
         let admitted = v3::AdmittedPackage {
             package,
-            digest: candidate.digest(),
             artifact: None,
             model_schema: inherited_v2.model_schema.clone(),
         };

@@ -17,12 +17,6 @@ use serde_json::json;
 /// The authored requirement's owning package, which the Quire context names too.
 const PACKAGE: &str = "example/runtime-rules";
 
-/// The model digest the fenced native body imports. Extraction never compiles the
-/// body, so any well-formed digest text serves; a fixed one keeps the fixture
-/// independent of the native model crate.
-const MODEL_DIGEST: &str =
-    "sha256:0000000000000000000000000000000000000000000000000000000000000000";
-
 fn identity() -> SourceIdentity {
     SourceIdentity {
         authority: "test".into(),
@@ -63,7 +57,6 @@ fn document(expression: &str, crlf: bool) -> Source {
     // Authored input fixture. Only the production Quire extractor selects its body.
     let text = format!(
         "# Ω authored document\n\n## Invariants\n\n### population_rule\n  ```ix:native\n  language \"ix:native\" edition \"0-draft\";\n  profile \"state-finite/0-draft\";\n  model M = \"example/rule-tests\";\n  invariant Rule on M::Node at current {{ {expression} }}\n  ```\n\n### unselected\n```ix:native\nopaque body remains unparsed by Quire\n```\n\n## Notes\nλ unselected prose.\n",
-        MODEL_DIGEST,
     );
     source(&if crlf {
         text.replace('\n', "\r\n")

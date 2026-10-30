@@ -31,17 +31,17 @@ pub use checked::{CheckedPackage, ResolvedDependency};
 pub use checked::{EmittedPackage, Import, LinkRefusal};
 #[cfg(feature = "std")]
 pub use checked_v2::{
-    clause_roots, hyper_roots, read_hybrids, read_import_view, read_terminal, read_terminals,
-    resolve_clause_root, resolve_hyper_root, resolve_state_graph_root, resolve_terminals,
-    state_graph_roots, supply_closure, AdmittedPackages, CheckedClockConstraint, CheckedClockGuard,
-    CheckedClockPlace, CheckedClockReset, CheckedConstraintTarget, CheckedGuardPart,
-    CheckedResetTarget, CheckedTimeInvariant, CheckedTimeSource, CheckedTimeSourceKind,
-    CheckedTimedModel, CheckedUrgency, ClauseRoot, ClauseRootUnresolved, ClockComparison,
-    ClockPathStep, HybridRead, HybridReadError, HyperRoot, HyperRootUnresolved, ImportViewRefusal,
-    PackageTerminal, PackageTerminalDeclaration, ReadHybridClaim, ReadHybridModel, ReadTerminal,
-    ReadTerminalDeclaration, ResolvedClockPathStep, SourceMapDefect, StateGraphKind,
-    StateGraphRoot, TerminalResolveRefusal, TimedLiteralTypes, TimedNodeMetadata, UnsupportedWire,
-    V2ReadLimits, V2ReadRefusal,
+    clause_roots, hyper_roots, occurrence_role, read_hybrids, read_import_view, read_terminal,
+    read_terminals, resolve_clause_root, resolve_hyper_root, resolve_state_graph_root,
+    resolve_terminals, state_graph_roots, supply_closure, AdmittedPackages, CheckedClockConstraint,
+    CheckedClockGuard, CheckedClockPlace, CheckedClockReset, CheckedConstraintTarget,
+    CheckedGuardPart, CheckedResetTarget, CheckedTimeInvariant, CheckedTimeSource,
+    CheckedTimeSourceKind, CheckedTimedModel, CheckedUrgency, ClauseRoot, ClauseRootUnresolved,
+    ClockComparison, ClockPathStep, HybridRead, HybridReadError, HyperRoot, HyperRootUnresolved,
+    ImportViewRefusal, PackageTerminal, PackageTerminalDeclaration, ReadHybridClaim,
+    ReadHybridModel, ReadTerminal, ReadTerminalDeclaration, ResolvedClockPathStep, SourceMapDefect,
+    StateGraphKind, StateGraphRoot, TerminalResolveRefusal, TimedLiteralTypes, TimedNodeMetadata,
+    UnsupportedWire, V2ReadLimits, V2ReadRefusal,
 };
 #[cfg(feature = "std")]
 pub use emit::{

@@ -27,7 +27,7 @@ fn unit(profile: Option<&str>, declarations: &str) -> String {
     let header = profile.map_or_else(String::new, |identity| {
         format!("profile p = \"{identity}\";\n")
     });
-    let fixture = crate::spine_model::unit().replace(
+    let fixture = include_str!("../../../tests/fixtures/spine-model.native").replace(
         "profile v = \"quire.model.complete/v1\";\n",
         &format!("profile v = \"quire.model.complete/v1\";\n{header}"),
     );

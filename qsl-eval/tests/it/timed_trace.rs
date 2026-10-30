@@ -25,7 +25,6 @@ use qsl_semantics::check::{
 };
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, package_input};
-use qsl_semantics::model::key::hex;
 use quire_exact::{ChargePoint, Integer, Meter, Rational, ScalarLimits, Undefined};
 
 use crate::model_simulation::{counters_document, increment, PACKAGE};

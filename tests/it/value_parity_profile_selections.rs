@@ -37,22 +37,19 @@ fn source_identity() -> SourceIdentity {
 }
 
 /// TC-1252's unit `UC`.
-fn uc(document: &[u8]) -> String {
-    let packages = qsl_semantics::model::intake::package_input([document]).unwrap();
-    format!(
-        "language \"ix:native\" edition \"1-draft\";\n\
+fn uc() -> String {
+    String::from("language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
          profile t = \"quire.temporal.infinite-trace/v1\";\n\
          profile p = \"quire.protocol.finite-global/v1\";\n\
          model Config = \"example/config-version\";\n\
-         temporal ReachesTwo using t over (c: Config::ConfigVersion) clock \"model-steps\" on origin {{ always eventually holds(c.versionNumber = 2) }}\n\
-         protocol Flow using v over (input: Config::ConfigVersion) on origin {{\n\
+         temporal ReachesTwo using t over (c: Config::ConfigVersion) clock \"model-steps\" on origin { always eventually holds(c.versionNumber = 2) }\n\
+         protocol Flow using v over (input: Config::ConfigVersion) on origin {\n\
          role R on Config::ConfigVersion;\n\
-         run sequence Main {{ }}\n\
-         finish End as (outcome: Boolean) {{ true }};\n\
-         }}\n\
-         function inc using v(x: Int[0, 9]): Integer pure {{ x + 1 }}\n"
-    )
+         run sequence Main { }\n\
+         finish End as (outcome: Boolean) { true };\n\
+         }\n\
+         function inc using v(x: Int[0, 9]): Integer pure { x + 1 }\n")
 }
 
 fn inc() -> QualifiedName {
@@ -70,7 +67,7 @@ fn integer(value: i64) -> ScalarOutcome {
 #[test]
 fn a_unit_whose_lock_selects_profiles_replays_with_an_empty_selection_list() {
     let document = crate::support::config_version_spine::spine::DOMAIN_PACKAGE.as_bytes();
-    let source = uc(document);
+    let source = uc();
     let located = call_site(
         source_identity(),
         "uc.native",

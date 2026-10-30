@@ -808,7 +808,8 @@ fn tc_906_a_reference_replays_by_identity_and_a_dereference_completes_no_value()
             "/../tests/fixtures/spine-model.semantic-ir.json"
         ))
         .unwrap()
-        .as_slice()]).unwrap(),
+        .as_slice()])
+        .unwrap(),
         SpineLimits::default().model,
         match fixture.declared("rw") {
             ValueType::Reference(object_type) => object_type,

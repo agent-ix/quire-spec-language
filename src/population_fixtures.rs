@@ -24,7 +24,6 @@
 //! public reader; nothing of IR is copied.
 
 use std::{
-    collections::BTreeMap,
     fs, io,
     path::{Path, PathBuf},
 };
@@ -248,7 +247,9 @@ fn with_population_package<T>(
 
 /// The spine-model unit run S1, S2, I1 (against `packages`) and the
 /// assembler, as spine `compile` runs it.
-fn assemble(packages: &qsl_semantics::model::intake::PackageInput) -> Result<PackageDeclarations, Error> {
+fn assemble(
+    packages: &qsl_semantics::model::intake::PackageInput,
+) -> Result<PackageDeclarations, Error> {
     let stage = |stage| move |detail: String| Error::Assemble { stage, detail };
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-model", "fixture", "fixture:1"),
@@ -459,7 +460,6 @@ fn retarget(
         edition: &base_preimage.edition,
         profile_selections: &base_preimage.profile_selections,
         definition_selections: &base_preimage.definition_selections,
-        model_selections: &base_preimage.model_selections,
         required_features: &base_preimage.required_features,
         dependency_selections: &base_preimage.dependency_selections,
         identity_projection: &graph.nodes,

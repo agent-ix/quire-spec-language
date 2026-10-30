@@ -12,13 +12,12 @@
 //! here yet.
 
 use crate::composed_domain_models::{
-    admitted_with, admitted_with_bytes, admitted_with_populations, architecture_bundle, hex,
+    admitted_with, admitted_with_bytes, admitted_with_populations, architecture_bundle,
     pump_operations, record_value_type,
 };
 use crate::support::native_protocol::{Inputs, Unit};
 
 use ix_trace_rs::trace;
-use qsl_foundation::ByteDigest;
 use qsl_semantics::model::domain_package::{DomainPackageRef, DOMAIN_PACKAGE_PROFILE};
 use quire_contract_model as ir;
 use quire_spec_language::checking::composed::{proofs, TypeDisposition, TypeLimits};
@@ -201,7 +200,6 @@ fn domain_typed_declarations_emit_a_model_naming_the_domain_package() {
             let read = inputs.read(proofs, &emitted);
             let read = read.result().expect("the strict reader admits the bytes");
             assert_eq!(read.package(), package);
-            assert_eq!(read.digest(), emitted.digest());
         },
     );
 }
@@ -268,10 +266,7 @@ fn a_substituted_domain_package_naming_refuses() {
             ] {
                 assert_ne!(mutated, text);
                 let bytes = mutated.into_bytes();
-                refused(
-                    &inputs.read_bytes(proofs, &bytes, ByteDigest::of(&bytes)),
-                    Error::Invalid(expected),
-                );
+                refused(&inputs.read_bytes(proofs, &bytes), Error::Invalid(expected));
             }
         },
     );
@@ -631,13 +626,6 @@ fn domain_object_populations_and_operations_emit_and_read_back() {
 fn substituted_domain_population_and_operation_keys_refuse() {
     let run = emitted_run_export();
     let inputs = pump_inputs(run);
-    let selection = inputs
-        .domain
-        .as_ref()
-        .expect("domain input")
-        .package
-        .selection()
-        .clone();
     inputs.with_proofs(
         TypeLimits::default(),
         proofs::ProofLimits::default(),
@@ -661,10 +649,7 @@ fn substituted_domain_population_and_operation_keys_refuse() {
             ] {
                 assert_ne!(mutated, text);
                 let bytes = mutated.into_bytes();
-                refused(
-                    &inputs.read_bytes(proofs, &bytes, ByteDigest::of(&bytes)),
-                    Error::Invalid(expected),
-                );
+                refused(&inputs.read_bytes(proofs, &bytes), Error::Invalid(expected));
             }
 
             let package = admitted.package();
@@ -716,7 +701,7 @@ fn substituted_domain_population_and_operation_keys_refuse() {
                     .into_result()
                     .expect("the mutated package encodes");
                 refused(
-                    &inputs.read_bytes(proofs, candidate.bytes(), candidate.digest()),
+                    &inputs.read_bytes(proofs, candidate.bytes()),
                     Error::Invalid(expected),
                 );
             }
@@ -918,7 +903,7 @@ fn dropped_pair_refuses(name: &'static str) {
                 .expect("emits");
             let candidate = without_population_pairs(admitted.package(), name);
             refused(
-                &inputs.read_bytes(proofs, candidate.bytes(), candidate.digest()),
+                &inputs.read_bytes(proofs, candidate.bytes()),
                 Error::Invalid(Invalid::Binding),
             );
         },

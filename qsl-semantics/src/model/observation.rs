@@ -1460,7 +1460,7 @@ pub(crate) fn model_views(
         .map(|selection| selection.identity.clone())
         .collect();
     let admitted = admit_selections(&identities, packages, limits.intake)
-    .map_err(|_| fault("model-reconsistent-admission"))?;
+        .map_err(|_| fault("model-reconsistent-admission"))?;
     let mut views = Vec::with_capacity(admitted.len());
     for (package_ref, document) in admitted {
         let records = read_records(&package_ref.identity, &document)
@@ -2231,8 +2231,7 @@ fn check_model(
     model: &document::ModelHeader,
 ) -> Result<(), AdmissionFailure> {
     let selection = &context_view.view.model_selection();
-    let matches = selection.identity == model.identity
-        ;
+    let matches = selection.identity == model.identity;
     if matches {
         Ok(())
     } else {
@@ -2255,7 +2254,7 @@ fn check_model_any(
     let matches = views.iter().any(|view| {
         let selection = &view.view.model_selection();
         selection.identity == model.identity
-        });
+    });
     if matches {
         Ok(())
     } else {

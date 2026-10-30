@@ -488,16 +488,9 @@ pub(crate) fn run_reading<T>(
     let models = front_end::select(&parsed, packages, limits.model, cancel)
         .map_err(refusal)?
         .into_value();
-    let checked = front_end::check(
-        &parsed,
-        &models,
-        dependencies,
-        &super::LockEvidence::default(),
-        limits,
-        cancel,
-    )
-    .map_err(refusal)?
-    .into_value();
+    let checked = front_end::check(&parsed, &models, dependencies, limits, cancel)
+        .map_err(refusal)?
+        .into_value();
     let emitted = front_end::package(&checked, front_end::PackageLimits::default(), cancel)
         .map_err(refusal)?
         .into_value();

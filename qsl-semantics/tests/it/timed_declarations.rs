@@ -1365,11 +1365,7 @@ pub(crate) fn assemble_selected_as(
     let inputs = package_input(packages.iter().map(|(_, _, bytes)| bytes.as_slice())).unwrap();
     let selections: String = packages
         .iter()
-        .map(|(alias, identity, bytes)| {
-            format!(
-                "model {alias} = \"{identity}\";\n"
-            )
-        })
+        .map(|(alias, identity, _bytes)| format!("model {alias} = \"{identity}\";\n"))
         .collect();
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\

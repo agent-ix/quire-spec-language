@@ -24,7 +24,6 @@ use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckedGraph, CheckedRefinement, PackageDeclarations};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::observation::{AdmissionFailure, DocumentRef, ObservationLimits};
 use qsl_semantics::model::state::{ModelState, StateObject};
 use quire_checked::key::DeclarationKey;
@@ -508,7 +507,6 @@ pub fn check(variant: Variant, refinement: &str) -> Result<CheckedGraph, String>
 /// fields are each `fields`.
 fn snapshot(
     package: &str,
-    document: &[u8],
     (fields, keys): (Json, &[String]),
     snapshots: &mut qsl_semantics::model::observation::DocumentProvision,
 ) -> DocumentRef {
@@ -528,8 +526,11 @@ fn snapshot(
             "objects": objects}],
     });
     let bytes = snapshot.to_string().into_bytes();
-    let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-    snapshots.insert(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes);
+    snapshots.insert(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    );
     DocumentRef {
         authority: "test".to_owned(),
         identity: name,
@@ -572,25 +573,21 @@ impl World {
         let mut snapshots = BTreeMap::new();
         let spec_initial = snapshot(
             SPEC,
-            &spec_document(SPEC, variant.add),
             (json!({"value": {"integer": "0"}}), &keys),
             &mut snapshots,
         );
         let spec_one = snapshot(
             SPEC,
-            &spec_document(SPEC, variant.add),
             (json!({"value": {"integer": "1"}}), &keys),
             &mut snapshots,
         );
         let third_initial = snapshot(
             THIRD,
-            &spec_document(THIRD, false),
             (json!({"value": {"integer": "0"}}), &keys),
             &mut snapshots,
         );
         let cas_initial = snapshot(
             CAS,
-            &cas_document(variant),
             (
                 json!({
                     "value": {"integer": variant.concrete_value.to_string()},

@@ -140,7 +140,11 @@ fn guarded_parent_reads_export_each_original_field_occurrence() {
             field.source(),
         )
     };
-    let mut fixture = OccurrenceFixture { text: format!("{HEADER}model M = \"example/rule-tests\";\ninvariant Rule on M::"), linked: Vec::new(), wire: Vec::new() };
+    let mut fixture = OccurrenceFixture {
+        text: format!("{HEADER}model M = \"example/rule-tests\";\ninvariant Rule on M::"),
+        linked: Vec::new(),
+        wire: Vec::new(),
+    };
     fixture.formal("Node", None, &context);
     fixture.append(" at current { present(");
     fixture.formal("self", Some(0), &context);
@@ -254,9 +258,7 @@ fn nested_aliases_and_ordered_unused_parameters_retain_exact_correspondence() {
     };
     for post in [false, true] {
         let mut fixture = OccurrenceFixture {
-            text: format!(
-                "{HEADER}model M = \"example/rule-tests\";\n"
-            ),
+            text: format!("{HEADER}model M = \"example/rule-tests\";\n"),
             linked: Vec::new(),
             wire: Vec::new(),
         };
@@ -427,9 +429,7 @@ fn skipped_nested_context_parameter_and_result_references_retain_transitive_univ
             ),
             _ => unreachable!(),
         };
-        let source = format!(
-            "{HEADER}model M = \"example/rule-tests\";\n{clause}\n"
-        );
+        let source = format!("{HEADER}model M = \"example/rule-tests\";\n{clause}\n");
         let package = NativePackage::new(
             checked(
                 &source,

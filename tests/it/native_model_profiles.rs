@@ -823,7 +823,7 @@ fn parameter(namespace: &SyntaxNamespace, index: usize) -> (UnitId, &QualifiedNa
 fn composed_exports_retain_rational_roles_and_require_exact_native_artifacts() {
     let record = r#"{"name":"Measure","fields":[{"name":"amount","type":{"kind":"scalar","name":"Ratio"}}]}"#;
     let admitted = model(&document(RATIONAL, record, AMOUNT));
-    let program = format!("language \"ix:native\" edition \"1-draft\";\nprofile S = \"test:unresolved\" version \"1\" digest \"unresolved\";\nmodel M = \"test/rational\";\npredicate Rule using S (amount: M::Ratio, item: M::Measure): Boolean {{ true }}");
+    let program = String::from("language \"ix:native\" edition \"1-draft\";\nprofile S = \"test:unresolved\";\nmodel M = \"test/rational\";\npredicate Rule using S (amount: M::Ratio, item: M::Measure): Boolean { true }");
     let inputs = [ModelInput::Native(&admitted)];
     with_namespace(&program, |namespace| {
         let mut work = Work::new(BindingLimits::default());
@@ -984,9 +984,7 @@ fn equal_rational_representations_preserve_distinct_names_and_owners() {
     .unwrap()
     .admit(ModelLimits::default())
     .unwrap();
-    let program = format!(
-        "language \"ix:native\" edition \"1-draft\";\nprofile S = \"test:unresolved\" version \"1\" digest \"unresolved\";\nmodel M = \"test/rational\";\nmodel N = \"test/second\";\npredicate Rule using S (firstValue: M::Ratio, other: M::OtherRatio, secondValue: N::Ratio): Boolean {{ true }}"
-    );
+    let program = String::from("language \"ix:native\" edition \"1-draft\";\nprofile S = \"test:unresolved\";\nmodel M = \"test/rational\";\nmodel N = \"test/second\";\npredicate Rule using S (firstValue: M::Ratio, other: M::OtherRatio, secondValue: N::Ratio): Boolean { true }");
     let inputs = [ModelInput::Native(&first), ModelInput::Native(&second)];
     with_namespace(&program, |namespace| {
         let mut work = Work::new(BindingLimits::default());

@@ -28,11 +28,10 @@ use qsl_semantics::check::{CheckedStateGraphClaim, PackageDeclarations};
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::observation::{
     declared_type_universe_for, DocumentRef, ObservationLimits,
 };
-use qsl_semantics::value::{CatalogRole, DefinitionLock};
+use qsl_semantics::value::{admit_integer_division, DefinitionRole};
 use quire_checked::key::DeclarationKey;
 use quire_exact::{ObjectId, ObjectReference, ScalarLimits, Value};
 use quire_semantic_value::checking::CheckingLimits;
@@ -228,20 +227,29 @@ pub(crate) struct World {
     pub(crate) initial: Vec<DocumentRef>,
 }
 
-
 impl World {
     /// The world of `model` with `body` after the unit header, and one
     /// initial snapshot per entry of `starts`, each `(key, [(field,
     /// value)])` per object.
     pub(crate) fn new(model: Model, body: &str, starts: &[&[Object<'_>]]) -> Self {
+        Self::with_profiles(model, "", body, starts)
+    }
+
+    /// As [`Self::new`], with `profiles` (header `profile` lines) after the
+    /// value profile.
+    pub(crate) fn with_profiles(
+        model: Model,
+        profiles: &str,
+        body: &str,
+        starts: &[&[Object<'_>]],
+    ) -> Self {
         let document = model.document();
         let packages = package_input([document.as_slice()]).unwrap();
         let text = format!(
             "language \"ix:native\" edition \"1-draft\";\n\
-             profile v = \"quire.value.complete/v1\";\n\
+             profile v = \"quire.value.complete/v1\";\n{profiles}\
              model {} = \"{}\";\n{body}",
-            model.alias,
-            model.package
+            model.alias, model.package
         );
         let parsed = qsl_cst::parse(
             SourceIdentity::new("agent-ix", "graph", "git", "1"),
@@ -270,12 +278,9 @@ impl World {
         )
         .expect("the unit assembles");
         // `div` reads truncating integer division.
-        let lock = DefinitionLock::pinned();
         declarations.integer_division = Some(
-            lock.admit_integer_division(
-                &[lock
-                    .entry(CatalogRole::IntegerDivisionTruncating)
-                    .reference()],
+            admit_integer_division(
+                &[DefinitionRole::IntegerDivisionTruncating.reference()],
                 None,
             )
             .expect("the division profile admits"),
@@ -326,8 +331,11 @@ impl World {
                 "complete": true, "objects": objects}],
         });
         let bytes = document.to_string().into_bytes();
-        let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-        self.snapshots.insert(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes);
+        self.snapshots.insert(
+            qsl_semantics::model::observation::document_reference(&bytes)
+                .expect("a document names itself"),
+            bytes,
+        );
         DocumentRef {
             authority: "test".to_owned(),
             identity: name.to_owned(),

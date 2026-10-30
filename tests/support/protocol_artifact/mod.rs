@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 
 use crate::support::native_rule_model;
-use qsl_foundation::{ByteDigest, Source, SourceIdentity};
+use qsl_foundation::{Source, SourceIdentity};
 use quire_contract_model as ir;
 use quire_spec_language::formal_source::FormalSource;
 use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
@@ -33,15 +33,12 @@ pub fn reference(
     identity: &str,
     wire: &str,
     version: &str,
-    bytes: &[u8],
 ) -> w::ArtifactRef {
     w::ArtifactRef {
         ref_version: "ix.artifact-ref/3-draft".into(),
         kind,
         authority: "test:protocol-reader".into(),
         identity: identity.into(),
-        revision: revision("fixture-1"),
-        digest: ByteDigest::of(bytes),
         wire: w::Wire {
             identity: wire.into(),
             version: version.into(),
@@ -108,14 +105,12 @@ impl Fixture {
         registry.sort_by_key(|definition| definition.identity());
         let mut inputs = BTreeMap::<String, (w::ArtifactRef, Vec<u8>)>::new();
         for definition in &registry {
-            let mut selected = reference(
+            let selected = reference(
                 w::ArtifactKind::Source,
                 definition.path(),
                 "text/markdown",
                 "1",
-                definition.bytes(),
             );
-            selected.revision = revision(definition.revision());
             inputs.insert(
                 definition.path().into(),
                 (selected, definition.bytes().to_vec()),
@@ -123,13 +118,7 @@ impl Fixture {
             for rule in definition.rules() {
                 inputs.entry(rule.path.into()).or_insert_with(|| {
                     (
-                        reference(
-                            w::ArtifactKind::Source,
-                            rule.path,
-                            "text/markdown",
-                            "1",
-                            rule.path.as_bytes(),
-                        ),
+                        reference(w::ArtifactKind::Source, rule.path, "text/markdown", "1"),
                         rule.path.as_bytes().to_vec(),
                     )
                 });
@@ -141,7 +130,6 @@ impl Fixture {
             "compiled-protocol-contract",
             "text/markdown",
             "1",
-            contract_bytes,
         );
         let baseline_bytes = b"independently selected protocol reader baseline";
         let baseline = reference(
@@ -149,14 +137,12 @@ impl Fixture {
             "accepted-baseline",
             "test:baseline",
             "1",
-            baseline_bytes,
         );
         let model_ref = reference(
             w::ArtifactKind::ModelPackage,
             "rule-model",
             model.profile().as_str(),
             "1",
-            model.artifact_bytes(),
         );
         for (key, selected, bytes) in [
             ("contract", contract.clone(), contract_bytes.as_slice()),
@@ -210,21 +196,11 @@ impl Fixture {
             .collect();
         let mut text = "language \"ix:native\" edition \"1-draft\";\n".to_owned();
         for (alias, selected) in [("P", R::Protocol), ("S", R::StateCore)] {
-            text.push_str(&format!(
-                "profile {alias} = \"{}\" version \"{}\" digest \"{}\";\n",
-                selected.identity(),
-                selected.revision(),
-                selected.selection().digest
-            ));
+            text.push_str(&format!("profile {alias} = \"{}\";\n", selected.identity()));
         }
         if !additional.is_empty() {
             for (alias, selected) in [("Q", R::StateQueries), ("T", R::EventPosition)] {
-                text.push_str(&format!(
-                    "profile {alias} = \"{}\" version \"{}\" digest \"{}\";\n",
-                    selected.identity(),
-                    selected.revision(),
-                    selected.selection().digest
-                ));
+                text.push_str(&format!("profile {alias} = \"{}\";\n", selected.identity()));
             }
         }
         text.push_str(&format!(
@@ -238,7 +214,6 @@ impl Fixture {
                 "native-protocol",
                 "ix:native",
                 "1-draft",
-                text.as_bytes(),
             ),
             native: w::NativeSource {
                 authority: "test".into(),
@@ -283,7 +258,6 @@ impl Fixture {
             "rule-model-source",
             "native-rule-model",
             "1",
-            model.source().source().text().as_bytes(),
         );
         let foreign_formal = w::Formal {
             document: "RuleModelSource".into(),
@@ -612,7 +586,6 @@ impl Fixture {
         let start = source.text.len();
         source.text.push_str(text);
         source.text.push('\n');
-        source.artifact.digest = ByteDigest::of(source.text.as_bytes());
         declaration.name = name.into();
         declaration.requirement.identity = name.into();
         declaration.locus.span = w::Span {
@@ -1017,7 +990,6 @@ impl Fixture {
         let source = &mut fixture.package.sources[0];
         source.text.truncate(start);
         source.text.push_str(&format!("protocol Demo using P over (view: M::Node) on origin {{\nrole Service on M::Node;\nrun {run}\n{FINISH}\n}}\n"));
-        source.artifact.digest = ByteDigest::of(source.text.as_bytes());
         declaration.locus.span.end = source.text.len() as u32;
         let whole = declaration.locus.clone();
         let locus = |text: &str| {
@@ -1424,7 +1396,6 @@ impl Fixture {
         let source = &mut fixture.package.sources[0];
         source.text.truncate(start);
         source.text.push_str(&format!("protocol Demo using P over (view: M::Node) on origin {{\n  run {PARALLEL}\n  {FINISH}\n}}\n"));
-        source.artifact.digest = ByteDigest::of(source.text.as_bytes());
         let locus = |at: usize, length: usize| w::Locus {
             source: 0,
             span: w::Span {
@@ -1574,13 +1545,12 @@ impl Fixture {
         fixture
     }
 
-    pub fn seal(bytes: &[u8]) -> w::ArtifactRef {
+    pub fn selected_artifact() -> w::ArtifactRef {
         reference(
             w::ArtifactKind::LinkedPackage,
             "compiled-reader-fixture",
             "quire.compiled-protocol",
             "1",
-            bytes,
         )
     }
 
@@ -1661,11 +1631,15 @@ impl Fixture {
         artifact::read(bytes, &expected, limits)
     }
 
-    /// Select adverse bytes explicitly so tests reach validation past the seal;
+    /// Select adverse bytes explicitly so tests reach validation past identity matching;
     /// all producer/source/dependency selections still come from the baseline.
     pub fn offered(&self, package: &w::Package) -> artifact::Report<artifact::AdmittedPackage> {
         let bytes = serde_json::to_vec(package).unwrap();
-        self.read(&bytes, &Self::seal(&bytes), artifact::Limits::default())
+        self.read(
+            &bytes,
+            &Self::selected_artifact(),
+            artifact::Limits::default(),
+        )
     }
 
     pub fn json(&self) -> serde_json::Value {
@@ -1674,7 +1648,11 @@ impl Fixture {
 
     pub fn raw(&self, value: &serde_json::Value) -> artifact::Report<artifact::AdmittedPackage> {
         let bytes = serde_json::to_vec(value).unwrap();
-        self.read(&bytes, &Self::seal(&bytes), artifact::Limits::default())
+        self.read(
+            &bytes,
+            &Self::selected_artifact(),
+            artifact::Limits::default(),
+        )
     }
 }
 

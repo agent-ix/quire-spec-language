@@ -1006,9 +1006,7 @@ fn each_model_alias_resolves_its_own_packages_object_type() {
         .into_bytes();
     let (unit, mut packages) = config_version_unit_and_packages_for(original);
     let copy_packages = qsl_semantics::model::intake::package_input([copy.as_slice()]).unwrap();
-    let [(copy_digest, _)] = copy_packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
+    assert_eq!(copy_packages.len(), 1, "one supplied document");
     let (header, declarations) = unit
         .split_once("invariant ParentOrder")
         .expect("the unit declares ParentOrder after its selections");

@@ -3,7 +3,6 @@ use super::*;
 use crate::spine::{compose, DependencyInput};
 use ix_trace_rs::trace;
 use qsl_foundation::SourceIdentity;
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::refusal::ModelRefusalCause;
 use quire_checked::key::DeclarationKey;
 use quire_exact::{
@@ -60,7 +59,7 @@ pub(in crate::spine) struct LookupDriverFixture {
     pub(in crate::spine) packages: qsl_semantics::model::intake::PackageInput,
 }
 
-pub(in crate::spine) fn lookup_driver_fixture(functions: &str) -> LookupDriverFixture {
+pub(in crate::spine) fn lookup_driver_fixture() -> LookupDriverFixture {
     let mut document: serde_json::Value = serde_json::from_slice(include_bytes!(
         "../../../../tests/fixtures/spine-model.semantic-ir.json"
     ))
@@ -92,11 +91,10 @@ pub(in crate::spine) fn lookup_driver_fixture(functions: &str) -> LookupDriverFi
         }}
     }]);
     let bytes = serde_json::to_vec(&document).expect("the lookup driver model serializes");
-    let source = format!(
-        "language \"ix:native\" edition \"1-draft\";\n\
+    let source = "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
          model M = \"acme/orders\";\n"
-    );
+        .to_string();
     let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()]).unwrap();
     LookupDriverFixture { source, packages }
 }
@@ -141,7 +139,6 @@ pub(in crate::spine) fn lookup_driver_context(
         &parsed,
         &models,
         &DependencyInput::default(),
-        &crate::spine::LockEvidence::default(),
         SpineLimits::default(),
         &cancel,
     )
@@ -231,9 +228,7 @@ pub(in crate::spine) fn lookup_driver_context(
 #[test]
 #[trace("TC-792", "FR-100-AC-14", "FR-100-AC-16", "FR-100-AC-17")]
 fn tc_792_source_compiled_lookup_driver_preserves_present_and_absent_paths() {
-    let fixture = lookup_driver_fixture(
-        "function query using v(p: Population<M::Gadget>[1], r: M::Gadget): M::Gadget pure { lookup<M::Gadget>(p, r) absent refused }",
-    );
+    let fixture = lookup_driver_fixture();
     let (objects, population, present, absent) = lookup_driver_context(&fixture);
     let invoke = |reference| {
         run(
@@ -279,9 +274,7 @@ fn tc_792_source_compiled_lookup_driver_preserves_present_and_absent_paths() {
 #[test]
 #[trace("TC-792", "FR-100-AC-14", "FR-100-AC-16")]
 fn tc_792_source_driver_admits_unused_parameters_before_body_evaluation() {
-    let fixture = lookup_driver_fixture(
-        "function unused using v(p: Population<M::Gadget>[1], r: M::Gadget): Boolean pure { true }",
-    );
+    let fixture = lookup_driver_fixture();
     let (objects, population, _, present) = lookup_driver_context(&fixture);
     let foreign_universe = quire_exact::ObjectReference::new(
         UniverseId::from_digest([0xa5; 32]),
@@ -324,9 +317,7 @@ fn tc_792_source_driver_admits_unused_parameters_before_body_evaluation() {
 #[test]
 #[trace("TC-792", "FR-100-AC-14", "FR-100-AC-16")]
 fn tc_792_source_driver_binding_precedence_precedes_value_admission() {
-    let fixture = lookup_driver_fixture(
-        "function query using v(p: Population<M::Gadget>[1], r: M::Gadget): M::Gadget pure { lookup<M::Gadget>(p, r) absent refused }",
-    );
+    let fixture = lookup_driver_fixture();
     let (objects, _, _, _) = lookup_driver_context(&fixture);
     let refusal = run(
         source(),
@@ -357,9 +348,7 @@ fn tc_792_source_driver_binding_precedence_precedes_value_admission() {
 #[test]
 #[trace("TC-792", "FR-100-AC-14", "FR-100-AC-16")]
 fn tc_792_source_driver_cancellation_returns_no_lookup_result() {
-    let fixture = lookup_driver_fixture(
-        "function query using v(p: Population<M::Gadget>[1], r: M::Gadget): M::Gadget pure { lookup<M::Gadget>(p, r) absent refused }",
-    );
+    let fixture = lookup_driver_fixture();
     let (objects, population, _, _) = lookup_driver_context(&fixture);
     let cancel = Cancel::new();
     cancel.cancel(quire_exact::CancelCause::Requested);
@@ -418,7 +407,8 @@ fn tc_792_typed_call_contract_is_not_an_integer_only_facade() {
         source(),
         "spine-model.native",
         crate::spine::spine_model::unit().as_bytes(),
-        &qsl_semantics::model::intake::package_input([crate::spine::spine_model::DOCUMENT]).unwrap(),
+        &qsl_semantics::model::intake::package_input([crate::spine::spine_model::DOCUMENT])
+            .unwrap(),
         &DependencyInput::default(),
         SpineLimits::default(),
         &call,
@@ -491,7 +481,6 @@ fn tc_792_driver_returns_the_admitted_reference_identity() {
         &parsed,
         &models,
         &DependencyInput::default(),
-        &crate::spine::LockEvidence::default(),
         SpineLimits::default(),
         &cancel,
     )

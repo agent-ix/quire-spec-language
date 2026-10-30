@@ -349,8 +349,6 @@ fn clauses(order: EffectiveId, sub: EffectiveId) -> OperationClauses {
 #[test]
 fn model_declaration_nodes_and_clause_functions_carry_their_model_owner() {
     let document = acme_document();
-    let digest: [u8; 32] =
-        Sha256::digest(jcs(&serde_json::from_slice::<Value>(&document).unwrap())).into();
     let package = DomainPackage::new(
         DomainPackageRef {
             identity: "acme/orders".to_owned(),
@@ -416,7 +414,6 @@ fn model_declaration_nodes_and_clause_functions_carry_their_model_owner() {
         assert_eq!(emission.omitted, []);
         let read = |emission: &Emission| {
             let mut evidence = read_evidence(emission);
-            let wire = wire(emission);
             evidence
                 .insert_domain_package_document(package_identity(&document[..]), &document[..])
                 .expect("a fresh evidence key");

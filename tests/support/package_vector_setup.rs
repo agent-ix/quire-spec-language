@@ -55,7 +55,7 @@ pub(crate) fn cases(model: &NativeModel) -> [Vector; 3] {
     [
         vector(
             "minimal",
-            vectors::source(model),
+            vectors::source(),
             vectors::expected(model, r#""test:package""#, r#""draft:1""#, 1),
             "test:package",
             "draft:1",
@@ -64,7 +64,7 @@ pub(crate) fn cases(model: &NativeModel) -> [Vector; 3] {
         ),
         vector(
             "controls",
-            vectors::source(model),
+            vectors::source(),
             vectors::expected(
                 model,
                 r#""test:\"\\/\u0000\b\f\n\r\té🦀""#,
@@ -78,7 +78,7 @@ pub(crate) fn cases(model: &NativeModel) -> [Vector; 3] {
         ),
         vector(
             "multiple",
-            vectors::source_multiple(model),
+            vectors::source_multiple(),
             vectors::expected_multiple(model, r#""test:multiple""#, r#""draft:1""#, 1),
             "test:multiple",
             "draft:1",

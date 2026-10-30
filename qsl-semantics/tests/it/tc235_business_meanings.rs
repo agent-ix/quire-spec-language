@@ -38,7 +38,8 @@ fn read_k2(document: &Value) -> Result<DomainPackage, Vec<ModelRefusal>> {
     let selection = DomainPackageRef {
         identity: PACKAGE.to_owned(),
     };
-    let (_selection, admitted) = admit(selection.identity.as_str(),
+    let (_selection, admitted) = admit(
+        selection.identity.as_str(),
         &offered,
         IntakeLimits::default(),
     )
@@ -337,9 +338,7 @@ fn tc213_retains_exact_key_origin_map_across_order_selection_and_origin_controls
 fn assemble_k2_unit(document: &Value, declarations: &str) -> PackageDeclarations {
     let bytes = serde_json::to_vec(document).expect("K2-derived fixture serializes");
     let packages = package_input([bytes.as_slice()]).unwrap();
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one K2-derived model package");
-    };
+    assert_eq!(packages.len(), 1, "one K2-derived model package");
     let source = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
@@ -381,7 +380,8 @@ fn admitted_original_keys_survive_normalization() {
     let selection = DomainPackageRef {
         identity: PACKAGE.to_owned(),
     };
-    let (_, admitted) = admit(selection.identity.as_str(),
+    let (_, admitted) = admit(
+        selection.identity.as_str(),
         &offered,
         IntakeLimits::default(),
     )
@@ -548,7 +548,8 @@ fn read_refusals(document: &Value) -> Vec<ModelRefusal> {
     let selection = DomainPackageRef {
         identity: PACKAGE.to_owned(),
     };
-    let (_selection, admitted) = admit(selection.identity.as_str(),
+    let (_selection, admitted) = admit(
+        selection.identity.as_str(),
         &offered,
         IntakeLimits::default(),
     )
@@ -761,7 +762,8 @@ fn tc235_m01_literal_k2_is_admitted_as_declared() {
     let selection = DomainPackageRef {
         identity: PACKAGE.to_owned(),
     };
-    let (selection, admitted) = admit(selection.identity.as_str(),
+    let (selection, admitted) = admit(
+        selection.identity.as_str(),
         &offered,
         IntakeLimits::default(),
     )

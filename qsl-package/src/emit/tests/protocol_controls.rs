@@ -418,7 +418,10 @@ fn admitted_config(declarations: &str) -> Value {
         evidence.support_feature(feature.as_str().unwrap());
     }
     evidence
-        .insert_domain_package_document(package_identity(&domain_document()), domain_document().to_vec())
+        .insert_domain_package_document(
+            package_identity(domain_document()),
+            domain_document().to_vec(),
+        )
         .expect("a fresh evidence key");
     crate::checked_v2::read_checked_package_v2(
         emission.package.bytes(),
@@ -672,16 +675,16 @@ fn a_fence_emits_each_of_its_orderings() {
 #[test]
 fn an_attempt_ordering_outside_a_parallel_is_refused_so_the_group_is_empty() {
     let packages = qsl_semantics::model::intake::package_input([domain_document()]).unwrap();
-    let unit = format!(
+    let unit = String::from(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
          profile p = \"quire.protocol.finite-global/v1\";\n\
          model Config = \"example/config-version\";\n\
-         protocol Flow using v over (input: Config::ConfigVersion) on origin {{\n\
+         protocol Flow using v over (input: Config::ConfigVersion) on origin {\n\
          role R on Config::ConfigVersion;\n\
          run attempt Update by R on Config::ConfigVersion::attemptUpdate \
-         ordering seq_cst contracts [] as (tried: Boolean) {{ true }};\n\
-         finish End as (outcome: Boolean) {{ true }};\n}}\n"
+         ordering seq_cst contracts [] as (tried: Boolean) { true };\n\
+         finish End as (outcome: Boolean) { true };\n}\n",
     );
     let refusals = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")

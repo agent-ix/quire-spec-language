@@ -2210,9 +2210,8 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
         dispatch_expression(),
         Expression::integer(1_i64),
     );
-    let profile_identity = qsl_semantics::value::DefinitionLock::pinned()
-        .entry(qsl_semantics::value::CatalogRole::Root)
-        .identity
+    let profile_identity = qsl_semantics::value::DefinitionRole::Root
+        .identity()
         .to_owned();
     let add_invariant = |name: &str, body: Expression| StateClauseDeclaration {
         kind: StateClauseKind::Invariant,

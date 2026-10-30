@@ -4,7 +4,7 @@
 use crate::support::native_rule_model;
 
 use ix_trace_rs::trace;
-use qsl_foundation::{ByteDigest, Source, SourceIdentity, Spanned};
+use qsl_foundation::{Source, SourceIdentity, Spanned};
 use quire_contract_model as ir;
 use quire_spec_language::checking::NativeType;
 use quire_spec_language::formal_source::FormalSource;
@@ -123,7 +123,7 @@ fn a_named_record_cannot_grant_related_instance_authority() {
 fn program(model: &NativeModel, declarations: &str) -> String {
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
-        profile S = \"test:unresolved-definition\" version \"1\" digest \"unresolved\";\n\
+        profile S = \"test:unresolved-definition\";\n\
         model M = \"{}\";\n{declarations}",
         model.environment().owner().package().as_str()
     )
@@ -266,12 +266,11 @@ fn a_missing_package_refuses_only_the_dependent_model_lookup() {
     let model = model("test/native", "NativeModel", "native-model");
     let inputs = [ModelInput::Native(&model)];
     let good = program(&model, "predicate Dependent using S (item: M::Node): Boolean { true }\npredicate Independent using S (): Boolean { true }");
-    for (text, expected) in [
-        (
+    {
+        let (text, expected) = (
             good.replace("test/native", "test/missing"),
             ImportRefusal::MissingPackage,
-        ),
-    ] {
+        );
         with_namespace(&[text], |namespace| {
             let bindings = bind_models(namespace, &inputs, &mut work());
             assert_eq!(bindings.imports()[0].selection, Err(expected));
@@ -466,13 +465,10 @@ fn exact_model_bytes_entries_and_lookup_limits_preserve_partial_report_and_retry
         |namespace| {
             let import = &namespace.units()[0].models()[0];
             let bytes = model.artifact_bytes().len()
-                + [
-                    &import.alias.value,
-                    &import.package.value,
-                ]
-                .iter()
-                .map(|value| value.len())
-                .sum::<usize>();
+                + [&import.alias.value, &import.package.value]
+                    .iter()
+                    .map(|value| value.len())
+                    .sum::<usize>();
             // Stored indexes: 3 per record, 2 per field/value/object/operation,
             // one per scalar role/site/frame field, then one import record.
             let bindings_count = 3 * 2 + 2 * 11 + 2 * 3 + 7 + 9 + 2 + 2 + 1 + 1;
@@ -598,10 +594,7 @@ fn multi_model_indexes_reserve_only_selected_inputs_and_share_repeated_imports()
                 .units()
                 .iter()
                 .flat_map(|unit| unit.models())
-                .map(|import| {
-                    import.alias.value.len()
-                        + import.package.value.len()
-                })
+                .map(|import| import.alias.value.len() + import.package.value.len())
                 .sum::<usize>();
         let exact = BindingLimits {
             models: 16,

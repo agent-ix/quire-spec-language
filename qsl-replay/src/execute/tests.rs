@@ -9,7 +9,7 @@ use ix_trace_rs::trace;
 use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
 use qsl_foundation::{Code, SourceIdentity};
 use qsl_semantics::library::PackageId;
-use qsl_semantics::model::intake::{package_input, PackageDocument};
+use qsl_semantics::model::intake::package_input;
 use quire_exact::{Identifier, Integer, ScalarLimits};
 
 use super::*;
@@ -348,7 +348,6 @@ fn tc_759_the_emitted_provision_replays_to_the_same_package_id() {
         &parsed,
         &models,
         &crate::spine::DependencyInput::default(),
-        &crate::spine::LockEvidence::default(),
         limits,
         &cancel,
     )

@@ -210,17 +210,6 @@ impl Parser {
             _ => Err(self.unexpected("identifier")),
         }
     }
-    /// The identifier `text`, which a profile import spells between its
-    /// labels.
-    fn word(&mut self, text: &str) -> Result<(), Box<Diagnostic>> {
-        match &self.peek().kind {
-            Kind::Identifier(word) if word == text => {
-                self.take();
-                Ok(())
-            }
-            _ => Err(self.unexpected(text)),
-        }
-    }
     fn string(&mut self) -> Result<Spanned<String>, Box<Diagnostic>> {
         if let Kind::Text(value) = &self.peek().kind {
             let result = Spanned {
@@ -281,25 +270,14 @@ impl Parser {
         if self.composed {
             self.charge(self.peek().span)?;
         }
-        let profile = keyword == K::Profile;
         let start = self.expect(keyword)?.span.start;
         let alias = self.identifier()?;
         self.expect(K::Equal)?;
         let package = self.string()?;
-        let pin = if profile {
-            self.word("version")?;
-            let version = self.string()?;
-            self.word("digest")?;
-            let digest = self.string()?;
-            Some(ImportPin { version, digest })
-        } else {
-            None
-        };
         let end = self.expect(K::Semicolon)?.span.end;
         Ok(ModelImport {
             alias,
             package,
-            pin,
             span: Span { start, end },
         })
     }
@@ -419,7 +397,7 @@ mod tests {
                 assert_eq!(unit.expressions.len(), depth + 1);
 
                 let composed = format!(
-                    "language \"ix:native\" edition \"1-draft\";\nprofile T = \"quire.temporal.timestamped-event.finite-window/v1\" version \"t\" digest \"u\";\nmodel M = \"m\";\ntemporal W using T over (v: M::V) clock \"c\" on origin {{ {}holds({}v{}){} }}\n",
+                    "language \"ix:native\" edition \"1-draft\";\nprofile T = \"quire.temporal.timestamped-event.finite-window/v1\";\nmodel M = \"m\";\ntemporal W using T over (v: M::V) clock \"c\" on origin {{ {}holds({}v{}){} }}\n",
                     "(".repeat(depth / 2),
                     "(".repeat(depth / 4),
                     ")".repeat(depth / 4),

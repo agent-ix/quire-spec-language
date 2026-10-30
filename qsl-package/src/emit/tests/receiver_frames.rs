@@ -544,13 +544,12 @@ fn a_deletes_self_frame_grants_the_receiver_only_and_differs_from_deletes_type()
     );
 
     let parts = unit_of(&operations, &overrides);
-    let [(digest, _)] = parts.packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
+    assert_eq!(parts.packages.len(), 1, "one supplied document");
     let selection = DomainPackageRef {
         identity: fixture::PACKAGE.to_owned(),
     };
-    let (selection, document) = admit(selection.identity.as_str(),
+    let (selection, document) = admit(
+        selection.identity.as_str(),
         &parts.packages,
         qsl_foundation::IntakeLimits::default(),
     )
@@ -711,7 +710,10 @@ fn constraint_state_clause_reads_back_as_a_distinct_kind() {
         evidence.support_feature(feature.as_str().unwrap());
     }
     evidence
-        .insert_domain_package_document(package_identity(&parts.document), parts.document.as_slice())
+        .insert_domain_package_document(
+            package_identity(&parts.document),
+            parts.document.as_slice(),
+        )
         .expect("a fresh evidence key");
     let package_id = crate::checked_v2::tests::derived_package_id(&wire);
     assert!(matches!(

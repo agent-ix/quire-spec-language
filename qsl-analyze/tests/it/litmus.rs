@@ -25,7 +25,6 @@ use qsl_package::CheckedPackage;
 use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
 use quire_checked::key::DeclarationKey;
 use quire_exact::Value;
@@ -211,7 +210,6 @@ pub(crate) fn document() -> Vec<u8> {
     .to_string()
     .into_bytes()
 }
-
 
 /// The contracts: `IsX`/`IsY`/`IsZ` select a cell, `StoreZero` stores 0,
 /// `StoreOne` stores 1, `StoreTwo` stores 2, `StoreThree` stores 3, `AddOne` adds 1,
@@ -452,11 +450,14 @@ impl Documents {
             ],
         });
         let bytes = snapshot.to_string().into_bytes();
-        let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
         Self {
             cells: cells.to_vec(),
             packages: package_input([document().as_slice()]).unwrap(),
-            snapshots: BTreeMap::from([(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes)]),
+            snapshots: BTreeMap::from([(
+                qsl_semantics::model::observation::document_reference(&bytes)
+                    .expect("a document names itself"),
+                bytes,
+            )]),
             initial: DocumentRef {
                 authority: "test".to_owned(),
                 identity: "s0".to_owned(),

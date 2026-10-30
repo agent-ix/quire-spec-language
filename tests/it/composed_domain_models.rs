@@ -50,7 +50,6 @@ use quire_spec_language::linking::composed::{
     admit_namespace, ExpectedSource, SourceInventory, SyntaxNamespace, WorkLimits,
 };
 use quire_spec_language::Limits;
-use sha2::{Digest, Sha256};
 
 const PACKAGE: &str = "agent-ix/architecture";
 
@@ -274,7 +273,8 @@ fn admit_bytes(bytes: Vec<u8>) -> (AdmittedPackage, Vec<u8>) {
             .expect("package identity")
             .to_owned(),
     };
-    let (selection, document) = admit(offered.identity.as_str(),
+    let (selection, document) = admit(
+        offered.identity.as_str(),
         &BTreeMap::from([(offered.identity.clone(), bytes.clone())]),
         qsl_foundation::IntakeLimits::default(),
     )
@@ -296,10 +296,6 @@ fn key(artifact: &str) -> DeclarationKey {
     }
 }
 
-pub(crate) fn hex(digest: &[u8; 32]) -> String {
-    digest.iter().map(|byte| format!("{byte:02x}")).collect()
-}
-
 const DECLARATIONS: &str =
     "predicate FieldRule using S (): Boolean { M::Pump::id = M::Pump::id }\n\
 protocol Plumbing using S over (view: M::Sys) on origin {\n\
@@ -316,7 +312,7 @@ protocol Plumbing using S over (view: M::Sys) on origin {\n\
 fn program(identity: &str) -> String {
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
-         profile S = \"test:unresolved-definition\" version \"1\" digest \"unresolved\";\n\
+         profile S = \"test:unresolved-definition\";\n\
          model M = \"{identity}\";\n\
          {DECLARATIONS}\
          predicate Unrelated using S (flag: Boolean): Boolean {{ flag }}\n"
@@ -521,7 +517,7 @@ fn missing_and_wrong_kind_domain_references_refuse_located() {
     let inputs = [ModelInput::Domain(&package)];
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
-         profile S = \"test:unresolved-definition\" version \"1\" digest \"unresolved\";\n\
+         profile S = \"test:unresolved-definition\";\n\
          model M = \"{}\";\n\
          predicate MissingType using S (port: M::drain_out): Boolean {{ true }}\n\
          predicate MissingField using S (): Boolean {{ M::Pump::speed = M::Pump::speed }}\n\
@@ -584,7 +580,8 @@ fn substituted_package_or_changed_digest_refuses_only_dependents() {
     );
     let selection = package.selection().clone();
 
-    for (inputs, refusal) in [([ModelInput::Domain(&other)], ImportRefusal::MissingPackage)] {
+    {
+        let (inputs, refusal) = ([ModelInput::Domain(&other)], ImportRefusal::MissingPackage);
         let text = program(&selection.identity);
         with_namespace(&text, |namespace| {
             let bindings = bind_models(namespace, &inputs, &mut work());
@@ -627,13 +624,12 @@ fn two_same_shaped_packages_keep_keys_under_their_selection() {
     let (a, b) = (package.selection(), other.selection());
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
-         profile S = \"test:unresolved-definition\" version \"1\" digest \"unresolved\";\n\
+         profile S = \"test:unresolved-definition\";\n\
          model M = \"{}\";\n\
          model N = \"{}\";\n\
          predicate FromM using S (): Boolean {{ M::Pump::id = M::Pump::id }}\n\
          predicate FromN using S (): Boolean {{ N::Pump::id = N::Pump::id }}\n",
-        a.identity,
-        b.identity
+        a.identity, b.identity
     );
     with_namespace(&text, |namespace| {
         let bindings = bind_models(namespace, &inputs, &mut work());
@@ -679,7 +675,7 @@ fn domain_typed_declarations_type_check() {
     let profile = R::StateQueries.selection();
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
-         profile S = \"{}\" version \"{}\" digest \"{}\";\n\
+         profile S = \"{}\";\n\
          model M = \"{}\";\n\
          predicate PumpUp using S (pump: M::Pump): Boolean {{ pump.id }}\n\
          predicate Flowing using S (flow: M::Flow, tally: M::Count): Boolean {{ true }}\n\
@@ -688,10 +684,7 @@ fn domain_typed_declarations_type_check() {
          predicate SamePump using S (a: M::Pump, b: M::Pump): Boolean {{ a = b }}\n\
          predicate Mixed using S (pump: M::Pump, tally: M::Count): Boolean {{ pump = tally }}\n\
          predicate Unrelated using S (flag: Boolean): Boolean {{ flag }}\n",
-        profile.identity,
-        profile.revision,
-        profile.digest,
-        selection.identity
+        profile.identity, selection.identity
     );
     let source = Source::read(
         SourceIdentity {
@@ -845,7 +838,7 @@ fn domain_field_multiplicities_and_nested_reads_type_check() {
     let profile = R::StateQueries.selection();
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
-         profile S = \"{}\" version \"{}\" digest \"{}\";\n\
+         profile S = \"{}\";\n\
          model M = \"{}\";\n\
          predicate Maybe using S (g: M::Gauge): Boolean {{ present(g.maybe) }}\n\
          predicate Few using S (g: M::Gauge): Boolean {{ let few = g.few in true }}\n\
@@ -857,8 +850,6 @@ fn domain_field_multiplicities_and_nested_reads_type_check() {
          predicate Unordered using S (g: M::Gauge): Boolean {{ let zero = g.unordered in true }}\n\
          predicate Nested using S (o: M::Outer): Boolean {{ o.inner.ok }}\n",
         profile.identity,
-        profile.revision,
-        profile.digest,
         selection.identity
     );
     let source = Source::read(
@@ -1036,7 +1027,7 @@ fn domain_operation_parameters_and_result_bind_and_type_check() {
     let profile = R::StateQueries.selection();
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
-         profile S = \"{}\" version \"{}\" digest \"{}\";\n\
+         profile S = \"{}\";\n\
          model M = \"{}\";\n\
          pre FillReady using S on M::Pump::fill {{ forced }}\n\
          post Filled using S on M::Pump::fill {{ result and level.ok and forced }}\n\
@@ -1048,10 +1039,7 @@ fn domain_operation_parameters_and_result_bind_and_type_check() {
          pre EarlyResult using S on M::Pump::fill {{ result }}\n\
          post Latched using S on M::Pump::latch {{ result }}\n\
          pre Held using S on M::Pump::hold {{ true }}\n",
-        profile.identity,
-        profile.revision,
-        profile.digest,
-        selection.identity
+        profile.identity, selection.identity
     );
     let source = Source::read(
         SourceIdentity {

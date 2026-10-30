@@ -8,15 +8,12 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use ix_trace_rs::trace;
 use qsl_foundation::bound::{DomainKind, FiniteBound};
-use qsl_foundation::digest::ByteDigest;
 use qsl_foundation::{BackendId, SourceIdentity};
 use qsl_replay::{Execution, ResultLabel};
 use qsl_route::request::{
     items_from_requirements, BoundRefusal, ExtentClassification, RequestWriter,
 };
-use qsl_route::{
-    BackendDescriptor, Candidate, CandidateOutcome, ManifestDigest, Mode, ProviderOrigin, Registry,
-};
+use qsl_route::{BackendDescriptor, Candidate, CandidateOutcome, Mode, ProviderOrigin, Registry};
 use qsl_semantics::check::{Capability, CheckedGraph, PackageDeclarations};
 use quire_semantic_value::catalog::{CatalogCoded, Category};
 use quire_semantic_value::checking::CheckingLimits;
@@ -26,14 +23,13 @@ use quire_semantic_value::checking::CheckingLimits;
 fn reaches() -> CheckedGraph {
     let document = crate::support::config_version_spine::spine::DOMAIN_PACKAGE.as_bytes();
     let packages = qsl_semantics::model::intake::package_input([document]).unwrap();
-    let digest = packages.keys().next().expect("one package");
-    let text = format!(
+    let text = String::from(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
          profile t = \"quire.temporal.infinite-trace/v1\";\n\
          model Config = \"example/config-version\";\n\
          temporal Reaches using t over (c: Config::ConfigVersion) clock \"model-steps\" \
-         on origin {{ eventually holds(c.versionNumber = 2) }}\n"
+         on origin { eventually holds(c.versionNumber = 2) }\n",
     );
     let parsed = qsl_cst::parse(
         SourceIdentity::new("agent-ix", "test:negotiation", "fixture", "fixture:1"),
@@ -61,7 +57,6 @@ fn backend(id: &str, mode: Mode) -> BackendDescriptor {
     BackendDescriptor::new(
         Candidate::new(BackendId::new(id)),
         ProviderOrigin::Linked,
-        ManifestDigest::from_digest(ByteDigest::of(id.as_bytes()).as_bytes()),
         [(Capability::TemporalSatisfaction, mode)],
         // A bounded pair names the domains it can bound (FR-290).
         match mode {

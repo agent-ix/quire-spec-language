@@ -23,9 +23,8 @@ fn source_order_preserves_multiple_model_owners_and_complete_invariant_pre_post_
     )
     .unwrap();
     let models = [native_rule_model::parts().model(), extra.model()];
-    let prefix = format!(
-        "{HEADER}model Z = \"example/extra-model\";\nmodel A = \"example/rule-tests\";\n",
-    );
+    let prefix =
+        format!("{HEADER}model Z = \"example/extra-model\";\nmodel A = \"example/rule-tests\";\n",);
     let clauses = [
         "invariant Always on Z::Node at current { true }",
         "pre Before on A::Node::step { true }",

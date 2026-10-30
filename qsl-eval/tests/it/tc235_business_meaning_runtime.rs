@@ -16,7 +16,7 @@ use qsl_forms::{BinaryOperator, ClauseKind, Expression, FunctionDeclaration, Typ
 use qsl_foundation::selection::ProfileSelection;
 use qsl_foundation::IntakeLimits;
 use qsl_package::CheckedPackage;
-use qsl_semantics::check::{CheckCause, LockEvidence, PackageDeclarations};
+use qsl_semantics::check::{CheckCause, PackageDeclarations};
 use qsl_semantics::model::accounting::{ChargePoint, ModelNormalizationLimits};
 use qsl_semantics::model::domain_package::{DomainPackage, DomainPackageRef};
 use qsl_semantics::model::intake::{admit_unit, package_input, read_domain_package};
@@ -27,7 +27,7 @@ use qsl_semantics::model::observation::{
     ClauseSelectionInput, ContextSide, DocumentRef, ObservationLimits, OperationFacts, Provisions,
 };
 use qsl_semantics::model::refusal::{MemberPath, MemberRoot};
-use qsl_semantics::value::{CatalogRole, DefinitionLock};
+use qsl_semantics::value::DefinitionRole;
 use quire_exact::{admit_text, TextPayload, TextProfile, TextType};
 use quire_exact::{
     CardinalityBound, CollectionKind, CollectionType, EffectiveId, FieldValue, Integer, Meter,
@@ -151,7 +151,8 @@ pub(crate) fn read_k2(
     let selection = DomainPackageRef {
         identity: crate::tc235_k2::PACKAGE.to_owned(),
     };
-    let (selection, admitted) = qsl_semantics::model::intake::admit(selection.identity.as_str(),
+    let (selection, admitted) = qsl_semantics::model::intake::admit(
+        selection.identity.as_str(),
         &offered,
         IntakeLimits::default(),
     )
@@ -162,7 +163,11 @@ pub(crate) fn read_k2(
     )
 }
 
-type LifecycleFixture = (CheckedPackage, EffectiveView, qsl_semantics::model::intake::PackageInput);
+type LifecycleFixture = (
+    CheckedPackage,
+    EffectiveView,
+    qsl_semantics::model::intake::PackageInput,
+);
 
 fn lifecycle_package(
     document: &serde_json::Value,
@@ -248,7 +253,7 @@ fn model_package_with(
     Ok((CheckedPackage::link(graph), view, packages))
 }
 
-pub(crate) fn lifecycle_document_ref(label: &str, bytes: &[u8]) -> DocumentRef {
+pub(crate) fn lifecycle_document_ref(label: &str) -> DocumentRef {
     DocumentRef {
         authority: "test".to_owned(),
         identity: label.to_owned(),
@@ -302,13 +307,10 @@ pub(crate) fn lifecycle_observation(
         "contexts": contexts,
     }))
     .expect("lifecycle snapshot serializes");
-    (lifecycle_document_ref(label, &bytes), bytes)
+    (lifecycle_document_ref(label), bytes)
 }
 
-fn lifecycle_invocation(
-    pre: &DocumentRef,
-    post: &DocumentRef,
-) -> (DocumentRef, Vec<u8>) {
+fn lifecycle_invocation(pre: &DocumentRef, post: &DocumentRef) -> (DocumentRef, Vec<u8>) {
     lifecycle_invocation_with(pre, post, serde_json::json!({}))
 }
 
@@ -346,7 +348,7 @@ pub(crate) fn lifecycle_invocation_with(
         "deleted": [],
     }))
     .expect("lifecycle invocation serializes");
-    (lifecycle_document_ref("i1", &bytes), bytes)
+    (lifecycle_document_ref("i1"), bytes)
 }
 
 pub(crate) fn lifecycle_observations(
@@ -541,10 +543,7 @@ fn package_with_types(
                 index,
                 ProfileSelection {
                     alias: "text".to_owned(),
-                    identity: DefinitionLock::pinned()
-                        .entry(CatalogRole::TextProfile)
-                        .identity
-                        .to_owned(),
+                    identity: DefinitionRole::TextProfile.identity().to_owned(),
                     span: qsl_foundation::Span { start: 0, end: 0 },
                     identity_span: qsl_foundation::Span { start: 0, end: 0 },
                 },
@@ -556,11 +555,6 @@ fn package_with_types(
             types,
             functions,
             function_selections,
-            lock_evidence: LockEvidence::default().with_text_profile(
-                DefinitionLock::pinned()
-                    .entry(CatalogRole::TextProfile)
-                    .reference(),
-            ),
             ..PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
                 qsl_foundation::IdentityLimits::default(),
@@ -906,8 +900,7 @@ fn tc235_m15_lifecycle_invariant_keeps_receiver_context() {
     let run = |pre: &[(bool, bool)], post: &[(bool, bool)]| {
         let (pre_ref, pre_bytes) = lifecycle_observation("p1", "pre", pre);
         let (post_ref, post_bytes) = lifecycle_observation("q1", "post", post);
-        let (invocation_ref, invocation_bytes) =
-            lifecycle_invocation(&pre_ref, &post_ref);
+        let (invocation_ref, invocation_bytes) = lifecycle_invocation(&pre_ref, &post_ref);
         (
             BTreeMap::from([(pre_ref.clone(), pre_bytes), (post_ref.clone(), post_bytes)]),
             BTreeMap::from([(invocation_ref.clone(), invocation_bytes)]),
@@ -1771,7 +1764,8 @@ fn orders_fixture() -> OrdersFixture {
     .expect("M22 checks");
     let (pre_ref, pre_bytes) = lifecycle_observation("p1", "pre", &[(false, false)]);
     let (post_ref, post_bytes) = lifecycle_observation("q1", "post", &[(true, true)]);
-    let (invocation_ref, invocation_bytes) = lifecycle_invocation_with(&pre_ref,
+    let (invocation_ref, invocation_bytes) = lifecycle_invocation_with(
+        &pre_ref,
         &post_ref,
         serde_json::json!({"flags": {"record": {
             "type": flags_type,
@@ -2028,11 +2022,12 @@ fn items_fixture() -> OrdersFixture {
         document["contexts"][0]["fields"]["items"] =
             serde_json::json!({"sequence": [item(true), item(false)]});
         let bytes = serde_json::to_vec(&document).unwrap();
-        (lifecycle_document_ref(label, &bytes), bytes)
+        (lifecycle_document_ref(label), bytes)
     };
     let (pre_ref, pre_bytes) = with_items("p1", "pre", &[(false, false)]);
     let (post_ref, post_bytes) = with_items("q1", "post", &[(true, true)]);
-    let (invocation_ref, invocation_bytes) = lifecycle_invocation_with(&pre_ref,
+    let (invocation_ref, invocation_bytes) = lifecycle_invocation_with(
+        &pre_ref,
         &post_ref,
         serde_json::json!({"flags": {"record": {
             "type": flags_type,
@@ -2093,10 +2088,7 @@ fn a_context_collection_read_under_pre_call_has_no_path() {
         .find(|(_, bytes)| {
             serde_json::from_slice::<serde_json::Value>(bytes).unwrap()["observation"] == "pre"
         })
-        .map(|(digest, bytes)| {
-            let reference = lifecycle_document_ref("p1", bytes);
-            reference
-        })
+        .map(|_| lifecycle_document_ref("p1"))
         .expect("the pre snapshot");
     let by_pre_call = lifecycle_pre_call(
         &package,

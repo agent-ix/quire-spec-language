@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Public-API qualification of the native-formal-environment/1 binding profile.
 use ix_trace_rs::trace;
-use qsl_foundation::{ByteDigest, Code, Phase, SourceIdentity};
+use qsl_foundation::{ByteDigest, Code, SourceIdentity};
 use quire_contract_model as ir;
 use quire_spec_language::linking::{DeclarationKey, ResolutionTarget};
 use quire_spec_language::{link, parse, Limits, LinkLimits, ParsedUnit};
@@ -137,10 +137,7 @@ fn canonical(env: &ir::DeclarationEnvironment) -> ir::CanonicalOutput {
 }
 
 fn import(env: &ir::DeclarationEnvironment, alias: &str) -> String {
-    format!(
-        "model {alias} = \"{}\";\n",
-        env.owner().package(),
-    )
+    format!("model {alias} = \"{}\";\n", env.owner().package(),)
 }
 
 fn clause(name: &str, expression: &str) -> String {

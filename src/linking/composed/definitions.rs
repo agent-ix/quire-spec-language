@@ -11,17 +11,13 @@ use super::binding_work::{Dimension, Exhaustion, Work};
 use super::definition_source::RegisteredDefinition;
 use super::{DeclarationId, SyntaxNamespace, UnitId};
 use crate::syntax::composed::{ControlKind, DeclarationKind, ProtocolRequirement};
-use qsl_foundation::{ByteDigest, Span, Spanned};
+use qsl_foundation::Spanned;
 
-/// Immutable definition selection. This digest covers original bytes only.
+/// Immutable definition selection: the registered definition's identity alone.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Selection {
     /// Exact registered definition identity, distinct from an alias or file path.
     pub identity: String,
-    /// Exact definition revision, distinct from a language edition.
-    pub revision: String,
-    /// SHA-256 of the supplied definition artifact's raw bytes.
-    pub digest: ByteDigest,
 }
 
 /// One explicitly supplied definition; metadata grants no interpretation.
@@ -38,8 +34,6 @@ pub struct Artifact<'a> {
 pub struct RuleInput<'a> {
     /// Exact rule path in the selected baseline; never used for file discovery.
     pub path: &'a str,
-    /// Independently supplied raw-byte digest.
-    pub digest: ByteDigest,
     /// Original supplied rule content.
     pub bytes: &'a [u8],
 }
@@ -76,19 +70,6 @@ pub enum Cause {
         /// Indices of the supplied entries claiming this definition.
         entries: Vec<usize>,
     },
-    /// Asserted digest does not match supplied content.
-    DefinitionDigest {
-        /// Index of the supplied entry whose digest does not match its bytes.
-        entry: usize,
-    },
-    /// The native selection's digest differs from the selected supplied
-    /// artifact's.
-    SelectionMismatch {
-        /// The selection asserted by the native reference.
-        expected: Selection,
-        /// Index of the supplied entry actually selected, which differs from `expected`.
-        entry: usize,
-    },
     /// The compiler has no interpretation for these exact bytes and labels.
     UnsupportedDefinition {
         /// Index of the supplied entry the compiler has no interpretation for.
@@ -105,13 +86,6 @@ pub enum Cause {
         path: &'static str,
         /// Indices of the supplied rule entries claiming this path.
         entries: Vec<usize>,
-    },
-    /// A supplied rule's declared digest does not match its own supplied bytes.
-    RuleMismatch {
-        /// Baseline path of the mismatched rule.
-        path: &'static str,
-        /// Index of the supplied entry whose declared digest does not match its bytes.
-        entry: usize,
     },
     /// Exact selection is known but is not the composed edition definition.
     WrongEdition(Selection),
@@ -133,11 +107,6 @@ pub enum Cause {
     AmbiguousAlias {
         /// Indices of the profile imports sharing this alias.
         imports: Vec<usize>,
-    },
-    /// The authored digest is not canonical SHA-256 text.
-    InvalidDigest {
-        /// Source span of the malformed digest text.
-        span: Span,
     },
     /// The exact root does not admit this declaration/obligation kind.
     WrongProfileKind {
@@ -211,11 +180,9 @@ pub struct Report<'a> {
 }
 
 struct Catalog<'a> {
-    input: &'a Inventory<'a>,
     definitions: BTreeMap<&'a str, Vec<usize>>,
     rules: BTreeMap<&'a str, Vec<usize>>,
     registered: Vec<Option<RegisteredDefinition>>,
-    invalid_digest: BTreeSet<usize>,
 }
 
 /// Resolve the supplied edition and every authored profile occurrence.
@@ -391,25 +358,8 @@ fn profile(
             return Ok(());
         }
     };
-    let Some(pin) = &import.pin else {
-        result.refusal = Some(Cause::MissingAlias);
-        result.complete = true;
-        return Ok(());
-    };
-    let digest = match pin.digest.value.parse() {
-        Ok(digest) => digest,
-        Err(_) => {
-            result.refusal = Some(Cause::InvalidDigest {
-                span: pin.digest.span,
-            });
-            result.complete = true;
-            return Ok(());
-        }
-    };
     let selection = Selection {
         identity: import.package.value.clone(),
-        revision: pin.version.value.clone(),
-        digest,
     };
     match catalog.closure(&selection, work)? {
         Ok(closure) => {
@@ -452,23 +402,15 @@ fn admits(profile: RegisteredDefinition, kind: UseKind) -> bool {
 
 impl<'a> Catalog<'a> {
     fn new(input: &'a Inventory<'a>, work: &mut Work) -> Result<Self, Exhaustion> {
-        for text in [&input.edition.identity, &input.edition.revision] {
-            work.charge(Dimension::Bytes, text.len())?;
-        }
+        work.charge(Dimension::Bytes, input.edition.identity.len())?;
         let mut catalog = Self {
-            input,
             definitions: BTreeMap::new(),
             rules: BTreeMap::new(),
             registered: Vec::new(),
-            invalid_digest: BTreeSet::new(),
         };
         for (index, artifact) in input.definitions.iter().enumerate() {
             work.charge(Dimension::Definitions, 1)?;
-            for bytes in [
-                artifact.selection.identity.as_bytes(),
-                artifact.selection.revision.as_bytes(),
-                artifact.bytes,
-            ] {
+            for bytes in [artifact.selection.identity.as_bytes(), artifact.bytes] {
                 work.charge(Dimension::Bytes, bytes.len())?;
             }
             catalog
@@ -476,9 +418,6 @@ impl<'a> Catalog<'a> {
                 .entry(&artifact.selection.identity)
                 .or_default()
                 .push(index);
-            if ByteDigest::of(artifact.bytes) != artifact.selection.digest {
-                catalog.invalid_digest.insert(index);
-            }
             let mut registered = None;
             for candidate in RegisteredDefinition::all() {
                 work.charge(Dimension::References, 1)?;
@@ -515,16 +454,6 @@ impl<'a> Catalog<'a> {
                 }))
             }
         };
-        let supplied = &self.input.definitions[index];
-        if self.invalid_digest.contains(&index) {
-            return Ok(Err(Cause::DefinitionDigest { entry: index }));
-        }
-        if supplied.selection.digest != selection.digest {
-            return Ok(Err(Cause::SelectionMismatch {
-                expected: selection.clone(),
-                entry: index,
-            }));
-        }
         Ok(self.registered[index].ok_or(Cause::UnsupportedDefinition { entry: index }))
     }
 
@@ -540,20 +469,17 @@ impl<'a> Catalog<'a> {
     ) -> Result<Result<RegisteredDefinition, Cause>, Exhaustion> {
         work.charge(Dimension::References, 1)?;
         let entries = self.definitions.get(required.identity());
-        let index = match entries.map(Vec::as_slice) {
+        match entries.map(Vec::as_slice) {
             None | Some([]) => return Ok(Err(Cause::MissingDependency(required))),
-            Some([index]) => *index,
+            Some([_]) => {}
             Some(entries) => {
                 return Ok(Err(Cause::AmbiguousDependency {
                     required,
                     entries: entries.to_vec(),
                 }))
             }
-        };
-        if self.invalid_digest.contains(&index) {
-            return Ok(Err(Cause::DefinitionDigest { entry: index }));
         }
-        // `self.registered[index]` was recognized by this same identity in
+        // The one entry was recognized by this same identity in
         // `Catalog::new`, so it is exactly `required` here.
         Ok(Ok(required))
     }
@@ -601,22 +527,15 @@ impl<'a> Catalog<'a> {
             for rule in definition.rules() {
                 work.charge(Dimension::References, 1)?;
                 let entries = self.rules.get(rule.path);
-                let index = match entries.map(Vec::as_slice) {
+                match entries.map(Vec::as_slice) {
                     None | Some([]) => return Ok(Err(Cause::MissingRule { path: rule.path })),
-                    Some([index]) => *index,
+                    Some([_]) => {}
                     Some(entries) => {
                         return Ok(Err(Cause::AmbiguousRule {
                             path: rule.path,
                             entries: entries.to_vec(),
                         }))
                     }
-                };
-                let supplied = &self.input.rules[index];
-                if supplied.digest != ByteDigest::of(supplied.bytes) {
-                    return Ok(Err(Cause::RuleMismatch {
-                        path: rule.path,
-                        entry: index,
-                    }));
                 }
             }
             for dependency in definition.requirements().iter().rev() {

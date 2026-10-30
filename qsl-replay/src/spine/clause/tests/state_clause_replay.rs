@@ -17,7 +17,7 @@ use crate::{
     ReplayResult, ReplaySource, ReplayTarget, SnapshotValue, StateClauseCounterexample,
     StateClauseKind, StateClauseReplayResult, Verdict, WitnessEnvelope, WitnessSettlement,
 };
-use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
+use qsl_foundation::digest::{DigestDomain, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_exact::Identifier;
@@ -72,12 +72,7 @@ fn invocation(pre_objects: &[serde_json::Value], post_objects: &[serde_json::Val
         super::frame::snapshot(label, "post", post_objects)
     });
     let (invocation, invocation_bytes) = document_ref_and_bytes("clause-invocation", |label| {
-        config_version_invocation_bytes(
-            label,
-            &pre,
-            &post,
-            "child",
-        )
+        config_version_invocation_bytes(label, &pre, &post, "child")
     });
     Documents {
         observation: ClauseSelectionInput::Invocation {
@@ -122,11 +117,7 @@ fn forbidden_parent_change() -> Documents {
 /// with `config_history` marked `complete`.
 fn current(identity: &str, root_version: i64, child_version: i64, complete: bool) -> Documents {
     let (snapshot, bytes) = document_ref_and_bytes(identity, |label| {
-        let bytes = config_version_snapshot(
-            label,
-            root_version,
-            Some(child_version),
-        );
+        let bytes = config_version_snapshot(label, root_version, Some(child_version));
         let mut document: serde_json::Value =
             serde_json::from_slice(&bytes).expect("the fixture is JSON");
         document["populations"][0]["complete"] = json!(complete);
@@ -184,11 +175,7 @@ fn private_probe_source_keeps_format_identity() {
 /// `target` naming `target`.
 fn pre_call(target: &str) -> Documents {
     let (snapshot, bytes) = document_ref_and_bytes("chain-pre", |label| {
-        config_version_step3_snapshot(
-            label,
-            "pre",
-            &config_version_step3_chain_objects(),
-        )
+        config_version_step3_snapshot(label, "pre", &config_version_step3_chain_objects())
     });
     Documents {
         observation: ClauseSelectionInput::PreCall {

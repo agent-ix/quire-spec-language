@@ -111,7 +111,6 @@ fn record_keys(source: &str) -> Vec<OccurrenceKey> {
         &parsed,
         &models,
         &DependencyInput::default(),
-        &spine::LockEvidence::default(),
         limits,
         &cancel,
     )

@@ -60,8 +60,7 @@ fn integer(spelling: &str) -> Value {
 }
 
 /// A document's reference: its identity and the digest of its bytes.
-fn document_ref(label: &str, bytes: &[u8]) -> DocumentRef {
-    let document = quire_canonical::read(bytes, u64::MAX).expect("the document is JSON");
+fn document_ref(label: &str) -> DocumentRef {
     DocumentRef {
         authority: "test".to_owned(),
         identity: label.to_owned(),
@@ -296,7 +295,7 @@ fn snapshot(
     fields: &[(String, Value)],
 ) -> (DocumentRef, Vec<u8>) {
     let bytes = snapshot_text(replay, observation, label, fields).into_bytes();
-    (document_ref(label, &bytes), bytes)
+    (document_ref(label), bytes)
 }
 
 /// A refusal as its typed parts.
@@ -459,11 +458,8 @@ impl Replay {
         parameters: Value,
         result: Value,
     ) -> Invoked {
-        let (pre, pre_bytes) = (document_ref("pre", pre.as_bytes()), pre.as_bytes().to_vec());
-        let (post, post_bytes) = (
-            document_ref("post", post.as_bytes()),
-            post.as_bytes().to_vec(),
-        );
+        let (pre, pre_bytes) = (document_ref("pre"), pre.as_bytes().to_vec());
+        let (post, post_bytes) = (document_ref("post"), post.as_bytes().to_vec());
         let call = DocumentRef {
             authority: "test".to_owned(),
             identity: "call".to_owned(),
@@ -490,7 +486,7 @@ impl Replay {
             "deleted": [],
         }))
         .expect("the invocation serializes");
-        let call = document_ref("call", &bytes);
+        let call = document_ref("call");
         Invoked {
             snapshots: BTreeMap::from([(pre.clone(), pre_bytes), (post.clone(), post_bytes)]),
             invocations: BTreeMap::from([(call.clone(), bytes)]),
@@ -1282,7 +1278,7 @@ fn any_scalar_sequence_admits_as_a_string_unchanged() {
         let text = snapshot_text(&replay, "current", "current", &base_fields())
             .replace("\"ready\"", "\"\\ud83d\\ude00\"");
         let bytes = text.into_bytes();
-        (document_ref("current", &bytes), bytes)
+        (document_ref("current"), bytes)
     };
     let provision = BTreeMap::from([(reference.clone(), bytes)]);
     let (environment, _) = admit_current_snapshot(

@@ -5,7 +5,7 @@ use crate::support::native_rule_model;
 
 use ix_trace_rs::trace;
 use native_rule_model::{parts, symbol, Parts};
-use qsl_foundation::{ByteDigest, Code, Phase, Source, SourceIdentity};
+use qsl_foundation::{Code, Phase, Source, SourceIdentity};
 use quire_contract_model as ir;
 use quire_spec_language::formal_source::FormalSource;
 use quire_spec_language::linking::{DeclarationKey, ResolutionTarget};
@@ -472,9 +472,7 @@ fn tc_045_native_link_hard_inventory_syntax_and_depth_limits_cannot_be_raised() 
     );
     for count in [64, 65] {
         let imports: String = (1..count)
-            .map(|index| {
-                format!("model Alias{index} = \"example/rule-tests\";\n")
-            })
+            .map(|index| format!("model Alias{index} = \"example/rule-tests\";\n"))
             .collect();
         let text = document(&model, &(imports + &invariant("true")));
         let result = link_native(read(&text), &models, permissive);

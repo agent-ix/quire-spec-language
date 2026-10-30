@@ -68,7 +68,7 @@ Number = Integer | {kind:"rational",numerator:String,denominator:String}
 Revision = {namespace:Name,value:Name}
 Wire = {identity:Name,version:Name}
 Ref = {refVersion:"ix.artifact-ref/3-draft",kind:ArtifactKind,authority:Name,
-       identity:Name,revision:Revision,wire:Wire}
+       identity:Name,wire:Wire}
 Formal = {document:Name,revision:Revision}
 Span = {start:U,end:U}
 Locus = {source:U,span:Span}
@@ -178,17 +178,17 @@ native record does.
 indexes definitions, while its `artifact`/`rules` and `Dependency.requires` index
 dependencies. `Model.artifact` also indexes dependencies.
 Dependency and definition closure is acyclic and complete under the selected
-package contract. Source/dependency revision values are copied exactly from the
+package contract. Source/dependency identities are copied exactly from the
 selected producer reference, never regenerated in the artifact domain.
 
-Native source labels, external source-artifact revision and the explicitly
+Native source labels and the explicitly
 authored formal document/revision remain separate. Spans use the original decoded
 UTF-8 source bytes and must be scalar-boundary aligned. Declaration loci are disjoint in each source;
 all local loci lie inside their owning declaration. Foreign model loci are
 validated against their separately supplied exact source bytes. No display
 path, occurrence ordinal or equal name establishes authority.
 
-Dependencies sort by `(kind,authority,identity,revision.namespace,revision.value,wire.identity,wire.version)`;
+Dependencies sort by `(kind,authority,identity,wire.identity,wire.version)`;
 sources sort by their artifact key; definitions by `(identity,revision.namespace,revision.value)`;
 models by dependency index; exports by `(kind,path)`; declarations by
 `(source index,span.start,span.end)`. Comparisons use lexicographic UTF-8 byte
@@ -699,7 +699,7 @@ The Rust path is `checking::composed::proofs::discharge` →
 `protocol_artifact::native::admit` → `native::emit`. Admission borrows the actual
 proof report and independent `native::Selections`: original formal sources,
 exact source/dependency references and bytes, admitted models, contract, baseline
-and producer. Each selected source retains its opaque external artifact revision
+and producer. Each selected source retains its opaque external artifact identity
 separately from the native/formal revision. The caller explicitly selects
 namespaces for formal-source, requirement and registered-definition revisions;
 a registered definition's semantic revision comes from its actual registered

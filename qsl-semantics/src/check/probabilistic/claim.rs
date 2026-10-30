@@ -1580,10 +1580,7 @@ impl Pass<'_, '_> {
         let text = |text: &str| text.as_bytes().to_vec();
         let subject = node_bytes(
             b"subject",
-            &[
-                text(&claim.subject.alias),
-                text(&subject.identity),
-            ],
+            &[text(&claim.subject.alias), text(&subject.identity)],
         );
         let profile = node_bytes(
             b"profile",

@@ -20,8 +20,6 @@
 //! `ConfigVersion`. AC-3's second parameter, `delta`, is typed by the same
 //! `VersionNumber` declaration and assembles to the same `Int[0, 1000]`.
 
-use std::collections::BTreeMap;
-
 use ix_trace_rs::trace;
 use qsl_semantics::check::{AssemblyCause, PackageDeclarations};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;

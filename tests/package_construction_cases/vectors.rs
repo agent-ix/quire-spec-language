@@ -51,19 +51,16 @@ pub(crate) fn model() -> NativeModel {
         .model()
 }
 
-pub(crate) fn source_prefix(model: &NativeModel) -> String {
-    format!(
-        "{}model M = \"example/package-model\";\n",
-        super::HEADER
-    )
+pub(crate) fn source_prefix() -> String {
+    format!("{}model M = \"example/package-model\";\n", super::HEADER)
 }
 
-pub(crate) fn source(model: &NativeModel) -> String {
-    format!("{}{CLAUSE}\n", source_prefix(model))
+pub(crate) fn source() -> String {
+    format!("{}{CLAUSE}\n", source_prefix())
 }
 
-pub(crate) fn source_multiple(model: &NativeModel) -> String {
-    format!("{}{CLAUSE}\n{SECOND_CLAUSE}\n", source_prefix(model))
+pub(crate) fn source_multiple() -> String {
+    format!("{}{CLAUSE}\n{SECOND_CLAUSE}\n", source_prefix())
 }
 
 pub(crate) struct Expected {
@@ -97,11 +94,11 @@ fn expected_inner(
     formal_revision: u64,
     multiple: bool,
 ) -> Expected {
-    let native_prefix = source_prefix(model);
+    let native_prefix = source_prefix();
     let original = if multiple {
-        source_multiple(model)
+        source_multiple()
     } else {
-        source(model)
+        source()
     };
     let original_digest = format!("sha256:{:x}", Sha256::digest(original.as_bytes()));
     let record_start = MODEL_PREFIX.len();

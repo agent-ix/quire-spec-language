@@ -22,7 +22,9 @@ fn population() -> String {
 
 /// The unit selecting the fixture's package for `operations`, and its
 /// package input.
-pub(super) fn unit_and_packages(operations: &[&str]) -> (String, qsl_semantics::model::intake::PackageInput) {
+pub(super) fn unit_and_packages(
+    operations: &[&str],
+) -> (String, qsl_semantics::model::intake::PackageInput) {
     let document = serde_json::to_vec(&fixture::document(operations, &[])).expect("fixture");
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let unit = format!(
@@ -48,7 +50,6 @@ pub(super) fn counter(key: &str, value: i64) -> serde_json::Value {
 }
 
 pub(super) fn snapshot(
-    operations: &[&str],
     label: &DocumentRef,
     observation: &str,
     objects: &[serde_json::Value],
@@ -95,15 +96,10 @@ fn run_selected(
 ) -> super::super::ClauseRunReport {
     let (unit, packages) = unit_and_packages(operations);
     let (pre, pre_bytes) = document_ref_and_bytes("counters-pre", |label| {
-        snapshot(
-            operations,
-            label,
-            "pre",
-            &[counter("c1", 0), counter("c2", 0)],
-        )
+        snapshot(label, "pre", &[counter("c1", 0), counter("c2", 0)])
     });
     let (post, post_bytes) = document_ref_and_bytes("counters-post", |label| {
-        snapshot(operations, label, "post", post_objects)
+        snapshot(label, "post", post_objects)
     });
     let (invocation, invocation_bytes) = document_ref_and_bytes("counters-invocation", |label| {
         json!({

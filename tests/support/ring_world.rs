@@ -24,7 +24,6 @@ use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckedGraph, CheckedRefinement, PackageDeclarations};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, package_input};
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
 use qsl_semantics::model::state::{ModelState, StateObject};
 use quire_exact::{Integer, ScalarLimits, Value};
@@ -321,7 +320,8 @@ fn packages(variant: Variant) -> qsl_semantics::model::intake::PackageInput {
     package_input([
         queue_document(variant).as_slice(),
         ring_document(variant).as_slice(),
-    ]).unwrap()
+    ])
+    .unwrap()
 }
 
 /// The checked graph of the unit with `refinement`, or its refusals.
@@ -364,7 +364,6 @@ pub fn check(variant: Variant, refinement: &str) -> Result<CheckedGraph, String>
 /// (population name, objects as (key, type name, fields)).
 fn snapshot(
     package: &str,
-    document: &[u8],
     populations: Vec<Json>,
     snapshots: &mut qsl_semantics::model::observation::DocumentProvision,
 ) -> DocumentRef {
@@ -379,8 +378,11 @@ fn snapshot(
         "populations": populations,
     });
     let bytes = snapshot.to_string().into_bytes();
-    let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-    snapshots.insert(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes);
+    snapshots.insert(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    );
     DocumentRef {
         authority: "test".to_owned(),
         identity: name,
@@ -419,7 +421,6 @@ impl RingWorld {
         }
         let queue_initial = snapshot(
             QUEUE,
-            &queue_document(variant),
             vec![
                 json!({"population": node(QUEUE, "queues"), "complete": true,
                 "objects": [{"key": "r", "type": node(QUEUE, "Queue"),
@@ -440,7 +441,6 @@ impl RingWorld {
         };
         let ring_initial = snapshot(
             RING,
-            &ring_document(variant),
             vec![
                 json!({"population": node(RING, "rings"), "complete": true,
                     "objects": [{"key": "r", "type": node(RING, "Ring"),

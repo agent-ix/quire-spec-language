@@ -189,7 +189,7 @@ struct Syntax {
     point: Value,
 }
 
-fn write_program(directory: &Path, model: &NativeModel, case: Case) -> io::Result<Program> {
+fn write_program(directory: &Path, case: Case) -> io::Result<Program> {
     let spec = case.spec();
     let clause = spec.clause;
     let syntax = match spec.input {
@@ -376,7 +376,7 @@ fn write_requests(
 pub fn write(directory: &Path, model: &NativeModel, case: Case) -> io::Result<()> {
     std::fs::create_dir_all(directory)?;
     let models = write_model(directory, model, case.spec())?;
-    let program = write_program(directory, model, case)?;
+    let program = write_program(directory, case)?;
     let inputs = write_inputs(directory, model, case)?;
     write_requests(directory, case, models, program, inputs)?;
     super::config_version_spine::spine::write(directory, case)

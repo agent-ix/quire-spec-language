@@ -1,22 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-110 "Layer selection": the header-selectable layers of QSpec AD-003's
-//! state and value/model hierarchy, as the `header_selectable_layers` rows
-//! of QSpec's `complete-value-lock.json` name them.
+//! state and value/model hierarchy.
 //!
-//! A [`HeaderLayer`] is one row: its identity, the layers it `requires`, the
-//! definition file that states its admitted forms, and the witness request
-//! it names. [`DefinitionLock::layer_row`](super::DefinitionLock::layer_row)
-//! reads the row; [`DefinitionLock::closure`](super::DefinitionLock::closure)
-//! computes a selection's `requires` closure; and
-//! [`DefinitionLock::admits`](super::DefinitionLock::admits) answers whether a
-//! [`LayerForm`] is in the admitted-form set of a closure. QSpec states the
-//! admitted-form sets in prose (`state-core.md`, `state-queries.md`,
-//! `state-graph.md`, `value-complete.md`, `model-complete.md`, `temporal-complete.md`); each
-//! [`LayerRow::forms`] is this build's reading of its row's file, over the
-//! forms the unit language has today.
+//! A [`HeaderLayer`] is one local policy role: its identity, direct
+//! requirements, admitted forms, and witness request are defined by exhaustive
+//! matches over the closed enum.
 
 /// A header-selectable layer of QSpec AD-003 (QSpec FR-453), in the order
-/// of the lock's `header_selectable_layers` rows.
+/// of the closed `header_selectable_layers` roles.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HeaderLayer {
     /// `quire.state.core/v1`: bounded scalars, presence and control, finite
@@ -39,7 +30,7 @@ pub enum HeaderLayer {
 }
 
 impl HeaderLayer {
-    /// Every layer, in the lock's row order.
+    /// Every layer, in enum order.
     pub const ALL: [Self; 6] = [
         Self::StateCore,
         Self::StateQueries,
@@ -61,6 +52,95 @@ impl HeaderLayer {
         }
     }
 
+    /// The package definition reference associated with this layer role.
+    pub fn reference(self) -> super::definition::DefinitionReference {
+        super::definition::DefinitionReference {
+            authority: "agent-ix".to_owned(),
+            identity: self.identity().to_owned(),
+        }
+    }
+
+    /// Direct layer requirements.
+    pub const fn requires(self) -> &'static [Self] {
+        match self {
+            Self::StateCore => &[],
+            Self::StateQueries => &[Self::StateCore],
+            Self::StateGraph => &[Self::StateQueries],
+            Self::ValueComplete => &[Self::StateCore],
+            Self::ModelComplete => &[Self::StateGraph, Self::ValueComplete],
+            Self::TemporalComplete => &[Self::ModelComplete],
+        }
+    }
+
+    /// The witness request this layer requires.
+    pub const fn witness_request(self) -> WitnessRequest {
+        match self {
+            Self::ValueComplete => WitnessRequest {
+                kind: WitnessKind::ValueValidity,
+                extent: "bounded",
+            },
+            Self::StateCore
+            | Self::StateQueries
+            | Self::StateGraph
+            | Self::ModelComplete
+            | Self::TemporalComplete => WitnessRequest {
+                kind: WitnessKind::OperationContract,
+                extent: "bounded",
+            },
+        }
+    }
+
+    /// Forms this layer adds to those of its direct requirements.
+    pub const fn forms(self) -> &'static [LayerForm] {
+        match self {
+            Self::StateCore => &[LayerForm::StateClause],
+            Self::StateQueries => &[
+                LayerForm::PredicateDeclaration,
+                LayerForm::NamedPredicateCall,
+                LayerForm::SequenceQuery,
+            ],
+            Self::StateGraph => &[LayerForm::ObjectNavigation],
+            Self::ValueComplete => &[
+                LayerForm::FunctionDeclaration,
+                LayerForm::ValueConstruct,
+                LayerForm::PredicateDeclaration,
+                LayerForm::NamedPredicateCall,
+                LayerForm::SequenceQuery,
+            ],
+            Self::ModelComplete => &[
+                LayerForm::OperationBody,
+                LayerForm::DispatchCall,
+                LayerForm::Lookup,
+            ],
+            Self::TemporalComplete => &[],
+        }
+    }
+
+    /// The selected layers and their transitive requirements.
+    pub fn closure(selected: &[Self]) -> Vec<Self> {
+        let mut reached = std::collections::BTreeSet::new();
+        let mut pending = selected.to_vec();
+        while let Some(layer) = pending.pop() {
+            if reached.insert(layer) {
+                pending.extend_from_slice(layer.requires());
+            }
+        }
+        reached.into_iter().collect()
+    }
+
+    /// The forms admitted by this layer and its requirement closure.
+    pub fn admitted_forms(self) -> std::collections::BTreeSet<LayerForm> {
+        Self::closure(&[self])
+            .into_iter()
+            .flat_map(|layer| layer.forms().iter().copied())
+            .collect()
+    }
+
+    /// Whether this layer admits a form through its requirement closure.
+    pub fn admits(self, form: LayerForm) -> bool {
+        self.admitted_forms().contains(&form)
+    }
+
     /// The layer a header identity names, if it names one.
     #[ix_trace_rs::string_edge]
     pub fn from_identity(identity: &str) -> Option<Self> {
@@ -70,7 +150,7 @@ impl HeaderLayer {
     }
 }
 
-/// What kind of witness a layer asks for (`witness_request.kind`).
+/// What kind of witness a layer asks for.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WitnessKind {
     /// `operation-contract`.
@@ -89,7 +169,7 @@ impl WitnessKind {
     }
 }
 
-/// The witness a layer's qualification asks for (`witness_request`): its
+/// The witness a layer's qualification asks for: its
 /// target kind and the extent its tier bounds it to.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct WitnessRequest {
@@ -171,97 +251,6 @@ impl LayerForm {
     }
 }
 
-/// One `header_selectable_layers` row of the `Value` family's lock.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct LayerRow {
-    /// The row's layer.
-    pub layer: HeaderLayer,
-    /// The layers it requires, directly.
-    pub requires: &'static [HeaderLayer],
-    /// The definition file that states its admitted forms.
-    pub admitted_forms: &'static str,
-    /// The witness request it names.
-    pub witness_request: WitnessRequest,
-    /// The forms this layer adds to those of the layers it requires.
-    pub forms: &'static [LayerForm],
-}
-
-const OPERATION_CONTRACT: WitnessRequest = WitnessRequest {
-    kind: WitnessKind::OperationContract,
-    extent: "bounded",
-};
-
-const VALUE_VALIDITY: WitnessRequest = WitnessRequest {
-    kind: WitnessKind::ValueValidity,
-    extent: "bounded",
-};
-
-/// The six rows, in the lock's order.
-pub(super) const LAYER_ROWS: [LayerRow; 6] = [
-    LayerRow {
-        layer: HeaderLayer::StateCore,
-        requires: &[],
-        admitted_forms: "state-core.md",
-        witness_request: OPERATION_CONTRACT,
-        forms: &[LayerForm::StateClause],
-    },
-    LayerRow {
-        layer: HeaderLayer::StateQueries,
-        requires: &[HeaderLayer::StateCore],
-        admitted_forms: "state-queries.md",
-        witness_request: OPERATION_CONTRACT,
-        forms: &[
-            LayerForm::PredicateDeclaration,
-            LayerForm::NamedPredicateCall,
-            LayerForm::SequenceQuery,
-        ],
-    },
-    LayerRow {
-        layer: HeaderLayer::StateGraph,
-        requires: &[HeaderLayer::StateQueries],
-        admitted_forms: "state-graph.md",
-        witness_request: OPERATION_CONTRACT,
-        forms: &[LayerForm::ObjectNavigation],
-    },
-    // `value.complete` adds complete values and pure functions to state core.
-    // A predicate is a pure Boolean function and the ordered queries are
-    // collection operations, so its set holds them although it does not
-    // require `state.queries`. It holds no object navigation: `deref` and
-    // `reaches` are `state.graph`'s (FR-361 item 17).
-    LayerRow {
-        layer: HeaderLayer::ValueComplete,
-        requires: &[HeaderLayer::StateCore],
-        admitted_forms: "value-complete.md",
-        witness_request: VALUE_VALIDITY,
-        forms: &[
-            LayerForm::FunctionDeclaration,
-            LayerForm::ValueConstruct,
-            LayerForm::PredicateDeclaration,
-            LayerForm::NamedPredicateCall,
-            LayerForm::SequenceQuery,
-        ],
-    },
-    // The model constructs (FR-361 item 5): an `operation-body`, a dispatched
-    // call and `lookup`.
-    LayerRow {
-        layer: HeaderLayer::ModelComplete,
-        requires: &[HeaderLayer::StateGraph, HeaderLayer::ValueComplete],
-        admitted_forms: "model-complete.md",
-        witness_request: OPERATION_CONTRACT,
-        forms: &[
-            LayerForm::OperationBody,
-            LayerForm::DispatchCall,
-            LayerForm::Lookup,
-        ],
-    },
-    // The timed models. The timed forms are clause-family forms the temporal
-    // clause checks own (FR-230), not unit-language forms of the `Layer`
-    // admission, so the row adds none to the model layer's set.
-    LayerRow {
-        layer: HeaderLayer::TemporalComplete,
-        requires: &[HeaderLayer::ModelComplete],
-        admitted_forms: "temporal-complete.md",
-        witness_request: OPERATION_CONTRACT,
-        forms: &[],
-    },
-];
+// `value.complete` adds complete values and pure functions to state core.
+// Predicate declarations and ordered queries are pure value forms, but object
+// navigation belongs to `state.graph` (FR-361 item 17).

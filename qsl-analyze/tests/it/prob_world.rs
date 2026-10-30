@@ -19,7 +19,6 @@ use qsl_replay::ModelCheckLimits;
 use qsl_semantics::check::{CheckRefusal, CheckedProbabilisticClaim, PackageDeclarations};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
 use quire_exact::ScalarLimits;
 use quire_semantic_value::checking::CheckingLimits;
@@ -395,8 +394,11 @@ impl World {
             })
             .to_string()
             .into_bytes();
-            let read = quire_canonical::read(&snapshot, u64::MAX).expect("JSON fixture");
-            snapshots.insert(qsl_semantics::model::observation::document_reference(&snapshot).expect("a document names itself"), snapshot);
+            snapshots.insert(
+                qsl_semantics::model::observation::document_reference(&snapshot)
+                    .expect("a document names itself"),
+                snapshot,
+            );
             initial.push(DocumentRef {
                 authority: "test".to_owned(),
                 identity,

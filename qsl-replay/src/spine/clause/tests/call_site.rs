@@ -68,7 +68,6 @@ fn operation_site(
 /// no clause names `probe`.
 fn two_operation_unit(clauses: bool) -> (String, Vec<u8>) {
     let document = config_version_step3_domain_document();
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let (pre, probe_post) = if clauses {
         (
             "pre AttemptPre using v on Config::ConfigVersion::attemptUpdate { \

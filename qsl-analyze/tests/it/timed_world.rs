@@ -14,7 +14,6 @@ use qsl_package::CheckedPackage;
 use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
 use quire_checked::key::DeclarationKey;
 use quire_exact::ScalarLimits;
@@ -334,11 +333,14 @@ pub(crate) fn world_built(
             }).collect::<Vec<_>>()}],
     });
     let bytes = snapshot.to_string().into_bytes();
-    let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
     World {
         package: CheckedPackage::link(graph),
         packages,
-        snapshots: BTreeMap::from([(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes)]),
+        snapshots: BTreeMap::from([(
+            qsl_semantics::model::observation::document_reference(&bytes)
+                .expect("a document names itself"),
+            bytes,
+        )]),
         initial: DocumentRef {
             authority: "test".to_owned(),
             identity: "s0".to_owned(),
@@ -501,14 +503,12 @@ pub(crate) fn refining_from(
         })?;
     let mut snapshots = BTreeMap::new();
     let abstract_initial = snapshot(
-        &packages,
         &mut snapshots,
         (&abstract_package, abstract_document),
         "a0",
         [abstract_inflight, false, false],
     );
     let concrete_initial = snapshot(
-        &packages,
         &mut snapshots,
         (PACKAGE, concrete_document),
         "m0",
@@ -527,9 +527,8 @@ pub(crate) fn refining_from(
 /// object `c` has `phase` 0 and `inflight`, `late` and `retried` as
 /// `flags` gives them, stored in `snapshots`.
 fn snapshot(
-    packages: &qsl_semantics::model::intake::PackageInput,
     snapshots: &mut qsl_semantics::model::observation::DocumentProvision,
-    (package, document): (&str, &[u8]),
+    (package, _document): (&str, &[u8]),
     name: &str,
     [inflight, late, retried]: [bool; 3],
 ) -> DocumentRef {
@@ -547,8 +546,11 @@ fn snapshot(
                     "late": {"boolean": late}, "retried": {"boolean": retried}}}]}],
     });
     let bytes = snapshot.to_string().into_bytes();
-    let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-    snapshots.insert(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes);
+    snapshots.insert(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    );
     DocumentRef {
         authority: "test".to_owned(),
         identity: name.to_owned(),
@@ -571,7 +573,6 @@ impl Refining {
             .enumerate()
             .map(|(index, &state)| {
                 snapshot(
-                    &self.packages,
                     &mut self.snapshots,
                     (PACKAGE, concrete_document),
                     &format!("m{index}"),

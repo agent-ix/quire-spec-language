@@ -63,7 +63,6 @@ fn packages() -> qsl_semantics::model::intake::PackageInput {
     qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap()
 }
 
-
 fn unit_text() -> String {
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\

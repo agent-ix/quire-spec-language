@@ -75,13 +75,7 @@ pub(super) fn selection_schema(production: P) -> Option<&'static [SelectionPart]
     match production {
         P::Profile => Some(&[Exact("profile"), Alias, Exact("="), Identity, Exact(";")]),
         P::ImportDeclaration => Some(&[Exact("import"), Identity, OptionalAlias, Exact(";")]),
-        P::Model => Some(&[
-            Exact("model"),
-            Alias,
-            Exact("="),
-            Identity,
-            Exact(";"),
-        ]),
+        P::Model => Some(&[Exact("model"), Alias, Exact("="), Identity, Exact(";")]),
         _ => None,
     }
 }

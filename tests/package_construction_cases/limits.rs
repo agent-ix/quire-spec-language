@@ -77,7 +77,7 @@ fn all_producer_passes_match_independently_counted_workloads() {
 #[trace("NFR-007-M-2", "NFR-007-M-3", "NFR-007-M-4", "NFR-007-M-5")]
 fn inclusive_limits_refuse_before_excess_and_retry_without_shared_usage() {
     let models = [vectors::model()];
-    let source_before = vectors::source(&models[0]);
+    let source_before = vectors::source();
     let model_before = models[0].artifact_bytes().to_vec();
     let expected = vectors::expected(&models[0], r#""test:package""#, r#""draft:1""#, 1);
     let [derive, canonical, encode] = expected_usage(&expected);
@@ -139,7 +139,7 @@ fn inclusive_limits_refuse_before_excess_and_retry_without_shared_usage() {
             assert!(measured.max_depth <= limits.depth);
         }
         assert_eq!(models[0].artifact_bytes(), model_before);
-        assert_eq!(vectors::source(&models[0]), source_before);
+        assert_eq!(vectors::source(), source_before);
         let retry = make(exact_limits).unwrap();
         assert_eq!(retry.bytes(), exact.bytes());
         assert_eq!(retry.usage(), exact.usage());

@@ -13,7 +13,6 @@
 //! evaluation `run_clause`'s `Clause` selection runs (FR-109) -- and
 //! settles an FR-072 result on the envelope's arm.
 
-
 use qsl_forms::StateClauseKind;
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;

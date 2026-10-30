@@ -43,12 +43,6 @@ fn population_identity() -> String {
     format!("ix://{PACKAGE_IDENTITY}/config_history")
 }
 
-/// [`DOMAIN_PACKAGE`], keyed the way `compile`/`run_clause` expect their
-/// `packages` map.
-pub fn domain_packages() -> qsl_semantics::model::intake::PackageInput {
-    qsl_semantics::model::intake::package_input([DOMAIN_PACKAGE.as_bytes()]).unwrap()
-}
-
 /// FR-108's own fixed `SourceIdentity` for the compiled unit, shared by
 /// every case (see [`request`]'s own doc for why it must not be
 /// case-suffixed) and by every direct front-end composition comparing

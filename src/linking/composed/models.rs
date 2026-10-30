@@ -4,7 +4,6 @@
 //! correspondence is inferred.
 
 use std::collections::BTreeMap;
-use std::str::FromStr;
 
 use quire_contract_model as ir;
 
@@ -14,7 +13,7 @@ use crate::checking::{Catalog, DomainType, NativeType};
 use crate::linking::{location, DeclarationKey, DeclarationLocation};
 use crate::native_model::{NativeModel, OperationRole, ScalarRole, ScalarSite};
 use crate::syntax::composed::{self as c, Operation, ParameterType, QualifiedName};
-use qsl_foundation::{ByteDigest, Span, Spanned};
+use qsl_foundation::{Span, Spanned};
 use qsl_semantics::model::admitted::{AdmittedPackage, Declaration, DeclarationKind};
 use qsl_semantics::model::domain_package::DomainPackageRecord;
 use qsl_semantics::model::domain_package::DomainPackageRef;
@@ -512,13 +511,7 @@ impl<'a> ModelBindings<'a> {
             let unit = UnitId(unit);
             for (import, selection) in syntax.models().iter().enumerate() {
                 work.charge(Dimension::Bindings, 1)?;
-                text(
-                    work,
-                    &[
-                        &selection.alias.value,
-                        &selection.package.value,
-                    ],
-                )?;
+                text(work, &[&selection.alias.value, &selection.package.value])?;
                 let selected = self.select(&selection.package.value, work)?;
                 let selected_input = selected.as_ref().ok().copied();
                 self.aliases
@@ -560,7 +553,9 @@ impl<'a> ModelBindings<'a> {
         for (index, input) in self.inputs.iter().enumerate() {
             work.charge(Dimension::References, 1)?;
             let named = match *input {
-                ModelInput::Native(model) => model.environment().owner().package().as_str() == package,
+                ModelInput::Native(model) => {
+                    model.environment().owner().package().as_str() == package
+                }
                 ModelInput::Domain(domain) => domain.selection().identity == package,
             };
             if named {

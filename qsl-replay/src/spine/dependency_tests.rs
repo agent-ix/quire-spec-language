@@ -735,12 +735,11 @@ fn wire_node<'w>(written: &'w Value, digest: &str) -> &'w Value {
 
 /// The domain package the refusal library's `model M` selects.
 fn spine_model() -> Vec<u8> {
-    let document = std::fs::read(concat!(
+    std::fs::read(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../tests/fixtures/spine-model.semantic-ir.json"
     ))
-    .unwrap();
-    document
+    .unwrap()
 }
 
 /// The wire node that is the one application whose operation is

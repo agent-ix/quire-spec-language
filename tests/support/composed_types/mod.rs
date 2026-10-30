@@ -2,7 +2,7 @@
 //! Real source/model/definition inputs shared by the composed type controls.
 
 use crate::support::native_rule_model;
-use qsl_foundation::{ByteDigest, Source, SourceIdentity};
+use qsl_foundation::{Source, SourceIdentity};
 use quire_contract_model as ir;
 use quire_spec_language::formal_source::FormalSource;
 use quire_spec_language::linking::composed::binding;
@@ -226,10 +226,7 @@ pub fn source(name: &str, model: &NativeModel, body: &str) -> Source {
         ("P", R::Protocol),
     ] {
         let selection = profile.selection();
-        text.push_str(&format!(
-            "profile {alias} = \"{}\" version \"{}\" digest \"{}\";\n",
-            selection.identity, selection.revision, selection.digest
-        ));
+        text.push_str(&format!("profile {alias} = \"{}\";\n", selection.identity));
     }
     text.push_str(&format!(
         "model M = \"{}\";\n{body}",
@@ -328,7 +325,6 @@ pub fn with_binding_inputs_and_inventory<T>(
                 rule.path,
                 RuleInput {
                     path: rule.path,
-                    digest: ByteDigest::of(rule.path.as_bytes()),
                     bytes: rule.path.as_bytes(),
                 },
             )

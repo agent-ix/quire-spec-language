@@ -23,17 +23,15 @@ mod compensation_model;
 
 /// The unit selecting `MODEL` as `M` by its identity.
 fn unit() -> String {
-    format!(
-        "language \"ix:native\" edition \"1-draft\";\n\
+    String::from("language \"ix:native\" edition \"1-draft\";\n\
     profile v = \"quire.value.complete/v1\";\n\
     profile p = \"quire.protocol.finite-global/v1\";\n\
     model M = \"acme/orders\";\n\
-    protocol P using v over (input: M::Gadget) on each (opened: Boolean) when ((1 + 2 = 3) and opened) {{\n\
+    protocol P using v over (input: M::Gadget) on each (opened: Boolean) when ((1 + 2 = 3) and opened) {\n\
       role R on M::Gadget;\n\
-      run sequence Main {{ check Ready using p {{ true }}; }}\n\
-      finish End as (outcome: Boolean) {{ true }};\n\
-    }}\n"
-    )
+      run sequence Main { check Ready using p { true }; }\n\
+      finish End as (outcome: Boolean) { true };\n\
+    }\n")
 }
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
@@ -86,10 +84,6 @@ fn compensation_package() -> CheckedPackage {
     let model = serde_json::to_vec(&compensation_model::document())
         .expect("the compensation model fixture serializes");
     let package_input = qsl_semantics::model::intake::package_input([model.as_slice()]).unwrap();
-    let digest = package_input
-        .keys()
-        .next()
-        .expect("the model fixture has one package");
     let source = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\

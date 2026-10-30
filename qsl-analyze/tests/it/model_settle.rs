@@ -37,8 +37,7 @@ use quire_semantic_value::catalog::Category;
 use quire_semantic_value::catalog::InternalFault;
 
 use crate::counter::{
-    document, package, subject, unit_text, universe, Documents, Letters, CONTRACT,
-    UNLIMITED,
+    document, package, subject, unit_text, universe, Documents, Letters, CONTRACT, UNLIMITED,
 };
 
 /// The letters of a replay that reads no atom: the deadlock-freedom item has
@@ -103,7 +102,7 @@ impl Case {
 
 pub(crate) fn case(body: &str, values: &[i64]) -> Case {
     let document = document(false);
-    let unit = unit_text(&document, body).into_bytes();
+    let unit = unit_text(body).into_bytes();
     let package_id = compile_package(
         SourceIdentity::new(AUTHORITY, IDENTITY, "git", "1"),
         "counter.native",
@@ -175,7 +174,12 @@ fn selected() -> QualifiedName {
 /// the snapshots in the byte provision.
 pub(crate) fn request<'a>(
     document: &[u8],
-    snapshots: impl Iterator<Item = (&'a qsl_semantics::model::observation::DocumentRef, &'a Vec<u8>)>,
+    snapshots: impl Iterator<
+        Item = (
+            &'a qsl_semantics::model::observation::DocumentRef,
+            &'a Vec<u8>,
+        ),
+    >,
     unit: &[u8],
     package_id: DigestRecord,
 ) -> ReplayRequestWire {
@@ -390,10 +394,9 @@ fn a_counterexample_the_model_does_not_take_refuses_with_no_result() {
     );
     assert_eq!(code, Code::InvalidRuntimeInput);
 
-    let edited = unit_text(
-        &case.documents.document,
-        &format!("{CONTRACT}function Other using v(): Boolean pure {{ false }}\n"),
-    )
+    let edited = unit_text(&format!(
+        "{CONTRACT}function Other using v(): Boolean pure {{ false }}\n"
+    ))
     .into_bytes();
     let stale = replay_model_trace(
         request(
@@ -1002,7 +1005,7 @@ fn a_counterexample_against_a_unit_with_another_terminal_declaration_is_refused(
         "{terminals:?}"
     );
     let any_package_id = self::case(&with_terminal(TERMINAL_ANY), &[0]).package_id;
-    let swapped = unit_text(&case.documents.document, &with_terminal(TERMINAL_ANY)).into_bytes();
+    let swapped = unit_text(&with_terminal(TERMINAL_ANY)).into_bytes();
     let stale = replay_model_trace(
         request(
             &case.documents.document,

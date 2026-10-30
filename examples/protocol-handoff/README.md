@@ -71,7 +71,6 @@ incomplete output before reusing its path.
 The output directory contains:
 
 - `compiled-protocol.json`: exact canonical bytes from native emission.
-- `compiled-protocol.ref.json`: the existing `ix.artifact-ref/3-draft` external seal (BLOCKED-BY QSL-1270 (draco), ArtifactRef seal).
 - `expected.json`: this example's independent selections, using the existing
   wire records and `Expected` fields, plus relative dependency/model filenames.
 - `predicates.native`, `state.native`, `temporal.native`, `workflow.native` and

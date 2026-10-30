@@ -17,7 +17,7 @@ use crate::scalar::{ScalarOperand, ScalarOperation};
 use crate::spine::call::tests::{lookup_driver_context, lookup_driver_fixture};
 use crate::spine::{
     check, default_accounting, package as emit, parse, run, select as select_models, CallArgument,
-    CallOutcome, DependencyInput, LockEvidence, ParseRequest, SpineLimits,
+    CallOutcome, DependencyInput, ParseRequest, SpineLimits,
 };
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
@@ -63,16 +63,9 @@ fn compile_with(
     let models = select_models(&parsed, &packages, limits.model, &cancel)
         .expect("the models select")
         .into_value();
-    let checked = check(
-        &parsed,
-        &models,
-        &dependencies,
-        &LockEvidence::default(),
-        limits,
-        &cancel,
-    )
-    .expect("the unit checks")
-    .into_value();
+    let checked = check(&parsed, &models, &dependencies, limits, &cancel)
+        .expect("the unit checks")
+        .into_value();
     let emitted = emit(&checked, Default::default(), &cancel)
         .expect("the unit emits")
         .into_value();
@@ -503,9 +496,7 @@ fn tc_1053_step_3_mistyped_arguments_equal_runs() {
 #[trace("TC-1053", "FR-367-AC-4")]
 #[test]
 fn tc_1053_step_3_reference_admission_equals_runs() {
-    let fixture = lookup_driver_fixture(
-        "function mk using v(r: M::Gadget, a: Int[0, 9]): Int[1, 10] pure { a + 1 }",
-    );
+    let fixture = lookup_driver_fixture();
     let unit = compile_source(fixture.source.clone(), fixture.packages.clone());
     let (objects, _, present, _) = lookup_driver_context(&fixture);
     let occurrence = the_application(&unit, "mk", ScalarOperator::Add);
@@ -908,8 +899,7 @@ fn tc_1053_step_5_binder_operand_is_not_an_argument() {
 #[trace("TC-1053", "FR-367-AC-4")]
 #[test]
 fn tc_1053_step_3_foreign_model_selection_equals_runs() {
-    use qsl_semantics::model::intake::{package_input, PackageDocument};
-    use qsl_semantics::model::key::hex;
+    use qsl_semantics::model::intake::package_input;
 
     let base = include_str!("../../../../tests/fixtures/spine-model.semantic-ir.json");
     let first = base.as_bytes().to_vec();
@@ -924,7 +914,10 @@ fn tc_1053_step_3_foreign_model_selection_equals_runs() {
          model N = \"acme/billing\";\n\
          function mk using v(r: M::Gadget, a: Int[0, 9]): Int[1, 10] pure {{ a + 1 }}\n"
     );
-    let unit = compile_source(source, package_input([first.as_slice(), second.as_slice()]).unwrap());
+    let unit = compile_source(
+        source,
+        package_input([first.as_slice(), second.as_slice()]).unwrap(),
+    );
     let occurrence = the_application(&unit, "mk", ScalarOperator::Add);
     let (other, key, identity) = unit
         .models
@@ -1016,8 +1009,8 @@ fn node_unit(
     items: &[i64],
 ) -> (Unit, ObjectEnvironment, quire_exact::ObjectReference) {
     use crate::execute::tests::object_environment::{domain_document, PACKAGE};
-    use qsl_semantics::model::intake::{package_input, PackageDocument};
-    use qsl_semantics::model::key::hex;
+    use qsl_semantics::model::intake::package_input;
+
     use quire_semantic_value::object_closure::ObjectClosure;
 
     let document = domain_document();

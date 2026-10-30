@@ -153,7 +153,8 @@ fn recompile_unit_with_execution_points<'a>(
         &source,
         path,
         bytes,
-        &package_input(packages).map_err(ReplayRefusal::DomainPackages)?,
+        &package_input(packages)
+            .map_err(|refusal| ReplayRefusal::DomainPackages(Box::new(refusal)))?,
         dependencies,
         execution_points,
         limits.spine,

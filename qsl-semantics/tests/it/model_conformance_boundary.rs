@@ -4,8 +4,6 @@
 //! `check`; no caller states a checked fact, and the work assertions read the
 //! meter the model admission carried into the conformance stage.
 
-use std::collections::BTreeMap;
-
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
 use qsl_semantics::check::{
@@ -15,7 +13,6 @@ use qsl_semantics::model::accounting::{
     ChargePoint, Incomplete, LimitKind, ModelNormalizationLimits,
 };
 use qsl_semantics::model::intake::{admit_unit, package_input, UnitIntakeCause};
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::normalize::ModelRefusalCause;
 use quire_checked::key::DeclarationKey;
 use quire_semantic_value::checking::CheckingLimits;
@@ -228,7 +225,11 @@ fn run(document: &[u8], body: &str, extra: Option<u64>) -> Run {
     run_unit(&unit, &packages, extra)
 }
 
-fn run_unit(unit: &str, packages: &qsl_semantics::model::intake::PackageInput, extra: Option<u64>) -> Run {
+fn run_unit(
+    unit: &str,
+    packages: &qsl_semantics::model::intake::PackageInput,
+    extra: Option<u64>,
+) -> Run {
     let n = admit_n(unit, packages);
     let limits = ModelNormalizationLimits {
         work_units: extra.map_or(u64::MAX, |extra| n + extra),
@@ -660,14 +661,6 @@ pub(super) fn cross_selection_refinement_decoy(row: usize) {
         .unwrap()
         .replace(PACKAGE, "example/other")
         .into_bytes();
-    let first_digest = package_input([bytes.as_slice()]).unwrap()
-        .into_keys()
-        .next()
-        .unwrap();
-    let other_digest = package_input([decoy.as_slice()]).unwrap()
-        .into_keys()
-        .next()
-        .unwrap();
     let packages = package_input([bytes.as_slice(), decoy.as_slice()]).unwrap();
     let proof = if numeric {
         format!("self.{proof_field} <= 5")
@@ -676,12 +669,8 @@ pub(super) fn cross_selection_refinement_decoy(row: usize) {
     };
     for reverse in [false, true] {
         let mut selections = [
-            format!(
-                "model Original = {PACKAGE:?};"
-            ),
-            format!(
-                "model Decoy = \"example/other\";"
-            ),
+            format!("model Original = {PACKAGE:?};"),
+            String::from("model Decoy = \"example/other\";"),
         ];
         if reverse {
             selections.reverse();
@@ -1288,21 +1277,9 @@ fn two_model_unit(reverse: bool) -> (String, qsl_semantics::model::intake::Packa
         .replace(PACKAGE, "example/other")
         .into_bytes();
     let input = package_input([bytes.as_slice(), second.as_slice()]).unwrap();
-    let first_digest = package_input([bytes.as_slice()]).unwrap()
-        .into_keys()
-        .next()
-        .expect("first digest");
-    let second_digest = package_input([second.as_slice()]).unwrap()
-        .into_keys()
-        .next()
-        .expect("second digest");
     let mut declarations = [
-        format!(
-            "model Z = {PACKAGE:?};"
-        ),
-        format!(
-            "model A = \"example/other\";"
-        ),
+        format!("model Z = {PACKAGE:?};"),
+        String::from("model A = \"example/other\";"),
     ];
     if reverse {
         declarations.reverse();

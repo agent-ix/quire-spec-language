@@ -1666,19 +1666,17 @@ mod tests {
     #[trace("TC-1263", "FR-485-AC-7")]
     #[test]
     fn unrecorded_population_refuses_before_application() {
-        use qsl_semantics::model::intake::package_input;
         use quire_exact::PopulationId;
 
         let document = include_bytes!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../tests/fixtures/spine-model.semantic-ir.json"
         ));
-        let source = format!(
-            "language \"ix:native\" edition \"1-draft\";\n\
+        let source = "language \"ix:native\" edition \"1-draft\";\n\
             profile v = \"quire.model.complete/v1\";\n\
             model M = \"acme/orders\";\n\
-            function h using v(p: Population<M::Widget>[3]): Boolean pure {{ true }}\n"
-        );
+            function h using v(p: Population<M::Widget>[3]): Boolean pure { true }\n"
+            .to_string();
         let acquired = acquire_checked_closure(
             identity("unit"),
             "unit.native",

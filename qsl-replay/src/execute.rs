@@ -165,7 +165,7 @@ pub enum ReplayRefusal {
     /// QC-1: the request's domain package documents do not form a package
     /// input (an unreadable document, or two for one identity).
     #[error("{}", .0.detail)]
-    DomainPackages(qsl_semantics::model::normalize::ModelRefusal),
+    DomainPackages(Box<qsl_semantics::model::normalize::ModelRefusal>),
     /// ADR-015 D-4 rules 1 and 6: the package reference's `dependencies`
     /// are not in strictly ascending UTF-8 byte order of identity, or name
     /// an identity the recompiled package does not select
@@ -1442,8 +1442,6 @@ pub(crate) fn run_spine_with_execution_points(
 ) -> Result<Recompiled, ReplayRefusal> {
     #[cfg(test)]
     SPINE_RUNS.with(|runs| runs.set(runs.get() + 1));
-    use qsl_semantics::value::{CatalogRole, DefinitionLock};
-
     let cancel = Cancel::new();
     let refusal = |failure| match spine::refusal_or_fault(failure) {
         Ok(refusal) => ReplayRefusal::Recompile(refusal),
@@ -1463,18 +1461,11 @@ pub(crate) fn run_spine_with_execution_points(
     let models = spine::select(&parsed, packages, limits.model, &cancel)
         .map_err(refusal)?
         .into_value();
-    // Compile and replay select the Text law implemented by the same
-    // definition catalog that supplies the emitted package's lock.
-    let text_profile = DefinitionLock::pinned()
-        .entry(CatalogRole::TextProfile)
-        .reference();
-    let lock = spine::LockEvidence::default().with_text_profile(text_profile);
     let checked = spine::check_with_execution_points(
         &parsed,
         execution_points,
         &models,
         dependencies,
-        &lock,
         limits,
         &cancel,
     )
@@ -1620,7 +1611,8 @@ pub(crate) fn recompile(
 fn domain_packages(
     request: &ReplayRequest,
 ) -> Result<qsl_semantics::model::intake::PackageInput, ReplayRefusal> {
-    package_input(request.byte_provision().package_documents()).map_err(ReplayRefusal::DomainPackages)
+    package_input(request.byte_provision().package_documents())
+        .map_err(|refusal| ReplayRefusal::DomainPackages(Box::new(refusal)))
 }
 
 /// The one source `references` names (ADR-015 D-4 rule 2), else

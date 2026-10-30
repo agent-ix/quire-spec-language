@@ -17,7 +17,6 @@ use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckedTemporalClause, PackageDeclarations, TemporalProfile};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
 use quire_checked::key::DeclarationKey;
 use quire_exact::ScalarLimits;
@@ -257,13 +256,16 @@ fn world(
             "objects": objects}],
     });
     let bytes = snapshot.to_string().into_bytes();
-    let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
     World {
         keys: start.iter().map(|(key, _)| (*key).to_owned()).collect(),
         package: CheckedPackage::link(graph),
         clauses,
         packages,
-        snapshots: BTreeMap::from([(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes)]),
+        snapshots: BTreeMap::from([(
+            qsl_semantics::model::observation::document_reference(&bytes)
+                .expect("a document names itself"),
+            bytes,
+        )]),
         initial: DocumentRef {
             authority: "test".to_owned(),
             identity: "s0".to_owned(),

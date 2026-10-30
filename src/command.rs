@@ -637,9 +637,9 @@ fn complete(
             .map(|document| document.source().text().as_bytes()),
     )
     .map_err(|refusal| RunCause::ClauseRequest {
-            member: "models".to_owned(),
-            reason: refusal.detail,
-        })?;
+        member: "models".to_owned(),
+        reason: refusal.detail,
+    })?;
     let libraries = library_sources(request, intake)?;
     // A refusal is rendered over the source its region is in, by that
     // region's source digest: the program's or one library's, wherever in
@@ -694,16 +694,9 @@ fn complete(
     let models = qsl_replay::spine::select(&parsed, &packages, limits.model, &cancel)
         .map_err(failure)?
         .into_value();
-    let checked = qsl_replay::spine::check(
-        &parsed,
-        &models,
-        &dependencies,
-        &qsl_replay::spine::LockEvidence::default(),
-        limits,
-        &cancel,
-    )
-    .map_err(failure)?
-    .into_value();
+    let checked = qsl_replay::spine::check(&parsed, &models, &dependencies, limits, &cancel)
+        .map_err(failure)?
+        .into_value();
     let emitted = qsl_replay::spine::package(
         &checked,
         qsl_replay::spine::PackageLimits::default(),
@@ -984,9 +977,9 @@ fn run_complete(
             .map(|document| document.source().text().as_bytes()),
     )
     .map_err(|refusal| RunCause::ClauseRequest {
-            member: "models".to_owned(),
-            reason: refusal.detail,
-        })?;
+        member: "models".to_owned(),
+        reason: refusal.detail,
+    })?;
     let libraries = request
         .libraries
         .iter()

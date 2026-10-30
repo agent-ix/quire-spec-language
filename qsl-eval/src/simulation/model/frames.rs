@@ -28,10 +28,10 @@ use super::contracts::{conjunction, Conjunction};
 use super::domain::{Domain, Odometer};
 use super::encode::{self, value_enc, values_equal, Typing};
 use super::footprints::ReadCheck;
-use super::walk::{stop, Applied, Budget, ContractFinding, Row, Selected, Walk};
+use super::walk::{stop, Applied, Budget, ContractFinding, FindingCase, Row, Selected, Walk};
 use super::{
-    handler_anchor, identity_limits, state_document, Application, ClauseInfo, FieldChange,
-    ModelFinding, ModelSimState, StepEffect, WrittenSlots, BROKEN, EXHAUSTED,
+    handler_anchor, identity_limits, state_document, Application, ClauseInfo, ClauseOutcome,
+    FieldChange, ModelFinding, ModelSimState, StepEffect, WrittenSlots, BROKEN, EXHAUSTED,
 };
 use crate::simulation::expansion::ExpansionStop;
 use crate::simulation::footprint::Footprint;
@@ -240,6 +240,11 @@ pub(super) fn apply(
                             clause,
                             evaluation,
                         },
+                        case: Box::new(FindingCase {
+                            receiver: row.reference.clone(),
+                            arguments: args.iter().map(|(_, value)| value.clone()).collect(),
+                            post: None,
+                        }),
                     });
                 }
                 continue;
@@ -314,6 +319,56 @@ pub(super) fn first_precondition(
         }
     }
     Ok(Some((transition, None)))
+}
+
+/// One argument vector of an application and how its one precondition
+/// read there (QSpec FR-485 "Clause"): `None` when it decided a Boolean,
+/// else the outcome that decided none.
+pub(super) struct PreconditionCase {
+    /// The FR-120 transition identity.
+    pub(super) transition: ModelTransition,
+    /// The arguments, in parameter order.
+    pub(super) arguments: Vec<Value>,
+    /// The evaluation that decided no Boolean, if any.
+    pub(super) undecided: Option<ClauseOutcome>,
+}
+
+/// QSpec FR-485 "Clause": the precondition `clause` of `application` at
+/// `row` evaluated alone at every argument vector, each counted against
+/// `budget`, with no candidate post-state built.
+///
+/// # Errors
+///
+/// An [`ExpansionStop`] when the budget runs out or an evaluation stops.
+pub(super) fn precondition_cases(
+    walk: &Walk<'_, '_>,
+    row: &Row,
+    application: &Application,
+    clause: &ClauseInfo,
+    budget: &mut Budget,
+) -> Result<Vec<PreconditionCase>, ExpansionStop> {
+    let domains = argument_domains(walk, application)?;
+    let mut arguments = Odometer::new(domains.iter().map(Domain::len).collect());
+    let mut cases = Vec::new();
+    while let Some(digits) = arguments.next_digits() {
+        let args = arguments_of(application, &domains, &digits)?;
+        budget.charge()?;
+        let transition = transition_of(row, application, &args, walk.system.typing())?;
+        let verdict = conjunction(walk, &[clause], |info| {
+            pre_observations(walk, info, row, &args)
+        })?;
+        cases.push(PreconditionCase {
+            transition,
+            arguments: args.into_iter().map(|(_, value)| value).collect(),
+            undecided: match verdict {
+                Conjunction::True | Conjunction::False(_) => None,
+                Conjunction::Undecided(mut undecided) => {
+                    undecided.pop().map(|(_, outcome)| outcome)
+                }
+            },
+        });
+    }
+    Ok(cases)
 }
 
 /// Where [`apply`] records what one application found: its contract
@@ -1361,6 +1416,15 @@ impl Run<'_, '_, '_> {
                                 clause,
                                 evaluation,
                             },
+                            case: Box::new(FindingCase {
+                                receiver: self.row.reference.clone(),
+                                arguments: self
+                                    .args
+                                    .iter()
+                                    .map(|(_, value)| value.clone())
+                                    .collect(),
+                                post: Some((candidate.clone(), result.clone())),
+                            }),
                         });
                     }
                 }

@@ -225,8 +225,8 @@ pub use profile::{resolve_profiles, ProfileCause, ProfileRefusal};
 #[cfg(any(test, feature = "test-support"))]
 pub use family::DeclarationMetrics;
 pub use lowering::{
-    model_root_key, AdmittedModel, AuthoredBound, ForeignView, LockEvidence, ModelClause,
-    ModelRootKeyError, NominalNode, SemanticGraph, SemanticNode,
+    model_root_key, AdmittedModel, AuthoredBound, ForeignView, ModelClause, ModelRootKeyError,
+    NominalNode, SemanticGraph, SemanticNode,
 };
 pub use node_key::AbstractionTerm;
 pub use node_key::{
@@ -1128,9 +1128,7 @@ impl PackageDeclarations {
         if !self.timed_forms.is_empty() {
             let required = crate::value::layer::HeaderLayer::TemporalComplete;
             let selected = self.header_layers.clone();
-            let admitted = crate::value::definition::DefinitionLock::pinned()
-                .closure(&selected)
-                .contains(&required);
+            let admitted = crate::value::layer::HeaderLayer::closure(&selected).contains(&required);
             let units = time_units::TimeUnits::new(
                 &self.units,
                 self.nominal_spans.keys().copied(),
@@ -1459,9 +1457,7 @@ impl PackageDeclarations {
         if !self.task_set_forms.is_empty() {
             let required = crate::value::layer::HeaderLayer::TemporalComplete;
             let selected = self.header_layers.clone();
-            let admitted = crate::value::definition::DefinitionLock::pinned()
-                .closure(&selected)
-                .contains(&required);
+            let admitted = crate::value::layer::HeaderLayer::closure(&selected).contains(&required);
             task_sets_admitted = admitted;
             if admitted {
                 let units = time_units::TimeUnits::new(
@@ -1617,8 +1613,7 @@ impl PackageDeclarations {
                 .iter()
                 .map(|protocol| protocol.name.name.as_str()),
         );
-        let model_selected = crate::value::definition::DefinitionLock::pinned()
-            .closure(&self.header_layers)
+        let model_selected = crate::value::layer::HeaderLayer::closure(&self.header_layers)
             .contains(&crate::value::layer::HeaderLayer::ModelComplete);
         let mut model_context_calls = Vec::new();
         if model_selected {
@@ -1917,7 +1912,7 @@ impl PackageDeclarations {
             .map(|function| function.parameter_spans().map(<[_]>::to_vec))
             .collect();
         let owner = node_key::SourceOwner::from(&source);
-        let lock_evidence = self.lock_evidence;
+        let protocol_profile = self.protocol_profile;
         let header_layers = self.header_layers;
         let models = self.models;
         let model_inputs = self.model_inputs;
@@ -2111,7 +2106,7 @@ impl PackageDeclarations {
                 &owner,
                 &models,
                 scope.types().units().clone(),
-                &lock_evidence,
+                protocol_profile.as_ref(),
                 0,
                 &mut sealing_occurrences,
                 &mut sealing_meter,
@@ -2537,8 +2532,7 @@ impl PackageDeclarations {
             let checking = timed_model::Checking {
                 declarations: &declarations,
                 state_clauses: &state_clause_forms,
-                complete_value: crate::value::definition::DefinitionLock::pinned()
-                    .closure(&header_layers)
+                complete_value: crate::value::layer::HeaderLayer::closure(&header_layers)
                     .contains(&crate::value::layer::HeaderLayer::ValueComplete),
                 presence_places: &[],
             };
@@ -2836,8 +2830,8 @@ impl PackageDeclarations {
         let mut protocol_bindings = Vec::with_capacity(self.protocols.len());
         // The selected protocol profile, which the structural refusals of a
         // protocol's control tree name (FR-218, FR-381).
-        let protocol_profile = lock_evidence
-            .protocol_profile()
+        let protocol_profile_identity = protocol_profile
+            .as_ref()
             .map(|definition| definition.identity.clone());
         // FR-218 "Requirements": the unit's declarations a `requires
         // temporal` name resolves among, each other kind by its keyword.
@@ -2925,7 +2919,7 @@ impl PackageDeclarations {
                 attempts,
                 &state_clause_forms,
                 protocol_clause::Selections {
-                    protocol: protocol_profile.as_deref(),
+                    protocol: protocol_profile_identity.as_deref(),
                     temporal: &temporal_aliases,
                 },
             );
@@ -2954,7 +2948,7 @@ impl PackageDeclarations {
             let obligations = protocol_obligation::check(
                 protocol,
                 anchored.as_ref().ok().map(|(checked, _)| checked),
-                protocol_profile.as_deref(),
+                protocol_profile_identity.as_deref(),
                 &obligation_declarations,
                 &mut obligation_cx,
             );
@@ -3033,7 +3027,7 @@ impl PackageDeclarations {
                         &slot_declarations,
                         &mut slot_cx,
                         &regions,
-                        protocol_profile.as_deref(),
+                        protocol_profile_identity.as_deref(),
                     ) {
                         protocol_slots::Slots::Checked(slots, used) => {
                             checked.slots = *slots;
@@ -3743,7 +3737,7 @@ impl PackageDeclarations {
             &owner,
             &models,
             units,
-            &lock_evidence,
+            protocol_profile.as_ref(),
             drafts.len(),
             &mut occurrences,
             &mut contract_meter,
@@ -6781,6 +6775,33 @@ impl CheckedGraph {
         self.operation_frames
             .iter()
             .find(|operation| operation.frame == frame)
+    }
+
+    /// QSpec FR-485 "Forms": the operation frame whose
+    /// `state`/`operation_anchor` node identity is `anchor`, the node a
+    /// `frame` item's claim names.
+    pub fn operation_frame_by_anchor(
+        &self,
+        anchor: quire_exact::NodeKey,
+    ) -> Option<&CheckedOperationFrame> {
+        self.operation_frames
+            .iter()
+            .find(|operation| operation.anchor == anchor)
+    }
+
+    /// The `state`/`operation_anchor` node of the operation `name` that
+    /// `declaring` declares, when a clause or attempt of the unit names it.
+    pub fn operation_anchor_of(
+        &self,
+        declaring: quire_exact::EffectiveId,
+        name: &str,
+    ) -> Option<quire_exact::NodeKey> {
+        self.operation_frames
+            .iter()
+            .find(|frame| {
+                frame.operation.declaring == declaring && frame.operation.declaration.name() == name
+            })
+            .map(|frame| frame.anchor)
     }
 
     /// FR-107: the checked state clause whose minted node identity is

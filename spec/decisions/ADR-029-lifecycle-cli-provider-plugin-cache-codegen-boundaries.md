@@ -315,7 +315,7 @@ below takes its request, its limits and `&Cancel`.
 | `parse` | Read source into syntax | QSL S1, S2 | source bytes, `SourceIdentity`, S1 and S2 limits | `Staged<ParsedSource>`; tooling reads S1's `LosslessCst` directly |
 | `format` | Format admissible source (FR-003) | QSL layer 1, `qsl_cst::format` | an admissible `ParsedSource`, format limits | `Staged<FormattedSource>`: the formatted bytes |
 | `select` | Admit the domain packages a unit's `model` declarations select | QSL I1 `model::intake` | domain package documents by identity, the unit's model selections | `Staged<AdmittedModels>` |
-| `check` | Check and link | QSL S3, S4 | `ParsedSource`, `AdmittedModels`, the dependency input (ADR-015 D-1), package selections (ADR-011 §2.4) | `Staged<CheckedPackage>` |
+| `check` | Check and link | QSL S3, S4 | `ParsedSource`, `AdmittedModels`, the dependency input (ADR-015 D-1) | `Staged<CheckedPackage>` |
 | `check_fences` | Check every `quire` fence of a spec artifact inventory as a state invariant of the object its artifact declares (FR-355) | QSL I1 `model::intake`, S1 to S3 | the artifact inventory, the module manifests that type it | `Staged<FenceReport>` |
 | `package` | Emit the checked package | QSL S4 `package` (E4) | `&CheckedPackage` | `Staged<EmittedPackage>` with its source provision |
 | `execute` | Call a checked function or evaluate a checked clause | QSL layer 5, through §7's seam | `&CheckedPackage`, a `QualifiedName` or clause selection, arguments, `ObjectEnvironment`, accounting limits, the chosen execution backend | `Result<Evaluation<Value>, CallFailure>` |
@@ -418,8 +418,8 @@ The descriptor carries a typed origin, `ProviderOrigin::Linked` or
 `ProviderOrigin::Process`, owned by layer R. The conversion sets it:
 `Linked` for a compile-time provider, `Process` for a plugin `hello`. Two
 descriptors of one `BackendId` that differ in origin differ in a member, so
-they conflict under the registration rule: both are withdrawn, `duplicate-backend`
-is recorded for each conflicting manifest identity, and the identity stays
+they conflict under the registration rule: both are withdrawn, one `duplicate-backend`
+refusal keyed by the `BackendId` is recorded, and the identity stays
 unregistered for the run (FR-288). The origin is a driver-supplied fact held in
 the registry. A manifest never states it, so a plugin cannot claim to be
 linked. A byte-identical registration stays idempotent, and the outcome does

@@ -37,7 +37,6 @@ use qsl_semantics::check::{CheckedTemporalClause, FormulaNode, FormulaNodeId};
 use qsl_semantics::family::ClaimExtent;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{meaning, package_input};
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::observation::{AdmissionFailure, DocumentRef, ObservationLimits};
 use quire_checked::key::DeclarationKey;
 use quire_exact::{Cancel, Meter};
@@ -45,9 +44,7 @@ use quire_semantic_value::catalog::{UndefinedReason, UndefinedRecord};
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
 
-use crate::counter::{
-    declarations_in, declarations_with_model_profile, UNLIMITED,
-};
+use crate::counter::{declarations_in, declarations_with_model_profile, UNLIMITED};
 
 const PACKAGE: &str = "test/things";
 const PLACEHOLDER: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
@@ -209,10 +206,13 @@ fn world(populations: &[(&str, &[&str])], held: &[Held<'_>]) -> World {
     })
     .to_string()
     .into_bytes();
-    let read = quire_canonical::read(&snapshot, u64::MAX).expect("JSON fixture");
     World {
         packages: package_input([document.as_slice()]).unwrap(),
-        snapshots: BTreeMap::from([(qsl_semantics::model::observation::document_reference(&snapshot).expect("a document names itself"), snapshot)]),
+        snapshots: BTreeMap::from([(
+            qsl_semantics::model::observation::document_reference(&snapshot)
+                .expect("a document names itself"),
+            snapshot,
+        )]),
         initial: vec![DocumentRef {
             authority: "test".to_owned(),
             identity: "s0".to_owned(),

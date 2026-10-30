@@ -5,7 +5,7 @@
 use crate::support::native_rule_model;
 
 use ix_trace_rs::trace;
-use qsl_foundation::{ByteDigest, Source, SourceIdentity};
+use qsl_foundation::{Source, SourceIdentity};
 use quire_contract_model as ir;
 use quire_spec_language::checking::NativeType;
 use quire_spec_language::formal_source::FormalSource;
@@ -38,7 +38,6 @@ pub(crate) fn artifacts() -> (Vec<Artifact<'static>>, Vec<RuleInput<'static>>) {
                 rule.path,
                 RuleInput {
                     path: rule.path,
-                    digest: ByteDigest::of(rule.path.as_bytes()),
                     bytes: rule.path.as_bytes(),
                 },
             )
@@ -53,10 +52,7 @@ fn source(id: &str, model: &NativeModel, profiles: &[(&str, R)], body: &str) -> 
     let mut text = "language \"ix:native\" edition \"1-draft\";\n".to_owned();
     for (alias, profile) in profiles {
         let selection = profile.selection();
-        text.push_str(&format!(
-            "profile {alias} = \"{}\" version \"{}\" digest \"{}\";\n",
-            selection.identity, selection.revision, selection.digest
-        ));
+        text.push_str(&format!("profile {alias} = \"{}\";\n", selection.identity));
     }
     text.push_str(&format!(
         "model M = \"{}\";\n",

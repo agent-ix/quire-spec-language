@@ -200,8 +200,7 @@ const HYPER_CLAUSE: &str = "profile t = \"quire.temporal.infinite-trace/v1\";\n\
 /// FR-410: ADR-022 section 7's three forms over the ConfigVersion domain
 /// package, a claim with no `over`, and an `always possible` claim written
 /// with and without `from`, emitting the `claim`/`state_graph` family.
-const STATE_GRAPH_CLAIMS: &str =
-    "model Config = \"example/config-version\";\n\
+const STATE_GRAPH_CLAIMS: &str = "model Config = \"example/config-version\";\n\
      possible ReachesTwo using v over (c: Config::ConfigVersion) { c.versionNumber = 2 }\n\
      always possible CanStillWin using v over (c: Config::ConfigVersion) \
      from (c.versionNumber != 0) { c.versionNumber = 2 }\n\
@@ -212,8 +211,7 @@ const STATE_GRAPH_CLAIMS: &str =
 
 /// A model `terminal when` declaration over the ConfigVersion domain
 /// package, emitting the `temporal`/`terminal` family.
-const TERMINAL_DECLARATION: &str =
-    "model Config = \"example/config-version\";\n\
+const TERMINAL_DECLARATION: &str = "model Config = \"example/config-version\";\n\
      terminal Done using v on Config when { self.versionNumber = 3 };\n";
 
 /// Structural equality over TC-416's recursive `Tree`, the STD-129 case: a
@@ -270,13 +268,11 @@ const HYBRID_UNIT: &str = "profile p = \"quire.temporal.infinite-trace/v1\";\n\
      }\n";
 
 /// The relationship model source after [`COMPLETE_V1_HEADER`].
-const RELATIONSHIP_MODEL_UNIT: &str =
-    "model M = \"acme/orders\";\n\
+const RELATIONSHIP_MODEL_UNIT: &str = "model M = \"acme/orders\";\n\
      function keep using v(g: M::Widget): M::Widget pure { g }\n";
 
 /// The systems-interface model source after [`COMPLETE_V1_HEADER`].
-const SYSTEMS_INTERFACE_UNIT: &str =
-    "model S = \"acme/systems\";\n\
+const SYSTEMS_INTERFACE_UNIT: &str = "model S = \"acme/systems\";\n\
      function keep using v(s: S::Sensor): S::Sensor pure { s }\n";
 
 /// One package of a fixture, checked, linked and emitted, with the domain
@@ -352,11 +348,7 @@ impl Fixture {
             }
             Self::RelationshipModel => {
                 let document = RELATIONSHIP_MODEL_DOCUMENT;
-                let unit = format!(
-                    "{}{}",
-                    COMPLETE_V1_HEADER,
-                    RELATIONSHIP_MODEL_UNIT,
-                );
+                let unit = format!("{}{}", COMPLETE_V1_HEADER, RELATIONSHIP_MODEL_UNIT,);
                 Emitted::placed(modelled(&unit, document, Vec::new()), vec![document])
             }
             Self::RefinementV2Empty => {
@@ -375,11 +367,7 @@ impl Fixture {
                 )
             }
             Self::SystemsInterface => {
-                let unit = format!(
-                    "{}{}",
-                    COMPLETE_V1_HEADER,
-                    SYSTEMS_INTERFACE_UNIT,
-                );
+                let unit = format!("{}{}", COMPLETE_V1_HEADER, SYSTEMS_INTERFACE_UNIT,);
                 Emitted::placed(
                     modelled(&unit, SYSTEMS_DOCUMENT, Vec::new()),
                     vec![SYSTEMS_DOCUMENT],
@@ -387,34 +375,22 @@ impl Fixture {
             }
             Self::TemporalClause => {
                 let document = config_version_unit::DOMAIN_PACKAGE.as_bytes();
-                let unit = format!(
-                    "{COMPLETE_V1_HEADER}{}",
-                    TEMPORAL_CLAUSE
-                );
+                let unit = format!("{COMPLETE_V1_HEADER}{}", TEMPORAL_CLAUSE);
                 Emitted::placed(modelled(&unit, document, Vec::new()), vec![document])
             }
             Self::HyperClause => {
                 let document = config_version_unit::DOMAIN_PACKAGE.as_bytes();
-                let unit = format!(
-                    "{COMPLETE_V1_HEADER}{}",
-                    HYPER_CLAUSE
-                );
+                let unit = format!("{COMPLETE_V1_HEADER}{}", HYPER_CLAUSE);
                 Emitted::placed(modelled(&unit, document, Vec::new()), vec![document])
             }
             Self::StateGraphClaim => {
                 let document = config_version_unit::DOMAIN_PACKAGE.as_bytes();
-                let unit = format!(
-                    "{COMPLETE_V1_HEADER}{}",
-                    STATE_GRAPH_CLAIMS
-                );
+                let unit = format!("{COMPLETE_V1_HEADER}{}", STATE_GRAPH_CLAIMS);
                 Emitted::placed(modelled(&unit, document, Vec::new()), vec![document])
             }
             Self::Terminal => {
                 let document = config_version_unit::DOMAIN_PACKAGE.as_bytes();
-                let unit = format!(
-                    "{COMPLETE_V1_HEADER}{}",
-                    TERMINAL_DECLARATION
-                );
+                let unit = format!("{COMPLETE_V1_HEADER}{}", TERMINAL_DECLARATION);
                 Emitted::placed(modelled(&unit, document, Vec::new()), vec![document])
             }
             Self::Hybrid => text(HYBRID_UNIT),
@@ -469,7 +445,6 @@ impl Fixture {
         vec![one]
     }
 }
-
 
 /// The spine fixture's object package with one minimal, independent state
 /// machine added, under `package`'s identity.
@@ -566,7 +541,8 @@ fn modelled_with_documents(
     documents: &[Vec<u8>],
     functions: Vec<FunctionDeclaration>,
 ) -> CheckedPackage {
-    let packages = qsl_semantics::model::intake::package_input(documents.iter().map(Vec::as_slice)).unwrap();
+    let packages =
+        qsl_semantics::model::intake::package_input(documents.iter().map(Vec::as_slice)).unwrap();
     let mut declarations =
         assemble_with_models(unit.as_bytes(), &packages).expect("the unit assembles");
     declarations.functions.extend(functions);
@@ -794,7 +770,7 @@ fn read(emitted: &Emitted) -> Result<V2Read, StageFailure<V2ReadRefusal>> {
     let mut evidence = read_evidence(&emitted.emission);
     for document in &emitted.documents {
         evidence
-            .insert_domain_package_document(package_identity(&document), document.to_vec())
+            .insert_domain_package_document(package_identity(document), document.to_vec())
             .expect("a fresh evidence key");
     }
     let pinned: PinnedRequest = qsl_semantics::library::fixtures::single_pin(
@@ -1111,7 +1087,7 @@ fn a_refinement_changed_under_its_node_id_is_a_stale_node_key() {
         let mut evidence = read_evidence(&emission);
         for document in &documents {
             evidence
-                .insert_domain_package_document(package_identity(&document), document.to_vec())
+                .insert_domain_package_document(package_identity(document), document.to_vec())
                 .expect("a fresh evidence key");
         }
         match quire_contract_model::read_checked_package(
@@ -1429,9 +1405,7 @@ fn a_clause_over_a_third_model_contributes_no_class() {
     let unit = unit
         .replace(
             "protocol Local",
-            &format!(
-                "model T = \"example/refinement-third\";\nprotocol Local"
-            ),
+            &String::from("model T = \"example/refinement-third\";\nprotocol Local"),
         )
         .replace("over (input: C::Widget)", "over (input: T::Widget)")
         .replace("role w on C::Widget", "role w on T::Widget");
@@ -1467,7 +1441,8 @@ fn emit_with_internals(
     documents: &[Vec<u8>],
     internals: Option<Value>,
 ) -> (Value, BTreeMap<String, Value>) {
-    let packages = qsl_semantics::model::intake::package_input(documents.iter().map(Vec::as_slice)).unwrap();
+    let packages =
+        qsl_semantics::model::intake::package_input(documents.iter().map(Vec::as_slice)).unwrap();
     let mut declarations =
         assemble_with_models(unit.as_bytes(), &packages).expect("the unit assembles");
     if let Some(value) = internals {
@@ -2311,7 +2286,8 @@ fn step_rows_carry_their_source_regions_by_canonical_ordinal() {
 /// The refusals of [`rows_refinement`] over `rows`, which must not check.
 fn refused_rows(rows: &str, operations: &[&str]) -> Vec<qsl_semantics::check::CheckCause> {
     let (unit, documents) = rows_refinement(rows, operations);
-    let packages = qsl_semantics::model::intake::package_input(documents.iter().map(Vec::as_slice)).unwrap();
+    let packages =
+        qsl_semantics::model::intake::package_input(documents.iter().map(Vec::as_slice)).unwrap();
     assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
         .check(CheckingLimits::default())
@@ -2734,7 +2710,7 @@ fn refinement_verdict(emitted: &Emitted, envelope: &Value, position: usize) -> S
     let mut evidence = read_evidence(&emitted.emission);
     for document in &emitted.documents {
         evidence
-            .insert_domain_package_document(package_identity(&document), document.to_vec())
+            .insert_domain_package_document(package_identity(document), document.to_vec())
             .expect("a fresh evidence key");
     }
     match quire_contract_model::read_checked_package(

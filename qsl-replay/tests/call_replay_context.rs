@@ -111,7 +111,6 @@ fn oracle(source: &str, limits: CallerLimits) -> PluginReplayContext {
         &parsed,
         &models,
         &DependencyInput::default(),
-        &spine::LockEvidence::default(),
         limits.spine,
         &cancel,
     )
@@ -218,7 +217,6 @@ fn parameter(source: &str, function: &str) -> WireNodeId {
         &parsed,
         &models,
         &DependencyInput::default(),
-        &spine::LockEvidence::default(),
         limits,
         &cancel,
     )

@@ -211,8 +211,7 @@ so unchecked input cannot reach an evaluator or backend.
 
 ## Usage
 
-Install Rust. [`rust-toolchain.toml`](rust-toolchain.toml) selects the toolchain,
-and `rustup` installs it automatically. No other tools or services are needed.
+Install Rust at or above the `rust-version` in `Cargo.toml`. No other tools or services are needed.
 
 ```sh
 git clone https://github.com/agent-ix/quire-spec-language

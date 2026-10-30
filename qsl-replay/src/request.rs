@@ -1195,7 +1195,9 @@ mod tests {
 
         // QC-1: a domain package document enters by what it declares.
         let mut domain_package = wire(1);
-        domain_package.documents.push(br#"{"b": 1, "a": [true]}"#.to_vec());
+        domain_package
+            .documents
+            .push(br#"{"b": 1, "a": [true]}"#.to_vec());
         let admitted =
             ReplayRequest::decode(domain_package, crate::ReplayLimits::default()).unwrap();
         assert_eq!(admitted.byte_provision().documents().count(), 1);

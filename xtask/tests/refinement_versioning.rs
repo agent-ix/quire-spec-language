@@ -25,6 +25,16 @@ const PACKAGE: &str = "repo:examples/config-version/model.semantic-ir.json";
 const POPULATION: &str = "ix://example/config-version/config_history";
 const PARENT_ORDER: &str = "deref(value(self.parent)).versionNumber < self.versionNumber";
 
+/// The unit selects the domain package by the identity its document declares.
+#[test]
+#[trace("TC-864", "FR-340-AC-8")]
+fn the_unit_selects_the_package_by_its_declared_identity() {
+    let document: Value = serde_json::from_str(config_version::DOMAIN_PACKAGE).unwrap();
+    assert_eq!(
+        document["package"]["identity"],
+        config_version::PACKAGE_IDENTITY
+    );
+}
 
 fn unit() -> String {
     config_version::unit_text()

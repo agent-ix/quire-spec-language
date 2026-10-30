@@ -305,7 +305,6 @@ fn labels(reference: &DocumentRef) -> Value {
 /// bytes.
 fn provision(reference: &DocumentRef, value: &Value) -> (DocumentRef, Vec<u8>) {
     let bytes = value.to_string().into_bytes();
-    let document = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
     (
         DocumentRef {
             ..reference.clone()
@@ -452,10 +451,7 @@ fn checked(variant: &Variant) -> Admission {
         .expect("the model assembles")
         .check(CheckingLimits::default())
         .expect("the unit checks");
-    Admission {
-        graph,
-        packages,
-        }
+    Admission { graph, packages }
 }
 
 impl Admission {
@@ -463,7 +459,7 @@ impl Admission {
     /// `{Q, s1}`.
     fn admit(
         &self,
-        mut document: Value,
+        document: Value,
         limits: ObservationLimits,
     ) -> (Result<AdmittedObservations, AdmissionFailure>, DocumentRef) {
         let (snapshot, bytes) = provision(&label("current"), &document);
@@ -1198,9 +1194,7 @@ impl Admission {
             snapshots.insert(reference.clone(), bytes);
             referenced.push(reference);
         }
-        let reference = |held: &DocumentRef| {
-            json!({"identity": labels(held)})
-        };
+        let reference = |held: &DocumentRef| json!({"identity": labels(held)});
         let mut invocation = json!({
             "format": "quire.state.invocation/v1",
             "identity": labels(&call),

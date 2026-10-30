@@ -204,7 +204,7 @@ fn real_authored_identity_and_anchor_changes_match_independent_static_expectatio
             .replace(&expected.digest, &digest);
         let package = NativePackage::new(
             checked(
-                &vectors::source(&models[0]),
+                &vectors::source(),
                 "test:package",
                 "draft:1",
                 1,

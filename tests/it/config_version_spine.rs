@@ -1296,7 +1296,7 @@ fn tc_469_step_6_package_id_is_pinned_across_every_case() {
         spine::unit_identity(),
         "spine-unit.native",
         unit.as_bytes(),
-        &spine::domain_packages(),
+        &qsl_semantics::model::intake::package_input([spine::DOMAIN_PACKAGE.as_bytes()]).unwrap(),
         &qsl_replay::spine::DependencyInput::default(),
     )
     .expect("the FR-108 unit compiles");
@@ -1315,7 +1315,7 @@ fn tc_469_step_6_the_emitted_package_admits_via_i04() {
         spine::unit_identity(),
         "spine-unit.native",
         unit.as_bytes(),
-        &spine::domain_packages(),
+        &qsl_semantics::model::intake::package_input([spine::DOMAIN_PACKAGE.as_bytes()]).unwrap(),
         &qsl_replay::spine::DependencyInput::default(),
     )
     .expect("the FR-108 unit compiles");

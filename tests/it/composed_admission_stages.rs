@@ -15,7 +15,7 @@ use quire_spec_language::linking::composed::binding::{self, Disposition as Bindi
 use quire_spec_language::linking::composed::binding_work::Limits as BindingLimits;
 use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
 use quire_spec_language::linking::composed::definitions::{Artifact, Inventory, RuleInput};
-use quire_spec_language::linking::composed::models::{ImportRefusal, ModelInput};
+use quire_spec_language::linking::composed::models::ModelInput;
 use quire_spec_language::linking::composed::requests::{
     self, Aggregate, Assessment, Disposition, Family, InventoryGap, Request,
 };
@@ -56,7 +56,6 @@ fn artifacts() -> (Vec<Artifact<'static>>, Vec<RuleInput<'static>>) {
                 rule.path,
                 RuleInput {
                     path: rule.path,
-                    digest: ByteDigest::of(rule.path.as_bytes()),
                     bytes: rule.path.as_bytes(),
                 },
             )
@@ -71,10 +70,7 @@ fn source(id: &str, model: &NativeModel, profiles: &[(&str, R)], body: &str) -> 
     let mut text = "language \"ix:native\" edition \"1-draft\";\n".to_owned();
     for (alias, profile) in profiles {
         let selection = profile.selection();
-        text.push_str(&format!(
-            "profile {alias} = \"{}\" version \"{}\" digest \"{}\";\n",
-            selection.identity, selection.revision, selection.digest
-        ));
+        text.push_str(&format!("profile {alias} = \"{}\";\n", selection.identity));
     }
     text.push_str(&format!(
         "model M = \"{}\";\n",

@@ -69,9 +69,7 @@ const CHECKS: &[Check] = &[
     Check { package: "qsl-package", target: Target::Lib, selection: "checked_v2::tests::conformance_shipped_projection_cases_are_refused_and_admitted_once_removed", summaries: &[&["conformance: ", " shipped-projection cases refused and admitted once removed"]], summary_mode: SummaryMode::Exact },
     Check { package: "qsl-package", target: Target::Lib, selection: "checked_v2::tests::conformance_dependency_selection_vectors", summaries: &[&["conformance: ", " dependency-selection entry mutations and ", " order vectors"]], summary_mode: SummaryMode::Exact },
     Check { package: "qsl-package", target: Target::Lib, selection: "emit::tests::golden::conformance_emitted_application_nodes_match_qspec_positive_fixtures", summaries: &[&["conformance: ", " emitted application nodes match QSpec's positive fixtures"]], summary_mode: SummaryMode::Exact },
-    Check { package: "qsl-semantics", target: Target::Test, selection: "complete_value_lock::conformance_catalog_matches_qspec_complete_value_lock", summaries: &[&["conformance: ", " catalog rows match QSpec's lock"]], summary_mode: SummaryMode::Exact },
-    Check { package: "qsl-semantics", target: Target::Test, selection: "complete_value_lock::conformance_catalog_matches_qspec_complete_model_lock", summaries: &[&["conformance: ", " model catalog rows match QSpec's lock"]], summary_mode: SummaryMode::Exact },
-    Check { package: "qsl-semantics", target: Target::Test, selection: "complete_value_lock::conformance_admit_selection_matches_qspec_selection_vectors", summaries: &[&["conformance: ", " accepted and ", " refused selection vectors"]], summary_mode: SummaryMode::Exact },
+    Check { package: "qsl-semantics", target: Target::Test, selection: "complete_value_lock::conformance_admit_selection_matches_qspec_vectors", summaries: &[&["conformance: ", " accepted and ", " refused selection vectors"]], summary_mode: SummaryMode::Exact },
 ];
 
 fn resolve(input: Option<&OsStr>, workspace: &Path) -> Result<PathBuf> {

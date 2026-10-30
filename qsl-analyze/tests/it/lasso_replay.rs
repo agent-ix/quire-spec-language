@@ -184,7 +184,7 @@ fn a_guarded_on_each_prefix_replays_through_production_letters() {
                   on each (q: M::Counter) when (c.value >= 3) \
                   { always holds(c.value <= 1) }\n";
     let body = format!("{CONTRACT}{clause}");
-    let unit = unit_text(&document, &body).into_bytes();
+    let unit = unit_text(&body).into_bytes();
     let package = package_from_text(&document, std::str::from_utf8(&unit).expect("UTF-8 source"));
     let clauses = package
         .graph()
@@ -565,7 +565,7 @@ pub(crate) fn bounded_fixture(formula: &str) -> Fixture {
         + &format!(
             "temporal C using tb over (c: M::Counter) clock \"model-steps\" on origin {{ {formula} }}\n"
         );
-    let text = unit_text(&doc, &body).replace(
+    let text = unit_text(&body).replace(
         "profile t0 = \"quire.temporal.infinite-trace/v1\";\n",
         "profile tb = \"quire.temporal.event-position.false-extension/v1\";\n",
     );

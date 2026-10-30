@@ -516,9 +516,7 @@ fn unit_text(
     let mut selections = String::new();
     for (alias, identity, bytes) in models {
         let single = package_input([*bytes]).unwrap();
-        selections.push_str(&format!(
-            "model {alias} = {identity:?};\n"
-        ));
+        selections.push_str(&format!("model {alias} = {identity:?};\n"));
         packages.extend(single);
     }
     let text = format!(

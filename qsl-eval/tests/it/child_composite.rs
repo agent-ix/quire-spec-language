@@ -67,9 +67,6 @@ fn declarations_over(
 ) -> PackageDeclarations {
     let bytes = serde_json::to_vec(document).expect("the fixture serializes");
     let packages = package_input([bytes.as_slice()]).unwrap();
-    let model_version = document["package"]["version"]
-        .as_str()
-        .expect("the model package version");
     let source = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
@@ -214,9 +211,6 @@ fn linked_ledger_clause(trace: &str) -> (CheckedPackage, qsl_semantics::check::C
     );
     let bytes = serde_json::to_vec(&document).expect("the fixture serializes");
     let packages = package_input([bytes.as_slice()]).unwrap();
-    let model_version = document["package"]["version"]
-        .as_str()
-        .expect("the model package version");
     let source = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
@@ -1032,8 +1026,7 @@ fn money_json(amount: i64) -> serde_json::Value {
     record_json("Money", &[("amount_minor", amount), ("currency", 978)])
 }
 
-fn document_ref(label: &str, bytes: &[u8]) -> DocumentRef {
-    let document = quire_canonical::read(bytes, u64::MAX).expect("the document is JSON");
+fn document_ref(label: &str) -> DocumentRef {
     DocumentRef {
         authority: "test".to_owned(),
         identity: label.to_owned(),
@@ -1082,7 +1075,7 @@ fn admit_invocation(
             }],
         }))
         .expect("the snapshot serializes");
-        (document_ref(label, &bytes), bytes)
+        (document_ref(label), bytes)
     };
     let (pre, pre_bytes) = snapshot("pre", "pre");
     let (post, post_bytes) = snapshot("post", "post");
@@ -1112,7 +1105,7 @@ fn admit_invocation(
         "deleted": [],
     }))
     .expect("the invocation serializes");
-    let invocation = document_ref("call", &invocation_bytes);
+    let invocation = document_ref("call");
     let snapshots = BTreeMap::from([(pre.clone(), pre_bytes), (post.clone(), post_bytes)]);
     let invocations = BTreeMap::from([(invocation.clone(), invocation_bytes)]);
     let checked = package.graph().state_clause(clause).expect("the clause");

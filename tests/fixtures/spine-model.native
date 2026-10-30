@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Complete-V1 compile fixture with a domain package (FR-027-AC-9, FR-056-AC-9):
 // `model M` selects `spine-model.semantic-ir.json` by its identity.
-// The profile is the `root` row of the DefinitionLock catalog (FR-110).
+// The profile selects the closed `root` role (FR-110).
 language "ix:native" edition "1-draft";
 profile v = "quire.model.complete/v1";
 model M = "acme/orders";

@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use qsl_foundation::SourceIdentity;
 use qsl_replay::spine::{
     check, package, parse, select, CheckedUnit, CompileRefusal, DependencyInput, EmittedUnit,
-    LockEvidence, PackageLimits, ParseRequest, SpineLimits, SuppliedLibrary,
+    PackageLimits, ParseRequest, SpineLimits, SuppliedLibrary,
 };
 use quire_exact::Cancel;
 
@@ -28,14 +28,10 @@ pub fn emitted(
         packages,
         dependencies,
         SpineLimits::default(),
-        &LockEvidence::default(),
     )
 }
 
-/// The same identity oracle with the owning fixture's limits and lock evidence.
-// Keep source, selected packages, dependencies, limits and lock evidence explicit
-// so callers retain each owning fixture's independent admission authority.
-#[allow(clippy::too_many_arguments)]
+/// The same identity oracle with the owning fixture's limits.
 pub fn emitted_with_authority(
     source: SourceIdentity,
     path: &str,
@@ -43,17 +39,8 @@ pub fn emitted_with_authority(
     packages: &qsl_semantics::model::intake::PackageInput,
     dependencies: &DependencyInput,
     limits: SpineLimits,
-    lock: &LockEvidence,
 ) -> Result<EmittedUnit, Box<CompileRefusal>> {
-    let original = emitted_once(
-        source.clone(),
-        path,
-        bytes,
-        packages,
-        dependencies,
-        limits,
-        lock,
-    )?;
+    let original = emitted_once(source.clone(), path, bytes, packages, dependencies, limits)?;
     assert_format_identity(
         &original,
         source,
@@ -62,7 +49,6 @@ pub fn emitted_with_authority(
         packages,
         dependencies,
         limits,
-        lock,
     );
     Ok(original)
 }
@@ -70,9 +56,6 @@ pub fn emitted_with_authority(
 /// Trace: FR-003-AC-9
 /// Every successful fixture using this actual S1–S4 seam also checks its
 /// formatted bytes under the same model and dependency selections.
-// The original result and each admission input remain separate so the round trip
-// reuses the fixture's actual authority without substituting helper defaults.
-#[allow(clippy::too_many_arguments)]
 fn assert_format_identity(
     original: &EmittedUnit,
     source: SourceIdentity,
@@ -81,7 +64,6 @@ fn assert_format_identity(
     packages: &qsl_semantics::model::intake::PackageInput,
     dependencies: &DependencyInput,
     limits: SpineLimits,
-    lock: &LockEvidence,
 ) {
     let parsed = qsl_cst::parse(source.clone(), path, bytes, limits.source).unwrap();
     // AC-9 isolates semantic identity; the AC-4/5/6 tests exercise exhaustion.
@@ -113,7 +95,6 @@ fn assert_format_identity(
         packages,
         dependencies,
         formatted_limits,
-        lock,
     )
     .unwrap_or_else(|refusal| panic!("{path}: formatted fixture must check: {refusal}"));
     assert_eq!(
@@ -133,9 +114,6 @@ fn assert_format_identity(
     );
 }
 
-// Forward the same independent admission inputs to checking before packaging;
-// grouping or defaulting them here would obscure the owning fixture's choices.
-#[allow(clippy::too_many_arguments)]
 fn emitted_once(
     source: SourceIdentity,
     path: &str,
@@ -143,9 +121,8 @@ fn emitted_once(
     packages: &qsl_semantics::model::intake::PackageInput,
     dependencies: &DependencyInput,
     limits: SpineLimits,
-    lock: &LockEvidence,
 ) -> Result<EmittedUnit, Box<CompileRefusal>> {
-    let checked = checked_once(&source, path, bytes, packages, dependencies, limits, lock)?;
+    let checked = checked_once(&source, path, bytes, packages, dependencies, limits)?;
     Ok(package(&checked, PackageLimits::default(), &Cancel::new())
         .map_err(refusal)?
         .into_value())
@@ -156,9 +133,6 @@ fn refusal(failure: qsl_replay::spine::FrontEndFailure) -> Box<CompileRefusal> {
         .unwrap_or_else(|fault| panic!("the front end faulted: {fault:?}"))
 }
 
-// This seam composes parse/select/check with the caller's exact source, models,
-// dependencies, limits and lock; each input stays explicit for fixture custody.
-#[allow(clippy::too_many_arguments)]
 fn checked_once(
     source: &SourceIdentity,
     path: &str,
@@ -166,7 +140,6 @@ fn checked_once(
     packages: &qsl_semantics::model::intake::PackageInput,
     dependencies: &DependencyInput,
     limits: SpineLimits,
-    lock: &LockEvidence,
 ) -> Result<CheckedUnit, Box<CompileRefusal>> {
     let cancel = Cancel::new();
     let parsed = parse(
@@ -183,7 +156,7 @@ fn checked_once(
     let models = select(&parsed, packages, limits.model, &cancel)
         .map_err(refusal)?
         .into_value();
-    Ok(check(&parsed, &models, dependencies, lock, limits, &cancel)
+    Ok(check(&parsed, &models, dependencies, limits, &cancel)
         .map_err(refusal)?
         .into_value())
 }
@@ -233,7 +206,6 @@ pub fn dependency_fixture_identity(
     let formatted_text = format(source.clone(), path, text.as_bytes());
     let packages = BTreeMap::new();
     let limits = SpineLimits::default();
-    let lock = LockEvidence::default();
     let mut formatted_source = source.clone();
     formatted_source.revision.push_str("-formatted");
     // The two sides are independent: check them on two threads.
@@ -246,7 +218,6 @@ pub fn dependency_fixture_identity(
                 &packages,
                 &original_input,
                 limits,
-                &lock,
             )
             .expect("original fixture and its actual dependency closure check")
         });
@@ -257,7 +228,6 @@ pub fn dependency_fixture_identity(
             &packages,
             &formatted_input,
             limits,
-            &lock,
         )
         .expect("formatted fixture and its actual dependency closure check");
         (

@@ -9,7 +9,6 @@
 //! and the context through the `qsl_replay` root and never names
 //! [`crate::spine`] (FR-060 T12-A).
 
-
 use qsl_foundation::bound::ProofBound;
 use qsl_foundation::{BackendId, RequestIndex, SourceIdentity};
 use qsl_semantics::library::PackageId;
@@ -273,7 +272,6 @@ mod tests {
             &parsed,
             &models,
             &DependencyInput::default(),
-            &spine::LockEvidence::default(),
             limits,
             &cancel,
         )

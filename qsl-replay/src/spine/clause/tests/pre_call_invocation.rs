@@ -105,12 +105,7 @@ fn run_invocation(
     let (invocation, invocation_bytes) =
         document_ref_and_bytes("forbidden-parent-change", |label| {
             edited(
-                &config_version_invocation_bytes(
-                    label,
-                    &pre,
-                    &post_label,
-                    "child",
-                ),
+                &config_version_invocation_bytes(label, &pre, &post_label, "child"),
                 edit,
             )
         });

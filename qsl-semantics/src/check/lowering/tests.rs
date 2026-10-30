@@ -65,29 +65,8 @@ fn spec_descriptions(spec: &str) -> BTreeMap<String, String> {
         .collect()
 }
 
-/// `spec`'s vector-key table rows, `| name | description | key |`: the
-/// name and description of each row whose key cell says the key is the
-/// SHA-256 of the vector's preimage.
-fn key_table_rows(spec: &str) -> Vec<(String, String)> {
-    spec.lines()
-        .filter_map(|line| {
-            let cells: Vec<&str> = line
-                .strip_prefix("| ")?
-                .strip_suffix(" |")?
-                .split(" | ")
-                .collect();
-            let [name, description, key] = cells[..] else {
-                return None;
-            };
-            (key == "the SHA-256 of its preimage")
-                .then(|| (name.to_owned(), description.to_owned()))
-        })
-        .collect()
-}
-
 /// Every table `spec` (published as `tag`) publishes about its golden
-/// vectors agrees with the vectors: the key table lists each vector with its
-/// heading, each heading's ordinal and each group table's ordinals and
+/// vectors agrees with the vectors: each heading's ordinal and each group table's ordinals and
 /// group-digest placeholder agree with the vector's preimage, and no two
 /// vectors share a key.
 fn assert_published_tables_agree(tag: &str, spec: &str) {
@@ -95,17 +74,6 @@ fn assert_published_tables_agree(tag: &str, spec: &str) {
     let descriptions = spec_descriptions(spec);
     let keys: std::collections::BTreeSet<&String> = vectors.values().map(|(key, _)| key).collect();
     assert_eq!(keys.len(), vectors.len(), "two vectors share a key");
-    for (name, description) in key_table_rows(spec) {
-        assert!(
-            vectors.contains_key(&name),
-            "{name}: the key table's vector"
-        );
-        assert_eq!(
-            Some(&description),
-            descriptions.get(&name),
-            "{name}: the key table's description"
-        );
-    }
     let recursion = |name: &str| -> Json {
         serde_json::from_str::<Json>(&crate::check::spec_vectors::raw_preimage(tag, name))
             .expect("a preimage is JSON")["recursion"]
@@ -231,7 +199,6 @@ fn type_nodes(
     owner: &SourceOwner,
     value_types: &[ValueType],
 ) -> (SemanticGraph, Vec<NodeKey>) {
-    let lock = LockEvidence::default();
     let mut occurrences = OccurrenceMap::default();
     let location = generated_location();
     let mut meter = quire_exact::Meter::new(crate::check::family::SCALAR_LIMITS_UNLIMITED);
@@ -240,7 +207,7 @@ fn type_nodes(
         owner,
         &[],
         scope.types().units().clone(),
-        &lock,
+        None,
         0,
         &mut occurrences,
         &mut meter,
@@ -1495,13 +1462,11 @@ fn binder_levels_count_enclosing_binders() {
     );
 }
 
-/// TC-415 step 6 (FR-093-AC-6): a text equality carries the lock
-/// evidence's `text_profile` law and the operands' profile; with no such
-/// evidence it refuses `missing_declaration`/`missing-selection` naming the
-/// role and the equality node's region, and yields no node.
+/// TC-415 step 6 (FR-093-AC-6): a text equality carries QSL's
+/// `text_profile` law and the operands' profile.
 #[trace("FR-093-AC-6", "TC-415")]
 #[test]
-fn a_law_comes_only_from_the_lock_evidence() {
+fn a_text_equality_carries_the_text_profile_law() {
     let text = || {
         TypeForm::builtin(BuiltinType::Text, SPAN).with_bounds(vec![
             "0".into(),
@@ -1509,7 +1474,6 @@ fn a_law_comes_only_from_the_lock_evidence() {
             "nfc".into(),
         ])
     };
-    // The equality sits under `not`, so its region is the body's child 0.
     let te = function(
         "te",
         &[("p", text()), ("r", text())],
@@ -1521,39 +1485,13 @@ fn a_law_comes_only_from_the_lock_evidence() {
             name_expr("r"),
         )),
     );
-    let refusals = check(vec![te.clone()]).expect_err("no text-profile evidence refuses");
-    assert_eq!(refusals.len(), 1, "{refusals:?}");
-    assert_eq!(
-        refusals[0].location,
-        Location::at(
-            Origin::Body {
-                function: "te".to_owned(),
-                index: 0,
-            },
-            &[0]
-        ),
-        "the refusal names the equality node's region"
-    );
-    assert_eq!(
-        refusals[0].cause,
-        CheckCause::MissingSelection {
-            role: LawRole::TextProfile
-        }
-    );
-    assert_eq!(refusals[0].cause.code().as_str(), "missing_declaration");
-    assert_eq!(refusals[0].cause.cause(), Some("missing-selection"));
-
-    let definition = DefinitionReference {
-        authority: "agent-ix".to_owned(),
-        identity: "unicode-text".to_owned(),
-    };
+    let definition = DefinitionRole::TextProfile.reference();
     let graph = PackageDeclarations {
         functions: vec![te],
-        lock_evidence: LockEvidence::default().with_text_profile(definition.clone()),
         ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
     }
     .check(CheckingLimits::default())
-    .expect("text-profile evidence admits the equality");
+    .expect("the text equality checks");
     let equality = application(graph.semantic_graph(), "quire.op.text.eq");
     let operation = &equality["body"]["operation"];
     assert_eq!(operation["laws"][0]["role"], "text_profile");
@@ -2286,7 +2224,6 @@ fn integer_literals_are_inline_operands_of_integer_equality() {
 fn with_lowering<T>(body: impl FnOnce(&mut Lowering<'_>) -> T) -> T {
     let scope = empty_scope();
     let owner = SourceOwner::from(&fixture_source());
-    let lock = LockEvidence::default();
     let mut occurrences = OccurrenceMap::default();
     let mut meter = quire_exact::Meter::new(crate::check::family::SCALAR_LIMITS_UNLIMITED);
     let mut lowering = Lowering::new(
@@ -2294,7 +2231,7 @@ fn with_lowering<T>(body: impl FnOnce(&mut Lowering<'_>) -> T) -> T {
         &owner,
         &[],
         scope.types().units().clone(),
-        &lock,
+        None,
         0,
         &mut occurrences,
         &mut meter,

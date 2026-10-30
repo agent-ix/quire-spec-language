@@ -112,16 +112,15 @@ fn members_pair_with_the_items_at_their_request_index() {
 fn only_value_validity_records_have_an_owner() {
     let document = crate::support::config_version_spine::spine::DOMAIN_PACKAGE.as_bytes();
     let packages = qsl_semantics::model::intake::package_input([document]).unwrap();
-    let digest = packages.keys().next().expect("one package");
-    let text = format!(
+    let text = String::from(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
          profile t = \"quire.temporal.infinite-trace/v1\";\n\
          model Config = \"example/config-version\";\n\
-         function inc using v(x: Int[0, 9]): Int[0, 10] pure {{ x + 1 }}\n\
-         post Q using v on Config::ConfigVersion::attemptUpdate {{ true }}\n\
+         function inc using v(x: Int[0, 9]): Int[0, 10] pure { x + 1 }\n\
+         post Q using v on Config::ConfigVersion::attemptUpdate { true }\n\
          temporal Reaches using t over (c: Config::ConfigVersion) clock \"model-steps\" \
-         on origin {{ eventually holds(c.versionNumber = 2) }}\n"
+         on origin { eventually holds(c.versionNumber = 2) }\n",
     );
     let graph = check(&text, &packages);
     let mut kinds = Vec::new();

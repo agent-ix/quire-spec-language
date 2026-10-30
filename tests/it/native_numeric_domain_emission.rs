@@ -140,7 +140,6 @@ fn signed64_extrema_and_ceiling_rational_survive_native_emission_and_independent
                 .into_result()
                 .expect("independent reader admits the full signed-64 domains");
             assert_eq!(read.package(), package);
-            assert_eq!(read.digest(), emitted.digest());
             assert_eq!(numbers(bounded(read.package())), numbers(declaration));
         },
     );

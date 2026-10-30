@@ -12,7 +12,6 @@
 //! over the invocation, admitted by FR-106 from the byte provision, and
 //! settles an FR-072 result on the envelope's arm.
 
-
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::check::{CheckedGraph, CheckedOperationFrame};

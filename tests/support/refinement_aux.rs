@@ -24,7 +24,6 @@ use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckRefusal, CheckedGraph, CheckedRefinement, PackageDeclarations};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, package_input};
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
 use qsl_semantics::model::state::{ModelState, StateObject};
 use quire_checked::key::DeclarationKey;
@@ -508,9 +507,7 @@ impl Unit {
              model Spec = \"{}\";\n\
              model Impl = \"{}\";\n\
              {}{body}\n",
-            self.abstract_package,
-            self.concrete_package,
-            self.contracts,
+            self.abstract_package, self.concrete_package, self.contracts,
         )
     }
 
@@ -593,7 +590,7 @@ impl Unit {
 /// in `package`, whose fields are `fields`.
 fn snapshot(
     unit: &Unit,
-    (package, document): (&str, &[u8]),
+    (package, _document): (&str, &[u8]),
     name: &str,
     fields: &Json,
     snapshots: &mut qsl_semantics::model::observation::DocumentProvision,
@@ -612,8 +609,11 @@ fn snapshot(
                 .collect::<Vec<_>>()}],
     });
     let bytes = snapshot.to_string().into_bytes();
-    let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-    snapshots.insert(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes);
+    snapshots.insert(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    );
     DocumentRef {
         authority: "test".to_owned(),
         identity,

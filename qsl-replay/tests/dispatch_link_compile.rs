@@ -123,9 +123,11 @@ fn package(operations: Vec<Value>, subtypes: &[(&str, &str, Vec<Value>)]) -> Vec
 
 /// The unit selecting `document` as model `Config`, then `declarations`, and
 /// its package input.
-fn unit(document: &[u8], declarations: &str) -> (String, qsl_semantics::model::intake::PackageInput) {
+fn unit(
+    document: &[u8],
+    declarations: &str,
+) -> (String, qsl_semantics::model::intake::PackageInput) {
     let packages = package_input([document]).unwrap();
-    let digest = packages.keys().next().expect("one package");
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
@@ -165,7 +167,6 @@ fn compile(
         &parsed,
         &models,
         &DependencyInput::default(),
-        &spine::LockEvidence::default(),
         limits,
         &cancel,
     )
@@ -213,7 +214,6 @@ fn compile_text_with_execution_points(
         execution_points,
         &models,
         &DependencyInput::default(),
-        &spine::LockEvidence::default(),
         limits,
         &cancel,
     )
@@ -1523,7 +1523,6 @@ fn a_synthesized_owners_application_item_is_not_replayable() {
         &parsed,
         &models,
         &DependencyInput::default(),
-        &spine::LockEvidence::default(),
         limits,
         &cancel,
     )

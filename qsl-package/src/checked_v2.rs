@@ -404,7 +404,7 @@ const OCCURRENCE_ROLES: [CheckedOccurrenceRole; 6] = [
 ];
 
 /// The occurrence role `spelling` names, the inverse of [`role_spelling`].
-pub(crate) fn occurrence_role(spelling: &str) -> Option<CheckedOccurrenceRole> {
+pub fn occurrence_role(spelling: &str) -> Option<CheckedOccurrenceRole> {
     OCCURRENCE_ROLES
         .into_iter()
         .find(|role| role_spelling(role) == spelling)

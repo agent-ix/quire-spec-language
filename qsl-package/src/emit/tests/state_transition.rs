@@ -134,7 +134,10 @@ fn unit(clauses: &str, protocol: bool) -> (String, qsl_semantics::model::intake:
     (unit, packages)
 }
 
-fn check(clauses: &str, protocol: bool) -> (CheckedPackage, qsl_semantics::model::intake::PackageInput) {
+fn check(
+    clauses: &str,
+    protocol: bool,
+) -> (CheckedPackage, qsl_semantics::model::intake::PackageInput) {
     let (unit, packages) = unit(clauses, protocol);
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")

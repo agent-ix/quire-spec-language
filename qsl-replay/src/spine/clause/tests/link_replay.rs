@@ -129,7 +129,6 @@ fn orders_document(modifies: &[String]) -> Vec<u8> {
 /// postcondition that gives `rehome` its frame node.
 fn orders_unit(modifies: &[String]) -> Unit {
     let document = orders_document(modifies);
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
@@ -189,22 +188,11 @@ fn invocation_i() -> (DocumentRef, Vec<(DocumentRef, Vec<u8>)>) {
     let provision = |name: &str, document: serde_json::Value| {
         let label = config_version_document_ref(name);
         let bytes = document.to_string().into_bytes();
-        (
-            DocumentRef {
-                ..label
-            },
-            bytes,
-        )
+        (DocumentRef { ..label }, bytes)
     };
     let call = "replay-call";
-    let mut pre = labelled(
-        "replay-pre",
-        side("pre", &[("p1", "t1"), ("p2", "t1")]),
-    );
-    let mut post = labelled(
-        "replay-post",
-        side("post", &[("p1", "t2"), ("p2", "t1")]),
-    );
+    let mut pre = labelled("replay-pre", side("pre", &[("p1", "t1"), ("p2", "t1")]));
+    let mut post = labelled("replay-post", side("post", &[("p1", "t2"), ("p2", "t1")]));
     for document in [&mut pre, &mut post] {
         document["invocation"] = document_identity_json(&config_version_document_ref(call));
     }
