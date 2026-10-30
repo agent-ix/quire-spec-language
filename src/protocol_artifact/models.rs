@@ -105,8 +105,8 @@ pub(super) fn validate(
         work.bytes(owner.package().as_str().len())?;
         work.bytes(owner.requirement().as_str().len())?;
         if owners
-            .insert(owner, model.model.digest())
-            .is_some_and(|digest| digest != model.model.digest())
+            .insert(owner, model.model.artifact_bytes())
+            .is_some_and(|bytes| bytes != model.model.artifact_bytes())
         {
             return Err(Error::Invalid(Invalid::Model));
         }
@@ -1061,7 +1061,8 @@ fn domain_field<'a>(
 }
 
 fn same_model(left: &NativeModel, right: &NativeModel) -> bool {
-    left.environment().owner() == right.environment().owner() && left.digest() == right.digest()
+    left.environment().owner() == right.environment().owner()
+        && left.artifact_bytes() == right.artifact_bytes()
 }
 
 fn matches_native(

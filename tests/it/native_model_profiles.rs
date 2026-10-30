@@ -143,7 +143,7 @@ fn explicit_profiles_preserve_the_frozen_historical_artifact() {
         serde_json::from_slice::<Value>(v2.artifact_bytes()).unwrap(),
         expected
     );
-    assert_ne!(v1.digest(), v2.digest());
+    assert_ne!(v1.artifact_bytes(), v2.artifact_bytes());
     assert_eq!(v1.environment(), v2.environment());
     for (name, expected) in [
         ("native-state-model/1", NativeModelProfile::V1),
@@ -212,7 +212,7 @@ fn integer_and_text_source_meanings_agree_across_explicit_profiles() {
         expected
     );
     assert_ne!(old.artifact_bytes(), selected.artifact_bytes());
-    assert_ne!(old.digest(), selected.digest());
+    assert_ne!(old.artifact_bytes(), selected.artifact_bytes());
 }
 
 #[test]
@@ -699,7 +699,7 @@ fn mixed_existing_roles_and_rational_artifact_identity_are_preserved() {
         ),
         format!("{simple}\n"),
     ] {
-        assert_ne!(baseline.digest(), model(&changed).digest());
+        assert_ne!(baseline.artifact_bytes(), model(&changed).artifact_bytes());
     }
 }
 

@@ -232,7 +232,6 @@ fn actual_checked_clause_retains_complete_selected_model_and_dispositions() {
     let wire: serde_json::Value = serde_json::from_slice(package.bytes()).unwrap();
     assert_eq!(wire["models"].as_array().unwrap().len(), 1);
     assert_eq!(wire["models"][0]["alias"], "M");
-    assert_eq!(wire["models"][0]["digest"], models[0].digest().to_string());
     assert_eq!(
         wire["models"][0]["artifact"],
         std::str::from_utf8(models[0].artifact_bytes()).unwrap()

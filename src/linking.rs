@@ -15,7 +15,7 @@ use quire_contract_model::{
 use crate::native_model::{NativeModel, NativeModelProfile, ObjectRole, OperationRole};
 use crate::syntax::{BinaryOp, Builtin, Clause, ClauseKind, ExprId, ExprKind, UnaryOp};
 use crate::ParsedUnit;
-use qsl_foundation::{ByteDigest, Code, Diagnostic, Phase, Span};
+use qsl_foundation::{Code, Diagnostic, Phase, Span};
 
 /// Caller-lowered ceilings for native formal linkage.
 #[derive(Clone, Copy, Debug)]
@@ -135,11 +135,10 @@ pub struct ResolvedOccurrence {
     pub target: ResolutionTarget,
 }
 
-/// One exact native import's formal environment and artifact byte digest.
+/// One exact native import's formal environment.
 #[derive(Clone, Copy, Debug)]
 pub struct LinkedModel<'a> {
     environment: &'a DeclarationEnvironment,
-    digest: ByteDigest,
     native: Option<&'a NativeModel>,
 }
 
@@ -147,10 +146,6 @@ impl<'a> LinkedModel<'a> {
     /// The immutable, constructor-validated formal environment.
     pub fn environment(&self) -> &'a DeclarationEnvironment {
         self.environment
-    }
-    /// Raw SHA-256 of its artifact under the selected binding profile.
-    pub fn digest(&self) -> ByteDigest {
-        self.digest
     }
     /// Explicit native correspondence; absent for the original formal profile.
     pub fn native_model(&self) -> Option<&'a NativeModel> {
@@ -417,7 +412,6 @@ fn formal_catalog<'a>(
         emitted += output.bytes().as_slice().len();
         catalog.push(LinkedModel {
             environment,
-            digest: ByteDigest::of(output.bytes().as_slice()),
             native: None,
         });
     }
@@ -1063,7 +1057,6 @@ mod profile_tests {
         };
         let selected = LinkedModel {
             environment: model.environment(),
-            digest: model.digest(),
             native: Some(&model),
         };
         for (models, expected, at) in [

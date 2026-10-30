@@ -157,7 +157,6 @@ pub(crate) fn draft(model: &NativeModel) -> SnapshotDraft {
         observation: ir::StateObservation::Current,
         models: vec![ModelBinding {
             model: model.environment().owner().clone(),
-            digest: model.digest(),
         }],
         populations: vec![Population {
             model: model.environment().owner().clone(),
@@ -271,7 +270,6 @@ pub(crate) fn recorded(
     let mut invocation = InvocationDraft {
         models: vec![ModelBinding {
             model: model.environment().owner().clone(),
-            digest: model.digest(),
         }],
         context: qualified(model, "Node"),
         operation: symbol("step"),

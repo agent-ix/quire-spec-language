@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Public-API qualification of the native-formal-environment/1 binding profile.
 use ix_trace_rs::trace;
-use qsl_foundation::{ByteDigest, Code, SourceIdentity};
+use qsl_foundation::{Code, SourceIdentity};
 use quire_contract_model as ir;
 use quire_spec_language::linking::{DeclarationKey, ResolutionTarget};
 use quire_spec_language::{link, parse, Limits, LinkLimits, ParsedUnit};
@@ -179,10 +179,6 @@ fn exact_source_owner_field_and_digest_domains() {
     assert_eq!(linked.unit().source().identity(), source.identity());
     assert_eq!(linked.unit().source().digest(), source.digest());
     assert!(std::ptr::eq(linked.models()[0].environment(), &envs[0]));
-    assert_eq!(
-        linked.models()[0].digest(),
-        ByteDigest::of(canonical(&envs[0]).bytes().as_slice())
-    );
     let c = &linked.clauses()[0];
     assert_eq!(c.model(), 0);
     assert_eq!(c.context().identity.owner, *envs[0].owner());

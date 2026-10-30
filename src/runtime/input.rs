@@ -40,15 +40,12 @@ pub struct QualifiedName {
     pub name: ir::SymbolName,
 }
 
-/// Exact input binding to an already admitted native model artifact.
+/// Input binding to an already admitted native model, by its owner.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(from = "Object<wire::ModelBinding>")]
 pub struct ModelBinding {
     /// Model requirement owner, including its selected revision.
     pub model: ir::RequirementRef,
-    /// Complete native model artifact digest.
-    #[serde(serialize_with = "serialize_digest")]
-    pub digest: ByteDigest,
 }
 
 /// Object identity within an exact model, type and declared universe.

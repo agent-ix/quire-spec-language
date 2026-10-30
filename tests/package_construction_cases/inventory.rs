@@ -78,8 +78,8 @@ fn source_order_preserves_multiple_model_owners_and_complete_invariant_pre_post_
     assert_eq!(
         wire["models"],
         json!([
-            {"alias":"Z","owner":models[1].environment().owner(),"digest":models[1].digest().to_string(),"artifact":std::str::from_utf8(models[1].artifact_bytes()).unwrap()},
-            {"alias":"A","owner":models[0].environment().owner(),"digest":models[0].digest().to_string(),"artifact":std::str::from_utf8(models[0].artifact_bytes()).unwrap()},
+            {"alias":"Z","owner":models[1].environment().owner(),"artifact":std::str::from_utf8(models[1].artifact_bytes()).unwrap()},
+            {"alias":"A","owner":models[0].environment().owner(),"artifact":std::str::from_utf8(models[0].artifact_bytes()).unwrap()},
         ])
     );
     let mut expected = Vec::new();

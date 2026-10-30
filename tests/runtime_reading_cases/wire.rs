@@ -2,7 +2,7 @@
 //! FR-024: the public record itself owns closed decoding at every nesting level.
 
 use super::*;
-use quire_spec_language::runtime::{InvocationDraft, InvocationRef, ModelBinding};
+use quire_spec_language::runtime::{InvocationDraft, InvocationRef};
 use serde::{de::DeserializeOwned, Serialize};
 use std::fmt::Debug;
 
@@ -72,7 +72,7 @@ fn public_runtime_records_own_closed_object_decoding() {
         draft,
         &["observation", "models", "populations", "values", "arena"],
     );
-    closed_record(&draft.models[0], &["model", "digest"]);
+    closed_record(&draft.models[0], &["model"]);
     closed_record(
         &draft.populations[0],
         &["model", "record", "universe", "complete", "objects"],
@@ -182,21 +182,11 @@ fn nullable_result_and_native_digest_keep_their_exact_wire_domains() {
     assert!(serde_json::from_value::<InvocationDraft>(value).is_err());
 
     let empty_digest = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
-    let mut binding = original.draft().models[0].clone();
-    binding.digest = ByteDigest::of(b"");
-    assert_eq!(format!("{:x}", binding.digest), empty_digest);
-    assert_eq!(binding.digest.to_string(), format!("sha256:{empty_digest}"));
-    assert_eq!(
-        binding.digest.to_string().parse::<ByteDigest>().unwrap(),
-        binding.digest
-    );
+    let digest = ByteDigest::of(b"");
+    assert_eq!(format!("{digest:x}"), empty_digest);
+    assert_eq!(digest.to_string(), format!("sha256:{empty_digest}"));
+    assert_eq!(digest.to_string().parse::<ByteDigest>().unwrap(), digest);
     assert!(empty_digest.parse::<ByteDigest>().is_err());
-    let mut wire = serde_json::to_value(&binding).unwrap();
-    assert_eq!(wire["digest"], empty_digest);
-    assert_eq!(
-        serde_json::from_value::<ModelBinding>(wire.clone()).unwrap(),
-        binding
-    );
     for invalid in [
         "".to_owned(),
         "0".repeat(63),
@@ -206,11 +196,6 @@ fn nullable_result_and_native_digest_keep_their_exact_wire_domains() {
         empty_digest.to_uppercase(),
         format!("sha256:{empty_digest}"),
     ] {
-        wire["digest"] = json!(invalid);
-        assert!(
-            serde_json::from_value::<ModelBinding>(wire.clone()).is_err(),
-            "{invalid}"
-        );
         let mut reference = serde_json::to_value(original.reference()).unwrap();
         reference["digest"] = json!(invalid);
         assert!(

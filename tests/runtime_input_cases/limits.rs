@@ -17,10 +17,7 @@ fn limits_from(snapshot: &Snapshot) -> ArtifactLimits {
 #[trace("TC-057", "FR-018-AC-6")]
 fn independent_text_totals_include_all_metadata_and_value_strings() {
     let mut snapshot = empty();
-    snapshot.models.push(ModelBinding {
-        model: owner(),
-        digest: zero_digest(),
-    });
+    snapshot.models.push(ModelBinding { model: owner() });
     snapshot.populations.push(Population {
         model: owner(),
         record: symbol("Node"),
@@ -59,10 +56,7 @@ fn independent_text_totals_include_all_metadata_and_value_strings() {
     );
 
     let mut operation = invocation();
-    operation.models.push(ModelBinding {
-        model: owner(),
-        digest: zero_digest(),
-    });
+    operation.models.push(ModelBinding { model: owner() });
     operation.parameters.push(binding("arg", 0));
     operation.created.push(object("new"));
     operation.deleted.push(object("old"));
@@ -171,10 +165,7 @@ fn generated_shared_arenas_obey_each_exact_lowered_dimension() {
 #[trace("TC-057", "FR-018-AC-6")]
 fn every_metadata_entry_class_is_counted_before_its_work() {
     let mut snapshot = empty();
-    snapshot.models.push(ModelBinding {
-        model: owner(),
-        digest: zero_digest(),
-    });
+    snapshot.models.push(ModelBinding { model: owner() });
     snapshot.populations.push(Population {
         model: owner(),
         record: symbol("Node"),
@@ -219,10 +210,7 @@ fn every_metadata_entry_class_is_counted_before_its_work() {
         }
     }
     let mut operation = invocation();
-    operation.models.push(ModelBinding {
-        model: owner(),
-        digest: zero_digest(),
-    });
+    operation.models.push(ModelBinding { model: owner() });
     operation.parameters.push(binding("arg", 0));
     operation.result = Some(ValueId::new(0));
     operation.created.push(object("new"));

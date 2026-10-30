@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use crate::formal_source::FormalSource;
 use crate::linking::DeclarationLocation;
-use qsl_foundation::{ByteDigest, Code, Diagnostic, Phase};
+use qsl_foundation::{Code, Diagnostic, Phase};
 
 /// Explicit producer semantics retained in the immutable native artifact.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -227,7 +227,6 @@ struct NativeModelData {
     environment: DeclarationEnvironment,
     roles: NativeRoles,
     artifact: Vec<u8>,
-    digest: ByteDigest,
 }
 
 impl NativeModel {
@@ -267,7 +266,6 @@ impl NativeModel {
             &roles,
             limits.artifact_bytes,
         )?;
-        let digest = ByteDigest::of(&artifact);
         Ok(Self {
             inner: Arc::new(NativeModelData {
                 profile,
@@ -275,7 +273,6 @@ impl NativeModel {
                 environment,
                 roles,
                 artifact,
-                digest,
             }),
         })
     }
@@ -299,10 +296,6 @@ impl NativeModel {
     /// Exact profile-bearing native model artifact content.
     pub fn artifact_bytes(&self) -> &[u8] {
         &self.inner.artifact
-    }
-    /// Raw SHA-256 of the artifact, distinct from IR semantic identity.
-    pub fn digest(&self) -> ByteDigest {
-        self.inner.digest
     }
 }
 
