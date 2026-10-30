@@ -620,9 +620,12 @@ mod tests {
     use crate::check::family::{OccurrenceMap, OccurrenceRole};
 
     fn node_key(fill: u8) -> NodeKey {
-        let mut bytes = [0_u8; 32];
-        bytes[31] = fill;
-        NodeKey::from_digest(bytes)
+        NodeKey::new(
+            "test-package".to_owned(),
+            vec![quire_exact::PathSegment::Text(format!("node-{fill}"))],
+            0,
+        )
+        .expect("a nonempty structural fixture key")
     }
 
     fn identifier(name: &str) -> Identifier {

@@ -7265,6 +7265,7 @@ mod tests {
             functions,
             ..PackageDeclarations::new(
                 family::fixtures::fixture_source(),
+                "test-package",
                 qsl_foundation::IdentityLimits::default(),
             )
         }
@@ -7288,14 +7289,20 @@ mod tests {
         };
 
         let field = FieldDeclaration::new("flag", ValueType::Boolean, Presence::Required);
-        let key = NodeKey::from_digest([0x11; 32]);
+        let key = NodeKey::new(
+            "test-package".to_owned(),
+            vec![quire_exact::PathSegment::Text("Flagged-handle".to_owned())],
+            0,
+        )
+        .unwrap();
         let composite =
-            CompositeDeclaration::new(key, "Flagged", CompositeShape::Record(vec![field]));
+            CompositeDeclaration::new(key.clone(), "Flagged", CompositeShape::Record(vec![field]));
         let types = TypeEnvironment::new([composite], []).expect("one record admits cleanly");
         let graph = PackageDeclarations {
             types,
             ..PackageDeclarations::new(
                 family::fixtures::fixture_source(),
+                "test-package",
                 qsl_foundation::IdentityLimits::default(),
             )
         }
@@ -7341,13 +7348,20 @@ mod tests {
         };
 
         let field = FieldDeclaration::new("flag", ValueType::Boolean, Presence::Required);
-        let key = NodeKey::from_digest([0x22; 32]);
-        let composite = CompositeDeclaration::new(key, "P::R", CompositeShape::Record(vec![field]));
+        let key = NodeKey::new(
+            "test-package".to_owned(),
+            vec![quire_exact::PathSegment::Text("P::R-handle".to_owned())],
+            0,
+        )
+        .unwrap();
+        let composite =
+            CompositeDeclaration::new(key.clone(), "P::R", CompositeShape::Record(vec![field]));
         let types = TypeEnvironment::new([composite], []).expect("one record admits cleanly");
         let graph = PackageDeclarations {
             types,
             ..PackageDeclarations::new(
                 family::fixtures::fixture_source(),
+                "test-package",
                 qsl_foundation::IdentityLimits::default(),
             )
         }
@@ -7390,10 +7404,8 @@ mod tests {
         use crate::value::enumeration::{
             AdmittedEnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
         };
-        use crate::value::semantic_node::{
-            NodeIdentityPreimage, NodeOwner, OwnerSelection, OwnerSubject,
-        };
-        use quire_exact::{NodeKey, NODE_KEY_DOMAIN};
+        use crate::value::semantic_node::{NodeOwner, OwnerSelection, OwnerSubject};
+        use quire_exact::{NodeKey, PathSegment};
         use serde_json::json;
 
         let owners = OwnerSelection::new([NodeOwner::Definition(OwnerSubject {
@@ -7408,42 +7420,35 @@ mod tests {
             "members": ["Active", "Closed"],
         });
         let declaration_preimage = EnumDeclarationPreimage::from_json(declaration_json).unwrap();
-        let declaration_key = NodeKey::from_digest(
-            declaration_preimage
-                .digest(qsl_foundation::IdentityLimits::default())
-                .unwrap(),
-        );
-        let declaration = AdmittedEnumDeclaration::admit(
-            declaration_preimage,
-            declaration_key,
-            &owners,
-            qsl_foundation::IdentityLimits::default(),
+        let declaration_key = NodeKey::new(
+            "example-model".to_owned(),
+            vec![
+                PathSegment::Text("Example".to_owned()),
+                PathSegment::Text("Status".to_owned()),
+            ],
+            0,
         )
         .unwrap();
+        let declaration =
+            AdmittedEnumDeclaration::admit(declaration_preimage, declaration_key.clone(), &owners)
+                .unwrap();
 
         let members = ["Active", "Closed"]
             .into_iter()
             .map(|case| {
-                let member_json = json!({
-                    "version": "quire.enum-member-node/v1",
-                    "declaration_node_id": {
-                        "domain": NODE_KEY_DOMAIN,
-                        "digest": declaration.key().to_string(),
-                    },
-                    "case": case,
-                });
-                let member_preimage = EnumMemberPreimage::from_json(member_json).unwrap();
-                let member_key = NodeKey::from_digest(
-                    member_preimage
-                        .digest(qsl_foundation::IdentityLimits::default())
-                        .unwrap(),
-                );
+                let member_preimage = EnumMemberPreimage::new(declaration.key(), case).unwrap();
+                let member_key = NodeKey::new(
+                    "example-model".to_owned(),
+                    vec![
+                        PathSegment::Text("Example".to_owned()),
+                        PathSegment::Text("Status".to_owned()),
+                        PathSegment::Text(case.to_owned()),
+                    ],
+                    0,
+                )
+                .unwrap();
                 declaration
-                    .admit_member(
-                        &member_preimage,
-                        member_key,
-                        qsl_foundation::IdentityLimits::default(),
-                    )
+                    .admit_member(&member_preimage, member_key)
                     .unwrap()
             })
             .collect();
@@ -7457,6 +7462,7 @@ mod tests {
             enums,
             ..PackageDeclarations::new(
                 family::fixtures::fixture_source(),
+                "test-package",
                 qsl_foundation::IdentityLimits::default(),
             )
         }
@@ -7470,16 +7476,18 @@ mod tests {
             declaration_key,
             "the checked type node's id must be the declaration's own existing key"
         );
-        assert_eq!(graph.checked_type_node(declaration_key), Some(nodes[0]));
+        assert_eq!(
+            graph.checked_type_node(declaration_key.clone()),
+            Some(nodes[0])
+        );
 
         let quire_exact::ValueType::Enum(ref shape) = to_kernel_value_type(nodes[0]) else {
             panic!("the sum form must convert to ValueType::Enum");
         };
         for case in ["Active", "Closed"] {
-            assert!(shape.contains(crate::value::enumeration::mint_variant_id(
-                declaration_key,
-                case
-            )));
+            assert!(shape.contains(
+                crate::value::enumeration::mint_variant_id(declaration_key.clone(), case).unwrap()
+            ));
         }
     }
 
@@ -7649,6 +7657,7 @@ mod tests {
             resolved_signatures,
             ..PackageDeclarations::new(
                 family::fixtures::fixture_source(),
+                "test-package",
                 qsl_foundation::IdentityLimits::default(),
             )
         }
