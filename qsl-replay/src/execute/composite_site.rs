@@ -67,49 +67,48 @@ fn fault(invariant: &'static str) -> ReplayRefusal {
 pub(super) fn locate(
     compiled: &Recompiled,
     function: &QualifiedName,
-    node: NodeKey,
+    node: &NodeKey,
     occurrence: &BodyKey,
     operator: EqualityOperator,
 ) -> Result<Site, ReplayRefusal> {
-    let package_id = compiled.emitted.package().package_id();
+    let package_name = compiled.package.clone();
     let mismatch = |cause: ScalarIdentityMismatch| ReplayRefusal::ScalarIdentity(Box::new(cause));
     let (segment, callable) = lookup(compiled, function)?;
     let package = compiled.checked.package();
     let graph = package.graph().semantic_graph();
     let semantic = graph
-        .resolve_wire(node)
-        .and_then(|key| graph.node(key))
+        .node(node)
         .ok_or_else(|| {
             mismatch(ScalarIdentityMismatch::Node {
-                node,
-                package: package_id,
+                node: node.clone(),
+                package: package_name.clone(),
             })
         })?;
-    if !in_body(graph, callable.identity, semantic.key()) {
+    if !in_body(graph, &callable.identity, semantic.key()) {
         return Err(mismatch(ScalarIdentityMismatch::Function {
-            node,
+            node: node.clone(),
             function: function.clone(),
-            package: package_id,
+            package: package_name.clone(),
         }));
     }
     if equality_operator(semantic) != Some(operator) {
         return Err(mismatch(ScalarIdentityMismatch::Equality {
-            node,
+            node: node.clone(),
             operator,
-            package: package_id,
+            package: package_name.clone(),
         }));
     }
     // The claimed occurrence must be one of this node in this function's
     // body: a node shared by two occurrences is two obligations.
     let refused = || {
         mismatch(ScalarIdentityMismatch::Occurrence {
-            node,
+            node: node.clone(),
             occurrence: occurrence.clone(),
         })
     };
     let location = package
         .graph()
-        .occurrence(semantic.key(), occurrence)
+        .occurrence(&semantic.key(), occurrence)
         .filter(|location| match &location.origin {
             BodyOrigin::Body { function, .. } => function == segment.as_str(),
             BodyOrigin::Measure { .. }
@@ -123,7 +122,7 @@ pub(super) fn locate(
         .ok_or_else(refused)?;
     let state = package
         .graph()
-        .function_by_identity(callable.identity)
+        .function_by_identity(&callable.identity)
         .ok_or_else(|| fault("function-identity-has-a-checked-body"))?;
     let (left, right) = equality_operands(state.body, &location)
         .ok_or_else(|| fault("claimed-node-has-a-checked-twin"))?;
@@ -131,9 +130,9 @@ pub(super) fn locate(
     let operand = |position: usize, checked: CheckedNode<'_>| -> Result<Operand, ReplayRefusal> {
         let refused = || {
             mismatch(ScalarIdentityMismatch::Operand {
-                node,
+                node: node.clone(),
                 position,
-                package: package_id,
+                package: package_name.clone(),
             })
         };
         if let NodeKind::Local(slot) = checked.kind() {
@@ -161,7 +160,7 @@ pub(super) fn locate(
         })
     };
     Ok(Site {
-        occurrence: OccurrenceKey::new(node, occurrence.clone()),
+        occurrence: OccurrenceKey::new(node.clone(), occurrence.clone()),
         operands: [operand(0, left)?, operand(1, right)?],
     })
 }

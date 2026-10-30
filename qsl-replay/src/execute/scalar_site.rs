@@ -4,7 +4,11 @@
 //! applies and the nodes a function's body reaches; it encodes nothing and
 //! computes no digest.
 
-use qsl_semantics::check::{NodeTag, SemanticGraph, SemanticNode};
+use std::borrow::Borrow;
+
+use qsl_semantics::check::{
+    ApplicationTerm, LeafTerm, LiteralValue, MemberTerm, NodeTag, SemanticGraph, SemanticNode,
+};
 use quire_exact::NodeKey;
 
 use quire_semantic_value::catalog::InternalFault;
@@ -15,147 +19,135 @@ use crate::scalar::{OperandIdentity, ScalarOperand, ScalarOperation, ScalarOpera
 use quire_semantic_value::declaration::EqualityOperator;
 
 /// Whether `target` is `function`'s node or one its body reaches. The walk
-/// follows every node reference of a node's preimage, and stops at another
+/// follows every node a body names through its leaves, and stops at another
 /// function's node: a call to another function is not that function's body.
-#[ix_trace_rs::string_edge]
-pub(crate) fn in_body(graph: &SemanticGraph, function: NodeKey, target: NodeKey) -> bool {
-    let keys: std::collections::BTreeMap<String, NodeKey> = graph
-        .nodes()
-        .map(SemanticNode::key)
-        .map(|key| (key.to_string(), key))
-        .collect();
-    let mut seen = std::collections::BTreeSet::from([function]);
-    let mut pending = vec![function];
+pub(crate) fn in_body(
+    graph: &SemanticGraph,
+    function: &NodeKey,
+    target: impl Borrow<NodeKey>,
+) -> bool {
+    let target = target.borrow();
+    let mut seen = std::collections::BTreeSet::from([function.clone()]);
+    let mut pending = vec![function.clone()];
     while let Some(key) = pending.pop() {
-        if key == target {
+        if &key == target {
             return true;
         }
-        let Some(node) = graph.node(key) else {
+        let Some(node) = graph.node(&key) else {
             continue;
         };
-        if key != function && node.node_tag() == NodeTag::Function {
+        if &key != function && node.node_tag() == NodeTag::Function {
             continue;
         }
-        let Ok(preimage) = serde_json::from_slice::<serde_json::Value>(node.preimage()) else {
-            continue;
-        };
-        let mut digests = Vec::new();
-        node_digests(&preimage, &mut digests);
-        for digest in digests {
-            let referenced = keys.get(&digest).copied();
-            if let Some(referenced) = referenced {
-                if seen.insert(referenced) {
-                    pending.push(referenced);
-                }
+        for referenced in node.body().leaves().into_iter().filter_map(LeafTerm::key) {
+            if seen.insert(referenced.clone()) {
+                pending.push(referenced);
             }
         }
     }
     false
 }
 
-/// Every `digest` string of a preimage's node ids (`{domain, digest}`).
-#[ix_trace_rs::string_edge]
-fn node_digests(value: &serde_json::Value, out: &mut Vec<String>) {
-    let mut pending = vec![value];
-    while let Some(value) = pending.pop() {
-        match value {
-            serde_json::Value::Object(map) => {
-                if let Some(serde_json::Value::String(digest)) = map.get("digest") {
-                    out.push(digest.clone());
-                }
-                pending.extend(map.values());
-            }
-            serde_json::Value::Array(items) => pending.extend(items),
-            serde_json::Value::Null
-            | serde_json::Value::Bool(_)
-            | serde_json::Value::Number(_)
-            | serde_json::Value::String(_) => {}
-        }
-    }
-}
-
 /// Whether `node` is an application of `operator`: its body's operation
 /// identity is the operator's catalog identity.
-#[ix_trace_rs::string_edge]
 pub(crate) fn applies(node: &SemanticNode, operator: ScalarOperator) -> bool {
-    serde_json::from_slice::<serde_json::Value>(node.preimage())
-        .ok()
-        .is_some_and(|preimage| {
-            preimage["body"]["operation"]["identity"] == operator.catalog_identity()
-        })
+    node.body()
+        .application_term()
+        .is_some_and(|term| term.operation.identity() == operator.catalog_identity())
 }
 
-/// [`check_operands`] over `node`'s own preimage, as the refusal the replay
+/// [`check_operands`] over `node`'s own body, as the refusal the replay
 /// settles.
 pub(super) fn check_node_operands(
     node: &SemanticNode,
-    application: NodeKey,
+    application: &NodeKey,
     operation: &ScalarOperation,
 ) -> Result<(), ReplayRefusal> {
-    let preimage = serde_json::from_slice::<serde_json::Value>(node.preimage()).map_err(|_| {
+    let term = node.body().application_term().ok_or_else(|| {
         ReplayRefusal::Fault(InternalFault::new(
             "replay",
-            "a-checked-node-preimage-is-json",
+            "a-checked-application-node-has-an-application-body",
         ))
     })?;
-    check_operands(&preimage, application, operation)
+    check_operands(term, application, operation)
         .map_err(|mismatch| ReplayRefusal::ScalarIdentity(Box::new(mismatch)))
 }
 
-/// Whether `preimage`, an application node's preimage, carries the operands
-/// the claim names, position by position (FR-357-AC-17): the same number of
+/// The leaf `argument` is, when it is a bare leaf.
+fn leaf_of(argument: &MemberTerm) -> Option<&LeafTerm> {
+    match argument {
+        MemberTerm::Leaf(leaf) => Some(leaf),
+        MemberTerm::Group(_) | MemberTerm::Binding(_) => None,
+    }
+}
+
+/// The node a leaf references, when it is a reference.
+fn referenced(leaf: &LeafTerm) -> Option<NodeKey> {
+    match leaf {
+        LeafTerm::Reference { target } => target.admitted().cloned(),
+        LeafTerm::Literal { .. } | LeafTerm::DependencyReference { .. } => None,
+    }
+}
+
+/// The integer an inline integer literal leaf holds.
+fn integer_literal(leaf: &LeafTerm) -> Option<String> {
+    match leaf {
+        LeafTerm::Literal {
+            value: LiteralValue::Integer(value),
+            ..
+        } => Some(value.to_string()),
+        _ => None,
+    }
+}
+
+/// Whether `term`, an application node's body, carries the operands the
+/// claim names, position by position (FR-357-AC-17): the same number of
 /// arguments; for a `GraphChild` the argument is a reference to that node;
 /// for an `InlineLiteral` the argument is an inline integer literal, whose
 /// value is the operand's value and whose singleton range is the operand's.
-#[ix_trace_rs::string_edge]
 pub(crate) fn check_operands(
-    preimage: &serde_json::Value,
-    application: NodeKey,
+    term: &ApplicationTerm,
+    application: &NodeKey,
     operation: &ScalarOperation,
 ) -> Result<(), ScalarIdentityMismatch> {
     let (first, second) = operation.operands();
     let claimed: Vec<&ScalarOperand> = std::iter::once(first).chain(second).collect();
-    let arguments = preimage["body"]["arguments"]
-        .as_array()
-        .map_or(&[][..], Vec::as_slice);
+    let arguments = &term.arguments;
     if arguments.len() != claimed.len() {
         return Err(ScalarIdentityMismatch::OperandCount {
-            node: application,
+            node: application.clone(),
             claimed: claimed.len(),
             found: arguments.len(),
         });
     }
     for (position, (operand, argument)) in claimed.into_iter().zip(arguments).enumerate() {
-        match operand.identity {
+        let leaf = leaf_of(argument);
+        match &operand.identity {
             OperandIdentity::GraphChild(node) => {
-                let found = (argument["term"] == "reference")
-                    .then(|| argument["target"]["digest"].as_str())
-                    .flatten()
-                    .and_then(NodeKey::from_hex);
-                if found != Some(node) {
+                let found = leaf.and_then(referenced);
+                if found.as_ref() != Some(node) {
                     return Err(ScalarIdentityMismatch::OperandChild {
-                        node: application,
+                        node: application.clone(),
                         position,
-                        claimed: node,
+                        claimed: node.clone(),
                         found,
                     });
                 }
             }
             OperandIdentity::InlineLiteral => {
-                if argument["term"] != "literal" || argument["value_kind"] != "integer" {
+                let Some(found) = leaf.and_then(integer_literal) else {
                     return Err(ScalarIdentityMismatch::NotInlineLiteral {
-                        node: application,
+                        node: application.clone(),
                         position,
                     });
-                }
-                let found = argument["value"].as_str().unwrap_or_default();
+                };
                 if found != operand.value.to_string()
-                    || operand.range != ScalarOperand::literal(operand.value).range
+                    || operand.range != ScalarOperand::literal(operand.value.clone()).range
                 {
                     return Err(ScalarIdentityMismatch::LiteralValue {
-                        node: application,
+                        node: application.clone(),
                         position,
-                        found: found.to_owned(),
+                        found,
                     });
                 }
             }
@@ -167,10 +159,8 @@ pub(crate) fn check_operands(
 /// The equality operator `node` applies, when its body's operation is a
 /// catalog `quire.op.<family>.eq` or `quire.op.<family>.ne` (QSpec FR-149's
 /// `=` and `!=`).
-#[ix_trace_rs::string_edge]
 pub(crate) fn equality_operator(node: &SemanticNode) -> Option<EqualityOperator> {
-    let preimage = serde_json::from_slice::<serde_json::Value>(node.preimage()).ok()?;
-    let identity = preimage["body"]["operation"]["identity"].as_str()?;
+    let identity = node.body().application_term()?.operation.identity();
     let (_, suffix) = identity.strip_prefix("quire.op.")?.rsplit_once('.')?;
     match suffix {
         "eq" => Some(EqualityOperator::Equal),
@@ -182,43 +172,35 @@ pub(crate) fn equality_operator(node: &SemanticNode) -> Option<EqualityOperator>
 /// FR-358: the identity of each argument of the application `node`, in
 /// position order: a reference is a `GraphChild`, an inline integer literal
 /// an `InlineLiteral`. The composite arm names exactly two operands.
-#[ix_trace_rs::string_edge]
 pub(super) fn operand_identities(
     node: &SemanticNode,
-    application: NodeKey,
+    application: &NodeKey,
 ) -> Result<Vec<OperandIdentity>, ScalarIdentityMismatch> {
     let fault = || ScalarIdentityMismatch::OperandCount {
-        node: application,
+        node: application.clone(),
         claimed: 2,
         found: 0,
     };
-    let preimage =
-        serde_json::from_slice::<serde_json::Value>(node.preimage()).map_err(|_| fault())?;
-    let arguments = preimage["body"]["arguments"]
-        .as_array()
-        .map_or(&[][..], Vec::as_slice);
-    if arguments.len() != 2 {
+    let term = node.body().application_term().ok_or_else(fault)?;
+    if term.arguments.len() != 2 {
         return Err(ScalarIdentityMismatch::OperandCount {
-            node: application,
+            node: application.clone(),
             claimed: 2,
-            found: arguments.len(),
+            found: term.arguments.len(),
         });
     }
-    arguments
+    term.arguments
         .iter()
         .enumerate()
         .map(|(position, argument)| {
-            if argument["term"] == "reference" {
-                argument["target"]["digest"]
-                    .as_str()
-                    .and_then(NodeKey::from_hex)
-                    .map(OperandIdentity::GraphChild)
-                    .ok_or_else(fault)
-            } else if argument["term"] == "literal" && argument["value_kind"] == "integer" {
+            let leaf = leaf_of(argument);
+            if let Some(target) = leaf.and_then(referenced) {
+                Ok(OperandIdentity::GraphChild(target))
+            } else if leaf.and_then(integer_literal).is_some() {
                 Ok(OperandIdentity::InlineLiteral)
             } else {
                 Err(ScalarIdentityMismatch::NotInlineLiteral {
-                    node: application,
+                    node: application.clone(),
                     position,
                 })
             }
