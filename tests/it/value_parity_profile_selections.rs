@@ -102,15 +102,15 @@ fn a_unit_whose_lock_selects_profiles_replays_with_an_empty_selection_list() {
         "r1".to_owned(),
     );
     let bindings = vec![CanonicalAssignment {
-        parameter: site.parameters[0].1,
+        parameter: site.parameters[0].1.clone(),
         value: WitnessValue::Integer(3),
     }];
 
     // The packet's profile_selections is the empty list, whatever the lock.
     let packet = WitnessPacket {
-        obligation_identity: Some(*parity.obligation_identity.as_bytes()),
+        obligation_identity: Some(parity.obligation_identity.clone()),
         occurrence_key: Some(site.declaration.clone()),
-        clause_node: Some(site.function),
+        clause_node: Some(site.function.clone()),
         replay_target: ReplayTargetMembers::function(inc()),
         profile_selections: Some(Vec::<ProfileSelection>::new()),
         run_limits: Some(UNLIMITED),
@@ -130,7 +130,7 @@ fn a_unit_whose_lock_selects_profiles_replays_with_an_empty_selection_list() {
         dependencies: Vec::new(),
         replay_target: RequestTargetWire::function(inc(), envelope.occurrence_key().clone()),
         source: envelope.source().clone().into(),
-        obligation_identity: *envelope.obligation_identity().as_bytes(),
+        obligation_identity: envelope.obligation_identity(),
         backend: envelope.backend().as_str().to_owned(),
         state_environment: StateEnvironment::new(vec![]),
         accounting_limits: envelope.run_limits(),

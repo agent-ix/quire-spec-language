@@ -441,36 +441,34 @@ fn subtype_fixture_diagnostics(graph: &qsl_semantics::check::CheckedGraph, sourc
         // The public structural terms retain the actual links, including
         // nominal links, without deriving an edge or node kind from a key.
         eprintln!(
-            "state fixture 13: node={:?} tag={:?} form={} type={:?} declaration={:?} body={:?} nominal={:?}",
+            "state fixture 13: node={:?} tag={:?} form={} type={:?} declaration={:?} body={:?}",
             node.key(),
             node.node_tag(),
             node.semantic_form(),
             node.semantic_type(),
             node.declaration(),
-            node.body(),
-            node.nominal()
+            node.body()
         );
     }
     let mut unresolved_generated = 0;
     for (key, origin, location) in graph.occurrences() {
         let node = graph
             .semantic_graph()
-            .node(key)
+            .node(key.clone())
             .expect("the original subtype occurrence names a checked node");
-        assert_eq!(graph.occurrence(key, &origin), Some(location));
-        let region = graph.occurrence_region(key, &origin);
+        assert_eq!(graph.occurrence(key.clone(), &origin), Some(location));
+        let region = graph.occurrence_region(key.clone(), &origin);
         eprintln!(
             "state fixture 13: occurrence={key:?}/{origin:?} location={location:?} region={region:?}"
         );
         if origin.role().as_str() == "generated" && region.is_none() {
             unresolved_generated += 1;
             eprintln!(
-                "state fixture 13: unresolved Generated node={key:?} role={} ordinal={} location={location:?} tag={:?} form={} preimage={}",
+                "state fixture 13: unresolved Generated node={key:?} role={} ordinal={} location={location:?} tag={:?} form={}",
                 origin.role().as_str(),
                 origin.ordinal(),
                 node.node_tag(),
-                node.semantic_form(),
-                std::str::from_utf8(node.preimage()).expect("canonical preimage is UTF-8")
+                node.semantic_form()
             );
         }
         let anchor_seed = matches!(
@@ -524,8 +522,8 @@ fn subtype_fixture_diagnostics(graph: &qsl_semantics::check::CheckedGraph, sourc
     let qsl_foundation::bound::DomainKey::Population { member_type, .. } = domain else {
         panic!("the requirement names its population's own member type");
     };
-    let member = graph.semantic_graph().resolve_wire(*member_type).unwrap();
-    let node = graph.semantic_graph().node(member).unwrap();
+    let member = member_type.clone();
+    let node = graph.semantic_graph().node(member.clone()).unwrap();
     let Some(qsl_semantics::check::Owner::Model(owner)) = node.owner() else {
         panic!("the population member is the original model-owned type");
     };
@@ -624,15 +622,8 @@ fn state_generated_occurrences_have_authored_regions() {
         if origin.ordinal() == 0 {
             generated_zero += 1;
         }
-        let node = graph
-            .semantic_graph()
-            .node(key)
-            .expect("the occurrence names a node");
         let region = graph.region(location).unwrap_or_else(|| {
-            panic!(
-                "generated occurrence {key:?}/{origin:?} at {location:?} has no authored region; preimage={}",
-                std::str::from_utf8(node.preimage()).expect("canonical preimage is UTF-8")
-            )
+            panic!("generated occurrence {key:?}/{origin:?} at {location:?} has no authored region")
         });
         assert_eq!(
             region.source(),
@@ -1494,7 +1485,7 @@ fn replay_execute_generators_keep_format_identity() {
         "proved",
         "parity_unit",
         "tc_166_case_variant_functions_each_replay_their_own_body",
-        "tc_913_a_u64_field_model_recompiles_to_its_package_id",
+        "tc_913_a_u64_field_model_recompiles_to_its_package",
     ] {
         let source = fixture_text(
             function_literal(fixture, function, "language "),
@@ -1629,14 +1620,7 @@ fn dependency_library_and_scalar_variants_keep_format_identity() {
     }
     compile(
         &source_literal(fixture, "F"),
-        &fixture_text(
-            function_literal(
-                fixture,
-                "an_imported_call_is_typed_from_the_library_and_lowered_to_a_dependency_reference",
-                "{declaration}function p using v(): Boolean pure {{ g::f(3)",
-            ),
-            &[("declaration", "")],
-        ),
+        "function p using v(): Boolean pure { g::f(3) }\n",
     );
     for kind in [
         "Decimal[0, 100; 0, 2; nearest-even]",

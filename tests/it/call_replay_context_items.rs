@@ -43,6 +43,7 @@ fn a_members_item_bounds_build_a_request_that_replays() {
     };
     let result = run_with_replay_context(
         SourceIdentity::new("a", "u", "git", "1"),
+        "fixture".to_owned(),
         "unit.native",
         SOURCE.as_bytes(),
         &BTreeMap::new(),

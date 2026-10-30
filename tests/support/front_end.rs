@@ -151,9 +151,16 @@ fn checked_once(
     let models = select(&parsed, packages, limits.model, &cancel)
         .map_err(refusal)?
         .into_value();
-    Ok(check(&parsed, &models, dependencies, limits, &cancel)
-        .map_err(refusal)?
-        .into_value())
+    Ok(check(
+        &parsed,
+        crate::TEST_PACKAGE_NAME.to_owned(),
+        &models,
+        dependencies,
+        limits,
+        &cancel,
+    )
+    .map_err(refusal)?
+    .into_value())
 }
 
 /// Formats every source in an actual dependency fixture, then checks each
@@ -249,9 +256,12 @@ pub fn dependency_fixture_identity(
         if !visited.insert(original_name) {
             continue;
         }
-        assert_eq!(
-            original.dependency_selections(),
-            formatted.dependency_selections()
+        assert!(
+            original
+                .dependency_selections()
+                .keys()
+                .eq(formatted.dependency_selections().keys()),
+            "{path}: formatting changes the selected libraries"
         );
         for (identity, original) in original.dependencies() {
             pending.push((

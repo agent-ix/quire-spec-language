@@ -400,6 +400,7 @@ fn example_owner() -> NodeOwner {
     NodeOwner::Definition(OwnerSubject {
         authority: "agent-ix".into(),
         identity: "example-model".into(),
+        package_name: "example-model".into(),
     })
 }
 

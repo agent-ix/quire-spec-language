@@ -37,10 +37,10 @@ fn nodes(wire: &Value) -> &[Value] {
 }
 
 /// TC-827 step 2: the retained source recompiles, through the facade replay
-/// recompiles with, to the emitted `package_id`.
+/// recompiles with, to the emitted package bytes.
 #[trace("FR-320-AC-1", "TC-827")]
 #[test]
-fn a_union_unit_recompiles_to_its_emitted_package_id() {
+fn a_union_unit_recompiles_to_its_emitted_package() {
     let original = emitted(
         identity("1"),
         "unit.native",
@@ -62,10 +62,11 @@ fn a_union_unit_recompiles_to_its_emitted_package_id() {
     let recompiled = compile_package(
         qsl_replay::CompileUnit {
             source: identity("2"),
-            package_name: "unit.native",
-            path: original.sources()[0].text().as_bytes(),
-            bytes: [],
+            package_name: crate::TEST_PACKAGE_NAME.to_owned(),
+            path: "unit.native",
+            bytes: original.sources()[0].text().as_bytes(),
         },
+        std::iter::empty::<&[u8]>(),
         &DependencyInput::default(),
         stages,
         ReplayLimits::default(),
@@ -114,7 +115,7 @@ fn a_claim_inside_a_case_arm_is_requested_as_a_value_validity_item() {
     let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
     let graph = qsl_semantics::check::PackageDeclarations::assemble(
         parsed.source().reference().clone(),
-        "fixture".to_string(),
+        crate::TEST_PACKAGE_NAME.to_string(),
         unit,
         Vec::new(),
         Vec::new(),
@@ -128,8 +129,8 @@ fn a_claim_inside_a_case_arm_is_requested_as_a_value_validity_item() {
     };
     assert_eq!(item.kind(), Capability::ValueValidity);
 
-    let node = serde_json::to_value(qsl_package::checked_node_id_of(item.node().clone()))
-        .expect("a node id serializes");
+    let node =
+        qsl_foundation::node_wire::node_key_to_json(item.node()).expect("a node id serializes");
     let written = nodes(&wire)
         .iter()
         .find(|candidate| candidate["node_id"] == node)
@@ -142,7 +143,6 @@ fn a_claim_inside_a_case_arm_is_requested_as_a_value_validity_item() {
     let names_it = case["dependencies"]
         .as_array()
         .expect("dependencies")
-        .iter()
-        .any(|dependency| *dependency == node);
+        .contains(&node);
     assert!(names_it, "the case names its arm's multiplication");
 }

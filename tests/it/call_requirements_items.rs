@@ -40,6 +40,7 @@ fn members(function: &str) -> Vec<(OccurrenceKey, usize)> {
     };
     let result = run_with_requirements(
         SourceIdentity::new("a", "u", "git", "1"),
+        "fixture".to_owned(),
         "unit.native",
         K.as_bytes(),
         &BTreeMap::new(),

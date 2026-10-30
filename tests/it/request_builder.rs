@@ -135,7 +135,7 @@ fn tc_449_one_item_per_record_in_key_order() {
         assert_eq!(item.kind(), Capability::ValueValidity);
         assert_eq!(item.extent(), ExtentClassification::Bounded);
         assert_eq!(item.unbounded(), []);
-        assert_eq!(item.result_bound(), record.result_bound().node());
+        assert_eq!(item.result_bound(), &record.result_bound().node());
         assert_eq!(candidates(item), std::slice::from_ref(&kani));
     }
     let keys: Vec<_> = items.iter().map(RequirementItem::occurrence).collect();
@@ -279,11 +279,14 @@ fn tc_449_two_items_at_one_node_carry_their_own_result_bounds() {
         .map(|record| record.result_bound().value_type())
         .collect();
     assert_eq!(bounds, [&int(0, 10), &int(0, 20)]);
-    let nodes: Vec<&NodeKey> = records
+    let nodes: Vec<NodeKey> = records
         .values()
         .map(|record| record.result_bound().node())
         .collect();
-    assert_eq!([first.result_bound(), second.result_bound()], nodes[..]);
+    assert_eq!(
+        [first.result_bound().clone(), second.result_bound().clone()],
+        nodes[..]
+    );
     assert_ne!(first.result_bound(), second.result_bound());
     let contexts: Vec<_> = records
         .values()

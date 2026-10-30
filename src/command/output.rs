@@ -203,8 +203,8 @@ pub(super) fn error(error: &RunError, artifact: bool) -> Result<Value, serde_jso
                             expected,
                         } => types::Details::AdmissionForeignUniverse {
                             position: *position,
-                            required: qsl_semantics::model::key::hex(expected.as_bytes()),
-                            supplied: qsl_semantics::model::key::hex(actual),
+                            required: expected.root_type().to_string(),
+                            supplied: actual.to_string(),
                         },
                         qsl_semantics::model::normalize::ModelRefusalCause::ForeignModelSelection {
                             actual,
@@ -411,8 +411,8 @@ pub(super) fn spine_run_result(
         },
         CallOutcome::Completed(CallValue::Reference(reference)) => types::SpineOutcome::Completed {
             value: types::SpineValue::Reference {
-                universe: qsl_semantics::model::key::hex(reference.universe().as_bytes()),
-                object_type: qsl_semantics::model::key::hex(reference.object_type().as_bytes()),
+                universe: reference.universe().root_type().to_string(),
+                object_type: effective_type_text(reference.object_type()),
                 object_identity: reference.object().as_str().to_owned(),
             },
         },
@@ -457,6 +457,17 @@ pub(super) fn spine_run_result(
         exit_code,
         value: NativeResult(serde_json::to_value(document).map_err(RunCause::Output)?),
     })
+}
+
+/// An effective type identity as its owning declarations, root first, each
+/// `package:node`, joined by `/`.
+fn effective_type_text(identity: &quire_exact::EffectiveId) -> String {
+    identity
+        .owner_chain()
+        .iter()
+        .map(|original| format!("{}:{}", original.package(), original.node()))
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 #[cfg(test)]

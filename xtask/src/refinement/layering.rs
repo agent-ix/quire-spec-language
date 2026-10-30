@@ -476,6 +476,14 @@ impl Compilation {
     }
 }
 
+/// The package name a unit compiles under: its source identity's `identity`
+/// label.
+pub fn package_name_of(identity: &SourceIdentity) -> String {
+    identity
+        .label(qsl_foundation::source::SourceLabel::Identity)
+        .to_owned()
+}
+
 /// Run one source through FR-278's parse, select, check and package stages.
 pub fn compile_unit(input: &UnitInput) -> Compilation {
     let cancellation = Cancel::new();
@@ -502,6 +510,7 @@ pub fn compile_unit(input: &UnitInput) -> Compilation {
     };
     let checked = match spine::check(
         &parsed,
+        package_name_of(&input.identity),
         &models,
         &input.dependencies,
         input.limits,

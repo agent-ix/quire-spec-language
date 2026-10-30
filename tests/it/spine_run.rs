@@ -1027,6 +1027,7 @@ fn tc_786_run_exit_statuses_come_from_the_exit_function() {
                 "fixture",
                 "fixture:1",
             ),
+            crate::TEST_PACKAGE_NAME.to_owned(),
             "program.native",
             &program,
             &std::collections::BTreeMap::new(),
@@ -1042,7 +1043,7 @@ fn tc_786_run_exit_statuses_come_from_the_exit_function() {
             &quire_exact::Cancel::new(),
         );
         let category = match direct {
-            Ok((_, outcome)) => outcome.category(),
+            Ok(outcome) => outcome.category(),
             Err(refusal) => refusal.category(),
         };
         assert_eq!(

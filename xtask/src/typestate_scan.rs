@@ -163,13 +163,6 @@ impl Aliases {
         }
         self.close(&keys)
     }
-
-    /// Whether `name` is `NodeKey` or an alias of it.
-    #[ix_trace_rs::string_edge]
-    fn is_node_key(&self, name: &str) -> bool {
-        self.close(&BTreeSet::from([name.to_owned()]))
-            .contains("NodeKey")
-    }
 }
 
 impl<'ast> Visit<'ast> for Aliases {

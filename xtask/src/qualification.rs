@@ -718,7 +718,7 @@ fn execute_vector(vector: &Vector, root: &Path, limits: &qsl_replay::CallerLimit
                     source: identity,
                     package_name: "qualification".to_owned(),
                     path: &source.path,
-                    bytes: bytes,
+                    bytes,
                 },
                 std::iter::empty::<&[u8]>(),
                 &qsl_replay::DependencyInput::default(),
