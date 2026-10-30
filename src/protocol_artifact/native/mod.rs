@@ -75,10 +75,6 @@ impl EmittedPackage {
     pub fn bytes(&self) -> &[u8] {
         self.candidate.bytes()
     }
-    /// Raw-byte digest of the complete native-emitted payload.
-    pub fn digest(&self) -> qsl_foundation::ByteDigest {
-        self.candidate.digest()
-    }
 }
 /// Check actual source/type/proof owners and lower only supported complete families.
 pub fn admit(

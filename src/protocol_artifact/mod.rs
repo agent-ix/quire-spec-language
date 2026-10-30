@@ -113,7 +113,6 @@ impl ClockNames {
 pub(crate) fn clock_binding_name(binding: &wire::BindingRequirement) -> Option<&str> {
     binding.name.strip_prefix("clock:")
 }
-use qsl_foundation::ByteDigest;
 
 /// Payload wire version; the external reference retains its separate wire pair.
 pub const WIRE: &str = "quire.compiled-protocol/1";
@@ -129,9 +128,9 @@ pub const ENCODING: &str = "quire.protocol.compact-json/1";
 /// One independently supplied immutable dependency and its exact direct closure.
 #[derive(Clone, Copy, Debug)]
 pub struct SuppliedDependency<'a> {
-    /// Independently selected role, identity, revision, wire and raw-byte digest.
+    /// Independently selected identity and exact artifact bytes.
     pub artifact: &'a wire::ArtifactRef,
-    /// Complete original artifact bytes, never canonically reconstructed.
+    /// Original bytes used to verify selected native or domain-package models.
     pub bytes: &'a [u8],
     /// Exact direct prerequisites; caller order need not be canonical wire order.
     pub requires: &'a [wire::ArtifactRef],
@@ -195,7 +194,7 @@ pub struct ExpectedSource<'a> {
 /// Independent acceptance selections. Nothing here is obtained from the offer.
 #[derive(Clone, Copy, Debug)]
 pub struct Expected<'a> {
-    /// External compiled-artifact seal selected before inspecting the offer.
+    /// External compiled-artifact identity selected before inspecting the offer.
     pub artifact: &'a wire::ArtifactRef,
     /// Accepted compiled-protocol contract artifact.
     pub contract: &'a wire::ArtifactRef,
@@ -240,8 +239,6 @@ pub enum Invalid {
     /// An offered artifact reference disagrees with an independently supplied
     /// selection it is required to match.
     Selection,
-    /// A supplied artifact's bytes do not hash to its declared digest.
-    Seal,
     /// A name is empty or exceeds the maximum permitted length.
     Name,
     /// An encoded structural integer, such as an index or count, exceeds the
@@ -377,7 +374,6 @@ const fn numeric_code(error: &NumberError) -> &'static str {
 const fn invalid_code(invalid: Invalid) -> &'static str {
     match invalid {
         Invalid::Selection => "invalid.selection",
-        Invalid::Seal => "invalid.seal",
         Invalid::Name => "invalid.name",
         Invalid::StructuralInteger => "invalid.structural-integer",
         Invalid::WrongNumericKind => "invalid.wrong-numeric-kind",
@@ -497,17 +493,12 @@ fn report<T>(work: work::Work, result: Result<T, Error>) -> Report<T> {
 #[derive(Debug)]
 pub struct Candidate {
     bytes: Vec<u8>,
-    digest: ByteDigest,
 }
 
 impl Candidate {
     /// Exact canonical candidate bytes; this is not a production emission proof.
     pub fn bytes(&self) -> &[u8] {
         &self.bytes
-    }
-    /// SHA-256 of those complete raw bytes.
-    pub fn digest(&self) -> ByteDigest {
-        self.digest
     }
 }
 
@@ -554,7 +545,6 @@ impl Candidate {
 #[derive(Debug)]
 pub struct AdmittedPackage {
     package: wire::Package,
-    digest: ByteDigest,
     artifact: wire::ArtifactRef,
     clocks: ClockNames,
 }
@@ -568,11 +558,6 @@ impl AdmittedPackage {
     pub fn package(&self) -> &wire::Package {
         &self.package
     }
-    /// Raw-byte digest that matched the independently expected external seal.
-    pub fn digest(&self) -> ByteDigest {
-        self.digest
-    }
-
     /// Independently selected compiled artifact identity admitted by the reader.
     pub fn artifact(&self) -> &wire::ArtifactRef {
         &self.artifact
