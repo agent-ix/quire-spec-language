@@ -3,12 +3,8 @@
 //! identity preimage: its version, required members and the
 //! `identity_projection` nodes from which FR-307 export node keys are derived.
 //!
-//! FR-087 (#213 S-3a, owner ruling on QSL-158, 2026-09-21, item 3(d)):
-//! relocated from `value::package_identity`. Every field or return value
-//! here that is built from wire-read or preimage-read data is typed
-//! [`super::WireNodeId`], never `quire_exact::NodeKey` (ADR-013 R-10, O-04):
-//! a wire node id becomes a `NodeKey` only by lookup in a QSL checked
-//! package, a lookup this module never performs.
+//! FR-087: relocated from `value::package_identity`. Node ids read from the
+//! preimage are structural `quire_exact::NodeKey`s.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -788,10 +784,10 @@ mod tests {
 
     /// FR-307: the wire node id `library::package_identity` derives for a
     /// nominal declaration is the projection node's own `node_id` digest,
-    /// carried as a `(WireNodeId, name)` entry.
+    /// carried as a `(NodeKey, name)` entry.
     #[trace("QSpec-TC-227", "QSpec-FR-307-AC-1")]
     #[test]
-    fn project_declarations_derives_the_declaring_nodes_own_wire_id() {
+    fn project_declarations_derives_the_declaring_nodes_own_node_id() {
         let bytes = one_node_preimage(b"Example::Length", &["Example", "Length"]);
         let expected = node_key(b"Example::Length");
         let declarations = project_declarations(&bytes).unwrap();

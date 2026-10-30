@@ -134,7 +134,6 @@
     reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline for typed model-admission failures"
 )]
 
-use quire_canonical::FixedShape;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 
@@ -150,7 +149,6 @@ use crate::model::normalize::{
 use qsl_foundation::absence::AbsenceMode;
 use qsl_foundation::diagnostic::Code;
 use quire_checked::key::DeclarationKey;
-use serde::Serialize;
 
 use quire_exact::{
     length_amount, CardinalityBound, Charge as ScalarCharge, ChargePoint as ScalarChargePoint,

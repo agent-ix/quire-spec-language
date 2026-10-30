@@ -97,7 +97,6 @@
     reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline for typed model-admission failures"
 )]
 
-use quire_canonical::FixedShape;
 use quire_semantic_value::catalog::render_identity;
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
@@ -118,7 +117,6 @@ use crate::model::key::{
 use qsl_foundation::diagnostic::{Code, JsonPointer};
 use quire_checked::key::DeclarationKey;
 use quire_exact::{length_amount, Cancel};
-use serde::Serialize;
 
 /// Re-exported from [`crate::model::refusal`] (#141 finding 4): that module
 /// is lower-level than this one so [`crate::model::key`] can depend on the

@@ -96,6 +96,35 @@ impl NodeOwner {
         NodeKey::new(package.clone(), segments, 0)
     }
 
+    /// The structural key of a model-owned declaration of `form`
+    /// (`record_value_type` or `variant_type`): package `identity`, path
+    /// `["model", form, node, ..path]`, ordinal 0, the IR `declaration_id`
+    /// shape.
+    ///
+    /// # Errors
+    ///
+    /// [`InvalidNodeKey`] when the key cannot be built, or when this is not a
+    /// model owner (the error is then `EmptyPackage`: no model package).
+    pub fn model_declaration_key(
+        &self,
+        form: &str,
+        path: &[String],
+    ) -> Result<NodeKey, InvalidNodeKey> {
+        let Self::Model(subject) = self else {
+            return Err(InvalidNodeKey::EmptyPackage);
+        };
+        let requested = path.len().saturating_add(3);
+        let mut segments = Vec::new();
+        segments
+            .try_reserve_exact(requested)
+            .map_err(|_| InvalidNodeKey::Allocation { requested })?;
+        segments.push(PathSegment::Text("model".to_owned()));
+        segments.push(PathSegment::Text(form.to_owned()));
+        segments.push(PathSegment::Text(subject.node.clone()));
+        segments.extend(path.iter().cloned().map(PathSegment::Text));
+        NodeKey::new(subject.identity.clone(), segments, 0)
+    }
+
     /// The structural handle of the record or tuple `name` declared under
     /// this owner, which `ValueType::Composite` carries before lowering.
     ///

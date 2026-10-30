@@ -170,22 +170,36 @@ impl EnumMemberPreimage {
         Ok(Self { declaration, case })
     }
 
-    /// The member's structural node key: its declaration's key nested as the
-    /// first path segment, then the case name.
+    /// The member's structural node key (FR-322: a declared node's path
+    /// equals its `declaration.qualified_name`): the declaration's package and
+    /// path with the case name as the last segment, ordinal 0.
     ///
     /// # Errors
     ///
-    /// [`InvalidNodeKey`] when the key cannot be built or cloned.
+    /// [`InvalidNodeKey`] when the key cannot be built, or when the
+    /// declaration's path holds a nested node id: such a declaration has no
+    /// qualified-name path to extend.
     pub fn key(&self) -> Result<NodeKey, InvalidNodeKey> {
-        let package = self.declaration.view().package().to_owned();
-        NodeKey::new(
-            package,
-            vec![
-                PathSegment::Node(self.declaration.try_clone()?),
-                PathSegment::Text(self.case.clone()),
-            ],
-            0,
-        )
+        let view = self.declaration.view();
+        let mut path = Vec::new();
+        for segment in view.path() {
+            match segment {
+                quire_exact::PathSegmentView::Text(text) => {
+                    path.try_reserve(1)
+                        .map_err(|_| InvalidNodeKey::Allocation {
+                            requested: std::mem::size_of::<PathSegment>(),
+                        })?;
+                    path.push(PathSegment::Text(text.to_owned()));
+                }
+                quire_exact::PathSegmentView::Node(_) => return Err(InvalidNodeKey::EmptyPath),
+            }
+        }
+        path.try_reserve(1)
+            .map_err(|_| InvalidNodeKey::Allocation {
+                requested: std::mem::size_of::<PathSegment>(),
+            })?;
+        path.push(PathSegment::Text(self.case.clone()));
+        NodeKey::new(view.package().to_owned(), path, 0)
     }
 
     /// The referenced declaration node id, as read.
@@ -282,7 +296,8 @@ impl AdmittedEnumDeclaration {
 
 /// Mint the FR-141/OQ-F enum-member `VariantId` of a member `case` of the
 /// enum declaration keyed by `declaration`: the declaration node and the exact
-/// case name (ADR-013 O-14 "Sum types").
+/// case name. The member's own node key ([`EnumMemberPreimage::key`]) is that
+/// declaration's path plus the same case name (ADR-013 O-14 "Sum types").
 ///
 /// # Errors
 ///

@@ -156,7 +156,7 @@ fn to_object_reference(key: &ReferenceKey) -> Result<ObjectReference, ModelQuery
 fn bridge_lookup_key(static_type: DeclarationKey, reference: &ObjectReference) -> LookupKey {
     LookupKey {
         static_type,
-        universe: reference.universe().as_bytes().to_vec(),
+        universe: reference.universe().clone(),
         type_identity: reference.object_type().clone(),
         object: reference.object().as_str().as_bytes().to_vec(),
     }
