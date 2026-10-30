@@ -670,9 +670,9 @@ required; check 10 settles it.
       `observation.input_bytes`. A byte error from check 3's read or
       encoding is this refusal too (FR-259 B4).
    3. If the shared reader (FR-261) refuses the document's bytes, then
-      admission SHALL refuse `invalid_runtime_input`/`invalid-value` at the
-      document root, naming the reader's cause; admission never reads a
-      member of such a document.
+      admission SHALL refuse `invalid_runtime_input` with the catalog cause
+      `invalid-value` at the document root (`document_pointer` only, no
+      member field); admission never reads a member of such a document.
       If a document the reader reads holds a number with no exact RFC 8785
       spelling, by FR-056's rule, then admission SHALL refuse
       `noncanonical_wire`, with cause `inexact-integer` or
