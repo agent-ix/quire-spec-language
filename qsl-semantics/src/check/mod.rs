@@ -231,6 +231,25 @@ pub use node_key::{
     Operator, Owner, PackageRef, SourceOwner, TupleMember, TupleTerm, WireNodeRef,
 };
 
+/// Carry a declared node identity from an admitted package name and its
+/// explicit, ordered path segments. An opaque IR declaration string is one
+/// segment; callers must not split it into inferred scopes.
+pub(crate) fn declared_node_key(
+    package: String,
+    declared_path: Vec<String>,
+    ordinal: u64,
+) -> Result<quire_exact::NodeKey, quire_exact::InvalidNodeKey> {
+    let requested = declared_path
+        .len()
+        .checked_mul(std::mem::size_of::<quire_exact::PathSegment>())
+        .unwrap_or(usize::MAX);
+    let mut path = Vec::new();
+    path.try_reserve_exact(declared_path.len())
+        .map_err(|_| quire_exact::InvalidNodeKey::Allocation { requested })?;
+    path.extend(declared_path.into_iter().map(quire_exact::PathSegment::Text));
+    quire_exact::NodeKey::new(package, path, ordinal)
+}
+
 /// The structural key of QSpec's built-in Rational scalar type (FR-092).
 /// Timed tick sources use this primitive literal type even when the checked
 /// unit contains no other rational expression from which S4 could discover it.
