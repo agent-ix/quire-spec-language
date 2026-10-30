@@ -4,7 +4,7 @@
 //! No checked package can hold a union until the FR-319 lowering exists, so
 //! the S6a evaluator and the replay argument conversion are tested over a
 //! hand-built [`TypeEnvironment`] that declares these unions and seals each
-//! one with its FR-441 member keys, minted by [`mint_union_member_key`]. A
+//! one with its FR-441 member keys, minted by `UnionMember::from_admitted`. A
 //! union's declaration handle is the key a static type and a checked node
 //! carry; its settled key is the key a union value carries.
 //!
@@ -21,8 +21,6 @@ use quire_semantic_value::declaration::{
     CompositeDeclaration, CompositeShape, ObjectTypeDeclaration, TypeEnvironment,
     UnionMemberDeclaration,
 };
-
-use super::mint_union_member_key;
 
 fn fixture_key(path: &[&str]) -> NodeKey {
     let path = path
@@ -50,7 +48,7 @@ pub fn union_type(union: &str) -> ValueType {
 /// The members of the fixture union `union` in declared order, each with its
 /// payload types.
 #[ix_trace_rs::string_edge]
-fn members(union: &str, object_type: EffectiveId) -> Vec<(&'static str, Vec<ValueType>)> {
+fn members(union: &str, object_type: &EffectiveId) -> Vec<(&'static str, Vec<ValueType>)> {
     match union {
         "Shape" => vec![
             ("Empty", vec![]),
@@ -66,7 +64,7 @@ fn members(union: &str, object_type: EffectiveId) -> Vec<(&'static str, Vec<Valu
             ),
         ],
         "Holder" => vec![
-            ("Some", vec![ValueType::Reference(object_type)]),
+            ("Some", vec![ValueType::Reference(object_type.clone())]),
             ("Nothing", vec![]),
         ],
         other => panic!("{other} is no fixture union"),
@@ -76,11 +74,7 @@ fn members(union: &str, object_type: EffectiveId) -> Vec<(&'static str, Vec<Valu
 /// The member `name` of the fixture union `union`, as the sealed binding its
 /// values carry.
 pub fn member(union: &str, name: &str) -> UnionMember {
-    UnionMember::from_admitted(
-        settled(union),
-        mint_union_member_key(&settled(union), name).expect("a fixture member key is well formed"),
-        Identifier::new(name).expect("a fixture member name is an identifier"),
-    )
+    UnionMember::from_admitted(settled(union), name).expect("a fixture member key is well formed")
 }
 
 /// A value of the fixture union `union` holding member `name` over `payload`.
@@ -97,7 +91,7 @@ pub fn types(object_type: EffectiveId) -> TypeEnvironment {
             handle(union),
             *union,
             CompositeShape::Union(
-                members(union, object_type)
+                members(union, &object_type)
                     .into_iter()
                     .map(|(name, payload)| {
                         UnionMemberDeclaration::resolved(
@@ -111,11 +105,15 @@ pub fn types(object_type: EffectiveId) -> TypeEnvironment {
     });
     let mut types = TypeEnvironment::new(
         declarations,
-        [ObjectTypeDeclaration::new(object_type, "T", Vec::new())],
+        [ObjectTypeDeclaration::new(
+            object_type.clone(),
+            "T",
+            Vec::new(),
+        )],
     )
     .expect("the fixture unions are well-formed");
     for union in UNIONS {
-        let bindings = members(union, object_type)
+        let bindings = members(union, &object_type)
             .into_iter()
             .map(|(name, _)| member(union, name))
             .collect();
