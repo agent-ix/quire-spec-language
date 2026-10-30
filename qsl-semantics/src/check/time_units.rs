@@ -83,7 +83,7 @@ impl TimeUnits {
                 NominalUnitForm::Unit {
                     dimension, target, ..
                 } => std::iter::once(*dimension)
-                    .chain(target.iter().copied())
+                    .chain(target.iter().cloned())
                     .collect(),
             };
             nominal_nodes.insert(
@@ -203,9 +203,9 @@ impl TimeUnits {
     pub fn scale(&self, name: &str) -> Result<&Rational, TimeUnitCause> {
         let owner_time = name
             .split_once("::")
-            .and_then(|(owner, _)| self.time_dimensions.get(owner).copied());
+            .and_then(|(owner, _)| self.time_dimensions.get(owner).cloned());
         let time = owner_time
-            .or(self.time)
+            .or(self.time.clone())
             .ok_or(TimeUnitCause::NoTimeDimension {
                 name: TIME_DIMENSION,
             })?;
@@ -239,7 +239,7 @@ impl TimeUnits {
             .ok_or_else(|| TimeUnitCause::UnknownUnit {
                 name: name.to_owned(),
             })?;
-        unit.dimension.ok_or(TimeUnitCause::NotTimeDimension {
+        unit.dimension.clone().ok_or(TimeUnitCause::NotTimeDimension {
             name: name.to_owned(),
         })
     }
@@ -253,11 +253,11 @@ impl TimeUnits {
         let unit = self
             .units
             .get(name)
-            .and_then(|unit| unit.node)
+            .and_then(|unit| unit.node.clone())
             .ok_or_else(|| TimeUnitCause::NotTimeDimension {
                 name: name.to_owned(),
             })?;
-        let nominal_nodes = self.nominal_dependency_closure([dimension, unit]);
+        let nominal_nodes = self.nominal_dependency_closure([dimension.clone(), unit.clone()]);
         Ok(Rational::from_integer(Integer::one())
             .div(scale)
             .map(|reciprocal| TimeScale {
@@ -278,14 +278,14 @@ impl TimeUnits {
             seen: &mut BTreeSet<NodeKey>,
             ordered: &mut Vec<TimeNominalNode>,
         ) {
-            if !seen.insert(key) {
+            if !seen.insert(key.clone()) {
                 return;
             }
             let Some(node) = nodes.get(&key) else {
                 return;
             };
             for dependency in &node.dependencies {
-                visit(*dependency, nodes, seen, ordered);
+                visit(dependency.clone(), nodes, seen, ordered);
             }
             ordered.push(node.clone());
         }
@@ -312,7 +312,7 @@ impl TimeUnits {
     ) -> Result<Rational, TimeUnitCause> {
         let scale = self.scale(from)?;
         let (from_class, from_size) = self.classes.class(self.dimension(from)?);
-        let (to_class, to_size) = self.classes.class(to.dimension);
+        let (to_class, to_size) = self.classes.class(to.dimension.clone());
         let other = || TimeUnitCause::OtherTimeDimension {
             name: from.to_owned(),
         };
@@ -372,11 +372,11 @@ fn package_unit_nominal_nodes(
         let target_nodes = match &unit.target {
             Some(key) => {
                 let target = units.iter().find(|candidate| candidate.key == *key)?;
-                resolve(target, units, dimension, identity, seen)?
+                resolve(target, units, dimension.clone(), identity, seen)?
             }
             None => Vec::new(),
         };
-        let target = target_nodes.last().map(|node| node.key);
+        let target = target_nodes.last().map(|node| node.key.clone());
         let scale = rational(&unit.scale)?;
         let offset = rational(&unit.offset)?;
         let owner = NodeOwner::Model(ModelSubject {
@@ -386,8 +386,8 @@ fn package_unit_nominal_nodes(
         let preimage = UnitPreimage::new(
             owner,
             vec![unit.name.clone()],
-            dimension,
-            target,
+            dimension.clone(),
+            target.clone(),
             &scale,
             &offset,
         )
@@ -433,12 +433,12 @@ pub struct TimeScale {
 impl TimeScale {
     /// The unit's nominal dimension node.
     pub fn dimension(&self) -> NodeKey {
-        self.dimension
+        self.dimension.clone()
     }
 
     /// The unit's nominal node key.
     pub fn unit(&self) -> NodeKey {
-        self.unit
+        self.unit.clone()
     }
 
     /// Nominal dimension/unit nodes needed by this conversion target.

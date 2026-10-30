@@ -29,7 +29,7 @@ use quire_checked::key::DeclarationKey;
 /// The type whose values an invariant ranges over, as a value shows it: a
 /// record or event value shows the declaration node of its most-specific
 /// type, an object its effective identity.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum TypeSlot {
     /// A record value type or an event type, by its composite declaration.
     Composite(NodeKey),
@@ -59,7 +59,7 @@ impl TypeInvariantDeclaration {
         ClauseView {
             kind: StateClauseKind::Invariant,
             complete_value: false,
-            context: Some(self.context),
+            context: Some(self.context.clone()),
             receiver: Some(("self", self.self_type.clone())),
             operation: None,
             context_population: None,

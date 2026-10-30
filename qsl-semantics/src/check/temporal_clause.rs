@@ -1219,7 +1219,7 @@ fn check_clause(
     let formula = build_formula(&form.formula, &intervals)?;
     let populations: Vec<PopulationDomain> = match types.first() {
         Some(ValueType::Reference(object)) => {
-            populations_overlapping(declarations.models, *object, declarations.scope.types())
+            populations_overlapping(declarations.models, object.clone(), declarations.scope.types())
                 .into_iter()
                 .filter(|domain| domain.maximum.is_none())
                 .collect()
@@ -1456,7 +1456,7 @@ fn resolve_fairness_operation(
         Some((object, operation)) => (scope.object_type_named(object), operation),
         None => (
             match over {
-                Some(ValueType::Reference(object)) => Some(*object),
+                Some(ValueType::Reference(object)) => Some(object.clone()),
                 _ => None,
             },
             name.name.as_str(),

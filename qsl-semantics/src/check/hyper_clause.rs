@@ -254,7 +254,7 @@ impl StepRead {
         match self {
             Self::Operation { .. } => Some(ValueType::String),
             Self::Receiver { object, .. } => Some(ValueType::Option(std::sync::Arc::new(
-                ValueType::Reference(*object),
+                ValueType::Reference(object.clone()),
             ))),
             Self::Argument(argument) => Some(argument.read_type()),
             Self::Stutter => None,
@@ -803,7 +803,7 @@ impl CheckedModelRelation {
 
     /// The step-relation node key after S4 assembly.
     pub fn identity(&self) -> Option<quire_exact::NodeKey> {
-        self.identity
+        self.identity.clone()
     }
 
     /// The node's `claim` occurrence after S4 assembly.
@@ -1271,7 +1271,7 @@ fn check_behaviours<'a>(
     let atom_roots = || -> BTreeMap<&str, Root> {
         parameters
             .iter()
-            .map(|(parameter, object)| (parameter.name.as_str(), Root::Object(*object)))
+            .map(|(parameter, object)| (parameter.name.as_str(), Root::Object(object.clone())))
             .collect()
     };
     // A condition is lowered only when the clause's quantifiers and object
@@ -1300,7 +1300,7 @@ fn check_behaviours<'a>(
             .collect::<Vec<_>>(),
         &parameters
             .iter()
-            .map(|(parameter, object)| (parameter.name.as_str(), parameter.alias.as_str(), *object))
+            .map(|(parameter, object)| (parameter.name.as_str(), parameter.alias.as_str(), object.clone()))
             .collect::<Vec<_>>(),
     );
     let first_trace = |parameter: &str| {
@@ -1482,10 +1482,10 @@ fn check_behaviours<'a>(
     };
 
     let parameter_objects: Vec<EffectiveId> =
-        parameters.iter().map(|(_, object)| *object).collect();
+        parameters.iter().map(|(_, object)| object.clone()).collect();
     let roots: Vec<ValueType> = parameters
         .iter()
-        .map(|(_, object)| ValueType::Reference(*object))
+        .map(|(_, object)| ValueType::Reference(object.clone()))
         .collect();
     let root_refs: Vec<&ValueType> = roots.iter().collect();
     let parameter_domains = classify_domains(&root_refs, scope.types(), temporal.position_limit)
@@ -1751,7 +1751,7 @@ fn checked_parameters(
             }));
             continue;
         };
-        match population_of(declarations.models, object, scope.types()) {
+        match population_of(declarations.models, object.clone(), scope.types()) {
             Ok(Some(population)) => checked.push((
                 ObjectParameter {
                     name,
@@ -2415,8 +2415,8 @@ fn receiver_object(declarations: &HyperDeclarations<'_>, alias: &str) -> Option<
             declaring.push(owner);
         }
     }
-    match declaring[..] {
-        [only] => Some(only),
+    match declaring.as_slice() {
+        [only] => Some(only.clone()),
         _ => None,
     }
 }

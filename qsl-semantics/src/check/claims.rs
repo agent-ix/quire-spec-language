@@ -695,7 +695,7 @@ impl<'n> ClaimsWalk<'n, '_> {
             ) => {
                 let payload = self
                     .types
-                    .composite(*declaration)
+                    .composite(declaration.clone())
                     .and_then(|union| match union.shape() {
                         CompositeShape::Union(members) => members.get(arms.get(index - 1)?.member),
                         CompositeShape::Record(_) | CompositeShape::Tuple(_) => None,
@@ -749,7 +749,7 @@ impl<'n> ClaimsWalk<'n, '_> {
             };
             reads.extend(read.iter().cloned());
             if let Some(read_objects) = self.roots.slot_objects.get(slot) {
-                objects.extend(read_objects.iter().copied());
+                objects.extend(read_objects.iter().cloned());
             }
         }
         if is_scalar_application(frame.node) {
@@ -888,7 +888,7 @@ impl Classify<'_> {
                 .get(index)
                 .ok_or_else(|| fault("guard-in-arena"))?;
             roots.extend(guard.reads.iter().cloned());
-            objects.extend(guard.objects.iter().copied());
+            objects.extend(guard.objects.iter().cloned());
             path_condition.push(SiteGuard {
                 location: guard.location.clone(),
                 holds: guard.holds,
@@ -945,7 +945,7 @@ fn unique_direct_narrow(
 ) -> Result<(NodeKey, Origin), KeyFault> {
     let mut matches = candidates.iter().filter(|(candidate, _)| {
         matches!(
-            graph.node(*candidate).map(|node| node.body()),
+            graph.node(candidate.clone()).map(|node| node.body()),
             Some(BodyTerm::Application(ApplicationTerm { operation, arguments, .. }))
                 if operation_role(operation.identity()) == OperationRole::Narrow
                     && matches!(arguments.as_slice(), [MemberTerm::Leaf(LeafTerm::Reference { target })] if target.0 == scalar)
@@ -955,7 +955,7 @@ fn unique_direct_narrow(
     if matches.next().is_some() {
         return Err(KeyFault::UnkeyableRequirements);
     }
-    Ok((*node, origin.clone()))
+    Ok((node.clone(), origin.clone()))
 }
 
 /// Key each claim of `claims` by the `expression` occurrence of its scalar
@@ -988,11 +988,11 @@ pub(crate) fn key_claims(
     // enclosing form's own occurrence at that location.
     let own_declarations: BTreeSet<(NodeKey, &Location)> = binders
         .iter()
-        .map(|(site, key)| (*key, &site.binder))
+        .map(|(site, key)| (key.clone(), &site.binder))
         .collect();
     let mut at: BTreeMap<&Location, Vec<(NodeKey, Origin)>> = BTreeMap::new();
     for (node, origin, location) in occurrences.iter_role(OccurrenceRole::Expression) {
-        if own_declarations.contains(&(node, location)) {
+        if own_declarations.contains(&(node.clone(), location)) {
             continue;
         }
         at.entry(location).or_default().push((node, origin));
@@ -1014,15 +1014,15 @@ pub(crate) fn key_claims(
         // carries that function; one without is an unkeyable requirement.
         let owner = claim.owner.ok_or_else(unkeyable)?;
         let here = at.get(&site.location).map_or(&[][..], Vec::as_slice);
-        let mut applications = here.iter().filter(|(key, _)| scalar(*key));
+        let mut applications = here.iter().filter(|(key, _)| scalar(key.clone()));
         let (Some((key, origin)), None) = (applications.next(), applications.next()) else {
             return Err(unkeyable());
         };
         let (bound_type, conversion_context) = if matches!(site.bound, SiteBound::Narrowed(_)) {
-            let (narrow, narrow_origin) = unique_direct_narrow(here, *key, graph)?;
+            let (narrow, narrow_origin) = unique_direct_narrow(here, key.clone(), graph)?;
             (
                 graph
-                    .node(narrow)
+                    .node(narrow.clone())
                     .and_then(|node| node.semantic_type())
                     .ok_or_else(unkeyable)?,
                 Some(OccurrenceKey::new(wire(narrow), narrow_origin)),
@@ -1030,7 +1030,7 @@ pub(crate) fn key_claims(
         } else {
             (
                 graph
-                    .node(*key)
+                    .node(key.clone())
                     .and_then(|node| node.semantic_type())
                     .ok_or_else(unkeyable)?,
                 None,
@@ -1050,7 +1050,7 @@ pub(crate) fn key_claims(
             let node = binders.get(&root).ok_or_else(unkeyable)?;
             domains.insert(
                 DomainKey::Node {
-                    node: wire(*node),
+                    node: wire(node.clone()),
                     path,
                 },
                 kind,
@@ -1058,7 +1058,7 @@ pub(crate) fn key_claims(
         }
         let mut extent_roots = BTreeSet::new();
         for root in &claim.roots {
-            extent_roots.insert(wire(*binders.get(root).ok_or_else(unkeyable)?));
+            extent_roots.insert(wire(binders.get(root).ok_or_else(unkeyable)?.clone()));
         }
         let record = RequirementRecord {
             requirements: Requirements::new(
@@ -1076,7 +1076,7 @@ pub(crate) fn key_claims(
             extent_roots,
         };
         if records
-            .insert(OccurrenceKey::new(wire(*key), origin.clone()), record)
+            .insert(OccurrenceKey::new(wire(key.clone()), origin.clone()), record)
             .is_some()
         {
             return Err(unkeyable());
@@ -1087,8 +1087,8 @@ pub(crate) fn key_claims(
             continue;
         }
         for (key, origin) in here {
-            if scalar(*key)
-                && !records.contains_key(&OccurrenceKey::new(wire(*key), origin.clone()))
+            if scalar(key.clone())
+                && !records.contains_key(&OccurrenceKey::new(wire(key.clone()), origin.clone()))
             {
                 return Err(unkeyable());
             }
@@ -1111,7 +1111,7 @@ fn outermost(here: &[(NodeKey, Origin)], graph: &SemanticGraph) -> Option<(NodeK
     let mut outer = here.iter().filter(|(inner, _)| {
         !here
             .iter()
-            .any(|(other, _)| other != inner && names(*other, *inner))
+            .any(|(other, _)| other != inner && names(other.clone(), inner.clone()))
     });
     match (outer.next(), outer.next()) {
         (Some(found), None) => Some(found.clone()),

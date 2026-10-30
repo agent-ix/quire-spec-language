@@ -84,7 +84,7 @@ impl SumCaseCause {
 }
 
 /// A union declaration read from the type environment.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct UnionRef<'a> {
     /// The union's declaration identity.
     pub(crate) declaration: NodeKey,
@@ -101,12 +101,12 @@ impl<'a> UnionRef<'a> {
         let ValueType::Composite(declaration) = scrutinee else {
             return None;
         };
-        let composite = types.composite(*declaration)?;
+        let composite = types.composite(declaration.clone())?;
         let CompositeShape::Union(members) = composite.shape() else {
             return None;
         };
         Some(Self {
-            declaration: *declaration,
+            declaration: declaration.clone(),
             name: composite.name(),
             members,
         })
@@ -121,7 +121,7 @@ impl<'a> UnionRef<'a> {
     pub(crate) fn position_of(&self, member: &str) -> Option<usize> {
         self.members
             .iter()
-            .position(|declared| declared.identifier().as_str() == member)
+            .position(|declared| declared.identifier() == member)
     }
 
     /// The position of the member an arm head spells, bare `m` or qualified
@@ -134,7 +134,7 @@ impl<'a> UnionRef<'a> {
         };
         self.members
             .iter()
-            .position(|declared| declared.identifier().as_str() == member)
+            .position(|declared| declared.identifier() == member)
     }
 
     /// The payload types of the member at `position`, in declared order.
@@ -161,7 +161,7 @@ pub fn mint_union_member_key(declaration: NodeKey, member: &str) -> NodeKey {
 /// One member of a declared union, named by a construction `U::m` or
 /// `U::m(a, b)` (FR-317): the `SumCase` family's side of the call-target
 /// seam.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct UnionMember<'a> {
     declaration: NodeKey,
     /// The member's position in the union's declared member order.
@@ -210,7 +210,7 @@ impl<'a> UnionMember<'a> {
     pub(crate) fn finish(self, arguments: Vec<NodeId>, location: &Location) -> super::ir::Node {
         super::ir::Node {
             kind: super::ir::NodeKind::UnionValue {
-                declaration: self.declaration,
+                declaration: self.declaration.clone(),
                 member: self.position,
                 arguments,
             },

@@ -470,7 +470,7 @@ impl CheckedGraph {
         node: quire_exact::NodeKey,
         origin: &quire_exact::Origin,
     ) -> Option<SourceRegion> {
-        if let Some(span) = self.parameter_span(node, origin) {
+        if let Some(span) = self.parameter_span(node.clone(), origin) {
             return region(&self.source, self.embedding.as_deref(), span);
         }
         self.region(self.occurrence(node, origin)?)

@@ -477,15 +477,15 @@ fn view_of<'v>(declaration: &'v StateGraphDeclaration, body: &'v Expression) -> 
     ClauseView {
         kind: StateClauseKind::Invariant,
         complete_value: super::state_clause::is_complete_value(&declaration.selection),
-        context: declaration.context,
+        context: declaration.context.clone(),
         receiver: declaration
             .form
             .over
             .as_ref()
-            .zip(declaration.context)
+            .zip(declaration.context.clone())
             .map(|(over, context)| (over.name.name.as_str(), ValueType::Reference(context))),
         operation: None,
-        context_population: declaration.context_population,
+        context_population: declaration.context_population.clone(),
         frame_population: None,
         binders: &[],
         presence_places: &[],
@@ -682,7 +682,7 @@ fn check_claim<'a>(
         over: form
             .over
             .as_ref()
-            .zip(declaration.context)
+            .zip(declaration.context.clone())
             .map(|(over, object)| OverParameter {
                 name: over.name.name.clone(),
                 object,

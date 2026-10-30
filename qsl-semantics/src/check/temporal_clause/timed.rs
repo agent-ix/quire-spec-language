@@ -154,7 +154,7 @@ fn model_of<'a>(
     let model = declarations
         .models
         .iter()
-        .find(|model| model.declaration_key(object).is_some())?;
+        .find(|model| model.declaration_key(object.clone()).is_some())?;
     let name = model
         .alias()
         .map_or_else(|| model.selection().identity.clone(), str::to_owned);
@@ -173,7 +173,7 @@ pub(crate) fn over_timed(over: &ValueType, declarations: &TemporalDeclarations<'
     let ValueType::Reference(object) = over else {
         return false;
     };
-    model_of(declarations, *object)
+    model_of(declarations, object.clone())
         .and_then(|(_, source)| source)
         .is_some()
 }
@@ -189,7 +189,7 @@ pub(crate) fn binding(
     let ValueType::Reference(object) = over else {
         return Err(TemporalCause::TimedTraceSubject { span: clause });
     };
-    let Some((model, source)) = model_of(declarations, *object) else {
+    let Some((model, source)) = model_of(declarations, object.clone()) else {
         return Err(TemporalCause::TimedTraceSubject { span: clause });
     };
     match (clock.text.as_str(), source) {

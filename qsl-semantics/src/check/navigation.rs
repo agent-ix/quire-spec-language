@@ -128,7 +128,7 @@ impl Relationships {
         self.declared
             .iter()
             .find(|relationship| &relationship.key == key)
-            .map(|relationship| relationship.end(side).object)
+            .map(|relationship| relationship.end(side).object.clone())
     }
 
     /// The relationship ends `name` names that a value of the object type
@@ -147,7 +147,7 @@ impl Relationships {
             .filter_map(move |(role, &(position, near))| {
                 let relationship = self.declared.get(position)?;
                 types
-                    .conforms(receiver, relationship.end(near).object)
+                    .conforms(receiver.clone(), relationship.end(near).object.clone())
                     .then_some(Navigable {
                         relationship,
                         near,

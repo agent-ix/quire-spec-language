@@ -256,7 +256,7 @@ fn encode_quantity_unit(out: &mut DeclarationMeter, unit: UnitId) {
         UnitDomain::Declared => "declared",
         UnitDomain::Compound => "compound",
     });
-    out.write_str(&unit.to_string());
+    out.write_str(&format!("{unit:?}"));
 }
 
 // PR #262 review, round 2: this function and `encode_expression` write
@@ -322,11 +322,11 @@ fn encode_value_type(out: &mut DeclarationMeter, value_type: &ValueType) {
             }
             ValueType::Quantity(unit) => {
                 out.write_str("quantity");
-                encode_quantity_unit(out, *unit);
+                encode_quantity_unit(out, unit.clone());
             }
             ValueType::BoundedQuantity(bounded) => {
                 out.write_str("bounded-quantity");
-                encode_quantity_unit(out, bounded.unit());
+                encode_quantity_unit(out, bounded.unit().clone());
                 // Bound presence is part of the type (QExact FR-387).
                 for bound in [bounded.min(), bounded.max()] {
                     match bound {
@@ -349,7 +349,7 @@ fn encode_value_type(out: &mut DeclarationMeter, value_type: &ValueType) {
                 out.write_str("enum");
                 out.write_bool(shape.is_ordered());
                 for variant in shape.variants() {
-                    out.write_str(&variant.to_string());
+                    out.write_str(&format!("{variant:?}"));
                 }
             }
             ValueType::Option(payload) => {
@@ -376,7 +376,7 @@ fn encode_value_type(out: &mut DeclarationMeter, value_type: &ValueType) {
             }
             ValueType::Reference(key) => {
                 out.write_str("reference");
-                out.write_str(&key.to_string());
+                out.write_str(&format!("{key:?}"));
             }
             ValueType::Population(maximum) => {
                 out.write_str("population");
@@ -1030,12 +1030,12 @@ impl<'a> Application<'a> {
             }) => None,
             Err(refusal) => return Err(refusal),
         };
-        match declared {
+        match &declared {
             Some(ValueType::Composite(key)) => {
                 let Some(CompositeShape::Tuple(positions)) = typer
                     .scope()
                     .types()
-                    .composite(key)
+                    .composite(key.clone())
                     .map(|declaration| declaration.shape())
                 else {
                     return Err(CheckRefusal::ill_typed(
@@ -1050,7 +1050,7 @@ impl<'a> Application<'a> {
                     ));
                 }
                 Ok(Self::Tuple {
-                    declaration: key,
+                    declaration: key.clone(),
                     positions,
                 })
             }
@@ -1173,7 +1173,7 @@ impl<'a> Application<'a> {
             }),
             Self::Tuple { declaration, .. } => Ok(Node {
                 kind: super::ir::NodeKind::Tuple {
-                    declaration,
+                    declaration: declaration.clone(),
                     arguments,
                 },
                 value_type: ValueType::Composite(declaration),
@@ -1507,7 +1507,7 @@ impl<S> OccurrenceMap<S> {
         position: impl Fn(&S) -> K,
     ) {
         for node in nodes {
-            if let Some(spans) = self.spans.get_mut(&(*node, role)) {
+            if let Some(spans) = self.spans.get_mut(&(node.clone(), role)) {
                 spans.sort_by_key(&position);
             }
         }
@@ -1518,7 +1518,7 @@ impl<S> OccurrenceMap<S> {
         // `Anchor` sorts first, so the first key at or after it is
         // `identity`'s first recorded role, if it has one.
         self.spans
-            .range((identity, OccurrenceRole::Anchor)..)
+            .range((identity.clone(), OccurrenceRole::Anchor)..)
             .next()
             .is_some_and(|((node, _), _)| *node == identity)
     }
@@ -1528,7 +1528,7 @@ impl<S> OccurrenceMap<S> {
     pub(crate) fn iter(&self) -> impl Iterator<Item = (NodeKey, Origin, &S)> {
         self.spans.iter().flat_map(|((identity, role), spans)| {
             (0_u64..).zip(spans).map(move |(ordinal, span)| {
-                (*identity, Origin::new(role.kernel_role(), ordinal), span)
+                (identity.clone(), Origin::new(role.kernel_role(), ordinal), span)
             })
         })
     }
@@ -1544,7 +1544,7 @@ impl<S> OccurrenceMap<S> {
             .filter(move |((_, recorded), _)| *recorded == role)
             .flat_map(|((identity, role), spans)| {
                 (0_u64..).zip(spans).map(move |(ordinal, span)| {
-                    (*identity, Origin::new(role.kernel_role(), ordinal), span)
+                    (identity.clone(), Origin::new(role.kernel_role(), ordinal), span)
                 })
             })
     }

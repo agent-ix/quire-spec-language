@@ -488,7 +488,7 @@ fn measure_expressions<'f>(measure: &'f MeasureForm, expressions: &mut Vec<&'f E
 }
 
 /// What a threshold of a measure is measured in.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 enum Measured {
     /// A step count: a natural number.
     Steps,
@@ -502,7 +502,7 @@ enum Measured {
 }
 
 /// A reward's value type, as a threshold must match it.
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, PartialEq)]
 enum RewardValue {
     Integer,
     Quantity(UnitId),
@@ -1349,7 +1349,7 @@ impl Pass<'_, '_> {
                 reward.name() == name && reward.operation().model() == claim.subject.alias
             })
             .map(|reward| match reward.value_type() {
-                ValueType::Quantity(unit) => RewardValue::Quantity(*unit),
+                ValueType::Quantity(unit) => RewardValue::Quantity(unit.clone()),
                 _ => RewardValue::Integer,
             });
         let Some(value) = declared.next() else {
@@ -1494,7 +1494,7 @@ impl Pass<'_, '_> {
                 Value::Decimal(decimal) => Ok(decimal.representation().to_rational()),
                 Value::Integer(integer) => Ok(Rational::from_integer(integer)),
                 Value::Quantity(quantity) => {
-                    Err(self.unit_mismatch(claim, quantity.unit(), None, span))
+                    Err(self.unit_mismatch(claim, quantity.unit().clone(), None, span))
                 }
                 _ => Err(mismatch()),
             },
@@ -1504,7 +1504,7 @@ impl Pass<'_, '_> {
                 Value::Quantity(quantity),
             ) => self.convert(claim, &quantity, unit, span),
             (Measured::Reward(RewardValue::Integer), Value::Quantity(quantity)) => {
-                Err(self.unit_mismatch(claim, quantity.unit(), None, span))
+                Err(self.unit_mismatch(claim, quantity.unit().clone(), None, span))
             }
             _ => Err(mismatch()),
         }
@@ -1519,11 +1519,11 @@ impl Pass<'_, '_> {
         span: Span,
     ) -> Result<Rational, CheckRefusal> {
         let units = self.input.scope.types().units();
-        let (Some(from), Some(target)) = (units.resolve(quantity), units.get(unit)) else {
+        let (Some(from), Some(target)) = (units.resolve(quantity), units.get(unit.clone())) else {
             return Err(broken("threshold-units-declared"));
         };
         if !from.unit().converts_to(target) {
-            return Err(self.unit_mismatch(claim, quantity.unit(), Some(unit), span));
+            return Err(self.unit_mismatch(claim, quantity.unit().clone(), Some(unit), span));
         }
         let mut meter = Meter::new(super::super::family::SCALAR_LIMITS_UNLIMITED);
         let outcome = convert_quantity(from, target, &QuantityTarget::Exact, &mut meter)
@@ -1702,7 +1702,7 @@ impl Pass<'_, '_> {
             .input
             .models
             .iter()
-            .find_map(|model| model.declaration_key(*object))
+            .find_map(|model| model.declaration_key(object.clone()))
             .ok_or_else(|| broken("over-type-is-declared"))?;
         Ok(node_bytes(b"reference", &[key.node.as_bytes().to_vec()]))
     }

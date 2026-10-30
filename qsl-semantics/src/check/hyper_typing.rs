@@ -83,9 +83,9 @@ impl Ty {
             ValueType::Rational(_) => Self::Rational,
             ValueType::Decimal(_) => Self::Decimal,
             ValueType::Float(_) => Self::Float,
-            ValueType::Quantity(unit) => Self::Quantity(*unit),
+            ValueType::Quantity(unit) => Self::Quantity(unit.clone()),
             // FR-127 item 6: a bounded quantity compares as `Quantity<u>`.
-            ValueType::BoundedQuantity(bounded) => Self::Quantity(bounded.unit()),
+            ValueType::BoundedQuantity(bounded) => Self::Quantity(bounded.unit().clone()),
             ValueType::Text(_) | ValueType::String => Self::Text,
             other => Self::Value(other.clone()),
         }
@@ -250,7 +250,7 @@ pub(crate) fn type_condition(
                     types.get(bound.value).cloned().unwrap_or(Ty::Unknown)
                 } else if let Some(root) = env.roots.get(name.name.as_str()) {
                     match root {
-                        Root::Object(object) => Ty::Value(ValueType::Reference(*object)),
+                        Root::Object(object) => Ty::Value(ValueType::Reference(object.clone())),
                         Root::Execution(_) => Ty::Execution(name.name.clone()),
                     }
                 } else if let Some((binding, _)) = env.scope.enum_members_named(&name.name).next() {
@@ -524,7 +524,7 @@ fn field_type(env: &Env<'_>, operand: &Ty, field: &str) -> Field {
     };
     match operand {
         Ty::Unknown => Field::Passed,
-        Ty::Value(ValueType::Reference(object)) => attribute(*object),
+        Ty::Value(ValueType::Reference(object)) => attribute(object.clone()),
         Ty::Execution(name) => match env.roots.get(name.as_str()) {
             Some(Root::Execution(execution)) => match field {
                 "self" => Field::Found(Box::new(Ty::ExecutionSelf(name.clone()))),
@@ -542,7 +542,7 @@ fn field_type(env: &Env<'_>, operand: &Ty, field: &str) -> Field {
             _ => Field::IllTyped,
         },
         Ty::ExecutionSelf(name) => match env.roots.get(name.as_str()) {
-            Some(Root::Execution(execution)) => attribute(execution.declaring),
+            Some(Root::Execution(execution)) => attribute(execution.declaring.clone()),
             _ => Field::IllTyped,
         },
         _ => Field::IllTyped,

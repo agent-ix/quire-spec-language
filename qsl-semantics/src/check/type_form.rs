@@ -450,8 +450,8 @@ pub(crate) fn population_target(
         return Ok(None);
     }
     let argument = only_argument(form).map_err(|error| error.into_refusal(location))?;
-    match resolve_type_form(scope, argument, location)? {
-        ValueType::Reference(target) => Ok(Some(target)),
+    match &resolve_type_form(scope, argument, location)? {
+        ValueType::Reference(target) => Ok(Some(target.clone())),
         _ => Err(CheckRefusal::ill_typed(
             location,
             IllTypedCause::TypeMismatch,

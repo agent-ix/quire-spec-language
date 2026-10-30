@@ -200,7 +200,7 @@ impl CheckedProtocol {
     /// protocol profile, which writes no node for it (QSpec FR-322
     /// "Properties", FR-368-AC-24).
     pub fn node(&self) -> Option<quire_exact::NodeKey> {
-        self.node
+        self.node.clone()
     }
 }
 
@@ -476,7 +476,7 @@ impl CheckedControlTree {
 /// The operation's shared anchor and frame node a `compensate` template is
 /// bound to (FR-381 "Compensation registration"), the nodes every attempt
 /// and template naming the operation share.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedOperationNodes {
     /// The operation's `operation_anchor` node identity.
     pub anchor: quire_exact::NodeKey,

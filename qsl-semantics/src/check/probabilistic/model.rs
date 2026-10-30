@@ -63,7 +63,7 @@ impl ProbabilisticOperation {
 
     /// The object type that declares the operation.
     pub fn declaring(&self) -> EffectiveId {
-        self.declaring
+        self.declaring.clone()
     }
 
     /// The operation's name.
@@ -443,7 +443,7 @@ pub(crate) fn precondition_reads(
             NodeKind::Local(slot) if *slot >= first => {
                 let (parameter, _) = declared.get(slot - first)?;
                 Some(PreconditionRead {
-                    declaring: operation.declaring,
+                    declaring: operation.declaring.clone(),
                     operation: operation.declaration.name().to_owned(),
                     parameter: parameter.clone(),
                     site: site.clone(),
@@ -629,7 +629,7 @@ impl<'a> ProbabilisticInput<'a> {
             [found] => found,
             _ => return Err(Unresolved::Ambiguous),
         };
-        let context = *self.object_types.get(key).ok_or(Unresolved::Missing)?;
+        let context = self.object_types.get(key).ok_or(Unresolved::Missing)?.clone();
         let (declaring, declaration) =
             match self
                 .scope
@@ -644,7 +644,7 @@ impl<'a> ProbabilisticInput<'a> {
                 OperationLookup::Ambiguous(_) => return Err(Unresolved::Ambiguous),
             };
         let resolved = ClauseOperation {
-            declaring,
+            declaring: declaring.clone(),
             declaration: declaration.clone(),
         };
         let key = self
@@ -672,12 +672,12 @@ impl<'a> ProbabilisticInput<'a> {
         };
         let mut operations = Vec::new();
         for (artifact, key) in objects {
-            let Some(&declaring) = self.object_types.get(key) else {
+            let Some(declaring) = self.object_types.get(key).cloned() else {
                 continue;
             };
-            for operation in self.scope.operations().declared_by(declaring) {
+            for operation in self.scope.operations().declared_by(declaring.clone()) {
                 operations.push((
-                    declaring,
+                    declaring.clone(),
                     operation.name(),
                     format!("{}::{}", artifact.as_str(), operation.name()),
                 ));
