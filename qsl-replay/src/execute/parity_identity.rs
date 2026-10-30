@@ -10,9 +10,8 @@
 //! domain (a range for a scalar, harness bounds for a composite).
 
 use qsl_foundation::bound::{DomainKey, FiniteBound, ProofBound};
-use quire_exact::NodeKey;
 use quire_canonical::{Encode, Error, Limits, Sink, Writer};
-use quire_exact::{IntegerInterval, Origin};
+use quire_exact::{IntegerInterval, NodeKey, Origin};
 
 use crate::identity::ObligationIdentity;
 use crate::scalar::OperandIdentity;
@@ -223,7 +222,7 @@ impl Encode for ValueParityPreimage {
 #[cfg(test)]
 pub(crate) fn argument_digest(
     argument: &ParityArgument,
-    node: NodeKey,
+    node: &NodeKey,
     occurrence: &Origin,
     position: usize,
 ) -> Result<[u8; 32], IdentityEncodeError> {
@@ -367,7 +366,7 @@ fn domain<S: Sink + ?Sized>(writer: &mut Writer<'_, S>, domain: &Domain) -> Resu
 
 struct ArgumentEncode<'a> {
     argument: &'a ParityArgument,
-    node: NodeKey,
+    node: &'a NodeKey,
     occurrence: &'a Origin,
     position: usize,
 }
@@ -382,7 +381,7 @@ impl Encode for ArgumentEncode<'_> {
         domain(writer, &self.argument.domain)?;
         writer.name("operand")?;
         writer.begin_object()?;
-        match self.argument.identity {
+        match &self.argument.identity {
             OperandIdentity::GraphChild(node) => {
                 writer.name("node_id")?;
                 writer.string(&node.to_string())?;
@@ -415,7 +414,7 @@ impl Encode for ParityPreimage {
         for (position, argument) in self.arguments.iter().enumerate() {
             ArgumentEncode {
                 argument,
-                node: self.node,
+                node: &self.node,
                 occurrence: &self.occurrence,
                 position,
             }
@@ -438,7 +437,7 @@ impl Encode for ParityPreimage {
 /// parity `bounds` form, the occurrence's node and key, the obligation kind
 /// `value-validity` and the subject kind `process-provider`.
 pub(crate) fn process_provider_obligation(
-    node: NodeKey,
+    node: &NodeKey,
     occurrence: &Origin,
     bounds: &BoundEntries,
 ) -> Result<ObligationIdentity, IdentityEncodeError> {
@@ -454,7 +453,7 @@ pub(crate) fn process_provider_obligation(
 }
 
 struct ProcessProviderPreimage<'a> {
-    node: NodeKey,
+    node: &'a NodeKey,
     occurrence: &'a Origin,
     bounds: &'a BoundEntries,
 }

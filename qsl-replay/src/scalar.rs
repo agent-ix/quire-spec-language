@@ -107,7 +107,7 @@ impl Eq for ScalarOutcome {}
 
 /// How an operand is named in the obligation identity (ADR-013 O-09's
 /// operator-parity preimage).
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum OperandIdentity {
     /// The operand is a graph node: its node id.
     GraphChild(NodeKey),

@@ -2,17 +2,16 @@
 //! The QSL FR-251/FR-252 monitor-plan contract handed to later layers.
 
 use std::collections::{BTreeMap, BTreeSet};
-use quire_exact::NodeKey;
 
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::check::{Activation, CheckedBody, CheckedFormula};
-use qsl_semantics::library::PackageId;
-use quire_exact::Rational;
+use qsl_semantics::library::LibraryName;
+use quire_exact::{NodeKey, Rational};
 
 /// The exact checked subject a monitor plan evaluates.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct MonitorSubject {
-    package: PackageId,
+    package: LibraryName,
     clause_node: NodeKey,
     occurrence: OccurrenceKey,
     clause_name: String,
@@ -21,7 +20,7 @@ pub struct MonitorSubject {
 impl MonitorSubject {
     /// Make a subject from the package and clause identity resolved by QSL.
     pub fn new(
-        package: PackageId,
+        package: LibraryName,
         clause_node: NodeKey,
         occurrence: OccurrenceKey,
         clause_name: impl Into<String>,
@@ -34,13 +33,13 @@ impl MonitorSubject {
         }
     }
 
-    /// The exact checked package identity.
-    pub fn package(&self) -> PackageId {
-        self.package
+    /// The checked package's library name.
+    pub fn package(&self) -> &LibraryName {
+        &self.package
     }
     /// The checked temporal-clause node.
-    pub fn clause_node(&self) -> NodeKey {
-        self.clause_node
+    pub fn clause_node(&self) -> &NodeKey {
+        &self.clause_node
     }
     /// The authored occurrence of this declaration.
     pub fn occurrence(&self) -> &OccurrenceKey {
