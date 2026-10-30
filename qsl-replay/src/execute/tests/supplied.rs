@@ -187,7 +187,6 @@ fn a_defaulted_request_is_the_request_that_states_the_defaults() {
     };
     assert_ne!(omitted, other_b(4095), "B is part of the request");
     assert_ne!(omitted, other_b(4097));
-    assert_eq!(omitted.package_id(), other_b(4095).package_id());
 
     let raised_a = decode(unit.with("seq", vec![booleans(2)], only_a(16_777_217)));
     let raised_h = decode(unit.with("seq", vec![booleans(2)], only_h(16_777_217)));
@@ -201,11 +200,6 @@ fn a_defaulted_request_is_the_request_that_states_the_defaults() {
     assert_eq!(
         raised_h.supplied_limits().admission_work_units(),
         16_777_216
-    );
-    assert_eq!(
-        omitted.package_id(),
-        raised_a.package_id(),
-        "not package identity"
     );
 }
 

@@ -3,13 +3,13 @@
 //! four refusals that precede every other check of `encode_hyper_query`.
 
 use ix_trace_rs::trace;
-use quire_exact::NodeKey;
 use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound, ProofBound};
 use qsl_package::CheckedPackage;
 use qsl_replay::{
     HyperProductIdentity, HyperQueryRequest, SmtEncodingLimits, SmtEncodingRefusal, SubjectIdentity,
 };
 use qsl_semantics::check::{admitted_source, PackageDeclarations};
+use quire_exact::NodeKey;
 use quire_exact::{LimitKind, Meter};
 use quire_semantic_value::checking::CheckingLimits;
 
@@ -87,10 +87,7 @@ fn the_identity_is_the_clause_the_subjects_and_the_instance() {
         world.clause().assembled_occurrence(),
         "the clause member is the assembled occurrence"
     );
-    assert_eq!(
-        base.subjects(),
-        [SubjectIdentity::of(&world.subject())]
-    );
+    assert_eq!(base.subjects(), [SubjectIdentity::of(&world.subject())]);
     assert_eq!(base.instance(), instance("v"));
 
     let other = identity(&world, &instance("w")).expect("instance w");

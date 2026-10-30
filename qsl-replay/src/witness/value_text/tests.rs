@@ -54,7 +54,7 @@ fn scalar(parameter: NodeKey) -> WitnessBinding {
 fn witness(entries: &[(NodeKey, &str)]) -> Witness {
     let values: Vec<String> = entries
         .iter()
-        .map(|(parameter, text)| format!("{parameter}={text}"))
+        .map(|(parameter, text)| format!("{}={text}", crate::pn(parameter)))
         .collect();
     Witness::parse(format!("<<<assertion|h|c|{}>>>", values.join(";"))).unwrap()
 }
@@ -406,7 +406,7 @@ fn tc_736_a_100000_long_list_decodes_and_walks_on_a_small_stack() {
     on_small_stack(|| {
         let value = list(100_000, "head", "tail");
         let text = value.to_value_text().unwrap();
-        let transcript = format!("<<<assertion|h|c|{}={text}>>>", id(1));
+        let transcript = format!("<<<assertion|h|c|{}={text}>>>", crate::pn(&id(1)));
         let witness = Witness::parse(transcript).unwrap();
 
         let mut packet = full_packet(0);

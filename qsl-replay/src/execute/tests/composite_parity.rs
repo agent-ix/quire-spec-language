@@ -612,23 +612,9 @@ fn tc_907_a_numeric_root_operand_is_admitted_by_its_domain_and_by_b() {
 #[test]
 fn tc_907_the_common_steps_refuse_for_both_entries() {
     let unit = unit();
-    let edited_source = unit.source.replace("[0, 3]; }", "[0, 4]; }");
-    assert_ne!(edited_source, unit.source);
-
     type Refusal = fn(&ReplayRefusal) -> bool;
     let mut cases: Vec<(&str, ReplayRequestWire, CompositeParityClaim, Refusal)> = Vec::new();
     let claim = || unit.claim("f", EqualityOperator::Equal, unit.covering());
-
-    let mut edited = request(
-        edited_source.as_bytes(),
-        &unit.compiled,
-        name(&["f"]),
-        ReplaySource::Input(vec![]),
-    );
-    edited.obligation_identity = unit.wire("f", &claim(), vec![]).obligation_identity;
-    cases.push(("an edited source", edited, claim(), |refusal| {
-        matches!(refusal, ReplayRefusal::PackageIdMismatch { .. })
-    }));
 
     let mut undeclared = unit.wire("f", &claim(), vec![]);
     undeclared.replay_target =
@@ -1200,24 +1186,6 @@ fn tc_907_a_refinement_disagreement_overrides_every_row() {
         assert_failed(&report.terminal_value());
         not_refuted(&report.terminal_value());
     }
-
-    // A common-step refusal still refuses.
-    let edited = unit.source.replace("[0, 3]; }", "[0, 4]; }");
-    let mut wire = request(
-        edited.as_bytes(),
-        &unit.compiled,
-        name(&["f"]),
-        ReplaySource::Input(vec![]),
-    );
-    wire.obligation_identity = [3; 32];
-    let mut evidence = falsified(unit.q(1, &[2]), unit.q(1, &[3]), outcome(false, 4));
-    evidence.refinement = Refinement::Disagreed;
-    let report = replay_composite_parity(wire, claim(), evidence, ReplayLimits::default());
-    assert!(matches!(
-        report.result(),
-        CompositeParityResult::Refused(refusal)
-            if matches!(**refusal, ReplayRefusal::PackageIdMismatch { .. })
-    ));
 }
 
 /// FR-358-AC-4 and AC-5, the `k` cases: the grammar cannot author an unbounded

@@ -186,7 +186,7 @@ fn witness_call(function: &str, values: &[WitnessValue]) -> ReplayRequestWire {
         .map(|(index, value)| {
             format!(
                 "{}={}",
-                parameter(&compiled, function, index),
+                crate::pn(&parameter(&compiled, function, index)),
                 value.to_value_text().expect("the value encodes")
             )
         })

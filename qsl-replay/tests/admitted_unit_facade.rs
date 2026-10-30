@@ -10,7 +10,7 @@ use qsl_foundation::Setting;
 use qsl_replay::spine::{self, ParseRequest, SpineLimits};
 use qsl_replay::{
     compile_admitted, AdmittedCompilation, AdmittedLookupRefusal, DependencyInput, NodeKey,
-    ReplayLimits, SourceIdentity, StageLimits, SuppliedLibrary, NodeKey,
+    ReplayLimits, SourceIdentity, StageLimits, SuppliedLibrary,
 };
 use std::collections::BTreeSet;
 

@@ -141,7 +141,7 @@ impl Fixture {
     fn witness(&self, function: &str, value: &WitnessValue) -> ReplayRequestWire {
         let parameter = self.parameter(function);
         let text = value.to_value_text().unwrap();
-        let transcript = format!("<<<assertion|{function}|c|{parameter}={text}>>>");
+        let transcript = format!("<<<assertion|{function}|c|{}={text}>>>", crate::pn(&parameter));
         self.request(
             function,
             ReplaySource::Witness(Witness::parse(transcript).unwrap()),
@@ -595,16 +595,16 @@ fn convert_one(
 #[trace("TC-906", "FR-098-AC-10")]
 #[test]
 fn tc_906_a_quantity_converts_in_its_declared_unit_only() {
-    let declared_unit = quire_exact::UnitId::declared(quire_exact::NodeKey::from_digest([7; 32]));
+    let declared_unit = quire_exact::UnitId::declared(crate::fixture_node(7));
     let declared = ValueType::Quantity(declared_unit);
-    let quantity = |unit: [u8; 32]| WitnessValue::Quantity {
+    let quantity = |unit: quire_exact::UnitId| WitnessValue::Quantity {
         magnitude: QuantityMagnitude::Decimal {
             coefficient: Integer::from(15_i64),
             scale: Integer::from(1_i64),
         },
         unit,
     };
-    let converted = convert_one(&declared, &quantity([7; 32]), &UNLIMITED).expect("converts");
+    let converted = convert_one(&declared, &quantity(declared_unit.clone()), &UNLIMITED).expect("converts");
     let quire_exact::Value::Quantity(converted) = converted else {
         panic!("a quantity");
     };
@@ -613,8 +613,8 @@ fn tc_906_a_quantity_converts_in_its_declared_unit_only() {
         &quire_exact::Rational::new(Integer::from(3_i64), Integer::from(2_i64)).unwrap(),
         "1.5 converts exactly"
     );
-    assert_eq!(converted.unit(), declared_unit);
-    let refused = convert_one(&declared, &quantity([8; 32]), &UNLIMITED);
+    assert_eq!(converted.unit(), &declared_unit);
+    let refused = convert_one(&declared, &quantity(quire_exact::UnitId::declared(crate::fixture_node(8))), &UNLIMITED);
     assert_eq!(
         refused.as_ref().err().and_then(refused_parameter),
         Some(0),
@@ -629,13 +629,13 @@ fn tc_906_a_quantity_converts_in_its_declared_unit_only() {
 #[test]
 fn tc_906_a_decimal_magnitude_scale_stops_at_the_request_limit() {
     let fixture = fixture("function t using v(b: Boolean): Boolean pure { b }\n");
-    let declared_unit = quire_exact::UnitId::declared(quire_exact::NodeKey::from_digest([7; 32]));
+    let declared_unit = quire_exact::UnitId::declared(crate::fixture_node(7));
     let value = WitnessValue::Quantity {
         magnitude: QuantityMagnitude::Decimal {
             coefficient: Integer::from(1_i64),
             scale: Integer::from(1_000_000_000_i64),
         },
-        unit: *declared_unit.as_bytes(),
+        unit: declared_unit.clone(),
     };
     let limits = ScalarLimits {
         scale_expansion: 64,
@@ -694,8 +694,7 @@ fn list(declaration: NodeKey, depth: usize) -> WitnessValue {
 /// recursive list parameter, whose assignment (and witness entry) carries a
 /// 100,000-long recursive list, whose `stage_limits` carries raised `s1.*`
 /// and `s3.*` settings, and whose `replay.input_bytes` is raised to fit,
-/// replays to the proving run's verdict, with its recompiled `package_id`
-/// equal to the request's. Under the default limits it refuses by the first
+/// replays to the proving run's verdict,  Under the default limits it refuses by the first
 /// limit it reaches.
 #[trace("TC-736", "FR-263-AC-1")]
 #[test]
@@ -885,7 +884,8 @@ fn convert_via_witness(
         value_type: witness_type(0, declared).expect("a UUID or Timestamp has a witness form"),
     };
     let transcript = format!(
-        "<<<assertion|h|c|{parameter}={}>>>",
+        "<<<assertion|h|c|{}={}>>>",
+        crate::pn(&parameter),
         value.to_value_text().unwrap()
     );
     let decoded = Witness::parse(transcript)
@@ -1205,7 +1205,7 @@ fn admitted_unit_ids_are_the_units_replay_converts_against() {
             .id()
             .as_bytes()
     };
-    let quantity = |unit: [u8; 32]| WitnessValue::Quantity {
+    let quantity = |unit: quire_exact::UnitId| WitnessValue::Quantity {
         magnitude: QuantityMagnitude::Decimal {
             coefficient: Integer::from(15_i64),
             scale: Integer::from(1_i64),

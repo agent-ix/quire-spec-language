@@ -53,7 +53,7 @@ fn convert(
     value: &WitnessValue,
     limits: &ScalarLimits,
 ) -> Result<Value, Stopped> {
-    let types = fixture::types(quire_exact::EffectiveId::from_digest([9; 32]));
+    let types = fixture::types(crate::fixture_effective(9));
     convert_arguments_in(
         &types,
         Vec::new(),

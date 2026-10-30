@@ -201,7 +201,7 @@ fn tc_444_the_occurrence_key_selects_the_predicate_or_the_application_claim() {
     );
     let witness = |value: &str| {
         ReplaySource::Witness(
-            Witness::parse(format!("<<<assertion|h|c|{}={value}>>>", x("r"))).unwrap(),
+            Witness::parse(format!("<<<assertion|h|c|{}={value}>>>", crate::pn(&x("r")))).unwrap(),
         )
     };
     assert_eq!(
@@ -353,7 +353,7 @@ fn tc_444_binder_bodies_are_observed_and_unread_parameters_are_filled() {
     assert!(matches!(refused, ReplayRefusal::NotAPredicate { .. }));
     // A witness transcript may likewise leave the unread parameter out.
     let transcript =
-        ReplaySource::Witness(Witness::parse(format!("<<<assertion|h|c|{x}=0>>>")).unwrap());
+        ReplaySource::Witness(Witness::parse(format!("<<<assertion|h|c|{}=0>>>", crate::pn(&x))).unwrap());
     assert_eq!(
         settled(replay(
             at(&source, &compiled, "u", &u_application, transcript),

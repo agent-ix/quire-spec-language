@@ -413,7 +413,7 @@ fn tc_444_a_witness_decodes_by_parameter_node_id() {
         )
     };
     let ReplayResult::Witness(result) =
-        replay(witness(format!("{x}=8")), ReplayLimits::default()).unwrap()
+        replay(witness(format!("{}=8", crate::pn(&x))), ReplayLimits::default()).unwrap()
     else {
         panic!("a Witness-sourced request settles on the Witness arm");
     };
@@ -769,7 +769,7 @@ fn tc_444_a_boolean_parameter_replays() {
         .unwrap()
     };
     let witness = |bit: u8| {
-        ReplaySource::Witness(Witness::parse(format!("<<<assertion|h|c|{b}={bit}>>>")).unwrap())
+        ReplaySource::Witness(Witness::parse(format!("<<<assertion|h|c|{}={bit}>>>", crate::pn(&b))).unwrap())
     };
 
     let ReplayResult::Witness(off) = flag(witness(0)) else {

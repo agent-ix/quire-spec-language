@@ -9,8 +9,8 @@
 
 use ix_trace_rs::trace;
 use qsl_replay::{
-    compile_admitted, AdmittedCompositeForm, AdmittedContext, DependencyInput, Identifier,
-    ReplayLimits, SourceIdentity, StageLimits, NodeKey,
+    compile_admitted, AdmittedCompositeForm, AdmittedContext, DependencyInput, Identifier, NodeKey,
+    ReplayLimits, SourceIdentity, StageLimits,
 };
 use quire_exact::{FieldValue, Presence, Value, ValueType};
 use quire_semantic_value::declaration::{

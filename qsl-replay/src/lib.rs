@@ -432,6 +432,12 @@ pub(crate) fn fixture_node(fill: u8) -> NodeKey {
     .expect("a fixture node is admissible")
 }
 
+/// A parameter node's transcript name.
+#[cfg(test)]
+pub(crate) fn pn(node: &NodeKey) -> String {
+    crate::witness::parameter_name(node).expect("a node spells")
+}
+
 /// A universe identity for a test fixture, distinct per `fill`.
 #[cfg(test)]
 pub(crate) fn fixture_universe(fill: u8) -> quire_exact::UniverseId {

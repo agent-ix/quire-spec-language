@@ -9,7 +9,7 @@ use ix_trace_rs::trace;
 use qsl_semantics::model::observation::{
     population_universe_for, AdmissionFailure, AdmissionRecord,
 };
-use quire_exact::{EffectiveId, ValueType};
+use quire_exact::{EffectiveId, UniverseId, ValueType};
 use serde_json::{json, Value};
 
 use super::*;
@@ -211,7 +211,7 @@ fn graph() -> Graph {
 
 impl Graph {
     /// The effective type id of the `Reference<T>` that `function` takes.
-    fn type_of(&self, function: &str) -> [u8; 32] {
+    fn type_of(&self, function: &str) -> EffectiveId {
         let callable = self
             .compiled
             .package
@@ -221,28 +221,27 @@ impl Graph {
         let ValueType::Reference(object_type) = &callable.parameters[0].1 else {
             panic!("{function} takes a reference");
         };
-        *object_type.as_bytes()
+        object_type.clone()
     }
 
-    fn universe_of(&self, object_type: [u8; 32]) -> [u8; 32] {
+    fn universe_of(&self, object_type: &EffectiveId) -> UniverseId {
         let graph = self.compiled.package.graph();
-        *population_universe_for(
+        population_universe_for(
             graph.model_selections(),
             &self.packages,
             SpineLimits::default().model,
-            EffectiveId::from_digest(object_type),
+            object_type.clone(),
         )
         .expect("the object type has a universe")
-        .as_bytes()
     }
 
     /// `ref(key, type)`: the reference to the object `key` of `object_type`,
     /// in `Lone`'s universe `V` for `Lone`'s type and in `U` otherwise.
-    fn reference(&self, key: &str, object_type: [u8; 32]) -> WitnessValue {
+    fn reference(&self, key: &str, object_type: EffectiveId) -> WitnessValue {
         let universe = if object_type == self.type_of("fl") {
-            self.universe_of(object_type)
+            self.universe_of(&object_type)
         } else {
-            self.universe_of(self.type_of("fa"))
+            self.universe_of(&self.type_of("fa"))
         };
         WitnessValue::Reference {
             universe,
@@ -330,7 +329,7 @@ impl Graph {
     fn witness(&self, function: &str, value: &WitnessValue) -> ReplayRequestWire {
         let parameter = self.parameter(function);
         let text = value.to_value_text().unwrap();
-        let transcript = format!("<<<assertion|{function}|c|{parameter}={text}>>>");
+        let transcript = format!("<<<assertion|{function}|c|{}={text}>>>", crate::pn(&parameter));
         self.base(
             function,
             ReplaySource::Witness(Witness::parse(transcript).unwrap()),
@@ -558,15 +557,28 @@ fn tc_1042_row_04_a_third_member_is_an_unknown_member() {
     );
 }
 
+/// The JSON string literal of `text`.
+fn quoted(text: &str) -> String {
+    serde_json::to_string(text).expect("a string")
+}
+
+fn universe_lit(universe: &UniverseId) -> String {
+    quoted(&crate::id_text::universe_text(universe).expect("a universe spells"))
+}
+
+fn type_lit(object_type: &EffectiveId) -> String {
+    quoted(&crate::id_text::effective_text(object_type).expect("a type spells"))
+}
+
 fn reference_text(universe: &str, object_type: &str, identity: &str) -> String {
     format!(
-        "{{\"identity\":\"{identity}\",\"object_type\":\"{object_type}\",\"type\":\"reference\",\"universe\":\"{universe}\"}}"
+        "{{\"identity\":\"{identity}\",\"object_type\":{object_type},\"type\":\"reference\",\"universe\":{universe}}}"
     )
 }
 
 fn decode_entry(text: &str) -> Result<Vec<WitnessValue>, DecodeRefusal> {
     let parameter = crate::fixture_node(9);
-    let transcript = format!("<<<assertion|f|c|{parameter}={text}>>>");
+    let transcript = format!("<<<assertion|f|c|{}={text}>>>", crate::pn(&parameter));
     Witness::parse(transcript)
         .unwrap()
         .decode(&[WitnessBinding {
@@ -579,22 +591,23 @@ fn decode_entry(text: &str) -> Result<Vec<WitnessValue>, DecodeRefusal> {
 #[trace("TC-1042", "FR-070-AC-16")]
 #[test]
 fn tc_1042_row_06_a_reference_entry_decodes() {
-    let (universe, object_type) = ("1".repeat(64), "2".repeat(64));
-    let decoded = decode_entry(&reference_text(&universe, &object_type, "61")).unwrap();
+    let (universe, object_type) = (crate::fixture_universe(0x11), crate::fixture_effective(0x22));
+    let (universe_text, type_text) = (universe_lit(&universe), type_lit(&object_type));
+    let decoded = decode_entry(&reference_text(&universe_text, &type_text, "61")).unwrap();
     assert_eq!(
         decoded,
         vec![WitnessValue::Reference {
-            universe: [0x11; 32],
-            object_type: [0x22; 32],
+            universe: universe.clone(),
+            object_type: object_type.clone(),
             identity: vec![0x61],
         }]
     );
-    let decoded = decode_entry(&reference_text(&universe, &object_type, "")).unwrap();
+    let decoded = decode_entry(&reference_text(&universe_text, &type_text, "")).unwrap();
     assert_eq!(
         decoded,
         vec![WitnessValue::Reference {
-            universe: [0x11; 32],
-            object_type: [0x22; 32],
+            universe,
+            object_type,
             identity: Vec::new(),
         }]
     );
@@ -604,22 +617,23 @@ fn tc_1042_row_06_a_reference_entry_decodes() {
 #[trace("TC-1042", "FR-070-AC-17")]
 #[test]
 fn tc_1042_row_07_a_malformed_reference_entry_is_refused() {
-    let (universe, object_type) = ("1".repeat(64), "2".repeat(64));
+    let universe = universe_lit(&crate::fixture_universe(0x11));
+    let object_type = type_lit(&crate::fixture_effective(0x22));
     let texts = [
-        reference_text(&"1".repeat(63), &object_type, "61"),
-        reference_text(&universe, &format!("{}A", "2".repeat(63)), "61"),
+        reference_text(&quoted("not a universe"), &object_type, "61"),
+        reference_text(&universe, &quoted("not a type"), "61"),
         reference_text(&universe, &object_type, "616"),
         format!(
-            "{{\"type\":\"reference\",\"universe\":\"{universe}\",\"object_type\":\"{object_type}\",\"identity\":\"61\"}}"
+            "{{\"type\":\"reference\",\"universe\":{universe},\"object_type\":{object_type},\"identity\":\"61\"}}"
         ),
         format!(
-            "{{\"object_type\":\"{object_type}\",\"type\":\"reference\",\"universe\":\"{universe}\"}}"
+            "{{\"object_type\":{object_type},\"type\":\"reference\",\"universe\":{universe}}}"
         ),
         format!(
-            "{{\"extra\":\"y\",\"identity\":\"61\",\"object_type\":\"{object_type}\",\"type\":\"reference\",\"universe\":\"{universe}\"}}"
+            "{{\"extra\":\"y\",\"identity\":\"61\",\"object_type\":{object_type},\"type\":\"reference\",\"universe\":{universe}}}"
         ),
         format!(
-            "{{\"identity\":\"61\",\"object_type\":\"{object_type}\",\"type\":\"reference\",\"universe\":1}}"
+            "{{\"identity\":\"61\",\"object_type\":{object_type},\"type\":\"reference\",\"universe\":1}}"
         ),
     ];
     for text in texts {
@@ -723,7 +737,7 @@ fn tc_1042_row_15_a_reference_compared_with_itself_completes_true() {
 fn tc_1042_row_16_a_record_for_a_reference_is_the_wrong_kind() {
     let graph = graph();
     let record = WitnessValue::Record {
-        declaration: NodeKey::from_digest(graph.type_of("fa")),
+        declaration: crate::fixture_node(0xfa),
         fields: vec![
             WitnessField {
                 name: "items".to_owned(),
@@ -765,8 +779,8 @@ fn tc_1042_row_17_a_foreign_universe_is_decided_before_conformance() {
         panic!("expected a foreign reference, got {refusal:?}");
     };
     assert_eq!(position, 0);
-    assert_eq!(required, graph.universe_of(graph.type_of("fa")));
-    assert_eq!(supplied, graph.universe_of(graph.type_of("fl")));
+    assert_eq!(required, graph.universe_of(&graph.type_of("fa")));
+    assert_eq!(supplied, graph.universe_of(&graph.type_of("fl")));
     assert_ne!(required, supplied);
     wrong_kind(
         run(environment(graph.input("fh", graph.node("a")), &s1, false)),
@@ -779,7 +793,7 @@ fn tc_1042_row_17_a_foreign_universe_is_decided_before_conformance() {
 #[test]
 fn tc_1042_row_18_an_unknown_object_type_is_the_wrong_kind() {
     let graph = graph();
-    let unknown = graph.reference("a", [0; 32]);
+    let unknown = graph.reference("a", crate::fixture_effective(0));
     let wire = environment(graph.input("fa", unknown), &graph.s1(), false);
     wrong_kind(run(wire), "an object type no model declares");
 }

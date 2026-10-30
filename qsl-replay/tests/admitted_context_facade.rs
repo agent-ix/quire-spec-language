@@ -11,7 +11,7 @@ use qsl_replay::spine::{self, ParseRequest, SpineLimits};
 use qsl_replay::{
     compile_admitted, compile_package, AdmittedCompilation, AdmittedLookupRefusal, AdmittedRefusal,
     AdmittedResource, Code, DependencyInput, Identifier, NodeKey, ReplayLimits, ReplayRefusal,
-    SourceIdentity, StageLimits, SuppliedLibrary, NodeKey,
+    SourceIdentity, StageLimits, SuppliedLibrary,
 };
 use qsl_semantics::check::NominalNode;
 use quire_exact::Cancel;

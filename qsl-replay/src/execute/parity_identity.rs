@@ -133,7 +133,7 @@ pub fn parity_obligation(
 }
 
 /// FR-484: one declared parameter of a function-value parity claim.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ValueParityArgument {
     /// The parameter's `value`/`parameter` node id, the id
     /// `FunctionSite.parameters` pairs with the parameter.
@@ -185,11 +185,11 @@ impl Encode for ValueParityArgument {
         })?;
         writer.begin_object()?;
         writer.name("parameter")?;
-        writer.string(&self.parameter.to_string())?;
+        writer.string(&node_str(&self.parameter)?)?;
         writer.name("position")?;
         writer.integer(position)?;
         writer.name("type")?;
-        writer.string(&self.semantic_type.to_string())?;
+        writer.string(&node_str(&self.semantic_type)?)?;
         writer.end_object()
     }
 }
@@ -204,7 +204,7 @@ impl Encode for ValueParityPreimage {
         }
         writer.end_array()?;
         writer.name("node")?;
-        writer.string(&self.node.to_string())?;
+        writer.string(&node_str(&self.node)?)?;
         writer.name("occurrence_key")?;
         writer.begin_object()?;
         writer.name("ordinal")?;
@@ -236,6 +236,13 @@ pub(crate) fn argument_digest(
         Limits::new(u64::MAX),
     )?;
     Ok(*digest.as_bytes())
+}
+
+/// A node's canonical text spelling.
+fn node_str(node: &NodeKey) -> Result<String, Error> {
+    crate::id_text::node_text(node).ok_or(Error::Internal {
+        invariant: "a node identity spells as text",
+    })
 }
 
 fn int<S: Sink + ?Sized>(writer: &mut Writer<'_, S>, value: impl Into<i128>) -> Result<(), Error> {
@@ -274,7 +281,7 @@ impl Encode for KeyEncode<'_> {
         match self.0 {
             DomainKey::Node { node, path } => {
                 writer.name("node_id")?;
-                writer.string(&node.to_string())?;
+                writer.string(&node_str(&node)?)?;
                 writer.name("path")?;
                 writer.begin_array()?;
                 for index in path {
@@ -289,7 +296,7 @@ impl Encode for KeyEncode<'_> {
                 ordinal,
             } => {
                 writer.name("member_type")?;
-                writer.string(&member_type.to_string())?;
+                writer.string(&node_str(&member_type)?)?;
                 writer.name("ordinal")?;
                 int(writer, *ordinal)?;
                 writer.name("tag")?;
@@ -384,13 +391,13 @@ impl Encode for ArgumentEncode<'_> {
         match &self.argument.identity {
             OperandIdentity::GraphChild(node) => {
                 writer.name("node_id")?;
-                writer.string(&node.to_string())?;
+                writer.string(&node_str(&node)?)?;
                 writer.name("tag")?;
                 writer.string("graph_child")?;
             }
             OperandIdentity::InlineLiteral => {
                 writer.name("node_id")?;
-                writer.string(&self.node.to_string())?;
+                writer.string(&node_str(&self.node)?)?;
                 writer.name("occurrence_key")?;
                 occurrence_key(writer, self.occurrence)?;
                 writer.name("position")?;
@@ -422,7 +429,7 @@ impl Encode for ParityPreimage {
         }
         writer.end_array()?;
         writer.name("node")?;
-        writer.string(&self.node.to_string())?;
+        writer.string(&node_str(&self.node)?)?;
         writer.name("obligation_kind")?;
         writer.string(&self.obligation_kind)?;
         writer.name("occurrence_key")?;
@@ -464,7 +471,7 @@ impl Encode for ProcessProviderPreimage<'_> {
         writer.name("declared_domains")?;
         domain(writer, &Domain::Bounds(self.bounds.clone()))?;
         writer.name("node")?;
-        writer.string(&self.node.to_string())?;
+        writer.string(&node_str(&self.node)?)?;
         writer.name("obligation_kind")?;
         writer.string("value-validity")?;
         writer.name("occurrence_key")?;

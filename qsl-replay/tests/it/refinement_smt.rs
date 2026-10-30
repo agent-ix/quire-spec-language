@@ -6,7 +6,6 @@
 //! the per-step simulation records and the safety half from them (TC-551).
 
 use ix_trace_rs::trace;
-use quire_exact::NodeKey;
 use qsl_eval::smt::{
     RefinementCertificateRequest, RefinementQueryKind, Refusal, SmtEncodingRefusal,
 };
@@ -19,6 +18,7 @@ use qsl_replay::{
     TerminalValue, UnavailabilityCause,
 };
 use quire_exact::Cancel;
+use quire_exact::NodeKey;
 
 use crate::refinement_fixture::{
     cas_refines_counter, cas_refines_counter_add, mutated, Variant, World,

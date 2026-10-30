@@ -5,8 +5,8 @@
 //! `step(i)` and `reset()`), the same package again as a second model under
 //! alias `N`, and a unit that declares one hyper clause.
 
-use std::collections::BTreeMap;
 use quire_exact::NodeKey;
+use std::collections::BTreeMap;
 
 fn fixture_node(fill: u8) -> NodeKey {
     NodeKey::new(
@@ -847,10 +847,8 @@ mod tp4 {
         }
 
         pub fn foreign_keys(&self) -> BuchiStates {
-            let identity = OccurrenceKey::new(
-                fixture_node(0x53),
-                Origin::new(Role::new("temporal"), 1),
-            );
+            let identity =
+                OccurrenceKey::new(fixture_node(0x53), Origin::new(Role::new("temporal"), 1));
             let context = StateContext::clause(self.clause(), identity, Vec::new());
             BuchiStates::clause(self.clause(), &context, SubjectKind::Ordinary)
                 .expect("the foreign TP-4 key context builds")

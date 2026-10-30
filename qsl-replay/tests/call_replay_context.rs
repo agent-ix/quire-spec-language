@@ -26,10 +26,10 @@ use qsl_replay::spine::{self, default_accounting, ParseRequest};
 use qsl_replay::{
     compile_package, replay, run_with_replay_context, run_with_requirements, BackendId, Call,
     CallArgument, CallOutcome, CallerLimits, CanonicalAssignment, DependencyInput, DomainKey,
-    DomainKind, FiniteBound, InconclusiveCause, Integer, ObjectEnvironment, PluginReplayContext,
-    PluginReplayRefusal, ProofBound, ReplayLimits, ReplayRequestWire, RequestIndex, RunRefusal,
-    RunWithReplayContext, SourceIdentity, SpineLimits, TerminalRecord, TerminalValue, Value,
-    NodeKey, WitnessValue,
+    DomainKind, FiniteBound, InconclusiveCause, Integer, NodeKey, ObjectEnvironment,
+    PluginReplayContext, PluginReplayRefusal, ProofBound, ReplayLimits, ReplayRequestWire,
+    RequestIndex, RunRefusal, RunWithReplayContext, SourceIdentity, SpineLimits, TerminalRecord,
+    TerminalValue, Value, WitnessValue,
 };
 use quire_exact::Cancel;
 use quire_semantic_value::supplied_stop::SuppliedLimits;

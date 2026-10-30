@@ -5,8 +5,8 @@ use ix_trace_rs::trace;
 use qsl_replay::spine::{self, ParseRequest, SpineLimits};
 use qsl_replay::{
     acquire_checked_closure, ApplicationEnvironment, CallableSelection, CheckedClosureCompilation,
-    CheckedClosureHandle, DependencyInput, NominalDeclaration, NominalDeclarationForm,
-    NominalDeclarationMember, ReplayLimits, SourceIdentity, StageLimits, NodeKey,
+    CheckedClosureHandle, DependencyInput, NodeKey, NominalDeclaration, NominalDeclarationForm,
+    NominalDeclarationMember, ReplayLimits, SourceIdentity, StageLimits,
 };
 use quire_eval::{
     Admission, Body, BodyFactory, BodyFailure, CallFailure, Evaluation, FamilyOutcome, Resume,

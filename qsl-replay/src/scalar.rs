@@ -321,7 +321,7 @@ impl OperatorClaim {
     pub fn identity(&self, obligation: ObligationIdentity) -> OperatorIdentity {
         OperatorIdentity {
             obligation,
-            node: self.node,
+            node: self.node.clone(),
             identity: self.identity,
             operation: self.operation.clone(),
             occurrence: self.occurrence.clone(),

@@ -24,8 +24,8 @@ use qsl_replay::CanonicalAssignment;
 use qsl_replay::ScalarLimits;
 use qsl_replay::{
     run_with_replay_context, BackendId, Call, CallArgument, CallerLimits, Cancel, DependencyInput,
-    DomainKey, DomainKind, FiniteBound, Integer, ObjectEnvironment, PluginReplayRefusal,
-    ProofBound, ReplayRequestWire, RequestIndex, SourceIdentity, TerminalValue, Value, NodeKey,
+    DomainKey, DomainKind, FiniteBound, Integer, NodeKey, ObjectEnvironment, PluginReplayRefusal,
+    ProofBound, ReplayRequestWire, RequestIndex, SourceIdentity, TerminalValue, Value,
     WitnessValue,
 };
 use quire_semantic_value::supplied_stop::SuppliedLimits;

@@ -4,8 +4,8 @@
 
 use ix_trace_rs::trace;
 use qsl_replay::{
-    acquire_checked_closure, DependencyInput, NominalDeclarationForm, NominalDeclarationMember,
-    ReplayLimits, SourceIdentity, StageLimits, NodeKey,
+    acquire_checked_closure, DependencyInput, NodeKey, NominalDeclarationForm,
+    NominalDeclarationMember, ReplayLimits, SourceIdentity, StageLimits,
 };
 use quire_exact::ValueType;
 use serde_json::Value as JsonValue;

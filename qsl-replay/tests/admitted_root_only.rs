@@ -8,7 +8,7 @@ use ix_trace_rs::trace;
 use qsl_foundation::Setting;
 use qsl_replay::{
     compile_admitted, AdmittedLookupRefusal, AdmittedRefusal, AdmittedResource, DependencyInput,
-    Identifier, ReplayLimits, SourceIdentity, StageLimits, NodeKey,
+    Identifier, NodeKey, ReplayLimits, SourceIdentity, StageLimits,
 };
 
 const SOURCE: &str = "language \"ix:native\" edition \"1-draft\";\n\

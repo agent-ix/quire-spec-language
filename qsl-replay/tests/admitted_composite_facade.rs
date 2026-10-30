@@ -11,7 +11,6 @@ use qsl_replay::spine::{self, ParseRequest, SpineLimits};
 use qsl_replay::{
     compile_admitted, AdmittedCompilation, AdmittedCompositeForm, AdmittedLookupRefusal,
     DependencyInput, NodeKey, ReplayLimits, SourceIdentity, StageLimits, SuppliedLibrary,
-    NodeKey,
 };
 use std::collections::BTreeSet;
 
