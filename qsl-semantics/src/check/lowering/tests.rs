@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-413, TC-414 and TC-415: the FR-092 keys and the FR-093 lowering,
-//! checked against FR-092's golden vectors. The vectors are read from this
-//! repository's own FR-092 text at compile time, so the spec and the test
-//! cannot drift apart.
+//! checked structurally: which nodes exist, what each preimage carries and
+//! which node each reference names.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -1193,4 +1192,896 @@ fn equality_refuses_a_map_and_reads_a_bounded_quantity_as_its_quantity() {
             .expect("a quantity compares");
         assert_eq!(format!("{bounded:?}"), format!("{plain:?}"));
     });
+}
+
+// ---------------------------------------------------------------------
+// Structure of the checked graph: nodes, owners and references.
+// ---------------------------------------------------------------------
+
+fn both() -> FunctionDeclaration {
+    function(
+        "both",
+        &[("a", boolean()), ("b", boolean())],
+        boolean(),
+        None,
+        binary(BinaryOperator::And, name_expr("a"), name_expr("b")),
+    )
+}
+
+fn nb() -> FunctionDeclaration {
+    function(
+        "nb",
+        &[("a", boolean())],
+        boolean(),
+        None,
+        Expression::call(
+            "both".to_owned(),
+            vec![name_expr("a"), Expression::boolean(true)],
+        ),
+    )
+}
+
+fn h() -> FunctionDeclaration {
+    function(
+        "h",
+        &[("a", boolean())],
+        boolean(),
+        None,
+        Expression::let_in("y".to_owned(), name_expr("a"), name_expr("y")),
+    )
+}
+
+fn t() -> FunctionDeclaration {
+    function(
+        "t",
+        &[],
+        boolean(),
+        None,
+        Expression::if_then_else(
+            Expression::boolean(true),
+            Expression::boolean(true),
+            Expression::boolean(true),
+        ),
+    )
+}
+
+/// The checked type node of a one-parameter function over `form`.
+fn parameter_type(form: TypeForm, aliases: Vec<(String, ValueType)>) -> NodeKey {
+    let graph = PackageDeclarations {
+        aliases,
+        functions: vec![function(
+            "g",
+            &[("x", form)],
+            boolean(),
+            None,
+            Expression::boolean(true),
+        )],
+        ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
+    }
+    .check(CheckingLimits::default())
+    .expect("g checks");
+    parameter_named(graph.semantic_graph(), "x")
+        .semantic_type()
+        .expect("a typed parameter")
+}
+
+/// TC-413 step 4 (FR-092-AC-3): an alias adds no node; the parameter is
+/// typed at the aliased type's node.
+#[trace("FR-092-AC-3", "TC-413")]
+#[test]
+fn an_alias_introduces_no_type_node() {
+    let graph = PackageDeclarations {
+        aliases: vec![("Digit".to_owned(), int(0, 9))],
+        functions: vec![function(
+            "g",
+            &[("x", TypeForm::name("Digit", SPAN))],
+            boolean(),
+            None,
+            Expression::boolean(true),
+        )],
+        ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
+    }
+    .check(CheckingLimits::default())
+    .expect("g checks");
+    let parameter = parameter_named(graph.semantic_graph(), "x");
+    assert_eq!(
+        parameter.semantic_type(),
+        Some(parameter_type(int_form(0, 9), Vec::new()))
+    );
+    assert!(graph.semantic_graph().nodes().all(|node| node
+        .declaration()
+        .is_none_or(|name| name.iter().all(|segment| segment.as_str() != "Digit"))));
+}
+
+/// TC-413 step 3 (FR-092-AC-2): a declared record's node carries the owner
+/// and its declaration, and an anonymous type's node carries neither.
+#[trace("FR-092-AC-2", "TC-413")]
+#[test]
+fn a_declared_record_carries_its_owner_and_an_anonymous_type_does_not() {
+    let point = NodeKey::from_digest([4; 32]);
+    let scope = scope_with(
+        TypeEnvironment::new(
+            [CompositeDeclaration::new(
+                point,
+                "Point",
+                CompositeShape::Record(vec![
+                    FieldDeclaration::new("x", int(0, 9), Presence::Required),
+                    FieldDeclaration::new("y", int(0, 9), Presence::Required),
+                ]),
+            )],
+            [],
+        )
+        .unwrap(),
+        Vec::new(),
+    );
+    let w = admitted_source(SourceIdentity::new("a", "w", "git", "1"), b"");
+    let types = [ValueType::Composite(point), int(0, 9)];
+    let u = SourceOwner::from(&fixture_source());
+    let (under_u, u_keys) = type_nodes(&scope, &u, &types);
+    let (again, again_keys) = type_nodes(&scope, &u, &types);
+    let (under_w, w_keys) = type_nodes(&scope, &SourceOwner::from(&w), &types);
+
+    assert_eq!(u_keys[0], again_keys[0], "one owner, one key");
+    assert_ne!(u_keys[0], w_keys[0], "the owner is part of a declared key");
+    assert_eq!(u_keys[1], w_keys[1], "an anonymous type has no owner");
+    assert_eq!(under_u.node(u_keys[0]), again.node(again_keys[0]));
+    let d1 = preimage(under_u.node(u_keys[0]).unwrap());
+    assert!(d1.get("owner").is_some() && !d1["declaration"].is_null());
+    let d2 = preimage(under_w.node(w_keys[0]).unwrap());
+    assert_eq!(d2["owner"]["identity"], "w");
+    let t4 = preimage(under_u.node(u_keys[1]).unwrap());
+    assert!(t4.get("owner").is_none() && t4["declaration"].is_null());
+
+    let g1 = function(
+        "g1",
+        &[("x", int_form(0, 9))],
+        boolean(),
+        None,
+        Expression::boolean(true),
+    );
+    let mut parameter_keys = Vec::new();
+    for owner in [fixture_source(), w] {
+        let graph = check_under(owner, vec![g1.clone()]).expect("g1 checks");
+        parameter_keys.push(parameter_named(graph.semantic_graph(), "x").semantic_type());
+    }
+    assert_eq!(parameter_keys[0], parameter_keys[1]);
+    assert_eq!(parameter_keys[0], Some(u_keys[1]));
+}
+
+/// TC-413 step 9 (FR-092-AC-7): two recursion groups that differ only in
+/// their names key alike and refuse as a collision.
+#[trace("FR-092-AC-7", "TC-413")]
+#[test]
+fn groups_that_differ_only_in_names_collide_and_refuse() {
+    let mut group_keys = Vec::new();
+    for name in ["f", "g"] {
+        let checked = check(vec![recursive(name, name)]).expect("one group checks");
+        group_keys.push(
+            checked
+                .semantic_graph()
+                .nodes()
+                .filter(|node| node.recursion().is_some())
+                .map(SemanticNode::key)
+                .collect::<BTreeSet<_>>(),
+        );
+    }
+    let shared: BTreeSet<_> = group_keys[0].intersection(&group_keys[1]).collect();
+    assert!(
+        !shared.is_empty(),
+        "a group member's key does not depend on the function's name"
+    );
+    let refusals =
+        check(vec![recursive("f", "f"), recursive("g", "g")]).expect_err("the groups collide");
+    assert_eq!(refusals.len(), 1, "{refusals:?}");
+    let CheckCause::UnsupportedFeature { loci } = &refusals[0].cause else {
+        panic!("{refusals:?}");
+    };
+    let functions: Vec<&str> = loci
+        .iter()
+        .filter_map(|location| match &location.origin {
+            Origin::Body { function, .. } => Some(function.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(functions, ["f", "g"]);
+    assert_eq!(
+        refusals[0].cause.code().as_str(),
+        "unknown_required_feature"
+    );
+    assert_eq!(refusals[0].cause.cause(), Some("unsupported-feature"));
+}
+
+/// TC-413 step 10 (FR-092-AC-12): `Point`, declared through a
+/// `CompositeDeclaration` keyed `0x11...` and again through one keyed
+/// `0x22...`, keys alike both times, and that key is its checked type
+/// node's id; no node or type node holds either supplied key.
+#[trace("FR-092-AC-12", "TC-413")]
+#[test]
+fn a_declared_records_node_id_is_its_key_not_its_handle() {
+    let mut ids = Vec::new();
+    for fill in [0x11, 0x22] {
+        let handle = NodeKey::from_digest([fill; 32]);
+        let types = TypeEnvironment::new(
+            [CompositeDeclaration::new(
+                handle,
+                "Point",
+                CompositeShape::Record(vec![
+                    FieldDeclaration::new("x", int(0, 9), Presence::Required),
+                    FieldDeclaration::new("y", int(0, 9), Presence::Required),
+                ]),
+            )],
+            [],
+        )
+        .expect("Point admits");
+        let checked = PackageDeclarations {
+            types,
+            ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
+        }
+        .check(CheckingLimits::default())
+        .expect("Point checks");
+        let graph = checked.semantic_graph();
+        let type_nodes: Vec<NodeKey> = checked
+            .checked_type_nodes()
+            .map(CheckedTypeNode::node)
+            .collect();
+        assert_eq!(type_nodes.len(), 1);
+        let id = type_nodes[0];
+        assert!(graph.node(id).is_some(), "the id names a graph node");
+        ids.push(id);
+        let supplied = handle.to_string();
+        assert!(checked.checked_type_node(handle).is_none());
+        for node in graph.nodes() {
+            assert_ne!(node.key(), handle);
+            assert!(
+                !std::str::from_utf8(node.preimage())
+                    .expect("UTF-8")
+                    .contains(&supplied),
+                "{} holds the supplied key",
+                node.key()
+            );
+        }
+    }
+    assert_eq!(ids[0], ids[1], "the supplied key does not reach the id");
+}
+
+/// TC-414 step 2 (FR-092-AC-5): a function lists every parameter in order,
+/// read or not, and a second function reuses the same parameter nodes.
+#[trace("FR-092-AC-5", "TC-414")]
+#[test]
+fn unread_parameters_keep_the_arity_and_parameter_nodes_are_shared() {
+    let unused = function(
+        "unused",
+        &[("a", boolean()), ("b", boolean())],
+        boolean(),
+        None,
+        name_expr("a"),
+    );
+    let mut both2 = both();
+    both2.name = "both2".to_owned();
+    let graph = check(vec![both(), unused, both2]).expect("the fixtures check");
+    let semantic = graph.semantic_graph();
+    let parameters_of = |name: &str| {
+        let key = graph.function_identity(name).expect("declared");
+        preimage(semantic.node(key).expect("the function node"))["body"]["members"][0]["value"]
+            ["members"]
+            .as_array()
+            .expect("a parameters aggregate")
+            .iter()
+            .map(|member| {
+                member["target"]["digest"]
+                    .as_str()
+                    .expect("a reference")
+                    .to_owned()
+            })
+            .collect::<Vec<_>>()
+    };
+    let expected = vec![
+        parameter_named(semantic, "a").key().to_string(),
+        parameter_named(semantic, "b").key().to_string(),
+    ];
+    assert_eq!(parameters_of("unused"), expected);
+    assert_eq!(parameters_of("both2"), expected);
+    assert_eq!(parameters_of("both"), expected);
+    let named = |name: &str| {
+        semantic
+            .nodes()
+            .filter(|node| {
+                node.semantic_form() == "parameter"
+                    && preimage(node)["body"]["members"][0]["value"]["value"] == json!(name)
+            })
+            .count()
+    };
+    assert_eq!((named("a"), named("b")), (1, 1), "one node per parameter");
+}
+
+/// TC-414 step 3 (FR-092-AC-6, FR-065-AC-8): no function body holds an
+/// application; every function is a structural-node key carrying the
+/// owner; `a and b` and `both(a, true)` are application-node keys with no
+/// owner.
+#[trace("FR-092-AC-6", "TC-414", "FR-065-AC-8", "TC-163")]
+#[test]
+fn functions_are_structural_and_applications_carry_no_owner() {
+    let graph = check(vec![both(), function("f", &[], boolean(), None, Expression::boolean(true)), h(), nb()])
+        .expect("the fixtures check");
+    let semantic = graph.semantic_graph();
+    for name in ["both", "f", "h", "nb"] {
+        let node = semantic
+            .node(graph.function_identity(name).expect("declared"))
+            .expect("the function node");
+        let json = preimage(node);
+        assert_eq!(json["version"], "quire.structural-node/v1", "{name}");
+        assert_eq!(
+            json["owner"],
+            json!({"kind": "source", "authority": "a", "identity": "u"}),
+            "{name}"
+        );
+        assert!(
+            !serde_json::to_string(&json["body"])
+                .expect("JSON")
+                .contains("\"application\""),
+            "{name}: a function body holds references only"
+        );
+    }
+    let applications: Vec<Json> = semantic
+        .nodes()
+        .map(preimage)
+        .filter(|json| json["version"] == "quire.application-node/v1")
+        .collect();
+    assert!(
+        applications.len() >= 3,
+        "`a and b`, `both(a, true)` and the let each build an application node"
+    );
+    for application in &applications {
+        assert!(application.get("owner").is_none());
+    }
+}
+
+/// TC-414 step 4 (FR-092-AC-10): `m`'s `decreases` binding references its
+/// parameter node.
+#[trace("FR-092-AC-10", "TC-414")]
+#[test]
+fn a_measure_is_a_decreases_reference() {
+    let m = function(
+        "m",
+        &[("x", int_form(0, 9))],
+        boolean(),
+        Some(name_expr("x")),
+        Expression::boolean(true),
+    );
+    let graph = check(vec![m]).expect("m checks");
+    let semantic = graph.semantic_graph();
+    let function_key = graph.function_identity("m").expect("declared");
+    let parameter = parameter_named(semantic, "x").key();
+    let decreases = &preimage(semantic.node(function_key).unwrap())["body"]["members"][2];
+    assert_eq!(decreases["name"], "decreases");
+    assert_eq!(
+        decreases["value"]["target"]["digest"],
+        json!(parameter.to_string())
+    );
+}
+
+/// TC-415 step 1 (FR-093-AC-1): three equal literals are one node with
+/// three `expression` occurrences in source order, and the conditional's
+/// arguments are three references to it.
+#[trace("FR-093-AC-1", "TC-415")]
+#[test]
+fn equal_literals_are_one_node_with_one_occurrence_each() {
+    let graph = check(vec![t()]).expect("t checks");
+    let semantic = graph.semantic_graph();
+    let literals: Vec<&SemanticNode> = semantic
+        .nodes()
+        .filter(|node| node.semantic_form() == "literal")
+        .collect();
+    assert_eq!(literals.len(), 1);
+    let literal = literals[0].key();
+    let boolean_type = literals[0].semantic_type().expect("a typed literal");
+    let conditionals: Vec<&SemanticNode> = semantic
+        .nodes()
+        .filter(|node| node.semantic_form() == "conditional")
+        .collect();
+    assert_eq!(conditionals.len(), 1);
+    let conditional = preimage(conditionals[0]);
+    assert_eq!(
+        conditional["body"]["operation"]["identity"],
+        "quire.op.control.if"
+    );
+    assert_eq!(
+        conditional["semantic_type"]["digest"],
+        json!(boolean_type.to_string())
+    );
+    assert_eq!(
+        conditional["body"]["result_type"]["digest"],
+        json!(boolean_type.to_string())
+    );
+    let arguments = conditional["body"]["arguments"].as_array().unwrap();
+    assert_eq!(arguments.len(), 3);
+    for argument in arguments {
+        assert_eq!(argument["target"]["digest"], json!(literal.to_string()));
+    }
+    let occurrences: Vec<Location> = (0..3)
+        .map(|ordinal| {
+            graph
+                .occurrence(
+                    literal,
+                    &quire_exact::Origin::new(quire_exact::Role::new("expression"), ordinal),
+                )
+                .expect("an expression occurrence")
+                .clone()
+        })
+        .collect();
+    let paths: Vec<Vec<usize>> = occurrences
+        .into_iter()
+        .map(|location| location.path())
+        .collect();
+    assert_eq!(paths, vec![vec![0], vec![1], vec![2]], "source order");
+    assert!(graph
+        .occurrence(
+            literal,
+            &quire_exact::Origin::new(quire_exact::Role::new("expression"), 3)
+        )
+        .is_none());
+}
+
+/// TC-415 step 2 (FR-093-AC-2): `a and b`, `both(a, true)` and `let y = a in
+/// y` each build an application node; a local read is a reference, never a
+/// node.
+#[trace("FR-093-AC-2", "TC-415")]
+#[test]
+fn applications_build_one_node_each_and_local_reads_build_no_node() {
+    let graph = check(vec![both(), nb(), h()]).expect("the fixtures check");
+    let semantic = graph.semantic_graph();
+    let applications = semantic
+        .nodes()
+        .filter(|node| preimage(node)["version"] == "quire.application-node/v1")
+        .count();
+    assert_eq!(applications, 3, "E1, E2 and E3");
+    let parameters: Vec<String> = ["a", "b"]
+        .iter()
+        .map(|name| parameter_named(semantic, name).key().to_string())
+        .collect();
+    for node in semantic.nodes() {
+        let json = preimage(node);
+        assert!(
+            !(json["body"]["term"] == "reference"
+                && parameters.contains(
+                    &json["body"]["target"]["digest"]
+                        .as_str()
+                        .unwrap_or("")
+                        .to_owned()
+                )),
+            "no node's body is a bare local read"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------
+// Conversions, record nodes, literals and recursion groups.
+// ---------------------------------------------------------------------
+
+/// The key of the one node of `graph` whose `semantic_form` is `form`.
+fn only_node_of_form(graph: &SemanticGraph, form: &str) -> NodeKey {
+    let found: Vec<NodeKey> = graph
+        .nodes()
+        .filter(|node| node.semantic_form() == form)
+        .map(SemanticNode::key)
+        .collect();
+    assert_eq!(found.len(), 1, "one `{form}` node");
+    found[0]
+}
+
+/// TC-415 step 4 (FR-093-AC-4): a contained integer builds no convert node;
+/// a narrowing is `numeric.narrow` naming `Int[0, 9]`; a numeric conversion
+/// is `numeric.convert`; `flatMap` is one `flat_map` node with no map node.
+#[trace("FR-093-AC-4", "TC-415")]
+#[test]
+fn conversions_are_classified_and_flat_map_builds_one_node() {
+    let c1 = function(
+        "c1",
+        &[("x", int_form(0, 9))],
+        int_form(0, 10),
+        None,
+        name_expr("x"),
+    );
+    let c2 = function("c2", &[], int_form(0, 9), None, integer_expr(3));
+    let rational = || {
+        TypeForm::builtin(BuiltinType::Rational, SPAN).with_bounds(vec![
+            "0".into(),
+            "9".into(),
+            "1".into(),
+            "1".into(),
+        ])
+    };
+    let c3 = function(
+        "c3",
+        &[("x", int_form(0, 9))],
+        rational(),
+        None,
+        Expression::convert(rational(), name_expr("x")),
+    );
+    let bounded_sequence = |element: TypeForm, maximum: &str| {
+        TypeForm::collection(CollectionKind::Sequence, SPAN)
+            .with_arguments(vec![element])
+            .with_bounds(vec!["0".into(), maximum.into()])
+    };
+    let fm = function(
+        "fm",
+        &[(
+            "s",
+            bounded_sequence(bounded_sequence(int_form(0, 9), "2"), "3"),
+        )],
+        bounded_sequence(int_form(0, 9), "6"),
+        None,
+        Expression::query(
+            BinderQuery::FlatMap,
+            "x".to_owned(),
+            name_expr("s"),
+            name_expr("x"),
+        ),
+    );
+
+    let graph = check(vec![c1]).expect("c1 checks");
+    let semantic = graph.semantic_graph();
+    let c1_node = preimage(
+        semantic
+            .node(graph.function_identity("c1").unwrap())
+            .unwrap(),
+    );
+    let x = parameter_named(semantic, "x").key();
+    assert_eq!(
+        c1_node["body"]["members"][1]["value"]["target"]["digest"],
+        json!(x.to_string())
+    );
+    assert!(semantic
+        .nodes()
+        .all(|node| node.semantic_form() != "conversion"));
+
+    let graph = check(vec![c2]).expect("c2 checks");
+    let narrow = application(graph.semantic_graph(), "quire.op.numeric.narrow");
+    assert_eq!(
+        narrow["body"]["operation"]["member"]["kind"],
+        "type_argument"
+    );
+    assert_eq!(
+        narrow["body"]["operation"]["member"]["declaration"]["digest"],
+        json!(parameter_type(int_form(0, 9), Vec::new()).to_string()),
+        "the narrowing names the node of `Int[0, 9]`"
+    );
+    assert_eq!(narrow["semantic_form"], "conversion");
+
+    let graph = check(vec![c3]).expect("c3 checks");
+    application(graph.semantic_graph(), "quire.op.numeric.convert");
+
+    let graph = check(vec![fm]).expect("fm checks");
+    application(graph.semantic_graph(), "quire.op.collection.flat_map");
+    assert!(graph
+        .semantic_graph()
+        .nodes()
+        .map(preimage)
+        .all(|json| json["body"]["operation"]["identity"] != "quire.op.collection.map"));
+}
+
+/// FR-093-AC-3: a record projection names its record's node, and a record
+/// value is typed by it, with an omitted optional field a typed `none`.
+#[trace("FR-093-AC-3", "TC-415")]
+#[test]
+fn record_projection_and_record_values_name_their_record_node() {
+    let point = NodeKey::from_digest([4; 32]);
+    let types = TypeEnvironment::new(
+        [CompositeDeclaration::new(
+            point,
+            "Point",
+            CompositeShape::Record(vec![
+                FieldDeclaration::new("x", int(0, 9), Presence::Required),
+                FieldDeclaration::new("y", int(0, 9), Presence::Optional),
+            ]),
+        )],
+        [],
+    )
+    .unwrap();
+    let project = function(
+        "px",
+        &[("p", TypeForm::name("Point", SPAN))],
+        int_form(0, 9),
+        None,
+        Expression::field(name_expr("p"), "x".to_owned()),
+    );
+    let build = function(
+        "mk",
+        &[("x", int_form(0, 9))],
+        TypeForm::name("Point", SPAN),
+        None,
+        Expression::record(
+            "Point".to_owned(),
+            vec![("x".to_owned(), Some(name_expr("x")))],
+        ),
+    );
+    let graph = PackageDeclarations {
+        types,
+        functions: vec![project, build],
+        ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
+    }
+    .check(CheckingLimits::default())
+    .expect("the record fixtures check");
+    let semantic = graph.semantic_graph();
+    let record = only_node_of_form(semantic, "record");
+    let projection = application(semantic, "quire.op.record.project");
+    assert_eq!(
+        projection["body"]["operation"]["member"],
+        json!({"kind": "field", "declaration": {"domain": "quire.checked-semantic-node/v1", "digest": record.to_string()}, "name": "x"})
+    );
+    let value = semantic
+        .nodes()
+        .find(|node| node.semantic_form() == "record_value")
+        .map(preimage)
+        .expect("the record value node");
+    assert_eq!(value["semantic_type"]["digest"], json!(record.to_string()));
+    let y = &value["body"]["members"][1];
+    assert_eq!(y["name"], "y");
+    assert_eq!(y["value"]["value_kind"], "none");
+    assert_eq!(y["value"]["value"], Json::Null);
+    let none_type = y["value"]["type"]["digest"].as_str().expect("a type node");
+    let held: Vec<&SemanticNode> = semantic
+        .nodes()
+        .filter(|node| node.key().to_string() == none_type)
+        .collect();
+    assert_eq!(held.len(), 1);
+    assert_eq!(held[0].semantic_form(), "option");
+}
+
+/// FR-092 L6: a literal `1` that is not an operand of an FR-357 operator is
+/// a `value`/`literal` node.
+#[trace("FR-092-AC-11", "TC-413")]
+#[test]
+fn a_standalone_integer_literal_is_a_node() {
+    let one = function("one", &[], integer_form(), None, integer_expr(1));
+    let graph = check(vec![one]).expect("one checks");
+    let literal = preimage(
+        graph
+            .semantic_graph()
+            .node(only_node_of_form(graph.semantic_graph(), "literal"))
+            .unwrap(),
+    );
+    assert_eq!(literal["body"]["value"], json!("1"));
+}
+
+/// A literal operand of any other operator stays a `value`/`literal` node:
+/// `x > 0` references its node, and a Boolean literal operand references its
+/// node.
+#[trace("FR-093-AC-30", "TC-415")]
+#[test]
+fn literal_operands_of_other_operators_stay_nodes() {
+    let compare = function(
+        "g",
+        &[("x", int_form(0, 9))],
+        boolean(),
+        None,
+        binary(BinaryOperator::Greater, name_expr("x"), integer_expr(0)),
+    );
+    let graph = check(vec![compare]).expect("g checks");
+    let gt = application(graph.semantic_graph(), "quire.op.integer.gt");
+    assert_eq!(gt["body"]["arguments"][1]["term"], "reference");
+    let literal = only_node_of_form(graph.semantic_graph(), "literal");
+    assert_eq!(
+        gt["body"]["arguments"][1]["target"]["digest"],
+        json!(literal.to_string())
+    );
+    let conjunction = function(
+        "h",
+        &[("a", boolean())],
+        boolean(),
+        None,
+        binary(
+            BinaryOperator::And,
+            name_expr("a"),
+            Expression::boolean(true),
+        ),
+    );
+    let graph = check(vec![conjunction]).expect("h checks");
+    only_node_of_form(graph.semantic_graph(), "literal");
+}
+
+/// FR-358 step 6: an integer literal operand of an integer `==` or `!=`
+/// over `Integer` operands, on either side, is inline. Against an
+/// `Int[lo, hi]` operand the literal is narrowed to it, so the operand is a
+/// `numeric.narrow` application (a graph child) over the literal's node. A
+/// Boolean equality keeps its literal node.
+#[trace("FR-093-AC-30", "TC-415")]
+#[test]
+fn integer_literals_are_inline_operands_of_integer_equality() {
+    for (operator, identity) in [
+        (BinaryOperator::Equal, "quire.op.integer.eq"),
+        (BinaryOperator::NotEqual, "quire.op.integer.ne"),
+    ] {
+        for literal_left in [false, true] {
+            let (left, right) = if literal_left {
+                (integer_expr(1), name_expr("x"))
+            } else {
+                (name_expr("x"), integer_expr(1))
+            };
+            let compare = function(
+                "g",
+                &[("x", integer_form())],
+                boolean(),
+                None,
+                binary(operator, left, right),
+            );
+            let graph = check(vec![compare]).expect("g checks");
+            let node = application(graph.semantic_graph(), identity);
+            let (inline, other) = if literal_left { (0, 1) } else { (1, 0) };
+            let arguments = &node["body"]["arguments"];
+            assert!(
+                is_inline_integer(&arguments[inline], "1"),
+                "{identity}: {arguments}"
+            );
+            assert_eq!(arguments[other]["term"], "reference", "{identity}");
+            assert_no_literal_node(graph.semantic_graph(), "1");
+        }
+        let narrowed = function(
+            "n",
+            &[("x", int_form(0, 9))],
+            boolean(),
+            None,
+            binary(operator, name_expr("x"), integer_expr(1)),
+        );
+        let graph = check(vec![narrowed]).expect("n checks");
+        let semantic = graph.semantic_graph();
+        let node = application(semantic, identity);
+        let narrow_key = semantic
+            .nodes()
+            .find(|candidate| {
+                preimage(candidate)["body"]["operation"]["identity"] == "quire.op.numeric.narrow"
+            })
+            .expect("the literal is narrowed")
+            .key()
+            .to_string();
+        assert_eq!(
+            node["body"]["arguments"][1]["target"]["digest"], narrow_key,
+            "{identity} compares `x` with the narrow node"
+        );
+        let narrow = application(semantic, "quire.op.numeric.narrow");
+        let literal = only_node_of_form(semantic, "literal");
+        assert_eq!(
+            narrow["body"]["arguments"][0]["target"]["digest"],
+            json!(literal.to_string()),
+            "the narrow node applies to the literal node"
+        );
+    }
+    let boolean_equality = function(
+        "h",
+        &[("a", boolean())],
+        boolean(),
+        None,
+        binary(
+            BinaryOperator::Equal,
+            name_expr("a"),
+            Expression::boolean(true),
+        ),
+    );
+    let graph = check(vec![boolean_equality]).expect("h checks");
+    let node = application(graph.semantic_graph(), "quire.op.boolean.eq");
+    assert_eq!(node["body"]["arguments"][1]["term"], "reference");
+    only_node_of_form(graph.semantic_graph(), "literal");
+}
+
+fn lower_hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+/// Assert every node of `graph` in a recursion group carries its place in
+/// its preimage: a structural node `{group, ordinal, size}` with the group
+/// digest, an application node `{ordinal, size}`.
+fn assert_group_members_carry_their_recursion(graph: &SemanticGraph) {
+    for node in graph.nodes() {
+        let preimage = preimage(node);
+        let Some(recursion) = node.recursion() else {
+            assert!(preimage["recursion"].is_null());
+            continue;
+        };
+        let mut expected = json!({"ordinal": recursion.ordinal(), "size": recursion.size()});
+        if preimage["version"] == "quire.structural-node/v1" {
+            expected["group"] = json!(lower_hex(recursion.group()));
+        }
+        assert_eq!(preimage["recursion"], expected, "{}", node.key());
+    }
+}
+
+/// TC-413 step 9 (FR-092-AC-11): the self-recursive `f` is a group of one
+/// recursive function, and every member carries its place in the group.
+#[trace("FR-092-AC-11", "TC-413")]
+#[test]
+fn a_self_recursive_function_is_a_group_of_one() {
+    let graph = check(vec![recursive("f", "f")]).expect("f checks");
+    let graph = graph.semantic_graph();
+    assert_group_members_carry_their_recursion(graph);
+    let members: Vec<&SemanticNode> = graph
+        .nodes()
+        .filter(|node| node.recursion().is_some())
+        .collect();
+    assert!(!members.is_empty());
+    assert!(members
+        .iter()
+        .any(|node| node.semantic_form() == "recursive_function"));
+}
+
+/// TC-413 step 9 (FR-092-AC-11): `ping` and `pong` key alike, whichever is
+/// declared first.
+#[trace("FR-092-AC-11", "FR-383-AC-25", "TC-413")]
+#[test]
+fn a_mutually_recursive_pair_keys_alike_in_either_order() {
+    let keys = |functions: Vec<FunctionDeclaration>| {
+        let checked = check(functions).expect("ping and pong check");
+        let graph = checked.semantic_graph();
+        assert_group_members_carry_their_recursion(graph);
+        let members = graph
+            .nodes()
+            .filter(|node| node.recursion().is_some())
+            .count();
+        assert!(members >= 2, "both functions are group members");
+        graph.nodes().map(SemanticNode::key).collect::<Vec<_>>()
+    };
+    let ping_first = keys(vec![recursive("ping", "pong"), recursive("pong", "ping")]);
+    let pong_first = keys(vec![recursive("pong", "ping"), recursive("ping", "pong")]);
+    assert_eq!(ping_first, pong_first);
+}
+
+/// TC-413 step 9 (FR-092-AC-11): `List` and `Tree` are recursion groups
+/// whose members carry their place, and `Tree`'s record refers to its own
+/// ordinal as a `group_reference`.
+#[trace("FR-092-AC-11", "TC-413")]
+#[test]
+fn recursive_records_are_groups_whose_members_refer_to_their_ordinal() {
+    let list = NodeKey::from_digest([5; 32]);
+    let tree = NodeKey::from_digest([6; 32]);
+    let units = [
+        CompositeDeclaration::new(
+            list,
+            "List",
+            CompositeShape::Record(vec![FieldDeclaration::new(
+                "next",
+                ValueType::Composite(list),
+                Presence::Optional,
+            )]),
+        ),
+        CompositeDeclaration::new(
+            tree,
+            "Tree",
+            CompositeShape::Record(vec![FieldDeclaration::new(
+                "kids",
+                sequence(ValueType::Composite(tree), Some((0, 3))),
+                Presence::Required,
+            )]),
+        ),
+    ];
+    for record in units {
+        let name = record.name().to_owned();
+        let types = TypeEnvironment::new([record], []).expect("FR-143 admits the record");
+        let checked = PackageDeclarations {
+            types,
+            ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
+        }
+        .check(CheckingLimits::default())
+        .expect("the record checks");
+        let graph = checked.semantic_graph();
+        assert_group_members_carry_their_recursion(graph);
+        let type_nodes: Vec<NodeKey> = checked
+            .checked_type_nodes()
+            .map(CheckedTypeNode::node)
+            .collect();
+        assert_eq!(type_nodes.len(), 1, "{name}");
+        let record_node = graph.node(type_nodes[0]).expect("the record's node");
+        assert_eq!(record_node.semantic_form(), "record");
+        assert!(record_node.recursion().is_some(), "{name} is a group member");
+        let self_references = graph
+            .nodes()
+            .filter(|node| {
+                preimage(node)["semantic_type"]
+                    == json!({"term": "group_reference", "ordinal": 0})
+                    || preimage(node)["semantic_type"]
+                        == json!({"term": "group_reference", "ordinal": 1})
+            })
+            .count();
+        if name == "Tree" {
+            assert!(self_references >= 1, "Tree's group types a member by ordinal");
+        }
+    }
 }

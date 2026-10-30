@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-417, TC-418 and TC-419: FR-094's model-owned, `Reference<T>`,
 //! `Population<T>[N]`, clause-function and quantity type nodes, checked
-//! against FR-094's golden vectors. The vectors are read from this
-//! repository's own FR-094 text at compile time, so the spec and the test
-//! cannot drift apart.
+//! structurally: which nodes exist, what each preimage carries and which
+//! node each reference names.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use ix_trace_rs::trace;
 use qsl_forms::{
@@ -49,6 +48,37 @@ fn applications<'g>(graph: &'g SemanticGraph, identity: &str) -> Vec<&'g Semanti
         .nodes()
         .filter(|node| preimage(node)["body"]["operation"]["identity"] == json!(identity))
         .collect()
+}
+
+/// The parameter node named `name` at `level`.
+fn parameter<'g>(graph: &'g SemanticGraph, name: &str, level: u64) -> &'g SemanticNode {
+    graph
+        .nodes()
+        .find(|node| {
+            let preimage = preimage(node);
+            node.semantic_form() == "parameter"
+                && preimage["body"]["members"][0]["value"]["value"] == json!(name)
+                && preimage["body"]["members"][1]["value"]["value"] == json!(level.to_string())
+        })
+        .unwrap_or_else(|| panic!("no parameter node {name} at level {level}"))
+}
+
+fn member_declaration(node: &SemanticNode) -> Json {
+    preimage(node)["body"]["operation"]["member"]["declaration"]["digest"].clone()
+}
+
+/// The model node of the declaration `name` of `acme/orders` in `graph`.
+fn model_node_of(graph: &SemanticGraph, name: &str) -> NodeKey {
+    let found: Vec<NodeKey> = graph
+        .nodes()
+        .filter(|node| {
+            preimage(node)["owner"]["node"] == json!(format!("ix://acme/orders/{name}"))
+                && matches!(node.node_tag(), NodeTag::Model | NodeTag::Relation)
+        })
+        .map(SemanticNode::key)
+        .collect();
+    assert_eq!(found.len(), 1, "one model node for {name}");
+    found[0]
 }
 
 // ---------------------------------------------------------------------
@@ -403,6 +433,66 @@ fn lower_with_occurrences<T>(
 // TC-417: model declaration, `Reference<T>` and `Population<T>[N]` nodes.
 // ---------------------------------------------------------------------
 
+/// TC-417 steps 1-2 (FR-094-AC-1, AC-2): `r`'s type node is a reference
+/// type over `Order`'s model node and `s`'s is over `Invoice`'s; the
+/// correspondence holds exactly the two model nodes.
+#[trace("FR-094-AC-1", "FR-094-AC-2", "FR-094-CON-2", "TC-417")]
+#[test]
+fn reference_types_key_over_their_model_nodes_and_record_the_correspondence() {
+    let g = function(
+        "g",
+        &[("r", named("M::Order")), ("s", named("M::Invoice"))],
+        builtin(BuiltinType::Boolean),
+        Expression::boolean(true),
+    );
+    let acme = admitted("1.0.0");
+    let checked = check(&acme, vec![g]);
+    let graph = checked.semantic_graph();
+    let r_type = parameter(graph, "r", 0).semantic_type().expect("typed");
+    let s_type = parameter(graph, "s", 1).semantic_type().expect("typed");
+    assert_ne!(r_type, s_type);
+    let m1 = model_node_of(graph, "Order");
+    let m3 = model_node_of(graph, "Invoice");
+    let m1_preimage = preimage(graph.node(m1).unwrap());
+    assert_eq!(
+        m1_preimage["owner"],
+        json!({"kind": "model", "identity": "acme/orders", "node": "ix://acme/orders/Order"})
+    );
+    assert!(m1_preimage["owner"].get("version").is_none(), "no version member");
+    assert!(m1_preimage["declaration"].is_null());
+    let r = preimage(graph.node(r_type).unwrap());
+    assert!(r.get("owner").is_none());
+    assert!(
+        serde_json::to_string(&r["body"])
+            .unwrap()
+            .contains(&m1.to_string()),
+        "the reference type's body references Order's model node"
+    );
+
+    // FR-094-AC-2: exactly (Order, M1) and (Invoice, M3).
+    let model_nodes: Vec<NodeKey> = graph
+        .nodes()
+        .filter(|node| matches!(node.node_tag(), NodeTag::Model | NodeTag::Relation))
+        .map(SemanticNode::key)
+        .collect();
+    assert_eq!(model_nodes, {
+        let mut expected = vec![m1, m3];
+        expected.sort();
+        expected
+    });
+    assert_eq!(checked.resolve_declaration(m1), Some(&key("Order")));
+    assert_eq!(checked.resolve_declaration(m3), Some(&key("Invoice")));
+    assert_eq!(checked.resolve_declaration(r_type), None);
+
+    // FR-094-CON-2: every owned node without a source declaration is
+    // model-owned and carries a `ModelOwner`.
+    for node in graph.nodes().filter(|node| node.declaration().is_none()) {
+        if let Some(owner) = preimage(node).get("owner") {
+            assert_eq!(owner["kind"], json!("model"), "{}", node.key());
+        }
+    }
+}
+
 /// FR-093 `Equality` row (FR-093-AC-3): `r = s` over two
 /// `Reference<M::Order>` parameters is `quire.op.reference.eq`, with no
 /// member, mode, law or leaf.
@@ -431,6 +521,23 @@ fn reference_equality_is_the_reference_eq_operation() {
     assert_eq!(equal["body"]["arguments"].as_array().map(Vec::len), Some(2));
 }
 
+/// TC-417 step 3 (FR-094-AC-1): the relationship `billedTo` keys to a
+/// relation node.
+#[trace("FR-094-AC-1", "TC-417")]
+#[test]
+fn a_relationship_keys_to_its_relation_node() {
+    let acme = admitted("1.0.0");
+    let (billed_to, graph) = lower(
+        std::slice::from_ref(&acme.model),
+        Default::default(),
+        |lowering| lowering.model_node(&key("billedTo"), &generated_location()),
+    );
+    let node = graph
+        .node(billed_to.expect("billedTo keys"))
+        .expect("the relation node is in the graph");
+    assert_eq!(node.node_tag(), NodeTag::Relation);
+}
+
 /// A selected relationship is a model graph root even when no checked value
 /// or frame names it yet.
 #[trace("FR-093-AC-27", "FR-094-AC-9", "TC-417")]
@@ -457,6 +564,159 @@ fn selected_relationships_are_rooted_in_the_checked_graph() {
     assert_eq!(generated.len(), 1, "the unreferenced relation has one root");
     assert_eq!(generated[0].0, relations[0].key());
     assert_eq!(generated[0].2, &declaration);
+}
+
+/// FR-093-AC-8: the checked `Attribute`, `AllInstances`, `Lookup` (both
+/// absence modes) and `Dispatch` nodes lower to their rows' operation,
+/// member, mode and arguments. A `Pre` node is checked only in a standalone
+/// postcondition expression, which `check` does not lower into the package
+/// graph.
+#[trace("FR-094-AC-3", "FR-094-AC-4", "TC-417", "FR-093-AC-8", "TC-415")]
+#[test]
+fn population_reference_and_model_rows_lower_to_their_operations() {
+    let acme = admitted("1.0.0");
+    let parameters = [("p", population("M::Order", 3)), ("r", named("M::Order"))];
+    let all_instances = Expression::all_instances(named("M::Order"), name("p"));
+    let lookup = |absence| Expression::lookup(named("M::Order"), name("p"), name("r"), absence);
+    let mut declarations = dispatch(&acme, "Order/size");
+    declarations.functions.extend([
+        function(
+            "f1",
+            &parameters,
+            builtin(BuiltinType::Integer),
+            Expression::size(all_instances),
+        ),
+        function(
+            "f2",
+            &parameters,
+            named("M::Order"),
+            lookup(qsl_foundation::absence::AbsenceMode::Undefined),
+        ),
+        function(
+            "f3",
+            &parameters,
+            builtin(BuiltinType::Boolean),
+            Expression::present(lookup(qsl_foundation::absence::AbsenceMode::Empty)),
+        ),
+        function(
+            "f4",
+            &parameters,
+            builtin(BuiltinType::Int).with_bounds(vec!["0".to_owned(), "9".to_owned()]),
+            Expression::field(Expression::deref(name("r")), "total".to_owned()),
+        ),
+        // A dispatched call checks only inside a clause (FR-151).
+        FunctionDeclaration::clause(
+            "f5",
+            parameters
+                .iter()
+                .map(|(name, form)| ((*name).to_owned(), form.clone()))
+                .collect(),
+            builtin(BuiltinType::Boolean),
+            None,
+            Expression::binary(
+                BinaryOperator::GreaterOrEqual,
+                Expression::dispatch(name("r"), "size".to_owned(), Vec::new()),
+                Expression::integer(0_i64),
+            ),
+            DeclaredClauseKind::Precondition,
+        ),
+        function(
+            "f6",
+            &[
+                ("p", population("M::Order", 5)),
+                ("q", population("M::Invoice", 3)),
+            ],
+            builtin(BuiltinType::Boolean),
+            Expression::boolean(true),
+        ),
+    ]);
+    let checked = check_declarations(declarations);
+    let graph = checked.semantic_graph();
+    let m1 = model_node_of(graph, "Order");
+
+    // FR-094-AC-3: `p` is a population parameter at level 0 and `r` a
+    // reference parameter at level 1.
+    let p = parameter(graph, "p", 0);
+    let r = parameter(graph, "r", 1);
+    let population_type = graph
+        .node(p.semantic_type().expect("typed"))
+        .expect("the population type node");
+    assert!(population_type.semantic_type().is_some());
+    assert_ne!(p.semantic_type(), r.semantic_type());
+    // A different bound or target gives a different population type node.
+    let other_populations: BTreeSet<NodeKey> = graph
+        .nodes()
+        .filter(|node| node.semantic_form() == "parameter")
+        .filter_map(|node| node.semantic_type())
+        .collect();
+    assert!(other_populations.len() >= 4, "[3], [5] and Invoice[3] differ");
+
+    let all = applications(graph, "quire.op.model.all_instances");
+    assert_eq!(all.len(), 1);
+    let lookups = applications(graph, "quire.op.model.lookup");
+    assert_eq!(lookups.len(), 2, "one lookup node per absence mode");
+    let modes: BTreeSet<String> = lookups
+        .iter()
+        .map(|node| preimage(node)["body"]["operation"]["mode"].to_string())
+        .collect();
+    assert_eq!(modes.len(), 2);
+    assert!(
+        modes
+            .iter()
+            .any(|mode| mode.contains("\"absence\"") && mode.contains("\"empty\"")),
+        "a lookup with `absent empty` carries mode absence = empty: {modes:?}"
+    );
+
+    // FR-094-AC-4: the attribute and dispatch members name `Order`'s model
+    // node.
+    let deref = applications(graph, "quire.op.record.project");
+    assert_eq!(deref.len(), 1);
+    assert_eq!(member_declaration(deref[0]), json!(m1.to_string()));
+    let dispatch_call = applications(graph, "quire.op.model.dispatch_call");
+    assert_eq!(dispatch_call.len(), 1);
+    assert_eq!(member_declaration(dispatch_call[0]), json!(m1.to_string()));
+}
+
+/// TC-417 step 6 (FR-094-AC-4): over `s: Reference<M::Sub>`, the attribute
+/// and dispatch members name `Sub`'s model node, not `Order`'s, though
+/// `Order` declares `total`.
+#[trace("FR-094-AC-4", "TC-417")]
+#[test]
+fn model_members_name_the_static_object_type() {
+    let acme = admitted("1.0.0");
+    let mut declarations = dispatch(&acme, "Sub/size");
+    declarations.functions.extend([
+        function(
+            "total_of",
+            &[("s", named("M::Sub"))],
+            builtin(BuiltinType::Int).with_bounds(vec!["0".to_owned(), "9".to_owned()]),
+            Expression::field(Expression::deref(name("s")), "total".to_owned()),
+        ),
+        FunctionDeclaration::clause(
+            "sized",
+            vec![("s".to_owned(), named("M::Sub"))],
+            builtin(BuiltinType::Boolean),
+            None,
+            Expression::binary(
+                BinaryOperator::GreaterOrEqual,
+                Expression::dispatch(name("s"), "size".to_owned(), Vec::new()),
+                Expression::integer(0_i64),
+            ),
+            DeclaredClauseKind::Precondition,
+        ),
+    ]);
+    let checked = check_declarations(declarations);
+    let graph = checked.semantic_graph();
+    assert!(parameter(graph, "s", 0).semantic_type().is_some());
+    let m5 = model_node_of(graph, "Sub");
+    assert_ne!(m5, model_node_of(graph, "Order"));
+    let m5 = json!(m5.to_string());
+    let project = applications(graph, "quire.op.record.project");
+    let call = applications(graph, "quire.op.model.dispatch_call");
+    assert_eq!(project.len(), 1);
+    assert_eq!(call.len(), 1);
+    assert_eq!(member_declaration(project[0]), m5);
+    assert_eq!(member_declaration(call[0]), m5);
 }
 
 /// TC-417 step 7 (FR-094-AC-7): an unmapped `EffectiveId`, an unadmitted
@@ -619,6 +879,90 @@ fn two_admitted_versions_of_one_model_identity_refuse() {
     );
 }
 
+/// The clause function `graph` keys for `member`'s `clause`, by owner node
+/// and `clause` binding.
+fn clause_function<'g>(
+    graph: &'g SemanticGraph,
+    member: &str,
+    clause: &str,
+) -> Vec<&'g SemanticNode> {
+    graph
+        .nodes()
+        .filter(|node| {
+            let preimage = preimage(node);
+            node.node_tag() == NodeTag::Function
+                && preimage["owner"]["node"] == json!(format!("ix://acme/orders/{member}"))
+                && preimage["body"]["members"]
+                    .as_array()
+                    .and_then(|members| members.last())
+                    .is_some_and(|last| {
+                        last["name"] == "clause" && last["value"]["value"] == clause
+                    })
+        })
+        .collect()
+}
+
+/// TC-418 steps 1, 3 and 5 (FR-094-AC-5): `Order.size`'s precondition and
+/// body are clause functions owned by the operation member's model node, and
+/// renaming the synthesized labels leaves every key unchanged.
+#[trace("FR-094-AC-5", "FR-094-CON-2", "TC-418")]
+#[test]
+fn clause_functions_key_under_their_operation_members_model_owner() {
+    let acme = admitted("1.0.0");
+    let size = check_declarations(dispatch(&acme, "Order/size"));
+    let graph = size.semantic_graph();
+    let precondition = clause_function(graph, "Order/size", "precondition");
+    let body = clause_function(graph, "Order/size", "body");
+    assert_eq!(precondition.len(), 1);
+    assert_eq!(body.len(), 1);
+    assert_ne!(precondition[0].key(), body[0].key());
+    let c1 = preimage(precondition[0]);
+    assert_eq!(
+        c1["owner"],
+        json!({"kind": "model", "identity": "acme/orders", "node": "ix://acme/orders/Order/size"})
+    );
+    assert!(c1["declaration"].is_null());
+
+    let count = check_declarations(dispatch(&acme, "Order/count"));
+    assert_eq!(
+        clause_function(count.semantic_graph(), "Order/count", "precondition").len(),
+        1
+    );
+
+    let mut relabelled = dispatch(&acme, "Order/size");
+    for (index, function) in relabelled.functions.iter_mut().enumerate() {
+        function.name = format!("renamed_{index}");
+    }
+    let relabelled = check_declarations(relabelled);
+    let keys = |graph: &SemanticGraph| graph.nodes().map(SemanticNode::key).collect::<Vec<_>>();
+    assert_eq!(keys(relabelled.semantic_graph()), keys(graph));
+}
+
+/// TC-418 step 4 (FR-094-AC-5): `Sub.size`'s authored and effective
+/// preconditions are one node each in both dispatch operations, under its own
+/// owner; `Order.size`'s authored precondition stays one node.
+#[trace("FR-094-AC-5", "TC-418")]
+#[test]
+fn a_redefining_candidates_clauses_key_once_under_its_own_owner() {
+    let acme = admitted("1.0.0");
+    for root in ["Order/size", "Sub/size"] {
+        let checked = check_declarations(dispatch(&acme, root));
+        let graph = checked.semantic_graph();
+        let sub = clause_function(graph, "Sub/size", "precondition");
+        assert_eq!(sub.len(), 2, "the authored and the effective precondition");
+        assert_ne!(sub[0].key(), sub[1].key());
+        for node in &sub {
+            assert_eq!(
+                preimage(node)["owner"]["node"],
+                json!("ix://acme/orders/Sub/size")
+            );
+        }
+        if root == "Order/size" {
+            assert_eq!(clause_function(graph, "Order/size", "precondition").len(), 1);
+        }
+    }
+}
+
 // ---------------------------------------------------------------------
 // TC-419: quantity type nodes.
 // ---------------------------------------------------------------------
@@ -719,6 +1063,115 @@ mod quantities {
 
     fn quantity(hex: &str) -> ValueType {
         ValueType::Quantity(UnitId::declared(node_key(hex)))
+    }
+
+    /// TC-419 steps 1-2 (FR-094-AC-6): a declared unit's quantity is typed
+    /// by the unit's nominal node, with no `compound_unit` node; the result
+    /// type of `a * a`, formed while `check` types the body, is one
+    /// compound unit node.
+    ///
+    /// `a / t`, `a / a` and `a * a / a` do not check as a function body:
+    /// no guard proves a quantity divisor nonzero (`facts`'s
+    /// `NodeKind::Quantity(Divide)` refuses `unproved-nonzero`), so their
+    /// result types are keyed from the units `result_unit` forms for them,
+    /// the same forming `check` does while typing.
+    #[trace("FR-094-AC-6", "TC-419")]
+    #[test]
+    fn quantity_types_key_to_the_unit_node_or_a_compound_unit_node() {
+        let package = |body: Expression| PackageDeclarations {
+            types: TypeEnvironment::default().with_units(units()),
+            aliases: vec![
+                ("Length".to_owned(), quantity(METRE)),
+                ("Time".to_owned(), quantity(SECOND)),
+            ],
+            functions: vec![function(
+                "q",
+                &[("a", named("Length")), ("t", named("Time"))],
+                builtin(BuiltinType::Boolean),
+                body,
+            )],
+            ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
+        };
+        let plain = check_declarations(package(Expression::boolean(true)));
+        let graph = plain.semantic_graph();
+        assert_eq!(
+            parameter(graph, "a", 0).semantic_type(),
+            Some(node_key(METRE))
+        );
+        assert!(graph
+            .nodes()
+            .all(|node| node.semantic_form() != "compound_unit"));
+        // The type node is the unit's nominal node, typed by its dimension's
+        // nominal node, which the graph holds too.
+        let metre = graph.node(node_key(METRE)).expect("the metre unit node");
+        assert_eq!(
+            (metre.node_tag(), metre.semantic_form()),
+            (NodeTag::ScalarType, "unit")
+        );
+        assert!(matches!(metre.nominal(), Some(NominalNode::Unit(None))));
+        assert_eq!(metre.semantic_type(), Some(node_key(LENGTH)));
+        let length = graph
+            .node(node_key(LENGTH))
+            .expect("the Length dimension node");
+        assert_eq!(length.semantic_form(), "dimension");
+        assert!(matches!(
+            length.nominal(),
+            Some(NominalNode::Dimension(None))
+        ));
+        assert!(graph.node(node_key(SECOND)).is_some() && graph.node(node_key(TIME)).is_some());
+
+        let square = Expression::binary(BinaryOperator::Multiply, name("a"), name("a"));
+        let squared = check_declarations(package(Expression::binary(
+            BinaryOperator::Equal,
+            square.clone(),
+            square,
+        )));
+        let graph = squared.semantic_graph();
+        let product = applications(graph, "quire.op.quantity.mul");
+        assert_eq!(product.len(), 1);
+        let u1 = product[0].semantic_type().expect("a typed product");
+        assert_eq!(graph.node(u1).unwrap().semantic_form(), "compound_unit");
+        assert_ne!(u1, node_key(METRE));
+
+        use quire_semantic_value::quantity::{result_unit, UnitOperation};
+        let table = units();
+        let unit = |hex: &str| {
+            table
+                .get(UnitId::declared(node_key(hex)))
+                .expect("an admitted unit")
+                .clone()
+        };
+        let (metre, second) = (unit(METRE), unit(SECOND));
+        let form = |operation, left: &QuantityUnit, right: &QuantityUnit| {
+            result_unit(operation, left, right).expect("the unit forms")
+        };
+        let per_second = form(UnitOperation::Divide, &metre, &second);
+        let ratio = form(UnitOperation::Divide, &metre, &metre);
+        let square = form(UnitOperation::Multiply, &metre, &metre);
+        let back = form(UnitOperation::Divide, &square, &metre);
+        let mut formed = table.clone();
+        for unit in [&per_second, &ratio, &back] {
+            formed
+                .insert(unit.clone())
+                .expect("a compound unit has an id");
+        }
+        let (keys, graph) = lower(&[], formed, |lowering| {
+            [&per_second, &ratio, &back].map(|unit| {
+                lowering
+                    .type_node(
+                        &ValueType::Quantity(unit.id().expect("a compound unit has an id")),
+                        &generated_location(),
+                    )
+                    .expect("a held compound unit keys")
+            })
+        });
+        assert_eq!(keys.iter().collect::<BTreeSet<_>>().len(), 3);
+        let u2 = preimage(graph.node(keys[0]).unwrap());
+        assert_eq!(
+            u2["body"]["members"][0]["members"][0]["value"]["target"]["digest"],
+            json!(resolved(METRE))
+        );
+        assert_ne!(keys[2], node_key(METRE));
     }
 
     /// FR-093 `ConvertScalar` quantity row (FR-093-AC-3): converting a

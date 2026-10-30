@@ -736,3 +736,31 @@ fn a_tuple_value_is_a_value_node_over_its_arguments() {
         node_ref(parameter_named(graph, "b").key())
     );
 }
+
+/// TC-413 step 7 (FR-092-AC-9): `rational(1, 2)` and `rational(2, 4)` as a
+/// `Rational[-9, 9; 1, 9]` literal, through `check`, give the same one
+/// literal node.
+#[trace("FR-092-AC-9", "TC-413")]
+#[test]
+fn rational_literals_are_one_literal_node_through_check() {
+    let mut keys = Vec::new();
+    for (numerator, denominator) in [(1_i64, 2_i64), (2, 4)] {
+        let literal = function(
+            "half",
+            &[],
+            rational_form(["-9", "9", "1", "9"]),
+            None,
+            Expression::rational(Integer::from(numerator), Integer::from(denominator)),
+        );
+        let checked = check(vec![literal]).expect("the literal checks");
+        let literals: Vec<NodeKey> = checked
+            .semantic_graph()
+            .nodes()
+            .filter(|node| node.semantic_form() == "literal")
+            .map(SemanticNode::key)
+            .collect();
+        assert_eq!(literals.len(), 1);
+        keys.push(literals[0]);
+    }
+    assert_eq!(keys[0], keys[1], "an equal rational is one node");
+}
