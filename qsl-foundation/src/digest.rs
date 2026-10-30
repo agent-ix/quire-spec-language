@@ -138,8 +138,6 @@ pub enum DigestDomain {
     SourceBytesV1,
     /// `quire.definition.bytes/v1`.
     DefinitionBytesV1,
-    /// `quire.checked-semantic-node/v1`.
-    CheckedSemanticNodeV1,
     /// `quire.contract-ir.semantic/v1`.
     ContractIrSemanticV1,
     /// `quire.diagnostic-catalog.bytes/v1`.
@@ -163,7 +161,7 @@ pub enum DigestDomain {
 impl DigestDomain {
     /// Every closed variant, in FR-201's own table order, for exhaustive
     /// round-trip tests.
-    pub const ALL: [Self; 20] = [
+    pub const ALL: [Self; 19] = [
         Self::IrCanonical,
         Self::IrBound,
         Self::IrSemantic,
@@ -174,7 +172,6 @@ impl DigestDomain {
         Self::PackageSemanticV2,
         Self::SourceBytesV1,
         Self::DefinitionBytesV1,
-        Self::CheckedSemanticNodeV1,
         Self::ContractIrSemanticV1,
         Self::DiagnosticCatalogBytesV1,
         Self::GeneratedArtifactBytesV1,
@@ -201,7 +198,6 @@ impl DigestDomain {
             Self::PackageSemanticV2 => "quire.package.semantic/v2",
             Self::SourceBytesV1 => "quire.source.bytes/v1",
             Self::DefinitionBytesV1 => "quire.definition.bytes/v1",
-            Self::CheckedSemanticNodeV1 => "quire.checked-semantic-node/v1",
             Self::ContractIrSemanticV1 => "quire.contract-ir.semantic/v1",
             Self::DiagnosticCatalogBytesV1 => "quire.diagnostic-catalog.bytes/v1",
             Self::GeneratedArtifactBytesV1 => "quire.generated-artifact.bytes/v1",
@@ -224,9 +220,8 @@ impl DigestDomain {
     /// "the entry's raw bytes hash to its own declared digest", which is
     /// only ever true for a domain defined that way. A `sha256-jcs` or
     /// `.../jcs/v1` domain digests a canonicalized form this repo has no
-    /// canonicalizer for; a `quire.package.semantic/v2` or
-    /// `quire.checked-semantic-node/v1` domain digests a structural
-    /// preimage, not arbitrary bytes. Admitting one of those here would
+    /// canonicalizer for; a `quire.package.semantic/v2` domain digests a
+    /// structural preimage, not arbitrary bytes. Admitting one of those here would
     /// make every entry under it fail the raw-bytes check with a spurious
     /// `byte-digest-mismatch`, naming a staleness that does not exist for a
     /// domain the entry was never eligible to declare in the first place.
@@ -503,14 +498,14 @@ mod digest_record_tests {
     /// `DigestDomain::as_str()`'s own match arms: a wrong label there (e.g.
     /// `ModelEffectiveDeclarationV2` silently becoming `.../v3`) fails the
     /// first assertion in the loop rather than round-tripping only against
-    /// itself (#260 review item 4). Both `[(...); 20]` and `DigestDomain::
-    /// ALL: [Self; 20]` are fixed-length arrays, so a 20th-to-21st-entry
+    /// itself (#260 review item 4). Both `[(...); 19]` and `DigestDomain::
+    /// ALL: [Self; 19]` are fixed-length arrays, so a 19th-to-20th-entry
     /// mismatch between them is a compile error, not something this test
     /// could observe at runtime -- the per-entry label and round-trip
     /// assertions below are this test's real teeth (#260 review round 2).
     #[test]
     fn every_fr201_domain_round_trips_through_the_wire() {
-        let labels: [(DigestDomain, &str); 20] = [
+        let labels: [(DigestDomain, &str); 19] = [
             (DigestDomain::IrCanonical, "ir-canonical"),
             (DigestDomain::IrBound, "ir-bound"),
             (DigestDomain::IrSemantic, "ir-semantic"),
@@ -521,10 +516,6 @@ mod digest_record_tests {
             (DigestDomain::PackageSemanticV2, "quire.package.semantic/v2"),
             (DigestDomain::SourceBytesV1, "quire.source.bytes/v1"),
             (DigestDomain::DefinitionBytesV1, "quire.definition.bytes/v1"),
-            (
-                DigestDomain::CheckedSemanticNodeV1,
-                "quire.checked-semantic-node/v1",
-            ),
             (
                 DigestDomain::ContractIrSemanticV1,
                 "quire.contract-ir.semantic/v1",
@@ -559,7 +550,7 @@ mod digest_record_tests {
                 "quire.model.object-universe/v2",
             ),
         ];
-        assert_eq!(DigestDomain::ALL.len(), 20);
+        assert_eq!(DigestDomain::ALL.len(), 19);
         assert_eq!(labels.len(), 20);
         for (domain, expected_label) in labels {
             assert_eq!(domain.as_str(), expected_label, "{domain:?}'s FR-201 label");
@@ -638,11 +629,11 @@ mod digest_record_tests {
     #[test]
     fn a_cross_domain_digest_is_unequal_despite_equal_bytes() {
         let same_bytes = bytes(0x42);
-        let node = DigestRecord::mint(DigestDomain::CheckedSemanticNodeV1, same_bytes);
+        let other = DigestRecord::mint(DigestDomain::SourceBytesV1, same_bytes);
         let effective = DigestRecord::mint(DigestDomain::ModelEffectiveDeclarationV2, same_bytes);
-        assert_ne!(node, effective);
+        assert_ne!(other, effective);
         assert_eq!(
-            node.as_bytes(),
+            other.as_bytes(),
             effective.as_bytes(),
             "sanity: bytes really do match"
         );

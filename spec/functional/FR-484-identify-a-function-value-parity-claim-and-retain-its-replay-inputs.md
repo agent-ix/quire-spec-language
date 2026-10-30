@@ -131,7 +131,7 @@ protocol clauses select. Such an entry is no semantic profile selection under
 any mapping: FR-071's decode refuses every profile outside its closed set
 `unknown_profile`/`unsupported-selection`. The entries are bound into the claim through
 `package_id`, which the replay recomputes from the sources it recompiles
-(BLOCKED-BY QSpec #510/STD-583 (owner: planner titan:QSL:plan)). No producer reads, maps or copies
+No producer reads, maps or copies
 such an entry into the request or the packet, and QSL defines no accessor for
 one: a package that selects temporal or protocol profiles gives its
 value-parity claims the same empty list as a package that selects
@@ -221,7 +221,7 @@ are equal, whatever their results read.
   key and the `subject_kind` are fixed by the form and are not fields.
 - `qsl_replay::value_parity_obligation(&ValueParityPreimage)`: the preimage
   itself as the identity, after the position check, or the position-order
-  refusal of the Behavior section. BLOCKED-BY STD-583 (owner: planner titan:QSL:plan).
+  refusal of the Behavior section.
 - `FunctionSite.value_parity: Option<ValueParitySite>`, with
   `ValueParitySite { preimage: ValueParityPreimage, obligation_identity:
   ObligationIdentity }`: `Some` exactly when the selected function's
