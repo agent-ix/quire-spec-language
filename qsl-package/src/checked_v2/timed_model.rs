@@ -465,7 +465,7 @@ impl CheckedTimedModel {
             })
             .copied()
             .collect::<Vec<_>>();
-        roots.sort_by(|a, b| a.node_id.digest.cmp(&b.node_id.digest));
+        roots.sort_by(|a, b| a.node_id.cmp(&b.node_id));
         if roots.is_empty() {
             return Ok(Vec::new());
         }
@@ -513,10 +513,7 @@ impl CheckedTimedModel {
 }
 
 fn checked_id(key: quire_exact::NodeKey) -> CheckedNodeId {
-    CheckedNodeId {
-        domain: quire_exact::NODE_KEY_DOMAIN.into(),
-        digest: key.to_string().into(),
-    }
+    crate::emit::node_id(key)
 }
 
 impl TimedNodeMetadata {
