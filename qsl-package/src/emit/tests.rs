@@ -19,7 +19,7 @@ use qsl_semantics::value::{always_roles, native_diagnostics_catalog, DefinitionR
 use quire_contract_model::CheckedPackageEvidence;
 use quire_exact::{
     CardinalityBound, CollectionKind, CollectionType, NodeKey, PathSegment, Presence, Role,
-    ValueType, NODE_KEY_DOMAIN,
+    ValueType,
 };
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::{
@@ -406,14 +406,6 @@ fn the_lock_selects_the_catalog_definitions() {
             assert_eq!(region["source"], source);
         }
     }
-    assert_eq!(
-        wire["identity_preimage"]["edition"],
-        wire["lock"]["edition"]
-    );
-    assert_eq!(
-        wire["identity_preimage"]["definition_selections"],
-        wire["lock"]["definition_selections"]
-    );
     let diagnostics = native_diagnostics_catalog();
     assert_eq!(
         wire["diagnostics"]["catalog"],
@@ -668,26 +660,6 @@ fn tc_416_packages() -> [CheckedPackage; 3] {
     ]
 }
 
-/// TC-416 steps 1, 2 and 5 (FR-093-AC-7): each node the emission arm writes,
-/// rebuilt from the written node by FR-322's application rule or FR-092's
-/// structural rule, keys to its `node_id`, recursion-group members by their
-/// place in graph order.
-#[trace("FR-093-AC-7", "TC-416")]
-#[test]
-fn every_written_node_recomputes_to_its_node_id() {
-    for package in tc_416_packages() {
-        let nodes = written_nodes(&package);
-        assert!(!nodes.is_empty());
-        for (node, group) in with_groups(&nodes) {
-            assert_eq!(
-                json!(rebuilt_key(node, &group)),
-                node["node_id"]["digest"],
-                "{node}"
-            );
-        }
-    }
-}
-
 /// TC-416 step 5 (FR-093-AC-7): a recursion group's members carry the group
 /// digest as their label and are written together in ordinal order: the
 /// recursive `f`'s three members under FR-092's label, and `Tree`'s three.
@@ -695,14 +667,11 @@ fn every_written_node_recomputes_to_its_node_id() {
 #[test]
 fn recursion_group_members_are_written_in_ordinal_order() {
     for (package, label) in [(recursive_f(), None::<String>), (tree(), None)] {
-        let expected: BTreeMap<String, usize> = package
+        let expected: BTreeMap<NodeKey, usize> = package
             .graph()
             .semantic_graph()
             .nodes()
-            .filter_map(|node| {
-                node.recursion()
-                    .map(|group| (node.key().to_string(), group.ordinal()))
-            })
+            .filter_map(|node| node.recursion().map(|group| (node.key(), group.ordinal())))
             .collect();
         let nodes = written_nodes(&package);
         let members: Vec<(usize, &Value)> = nodes
@@ -714,7 +683,8 @@ fn recursion_group_members_are_written_in_ordinal_order() {
         assert_eq!(members[2].0 - members[0].0, 2, "the members are contiguous");
         for (ordinal, (_, member)) in members.iter().enumerate() {
             assert_eq!(
-                expected[member["node_id"]["digest"].as_str().unwrap()],
+                expected[&qsl_foundation::node_wire::node_key_from_json(&member["node_id"])
+                    .expect("a structural recursion member id")],
                 ordinal
             );
             assert_eq!(member["recursion_group"], members[0].1["recursion_group"]);
@@ -729,11 +699,14 @@ fn recursion_group_members_are_written_in_ordinal_order() {
 /// test-side walker: body reference targets, operation member declarations and populations,
 /// and a `bounded_domain` node's semantic type.
 fn rebuilt_dependencies(node: &Value) -> Vec<Value> {
-    fn walk(term: &Value, found: &mut BTreeSet<String>) {
+    fn walk(term: &Value, found: &mut BTreeSet<NodeKey>) {
         match term {
             Value::Object(members) => {
                 if members.get("term") == Some(&json!("reference")) {
-                    found.insert(members["target"]["digest"].as_str().unwrap().to_owned());
+                    found.insert(
+                        qsl_foundation::node_wire::node_key_from_json(&members["target"])
+                            .expect("a structural reference target"),
+                    );
                 }
                 for key in ["declaration", "population"] {
                     if let Some(named) = members
@@ -741,7 +714,10 @@ fn rebuilt_dependencies(node: &Value) -> Vec<Value> {
                         .and_then(|operation| operation.get("member"))
                         .and_then(|member| member.get(key))
                     {
-                        found.insert(named["digest"].as_str().unwrap().to_owned());
+                        found.insert(
+                            qsl_foundation::node_wire::node_key_from_json(named)
+                                .expect("a structural member key"),
+                        );
                     }
                 }
                 members.values().for_each(|value| walk(value, found));
@@ -753,11 +729,14 @@ fn rebuilt_dependencies(node: &Value) -> Vec<Value> {
     let mut found = BTreeSet::new();
     walk(&node["body"], &mut found);
     if node["node_tag"] == "bounded_domain" {
-        found.insert(node["semantic_type"]["digest"].as_str().unwrap().to_owned());
+        found.insert(
+            qsl_foundation::node_wire::node_key_from_json(&node["semantic_type"])
+                .expect("a structural semantic type"),
+        );
     }
     found
         .into_iter()
-        .map(|digest| json!({"domain": "quire.checked-semantic-node/v1", "digest": digest}))
+        .map(|key| qsl_foundation::node_wire::node_key_to_json(&key).expect("a structural key"))
         .collect()
 }
 
@@ -782,19 +761,17 @@ fn dependencies_are_the_lists_the_rules_rebuild() {
         .iter()
         .filter(|node| node.get("recursion_group").is_some())
         .collect();
-    let digest = |id: &Value| id["digest"].as_str().unwrap().to_owned();
-    let ids: BTreeSet<String> = members
-        .iter()
-        .map(|node| digest(&node["node_id"]))
-        .collect();
+    let key =
+        |id: &Value| qsl_foundation::node_wire::node_key_from_json(id).expect("a structural key");
+    let ids: BTreeSet<NodeKey> = members.iter().map(|node| key(&node["node_id"])).collect();
     let mut next = BTreeMap::new();
     for member in &members {
         let dependencies = member["dependencies"].as_array().unwrap();
         assert_eq!(dependencies.len(), 1, "{member}");
-        assert!(ids.contains(&digest(&dependencies[0])));
-        next.insert(digest(&member["node_id"]), digest(&dependencies[0]));
+        assert!(ids.contains(&key(&dependencies[0])));
+        next.insert(key(&member["node_id"]), key(&dependencies[0]));
     }
-    let start = digest(&members[0]["node_id"]);
+    let start = key(&members[0]["node_id"]);
     let mut at = start.clone();
     for _ in 0..3 {
         at = next[&at].clone();
@@ -823,7 +800,9 @@ fn every_emitted_node_has_its_recorded_occurrences() {
         assert!(!occurrences.is_empty(), "{node}");
         for occurrence in occurrences {
             let key = (
-                node["node_id"]["digest"].as_str().unwrap().to_owned(),
+                qsl_foundation::node_wire::node_key_from_json(&node["node_id"])
+                    .expect("an emitted node id")
+                    .to_string(),
                 occurrence["role"].as_str().unwrap().to_owned(),
                 occurrence["ordinal"].as_u64().unwrap(),
             );
@@ -961,15 +940,14 @@ fn a_record_and_a_tuple_are_written_with_their_declarations() {
     for (name, form) in [("Point", "record"), ("Pair", "tuple")] {
         let node = declared(&wire, name);
         assert_eq!(node["semantic_form"], form);
-        let digest = node["node_id"]["digest"]
-            .as_str()
-            .expect("the node id is written");
+        let key = qsl_foundation::node_wire::node_key_from_json(&node["node_id"])
+            .expect("the structural node id is written");
         assert_eq!(
             node["occurrences"],
             json!([{"role": "declaration", "ordinal": 0}]),
             "{name}"
         );
-        assert_eq!(exports.get(name).map(String::as_str), Some(digest));
+        assert_eq!(exports.get(name), Some(&key.to_string()));
     }
 }
 
@@ -1069,7 +1047,8 @@ fn a_declared_name_segment_that_is_no_identifier_refuses_by_that_segment() {
 #[trace("TC-416")]
 #[test]
 fn one_enum_declaration_bound_twice_is_declared_once() {
-    let owner = || json!({"kind": "source", "authority": "a", "identity": "u"});
+    let owner =
+        || json!({"kind": "source", "authority": "a", "identity": "u", "package_name": "pkg"});
     let first = status_enum(owner(), "Status");
     let second = status_enum(owner(), "Status");
     let key = first.declaration.key();
@@ -1112,7 +1091,7 @@ fn status_enum(owner: Value, name: &str) -> qsl_semantics::check::EnumBinding {
     use qsl_semantics::value::enumeration::{
         AdmittedEnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
     };
-    use qsl_semantics::value::{NodeIdentityPreimage, NodeOwner, OwnerSelection};
+    use qsl_semantics::value::{NodeOwner, OwnerSelection};
 
     let preimage = EnumDeclarationPreimage::from_json(json!({
         "version": "quire.enum-declaration-node/v1",
@@ -1123,39 +1102,21 @@ fn status_enum(owner: Value, name: &str) -> qsl_semantics::check::EnumBinding {
     }))
     .expect("a schema-valid preimage");
     let owners = OwnerSelection::new([NodeOwner::clone(preimage.owner())]);
-    let key = NodeKey::from_digest(
-        preimage
-            .digest(qsl_foundation::IdentityLimits::default())
-            .unwrap(),
-    );
-    let declaration = AdmittedEnumDeclaration::admit(
-        preimage,
-        key,
-        &owners,
-        qsl_foundation::IdentityLimits::default(),
-    )
-    .expect("admitted");
+    let key = preimage.key().expect("the enum has a structural key");
+    let declaration =
+        AdmittedEnumDeclaration::admit(preimage, key.clone(), &owners).expect("admitted");
     let members = ["Ready", "Done"]
         .into_iter()
         .map(|case| {
             let member = EnumMemberPreimage::from_json(json!({
                 "version": "quire.enum-member-node/v1",
-                "declaration_node_id": {"domain": NODE_KEY_DOMAIN, "digest": key.to_string()},
+                "declaration_node_id": qsl_foundation::node_wire::node_key_to_json(&key)
+                    .expect("a structural enum declaration key"),
                 "case": case,
             }))
             .unwrap();
-            let member_key = NodeKey::from_digest(
-                member
-                    .digest(qsl_foundation::IdentityLimits::default())
-                    .unwrap(),
-            );
-            declaration
-                .admit_member(
-                    &member,
-                    member_key,
-                    qsl_foundation::IdentityLimits::default(),
-                )
-                .unwrap()
+            let member_key = member.key().expect("the member has a structural key");
+            declaration.admit_member(&member, member_key).unwrap()
         })
         .collect();
     qsl_semantics::check::EnumBinding {
@@ -1178,11 +1139,11 @@ fn status_enum(owner: Value, name: &str) -> qsl_semantics::check::EnumBinding {
 #[test]
 fn enum_declaration_and_member_nodes_are_written() {
     let local = status_enum(
-        json!({"kind": "source", "authority": "a", "identity": "u"}),
+        json!({"kind": "source", "authority": "a", "identity": "u", "package_name": "pkg"}),
         "Status",
     );
     let foreign = status_enum(
-        json!({"kind": "definition", "authority": "agent-ix", "identity": "example-model"}),
+        json!({"kind": "definition", "authority": "agent-ix", "identity": "example-model", "package_name": "example-model"}),
         "Foreign",
     );
     let status = local.declaration.key();
@@ -1209,16 +1170,23 @@ fn enum_declaration_and_member_nodes_are_written() {
         .nodes()
         .find(|node| node.semantic_form() == "parameter")
         .expect("keep's parameter node");
-    assert_eq!(parameter.semantic_type(), Some(status));
+    assert_eq!(parameter.semantic_type(), Some(status.clone()));
     let keep_key = package.graph().function_identity("keep").unwrap();
     let emission = emit(&package);
-    let omitted: BTreeMap<String, &OmissionCause> = emission
+    let omitted: BTreeMap<NodeKey, &OmissionCause> = emission
         .omitted
         .iter()
-        .map(|omission| (omission.node.digest.to_string(), &omission.cause))
+        .map(|omission| {
+            let wire = serde_json::to_value(&omission.node).expect("an omitted node id encodes");
+            (
+                qsl_foundation::node_wire::node_key_from_json(&wire)
+                    .expect("an omitted structural key"),
+                &omission.cause,
+            )
+        })
         .collect();
     assert_eq!(
-        omitted.get(&foreign_key.to_string()),
+        omitted.get(&foreign_key),
         Some(&&OmissionCause::UnlockedOwner)
     );
     assert!(
@@ -1227,7 +1195,7 @@ fn enum_declaration_and_member_nodes_are_written() {
             .any(|cause| matches!(cause, OmissionCause::NamesAbsentNode(_))),
         "{omitted:?}"
     );
-    assert!(!omitted.contains_key(&parameter.key().to_string()));
+    assert!(!omitted.contains_key(&parameter.key()));
     // The foreign enum's two members name its declaration.
     assert_eq!(omitted.len(), 3, "{omitted:?}");
     let exports = verified_exports(&emission);
@@ -1237,7 +1205,7 @@ fn enum_declaration_and_member_nodes_are_written() {
     assert_eq!(exports.get("keep"), Some(&keep_key.to_string()));
     let wire = wire(&emission);
     let declaration = declared(&wire, "Status");
-    assert_eq!(declaration["node_id"]["digest"], json!(status.to_string()));
+    assert_eq!(declaration["node_id"], node_id_of(&status));
     assert_eq!(declaration["node_tag"], "scalar_type");
     assert_eq!(declaration["semantic_form"], "enum");
     assert_eq!(declaration["semantic_type"], declaration["node_id"]);
@@ -2253,85 +2221,6 @@ fn a_fault_injected_partway_through_node_emission_writes_nothing() {
     // this function's own return type, not merely untested.
 }
 
-// No `#[trace]` tag: no TC names the I2 reader's own preimage refusals; the
-// test backs `read_checked_package_v2`'s `InvalidPreimage` arm.
-/// An enum declaration node whose `declaration` is dropped (its declaration
-/// occurrence re-roled `expression`, so it keeps one) passes IR's v2 reader:
-/// IR's `validate_declaration_names` checks the nominal join only on a node
-/// carrying both. QSL's I2 read refuses it as
-/// `DeclarationNominalMismatch` with no declared name, through the
-/// `InvalidPreimage` arm, and yields no package.
-#[test]
-fn a_nominal_node_without_its_declaration_is_refused_by_the_i2_read() {
-    let local = status_enum(
-        json!({"kind": "source", "authority": "a", "identity": "u"}),
-        "Status",
-    );
-    let status = json!(local.declaration.key().to_string());
-    let emission = emit(&declared_types(vec![local], vec![]));
-    let mut wire = wire(&emission);
-    let strip = |node: &mut Value| {
-        if node["node_id"]["digest"] == status {
-            node.as_object_mut().unwrap().remove("declaration").unwrap();
-            for occurrence in node
-                .get_mut("occurrences")
-                .and_then(Value::as_array_mut)
-                .into_iter()
-                .flatten()
-            {
-                if occurrence["role"] == "declaration" {
-                    occurrence["role"] = json!("expression");
-                }
-            }
-        }
-    };
-    wire["semantic_graph"]["nodes"]
-        .as_array_mut()
-        .unwrap()
-        .iter_mut()
-        .for_each(strip);
-    let mut re_roled = 0;
-    for entry in wire["source_map"].as_array_mut().unwrap() {
-        if entry["node_id"]["digest"] == status && entry["role"] == "declaration" {
-            entry["role"] = json!("expression");
-            re_roled += 1;
-        }
-    }
-    assert_eq!(re_roled, 1, "Status had one declaration entry");
-    let package_id = crate::checked_v2::tests::derived_package_id(&wire);
-    wire["package_id"]["digest"] = json!(package_id.hex());
-    let mut evidence = CheckedPackageEvidence::new();
-    for feature in wire["lock"]["required_features"].as_array().unwrap() {
-        evidence.support_feature(feature.as_str().unwrap());
-    }
-    let pinned: PinnedRequest = qsl_semantics::library::fixtures::single_pin(library(), package_id);
-    let outcome = read_v2(
-        &jcs(&wire),
-        library(),
-        V2ReadLimits::default(),
-        &evidence,
-        &pinned,
-    );
-    let Read::Refused(crate::checked_v2::V2ReadRefusal::Structural(structural)) = outcome else {
-        panic!("expected a structural refusal, got {outcome:?}");
-    };
-    let qsl_semantics::library::LibraryRefusal::InvalidPreimage {
-        library: refused,
-        defect:
-            qsl_semantics::library::PreimageDefect::DeclarationNominalMismatch {
-                node,
-                declared: None,
-                nominal,
-            },
-    } = *structural
-    else {
-        panic!("expected InvalidPreimage(DeclarationNominalMismatch), got {structural:?}");
-    };
-    assert_eq!(refused, library());
-    assert_eq!(json!(node.to_string()), status);
-    assert_eq!(nominal, "Status");
-}
-
 /// FR-027-AC-5 (TC-435 step 1): the complete-V1 compile fixture, a record,
 /// an Integer function and a function with parameters, goes S1 to S4 as
 /// spine `compile` runs it, is written with nothing omitted and reads back
@@ -2499,7 +2388,7 @@ fn a_model_bearing_unit_emits_its_model_selection_and_reads_back_verified() {
 
     let (emission, wire, read) = emit_model_unit(&unit, None);
     assert!(wire["lock"].get("model_selections").is_none());
-    assert!(wire["identity_preimage"].get("model_selections").is_none());
+    assert!(wire["lock"].get("model_selections").is_none());
     assert!(
         nodes(&wire).iter().any(|node| node["node_tag"] == "model"),
         "a model node is emitted"
@@ -2508,17 +2397,24 @@ fn a_model_bearing_unit_emits_its_model_selection_and_reads_back_verified() {
     // the content-only `ModelOwner`, `{kind, identity, node}` with no
     // version, the key IR's reader recomputes from the lock selection.
     let model_key = |artifact: &str| {
-        sha256_hex(
-            format!(
-                r#"{{"body":{{"members":[],"term":"aggregate"}},"declaration":null,"node_tag":"model","owner":{{"identity":"acme/orders","kind":"model","node":"ix://acme/orders/{artifact}"}},"recursion":null,"semantic_form":"object_type","semantic_type":null,"version":"quire.structural-node/v1"}}"#
-            )
-            .as_bytes(),
+        NodeKey::new(
+            "acme/orders",
+            vec![
+                PathSegment::Text("model".to_owned()),
+                PathSegment::Text("object_type".to_owned()),
+                PathSegment::Text(format!("ix://acme/orders/{artifact}")),
+            ],
+            0,
         )
+        .expect("a model declaration key")
     };
-    let emitted: BTreeSet<String> = nodes(&wire)
+    let emitted: BTreeSet<NodeKey> = nodes(&wire)
         .iter()
         .filter(|node| node["node_tag"] == "model" && node["semantic_form"] != "model_root")
-        .map(|node| node["node_id"]["digest"].as_str().unwrap().to_owned())
+        .map(|node| {
+            qsl_foundation::node_wire::node_key_from_json(&node["node_id"])
+                .expect("a structural model key")
+        })
         .collect();
     assert_eq!(
         emitted,
@@ -2553,7 +2449,7 @@ fn a_model_bearing_unit_emits_its_model_selection_and_reads_back_verified() {
     assert_eq!(last_entry["ordinal"], 0);
     match read {
         Read::Verified { package, .. } => {
-            assert_eq!(package.package_id(), emission.package.package_id());
+            assert_eq!(package.library(), &library());
             let exports: BTreeSet<String> = package
                 .into_import_view()
                 .exports()
@@ -2583,7 +2479,7 @@ fn inherited_field_access_is_accepted_by_the_i2_read() {
     let (emission, .., read) = emit_model_unit(&unit, None);
     match read {
         Read::Verified { package, .. } => {
-            assert_eq!(package.package_id(), emission.package.package_id());
+            assert_eq!(package.library(), &library());
             let exports: BTreeSet<String> = package
                 .into_import_view()
                 .exports()
@@ -2608,7 +2504,7 @@ fn conforming_reference_equality_is_accepted_by_the_i2_read() {
     let (emission, .., read) = emit_model_unit(&unit, None);
     match read {
         Read::Verified { package, .. } => {
-            assert_eq!(package.package_id(), emission.package.package_id());
+            assert_eq!(package.library(), &library());
             let exports: BTreeSet<String> = package
                 .into_import_view()
                 .exports()

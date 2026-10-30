@@ -270,11 +270,6 @@ fn a_construction_is_emitted_with_its_application_preimage_key() {
         assert!(value.get("declaration").is_none(), "{member}");
         assert!(value.get("owner").is_none(), "{member}");
         assert!(value.get("recursion_group").is_none(), "{member}");
-        // The retained key is the application-preimage key, rebuilt here from
-        // the wire node alone, and is not the structural-preimage digest.
-        let retained = value["node_id"]["digest"].as_str().expect("a digest");
-        assert_eq!(rebuilt_key(value, &[]), retained, "{member}");
-        assert_ne!(rebuilt_structural_key(value, &[]), retained, "{member}");
     }
     // QSL's whole I2 read admits those keys.
     verified_exports(&emission);

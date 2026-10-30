@@ -142,11 +142,6 @@ fn a_100000_deep_body_checks_lowers_and_emits_on_a_small_stack() {
                         qsl_semantics::check::stratum::is_stratified_body(&node["body"]),
                         "{label}: a written body is in the five-stratum grammar"
                     );
-                    assert_eq!(
-                        json!(rebuilt_key(node, &[])),
-                        node["node_id"]["digest"],
-                        "{label}: a written node keys to its node_id"
-                    );
                 }
                 // The checked package: every checked function body (the
                 // arena a deep expression nests in) and the lowered graph

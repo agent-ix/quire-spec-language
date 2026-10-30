@@ -125,7 +125,9 @@ fn a_clause_names_the_object_type_its_over_input_references() {
 
     let mut expected = vec![owner["node_id"].clone()];
     targets(&clause["body"], &mut expected);
-    expected.sort_by(|left, right| left["digest"].as_str().cmp(&right["digest"].as_str()));
+    expected.sort_by_key(|id| {
+        qsl_foundation::node_wire::node_key_from_json(id).expect("a structural dependency")
+    });
     expected.dedup();
     assert_eq!(clause["dependencies"], Value::Array(expected));
 
@@ -134,15 +136,6 @@ fn a_clause_names_the_object_type_its_over_input_references() {
         .filter(|node| node.get("owner_model").is_some())
         .collect();
     assert_eq!(carriers, [clause], "only the clause carries the edge");
-
-    // The key IR re-derives is the key over the preimage with the edge: the
-    // test's own rebuild reads it from the wire node.
-    let preimage = crate::emit::tests::rebuilt_preimage(clause, &[], true);
-    assert_eq!(preimage["owner_model"], owner["node_id"]);
-    assert_eq!(
-        crate::emit::tests::rebuilt_key(clause, &[]),
-        clause["node_id"]["digest"].as_str().unwrap()
-    );
 
     let admitted = lowered.ir.unwrap();
     let typed = admitted
