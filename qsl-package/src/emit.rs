@@ -692,7 +692,7 @@ impl<'g> Candidate<'g> {
 /// reference is required to have an admitted structural identity here.
 fn checked_body(node: &SemanticNode, tag: CheckedNodeTag) -> Result<CheckedTerm, EmitRefusal> {
     if let Some(nominal) = node.nominal_payload() {
-        return Ok(nominal_term(nominal));
+        return nominal_term(nominal);
     }
     let BodyTerm::Aggregate(aggregate) = node.body() else {
         return checked_term(node.body());
@@ -740,18 +740,18 @@ fn checked_rational(value: &quire_exact::Rational) -> CheckedRational {
 
 /// Convert admitted nominal facts without reading an identity back out of a
 /// structural key. Enum ordering and conversion factors are payload facts.
-fn nominal_term(payload: &NominalPayload) -> CheckedTerm {
+fn nominal_term(payload: &NominalPayload) -> Result<CheckedTerm, EmitRefusal> {
     let body = match payload {
-        NominalPayload::Enum(enumeration) => NominalBody::Enum {
-            ordered: enumeration.is_ordered(),
-            members: enumeration
+        NominalPayload::Enum(enumeration) => NominalBody::try_enum(
+            enumeration.is_ordered(),
+            enumeration
                 .members()
                 .iter()
                 .map(|member| member.as_str().into())
                 .collect(),
-        },
-        NominalPayload::Dimension(dimension) => NominalBody::Dimension {
-            terms: dimension
+        ),
+        NominalPayload::Dimension(dimension) => NominalBody::try_dimension(
+            dimension
                 .terms()
                 .iter()
                 .map(|(base, exponent)| DimensionTerm {
@@ -759,19 +759,21 @@ fn nominal_term(payload: &NominalPayload) -> CheckedTerm {
                     exponent: exponent.to_string().into(),
                 })
                 .collect(),
-        },
-        NominalPayload::Unit(unit) => NominalBody::Unit {
-            dimension_node_id: node_id(unit.dimension()),
-            target_unit_node_id: unit.target().map(node_id),
-            scale: checked_rational(unit.factor()),
-            offset: checked_rational(unit.offset()),
-        },
-        NominalPayload::DimensionEquivalence(equivalence) => NominalBody::DimensionEquivalence {
-            dimension_node_ids: equivalence.dimensions().each_ref().map(node_id),
-            root_scale: checked_rational(equivalence.scale()),
-        },
+        ),
+        NominalPayload::Unit(unit) => NominalBody::try_unit(
+            node_id(unit.dimension()),
+            unit.target().map(node_id),
+            checked_rational(unit.factor()),
+            checked_rational(unit.offset()),
+        ),
+        NominalPayload::DimensionEquivalence(equivalence) => {
+            NominalBody::try_dimension_equivalence(
+                equivalence.dimensions().each_ref().map(node_id),
+                checked_rational(equivalence.scale()),
+            )
+        }
     };
-    CheckedTerm::NominalBody(Box::new(body))
+    Ok(CheckedTerm::NominalBody(Box::new(body.map_err(encoding)?)))
 }
 
 fn checked_term(term: &BodyTerm) -> Result<CheckedTerm, EmitRefusal> {
@@ -1355,7 +1357,7 @@ fn graph_order<'c, 'g>(kept: &[&'c Candidate<'g>]) -> Vec<&'c Candidate<'g>> {
             None => order.push(*candidate),
             Some(recursion) => {
                 let group = recursion.anchor().clone();
-                if emitted_groups.insert(group) {
+                if emitted_groups.insert(group.clone()) {
                     if let Some(members) = groups.remove(&group) {
                         order.extend(members.into_iter().flatten());
                     }
@@ -2833,7 +2835,7 @@ fn emit_package_inner(
                     match (nominal.form.as_str(), nominal.nominal_payload()) {
                         ("dimension", Some(payload @ NominalPayload::Dimension(_)))
                         | ("unit", Some(payload @ NominalPayload::Unit(_))) => {
-                            nominal_term(payload)
+                            nominal_term(payload)?
                         }
                         _ => {
                             return Err(EmitRefusal::TimedModelWriterInvariant(
