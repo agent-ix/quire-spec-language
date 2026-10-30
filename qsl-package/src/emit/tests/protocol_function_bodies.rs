@@ -155,7 +155,14 @@ fn a_chain_of_functions_and_protocols_is_keyed_in_dependency_order() {
     assert_ne!(digest(inner), digest(outer));
     // Declaring them in the reverse order changes nothing.
     let reversed: String = parts.iter().rev().copied().collect();
-    assert_eq!(identity(&admitted(&reversed)), identity(&lowered));
+    let clause_ids = |lowered: &Lowered| -> std::collections::BTreeSet<String> {
+        nodes(&lowered.wire)
+            .iter()
+            .filter(|node| node["semantic_form"] == "protocol_clause")
+            .map(digest)
+            .collect()
+    };
+    assert_eq!(clause_ids(&admitted(&reversed)), clause_ids(&lowered));
 }
 
 /// QSL-844: a component of function calls and protocol references that

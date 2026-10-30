@@ -1331,7 +1331,13 @@ fn the_package_crate_builds_no_term_and_mints_no_key() {
         let text = std::fs::read_to_string(root.join(file)).unwrap();
         let shipped = text.split("#[cfg(test)]").next().unwrap();
         for token in forbidden {
-            assert!(!shipped.contains(token), "{file} calls {token}");
+            let called = shipped.match_indices(token).any(|(at, _)| {
+                !shipped[..at]
+                    .chars()
+                    .next_back()
+                    .is_some_and(|before| before.is_alphanumeric() || before == '_')
+            });
+            assert!(!called, "{file} calls {token}");
         }
         scanned += 1;
     }

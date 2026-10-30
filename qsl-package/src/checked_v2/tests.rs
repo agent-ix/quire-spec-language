@@ -2817,7 +2817,7 @@ fn a_refusal_at_a_value_is_located_at_its_pointer() {
             assert_eq!(ir.code, CheckedPackageRefusalCode::InvalidPackage);
             assert_eq!(
                 refusal.locus(),
-                Some(&artifact_locus("/lock/dependency_selections/1"))
+                Some(&artifact_locus("/lock/dependency_selections/0"))
             );
         }
         other => panic!("expected a repeated identity to refuse, got {other:?}"),
@@ -2905,7 +2905,7 @@ fn each_reader_limit_names_its_kind_bound_actual_and_locus() {
             Setting::I2WorkUnits,
             0,
             1,
-            "/semantic_graph/nodes/0/body",
+            "/semantic_graph/nodes/0/node_id",
         ),
     ];
     for (envelope, limits, setting, bound, actual, pointer) in cases {

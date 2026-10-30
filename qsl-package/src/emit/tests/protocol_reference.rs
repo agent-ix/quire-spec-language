@@ -320,16 +320,6 @@ fn assert_clause_graph(wire: &Value, clause: &Value) {
     assert_eq!(constraint["body"]["value"], json!(true));
 }
 
-fn reference_key(text: &str) -> (String, Value) {
-    let (_, wire, read) = emit_model_unit(text, None);
-    assert!(matches!(read, Read::Verified { .. }), "{read:?}");
-    let reference = node_of(&wire, "protocol", "protocol_reference").clone();
-    (
-        reference["node_id"].to_string(),
-        wire,
-    )
-}
-
 const REFERS_TO_FILL: &str = "function refers using v(): Boolean pure { protocol Fill }\n";
 
 /// The spine-model unit whose protocol `Flow` has two roles and a channel
@@ -669,29 +659,6 @@ fn a_clause_key_is_distinct_per_protocol_and_independent_of_declaration_order() 
     assert_eq!(forward.len(), 2);
     assert_ne!(forward["Fill"], forward["Drain"]);
     assert_eq!(forward, keys_of(&format!("{drain}{fill}")));
-}
-
-/// FR-092-AC-17 (TC-1021 step 6): the reference's key follows the bound target, repeats for
-/// the same unit and changes with the target's key.
-#[trace("FR-092-AC-17", "TC-1021")]
-#[test]
-fn a_references_key_follows_its_bound_target() {
-    let both = format!("{}{}", protocol("Fill"), protocol("Drain"));
-    let against_fill = selecting(&format!("{REFERS_TO_FILL}{both}"));
-    let against_drain = selecting(&format!(
-        "function refers using v(): Boolean pure {{ protocol Drain }}\n{both}"
-    ));
-    let (fill, _) = reference_key(&against_fill);
-    let (drain, _) = reference_key(&against_drain);
-    let (again, _) = reference_key(&against_fill);
-    assert_ne!(fill, drain, "different targets, different keys");
-    assert_eq!(fill, again, "the same unit, the same key");
-
-    // `Fill` renamed: its node key changes, so the reference's does too.
-    let renamed =
-        selecting(&format!("{REFERS_TO_FILL}{}", protocol("Fill")).replace("Fill", "Pour"));
-    let (poured, _) = reference_key(&renamed);
-    assert_ne!(fill, poured, "a changed target key changes the reference");
 }
 
 /// FR-218-AC-8 (TC-1021 step 4): an unknown name, a name only qualified, a

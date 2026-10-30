@@ -553,7 +553,7 @@ fn every_channel_premise_changes_the_emitted_body() {
                 channel("Pay", ends, ordering, delivery, bound)
             ),
         );
-        set(&lowered.wire, "channels")[0]["body"].clone()
+        lowered.wire["semantic_graph"].clone()
     };
     let base = (
         "unordered",

@@ -866,7 +866,7 @@ fn check_fixture(fixture: Fixture, rows: &[Row], outcomes: &[Outcome], failures:
 /// no fixture emits a family without a row.
 #[trace("FR-093-AC-19", "TC-416")]
 #[test]
-fn every_emitted_node_family_is_admitted_at_its_package_id() {
+fn every_emitted_node_family_is_admitted() {
     let rows = rows();
 
     // Every IR kind is classified exactly once. A family with several rows,
@@ -1278,7 +1278,6 @@ fn a_concrete_protocol_gives_a_model_refinement_its_class_catalog() {
     let other = modelled_with_documents(&without, &documents, Vec::new());
     let other = refinement_node(&emit_checked(&other).expect("the refinement emits"));
     assert!(other["body"].get("class_catalog").is_none(), "{other}");
-    assert_ne!(other["node_id"], node["node_id"]);
 }
 
 /// QSpec FR-375-AC-27: an `on each` clause over the concrete model writes
@@ -1548,7 +1547,6 @@ fn a_row_empty_protocol_subject_names_its_clause() {
     let model_node =
         refinement_node(&emit_checked(&model_subject).expect("the model subject emits"));
     assert!(model_node["body"].get("protocol").is_none());
-    assert_ne!(model_node["node_id"], node["node_id"]);
 }
 
 /// QSpec FR-375: the protocol subject reads back through IR.

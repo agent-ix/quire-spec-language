@@ -66,7 +66,7 @@ pub(super) fn member<'v>(node: &'v Value, name: &str) -> &'v Value {
 }
 
 /// Each step of an aggregate path, its literal members by name and a
-/// reference member as `ref:<digest>`.
+/// reference member as `ref:<node id>`.
 fn steps(path: &Value) -> Vec<Vec<(String, String)>> {
     path["members"]
         .as_array()
@@ -149,7 +149,10 @@ fn a_clock_collection_emits_one_template_place() {
             vec![
                 ("kind".to_owned(), "slot".to_owned()),
                 ("collection".to_owned(), "sequence".to_owned()),
-                ("selector".to_owned(), format!("ref:{integer}")),
+                ("selector".to_owned(), format!(
+                    "ref:{}",
+                    qsl_foundation::node_wire::node_key_to_json(&integer).expect("a structural key")
+                )),
                 ("minimum".to_owned(), "0".to_owned()),
                 ("maximum".to_owned(), "3".to_owned()),
             ],

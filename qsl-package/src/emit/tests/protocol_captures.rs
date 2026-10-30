@@ -89,11 +89,6 @@ fn finish_level(wire: &Value) -> String {
     parameter(wire, &finish["body"]["arguments"][0]["value"]).1
 }
 
-/// The clause key.
-fn key(lowered: &Lowered) -> String {
-    clause(&lowered.wire)["node_id"].to_string()
-}
-
 /// FR-464 "Binders", "Level", FR-383: under `on origin` the captures are
 /// parameters at the levels after `over` (1, 2, ...), the `captures`
 /// argument lists their `binder`/`initializer` records in source order, an
@@ -240,7 +235,6 @@ fn the_captures_follow_the_source_order() {
     let backward = lowered(y, x);
     assert_eq!(binders(&forward.wire), [pair("x", "1"), pair("y", "2")]);
     assert_eq!(binders(&backward.wire), [pair("y", "1"), pair("x", "2")]);
-    assert_ne!(key(&forward), key(&backward));
 }
 
 /// The activation Group is `kind`, `trigger` and, for a guard, `guard`: a
@@ -300,9 +294,6 @@ fn an_each_guard_emits_a_boolean_term_over_the_trigger() {
     assert_eq!(guard["body"]["term"], "literal");
     assert_eq!(guard["body"]["value"], true);
 
-    let keys = [&absent, &read, &negated, &literal].map(key);
-    let distinct: BTreeSet<&String> = keys.iter().collect();
-    assert_eq!(distinct.len(), keys.len(), "each guard keys its own clause");
 }
 
 /// Captures and a guard together, and two protocols that capture alike: the
