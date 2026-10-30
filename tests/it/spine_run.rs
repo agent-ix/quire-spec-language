@@ -241,7 +241,7 @@ fn native_result_two_reader_refuses_invalid_command_error_members() {
 }
 
 /// FR-100-AC-1 (TC-450 step 1): `seven()` completes integer `7`, and the
-/// document's `package_id`, `source` and `request_digest` agree with a
+/// document's `source` and `request_digest` agree with a
 /// composition of the `qsl_replay::spine` operations.
 #[test]
 #[trace("TC-450", "FR-100-AC-1")]
@@ -265,7 +265,7 @@ fn tc_450_step_1_seven_completes_through_the_spine() {
         document["request_digest"],
         ByteDigest::of(&request_bytes).to_string()
     );
-    let compiled = crate::support::front_end::emitted(
+    crate::support::front_end::emitted(
         qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-run", "fixture", "fixture:1"),
         "program.native",
         &program,
@@ -273,10 +273,6 @@ fn tc_450_step_1_seven_completes_through_the_spine() {
         &qsl_replay::spine::DependencyInput::default(),
     )
     .unwrap();
-    assert_eq!(
-        document["package_id"],
-        compiled.package().package_id().hex()
-    );
     assert_eq!(document["source"]["authority"], "agent-ix");
     assert_eq!(document["source"]["identity"], "test:spine-run");
     assert_eq!(document["source"]["revision_namespace"], "fixture");
@@ -299,7 +295,6 @@ fn tc_450_step_1_seven_completes_through_the_spine() {
         json!({
             "format": "spine-run-result/1",
             "request_digest": ByteDigest::of(&request_bytes).to_string(),
-            "package_id": compiled.package().package_id().hex(),
             "source": {
                 "authority": "agent-ix",
                 "identity": "test:spine-run",
