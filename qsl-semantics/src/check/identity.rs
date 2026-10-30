@@ -604,9 +604,10 @@ pub fn to_kernel_value_type(type_node: &CheckedTypeNode) -> ValueType {
         CheckedTypeNode::BoundedDomain { bound, .. } => ValueType::Int(bound.clone()),
         CheckedTypeNode::Sum { node, variants } => ValueType::Enum(EnumShape::new(
             variants.is_ordered(),
-            variants
-                .iter()
-                .map(|variant| mint_variant_id(node.clone(), variant.name())),
+            variants.iter().map(|variant| {
+                mint_variant_id(node.clone(), variant.name())
+                    .expect("an admitted sum variant has a nonempty name")
+            }),
         )),
     }
 }

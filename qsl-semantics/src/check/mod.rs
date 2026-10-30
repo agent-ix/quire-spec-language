@@ -5880,7 +5880,7 @@ fn finish_step_relations(
         } else {
             None
         };
-        let boolean = lowered.boolean;
+        let boolean = lowered.boolean.clone();
         let (node, code_roots) = lowering::finish_step_relation(
             lowered,
             &relation,
@@ -5896,24 +5896,27 @@ fn finish_step_relations(
                 cause: CheckCause::InternalFault(Box::new(KeyFault::UnkeyableRequirements)),
             }]
         })?;
-        graph
-            .occurrences
-            .record(key, family::OccurrenceRole::Declaration, location.clone());
+        graph.occurrences.record(
+            key.clone(),
+            family::OccurrenceRole::Declaration,
+            location.clone(),
+        );
         let claim_origin =
             graph
                 .occurrences
-                .record(key, family::OccurrenceRole::Claim, location.clone());
-        let occurrence = OccurrenceKey::new(claims::wire(key), claim_origin);
+                .record(key.clone(), family::OccurrenceRole::Claim, location.clone());
+        let occurrence = OccurrenceKey::new(claims::wire(key.clone()), claim_origin);
         let requirements = relation
             .model_claim()
-            .requirements(claims::wire(key), &[], &[], &[])
+            .requirements(claims::wire(key.clone()), &[], &[], &[])
             .map_err(|_| {
                 vec![CheckRefusal {
                     location: root(Origin::Expression),
                     cause: CheckCause::InternalFault(Box::new(KeyFault::UnkeyableRequirements)),
                 }]
             })?;
-        let record = claims::RequirementRecord::model_claim(requirements, claims::wire(boolean));
+        let record =
+            claims::RequirementRecord::model_claim(requirements, claims::wire(boolean.clone()));
         if graph
             .requirements
             .insert(occurrence.clone(), record)
@@ -5934,11 +5937,12 @@ fn finish_step_relations(
                     cause: CheckCause::InternalFault(Box::new(KeyFault::UnkeyableRequirements)),
                 }]
             })?;
-            let code_origin =
-                graph
-                    .occurrences
-                    .record(key, family::OccurrenceRole::Claim, location.clone());
-            let code_occurrence = OccurrenceKey::new(claims::wire(key), code_origin);
+            let code_origin = graph.occurrences.record(
+                key.clone(),
+                family::OccurrenceRole::Claim,
+                location.clone(),
+            );
+            let code_occurrence = OccurrenceKey::new(claims::wire(key.clone()), code_origin);
             let code_record = claims::RequirementRecord::unguarded(
                 code_requirements,
                 ValueType::Boolean,

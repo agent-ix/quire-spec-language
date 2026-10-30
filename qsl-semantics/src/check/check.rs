@@ -220,14 +220,14 @@ impl VariantTypeDeclaration {
         let cases = cases
             .into_iter()
             .map(|(key, case)| {
-                let variant = mint_variant_id(node.clone(), &case);
-                VariantCaseDeclaration {
+                let variant = mint_variant_id(node.clone(), &case).ok()?;
+                Some(VariantCaseDeclaration {
                     key,
                     name: case,
                     variant,
-                }
+                })
             })
-            .collect();
+            .collect::<Option<Vec<_>>>()?;
         Some(Self {
             key,
             name,
@@ -1778,7 +1778,8 @@ pub(crate) fn enum_value(binding: &EnumBinding, member: &EnumValue) -> Value {
     let rank = u32::try_from(member.position())
         .expect("an admitted enum has far fewer than u32::MAX members");
     Value::Enum(EnumMember::new(
-        mint_variant_id(binding.declaration.key(), member.case()),
+        mint_variant_id(binding.declaration.key(), member.case())
+            .expect("an admitted enum member has a nonempty case"),
         rank,
     ))
 }
