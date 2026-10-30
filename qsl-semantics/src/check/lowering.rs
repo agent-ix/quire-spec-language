@@ -81,7 +81,6 @@ mod state_transition;
 mod temporal;
 mod terminal;
 mod timed_clause;
-mod wire;
 
 pub(crate) use hybrid::{
     hybrid_location, hybrid_site, HybridClaimInput, HybridModelInput, HybridSite,

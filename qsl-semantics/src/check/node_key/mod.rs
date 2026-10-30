@@ -604,14 +604,14 @@ impl LeafTerm {
     }
 
     /// This leaf with the node key it names replaced by `map`'s image.
-    fn map_keys(&self, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Self {
+    fn map_refs(&self, map: &mut impl FnMut(&NodeRef) -> NodeRef) -> Self {
         match self {
             Self::Literal { ty, value } => Self::Literal {
-                ty: ty.map_admitted(map),
+                ty: map(&ty),
                 value: value.clone(),
             },
             Self::Reference { target } => Self::Reference {
-                target: target.map_admitted(map),
+                target: map(&target),
             },
             Self::DependencyReference { node } => Self::DependencyReference { node: node.clone() },
         }
@@ -629,8 +629,8 @@ impl<V> Binding<V> {
 }
 
 impl Binding<LeafTerm> {
-    fn map_keys(&self, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Self {
-        Self::new(self.name.clone(), self.value.map_keys(map))
+    fn map_refs(&self, map: &mut impl FnMut(&NodeRef) -> NodeRef) -> Self {
+        Self::new(self.name.clone(), self.value.map_refs(map))
     }
 }
 
@@ -642,10 +642,10 @@ impl GroupMember {
         }
     }
 
-    fn map_keys(&self, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Self {
+    fn map_refs(&self, map: &mut impl FnMut(&NodeRef) -> NodeRef) -> Self {
         match self {
-            Self::Leaf(leaf) => Self::Leaf(leaf.map_keys(map)),
-            Self::Binding(binding) => Self::Binding(binding.map_keys(map)),
+            Self::Leaf(leaf) => Self::Leaf(leaf.map_refs(map)),
+            Self::Binding(binding) => Self::Binding(binding.map_refs(map)),
         }
     }
 }
@@ -676,11 +676,11 @@ impl GroupTerm {
         self.members.iter().map(GroupMember::leaf)
     }
 
-    fn map_keys(&self, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Self {
+    fn map_refs(&self, map: &mut impl FnMut(&NodeRef) -> NodeRef) -> Self {
         Self::new(
             self.members
                 .iter()
-                .map(|member| member.map_keys(map))
+                .map(|member| member.map_refs(map))
                 .collect(),
         )
     }
@@ -695,10 +695,10 @@ impl TupleMember {
         }
     }
 
-    fn map_keys(&self, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Self {
+    fn map_refs(&self, map: &mut impl FnMut(&NodeRef) -> NodeRef) -> Self {
         match self {
-            Self::Leaf(leaf) => Self::Leaf(leaf.map_keys(map)),
-            Self::Group(group) => Self::Group(group.map_keys(map)),
+            Self::Leaf(leaf) => Self::Leaf(leaf.map_refs(map)),
+            Self::Group(group) => Self::Group(group.map_refs(map)),
         }
     }
 }
@@ -714,11 +714,11 @@ impl TupleTerm {
         self.members.iter().flat_map(TupleMember::leaves).collect()
     }
 
-    fn map_keys(&self, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Self {
+    fn map_refs(&self, map: &mut impl FnMut(&NodeRef) -> NodeRef) -> Self {
         Self::new(
             self.members
                 .iter()
-                .map(|member| member.map_keys(map))
+                .map(|member| member.map_refs(map))
                 .collect(),
         )
     }
@@ -748,16 +748,16 @@ impl BindingValue {
         }
     }
 
-    fn map_keys(&self, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Self {
+    fn map_refs(&self, map: &mut impl FnMut(&NodeRef) -> NodeRef) -> Self {
         match self {
-            Self::Leaf(leaf) => Self::Leaf(leaf.map_keys(map)),
-            Self::Group(group) => Self::Group(group.map_keys(map)),
-            Self::Tuple(tuple) => Self::Tuple(tuple.map_keys(map)),
+            Self::Leaf(leaf) => Self::Leaf(leaf.map_refs(map)),
+            Self::Group(group) => Self::Group(group.map_refs(map)),
+            Self::Tuple(tuple) => Self::Tuple(tuple.map_refs(map)),
             Self::Aggregate(aggregate) => Self::Aggregate(AggregateTerm {
                 members: aggregate
                     .members
                     .iter()
-                    .map(|member| member.map_keys(map))
+                    .map(|member| member.map_refs(map))
                     .collect(),
             }),
             Self::ExecutionPoint(point) => Self::ExecutionPoint(point.clone()),
@@ -795,13 +795,13 @@ impl MemberTerm {
         }
     }
 
-    fn map_keys(&self, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Self {
+    fn map_refs(&self, map: &mut impl FnMut(&NodeRef) -> NodeRef) -> Self {
         match self {
-            Self::Leaf(leaf) => Self::Leaf(leaf.map_keys(map)),
-            Self::Group(group) => Self::Group(group.map_keys(map)),
+            Self::Leaf(leaf) => Self::Leaf(leaf.map_refs(map)),
+            Self::Group(group) => Self::Group(group.map_refs(map)),
             Self::Binding(binding) => Self::Binding(Binding::new(
                 binding.name.clone(),
-                binding.value.map_keys(map),
+                binding.value.map_refs(map),
             )),
         }
     }
@@ -938,10 +938,28 @@ impl BodyTerm {
         Ok(())
     }
 
-    /// This body with every node key it names replaced by `map`'s image.
+    /// Call `visit` with every node reference this body holds, admitted or
+    /// pending (a reference, a literal or result type, a frame entry, an
+    /// abstraction target, an operation member's declaration or population).
+    pub(crate) fn for_each_ref(&self, visit: &mut impl FnMut(&NodeRef)) {
+        let _ = self.map_refs(&mut |reference| {
+            visit(reference);
+            reference.clone()
+        });
+    }
+
+    /// This body with every admitted node key it names replaced by `map`'s
+    /// image; pending handles are kept.
     pub(crate) fn map_keys(&self, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Self {
+        self.map_refs(&mut |reference| reference.map_admitted(&mut *map))
+    }
+
+    /// This body with every node reference it holds replaced by `map`'s
+    /// image. An operation member's declaration or population is a node
+    /// key: it takes the image only when that is admitted.
+    pub(crate) fn map_refs(&self, map: &mut impl FnMut(&NodeRef) -> NodeRef) -> Self {
         match self {
-            Self::Leaf(leaf) => Self::Leaf(leaf.map_keys(map)),
+            Self::Leaf(leaf) => Self::Leaf(leaf.map_refs(map)),
             Self::Application(ApplicationTerm {
                 operator,
                 operation,
@@ -953,15 +971,15 @@ impl BodyTerm {
                 Self::Application(ApplicationTerm {
                     operator: *operator,
                     operation,
-                    result_type: result_type.map_admitted(map),
+                    result_type: map(&result_type),
                     arguments: arguments
                         .iter()
-                        .map(|argument| argument.map_keys(map))
+                        .map(|argument| argument.map_refs(map))
                         .collect(),
                 })
             }
             Self::Aggregate(AggregateTerm { members }) => Self::Aggregate(AggregateTerm {
-                members: members.iter().map(|member| member.map_keys(map)).collect(),
+                members: members.iter().map(|member| member.map_refs(map)).collect(),
             }),
             Self::Frame(FrameTerm {
                 modifies,
@@ -973,56 +991,63 @@ impl BodyTerm {
                     .iter()
                     .map(|entry| match entry {
                         FrameModifies::Field(field) => FrameModifies::Field(FrameField {
-                            declaration: field.declaration.map_admitted(map),
+                            declaration: map(&field.declaration),
                             name: field.name.clone(),
                             scope: field.scope,
                         }),
                         FrameModifies::Relationship(declaration) => {
-                            FrameModifies::Relationship(declaration.map_admitted(map))
+                            FrameModifies::Relationship(map(&declaration))
                         }
                     })
                     .collect(),
-                creates: creates.iter().map(|node| node.map_admitted(map)).collect(),
-                deletes: deletes.iter().map(|node| node.map_admitted(map)).collect(),
+                creates: creates.iter().map(|node| map(&node)).collect(),
+                deletes: deletes.iter().map(|node| map(&node)).collect(),
                 deletes_scoped: deletes_scoped.clone(),
             }),
-            Self::Abstraction(term) => Self::Abstraction(term.map_keys(map)),
+            Self::Abstraction(term) => Self::Abstraction(term.map_refs(map)),
         }
     }
 }
 
 /// Remap only the admitted declaration references of an operation member.
-fn map_member(member: Member, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Member {
+fn map_key(map: &mut impl FnMut(&NodeRef) -> NodeRef, key: NodeKey) -> NodeKey {
+    match map(&NodeRef::Admitted(key.clone())) {
+        NodeRef::Admitted(mapped) => mapped,
+        NodeRef::Pending(_) => key,
+    }
+}
+
+fn map_member(member: Member, map: &mut impl FnMut(&NodeRef) -> NodeRef) -> Member {
     match member {
         Member::Field { declaration, name } => Member::Field {
-            declaration: map(declaration),
+            declaration: map_key(map, declaration),
             name,
         },
         Member::Position {
             declaration,
             position,
         } => Member::Position {
-            declaration: map(declaration),
+            declaration: map_key(map, declaration),
             position,
         },
         Member::Element { declaration } => Member::Element {
-            declaration: map(declaration),
+            declaration: map_key(map, declaration),
         },
         Member::RelationshipEnd {
             declaration,
             name,
             population,
         } => Member::RelationshipEnd {
-            declaration: map(declaration),
+            declaration: map_key(map, declaration),
             name,
-            population: population.map(&mut *map),
+            population: population.map(|population| map_key(map, population)),
         },
         Member::Operation { declaration, name } => Member::Operation {
-            declaration: map(declaration),
+            declaration: map_key(map, declaration),
             name,
         },
         Member::TypeArgument { declaration } => Member::TypeArgument {
-            declaration: map(declaration),
+            declaration: map_key(map, declaration),
         },
         Member::ProfileOperator { operator } => Member::ProfileOperator { operator },
         Member::StateClause {
@@ -1042,7 +1067,7 @@ fn map_member(member: Member, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Membe
         } => Member::Fairness {
             kind,
             granularity,
-            declaration: map(declaration),
+            declaration: map_key(map, declaration),
             name,
         },
     }

@@ -157,13 +157,13 @@ impl AbstractionTerm {
             .collect()
     }
 
-    /// Remap admitted node references and retain unresolved local handles.
-    pub(crate) fn map_keys(&self, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Self {
+    /// Remap every node reference.
+    pub(crate) fn map_refs(&self, map: &mut impl FnMut(&NodeRef) -> NodeRef) -> Self {
         let objects = self
             .objects
             .iter()
             .map(|entry| ObjectEntry {
-                ty: entry.ty.map_admitted(map),
+                ty: map(&entry.ty),
                 ..entry.clone()
             })
             .collect();
@@ -171,7 +171,7 @@ impl AbstractionTerm {
             .populations
             .iter()
             .map(|entry| PopulationEntry {
-                population: entry.population.map_admitted(map),
+                population: map(&entry.population),
                 ..entry.clone()
             })
             .collect();
@@ -179,7 +179,7 @@ impl AbstractionTerm {
             .frames
             .iter()
             .map(|entry| FrameEntry {
-                context: entry.context.map_admitted(map),
+                context: map(&entry.context),
                 ..entry.clone()
             })
             .collect();
