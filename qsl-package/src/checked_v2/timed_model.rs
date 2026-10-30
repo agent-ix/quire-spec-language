@@ -356,7 +356,7 @@ impl CheckedTimedModel {
         rational_type: CheckedNodeId,
         source_alias: &str,
     ) -> Option<Self> {
-        let model = checked_id(source.model_node);
+        let model = checked_id(&source.model_node);
         let source_metadata = TimedNodeMetadata {
             node_id: source_id.clone(),
             schema_version: "quire.checked-semantic-graph/v2".into(),
@@ -377,7 +377,7 @@ impl CheckedTimedModel {
             qsl_semantics::check::TimeSourceKind::Tick { period, .. } => (
                 CheckedTimeSourceKind::Tick,
                 Some(model.clone()),
-                Some(checked_id(source.tick_operation_anchor?)),
+                Some(checked_id(source.tick_operation_anchor.as_ref()?)),
                 Some(format!("{}/{}", period.numerator(), period.denominator())),
                 Some(rational_type),
             ),
@@ -385,7 +385,7 @@ impl CheckedTimedModel {
         let timed_source = CheckedTimeSource {
             metadata: source_metadata,
             kind,
-            unit: checked_id(source.unit_node),
+            unit: checked_id(&source.unit_node),
             model: model_ref,
             operation,
             period,
@@ -409,7 +409,7 @@ impl CheckedTimedModel {
         Some(Self {
             metadata: root_metadata,
             model: model.clone(),
-            time_dimension: checked_id(source.time_dimension),
+            time_dimension: checked_id(&source.time_dimension),
             source: timed_source,
             clock_places: Vec::new(),
             resets: Vec::new(),
@@ -508,7 +508,7 @@ impl CheckedTimedModel {
     }
 }
 
-fn checked_id(key: quire_exact::NodeKey) -> CheckedNodeId {
+fn checked_id(key: impl std::borrow::Borrow<quire_exact::NodeKey>) -> CheckedNodeId {
     crate::emit::node_id(key)
 }
 
