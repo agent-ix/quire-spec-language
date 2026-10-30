@@ -14,8 +14,8 @@ use qsl_foundation::SourceIdentity;
 use qsl_replay::spine::DependencyInput;
 use quire_contract_model::{
     ApplicationOperator, CheckedNodeId, CheckedOccurrenceRole, CheckedPackageEvidence,
-    CheckedPackageIdentityPreimageRefV2, CheckedPackageReadLimits, CheckedPackageV2,
-    CheckedPackageV2ReadResult, CheckedSemanticNodeV2, CheckedTerm,
+    CheckedPackageReadLimits, CheckedPackageV2, CheckedPackageV2ReadResult, CheckedSemanticNodeV2,
+    CheckedTerm,
 };
 use quire_spec_language::emit_checked_v2::{emit, run, Error, Request};
 use serde_json::{json, Value};
@@ -391,31 +391,20 @@ fn the_switch_transition_reads_back_typed_subject_input_post_claim_and_source() 
     // Read -> typed re-encode -> read: the public typed writer's output
     // admits again and the re-read carries the same typed graph (so the same
     // transition, subject, inputs, post and occurrences), the same source
-    // rows and the same package identity. Only what the writer guarantees is
+    // rows and the same package name. Only what the writer guarantees is
     // asserted: that its bytes are a fixed point of read then write.
     let written = encode(&package);
     let again = read_back(&written, &[&document]);
     assert_eq!(again.graph(), package.graph());
     assert_eq!(again.source_map(), package.source_map());
-    assert_eq!(again.package_id(), package.package_id());
+    assert_eq!(again.name(), package.name());
     assert_eq!(encode(&again), written, "write/read/write is stable");
 }
 
 /// The package re-encoded by IR's public typed writer.
 fn encode(read: &CheckedPackageV2) -> Vec<u8> {
-    let selection = read.identity_preimage();
-    let preimage = CheckedPackageIdentityPreimageRefV2 {
-        version: &selection.version,
-        edition: &selection.edition,
-        profile_selections: &selection.profile_selections,
-        definition_selections: &selection.definition_selections,
-        required_features: &selection.required_features,
-        dependency_selections: &selection.dependency_selections,
-        identity_projection: &read.graph().nodes,
-    };
     quire_contract_model::encode_checked_package_v2(
-        &preimage,
-        read.package_id(),
+        read.name(),
         read.lock(),
         read.graph(),
         quire_contract_model::CheckedPackageSourceCorrespondenceRef {
