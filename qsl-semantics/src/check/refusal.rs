@@ -2915,6 +2915,9 @@ pub enum KeyFault {
     /// An admitted enum declaration or member whose nominal preimage has no
     /// RFC 8785 encoding.
     NonCanonicalNominal(quire_exact::NodeKey),
+    /// A union or enum declaration whose member has no valid structural key:
+    /// the declaration's path extended by the member name is not a node key.
+    InvalidMemberKey(quire_exact::NodeKey),
     /// A family `check` reported a stage limit whose setting no checking
     /// limit has.
     UncheckedLimit(Setting),
@@ -2965,6 +2968,7 @@ impl KeyFault {
             Self::DuplicateModelSelection(_) => "one-model-version-per-identity",
             Self::ModelRootKey(_) => "model-root-keyed",
             Self::NonCanonicalNominal(_) => "nominal-preimage-canonical",
+            Self::InvalidMemberKey(_) => "member-key-valid",
             Self::UncheckedLimit(_) => "family-limit-is-a-checking-limit",
             Self::UnkeyableRequirements => "requirements-item-keyed",
             Self::UnclassifiedExtent(fault) | Self::StageFault(fault) => fault.invariant(),

@@ -4695,7 +4695,7 @@ impl<'a> Lowering<'a> {
                     .map_err(|_| {
                         fault(
                             node.location(),
-                            KeyFault::NonCanonicalNominal(variant.owner().clone()),
+                            KeyFault::InvalidMemberKey(variant.owner().clone()),
                         )
                     })?;
                 self.record(key.clone(), OccurrenceRole::Expression, node.location().clone());
