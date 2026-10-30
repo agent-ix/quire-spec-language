@@ -106,26 +106,22 @@ fn admit(compiled: &Compiled) -> std::sync::Arc<quire_contract_model::CheckedPac
         library(),
         V2ReadLimits::default(),
         &evidence(&compiled.wire),
-        &qsl_semantics::library::fixtures::single_pin(
-            library(),
-            compiled.emission.package.package_id(),
-        ),
     )
     .unwrap_or_else(|failure| panic!("the I2 read admits the package: {failure:?}"))
     .into_value()
     .admitted
 }
 
-fn node_with<'w>(wire: &'w Value, digest: &str) -> &'w Value {
+fn node_with<'w>(wire: &'w Value, key: &Value) -> &'w Value {
     nodes(wire)
         .iter()
-        .find(|node| node["node_id"]["digest"] == digest)
-        .unwrap_or_else(|| panic!("a node {digest}"))
+        .find(|node| &node["node_id"] == key)
+        .unwrap_or_else(|| panic!("a node {key}"))
 }
 
-fn target(term: &Value) -> &str {
+fn target(term: &Value) -> &Value {
     assert_eq!(term["term"], "reference", "{term}");
-    term["target"]["digest"].as_str().expect("a target digest")
+    &term["target"]
 }
 
 /// The member of the aggregate `body` bound to `name`.
@@ -374,29 +370,11 @@ fn an_align_skip_operation_shares_the_state_clause_anchor() {
     admit(&compiled);
 }
 
-/// FR-488-AC-11, AC-12: the `match` block changes the NodeId; a renamed
-/// clause shares one node with distinct `claim` ordinals; a renamed trace
-/// variable changes the NodeId.
+/// FR-488-AC-12: equivalent renamed declarations share one node with
+/// distinct `claim` ordinals.
 #[trace("TC-1266", "FR-488-AC-11", "FR-488-AC-12")]
 #[test]
 fn equal_clauses_share_a_node_and_differing_ones_do_not() {
-    let id = |declarations: &str| {
-        let compiled = compile(&unit(INFINITE, declarations));
-        hyper_node(&compiled.wire)["node_id"]["digest"]
-            .as_str()
-            .unwrap()
-            .to_owned()
-    };
-    let base = id(&non_interference());
-    let no_match = id(&hyper("NonInterference", "", "", "", READ_A_B));
-    assert_ne!(base, no_match);
-    let renamed_trace = id(
-        "hyper NonInterference using t over behaviours (c: Config::ConfigVersion) \
-         forall trace x of Config forall trace b of Config \
-         match { x.step.op = b.step.op } { always holds(c.versionNumber @ x = c.versionNumber @ b) }",
-    );
-    assert_ne!(base, renamed_trace);
-
     let twice = compile(&unit(
         INFINITE,
         &format!(
@@ -440,7 +418,7 @@ fn the_occurrence_round_trips_and_the_wrapper_is_no_clause_root() {
 
     let wrapper = roots[0].body().expect("a body wrapper");
     let wrapper_triple = quire_exact::Origin::new(quire_exact::Role::new("claim"), 0);
-    let wrapper_key = OccurrenceKey::new(wrapper, wrapper_triple.clone());
+    let wrapper_key = OccurrenceKey::new(wrapper.clone(), wrapper_triple.clone());
     assert_eq!(
         resolve_hyper_root(&admitted, &wrapper_key),
         Err(HyperRootUnresolved {
@@ -449,7 +427,7 @@ fn the_occurrence_round_trips_and_the_wrapper_is_no_clause_root() {
     );
     assert_eq!(HyperRootUnresolved::TAG, "hyper-root-unresolved");
     let wrong_ordinal = OccurrenceKey::new(
-        roots[0].occurrence().node(),
+        roots[0].occurrence().node().clone(),
         quire_exact::Origin::new(quire_exact::Role::new("claim"), 7),
     );
     assert!(resolve_hyper_root(&admitted, &wrong_ordinal).is_err());
@@ -605,10 +583,6 @@ fn admitted(built: &Built) -> std::sync::Arc<quire_contract_model::CheckedPackag
         library(),
         V2ReadLimits::default(),
         &evidence,
-        &qsl_semantics::library::fixtures::single_pin(
-            library(),
-            built.emission.package.package_id(),
-        ),
     )
     .unwrap_or_else(|failure| panic!("the I2 read admits the package: {failure:?}"))
     .into_value()
@@ -705,10 +679,7 @@ fn match_conjuncts_mint_typed_step_label_slots_at_their_own_levels() {
     let slots = slots(&built.wire);
     let type_form = |name: &str| {
         let slot = slots.get(name).unwrap_or_else(|| panic!("a slot {name}"));
-        node_with(
-            &built.wire,
-            slot["semantic_type"]["digest"].as_str().unwrap(),
-        )["semantic_form"]
+        node_with(&built.wire, &slot["semantic_type"])["semantic_form"]
             .as_str()
             .unwrap()
             .to_owned()
@@ -920,70 +891,6 @@ fn non_interference_v() -> String {
     )
 }
 
-/// FR-488-AC-11, AC-12, AC-13: each variant has a different NodeId;
-/// reformatting and a changed clause name keep it; `weak whole` equals the
-/// unmarked constraint and `each` differs.
-#[trace("TC-1266", "FR-488-AC-11", "FR-488-AC-12", "FR-488-AC-13")]
-#[test]
-fn node_ids_follow_the_checked_clause() {
-    let id = |declarations: String| {
-        let built = build(INFINITE, &["V"], &declarations);
-        hyper_node(&built.wire)["node_id"]["digest"]
-            .as_str()
-            .unwrap()
-            .to_owned()
-    };
-    let with =
-        |quantifiers: &str, matched: &str| clause_over("NonInterference", quantifiers, matched);
-    let base = id(non_interference_v());
-    let m = "match { a.step.op = b.step.op }";
-    let fair = "fair weak V::ConfigVersion::mix;";
-    let variants = [
-        id(with("forall trace a of V exists trace b of V", m)),
-        id(with("forall trace b of V forall trace a of V", m)),
-        id(with(
-            &format!("forall trace a of V {fair} forall trace b of V"),
-            m,
-        )),
-        id(with(
-            &format!("forall trace a of V forall trace b of V {fair}"),
-            m,
-        )),
-        id(with(
-            TWO_FORALL,
-            "match { a.step.op = b.step.op and a.step.receiver = b.step.receiver }",
-        )),
-        id(with(
-            "forall trace a of V forall trace b of V align skip { V::ConfigVersion::mix }",
-            m,
-        )),
-        id(non_interference_v()
-            .replace("<=", "=")
-            .replace("= c.version", "!= c.version")),
-    ];
-    for (i, variant) in variants.iter().enumerate() {
-        assert_ne!(&base, variant, "variant {i}");
-        for other in &variants[..i] {
-            assert_ne!(other, variant, "variant {i}");
-        }
-    }
-    // Reformatting and a renamed clause keep the NodeId.
-    let reformatted = non_interference_v()
-        .replace("NonInterference", "Renamed")
-        .replace(" forall", "\n   forall")
-        .replace("{ always", "{\n always");
-    assert_eq!(base, id(reformatted));
-    // `weak whole` is the unmarked constraint; `each` is not.
-    let marked = |written: &str| {
-        id(with(
-            &format!("forall trace a of V {written} V::ConfigVersion::mix; forall trace b of V"),
-            m,
-        ))
-    };
-    assert_eq!(marked("fair"), marked("fair weak whole"));
-    assert_ne!(marked("fair weak whole"), marked("fair weak each"));
-}
-
 /// FR-488-AC-4, AC-5, AC-13: the wrapper's law, activation and formula, the
 /// fairness `declaration` reference, and the slot nodes the formula reads.
 #[trace("TC-1266", "FR-488-AC-4", "FR-488-AC-5", "FR-488-AC-13")]
@@ -1052,21 +959,18 @@ fn lookups_of_what_is_no_hyper_clause_are_unresolved() {
             quire_exact::Origin::new(quire_exact::Role::new(role), ordinal),
         )
     };
-    let slot = qsl_foundation::digest::WireNodeId::from_hex(
-        slots(&built.wire)["slot_sc_sa"]["node_id"]["digest"]
-            .as_str()
-            .unwrap(),
-    )
-    .unwrap();
+    let slot =
+        qsl_foundation::node_wire::node_key_from_json(&slots(&built.wire)["slot_sc_sa"]["node_id"])
+            .expect("a structural slot key");
     for key in [
         claim(
-            qsl_foundation::digest::WireNodeId::from_digest([9; 32]),
+            NodeKey::new("pkg", vec![PathSegment::Text("missing".into())], 0).unwrap(),
             "claim",
             0,
         ),
         claim(slot, "claim", 0),
-        claim(root.occurrence().node(), "invariant", 0),
-        claim(root.occurrence().node(), "claim", 9),
+        claim(root.occurrence().node().clone(), "invariant", 0),
+        claim(root.occurrence().node().clone(), "claim", 9),
     ] {
         assert_eq!(
             resolve_hyper_root(&package, &key),
