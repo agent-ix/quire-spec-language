@@ -1685,15 +1685,17 @@ impl Step {
                 if f != g || xs.len() != ys.len() {
                     return false;
                 }
-                let mut next = premises.iter().peekable();
-                for (x, y) in xs.iter().zip(ys) {
-                    if next.peek().is_some_and(|(from, to)| from == x && to == y) {
-                        next.next();
-                    } else if !renames(x, y) {
-                        return false;
+                argument_orderings(f, xs, ys).iter().any(|(xs, ys)| {
+                    let mut next = premises.iter().peekable();
+                    for (x, y) in xs.iter().zip(ys) {
+                        if next.peek().is_some_and(|(from, to)| from == x && to == y) {
+                            next.next();
+                        } else if !renames(x, y) {
+                            return false;
+                        }
                     }
-                }
-                next.next().is_none()
+                    next.next().is_none()
+                })
             }
             _ => false,
         }
@@ -2214,6 +2216,38 @@ fn congruent(left: &Rc<Term>, right: &Rc<Term>, equalities: &[(Rc<Term>, Rc<Term
     if f != g || xs.len() != ys.len() {
         return false;
     }
+    argument_orderings(f, xs, ys)
+        .iter()
+        .any(|(xs, ys)| congruent_arguments(xs, ys, equalities))
+}
+
+/// One ordering of the two argument lists of a congruence check.
+type Orderings = (Vec<Rc<Term>>, Vec<Rc<Term>>);
+
+/// The orderings of the arguments of `f(xs)` and `f(ys)` a congruence check
+/// must try: the written one, and for a binary `=` also the swapped ones.
+/// A binary `=` holds its arguments in canonical order (implicit reordering
+/// of equalities), so the written positions of its arguments are lost and
+/// either side may have been swapped; equality is symmetric, so congruence
+/// over it holds for any ordering of each side.
+fn argument_orderings(f: &str, xs: &[Rc<Term>], ys: &[Rc<Term>]) -> Vec<Orderings> {
+    let mut orderings = vec![(xs.to_vec(), ys.to_vec())];
+    if op(f) == Some(Op::Eq) && xs.len() == 2 && ys.len() == 2 {
+        let swap = |terms: &[Rc<Term>]| vec![terms[1].clone(), terms[0].clone()];
+        orderings.push((swap(xs), ys.to_vec()));
+        orderings.push((xs.to_vec(), swap(ys)));
+        orderings.push((swap(xs), swap(ys)));
+    }
+    orderings
+}
+
+/// The argument pairs of `xs` and `ys` are equal or are, in order, the next
+/// of `equalities` (in either orientation); every equality is used.
+fn congruent_arguments(
+    xs: &[Rc<Term>],
+    ys: &[Rc<Term>],
+    equalities: &[(Rc<Term>, Rc<Term>)],
+) -> bool {
     let mut next = equalities.iter();
     let mut pending = next.next();
     for (x, y) in xs.iter().zip(ys) {
@@ -2243,11 +2277,12 @@ fn congruent_pairwise(
     f == g
         && xs.len() == ys.len()
         && xs.len() == equalities.len()
-        && xs
-            .iter()
-            .zip(ys)
-            .zip(equalities)
-            .all(|((x, y), (a, b))| (a == x && b == y) || (a == y && b == x))
+        && argument_orderings(f, xs, ys).iter().any(|(xs, ys)| {
+            xs.iter()
+                .zip(ys)
+                .zip(equalities)
+                .all(|((x, y), (a, b))| (a == x && b == y) || (a == y && b == x))
+        })
 }
 
 /// The most pivot choices [`resolution`] explores for a step that names no
@@ -2736,7 +2771,11 @@ mod tests {
     /// What FR-314's proof rules say of `proof`: `Err("malformed")`,
     /// `Err("empty")`, `Err("invalid N")`, `Err("short N")`, or the outcome.
     fn verdict(proof: &str) -> Result<ProofOutcome, String> {
-        let query = query();
+        verdict_over(query(), proof)
+    }
+
+    /// [`verdict`] over `query`.
+    fn verdict_over(query: Query, proof: &str) -> Result<ProofOutcome, String> {
         let read = read_proof(proof.as_bytes(), &query, &mut |_| true);
         let Reading::Read(proof) = read else {
             return Err("malformed".to_owned());
@@ -2902,6 +2941,118 @@ mod tests {
         assert_eq!(verdict(proof), Ok(ProofOutcome::Refutes));
         let wrong = proof.replace("(assume a0 (f x))", "(assume a0 (f y))");
         assert_eq!(verdict(&wrong), Err("invalid 1".to_owned()));
+    }
+
+    /// `cong` with the equality itself as the head symbol: a binary `=`
+    /// holds its arguments in canonical order, so the pairing of the
+    /// premises to the argument positions must not depend on the written
+    /// order.
+    #[trace("TC-893", "FR-314-AC-1")]
+    #[test]
+    fn cong_over_equality_terms() {
+        let premises = "(step t1 (cl (= x y)) :rule hole)\
+             (step t2 (cl (= x x)) :rule refl)";
+        for conclusion in ["(= (= x x) (= y x))", "(= (= x x) (= x y))"] {
+            let proof =
+                format!("{premises}(step t3 (cl {conclusion}) :rule cong :premises (t1 t2))");
+            // Not invalid: the proof only stops short of the empty clause.
+            assert_eq!(verdict(&proof), Err("short 2".to_owned()));
+        }
+        // Reversed premise order and a premise written in the other orientation.
+        let reversed = "(step t1 (cl (= y x)) :rule hole)\
+             (step t2 (cl (= x x)) :rule refl)\
+             (step t3 (cl (= (= x x) (= x y))) :rule cong :premises (t2 t1))";
+        assert_eq!(verdict(reversed), Err("short 2".to_owned()));
+    }
+
+    /// The shape cvc5 1.4.2 emits for a refinement step row: `cong` over an
+    /// equality of equalities whose operands the reader stores in canonical
+    /// order (steps `t31`..`t36` of a FR-315 row-1 proof, minimal chain).
+    #[trace("TC-893", "FR-314-AC-1")]
+    #[test]
+    fn cong_accepts_cvc5_equality_of_equalities() {
+        let query = || {
+            read_query(
+                b"(set-logic QF_LIA)\n(declare-const s0.c.busyA Bool)\n\
+              (declare-const s0.c.tmpA Int)\n(declare-const s0.c.value Int)\n\
+              (declare-const s1.c.value Int)\n\
+              (assert (and (and (and s0.c.busyA (= s0.c.tmpA s0.c.value)) \
+              (< s0.c.value 2)) (< s1.c.value 5)))\n(check-sat)\n",
+            )
+            .expect("the query reads")
+        };
+        let chain = "(assume a6 (and (! (and (! (and s0.c.busyA \
+             (! (= s0.c.tmpA s0.c.value) :named @p_21)) :named @p_22) \
+             (! (< s0.c.value 2) :named @p_6)) :named @p_23) (< s1.c.value 5)))\
+             (step t31 (cl @p_23) :rule and :premises (a6) :args (0))\
+             (step t32 (cl @p_22) :rule and :premises (t31) :args (0))\
+             (step t33 (cl @p_21) :rule and :premises (t32) :args (1))\
+             (step t34 (cl (= (! (+ 1 s0.c.tmpA) :named @p_67) \
+             (! (+ 1 s0.c.value) :named @p_45))) :rule cong :premises (t33))\
+             (step t35 (cl (! (= s1.c.value s1.c.value) :named @p_65)) :rule refl)\
+             (step t36 (cl (! (= (! (= @p_67 s1.c.value) :named @p_68) \
+             (! (= @p_45 s1.c.value) :named @p_46)) :named @p_71)) \
+             :rule cong :premises (t34 t35))";
+        // Not invalid at t36 (command 6): it only stops short of the empty clause.
+        assert_eq!(verdict_over(query(), chain), Err("short 6".to_owned()));
+        // The solver's `hole` steps stay unverifiable, never certified.
+        let with_hole = format!("{chain}(step t38 (cl) :rule hole)");
+        assert_eq!(
+            verdict_over(query(), &with_hole),
+            Ok(ProofOutcome::Unverifiable { step: 7 })
+        );
+        // Adverse: a conclusion whose operands the premises do not relate.
+        let wrong = chain.replace(
+            "(! (= @p_45 s1.c.value) :named @p_46)",
+            "(= s0.c.value s1.c.value)",
+        );
+        assert_eq!(verdict_over(query(), &wrong), Err("invalid 6".to_owned()));
+    }
+
+    /// Adverse: `cong` over `=` still rejects an unmatched premise, a
+    /// missing premise, a surplus premise and mismatched heads or arity.
+    #[trace("TC-893", "FR-314-AC-2")]
+    #[test]
+    fn cong_over_equality_terms_stays_sound() {
+        let premises = "(step t1 (cl (= x y)) :rule hole)\
+             (step t2 (cl (= x x)) :rule refl)";
+        for (conclusion, used) in [
+            // the arguments differ where no premise covers them
+            ("(= (= x x) (= y y))", "t1 t2"),
+            ("(= (= x y) (= y x))", "t1 t2"),
+            // a needed premise is missing, or a premise is surplus
+            ("(= (= x x) (= y x))", "t2"),
+            ("(= (= x x) (= y x))", "t1 t2 t1"),
+            // heads differ
+            ("(= (= x x) (< y x))", "t1 t2"),
+            ("(= (= x x) (not (= y x)))", "t1 t2"),
+        ] {
+            let proof =
+                format!("{premises}(step t3 (cl {conclusion}) :rule cong :premises ({used}))");
+            assert_eq!(verdict(&proof), Err("invalid 2".to_owned()), "{conclusion}");
+        }
+        // mismatched arity
+        let arity = "(step t1 (cl (= x y)) :rule hole)\
+             (step t3 (cl (= (+ x x) (+ y x x))) :rule cong :premises (t1))";
+        assert_eq!(verdict(arity), Err("invalid 1".to_owned()));
+    }
+
+    /// `eq_congruent` over the equality head shares `cong`'s ordering
+    /// freedom, and its adverse cases still fail.
+    #[trace("TC-893", "FR-314-AC-2")]
+    #[test]
+    fn eq_congruent_over_equality_terms() {
+        let ok =
+            "(step t0 (cl (not (= x y)) (not (= x x)) (= (= x x) (= y x))) :rule eq_congruent)";
+        assert_eq!(verdict(ok), Err("short 0".to_owned()));
+        let swapped = ok.replace("(= (= x x) (= y x))", "(= (= x x) (= x y))");
+        assert_eq!(verdict(&swapped), Err("short 0".to_owned()));
+        let missing = "(step t0 (cl (not (= x y)) (= (= x x) (= y x))) :rule eq_congruent)";
+        assert_eq!(verdict(missing), Err("invalid 0".to_owned()));
+        let uncovered = ok.replace("(= y x))) :rule", "(= y y))) :rule");
+        assert_eq!(verdict(&uncovered), Err("invalid 0".to_owned()));
+        let head = ok.replace("(= (= x x) (= y x))", "(= (= x x) (< y x))");
+        assert_eq!(verdict(&head), Err("invalid 0".to_owned()));
     }
 
     /// An anchor's context: `refl` and `cong` under `subst(Γ)`, and `bind`
