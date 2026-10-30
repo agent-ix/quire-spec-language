@@ -264,6 +264,11 @@ the node id, except as the owner's `node` where the two coincide: a body
 function's label is its candidate's IR node identity. Renaming the label
 leaves the node id unchanged.
 
+The clause functions of one owner share one `package` and `path` (FR-322
+"Structural node identity") and `check` assigns their `ordinal`s in the order
+this section lists them: authored precondition `0`, effective precondition
+`1`, body `2`; an invariant is `0`. No reader derives an ordinal.
+
 A redefining candidate's own clauses are built both by its own dispatch
 operation and as a candidate of the operation it redefines, and `check`
 yields one node for each clause, with one node id each time.
@@ -302,6 +307,10 @@ domain:
   term is `aggregate{[binding "unit" = reference(the root unit's node),
   binding "exponent" = the exponent as an integer literal typed at the
   `Integer` node]}`. The dimensionless unit's body is `aggregate{[]}`.
+  BLOCKED-BY QSL-1310 (owner: planner titan:QSL:plan): exponent operands in compound-unit node paths.
+  Until then the node's `path` is `[scalar_type, compound_unit, ...]` with
+  its terms' root-unit node ids as operands (FR-322), and `check` assigns the
+  `ordinal`.
 
 `check` reads a compound unit's terms from the `CompoundUnit` that the check
 stage's unit scope holds for its `UnitId`: the package's unit table, or the
