@@ -4,13 +4,10 @@
 //! nodes.
 //!
 //! A model declaration node stands for one domain package declaration. It
-//! is keyed by `quire.structural-node/v1` with QSpec's content-only
-//! `ModelOwner` (the declaring package's `DomainPackageRef` identity and
-//! the declaration's IR node identity, no version), a `null` `declaration`
-//! and an empty body. A `Reference<T>` carries `T` as an `EffectiveId` (ADR-013 O-05);
+//! is identified by its admitted structural `NodeKey`. A `Reference<T>`
+//! carries `T` as an `EffectiveId` (ADR-013 O-05);
 //! `check` maps it to its `DeclarationKey` through the admitted effective
-//! view's `type_identities` and keys the node by that key, so no preimage
-//! member is computed from an `EffectiveId` (FR-094-CON-2). Each model
+//! view's `type_identities` (FR-094-CON-2). Each model
 //! declaration node `check` keys is one model correspondence entry, and
 //! `check` is the correspondence's only writer.
 
@@ -21,8 +18,7 @@ use quire_exact::{EffectiveId, Integer, NodeKey, UnitDomain, UnitId, ValueType};
 use super::{identifiers, refuse, type_declaration, Lowering, NodeContent, NominalNode};
 use crate::check::family::OccurrenceRole;
 use crate::check::node_key::{
-    Binding, BodyTerm, GroupMember, GroupTerm, LeafTerm, MemberTerm, ModelOwner, ModelRootOwner,
-    NodeTag, Owner,
+    Binding, BodyTerm, GroupMember, GroupTerm, LeafTerm, MemberTerm, ModelOwner, NodeTag, Owner,
 };
 use crate::check::refusal::{CheckCause, CheckRefusal, KeyFault};
 use crate::check::VariantTypeDeclaration;
@@ -30,7 +26,6 @@ use crate::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, PopulationRecord,
 };
 use crate::model::normalize::EffectiveView;
-use crate::value::unit::{DimensionPreimage, UnitPreimage};
 use qsl_forms::{DeclaredClauseKind, NameForm};
 use quire_checked::key::DeclarationKey;
 use quire_semantic_value::location::Location;
@@ -867,18 +862,6 @@ impl AdmittedModel {
             .map(|(id, key)| (key, id.clone()))
     }
 
-    /// Every semantic object-type model node in this selected package, in
-    /// declaration-key order. FR-230 resolves a time-source alias only when
-    /// this package names exactly one such node.
-    pub(crate) fn object_type_model_node_keys(
-        &self,
-        identity: qsl_foundation::IdentityLimits,
-    ) -> Vec<NodeKey> {
-        self.object_types()
-            .filter_map(|(declaration, _)| self.model_node_key(declaration, identity))
-            .collect()
-    }
-
     /// The object type a `terminal` declaration's model node names (FR-411):
     /// the one object type the package's populations range over (FR-124),
     /// else its least object type by declaration key, so that a model with
@@ -954,25 +937,6 @@ impl AdmittedModel {
         self.records.iter().filter_map(|(key, record)| {
             matches!(record, DomainPackageRecord::Relationship(_)).then_some(key)
         })
-    }
-
-    /// The key of `declaration`'s model node, keyed from the same content
-    /// [`Lowering::model_node`] keys, without adding a node to any graph:
-    /// a model node's key depends on its declaration alone, so this names
-    /// the node whether or not the package's own lowering minted it.
-    /// `None` when this package does not declare `declaration`, or declares
-    /// it as a record kind no checked node names.
-    pub(crate) fn model_node_key(
-        &self,
-        declaration: &DeclarationKey,
-        identity: qsl_foundation::IdentityLimits,
-    ) -> Option<NodeKey> {
-        if self.selection.identity != declaration.package {
-            return None;
-        }
-        record_node_key(self.records.get(declaration)?, identity)
-            .ok()
-            .flatten()
     }
 
     /// The record `key` names in this package.
@@ -1748,19 +1712,6 @@ fn fault(location: &Location, fault: KeyFault) -> CheckRefusal {
     refuse(location, CheckCause::InternalFault(Box::new(fault)))
 }
 
-/// The refusal for a record whose model node key [`record_node_key`] could
-/// not form.
-fn record_key_refusal(
-    location: &Location,
-    declaration: &DeclarationKey,
-    error: RecordKeyError,
-) -> CheckRefusal {
-    match error {
-        RecordKeyError::EmptyOwner => fault(location, KeyFault::EmptyNode(declaration.clone())),
-        RecordKeyError::Preimage(refusal) => super::preimage_refusal(location, refusal),
-    }
-}
-
 /// FR-094's `clause` binding value. No postcondition arm:
 /// `DeclaredClauseKind` has none (FR-094-CON-1).
 fn clause_spelling(kind: DeclaredClauseKind) -> &'static str {
@@ -1791,95 +1742,11 @@ pub(super) fn model_node_content(
     }
 }
 
-/// QSpec FR-322 `model_root`: the key of the root of the selected model
-/// package `selection`, a function of its identity and digest alone. The one
-/// definition the refinement body and the package emitter both use.
-///
-/// # Errors
-///
-/// A refusal when the selection's identity is empty or the preimage has no
-/// key.
-pub fn model_root_key(
-    selection: &DomainPackageRef,
-    identity: qsl_foundation::IdentityLimits,
-) -> Result<NodeKey, ModelRootKeyError> {
-    let owner = ModelRootOwner::new(selection.identity.clone())
-        .map_err(|_| ModelRootKeyError::EmptyIdentity)?;
-    let content = NodeContent {
-        owner_model: None,
-        node_tag: NodeTag::Model,
-        semantic_form: "model_root",
-        semantic_type: None,
-        declaration: None,
-        owner: Some(Owner::ModelRoot(owner)),
-        body: BodyTerm::aggregate(Vec::new()),
-    };
-    crate::check::node_key::node_key(&content.input(), identity)
-        .map(|keyed| keyed.key)
-        .map_err(|error| ModelRootKeyError::Preimage(error.to_string()))
-}
-
-/// Why a selection has no `model_root` key.
-#[derive(Clone, Debug, Eq, Hash, PartialEq, thiserror::Error)]
-pub enum ModelRootKeyError {
-    /// The selection's package identity is empty.
-    #[error("the selected model package's identity is empty")]
-    EmptyIdentity,
-    /// The root's preimage has no key.
-    #[error("the model root's preimage has no key: {0}")]
-    Preimage(String),
-}
-
 /// The content of a `relation`/`population` node (QSpec FR-322 "Population
 /// references"): the one definition lowering's population reference and an
 /// abstraction relation's population target both key.
 pub(super) fn population_node_content(owner: ModelOwner) -> NodeContent {
     model_node_content(owner, NodeTag::Relation, "population")
-}
-
-/// The key of the model declaration node of `record`, or `None` for a record
-/// kind no checked node names. It is a function of the declaring package's
-/// identity and the record's node alone (FR-322 "Model-owned members"
-/// step 2), so it is also the declaration key under which a model record
-/// value type or event type is declared in the type environment (FR-359
-/// item 9): a unit's alias for the model never enters it.
-pub(crate) fn record_node_key(
-    record: &DomainPackageRecord,
-    identity: qsl_foundation::IdentityLimits,
-) -> Result<Option<NodeKey>, RecordKeyError> {
-    let Some((node_tag, form)) = record_form(record) else {
-        return Ok(None);
-    };
-    let key = record.key();
-    let owner = ModelOwner::new(key.package.clone(), key.node.clone())
-        .map_err(|_| RecordKeyError::EmptyOwner)?;
-    crate::check::node_key::node_key(&model_node_content(owner, node_tag, form).input(), identity)
-        .map(|keyed| Some(keyed.key))
-        .map_err(RecordKeyError::Preimage)
-}
-
-/// The key of the model declaration node of the variant type `record`
-/// declares (QSpec FR-322 "Model-owned members" step 2), a function of the
-/// declaring package's identity and the type's node alone, so no alias a
-/// unit gives the model enters it (FR-360 item 11). `None` for a record that
-/// declares no variant type.
-pub(crate) fn variant_type_node_key(
-    record: &DomainPackageRecord,
-    identity: qsl_foundation::IdentityLimits,
-) -> Result<Option<NodeKey>, RecordKeyError> {
-    match record {
-        DomainPackageRecord::Enum(_) => record_node_key(record, identity),
-        _ => Ok(None),
-    }
-}
-
-/// Why [`record_node_key`] has no key for a record it names.
-#[derive(Debug)]
-pub(crate) enum RecordKeyError {
-    /// The record's package identity or node is empty.
-    EmptyOwner,
-    /// The node's preimage has no key.
-    Preimage(crate::check::node_key::NodeKeyRefusal),
 }
 
 /// A domain package record's model node tag and form, or `None` for a
@@ -1939,41 +1806,6 @@ impl<'a> Lowering<'a> {
         let owner = ModelOwner::new(model.selection.identity.clone(), declaration.node.clone())
             .map_err(|_| fault(location, KeyFault::EmptyNode(declaration.clone())))?;
         Ok((owner, model))
-    }
-
-    /// The model record value type or event type whose model node key is
-    /// `handle`, the declaration key a model record carries in the type
-    /// environment (FR-359 item 9); `None` when `handle` is a source
-    /// composite.
-    pub(super) fn model_record_declaration(
-        &mut self,
-        handle: NodeKey,
-        location: &Location,
-    ) -> Result<Option<DeclarationKey>, CheckRefusal> {
-        if self.model_records.is_none() {
-            let mut records = BTreeMap::new();
-            for model in self.models {
-                for (declaration, record) in &model.records {
-                    if !matches!(
-                        record,
-                        DomainPackageRecord::RecordValueType(_) | DomainPackageRecord::EventType(_)
-                    ) {
-                        continue;
-                    }
-                    let key = record_node_key(record, self.identity)
-                        .map_err(|error| record_key_refusal(location, declaration, error))?;
-                    if let Some(key) = key {
-                        records.insert(key, declaration.clone());
-                    }
-                }
-            }
-            self.model_records = Some(records);
-        }
-        Ok(self
-            .model_records
-            .as_ref()
-            .and_then(|records| records.get(&handle))
-            .cloned())
     }
 
     /// The model declaration node of `declaration`, recorded in the model
@@ -2226,17 +2058,13 @@ impl<'a> Lowering<'a> {
     /// FR-094, FR-092 rule 1: add the declared unit node `unit` to the
     /// graph, and every node it names: its dimension, that dimension's base
     /// dimensions and its target units. Each is built from the admitted node
-    /// the unit table holds for it, keyed by its admitted preimage bytes, as
-    /// QSpec's `scalar_type`/`unit` or `scalar_type`/`dimension` node: its
-    /// preimage's qualified name as its `declaration`, with a `declaration`
-    /// occurrence at that declared name, an empty body, and a unit typed by
-    /// its dimension. Its nominal preimage is rebuilt under the checked
-    /// unit's own source owner and kept when its bytes are the admitted ones;
-    /// a node another owner declares keeps none. A node already in the graph
+    /// the unit table holds for it, as QSpec's `scalar_type`/`unit` or
+    /// `scalar_type`/`dimension` node: its qualified name as its
+    /// `declaration`, with a `declaration` occurrence at that declared name,
+    /// an empty body, and a unit typed by its dimension. A node already in the graph
     /// is left as it is. The walk is a heap work list, bounded by the unit
     /// table's size.
     fn unit_nodes(&mut self, unit: NodeKey, location: &Location) -> Result<(), CheckRefusal> {
-        let owner = self.owner.node_owner();
         let mut pending = vec![unit];
         while let Some(key) = pending.pop() {
             if self.graph.nodes.contains_key(&key) {
@@ -2247,45 +2075,28 @@ impl<'a> Lowering<'a> {
             };
             let NominalDeclaration {
                 qualified_declaration: qualified,
-                preimage: bytes,
+                ..
             } = node.declaration;
-            let own = |rebuilt: Result<Vec<u8>, _>| rebuilt.is_ok_and(|rebuilt| rebuilt == bytes);
             let (kind, semantic_form, semantic_type, nominal) = match node.form {
                 NominalUnitForm::Unit {
-                    dimension,
-                    target,
-                    scale,
-                    offset,
+                    dimension, target, ..
                 } => {
                     pending.push(dimension.clone());
-                    pending.extend(target.clone());
-                    let preimage = UnitPreimage::new(
-                        owner.clone(),
-                        qualified.clone(),
-                        dimension.clone(),
-                        target,
-                        &scale,
-                        &offset,
-                    )
-                    .ok()
-                    .filter(|preimage| own(preimage.preimage_bytes(self.identity)));
+                    pending.extend(target);
                     (
                         QuantityKind::Unit,
                         "unit",
                         Some(dimension),
-                        NominalNode::Unit(preimage.map(Box::new)),
+                        NominalNode::Unit,
                     )
                 }
                 NominalUnitForm::Dimension { terms } => {
                     pending.extend(terms.iter().map(|(base, _)| base.clone()));
-                    let preimage = DimensionPreimage::new(owner.clone(), qualified.clone(), terms)
-                        .ok()
-                        .filter(|preimage| own(preimage.preimage_bytes(self.identity)));
                     (
                         QuantityKind::Dimension,
                         "dimension",
                         None,
-                        NominalNode::Dimension(preimage),
+                        NominalNode::Dimension,
                     )
                 }
             };
@@ -2294,7 +2105,6 @@ impl<'a> Lowering<'a> {
             let inserted = self.insert_nominal(
                 &site,
                 key.clone(),
-                bytes,
                 NodeContent {
                     owner_model: None,
                     node_tag: NodeTag::ScalarType,
