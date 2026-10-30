@@ -613,7 +613,7 @@ impl LeafTerm {
             Self::Reference { target } => Self::Reference {
                 target: map(&target),
             },
-            Self::DependencyReference { node } => Self::DependencyReference { node: node.clone() },
+            Self::DependencyReference { node } => Self::DependencyReference { node: map(node) },
         }
     }
 }
@@ -939,25 +939,87 @@ impl BodyTerm {
     }
 
     /// Call `visit` with every node reference this body holds, admitted or
-    /// pending (a reference, a literal or result type, a frame entry, an
-    /// abstraction target, an operation member's declaration or population).
+    /// pending (a reference, a literal or result type, a dependency
+    /// reference, a frame entry, an abstraction target, an operation
+    /// member's declaration or population), without copying the body.
     pub(crate) fn for_each_ref(&self, visit: &mut impl FnMut(&NodeRef)) {
-        let _ = self.map_refs(&mut |reference| {
-            visit(reference);
-            reference.clone()
-        });
+        match self {
+            Self::Application(ApplicationTerm {
+                operation,
+                result_type,
+                ..
+            }) => {
+                if let Some(member) = operation.member.as_ref() {
+                    for key in [member.declaration(), member.population()]
+                        .into_iter()
+                        .flatten()
+                    {
+                        visit(&NodeRef::Admitted(key));
+                    }
+                }
+                visit(result_type);
+            }
+            Self::Frame(FrameTerm {
+                modifies,
+                creates,
+                deletes,
+                deletes_scoped: _,
+            }) => {
+                for entry in modifies {
+                    visit(&entry.declaration());
+                }
+                for reference in creates.iter().chain(deletes) {
+                    visit(reference);
+                }
+            }
+            Self::Abstraction(term) => term.for_each_ref(visit),
+            Self::Leaf(_) | Self::Aggregate(_) => {}
+        }
+        for leaf in self.leaves() {
+            match leaf {
+                LeafTerm::Literal { ty, .. } => visit(ty),
+                LeafTerm::Reference { target } => visit(target),
+                LeafTerm::DependencyReference { node } => visit(node),
+            }
+        }
     }
 
     /// This body with every admitted node key it names replaced by `map`'s
     /// image; pending handles are kept.
     pub(crate) fn map_keys(&self, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Self {
+        // An admitted reference always maps to an admitted one here, so the
+        // refusal of `map_refs` cannot arise.
         self.map_refs(&mut |reference| reference.map_admitted(&mut *map))
+            .unwrap_or_else(|_| self.clone())
     }
 
     /// This body with every node reference it holds replaced by `map`'s
     /// image. An operation member's declaration or population is a node
     /// key: it takes the image only when that is admitted.
-    pub(crate) fn map_refs(&self, map: &mut impl FnMut(&NodeRef) -> NodeRef) -> Self {
+    ///
+    /// # Errors
+    ///
+    /// [`NodeKeyRefusal::UnresolvedPlaceholder`] when `map` returns a pending
+    /// handle for an operation member's declaration or population, which are
+    /// always admitted node keys.
+    pub(crate) fn map_refs(
+        &self,
+        map: &mut impl FnMut(&NodeRef) -> NodeRef,
+    ) -> Result<Self, NodeKeyRefusal> {
+        let mut pending_member = false;
+        let mapped = self.map_refs_in(map, &mut pending_member);
+        if pending_member {
+            Err(NodeKeyRefusal::UnresolvedPlaceholder)
+        } else {
+            Ok(mapped)
+        }
+    }
+
+    fn map_refs_in(
+        &self,
+        map: &mut impl FnMut(&NodeRef) -> NodeRef,
+        pending_member: &mut bool,
+    ) -> Self {
         match self {
             Self::Leaf(leaf) => Self::Leaf(leaf.map_refs(map)),
             Self::Application(ApplicationTerm {
@@ -967,7 +1029,9 @@ impl BodyTerm {
                 arguments,
             }) => {
                 let mut operation = operation.clone();
-                operation.member = operation.member.map(|member| map_member(member, map));
+                operation.member = operation
+                    .member
+                    .map(|member| map_member(member, map, pending_member));
                 Self::Application(ApplicationTerm {
                     operator: *operator,
                     operation,
@@ -1010,44 +1074,55 @@ impl BodyTerm {
 }
 
 /// Remap only the admitted declaration references of an operation member.
-fn map_key(map: &mut impl FnMut(&NodeRef) -> NodeRef, key: NodeKey) -> NodeKey {
+fn map_key(
+    map: &mut impl FnMut(&NodeRef) -> NodeRef,
+    pending_member: &mut bool,
+    key: NodeKey,
+) -> NodeKey {
     match map(&NodeRef::Admitted(key.clone())) {
         NodeRef::Admitted(mapped) => mapped,
-        NodeRef::Pending(_) => key,
+        NodeRef::Pending(_) => {
+            *pending_member = true;
+            key
+        }
     }
 }
 
-fn map_member(member: Member, map: &mut impl FnMut(&NodeRef) -> NodeRef) -> Member {
+fn map_member(
+    member: Member,
+    map: &mut impl FnMut(&NodeRef) -> NodeRef,
+    pending_member: &mut bool,
+) -> Member {
     match member {
         Member::Field { declaration, name } => Member::Field {
-            declaration: map_key(map, declaration),
+            declaration: map_key(map, pending_member, declaration),
             name,
         },
         Member::Position {
             declaration,
             position,
         } => Member::Position {
-            declaration: map_key(map, declaration),
+            declaration: map_key(map, pending_member, declaration),
             position,
         },
         Member::Element { declaration } => Member::Element {
-            declaration: map_key(map, declaration),
+            declaration: map_key(map, pending_member, declaration),
         },
         Member::RelationshipEnd {
             declaration,
             name,
             population,
         } => Member::RelationshipEnd {
-            declaration: map_key(map, declaration),
+            declaration: map_key(map, pending_member, declaration),
             name,
-            population: population.map(|population| map_key(map, population)),
+            population: population.map(|population| map_key(map, pending_member, population)),
         },
         Member::Operation { declaration, name } => Member::Operation {
-            declaration: map_key(map, declaration),
+            declaration: map_key(map, pending_member, declaration),
             name,
         },
         Member::TypeArgument { declaration } => Member::TypeArgument {
-            declaration: map_key(map, declaration),
+            declaration: map_key(map, pending_member, declaration),
         },
         Member::ProfileOperator { operator } => Member::ProfileOperator { operator },
         Member::StateClause {
@@ -1067,7 +1142,7 @@ fn map_member(member: Member, map: &mut impl FnMut(&NodeRef) -> NodeRef) -> Memb
         } => Member::Fairness {
             kind,
             granularity,
-            declaration: map_key(map, declaration),
+            declaration: map_key(map, pending_member, declaration),
             name,
         },
     }
@@ -1230,6 +1305,11 @@ impl Operation {
     /// The operation's profile laws, in order.
     pub fn laws(&self) -> &[OperationLaw] {
         &self.laws
+    }
+
+    /// The operation's mode, when it has one.
+    pub fn mode(&self) -> Option<&OperationMode> {
+        self.mode.as_ref()
     }
 
     /// The operation's member, when it names one.
@@ -1449,3 +1529,6 @@ mod abstraction;
 
 pub use abstraction::AbstractionTerm;
 pub(crate) use abstraction::{FrameEntry, ObjectEntry, PopulationEntry};
+
+#[cfg(test)]
+mod ref_tests;

@@ -157,6 +157,19 @@ impl AbstractionTerm {
             .collect()
     }
 
+    /// Call `visit` with every node reference this term holds.
+    pub(crate) fn for_each_ref(&self, visit: &mut impl FnMut(&NodeRef)) {
+        for entry in &self.objects {
+            visit(&entry.ty);
+        }
+        for entry in &self.populations {
+            visit(&entry.population);
+        }
+        for entry in &self.frames {
+            visit(&entry.context);
+        }
+    }
+
     /// Remap every node reference.
     pub(crate) fn map_refs(&self, map: &mut impl FnMut(&NodeRef) -> NodeRef) -> Self {
         let objects = self
