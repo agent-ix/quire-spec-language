@@ -10,11 +10,10 @@ use qsl_eval::model_subject::{AtomStop, ModelInstance, ModelLetters};
 use qsl_eval::simulation::model::ModelSimState;
 use qsl_eval::simulation::protocol::MemorySelection;
 use qsl_eval::temporal::AtomReading;
-use qsl_foundation::{MemoryModelName};
+use qsl_foundation::MemoryModelName;
 use qsl_replay::{
-    settle_protocol_check, Certification, ModelCheckItem,
-    ModelCheckLimits, ModelCheckOutcome, ProofBasis, ProofCertificate, ProtocolCertificateRequest,
-    ResultLabel, TerminalValue,
+    settle_protocol_check, Certification, ModelCheckItem, ModelCheckLimits, ModelCheckOutcome,
+    ProofBasis, ProofCertificate, ProtocolCertificateRequest, ResultLabel, TerminalValue,
 };
 use qsl_semantics::check::FormulaNodeId;
 use quire_exact::{Cancel, Meter};

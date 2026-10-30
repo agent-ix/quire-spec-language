@@ -20,10 +20,9 @@ use qsl_eval::simulation::{
 use qsl_foundation::IdentityLimits;
 use qsl_replay::{
     settle_model_check, AppliedReduction, CertificateRequest, Certification, CounterexampleKind,
-    IncompleteCause, InconclusiveCause, ModelCheckItem,
-    ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ModelTraceSettlement, ProofBasis,
-    ProofCertificate, Proviso, ReachedLimit, ReductionCause, ResultLabel, SettlementBasis,
-    TerminalValue,
+    IncompleteCause, InconclusiveCause, ModelCheckItem, ModelCheckLimit, ModelCheckLimits,
+    ModelCheckOutcome, ModelTraceSettlement, ProofBasis, ProofCertificate, Proviso, ReachedLimit,
+    ReductionCause, ResultLabel, SettlementBasis, TerminalValue,
 };
 use qsl_route::reductions::{Reductions, SymmetryDeclaration};
 use qsl_semantics::check::footprint::{FootprintObject, SymbolicLocation};

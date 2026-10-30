@@ -28,11 +28,11 @@ use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::MemoryModelName;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
-    replay_protocol_trace, settle_protocol_check, CounterexampleKind,
-    InconclusiveCause, ModelCheckItem, ModelCheckLimits, ModelCheckOutcome, ModelCheckRecord,
-    ModelStep, ModelTraceRefusal, ModelTraceReplayResult, ModelTraceSettlement, ModelTraceSubject,
-    ProofBasis, ProtocolCertificateRequest, ProtocolTraceSubject, ReplayLimits, ReplayRefusal,
-    ResultLabel, TemporalCounterexample, TerminalValue, UndefinedLocus,
+    replay_protocol_trace, settle_protocol_check, CounterexampleKind, InconclusiveCause,
+    ModelCheckItem, ModelCheckLimits, ModelCheckOutcome, ModelCheckRecord, ModelStep,
+    ModelTraceRefusal, ModelTraceReplayResult, ModelTraceSettlement, ModelTraceSubject, ProofBasis,
+    ProtocolCertificateRequest, ProtocolTraceSubject, ReplayLimits, ReplayRefusal, ResultLabel,
+    TemporalCounterexample, TerminalValue, UndefinedLocus,
 };
 use qsl_route::deadlock::ProtocolTemporalItem;
 use qsl_route::request::ItemKind;
@@ -44,8 +44,8 @@ use serde_json::{json, Value as Json};
 use crate::counter::Letters;
 use crate::derived_request::{derived_subjects, protocol_request};
 use crate::fill::{
-    attempt, compiled, contracts, document, fill_unit, instance, json_of, package, projections, protocol, reachable, sc_system, subject, unit_text, universe, v, Documents,
-    Reached, PACKAGE,
+    attempt, compiled, contracts, document, fill_unit, instance, json_of, package, projections,
+    protocol, reachable, sc_system, subject, unit_text, universe, v, Documents, Reached, PACKAGE,
 };
 use crate::model_settle::{deadlock_freedom_clause, envelope_at, request};
 

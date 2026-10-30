@@ -16,7 +16,7 @@ use ix_trace_rs::trace;
 use qsl_analyze::model_check::{check_and_settle_state_graph, StateGraphItem, StateGraphRequest};
 use qsl_eval::simulation::model::ModelSimState;
 use qsl_eval::temporal::UndefinedCause;
-use qsl_foundation::digest::{DigestDomain, DigestRecord};
+use qsl_foundation::digest::DigestRecord;
 use qsl_replay::{
     settle_state_graph, AppliedReduction, CertificateLocus, CertificateRule, Certification,
     DisagreementCause, Execution, GraphReplayResult, GraphReplaySettlement, GraphWitness,
@@ -25,7 +25,6 @@ use qsl_replay::{
     StateGraphInstanceOutcome, StateGraphMethod, StateGraphOutcome, StateGraphRecord,
     TerminalValue, Truth, Verdict, WitnessSource, DEFAULT_WITNESS_SEED, EXPLICIT_STATE,
 };
-use qsl_semantics::library::PackageId;
 use quire_exact::{Cancel, CancelCause};
 use quire_semantic_value::catalog::Category;
 
@@ -46,14 +45,12 @@ fn method(limits: ModelCheckLimits) -> StateGraphMethod {
     }
 }
 
-/// How a test settles: the run's method and package, the cancellation
+/// How a test settles: the run's method, the cancellation
 /// handle, and the replay result the caller hands the map.
 struct Settling {
     method: StateGraphMethod,
-    package_id: DigestRecord,
     cancel: Cancel,
     replay: GraphReplaySettlement,
-    replayed: PackageId,
 }
 
 impl Settling {
@@ -62,10 +59,8 @@ impl Settling {
     fn of(world: &World, limits: ModelCheckLimits) -> Self {
         Self {
             method: method(limits),
-            package_id: world.package_id().record(),
             cancel: Cancel::new(),
             replay: GraphReplaySettlement::Reproduced,
-            replayed: world.package_id(),
         }
     }
 }
@@ -84,7 +79,6 @@ fn settle_with(
     settle_state_graph(
         instance,
         &settling.method,
-        &settling.package_id,
         &subject,
         world.claim(claim),
         &settling.cancel,
@@ -92,7 +86,6 @@ fn settle_with(
             *replays += 1;
             Ok(GraphReplayResult {
                 settlement: settling.replay.clone(),
-                package_id: settling.replayed,
                 evaluated_predicates: Vec::new(),
                 closure_nodes: None,
                 first_target: None,
@@ -193,17 +186,15 @@ fn the_state_graph_pipeline_runs_and_settles_each_instance() {
         limits: no_samples(),
         seed: None,
     };
-    let settled =
-        check_and_settle_state_graph(request, world.package_id().record(), &Cancel::new(), |_| {
-            Ok(GraphReplayResult {
-                settlement: GraphReplaySettlement::Reproduced,
-                package_id: world.package_id(),
-                evaluated_predicates: Vec::new(),
-                closure_nodes: None,
-                first_target: None,
-            })
+    let settled = check_and_settle_state_graph(request, &Cancel::new(), |_| {
+        Ok(GraphReplayResult {
+            settlement: GraphReplaySettlement::Reproduced,
+            evaluated_predicates: Vec::new(),
+            closure_nodes: None,
+            first_target: None,
         })
-        .expect("the state-graph engine and settlement map both complete");
+    })
+    .expect("the state-graph engine and settlement map both complete");
 
     assert_eq!(settled.records.len(), 1);
     assert_eq!(settled.records[0].len(), AB.len());
@@ -228,11 +219,10 @@ fn the_pipeline_settles_non_preserving_reduction_before_expansion() {
     let mut request = world.request(&["j"], vec![world.item("InOneWay")], no_samples());
     request.reductions.partial_order = true;
 
-    let settled =
-        check_and_settle_state_graph(request, world.package_id().record(), &Cancel::new(), |_| {
-            panic!("a refusal before exploration has no evidence to replay")
-        })
-        .expect("the request is settled");
+    let settled = check_and_settle_state_graph(request, &Cancel::new(), |_| {
+        panic!("a refusal before exploration has no evidence to replay")
+    })
+    .expect("the request is settled");
     assert!(settled.run.graph.nodes.is_empty());
     assert!(matches!(
         settled.records[0][0].value,
@@ -1245,7 +1235,6 @@ fn a_claim_the_request_package_does_not_hold_settles_failed() {
     let record = settle_state_graph(
         instance,
         &method(ModelCheckLimits::default()),
-        &foreign.package_id().record(),
         &foreign_subject,
         world.claim("ReachesTwo"),
         &Cancel::new(),
@@ -1253,7 +1242,6 @@ fn a_claim_the_request_package_does_not_hold_settles_failed() {
             replays += 1;
             Ok(GraphReplayResult {
                 settlement: GraphReplaySettlement::Reproduced,
-                package_id: foreign.package_id(),
                 evaluated_predicates: Vec::new(),
                 closure_nodes: None,
                 first_target: None,

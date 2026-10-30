@@ -46,8 +46,8 @@ use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
 
 use crate::fill::{
-    attempt, contracts, document, fill_unit, instance, package, package_id, protocol, reachable,
-    sc_system, subject, unit_text, universe, v, Documents,
+    attempt, contracts, document, fill_unit, instance, package, protocol, reachable, sc_system,
+    subject, unit_text, universe, v, Documents,
 };
 use crate::model_settle::{envelope_at, request};
 
@@ -321,9 +321,7 @@ fn chatter_carries_three_scheduler_constraints_and_no_fair_counterexample() {
 /// refuses `invalid_runtime_input`/`invalid-value` as unfair: `s` is enabled
 /// at every loop state and takes no step, and so is `r`, whose constraint
 /// comes first in the set. Not
-/// covered: the two packages' different identities. The compiled
-/// `package_id` does not bind the `scheduling` member until FR-383 emits
-/// it, so today the two identities are equal, and replay tells the two
+/// covered: the two packages' different identities. Replay tells the two
 /// packages' counterexamples apart by their fairness sets alone.
 #[trace("TC-657", "TC-662", "FR-217-AC-4")]
 #[test]

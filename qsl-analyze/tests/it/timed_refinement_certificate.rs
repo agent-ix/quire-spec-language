@@ -471,13 +471,6 @@ fn a_forged_locked_initial_state_that_diverges_is_a_bad_state() {
     let [first, locked, _] = forged.initials[..] else {
         panic!("three initial nodes");
     };
-    let package = qsl_package::emit_checked(&free.package)
-        .expect("the package emits")
-        .package()
-        .package_id();
-    let part = forged.refinement.as_mut().expect("the part");
-    part.concrete_package = package;
-    part.abstract_package = package;
     forged.obligation = obligation(&free);
     forged.nodes[locked].zone = forged.nodes[first].zone.clone();
     assert_eq!(
@@ -523,13 +516,6 @@ fn a_forged_step_level_locked_entry_that_diverges_is_a_bad_state() {
     let entry = (0..forged.nodes.len())
         .find(|&at| forged.nodes[at].locked)
         .expect("the locked entry node");
-    let package = qsl_package::emit_checked(&live.package)
-        .expect("the package emits")
-        .package()
-        .package_id();
-    let part = forged.refinement.as_mut().expect("the part");
-    part.concrete_package = package;
-    part.abstract_package = package;
     forged.obligation = obligation(&live);
     let dim = forged.nodes[entry].zone.dim();
     forged.nodes[entry].zone = Zone::universe(dim);

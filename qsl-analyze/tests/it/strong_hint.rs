@@ -10,11 +10,10 @@
 use ix_trace_rs::trace;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_replay::{
-    replay_model_trace, settle_model_check, CertificateRequest,
-    CounterexampleKind, ModelCheckItem, ModelCheckLimits,
-    ModelCheckOutcome, ModelCheckRecord, ModelTraceReplayResult, ModelTraceSettlement,
-    ModelTraceSubject, ReplayLimits, ResultLabel, StrongFairnessHint, TemporalCounterexample,
-    TerminalValue,
+    replay_model_trace, settle_model_check, CertificateRequest, CounterexampleKind, ModelCheckItem,
+    ModelCheckLimits, ModelCheckOutcome, ModelCheckRecord, ModelTraceReplayResult,
+    ModelTraceSettlement, ModelTraceSubject, ReplayLimits, ResultLabel, StrongFairnessHint,
+    TemporalCounterexample, TerminalValue,
 };
 use qsl_semantics::check::CheckedTemporalClause;
 use quire_exact::Cancel;
@@ -49,18 +48,18 @@ fn settled(
     let occurrence = OccurrenceKey::new(clause_node.clone(), node.claim().clone());
     let replay = |counterexample: &TemporalCounterexample| {
         replay_model_trace(
-            request(
-                &world.domain.document,
-                world.snapshots.iter(),
-                &world.unit,
-            ),
+            request(&world.domain.document, world.snapshots.iter(), &world.unit),
             &ModelTraceSubject {
                 timed: None,
                 initial: world.initial.clone(),
                 universes: world.unlimited().simulation.universes,
                 expansion: world.unlimited().simulation.expansion,
             },
-            &envelope_at(counterexample.clone(), clause_node.clone(), occurrence.clone()),
+            &envelope_at(
+                counterexample.clone(),
+                clause_node.clone(),
+                occurrence.clone(),
+            ),
             &letters,
             ReplayLimits::default(),
         )

@@ -26,10 +26,10 @@ use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::ReductionKind;
 use qsl_replay::{
     settle_model_check, AppliedReduction, CertificateRequest, Certification, CounterexampleKind,
-    IncompleteCause, InconclusiveCause, ModelCheckItem,
-    ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ModelTraceSettlement, ModelTraceValue,
-    ProofBasis, ReachedLimit, ReductionCause, ResultLabel, RunStats, SettlementBasis,
-    SymmetryBrokenCause, SymmetryRefusal, TerminalValue, UnavailabilityCause, UndefinedLocus,
+    IncompleteCause, InconclusiveCause, ModelCheckItem, ModelCheckLimit, ModelCheckLimits,
+    ModelCheckOutcome, ModelTraceSettlement, ModelTraceValue, ProofBasis, ReachedLimit,
+    ReductionCause, ResultLabel, RunStats, SettlementBasis, SymmetryBrokenCause, SymmetryRefusal,
+    TerminalValue, UnavailabilityCause, UndefinedLocus,
 };
 use qsl_route::model_request::ModelRequest;
 use qsl_route::reductions::{Reductions, SymmetryDeclaration};
