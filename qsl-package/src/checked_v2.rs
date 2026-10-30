@@ -20,7 +20,7 @@ use quire_contract_model::{
 use qsl_foundation::diagnostic::{
     Code, JsonPointer, LimitExceeded, Locus, RefusalRecord, StageFailure, Staged,
 };
-use qsl_foundation::digest::{DigestRecord, InvalidDigestRecord};
+use qsl_foundation::digest::InvalidDigestRecord;
 use qsl_foundation::source::provenance::{
     InvalidProvenance, OccurrenceKey, PackageSourceMap, RawSourceRef, SourceRegion,
 };
@@ -449,11 +449,9 @@ fn map_refusal_code(code: CheckedPackageRefusalCode) -> Code {
         CheckedPackageRefusalCode::MalformedWire
         | CheckedPackageRefusalCode::DuplicateMember
         | CheckedPackageRefusalCode::UnknownMember
-        | CheckedPackageRefusalCode::DigestDomainMismatch
         | CheckedPackageRefusalCode::UnsupportedNodeTag
         | CheckedPackageRefusalCode::InvalidSemanticGraph
         | CheckedPackageRefusalCode::InvalidPackage => Code::InvalidPackage,
-        CheckedPackageRefusalCode::StaleDependency => Code::StaleDependency,
         CheckedPackageRefusalCode::UnknownRequiredCapability => Code::UnknownRequiredFeature,
         CheckedPackageRefusalCode::InvalidSourceMap => Code::InvalidSourceMap,
         CheckedPackageRefusalCode::MissingDeclaration => Code::MissingDeclaration,
@@ -515,20 +513,17 @@ const fn limit_setting(kind: CheckedPackageLimit) -> Setting {
 /// IR reported a pointer that is not RFC 6901 text.
 const IR_POINTER_FAULT: InternalFault = InternalFault::new("I2", "ir-pointer-is-rfc-6901");
 
-/// The supplied bytes' `raw-artifact-digest` record, and the loci it names.
-struct Artifact(DigestRecord);
+/// The loci named by a supplied artifact's reader refusals.
+struct Artifact;
 
 impl Artifact {
-    fn of(bytes: &[u8]) -> Self {
-        Self(DigestRecord::raw_artifact(bytes))
+    fn of(_bytes: &[u8]) -> Self {
+        Self
     }
 
     /// `Locus::Artifact` at `pointer`.
     fn at(&self, pointer: JsonPointer) -> Locus {
-        Locus::Artifact {
-            digest: self.0,
-            pointer,
-        }
+        Locus::Artifact { pointer }
     }
 
     /// `Locus::Artifact` at the pointer IR reported, or `None` when IR
@@ -663,10 +658,11 @@ pub(crate) fn read_checked_package_v2(
         }
         CheckedPackageDispatchResult::Refused(refusal) => {
             let artifact = Artifact::of(bytes);
-            let locus = match artifact.at_ir(refusal.path.as_ref()) {
-                Ok(locus) => locus.map(Box::new),
-                Err(fault) => return refused(V2ReadRefusal::Fault(fault)),
-            };
+            let locus =
+                match artifact.at_ir(refusal.loci.first().and_then(|locus| locus.path.as_ref())) {
+                    Ok(locus) => locus.map(Box::new),
+                    Err(fault) => return refused(V2ReadRefusal::Fault(fault)),
+                };
             refused(match (refusal.code, &refusal.contract_version, locus) {
                 (CheckedPackageRefusalCode::UnknownContractVersion, Some(actual), Some(locus)) => {
                     V2ReadRefusal::UnsupportedVersion {

@@ -7,7 +7,7 @@ use std::str::FromStr;
 use quire_contract_model::{
     CheckedDeclaration, CheckedNodeId, CheckedNodeOwner, CheckedNodeTag, CheckedOccurrence,
     CheckedOccurrenceRole, CheckedPackageV2, CheckedSemanticNodeV2, CheckedTerm, LiteralKind,
-    NominalIdentityPreimage, TimedModelForm,
+    TimedModelForm,
 };
 use quire_exact::{Integer, Rational};
 
@@ -54,8 +54,6 @@ pub struct TimedNodeMetadata {
     pub occurrences: Vec<CheckedOccurrence>,
     /// Recursion group, absent for timed nodes.
     pub recursion_group: Option<Box<str>>,
-    /// Nominal identity preimage, absent for timed nodes.
-    pub nominal_identity_preimage: Option<NominalIdentityPreimage>,
     /// Declaration name, present for the root.
     pub declaration: Option<CheckedDeclaration>,
     /// Structural owner, present for the root.
@@ -369,7 +367,6 @@ impl CheckedTimedModel {
                 ordinal: 0,
             }],
             recursion_group: None,
-            nominal_identity_preimage: None,
             declaration: None,
             owner: None,
         };
@@ -404,7 +401,6 @@ impl CheckedTimedModel {
                 ordinal: 0,
             }],
             recursion_group: None,
-            nominal_identity_preimage: None,
             declaration: Some(CheckedDeclaration {
                 qualified_name: vec![source_alias.into(), "Timed".into()],
             }),
@@ -525,7 +521,6 @@ impl TimedNodeMetadata {
             dependencies: node.dependencies.clone(),
             occurrences: node.occurrences.clone(),
             recursion_group: node.recursion_group.clone(),
-            nominal_identity_preimage: node.nominal_identity_preimage.clone(),
             declaration: node.declaration.clone(),
             owner: node.owner.clone(),
         }
@@ -542,7 +537,6 @@ impl TimedNodeMetadata {
             dependencies: self.dependencies.clone(),
             occurrences: self.occurrences.clone(),
             recursion_group: self.recursion_group.clone(),
-            nominal_identity_preimage: self.nominal_identity_preimage.clone(),
             declaration: self.declaration.clone(),
             owner: self.owner.clone(),
             body,
