@@ -173,17 +173,6 @@ pub enum EmitRefusal {
     /// A checked refinement is not supported by the current emission slice.
     #[error("the checked refinement body is not supported by the current V2 emission slice")]
     RefinementNotEmitted,
-    /// Two refinement declarations of different names key one node: the
-    /// authored name is part of a refinement's node identity (the planner's
-    /// ruling on STD-493), which the V2 preimage does not carry yet, so the
-    /// second is not emitted rather than merged into the first.
-    #[error("refinement `{second}` has the meaning of `{first}`; a refinement's name does not enter its node identity yet")]
-    SameMeaningRefinements {
-        /// The first declaration, in source order.
-        first: String,
-        /// The later declaration with the same node.
-        second: String,
-    },
     /// A checked refinement's declaration occurrence has no original source region.
     #[error("the checked refinement declaration has no source region")]
     UnlocatedRefinementDeclaration,
@@ -221,9 +210,7 @@ impl EmitRefusal {
                 Code::RuntimeInvariant
             }
             Self::RefinementIdentityEncoding => Code::OutputFailure,
-            Self::RefinementNotEmitted | Self::SameMeaningRefinements { .. } => {
-                Code::UnsupportedConstruct
-            }
+            Self::RefinementNotEmitted => Code::UnsupportedConstruct,
             Self::UnlocatedRefinementDeclaration => Code::UnsupportedProjection,
             Self::SourceMapInvariant | Self::UnresolvedNodeReference => Code::RuntimeInvariant,
         }
@@ -236,9 +223,7 @@ impl EmitRefusal {
             Self::ProbabilisticModelNotEmitted { .. } | Self::TimedModelNotEmitted { .. } => {
                 Some("not-yet-implemented")
             }
-            Self::RefinementNotEmitted | Self::SameMeaningRefinements { .. } => {
-                Some("not-yet-implemented")
-            }
+            Self::RefinementNotEmitted => Some("not-yet-implemented"),
             Self::NothingToEmit { .. }
             | Self::UnlocatedOccurrence { .. }
             | Self::UnknownOccurrenceRole { .. }
@@ -2545,7 +2530,6 @@ fn emit_package_inner(
         .collect::<Result<Vec<_>, _>>()?;
     let mut nodes = wire_nodes;
     let mut emitted_refinements = Vec::new();
-    let mut refinement_names: BTreeMap<CheckedNodeId, &str> = BTreeMap::new();
     let mut step_rows = Vec::new();
     for refinement in graph.refinements() {
         if !refinement.v2_emittable() {
@@ -2556,12 +2540,6 @@ fn emit_package_inner(
             .filter(|region| region.start() < region.end())
             .ok_or(EmitRefusal::UnlocatedRefinementDeclaration)?;
         let (node, entries, rows) = refinement_node(graph, refinement, &region)?;
-        if let Some(first) = refinement_names.insert(node.node_id.clone(), refinement.name()) {
-            return Err(EmitRefusal::SameMeaningRefinements {
-                first: first.to_owned(),
-                second: refinement.name().to_owned(),
-            });
-        }
         step_rows.extend(rows);
         let insertion = nodes.partition_point(|existing| existing.node_id < node.node_id);
         nodes.insert(insertion, node.clone());

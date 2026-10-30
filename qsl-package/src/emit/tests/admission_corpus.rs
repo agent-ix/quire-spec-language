@@ -983,13 +983,11 @@ fn every_emitted_node_family_is_admitted() {
 }
 
 /// Two refinements of different names with one subject, profile and body
-/// key one node today, though a refinement's name is part of its identity
-/// (the planner's ruling on STD-493): the later declaration refuses
-/// `unsupported_construct`/`not-yet-implemented`, naming both, and no
-/// package is written.
+/// are two nodes, because a refinement's name is part of its identity (the
+/// planner's ruling on STD-493): both emit, under distinct node ids.
 #[trace("FR-375", "TC-310")]
 #[test]
-fn two_refinements_of_one_meaning_refuse_naming_both() {
+fn two_refinements_of_one_meaning_are_two_distinct_nodes() {
     let abstract_document = state_machine_document("example/refinement-abstract");
     let concrete_document = state_machine_document("example/refinement-concrete");
     let unit = format!(
@@ -1001,22 +999,19 @@ fn two_refinements_of_one_meaning_refuse_naming_both() {
     );
     let package =
         modelled_with_documents(&unit, &[abstract_document, concrete_document], Vec::new());
-    let refusal = emit_checked(&package).expect_err("the second declaration refuses");
-    assert!(
-        matches!(
-            &refusal,
-            EmitRefusal::SameMeaningRefinements { first, second }
-                if first == "R" && second == "R2"
-        ),
-        "{refusal:?}"
-    );
-    assert_eq!(refusal.code(), Code::UnsupportedConstruct);
-    assert_eq!(refusal.cause(), Some("not-yet-implemented"));
+    let emission = emit_checked(&package).expect("both refinements emit");
+    let wire = wire(&emission);
+    let refinements: Vec<&Value> = nodes(&wire)
+        .iter()
+        .filter(|node| node["node_tag"] == "relation" && node["semantic_form"] == "refinement")
+        .collect();
+    assert_eq!(refinements.len(), 2, "{refinements:?}");
+    assert_ne!(refinements[0]["node_id"], refinements[1]["node_id"]);
 }
 
 /// Two refinements of different meanings are two nodes and both emit: `R`
 /// refines `A` by `C` and `R2` refines `C` by `A`, so their subjects differ
-/// and no declaration refuses as [`EmitRefusal::SameMeaningRefinements`].
+/// and both emit.
 #[trace("FR-375", "TC-310")]
 #[test]
 fn two_refinements_of_different_meanings_both_emit() {
