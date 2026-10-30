@@ -137,7 +137,12 @@ fn requirement_wire_mutations_refuse() {
         .unwrap()
         .iter()
         .find(|node| {
-            node["semantic_form"] != "temporal_clause" && node["node_id"] != clause["node_id"]
+            node["semantic_form"] != "temporal_clause"
+                && node["node_id"] != clause["node_id"]
+                && !clause["dependencies"]
+                    .as_array()
+                    .unwrap()
+                    .contains(&node["node_id"])
         })
         .expect("a non-temporal node")["node_id"]
         .clone();
