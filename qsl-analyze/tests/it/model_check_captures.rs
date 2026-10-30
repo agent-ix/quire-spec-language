@@ -12,13 +12,11 @@ use qsl_eval::model_subject::{ModelInstance, ModelLetters};
 use qsl_eval::simulation::model::{ExpansionLimits, ModelSystem};
 use qsl_eval::temporal::{CaptureReading, UndefinedCause};
 use qsl_foundation::source::provenance::OccurrenceKey;
-use qsl_foundation::SourceIdentity;
 use qsl_replay::{
-    check_closure, compile_package, replay_model_trace, CertificateRequest, CertificateRule,
-    CounterexampleKind, DependencyInput, DisagreementCause, ModelCheckItem, ModelCheckLimits,
-    ModelCheckOutcome, ModelTraceSettlement, ModelTraceSubject, ModelTraceValue, ReplayLimits,
-    SmtEncodingLimits, TemporalCertificateCheck, TemporalCounterexample, UndefinedEvaluation,
-    UndefinedLocus, WireNodeId,
+    check_closure, replay_model_trace, CertificateRequest, CertificateRule, CounterexampleKind,
+    DisagreementCause, ModelCheckItem, ModelCheckLimits, ModelCheckOutcome, ModelTraceSettlement,
+    ModelTraceSubject, ModelTraceValue, ReplayLimits, SmtEncodingLimits, TemporalCertificateCheck,
+    TemporalCounterexample, UndefinedEvaluation, UndefinedLocus,
 };
 use quire_exact::{Cancel, Meter};
 use serde_json::json;
@@ -427,20 +425,9 @@ fn replay_reproduces_an_undefined_capture_located_at_it() {
     let claimed = claimed.clone();
 
     let document = world.domain.document.as_slice();
-    let package_id = compile_package(
-        SourceIdentity::new("agent-ix", "counter", "git", "1"),
-        "counter.native",
-        &world.unit,
-        [document],
-        &DependencyInput::default(),
-        qsl_replay::StageLimits::default(),
-        ReplayLimits::default(),
-    )
-    .expect("the unit compiles")
-    .package_id();
     let node = &world.package.graph().temporal_clauses()[0];
     let identity = node.identity().clone();
-    let occurrence = OccurrenceKey::new(identity, node.claim().clone());
+    let occurrence = OccurrenceKey::new(identity.clone(), node.claim().clone());
     let system =
         ModelSystem::new(world.subject(&["c"], UNLIMITED).simulation).expect("the subject admits");
     let letters = system.clause_letters(node).expect("the clause has letters");
@@ -454,9 +441,9 @@ fn replay_reproduces_an_undefined_capture_located_at_it() {
     };
     let replay = |payload: TemporalCounterexample| {
         replay_model_trace(
-            request(document, world.snapshot_bytes(), &world.unit, package_id),
+            request(document, world.snapshot_bytes(), &world.unit),
             &subject,
-            &envelope_at(package_id, payload, identity, occurrence.clone()),
+            &envelope_at(payload, identity.clone(), occurrence.clone()),
             &letters,
             ReplayLimits::default(),
         )

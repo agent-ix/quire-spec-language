@@ -20,15 +20,14 @@ use qsl_foundation::diagnostic::Code;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
-    replay_model_trace, settle_model_check,
-    CertificateRequest, CounterexampleKind, DigestDomain, DigestRecord,
-    DisagreementCause, EnvelopeSource, Execution, IncompleteCause, InconclusiveCause,
+    replay_model_trace, settle_model_check, CertificateRequest, CounterexampleKind, DigestDomain,
+    DigestRecord, DisagreementCause, EnvelopeSource, Execution, IncompleteCause, InconclusiveCause,
     ModelCheckItem, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ModelTraceRefusal,
     ModelTraceReplayResult, ModelTraceSettlement, ModelTraceSubject, ModelTraceValue,
     QualifiedName, ReachedLimit, ReplayLimits, ReplayRefusal, ReplayRequestWire, ReplaySource,
     ResultLabel, RunStats, SettlementBasis, StateEnvironment, TemporalCounterexample,
-    TerminalValue, Truth, UndecidedCause, UndefinedLocus, Witness, WitnessEnvelope,
-    WitnessPacket, EXPLICIT_STATE,
+    TerminalValue, Truth, UndecidedCause, UndefinedLocus, Witness, WitnessEnvelope, WitnessPacket,
+    EXPLICIT_STATE,
 };
 use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::{Cancel, CancelCause, Identifier, NodeKey, Origin, Role};

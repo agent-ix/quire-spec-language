@@ -20,7 +20,6 @@ use qsl_analyze::analyze::{analyze, hyper_form_item, DispositionKind, Engines, S
 use qsl_analyze::model_check::ModelCheckRefusal;
 use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::bound::{DomainKey, DomainKind};
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::ReductionKind;
 use qsl_foundation::{BackendId, RequestIndex};

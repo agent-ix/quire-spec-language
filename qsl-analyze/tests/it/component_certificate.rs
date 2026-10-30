@@ -940,9 +940,7 @@ fn a_closure_certificate_never_proves_a_liveness_claim() {
     let letters = fixture.letters(never);
     let request = fixture.certificate_request(&letters, UNLIMITED);
     let mut forged = ComponentCertificate {
-        closure: ClosureCertificate {
-            states: Vec::new(),
-        },
+        closure: ClosureCertificate { states: Vec::new() },
         components: Vec::new(),
     };
     loop {

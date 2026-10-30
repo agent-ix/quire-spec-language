@@ -19,7 +19,6 @@ use qsl_analyze::zone_check::manifest as en6;
 use qsl_analyze::zone_check::{ZoneCheckItem, ZoneCheckLimits, ZoneCheckRequest};
 use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::simulation::model::{PopulationUniverse, TimedSystem, DEFAULT_MAX_CLOCKS};
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::CheckedPackage;
 use qsl_replay::node_occurrence;
@@ -291,7 +290,6 @@ fn zone_run<'w>(
             item: certified,
         },
         certificate_limits: CertificateCheckLimits::default(),
-        package_id: PackageId::of_preimage(b"derived-timed").record(),
         replay: Box::new(|_| panic!("a proof has no counterexample to replay")),
     };
     derived_zone_item(derived, timed_item)

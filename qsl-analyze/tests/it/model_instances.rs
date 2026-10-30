@@ -28,7 +28,6 @@ use qsl_eval::simulation::{NotSimulated, RequiresBound};
 use qsl_eval::temporal::{AtomReading, UndefinedCause};
 use qsl_foundation::bound::{DomainKey, DomainKind};
 use qsl_foundation::diagnostic::Code;
-use qsl_foundation::digest::WireNodeId;
 use qsl_package::CheckedPackage;
 use qsl_replay::{check_closure, CertificateRequest, ClosureCertificate, ClosureRefusal};
 use qsl_replay::{CounterexampleKind, ModelCheckItem, ModelCheckLimits};
@@ -374,13 +373,7 @@ impl World {
                 },
                 smt_encoding: qsl_replay::SmtEncodingLimits::default(),
             },
-            &ClosureCertificate {
-                package_id: qsl_package::emit_checked(&package)
-                    .expect("the package emits")
-                    .package()
-                    .package_id(),
-                states: Vec::new(),
-            },
+            &ClosureCertificate { states: Vec::new() },
             &ModelCheckLimits::default(),
             &Cancel::new(),
         )

@@ -20,10 +20,10 @@ use qsl_foundation::diagnostic::Code;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_replay::{
     replay_model_trace, settle_model_check, CertificateRequest, DigestDomain, DigestRecord,
-    DisagreementCause, InconclusiveCause, ModelCheckItem,
-    ModelCheckLimits, ModelCheckOutcome, ModelTraceRefusal, ModelTraceReplayResult,
-    ModelTraceSettlement, ModelTraceSubject, ModelTraceValue, ReplayLimits, ReplayRefusal,
-    ResultLabel, TemporalCounterexample, TerminalValue, UndefinedEvaluation, UndefinedLocus,
+    DisagreementCause, InconclusiveCause, ModelCheckItem, ModelCheckLimits, ModelCheckOutcome,
+    ModelTraceRefusal, ModelTraceReplayResult, ModelTraceSettlement, ModelTraceSubject,
+    ModelTraceValue, ReplayLimits, ReplayRefusal, ResultLabel, TemporalCounterexample,
+    TerminalValue, UndefinedEvaluation, UndefinedLocus,
 };
 use quire_exact::{Cancel, NodeKey};
 

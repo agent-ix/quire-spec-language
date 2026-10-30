@@ -23,12 +23,11 @@ use qsl_eval::simulation::model::{ModelSimState, ModelSystem};
 use qsl_eval::simulation::TransitionSystem;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
-    check_closure, settle_model_check, CertificateLocus, CertificateRejection,
-    CertificateRequest, CertificateRule, Certification, ClauseIdentity, ClauseRootRefusal,
-    ClosureCertificate, ClosureRefusal, DigestDomain, DigestRecord, Execution,
-    IncompleteCause, InconclusiveCause, ItemRefusal, ModelCheckItem, ModelCheckLimit,
-    ModelCheckLimits, ModelCheckOutcome, ProductStateRef, ProofBasis, ProofCertificate,
-    ReachedLimit, ResultLabel, SettlementBasis,
+    check_closure, settle_model_check, CertificateLocus, CertificateRejection, CertificateRequest,
+    CertificateRule, Certification, ClauseIdentity, ClauseRootRefusal, ClosureCertificate,
+    ClosureRefusal, DigestDomain, DigestRecord, Execution, IncompleteCause, InconclusiveCause,
+    ItemRefusal, ModelCheckItem, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome,
+    ProductStateRef, ProofBasis, ProofCertificate, ReachedLimit, ResultLabel, SettlementBasis,
     TemporalCertificateCheck, TerminalValue, UndecidedCause,
 };
 use qsl_semantics::check::CheckedTemporalClause;
@@ -355,12 +354,7 @@ fn a_proved_invariant_carries_a_certificate_the_core_accepts() {
     assert_eq!(reachable.len(), 16);
     let mut expected = Vec::new();
     for object in world.objects() {
-        expected.extend(
-            closure(
-                &reachable,
-                &invariant.translation(&object))
-            .states,
-        );
+        expected.extend(closure(&reachable, &invariant.translation(&object)).states);
     }
     expected.sort();
     assert_eq!(certificate.states, expected);
@@ -419,10 +413,7 @@ fn a_deadlock_is_bad_for_the_deadlock_item_alone() {
     let deadlock = SafetyTranslation::deadlock_freedom().expect("translates");
     let request = world.request(ModelCheckItem::DeadlockFreedom, UNLIMITED);
     assert_eq!(
-        check(
-            &request,
-            &closure(&reachable, &deadlock),
-        ),
+        check(&request, &closure(&reachable, &deadlock),),
         rejected(
             CertificateRule::BadState,
             ProductStateRef {
@@ -437,9 +428,7 @@ fn a_deadlock_is_bad_for_the_deadlock_item_alone() {
     assert_eq!(
         check(
             &invariant.request(&world, UNLIMITED),
-            &closure(
-                &reachable,
-                &translation)
+            &closure(&reachable, &translation)
         ),
         TemporalCertificateCheck::Accepted
     );
@@ -488,9 +477,7 @@ fn an_undetermined_contract_or_a_failing_atom_is_a_bad_state() {
         assert_eq!(
             check(
                 &invariant.request(&world, UNLIMITED),
-                &closure(
-                    &reachable,
-                    &translation)
+                &closure(&reachable, &translation)
             ),
             rejected(
                 CertificateRule::BadState,
@@ -517,15 +504,14 @@ fn a_certificate_of_another_item_is_not_admitted() {
     let invariant = world.invariant("always holds(c.value <= 3)", |v| Some(v <= 3));
     let deadlock = closure(
         &reachable,
-        &SafetyTranslation::deadlock_freedom().expect("translates"));
+        &SafetyTranslation::deadlock_freedom().expect("translates"),
+    );
     assert_eq!(
         check(&invariant.request(&world, UNLIMITED), &deadlock),
         rejected(CertificateRule::ShapeMismatch, least(&deadlock.states))
     );
 
-    let own = closure(
-        &reachable,
-        &invariant.translation(&world.objects()[0]));
+    let own = closure(&reachable, &invariant.translation(&world.objects()[0]));
     let mut foreign = own.clone();
     foreign.states[0].model_state = DigestRecord::mint(
         DigestDomain::Sha256Jcs,
@@ -591,10 +577,7 @@ fn the_checker_resolves_each_clause_s_identity_from_the_package() {
     let d = world.declared(body, package, d.clone(), |v| Some(v <= 3));
     let own = certificate(&c.run(&world));
     let reachable = world.reachable();
-    let mut expected = closure(
-        &reachable,
-        &c.translation(&world.objects()[0]))
-    .states;
+    let mut expected = closure(&reachable, &c.translation(&world.objects()[0])).states;
     expected.sort();
     assert_eq!(own.states, expected);
     assert_eq!(
@@ -1040,13 +1023,9 @@ fn a_stopped_check_names_what_stopped_it() {
         );
     }
 
-    let record = settle_model_check(
-        &outcome,
-        &states,
-        &request,
-        &Cancel::new(),
-        |_| panic!("a proof replays nothing"),
-    );
+    let record = settle_model_check(&outcome, &states, &request, &Cancel::new(), |_| {
+        panic!("a proof replays nothing")
+    });
     assert_eq!(
         record.value,
         TerminalValue::Incomplete(IncompleteCause::LimitReached {
@@ -1082,9 +1061,7 @@ fn a_clause_with_no_instance_is_never_certified() {
     assert!(matches!(
         check_closure(
             &invariant.request(&world, UNLIMITED),
-            &ClosureCertificate {
-                states: Vec::new(),
-            },
+            &ClosureCertificate { states: Vec::new() },
             &ModelCheckLimits::default(),
             &Cancel::new()
         ),
@@ -1138,9 +1115,7 @@ fn a_subject_with_no_initial_state_is_never_certified() {
     let mut world = world(CONTRACT, &[("c", 0)]);
     world.initial.clear();
     let request = world.request(ModelCheckItem::DeadlockFreedom, UNLIMITED);
-    let empty = ClosureCertificate {
-        states: Vec::new(),
-    };
+    let empty = ClosureCertificate { states: Vec::new() };
     assert!(matches!(
         check_closure(
             &request,
