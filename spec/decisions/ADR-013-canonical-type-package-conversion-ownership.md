@@ -1018,8 +1018,10 @@ The counterexample packet and the #231 envelope carry, for deterministic replay:
 
 A packet missing any member is refused at reconstruction
 (`WitnessEnvelope::reconstruct`). The members are QSL's (FR-070); the obligation
-identity is QSL's `ObligationIdentity` type, whose structural identity CG builds (O-09)
-and CG uses directly (OQ-H).
+identity is QSL's `ObligationIdentity` type. CG builds it for its clause,
+application and per-step obligations; QSL issues it for selected function
+contracts and operation frames (O-09). CG uses the resulting value directly
+(OQ-H).
 
 Conversions: `Witness` + `KaniObligationIdentity.arguments` → `WitnessBinding`s
 → typed `WitnessValue`s (QSL `Witness::decode`) → reconstructed arguments keyed by

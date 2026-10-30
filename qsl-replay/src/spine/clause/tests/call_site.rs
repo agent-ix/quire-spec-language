@@ -194,7 +194,7 @@ fn call_site_locates_an_operations_anchor_frame_and_clauses() {
             .obligation_identity
             .model()
             .map(crate::ModelIdentity::as_str),
-        graph.model_package_identity("Config")
+        Some(CONFIG_VERSION_PACKAGE_IDENTITY)
     );
 
     let posts: Vec<NodeKey> = state_clause_nodes(graph)
