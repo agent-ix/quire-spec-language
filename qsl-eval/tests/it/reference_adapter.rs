@@ -169,7 +169,7 @@ impl Body for RequestBody {
                 arguments: self.arguments.clone(),
                 site: call_site(),
             })),
-            Resume::Child(child) => Ok(Transition::Done(child)),
+            Resume::Child(child) => Ok(Transition::Done(*child)),
         }
     }
 }
