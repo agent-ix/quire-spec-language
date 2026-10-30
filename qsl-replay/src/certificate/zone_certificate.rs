@@ -81,6 +81,7 @@ mod divergence;
 mod product;
 
 use std::cell::{Cell, RefCell};
+use quire_exact::NodeKey;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
@@ -95,7 +96,7 @@ use qsl_eval::simulation::model::{
 };
 use qsl_eval::temporal::AtomReading;
 use qsl_foundation::diagnostic::Code;
-use qsl_foundation::digest::{DigestRecord, WireNodeId};
+use qsl_foundation::digest::{DigestRecord};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::{CheckedPackage, EmitRefusal};
 use qsl_semantics::check::{
@@ -167,7 +168,7 @@ pub struct ZoneCertificate<O> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RefinementPart {
     /// QSpec FR-418 `refinement_node`: the refinement node's id.
-    pub refinement_node: WireNodeId,
+    pub refinement_node: NodeKey,
     /// The package of the concrete subject.
     pub concrete_package: PackageId,
     /// The package holding the abstract model.
@@ -183,7 +184,7 @@ pub struct RefinementPart {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RefinementIdentity {
     /// The refinement node's id.
-    pub refinement_node: WireNodeId,
+    pub refinement_node: NodeKey,
     /// The concrete subject's package.
     pub concrete_package: PackageId,
     /// The abstract model's package.

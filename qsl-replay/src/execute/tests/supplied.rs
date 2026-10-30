@@ -709,7 +709,7 @@ fn tree_witness(unit: &Unit, depth: usize) -> WitnessValue {
         .expect("Tree is declared")
         .key();
     let key = types.union_key(handle).expect("check sealed the union");
-    let declaration = WireNodeId::from_digest(*key.as_bytes());
+    let declaration = key.clone();
     let member = |name: &str, components| WitnessValue::Union {
         declaration,
         member: name.to_owned(),

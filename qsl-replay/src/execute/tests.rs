@@ -6,7 +6,7 @@ use quire_semantic_value::catalog::Category;
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
-use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
+use qsl_foundation::digest::{DigestDomain, DigestRecord};
 use qsl_foundation::{Code, SourceIdentity};
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::intake::package_input;
@@ -116,7 +116,7 @@ fn spine(source: &str, packages: &qsl_semantics::model::intake::PackageInput) ->
 }
 
 /// The wire node id of `function`'s parameter `index` in `compiled`.
-fn parameter(compiled: &ComposedUnit, function: &str, index: usize) -> WireNodeId {
+fn parameter(compiled: &ComposedUnit, function: &str, index: usize) -> NodeKey {
     let graph = compiled.package.graph();
     let identity = graph.callable(function).expect("declared").identity;
     let key = graph
@@ -124,7 +124,7 @@ fn parameter(compiled: &ComposedUnit, function: &str, index: usize) -> WireNodeI
         .node(identity)
         .and_then(|node| node.function_parameters())
         .expect("a function node")[index];
-    WireNodeId::from_digest(*key.as_bytes())
+    key.clone()
 }
 
 /// The `declaration` occurrence of `function` in the package `package_id`
@@ -199,11 +199,11 @@ fn request(
     }
 }
 
-fn input(parameter: WireNodeId, value: i64) -> ReplaySource {
+fn input(parameter: NodeKey, value: i64) -> ReplaySource {
     typed_input(parameter, WitnessValue::Integer(i128::from(value)))
 }
 
-fn typed_input(parameter: WireNodeId, value: WitnessValue) -> ReplaySource {
+fn typed_input(parameter: NodeKey, value: WitnessValue) -> ReplaySource {
     ReplaySource::Input(vec![CanonicalAssignment { parameter, value }])
 }
 
@@ -2176,7 +2176,7 @@ fn parity_unit() -> String {
 /// from its parameter 0's node id.
 fn parity_request(
     function: &str,
-    bind: impl FnOnce(WireNodeId) -> ReplaySource,
+    bind: impl FnOnce(NodeKey) -> ReplaySource,
 ) -> ReplayRequestWire {
     let source = parity_unit();
     let compiled = spine(&source, &BTreeMap::new());
@@ -2646,12 +2646,12 @@ mod operator_arm {
         ScalarOperand {
             value,
             range: range(0, 100),
-            identity: crate::OperandIdentity::GraphChild(WireNodeId::from_digest([0x11; 32])),
+            identity: crate::OperandIdentity::GraphChild(crate::fixture_node(0x11)),
         }
     }
 
     /// The node of `parity_unit` whose operation identity is `identity`.
-    fn node_of(identity: &str) -> WireNodeId {
+    fn node_of(identity: &str) -> NodeKey {
         let compiled = spine(&parity_unit(), &BTreeMap::new());
         let node = compiled
             .package
@@ -2664,7 +2664,7 @@ mod operator_arm {
                     .unwrap_or(false)
             })
             .expect("the unit has the application");
-        WireNodeId::from_digest(*node.key().as_bytes())
+        node.key().clone()
     }
 
     /// The identity and enclosing function of each operator's node.
@@ -2679,7 +2679,7 @@ mod operator_arm {
 
     /// The graph node each of `node`'s application arguments references, in
     /// order, `None` for an inline literal term.
-    fn children_of(node: WireNodeId) -> Vec<Option<WireNodeId>> {
+    fn children_of(node: NodeKey) -> Vec<Option<NodeKey>> {
         let compiled = spine(&parity_unit(), &BTreeMap::new());
         let graph = compiled.package.graph().semantic_graph();
         let key = graph.resolve_wire(node).expect("the node is in the unit");
@@ -2691,7 +2691,7 @@ mod operator_arm {
             .iter()
             .map(|argument| {
                 (argument["term"] == "reference").then(|| {
-                    WireNodeId::from_hex(argument["target"]["digest"].as_str().unwrap()).unwrap()
+                    NodeKey::from_hex(argument["target"]["digest"].as_str().unwrap()).unwrap()
                 })
             })
             .collect()
@@ -2700,7 +2700,7 @@ mod operator_arm {
     /// `operation` with each operand still naming the placeholder node
     /// renamed to the application's real argument at its position: its child
     /// node, or an inline literal where the argument is a literal term.
-    fn with_real_children(operation: ScalarOperation, node: WireNodeId) -> ScalarOperation {
+    fn with_real_children(operation: ScalarOperation, node: NodeKey) -> ScalarOperation {
         let children = children_of(node);
         let placeholder = operand(0).identity;
         let fix = |operand: ScalarOperand, position: usize| {
@@ -2747,7 +2747,7 @@ mod operator_arm {
 
     /// A claim over `operation` at `node`, exactly as given.
     fn claim_raw(
-        node: WireNodeId,
+        node: NodeKey,
         operation: ScalarOperation,
         generated: NativeOutcome,
     ) -> OperatorClaim {
@@ -3030,7 +3030,7 @@ mod operator_arm {
                 })
             })
             .expect("the unit has the application");
-        let node = WireNodeId::from_digest(*application.key().as_bytes());
+        let node = application.key().clone();
         let children = (0..2)
             .map(|index| parameter(&compiled, "two", index))
             .collect::<Vec<_>>();
@@ -3113,7 +3113,7 @@ mod operator_arm {
     #[trace("TC-904", "FR-357-AC-11")]
     #[test]
     fn tc_904_a_raised_replay_input_bound_admits_what_the_default_refuses() {
-        let claim = claim_raw(WireNodeId::from_digest([7; 32]), add(2, 1), completed(3));
+        let claim = claim_raw(crate::fixture_node(7), add(2, 1), completed(3));
         let (_, function) = site(&claim.operation);
         let mut wire = wire_for(function, &claim);
         let above = crate::DEFAULT_REPLAY_INPUT_BYTES * 2;
@@ -3201,7 +3201,7 @@ mod operator_arm {
         ));
 
         let mut missing_node = add_claim();
-        missing_node.node = WireNodeId::from_digest([1; 32]);
+        missing_node.node = crate::fixture_node(1);
         let mut wrong_function = add_claim();
         wrong_function.node = node_of("quire.op.integer.mul");
         wrong_function.operation = mul(1, 2);
@@ -3275,7 +3275,7 @@ mod operator_arm {
             ..UNLIMITED
         };
         let mut missing_node = claim(add(2, 1), completed(3));
-        missing_node.node = WireNodeId::from_digest([1; 32]);
+        missing_node.node = crate::fixture_node(1);
         let mut stale = parity("inc", 3);
         stale.package_id = (
             Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
@@ -3386,7 +3386,7 @@ mod operator_arm {
         )
     }
 
-    fn at(node: WireNodeId, operation: ScalarOperation) -> OperatorClaim {
+    fn at(node: NodeKey, operation: ScalarOperation) -> OperatorClaim {
         claim_raw(node, operation, completed(0))
     }
 
@@ -3397,7 +3397,7 @@ mod operator_arm {
     #[trace("TC-904", "FR-357-AC-15")]
     #[test]
     fn tc_904_the_obligation_identity_is_recomputed_from_the_o09_preimage() {
-        let node = WireNodeId::from_digest([0xaa; 32]);
+        let node = crate::fixture_node(0xaa);
         let app = "aa".repeat(32);
         let child = "11".repeat(32);
 
@@ -3407,7 +3407,7 @@ mod operator_arm {
                 left: ScalarOperand::graph_child(
                     1,
                     range(-5, 100),
-                    WireNodeId::from_digest([0x11; 32]),
+                    crate::fixture_node(0x11),
                 ),
                 right: operand(2),
             },
@@ -3484,7 +3484,7 @@ mod operator_arm {
         }
         let mut other_identity = base.clone();
         if let ScalarOperation::Add { left, .. } = &mut other_identity.operation {
-            left.identity = crate::OperandIdentity::GraphChild(WireNodeId::from_digest([0x33; 32]));
+            left.identity = crate::OperandIdentity::GraphChild(crate::fixture_node(0x33));
         }
         let mut other_key = base.clone();
         other_key.occurrence = quire_exact::Origin::new(quire_exact::Role::new("expression"), 1);
@@ -3545,7 +3545,7 @@ mod operator_arm {
     #[test]
     fn tc_904_a_claim_on_another_node_or_operator_is_refused_before_the_identity() {
         let mut missing = claim(add(2, 1), completed(3));
-        missing.node = WireNodeId::from_digest([1; 32]);
+        missing.node = crate::fixture_node(1);
         assert!(matches!(
             mismatch_of(&refused_claim(missing)),
             crate::ScalarIdentityMismatch::Node { .. }
@@ -3586,7 +3586,7 @@ mod operator_arm {
         let children = children_of(node);
         let parameter = children[0].expect("`x` is a graph child");
         assert_eq!(children[1], None, "the literal `1` is inline");
-        let invented = WireNodeId::from_digest([7; 32]);
+        let invented = crate::fixture_node(7);
         let mut wrong_child = claim(add(2, 1), completed(3));
         if let ScalarOperation::Add { left, .. } = &mut wrong_child.operation {
             left.identity = crate::OperandIdentity::GraphChild(invented);
@@ -3652,8 +3652,8 @@ mod operator_arm {
             report.result()
         );
 
-        let child = WireNodeId::from_digest([0x22; 32]);
-        let application = WireNodeId::from_digest([0xaa; 32]);
+        let child = crate::fixture_node(0x22);
+        let application = crate::fixture_node(0xaa);
         let body = serde_json::json!({"body": {"arguments": [
             {"term": "reference", "target": {"digest": child.to_string()}},
             {"term": "literal", "value_kind": "integer", "value": "7"},

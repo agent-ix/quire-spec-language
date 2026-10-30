@@ -6,6 +6,7 @@
 //! the per-step simulation records and the safety half from them (TC-551).
 
 use ix_trace_rs::trace;
+use quire_exact::NodeKey;
 use qsl_eval::smt::{
     RefinementCertificateRequest, RefinementQueryKind, Refusal, SmtEncodingRefusal,
 };
@@ -695,7 +696,7 @@ fn the_safety_half_settles_by_the_first_rule_that_applies() {
     let unproved = TerminalValue::Inconclusive(InconclusiveCause::InductionNotClosed { depth: 1 });
     let not_established =
         TerminalValue::Inconclusive(InconclusiveCause::HypothesesNotEstablished {
-            hypothesis: qsl_foundation::digest::WireNodeId::from_digest(*hypothesis.as_bytes()),
+            hypothesis: qsl_foundation::digest::hypothesis.clone(),
             result: ItemLabel::Inconclusive,
         });
     let induction = TerminalValue::Inconclusive(InconclusiveCause::InductionNotClosed { depth: 1 });
@@ -992,7 +993,7 @@ fn the_rule_order_outranks_the_query_order() {
             &[(hypothesis, unproved)]
         ),
         TerminalValue::Inconclusive(InconclusiveCause::HypothesesNotEstablished {
-            hypothesis: qsl_foundation::digest::WireNodeId::from_digest(*hypothesis.as_bytes()),
+            hypothesis: qsl_foundation::digest::hypothesis.clone(),
             result: ItemLabel::Inconclusive,
         })
     );

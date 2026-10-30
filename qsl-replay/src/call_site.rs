@@ -14,13 +14,13 @@
 //! or a named state clause's identities, or a named state field's or
 //! population's domain key (ADR-012 §15.4, §15.7). It also returns the compiled package's own
 //! `quire.checked-package/v2` bytes. Every node id is the same
-//! `WireNodeId` a `CanonicalAssignment`, a witness transcript or a
+//! `NodeKey` a `CanonicalAssignment`, a witness transcript or a
 //! counterexample names, joined by declared identity, never by position (ADR-013 O-25).
 //! It builds no [`crate::execute::replay`] call and no
 //! [`crate::spine::Call`]; it names a call site, it does not make one.
 
 use qsl_foundation::bound::DomainKey;
-use qsl_foundation::digest::{DigestRecord, WireNodeId};
+use qsl_foundation::digest::{DigestRecord};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::{Code, SourceIdentity};
 use qsl_package::CheckedPackage;
@@ -160,16 +160,16 @@ pub struct FunctionSite {
     /// The compiled graph's `function` node whose `declaration` is the
     /// selected function: the function node id member of the function
     /// contract obligation's ADR-013 O-09 preimage (FR-121-AC-15).
-    pub function: WireNodeId,
+    pub function: NodeKey,
     /// The function node's `declaration` occurrence at ordinal 0, the
     /// declaration occurrence member of that preimage. Its source span is
     /// not part of it.
     pub declaration: OccurrenceKey,
     /// The parameters, in declared order. Each pair is the parameter's
-    /// declared name and the `WireNodeId` a `CanonicalAssignment::parameter`
+    /// declared name and the `NodeKey` a `CanonicalAssignment::parameter`
     /// or a witness transcript names to bind that parameter's argument --
     /// joined by declared identity, never by position (ADR-013 O-25, C-11).
-    pub parameters: Vec<(Identifier, WireNodeId)>,
+    pub parameters: Vec<(Identifier, NodeKey)>,
     /// FR-484: the function-value parity claim's preimage and the
     /// obligation identity QSL mints from it; `Some` exactly when the
     /// function's declared result is not `Boolean`. A claim producer takes
@@ -199,9 +199,9 @@ pub struct OperationSite {
     /// type's effective view (AD-006), never the selected type itself.
     pub frame_operation: FrameOperation,
     /// The operation's `state`/`operation_anchor` node.
-    pub anchor: WireNodeId,
+    pub anchor: NodeKey,
     /// The operation's `state`/`frame` node.
-    pub frame: WireNodeId,
+    pub frame: NodeKey,
     /// The frame node's own `generated` occurrence (FR-104-AC-5): the key
     /// the frame's `operation-contract` requirement is recorded under and
     /// a frame counterexample names.
@@ -241,7 +241,7 @@ pub struct ClauseSite {
     /// The clause's declared name.
     pub name: Identifier,
     /// The clause's `state_clause` node.
-    pub node: WireNodeId,
+    pub node: NodeKey,
     /// The clause's `claim` occurrence of its node (ADR-013 O-07).
     pub occurrence: OccurrenceKey,
 }
@@ -789,8 +789,8 @@ fn identifier(name: &str, invariant: &'static str) -> Result<Identifier, Box<Cal
 }
 
 /// A checked node's key as the wire spells it.
-fn wire_id(key: NodeKey) -> WireNodeId {
-    WireNodeId::from_digest(*key.as_bytes())
+fn wire_id(key: NodeKey) -> NodeKey {
+    key.clone()
 }
 
 #[cfg(test)]

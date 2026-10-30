@@ -12,8 +12,8 @@
 //! over the invocation, admitted by FR-106 from the byte provision, and
 //! settles an FR-072 result on the envelope's arm.
 
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
+use quire_exact::NodeKey;
 use qsl_semantics::check::{CheckedGraph, CheckedOperationFrame};
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::observation::{DocumentRef, FrameWitness, Provisions};
@@ -49,9 +49,9 @@ pub enum FrameIdentityMismatch {
     )]
     EnvelopeFrame {
         /// The envelope's clause node.
-        envelope: WireNodeId,
+        envelope: NodeKey,
         /// The payload's frame node.
-        payload: WireNodeId,
+        payload: NodeKey,
     },
     /// The envelope's `occurrence_key`, which for a frame packet is the
     /// payload's frame occurrence.
@@ -68,9 +68,9 @@ pub enum FrameIdentityMismatch {
     )]
     Anchor {
         /// The payload's anchor node.
-        payload: WireNodeId,
+        payload: NodeKey,
         /// The recompiled anchor node.
-        recompiled: WireNodeId,
+        recompiled: NodeKey,
     },
     /// The operation's `state`/`frame` node.
     #[error(
@@ -78,9 +78,9 @@ pub enum FrameIdentityMismatch {
     )]
     Frame {
         /// The payload's frame node.
-        payload: WireNodeId,
+        payload: NodeKey,
         /// The recompiled frame node.
-        recompiled: WireNodeId,
+        recompiled: NodeKey,
     },
     /// The frame node's `generated` occurrence.
     #[error("the payload names frame occurrence {payload:?} but the package recompiles it as {recompiled:?}")]
@@ -104,8 +104,8 @@ pub struct FrameReplayResult {
     source: RawSourceRef,
     package_id: PackageId,
     operation: FrameOperation,
-    anchor: WireNodeId,
-    frame: WireNodeId,
+    anchor: NodeKey,
+    frame: NodeKey,
     occurrence: OccurrenceKey,
     invocation: DocumentRef,
     pre: DocumentRef,
@@ -132,11 +132,11 @@ impl FrameReplayResult {
         &self.operation
     }
     /// The operation's anchor node.
-    pub fn anchor(&self) -> WireNodeId {
+    pub fn anchor(&self) -> NodeKey {
         self.anchor
     }
     /// The operation's frame node.
-    pub fn frame(&self) -> WireNodeId {
+    pub fn frame(&self) -> NodeKey {
         self.frame
     }
     /// The frame node's `generated` occurrence key.

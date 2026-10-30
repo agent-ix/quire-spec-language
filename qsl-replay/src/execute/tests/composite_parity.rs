@@ -101,7 +101,7 @@ fn range(lower: i64, upper: i64) -> FiniteBound {
     FiniteBound::integer_range(Integer::from(lower), Integer::from(upper)).unwrap()
 }
 
-fn bound(node: WireNodeId, path: &[u32], bound: FiniteBound) -> ProofBound {
+fn bound(node: NodeKey, path: &[u32], bound: FiniteBound) -> ProofBound {
     let kind = match bound.kind() {
         FiniteBoundKind::Cardinality => Some(DomainKind::Collection),
         FiniteBoundKind::IntegerRange => Some(DomainKind::Integer),
@@ -120,15 +120,15 @@ fn outcome(equal: bool, pair_count: u64) -> EqualityOutcome {
 }
 
 impl Unit {
-    fn parameter(&self, function: &str, index: usize) -> WireNodeId {
+    fn parameter(&self, function: &str, index: usize) -> NodeKey {
         let package = self.compiled.checked.package();
         let callable = package.graph().callable(function).expect("declared");
         let keys = callable_parameter_keys(package, &callable).unwrap();
-        WireNodeId::from_digest(*keys[index].as_bytes())
+        keys[index].clone()
     }
 
     /// The claimed equality node in `function`'s body.
-    fn node(&self, function: &str) -> WireNodeId {
+    fn node(&self, function: &str) -> NodeKey {
         let graph = self.compiled.checked.package().graph();
         let identity = graph.callable(function).expect("declared").identity;
         let semantic = graph.semantic_graph();
@@ -138,7 +138,7 @@ impl Unit {
                 equality_operator(node).is_some() && in_body(semantic, identity, node.key())
             })
             .expect("the function applies an equality");
-        WireNodeId::from_digest(*found.key().as_bytes())
+        found.key().clone()
     }
 
     /// The `index`th occurrence (in the package's own order) of `function`'s
@@ -167,13 +167,13 @@ impl Unit {
             .expect("the occurrence exists")
     }
 
-    fn record_id(&self, name: &str) -> WireNodeId {
+    fn record_id(&self, name: &str) -> NodeKey {
         let types = self.compiled.checked.package().graph().scope().types();
         let record = types
             .composites()
             .find(|declaration| declaration.name() == name)
             .expect("a declared record");
-        WireNodeId::from_digest(*record.key().as_bytes())
+        record.key().clone()
     }
 
     /// `Q { x, s }`.
@@ -329,7 +329,7 @@ fn settle(
     settle_verified_shadow(wire, claim, evidence, ReplayLimits::default())
 }
 
-fn declared(node: WireNodeId, path: &[u32], finite: FiniteBound) -> DeclaredDomain {
+fn declared(node: NodeKey, path: &[u32], finite: FiniteBound) -> DeclaredDomain {
     DeclaredDomain::new(bound(node, path, finite))
 }
 
@@ -638,7 +638,7 @@ fn tc_907_the_common_steps_refuse_for_both_entries() {
     }));
 
     let mut absent = claim();
-    absent.node = WireNodeId::from_digest([7; 32]);
+    absent.node = crate::fixture_node(7);
     cases.push((
         "a node the package does not hold",
         unit.wire("f", &claim(), vec![]),
@@ -1073,7 +1073,7 @@ fn tc_907_a_defective_bound_refuses_before_any_row() {
         assert_eq!(refusal.code(), Code::InvalidRuntimeInput);
         (**cause).clone()
     };
-    let key = |node: WireNodeId, path: &[u32]| DomainKey::Node {
+    let key = |node: NodeKey, path: &[u32]| DomainKey::Node {
         node,
         path: path.to_vec(),
     };
@@ -1241,7 +1241,7 @@ fn tc_907_an_unbounded_collection_is_covered_only_by_a_declared_cardinality() {
         CollectionKind::OrderedSet,
     ] {
         let unbounded = ValueType::collection(CollectionType::new(kind, element.clone(), None));
-        let parameter = WireNodeId::from_digest([5; 32]);
+        let parameter = crate::fixture_node(5);
         let package = unit.compiled.checked.package();
         let positions = || derive(&[(parameter, &unbounded)], package, 1_000).unwrap();
         let harness = vec![
@@ -1721,7 +1721,7 @@ fn tc_907_the_identity_equals_a_hand_written_canonical_text() {
         OperandIdentity::InlineLiteral => panic!("a composite literal is a graph child"),
     };
     let a = unit.parameter("g", 0);
-    let argument = |node: WireNodeId, position: u32, entries: &str| {
+    let argument = |node: NodeKey, position: u32, entries: &str| {
         format!(
             r#"{{"domain":{{"entries":[{entries}],"tag":"bounds"}},"operand":{{"node_id":"{node}","tag":"graph_child"}},"position":{position}}}"#
         )
@@ -1738,7 +1738,7 @@ fn tc_907_the_identity_equals_a_hand_written_canonical_text() {
     // the bytes of the encoded key, so `[1, 0]` precedes `[1]`.
     let claim = unit.claim("f", EqualityOperator::Equal, unit.covering());
     let wire = unit.wire("f", &claim, vec![]);
-    let entries = |id: WireNodeId| {
+    let entries = |id: NodeKey| {
         let key = |path: &str| format!(r#"{{"node_id":"{id}","path":{path},"tag":"node"}}"#);
         let range = r#"{"lower":"0","tag":"integer_range","upper":"9"}"#;
         format!(

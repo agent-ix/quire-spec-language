@@ -6,6 +6,16 @@
 //! alias `N`, and a unit that declares one hyper clause.
 
 use std::collections::BTreeMap;
+use quire_exact::NodeKey;
+
+fn fixture_node(fill: u8) -> NodeKey {
+    NodeKey::new(
+        "fixture",
+        vec![quire_exact::PathSegment::Text(fill.to_string())],
+        0,
+    )
+    .expect("fixture node")
+}
 
 use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::simulation::model::{ExpansionLimits, ModelSimulationRequest, PopulationUniverse};
@@ -604,7 +614,6 @@ mod tp4 {
     use qsl_eval::simulation::model::ModelSimState;
     use qsl_eval::simulation::model::ModelSystem;
     use qsl_eval::temporal::AtomReading;
-    use qsl_foundation::digest::WireNodeId;
     use qsl_foundation::source::provenance::OccurrenceKey;
     use qsl_replay::ClauseIdentity;
     use qsl_replay::{
@@ -839,7 +848,7 @@ mod tp4 {
 
         pub fn foreign_keys(&self) -> BuchiStates {
             let identity = OccurrenceKey::new(
-                WireNodeId::from_digest([0x53; 32]),
+                fixture_node(0x53),
                 Origin::new(Role::new("temporal"), 1),
             );
             let context = StateContext::clause(self.clause(), identity, Vec::new());

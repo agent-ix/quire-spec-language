@@ -36,7 +36,6 @@
 //!   it into a proof.
 
 use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{Capability, NodeTag};
@@ -121,7 +120,7 @@ impl TargetParameter {
     }
 
     /// The parameter's wire node id.
-    pub fn wire(&self) -> WireNodeId {
+    pub fn wire(&self) -> NodeKey {
         wire_id(self.node)
     }
 
@@ -503,8 +502,8 @@ fn undefined_reason(reason: Undefined) -> &'static str {
     kernel_undefined_reason(reason)
 }
 
-fn wire_id(key: NodeKey) -> WireNodeId {
-    WireNodeId::from_digest(*key.as_bytes())
+fn wire_id(key: NodeKey) -> NodeKey {
+    key.clone()
 }
 
 /// `a` restricted to `b`, or `None` when they share no value.

@@ -7,7 +7,6 @@
 use qsl_semantics::check::{NodeTag, SemanticGraph, SemanticNode};
 use quire_exact::NodeKey;
 
-use qsl_foundation::digest::WireNodeId;
 use quire_semantic_value::catalog::InternalFault;
 
 use super::operator_parity::ScalarIdentityMismatch;
@@ -90,7 +89,7 @@ pub(crate) fn applies(node: &SemanticNode, operator: ScalarOperator) -> bool {
 /// settles.
 pub(super) fn check_node_operands(
     node: &SemanticNode,
-    application: WireNodeId,
+    application: NodeKey,
     operation: &ScalarOperation,
 ) -> Result<(), ReplayRefusal> {
     let preimage = serde_json::from_slice::<serde_json::Value>(node.preimage()).map_err(|_| {
@@ -111,7 +110,7 @@ pub(super) fn check_node_operands(
 #[ix_trace_rs::string_edge]
 pub(crate) fn check_operands(
     preimage: &serde_json::Value,
-    application: WireNodeId,
+    application: NodeKey,
     operation: &ScalarOperation,
 ) -> Result<(), ScalarIdentityMismatch> {
     let (first, second) = operation.operands();
@@ -132,7 +131,7 @@ pub(crate) fn check_operands(
                 let found = (argument["term"] == "reference")
                     .then(|| argument["target"]["digest"].as_str())
                     .flatten()
-                    .and_then(WireNodeId::from_hex);
+                    .and_then(NodeKey::from_hex);
                 if found != Some(node) {
                     return Err(ScalarIdentityMismatch::OperandChild {
                         node: application,
@@ -186,7 +185,7 @@ pub(crate) fn equality_operator(node: &SemanticNode) -> Option<EqualityOperator>
 #[ix_trace_rs::string_edge]
 pub(super) fn operand_identities(
     node: &SemanticNode,
-    application: WireNodeId,
+    application: NodeKey,
 ) -> Result<Vec<OperandIdentity>, ScalarIdentityMismatch> {
     let fault = || ScalarIdentityMismatch::OperandCount {
         node: application,
@@ -212,7 +211,7 @@ pub(super) fn operand_identities(
             if argument["term"] == "reference" {
                 argument["target"]["digest"]
                     .as_str()
-                    .and_then(WireNodeId::from_hex)
+                    .and_then(NodeKey::from_hex)
                     .map(OperandIdentity::GraphChild)
                     .ok_or_else(fault)
             } else if argument["term"] == "literal" && argument["value_kind"] == "integer" {

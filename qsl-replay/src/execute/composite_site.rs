@@ -9,7 +9,7 @@
 //! subexpression, evaluated.
 
 use qsl_eval::value::evaluate_closed;
-use qsl_foundation::digest::WireNodeId;
+use quire_exact::NodeKey;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::check::{CheckedNode, NodeKind};
 use quire_eval::FamilyOutcome;
@@ -29,7 +29,7 @@ pub(super) enum Operand {
     /// A reference to a parameter of the enclosing function.
     Parameter {
         /// The parameter's node id.
-        node: WireNodeId,
+        node: NodeKey,
         /// The parameter's declared type.
         value_type: ValueType,
     },
@@ -67,7 +67,7 @@ fn fault(invariant: &'static str) -> ReplayRefusal {
 pub(super) fn locate(
     compiled: &Recompiled,
     function: &QualifiedName,
-    node: WireNodeId,
+    node: NodeKey,
     occurrence: &BodyKey,
     operator: EqualityOperator,
 ) -> Result<Site, ReplayRefusal> {

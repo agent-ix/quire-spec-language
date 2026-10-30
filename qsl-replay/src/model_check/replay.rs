@@ -34,6 +34,7 @@
 //! no solver, and reads no path, environment variable or clock.
 
 use std::collections::BTreeMap;
+use quire_exact::NodeKey;
 
 use qsl_eval::fairness::{
     check_loop, Constraint, EdgeLabel, Identity, LassoFairness, LoopStep, Strength,
@@ -60,7 +61,7 @@ use qsl_eval::temporal::{
 };
 use qsl_eval::temporal::{AtomReading, CaptureReading};
 use qsl_foundation::diagnostic::Code;
-use qsl_foundation::digest::{DigestRecord, WireNodeId};
+use qsl_foundation::digest::{DigestRecord};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId};
@@ -178,7 +179,7 @@ pub enum ModelTraceRefusal {
     #[error("stale_dependency/content-mismatch: the recompiled package holds no temporal clause node {clause_node}")]
     UnknownTemporalClause {
         /// The envelope's clause node.
-        clause_node: WireNodeId,
+        clause_node: NodeKey,
     },
     /// A step carries a `delay`, or the counterexample a `final_delay`, over
     /// a subject this replay reads untimed: the delays are not checked here
@@ -268,11 +269,11 @@ pub enum ModelTraceRefusal {
     #[error("stale_dependency/content-mismatch: the envelope names clause {clause_node} at {occurrence_key}; the payload's item is {expected_node} at {expected_key}")]
     ItemIdentity {
         /// The envelope's clause node.
-        clause_node: WireNodeId,
+        clause_node: NodeKey,
         /// The envelope's occurrence key.
         occurrence_key: Box<OccurrenceKey>,
         /// The clause node the payload's item has.
-        expected_node: WireNodeId,
+        expected_node: NodeKey,
         /// The occurrence key the payload's item has.
         expected_key: Box<OccurrenceKey>,
     },
@@ -1076,7 +1077,7 @@ fn resolve_item<'p, T: SubjectTransition>(
     let (deadlock_node, deadlock_key) = deadlock_freedom_clause(package_id);
     let (race_node, race_key) = race_freedom_clause(package_id);
     let (lock_node, lock_key) = time_lock_freedom_clause(package_id);
-    let names = |node: WireNodeId, key: &OccurrenceKey| {
+    let names = |node: NodeKey, key: &OccurrenceKey| {
         envelope.clause_node() == node && envelope.occurrence_key() == key
     };
     let on_deadlock = names(deadlock_node, &deadlock_key);
@@ -1111,7 +1112,7 @@ fn resolve_item<'p, T: SubjectTransition>(
         ));
     }
     let found = package.graph().temporal_clauses().iter().find(|candidate| {
-        WireNodeId::from_digest(*candidate.identity().as_bytes()) == envelope.clause_node()
+        candidate.identity().clone() == envelope.clause_node()
     });
     let Some(found) = found else {
         return Err(refused(ModelTraceRefusal::UnknownTemporalClause {

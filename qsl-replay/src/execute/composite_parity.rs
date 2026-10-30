@@ -13,9 +13,9 @@
 //! row settles `Refuted`.
 
 use std::collections::BTreeMap;
+use quire_exact::NodeKey;
 
 use qsl_foundation::bound::DomainKey;
-use qsl_foundation::digest::WireNodeId;
 use quire_exact::{plan_equality, planned_equality, Meter, Outcome, ScalarLimits, Value};
 use quire_exact::{Cancel, IntegerInterval};
 use quire_semantic_value::catalog::InternalFault;
@@ -95,8 +95,8 @@ fn prepare(
 
 /// The distinct parameter operands of the claimed node, ascending by node id,
 /// each with its declared type.
-fn distinct_parameters(site: &Site) -> Vec<(WireNodeId, &quire_exact::ValueType)> {
-    let mut parameters: BTreeMap<WireNodeId, &quire_exact::ValueType> = BTreeMap::new();
+fn distinct_parameters(site: &Site) -> Vec<(NodeKey, &quire_exact::ValueType)> {
+    let mut parameters: BTreeMap<NodeKey, &quire_exact::ValueType> = BTreeMap::new();
     for operand in &site.operands {
         if let Operand::Parameter { node, value_type } = operand {
             parameters.insert(*node, value_type);

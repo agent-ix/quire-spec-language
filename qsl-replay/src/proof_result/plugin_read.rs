@@ -11,6 +11,7 @@
 //! plugin. Those are the [`BASIS`] and [`CAUSE`] tables below.
 
 use std::cmp::Ordering;
+use quire_exact::NodeKey;
 use std::collections::BTreeSet;
 
 use serde_json::{Map, Value};
@@ -23,7 +24,6 @@ use super::{
 use crate::hybrid::{BoundDimension, SolverHorizon, SolverMethod};
 use crate::outcome::ItemLabel;
 use crate::witness::{CanonicalAssignment, WitnessValue};
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::ReductionKind;
 use quire_exact::{Integer, Rational, NODE_KEY_DOMAIN};
 use quire_semantic_value::fairness::PropertyForm;
@@ -766,7 +766,7 @@ fn read_instance_limit(
 
 /// A checked-package `NodeId`: exactly `domain`, the node-key domain, and
 /// `digest`, 64 lowercase hex digits.
-fn read_node(value: &Value, pointer: String) -> Result<WireNodeId, PluginResultRefusal> {
+fn read_node(value: &Value, pointer: String) -> Result<NodeKey, PluginResultRefusal> {
     let Value::Object(members) = value else {
         return Err(wrong_kind(pointer));
     };
@@ -778,7 +778,7 @@ fn read_node(value: &Value, pointer: String) -> Result<WireNodeId, PluginResultR
     if domain.as_str() != Some(NODE_KEY_DOMAIN) {
         return Err(malformed(domain.is_string(), child(&pointer, "domain")));
     }
-    match digest.as_str().and_then(WireNodeId::from_hex) {
+    match digest.as_str().and_then(NodeKey::from_hex) {
         Some(node) => Ok(node),
         None => Err(malformed(digest.is_string(), child(&pointer, "digest"))),
     }
@@ -803,7 +803,7 @@ fn read_result(value: &Value, pointer: String) -> Result<ItemLabel, PluginResult
 
 /// An FR-331 `StateKey`: 64 lowercase hex digits.
 fn check_state_key(value: &Value, pointer: String) -> Result<(), PluginResultRefusal> {
-    match value.as_str().and_then(WireNodeId::from_hex) {
+    match value.as_str().and_then(NodeKey::from_hex) {
         Some(_) => Ok(()),
         None => Err(malformed(value.is_string(), pointer)),
     }
@@ -970,7 +970,7 @@ fn read_assignment(
     let text = member(members, "parameter", pointer)?;
     let parameter = text
         .as_str()
-        .and_then(WireNodeId::from_hex)
+        .and_then(NodeKey::from_hex)
         .ok_or_else(|| malformed(text.is_string(), parameter_pointer))?;
     let value = WitnessValue::from_wire_json(member(members, "value", pointer)?)
         .map_err(|_| invalid(child(pointer, "value")))?;

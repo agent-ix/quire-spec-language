@@ -88,7 +88,7 @@ fn model_fixture(body: &str) -> Fixture {
 }
 
 impl Fixture {
-    fn parameter(&self, function: &str) -> WireNodeId {
+    fn parameter(&self, function: &str) -> NodeKey {
         parameter(&self.compiled, function, 0)
     }
 
@@ -99,16 +99,16 @@ impl Fixture {
         callable.parameters[0].1.clone()
     }
 
-    fn record_id(&self, name: &str) -> WireNodeId {
+    fn record_id(&self, name: &str) -> NodeKey {
         let types = self.compiled.package.graph().scope().types();
         let record = types
             .composites()
             .find(|declaration| declaration.name() == name)
             .expect("a declared record");
-        WireNodeId::from_digest(*record.key().as_bytes())
+        record.key().clone()
     }
 
-    fn enum_id(&self, name: &str) -> WireNodeId {
+    fn enum_id(&self, name: &str) -> NodeKey {
         let graph = self.compiled.package.graph().semantic_graph();
         let node = graph
             .nodes()
@@ -120,7 +120,7 @@ impl Fixture {
                 )
             })
             .expect("a declared enum");
-        WireNodeId::from_digest(*node.key().as_bytes())
+        node.key().clone()
     }
 
     fn request(&self, function: &str, source: ReplaySource) -> ReplayRequestWire {
@@ -519,7 +519,7 @@ const LEAVES: &str = "enum Color { BLUE, GREEN, RED }\n\
 #[test]
 fn tc_906_leaf_families_replay_and_refuse_by_kind_and_domain() {
     let fixture = fixture(LEAVES);
-    let color = |declaration: WireNodeId, member: &str| WitnessValue::Enum {
+    let color = |declaration: NodeKey, member: &str| WitnessValue::Enum {
         declaration,
         member: member.to_owned(),
     };
@@ -675,7 +675,7 @@ fn on_small_stack(body: impl FnOnce() + Send + 'static) {
 }
 
 /// `record List { head: Int[0, 9]; tail: List?; }` nested `depth` deep.
-fn list(declaration: WireNodeId, depth: usize) -> WitnessValue {
+fn list(declaration: NodeKey, depth: usize) -> WitnessValue {
     let mut value = WitnessValue::Record {
         declaration,
         fields: vec![present("head", int(1)), field("tail", WitnessSlot::Absent)],
@@ -879,7 +879,7 @@ fn convert_via_witness(
     declared: &ValueType,
     value: &WitnessValue,
 ) -> Result<quire_exact::Value, argument::Stopped> {
-    let parameter = WireNodeId::from_digest([1; 32]);
+    let parameter = crate::fixture_node(1);
     let binding = WitnessBinding {
         parameter,
         value_type: witness_type(0, declared).expect("a UUID or Timestamp has a witness form"),
@@ -1097,9 +1097,9 @@ fn admitted_composite_keys_are_the_keys_replay_converts_against() {
             .expect("an admitted composite")
     };
     let (pair, holder) = (find("Pair"), find("Holder"));
-    let id = |key: quire_exact::NodeKey| WireNodeId::from_digest(*key.as_bytes());
+    let id = |key: quire_exact::NodeKey| key.clone();
     assert_eq!(id(holder.key()), fixture.record_id("Holder"));
-    let value = |pair: WireNodeId, holder: WireNodeId| WitnessValue::Record {
+    let value = |pair: NodeKey, holder: NodeKey| WitnessValue::Record {
         declaration: holder,
         fields: vec![
             present("flag", WitnessValue::Boolean(false)),
@@ -1156,8 +1156,8 @@ fn admitted_union_node_is_what_replay_converts_a_union_witness_against() {
         .identifier()
         .as_str()
         .to_owned();
-    let id = |key: quire_exact::NodeKey| WireNodeId::from_digest(*key.as_bytes());
-    let value = |declaration: WireNodeId| WitnessValue::Union {
+    let id = |key: quire_exact::NodeKey| key.clone();
+    let value = |declaration: NodeKey| WitnessValue::Union {
         declaration,
         member: member.clone(),
         components: vec![int(2)],

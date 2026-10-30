@@ -11,8 +11,9 @@
 //! `Refuted`.
 
 use qsl_foundation::bound::ProofBound;
+use quire_exact::NodeKey;
 use qsl_foundation::diagnostic::Code;
-use qsl_foundation::digest::{DigestRecord, WireNodeId};
+use qsl_foundation::digest::{DigestRecord};
 use quire_exact::{Incomplete, Origin, ScalarLimits};
 use quire_semantic_value::declaration::EqualityOperator;
 
@@ -90,7 +91,7 @@ pub enum Refinement {
 pub struct CompositeParityClaim {
     /// The claimed equality node, by its node identity in the original
     /// package.
-    pub node: WireNodeId,
+    pub node: NodeKey,
     /// The claimed occurrence of the node in the selected function's body:
     /// a node shared by two occurrences is two obligations.
     pub occurrence: Origin,
@@ -165,7 +166,7 @@ pub struct CompositeIdentity {
     /// The obligation the claim replays, as the request carried it.
     pub obligation: ObligationIdentity,
     /// The claimed equality node.
-    pub node: WireNodeId,
+    pub node: NodeKey,
     /// The claimed occurrence of the node.
     pub occurrence: Origin,
     /// The claimed operation.

@@ -6,7 +6,7 @@ use qsl_replay::spine::{self, ParseRequest, SpineLimits};
 use qsl_replay::{
     acquire_checked_closure, ApplicationEnvironment, CallableSelection, CheckedClosureCompilation,
     CheckedClosureHandle, DependencyInput, NominalDeclaration, NominalDeclarationForm,
-    NominalDeclarationMember, ReplayLimits, SourceIdentity, StageLimits, WireNodeId,
+    NominalDeclarationMember, ReplayLimits, SourceIdentity, StageLimits, NodeKey,
 };
 use quire_eval::{
     Admission, Body, BodyFactory, BodyFailure, CallFailure, Evaluation, FamilyOutcome, Resume,
@@ -208,7 +208,7 @@ fn fixture() -> Fixture {
     .into_value();
     let graph = checked.package().graph();
     let function_node = |name: &str| {
-        WireNodeId::from_digest(
+        NodeKey::from_digest(
             *graph
                 .function_identity(name)
                 .expect("checked function identity")
@@ -225,7 +225,7 @@ fn fixture() -> Fixture {
                     .is_some_and(|segment| segment.as_str() == name)
             })
             .expect("checked composite declaration");
-        WireNodeId::from_digest(*node.key().as_bytes())
+        node.key().clone()
     };
     let f_node = function_node("f");
     let g_node = function_node("g");

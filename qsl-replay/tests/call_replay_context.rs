@@ -12,6 +12,15 @@
 
 use std::collections::BTreeMap;
 
+fn fixture_node(fill: u8) -> NodeKey {
+    NodeKey::new(
+        "fixture",
+        vec![quire_exact::PathSegment::Text(fill.to_string())],
+        0,
+    )
+    .expect("fixture node")
+}
+
 use ix_trace_rs::trace;
 use qsl_replay::spine::{self, default_accounting, ParseRequest};
 use qsl_replay::{
@@ -20,7 +29,7 @@ use qsl_replay::{
     DomainKind, FiniteBound, InconclusiveCause, Integer, ObjectEnvironment, PluginReplayContext,
     PluginReplayRefusal, ProofBound, ReplayLimits, ReplayRequestWire, RequestIndex, RunRefusal,
     RunWithReplayContext, SourceIdentity, SpineLimits, TerminalRecord, TerminalValue, Value,
-    WireNodeId, WitnessValue,
+    NodeKey, WitnessValue,
 };
 use quire_exact::Cancel;
 use quire_semantic_value::supplied_stop::SuppliedLimits;
@@ -125,7 +134,7 @@ fn oracle(source: &str, limits: CallerLimits) -> PluginReplayContext {
 fn bound() -> ProofBound {
     ProofBound::new(
         DomainKey::Node {
-            node: WireNodeId::from_digest([7; 32]),
+            node: fixture_node(7),
             path: vec![],
         },
         Some(DomainKind::Integer),
@@ -195,7 +204,7 @@ fn the_entry_returns_what_run_with_requirements_returns() {
 
 /// The node of `function`'s first parameter in `source`, read through a
 /// separate compile.
-fn parameter(source: &str, function: &str) -> WireNodeId {
+fn parameter(source: &str, function: &str) -> NodeKey {
     let identity = identity();
     let limits = CallerLimits::default().spine;
     let cancel = Cancel::new();
@@ -229,10 +238,10 @@ fn parameter(source: &str, function: &str) -> WireNodeId {
         .node(identity)
         .and_then(|node| node.function_parameters())
         .expect("a function node")[0];
-    WireNodeId::from_digest(*parameter.as_bytes())
+    parameter.clone()
 }
 
-fn assign(parameter: WireNodeId, x: i128) -> Vec<CanonicalAssignment> {
+fn assign(parameter: NodeKey, x: i128) -> Vec<CanonicalAssignment> {
     vec![CanonicalAssignment {
         parameter,
         value: WitnessValue::Integer(x),
@@ -366,7 +375,7 @@ fn an_undefined_calls_member_refutes_and_an_incomplete_calls_request_is_unchange
     assert_eq!(built.byte_provision, expected.byte_provision);
 }
 
-fn bound_at(node: WireNodeId) -> ProofBound {
+fn bound_at(node: NodeKey) -> ProofBound {
     ProofBound::new(
         DomainKey::Node { node, path: vec![] },
         Some(DomainKind::Integer),

@@ -10,11 +10,11 @@
 //! its family assigns.
 
 use std::cell::RefCell;
+use quire_exact::NodeKey;
 use std::collections::BTreeMap;
 
 use ix_trace_rs::string_edge;
 use qsl_foundation::diagnostic::catalog_category;
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::witness::{
     InvocationBinding, ObservationIdentity, RuntimeValuePath, SeparationStep, ValuePathStep,
@@ -875,7 +875,7 @@ impl OccurrenceWire {
 
     fn read(self) -> Result<OccurrenceKey, CauseCodecError> {
         Ok(OccurrenceKey::new(
-            WireNodeId::from_digest(digest(&self.node_id, "node_id")?),
+            NodeKey::from_digest(digest(&self.node_id, "node_id")?),
             Origin::new(Role::new(self.role), self.ordinal),
         ))
     }
@@ -1422,7 +1422,7 @@ fn hex(bytes: &[u8; 32]) -> String {
 
 /// A 32-byte digest from exactly 64 lowercase hexadecimal digits.
 fn digest(text: &str, member: &'static str) -> Result<[u8; 32], CauseCodecError> {
-    WireNodeId::from_hex(text)
+    NodeKey::from_hex(text)
         .map(|id| *id.as_bytes())
         .ok_or(CauseCodecError::Digest(member))
 }

@@ -14,7 +14,7 @@
 //! settles an FR-072 result on the envelope's arm.
 
 use qsl_forms::StateClauseKind;
-use qsl_foundation::digest::WireNodeId;
+use quire_exact::NodeKey;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::check::CheckedStateClause;
 use qsl_semantics::library::PackageId;
@@ -62,9 +62,9 @@ pub enum ClauseIdentityMismatch {
     )]
     Node {
         /// The envelope's clause node.
-        envelope: WireNodeId,
+        envelope: NodeKey,
         /// The recompiled clause node.
-        recompiled: WireNodeId,
+        recompiled: NodeKey,
     },
     /// The clause declaration's `claim` occurrence.
     #[error("the envelope names occurrence {envelope:?} but the package recompiles it as {recompiled:?}")]
@@ -88,7 +88,7 @@ pub struct StateClauseReplayResult {
     source: RawSourceRef,
     package_id: PackageId,
     clause: crate::identity::QualifiedName,
-    clause_node: WireNodeId,
+    clause_node: NodeKey,
     occurrence_key: OccurrenceKey,
     observation: ClauseSelectionInput,
     documents: Vec<DocumentRef>,
@@ -113,7 +113,7 @@ impl StateClauseReplayResult {
         &self.clause
     }
     /// The envelope's clause node.
-    pub fn clause_node(&self) -> WireNodeId {
+    pub fn clause_node(&self) -> NodeKey {
         self.clause_node
     }
     /// The envelope's occurrence key: the clause's `claim` occurrence.

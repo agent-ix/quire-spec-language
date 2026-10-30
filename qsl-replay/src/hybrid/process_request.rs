@@ -444,7 +444,7 @@ fn admit_package(
     }
 }
 
-fn wire_node_digest(node: &qsl_foundation::digest::WireNodeId) -> String {
+fn wire_node_digest(node: &NodeKey) -> String {
     node.to_string()
 }
 

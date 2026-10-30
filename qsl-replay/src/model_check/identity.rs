@@ -12,8 +12,8 @@
 //! package does not declare, or that the lookup does not find, is
 //! `clause-root-unresolved` ([`ClauseRootRefusal`]).
 
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
+use quire_exact::NodeKey;
 use qsl_package::{
     emit_checked_with_cancel, read_import_view, resolve_clause_root, resolve_hyper_root,
     resolve_state_graph_root, AdmittedPackages, CheckedPackage, ClauseRootUnresolved, EmitRefusal,
@@ -29,7 +29,7 @@ use quire_exact::{Cancel, CancelCause};
 /// origin (ADR-013 O-07).
 pub fn node_occurrence(node: &TemporalClauseNode) -> OccurrenceKey {
     OccurrenceKey::new(
-        WireNodeId::from_digest(*node.identity().as_bytes()),
+        node.identity().clone(),
         node.claim().clone(),
     )
 }
@@ -41,7 +41,7 @@ pub fn node_occurrence(node: &TemporalClauseNode) -> OccurrenceKey {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClauseIdentity {
     occurrence: OccurrenceKey,
-    over: Option<WireNodeId>,
+    over: Option<NodeKey>,
 }
 
 impl ClauseIdentity {
@@ -51,7 +51,7 @@ impl ClauseIdentity {
     }
 
     /// The `over` parameter's checked node.
-    pub fn over(&self) -> Option<WireNodeId> {
+    pub fn over(&self) -> Option<NodeKey> {
         self.over
     }
 
@@ -126,7 +126,7 @@ fn read_back(
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StateGraphIdentity {
     occurrence: OccurrenceKey,
-    over: Option<WireNodeId>,
+    over: Option<NodeKey>,
 }
 
 impl StateGraphIdentity {
@@ -136,7 +136,7 @@ impl StateGraphIdentity {
     }
 
     /// The `over` parameter's checked node.
-    pub fn over(&self) -> Option<WireNodeId> {
+    pub fn over(&self) -> Option<NodeKey> {
         self.over
     }
 

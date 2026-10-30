@@ -5,7 +5,6 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use qsl_eval::value::PackageClosure;
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::SourceIdentity;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckedExpression, CheckedNode, NodeKind};
@@ -205,7 +204,7 @@ impl CheckedClosureHandle {
     pub fn lookup_callable(
         &self,
         owner_package_id: DigestRecord,
-        wire_node_id: WireNodeId,
+        wire_node_id: NodeKey,
     ) -> Result<CallableSelection, CallableLookupRefusal> {
         let mut packages = vec![(self.package_id, self.package.as_ref())];
         let mut visited = BTreeSet::new();
@@ -270,7 +269,7 @@ impl CheckedClosureHandle {
     pub fn nominal_declaration(
         &self,
         selection: &CallableSelection,
-        declaration: WireNodeId,
+        declaration: NodeKey,
     ) -> Result<NominalDeclaration, NominalDeclarationRefusal> {
         if !Arc::ptr_eq(&self.acquisition, &selection.acquisition) {
             return Err(NominalDeclarationRefusal::WrongAcquisition);
@@ -473,7 +472,7 @@ impl CheckedClosureHandle {
     }
 }
 
-fn has_node(package: &CheckedPackage, node: WireNodeId) -> bool {
+fn has_node(package: &CheckedPackage, node: NodeKey) -> bool {
     package
         .graph()
         .semantic_graph()
@@ -666,13 +665,13 @@ pub enum CallableLookupRefusal {
 /// [`CheckedClosureHandle::nested_call_site`] resolves it inside a selected caller.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct NestedCallOccurrence {
-    call_node: WireNodeId,
+    call_node: NodeKey,
     ordinal: u64,
 }
 
 impl NestedCallOccurrence {
     /// Name the `ordinal`th `expression` occurrence of the `call_node`.
-    pub fn new(call_node: WireNodeId, ordinal: u64) -> Self {
+    pub fn new(call_node: NodeKey, ordinal: u64) -> Self {
         Self { call_node, ordinal }
     }
 }
@@ -899,8 +898,8 @@ mod tests {
         )
         .expect("checked acquisition")
     }
-    fn wire(package: &CheckedPackage, name: &str) -> WireNodeId {
-        WireNodeId::from_digest(
+    fn wire(package: &CheckedPackage, name: &str) -> NodeKey {
+        NodeKey::from_digest(
             *package
                 .graph()
                 .function_identity(name)
@@ -1094,7 +1093,7 @@ mod tests {
         );
         assert_eq!(
             handle
-                .lookup_callable(handle.package_id(), WireNodeId::from_digest([9; 32]))
+                .lookup_callable(handle.package_id(), crate::fixture_node(9))
                 .err(),
             Some(CallableLookupRefusal::Unknown)
         );
@@ -1310,7 +1309,7 @@ mod tests {
             handle
                 .lookup_callable(
                     handle.package_id(),
-                    WireNodeId::from_digest(*enum_key.as_bytes())
+                    enum_key.clone()
                 )
                 .err(),
             Some(CallableLookupRefusal::WrongKind)
@@ -1342,7 +1341,7 @@ mod tests {
             .graph()
             .function_identity("other")
             .expect("other");
-        let missing = WireNodeId::from_digest(*missing_key.as_bytes());
+        let missing = missing_key.clone();
         assert_eq!(
             handle.lookup_callable(handle.package_id(), missing).err(),
             Some(CallableLookupRefusal::Unknown)
@@ -1760,7 +1759,7 @@ mod tests {
             if !is_call_form(node.semantic_form()) {
                 continue;
             }
-            let wire = WireNodeId::from_digest(*node.key().as_bytes());
+            let wire = node.key().clone();
             for ordinal in 0..16 {
                 let occurrence = NestedCallOccurrence::new(wire, ordinal);
                 if let Ok(site) = handle.nested_call_site(caller, occurrence) {
@@ -2026,7 +2025,7 @@ mod tests {
             handle.nested_call_site(&g, NestedCallOccurrence::new(wire(&package, "g"), 0)),
             handle.nested_call_site(
                 &g,
-                NestedCallOccurrence::new(WireNodeId::from_digest([7; 32]), 0),
+                NestedCallOccurrence::new(crate::fixture_node(7), 0),
             ),
             handle.nested_call_site(&g, NestedCallOccurrence::new(g_call.call_node, 99)),
         ]
@@ -2209,7 +2208,7 @@ mod tests {
                         .is_some_and(|segment| segment.as_str() == name)
                 })
                 .expect("composite node");
-            WireNodeId::from_digest(*node.key().as_bytes())
+            node.key().clone()
         };
 
         let holder_id = composite_id("Holder");
@@ -2410,7 +2409,7 @@ mod tests {
                     .and_then(|name| name.last())
                     .is_some_and(|name| name.as_str() == "OwnData")
             })
-            .map(|node| WireNodeId::from_digest(*node.key().as_bytes()))
+            .map(|node| node.key().clone())
             .expect("own composite");
         assert!(handle.nominal_declaration(&own_selection, own_id).is_ok());
 
@@ -2430,7 +2429,7 @@ mod tests {
                     .and_then(|name| name.last())
                     .is_some_and(|name| name.as_str() == "Imported")
             })
-            .map(|node| WireNodeId::from_digest(*node.key().as_bytes()))
+            .map(|node| node.key().clone())
             .expect("imported composite");
         assert_eq!(
             handle.nominal_declaration(&own_selection, imported_node),
@@ -2451,7 +2450,7 @@ mod tests {
             Err(NominalDeclarationRefusal::WrongKind)
         );
         assert_eq!(
-            handle.nominal_declaration(&own_selection, WireNodeId::from_digest([0xA5; 32]),),
+            handle.nominal_declaration(&own_selection, crate::fixture_node(0xA5),),
             Err(NominalDeclarationRefusal::Unknown)
         );
         let other_acquisition = acquire(&source, &dependencies);

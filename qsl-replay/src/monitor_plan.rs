@@ -2,8 +2,8 @@
 //! The QSL FR-251/FR-252 monitor-plan contract handed to later layers.
 
 use std::collections::{BTreeMap, BTreeSet};
+use quire_exact::NodeKey;
 
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::check::{Activation, CheckedBody, CheckedFormula};
 use qsl_semantics::library::PackageId;
@@ -13,7 +13,7 @@ use quire_exact::Rational;
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct MonitorSubject {
     package: PackageId,
-    clause_node: WireNodeId,
+    clause_node: NodeKey,
     occurrence: OccurrenceKey,
     clause_name: String,
 }
@@ -22,7 +22,7 @@ impl MonitorSubject {
     /// Make a subject from the package and clause identity resolved by QSL.
     pub fn new(
         package: PackageId,
-        clause_node: WireNodeId,
+        clause_node: NodeKey,
         occurrence: OccurrenceKey,
         clause_name: impl Into<String>,
     ) -> Self {
@@ -39,7 +39,7 @@ impl MonitorSubject {
         self.package
     }
     /// The checked temporal-clause node.
-    pub fn clause_node(&self) -> WireNodeId {
+    pub fn clause_node(&self) -> NodeKey {
         self.clause_node
     }
     /// The authored occurrence of this declaration.

@@ -11,12 +11,21 @@
 
 use std::collections::BTreeMap;
 
+fn fixture_node(fill: u8) -> NodeKey {
+    NodeKey::new(
+        "fixture",
+        vec![quire_exact::PathSegment::Text(fill.to_string())],
+        0,
+    )
+    .expect("fixture node")
+}
+
 use qsl_replay::CanonicalAssignment;
 use qsl_replay::ScalarLimits;
 use qsl_replay::{
     run_with_replay_context, BackendId, Call, CallArgument, CallerLimits, Cancel, DependencyInput,
     DomainKey, DomainKind, FiniteBound, Integer, ObjectEnvironment, PluginReplayRefusal,
-    ProofBound, ReplayRequestWire, RequestIndex, SourceIdentity, TerminalValue, Value, WireNodeId,
+    ProofBound, ReplayRequestWire, RequestIndex, SourceIdentity, TerminalValue, Value, NodeKey,
     WitnessValue,
 };
 use quire_semantic_value::supplied_stop::SuppliedLimits;
@@ -63,7 +72,7 @@ fn a_consumer_runs_builds_and_settles_through_the_crate_root() {
     assert_eq!(context.package_id(), package_id);
     assert_eq!(requirements.members().len(), 1);
     let plugin = BackendId::new("acme");
-    let node = WireNodeId::from_digest([7; 32]);
+    let node = fixture_node(7);
     let bounds = [ProofBound::new(
         DomainKey::Node { node, path: vec![] },
         Some(DomainKind::Integer),

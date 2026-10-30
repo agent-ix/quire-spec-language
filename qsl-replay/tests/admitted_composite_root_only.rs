@@ -10,7 +10,7 @@
 use ix_trace_rs::trace;
 use qsl_replay::{
     compile_admitted, AdmittedCompositeForm, AdmittedContext, DependencyInput, Identifier,
-    ReplayLimits, SourceIdentity, StageLimits, WireNodeId,
+    ReplayLimits, SourceIdentity, StageLimits, NodeKey,
 };
 use quire_exact::{FieldValue, Presence, Value, ValueType};
 use quire_semantic_value::declaration::{
@@ -41,13 +41,13 @@ fn context() -> AdmittedContext {
 
 /// The wire node id of the one admitted composite named `name`, as a
 /// consumer reads it from the emitted package or a Contract IR document.
-fn wire_id_of(context: &AdmittedContext, name: &str) -> WireNodeId {
+fn wire_id_of(context: &AdmittedContext, name: &str) -> NodeKey {
     let name = Identifier::new(name).expect("an identifier");
     let found = context
         .composites()
         .find(|composite| composite.qualified_name().last() == Some(&name))
         .expect("the declaration is admitted");
-    WireNodeId::from_digest(*found.node().as_bytes())
+    found.node().clone()
 }
 
 #[trace("TC-1090", "FR-396-AC-1")]

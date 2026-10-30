@@ -14,7 +14,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::{Code, SourceIdentity};
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{
@@ -318,7 +317,7 @@ pub enum AdmittedLookupRefusal {
     #[error("unknown_declaration: {}", unknown_what(.declaration, .case))]
     Unknown {
         /// The declaration id looked up.
-        declaration: WireNodeId,
+        declaration: NodeKey,
         /// The case looked up, when the lookup named one and the
         /// declaration exists.
         case: Option<Identifier>,
@@ -329,7 +328,7 @@ pub enum AdmittedLookupRefusal {
     #[error("foreign_declaration: declaration {declaration} is admitted by dependency package {}", .package.hex())]
     Foreign {
         /// The declaration id looked up.
-        declaration: WireNodeId,
+        declaration: NodeKey,
         /// The dependency package that admitted it.
         package: PackageId,
     },
@@ -344,11 +343,11 @@ pub enum AdmittedLookupRefusal {
     #[error("wrong_kind: node {declaration} is admitted by this package but is not a declaration of the looked-up kind")]
     WrongKind {
         /// The declaration id looked up.
-        declaration: WireNodeId,
+        declaration: NodeKey,
     },
 }
 
-fn unknown_what(declaration: &WireNodeId, case: &Option<Identifier>) -> String {
+fn unknown_what(declaration: &NodeKey, case: &Option<Identifier>) -> String {
     match case {
         None => format!("no admitted declaration {declaration} of the looked-up kind"),
         Some(case) => format!(
@@ -400,7 +399,7 @@ impl AdmittedContext {
     /// [`AdmittedLookupRefusal::Unknown`] when no package of the closure did.
     pub fn enum_declaration(
         &self,
-        declaration: WireNodeId,
+        declaration: NodeKey,
     ) -> Result<&AdmittedEnum, AdmittedLookupRefusal> {
         let id = *declaration.as_bytes();
         if let Some(admitted) = self.enums.get(&id) {
@@ -426,7 +425,7 @@ impl AdmittedContext {
     /// naming the case when the declaration has no such case.
     pub fn enum_case(
         &self,
-        declaration: WireNodeId,
+        declaration: NodeKey,
         case: &Identifier,
     ) -> Result<&AdmittedEnumCase, AdmittedLookupRefusal> {
         self.enum_declaration(declaration)?
@@ -454,7 +453,7 @@ impl AdmittedContext {
     /// otherwise.
     pub fn composite_declaration(
         &self,
-        declaration: WireNodeId,
+        declaration: NodeKey,
     ) -> Result<&AdmittedComposite, AdmittedLookupRefusal> {
         let id = *declaration.as_bytes();
         if let Some(admitted) = self.composites.get(&id) {
@@ -479,7 +478,7 @@ impl AdmittedContext {
     /// [`AdmittedLookupRefusal::Unknown`] otherwise.
     pub fn unit_declaration(
         &self,
-        declaration: WireNodeId,
+        declaration: NodeKey,
     ) -> Result<&AdmittedUnit, AdmittedLookupRefusal> {
         self.units
             .get(declaration.as_bytes())
@@ -499,7 +498,7 @@ impl AdmittedContext {
     /// As [`Self::unit_declaration`], for a dimension.
     pub fn dimension_declaration(
         &self,
-        declaration: WireNodeId,
+        declaration: NodeKey,
     ) -> Result<&AdmittedDimension, AdmittedLookupRefusal> {
         self.dimensions
             .get(declaration.as_bytes())
@@ -519,7 +518,7 @@ impl AdmittedContext {
     /// `Unknown`.
     fn refusal(
         &self,
-        declaration: WireNodeId,
+        declaration: NodeKey,
         foreign: &BTreeMap<[u8; 32], PackageId>,
     ) -> AdmittedLookupRefusal {
         let id = declaration.as_bytes();

@@ -8,7 +8,7 @@
 //! recompiled `package_id` to equal the request's, selects the function by
 //! its `QualifiedName` in the recompiled package's declarations, joins the
 //! replay source's arguments to the function's parameters by parameter node
-//! id (each `WireNodeId` becomes a `NodeKey` only by lookup in the
+//! id (each `NodeKey` becomes a `NodeKey` only by lookup in the
 //! recompiled package), calls it through S6a (`CheckedPackage::call`) and
 //! settles the verdict against the counterexample's. No `CheckedPackage` is
 //! built from wire bytes, and nothing is read from a path, environment
@@ -24,7 +24,7 @@ use qsl_eval::temporal::{evaluate_observed, TemporalPosition, TemporalRefusal, T
 use qsl_eval::value::{
     input_refusal_code, supplied_stop_cause, supplied_stop_code, CheckedPackageEvaluation,
 };
-use qsl_foundation::digest::{DigestRecord, WireNodeId};
+use qsl_foundation::digest::{DigestRecord};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::{Code, SourceIdentity};
 use qsl_package::CheckedPackage;
@@ -115,8 +115,8 @@ pub struct LimitAboveReader {
     pub reader: u64,
 }
 
-fn hex(digest: &[u8; 32]) -> WireNodeId {
-    WireNodeId::from_digest(*digest)
+fn hex(digest: &[u8; 32]) -> NodeKey {
+    NodeKey::from_digest(*digest)
 }
 
 /// Why a `frame_operation` object is not the operation's declaring object
@@ -222,13 +222,13 @@ pub enum ReplayRefusal {
     /// An argument names a node that is not a parameter of the selected
     /// function.
     #[error("invalid_runtime_input: node {0} is not a parameter of the selected function")]
-    UnknownParameter(WireNodeId),
+    UnknownParameter(NodeKey),
     /// Two arguments name the same parameter.
     #[error("invalid_runtime_input: parameter {0} is bound twice")]
-    DuplicateArgument(WireNodeId),
+    DuplicateArgument(NodeKey),
     /// A parameter of the selected function has no argument.
     #[error("invalid_runtime_input: parameter {0} has no argument")]
-    UnboundParameter(WireNodeId),
+    UnboundParameter(NodeKey),
     /// The backend witness does not decode against the selected function's
     /// parameters. Carries the obligation the request replays (ADR-013
     /// O-25), so a caller replaying many obligations knows which failed.
@@ -894,7 +894,7 @@ fn replay_observed_temporal(
             package: package_id,
         });
     };
-    let expected_node = WireNodeId::from_digest(*clause_node.identity().as_bytes());
+    let expected_node = clause_node.identity().clone();
     let expected_occurrence = OccurrenceKey::new(expected_node, clause_node.claim().clone());
     if envelope.clause_node() != expected_node || envelope.occurrence_key() != &expected_occurrence
     {
@@ -1746,7 +1746,7 @@ fn function_claim(
 /// A function node's one `declaration` occurrence (ADR-013 O-07): the node,
 /// role `declaration`, ordinal 0. The one constructor `call_site`, the
 /// predicate claim and the value-parity claim share.
-pub(crate) fn declaration_occurrence(function: WireNodeId) -> OccurrenceKey {
+pub(crate) fn declaration_occurrence(function: NodeKey) -> OccurrenceKey {
     OccurrenceKey::new(function, Origin::new(Role::new("declaration"), 0))
 }
 
@@ -2096,8 +2096,8 @@ fn witness_type(
 
 /// A checked node's wire spelling, for reporting and for the witness's
 /// binding names. Wire ids carry no claim that they resolve.
-fn wire_id(key: NodeKey) -> WireNodeId {
-    WireNodeId::from_digest(*key.as_bytes())
+fn wire_id(key: NodeKey) -> NodeKey {
+    key.clone()
 }
 
 /// The replay's charges: what `meter` consumed of each counter.

@@ -14,6 +14,7 @@
 //!   typed payload through.
 
 use std::fmt;
+use quire_exact::NodeKey;
 
 #[cfg(test)]
 use quire_exact::Origin;
@@ -24,9 +25,7 @@ use crate::identity::{DeclaredDomain, ObligationIdentity, ProfileSelection, Trac
 use crate::model_check::state_graph::GraphEvidenceEnvelope;
 use crate::target::{ReplayTarget, ReplayTargetMembers, TargetMember, TargetSelectionRefusal};
 use qsl_foundation::bound::{DomainKey, FiniteBound};
-use qsl_foundation::digest::{
-    ByteDigest, DigestDomain, DigestRecord, InvalidDigestRecord, WireNodeId,
-};
+use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord, InvalidDigestRecord};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::BackendId;
 
@@ -275,7 +274,7 @@ impl WitnessValueType {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct WitnessBinding {
     /// The parameter this argument binds.
-    pub parameter: WireNodeId,
+    pub parameter: NodeKey,
     /// The argument's declared primitive type.
     pub value_type: WitnessValueType,
 }
@@ -286,10 +285,10 @@ pub struct WitnessBinding {
 pub enum DecodeRefusal {
     /// No transcript entry names this parameter.
     #[error("no witness entry for parameter {0}")]
-    Missing(WireNodeId),
+    Missing(NodeKey),
     /// More than one transcript entry names this parameter.
     #[error("more than one witness entry for parameter {0}")]
-    Duplicate(WireNodeId),
+    Duplicate(NodeKey),
     /// A transcript entry names no binding's parameter.
     #[error("witness entry {0:?} names no bound parameter")]
     Unbound(String),
@@ -302,7 +301,7 @@ pub enum DecodeRefusal {
     #[error("witness entry for parameter {parameter} is not a {value_type:?} value: {fault:?}")]
     Malformed {
         /// The parameter the entry names.
-        parameter: WireNodeId,
+        parameter: NodeKey,
         /// The binding's declared type.
         value_type: WitnessValueType,
         /// What is wrong with the entry.
@@ -392,7 +391,7 @@ fn parse_block(block: &str) -> Option<BlockFields<'_>> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CanonicalAssignment {
     /// The parameter this assignment binds.
-    pub parameter: WireNodeId,
+    pub parameter: NodeKey,
     /// The parameter's concrete value.
     pub value: WitnessValue,
 }
@@ -588,7 +587,7 @@ pub(crate) use derivation::Derived;
 pub struct WitnessEnvelope<P: FamilyPayload> {
     obligation_identity: ObligationIdentity,
     occurrence_key: OccurrenceKey,
-    clause_node: WireNodeId,
+    clause_node: NodeKey,
     replay_target: ReplayTarget,
     package_id: DigestRecord,
     profile_selections: Vec<ProfileSelection>,
@@ -610,7 +609,7 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
         &self.occurrence_key
     }
     /// The clause node this counterexample witnesses against.
-    pub fn clause_node(&self) -> WireNodeId {
+    pub fn clause_node(&self) -> NodeKey {
         self.clause_node
     }
     /// The replay target (QSpec FR-323): the one function, frame operation
@@ -664,14 +663,14 @@ mod witness_tests {
         format!("<<<assertion|{harness}|{check}|{values}>>>")
     }
 
-    fn integer(parameter: WireNodeId) -> WitnessBinding {
+    fn integer(parameter: NodeKey) -> WitnessBinding {
         WitnessBinding {
             parameter,
             value_type: WitnessValueType::I128,
         }
     }
 
-    fn boolean(parameter: WireNodeId) -> WitnessBinding {
+    fn boolean(parameter: NodeKey) -> WitnessBinding {
         WitnessBinding {
             parameter,
             value_type: WitnessValueType::Boolean,
@@ -701,8 +700,8 @@ mod witness_tests {
     #[trace("TC-180", "FR-070-AC-1")]
     #[test]
     fn tc_180_exactly_one_field_and_derived_facts_track_the_stored_transcript() {
-        let x = WireNodeId::from_digest([1; 32]);
-        let y = WireNodeId::from_digest([2; 32]);
+        let x = crate::fixture_node(1);
+        let y = crate::fixture_node(2);
         let bindings = [integer(x), integer(y)];
         let text = assertion("harness_a", "x == 1", &format!("{x}=1;{y}=2"));
         let witness = Witness::parse(text.clone()).unwrap();
@@ -774,9 +773,9 @@ mod witness_tests {
     #[trace("TC-444", "FR-098-AC-2")]
     #[test]
     fn tc_444_decode_reads_typed_values_by_parameter_node_id() {
-        let flag = WireNodeId::from_digest([1; 32]);
-        let low = WireNodeId::from_digest([2; 32]);
-        let high = WireNodeId::from_digest([3; 32]);
+        let flag = crate::fixture_node(1);
+        let low = crate::fixture_node(2);
+        let high = crate::fixture_node(3);
         let values = format!("{flag}=1;{low}={};{high}={}", i128::MIN, i128::MAX);
         let witness = Witness::parse(assertion("h", "c", &values)).unwrap();
         assert_eq!(
@@ -803,8 +802,8 @@ mod witness_tests {
     #[trace("TC-444", "FR-098-AC-4")]
     #[test]
     fn tc_444_decode_refuses_each_join_failure_with_its_own_variant() {
-        let x = WireNodeId::from_digest([1; 32]);
-        let b = WireNodeId::from_digest([2; 32]);
+        let x = crate::fixture_node(1);
+        let b = crate::fixture_node(2);
         let decode = |values: String, bindings: &[WitnessBinding]| {
             Witness::parse(assertion("h", "c", &values))
                 .unwrap()
@@ -894,7 +893,7 @@ pub struct WitnessPacket<P: FamilyPayload> {
     /// The occurrence key this counterexample was produced at.
     pub occurrence_key: Option<OccurrenceKey>,
     /// The clause node this counterexample witnesses against.
-    pub clause_node: Option<WireNodeId>,
+    pub clause_node: Option<NodeKey>,
     /// The replay target members (QSpec FR-323): exactly one must be
     /// present.
     pub replay_target: ReplayTargetMembers,
@@ -1202,10 +1201,10 @@ mod envelope_tests {
         WitnessPacket {
             obligation_identity: Some(digest(1)),
             occurrence_key: Some(OccurrenceKey::new(
-                WireNodeId::from_digest(digest(2)),
+                NodeKey::from_digest(digest(2)),
                 origin("reference", occurrence_ordinal),
             )),
-            clause_node: Some(WireNodeId::from_digest(digest(3))),
+            clause_node: Some(NodeKey::from_digest(digest(3))),
             replay_target: ReplayTargetMembers::function(
                 QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap(),
             ),
@@ -1221,7 +1220,7 @@ mod envelope_tests {
             declared_domains: Some(vec![DeclaredDomain::new(
                 ProofBound::new(
                     DomainKey::Node {
-                        node: WireNodeId::from_digest(digest(6)),
+                        node: NodeKey::from_digest(digest(6)),
                         path: Vec::new(),
                     },
                     Some(DomainKind::Integer),
@@ -1281,7 +1280,7 @@ mod envelope_tests {
         // `Input`-arm envelope round trip too.
         let mut input_packet = full_packet(0);
         input_packet.source = Some(EnvelopeSource::Input(vec![CanonicalAssignment {
-            parameter: WireNodeId::from_digest(digest(9)),
+            parameter: NodeKey::from_digest(digest(9)),
             value: WitnessValue::Integer(42),
         }]));
         let input_envelope =
@@ -1304,7 +1303,7 @@ mod envelope_tests {
         let mut packet = full_packet(0);
         // Two bounds on one parameter, at the parameter's own position and
         // at its element: distinct by their domain keys.
-        let parameter = WireNodeId::from_digest(digest(6));
+        let parameter = NodeKey::from_digest(digest(6));
         let whole = DomainKey::Node {
             node: parameter,
             path: Vec::new(),
@@ -1533,7 +1532,7 @@ mod envelope_tests {
             DeclaredDomain::new(
                 ProofBound::new(
                     DomainKey::Node {
-                        node: WireNodeId::from_digest(digest(6)),
+                        node: NodeKey::from_digest(digest(6)),
                         path,
                     },
                     Some(DomainKind::Collection),

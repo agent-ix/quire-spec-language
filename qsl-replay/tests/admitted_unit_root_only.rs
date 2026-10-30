@@ -11,7 +11,7 @@
 use ix_trace_rs::trace;
 use qsl_replay::{
     compile_admitted, AdmittedContext, AdmittedUnit, DependencyInput, Identifier, ReplayLimits,
-    SourceIdentity, StageLimits, WireNodeId,
+    SourceIdentity, StageLimits, NodeKey,
 };
 use quire_exact::Outcome;
 use quire_exact::{Integer, Meter, Quantity, Rational, ScalarLimits, Value, ValueType};
@@ -49,7 +49,7 @@ fn unit<'a>(context: &'a AdmittedContext, name: &str) -> &'a AdmittedUnit {
         .find(|unit| unit.qualified_name().last() == Some(&name))
         .expect("the unit is admitted");
     context
-        .unit_declaration(WireNodeId::from_digest(*found.node().as_bytes()))
+        .unit_declaration(found.node().clone())
         .expect("the lookup finds it")
 }
 

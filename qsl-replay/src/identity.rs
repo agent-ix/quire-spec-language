@@ -22,6 +22,7 @@
 //! lands; until then it exists here, once, so the four envelope types have a
 //! typed (never string-keyed, never bare-`&str`) vocabulary to carry.
 use std::fmt;
+use quire_exact::NodeKey;
 
 use qsl_foundation::bound::{DomainKey, FiniteBound, ProofBound};
 use quire_exact::Identifier;
@@ -237,10 +238,10 @@ impl DeclaredDomain {
     ///
     /// ```
     /// use qsl_replay::{
-    ///     DeclaredDomain, DomainKey, DomainKind, FiniteBound, Integer, ProofBound, WireNodeId,
+    ///     DeclaredDomain, DomainKey, DomainKind, FiniteBound, Integer, ProofBound, NodeKey,
     /// };
     ///
-    /// let parameter = WireNodeId::from_digest([7; 32]);
+    /// let parameter = crate::fixture_node(7);
     /// let bound = FiniteBound::integer_range(Integer::from(0_i64), Integer::from(9_i64))?;
     /// let domain = DomainKey::Node { node: parameter, path: Vec::new() };
     /// let declared = DeclaredDomain::new(ProofBound::new(domain, Some(DomainKind::Integer), bound)?);

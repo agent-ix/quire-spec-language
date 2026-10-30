@@ -251,7 +251,7 @@ impl crate::witness::FamilyPayload for GraphEvidence {
 pub struct GraphEvidenceEnvelope {
     obligation_identity: ObligationIdentity,
     occurrence_key: qsl_foundation::source::provenance::OccurrenceKey,
-    claim_node: qsl_foundation::digest::WireNodeId,
+    claim_node: NodeKey,
     package_id: DigestRecord,
     profile_selections: Vec<ProfileSelection>,
     run_limits: ScalarLimits,
@@ -266,7 +266,7 @@ impl GraphEvidenceEnvelope {
     pub fn new(
         obligation_identity: ObligationIdentity,
         occurrence_key: qsl_foundation::source::provenance::OccurrenceKey,
-        claim_node: qsl_foundation::digest::WireNodeId,
+        claim_node: NodeKey,
         package_id: DigestRecord,
         profile_selections: Vec<ProfileSelection>,
         run_limits: ScalarLimits,
@@ -298,7 +298,7 @@ impl GraphEvidenceEnvelope {
     }
 
     /// The checked package node that owns the claim.
-    pub fn claim_node(&self) -> qsl_foundation::digest::WireNodeId {
+    pub fn claim_node(&self) -> NodeKey {
         self.claim_node
     }
 

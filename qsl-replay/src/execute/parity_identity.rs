@@ -10,7 +10,7 @@
 //! domain (a range for a scalar, harness bounds for a composite).
 
 use qsl_foundation::bound::{DomainKey, FiniteBound, ProofBound};
-use qsl_foundation::digest::WireNodeId;
+use quire_exact::NodeKey;
 use quire_canonical::{Encode, Error, Limits, Sink, Writer};
 use quire_exact::{IntegerInterval, Origin};
 
@@ -114,7 +114,7 @@ pub struct ParityArgument {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ParityPreimage {
     /// The application node.
-    pub node: WireNodeId,
+    pub node: NodeKey,
     /// The application node's occurrence key.
     pub occurrence: Origin,
     /// The CG `ObligationKind` wire string.
@@ -138,12 +138,12 @@ pub fn parity_obligation(
 pub struct ValueParityArgument {
     /// The parameter's `value`/`parameter` node id, the id
     /// `FunctionSite.parameters` pairs with the parameter.
-    pub parameter: WireNodeId,
+    pub parameter: NodeKey,
     /// The parameter's zero-based position in the declared parameter list.
     pub position: usize,
     /// The node id of the parameter node's `semantic_type`, its declared
     /// type.
-    pub semantic_type: WireNodeId,
+    pub semantic_type: NodeKey,
 }
 
 /// FR-484's preimage of a function-value parity claim. The occurrence key
@@ -152,7 +152,7 @@ pub struct ValueParityArgument {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ValueParityPreimage {
     /// The function's checked `function` node id.
-    pub node: WireNodeId,
+    pub node: NodeKey,
     /// One entry per declared parameter, in declared parameter order.
     pub arguments: Vec<ValueParityArgument>,
 }
@@ -223,7 +223,7 @@ impl Encode for ValueParityPreimage {
 #[cfg(test)]
 pub(crate) fn argument_digest(
     argument: &ParityArgument,
-    node: WireNodeId,
+    node: NodeKey,
     occurrence: &Origin,
     position: usize,
 ) -> Result<[u8; 32], IdentityEncodeError> {
@@ -367,7 +367,7 @@ fn domain<S: Sink + ?Sized>(writer: &mut Writer<'_, S>, domain: &Domain) -> Resu
 
 struct ArgumentEncode<'a> {
     argument: &'a ParityArgument,
-    node: WireNodeId,
+    node: NodeKey,
     occurrence: &'a Origin,
     position: usize,
 }
@@ -438,7 +438,7 @@ impl Encode for ParityPreimage {
 /// parity `bounds` form, the occurrence's node and key, the obligation kind
 /// `value-validity` and the subject kind `process-provider`.
 pub(crate) fn process_provider_obligation(
-    node: WireNodeId,
+    node: NodeKey,
     occurrence: &Origin,
     bounds: &BoundEntries,
 ) -> Result<ObligationIdentity, IdentityEncodeError> {
@@ -454,7 +454,7 @@ pub(crate) fn process_provider_obligation(
 }
 
 struct ProcessProviderPreimage<'a> {
-    node: WireNodeId,
+    node: NodeKey,
     occurrence: &'a Origin,
     bounds: &'a BoundEntries,
 }
@@ -484,8 +484,8 @@ mod tests {
     use qsl_foundation::ByteDigest;
     use quire_exact::{Integer, Role};
 
-    fn node() -> WireNodeId {
-        WireNodeId::from_digest([0x11; 32])
+    fn node() -> NodeKey {
+        crate::fixture_node(0x11)
     }
 
     fn key(path: Vec<u32>) -> DomainKey {
@@ -550,7 +550,7 @@ mod tests {
             "{{\"arguments\":[{entry}],\"node\":\"{app}\",\"obligation_kind\":\"bounded_shadow\",\"occurrence_key\":{{\"ordinal\":0,\"role\":\"expression\"}}}}"
         );
         let preimage = ParityPreimage {
-            node: WireNodeId::from_digest([0xaa; 32]),
+            node: crate::fixture_node(0xaa),
             occurrence: Origin::new(Role::new("expression"), 0),
             obligation_kind: "bounded_shadow".to_owned(),
             arguments: vec![sequence_argument()],
@@ -582,7 +582,7 @@ mod tests {
             occurrence: Origin::new(Role::new("expression"), 0),
             obligation_kind: "operator_parity".to_owned(),
             arguments: vec![ParityArgument {
-                identity: OperandIdentity::GraphChild(WireNodeId::from_digest([0x22; 32])),
+                identity: OperandIdentity::GraphChild(crate::fixture_node(0x22)),
                 domain: Domain::Range(
                     IntegerInterval::new(Integer::from(-2_i64), Integer::from(3_i64)).unwrap(),
                 ),

@@ -308,7 +308,7 @@ impl Graph {
         self.document(Variant::default())
     }
 
-    fn parameter(&self, function: &str) -> WireNodeId {
+    fn parameter(&self, function: &str) -> NodeKey {
         parameter(&self.compiled, function, 0)
     }
 
@@ -565,7 +565,7 @@ fn reference_text(universe: &str, object_type: &str, identity: &str) -> String {
 }
 
 fn decode_entry(text: &str) -> Result<Vec<WitnessValue>, DecodeRefusal> {
-    let parameter = WireNodeId::from_digest([9; 32]);
+    let parameter = crate::fixture_node(9);
     let transcript = format!("<<<assertion|f|c|{parameter}={text}>>>");
     Witness::parse(transcript)
         .unwrap()
@@ -623,7 +623,7 @@ fn tc_1042_row_07_a_malformed_reference_entry_is_refused() {
         ),
     ];
     for text in texts {
-        let parameter = WireNodeId::from_digest([9; 32]);
+        let parameter = crate::fixture_node(9);
         assert!(
             matches!(
                 decode_entry(&text),
@@ -723,7 +723,7 @@ fn tc_1042_row_15_a_reference_compared_with_itself_completes_true() {
 fn tc_1042_row_16_a_record_for_a_reference_is_the_wrong_kind() {
     let graph = graph();
     let record = WitnessValue::Record {
-        declaration: WireNodeId::from_digest(graph.type_of("fa")),
+        declaration: NodeKey::from_digest(graph.type_of("fa")),
         fields: vec![
             WitnessField {
                 name: "items".to_owned(),

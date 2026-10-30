@@ -12,6 +12,7 @@
 //! `inconclusive` with cause `replay-refused` (ADR-029 PL-7).
 
 use std::collections::BTreeMap;
+use quire_exact::NodeKey;
 
 use super::{InconclusiveCause, TerminalRecord, TerminalValue};
 use crate::execute::{process_provider_obligation, BoundEntries, IdentityEncodeError};
@@ -22,7 +23,7 @@ use crate::request::{DependencyEntryWire, ReplayRequestWire, StateEnvironment};
 use crate::spine::{AdmittedModels, CheckedUnit, EmittedUnit};
 use crate::witness::{CanonicalAssignment, ReplaySource};
 use qsl_foundation::bound::ProofBound;
-use qsl_foundation::digest::{DigestRecord, WireNodeId};
+use qsl_foundation::digest::{DigestRecord};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::source::{Source, SourceLabel};
 use qsl_foundation::{BackendId, Code, RequestIndex, Setting, SettingLimits};
@@ -64,7 +65,7 @@ pub struct PluginReplayContext {
     package_id: DigestRecord,
     source: RawSourceRef,
     dependencies: Vec<DependencySelection>,
-    functions: BTreeMap<WireNodeId, FunctionDeclaration>,
+    functions: BTreeMap<NodeKey, FunctionDeclaration>,
     /// Every requirement record of the package, with the function whose
     /// application claim it is when `replay` can select that function by
     /// name: a `value-validity` record owned by a callable function.
@@ -105,7 +106,7 @@ impl PluginReplayContext {
                 let callable = graph.callable(state.name)?;
                 let name = Identifier::new(state.name).ok();
                 Some((
-                    WireNodeId::from_digest(*callable.identity.as_bytes()),
+                    callable.identity.clone(),
                     FunctionDeclaration {
                         name,
                         predicate: *callable.result == ValueType::Boolean,

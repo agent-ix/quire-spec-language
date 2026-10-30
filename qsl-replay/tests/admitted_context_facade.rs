@@ -11,10 +11,19 @@ use qsl_replay::spine::{self, ParseRequest, SpineLimits};
 use qsl_replay::{
     compile_admitted, compile_package, AdmittedCompilation, AdmittedLookupRefusal, AdmittedRefusal,
     AdmittedResource, Code, DependencyInput, Identifier, NodeKey, ReplayLimits, ReplayRefusal,
-    SourceIdentity, StageLimits, SuppliedLibrary, WireNodeId,
+    SourceIdentity, StageLimits, SuppliedLibrary, NodeKey,
 };
 use qsl_semantics::check::NominalNode;
 use quire_exact::Cancel;
+
+fn fixture_node(fill: u8) -> NodeKey {
+    NodeKey::new(
+        "fixture",
+        vec![quire_exact::PathSegment::Text(fill.to_string())],
+        0,
+    )
+    .expect("fixture node")
+}
 
 const HEADER: &str =
     "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\n";
@@ -37,8 +46,8 @@ fn id(text: &str) -> Identifier {
     Identifier::new(text).expect("an identifier")
 }
 
-fn wire(key: NodeKey) -> WireNodeId {
-    WireNodeId::from_digest(*key.as_bytes())
+fn wire(key: NodeKey) -> NodeKey {
+    key.clone()
 }
 
 fn library(identity: &str, name: &str, body: &str) -> SuppliedLibrary {
@@ -186,7 +195,7 @@ fn lookups_find_admitted_keys_and_refuse_unknown_ones() {
     let green = context.enum_case(declaration, &id("GREEN")).expect("found");
     assert_eq!(Some(green), color.case(&id("GREEN")));
 
-    let nobody = WireNodeId::from_digest([7; 32]);
+    let nobody = fixture_node(7);
     assert_eq!(
         context.enum_declaration(nobody),
         Err(AdmittedLookupRefusal::Unknown {

@@ -6,7 +6,7 @@
 //! package under different aliases assign equal keys of both kinds.
 
 use ix_trace_rs::trace;
-use qsl_foundation::digest::WireNodeId;
+use quire_exact::NodeKey;
 use qsl_package::CheckedPackage;
 use quire_exact::{EnumMember, Value, ValueType};
 use quire_semantic_value::checking::CheckingLimits;
@@ -80,7 +80,7 @@ fn declared<'a>(
 
 fn witness(declaration: &qsl_semantics::check::VariantTypeDeclaration, case: &str) -> WitnessValue {
     WitnessValue::Enum {
-        declaration: WireNodeId::from_digest(*declaration.node().as_bytes()),
+        declaration: declaration.node().clone(),
         member: case.to_owned(),
     }
 }

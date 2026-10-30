@@ -130,7 +130,7 @@ fn run(
     compiled: &ComposedUnit,
     function: &str,
     key: &OccurrenceKey,
-    values: &[(WireNodeId, WitnessValue)],
+    values: &[(NodeKey, WitnessValue)],
 ) -> Result<ReplayResult, ReplayRefusal> {
     let assignments = values
         .iter()
@@ -365,14 +365,14 @@ fn tc_444_binder_bodies_are_observed_and_unread_parameters_are_filled() {
 
 /// The node of `function`'s first `forall` binder: the node of a
 /// quantifier's bound variable, which is no parameter.
-fn record_binder_node(compiled: &ComposedUnit, function: &str) -> WireNodeId {
+fn record_binder_node(compiled: &ComposedUnit, function: &str) -> NodeKey {
     let graph = compiled.package.graph();
     let record = graph
         .requirements()
         .values()
         .find(|record| record.owner() == Some(function))
         .expect("a record");
-    let parameters: Vec<WireNodeId> = (0..1).map(|i| parameter(compiled, function, i)).collect();
+    let parameters: Vec<NodeKey> = (0..1).map(|i| parameter(compiled, function, i)).collect();
     *record
         .extent_roots()
         .iter()
@@ -391,7 +391,7 @@ fn tc_444_a_key_selecting_no_claim_of_the_function_refuses() {
     let x = |function| parameter(&compiled, function, 0);
     let r_application = record(&compiled, &source, "r", "10 mod x", 0);
     let no_node = OccurrenceKey::new(
-        WireNodeId::from_digest([0x11; 32]),
+        crate::fixture_node(0x11),
         Origin::new(Role::new("expression"), 0),
     );
     // The narrow that wraps `inc`'s `x + 1` is located with the application
@@ -518,7 +518,7 @@ fn tc_444_claim_selection_comes_after_the_function_and_before_the_join() {
             value: int(0),
         },
         CanonicalAssignment {
-            parameter: WireNodeId::from_digest([0x22; 32]),
+            parameter: crate::fixture_node(0x22),
             value: int(0),
         },
     ]);

@@ -8,7 +8,7 @@ use ix_trace_rs::trace;
 use qsl_foundation::Setting;
 use qsl_replay::{
     compile_admitted, AdmittedLookupRefusal, AdmittedRefusal, AdmittedResource, DependencyInput,
-    Identifier, ReplayLimits, SourceIdentity, StageLimits, WireNodeId,
+    Identifier, ReplayLimits, SourceIdentity, StageLimits, NodeKey,
 };
 
 const SOURCE: &str = "language \"ix:native\" edition \"1-draft\";\n\
@@ -46,7 +46,7 @@ fn a_consumer_looks_keys_up_through_the_crate_root() {
     assert!(!package.bytes().is_empty());
 
     let color = context.enums().next().expect("an enum");
-    let declaration = WireNodeId::from_digest(*color.key().as_bytes());
+    let declaration = color.key().clone();
     let blue = Identifier::new("BLUE").expect("an identifier");
     assert_eq!(
         context.enum_declaration(declaration).map(|e| e.key()),
@@ -63,7 +63,7 @@ fn a_consumer_looks_keys_up_through_the_crate_root() {
         Err(AdmittedLookupRefusal::Unknown { case: Some(_), .. })
     ));
     assert!(matches!(
-        context.enum_declaration(WireNodeId::from_digest([7; 32])),
+        context.enum_declaration(fixture_node(7)),
         Err(AdmittedLookupRefusal::Unknown { case: None, .. })
     ));
 

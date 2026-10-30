@@ -6,7 +6,6 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use ix_trace_rs::trace;
 use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound, ProofBound};
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::{BackendId, Code, RequestIndex, SourceIdentity};
 use quire_exact::{Cancel, Integer, Origin, Role};
@@ -380,7 +379,7 @@ fn the_cause_reader_reads_hypotheses_not_established() {
             "result": "refuted",
         })),
         Ok(InconclusiveCause::HypothesesNotEstablished {
-            hypothesis: WireNodeId::from_digest([0xdc; 32]),
+            hypothesis: crate::fixture_node(0xdc),
             result: crate::outcome::ItemLabel::Refuted,
         })
     );
@@ -546,7 +545,7 @@ fn tc_774_assignment_reader_reads_and_refuses_in_order() {
     assert_eq!(
         read_plugin_assignments(&entry(json!([{"parameter": parameter, "value": value}]))),
         Ok(vec![CanonicalAssignment {
-            parameter: WireNodeId::from_digest([0x11; 32]),
+            parameter: crate::fixture_node(0x11),
             value: WitnessValue::ExactInteger(Integer::from(0_i64)),
         }])
     );
@@ -795,19 +794,19 @@ fn context(fixture: &Fixture, limits: CallerLimits) -> PluginReplayContext {
     PluginReplayContext::new(&fixture.checked, &fixture.emitted, &fixture.models, limits)
 }
 
-fn declaration(fixture: &Fixture, name: &str) -> (OccurrenceKey, WireNodeId) {
+fn declaration(fixture: &Fixture, name: &str) -> (OccurrenceKey, NodeKey) {
     let graph = fixture.checked.package().graph();
     let callable = graph.callable(name).expect("declared");
     let parameter = crate::execute::callable_parameter_keys(fixture.checked.package(), &callable)
         .expect("a function node")[0];
-    let node = WireNodeId::from_digest(*callable.identity.as_bytes());
+    let node = callable.identity.clone();
     (
         OccurrenceKey::new(node, Origin::new(Role::new("declaration"), 0)),
-        WireNodeId::from_digest(*parameter.as_bytes()),
+        parameter.clone(),
     )
 }
 
-fn bound_at(node: WireNodeId) -> ProofBound {
+fn bound_at(node: NodeKey) -> ProofBound {
     ProofBound::new(
         DomainKey::Node { node, path: vec![] },
         Some(DomainKind::Integer),
@@ -816,7 +815,7 @@ fn bound_at(node: WireNodeId) -> ProofBound {
     .unwrap()
 }
 
-fn input(parameter: WireNodeId, x: i128) -> Vec<CanonicalAssignment> {
+fn input(parameter: NodeKey, x: i128) -> Vec<CanonicalAssignment> {
     vec![CanonicalAssignment {
         parameter,
         value: WitnessValue::Integer(x),
@@ -1046,9 +1045,9 @@ fn tc_774_an_undefined_application_item_is_refuted() {
 #[trace("TC-774", "FR-290-AC-13")]
 #[test]
 fn tc_774_process_provider_preimage_encodes_and_digests() {
-    let node = WireNodeId::from_digest([0x11; 32]);
+    let node = crate::fixture_node(0x11);
     let origin = Origin::new(Role::new("declaration"), 0);
-    let bound = bound_at(WireNodeId::from_digest([0x22; 32]));
+    let bound = bound_at(crate::fixture_node(0x22));
     let with = process_provider_obligation(node, &origin, &BoundEntries::new(vec![bound]).unwrap())
         .unwrap();
     let without =
@@ -1136,7 +1135,7 @@ fn tc_774_limits_flow_into_the_request_and_refusals_are_ordered() {
 
     // An unknown key comes before NotReplayable; duplicate bounds come last.
     let unknown_key = OccurrenceKey::new(
-        WireNodeId::from_digest([0x99; 32]),
+        crate::fixture_node(0x99),
         Origin::new(Role::new("declaration"), 0),
     );
     assert_eq!(

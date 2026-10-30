@@ -6,7 +6,6 @@
 //! does not conform refuses `WrongValueKind` naming the parameter.
 
 use ix_trace_rs::trace;
-use qsl_foundation::digest::WireNodeId;
 use qsl_package::CheckedPackage;
 use quire_exact::{
     CardinalityBound, CollectionKind, CollectionType, Integer, NodeKey, Presence, Value, ValueType,
@@ -69,7 +68,7 @@ fn package() -> CheckedPackage {
 
 fn witness(label: &str, fields: &[(&str, i64)]) -> WitnessValue {
     WitnessValue::Record {
-        declaration: WireNodeId::from_digest(*key(label).as_bytes()),
+        declaration: key(label).clone(),
         fields: fields
             .iter()
             .map(|(name, value)| WitnessField {

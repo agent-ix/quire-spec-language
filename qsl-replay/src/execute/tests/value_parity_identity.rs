@@ -22,9 +22,9 @@ fn hex64(bytes: [u8; 32]) -> String {
 }
 
 fn argument(
-    parameter: WireNodeId,
+    parameter: NodeKey,
     position: usize,
-    semantic_type: WireNodeId,
+    semantic_type: NodeKey,
 ) -> ValueParityArgument {
     ValueParityArgument {
         parameter,
@@ -35,20 +35,20 @@ fn argument(
 
 /// The spec's first argument: `x: Int[0, 9]` (QSpec FR-322 P4 typed by T4).
 fn first() -> ValueParityArgument {
-    argument(WireNodeId::from_digest(P0), 0, WireNodeId::from_digest(T0))
+    argument(NodeKey::from_digest(P0), 0, NodeKey::from_digest(T0))
 }
 
 fn second() -> ValueParityArgument {
     argument(
-        WireNodeId::from_digest([0x33; 32]),
+        crate::fixture_node(0x33),
         1,
-        WireNodeId::from_digest([0x44; 32]),
+        crate::fixture_node(0x44),
     )
 }
 
 fn v2() -> ValueParityPreimage {
     ValueParityPreimage {
-        node: WireNodeId::from_digest(NODE),
+        node: NodeKey::from_digest(NODE),
         arguments: vec![first(), second()],
     }
 }
@@ -149,7 +149,7 @@ fn tc_1252_the_declared_order_is_part_of_the_identity() {
 #[test]
 fn tc_1252_every_member_changes_the_digest_and_a_position_out_of_order_refuses() {
     let base = identity_hex(&v2());
-    let other = WireNodeId::from_digest([0x55; 32]);
+    let other = crate::fixture_node(0x55);
     let mut variants = Vec::new();
     let mut changed = v2();
     changed.node = other;
@@ -274,7 +274,7 @@ fn tc_1252_call_site_mints_the_identity_of_a_value_function_only() {
                 .node(key)
                 .and_then(|node| node.semantic_type())
                 .expect("a typed parameter");
-            let declared = WireNodeId::from_digest(*declared.as_bytes());
+            let declared = declared.clone();
             assert_eq!(
                 parity.preimage.arguments[position],
                 argument(*parameter, position, declared)
@@ -352,7 +352,7 @@ fn tc_1252_a_wrong_identity_refuses_obligation_before_the_argument_join() {
     let inc = site(&source, "inc").site.value_parity.unwrap();
     let add = site(&source, "add").site;
     let mut retyped = inc.preimage.clone();
-    retyped.arguments[0].semantic_type = WireNodeId::from_digest([0x44; 32]);
+    retyped.arguments[0].semantic_type = crate::fixture_node(0x44);
     let retyped = value_parity_obligation(&retyped).unwrap();
     let add_identity = add.value_parity.as_ref().unwrap().obligation_identity;
     let stray = add.parameters[1].1;

@@ -11,9 +11,18 @@ use qsl_replay::spine::{self, ParseRequest, SpineLimits};
 use qsl_replay::{
     compile_admitted, AdmittedCompilation, AdmittedCompositeForm, AdmittedLookupRefusal,
     DependencyInput, NodeKey, ReplayLimits, SourceIdentity, StageLimits, SuppliedLibrary,
-    WireNodeId,
+    NodeKey,
 };
 use std::collections::BTreeSet;
+
+fn fixture_node(fill: u8) -> NodeKey {
+    NodeKey::new(
+        "fixture",
+        vec![quire_exact::PathSegment::Text(fill.to_string())],
+        0,
+    )
+    .expect("fixture node")
+}
 
 use qsl_semantics::check::{mint_union_member_key, CheckedGraph, NodeTag};
 use qsl_semantics::value::enumeration::mint_union_variant_id;
@@ -47,8 +56,8 @@ fn limits() -> StageLimits {
     [(Setting::S1InputBytes, 1 << 20)].into_iter().collect()
 }
 
-fn wire(key: NodeKey) -> WireNodeId {
-    WireNodeId::from_digest(*key.as_bytes())
+fn wire(key: NodeKey) -> NodeKey {
+    key.clone()
 }
 
 fn admit(text: &str, dependencies: &DependencyInput) -> AdmittedCompilation {
@@ -220,7 +229,7 @@ fn composite_lookups_refuse_unknown_and_wrong_kind_ids() {
     let admitted = admit(&format!("{HEADER}{UNIT}"), &DependencyInput::default());
     let context = admitted.context();
 
-    let nobody = WireNodeId::from_digest([7; 32]);
+    let nobody = fixture_node(7);
     assert_eq!(
         context.composite_declaration(nobody),
         Err(AdmittedLookupRefusal::Unknown {

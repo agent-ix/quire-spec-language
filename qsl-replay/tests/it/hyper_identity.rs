@@ -3,8 +3,8 @@
 //! four refusals that precede every other check of `encode_hyper_query`.
 
 use ix_trace_rs::trace;
+use quire_exact::NodeKey;
 use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound, ProofBound};
-use qsl_foundation::digest::WireNodeId;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
     HyperProductIdentity, HyperQueryRequest, SmtEncodingLimits, SmtEncodingRefusal, SubjectIdentity,
@@ -12,6 +12,15 @@ use qsl_replay::{
 use qsl_semantics::check::{admitted_source, PackageDeclarations};
 use quire_exact::{LimitKind, Meter};
 use quire_semantic_value::checking::CheckingLimits;
+
+fn fixture_node(fill: u8) -> NodeKey {
+    NodeKey::new(
+        "fixture",
+        vec![quire_exact::PathSegment::Text(fill.to_string())],
+        0,
+    )
+    .expect("fixture node")
+}
 
 use crate::vault_world::{
     non_interference, World, EQUAL_INPUTS, FORALL_EXISTS, LIVENESS, SAVES_POWER, UNLIMITED,
@@ -55,7 +64,7 @@ fn refused(result: Result<HyperProductIdentity, SmtEncodingRefusal>) -> SmtEncod
 fn bound(maximum: u64) -> ProofBound {
     ProofBound::new(
         DomainKey::Node {
-            node: WireNodeId::from_digest([7; 32]),
+            node: fixture_node(7),
             path: Vec::new(),
         },
         Some(DomainKind::Population),

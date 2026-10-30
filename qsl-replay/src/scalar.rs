@@ -11,13 +11,14 @@
 //! bindings ([`crate::replay`]).
 
 use qsl_foundation::diagnostic::Code;
+use quire_exact::NodeKey;
 use quire_exact::{
     evaluate_integer_arithmetic, Incomplete, Integer, IntegerArithmetic, IntegerInterval, Meter,
     Origin, Outcome, Refusal, ScalarLimits, Value,
 };
 use quire_semantic_value::catalog::InternalFault;
 
-use qsl_foundation::digest::{DigestRecord, WireNodeId};
+use qsl_foundation::digest::{DigestRecord};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use quire_semantic_value::supplied_stop::SuppliedLimits;
 
@@ -109,7 +110,7 @@ impl Eq for ScalarOutcome {}
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OperandIdentity {
     /// The operand is a graph node: its node id.
-    GraphChild(WireNodeId),
+    GraphChild(NodeKey),
     /// The operand is an IR v2 inline literal, which has no node id: it is
     /// named by the application's node id and occurrence key and by its own
     /// position, all of which the claim already holds.
@@ -129,7 +130,7 @@ pub struct ScalarOperand {
 
 impl ScalarOperand {
     /// A graph-node operand named by `node`, drawn from `range`.
-    pub fn graph_child(value: i64, range: IntegerInterval, node: WireNodeId) -> Self {
+    pub fn graph_child(value: i64, range: IntegerInterval, node: NodeKey) -> Self {
         Self {
             value,
             range,
@@ -290,7 +291,7 @@ impl NativeOutcome {
 #[derive(Clone, Debug)]
 pub struct OperatorClaim {
     /// The scalar node the operator is tied to.
-    pub node: WireNodeId,
+    pub node: NodeKey,
     /// The catalog operator and its recorded operands, each with its range.
     pub operation: ScalarOperation,
     /// The application node's occurrence key within the package (its role
@@ -340,7 +341,7 @@ pub struct OperatorIdentity {
     /// The obligation the claim replays, as the request carried it.
     pub obligation: ObligationIdentity,
     /// The scalar node the operator is tied to.
-    pub node: WireNodeId,
+    pub node: NodeKey,
     /// The content identity of the generated artifact alone.
     pub identity: DigestRecord,
     /// The operator and its operands.

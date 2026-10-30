@@ -201,7 +201,6 @@ pub fn run_with_replay_context(
 #[cfg(test)]
 mod tests {
     use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound};
-    use qsl_foundation::digest::WireNodeId;
     use qsl_foundation::source::provenance::OccurrenceKey;
     use quire_exact::{Integer, Origin, Role, Value};
     use std::collections::BTreeMap;
@@ -250,7 +249,7 @@ mod tests {
 
     /// `p`'s declaration occurrence and its parameter's node, read through
     /// a separate compile of `source`.
-    fn declaration(source: &str, function: &str) -> (OccurrenceKey, WireNodeId) {
+    fn declaration(source: &str, function: &str) -> (OccurrenceKey, NodeKey) {
         let identity = SourceIdentity::new("a", "u", "git", "1");
         let limits = CallerLimits::default().spine;
         let cancel = Cancel::new();
@@ -286,14 +285,14 @@ mod tests {
             callable_parameter_keys(checked.package(), &callable).expect("a function node")[0];
         (
             OccurrenceKey::new(
-                WireNodeId::from_digest(*callable.identity.as_bytes()),
+                callable.identity.clone(),
                 Origin::new(Role::new("declaration"), 0),
             ),
-            WireNodeId::from_digest(*parameter.as_bytes()),
+            parameter.clone(),
         )
     }
 
-    fn bound_at(node: WireNodeId) -> ProofBound {
+    fn bound_at(node: NodeKey) -> ProofBound {
         ProofBound::new(
             DomainKey::Node { node, path: vec![] },
             Some(DomainKind::Integer),
@@ -302,7 +301,7 @@ mod tests {
         .unwrap()
     }
 
-    fn input(parameter: WireNodeId, x: i128) -> Vec<CanonicalAssignment> {
+    fn input(parameter: NodeKey, x: i128) -> Vec<CanonicalAssignment> {
         vec![CanonicalAssignment {
             parameter,
             value: WitnessValue::Integer(x),

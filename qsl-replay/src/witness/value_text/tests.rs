@@ -4,7 +4,7 @@
 //! a small native stack.
 
 use ix_trace_rs::trace;
-use qsl_foundation::digest::WireNodeId;
+use quire_exact::NodeKey;
 use quire_exact::Integer;
 
 use super::super::envelope_tests::full_packet;
@@ -16,8 +16,8 @@ use super::super::{
 use super::EntryFault;
 use crate::bounds::BoundExceeded;
 
-fn id(fill: u8) -> WireNodeId {
-    WireNodeId::from_digest([fill; 32])
+fn id(fill: u8) -> NodeKey {
+    crate::fixture_node(fill)
 }
 
 fn int(value: i64) -> WitnessValue {
@@ -35,14 +35,14 @@ fn present(name: &str, value: WitnessValue) -> WitnessField {
     field(name, WitnessSlot::Present(value))
 }
 
-fn canonical(parameter: WireNodeId) -> WitnessBinding {
+fn canonical(parameter: NodeKey) -> WitnessBinding {
     WitnessBinding {
         parameter,
         value_type: WitnessValueType::Canonical,
     }
 }
 
-fn scalar(parameter: WireNodeId) -> WitnessBinding {
+fn scalar(parameter: NodeKey) -> WitnessBinding {
     WitnessBinding {
         parameter,
         value_type: WitnessValueType::I128,
@@ -51,7 +51,7 @@ fn scalar(parameter: WireNodeId) -> WitnessBinding {
 
 /// A witness over `entries` (`parameter node id`, `entry text`), in the
 /// order given.
-fn witness(entries: &[(WireNodeId, &str)]) -> Witness {
+fn witness(entries: &[(NodeKey, &str)]) -> Witness {
     let values: Vec<String> = entries
         .iter()
         .map(|(parameter, text)| format!("{parameter}={text}"))

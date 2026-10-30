@@ -8,8 +8,8 @@
 //! an explicit heap stack, as the kernel's own values are.
 
 use std::fmt;
+use quire_exact::NodeKey;
 
-use qsl_foundation::digest::WireNodeId;
 use quire_exact::Integer;
 
 /// A quantity's magnitude: its rational or decimal form (FR-070).
@@ -71,7 +71,7 @@ pub enum WitnessValue {
     /// An enum member.
     Enum {
         /// The enum declaration's node id.
-        declaration: WireNodeId,
+        declaration: NodeKey,
         /// The member identifier.
         member: String,
     },
@@ -127,21 +127,21 @@ pub enum WitnessValue {
     /// A record, one field per declared field in declaration order.
     Record {
         /// The record declaration's node id.
-        declaration: WireNodeId,
+        declaration: NodeKey,
         /// The fields.
         fields: Vec<WitnessField>,
     },
     /// A tuple, its components in declaration order.
     Tuple {
         /// The tuple declaration's node id.
-        declaration: WireNodeId,
+        declaration: NodeKey,
         /// The components.
         components: Vec<WitnessValue>,
     },
     /// A union member and its components.
     Union {
         /// The union declaration's node id.
-        declaration: WireNodeId,
+        declaration: NodeKey,
         /// The member identifier.
         member: String,
         /// The member's components.

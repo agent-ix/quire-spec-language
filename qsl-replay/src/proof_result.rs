@@ -8,6 +8,7 @@
 //! settles `refuted`, category violation.
 
 use crate::bounds::{BoundExceeded, ReplayLimits};
+use quire_exact::NodeKey;
 use crate::call_site::CallSiteRefusal;
 use crate::certificate::closed_form::outcome::ClosedFormAnalysis;
 use crate::certificate::{CertificateLocus, CertificateRule};
@@ -652,7 +653,7 @@ pub enum InconclusiveCause {
     /// can settle the safety half `proved`.
     HypothesesNotEstablished {
         /// The invariant clause's node, as its wire id.
-        hypothesis: qsl_foundation::digest::WireNodeId,
+        hypothesis: NodeKey,
         /// The result its item settled.
         result: crate::outcome::ItemLabel,
     },
@@ -1761,7 +1762,6 @@ mod tests {
     use crate::scalar::{ScalarClaim, ScalarOutcome};
     use crate::witness::{CanonicalAssignment, WitnessValue};
     use ix_trace_rs::trace;
-    use qsl_foundation::digest::WireNodeId;
     use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
     use quire_contract_model::std001_code;
 
@@ -2183,7 +2183,7 @@ mod tests {
     fn a_replay_refusal_settles_inconclusive_with_its_code_and_a_fault_failed() {
         use quire_semantic_value::catalog::InternalFault;
 
-        let refusal = ReplayRefusal::UnboundParameter(WireNodeId::from_digest([1; 32]));
+        let refusal = ReplayRefusal::UnboundParameter(crate::fixture_node(1));
         assert_eq!(
             TerminalValue::from_replay_refusal(&refusal),
             TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(refusal.code()))
@@ -2328,7 +2328,7 @@ mod tests {
         use quire_exact::{Origin, Role, Value};
 
         let occurrence = OccurrenceKey::new(
-            WireNodeId::from_digest([7; 32]),
+            crate::fixture_node(7),
             Origin::new(Role::new("expression"), 0),
         );
         let record = crate::SeparatingWitnessRecord {
@@ -2456,7 +2456,7 @@ mod tests {
 
         fn base_witness() -> crate::SeparatingWitnessRecord {
             let quantifier = OccurrenceKey::new(
-                WireNodeId::from_digest([7; 32]),
+                crate::fixture_node(7),
                 Origin::new(Role::new("q"), 0),
             );
             crate::SeparatingWitnessRecord {
@@ -2570,7 +2570,7 @@ mod tests {
         let witness_edits: &[WitnessEdit] = &[
             ("quantifier role String", |record| {
                 record.quantifier = OccurrenceKey::new(
-                    WireNodeId::from_digest([7; 32]),
+                    crate::fixture_node(7),
                     Origin::new(Role::new("qq"), 0),
                 );
             }),
@@ -2591,7 +2591,7 @@ mod tests {
             }),
             ("subject role String", |record| {
                 record.value_path.subject = ValuePathSubject::Built(OccurrenceKey::new(
-                    WireNodeId::from_digest([7; 32]),
+                    crate::fixture_node(7),
                     Origin::new(Role::new("qq"), 0),
                 ));
             }),
@@ -2834,7 +2834,7 @@ mod tests {
         let oversized = ScalarAgreement::new(
             function_claim(vec![
                 CanonicalAssignment {
-                    parameter: WireNodeId::from_digest([0; 32]),
+                    parameter: crate::fixture_node(0),
                     value: WitnessValue::Integer(0),
                 };
                 DEFAULT_INPUT_BYTES / 40 + 1

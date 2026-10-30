@@ -314,24 +314,23 @@ pub use qsl_foundation::source::provenance::{OccurrenceKey, SourceRegion};
 // The kernel identity and digest types a `ReplayRequestWire`'s or a frame
 // counterexample's members are built from -- `quire_exact`'s identifier,
 // occurrence origin and role, and value-accounting limits, and
-// `qsl_foundation`'s node id and digest-record vocabulary -- re-exported so
+// `qsl_foundation`'s digest-record vocabulary -- re-exported so
 // CG, which reaches QSL only through this crate (ADR-011 FB-05), builds one
 // without its own direct dependency on `quire-exact` or `qsl-foundation`.
 // These re-exports add constructors CG can call directly:
-// `DigestRecord::mint`, `WireNodeId::from_digest`/`from_hex`,
+// `DigestRecord::mint`, `NodeKey::new`,
 // `SourceIdentity::new`, `Identifier::new` and `Origin::new`/`Role::new`
 // among them, and with `Origin` the occurrence key's own
-// `OccurrenceKey::new(WireNodeId, Origin)` becomes callable. None is a
+// `OccurrenceKey::new(NodeKey, Origin)` becomes callable. None is a
 // T-12-governed constructor (ADR-011 §3 FB-05), so no rule is broken; CG
 // needs exactly these to build the requests `call_site` and `replay`
 // (FR-098) and `replay_frame` (FR-116) read.
-pub use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord, WireNodeId};
+pub use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord};
 pub use qsl_foundation::SourceIdentity;
 pub use quire_exact::{Identifier, NodeKey, Origin, Role, ScalarLimits, Value};
 // FR-395: the types of `run`'s signature and result that the root did not
 // export, so a consumer calls `run_with_requirements` and reads its result
 // without naming `qsl_replay::spine` or `qsl_semantics`.
-pub use qsl_semantics::library::PackageId;
 pub use qsl_semantics::model::object_environment::ObjectEnvironment;
 pub use quire_exact::{Cancel, CancelCause};
 pub use spine::{
@@ -401,7 +400,7 @@ pub use witness::{
 // FR-116: the FR-106 document, object and FR-115 frame witness types a
 // frame counterexample and its replay result carry, re-exported so CG can
 // name and build them through this crate (ADR-011 FB-05). The node and
-// occurrence identities are built from the `WireNodeId`, `Origin` and
+// occurrence identities are built from the `NodeKey`, `Origin` and
 // `Identifier` re-exported above.
 pub use qsl_semantics::model::observation::{
     AdmissionFailure, AdmissionRecord, DocumentRef, FrameChange, FrameWitness, LinkDifference,
@@ -421,12 +420,23 @@ pub use qsl_semantics::model::observation::{
 };
 pub use witness::StateClauseCounterexample;
 
+/// A structural node identity for a test fixture, distinct per `fill`.
+#[cfg(test)]
+pub(crate) fn fixture_node(fill: u8) -> NodeKey {
+    NodeKey::new(
+        "fixture",
+        vec![quire_exact::PathSegment::Text(fill.to_string())],
+        0,
+    )
+    .expect("a fixture node is admissible")
+}
+
 #[cfg(test)]
 mod redaction_tests {
     use ix_trace_rs::trace;
 
     use super::*;
-    use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
+    use qsl_foundation::digest::{DigestDomain, DigestRecord};
     use quire_exact::Identifier;
 
     fn scalar_limits(seed: u64) -> quire_exact::ScalarLimits {
@@ -473,7 +483,7 @@ mod redaction_tests {
                 crate::target::test_key(),
             ),
             source: ReplaySource::Input(vec![CanonicalAssignment {
-                parameter: WireNodeId::from_digest([9; 32]),
+                parameter: crate::fixture_node(9),
                 value: WitnessValue::Integer(1),
             }]),
             obligation_identity: [2; 32],

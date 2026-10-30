@@ -17,7 +17,6 @@ use std::rc::Rc;
 
 use qsl_foundation::bound::{DomainKey, FiniteBound, FiniteBoundKind, ProofBound};
 use qsl_foundation::diagnostic::Code;
-use qsl_foundation::digest::WireNodeId;
 use qsl_package::CheckedPackage;
 use quire_exact::{IntegerInterval, NodeKey, ValueType};
 use quire_semantic_value::catalog::InternalFault;
@@ -217,7 +216,7 @@ pub(super) struct Positions(BTreeMap<DomainKey, Position>);
 
 /// One pending type position of the walk.
 struct Pending<'t> {
-    root: WireNodeId,
+    root: NodeKey,
     path: Path,
     value_type: &'t ValueType,
     /// The records and tuples on the path to this position, innermost first.
@@ -257,7 +256,7 @@ fn indexes(path: &Path) -> Vec<u32> {
 /// Derive the positions of `parameters`, each a node id and its declared
 /// type (FR-358 step 3), visiting at most `limit` type positions.
 pub(super) fn derive(
-    parameters: &[(WireNodeId, &ValueType)],
+    parameters: &[(NodeKey, &ValueType)],
     package: &CheckedPackage,
     limit: u64,
 ) -> Result<Positions, ReplayRefusal> {

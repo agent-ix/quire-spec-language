@@ -5,7 +5,7 @@
 use ix_trace_rs::trace;
 use qsl_replay::{
     acquire_checked_closure, DependencyInput, NominalDeclarationForm, NominalDeclarationMember,
-    ReplayLimits, SourceIdentity, StageLimits, WireNodeId,
+    ReplayLimits, SourceIdentity, StageLimits, NodeKey,
 };
 use quire_exact::ValueType;
 use serde_json::Value as JsonValue;
@@ -17,7 +17,7 @@ union Shape { Empty, Circle(Integer) }\n\
 record Holder { datum: Integer; pair: Pair; shape: Shape; }\n\
 function consume using v(x: Holder): Boolean pure { true }\n";
 
-fn node_id(package: &[u8], tag: &str, name: &str) -> WireNodeId {
+fn node_id(package: &[u8], tag: &str, name: &str) -> NodeKey {
     let package: JsonValue = serde_json::from_slice(package).expect("checked package JSON");
     package["semantic_graph"]["nodes"]
         .as_array()
@@ -32,7 +32,7 @@ fn node_id(package: &[u8], tag: &str, name: &str) -> WireNodeId {
                     == Some(name)
         })
         .and_then(|node| node["node_id"]["digest"].as_str())
-        .and_then(WireNodeId::from_hex)
+        .and_then(NodeKey::from_hex)
         .expect("matching node id")
 }
 

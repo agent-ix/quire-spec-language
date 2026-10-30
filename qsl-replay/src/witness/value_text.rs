@@ -10,8 +10,8 @@
 //! length bounds it.
 
 use std::collections::{HashMap, HashSet};
+use quire_exact::NodeKey;
 
-use qsl_foundation::digest::WireNodeId;
 use quire_canonical::{read, to_vec, Error as CanonicalError, Limits, Node, NodeRef, Writer};
 use quire_exact::Integer;
 
@@ -775,7 +775,7 @@ fn integer_member(members: &[(&str, NodeRef<'_>)], name: &str) -> Result<Integer
 }
 
 fn digest_member(members: &[(&str, NodeRef<'_>)], name: &str) -> Result<[u8; 32], EntryFault> {
-    WireNodeId::from_hex(string_member(members, name)?)
+    NodeKey::from_hex(string_member(members, name)?)
         .map(|id| *id.as_bytes())
         .ok_or(EntryFault::Spelling)
 }
@@ -783,8 +783,8 @@ fn digest_member(members: &[(&str, NodeRef<'_>)], name: &str) -> Result<[u8; 32]
 fn declaration_member(
     members: &[(&str, NodeRef<'_>)],
     name: &str,
-) -> Result<WireNodeId, EntryFault> {
-    WireNodeId::from_hex(string_member(members, name)?).ok_or(EntryFault::Spelling)
+) -> Result<NodeKey, EntryFault> {
+    NodeKey::from_hex(string_member(members, name)?).ok_or(EntryFault::Spelling)
 }
 
 /// Whether `text` is lowercase hex of exactly `digits` digits.
@@ -856,15 +856,15 @@ enum Step<'d> {
         present: bool,
     },
     Record {
-        declaration: WireNodeId,
+        declaration: NodeKey,
         fields: Vec<(String, SlotKind)>,
     },
     Tuple {
-        declaration: WireNodeId,
+        declaration: NodeKey,
         count: usize,
     },
     Union {
-        declaration: WireNodeId,
+        declaration: NodeKey,
         member: String,
         count: usize,
     },

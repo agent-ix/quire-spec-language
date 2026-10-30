@@ -10,8 +10,8 @@
 //! and to be an application of the claim's operator. It never selects a function: no synthetic predicate or
 //! function obligation stands in for the operator.
 
-use qsl_foundation::digest::WireNodeId;
 use qsl_semantics::library::PackageId;
+use quire_exact::NodeKey;
 use quire_exact::Origin;
 use quire_semantic_value::declaration::EqualityOperator;
 
@@ -37,7 +37,7 @@ pub enum ScalarIdentityMismatch {
     #[error("the claim names scalar node {node} but package {} holds no such node", .package.hex())]
     Node {
         /// The claim's scalar node.
-        node: WireNodeId,
+        node: NodeKey,
         /// The recompiled package.
         package: PackageId,
     },
@@ -46,7 +46,7 @@ pub enum ScalarIdentityMismatch {
     #[error("scalar node {node} is not in the body of function {function} of package {}", .package.hex())]
     Function {
         /// The claim's scalar node.
-        node: WireNodeId,
+        node: NodeKey,
         /// The request's enclosing function.
         function: QualifiedName,
         /// The recompiled package.
@@ -69,7 +69,7 @@ pub enum ScalarIdentityMismatch {
     #[error("scalar node {node} has no occurrence {occurrence:?}")]
     Occurrence {
         /// The claim's scalar node.
-        node: WireNodeId,
+        node: NodeKey,
         /// The claimed occurrence key.
         occurrence: Origin,
     },
@@ -78,7 +78,7 @@ pub enum ScalarIdentityMismatch {
     #[error("the claim names {claimed} operands but scalar node {node} has {found} arguments")]
     OperandCount {
         /// The claim's scalar node.
-        node: WireNodeId,
+        node: NodeKey,
         /// The operands the claim names.
         claimed: usize,
         /// The arguments the node has.
@@ -88,13 +88,13 @@ pub enum ScalarIdentityMismatch {
     #[error("operand {position} of scalar node {node} is claimed to be {claimed} but is {}", found.map_or_else(|| "no node reference".to_owned(), |found| found.to_string()))]
     OperandChild {
         /// The claim's scalar node.
-        node: WireNodeId,
+        node: NodeKey,
         /// The operand's position.
         position: usize,
         /// The node the claim names.
-        claimed: WireNodeId,
+        claimed: NodeKey,
         /// The node the argument references, or `None` for an inline term.
-        found: Option<WireNodeId>,
+        found: Option<NodeKey>,
     },
     /// An `InlineLiteral` operand is not an inline integer literal of the
     /// node at its position.
@@ -103,7 +103,7 @@ pub enum ScalarIdentityMismatch {
     )]
     NotInlineLiteral {
         /// The claim's scalar node.
-        node: WireNodeId,
+        node: NodeKey,
         /// The operand's position.
         position: usize,
     },
@@ -112,7 +112,7 @@ pub enum ScalarIdentityMismatch {
     #[error("operand {position} of scalar node {node} is the inline literal {found}, not the claimed value and singleton range")]
     LiteralValue {
         /// The claim's scalar node.
-        node: WireNodeId,
+        node: NodeKey,
         /// The operand's position.
         position: usize,
         /// The literal's value in the package.
@@ -123,7 +123,7 @@ pub enum ScalarIdentityMismatch {
     #[error("scalar node {node} of package {} is no {operator:?} application", .package.hex())]
     Operator {
         /// The claim's scalar node.
-        node: WireNodeId,
+        node: NodeKey,
         /// The claim's operator.
         operator: ScalarOperator,
         /// The recompiled package.
@@ -134,7 +134,7 @@ pub enum ScalarIdentityMismatch {
     #[error("scalar node {node} of package {} is no {operator:?} equality application", .package.hex())]
     Equality {
         /// The claim's node.
-        node: WireNodeId,
+        node: NodeKey,
         /// The claim's operator.
         operator: EqualityOperator,
         /// The recompiled package.
@@ -145,7 +145,7 @@ pub enum ScalarIdentityMismatch {
     #[error("operand {position} of scalar node {node} of package {} is neither a parameter nor a literal", .package.hex())]
     Operand {
         /// The claim's node.
-        node: WireNodeId,
+        node: NodeKey,
         /// The operand's position: 0 for the left, 1 for the right.
         position: usize,
         /// The recompiled package.
