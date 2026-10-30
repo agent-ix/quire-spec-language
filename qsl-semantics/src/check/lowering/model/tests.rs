@@ -458,7 +458,10 @@ fn reference_types_key_over_their_model_nodes_and_record_the_correspondence() {
         m1_preimage["owner"],
         json!({"kind": "model", "identity": "acme/orders", "node": "ix://acme/orders/Order"})
     );
-    assert!(m1_preimage["owner"].get("version").is_none(), "no version member");
+    assert!(
+        m1_preimage["owner"].get("version").is_none(),
+        "no version member"
+    );
     assert!(m1_preimage["declaration"].is_null());
     let r = preimage(graph.node(r_type).unwrap());
     assert!(r.get("owner").is_none());
@@ -649,7 +652,10 @@ fn population_reference_and_model_rows_lower_to_their_operations() {
         .filter(|node| node.semantic_form() == "parameter")
         .filter_map(|node| node.semantic_type())
         .collect();
-    assert!(other_populations.len() >= 4, "[3], [5] and Invoice[3] differ");
+    assert!(
+        other_populations.len() >= 4,
+        "[3], [5] and Invoice[3] differ"
+    );
 
     let all = applications(graph, "quire.op.model.all_instances");
     assert_eq!(all.len(), 1);
@@ -958,7 +964,10 @@ fn a_redefining_candidates_clauses_key_once_under_its_own_owner() {
             );
         }
         if root == "Order/size" {
-            assert_eq!(clause_function(graph, "Order/size", "precondition").len(), 1);
+            assert_eq!(
+                clause_function(graph, "Order/size", "precondition").len(),
+                1
+            );
         }
     }
 }

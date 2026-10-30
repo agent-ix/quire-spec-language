@@ -224,7 +224,11 @@ fn reconstructed_validation_and_exhaustion_preserve_refusal_and_fresh_retries() 
     let package = reconstruct(checked(&models, PARENT), &models);
     for (complete, code, status) in [
         (true, Code::DanglingReference, ValidationStatus::Refused),
-        (false, Code::IncompletePopulation, ValidationStatus::Incomplete),
+        (
+            false,
+            Code::IncompletePopulation,
+            ValidationStatus::Incomplete,
+        ),
     ] {
         let mut data = parent_data(&models[0], 1, false);
         data.populations[0].objects.pop();

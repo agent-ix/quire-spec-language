@@ -141,8 +141,8 @@ fn reads_refuse_incompatible_envelopes_before_body_decoding() {
         assert_eq!(failure.stage.to_string(), "envelope");
     }
     for bytes in [b"{broken".to_vec(), b"[]".to_vec(), b"null".to_vec()] {
-        let failure = Snapshot::read_verified(&selected(), &bytes, ArtifactLimits::default())
-            .unwrap_err();
+        let failure =
+            Snapshot::read_verified(&selected(), &bytes, ArtifactLimits::default()).unwrap_err();
         assert_eq!(failure.stage, InputReadStage::Envelope);
         assert!(matches!(failure.cause, InputReadCause::Envelope(ref error) if error.line() > 0));
     }
@@ -180,9 +180,8 @@ fn native_records_require_object_shapes_and_closed_fields() {
                 .unwrap()
                 .remove(removed);
             let bytes = serde_json::to_vec(&changed).unwrap();
-            let failure =
-                Snapshot::read_verified(&selected(), &bytes, ArtifactLimits::default())
-                    .unwrap_err();
+            let failure = Snapshot::read_verified(&selected(), &bytes, ArtifactLimits::default())
+                .unwrap_err();
             assert_eq!(
                 failure.code,
                 Code::InvalidRuntimeInput,
@@ -228,8 +227,8 @@ fn native_records_require_object_shapes_and_closed_fields() {
         let bytes = text
             .replacen(fragment, &format!("{fragment},{fragment}"), 1)
             .into_bytes();
-        let failure = Snapshot::read_verified(&selected(), &bytes, ArtifactLimits::default())
-            .unwrap_err();
+        let failure =
+            Snapshot::read_verified(&selected(), &bytes, ArtifactLimits::default()).unwrap_err();
         assert_eq!(failure.code, Code::InvalidRuntimeInput);
         assert!(matches!(
             failure.cause,
@@ -254,8 +253,8 @@ fn malformed_values_and_limits_refuse_without_losing_fresh_read_behavior() {
         let mut wire: Value = serde_json::from_slice(original.bytes()).unwrap();
         *wire.pointer_mut(pointer).unwrap() = value;
         let bytes = serde_json::to_vec(&wire).unwrap();
-        let failure = Snapshot::read_verified(&selected(), &bytes, ArtifactLimits::default())
-            .unwrap_err();
+        let failure =
+            Snapshot::read_verified(&selected(), &bytes, ArtifactLimits::default()).unwrap_err();
         assert_eq!(failure.stage, InputReadStage::Body, "{pointer}");
         assert!(matches!(failure.cause, InputReadCause::Body(ref error) if error.line() > 0));
     }
@@ -309,9 +308,7 @@ fn malformed_values_and_limits_refuse_without_losing_fresh_read_behavior() {
         assert_eq!(retry.draft(), original.draft());
     }
     let nested = format!("{{\"version\":\"native-state-input/1\",\"kind\":\"snapshot\",\"identity\":{{\"identity\":\"test:runtime-current\",\"revision\":\"1\"}},\"body\":{}0{}}}", "[".repeat(200), "]".repeat(200)).into_bytes();
-    assert!(
-        Snapshot::read_verified(&selected(), &nested, ArtifactLimits::default()).is_err()
-    );
+    assert!(Snapshot::read_verified(&selected(), &nested, ArtifactLimits::default()).is_err());
 }
 
 #[test]
@@ -406,7 +403,8 @@ fn reread_snapshots_and_invocations_reach_actual_native_execution() {
         let mut wire: Value = serde_json::from_slice(original.bytes()).unwrap();
         wire["body"]["result"] = Value::Null;
         let bytes = serde_json::to_vec_pretty(&wire).unwrap();
-        let expected = quire_spec_language::runtime::InvocationRef::new(original.identity().clone()).unwrap();
+        let expected =
+            quire_spec_language::runtime::InvocationRef::new(original.identity().clone()).unwrap();
         assert_eq!(
             Invocation::read_verified(&expected, &bytes, ArtifactLimits::default())
                 .unwrap()
@@ -416,7 +414,8 @@ fn reread_snapshots_and_invocations_reach_actual_native_execution() {
         );
         wire["body"].as_object_mut().unwrap().remove("result");
         let bytes = serde_json::to_vec(&wire).unwrap();
-        let expected = quire_spec_language::runtime::InvocationRef::new(original.identity().clone()).unwrap();
+        let expected =
+            quire_spec_language::runtime::InvocationRef::new(original.identity().clone()).unwrap();
         assert!(Invocation::read_verified(&expected, &bytes, ArtifactLimits::default()).is_err());
     }
 }

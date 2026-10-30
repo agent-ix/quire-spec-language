@@ -1004,14 +1004,12 @@ fn the_historical_runner_refuses_a_relabelled_composed_input() {
     let mut envelope: Value = serde_json::from_slice(&original).unwrap();
     envelope["version"] = Value::from("native-composed-input/1");
     let relabelled = serde_json::to_vec(&envelope).unwrap();
-    let expected = SnapshotRef::new(
-        SourceIdentity {
-            authority: "test".into(),
-            identity: "test:runtime-current".into(),
-            revision_namespace: "test".into(),
-            revision: "1".into(),
-        },
-    )
+    let expected = SnapshotRef::new(SourceIdentity {
+        authority: "test".into(),
+        identity: "test:runtime-current".into(),
+        revision_namespace: "test".into(),
+        revision: "1".into(),
+    })
     .unwrap();
     let error = *Snapshot::read_verified(&expected, &relabelled, ArtifactLimits::default())
         .expect_err("a composed label cannot enter the historical runner");

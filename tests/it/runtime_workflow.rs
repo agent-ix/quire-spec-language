@@ -11,8 +11,8 @@ use quire_spec_language::checking::CheckedPackage;
 use quire_spec_language::native_model::NativeModel;
 use quire_spec_language::runtime::{
     evaluate, validate, EvaluationLimits, EvaluationOutcome, EvaluationReport,
-    ImplicationEventKind, ObservationSelection, SnapshotDraft, ValidationLimits,
-    ValidationReport, ValidationStatus, ValueBinding, ValueId, ValueNode,
+    ImplicationEventKind, ObservationSelection, SnapshotDraft, ValidationLimits, ValidationReport,
+    ValidationStatus, ValueBinding, ValueId, ValueNode,
 };
 use quire_spec_language::syntax::ClauseKind;
 use serde_json::json;

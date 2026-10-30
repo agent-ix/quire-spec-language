@@ -20,8 +20,8 @@ use quire_spec_language::linking::DeclarationKey;
 use quire_spec_language::native_model::NativeModel;
 use quire_spec_language::runtime::{
     validate, ArtifactLimits, FieldBinding, ModelBinding, ObjectEntry, ObjectIdentity,
-    ObservationSelection, Population, RuntimeInput, Snapshot, SnapshotDraft,
-    ValidationLimits, ValidationStatus, ValueBinding, ValueId, ValueNode,
+    ObservationSelection, Population, RuntimeInput, Snapshot, SnapshotDraft, ValidationLimits,
+    ValidationStatus, ValueBinding, ValueId, ValueNode,
 };
 use quire_spec_language::syntax::ClauseKind;
 

@@ -1501,8 +1501,13 @@ fn unread_parameters_keep_the_arity_and_parameter_nodes_are_shared() {
 #[trace("FR-092-AC-6", "TC-414", "FR-065-AC-8", "TC-163")]
 #[test]
 fn functions_are_structural_and_applications_carry_no_owner() {
-    let graph = check(vec![both(), function("f", &[], boolean(), None, Expression::boolean(true)), h(), nb()])
-        .expect("the fixtures check");
+    let graph = check(vec![
+        both(),
+        function("f", &[], boolean(), None, Expression::boolean(true)),
+        h(),
+        nb(),
+    ])
+    .expect("the fixtures check");
     let semantic = graph.semantic_graph();
     for name in ["both", "f", "h", "nb"] {
         let node = semantic
@@ -2070,18 +2075,23 @@ fn recursive_records_are_groups_whose_members_refer_to_their_ordinal() {
         assert_eq!(type_nodes.len(), 1, "{name}");
         let record_node = graph.node(type_nodes[0]).expect("the record's node");
         assert_eq!(record_node.semantic_form(), "record");
-        assert!(record_node.recursion().is_some(), "{name} is a group member");
+        assert!(
+            record_node.recursion().is_some(),
+            "{name} is a group member"
+        );
         let self_references = graph
             .nodes()
             .filter(|node| {
-                preimage(node)["semantic_type"]
-                    == json!({"term": "group_reference", "ordinal": 0})
+                preimage(node)["semantic_type"] == json!({"term": "group_reference", "ordinal": 0})
                     || preimage(node)["semantic_type"]
                         == json!({"term": "group_reference", "ordinal": 1})
             })
             .count();
         if name == "Tree" {
-            assert!(self_references >= 1, "Tree's group types a member by ordinal");
+            assert!(
+                self_references >= 1,
+                "Tree's group types a member by ordinal"
+            );
         }
     }
 }

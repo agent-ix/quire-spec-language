@@ -1356,7 +1356,10 @@ fn validate_command_details(
                     return false;
                 };
                 members.len() == 1
-                    && matches!(node.get("identity").map(|value| value.node()), Some(Node::String(_)))
+                    && matches!(
+                        node.get("identity").map(|value| value.node()),
+                        Some(Node::String(_))
+                    )
             };
             match cause {
                 "foreign-model-selection" => {
