@@ -60,17 +60,15 @@ checked-input:
 # corpus does not admit a case its prior revision admitted, or when the gate
 # reports anything but success (exit 0).
 #
-# FR-340: the corpus is generated into a temporary directory on every run, with
-# the model digest computed from examples/config-version/model.semantic-ir.json
-# then. Nothing is committed with a frozen digest.
+# FR-340: the corpus is generated into a temporary directory on every run from
+# examples/config-version/model.semantic-ir.json. Nothing is committed.
 refinement-versioning:
 	@corpus=$$(mktemp -d "$${TMPDIR:-/tmp}/refinement-versioning.XXXXXX") && \
 	trap 'rm -rf "$$corpus"' EXIT && \
 	cargo run --package xtask -- refinement generate-versioning "$$corpus" && \
 	cargo run --package xtask -- refinement versioning "$$corpus"
 
-# FR-345: generate the real layering corpus into a temporary directory, with
-# each model digest computed then, and run the layering CLI over it with no
+# FR-345: generate the real layering corpus into a temporary directory and run the layering CLI over it with no
 # negotiation function. The target passes only the CLI's expected run: exit 21,
 # every layer `unresolved (unsupported)` for reason `not-negotiated` over a
 # non-empty candidate set, and every case and edge holding or not applicable
