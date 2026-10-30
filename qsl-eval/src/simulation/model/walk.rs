@@ -248,6 +248,12 @@ pub(super) fn walk_of<'s, 'a>(
 type ModelExpansion = Expansion<ModelTransition, ModelSimState, ModelFinding>;
 
 /// Expand `state`: its findings and every successor (FR-120).
+///
+/// No post-state presences are supplied here: a postcondition's
+/// `present(self.v)` read on this path fails closed with
+/// `place-presence-unrecorded`. Dense timed models route only to EN-6,
+/// whose timed subject expands through [`expand_enabled`] with them, so
+/// nothing reaches that read here today.
 pub(super) fn expand_state(
     system: &ModelSystem<'_>,
     state: &ModelSimState,
