@@ -616,24 +616,13 @@ pub fn protocol_domains(
         .iter()
         .filter(|binder| binder.ranged)
         .filter_map(|binder| {
-            // FR-464: the binder's level is the entry count of the control
-            // that introduces it, and the post-root readable count for the
-            // `finish` node. A binder with no node, or a control with no
-            // recorded entry, has no level and no root.
-            let node = binder.node?;
-            let level = if protocol
-                .finish
-                .as_ref()
-                .is_some_and(|(finish, _)| *finish == node)
-            {
-                protocol.slots.root_out.len()
-            } else {
-                protocol.slots.entries.get(&node)?.len()
-            };
+            // The admitted parameter node of the binder the introducing
+            // node declares under this name.
+            let introducing = binder.node?;
             let key = keys
                 .binders
                 .iter()
-                .find(|key| key.level == level && key.name == binder.name)?;
+                .find(|key| key.introducing == Some(introducing) && key.name == binder.name)?;
             Some((key.node.clone(), binder.value_type.clone()))
         });
     // A `cattempt` takes one record of its template's attempt type (ST-11).
