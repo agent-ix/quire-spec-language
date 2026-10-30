@@ -236,8 +236,6 @@ impl ObjectEnvironmentDocument {
 ///     },
 ///     &EnvironmentModel {
 ///         identity: "test/graph".to_owned(),
-///         version: "1.0.0".to_owned(),
-///         digest: [7; 32],
 ///     },
 ///     &[EnvironmentPopulation {
 ///         population: "ix://test/graph/G".to_owned(),
