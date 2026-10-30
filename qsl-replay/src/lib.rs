@@ -64,6 +64,7 @@ mod object_environment;
 mod outcome;
 mod proof_result;
 mod refinement;
+mod refinement_query;
 mod request;
 mod result;
 mod scalar;
@@ -252,6 +253,20 @@ pub use monitor_plan::{
     MonitorSubject, MonitorTarget, PlanId, SubformulaId, TickInterval, TimedMonitorPlan,
     TimingObligation, TimingObligationSettings,
 };
+
+// FR-492: the refinement simulation query, its request and its kind, with the
+// subject and package types the request is built from, at the root so CG
+// names them without naming `spine` or `qsl_eval` (ADR-011 FB-05, T-12).
+pub use qsl_eval::model_subject::ModelSubject;
+pub use qsl_eval::simulation::model::{
+    ExpansionLimits, ModelSimulationRequest, PopulationUniverse,
+};
+pub use qsl_eval::smt::{
+    encode_refinement_query, RefinementCertificateRequest, RefinementQueryKind,
+};
+pub use qsl_package::CheckedPackage;
+pub use qsl_semantics::model::observation::ObservationLimits;
+pub use refinement_query::refinement_step_sources;
 
 pub use refinement::{
     abstract_classes, check_initial, check_step, initial_history, map_state, open_systems,
