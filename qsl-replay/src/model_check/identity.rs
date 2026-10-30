@@ -52,7 +52,7 @@ impl ClauseIdentity {
 
     /// The `over` parameter's checked node.
     pub fn over(&self) -> Option<NodeKey> {
-        self.over
+        self.over.clone()
     }
 
     /// The identity of `clause` in `package`, read from the package's
@@ -137,7 +137,7 @@ impl StateGraphIdentity {
 
     /// The `over` parameter's checked node.
     pub fn over(&self) -> Option<NodeKey> {
-        self.over
+        self.over.clone()
     }
 
     /// The identity of `claim` in `package`, read from the package's emitted

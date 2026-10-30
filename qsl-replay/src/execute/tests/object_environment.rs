@@ -315,7 +315,7 @@ impl Graph {
     fn base(&self, function: &str, source: ReplaySource) -> ReplayRequestWire {
         let mut wire = request(
             self.unit.as_bytes(),
-            self.compiled.emitted.package_id(),
+            &self.compiled,
             name(&[function]),
             source,
         );

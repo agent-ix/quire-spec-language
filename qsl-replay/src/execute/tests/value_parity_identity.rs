@@ -225,7 +225,7 @@ fn retained_request(source: &str, function: &str, value: i64) -> ReplayRequestWi
     let compiled = spine(source, &BTreeMap::new());
     let mut wire = request(
         source.as_bytes(),
-        compiled.emitted.package_id(),
+        &compiled,
         name(&[function]),
         input(located.site.parameters[0].1, value),
     );

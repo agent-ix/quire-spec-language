@@ -77,7 +77,7 @@ fn at(
 ) -> ReplayRequestWire {
     let mut wire = request(
         source_text.as_bytes(),
-        compiled.emitted.package_id(),
+        &compiled,
         name(&[function]),
         source,
     );
@@ -474,8 +474,8 @@ fn tc_444_a_key_selecting_no_claim_of_the_function_refuses() {
     );
 }
 
-/// FR-098-AC-26: the refusal order. A stale `package_id` and an unknown
-/// function precede `ClaimOccurrence`, which precedes the argument join.
+/// FR-098-AC-26: the refusal order. An unknown
+/// function precedes `ClaimOccurrence`, which precedes the argument join.
 #[trace("TC-444", "FR-098-AC-26")]
 #[test]
 fn tc_444_claim_selection_comes_after_the_function_and_before_the_join() {
@@ -495,15 +495,6 @@ fn tc_444_claim_selection_comes_after_the_function_and_before_the_join() {
             }]),
         )
     };
-    let mut stale = build();
-    stale.package_id = (
-        Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
-        DigestRecord::mint(DigestDomain::PackageSemanticV2, [5; 32]).hex(),
-    );
-    assert!(matches!(
-        replay(stale, ReplayLimits::default()).unwrap_err(),
-        ReplayRefusal::PackageIdMismatch { .. }
-    ));
     let mut unknown = build();
     unknown.replay_target =
         crate::RequestTargetWire::function(name(&["nope"]), r_application.clone());

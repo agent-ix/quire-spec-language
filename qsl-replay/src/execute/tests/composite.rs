@@ -126,7 +126,7 @@ impl Fixture {
     fn request(&self, function: &str, source: ReplaySource) -> ReplayRequestWire {
         let mut wire = request(
             self.source.as_bytes(),
-            self.compiled.emitted.package_id(),
+            &self.compiled,
             name(&[function]),
             source,
         );

@@ -240,7 +240,7 @@ impl Unit {
     ) -> ReplayRequestWire {
         let mut wire = request(
             self.source.as_bytes(),
-            self.compiled.emitted.package().package_id(),
+            &self.compiled,
             name(&[function]),
             ReplaySource::Input(vec![]),
         );
@@ -621,7 +621,7 @@ fn tc_907_the_common_steps_refuse_for_both_entries() {
 
     let mut edited = request(
         edited_source.as_bytes(),
-        unit.compiled.emitted.package().package_id(),
+        &unit.compiled,
         name(&["f"]),
         ReplaySource::Input(vec![]),
     );
@@ -947,7 +947,7 @@ fn text_leaf_is_tested(
     let claim = unit.claim("t", EqualityOperator::Equal, bounds.clone());
     let mut wire = request(
         unit.source.as_bytes(),
-        unit.compiled.emitted.package().package_id(),
+        &unit.compiled,
         name(&["t"]),
         ReplaySource::Input(vec![]),
     );
@@ -1205,7 +1205,7 @@ fn tc_907_a_refinement_disagreement_overrides_every_row() {
     let edited = unit.source.replace("[0, 3]; }", "[0, 4]; }");
     let mut wire = request(
         edited.as_bytes(),
-        unit.compiled.emitted.package().package_id(),
+        &unit.compiled,
         name(&["f"]),
         ReplaySource::Input(vec![]),
     );

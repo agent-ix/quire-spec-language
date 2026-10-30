@@ -51,7 +51,7 @@ impl Unit {
             .collect();
         request(
             self.source.as_bytes(),
-            self.compiled.emitted.package_id(),
+            &self.compiled,
             name(&[function]),
             ReplaySource::Input(assignments),
         )

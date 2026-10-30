@@ -58,7 +58,6 @@ fn bound_key(bound: &ProofBound) -> BoundKey {
 
 impl SubjectIdentity {
     /// The identity of `subject`.
-    // BLOCKED-BY QSL-1282 (owner: planner titan:QSL:plan): the checked package's own identity in a model-subject identity
     pub fn of(subject: &ModelSubject<'_>) -> Self {
         let simulation = &subject.simulation;
         let mut universes: BTreeMap<DeclarationKey, BTreeSet<String>> = BTreeMap::new();

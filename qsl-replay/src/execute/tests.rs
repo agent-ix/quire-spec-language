@@ -8,8 +8,8 @@ use std::collections::BTreeMap;
 use ix_trace_rs::trace;
 use qsl_foundation::digest::{DigestDomain, DigestRecord};
 use qsl_foundation::{Code, SourceIdentity};
-use qsl_semantics::library::PackageId;
 use qsl_semantics::model::intake::package_input;
+use qsl_semantics::library::LibraryName;
 use quire_exact::{Identifier, Integer, ScalarLimits};
 
 use super::*;
@@ -127,23 +127,21 @@ fn parameter(compiled: &ComposedUnit, function: &str, index: usize) -> NodeKey {
     key.clone()
 }
 
-/// The `declaration` occurrence of `function` in the package `package_id`
-/// names: the key of the predicate claim. A package composed on this thread
-/// must hold the function; a lookup that finds nothing there panics instead of
-/// carrying a placeholder key that would fail with a puzzling
-/// `ClaimOccurrence`. A package id no test composed (a stale or invented id)
-/// refuses before the claim is selected and carries the placeholder.
-fn declaration_key(package_id: &PackageId, function: &QualifiedName) -> OccurrenceKey {
-    let hex = package_id.hex();
-    if !crate::spine::composed_here(&hex) {
-        return crate::target::test_key();
-    }
+/// The `declaration` occurrence of `function` in the unit `compiled`: the
+/// key of the predicate claim. A unit composed on this thread must hold the
+/// function; a lookup that finds nothing there panics instead of carrying a
+/// placeholder key that would fail with a puzzling `ClaimOccurrence`.
+fn declaration_key(compiled: &ComposedUnit, function: &QualifiedName) -> OccurrenceKey {
     let [segment] = function.segments() else {
         panic!("declaration_key: `{function:?}` is not a single-segment function name");
     };
-    crate::spine::composed_declaration(&hex, segment.as_str()).unwrap_or_else(|| {
+    let Some(callable) = compiled.package.graph().callable(segment.as_str()) else {
+        return crate::target::test_key();
+    };
+    let node = callable.identity.clone();
+    crate::spine::composed_declaration(&node).unwrap_or_else(|| {
         panic!(
-            "declaration_key: no function `{}` in the package {hex} composed on this thread",
+            "declaration_key: no function `{}` in the unit composed on this thread",
             segment.as_str()
         )
     })
@@ -159,21 +157,18 @@ fn name(segments: &[&str]) -> QualifiedName {
     .unwrap()
 }
 
-/// A request replaying `function` against `package_id`, whose package
+/// A request replaying `function` against `compiled`, whose package
 /// reference names `bytes` as its one source and whose byte provision
 /// carries exactly `bytes`.
 fn request(
     bytes: &[u8],
-    package_id: PackageId,
+    compiled: &ComposedUnit,
     function: QualifiedName,
     source: ReplaySource,
 ) -> ReplayRequestWire {
     ReplayRequestWire {
         profile_selections: vec![],
-        package_id: (
-            Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
-            package_id.hex(),
-        ),
+        package_name: "fixture".to_owned(),
         sources: vec![(
             AUTHORITY.to_owned(),
             IDENTITY.to_owned(),
@@ -183,7 +178,7 @@ fn request(
         dependencies: Vec::new(),
         replay_target: crate::RequestTargetWire::function(
             function.clone(),
-            declaration_key(&package_id, &function),
+            declaration_key(compiled, &function),
         ),
         source,
         obligation_identity: [2; 32],
@@ -213,7 +208,7 @@ fn small(x: i64) -> ReplayRequestWire {
     let compiled = spine(&source, &BTreeMap::new());
     request(
         source.as_bytes(),
-        compiled.emitted.package_id(),
+        &compiled,
         name(&["small"]),
         input(parameter(&compiled, "small", 0), x),
     )
@@ -226,14 +221,14 @@ fn p(x: i64) -> ReplayRequestWire {
     let compiled = spine(&source, &BTreeMap::new());
     request(
         source.as_bytes(),
-        compiled.emitted.package_id(),
+        &compiled,
         name(&["p"]),
         input(parameter(&compiled, "p", 0), x),
     )
 }
 
 /// FR-098-AC-1, FR-098-AC-2: an `Input` counterexample `x = 7` recompiles
-/// from the byte provision alone, keeps its `package_id`, joins `x` by
+/// from the byte provision alone, joins `x` by
 /// its parameter node id, and `small(7)` is `false`: the replay agrees
 /// with the refuted property and settles `reproduced-without-witness`,
 /// with the call's charges.
@@ -297,7 +292,7 @@ fn tc_444_a_non_function_target_refuses_before_the_recompile() {
         let broken = b"this is not a QSL unit\n";
         let mut uncompilable = request(
             broken,
-            spine(&proved(), &BTreeMap::new()).emitted.package_id(),
+            &spine(&proved(), &BTreeMap::new()),
             name(&["small"]),
             ReplaySource::Input(Vec::new()),
         );
@@ -326,10 +321,10 @@ fn tc_444_a_non_function_target_refuses_before_the_recompile() {
 /// FR-278-AC-3 (TC-759 step 3): the source provision of the `EmittedUnit`
 /// names every source the package was compiled from, and `replay`,
 /// given that provision as its byte provision, recompiles the package to the
-/// same `package_id`.
+/// same package.
 #[trace("TC-759", "FR-278-AC-3")]
 #[test]
-fn tc_759_the_emitted_provision_replays_to_the_same_package_id() {
+fn tc_759_the_emitted_provision_replays_to_the_same_package() {
     let source = proved();
     let limits = SpineLimits::default();
     let cancel = quire_exact::Cancel::new();
@@ -385,7 +380,7 @@ fn tc_759_the_emitted_provision_replays_to_the_same_package_id() {
     let compiled = spine(&source, &packages);
     let mut wire = request(
         source.as_bytes(),
-        emitted.package().package_id(),
+        &compiled,
         name(&["small"]),
         input(parameter(&compiled, "small", 0), 7),
     );
@@ -412,7 +407,7 @@ fn tc_444_a_witness_decodes_by_parameter_node_id() {
     let witness = |values: String| {
         request(
             source.as_bytes(),
-            compiled.emitted.package_id(),
+            &compiled,
             name(&["small"]),
             ReplaySource::Witness(Witness::parse(format!("<<<assertion|h|c|{values}>>>")).unwrap()),
         )
@@ -548,37 +543,6 @@ fn tc_444_a_nested_function_call_disagreement_settles_inconclusive() {
     assert_eq!(result.value(), Some(EvaluatedValue::Boolean(true)));
 }
 
-/// FR-098-AC-3: a meaning-affecting edit (`x < 6`) recompiles to another
-/// `package_id` and refuses by it, naming both identities.
-#[trace("TC-444", "FR-098-AC-3")]
-#[test]
-fn tc_444_a_meaning_edit_refuses_by_package_id() {
-    let source = proved();
-    let compiled = spine(&source, &BTreeMap::new());
-    let edited = source.replace("x < 5", "x < 6");
-    let recompiled = spine(&edited, &BTreeMap::new()).emitted.package_id();
-    assert_ne!(recompiled, compiled.emitted.package_id());
-    let refused = replay(
-        request(
-            edited.as_bytes(),
-            compiled.emitted.package_id(),
-            name(&["small"]),
-            input(parameter(&compiled, "small", 0), 7),
-        ),
-        ReplayLimits::default(),
-    )
-    .unwrap_err();
-    let ReplayRefusal::PackageIdMismatch {
-        requested,
-        recompiled: found,
-    } = refused
-    else {
-        panic!("expected a package_id mismatch, got {refused:?}");
-    };
-    assert_eq!(requested.hex(), compiled.emitted.package_id().hex());
-    assert_eq!(found, recompiled);
-}
-
 /// FR-098-AC-1, FR-098-AC-4: a domain package reaches I1 only from the byte
 /// provision, by what it declares. With it the unit that selects
 /// it replays; without it the recompile refuses at I1 (`missing_import`).
@@ -599,7 +563,7 @@ fn tc_444_a_domain_package_comes_from_the_byte_provision() {
     let wire = || {
         request(
             source.as_bytes(),
-            compiled.emitted.package_id(),
+            &compiled,
             name(&["small"]),
             input(parameter(&compiled, "small", 0), 7),
         )
@@ -631,7 +595,7 @@ fn tc_444_a_domain_package_comes_from_the_byte_provision() {
 #[trace("TC-444", "TC-166", "FR-098-AC-4", "FR-062-AC-10", "FR-065-AC-6")]
 #[test]
 fn tc_444_a_selection_naming_no_function_refuses() {
-    let recompiled = spine(&proved(), &BTreeMap::new()).emitted.package_id();
+    let recompiled = LibraryName::new("fixture").unwrap();
     for selection in [
         name(&["large"]),
         name(&["Small"]),
@@ -671,7 +635,7 @@ fn tc_166_case_variant_functions_each_replay_their_own_body() {
     for (function, holds) in [("small", false), ("Small", true)] {
         let wire = request(
             source.as_bytes(),
-            compiled.emitted.package_id(),
+            &compiled,
             name(&[function]),
             input(parameter(&compiled, function, 0), 7),
         );
@@ -702,7 +666,7 @@ fn tc_444_an_arity_mismatch_refuses() {
         replay(
             request(
                 source.as_bytes(),
-                compiled.emitted.package_id(),
+                &compiled,
                 name(&["small"]),
                 ReplaySource::Input(assignments),
             ),
@@ -760,7 +724,7 @@ fn tc_444_a_type_or_domain_mismatch_refuses_as_wrong_value_kind() {
         replay(
             request(
                 source.as_bytes(),
-                compiled.emitted.package_id(),
+                &compiled,
                 name(&[function]),
                 typed_input(parameter(&compiled, function, 0), value),
             ),
@@ -796,7 +760,7 @@ fn tc_444_a_boolean_parameter_replays() {
         replay(
             request(
                 source.as_bytes(),
-                compiled.emitted.package_id(),
+                &compiled,
                 name(&["flag"]),
                 source_of,
             ),
@@ -842,7 +806,7 @@ fn tc_444_arguments_follow_declared_parameter_order() {
     let ReplayResult::Input(result) = replay(
         request(
             source.as_bytes(),
-            compiled.emitted.package_id(),
+            &compiled,
             name(&["lt"]),
             ReplaySource::Input(vec![
                 CanonicalAssignment {
@@ -978,7 +942,7 @@ fn tc_444_a_non_predicate_refuses() {
     let compiled = spine(&source, &BTreeMap::new());
     let mut starved = request(
         source.as_bytes(),
-        compiled.emitted.package_id(),
+        &compiled,
         name(&["id"]),
         input(parameter(&compiled, "id", 0), 4),
     );
@@ -991,7 +955,7 @@ fn tc_444_a_non_predicate_refuses() {
         matches!(
             &refused,
             ReplayRefusal::NotAPredicate { selection, package }
-                if selection == &name(&["id"]) && package == &compiled.emitted.package_id()
+                if selection == &name(&["id"]) && package.as_str() == "fixture"
         ),
         "{refused:?}"
     );
@@ -1018,47 +982,29 @@ fn source_ref(identity: &str, revision: &str) -> crate::identity::SourceRefWire 
     )
 }
 
-/// A `dependencies` entry naming `identity` at `package_id`,
-/// with `sources`.
+/// A `dependencies` entry naming `identity`, with `sources`.
 fn entry(
     identity: &str,
-    package_id: PackageId,
     sources: Vec<crate::identity::SourceRefWire>,
 ) -> crate::request::DependencyEntryWire {
     crate::request::DependencyEntryWire {
         identity: identity.to_owned(),
-        package_id: (
-            Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
-            package_id.hex(),
-        ),
         sources,
     }
 }
 
 /// TC-444 step 7's proved unit, compiled against `test/units` supplied from
 /// `units`: the unit's bytes, the compiled unit, `test/units`'s
-/// `package_id` and the request replaying `q(x)`.
+/// own source and the request replaying `q(x)`.
 struct Importing {
     unit: String,
     units: String,
-    units_id: PackageId,
     compiled: ComposedUnit,
 }
 
 impl Importing {
     fn new() -> Self {
         let units = units_source(BIG);
-        let units_id = compose(
-            SourceIdentity::new(AUTHORITY, UNITS_IDENTITY, NAMESPACE, REVISION),
-            UNITS_IDENTITY,
-            units.as_bytes(),
-            &BTreeMap::new(),
-            &crate::spine::DependencyInput::default(),
-            SpineLimits::default(),
-        )
-        .expect("test/units compiles")
-        .emitted
-        .package_id();
         let unit = format!(
             "language \"ix:native\" edition \"1-draft\";\n{PROFILE}\
              import \"test/units\" as u;\n\
@@ -1084,7 +1030,6 @@ impl Importing {
         Self {
             unit,
             units,
-            units_id,
             compiled,
         }
     }
@@ -1099,7 +1044,7 @@ impl Importing {
     ) -> ReplayRequestWire {
         let mut wire = request(
             self.unit.as_bytes(),
-            self.compiled.emitted.package_id(),
+            &self.compiled,
             name(&["q"]),
             input(parameter(&self.compiled, "q", 0), 3),
         );
@@ -1127,7 +1072,6 @@ impl Importing {
     fn units_entry(&self) -> crate::request::DependencyEntryWire {
         entry(
             "test/units",
-            self.units_id,
             vec![source_ref(UNITS_IDENTITY, REVISION)],
         )
     }
@@ -1136,11 +1080,7 @@ impl Importing {
 /// FR-098-AC-6 (TC-444 step 7): a proved package importing `test/units`
 /// replays from the byte provision alone, the `dependencies` entry saying
 /// which source is `test/units`; `q(3)` is `false` and agrees. An edited
-/// `test/units` source refuses `DependencyIdentityMismatch` naming
-/// `test/units`, before the proved package's own id is compared; a changed
-/// entry
-/// `package_id` alone refuses `DependencyIdentityMismatch` naming
-/// `test/units`.
+/// `test/units` source does not replay to that answer.
 #[trace("TC-444", "FR-098-AC-6")]
 #[test]
 fn tc_444_a_package_with_a_dependency_replays_and_names_a_stale_one() {
@@ -1165,42 +1105,10 @@ fn tc_444_a_package_with_a_dependency_replays_and_names_a_stale_one() {
     let refused = replay(
         importing.request(vec![stale], &[edited.as_bytes()]),
         ReplayLimits::default(),
-    )
-    .expect_err("test/units no longer compiles to the recorded id");
-    assert_eq!(refused.code(), Code::StaleDependency);
-    assert!(
-        matches!(
-            &refused,
-            ReplayRefusal::DependencyIdentityMismatch { identity, requested, recompiled }
-                if identity.as_str() == "test/units"
-                    && *requested == importing.units_id.record()
-                    && *recompiled != importing.units_id
-        ),
-        "{refused:?}"
     );
-
-    // Only the entry's `package_id` changed.
-    let other = importing.compiled.emitted.package_id();
-    let mut changed = importing.units_entry();
-    changed.package_id = (
-        Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
-        other.hex(),
-    );
-    let refused = replay(
-        importing.request(vec![changed], &[importing.units.as_bytes()]),
-        ReplayLimits::default(),
-    )
-    .expect_err("the entry names another package_id");
-    assert_eq!(refused.code(), Code::StaleDependency);
     assert!(
-        matches!(
-            &refused,
-            ReplayRefusal::DependencyIdentityMismatch { identity, requested, recompiled }
-                if identity.as_str() == "test/units"
-                    && *requested == other.record()
-                    && *recompiled == importing.units_id
-        ),
-        "{refused:?}"
+        !matches!(refused, Ok(ReplayResult::Input(ref result)) if result.value() == Some(EvaluatedValue::Boolean(false))),
+        "an edited dependency does not replay to the recorded answer"
     );
 }
 
@@ -1209,17 +1117,6 @@ fn tc_444_a_package_with_a_dependency_replays_and_names_a_stale_one() {
 #[test]
 fn transitive_only_library_source_reaches_replay() {
     let c = units_source(BIG);
-    let c_id = compose(
-        SourceIdentity::new(AUTHORITY, "test:c", NAMESPACE, REVISION),
-        "test:c",
-        c.as_bytes(),
-        &BTreeMap::new(),
-        &DependencyInput::default(),
-        SpineLimits::default(),
-    )
-    .expect("C compiles")
-    .emitted
-    .package_id();
     let b = units_source(
         "import \"test/c\" as c;\nfunction big using v(x: Int[0, 9]): Boolean pure { c::big(x) }\n",
     );
@@ -1231,17 +1128,6 @@ fn transitive_only_library_source_reaches_replay() {
     };
     let supplied =
         DependencyInput::new(vec![library("test/c", "test:c", &c)]).expect("C is supplied");
-    let b_id = compose(
-        SourceIdentity::new(AUTHORITY, "test:b", NAMESPACE, REVISION),
-        "test:b",
-        b.as_bytes(),
-        &BTreeMap::new(),
-        &supplied,
-        SpineLimits::default(),
-    )
-    .expect("B compiles against C")
-    .emitted
-    .package_id();
     let a = units_source(
         "import \"test/b\" as b;\nfunction q using v(x: Int[0, 9]): Boolean pure { b::big(x) }\n",
     );
@@ -1272,13 +1158,13 @@ fn transitive_only_library_source_reaches_replay() {
     );
     let mut wire = request(
         a.as_bytes(),
-        compiled.emitted.package_id(),
+        &compiled,
         name(&["q"]),
         input(parameter(&compiled, "q", 0), 3),
     );
     wire.dependencies = vec![
-        entry("test/b", b_id, vec![source_ref("test:b", REVISION)]),
-        entry("test/c", c_id, vec![source_ref("test:c", REVISION)]),
+        entry("test/b", vec![source_ref("test:b", REVISION)]),
+        entry("test/c", vec![source_ref("test:c", REVISION)]),
     ];
     for (identity, bytes) in [("test:b", b.as_bytes()), ("test:c", c.as_bytes())] {
         wire.byte_provision
@@ -1303,8 +1189,8 @@ fn transitive_only_library_source_reaches_replay() {
 
 /// FR-121-AC-4 (TC-516): `call_site` compiles TC-444 step 7's importing
 /// unit against a dependency input supplying `test/units`, and a request
-/// carrying that dependency, keyed only by `call_site`'s own `package_id`
-/// and parameter pair, replays and agrees. Without the dependency input the
+/// carrying that dependency, keyed only by `call_site`'s own parameter
+/// pair, replays and agrees. Without the dependency input the
 /// same unit refuses `Import`.
 #[trace("TC-516", "FR-121-AC-4")]
 #[test]
@@ -1313,6 +1199,7 @@ fn call_site_with_a_dependency_input_keys_a_request_replay_accepts() {
     let locate = |dependencies: &crate::DependencyInput| {
         crate::call_site(
             SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
+            "fixture".to_owned(),
             IDENTITY,
             importing.unit.as_bytes(),
             [],
@@ -1334,11 +1221,7 @@ fn call_site_with_a_dependency_input_keys_a_request_replay_accepts() {
     assert_eq!(parameter.as_str(), "x");
 
     let mut wire = importing.request(vec![importing.units_entry()], &[importing.units.as_bytes()]);
-    wire.package_id = (
-        Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
-        site.package_id.hex(),
-    );
-    wire.source = input(*node, 3);
+    wire.source = input(node.clone(), 3);
     let ReplayResult::Input(result) =
         replay(wire, ReplayLimits::default()).expect("the replay runs")
     else {
@@ -1374,6 +1257,7 @@ fn locate_q_with_units(
     .expect("one library under one identity");
     crate::call_site(
         SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
+        "fixture".to_owned(),
         IDENTITY,
         importing.unit.as_bytes(),
         [],
@@ -1445,6 +1329,7 @@ fn call_site_refusal_codes_are_the_replay_refusal_codes() {
     let compiled = spine(&proved_source, &BTreeMap::new());
     let refusal = crate::call_site(
         unit_source.clone(),
+        "fixture".to_owned(),
         IDENTITY,
         proved_source.as_bytes(),
         [],
@@ -1467,6 +1352,7 @@ fn call_site_refusal_codes_are_the_replay_refusal_codes() {
     let broken = format!("language \"ix:native\" edition \"1-draft\";\n{PROFILE}function {{\n");
     let refusal = crate::call_site(
         unit_source.clone(),
+        "fixture".to_owned(),
         IDENTITY,
         broken.as_bytes(),
         [],
@@ -1481,7 +1367,7 @@ fn call_site_refusal_codes_are_the_replay_refusal_codes() {
     let replayed = replay(
         request(
             broken.as_bytes(),
-            compiled.emitted.package_id(),
+            &compiled,
             name(&["small"]),
             input(parameter(&compiled, "small", 0), 7),
         ),
@@ -1500,6 +1386,7 @@ fn call_site_refusal_codes_are_the_replay_refusal_codes() {
     // AC-4's `Import`: no dependency input, and no `dependencies` entry.
     let refusal = crate::call_site(
         unit_source,
+        "fixture".to_owned(),
         IDENTITY,
         importing.unit.as_bytes(),
         [],
@@ -1577,7 +1464,6 @@ fn tc_444_dependency_entries_refuse_by_the_d4_rules() {
     let extra_bytes = units_source("function spare using v(): Boolean pure { true }\n");
     let extra = entry(
         "test/zzz",
-        importing.units_id,
         vec![source_ref("test:zzz", REVISION)],
     );
     let provision: &[&[u8]] = &[units_bytes, extra_bytes.as_bytes()];
@@ -2182,7 +2068,7 @@ fn parity_request(
     let compiled = spine(&source, &BTreeMap::new());
     let mut wire = request(
         source.as_bytes(),
-        compiled.emitted.package_id(),
+        &compiled,
         name(&[function]),
         bind(parameter(&compiled, function, 0)),
     );
@@ -2196,6 +2082,7 @@ fn parity_request(
 fn minted_identity(source: &str, function: &str) -> [u8; 32] {
     let site = crate::call_site(
         SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
+        "fixture".to_owned(),
         IDENTITY,
         source.as_bytes(),
         [],
@@ -2583,10 +2470,7 @@ fn tc_904_a_value_report_carries_the_sent_claim_on_every_outcome() {
         ..UNLIMITED
     };
     let mut stale = parity("inc", 3);
-    stale.package_id = (
-        Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
-        DigestRecord::mint(DigestDomain::PackageSemanticV2, [1; 32]).hex(),
-    );
+    stale.package_name = String::new();
     let mut undecodable = parity("inc", 3);
     undecodable.backend = String::new();
     let cases = [
@@ -3044,7 +2928,7 @@ mod operator_arm {
         );
         let mut wire = request(
             source.as_bytes(),
-            compiled.emitted.package_id(),
+            &compiled,
             name(&["two"]),
             ReplaySource::Input(vec![
                 CanonicalAssignment {
@@ -3138,8 +3022,7 @@ mod operator_arm {
     /// into the agreement's claim identity (checked in the AC-7 test) and onto
     /// every settlement (`replayed` asserts it for each report above).
     ///
-    /// FR-357-AC-11: a stale `package_id` refuses
-    /// `PackageIdMismatch` (`stale_dependency/content-mismatch`); a node the
+    /// FR-357-AC-11: a node the
     /// package does not hold, a node that is not in the selected function's
     /// body and an operator the node is not an application of each refuse
     /// `ScalarIdentity` (`stale_dependency/content-mismatch`) with their own
@@ -3163,42 +3046,6 @@ mod operator_arm {
         };
         let stale_code =
             TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(Code::StaleDependency));
-
-        let mut stale = parity("inc", 3);
-        stale.package_id = (
-            Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
-            DigestRecord::mint(DigestDomain::PackageSemanticV2, [1; 32]).hex(),
-        );
-        let (text, code, settled, report) = refusal_of(stale, add_claim());
-        assert!(text.contains("content-mismatch"), "{text}");
-        assert_eq!(code, Code::StaleDependency);
-        let TerminalValue::Inconclusive(InconclusiveCause::StaleDependency {
-            requested,
-            recompiled,
-        }) = settled
-        else {
-            panic!("a package mismatch names both package identities: {settled:?}");
-        };
-        assert_eq!(
-            requested,
-            crate::StaleIdentity::Package(DigestRecord::mint(
-                DigestDomain::PackageSemanticV2,
-                [1; 32],
-            ))
-        );
-        assert!(
-            matches!(
-                recompiled,
-                crate::StaleIdentity::Package(package)
-                    if package.domain() == DigestDomain::PackageSemanticV2
-            ),
-            "the refusal carries the recompiled package identity"
-        );
-        assert!(matches!(
-            report.result(),
-            OperatorParityResult::Refused(refusal)
-                if matches!(**refusal, ReplayRefusal::PackageIdMismatch { .. })
-        ));
 
         let mut missing_node = add_claim();
         missing_node.node = crate::fixture_node(1);
@@ -3277,10 +3124,7 @@ mod operator_arm {
         let mut missing_node = claim(add(2, 1), completed(3));
         missing_node.node = crate::fixture_node(1);
         let mut stale = parity("inc", 3);
-        stale.package_id = (
-            Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
-            DigestRecord::mint(DigestDomain::PackageSemanticV2, [1; 32]).hex(),
-        );
+        stale.package_name = String::new();
         let mut undecodable = parity("inc", 3);
         undecodable.backend = String::new();
         let cases = [
@@ -3746,11 +3590,11 @@ fn wide_source(parameter: &str, body: &str) -> String {
 
 /// FR-098-AC-11 (TC-913 steps 1 to 4): a proved package whose range is
 /// beyond `i64` recompiles from its byte provision to the request's
-/// `package_id`, and an `Input` assignment at the range's edge settles
+/// package, and an `Input` assignment at the range's edge settles
 /// `reproduced-without-witness` with the call's result `false`.
 #[trace("TC-913", "FR-098-AC-11")]
 #[test]
-fn tc_913_a_wide_integer_input_replays_to_its_package_id() {
+fn tc_913_a_wide_integer_input_replays_to_its_package() {
     let cases: [(&str, &str, i128); 4] = [
         (
             "Int[0, 18446744073709551615]",
@@ -3778,7 +3622,7 @@ fn tc_913_a_wide_integer_input_replays_to_its_package_id() {
         let compiled = spine(&source, &BTreeMap::new());
         let wire = request(
             source.as_bytes(),
-            compiled.emitted.package_id(),
+            &compiled,
             name(&["wide"]),
             typed_input(
                 parameter(&compiled, "wide", 0),
@@ -3807,10 +3651,10 @@ fn tc_913_a_wide_integer_input_replays_to_its_package_id() {
 
 /// FR-098-AC-11 (TC-913 step 5): the u64-field model, QSL's stand-in for
 /// CG's wide-range model, recompiles from its byte provision alone to the
-/// request's `package_id`.
+/// request's package.
 #[trace("TC-913", "FR-098-AC-11")]
 #[test]
-fn tc_913_a_u64_field_model_recompiles_to_its_package_id() {
+fn tc_913_a_u64_field_model_recompiles_to_its_package() {
     let source = format!(
         "language \"ix:native\" edition \"1-draft\";\n{PROFILE}\
          record Meter {{ reading: Int[0, 18446744073709551615]; }}\n\
@@ -3819,7 +3663,7 @@ fn tc_913_a_u64_field_model_recompiles_to_its_package_id() {
     let compiled = spine(&source, &BTreeMap::new());
     let wire = request(
         source.as_bytes(),
-        compiled.emitted.package_id(),
+        &compiled,
         name(&["meter_over"]),
         ReplaySource::Input(vec![]),
     );
@@ -3832,10 +3676,7 @@ fn tc_913_a_u64_field_model_recompiles_to_its_package_id() {
     )
     .expect("the request's limits");
     let recompiled = recompile(&request, &limits).expect("the byte provision recompiles");
-    assert_eq!(
-        recompiled.emitted.package().package_id(),
-        compiled.emitted.package_id()
-    );
+    assert_eq!(recompiled.package.as_str(), "fixture");
 }
 
 /// A membership query that reserved no storage settles

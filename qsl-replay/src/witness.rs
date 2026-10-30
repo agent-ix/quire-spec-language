@@ -184,7 +184,6 @@ impl Witness {
             .into_iter()
             .collect::<Result<Vec<_>, _>>()
             .map_err(|entry| DecodeRefusal::MalformedEntry(entry.to_owned()))?;
-        // BLOCKED-BY QSL-1282 (owner: planner titan:QSL:plan): the transcript spelling of a parameter node, whose text may hold the entry separators
         let named = entries
             .iter()
             .map(|(name, text)| {

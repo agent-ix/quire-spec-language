@@ -211,7 +211,7 @@ fn a_union_input_evaluates_a_checked_case_through_replay() {
     ] {
         let request = request(
             SHAPE_UNIT.as_bytes(),
-            compiled.emitted.package_id(),
+            &compiled,
             name(&["big"]),
             typed_input(parameter(&compiled, "big", 0), value.clone()),
         );

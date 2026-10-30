@@ -52,7 +52,7 @@ fn call(function: &str, a: WitnessValue, b: WitnessValue) -> ReplayRequestWire {
         .collect();
     request(
         UNIT.as_bytes(),
-        compiled.emitted.package_id(),
+        &compiled,
         name(&[function]),
         ReplaySource::Input(assignments),
     )
@@ -194,7 +194,7 @@ fn witness_call(function: &str, values: &[WitnessValue]) -> ReplayRequestWire {
     entries.sort();
     request(
         UNIT.as_bytes(),
-        compiled.emitted.package_id(),
+        &compiled,
         name(&[function]),
         ReplaySource::Witness(
             Witness::parse(format!(
@@ -291,7 +291,7 @@ fn tc_1028_a_wrong_native_kind_is_refused_before_the_call() {
         let compiled = spine(UNIT, &BTreeMap::new());
         let from_input = request(
             UNIT.as_bytes(),
-            compiled.emitted.package_id(),
+            &compiled,
             name(&[function]),
             ReplaySource::Input(assignments(&compiled)),
         );
@@ -326,7 +326,7 @@ fn text_calls(function: &str, text: &str) -> [(&'static str, ReplayRequestWire);
     let compiled = spine(UNIT, &BTreeMap::new());
     let from_input = request(
         UNIT.as_bytes(),
-        compiled.emitted.package_id(),
+        &compiled,
         name(&[function]),
         ReplaySource::Input(vec![CanonicalAssignment {
             parameter: parameter(&compiled, function, 0),
@@ -410,7 +410,7 @@ fn tc_1052_a_string_literal_comparison_runs_through_replay() {
             let compiled = spine(UNIT, &BTreeMap::new());
             let request = request(
                 UNIT.as_bytes(),
-                compiled.emitted.package_id(),
+                &compiled,
                 name(&[function]),
                 ReplaySource::Input(vec![CanonicalAssignment {
                     parameter: parameter(&compiled, function, 0),

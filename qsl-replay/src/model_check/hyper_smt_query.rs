@@ -181,7 +181,6 @@ fn check_subjects(
             return Err(binding(Some(alias.as_str())).into());
         };
         let (one, other) = (first.simulation.package, subject.simulation.package);
-        // BLOCKED-BY QSL-1282 (owner: planner titan:QSL:plan): equal-content check for two distinct checked packages
         if !std::ptr::eq(one, other) {
             return Err(binding(Some(alias.as_str())).into());
         }
