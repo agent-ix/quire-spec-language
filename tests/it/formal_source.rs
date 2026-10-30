@@ -9,7 +9,7 @@ use quire_contract_model as ir;
 use quire_spec_language::formal_source::{FormalSource, FormalSourceError};
 
 fn source(text: &str) -> Source {
-    Source::read_verified(
+    Source::read(
         SourceIdentity {
             authority: "test".into(),
             identity: "ix://example/source".into(),
@@ -18,7 +18,6 @@ fn source(text: &str) -> Source {
         },
         "native/source",
         text.as_bytes(),
-        ByteDigest::of(text.as_bytes()),
         MAX_SOURCE_BYTES,
     )
     .unwrap()

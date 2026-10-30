@@ -25,9 +25,6 @@ pub enum CompleteCause {
     /// `unknown_language`, `unknown_edition` or `unknown_profile`: the
     /// selection is not supported by this consumer.
     UnsupportedSelection,
-    /// `source_digest_mismatch`: the source bytes do not hash to their
-    /// declared digest.
-    ByteDigestMismatch,
     /// `resource_exhausted`: the next charge exceeds its limit.
     InsufficientNextCharge,
     /// `missing_import`: no known definition has the selected identity.
@@ -111,7 +108,6 @@ impl CompleteCause {
             Self::InvalidToken => "invalid-token",
             Self::InvalidEscape => "invalid-escape",
             Self::UnsupportedSelection => "unsupported-selection",
-            Self::ByteDigestMismatch => "byte-digest-mismatch",
             Self::InsufficientNextCharge => "insufficient-next-charge",
             Self::MissingSelection => "missing-selection",
             Self::AmbiguousName => "ambiguous-name",
@@ -157,7 +153,6 @@ impl CompleteCause {
                     | CompleteCode::UnknownEdition
                     | CompleteCode::UnknownProfile
             ),
-            Self::ByteDigestMismatch => code == CompleteCode::SourceDigestMismatch,
             Self::InsufficientNextCharge => code == CompleteCode::ResourceExhausted,
             Self::MissingSelection => code == CompleteCode::MissingImport,
             Self::AmbiguousName | Self::ConflictingAuthority => {
@@ -307,10 +302,6 @@ pub fn read_source(
             SourceReadCause::Bom | SourceReadCause::Nul => {
                 (CompleteCode::InvalidSyntax, CompleteCause::InvalidToken)
             }
-            SourceReadCause::DigestMismatch => (
-                CompleteCode::SourceDigestMismatch,
-                CompleteCause::ByteDigestMismatch,
-            ),
         };
         Box::new(CompleteDiagnostic {
             phase: Phase::Source,

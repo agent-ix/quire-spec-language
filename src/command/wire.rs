@@ -228,7 +228,6 @@ fn selected_package<'de, D: serde::Deserializer<'de>>(
 #[serde(deny_unknown_fields)]
 pub(super) struct SourceFile {
     pub file: String,
-    pub digest: String,
     #[serde(flatten)]
     pub identity: Identity,
 }

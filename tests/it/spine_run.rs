@@ -25,10 +25,10 @@ const SEVEN_FIXTURE: &str = "tests/fixtures/spine-compile.native";
 /// The TC-451 fixture: `lt`, `flag`, `id`, `px`, `corner` and `seven`.
 const RUN_FIXTURE: &str = "tests/fixtures/spine-run.native";
 
-fn program_source(program: &[u8]) -> Value {
+fn program_source() -> Value {
     json!({"file":"program.native","authority":"agent-ix","identity":"test:spine-run",
         "revision_namespace":"fixture","revision":"fixture:1",
-        "digest":ByteDigest::of(program).to_string(),"document":"SpineRun","formal_revision":1})
+        "document":"SpineRun","formal_revision":1})
 }
 
 /// FR-289-AC-1 / TC-773 step 1: the front end has no registry input, so
@@ -122,7 +122,7 @@ fn spine_run_request(directory: &Path, program: &[u8], call: Value) {
     std::fs::write(directory.join("program.native"), program).unwrap();
     let request = json!({"format":"native-run/1","request":{
         "models":[],
-        "program":{"source":program_source(program)},
+        "program":{"source":program_source()},
         "call":call,
     }});
     std::fs::write(
@@ -363,8 +363,8 @@ fn tc_450_step_4_native_only_members_refuse_before_any_model_is_read() {
             "models":[{"format":"native-rule-model/1","source":{
                 "file":"missing-model.json","authority":"agent-ix","identity":"acme/model",
                 "revision_namespace":"fixture","revision":"fixture:1",
-                "digest":format!("sha256:{}", "0".repeat(64)),"document":"M","formal_revision":1}}],
-            "program":{"source":program_source(&program)},
+                "document":"M","formal_revision":1}}],
+            "program":{"source":program_source()},
             "call":call("seven", json!([])),
         }})
     };
@@ -451,8 +451,8 @@ fn tc_450_step_4_native_model_refuses_alone() {
         "models":[{"format":"native-rule-model/1","source":{
             "file":"missing-model.json","authority":"agent-ix","identity":"acme/model",
             "revision_namespace":"fixture","revision":"fixture:1",
-            "digest":format!("sha256:{}", "0".repeat(64)),"document":"M","formal_revision":1}}],
-        "program":{"source":program_source(&program)},
+            "document":"M","formal_revision":1}}],
+        "program":{"source":program_source()},
         "call":call("seven", json!([])),
     }});
     std::fs::write(
@@ -484,7 +484,7 @@ fn tc_450_step_4_no_call_refuses_alone() {
     std::fs::write(directory.path().join("program.native"), &program).unwrap();
     let job = json!({"format":"native-run/1","request":{
         "models":[],
-        "program":{"source":program_source(&program)},
+        "program":{"source":program_source()},
     }});
     std::fs::write(
         directory.path().join("request.json"),
@@ -520,7 +520,7 @@ fn tc_450_step_4_extraction_refuses_alone() {
     let job = json!({"format":"native-run/1","request":{
         "models":[],
         "program":{
-            "source":program_source(&program),
+            "source":program_source(),
             "extraction":{"body":{
                 "authority":"agent-ix","identity":"test:spine-run","revision_namespace":"fixture",
                 "revision":"fixture:1","document":"SpineRun","formal_revision":1,
@@ -560,7 +560,7 @@ fn tc_450_step_5_zero_draft_carrying_call_or_libraries_refuses() {
         (|job: &mut Value| {
             job["request"]["libraries"] = json!([{"identity":"x","source":{
                 "file":"lib.native","authority":"agent-ix","identity":"x","revision_namespace":"fixture",
-                "revision":"fixture:1","digest":format!("sha256:{}", "0".repeat(64)),"document":"L","formal_revision":1}}]);
+                "revision":"fixture:1","document":"L","formal_revision":1}}]);
         }) as fn(&mut Value),
     ] {
         let directory = tempfile::tempdir().unwrap();
@@ -864,7 +864,7 @@ fn tc_450_step_4_malformed_work_units_refuses() {
         placeholder_call["accounting"] = json!({"work_units": 0});
         let request = json!({"format":"native-run/1","request":{
             "models":[],
-            "program":{"source":program_source(&program)},
+            "program":{"source":program_source()},
             "call": placeholder_call,
         }});
         let text = serde_json::to_string(&request).unwrap().replacen(
@@ -960,12 +960,12 @@ fn tc_450_step_6_libraries_and_models_both_present_runs() {
         "models":[{"format":"semantic-ir/2.0.0","source":{
             "file":"orders.json","authority":"agent-ix","identity":"acme/orders",
             "revision_namespace":"fixture","revision":"fixture:1",
-            "digest":ByteDigest::of(&document).to_string(),"document":"Orders","formal_revision":1}}],
+            "document":"Orders","formal_revision":1}}],
         "libraries":[{"identity":"test/geometry","source":{
             "file":"geometry.native","authority":"agent-ix","identity":"test:geometry",
             "revision_namespace":"fixture","revision":"fixture:1",
-            "digest":ByteDigest::of(&library).to_string(),"document":"Geometry","formal_revision":1}}],
-        "program":{"source":program_source(&program)},
+            "document":"Geometry","formal_revision":1}}],
+        "program":{"source":program_source()},
         "call":call("seven", json!([])),
     }});
     std::fs::write(

@@ -434,15 +434,8 @@ impl Intake<'_> {
 
     fn source(&mut self, selected: &wire::SourceFile) -> Result<FormalSource> {
         let identity = selected.identity.bind()?;
-        let expected = selected.digest.parse()?;
         let bytes = self.file(&selected.file, self.remaining)?;
-        let source = Source::read_verified(
-            identity.native,
-            &selected.file,
-            &bytes,
-            expected,
-            self.maximum,
-        )?;
+        let source = Source::read(identity.native, &selected.file, &bytes, self.maximum)?;
         Ok(FormalSource::new(source, identity.formal))
     }
 }
