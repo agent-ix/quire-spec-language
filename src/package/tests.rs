@@ -64,12 +64,10 @@ fn runtime_populations_and_evaluator_budgets_do_not_enter_static_passes() {
         .unwrap()
     };
     let original_canonical = canonical(&package);
-    let mut runtime_digests = std::collections::BTreeSet::new();
     for (number, truth) in [(0, false), (1, true), (2, false)] {
         let mut data = setup::draft(&models[0]);
         setup::change_field(&mut data, "n", ValueNode::Integer { value: number });
         let snapshot = setup::snapshot(data);
-        assert!(runtime_digests.insert(snapshot.digest().to_string()));
         let selected = setup::selection(&models[0], snapshot.reference());
         let context = validate(
             package.checked(),
@@ -106,5 +104,4 @@ fn runtime_populations_and_evaluator_budgets_do_not_enter_static_passes() {
             assert_eq!(rebuilt.usage(), package.usage());
         }
     }
-    assert_eq!(runtime_digests.len(), 3);
 }

@@ -1506,8 +1506,7 @@ pub(crate) fn view_of(views: &[ModelView], effective: EffectiveId) -> Option<&Mo
 /// lexeme: it is named when the reader reaches it, so ahead of an earlier
 /// inexact number. Any other refusal of the shared reader (malformed text, a lone
 /// surrogate escape, non-UTF-8 bytes, a repeated name) refuses
-/// `invalid_runtime_input`/`invalid-value` at the root, naming the reader's
-/// cause.
+/// `invalid_runtime_input`/`invalid-value` at the root.
 fn check_document_valid(
     read: &Result<quire_canonical::Document, quire_canonical::ReadError>,
     limits: ObservationLimits,
@@ -1528,23 +1527,6 @@ fn check_document_valid(
             Some(refusal) => Err(refusal),
             None => Ok(()),
         },
-    }
-}
-
-/// The stable spelling of a shared-reader refusal's cause.
-fn malformed_cause(kind: quire_canonical::Malformed) -> &'static str {
-    use quire_canonical::Malformed;
-    match kind {
-        Malformed::InvalidUtf8 => "invalid-utf8",
-        Malformed::UnexpectedEnd => "unexpected-end",
-        Malformed::UnexpectedCharacter => "unexpected-character",
-        Malformed::ControlCharacter => "control-character",
-        Malformed::InvalidEscape => "invalid-escape",
-        Malformed::LoneSurrogate => "lone-surrogate",
-        Malformed::InvalidNumber => "invalid-number",
-        Malformed::DuplicateName => "duplicate-name",
-        Malformed::TrailingContent => "trailing-content",
-        _ => "malformed",
     }
 }
 
@@ -1574,12 +1556,10 @@ fn read_error_refusal(
             })
         }
         // Any other refusal of the shared reader settles at the document
-        // root before any member is read, naming the reader's cause
-        // (FR-106 check 1.3, FR-106-AC-3, AC-32, AC-38).
-        quire_canonical::ReadError::Malformed { kind, .. } => Some(refuse(
+        // root before any member is read (FR-106 check 1.3, FR-106-AC-3, AC-32, AC-38).
+        quire_canonical::ReadError::Malformed { .. } => Some(refuse(
             AdmissionRecord::new(Code::InvalidRuntimeInput, "invalid-value")
-                .with("document_pointer", "")
-                .with("reader_cause", malformed_cause(*kind)),
+                .with("document_pointer", ""),
         )),
         _ => None,
     }
@@ -3430,22 +3410,21 @@ mod tests {
     /// FR-106 check 1.3: any text the shared reader refuses (a repeated
     /// member name, a lone surrogate escape, a byte that is not UTF-8, text
     /// that is not JSON) refuses `invalid_runtime_input`/`invalid-value` at
-    /// the document root, naming the reader's cause.
+    /// the document root.
     #[trace("TC-465", "FR-106-AC-3")]
     #[test]
     fn the_shared_reader_settles_a_text_it_refuses_at_check_1_3() {
-        let invalid_value = |cause: &'static str| {
+        let invalid_value = || {
             Err(refuse(
                 AdmissionRecord::new(Code::InvalidRuntimeInput, "invalid-value")
-                    .with("document_pointer", "")
-                    .with("reader_cause", cause),
+                    .with("document_pointer", ""),
             ))
         };
-        assert_eq!(check(br#"{"a":1,"a":2}"#), invalid_value("duplicate-name"));
-        assert_eq!(check(br#"{"s":"\ud800"}"#), invalid_value("lone-surrogate"));
-        assert_eq!(check(b"{\"s\":\"\xC0\"}"), invalid_value("invalid-utf8"));
-        assert_eq!(check(b"{\"a\":"), invalid_value("unexpected-end"));
-        assert_eq!(check(b"{} {}"), invalid_value("trailing-content"));
+        assert_eq!(check(br#"{"a":1,"a":2}"#), invalid_value());
+        assert_eq!(check(br#"{"s":"\ud800"}"#), invalid_value());
+        assert_eq!(check(b"{\"s\":\"\xC0\"}"), invalid_value());
+        assert_eq!(check(b"{\"a\":"), invalid_value());
+        assert_eq!(check(b"{} {}"), invalid_value());
     }
 
     /// FR-056: a number with no finite double refuses `noncanonical_wire` at
@@ -3488,7 +3467,6 @@ mod tests {
             Err(refuse(
                 AdmissionRecord::new(Code::InvalidRuntimeInput, "invalid-value")
                     .with("document_pointer", "")
-                    .with("reader_cause", "duplicate-name")
             ))
         );
     }

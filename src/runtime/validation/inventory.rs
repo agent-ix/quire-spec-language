@@ -104,14 +104,6 @@ impl<F: FnMut() -> bool> Validator<'_, '_, F> {
             )?;
             return Ok(None);
         }
-        if actual.digest() != expected.digest() {
-            self.budget.issue(
-                Stage::Binding,
-                Code::StaleDependency,
-                "selected input digest differs from supplied complete bytes",
-            )?;
-            return Ok(None);
-        }
         Ok(Some(address))
     }
 

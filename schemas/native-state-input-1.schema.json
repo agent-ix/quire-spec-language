@@ -26,12 +26,6 @@
       "type": "string",
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*(?![\\s\\S])"
     },
-    "digest": {
-      "type": "string",
-      "minLength": 64,
-      "maxLength": 64,
-      "pattern": "^[0-9a-f]{64}$"
-    },
     "value_id": {"type": "integer", "minimum": 0, "maximum": 4294967295},
     "source_identity": {
       "type": "object",
@@ -105,10 +99,9 @@
     "reference": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["identity", "digest"],
+      "required": ["identity"],
       "properties": {
-        "identity": {"$ref": "#/$defs/source_identity"},
-        "digest": {"$comment": "BLOCKED-BY PLAT-1205 (owner: planner titan:QSL:plan): the runtime SnapshotRef and InvocationRef digest.", "$ref": "#/$defs/digest"}
+        "identity": {"$ref": "#/$defs/source_identity"}
       }
     },
     "object_entry": {

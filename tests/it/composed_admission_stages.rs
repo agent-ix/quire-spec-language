@@ -9,7 +9,7 @@ use crate::support::runtime_setup as setup;
 use crate::support::package_vector_setup;
 
 use ix_trace_rs::trace;
-use qsl_foundation::{ByteDigest, Code, Source, SourceIdentity};
+use qsl_foundation::{Code, Source, SourceIdentity};
 use qsl_semantics::check::Capability;
 use quire_spec_language::linking::composed::binding::{self, Disposition as BindingDisposition};
 use quire_spec_language::linking::composed::binding_work::Limits as BindingLimits;
@@ -1011,7 +1011,6 @@ fn the_historical_runner_refuses_a_relabelled_composed_input() {
             revision_namespace: "test".into(),
             revision: "1".into(),
         },
-        ByteDigest::of(&relabelled),
     )
     .unwrap();
     let error = *Snapshot::read_verified(&expected, &relabelled, ArtifactLimits::default())
@@ -1022,13 +1021,6 @@ fn the_historical_runner_refuses_a_relabelled_composed_input() {
         error.cause,
         InputReadCause::Version { ref actual } if actual == "native-composed-input/1"
     ));
-
-    // Submitting the relabelled bytes under the accepted reference is stale.
-    let error = *Snapshot::read_verified(&accepted, &relabelled, ArtifactLimits::default())
-        .expect_err("the accepted reference cannot carry relabelled bytes");
-    assert_eq!(error.code, Code::StaleDependency);
-    assert_eq!(error.stage, InputReadStage::Selection);
-    assert!(matches!(error.cause, InputReadCause::DigestMismatch { .. }));
 
     // The accepted artifact bytes and identity are unchanged.
     assert_eq!(snapshot.bytes(), original);

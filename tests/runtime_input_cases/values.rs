@@ -136,12 +136,10 @@ fn invocation_encodes_every_original_binding_without_claiming_validity() {
     let artifact = Invocation::new(identity(), draft, ArtifactLimits::default()).unwrap();
     assert_eq!(artifact.draft(), &original);
     assert_eq!(artifact.identity(), &identity());
-    assert_eq!(artifact.digest(), ByteDigest::of(artifact.bytes()));
     assert_eq!(artifact.reference().identity(), artifact.identity());
-    assert_eq!(artifact.reference().digest(), artifact.digest());
     let model = json!({"package":"example/runtime","requirement":"RuntimeModel","revision":1});
     let object = json!({"model":model,"record":"Node","universe":"nodes","key":"new"});
-    let selection = json!({"identity":{"authority":"agent-ix","identity":"snapshot:current","revision_namespace":"git","revision":"1"},"digest":"0".repeat(64)});
+    let selection = json!({"identity":{"authority":"agent-ix","identity":"snapshot:current","revision_namespace":"git","revision":"1"}});
     let expected = json!({
         "models":[{"model":model}],
         "context":{"model":model,"name":"Node"},

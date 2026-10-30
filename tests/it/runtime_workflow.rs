@@ -5,13 +5,13 @@ use crate::support::runtime_setup as setup;
 use setup::*;
 
 use ix_trace_rs::trace;
-use qsl_foundation::{ByteDigest, Code, Phase};
+use qsl_foundation::{Code, Phase};
 use quire_contract_model as ir;
 use quire_spec_language::checking::CheckedPackage;
 use quire_spec_language::native_model::NativeModel;
 use quire_spec_language::runtime::{
     evaluate, validate, EvaluationLimits, EvaluationOutcome, EvaluationReport,
-    ImplicationEventKind, ObservationSelection, SnapshotDraft, SnapshotRef, ValidationLimits,
+    ImplicationEventKind, ObservationSelection, SnapshotDraft, ValidationLimits,
     ValidationReport, ValidationStatus, ValueBinding, ValueId, ValueNode,
 };
 use quire_spec_language::syntax::ClauseKind;
@@ -170,7 +170,6 @@ fn native_pipeline_distinguishes_parent_order_cycle_and_duplicate_aggregate_trut
             checked.linked().unit().source().digest()
         );
         let artifact = snapshot(parent_data(&models[0], parent_version, cycle));
-        assert_eq!(artifact.digest(), ByteDigest::of(artifact.bytes()));
         let reference = artifact.reference();
         let selected = selection(&models[0], reference.clone());
         let context = validate(
@@ -220,49 +219,29 @@ fn native_pipeline_distinguishes_parent_order_cycle_and_duplicate_aggregate_trut
 
 #[test]
 #[trace("TC-077", "FR-007-AC-5", "FR-018-AC-3")]
-fn native_pipeline_retains_dangling_stale_and_incomplete_input_stages() {
+fn native_pipeline_retains_dangling_and_incomplete_input_stages() {
     // Workflow steps 4/5/7: construction succeeds; validation supplies each observed result.
     let models = [native_rule_model::parts().model()];
     let checked = checked(&models, PARENT);
-    for (name, complete, stale, status, code) in [
+    for (name, complete, status, code) in [
         (
             "dangling-parent",
             true,
-            false,
             ValidationStatus::Refused,
             Code::DanglingReference,
         ),
         (
             "incomplete-population",
             false,
-            false,
             ValidationStatus::Incomplete,
             Code::IncompletePopulation,
         ),
-        (
-            "stale-selected-bytes",
-            true,
-            true,
-            ValidationStatus::Refused,
-            Code::StaleDependency,
-        ),
     ] {
         let mut data = parent_data(&models[0], 1, false);
-        if !stale {
-            data.populations[0].objects.pop();
-        }
+        data.populations[0].objects.pop();
         data.populations[0].complete = complete;
         let artifact = snapshot(data);
-        let reference = if stale {
-            SnapshotRef::new(
-                artifact.identity().clone(),
-                ByteDigest::of(b"stale selected bytes"),
-            )
-            .unwrap()
-        } else {
-            artifact.reference()
-        };
-        let selected = selection(&models[0], reference);
+        let selected = selection(&models[0], artifact.reference());
         let report = validate(
             &checked,
             input(artifact),

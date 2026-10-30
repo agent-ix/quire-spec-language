@@ -5,7 +5,7 @@ use crate::support::runtime_setup as setup;
 use setup::*;
 
 use ix_trace_rs::trace;
-use qsl_foundation::{ByteDigest, Code, Phase};
+use qsl_foundation::{Code, Phase};
 use quire_contract_model as ir;
 use quire_spec_language::checking::CheckedPackage;
 use quire_spec_language::native_model::NativeModel;
@@ -14,7 +14,7 @@ use quire_spec_language::package::{
 };
 use quire_spec_language::runtime::{
     evaluate, validate, EvaluationLimits, EvaluationOutcome, ImplicationEventKind, SnapshotDraft,
-    SnapshotRef, ValidationLimits, ValidationStatus, ValueBinding, ValueId, ValueNode,
+    ValidationLimits, ValidationStatus, ValueBinding, ValueId, ValueNode,
 };
 use quire_spec_language::syntax::ClauseKind;
 use serde_json::{json, Value};
@@ -222,33 +222,15 @@ fn reconstructed_current_workflows_preserve_truth_events_and_exact_costs() {
 fn reconstructed_validation_and_exhaustion_preserve_refusal_and_fresh_retries() {
     let models = [native_rule_model::parts().model()];
     let package = reconstruct(checked(&models, PARENT), &models);
-    for (complete, stale, code, status) in [
-        (
-            true,
-            false,
-            Code::DanglingReference,
-            ValidationStatus::Refused,
-        ),
-        (
-            false,
-            false,
-            Code::IncompletePopulation,
-            ValidationStatus::Incomplete,
-        ),
-        (true, true, Code::StaleDependency, ValidationStatus::Refused),
+    for (complete, code, status) in [
+        (true, Code::DanglingReference, ValidationStatus::Refused),
+        (false, Code::IncompletePopulation, ValidationStatus::Incomplete),
     ] {
         let mut data = parent_data(&models[0], 1, false);
-        if !stale {
-            data.populations[0].objects.pop();
-        }
+        data.populations[0].objects.pop();
         data.populations[0].complete = complete;
         let artifact = snapshot(data);
-        let reference = if stale {
-            SnapshotRef::new(artifact.identity().clone(), ByteDigest::of(b"stale bytes")).unwrap()
-        } else {
-            artifact.reference()
-        };
-        let selected = selection(&models[0], reference);
+        let selected = selection(&models[0], artifact.reference());
         let error = validate(
             package.checked(),
             input(artifact),
