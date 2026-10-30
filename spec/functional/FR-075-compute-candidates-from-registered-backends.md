@@ -347,7 +347,7 @@ inserted into the registry; the refused descriptor contributes no
 registration, and any registration already held under that identity stands.
 An admitted descriptor SHALL keep `dynamics` exactly as supplied: a
 descriptor that supplies none holds none, and every FR-331 manifest QSL
-writes from it carries no `dynamics` member, so the descriptor of such a registration (the production engines en-1 and en-6 both supply none) and the request identity (QSpec FR-306) of
+writes from it carries no `dynamics` member, so the descriptor of such a registration (the production engines en-1 and en-6 both supply none) and the request identity (QSpec FR-331, "Request identity") of
 every temporal request over it are those it has without this member.
 `{discrete}` is only how candidate computation reads an absent member. A
 descriptor that supplies `["discrete"]` explicitly holds a different
@@ -369,8 +369,8 @@ candidate.
 
 If a registration names a `BackendId` the registry already holds, the
 registry SHALL compare identity, provider origin, advertised
-pairs, retained `domains`, the evidence-kind set and the `dynamics` member as supplied (QSpec
-FR-290-AC-10, TC-282). A different identity is a different registry key and is
+pairs, retained `domains`, the evidence-kind set and the `dynamics` member as supplied. A second registration of one identity is
+refused whatever its manifest (QSpec FR-290-AC-10, TC-282). A different identity is a different registry key and is
 not a duplicate-registration conflict:
 
 - If the two are equal in every equality-compared member, the

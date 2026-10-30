@@ -260,7 +260,9 @@ names is its state key: `Trace.initial` and each `Step.key` are `StateKey`s, a
 a `StateKey`. Replay recomputes each candidate state's key to find the
 recorded initial state. It picks each step's successor by transition identity
 and then by ordinal among the successors that share it, with no recorded-key
-comparison.
+comparison. The ordinal of a successor is its zero-based position among the
+successors of that state that share its transition identity, in the system's
+canonical successor order. BLOCKED-BY QSL-1282 (owner: planner titan:QSL:plan): qsl-eval replay key compare in simulation/trace.rs
 
 **Sampler.** Sampling uses QSpec's `quire.simulation.sampler/v1` definition
 and the sampling contract in QSpec FR-181; that contract owns the draw
