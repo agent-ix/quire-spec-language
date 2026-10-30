@@ -776,6 +776,7 @@ mod tests {
         let region = refused.error.region.expect("a located refusal");
         let rendered = render_offered(b"a\n\xffb", &region).expect("rendered");
         assert_eq!((rendered.start.line, rendered.start.column), (2, 1));
-        assert_eq!(render_offered(b"other", &region), None);
+        // A region outside the offered bytes' valid prefix refuses.
+        assert_eq!(render_offered(b"a", &region), None);
     }
 }

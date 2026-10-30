@@ -2407,8 +2407,8 @@ impl<'t> PopulationValues<'t> {
             )
         })?;
         let reference = ObjectReference::new(
-            // BLOCKED-BY QSL-1282 (owner: planner titan:QSL:plan): locked quire-exact d278fe4c
-            // identity.rs:65 is the only UniverseId constructor (`UniverseId::from_digest([u8; 32])`),
+            // BLOCKED-BY QSL-1282 (owner: planner titan:QSL:plan): UniverseId::from_digest, the only
+            // `UniverseId` constructor in the locked quire-exact (identity.rs:65),
             // and `ObjectReference::new` (src/reference.rs:26) takes a `UniverseId`;
             // the token is the observation's role ordinal, not a hash.
             UniverseId::from_digest(role_token(role)),

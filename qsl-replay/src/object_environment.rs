@@ -149,6 +149,7 @@ fn labels(identity: &Value) -> Result<EnvironmentLabels, ObjectEnvironmentRefusa
 ///
 /// [`ObjectEnvironmentRefusal`] for a member that is not an object, an
 /// `identity` of the wrong JSON kind, a missing member or an unknown member.
+#[ix_trace_rs::string_edge]
 pub fn read_object_environment(
     value: &Value,
 ) -> Result<ObjectEnvironmentRef, ObjectEnvironmentRefusal> {

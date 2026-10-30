@@ -987,7 +987,8 @@ fn declared_member(document: &PackageDocument, member: &str) -> String {
 ///
 /// The package bytes are parsed once, here, into the [`PackageDocument`]
 /// this returns alongside the admitted selection; [`read_records`] reads
-/// that same tree rather than parsing the bytes again. #[ix_trace_rs::string_edge]
+/// that same tree rather than parsing the bytes again.
+#[ix_trace_rs::string_edge]
 pub fn admit(
     identity: &str,
     packages: &PackageInput,

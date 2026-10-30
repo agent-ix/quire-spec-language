@@ -361,7 +361,7 @@ pub struct UnitIntakeRefusal {
 }
 
 /// Admit each of a unit's `model` declarations, in source order, against
-/// `packages` (see [`package_input`]): FR-154 admission (one version of
+/// `packages` (a [`PackageInput`]): FR-154 admission (one version of
 /// each identity), [`crate::model::intake::read_records`], then normalization under `limits`. It
 /// stops at the first declaration that does not admit.
 pub fn admit_unit(
