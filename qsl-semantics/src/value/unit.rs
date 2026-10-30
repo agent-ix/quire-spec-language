@@ -388,7 +388,9 @@ impl UnitPreimage {
 /// for repeated keys. The graph, referenced by key, is then checked for
 /// unknown or derived dimension terms, unknown dimensions, unknown and
 /// cross-dimension targets, per-dimension root count and target cycles
-/// ([`UnitGraph::from_checked_nodes`]). Finally every owner must join the
+/// ([`UnitGraph::from_checked_nodes`]). Each supplied key must equal its
+/// preimage's structural [`DimensionPreimage::key`] or [`UnitPreimage::key`],
+/// else the refusal is `StaleKey`. Finally every owner must join the
 /// selection. Every refusal is `invalid_semantic_graph`; the typed cause names
 /// the first failed check.
 pub fn admit_unit_graph(
@@ -402,6 +404,9 @@ pub fn admit_unit_graph(
     for (preimage, key) in dimensions {
         let node = DimensionNode::checked(preimage.terms.clone(), preimage.nominal_declaration())
             .map_err(refuse)?;
+        if preimage.key().ok().as_ref() != Some(&key) {
+            return Err(refuse(SemanticGraphCause::StaleKey).into());
+        }
         if !keys.insert(key.clone()) {
             return Err(refuse(SemanticGraphCause::DuplicateNode).into());
         }
@@ -413,6 +418,9 @@ pub fn admit_unit_graph(
         let node = preimage
             .check_semantics(preimage.nominal_declaration())
             .map_err(refuse)?;
+        if preimage.key().ok().as_ref() != Some(&key) {
+            return Err(refuse(SemanticGraphCause::StaleKey).into());
+        }
         if !keys.insert(key.clone()) {
             return Err(refuse(SemanticGraphCause::DuplicateNode).into());
         }

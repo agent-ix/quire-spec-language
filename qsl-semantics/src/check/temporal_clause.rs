@@ -1268,12 +1268,8 @@ fn check_clause(
         profile_ref,
         over: (form.over.name.name.clone(), over_type),
         clock: clock.text.clone(),
-        clock_binding: clock_binding(
-            declarations.package_name,
-            &clock.text,
-            time_binding_form,
-        )
-        .map_err(|_| fault("clock-binding-keyed"))?,
+        clock_binding: clock_binding(declarations.package_name, &clock.text, time_binding_form)
+            .map_err(|_| fault("clock-binding-keyed"))?,
         operators,
         horizon,
         claim: TemporalClaim {
