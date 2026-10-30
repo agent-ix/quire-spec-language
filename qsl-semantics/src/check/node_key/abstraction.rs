@@ -199,14 +199,3 @@ impl AbstractionTerm {
         Self::new(objects, populations, frames)
     }
 }
-
-// Test-only, matching `FrameTerm`'s pattern: QSpec's operation vectors carry
-// no abstraction body, so the conformance decoder never needs one.
-#[cfg(test)]
-impl<'de> serde::Deserialize<'de> for AbstractionTerm {
-    fn deserialize<D: serde::Deserializer<'de>>(_: D) -> Result<Self, D::Error> {
-        Err(serde::de::Error::custom(
-            "abstraction bodies are not decoded from vectors",
-        ))
-    }
-}
