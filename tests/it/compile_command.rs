@@ -680,9 +680,8 @@ fn a_complete_v1_request_with_a_domain_package_locks_its_model_selection() {
 /// admitted package does not declare, at `assembly`; `deref(g).nope`, a
 /// field neither `Gadget` nor its supertype declares, and `g = w` over a
 /// `Gadget` and an unrelated `Rock` (FR-082 compares references of one
-/// type only), at `check`; the `model` declaration, when the request
-/// supplies no domain package or a document whose digest differs, at
-/// `intake`; and a `sha256:` model digest at `intake`.
+/// type only), at `check`; and the `model` declaration, when the request
+/// supplies no domain package, at `intake`.
 #[test]
 #[trace("TC-442", "TC-136", "FR-027-AC-9", "FR-056-AC-9", "FR-049-AC-11")]
 fn a_model_bearing_request_refuses_at_the_owning_stage() {
@@ -692,12 +691,6 @@ fn a_model_bearing_request_refuses_at_the_owning_stage() {
         .lines()
         .find(|line| line.starts_with("model M = "))
         .unwrap();
-    let artifact = program.replacen("sha256-jcs:", "sha256:", 1);
-    // Another document of the same package: its `sha256-jcs` digest is not
-    // the one the declaration selects.
-    let mut changed_document: Value = serde_json::from_slice(&document).unwrap();
-    changed_document["package"]["lockDigest"] = json!(format!("sha256:{}", "1".repeat(64)));
-    let changed_document = serde_json::to_vec(&changed_document).unwrap();
     for (text, supplied, stage, code, located) in [
         (
             program.replacen("deref(g).code", "deref(g).nope", 1),
@@ -726,24 +719,6 @@ fn a_model_bearing_request_refuses_at_the_owning_stage() {
             "intake",
             "missing_import",
             declaration.to_owned(),
-        ),
-        (
-            program.clone(),
-            Some(changed_document),
-            "intake",
-            "missing_import",
-            declaration.to_owned(),
-        ),
-        (
-            artifact.clone(),
-            Some(document.clone()),
-            "intake",
-            "invalid_model_binding",
-            artifact
-                .lines()
-                .find(|line| line.starts_with("model M = "))
-                .unwrap()
-                .to_owned(),
         ),
     ] {
         let directory = tempfile::tempdir().unwrap();

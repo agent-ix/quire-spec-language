@@ -1118,23 +1118,6 @@ fn tc_1042_row_33_a_present_reference_is_not_named() {
 // The writer, the labels, and the fault mapping
 // ---------------------------------------------------------------------------
 
-/// FR-071: admission selects the document by digest alone, so labels that
-/// are not the document's own identity change nothing.
-#[test]
-fn the_member_labels_are_not_compared_with_the_documents_identity() {
-    let graph = graph();
-    let s1 = graph.s1();
-    let mut wire = graph.input("fa", graph.node("a"));
-    wire.documents.push(s1.bytes.clone());
-    wire.object_environment = Some(ObjectEnvironmentRef::new(EnvironmentLabels {
-        authority: "elsewhere".to_owned(),
-        identity: "ix://elsewhere/other".to_owned(),
-        revision_namespace: "svn".to_owned(),
-        revision: "9".to_owned(),
-    }));
-    assert_completes_false(run(wire), false);
-}
-
 /// The builder's document is the one admission reads: `Node.items` of length
 /// 0, 1 and 3 round-trips through the executor, and the deref completes the
 /// value `forall(x in items: x < 5)` has over those items.

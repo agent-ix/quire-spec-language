@@ -59,7 +59,7 @@ pub(in crate::spine) struct LookupDriverFixture {
     pub(in crate::spine) packages: qsl_semantics::model::intake::PackageInput,
 }
 
-pub(in crate::spine) fn lookup_driver_fixture() -> LookupDriverFixture {
+pub(in crate::spine) fn lookup_driver_fixture(functions: &str) -> LookupDriverFixture {
     let mut document: serde_json::Value = serde_json::from_slice(include_bytes!(
         "../../../../tests/fixtures/spine-model.semantic-ir.json"
     ))
@@ -91,10 +91,11 @@ pub(in crate::spine) fn lookup_driver_fixture() -> LookupDriverFixture {
         }}
     }]);
     let bytes = serde_json::to_vec(&document).expect("the lookup driver model serializes");
-    let source = "language \"ix:native\" edition \"1-draft\";\n\
+    let source = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
-         model M = \"acme/orders\";\n"
-        .to_string();
+         model M = \"acme/orders\";\n{functions}\n"
+    );
     let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()]).unwrap();
     LookupDriverFixture { source, packages }
 }
@@ -228,7 +229,9 @@ pub(in crate::spine) fn lookup_driver_context(
 #[test]
 #[trace("TC-792", "FR-100-AC-14", "FR-100-AC-16", "FR-100-AC-17")]
 fn tc_792_source_compiled_lookup_driver_preserves_present_and_absent_paths() {
-    let fixture = lookup_driver_fixture();
+    let fixture = lookup_driver_fixture(
+        "function query using v(p: Population<M::Gadget>[1], r: M::Gadget): M::Gadget pure { lookup<M::Gadget>(p, r) absent refused }",
+    );
     let (objects, population, present, absent) = lookup_driver_context(&fixture);
     let invoke = |reference| {
         run(
@@ -274,7 +277,9 @@ fn tc_792_source_compiled_lookup_driver_preserves_present_and_absent_paths() {
 #[test]
 #[trace("TC-792", "FR-100-AC-14", "FR-100-AC-16")]
 fn tc_792_source_driver_admits_unused_parameters_before_body_evaluation() {
-    let fixture = lookup_driver_fixture();
+    let fixture = lookup_driver_fixture(
+        "function unused using v(p: Population<M::Gadget>[1], r: M::Gadget): Boolean pure { true }",
+    );
     let (objects, population, _, present) = lookup_driver_context(&fixture);
     let foreign_universe = quire_exact::ObjectReference::new(
         UniverseId::from_digest([0xa5; 32]),
@@ -317,7 +322,9 @@ fn tc_792_source_driver_admits_unused_parameters_before_body_evaluation() {
 #[test]
 #[trace("TC-792", "FR-100-AC-14", "FR-100-AC-16")]
 fn tc_792_source_driver_binding_precedence_precedes_value_admission() {
-    let fixture = lookup_driver_fixture();
+    let fixture = lookup_driver_fixture(
+        "function query using v(p: Population<M::Gadget>[1], r: M::Gadget): M::Gadget pure { lookup<M::Gadget>(p, r) absent refused }",
+    );
     let (objects, _, _, _) = lookup_driver_context(&fixture);
     let refusal = run(
         source(),
@@ -348,7 +355,9 @@ fn tc_792_source_driver_binding_precedence_precedes_value_admission() {
 #[test]
 #[trace("TC-792", "FR-100-AC-14", "FR-100-AC-16")]
 fn tc_792_source_driver_cancellation_returns_no_lookup_result() {
-    let fixture = lookup_driver_fixture();
+    let fixture = lookup_driver_fixture(
+        "function query using v(p: Population<M::Gadget>[1], r: M::Gadget): M::Gadget pure { lookup<M::Gadget>(p, r) absent refused }",
+    );
     let (objects, population, _, _) = lookup_driver_context(&fixture);
     let cancel = Cancel::new();
     cancel.cancel(quire_exact::CancelCause::Requested);
@@ -558,7 +567,11 @@ fn synthetic_model(
     let object = DeclarationKey::fixture(format!("{placeholder}/A"));
     let population = DeclarationKey::fixture(format!("{placeholder}/P"));
     let domain = DomainPackage::new(
-        DomainPackageRef::fixture(placeholder),
+        // Selection is by identity alone, so two synthetic models are foreign
+        // to each other only under distinct identities.
+        DomainPackageRef {
+            identity: format!("test/{placeholder}"),
+        },
         vec![
             DomainPackageRecord::ObjectType(ObjectTypeRecord {
                 key: object.clone(),
@@ -601,7 +614,11 @@ fn synthetic_reference_hierarchy(
     let subtype = DeclarationKey::fixture(format!("{placeholder}/S"));
     let unrelated = DeclarationKey::fixture(format!("{placeholder}/U"));
     let domain = DomainPackage::new(
-        DomainPackageRef::fixture(placeholder),
+        // Selection is by identity alone, so two synthetic models are foreign
+        // to each other only under distinct identities.
+        DomainPackageRef {
+            identity: format!("test/{placeholder}"),
+        },
         vec![
             DomainPackageRecord::ObjectType(ObjectTypeRecord {
                 key: root.clone(),

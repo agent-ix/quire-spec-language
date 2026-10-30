@@ -196,12 +196,13 @@ fn conflicting_unselected_inventory_is_not_hidden_by_wire_imports() {
         original_model.environment().owner(),
         changed.environment().owner()
     );
-    assert_ne!(original_model.digest(), changed.digest());
     let models = [original_model, changed];
     let package = rule(&models[..1], "invariant", "true");
-    for (offered, code) in [
-        (&models[..], Code::InvalidModelBinding),
-        (&models[1..], Code::StaleDependency),
+    for (offered, code, stage) in [
+        (&models[..], Code::InvalidModelBinding, PackageStage::Rebind),
+        // Only the changed artifact offered: the import selects it, and the
+        // package it rebuilds is not the one read.
+        (&models[1..], Code::InvalidPackage, PackageStage::Compare),
     ] {
         let error = NativePackage::read_verified(
             package.bytes(),
@@ -212,7 +213,7 @@ fn conflicting_unselected_inventory_is_not_hidden_by_wire_imports() {
             PackageReadLimits::default(),
         )
         .unwrap_err();
-        assert_eq!((error.code, error.stage), (code, PackageStage::Rebind));
+        assert_eq!((error.code, error.stage), (code, stage));
         assert!(matches!(
             error.cause,
             Some(PackageCause::Linking(_)) | Some(PackageCause::Checking(_))
