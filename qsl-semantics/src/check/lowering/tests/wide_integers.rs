@@ -57,7 +57,10 @@ fn wide_integer_ranges_give_distinct_nodes_with_decimal_string_bounds() {
         "\"-170141183460469231731687303715884105728\"",
         "\"170141183460469231731687303715884105727\"",
     ] {
-        assert!(t15.contains(bound), "the range spells {bound} as a string: {t15}");
+        assert!(
+            t15.contains(bound),
+            "the range spells {bound} as a string: {t15}"
+        );
     }
     let t13 = std::str::from_utf8(graph.node(keys[0]).unwrap().preimage()).unwrap();
     assert!(t13.contains("\"18446744073709551615\""), "{t13}");

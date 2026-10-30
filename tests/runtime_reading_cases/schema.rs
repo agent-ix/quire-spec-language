@@ -317,8 +317,8 @@ fn schema_pass_does_not_replace_raw_byte_selection_or_arena_admission() {
         assert!(text.contains(fragment));
         let bytes = text.replacen(fragment, replacement, 1).into_bytes();
         assert!(schema.is_valid(&serde_json::from_slice(&bytes).unwrap()));
-        let failure = Snapshot::read_verified(&selected(), &bytes, ArtifactLimits::default())
-            .unwrap_err();
+        let failure =
+            Snapshot::read_verified(&selected(), &bytes, ArtifactLimits::default()).unwrap_err();
         assert_eq!(failure.code, Code::InvalidRuntimeInput);
         assert_eq!(failure.stage, stage);
         match (stage, failure.cause) {

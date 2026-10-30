@@ -419,15 +419,11 @@ fn oversized_text_stops_before_encoding_and_retains_original_labels() {
     assert_eq!(error.usage.artifact_bytes, 0);
     assert_eq!(error.code, Code::ResourceExhausted);
     assert_eq!(
-        SnapshotRef::new(oversized.clone())
-            .unwrap_err()
-            .code,
+        SnapshotRef::new(oversized.clone()).unwrap_err().code,
         Code::ResourceExhausted
     );
     assert_eq!(
-        InvocationRef::new(oversized)
-            .unwrap_err()
-            .code,
+        InvocationRef::new(oversized).unwrap_err().code,
         Code::ResourceExhausted
     );
 }
