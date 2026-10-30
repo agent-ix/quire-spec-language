@@ -830,9 +830,9 @@ impl CheckedRefinement {
         &self,
         concrete_subject: &NodeKey,
     ) -> Result<NodeKey, RefinementV2EncodingError> {
-        NodeKey::new(
-            concrete_subject.package(),
-            vec![quire_exact::PathSegment::Text(self.name.clone())],
+        crate::check::declared_node_key(
+            concrete_subject.package().to_owned(),
+            vec![self.name.clone()],
             0,
         )
         .map_err(RefinementV2EncodingError::Identity)
