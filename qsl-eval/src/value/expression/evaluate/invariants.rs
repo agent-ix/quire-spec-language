@@ -879,10 +879,8 @@ fn result_stack_reference_and_import_shapes_reach_their_actual_producers() {
         m.push_value(Value::Reference(reference()), false);
         m.apply(dispatch.root())
     });
-    let callee = qsl_semantics::library::PackageNodeKey::new(
-        qsl_semantics::library::PackageId::of_preimage(b"unresolved fixture package"),
-        crate::test_ids::node_key([0xfe]),
-    );
+    // A node of a package no import supplies.
+    let callee = crate::test_ids::node_key([0xfe]);
     let imported = body(|_| NodeKind::ImportedCall {
         callee,
         function: 0,
