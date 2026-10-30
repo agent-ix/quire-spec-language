@@ -105,26 +105,8 @@ use crate::emit::{emit_checked, Emission, EmitRefusal};
 /// }
 /// ```
 ///
-/// TC-244 row 3 (FR-087-AC-2, R-10): a wire-admitted `VerifiedPackage`
-/// has no conversion into a `CheckedPackage`:
-/// ```compile_fail,E0277
-/// use qsl_package::CheckedPackage;
-/// use qsl_semantics::library::VerifiedPackage;
-/// fn forge(verified: VerifiedPackage) -> CheckedPackage {
-///     verified.into()
-/// }
-/// ```
-/// Its pair:
-/// ```no_run
-/// use qsl_package::CheckedPackage;
-/// use qsl_semantics::library::VerifiedPackage;
-/// fn holds(verified: VerifiedPackage, package: CheckedPackage) -> CheckedPackage {
-///     drop(verified);
-///     package
-/// }
-/// ```
-///
-/// TC-244 row 4: nor has an `ImportView`:
+/// TC-244 row 3: a wire-admitted `ImportView` has no conversion into a
+/// `CheckedPackage`:
 /// ```compile_fail,E0277
 /// use qsl_package::CheckedPackage;
 /// use qsl_semantics::library::ImportView;
@@ -400,7 +382,7 @@ impl CheckedPackage {
     /// fn build(
     ///     source: qsl_foundation::source::provenance::RawSourceRef,
     /// ) -> CheckedPackage {
-    ///     let graph = PackageDeclarations::new(source, qsl_foundation::IdentityLimits::default())
+    ///     let graph = PackageDeclarations::new(source, "test/package", qsl_foundation::IdentityLimits::default())
     ///         .check(CheckingLimits::default())
     ///         .expect("an empty package checks cleanly");
     ///     CheckedPackage::link(graph)
@@ -738,9 +720,13 @@ pub(crate) fn dependency_chain(length: usize) -> CheckedPackage {
     .reference()
     .clone();
     let graph = Arc::new(
-        PackageDeclarations::new(source, qsl_foundation::IdentityLimits::default())
-            .check(CheckingLimits::default())
-            .expect("an empty package checks"),
+        PackageDeclarations::new(
+            source,
+            "test/package",
+            qsl_foundation::IdentityLimits::default(),
+        )
+        .check(CheckingLimits::default())
+        .expect("an empty package checks"),
     );
     (0..length).fold(
         CheckedPackage {
@@ -754,7 +740,7 @@ pub(crate) fn dependency_chain(length: usize) -> CheckedPackage {
         |dependency, link| CheckedPackage {
             graph: Arc::clone(&graph),
             dependencies: BTreeMap::from([(
-                PackageId::of_preimage(&link.to_le_bytes()),
+                LibraryName::new(format!("test/chain-{link}")).expect("a library identity"),
                 Arc::new(dependency),
             )]),
             selections: BTreeMap::new(),
@@ -774,16 +760,14 @@ pub(crate) fn dependency_chain_with_selections(length: usize) -> CheckedPackage 
     for link in 0..length {
         let below = Arc::new(chain);
         let mut package = dependency_chain(0);
-        package.dependencies = BTreeMap::from([(
-            PackageId::of_preimage(&link.to_le_bytes()),
-            Arc::clone(&below),
-        )]);
+        let identity = LibraryName::new(format!("test/chain-{link}")).expect("a library identity");
+        package.dependencies = BTreeMap::from([(identity.clone(), Arc::clone(&below))]);
         package.selections = BTreeMap::from([(
-            LibraryName::new("test/below").expect("a library identity"),
+            identity.clone(),
             ResolvedDependency {
-                package_id: PackageId::of_preimage(&link.to_le_bytes()),
+                package: Arc::clone(&below),
                 path: DependencyPath::Via {
-                    first: LibraryName::new("test/below").expect("a library identity"),
+                    first: identity,
                     package: below,
                 },
             },
@@ -879,6 +863,7 @@ mod tests {
             )],
             ..PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
+                "test/package",
                 qsl_foundation::IdentityLimits::default(),
             )
         }
@@ -893,57 +878,29 @@ mod tests {
         assert_eq!(model_nodes.len(), 1, "one model node: model.A's");
         let package = CheckedPackage::link(graph);
         assert_eq!(
-            package.graph().resolve_declaration(model_nodes[0]),
+            package.graph().resolve_declaration(model_nodes[0].clone()),
             Some(&declaration)
         );
 
         // Adverse (R-05): a node `check` never keyed resolves to nothing.
-        let other = quire_exact::NodeKey::from_digest([8_u8; 32]);
+        let other = quire_exact::NodeKey::new(
+            "test/package",
+            vec![quire_exact::PathSegment::Text("missing".into())],
+            0,
+        )
+        .expect("a structural node key");
         assert_eq!(package.graph().resolve_declaration(other), None);
     }
 
-    /// Golden vector for `package_id`
-    /// (`quire.package.semantic/v2`): the identity preimage's RFC 8785 text,
-    /// written out by hand, and its SHA-256. `EmittedPackage::new` encodes
-    /// IR's typed preimage through `quire-canonical`, and the `serde_json`
-    /// `Value` round trip it replaced emitted the same text, so the minted
-    /// `package_id` is unchanged.
+    /// The emitted name comes from the required package manifest name.
     #[trace("TC-253", "FR-087-AC-3")]
     #[test]
-    fn package_id_is_the_hash_of_its_hand_written_preimage() {
-        use sha2::{Digest as _, Sha256};
-        const TEXT: &str = r#"{"definition_selections":[],"dependency_selections":[],"edition":{"definition":{"authority":"pkg","identity":"edition-def"},"role":"edition"},"identity_projection":[{"body":{"term":"literal","type":{"digest":"afbb1f4913f26cb385723382e760adb9d35629d8b46d83ff73bb33b0caf50768","domain":"quire.checked-semantic-node/v1"},"value":true,"value_kind":"boolean"},"declaration":{"qualified_name":["R"]},"dependencies":[],"node_id":{"digest":"afbb1f4913f26cb385723382e760adb9d35629d8b46d83ff73bb33b0caf50768","domain":"quire.checked-semantic-node/v1"},"node_tag":"scalar_type","schema_version":"quire.checked-semantic-graph/v2","semantic_form":"boolean","semantic_type":{"digest":"afbb1f4913f26cb385723382e760adb9d35629d8b46d83ff73bb33b0caf50768","domain":"quire.checked-semantic-node/v1"}}],"profile_selections":[],"required_features":[],"version":"quire.checked-package-id/v2"}"#;
-        let digest = format!("{:x}", Sha256::digest(TEXT.as_bytes()));
-        let value: serde_json::Value = serde_json::from_str(TEXT).unwrap();
-        // The wire preimage holds the six selections only; the hashed
-        // `identity_projection` is derived from the graph nodes.
-        let mut selections = value.clone();
-        selections
-            .as_object_mut()
-            .unwrap()
-            .remove("identity_projection");
-        let preimage: quire_contract_model::CheckedPackageIdentityPreimageV2 =
-            serde_json::from_value(selections).expect("the vector is a v2 identity preimage");
-        let mut node = value["identity_projection"][0].clone();
-        node["occurrences"] = serde_json::json!([]);
-        let nodes: Vec<quire_contract_model::CheckedSemanticNodeV2> =
-            vec![serde_json::from_value(node).expect("the projection is a semantic node")];
-        let borrowed = quire_contract_model::CheckedPackageIdentityPreimageRefV2 {
-            version: preimage.version.as_ref(),
-            edition: &preimage.edition,
-            profile_selections: &preimage.profile_selections,
-            definition_selections: &preimage.definition_selections,
-            required_features: &preimage.required_features,
-            dependency_selections: &preimage.dependency_selections,
-            identity_projection: &nodes,
-        };
-        assert_eq!(
-            EmittedPackage::new(&borrowed, |_| Ok::<_, quire_canonical::Error>(Vec::new()))
-                .expect("the golden preimage encodes")
-                .package_id()
-                .hex(),
-            digest
-        );
-        assert_eq!(serde_json::to_string(&value).unwrap(), TEXT);
+    fn emitted_package_retains_declared_name() {
+        let emitted = EmittedPackage::new("test/package", |_| {
+            Ok::<_, core::convert::Infallible>(vec![1, 2, 3])
+        })
+        .expect("the encoder is infallible");
+        assert_eq!(emitted.name(), "test/package");
+        assert_eq!(emitted.bytes(), [1, 2, 3]);
     }
 }
