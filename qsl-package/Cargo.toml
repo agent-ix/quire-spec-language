@@ -45,7 +45,7 @@ qsl-semantics = { path = "../qsl-semantics" }
 # (ADR-013 O-07).
 quire-exact = { workspace = true, optional = true }
 # The v2 structural wire vocabulary and the I2 byte reader's IR model.
-quire-contract-model = { git = "https://github.com/agent-ix/quire-contract-ir", rev = "0fa7cfdcd067eae9a8f0f2f7c8f48b081ceda221", optional = true }
+quire-contract-model = { git = "https://github.com/agent-ix/quire-contract-ir", branch = "main", optional = true }
 # ADR-013 §2 (ADR-013:113): the one RFC 8785 implementation for
 # canonical checked package bytes.
 quire-canonical = { workspace = true, optional = true }
