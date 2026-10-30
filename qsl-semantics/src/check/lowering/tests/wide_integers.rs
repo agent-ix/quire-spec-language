@@ -50,9 +50,9 @@ fn wide_integer_ranges_give_distinct_nodes_with_decimal_string_bounds() {
         &SourceOwner::from(&fixture_source()),
         &cases,
     );
-    let distinct: BTreeSet<NodeKey> = keys.iter().copied().collect();
+    let distinct: BTreeSet<NodeKey> = keys.iter().cloned().collect();
     assert_eq!(distinct.len(), cases.len(), "each range has its own node");
-    let t15 = std::str::from_utf8(graph.node(keys[2]).unwrap().preimage()).unwrap();
+    let t15 = preimage(graph.node(keys[2].clone()).unwrap()).to_string();
     for bound in [
         "\"-170141183460469231731687303715884105728\"",
         "\"170141183460469231731687303715884105727\"",
@@ -62,7 +62,7 @@ fn wide_integer_ranges_give_distinct_nodes_with_decimal_string_bounds() {
             "the range spells {bound} as a string: {t15}"
         );
     }
-    let t13 = std::str::from_utf8(graph.node(keys[0]).unwrap().preimage()).unwrap();
+    let t13 = preimage(graph.node(keys[0].clone()).unwrap()).to_string();
     assert!(t13.contains("\"18446744073709551615\""), "{t13}");
 }
 
@@ -99,7 +99,7 @@ fn wide_integer_parameters_keep_their_nodes_in_one_unit() {
                 .expect("a typed parameter")
         })
         .collect();
-    assert_eq!(types.iter().copied().collect::<BTreeSet<_>>().len(), 5);
+    assert_eq!(types.iter().cloned().collect::<BTreeSet<_>>().len(), 5);
     let alone = check(vec![function(
         "g",
         &[("e", int_form(0, 9))],

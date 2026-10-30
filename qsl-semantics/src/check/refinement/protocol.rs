@@ -287,7 +287,6 @@ pub(super) fn classify<'f>(
 /// checks").
 pub(crate) struct ProtocolRefinement<'f> {
     pub(super) checked: CheckedRefinement,
-    pub(super) identity: qsl_foundation::IdentityLimits,
     /// The operation rows that checked, with their position among the
     /// declaration's rows.
     pub(super) operations: Vec<(usize, StepRow)>,
@@ -669,7 +668,6 @@ impl ProtocolRefinement<'_> {
     ) {
         let Self {
             mut checked,
-            identity,
             operations,
             written,
             selection,
@@ -729,7 +727,6 @@ impl ProtocolRefinement<'_> {
             protocols: &[],
             abstract_side,
             concrete_side,
-            identity,
             findings,
             nodes: &mut nodes,
             lifting: typing.lifting,

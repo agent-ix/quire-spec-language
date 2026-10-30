@@ -2156,7 +2156,6 @@ impl PackageDeclarations {
                 0,
                 &mut sealing_occurrences,
                 &mut sealing_meter,
-                self.identity,
                 &package_name,
             );
             let mut sealed_refusals = Vec::new();
@@ -2689,7 +2688,6 @@ impl PackageDeclarations {
                     &declarations,
                     &mut contract_cx,
                     &env,
-                    self.identity,
                 );
                 nodes_used = used;
                 // A limit or a cancellation stops the unit at a refusal, as
@@ -3791,7 +3789,6 @@ impl PackageDeclarations {
             drafts.len(),
             &mut occurrences,
             &mut contract_meter,
-            self.identity,
             &package_name,
         )
         .with_node_limit(limits.nodes(), nodes_used);
