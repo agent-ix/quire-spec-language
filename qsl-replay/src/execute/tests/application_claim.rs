@@ -244,14 +244,17 @@ fn tc_444_the_occurrence_key_selects_the_predicate_or_the_application_claim() {
             value: int(0),
         }]),
     );
-    identified.obligation_identity = [9; 32];
+    identified.obligation_identity =
+        crate::ObligationIdentity::new(crate::fixture_node(9), None, 0);
     assert_eq!(
         settled(replay(identified, ReplayLimits::default())),
         Settled::Verdicts(boolean(true))
     );
     // The identity is carried unchanged into the request the result settles
     // from: a distinct identity per request survives decoding.
-    for identity in [[1; 32], [2; 32]] {
+    for identity in
+        [1_u8, 2].map(|n| crate::ObligationIdentity::new(crate::fixture_node(n), None, 0))
+    {
         let mut wire = at(
             &source,
             &compiled,
@@ -264,7 +267,7 @@ fn tc_444_the_occurrence_key_selects_the_predicate_or_the_application_claim() {
         );
         wire.obligation_identity = identity;
         let request = ReplayRequest::decode(wire, ReplayLimits::default()).unwrap();
-        assert_eq!(request.obligation_identity().as_bytes(), &identity);
+        assert_eq!(request.obligation_identity(), identity);
     }
 }
 
@@ -279,11 +282,23 @@ fn tc_444_each_occurrence_of_one_node_is_a_claim_of_its_own() {
     let then_branch = record(&compiled, &source, "s", "10 mod x", 0);
     let right_operand = record(&compiled, &source, "s", "10 mod x", 1);
     assert_eq!(
-        settled(run(&source, &compiled, "s", &then_branch, &[(x.clone(), int(0))])),
+        settled(run(
+            &source,
+            &compiled,
+            "s",
+            &then_branch,
+            &[(x.clone(), int(0))]
+        )),
         Settled::NoValue
     );
     assert_eq!(
-        settled(run(&source, &compiled, "s", &right_operand, &[(x.clone(), int(0))])),
+        settled(run(
+            &source,
+            &compiled,
+            "s",
+            &right_operand,
+            &[(x.clone(), int(0))]
+        )),
         Settled::Reproduced(boolean(false))
     );
     assert_eq!(
@@ -341,14 +356,27 @@ fn tc_444_binder_bodies_are_observed_and_unread_parameters_are_filled() {
     let y = parameter(&compiled, "u", 1);
     let u_application = record(&compiled, &source, "u", "10 mod x", 0);
     assert_eq!(
-        settled(run(&source, &compiled, "u", &u_application, &[(x.clone(), int(0))])),
+        settled(run(
+            &source,
+            &compiled,
+            "u",
+            &u_application,
+            &[(x.clone(), int(0))]
+        )),
         Settled::Reproduced(boolean(false))
     );
     let refused = run(&source, &compiled, "u", &u_application, &[(y, int(1))]).unwrap_err();
     assert!(matches!(refused, ReplayRefusal::UnboundParameter(node) if node == x));
     // The predicate claim binds every parameter.
     let u_declaration = declaration(&compiled, "u");
-    let refused = run(&source, &compiled, "u", &u_declaration, &[(x.clone(), int(0))]).unwrap_err();
+    let refused = run(
+        &source,
+        &compiled,
+        "u",
+        &u_declaration,
+        &[(x.clone(), int(0))],
+    )
+    .unwrap_err();
     assert!(matches!(refused, ReplayRefusal::NotAPredicate { .. }));
     // A witness transcript may likewise leave the unread parameter out.
     let transcript = ReplaySource::Witness(

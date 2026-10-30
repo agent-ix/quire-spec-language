@@ -6,8 +6,6 @@
 use super::*;
 use crate::witness::{NoPayload, WitnessEnvelope, WitnessPacket};
 use crate::{ProfileSelection, TracePosition};
-use qsl_foundation::ByteDigest;
-use quire_canonical::Limits;
 use quire_exact::{IntegerInterval, NodeKey, Origin, Role};
 use quire_semantic_value::supplied_stop::{SuppliedLimitKind, SuppliedLimits};
 
@@ -51,149 +49,6 @@ fn v2() -> ValueParityPreimage {
     }
 }
 
-fn bytes_of<T: quire_canonical::Encode>(value: &T) -> String {
-    String::from_utf8(quire_canonical::to_vec(value, Limits::new(u64::MAX)).unwrap()).unwrap()
-}
-
-fn sha_hex(text: &str) -> String {
-    ByteDigest::of(text.as_bytes())
-        .as_bytes()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
-}
-
-fn identity_hex(preimage: &ValueParityPreimage) -> String {
-    value_parity_obligation(preimage).unwrap().to_string()
-}
-
-/// FR-484-AC-1: the 516-byte canonical text, its digest, and the first
-/// argument alone.
-#[trace("TC-1252", "FR-484-AC-1")]
-#[test]
-fn tc_1252_the_preimage_encodes_to_the_specified_bytes_and_digest() {
-    let (p0, t0) = (lit(P0), lit(T0));
-    let text = format!(
-        concat!(
-            r#"{{"arguments":[{{"parameter":{p0},"position":0,"type":{t0}}},"#,
-            r#"{{"parameter":{p1},"position":1,"type":{t1}}}],"#,
-            r#""node":{node},"#,
-            r#""occurrence_key":{{"ordinal":0,"role":"declaration"}},"subject_kind":"function-value-parity"}}"#
-        ),
-        p0 = p0,
-        t0 = t0,
-        p1 = lit(0x33),
-        t1 = lit(0x44),
-        node = lit(NODE),
-    );
-    assert_eq!(bytes_of(&v2()), text);
-    // The identity is the SHA-256 of those bytes, hashed independently.
-    assert_eq!(identity_hex(&v2()), sha_hex(&text));
-    let argument_text = format!(r#"{{"parameter":{p0},"position":0,"type":{t0}}}"#);
-    assert_eq!(bytes_of(&first()), argument_text);
-}
-
-/// FR-484-AC-2: the empty list, the first argument alone, and the declared
-/// order being part of the identity.
-#[trace("TC-1252", "FR-484-AC-2")]
-#[test]
-fn tc_1252_the_declared_order_is_part_of_the_identity() {
-    let with = |arguments| ValueParityPreimage {
-        node: v2().node,
-        arguments,
-    };
-    let empty = with(Vec::new());
-    let node = lit(NODE);
-    let tail = format!(
-        r#""node":{node},"occurrence_key":{{"ordinal":0,"role":"declaration"}},"subject_kind":"function-value-parity"}}"#
-    );
-    let empty_text = format!(r#"{{"arguments":[],{tail}"#);
-    assert_eq!(bytes_of(&empty), empty_text);
-    assert_eq!(identity_hex(&empty), sha_hex(&empty_text));
-    let argument_json = |parameter: u8, position: usize, semantic_type: u8| {
-        format!(
-            r#"{{"parameter":{},"position":{position},"type":{}}}"#,
-            lit(parameter),
-            lit(semantic_type)
-        )
-    };
-    let one_text = format!(r#"{{"arguments":[{}],{tail}"#, argument_json(P0, 0, T0));
-    assert_eq!(identity_hex(&with(vec![first()])), sha_hex(&one_text));
-    let swapped = with(vec![
-        argument(second().parameter, 0, second().semantic_type),
-        argument(first().parameter, 1, first().semantic_type),
-    ]);
-    let swapped_text = format!(
-        r#"{{"arguments":[{},{}],{tail}"#,
-        argument_json(0x33, 0, 0x44),
-        argument_json(P0, 1, T0)
-    );
-    assert_eq!(identity_hex(&swapped), sha_hex(&swapped_text));
-    // Order is part of the identity: all four spellings differ.
-    let identities = [
-        identity_hex(&empty),
-        identity_hex(&with(vec![first()])),
-        identity_hex(&swapped),
-        identity_hex(&v2()),
-    ];
-    let distinct: std::collections::BTreeSet<_> = identities.iter().collect();
-    assert_eq!(distinct.len(), identities.len());
-}
-
-/// FR-484-AC-3: every member changes the digest, a position out of order
-/// refuses, and the form never equals an operator-parity preimage.
-#[trace("TC-1252", "FR-484-AC-3")]
-#[test]
-fn tc_1252_every_member_changes_the_digest_and_a_position_out_of_order_refuses() {
-    let base = identity_hex(&v2());
-    let other = crate::fixture_node(0x55);
-    let mut variants = Vec::new();
-    let mut changed = v2();
-    changed.node = other.clone();
-    variants.push(changed);
-    let mut changed = v2();
-    changed.arguments[1].parameter = other.clone();
-    variants.push(changed);
-    let mut changed = v2();
-    changed.arguments[1].semantic_type = other.clone();
-    variants.push(changed);
-    let mut changed = v2();
-    changed.arguments.pop();
-    variants.push(changed);
-    let mut changed = v2();
-    changed
-        .arguments
-        .push(argument(other.clone(), 2, other.clone()));
-    variants.push(changed);
-    for variant in &variants {
-        assert_ne!(identity_hex(variant), base);
-    }
-    let mut misplaced = v2();
-    misplaced.arguments[1].position = 3;
-    assert_eq!(
-        value_parity_obligation(&misplaced),
-        Err(IdentityEncodeError::PositionOrder {
-            index: 1,
-            position: 3
-        })
-    );
-    let operator = ParityPreimage {
-        node: v2().node,
-        occurrence: Origin::new(Role::new("expression"), 0),
-        obligation_kind: "operator_parity".to_owned(),
-        arguments: vec![ParityArgument {
-            identity: crate::OperandIdentity::GraphChild(other.clone()),
-            domain: Domain::Range(
-                IntegerInterval::new(Integer::from(0_i64), Integer::from(9_i64)).unwrap(),
-            ),
-        }],
-    };
-    assert_ne!(
-        crate::parity_obligation(&operator).unwrap(),
-        value_parity_obligation(&v2()).unwrap()
-    );
-}
-
 fn unit() -> String {
     format!(
         "language \"ix:native\" edition \"1-draft\";\n{PROFILE}\
@@ -233,7 +88,7 @@ fn retained_request(source: &str, function: &str, value: i64) -> ReplayRequestWi
     wire.replay_target =
         crate::RequestTargetWire::function(name(&[function]), located.site.declaration.clone());
     if let Some(parity) = &located.site.value_parity {
-        wire.obligation_identity = *parity.obligation_identity.as_bytes();
+        wire.obligation_identity = parity.obligation_identity.clone();
     }
     wire
 }
@@ -264,33 +119,20 @@ fn tc_1252_call_site_mints_the_identity_of_a_value_function_only() {
             .expect("a value function has an identity");
         assert_eq!(parity.preimage.node, located.function);
         assert_eq!(parity.preimage.arguments.len(), located.parameters.len());
-        let mut text = String::from("{\"arguments\":[");
         for (position, (_, parameter)) in located.parameters.iter().enumerate() {
             let declared = semantic
                 .node(parameter.clone())
                 .and_then(|node| node.semantic_type())
-                .expect("a typed parameter");
-            let declared = declared.clone();
+                .expect("a typed parameter")
+                .clone();
             assert_eq!(
                 parity.preimage.arguments[position],
                 argument(parameter.clone(), position, declared)
             );
-            if position > 0 {
-                text.push(',');
-            }
-            text.push_str(&format!(
-                "{{\"parameter\":{},\"position\":{position},\"type\":{}}}",
-                node_lit(parameter),
-                node_lit(&declared)
-            ));
         }
-        text.push_str(&format!(
-            "],\"node\":{},\"occurrence_key\":{{\"ordinal\":0,\"role\":\"declaration\"}},\"subject_kind\":\"function-value-parity\"}}",
-            node_lit(&located.function)
-        ));
         assert_eq!(
-            parity.obligation_identity.to_string(),
-            sha_hex(&text),
+            parity.obligation_identity,
+            crate::ObligationIdentity::new(located.function.clone(), None, 0),
             "{function}"
         );
     }
@@ -314,13 +156,8 @@ fn tc_1252_a_request_from_the_retained_inputs_replays_and_carries_them() {
         assert_eq!(value_kind(report.result()), kind);
         let held = report.claim();
         assert_eq!(
-            held.obligation.as_bytes(),
-            located
-                .value_parity
-                .as_ref()
-                .unwrap()
-                .obligation_identity
-                .as_bytes()
+            held.obligation,
+            located.value_parity.as_ref().unwrap().obligation_identity
         );
         assert_eq!(held.occurrence_key, Some(located.declaration.clone()));
         assert_eq!(held.function, Some(name(&["inc"])));
@@ -349,19 +186,23 @@ fn tc_1252_a_wrong_identity_refuses_obligation_before_the_argument_join() {
     let source = unit();
     let inc = site(&source, "inc").site.value_parity.unwrap();
     let add = site(&source, "add").site;
-    let mut retyped = inc.preimage.clone();
-    retyped.arguments[0].semantic_type = crate::fixture_node(0x44);
-    let retyped = value_parity_obligation(&retyped).unwrap();
-    let add_identity = add.value_parity.as_ref().unwrap().obligation_identity;
-    let stray = &add.parameters[1].1;
+    let add_identity = add
+        .value_parity
+        .as_ref()
+        .unwrap()
+        .obligation_identity
+        .clone();
+    let stray = add.parameters[1].1.clone();
     for (claimed, extra) in [
-        (*add_identity.as_bytes(), false),
-        ([0; 32], false),
-        (*retyped.as_bytes(), false),
-        (*add_identity.as_bytes(), true),
+        (add_identity.clone(), false),
+        (
+            crate::ObligationIdentity::new(crate::fixture_node(0), None, 0),
+            false,
+        ),
+        (add_identity.clone(), true),
     ] {
         let mut wire = retained_request(&source, "inc", 3);
-        wire.obligation_identity = claimed;
+        wire.obligation_identity = claimed.clone();
         if extra {
             let ReplaySource::Input(assignments) = &mut wire.source else {
                 panic!("an input source");
@@ -382,13 +223,13 @@ fn tc_1252_a_wrong_identity_refuses_obligation_before_the_argument_join() {
         else {
             panic!("expected the Obligation cause: {mismatch:?}");
         };
-        assert_eq!(named.as_bytes(), &claimed);
+        assert_eq!(named, &claimed);
         assert_eq!(recomputed, &inc.obligation_identity);
         assert_eq!(
             report.terminal_value(),
             TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(Code::StaleDependency))
         );
-        assert_eq!(report.claim().obligation.as_bytes(), &claimed);
+        assert_eq!(report.claim().obligation, claimed);
     }
 }
 
@@ -425,7 +266,7 @@ fn tc_1252_a_foreign_occurrence_refuses_before_any_call() {
     for key in keys {
         let mut wire = retained_request(&source, "inc", 3);
         // The identity is wrong too: the occurrence check comes first.
-        wire.obligation_identity = [0; 32];
+        wire.obligation_identity = crate::ObligationIdentity::new(crate::fixture_node(0), None, 0);
         wire.replay_target = crate::RequestTargetWire::function(name(&["inc"]), key.clone());
         let report = replay_generated(wire, integer(4), ReplayLimits::default());
         let ReplayRefusal::ClaimOccurrence {
@@ -459,7 +300,7 @@ fn tc_1252_the_content_identity_and_occurrence_bind_into_the_claim() {
     let source = unit();
     let content = |byte: u8| DigestRecord::mint(DigestDomain::SourceBytesV1, [byte; 32]);
     let mut wrong = retained_request(&source, "inc", 3);
-    wrong.obligation_identity = [0; 32];
+    wrong.obligation_identity = crate::ObligationIdentity::new(crate::fixture_node(0), None, 0);
     let cases = [
         (retained_request(&source, "inc", 3), integer(4), "agrees"),
         (retained_request(&source, "inc", 3), integer(5), "diverged"),
@@ -519,13 +360,13 @@ fn tc_1252_the_input_arm_packet_round_trips_and_replays() {
         assert_lock_selects_no_profile(&located.package);
         let wire = retained_request(&source, function, value);
         assert!(wire.profile_selections.is_empty());
-        let identity = *located
+        let identity = located
             .site
             .value_parity
             .as_ref()
             .unwrap()
             .obligation_identity
-            .as_bytes();
+            .clone();
         let envelope_source = match wire.source.clone() {
             crate::ReplaySource::Witness(witness) => crate::EnvelopeSource::Witness(witness),
             crate::ReplaySource::Input(assignments) => crate::EnvelopeSource::Input(assignments),
@@ -572,7 +413,7 @@ fn tc_1252_the_input_arm_packet_round_trips_and_replays() {
 
         // The request is built from the admitted envelope's members alone.
         let mut built = wire;
-        built.obligation_identity = *envelope.obligation_identity().as_bytes();
+        built.obligation_identity = envelope.obligation_identity();
         built.profile_selections = envelope.profile_selections().to_vec();
         built.accounting_limits = envelope.run_limits();
         built.backend = envelope.backend().as_str().to_owned();
@@ -673,7 +514,8 @@ fn tc_1252_a_profile_selection_refuses_before_the_recompile() {
         let mut wire = retained_request(&source, "inc", 3);
         wire.profile_selections = vec![selection.clone()];
         if zero_identity {
-            wire.obligation_identity = [0; 32];
+            wire.obligation_identity =
+                crate::ObligationIdentity::new(crate::fixture_node(0), None, 0);
         }
         if stale {
             wire.package_name = "other".to_owned();

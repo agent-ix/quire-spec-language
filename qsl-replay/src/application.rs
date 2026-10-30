@@ -2366,8 +2366,14 @@ mod tests {
                     .collect(),
             )
             .expect("the retained union bindings seal the declared union");
-        assert_eq!(types.composite(holder.key().clone()).unwrap().name(), "Holder");
-        assert_eq!(types.composite(shape.key().clone()).unwrap().name(), "Shape");
+        assert_eq!(
+            types.composite(holder.key().clone()).unwrap().name(),
+            "Holder"
+        );
+        assert_eq!(
+            types.composite(shape.key().clone()).unwrap().name(),
+            "Shape"
+        );
         assert_eq!(*pair_key, pair.key().clone());
         assert_eq!(holder.members().len(), 3);
     }
@@ -2427,7 +2433,9 @@ mod tests {
             .expect("imported composite");
         assert_eq!(
             handle.nominal_declaration(&own_selection, &imported_node),
-            Err(NominalDeclarationRefusal::Foreign(dependency_record.clone()))
+            Err(NominalDeclarationRefusal::Foreign(
+                dependency_record.clone()
+            ))
         );
         let imported_selection = handle
             .lookup_callable(&dependency_record, &wire(dependency, "imported"))

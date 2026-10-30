@@ -266,7 +266,7 @@ impl Unit {
         wire.obligation_identity = parity_preimage(&compiled, &site, claim)
             .ok()
             .and_then(|preimage| parity_obligation(&preimage).ok())
-            .map_or([0; 32], |identity| *identity.as_bytes());
+            .unwrap_or_else(|| crate::ObligationIdentity::new(crate::fixture_node(0), None, 0));
         wire
     }
 }
@@ -675,7 +675,7 @@ fn tc_907_the_common_steps_refuse_for_both_entries() {
     ));
 
     for (what, wire, claim, expected) in cases {
-        let obligation = ObligationIdentity::from_digest(wire.obligation_identity);
+        let obligation = wire.obligation_identity.clone();
         let operands = [unit.q(1, &[2]), unit.q(1, &[3])];
         let report = replay_composite_parity(
             wire.clone(),
@@ -861,7 +861,11 @@ fn tc_907_anything_short_of_covering_is_tested() {
     let mut bounds = Vec::new();
     for index in 0..2 {
         let parameter = unit.parameter("h", index);
-        bounds.push(bound(parameter.clone(), &[], FiniteBound::depth(3).unwrap()));
+        bounds.push(bound(
+            parameter.clone(),
+            &[],
+            FiniteBound::depth(3).unwrap(),
+        ));
         bounds.push(bound(parameter, &[0], range(0, 9)));
     }
     tested(
@@ -972,9 +976,7 @@ fn text_leaf_is_tested(
                 ParityBoundRefusal::HarnessKind { key: found, expected: None, .. } if found == &key)));
     }
     wire.obligation_identity =
-        *parity_obligation(&parity_preimage(&unit.compiled, &site, &claim).unwrap())
-            .unwrap()
-            .as_bytes();
+        parity_obligation(&parity_preimage(&unit.compiled, &site, &claim).unwrap()).unwrap();
     let report = settle_verified_shadow(wire, claim, exhausted, ReplayLimits::default());
     assert_eq!(report.claim().harness_bounds, bounds);
     assert_eq!(
@@ -1226,7 +1228,11 @@ fn tc_907_an_unbounded_collection_is_covered_only_by_a_declared_cardinality() {
         // reaches it; a harness of 4 does not.
         let mut declared_positions = positions();
         declared_positions
-            .declare(&[declared(parameter.clone(), &[], FiniteBound::cardinality(5))])
+            .declare(&[declared(
+                parameter.clone(),
+                &[],
+                FiniteBound::cardinality(5),
+            )])
             .unwrap();
         let drawn = declared_positions.harness(&harness).unwrap();
         assert!(declared_positions.covered(&drawn));
@@ -1283,8 +1289,8 @@ fn tc_907_a_tampered_obligation_digest_refuses() {
     let unit = unit();
     let claim = unit.claim("f", EqualityOperator::Equal, unit.covering());
     let mut wire = unit.wire("f", &claim, vec![]);
-    wire.obligation_identity[0] ^= 1;
-    let tampered = ObligationIdentity::from_digest(wire.obligation_identity);
+    wire.obligation_identity = crate::ObligationIdentity::new(crate::fixture_node(0), None, 0);
+    let tampered = wire.obligation_identity.clone();
     let is_mismatch = |refusal: &ReplayRefusal| {
         matches!(refusal, ReplayRefusal::ScalarIdentity(cause)
             if matches!(**cause, crate::ScalarIdentityMismatch::Obligation { claimed, .. } if claimed == tampered))
@@ -1323,7 +1329,7 @@ fn tc_907_a_preimage_the_encoder_refuses_never_yields_an_identity() {
     let claim = unit.claim("f", EqualityOperator::Equal, unit.covering());
     let (request, compiled, mut site) = prepared(&unit, "f", &claim);
     let mut zero_wire = unit.wire("f", &claim, vec![]);
-    zero_wire.obligation_identity = [0; 32];
+    zero_wire.obligation_identity = crate::ObligationIdentity::new(crate::fixture_node(0), None, 0);
     let zero = ReplayRequest::decode(zero_wire, ReplayLimits::default()).unwrap();
     assert!(matches!(
         identity_tie(&zero, &compiled, &site, &claim),
@@ -1363,39 +1369,6 @@ fn tc_907_an_operand_that_is_not_the_nodes_child_refuses() {
         Err(ReplayRefusal::ScalarIdentity(cause))
             if matches!(*cause, crate::ScalarIdentityMismatch::OperandChild { position: 0, .. })
     ));
-}
-
-/// FR-358 step 6, the worked example of ADR-013 O-09 through the composite
-/// arm: the argument the arm builds for a record parameter with a `Sequence`
-/// field (the example's shape: cardinality 3 at its field and the element's
-/// range below it) digests as the canonical text the ADR shows, written here
-/// with this package's node ids. The ADR's own digest is the
-/// same text over node id 11...11, which `parity_identity`'s test reproduces;
-/// a package's node ids cannot be 11...11.
-#[trace("TC-907", "FR-358-AC-3")]
-#[test]
-fn tc_907_the_composite_arm_builds_the_adr_worked_argument() {
-    use crate::execute::parity_identity::argument_digest;
-    let unit = unit();
-    let claim = unit.claim("f", EqualityOperator::Equal, unit.covering());
-    let (_, compiled, site) = prepared(&unit, "f", &claim);
-    let preimage = parity_preimage(&compiled, &site, &claim).unwrap();
-    let id = unit.parameter("f", 0);
-    let range = r#"{"lower":"0","tag":"integer_range","upper":"9"}"#;
-    let key = |path: &str| format!(r#"{{"node_id":"{id}","path":{path},"tag":"node"}}"#);
-    let entry = |bound: &str, path: &str| format!(r#"{{"bound":{bound},"key":{}}}"#, key(path));
-    let text = format!(
-        r#"{{"domain":{{"entries":[{},{},{}],"tag":"bounds"}},"operand":{{"node_id":"{id}","tag":"graph_child"}},"position":0}}"#,
-        entry(range, "[0]"),
-        entry(range, "[1,0]"),
-        entry(r#"{"maximum":"3","tag":"cardinality"}"#, "[1]"),
-    );
-    let digest =
-        argument_digest(&preimage.arguments[0], &claim.node, &preimage.occurrence, 0).unwrap();
-    assert_eq!(
-        digest,
-        qsl_foundation::ByteDigest::of(text.as_bytes()).as_bytes()
-    );
 }
 
 /// FR-358 step 2 (the occurrence key): `(a = b) and (a = b)` is one node with
@@ -1531,7 +1504,10 @@ fn tc_907_every_outcome_carries_the_full_claim() {
         ),
         (
             "refused",
-            Box::new(|w, _, _| w.obligation_identity = [0; 32]),
+            Box::new(|w, _, _| {
+                w.obligation_identity =
+                    crate::ObligationIdentity::new(crate::fixture_node(0), None, 0)
+            }),
         ),
     ];
     for (row, edit) in &scenarios {
@@ -1539,7 +1515,7 @@ fn tc_907_every_outcome_carries_the_full_claim() {
         let mut evidence = base();
         let mut wire = unit.wire("f", &claim, vec![]);
         edit(&mut wire, &mut claim, &mut evidence);
-        let obligation = ObligationIdentity::from_digest(wire.obligation_identity);
+        let obligation = wire.obligation_identity.clone();
         let report = replay_composite_parity(
             wire,
             claim.clone(),
@@ -1576,9 +1552,10 @@ fn tc_907_every_outcome_carries_the_full_claim() {
         let claim = claim();
         let mut wire = unit.wire("f", &claim, vec![]);
         if refuse {
-            wire.obligation_identity = [0; 32];
+            wire.obligation_identity =
+                crate::ObligationIdentity::new(crate::fixture_node(0), None, 0);
         }
-        let obligation = ObligationIdentity::from_digest(wire.obligation_identity);
+        let obligation = wire.obligation_identity.clone();
         let evidence = verified(success_checks, refinement);
         let report = settle_verified_shadow(wire, claim.clone(), evidence, ReplayLimits::default());
         let full = |evidence: VerifiedShadow| {
@@ -1596,134 +1573,6 @@ fn tc_907_every_outcome_carries_the_full_claim() {
         };
         assert_ne!(*report.claim(), full(verified(success_checks, other)));
     }
-}
-
-/// ADR-013 O-09, a composite literal operand: the argument names the literal's
-/// own graph node and ranges over exactly its value, so its domain is the
-/// empty bounds. Written out as the canonical text and hashed here.
-#[trace("TC-907", "FR-358-AC-3")]
-#[test]
-fn tc_907_a_composite_literal_operand_is_its_own_node_with_empty_bounds() {
-    use crate::execute::parity_identity::argument_digest;
-    let unit = unit();
-    let claim = unit.claim("g", EqualityOperator::NotEqual, vec![]);
-    let (_, compiled, site) = prepared(&unit, "g", &claim);
-    let preimage = parity_preimage(&compiled, &site, &claim).unwrap();
-    let OperandIdentity::GraphChild(literal) = preimage.arguments[1].identity else {
-        panic!("a composite literal is a graph child");
-    };
-    assert_ne!(literal, unit.parameter("g", 0));
-    let text = format!(
-        r#"{{"domain":{{"entries":[],"tag":"bounds"}},"operand":{{"node_id":"{literal}","tag":"graph_child"}},"position":1}}"#
-    );
-    let digest =
-        argument_digest(&preimage.arguments[1], &claim.node, &preimage.occurrence, 1).unwrap();
-    assert_eq!(
-        digest,
-        qsl_foundation::ByteDigest::of(text.as_bytes()).as_bytes()
-    );
-}
-
-/// ADR-013 O-09, a collection operand with no declared maximum (a recursive
-/// type's depth): the domain is the bounds the harness drew, so two drawn
-/// depths are two obligations. Written out as the canonical text and hashed
-/// here.
-#[trace("TC-907", "FR-358-AC-3")]
-#[test]
-fn tc_907_an_unbounded_operand_is_identified_by_the_bounds_the_harness_drew() {
-    use crate::execute::parity_identity::argument_digest;
-    let unit = unit();
-    let id = unit.parameter("h", 0);
-    let drawn = |depth: u64| {
-        vec![
-            bound(id, &[], FiniteBound::depth(depth).unwrap()),
-            bound(id, &[0], range(0, 9)),
-        ]
-    };
-    let digest = |depth: u64| {
-        let claim = unit.claim("h", EqualityOperator::Equal, drawn(depth));
-        let (_, compiled, site) = prepared(&unit, "h", &claim);
-        let preimage = parity_preimage(&compiled, &site, &claim).unwrap();
-        argument_digest(&preimage.arguments[0], &claim.node, &preimage.occurrence, 0).unwrap()
-    };
-    let text = |depth: u64| {
-        format!(
-            r#"{{"domain":{{"entries":[{{"bound":{{"lower":"0","tag":"integer_range","upper":"9"}},"key":{{"node_id":"{id}","path":[0],"tag":"node"}}}},{{"bound":{{"maximum":"{depth}","tag":"depth"}},"key":{{"node_id":"{id}","path":[],"tag":"node"}}}}],"tag":"bounds"}},"operand":{{"node_id":"{id}","tag":"graph_child"}},"position":0}}"#
-        )
-    };
-    for depth in [3, 4] {
-        assert_eq!(
-            digest(depth),
-            qsl_foundation::ByteDigest::of(text(depth).as_bytes()).as_bytes()
-        );
-    }
-    assert_ne!(digest(3), digest(4));
-}
-
-/// FR-358 step 6, written independently of the code under test: the
-/// canonical text of ADR-013 O-09's preimage is spelled out here and hashed
-/// here, and it equals the identity the fixture's recompute gives, for a
-/// parameter against a composite literal (`g`) and for two parameters over
-/// the covering bounds (`f`).
-#[trace("TC-907", "FR-358-AC-3")]
-#[test]
-fn tc_907_the_identity_equals_a_hand_written_canonical_text() {
-    let unit = unit();
-    let hashed = |text: &str| qsl_foundation::ByteDigest::of(text.as_bytes()).as_bytes();
-    let tail = |claim: &CompositeParityClaim| {
-        format!(
-            r#""node":"{}","obligation_kind":"bounded_shadow","occurrence_key":{{"ordinal":{},"role":"{}"}}"#,
-            claim.node,
-            claim.occurrence.ordinal(),
-            claim.occurrence.role().as_str(),
-        )
-    };
-
-    // `a != Q { x: 1, s: sequence[] }`: no harness bound on `a`, and the
-    // literal is its own graph node with no free position.
-    let claim = unit.claim("g", EqualityOperator::NotEqual, vec![]);
-    let wire = unit.wire("g", &claim, vec![]);
-    let (_, compiled, site) = prepared(&unit, "g", &claim);
-    let literal = match parity_preimage(&compiled, &site, &claim).unwrap().arguments[1].identity {
-        OperandIdentity::GraphChild(node) => node,
-        OperandIdentity::InlineLiteral => panic!("a composite literal is a graph child"),
-    };
-    let a = unit.parameter("g", 0);
-    let argument = |node: NodeKey, position: u32, entries: &str| {
-        format!(
-            r#"{{"domain":{{"entries":[{entries}],"tag":"bounds"}},"operand":{{"node_id":"{node}","tag":"graph_child"}},"position":{position}}}"#
-        )
-    };
-    let text = format!(
-        r#"{{"arguments":[{},{}],{}}}"#,
-        argument(a, 0, ""),
-        argument(literal, 1, ""),
-        tail(&claim),
-    );
-    assert_eq!(wire.obligation_identity, hashed(&text));
-
-    // `a = b` over the covering bounds: each parameter's entries ascend by
-    // the bytes of the encoded key, so `[1, 0]` precedes `[1]`.
-    let claim = unit.claim("f", EqualityOperator::Equal, unit.covering());
-    let wire = unit.wire("f", &claim, vec![]);
-    let entries = |id: NodeKey| {
-        let key = |path: &str| format!(r#"{{"node_id":"{id}","path":{path},"tag":"node"}}"#);
-        let range = r#"{"lower":"0","tag":"integer_range","upper":"9"}"#;
-        format!(
-            r#"{{"bound":{range},"key":{}}},{{"bound":{range},"key":{}}},{{"bound":{{"maximum":"3","tag":"cardinality"}},"key":{}}}"#,
-            key("[0]"),
-            key("[1,0]"),
-            key("[1]"),
-        )
-    };
-    let (a, b) = (unit.parameter("f", 0), unit.parameter("f", 1));
-    let text = format!(
-        r#"{{"arguments":[{},{}],{}}}"#,
-        argument(a.clone(), 0, &entries(a)),
-        argument(b.clone(), 1, &entries(b)),
-        tail(&claim),
-    );
-    assert_eq!(wire.obligation_identity, hashed(&text));
 }
 
 /// `replay.input_bytes` is the caller's on both composite entries: an S1

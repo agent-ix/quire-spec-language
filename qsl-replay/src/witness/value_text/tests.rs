@@ -348,7 +348,9 @@ fn tc_905_entries_must_ascend_by_parameter_node_id() {
     let (a, b) = (id(0x0a), id(0x0b));
     let ascending = witness(&[(a.clone(), "1"), (b.clone(), "2")]);
     assert_eq!(
-        ascending.decode(&[scalar(a.clone()), scalar(b.clone())]).unwrap(),
+        ascending
+            .decode(&[scalar(a.clone()), scalar(b.clone())])
+            .unwrap(),
         vec![WitnessValue::Integer(1), WitnessValue::Integer(2)]
     );
     let descending = witness(&[(b.clone(), "2"), (a.clone(), "1")]);

@@ -887,7 +887,7 @@ mod tests {
             dependencies: Vec::new(),
             replay_target: crate::RequestTargetWire::function(function, declaration),
             source: ReplaySource::Input(assignments),
-            obligation_identity: [0; 32],
+            obligation_identity: crate::ObligationIdentity::new(crate::fixture_node(0), None, 0),
             backend: "kani-backend-1".to_owned(),
             state_environment: StateEnvironment::new(vec![]),
             accounting_limits: scalar_limits(u64::MAX),

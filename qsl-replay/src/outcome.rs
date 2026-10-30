@@ -2290,7 +2290,11 @@ mod tests {
                 TerminalValue::Inconclusive(InconclusiveCause::ScalarAgrees(
                     crate::scalar::ScalarAgreement::new(
                         crate::scalar::ScalarClaim::Function(Box::new(crate::ValueIdentity {
-                            obligation: crate::identity::ObligationIdentity::from_digest([1; 32]),
+                            obligation: crate::identity::ObligationIdentity::new(
+                                crate::fixture_node(1),
+                                None,
+                                0,
+                            ),
                             package_name: "fixture".to_owned(),
                             function: Some(
                                 QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap(),

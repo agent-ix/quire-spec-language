@@ -1614,7 +1614,11 @@ mod tests {
                 let witness =
                     Witness::parse(format!("<<<assertion|harness|check|{values}>>>")).unwrap();
                 let packet = WitnessPacket::<NoPayload> {
-                    obligation_identity: Some([2; 32]),
+                    obligation_identity: Some(crate::ObligationIdentity::new(
+                        crate::fixture_node(2),
+                        None,
+                        0,
+                    )),
                     occurrence_key: Some(OccurrenceKey::new(
                         crate::fixture_node(3),
                         origin("reference", 0),

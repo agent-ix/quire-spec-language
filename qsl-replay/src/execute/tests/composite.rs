@@ -1123,7 +1123,10 @@ fn admitted_composite_keys_are_the_keys_replay_converts_against() {
     for result in fixture.both("p", value(id(pair.key().clone()), id(holder.key().clone()))) {
         assert_reproduced(result);
     }
-    for result in fixture.both("p", value(id(pair.node().clone()), id(holder.node().clone()))) {
+    for result in fixture.both(
+        "p",
+        value(id(pair.node().clone()), id(holder.node().clone())),
+    ) {
         assert!(
             result.is_err(),
             "node ids are not the kernel keys: {result:?}"

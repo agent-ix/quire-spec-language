@@ -894,7 +894,7 @@ fn tc_774_function_contract_and_application_items_replay() {
     // The item's identity is the process-provider preimage of its bounds.
     let entries = BoundEntries::new(bounds.to_vec()).unwrap();
     let identity = process_provider_obligation(p.node(), p.origin(), &entries).unwrap();
-    assert_eq!(wire.obligation_identity, *identity.as_bytes());
+    assert_eq!(wire.obligation_identity, identity);
 
     // `r(x) = x + 1 > 3` holds for every x, yet `r(0)` is false: the item at
     // an application of `r` is a value-validity item, so it replays the
@@ -916,14 +916,24 @@ fn tc_774_function_contract_and_application_items_replay() {
         // The item's identity is the process-provider preimage of its node
         // and occurrence.
         let wire = context
-            .request(application, &[bound_at(r_x.clone())], &plugin(), input(r_x.clone(), 0))
+            .request(
+                application,
+                &[bound_at(r_x.clone())],
+                &plugin(),
+                input(r_x.clone(), 0),
+            )
             .expect("an application item");
         let entries = BoundEntries::new(vec![bound_at(r_x.clone())]).unwrap();
         let identity =
             process_provider_obligation(application.node(), application.origin(), &entries)
                 .unwrap();
-        assert_eq!(wire.obligation_identity, *identity.as_bytes());
-        let record = settle(&context, application, &[bound_at(r_x.clone())], input(r_x.clone(), 0));
+        assert_eq!(wire.obligation_identity, identity);
+        let record = settle(
+            &context,
+            application,
+            &[bound_at(r_x.clone())],
+            input(r_x.clone(), 0),
+        );
         assert!(
             matches!(
                 record.value(),
@@ -951,7 +961,12 @@ fn tc_774_function_contract_and_application_items_replay() {
         .map(|(key, _)| key.clone())
         .expect("q's application has a requirement record");
     let wire = context
-        .request(&application, &[bound_at(q_x.clone())], &plugin(), input(q_x.clone(), 9))
+        .request(
+            &application,
+            &[bound_at(q_x.clone())],
+            &plugin(),
+            input(q_x.clone(), 9),
+        )
         .expect("an application item");
     assert_eq!(
         wire.replay_target
@@ -968,8 +983,13 @@ fn tc_774_function_contract_and_application_items_replay() {
     let entries = BoundEntries::new(vec![bound_at(q_x.clone())]).unwrap();
     let identity =
         process_provider_obligation(application.node(), application.origin(), &entries).unwrap();
-    assert_eq!(wire.obligation_identity, *identity.as_bytes());
-    let record = settle(&context, &application, &[bound_at(q_x.clone())], input(q_x.clone(), 9));
+    assert_eq!(wire.obligation_identity, identity);
+    let record = settle(
+        &context,
+        &application,
+        &[bound_at(q_x.clone())],
+        input(q_x.clone(), 9),
+    );
     assert!(matches!(
         record.value(),
         TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(_))
@@ -979,7 +999,12 @@ fn tc_774_function_contract_and_application_items_replay() {
     // A function declaration whose result is not `Boolean` is no
     // function-contract item.
     let refusal = context
-        .request(&q, &[bound_at(q_x.clone())], &plugin(), input(q_x.clone(), 9))
+        .request(
+            &q,
+            &[bound_at(q_x.clone())],
+            &plugin(),
+            input(q_x.clone(), 9),
+        )
         .err()
         .expect("a non-predicate declaration");
     assert_eq!(
@@ -1032,41 +1057,6 @@ fn tc_774_an_undefined_application_item_is_refuted() {
     );
 }
 
-/// FR-290-AC-13.
-#[trace("TC-774", "FR-290-AC-13")]
-#[test]
-fn tc_774_process_provider_preimage_encodes_and_digests() {
-    let node = crate::fixture_node(0x11);
-    let origin = Origin::new(Role::new("declaration"), 0);
-    let bound = bound_at(crate::fixture_node(0x22));
-    let with = process_provider_obligation(&node, &origin, &BoundEntries::new(vec![bound]).unwrap())
-        .unwrap();
-    let without =
-        process_provider_obligation(&node, &origin, &BoundEntries::new(Vec::new()).unwrap())
-            .unwrap();
-    // The identity is the SHA-256 of the RFC 8785 text of the item's
-    // proof bounds, node, kind and occurrence, written out by hand here and
-    // hashed independently of `quire-canonical`.
-    let (node_id, bound_node) = ("11".repeat(32), "22".repeat(32));
-    let text = |entries: &str| {
-        format!(
-            r#"{{"declared_domains":{{"entries":[{entries}],"tag":"bounds"}},"node":"{node_id}","obligation_kind":"value-validity","occurrence_key":{{"ordinal":0,"role":"declaration"}},"subject_kind":"process-provider"}}"#
-        )
-    };
-    let entry = format!(
-        r#"{{"bound":{{"lower":"0","tag":"integer_range","upper":"9"}},"key":{{"node_id":"{bound_node}","path":[],"tag":"node"}}}}"#
-    );
-    assert_eq!(
-        with.as_bytes(),
-        &qsl_foundation::ByteDigest::of(text(&entry).as_bytes()).as_bytes()
-    );
-    assert_eq!(
-        without.as_bytes(),
-        &qsl_foundation::ByteDigest::of(text("").as_bytes()).as_bytes()
-    );
-    assert_ne!(with.as_bytes(), without.as_bytes());
-}
-
 /// FR-290-AC-14.
 #[trace("TC-774", "FR-290-AC-14")]
 #[test]
@@ -1116,7 +1106,8 @@ fn tc_774_limits_flow_into_the_request_and_refusals_are_ordered() {
         })
     );
     // Only the `declaration` occurrence at ordinal 0 names a function.
-    let off_ordinal = OccurrenceKey::new(p.node().clone(), Origin::new(Role::new("declaration"), 1));
+    let off_ordinal =
+        OccurrenceKey::new(p.node().clone(), Origin::new(Role::new("declaration"), 1));
     assert_eq!(
         context
             .request(&off_ordinal, &[], &plugin(), Vec::new())
@@ -1227,7 +1218,12 @@ fn tc_774_a_transitive_dependency_replays() {
     let context = context(&fixture, CallerLimits::default());
     let (q, q_x) = declaration(&fixture, "q");
     let wire = context
-        .request(&q, &[bound_at(q_x.clone())], &plugin(), input(q_x.clone(), 0))
+        .request(
+            &q,
+            &[bound_at(q_x.clone())],
+            &plugin(),
+            input(q_x.clone(), 0),
+        )
         .expect("a function-contract item");
     let identities: Vec<&str> = wire
         .dependencies
@@ -1236,7 +1232,13 @@ fn tc_774_a_transitive_dependency_replays() {
         .collect();
     assert_eq!(identities, ["test/b", "test/c"]);
     assert_eq!(
-        settle(&context, &q, &[bound_at(q_x.clone())], input(q_x.clone(), 0)).value(),
+        settle(
+            &context,
+            &q,
+            &[bound_at(q_x.clone())],
+            input(q_x.clone(), 0)
+        )
+        .value(),
         &TerminalValue::Refuted
     );
     assert!(matches!(

@@ -257,7 +257,7 @@ pub(super) fn request(
         dependencies: Vec::new(),
         replay_target: target.into(),
         source: witness_source(),
-        obligation_identity: [2; 32],
+        obligation_identity: crate::ObligationIdentity::new(crate::fixture_node(2), None, 0),
         backend: "kani-backend-1".to_owned(),
         state_environment: StateEnvironment::new(Vec::new()),
         accounting_limits: default_accounting(1_000_000),
@@ -314,7 +314,11 @@ pub(super) fn packet<P: FamilyPayload>(
     target: ReplayTarget,
 ) -> WitnessPacket<P> {
     WitnessPacket {
-        obligation_identity: Some([1; 32]),
+        obligation_identity: Some(crate::ObligationIdentity::new(
+            crate::fixture_node(1),
+            None,
+            0,
+        )),
         occurrence_key: Some(occurrence_key),
         clause_node: Some(clause_node),
         replay_target: target.into(),

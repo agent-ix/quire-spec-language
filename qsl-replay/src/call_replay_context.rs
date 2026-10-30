@@ -395,7 +395,7 @@ mod tests {
             &crate::BoundEntries::new(bounds.to_vec()).unwrap(),
         )
         .unwrap();
-        assert_eq!(wire.obligation_identity, *expected.as_bytes());
+        assert_eq!(wire.obligation_identity, expected);
         let replayed = crate::replay(wire, ReplayLimits::default());
         let refuted =
             TerminalRecord::from_plugin_counterexample(RequestIndex::new(0), plugin(), &replayed);

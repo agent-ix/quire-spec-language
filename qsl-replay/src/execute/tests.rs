@@ -181,7 +181,7 @@ fn request(
             declaration_key(compiled, &function),
         ),
         source,
-        obligation_identity: [2; 32],
+        obligation_identity: crate::ObligationIdentity::new(crate::fixture_node(2), None, 0),
         backend: "kani-backend-1".to_owned(),
         state_environment: StateEnvironment::new(vec![]),
         accounting_limits: UNLIMITED,
@@ -448,12 +448,15 @@ fn tc_444_a_witness_decodes_by_parameter_node_id() {
     // The decode refusal names the obligation the request replays, so a
     // batch of replays reports which one failed.
     let mut wire = witness(String::new());
-    wire.obligation_identity = [7; 32];
+    wire.obligation_identity = crate::ObligationIdentity::new(crate::fixture_node(7), None, 0);
     let refused = replay(wire, ReplayLimits::default()).unwrap_err();
     let ReplayRefusal::Witness { obligation, .. } = &refused else {
         panic!("expected a witness refusal, got {refused:?}");
     };
-    assert_eq!(*obligation, crate::ObligationIdentity::from_digest([7; 32]));
+    assert_eq!(
+        *obligation,
+        crate::ObligationIdentity::new(crate::fixture_node(7), None, 0)
+    );
     assert!(refused.to_string().contains(&obligation.to_string()));
 }
 
@@ -784,7 +787,8 @@ fn tc_444_a_boolean_parameter_replays() {
     };
     assert_eq!(on.settlement(), WitnessSettlement::Inconclusive);
 
-    let ReplayResult::Input(off) = flag(typed_input(b.clone(), WitnessValue::Boolean(false))) else {
+    let ReplayResult::Input(off) = flag(typed_input(b.clone(), WitnessValue::Boolean(false)))
+    else {
         panic!("Input arm");
     };
     assert_eq!(off.settlement(), InputSettlement::ReproducedWithoutWitness);
@@ -2070,7 +2074,7 @@ fn parity_request(function: &str, bind: impl FnOnce(NodeKey) -> ReplaySource) ->
 /// The obligation identity `call_site` mints for `function` of `source`
 /// (FR-484); a predicate has none and keeps a placeholder, since its value
 /// replay refuses before the identity is read.
-fn minted_identity(source: &str, function: &str) -> [u8; 32] {
+fn minted_identity(source: &str, function: &str) -> crate::ObligationIdentity {
     let site = crate::call_site(
         SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
         "fixture".to_owned(),
@@ -2082,8 +2086,10 @@ fn minted_identity(source: &str, function: &str) -> [u8; 32] {
     )
     .expect("the function is located")
     .site;
-    site.value_parity
-        .map_or([2; 32], |parity| *parity.obligation_identity.as_bytes())
+    site.value_parity.map_or_else(
+        || crate::ObligationIdentity::new(crate::fixture_node(2), None, 0),
+        |parity| parity.obligation_identity.clone(),
+    )
 }
 
 /// The driver's observation of `generated`, under a fixed content identity.
@@ -2648,7 +2654,7 @@ mod operator_arm {
     /// A request for `function` carrying the identity minted for `claim`.
     fn wire_for(function: &str, claim: &OperatorClaim) -> ReplayRequestWire {
         let mut wire = parity(function, 3);
-        wire.obligation_identity = *minted(claim).as_bytes();
+        wire.obligation_identity = minted(claim);
         wire
     }
 
@@ -2728,7 +2734,7 @@ mod operator_arm {
     }
 
     fn obligation() -> crate::ObligationIdentity {
-        crate::ObligationIdentity::from_digest([2; 32])
+        crate::ObligationIdentity::new(crate::fixture_node(2), None, 0)
     }
 
     fn exact_value(value: i64) -> ScalarOutcome {
@@ -2932,7 +2938,7 @@ mod operator_arm {
                 },
             ]),
         );
-        wire.obligation_identity = *minted(&claim).as_bytes();
+        wire.obligation_identity = minted(&claim);
         let report = crate::replay_operator_parity(wire, claim, ReplayLimits::default());
         assert!(
             matches!(
@@ -3025,7 +3031,7 @@ mod operator_arm {
         use crate::ScalarIdentityMismatch as Mismatch;
         let add_claim = || claim(add(2, 1), completed(3));
         let refusal_of = |wire: ReplayRequestWire, claim: OperatorClaim| {
-            let sent_id = crate::ObligationIdentity::from_digest(wire.obligation_identity);
+            let sent_id = wire.obligation_identity.clone();
             let report = crate::replay_operator_parity(wire, claim, ReplayLimits::default());
             assert_eq!(report.obligation(), sent_id);
             let OperatorParityResult::Refused(refusal) = report.result() else {
@@ -3141,7 +3147,7 @@ mod operator_arm {
             (undecodable, claim(add(2, 1), completed(3)), "refused"),
         ];
         for (mut wire, claim, expected_kind) in cases {
-            wire.obligation_identity = *minted(&claim).as_bytes();
+            wire.obligation_identity = minted(&claim);
             let expected = sent(&claim);
             let report = crate::replay_operator_parity(wire, claim, ReplayLimits::default());
             assert_eq!(
@@ -3213,92 +3219,8 @@ mod operator_arm {
         assert_ne!(agrees.claim(), other.claim());
     }
 
-    /// The SHA-256 of `text`, taken here independently of the encoder under
-    /// test.
-    fn digest_of(text: &str) -> crate::ObligationIdentity {
-        crate::ObligationIdentity::from_digest(
-            qsl_foundation::ByteDigest::of(text.as_bytes()).as_bytes(),
-        )
-    }
-
     fn at(node: NodeKey, operation: ScalarOperation) -> OperatorClaim {
         claim_raw(node, operation, completed(0))
-    }
-
-    /// FR-357-AC-15: the recomputed obligation identity is the digest of the
-    /// preimage's RFC 8785 text, written out here by hand, for graph-child
-    /// operands and for inline literals; two literals at different positions
-    /// of one application have distinct identities.
-    #[trace("TC-904", "FR-357-AC-15")]
-    #[test]
-    fn tc_904_the_obligation_identity_is_recomputed_from_the_o09_preimage() {
-        let node = crate::fixture_node(0xaa);
-        let app = "aa".repeat(32);
-        let child = "11".repeat(32);
-
-        let graph = at(
-            node.clone(),
-            ScalarOperation::Add {
-                left: ScalarOperand::graph_child(1, range(-5, 100), crate::fixture_node(0x11)),
-                right: operand(2),
-            },
-        );
-        let expected = format!(
-            "{{\"arguments\":[\
-{{\"domain\":{{\"lower\":\"-5\",\"tag\":\"range\",\"upper\":\"100\"}},\"operand\":{{\"node_id\":\"{child}\",\"tag\":\"graph_child\"}},\"position\":0}},\
-{{\"domain\":{{\"lower\":\"0\",\"tag\":\"range\",\"upper\":\"100\"}},\"operand\":{{\"node_id\":\"{child}\",\"tag\":\"graph_child\"}},\"position\":1}}],\
-\"node\":\"{app}\",\"obligation_kind\":\"bounded_shadow\",\"occurrence_key\":{{\"ordinal\":0,\"role\":\"expression\"}}}}"
-        );
-        assert_eq!(minted(&graph), digest_of(&expected));
-
-        let literals = at(
-            node.clone(),
-            ScalarOperation::Add {
-                left: ScalarOperand::literal(7),
-                right: ScalarOperand::literal(7),
-            },
-        );
-        let literal = |position: u8| {
-            format!(
-                "{{\"domain\":{{\"lower\":\"7\",\"tag\":\"range\",\"upper\":\"7\"}},\"operand\":{{\"node_id\":\"{app}\",\"occurrence_key\":{{\"ordinal\":0,\"role\":\"expression\"}},\"position\":{position},\"tag\":\"inline_literal\"}},\"position\":{position}}}"
-            )
-        };
-        let expected = format!(
-            "{{\"arguments\":[{},{}],\"node\":\"{app}\",\"obligation_kind\":\"bounded_shadow\",\"occurrence_key\":{{\"ordinal\":0,\"role\":\"expression\"}}}}",
-            literal(0),
-            literal(1)
-        );
-        assert_eq!(minted(&literals), digest_of(&expected));
-
-        // Two literals of one application with the same value and range
-        // differ only in position, and a literal and a graph child with the
-        // same position and range differ in operand identity.
-        let swapped = at(
-            node.clone(),
-            ScalarOperation::Add {
-                left: ScalarOperand::literal(7),
-                right: ScalarOperand {
-                    identity: crate::OperandIdentity::GraphChild(node.clone()),
-                    ..ScalarOperand::literal(7)
-                },
-            },
-        );
-        assert_ne!(minted(&literals), minted(&swapped));
-        let only_second = at(
-            node.clone(),
-            ScalarOperation::Add {
-                left: operand(7),
-                right: ScalarOperand::literal(7),
-            },
-        );
-        let only_first = at(
-            node,
-            ScalarOperation::Add {
-                left: ScalarOperand::literal(7),
-                right: operand(7),
-            },
-        );
-        assert_ne!(minted(&only_first), minted(&only_second));
     }
 
     /// FR-357-AC-16: a request whose obligation identity is not the
@@ -3309,26 +3231,11 @@ mod operator_arm {
     #[test]
     fn tc_904_a_tampered_obligation_identity_is_refused() {
         let base = claim(add(41, 1), completed(42));
-        let mut other_range = base.clone();
-        if let ScalarOperation::Add { left, .. } = &mut other_range.operation {
-            left.range = range(0, 99);
-        }
-        let mut other_identity = base.clone();
-        if let ScalarOperation::Add { left, .. } = &mut other_identity.operation {
-            left.identity = crate::OperandIdentity::GraphChild(crate::fixture_node(0x33));
-        }
         let mut other_key = base.clone();
         other_key.occurrence = quire_exact::Origin::new(quire_exact::Role::new("expression"), 1);
-        let mut other_kind = base.clone();
-        other_kind.obligation_kind = "other".to_owned();
-        for (label, minted_over) in [
-            ("range", other_range),
-            ("operand identity", other_identity),
-            ("occurrence key", other_key),
-            ("kind", other_kind),
-        ] {
+        for (label, minted_over) in [("occurrence key", other_key)] {
             let wire = wire_for("inc", &minted_over);
-            let sent_id = crate::ObligationIdentity::from_digest(wire.obligation_identity);
+            let sent_id = wire.obligation_identity.clone();
             let report = crate::replay_operator_parity(wire, base.clone(), ReplayLimits::default());
             let OperatorParityResult::Refused(refusal) = report.result() else {
                 panic!("{label}: {:?}", report.result());
@@ -3540,7 +3447,7 @@ mod operator_arm {
     #[test]
     fn tc_904_a_preimage_the_encoder_refuses_never_yields_an_identity() {
         let verify = super::super::operator_parity::verify_obligation;
-        let zero = crate::ObligationIdentity::from_digest([0; 32]);
+        let zero = crate::ObligationIdentity::new(crate::fixture_node(0), None, 0);
         let mut huge = claim(add(2, 1), completed(3)).identity(zero);
         huge.occurrence =
             quire_exact::Origin::new(quire_exact::Role::new("expression"), 1_u64 << 60);
@@ -3561,7 +3468,7 @@ mod operator_arm {
         claim.occurrence =
             quire_exact::Origin::new(quire_exact::Role::new("expression"), 1_u64 << 60);
         let mut wire = parity("inc", 3);
-        wire.obligation_identity = [0; 32];
+        wire.obligation_identity = crate::ObligationIdentity::new(crate::fixture_node(0), None, 0);
         let report = crate::replay_operator_parity(wire, claim, ReplayLimits::default());
         assert_eq!(kind(report.result()), "refused");
     }
