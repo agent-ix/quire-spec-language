@@ -106,15 +106,13 @@ use std::sync::Arc;
 use crate::model::accounting::{
     Charge, ChargePoint, Incomplete, LimitKind, Meter, ModelNormalizationLimits,
 };
-use crate::model::domain_package::DomainPackageRefWire;
 use crate::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, NativeValueType, PopulationRecord,
     ScalarValueDomain, ValueTypeRef,
 };
 use crate::model::index::{ModelIndex, RecordIndex, Redefiner};
 use crate::model::key::{
-    canonical_len, sha256_and_len, EffectiveDeclarationPreimage, EffectiveDeclarationWire,
-    EffectiveId, EffectiveIdWire, Fact, RuleRef, RuleRefWire, RULE_INHERIT, RULE_QUALIFY,
+    EffectiveDeclarationPreimage, EffectiveId, Fact, RuleRef, RULE_INHERIT, RULE_QUALIFY,
     RULE_REDEFINE, RULE_SUBSET,
 };
 use qsl_foundation::diagnostic::{Code, JsonPointer};
@@ -448,51 +446,6 @@ impl TypeCatalog {
     }
 }
 
-impl ViewBody {
-    /// The RFC 8785 length of [`Self::wire`] under `model_selection`, given
-    /// `declarations_len`, the encoded length of its `declarations` elements
-    /// (each [`view_entry_len`], comma-separated): the view with no
-    /// declarations, plus those elements. Nothing but the header is encoded.
-    fn canonical_len_from_parts(
-        &self,
-        model_selection: &DomainPackageRef,
-        declarations_len: u64,
-    ) -> u64 {
-        canonical_len(&Self::wire_header(model_selection)).saturating_add(declarations_len)
-    }
-
-    /// [`Self::wire`] with no declarations.
-    fn wire_header(model_selection: &DomainPackageRef) -> EffectiveViewWire<'_> {
-        EffectiveViewWire {
-            version: crate::model::key::EFFECTIVE_VIEW_DOMAIN,
-            model_selection: model_selection.wire(),
-            rules: RuleRefWire {
-                identity: crate::model::key::RULES_IDENTITY,
-            },
-            declarations: Vec::new(),
-        }
-    }
-
-    /// The view's `quire.model.effective-view/v2` preimage form under
-    /// `model_selection`: `{version, model_selection, rules, declarations}`,
-    /// each declaration `{effective_id, preimage}` -- the package's own
-    /// header and every declaration, never the universes, populations or
-    /// `visible` bits.
-    fn wire<'a>(&'a self, model_selection: &'a DomainPackageRef) -> EffectiveViewWire<'a> {
-        EffectiveViewWire {
-            declarations: self
-                .declarations
-                .iter()
-                .map(|entry| ViewEntryWire {
-                    effective_id: EffectiveIdWire::from(&entry.effective_id),
-                    preimage: entry.preimage.wire(),
-                })
-                .collect(),
-            ..Self::wire_header(model_selection)
-        }
-    }
-}
-
 /// One `Population` record of a view's package, with the position in the
 /// view's universes of the universe its bindings are admitted into
 /// (ADR-013 §8 OQ-E: its first member type's component, or the first
@@ -651,24 +604,6 @@ impl EffectiveView {
         })
     }
 
-    fn wire(&self) -> EffectiveViewWire<'_> {
-        self.body.wire(self.model_selection())
-    }
-
-    /// This view's `quire.model.effective-view/v2` identity, encoded by
-    /// `quire-canonical` (ADR-013 §2, ADR-013:113: one RFC 8785
-    /// implementation).
-    pub fn identity(&self) -> EffectiveId {
-        EffectiveId::from_digest(sha256_and_len(&self.wire()).0)
-    }
-
-    /// The length of this view's RFC 8785 bytes (for `normalize.hash`
-    /// accounting, and for tests asserting an exact hashed-byte length
-    /// against a ground-truth vector), counted by the encoder.
-    pub fn canonical_len(&self) -> u64 {
-        canonical_len(&self.wire())
-    }
-
     /// Whether `declarations` is correctly sorted ascending by effective
     /// identity — TC-195 N10's `unsorted-view` mutation, "refused by the
     /// semantic check" over an already-constructed view (PR #140 F5).
@@ -704,52 +639,39 @@ pub struct ObjectUniverse {
 }
 
 impl ObjectUniverse {
-    /// This universe's `quire.model.object-universe/v2` preimage form:
-    /// `{version, model_selection, root_types}`.
-    fn wire(&self) -> ObjectUniverseWire<'_> {
-        ObjectUniverseWire {
-            version: crate::model::key::OBJECT_UNIVERSE_DOMAIN,
-            model_selection: self.model_selection.wire(),
-            root_types: self.root_types.iter().map(EffectiveIdWire::from).collect(),
-        }
-    }
-
-    /// This universe's `quire.model.object-universe/v2` identity (ADR-013
-    /// §8 OQ-C ruling: a `UniverseId`, not an `EffectiveId` -- the two
-    /// digests use the same SHA-256 computation over the same preimage
-    /// shape, differing only in which kernel newtype carries the result).
-    /// Encoded by `quire-canonical` (ADR-013 §2, ADR-013:113).
-    pub fn identity(&self) -> quire_exact::UniverseId {
-        quire_exact::UniverseId::from_digest(sha256_and_len(&self.wire()).0)
-    }
-
-    /// The length of this universe's RFC 8785 bytes (for `normalize.hash`
-    /// accounting, and for tests asserting an exact hashed-byte length
-    /// against a ground-truth vector), counted by the encoder.
-    pub fn canonical_len(&self) -> u64 {
-        canonical_len(&self.wire())
+    /// This universe's structural identity: the node identity of its least
+    /// root object type (QSpec FR-142's `UniverseId`).
+    ///
+    /// # Errors
+    ///
+    /// [`UniverseIdentityError::NoRootType`] for the empty universe of a
+    /// package that declares no object type, and
+    /// [`UniverseIdentityError::Key`] when the root type has no valid node
+    /// identity.
+    pub fn identity(&self) -> Result<quire_exact::UniverseId, UniverseIdentityError> {
+        let root = self
+            .root_types
+            .first()
+            .ok_or(UniverseIdentityError::NoRootType)?;
+        let original = root.original();
+        let key = crate::model::key::model_node_key(
+            original.package(),
+            "model",
+            "object_type",
+            original.node(),
+        )
+        .map_err(UniverseIdentityError::Key)?;
+        Ok(quire_exact::UniverseId::new(key))
     }
 }
 
-#[derive(Serialize, FixedShape)]
-struct EffectiveViewWire<'a> {
-    version: &'static str,
-    model_selection: DomainPackageRefWire<'a>,
-    rules: RuleRefWire,
-    declarations: Vec<ViewEntryWire<'a>>,
-}
-
-#[derive(Serialize, FixedShape)]
-struct ViewEntryWire<'a> {
-    effective_id: EffectiveIdWire,
-    preimage: EffectiveDeclarationWire<'a>,
-}
-
-#[derive(Serialize, FixedShape)]
-struct ObjectUniverseWire<'a> {
-    version: &'static str,
-    model_selection: DomainPackageRefWire<'a>,
-    root_types: Vec<EffectiveIdWire>,
+/// Why an [`ObjectUniverse`] has no [`quire_exact::UniverseId`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum UniverseIdentityError {
+    /// The universe has no root object type to name it.
+    NoRootType,
+    /// The root object type's node identity is not a valid structural key.
+    Key(quire_exact::InvalidNodeKey),
 }
 
 /// Every declared object type's connected-component id in the undirected
@@ -2634,10 +2556,9 @@ fn record_member_owners<'a>(
 }
 
 /// The placeholder a member's link carries from its formation until its
-/// parent's identity exists: a parent identity is fixed width, so a
-/// preimage's length does not depend on which digest it holds.
+/// parent's identity exists.
 fn placeholder_id() -> EffectiveId {
-    EffectiveId::from_digest([0; 32])
+    EffectiveId::new(None, quire_exact::OriginalDeclarationKey::new("", ""))
 }
 
 /// Every type in topological order (parents before children, ties by
@@ -2997,17 +2918,12 @@ fn build(
         }
     }
 
-    // Every placed type's identity, parents first. A preimage binds the
-    // type's own key and the identity of each direct parent, so its length
-    // is the type's key and its edges, never an ancestor path. This is the
-    // one hash made before its `normalize.hash` charge: that charge sits in
-    // phase 5, after every phase-4 charge ordered by these identities; each
-    // edge it holds was admitted by the `normalize.cycle-check` and
-    // `normalize.fact` charges above.
+    // Every placed type's identity, parents first: a type's structural
+    // identity is its own original key, so a parent's identity is known
+    // before any child's inherit fact links to it.
     let mut type_ids: Vec<EffectiveId> = vec![placeholder_id(); type_keys.len()];
     let mut type_preimages: Vec<Option<EffectiveDeclarationPreimage>> =
         (0..type_keys.len()).map(|_| None).collect();
-    let mut type_hashed_bytes: Vec<u64> = vec![0; type_keys.len()];
     for &at in &topological {
         let mut derivation = vec![Fact {
             ordinal: 0,
@@ -3029,7 +2945,6 @@ fn build(
             derivation,
         };
         type_ids[at] = preimage.identity();
-        type_hashed_bytes[at] = preimage.canonical_len_from_parts();
         type_preimages[at] = Some(preimage);
     }
 
@@ -3259,27 +3174,12 @@ fn build(
         return Err(Denial::Refused(refusals));
     }
 
-    // Phase 5: `normalize.declaration` then `normalize.hash` per effective
-    // declaration -- "effective types, then effective members, each
-    // ascending by effective member key" (`value-accounting.md:494`, QSL
-    // #195): `(owner effective type identity, original declaration key)`
-    // (`model-complete.md`:206). Every `normalize.hash` is charged from a
-    // length counted from the preimage's parts, before the preimage is
-    // encoded and hashed; a parent identity is fixed width, so a length does
-    // not wait for the identity it contains. `declarations_len` counts the
-    // view's `declarations` elements as they are admitted, so the view's own
-    // `normalize.hash` is charged without encoding the view.
-    let mut declarations_len: u64 = 0;
-    let mut add_entry_len = |preimage_len: u64| {
-        let separator = u64::from(declarations_len > 0);
-        declarations_len = declarations_len
-            .saturating_add(separator)
-            .saturating_add(view_entry_len(&placeholder_id(), preimage_len));
-    };
-    for hashed_bytes in &type_hashed_bytes {
+    // Phase 5: `normalize.declaration` per effective declaration --
+    // "effective types, then effective members, each ascending by effective
+    // member key" (`value-accounting.md:494`, QSL #195): `(owner effective
+    // type identity, original declaration key)` (`model-complete.md`:206).
+    for _ in &type_keys {
         charges.declaration()?;
-        charges.hash(*hashed_bytes)?;
-        add_entry_len(*hashed_bytes);
     }
     let mut member_order: Vec<(EffectiveId, &DeclarationKey, usize, usize)> = Vec::new();
     for (at, slots) in store.slots.iter().enumerate() {
@@ -3288,14 +3188,9 @@ fn build(
         }
     }
     member_order.sort_unstable_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(b.1)));
-    for (_, _, at, position) in &member_order {
+    for _ in &member_order {
         charges.declaration()?;
         work_step();
-        let hashed_bytes = store.slots[*at][*position]
-            .preimage
-            .canonical_len_from_parts();
-        charges.hash(hashed_bytes)?;
-        add_entry_len(hashed_bytes);
     }
     drop(member_order);
 
@@ -3368,10 +3263,8 @@ fn build(
             (members, universe)
         })
         .collect();
-    // `value-accounting.md`:495: "each object universe preimage ascending
-    // by its first root type identity". A component with no root type at
-    // all (a pure cycle) arises only on a package phase 3 already refused
-    // above, so `None` sorting first is never observed.
+    // Universes ascend by their first root type identity (`None`, a component
+    // with no root type, arises only on a package already refused above).
     components.sort_by_key(|(_, universe)| universe.root_types.first().cloned());
     let mut universe_index_by_type: BTreeMap<DeclarationKey, usize> = BTreeMap::new();
     for (component_index, (members, _)) in components.iter().enumerate() {
@@ -3390,12 +3283,6 @@ fn build(
         first,
         rest: ordered.collect(),
     };
-    // `value-accounting.md`:495: "each object universe preimage ascending
-    // by its first root type identity, then the effective view preimage".
-    for universe in universes.iter() {
-        charges.hash(universe.canonical_len())?;
-    }
-
     // Each population's bindings are admitted into its first member type's
     // universe, or the first universe when it declares no member type.
     // Intake has already refused a member type that is not a declared
@@ -3435,19 +3322,7 @@ fn build(
         populations,
         limits,
     };
-    charges
-        .hash(view.canonical_len_from_parts(&domain_package.model_selection, declarations_len))?;
     Ok((view, index))
-}
-
-/// The RFC 8785 length of one effective-view `declarations` element,
-/// `{"effective_id":<id>,"preimage":<preimage>}`, from its identity and its
-/// preimage's length: the element's fixed frame, plus the two values.
-fn view_entry_len(effective_id: &EffectiveId, preimage_len: u64) -> u64 {
-    const FRAME: &str = r#"{"effective_id":,"preimage":}"#;
-    length_amount(FRAME.len())
-        .saturating_add(canonical_len(&EffectiveIdWire::from(effective_id)))
-        .saturating_add(preimage_len)
 }
 
 /// One redefining member's contest for its `redefines` target, reachable
@@ -4305,10 +4180,6 @@ impl<'m> Charges<'m> {
         Ok(())
     }
 
-    /// One `normalize.hash` over `bytes` of RFC 8785 preimage.
-    fn hash(&mut self, bytes: u64) -> Result<(), Incomplete> {
-        self.charge(Charge::new(ChargePoint::NormalizeHash).size(LimitKind::HashedBytes, bytes))
-    }
 }
 
 /// Normalize `domain_package` under `limits`: FR-150 phases 1, 2, 3, 4 and 5.

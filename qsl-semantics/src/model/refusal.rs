@@ -602,15 +602,8 @@ pub enum ModelRefusalCause {
     },
     /// A reference key names a universe other than the binding's.
     ForeignUniverse {
-        /// The reference key's raw universe bytes, exactly as supplied. Not
-        /// always a well-formed 32-byte identity: a
-        /// [`crate::model::population::LookupKey`] whose `universe` is some
-        /// other length is also refused under this cause
-        /// (`crate::model::population::lookup`'s own raw-byte universe
-        /// comparison, never a separate malformed case), reporting the bytes
-        /// the caller actually supplied rather than a substituted or
-        /// truncated identity.
-        actual: Vec<u8>,
+        /// The reference key's universe root type node, as supplied.
+        actual: quire_exact::NodeKey,
         /// The binding's universe (ADR-013 §8 OQ-C ruling: a `UniverseId`,
         /// not an `EffectiveId`).
         expected: UniverseId,
@@ -1210,8 +1203,8 @@ impl ModelRefusalCause {
                 ("key", render_identity(key)),
             ])),
             Self::ForeignUniverse { actual, expected } => Some(std::collections::BTreeMap::from([
-                ("required", crate::model::key::hex(expected.as_bytes())),
-                ("supplied", crate::model::key::hex(actual)),
+                ("required", expected.root_type().to_string()),
+                ("supplied", actual.to_string()),
             ])),
             // A caller-budget ceiling (ADR-014 section 1): FR-255 Behavior 1's
             // record, built once by `BudgetDenial`.

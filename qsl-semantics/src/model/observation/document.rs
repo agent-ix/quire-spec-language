@@ -1491,9 +1491,8 @@ pub(super) fn quantity_magnitude(
 /// The qualified name of the declared unit `unit` in `types`, segments
 /// joined by `::`, or `None` for a unit with no declared name.
 pub(crate) fn unit_name(types: &TypeEnvironment, unit: quire_exact::UnitId) -> Option<String> {
-    types
-        .units()
-        .nominal_node(unit.as_bytes())
+    unit.declared_key()
+        .and_then(|key| types.units().nominal_node(key))
         .map(|node| node.declaration.qualified_declaration.join("::"))
 }
 
@@ -2407,11 +2406,11 @@ impl<'t> PopulationValues<'t> {
             )
         })?;
         let reference = ObjectReference::new(
-            // BLOCKED-BY QSL-1282 (owner: planner titan:QSL:plan): UniverseId::from_digest, the only
-            // `UniverseId` constructor in the locked quire-exact (identity.rs:65),
-            // and `ObjectReference::new` (src/reference.rs:26) takes a `UniverseId`;
-            // the token is the observation's role ordinal, not a hash.
-            UniverseId::from_digest(role_token(role)),
+            // BLOCKED-BY QSL-1282 (owner: planner titan:QSL:plan): a state-machine
+            // context object has no declared object universe, yet
+            // `ObjectReference::new` takes a `UniverseId` (a root type node); the
+            // observation's role names the universe until that source exists.
+            UniverseId::new(role_universe_key(role)?),
             context.effective,
             object,
         );
@@ -3650,16 +3649,20 @@ pub(super) fn admit_result(
     }
 }
 
-/// The fixed-width token `quire_exact::UniverseId` takes for the universe of
-/// one observation: its role ordinal, not a hash.
-fn role_token(role: ObservationRole) -> [u8; 32] {
-    let mut token = [0_u8; 32];
-    token[0] = match role {
-        ObservationRole::Current => 1,
-        ObservationRole::Pre => 2,
-        ObservationRole::Post => 3,
+/// The structural node a read-context object's universe takes for one
+/// observation role.
+fn role_universe_key(role: ObservationRole) -> Result<quire_exact::NodeKey, AdmissionFailure> {
+    let name = match role {
+        ObservationRole::Current => "current",
+        ObservationRole::Pre => "pre",
+        ObservationRole::Post => "post",
     };
-    token
+    crate::check::declared_node_key(
+        "observation".to_owned(),
+        vec!["role".to_owned(), name.to_owned()],
+        0,
+    )
+    .map_err(|_| fault("observation-role-universe-unkeyed"))
 }
 
 #[cfg(test)]

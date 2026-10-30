@@ -3364,7 +3364,7 @@ fn population_universe(
         .ok_or_else(|| fault("object-type-unresolved"))?;
     view.view
         .object_universe_of(key)
-        .map(|universe| universe.identity())
+        .and_then(|universe| universe.identity().ok())
         .ok_or_else(|| fault("object-universe-unresolved"))
 }
 
