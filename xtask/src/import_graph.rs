@@ -1103,7 +1103,7 @@ mod tests {
         assert!(reexports.check.is_empty(), "{:?}", reexports.check);
         let submodules = value_submodule_reexports(&workspace_root()).expect("scan runs");
         assert_eq!(
-            submodules.get("DefinitionLock").map(String::as_str),
+            submodules.get("DefinitionRole").map(String::as_str),
             Some("definition")
         );
     }

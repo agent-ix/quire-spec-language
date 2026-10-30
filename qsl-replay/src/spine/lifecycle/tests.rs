@@ -1838,14 +1838,9 @@ fn a_rebound_model_node_leaves_the_front_end_as_an_internal_failure_with_no_pack
 #[trace("TC-759", "FR-278-AC-1")]
 #[test]
 fn a_library_is_checked_under_its_own_lock_evidence_not_its_importers() {
-    use qsl_semantics::value::{CatalogRole, DefinitionLock};
-    let text_profile = || {
-        LockEvidence::default().with_text_profile(
-            DefinitionLock::pinned()
-                .entry(CatalogRole::TextProfile)
-                .reference(),
-        )
-    };
+    use qsl_semantics::value::DefinitionRole;
+    let text_profile =
+        || LockEvidence::default().with_text_profile(DefinitionRole::TextProfile.reference());
     let limits = SpineLimits::default();
     let importer = |library: &SuppliedLibrary, lock: &LockEvidence| {
         let unit = format!(
@@ -1898,7 +1893,7 @@ fn a_library_is_checked_under_its_own_lock_evidence_not_its_importers() {
 #[trace("TC-759", "FR-278-AC-1")]
 #[test]
 fn check_takes_the_lock_evidence_the_text_law_comes_from() {
-    use qsl_semantics::value::{CatalogRole, DefinitionLock};
+    use qsl_semantics::value::DefinitionRole;
     let unit = format!(
         "{HEADER}function same using v(a: Text[0, 8; nfc], b: Text[0, 8; nfc]): Boolean pure \
          {{ a = b }}\n"
@@ -1924,9 +1919,7 @@ fn check_takes_the_lock_evidence_the_text_law_comes_from() {
     let without = run(&LockEvidence::default()).expect_err("no text law is selected");
     let refusal = refusal(without);
     assert_eq!(refusal.code().as_str(), "missing_declaration");
-    let text_profile = DefinitionLock::pinned()
-        .entry(CatalogRole::TextProfile)
-        .reference();
+    let text_profile = DefinitionRole::TextProfile.reference();
     run(&LockEvidence::default().with_text_profile(text_profile))
         .expect("the lock evidence selects the text law");
 }

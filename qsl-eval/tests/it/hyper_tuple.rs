@@ -21,7 +21,7 @@ use qsl_semantics::check::{
 };
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, package_input};
-use qsl_semantics::value::{CatalogRole, DefinitionLock};
+use qsl_semantics::value::{admit_integer_division, DefinitionRole};
 use quire_exact::{Cancel, CancelCause, LimitKind, Meter, ScalarLimits, Undefined};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
@@ -78,12 +78,9 @@ fn fixture_with(operations: Vec<serde_json::Value>, alignment: &str, body: &str)
     )
     .expect("the unit assembles");
     // `mod` reads truncating integer division.
-    let lock = DefinitionLock::pinned();
     package.integer_division = Some(
-        lock.admit_integer_division(
-            &[lock
-                .entry(CatalogRole::IntegerDivisionTruncating)
-                .reference()],
+        admit_integer_division(
+            &[DefinitionRole::IntegerDivisionTruncating.reference()],
             None,
         )
         .expect("the division profile admits"),

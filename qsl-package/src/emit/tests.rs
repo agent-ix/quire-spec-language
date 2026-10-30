@@ -16,7 +16,7 @@ use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::{OccurrenceKey, RawSourceRef, SourceRegion};
 use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::library::{LibraryName, PinnedRequest};
-use qsl_semantics::value::{native_diagnostics_catalog, CatalogRole, DefinitionLock};
+use qsl_semantics::value::{always_roles, native_diagnostics_catalog, DefinitionRole};
 use quire_contract_model::CheckedPackageEvidence;
 use quire_exact::{
     CardinalityBound, CollectionKind, CollectionType, NodeKey, Presence, Role, ValueType,
@@ -369,8 +369,8 @@ fn a_function_identity_survives_emission_and_the_i2_read() {
     assert_eq!(identities.len(), 1, "reordering changed t's identity");
 }
 
-/// The wire lock's edition and definition selections are the
-/// `DefinitionLock` catalog's rows, each exactly `{authority, identity}`;
+/// The wire lock's edition and definition selections are resolved directly
+/// from closed role enums, each exactly `{authority, identity}`;
 /// the diagnostics catalog is QSpec's native diagnostics `DefinitionRef`,
 /// `{agent-ix, quire.native.diagnostics/v1}` and no other member; each
 /// source row, and each source-map region's source, keeps its
@@ -381,19 +381,17 @@ fn the_lock_selects_the_catalog_definitions() {
     let emission = emit(&package(vec![t()]));
     assert!(matches!(read_back(&emission), Read::Verified { .. }));
     let wire = wire(&emission);
-    let lock = DefinitionLock::pinned();
-    let row = |role: CatalogRole| {
-        let entry = lock.entry(role);
-        json!({"authority": entry.authority, "identity": entry.identity})
+    let row = |role: DefinitionRole| {
+        let reference = role.reference();
+        json!({"authority": reference.authority, "identity": reference.identity})
     };
     assert_eq!(
         wire["lock"]["edition"],
-        json!({"role": "edition", "definition": row(CatalogRole::Edition)})
+        json!({"role": "edition", "definition": row(DefinitionRole::Edition)})
     );
-    let expected: Vec<Value> = lock
-        .always_roles()
+    let expected: Vec<Value> = always_roles()
         .iter()
-        .filter(|role| **role != CatalogRole::Edition)
+        .filter(|role| **role != DefinitionRole::Edition)
         .map(|role| row(*role))
         .collect();
     assert_eq!(wire["lock"]["definition_selections"], json!(expected));
@@ -439,9 +437,7 @@ fn a_law_names_its_definition_by_authority_and_identity() {
     let emission = emit(&golden::float_add_of(BuiltinType::Float64, "nearest-even"));
     assert!(matches!(read_back(&emission), Read::Verified { .. }));
     let wire = wire(&emission);
-    let ieee = DefinitionLock::pinned()
-        .entry(CatalogRole::IeeeProfile)
-        .reference();
+    let ieee = DefinitionRole::IeeeProfile.reference();
     let ieee = json!({"authority": ieee.authority, "identity": ieee.identity});
     let laws: Vec<&Value> = wire["semantic_graph"]["nodes"]
         .as_array()

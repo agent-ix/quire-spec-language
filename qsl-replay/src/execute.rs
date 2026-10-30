@@ -1471,7 +1471,7 @@ pub(crate) fn run_spine_with_execution_points(
 ) -> Result<Recompiled, ReplayRefusal> {
     #[cfg(test)]
     SPINE_RUNS.with(|runs| runs.set(runs.get() + 1));
-    use qsl_semantics::value::{CatalogRole, DefinitionLock};
+    use qsl_semantics::value::DefinitionRole;
 
     let cancel = Cancel::new();
     let refusal = |failure| match spine::refusal_or_fault(failure) {
@@ -1494,9 +1494,7 @@ pub(crate) fn run_spine_with_execution_points(
         .into_value();
     // Compile and replay select the Text law implemented by the same
     // definition catalog that supplies the emitted package's lock.
-    let text_profile = DefinitionLock::pinned()
-        .entry(CatalogRole::TextProfile)
-        .reference();
+    let text_profile = DefinitionRole::TextProfile.reference();
     let lock = spine::LockEvidence::default().with_text_profile(text_profile);
     let checked = spine::check_with_execution_points(
         &parsed,

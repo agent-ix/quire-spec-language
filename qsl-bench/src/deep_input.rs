@@ -29,7 +29,7 @@ pub const MAX_DEPTH: usize = 100_000;
 
 /// The fixture whose header (its `language` and `profile` lines) every
 /// generated unit uses, so the profile resolves against the same
-/// `DefinitionLock` catalog row the spine tests compile against.
+/// closed semantic role the spine tests compile against.
 const HEADER_FIXTURE: &str = include_str!("../../tests/fixtures/spine-run.native");
 
 /// The `language` and `profile` lines of [`HEADER_FIXTURE`].

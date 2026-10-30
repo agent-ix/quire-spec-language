@@ -75,7 +75,7 @@ use super::node_key::{
 use super::refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, KeyFault, StageLimitCause,
 };
-use crate::value::definition::{CatalogRole, DefinitionLock, DefinitionReference};
+use crate::value::definition::{DefinitionReference, DefinitionRole};
 use crate::value::enumeration::{member_preimage_bytes, EnumDeclarationPreimage};
 use crate::value::member::Member;
 use crate::value::unit::{DimensionPreimage, UnitPreimage};
@@ -136,14 +136,11 @@ pub(crate) use terminal::{terminal_location, terminal_site, TerminalInput, Termi
 pub(crate) use timed_clause::TimedClauseInput;
 
 /// The package's lock evidence as the lowering reads it (ADR-011 §2.4): the
-/// `DefinitionRef` the `text_profile` law role selects. QSpec publishes no
-/// `complete-value-lock.json` accessor yet, so every production package
-/// supplies none, and each text-law operation refuses
-/// (`missing_declaration`/`missing-selection`, FR-093-AC-6). The
-/// `ieee_profile` law is the package's one admitted IEEE profile
-/// (`PackageDeclarations::ieee_profile`, admitted against the definition
-/// lock by `DefinitionLock::admit_ieee_profile`), so the two cannot
-/// disagree.
+/// `DefinitionRef` the `text_profile` law role selects. The `ieee_profile`
+/// law is the package's one admitted IEEE profile
+/// (`PackageDeclarations::ieee_profile`, admitted against the local
+/// definition policy by `admit_ieee_profile`), so the two
+/// cannot disagree.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct LockEvidence {
     text_profile: Option<DefinitionReference>,
@@ -2552,14 +2549,14 @@ impl<'a> Lowering<'a> {
             LawRole::IntegerDivision => self.scope.integer_division.map(|selection| {
                 let role = match selection.profile() {
                     quire_exact::DivisionProfile::Euclidean => {
-                        CatalogRole::IntegerDivisionEuclidean
+                        DefinitionRole::IntegerDivisionEuclidean
                     }
-                    quire_exact::DivisionProfile::Floor => CatalogRole::IntegerDivisionFloor,
+                    quire_exact::DivisionProfile::Floor => DefinitionRole::IntegerDivisionFloor,
                     quire_exact::DivisionProfile::Truncating => {
-                        CatalogRole::IntegerDivisionTruncating
+                        DefinitionRole::IntegerDivisionTruncating
                     }
                 };
-                DefinitionLock::pinned().entry(role).reference()
+                role.reference()
             }),
             LawRole::ProtocolProfile => self.lock.protocol_profile().cloned(),
             LawRole::TemporalProfile => None,

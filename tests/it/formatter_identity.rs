@@ -859,7 +859,7 @@ fn replay_fixture(text: &str) {
 /// S1–S4 under the evaluator's actual post-S2 profile injection.
 fn ieee_fixture_identity(text: &str) {
     use qsl_semantics::check::PackageDeclarations;
-    use qsl_semantics::value::{CatalogRole, DefinitionLock, DefinitionReference};
+    use qsl_semantics::value::{admit_ieee_profile, DefinitionRole};
     let compile = |text: &str, revision: &str| {
         let parsed = qsl_cst::parse(
             SourceIdentity::new("a", "u", "git", revision),
@@ -876,18 +876,8 @@ fn ieee_fixture_identity(text: &str) {
             Vec::new(),
         )
         .unwrap();
-        let lock = DefinitionLock::pinned();
-        let entry = lock.entry(CatalogRole::IeeeProfile);
-        declarations.ieee_profile = Some(
-            lock.admit_ieee_profile(
-                &[DefinitionReference {
-                    authority: entry.authority.to_owned(),
-                    identity: entry.identity.to_owned(),
-                }],
-                &[],
-            )
-            .unwrap(),
-        );
+        let definition = DefinitionRole::IeeeProfile.reference();
+        declarations.ieee_profile = Some(admit_ieee_profile(&[definition], &[]).unwrap());
         let graph = declarations
             .check(quire_semantic_value::checking::CheckingLimits::default())
             .expect("the owning IEEE profile admits the fixture");
@@ -1627,7 +1617,7 @@ fn replay_composite_and_model_units_keep_format_identity() {
 #[test]
 fn lifecycle_text_law_fixture_keeps_format_identity() {
     use qsl_replay::spine::{LockEvidence, SpineLimits};
-    use qsl_semantics::value::{CatalogRole, DefinitionLock};
+    use qsl_semantics::value::DefinitionRole;
     let fixture = include_str!("../../qsl-replay/src/spine/lifecycle/tests.rs");
     let header = source_literal(fixture, "HEADER");
     let source = fixture_text(
@@ -1638,11 +1628,7 @@ fn lifecycle_text_law_fixture_keeps_format_identity() {
         ),
         &[("HEADER", &header)],
     );
-    let lock = LockEvidence::default().with_text_profile(
-        DefinitionLock::pinned()
-            .entry(CatalogRole::TextProfile)
-            .reference(),
-    );
+    let lock = LockEvidence::default().with_text_profile(DefinitionRole::TextProfile.reference());
     let compile = |lock: &LockEvidence| {
         crate::support::front_end::emitted_with_authority(
             SourceIdentity::new("agent-ix", "test:lifecycle", "fixture", "fixture:1"),
@@ -2040,7 +2026,7 @@ fn evaluator_source_call_fixture_keeps_checked_identity() {
 #[test]
 fn replay_composite_fixture_keeps_checked_identity() {
     use qsl_replay::spine::{LockEvidence, SpineLimits};
-    use qsl_semantics::value::{CatalogRole, DefinitionLock};
+    use qsl_semantics::value::DefinitionRole;
     let profile = source_literal(
         include_str!("../../qsl-replay/src/execute/tests.rs"),
         "PROFILE",
@@ -2050,11 +2036,7 @@ fn replay_composite_fixture_keeps_checked_identity() {
         "UNIT",
     );
     let source = format!("language \"ix:native\" edition \"1-draft\";\n{profile}{body}");
-    let lock = LockEvidence::default().with_text_profile(
-        DefinitionLock::pinned()
-            .entry(CatalogRole::TextProfile)
-            .reference(),
-    );
+    let lock = LockEvidence::default().with_text_profile(DefinitionRole::TextProfile.reference());
     crate::support::front_end::emitted_with_authority(
         SourceIdentity::new("agent-ix", "test:replay", "git", "r1"),
         "test:replay",

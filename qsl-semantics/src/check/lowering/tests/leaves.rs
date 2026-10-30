@@ -4,7 +4,7 @@
 //! repository's own FR-093 text at compile time.
 
 use super::*;
-use crate::value::definition::{CatalogRole, DefinitionLock};
+use crate::value::definition::DefinitionRole;
 
 const FR_093: &str = include_str!(
     "../../../../../spec/functional/FR-093-lower-checked-value-expressions-to-fr-322-terms.md"
@@ -31,9 +31,7 @@ fn assert_fr093(graph: &SemanticGraph, name: &str) {
 /// QSpec's text definition that the Recursive text-leaf vectors name: the
 /// lock's `text_profile` row.
 fn vector_text_definition() -> DefinitionReference {
-    DefinitionLock::pinned()
-        .entry(CatalogRole::TextProfile)
-        .reference()
+    DefinitionRole::TextProfile.reference()
 }
 
 fn text(max: u64, profile: TextProfile) -> ValueType {

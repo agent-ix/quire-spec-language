@@ -13,7 +13,7 @@
 //!
 //! # Lock
 //!
-//! - `edition` and `definition_selections` come from the `DefinitionLock`
+//! - `edition` and `definition_selections` come from closed typed role mappings
 //!   catalog: the `edition` role, every other always-selected role, and each
 //!   law `DefinitionRef` a node body names. Each is a QSpec `DefinitionRef`,
 //!   exactly `{authority, identity}`.
@@ -110,8 +110,8 @@ use qsl_semantics::check::{
 };
 use qsl_semantics::library::PackageId;
 use qsl_semantics::value::{
-    native_diagnostics_catalog, CatalogEntry, CatalogRole, DefinitionLock, DefinitionReference,
-    HeaderLayer, Member, ModelEntry, NodeOwner, TemporalEntry,
+    native_diagnostics_catalog, DefinitionReference, DefinitionRole, HeaderLayer, Member,
+    ModelRole, NodeOwner, TemporalRole,
 };
 use quire_exact::{Cancel, Integer, NodeKey, Origin, Role, NODE_KEY_DOMAIN};
 use quire_semantic_value::location::Location;
@@ -1043,12 +1043,6 @@ fn source_artifact(source: &RawSourceRef) -> CheckedSourceRef {
     }
 }
 
-/// The catalog's row for `role`. The closed catalog has a row for every
-/// role (`the_catalog_covers_every_role_exactly_once`).
-fn catalog_entry(lock: &DefinitionLock, role: CatalogRole) -> &CatalogEntry {
-    lock.entry(role)
-}
-
 /// The lock's `edition` and `definition_selections` (FR-110 "Lock rows"):
 /// the catalog's edition; then the header-selected layers and every layer
 /// their `requires` closure names, in the lock's row order, and no layer
@@ -1061,7 +1055,6 @@ fn catalog_entry(lock: &DefinitionLock, role: CatalogRole) -> &CatalogEntry {
 /// lock's `without_layer` rows are for a unit that selects layers none of
 /// which is `quire.value.complete/v1`.
 fn catalog_selections(
-    lock: &DefinitionLock,
     layers: &[HeaderLayer],
     laws: &[DefinitionReference],
 ) -> (CheckedSelection, Vec<CheckedArtifactRef>) {
@@ -1069,36 +1062,36 @@ fn catalog_selections(
     // name the law.
     let edition = CheckedSelection {
         role: CheckedSelectionRole::Edition,
-        definition: artifact(&catalog_entry(lock, CatalogRole::Edition).reference()),
+        definition: artifact(&DefinitionRole::Edition.reference()),
     };
-    let closure = lock.closure(layers);
+    let closure = HeaderLayer::closure(layers);
     let qualification = if layers.is_empty() {
-        lock.always_roles()
+        qsl_semantics::value::always_roles()
     } else {
-        lock.qualification_roles(&closure)
+        qsl_semantics::value::qualification_roles(&closure)
     };
     let selected = closure
         .iter()
-        .map(|layer| lock.layer_reference(*layer))
+        .map(|layer| layer.reference())
         .chain(
             qualification
                 .iter()
-                .filter(|role| **role != CatalogRole::Edition)
-                .map(|role| catalog_entry(lock, *role).reference()),
+                .filter(|role| **role != DefinitionRole::Edition)
+                .map(|role| role.reference()),
         )
         // FR-361 item 3: the complete-model lock's `package_selection.always`
         // rows, for a unit whose layers hold the model layer.
         .chain(
             closure
                 .contains(&HeaderLayer::ModelComplete)
-                .then(|| lock.model_catalog().iter().map(ModelEntry::reference))
+                .then(|| ModelRole::ALL.into_iter().map(ModelRole::reference))
                 .into_iter()
                 .flatten(),
         )
         .chain(
             closure
                 .contains(&HeaderLayer::TemporalComplete)
-                .then(|| lock.temporal_catalog().iter().map(TemporalEntry::reference))
+                .then(|| TemporalRole::ALL.into_iter().map(TemporalRole::reference))
                 .into_iter()
                 .flatten(),
         )
@@ -2574,10 +2567,8 @@ fn emit_package_inner(
         laws.push(profile.definition().clone());
     }
 
-    let catalog = DefinitionLock::pinned();
-    let (edition, definition_selections) =
-        catalog_selections(&catalog, graph.header_layers(), &laws);
-    let root = catalog_entry(&catalog, CatalogRole::Root).identity;
+    let (edition, definition_selections) = catalog_selections(graph.header_layers(), &laws);
+    let root = DefinitionRole::Root.identity();
     let lock = CheckedPackageLockV2 {
         sources: sources.into_iter().collect(),
         edition: edition.clone(),
