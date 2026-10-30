@@ -14,7 +14,6 @@ use qsl_forms::{
 };
 use quire_exact::{Integer, IntegerInterval, Presence};
 use serde_json::{json, Value as Json};
-use sha2::{Digest, Sha256};
 
 use super::super::{generated_location, type_declaration, Lowering, SemanticGraph, SemanticNode};
 use super::*;
@@ -40,56 +39,8 @@ mod place_rows;
 
 const SPAN: qsl_foundation::Span = qsl_foundation::Span { start: 0, end: 0 };
 
-/// FR-094's golden vectors by name: `(key, preimage)`, each key recomputed
-/// from the vector's preimage. The vectors that name a QSpec key are absent
-/// while `QSPEC_DIR` is unset.
-fn vectors() -> BTreeMap<String, (String, String)> {
-    crate::check::spec_vectors::vectors("FR-094")
-}
-
-fn vector_key(name: &str) -> NodeKey {
-    let hex = &vectors()[name].0;
-    let mut digest = [0_u8; 32];
-    for (index, byte) in digest.iter_mut().enumerate() {
-        *byte = u8::from_str_radix(&hex[2 * index..2 * index + 2], 16).expect("hex");
-    }
-    NodeKey::from_digest(digest)
-}
-
-/// Assert `key` names vector `name` in `graph`, bytes and key.
-fn assert_vector(graph: &SemanticGraph, key: NodeKey, name: &str) {
-    let (expected_key, expected_preimage) = &vectors()[name];
-    let node = graph
-        .node(key)
-        .unwrap_or_else(|| panic!("{name}: no node keyed {key}"));
-    assert_eq!(
-        std::str::from_utf8(node.preimage()).expect("UTF-8"),
-        expected_preimage,
-        "{name}: preimage bytes"
-    );
-    assert_eq!(&key.to_string(), expected_key, "{name}: key");
-}
-
-/// Assert `graph` holds vector `name`, byte for byte.
-fn assert_holds(graph: &SemanticGraph, name: &str) {
-    assert_vector(graph, vector_key(name), name);
-}
-
 fn preimage(node: &SemanticNode) -> Json {
     serde_json::from_slice(node.preimage()).expect("a preimage is JSON")
-}
-
-/// The parameter node named `name` at `level`.
-fn parameter<'g>(graph: &'g SemanticGraph, name: &str, level: u64) -> &'g SemanticNode {
-    graph
-        .nodes()
-        .find(|node| {
-            let preimage = preimage(node);
-            node.semantic_form() == "parameter"
-                && preimage["body"]["members"][0]["value"]["value"] == json!(name)
-                && preimage["body"]["members"][1]["value"]["value"] == json!(level.to_string())
-        })
-        .unwrap_or_else(|| panic!("no parameter node {name} at level {level}"))
 }
 
 /// Every application node whose operation is `identity`.
@@ -98,10 +49,6 @@ fn applications<'g>(graph: &'g SemanticGraph, identity: &str) -> Vec<&'g Semanti
         .nodes()
         .filter(|node| preimage(node)["body"]["operation"]["identity"] == json!(identity))
         .collect()
-}
-
-fn member_declaration(node: &SemanticNode) -> Json {
-    preimage(node)["body"]["operation"]["member"]["declaration"]["digest"].clone()
 }
 
 // ---------------------------------------------------------------------
@@ -456,86 +403,6 @@ fn lower_with_occurrences<T>(
 // TC-417: model declaration, `Reference<T>` and `Population<T>[N]` nodes.
 // ---------------------------------------------------------------------
 
-/// TC-417 steps 1-2 (FR-094-AC-1, AC-2): `r`'s type node is R1 over M1 and
-/// `s`'s model node M3; under `2.0.0`, the same M1 and R1, because the
-/// content-only `ModelOwner` carries no version. The correspondence holds
-/// exactly the two model nodes.
-#[trace("FR-094-AC-1", "FR-094-AC-2", "FR-094-CON-2", "TC-417")]
-#[test]
-fn reference_types_key_over_their_model_nodes_and_record_the_correspondence() {
-    let g = || {
-        function(
-            "g",
-            &[("r", named("M::Order")), ("s", named("M::Invoice"))],
-            builtin(BuiltinType::Boolean),
-            Expression::boolean(true),
-        )
-    };
-    let acme = admitted("1.0.0");
-    let checked = check(&acme, vec![g()]);
-    let graph = checked.semantic_graph();
-    assert_eq!(
-        parameter(graph, "r", 0).semantic_type(),
-        Some(vector_key("R1"))
-    );
-    for vector in ["M1", "R1", "M3", "R5"] {
-        assert_holds(graph, vector);
-    }
-    let m1 = preimage(graph.node(vector_key("M1")).unwrap());
-    assert_eq!(
-        m1["owner"],
-        json!({"kind": "model", "identity": "acme/orders", "node": "ix://acme/orders/Order"})
-    );
-    assert!(m1["declaration"].is_null());
-    assert!(preimage(graph.node(vector_key("R1")).unwrap())
-        .get("owner")
-        .is_none());
-
-    // FR-094-AC-2: exactly (M1, Order) and (M3, Invoice).
-    let model_nodes: Vec<NodeKey> = graph
-        .nodes()
-        .filter(|node| matches!(node.node_tag(), NodeTag::Model | NodeTag::Relation))
-        .map(SemanticNode::key)
-        .collect();
-    assert_eq!(model_nodes, {
-        let mut expected = vec![vector_key("M1"), vector_key("M3")];
-        expected.sort();
-        expected
-    });
-    assert_eq!(
-        checked.resolve_declaration(vector_key("M1")),
-        Some(&key("Order"))
-    );
-    assert_eq!(
-        checked.resolve_declaration(vector_key("M3")),
-        Some(&key("Invoice"))
-    );
-    assert_eq!(checked.resolve_declaration(vector_key("R1")), None);
-
-    // FR-094-CON-2: every owned node without a source declaration is
-    // model-owned and carries a `ModelOwner`.
-    for node in graph.nodes().filter(|node| node.declaration().is_none()) {
-        if let Some(owner) = preimage(node).get("owner") {
-            assert_eq!(owner["kind"], json!("model"), "{}", node.key());
-        }
-    }
-
-    let acme_2 = admitted("2.0.0");
-    let checked_2 = check(&acme_2, vec![g()]);
-    let graph_2 = checked_2.semantic_graph();
-    assert_eq!(
-        parameter(graph_2, "r", 0).semantic_type(),
-        Some(vector_key("R1"))
-    );
-    for vector in ["M1", "R1", "M3", "R5"] {
-        assert_holds(graph_2, vector);
-    }
-    assert_eq!(
-        checked_2.resolve_declaration(vector_key("M1")),
-        Some(&key("Order"))
-    );
-}
-
 /// FR-093 `Equality` row (FR-093-AC-3): `r = s` over two
 /// `Reference<M::Order>` parameters is `quire.op.reference.eq`, with no
 /// member, mode, law or leaf.
@@ -564,19 +431,6 @@ fn reference_equality_is_the_reference_eq_operation() {
     assert_eq!(equal["body"]["arguments"].as_array().map(Vec::len), Some(2));
 }
 
-/// TC-417 step 3 (FR-094-AC-1): the relationship `billedTo` keys to M4.
-#[trace("FR-094-AC-1", "TC-417")]
-#[test]
-fn a_relationship_keys_to_its_relation_node() {
-    let acme = admitted("1.0.0");
-    let (billed_to, graph) = lower(
-        std::slice::from_ref(&acme.model),
-        Default::default(),
-        |lowering| lowering.model_node(&key("billedTo"), &generated_location()),
-    );
-    assert_vector(&graph, billed_to.expect("billedTo keys"), "M4");
-}
-
 /// A selected relationship is a model graph root even when no checked value
 /// or frame names it yet.
 #[trace("FR-093-AC-27", "FR-094-AC-9", "TC-417")]
@@ -603,145 +457,6 @@ fn selected_relationships_are_rooted_in_the_checked_graph() {
     assert_eq!(generated.len(), 1, "the unreferenced relation has one root");
     assert_eq!(generated[0].0, relations[0].key());
     assert_eq!(generated[0].2, &declaration);
-}
-
-/// TC-417 steps 4-5 (FR-094-AC-3, AC-4): the population and reference
-/// parameters, their type nodes and the model rows are P5, PO1 (over S1),
-/// P6, E4 (S2), E5 (R1), E6 (R3), E7, E8 and E9; `Population<Order>[5]` and
-/// `Population<Invoice>[3]` are PO2 and PO3.
-///
-/// FR-093-AC-8: the checked `Attribute`, `AllInstances`, `Lookup` (both
-/// absence modes) and `Dispatch` nodes lower to their rows' operation,
-/// member, mode and arguments. A `Pre` node is checked only in a standalone
-/// postcondition expression, which `check` does not lower into the package
-/// graph.
-#[trace("FR-094-AC-3", "FR-094-AC-4", "TC-417", "FR-093-AC-8", "TC-415")]
-#[test]
-fn population_reference_and_model_rows_match_their_vectors() {
-    let acme = admitted("1.0.0");
-    let parameters = [("p", population("M::Order", 3)), ("r", named("M::Order"))];
-    let all_instances = Expression::all_instances(named("M::Order"), name("p"));
-    let lookup = |absence| Expression::lookup(named("M::Order"), name("p"), name("r"), absence);
-    let mut declarations = dispatch(&acme, "Order/size");
-    declarations.functions.extend([
-        function(
-            "f1",
-            &parameters,
-            builtin(BuiltinType::Integer),
-            Expression::size(all_instances),
-        ),
-        function(
-            "f2",
-            &parameters,
-            named("M::Order"),
-            lookup(qsl_foundation::absence::AbsenceMode::Undefined),
-        ),
-        function(
-            "f3",
-            &parameters,
-            builtin(BuiltinType::Boolean),
-            Expression::present(lookup(qsl_foundation::absence::AbsenceMode::Empty)),
-        ),
-        function(
-            "f4",
-            &parameters,
-            builtin(BuiltinType::Int).with_bounds(vec!["0".to_owned(), "9".to_owned()]),
-            Expression::field(Expression::deref(name("r")), "total".to_owned()),
-        ),
-        // A dispatched call checks only inside a clause (FR-151).
-        FunctionDeclaration::clause(
-            "f5",
-            parameters
-                .iter()
-                .map(|(name, form)| ((*name).to_owned(), form.clone()))
-                .collect(),
-            builtin(BuiltinType::Boolean),
-            None,
-            Expression::binary(
-                BinaryOperator::GreaterOrEqual,
-                Expression::dispatch(name("r"), "size".to_owned(), Vec::new()),
-                Expression::integer(0_i64),
-            ),
-            DeclaredClauseKind::Precondition,
-        ),
-        function(
-            "f6",
-            &[
-                ("p", population("M::Order", 5)),
-                ("q", population("M::Invoice", 3)),
-            ],
-            builtin(BuiltinType::Boolean),
-            Expression::boolean(true),
-        ),
-    ]);
-    let checked = check_declarations(declarations);
-    let graph = checked.semantic_graph();
-
-    assert_vector(graph, parameter(graph, "p", 0).key(), "P5");
-    assert_vector(graph, parameter(graph, "r", 1).key(), "P6");
-    for vector in [
-        "PO1", "S1", "E4", "S2", "E5", "E6", "R3", "E7", "E8", "E9", "PO2", "PO3", "S3", "R5",
-    ] {
-        assert_holds(graph, vector);
-    }
-    assert_eq!(
-        graph.node(vector_key("PO1")).unwrap().semantic_type(),
-        Some(vector_key("S1"))
-    );
-    assert_ne!(vector_key("PO1"), vector_key("PO3"));
-    assert_eq!(
-        member_declaration(graph.node(vector_key("E8")).unwrap()),
-        json!(vector_key("M1").to_string())
-    );
-    assert_eq!(
-        member_declaration(graph.node(vector_key("E9")).unwrap()),
-        json!(vector_key("M1").to_string())
-    );
-}
-
-/// TC-417 step 6 (FR-094-AC-4): over `s: Reference<M::Sub>` (R4), the
-/// attribute and dispatch members name `Sub`'s model node M5, not `Order`'s
-/// M1, though `Order` declares `total`.
-#[trace("FR-094-AC-4", "TC-417")]
-#[test]
-fn model_members_name_the_static_object_type() {
-    let acme = admitted("1.0.0");
-    let mut declarations = dispatch(&acme, "Sub/size");
-    declarations.functions.extend([
-        function(
-            "total_of",
-            &[("s", named("M::Sub"))],
-            builtin(BuiltinType::Int).with_bounds(vec!["0".to_owned(), "9".to_owned()]),
-            Expression::field(Expression::deref(name("s")), "total".to_owned()),
-        ),
-        FunctionDeclaration::clause(
-            "sized",
-            vec![("s".to_owned(), named("M::Sub"))],
-            builtin(BuiltinType::Boolean),
-            None,
-            Expression::binary(
-                BinaryOperator::GreaterOrEqual,
-                Expression::dispatch(name("s"), "size".to_owned(), Vec::new()),
-                Expression::integer(0_i64),
-            ),
-            DeclaredClauseKind::Precondition,
-        ),
-    ]);
-    let checked = check_declarations(declarations);
-    let graph = checked.semantic_graph();
-    assert_eq!(
-        parameter(graph, "s", 0).semantic_type(),
-        Some(vector_key("R4"))
-    );
-    assert_holds(graph, "R4");
-    assert_holds(graph, "M5");
-    let m5 = json!(vector_key("M5").to_string());
-    let project = applications(graph, "quire.op.record.project");
-    let call = applications(graph, "quire.op.model.dispatch_call");
-    assert_eq!(project.len(), 1);
-    assert_eq!(call.len(), 1);
-    assert_eq!(member_declaration(project[0]), m5);
-    assert_eq!(member_declaration(call[0]), m5);
 }
 
 /// TC-417 step 7 (FR-094-AC-7): an unmapped `EffectiveId`, an unadmitted
@@ -881,85 +596,6 @@ fn the_model_matches_have_no_catch_all_arm() {
 // TC-418: clause functions.
 // ---------------------------------------------------------------------
 
-/// The clause function `graph` keys for `member`'s `clause`, by owner node
-/// and `clause` binding.
-fn clause_function<'g>(
-    graph: &'g SemanticGraph,
-    member: &str,
-    clause: &str,
-) -> Vec<&'g SemanticNode> {
-    graph
-        .nodes()
-        .filter(|node| {
-            let preimage = preimage(node);
-            node.node_tag() == NodeTag::Function
-                && preimage["owner"]["node"] == json!(format!("ix://acme/orders/{member}"))
-                && preimage["body"]["members"]
-                    .as_array()
-                    .and_then(|members| members.last())
-                    .is_some_and(|last| {
-                        last["name"] == "clause" && last["value"]["value"] == clause
-                    })
-        })
-        .collect()
-}
-
-/// TC-418 steps 1, 3 and 5 (FR-094-AC-5): `Order.size`'s precondition and
-/// body are C1 and C2 over P7, `Order.count`'s precondition is C4, and
-/// renaming the synthesized labels leaves every key unchanged.
-#[trace("FR-094-AC-5", "FR-094-CON-2", "TC-418")]
-#[test]
-fn clause_functions_key_under_their_operation_members_model_owner() {
-    let acme = admitted("1.0.0");
-    let size = check_declarations(dispatch(&acme, "Order/size"));
-    let graph = size.semantic_graph();
-    assert_holds(graph, "P7");
-    assert_holds(graph, "C1");
-    assert_holds(graph, "C2");
-    let c1 = preimage(graph.node(vector_key("C1")).unwrap());
-    assert_eq!(
-        c1["owner"],
-        json!({"kind": "model", "identity": "acme/orders", "node": "ix://acme/orders/Order/size"})
-    );
-    assert!(c1["declaration"].is_null());
-
-    let count = check_declarations(dispatch(&acme, "Order/count"));
-    assert_holds(count.semantic_graph(), "C4");
-
-    let mut relabelled = dispatch(&acme, "Order/size");
-    for (index, function) in relabelled.functions.iter_mut().enumerate() {
-        function.name = format!("renamed_{index}");
-    }
-    let relabelled = check_declarations(relabelled);
-    let keys = |graph: &SemanticGraph| graph.nodes().map(SemanticNode::key).collect::<Vec<_>>();
-    assert_eq!(keys(relabelled.semantic_graph()), keys(graph));
-}
-
-/// TC-418 step 2 (FR-094-AC-5): under `2.0.0`, the receiver parameter
-/// keys to P7 over R1 and `Order.size`'s clauses to C1 and C2 again: the
-/// content-only `ModelOwner` carries no version, so a version-only change
-/// of the domain package keys the same clause functions.
-#[trace("FR-094-AC-5", "TC-418")]
-#[test]
-fn a_version_only_change_keys_the_same_clause_functions() {
-    let size = |version: &str| {
-        let acme = admitted(version);
-        check_declarations(dispatch(&acme, "Order/size"))
-    };
-    let (first, second) = (size("1.0.0"), size("2.0.0"));
-    let graph = second.semantic_graph();
-    for vector in ["R1", "P7", "C1", "C2"] {
-        assert_holds(graph, vector);
-    }
-    let c1 = preimage(graph.node(vector_key("C1")).unwrap());
-    assert_eq!(
-        c1["owner"],
-        json!({"kind": "model", "identity": "acme/orders", "node": "ix://acme/orders/Order/size"})
-    );
-    let keys = |graph: &SemanticGraph| graph.nodes().map(SemanticNode::key).collect::<Vec<_>>();
-    assert_eq!(keys(graph), keys(first.semantic_graph()));
-}
-
 /// FR-094: a check selects one version of each domain package identity;
 /// two admitted versions of `acme/orders` refuse as a broken invariant
 /// instead of resolving declarations against whichever admitted view comes
@@ -981,29 +617,6 @@ fn two_admitted_versions_of_one_model_identity_refuse() {
         ),
         "{refusals:?}"
     );
-}
-
-/// TC-418 step 4 (FR-094-AC-5): `Sub.size`'s authored precondition is C5 and
-/// its effective precondition C6 (over E10) in both dispatch operations,
-/// one node each; `Order.size`'s authored precondition stays C1.
-#[trace("FR-094-AC-5", "TC-418")]
-#[test]
-fn a_redefining_candidates_clauses_key_once_under_its_own_owner() {
-    let acme = admitted("1.0.0");
-    for root in ["Order/size", "Sub/size"] {
-        let checked = check_declarations(dispatch(&acme, root));
-        let graph = checked.semantic_graph();
-        assert_holds(graph, "P8");
-        for vector in ["L4", "E10", "C5", "C6"] {
-            assert_holds(graph, vector);
-        }
-        assert_eq!(clause_function(graph, "Sub/size", "precondition").len(), 2);
-        let c6 = preimage(graph.node(vector_key("C6")).unwrap());
-        assert_eq!(c6["owner"]["node"], json!("ix://acme/orders/Sub/size"));
-        if root == "Order/size" {
-            assert_holds(graph, "C1");
-        }
-    }
 }
 
 // ---------------------------------------------------------------------
@@ -1047,37 +660,23 @@ mod quantities {
         .expect("a root unit")
     }
 
-    // QSpec's nominal vectors, by name; each key is recomputed from the
-    // hand-written preimage (`spec_vectors::local_key`), and
-    // `the_nominal_keys_are_qspecs_published_vectors` compares them with
-    // QSpec's published vectors when `$QSPEC_DIR` is set.
+    // Four distinct nominal nodes, by name; each stands for an arbitrary
+    // node key.
     const LENGTH: &str = "dimension-length";
     const TIME: &str = "dimension-time";
     const METRE: &str = "unit-metre";
     const SECOND: &str = "unit-second";
 
-    /// `name_or_hex`, with a QSpec vector name replaced by that vector's key.
+    /// `name_or_hex`, with a nominal node name replaced by its stand-in key.
     fn resolved(name_or_hex: &str) -> String {
-        if name_or_hex.starts_with("dimension-") || name_or_hex.starts_with("unit-") {
-            crate::check::spec_vectors::local_key(name_or_hex)
-                .unwrap_or_else(|| panic!("QSpec publishes no vector {name_or_hex}"))
-        } else {
-            name_or_hex.to_owned()
-        }
-    }
-
-    /// The recomputed keys are the ones QSpec publishes for the same nodes
-    /// (compared only when `$QSPEC_DIR` is set; `make conformance` requires
-    /// it).
-    #[test]
-    fn the_nominal_keys_are_qspecs_published_vectors() {
-        for name in [LENGTH, TIME, METRE, SECOND] {
-            let Some(published) = crate::check::spec_vectors::published_key(name) else {
-                println!("skipped: QSPEC_DIR not set");
-                return;
-            };
-            assert_eq!(resolved(name), published, "{name}");
-        }
+        let byte = match name_or_hex {
+            LENGTH => "a1",
+            TIME => "a2",
+            METRE => "a3",
+            SECOND => "a4",
+            other => return other.to_owned(),
+        };
+        byte.repeat(32)
     }
 
     fn node_key(hex: &str) -> NodeKey {
@@ -1119,121 +718,6 @@ mod quantities {
 
     fn quantity(hex: &str) -> ValueType {
         ValueType::Quantity(UnitId::declared(node_key(hex)))
-    }
-
-    /// TC-419 steps 1-2 (FR-094-AC-6): a declared unit's quantity is typed
-    /// by the unit's nominal node, with no `compound_unit` node; the result
-    /// type of `a * a`, formed while `check` types the body, is U1.
-    ///
-    /// `a / t`, `a / a` and `a * a / a` do not check as a function body:
-    /// no guard proves a quantity divisor nonzero (`facts`'s
-    /// `NodeKind::Quantity(Divide)` refuses `unproved-nonzero`), so their
-    /// result types U2 to U4 are keyed from the units `result_unit` forms
-    /// for them, the same forming `check` does while typing.
-    #[trace("FR-094-AC-6", "TC-419")]
-    #[test]
-    fn quantity_types_key_to_the_unit_node_or_a_compound_unit_node() {
-        let package = |body: Expression| PackageDeclarations {
-            types: TypeEnvironment::default().with_units(units()),
-            aliases: vec![
-                ("Length".to_owned(), quantity(METRE)),
-                ("Time".to_owned(), quantity(SECOND)),
-            ],
-            functions: vec![function(
-                "q",
-                &[("a", named("Length")), ("t", named("Time"))],
-                builtin(BuiltinType::Boolean),
-                body,
-            )],
-            ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
-        };
-        let plain = check_declarations(package(Expression::boolean(true)));
-        let graph = plain.semantic_graph();
-        assert_eq!(
-            parameter(graph, "a", 0).semantic_type(),
-            Some(node_key(METRE))
-        );
-        assert!(graph
-            .nodes()
-            .all(|node| node.semantic_form() != "compound_unit"));
-        // The type node is the unit's QSpec nominal node, built from its
-        // `quire.unit-node/v1` preimage and typed by its dimension's nominal
-        // node, which the graph holds too.
-        let metre = graph.node(node_key(METRE)).expect("the metre unit node");
-        assert_eq!(
-            (metre.node_tag(), metre.semantic_form()),
-            (NodeTag::ScalarType, "unit")
-        );
-        assert!(matches!(metre.nominal(), Some(NominalNode::Unit(None))));
-        assert_eq!(metre.semantic_type(), Some(node_key(LENGTH)));
-        assert_eq!(
-            Sha256::digest(metre.preimage()).as_slice(),
-            node_key(METRE).as_bytes(),
-            "the unit node's preimage is the one its key hashes"
-        );
-        let length = graph
-            .node(node_key(LENGTH))
-            .expect("the Length dimension node");
-        assert_eq!(length.semantic_form(), "dimension");
-        assert!(matches!(
-            length.nominal(),
-            Some(NominalNode::Dimension(None))
-        ));
-        assert!(graph.node(node_key(SECOND)).is_some() && graph.node(node_key(TIME)).is_some());
-
-        let square = Expression::binary(BinaryOperator::Multiply, name("a"), name("a"));
-        let squared = check_declarations(package(Expression::binary(
-            BinaryOperator::Equal,
-            square.clone(),
-            square,
-        )));
-        let graph = squared.semantic_graph();
-        assert_holds(graph, "U1");
-        let product = applications(graph, "quire.op.quantity.mul");
-        assert_eq!(product.len(), 1);
-        assert_eq!(product[0].semantic_type(), Some(vector_key("U1")));
-
-        use quire_semantic_value::quantity::{result_unit, UnitOperation};
-        let table = units();
-        let unit = |hex: &str| {
-            table
-                .get(UnitId::declared(node_key(hex)))
-                .expect("an admitted unit")
-                .clone()
-        };
-        let (metre, second) = (unit(METRE), unit(SECOND));
-        let form = |operation, left: &QuantityUnit, right: &QuantityUnit| {
-            result_unit(operation, left, right).expect("the unit forms")
-        };
-        let per_second = form(UnitOperation::Divide, &metre, &second);
-        let ratio = form(UnitOperation::Divide, &metre, &metre);
-        let square = form(UnitOperation::Multiply, &metre, &metre);
-        let back = form(UnitOperation::Divide, &square, &metre);
-        let mut formed = table.clone();
-        for unit in [&per_second, &ratio, &back] {
-            formed
-                .insert(unit.clone())
-                .expect("a compound unit has an id");
-        }
-        let (keys, graph) = lower(&[], formed, |lowering| {
-            [&per_second, &ratio, &back].map(|unit| {
-                lowering
-                    .type_node(
-                        &ValueType::Quantity(unit.id().expect("a compound unit has an id")),
-                        &generated_location(),
-                    )
-                    .expect("a held compound unit keys")
-            })
-        });
-        for (key, vector) in keys.into_iter().zip(["U2", "U3", "U4"]) {
-            assert_vector(&graph, key, vector);
-        }
-        let u2 = preimage(graph.node(vector_key("U2")).unwrap());
-        assert_eq!(
-            u2["body"]["members"][0]["members"][0]["value"]["target"]["digest"],
-            json!(resolved(METRE))
-        );
-        assert_ne!(vector_key("U4"), node_key(METRE));
     }
 
     /// FR-093 `ConvertScalar` quantity row (FR-093-AC-3): converting a

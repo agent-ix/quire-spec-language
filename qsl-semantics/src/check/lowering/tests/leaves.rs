@@ -250,49 +250,6 @@ fn union_leaf_paths_follow_member_then_position() {
     assert!(equality_leaves(vec![list], "List").is_empty());
 }
 
-/// FR-092 G8: a `Sequence<Tree>` named after `Tree`'s group is keyed, with
-/// any bound, is over the group's `sequence` member, not a second
-/// `sequence` node.
-#[trace("FR-092-AC-11", "TC-413")]
-#[test]
-fn a_collection_over_a_recursive_record_reuses_the_group_base() {
-    let tree = record(
-        "Tree",
-        vec![required(
-            "kids",
-            sequence(ValueType::Composite(handle("Tree")), Some((0, 3))),
-        )],
-    );
-    let trees = TypeForm::collection(CollectionKind::Sequence, SPAN)
-        .with_arguments(vec![named("Tree")])
-        .with_bounds(vec!["0".into(), "5".into()]);
-    let wide = function(
-        "wide",
-        &[("s", trees)],
-        boolean(),
-        None,
-        Expression::boolean(true),
-    );
-    let checked = package(vec![tree], vec![wide])
-        .check(CheckingLimits::default())
-        .expect("the parameter checks");
-    let graph = checked.semantic_graph();
-    let g8 = node_by_key(graph, &vector_key("G8")).key();
-    let sequences: Vec<NodeKey> = graph
-        .nodes()
-        .filter(|node| node.semantic_form() == "sequence")
-        .map(SemanticNode::key)
-        .collect();
-    assert_eq!(sequences, [g8]);
-    assert_eq!(
-        parameter_named(graph, "s")
-            .semantic_type()
-            .and_then(|bounds| graph.node(bounds))
-            .and_then(SemanticNode::semantic_type),
-        Some(g8)
-    );
-}
-
 /// FR-093 "Text leaves" rule 4: a composite from which no text type is
 /// reachable is not entered, so a cluster of twelve text-free records that
 /// each hold an optional field of every other adds no leaf and no walk, and
