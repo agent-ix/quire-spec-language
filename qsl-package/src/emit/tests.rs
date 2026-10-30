@@ -400,8 +400,6 @@ fn the_lock_selects_the_catalog_definitions() {
     let source = json!({
         "authority": "a",
         "identity": "u",
-        "digest_domain": "quire.source.bytes/v1",
-        "digest": sha256_hex(TEXT),
     });
     assert_eq!(wire["lock"]["sources"], json!([source]));
     for entry in wire["source_map"].as_array().unwrap() {

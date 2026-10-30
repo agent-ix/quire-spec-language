@@ -52,13 +52,11 @@ fn artifact_ref(label: &str) -> Value {
     json!({"authority": "pkg", "identity": label})
 }
 
-/// A QSpec `RawSourceRef`: authority, identity and the digest of its bytes.
+/// A QSpec `RawSourceRef`: authority and identity.
 fn source_ref(label: &str) -> Value {
     json!({
         "authority": "pkg",
         "identity": label,
-        "digest_domain": SOURCE_DOMAIN,
-        "digest": hex(label),
     })
 }
 
@@ -657,7 +655,7 @@ fn refuses_unrecognized_top_level_member() {
 }
 
 /// A definition reference is exactly `{authority, identity}` and a source
-/// reference exactly `{authority, identity, digest_domain, digest}`: a
+/// reference exactly `{authority, identity}`: a
 /// `revision`, `digest_domain` or `digest` on the edition, a definition
 /// selection or the diagnostics catalog, or a `revision` on a source row or
 /// a region's source, refuses `unknown_member`. There is no reader for the
@@ -702,6 +700,11 @@ fn an_old_reference_shape_refuses_unknown_member() {
     let mut source_row = envelope.clone();
     source_row["lock"]["sources"][0]["revision"] = revision.clone();
     mutations.push(("lock.sources.0 revision".to_owned(), source_row));
+    for (member, value) in [("digest_domain", &domain), ("digest", &digest)] {
+        let mut source_row = envelope.clone();
+        source_row["lock"]["sources"][0][member] = value.clone();
+        mutations.push((format!("lock.sources.0 {member}"), source_row));
+    }
     let mut region_source = envelope.clone();
     region_source["source_map"][0]["regions"][0]["source"]["revision"] = revision;
     mutations.push(("region source revision".to_owned(), region_source));
