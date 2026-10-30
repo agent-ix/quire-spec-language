@@ -31,6 +31,8 @@ fn a_100000_vertex_cycle_is_found_on_a_small_stack() {
     assert_eq!(result[0].len(), COUNT);
 }
 
+// BLOCKED-BY QSL-1282 (owner: planner titan:QSL:plan): locked quire-exact d278fe4c has
+// `from_digest` as the only `NodeKey` constructor; removed in the swap.
 fn handle(label: &str) -> NodeKey {
     NodeKey::from_digest(qsl_foundation::ByteDigest::of(label.as_bytes()).as_bytes())
 }

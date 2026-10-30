@@ -157,8 +157,9 @@ it.
 | Validation and diagnostics | IR reader refuses a mismatched `package_id` under FR-322 (IR TC-048). |
 | Equality | normalized: identity and version compare for equality. |
 
-`NativePackageIdentity` (native-v1, `native-checked-clauses/1`) is lane-private
-(§6).
+`NativePackageIdentity` (native-v1, `native-checked-clauses/1`) is retired:
+removed with its hash and its `canonical_identity` member (QSL-1260); the native
+package's canonical content is compared by equality, with no identity value.
 
 #### O-03 Model declaration identity (DA-01)
 
@@ -1180,7 +1181,7 @@ lane D converges.
 | Concept | Lane-private type | Canonical owner |
 | --- | --- | --- |
 | Declaration identity | `linking::DeclarationKey` | O-04 checked node id |
-| Package identity | `NativePackageIdentity` | O-02 |
+| Package identity | `NativePackageIdentity` (retired, QSL-1260; no replacement) | O-02 |
 | Checked typestate | `checking::CheckedPackage<'a>` | O-15 |
 | Types | `checking::types::NativeType`; native-v1 use of `ir::ValueType` | O-14 |
 | Values | `runtime::input::ValueNode`, `state::input::Value` | O-13 |
@@ -1383,7 +1384,7 @@ Primary-owner items:
 | --- | --- |
 | DA-01 | O-03: `quire_checked::key::DeclarationKey` for model declarations; checked node id for QSL-authored ones; `linking::DeclarationKey` lane-private. |
 | DA-02 | O-04, O-05: `NodeKey` (checked-semantic-node) and `EffectiveId` (effective-declaration) are distinct identities with no conversion; correspondence is checker-recorded. |
-| DA-03 | O-02: v2 `package_id` minted by QSL; `NativePackageIdentity` lane-private. |
+| DA-03 | O-02: v2 `package_id` minted by QSL; `NativePackageIdentity` retired (QSL-1260). |
 | DA-04 | O-15, T-1: `CheckedPackage`, defined in layer-4 `package`, canonical for S4; one nominal type per stage output; checker-only construction. |
 | DA-05 | O-14: package types are checked nodes; kernel `ValueType` for evaluation; `ValueTypeRef` for model fields. |
 | DA-06 | O-13: kernel `Value`. |

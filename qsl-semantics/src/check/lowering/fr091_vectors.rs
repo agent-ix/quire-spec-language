@@ -9,6 +9,12 @@
 //! number is a decimal string) and hashes the bytes. It shares no code with
 //! the production preimage types, and no key is recorded anywhere.
 //!
+//! BLOCKED-BY QSL-1299 (owner: planner titan:QSL:plan): this is the
+//! independent oracle for the production `NodeKey` (FR-091 states the key as
+//! the SHA-256 of the preimage). `assemble/tests.rs` and
+//! `tests/it/dimension_equivalence.rs` compare production keys against it, so
+//! it cannot be removed before the key itself is.
+//!
 //! The file depends on `serde_json` and `qsl_foundation` only, so the
 //! integration tests include it by path as well.
 

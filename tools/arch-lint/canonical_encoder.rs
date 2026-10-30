@@ -136,69 +136,15 @@ pub(crate) struct Exemption {
 }
 
 /// Every exemption. A file may carry more than one, of different kinds.
-pub(crate) const EXEMPT: &[Exemption] = &[
-    Exemption {
-        crate_src: "src",
-        module: "command",
-        functions: &["with_request_limits"],
-        calls: &[],
-        kind: ExemptionKind::NotAnIdentity,
-        reason: "the FR-001 `ByteDigest` of the exact artifact bytes it read from disk, \
+pub(crate) const EXEMPT: &[Exemption] = &[Exemption {
+    crate_src: "src",
+    module: "command",
+    functions: &["with_request_limits"],
+    calls: &[],
+    kind: ExemptionKind::NotAnIdentity,
+    reason: "the FR-001 `ByteDigest` of the exact artifact bytes it read from disk, \
                  handed to the command's action; not an identity over a canonical form",
-    },
-    Exemption {
-        crate_src: "src",
-        module: "native_model",
-        functions: &["NativeModel::new_with_profile"],
-        calls: &[],
-        kind: ExemptionKind::NotAnIdentity,
-        reason: "the FR-001 `ByteDigest` of the native model artifact bytes it has just \
-                 emitted; not an identity over a canonical form",
-    },
-    Exemption {
-        crate_src: "src",
-        module: "package",
-        functions: &["NativePackage::new", "NativePackage::read_verified"],
-        calls: &[],
-        kind: ExemptionKind::NotAnIdentity,
-        reason: "the FR-001 `ByteDigest` of the emitted package bytes, and of supplied \
-                 package bytes checked against their expected reference; not an identity \
-                 over a canonical form",
-    },
-    Exemption {
-        crate_src: "src",
-        module: "protocol_artifact::encoding",
-        functions: &["candidate"],
-        calls: &[],
-        kind: ExemptionKind::NotAnIdentity,
-        reason: "the FR-001 `ByteDigest` of a transport candidate's exact bytes; not an \
-                 identity over a canonical form",
-    },
-    Exemption {
-        crate_src: "src",
-        module: "protocol_artifact::handoff::writer",
-        functions: &["reference", "DefinitionInputs::new"],
-        calls: &[],
-        kind: ExemptionKind::NotAnIdentity,
-        reason: "the handoff writer's FR-001 `ByteDigest`s of exact bytes it has \
-                 emitted or embedded (offer, mutation offers, sources, clock inputs, rule \
-                 placeholders, its own source); not an identity over a \
-                 canonical form",
-    },
-    Exemption {
-        crate_src: "src",
-        module: "protocol_artifact::handoff::writer",
-        functions: &["compile_with", "emit_and_read"],
-        calls: &["bind", "admit"],
-        kind: ExemptionKind::NotAnIdentity,
-        reason: "these two functions name no `serde_json` themselves; their only \
-                 hash sites are their calls into `linking::composed::binding::bind` and \
-                 `protocol_artifact::native::admit`, which hash the admission evidence they \
-                 construct, not a canonical form of it. Pinned to those two calls so this \
-                 exemption cannot silently widen if either function grows a local hash or a \
-                 JSON call of its own.",
-    },
-];
+}];
 
 /// One call from a file to a function defined in another file of its crate.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -1490,15 +1436,8 @@ pub(super) fn digest_of(value: &serde_json::Value) -> [u8; 32] {
         let dir = tree();
         write(
             dir.path(),
-            "src/protocol_artifact/encoding.rs",
+            "src/command.rs",
             "pub fn encode(v: &V) -> Vec<u8> { quire_canonical::to_vec(v, L).unwrap() }\n",
-        );
-        write(
-            dir.path(),
-            "src/package.rs",
-            "use serde_json::Value;\nimpl NativePackage {\n    fn new(b: &[u8]) {\n        \
-             ByteDigest::of(b);\n    }\n    fn read_verified(b: &[u8]) {\n        \
-             ByteDigest::of(b);\n    }\n}\n",
         );
         let outcome = evaluate(dir.path()).unwrap();
         assert!(!outcome.passed());
@@ -1507,6 +1446,6 @@ pub(super) fn digest_of(value: &serde_json::Value) -> [u8; 32] {
             .iter()
             .map(|(exemption, function)| (exemption.module, *function))
             .collect();
-        assert_eq!(stale, vec![("protocol_artifact::encoding", None)]);
+        assert_eq!(stale, vec![("command", None)]);
     }
 }
