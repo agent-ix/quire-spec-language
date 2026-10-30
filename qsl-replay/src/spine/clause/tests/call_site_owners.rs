@@ -328,6 +328,7 @@ fn locate(
 ) -> Result<CallSite<OperationSite>, Box<CallSiteRefusal>> {
     call_site(
         source(),
+        "fixture".to_owned(),
         "call-site-owners.native",
         unit.as_bytes(),
         [document],
@@ -501,13 +502,7 @@ fn call_site_refuses_a_non_owner_and_an_ambiguous_operation() {
         "post TouchA using v on Config::A::touch { true }\n\
          post TouchB using v on Config::B::touch { true }",
     );
-    let package = {
-        let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
-        compile_config_version_unit(&unit, &packages)
-            .emitted
-            .package_id()
-            .record()
-    };
+    let package = qsl_semantics::library::LibraryName::new("fixture").unwrap();
     let owners = [
         ("Holder", "record value type"),
         ("Happened", "event type"),
@@ -578,12 +573,12 @@ fn a_call_site_frame_operation_resolves_as_a_replay_frame_target() {
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let compiled = compile_config_version_unit(&unit, &packages);
     let graph = compiled.package.graph();
-    let package_id = compiled.emitted.package_id();
+    let package_name = qsl_semantics::library::LibraryName::new("fixture").unwrap();
 
     for (owner, name) in [("Flow", "go"), ("OrderLifecycle", "place")] {
         let site = locate(&unit, &document, &selection(owner, name))
             .unwrap_or_else(|refusal| panic!("{owner}::{name}: {refusal:?}"));
-        let (context, frame) = resolve_target(graph, &site.site.frame_operation, package_id)
+        let (context, frame) = resolve_target(graph, &site.site.frame_operation, &package_name)
             .unwrap_or_else(|refusal| panic!("{owner}::{name}: {refusal:?}"));
         assert_eq!(
             crate::frame.frame().clone(),
@@ -599,7 +594,7 @@ fn a_call_site_frame_operation_resolves_as_a_replay_frame_target() {
     }
 
     let inherited = frame_operation("ExpressLifecycle", "place");
-    let Err(refusal) = resolve_target(graph, &inherited, package_id) else {
+    let Err(refusal) = resolve_target(graph, &inherited, &package_name) else {
         panic!("ExpressLifecycle only inherits place");
     };
     assert!(
@@ -631,6 +626,7 @@ fn a_field_of_a_process_or_state_machine_is_not_selectable() {
         };
         let refusal = call_site(
             source(),
+            "fixture".to_owned(),
             "call-site-owners.native",
             unit.as_bytes(),
             [document.as_slice()],

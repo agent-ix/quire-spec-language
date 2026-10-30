@@ -1515,9 +1515,8 @@ fn display_path(path: &[LibraryName]) -> String {
 }
 
 /// One supplied library as its supplier names it (ADR-015 D-1; QSpec
-/// FR-307): its identity and its source unit. It carries no
-/// `package_id`: a library's `package_id` is the one its own compile yields
-/// (ADR-013 O-02).
+/// FR-307): its identity and its source unit. A library is identified by
+/// its [`LibraryName`](qsl_semantics::library::LibraryName).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SuppliedLibrary {
     /// The library identity, a non-empty string (ADR-015 D-3).
