@@ -14,6 +14,8 @@
 //!   and the terminal stutter last. A caller encoding a product of several
 //!   subjects takes one component disjunct from this relation per subject.
 //! - `query` assembles a script for an item and a [`SmtQueryKind`].
+//! - `refinement` assembles a refinement's per-step simulation queries
+//!   (FR-315 "Refinement queries").
 
 mod expression;
 mod hyper;
@@ -22,6 +24,7 @@ mod layout;
 mod limits;
 mod monitor;
 mod query;
+mod refinement;
 mod refusal;
 pub(crate) mod relation;
 pub mod script;
@@ -31,4 +34,8 @@ pub use kind::SmtQueryKind;
 pub use limits::SmtEncodingLimits;
 pub use monitor::{MonitorTable, Move};
 pub use query::{encode_smt_query, SmtItem};
+pub use refinement::{
+    encode_refinement_query, refinement_step_sources, RefinementCertificateRequest,
+    RefinementQueryKind,
+};
 pub use refusal::{ExpressionLocus, LifecycleLocus, Measure, Refusal, SmtEncodingRefusal};

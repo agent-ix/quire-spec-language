@@ -127,7 +127,7 @@ compiler produces it and CG reads it in counterexamples; it serializes as
   access whose memory model chooses a message or slot, that choice; for a
   memory step, the form its model gives.
 - Successors of one identity SHALL be told apart by their post-state's
-  state-key digest, as ADR-018 CX-3 tells FR-120's apart.
+  state key, as ADR-018 CX-3 tells FR-120's apart.
 
 ### One application rule
 

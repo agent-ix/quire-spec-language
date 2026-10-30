@@ -27,6 +27,8 @@ exact FormalSource and complete authored clause/requirement/execution-point
 correspondence, and caller-configured CheckLimits. No runtime sample participates
 in type inference or proof. The concrete contract and proof abstraction are
 defined in [native-model-checking.md](../../docs/native-model-checking.md).
+Source spans and formal positions are derived from the linked unit's own
+`Source` bytes; `CheckBindings` carries no separate source to compare.
 
 ## Outputs
 
@@ -101,7 +103,7 @@ and contains no healthy/violating assessment of an unsupplied population.
 | FR-016-AC-3 | Guarded Version addition discharges through the actual IR prover; absent/weakened guards, possible zero divisors and signed-minimum/-1 fail definedness, while specified signed division/remainder constants are accepted. | Test (TC-027, TC-047) |
 | FR-016-AC-4 | Ambiguous literals and context-free size refuse; an explicit Count context and unambiguous contextual literal constraints are accepted without nominal or unit coercion. | Test (TC-028, TC-048) |
 | FR-016-AC-5 | Numeric roots and mismatched conditional branches refuse; Boolean comparisons and the actual Boolean step result postcondition are accepted. | Test (TC-029, TC-048) |
-| FR-016-AC-6 | Missing/duplicate/foreign clause/source bindings and mismatched execution anchors refuse before exposing a checked package; successful output retains all original AST/source and authored clause identities. | Test (TC-049) |
+| FR-016-AC-6 | Missing/duplicate/foreign clause bindings and mismatched execution anchors refuse before exposing a checked package; successful output retains all original AST/source and authored clause identities. | Test (TC-049) |
 | FR-016-AC-7 | Immutable let/quantifier scopes and unreachable-branch checks obey the native rules; repeated compound optional text does not create a shared guard fact. | Test (TC-050, TC-053) |
 | FR-016-AC-8 | Caller/hard budgets bound native checking, proof graph construction and actual IR expansion before work; exact and one-over controls return success or resource_exhausted respectively, with no partial package. | Test (TC-051) |
 | FR-016-AC-9 | Accepted reference, reachability and operation clauses expose their required population/observation/context validation without fabricating runtime values or an executable backend projection. | Test (TC-052) |

@@ -27,7 +27,7 @@ model and authority so registration-capture initializers can execute.
 - [x] Preserve evaluator-owned captures, typed source failures, exact replay
   and one-short accounting behavior.
 - [x] Run the required local Rust gates and PR-readiness reviews.
-- [x] Record issue #108 closure and repin the blocked `quire-protocol` consumer.
+- [x] Record issue #108 closure.
 
 ## Delivery
 

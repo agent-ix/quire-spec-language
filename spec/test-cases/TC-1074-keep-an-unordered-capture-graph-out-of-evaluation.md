@@ -25,7 +25,7 @@ the `activated` capture to a Boolean `expression` node already in the package.
 That node is referenced by its parent expression, not by the compensation, so
 the edit also adds the node to the compensation's `dependencies`, and it
 re-mints the compensation's node key, the clause's node key and every key above
-them, and the `package_id`, which the reader recomputes. With those rewritten
+them, and the `package_id`. With those rewritten
 the only defect left is the binder-scope read, so the reader reaches its slot
 checks (QSpec FR-464 reader order, step 6) and refuses there.
 

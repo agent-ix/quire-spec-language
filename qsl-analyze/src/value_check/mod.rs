@@ -1,0 +1,543 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//! The `value-validity` check arm (QSpec FR-483, FR-484): decide a claim over
+//! a checked package by evaluating every assignment of its function's
+//! parameters in their finite domains through the native evaluator.
+//!
+//! * A `clause` (a `Boolean` function's own claim) is `proved` with basis
+//!   `exhaustive` and certification `uncertified` when it holds at every
+//!   assignment, and `refuted` at the first assignment where it is false or
+//!   undefined, once the native replay reproduces that violation.
+//! * A `scalar-operation` is `refuted` where the evaluation stops undefined
+//!   at its own occurrence. The evaluator reports neither the occurrences it
+//!   passed through nor those a stop elsewhere masked, so the arm never
+//!   proves one: with no violation found it is `unknown`.
+//! * One case is one assignment evaluated. The count is `check.limits.max_cases`
+//!   or the descriptor default; reaching it before the domain is exhausted is
+//!   `incomplete` `limit-reached`.
+//!
+//! [`value_item`] is the only constructor of the arm's work.
+
+pub mod manifest;
+
+use std::num::NonZeroU64;
+
+use qsl_foundation::RequestIndex;
+use qsl_replay::value_check::{
+    integers, ClaimForm, ParameterDomain, ReproducedViolation, Selection, Stop, ValueTarget,
+    Verdict,
+};
+use qsl_replay::{Cancel, DeclineCode, ProofRefusalCause, Value, ValueCheckUnsupported};
+use qsl_route::Mode;
+use qsl_semantics::check::Capability;
+use quire_semantic_value::catalog::{CatalogCode, InternalFault};
+
+use crate::analyze::{AnalyzeItem, EngineReport, Refusal};
+
+/// What the arm found, before settlement.
+#[derive(Debug)]
+pub enum ValueOutcome {
+    /// The goal holds at all `cases` assignments of the finite domain.
+    Proved {
+        /// The assignments evaluated.
+        cases: u64,
+    },
+    /// A violation the native replay reproduced.
+    Refuted(Box<ReproducedViolation>),
+    /// A candidate violation the native replay did not reproduce.
+    ReplayParity,
+    /// No assignment: a bound left a parameter without a value.
+    Vacuous,
+    /// The arm neither established the goal nor found a violation.
+    Undecided,
+    /// The case budget was reached before the domain was exhausted.
+    MaxCases(u64),
+    /// The evaluation was stopped.
+    Stopped(Stop),
+}
+
+/// Why the arm settles without a check.
+#[derive(Debug)]
+pub enum ValueRefusal {
+    /// A parameter is the mathematical `Integer` with no bound.
+    RequiresBound,
+    /// The form or an element it reads lies outside what the arm decides.
+    Unsupported(ClaimForm, ValueCheckUnsupported),
+    /// A broken invariant.
+    Fault(InternalFault),
+}
+
+/// One value-validity request item: the claim's target and its case budget.
+pub struct ValueRequest<'p> {
+    /// The claim's target, with the item's bounds applied.
+    pub target: ValueTarget<'p>,
+    /// The item's `check.limits.max_cases`; absent takes the default the
+    /// candidate's descriptor publishes under `bounds.max_cases`.
+    pub max_cases: Option<NonZeroU64>,
+    /// A candidate violation an external source reports for the claim (an
+    /// engine's counterexample). The arm confirms it by the native replay
+    /// before it reports `refuted`, and a candidate the replay does not
+    /// reproduce is `inconclusive` `replay-parity` (QSpec FR-483
+    /// "Counterexample and evidence kind"). Absent, the arm searches the
+    /// domain itself.
+    pub reported: Option<qsl_replay::value_check::Assignment>,
+}
+
+/// What one evaluated assignment means for the search.
+#[derive(Debug, Eq, PartialEq)]
+pub(crate) enum Step {
+    /// The goal holds there, or the evaluation showed nothing against it.
+    Continue,
+    /// The goal is violated there.
+    Violated(qsl_replay::value_check::Violation),
+    /// The evaluation was stopped.
+    Stop(Stop),
+    /// The evaluator refused: the arm cannot decide the claim.
+    Refuse,
+    /// The goal is undefined where the package names no single occurrence:
+    /// the arm cannot report the violation and does not claim the goal.
+    Unlocated,
+}
+
+/// The step a verdict is. A refused evaluation is never a held goal.
+pub(crate) fn judge(verdict: Verdict) -> Step {
+    match verdict {
+        Verdict::Holds | Verdict::NotDecisive => Step::Continue,
+        Verdict::Violated(violation) => Step::Violated(violation),
+        Verdict::Stopped(stop) => Step::Stop(stop),
+        Verdict::Refused => Step::Refuse,
+        Verdict::Unlocated => Step::Unlocated,
+    }
+}
+
+/// The outcome of a replay: `refuted` when the native replay reproduced the
+/// violation, `replay-parity` when it did not (QSpec FR-483 "Counterexample
+/// and evidence kind"). The parity branch is defence in depth: the arm's own
+/// search and its replay share one evaluator, so only a reported candidate
+/// (or an evaluator that is not deterministic) reaches it.
+pub(crate) fn replayed(reproduced: Option<ReproducedViolation>) -> ValueOutcome {
+    match reproduced {
+        Some(reproduced) => ValueOutcome::Refuted(Box::new(reproduced)),
+        None => ValueOutcome::ReplayParity,
+    }
+}
+
+/// Replay `violation` at `assignment` natively and settle by the result.
+fn reproduce(
+    target: &ValueTarget<'_>,
+    assignment: &[Value],
+    violation: &qsl_replay::value_check::Violation,
+    cancel: &Cancel,
+) -> Result<ValueOutcome, ValueRefusal> {
+    target
+        .replay(assignment, violation, cancel)
+        .map(replayed)
+        .map_err(ValueRefusal::Fault)
+}
+
+/// Confirm a candidate violation an external source reports: `refuted` only
+/// when the evaluator violates the goal at it, `replay-parity` otherwise.
+fn confirm_reported(
+    target: &ValueTarget<'_>,
+    reported: &[Value],
+    cancel: &Cancel,
+) -> Result<ValueOutcome, ValueRefusal> {
+    // A candidate that is no assignment of the target (wrong arity, type or
+    // outside its domain) is not a violation the native replay can
+    // reproduce: `replay-parity`, never a fault.
+    if !target.admits(reported) {
+        return Ok(ValueOutcome::ReplayParity);
+    }
+    let verdict = target
+        .evaluate(reported, cancel)
+        .map_err(ValueRefusal::Fault)?;
+    match judge(verdict) {
+        Step::Violated(violation) => reproduce(target, reported, &violation, cancel),
+        Step::Continue | Step::Unlocated => Ok(ValueOutcome::ReplayParity),
+        Step::Stop(stop) => Ok(ValueOutcome::Stopped(stop)),
+        Step::Refuse => Err(ValueRefusal::Unsupported(
+            target.form(),
+            ValueCheckUnsupported::EvaluationRefused,
+        )),
+    }
+}
+
+/// One parameter's position in the enumeration: the values it has left and
+/// the one it holds. Values are produced one at a time, so a domain of any
+/// size costs a position, never its extent.
+struct Digit {
+    first: Value,
+    values: Box<dyn Iterator<Item = Value>>,
+    current: Value,
+}
+
+/// The iterator over `domain`'s values, in order.
+fn values(domain: &ParameterDomain) -> Box<dyn Iterator<Item = Value>> {
+    match domain {
+        ParameterDomain::Integers(Some(interval)) => {
+            Box::new(integers(interval).map(Value::Integer))
+        }
+        ParameterDomain::Boolean => {
+            Box::new([Value::Boolean(false), Value::Boolean(true)].into_iter())
+        }
+        ParameterDomain::Integers(None)
+        | ParameterDomain::Unbounded
+        | ParameterDomain::Unsupported(_) => Box::new(std::iter::empty()),
+    }
+}
+
+impl Digit {
+    /// The first position of `domain`; `None` when it holds no value.
+    fn first(domain: &ParameterDomain) -> Option<Self> {
+        let mut values = values(domain);
+        let current = values.next()?;
+        Some(Self {
+            first: current.clone(),
+            values,
+            current,
+        })
+    }
+
+    /// Move to the next value; `false` after the last, when the digit is
+    /// back at its first value.
+    fn advance(&mut self, domain: &ParameterDomain) -> bool {
+        if let Some(next) = self.values.next() {
+            self.current = next;
+            return true;
+        }
+        self.values = values(domain);
+        self.values.next();
+        self.current = self.first.clone();
+        false
+    }
+}
+
+/// Decide `request` (QSpec FR-483, FR-484) under the case budget `budget`.
+///
+/// # Errors
+///
+/// [`ValueRefusal`] when the item settles without a check.
+pub fn check_value(
+    request: &ValueRequest<'_>,
+    budget: NonZeroU64,
+    cancel: &Cancel,
+) -> Result<ValueOutcome, ValueRefusal> {
+    let target = &request.target;
+    let form = target.form();
+    let budget = budget.get();
+    let domains: Vec<&ParameterDomain> = target
+        .parameters()
+        .iter()
+        .map(|parameter| parameter.domain())
+        .collect();
+    if domains.iter().any(|d| **d == ParameterDomain::Unbounded) {
+        return Err(ValueRefusal::RequiresBound);
+    }
+    if domains
+        .iter()
+        .any(|d| matches!(d, ParameterDomain::Unsupported(_)))
+    {
+        return Err(ValueRefusal::Unsupported(
+            form,
+            ValueCheckUnsupported::ParameterDomain,
+        ));
+    }
+    let Some(mut digits) = domains
+        .iter()
+        .map(|domain| Digit::first(domain))
+        .collect::<Option<Vec<_>>>()
+    else {
+        return Ok(ValueOutcome::Vacuous);
+    };
+    if let Some(reported) = &request.reported {
+        return confirm_reported(target, reported, cancel);
+    }
+    let mut cases = 0_u64;
+    loop {
+        if cases >= budget {
+            return Ok(ValueOutcome::MaxCases(budget));
+        }
+        cases += 1;
+        let assignment: Vec<Value> = digits.iter().map(|d| d.current.clone()).collect();
+        let verdict = target
+            .evaluate(&assignment, cancel)
+            .map_err(ValueRefusal::Fault)?;
+        match judge(verdict) {
+            Step::Continue => {}
+            Step::Violated(violation) => return reproduce(target, &assignment, &violation, cancel),
+            Step::Stop(stop) => return Ok(ValueOutcome::Stopped(stop)),
+            // A violation that cannot be named is not a pass: the claim is
+            // undecided (`solver-inconclusive`, an element the arm does not
+            // cover).
+            Step::Unlocated => return Ok(ValueOutcome::Undecided),
+            Step::Refuse => {
+                return Err(ValueRefusal::Unsupported(
+                    form,
+                    ValueCheckUnsupported::EvaluationRefused,
+                ))
+            }
+        }
+        // Advance the odometer, the last parameter fastest.
+        let mut at = digits.len();
+        loop {
+            if at == 0 {
+                return Ok(match form {
+                    ClaimForm::Clause => ValueOutcome::Proved { cases },
+                    ClaimForm::ScalarOperation => ValueOutcome::Undecided,
+                });
+            }
+            at -= 1;
+            if digits[at].advance(domains[at]) {
+                break;
+            }
+        }
+    }
+}
+
+/// The record a refuted item keeps: the reproduced violation.
+#[derive(Debug)]
+pub struct ValueCounterexample {
+    /// The claim's `{node, occurrence}`.
+    pub claim: qsl_replay::OccurrenceKey,
+    /// The parameters' wire node ids, in the order of the assignment.
+    pub parameters: Vec<qsl_replay::WireNodeId>,
+    /// The reproduced violation.
+    pub reproduced: ReproducedViolation,
+}
+
+/// What the arm reports for one item.
+pub(crate) enum ValueReport {
+    /// The arm's finding, with the counterexample's identity.
+    Found(
+        ValueOutcome,
+        Vec<qsl_replay::WireNodeId>,
+        qsl_replay::OccurrenceKey,
+    ),
+    /// An arm `unsupported` outcome.
+    Unsupported(ClaimForm, ValueCheckUnsupported),
+}
+
+fn invalid_input() -> Refusal {
+    Refusal::Declined(
+        ProofRefusalCause::InvalidInput,
+        DeclineCode::Qsl(qsl_foundation::Code::InvalidRuntimeInput),
+        CatalogCode::new("invalid_runtime_input", "invalid-value"),
+    )
+}
+
+fn incomplete_input() -> Refusal {
+    Refusal::Declined(
+        ProofRefusalCause::IncompleteInput,
+        DeclineCode::Qsl(qsl_foundation::Code::MissingDeclaration),
+        CatalogCode::new("missing_declaration", "missing-name"),
+    )
+}
+
+/// The `value-validity` item that runs `selection` on the arm: a claim that
+/// selects no form is `declined` `invalid-input`, one whose package lacks a
+/// required node `incomplete-input`, and neither runs a check (QSpec FR-483
+/// "The check input").
+pub fn value_item<'a>(
+    index: RequestIndex,
+    selection: Result<ValueRequest<'a>, Selection>,
+) -> AnalyzeItem<'a> {
+    AnalyzeItem::new_with_engine(
+        index,
+        Capability::ValueValidity,
+        Mode::Bounded,
+        manifest::BACKEND_ID,
+        move |cancel, engine| {
+            let request = match selection {
+                Ok(request) => request,
+                Err(Selection::NoForm) => return EngineReport::Refused(invalid_input()),
+                Err(Selection::MissingNode) => return EngineReport::Refused(incomplete_input()),
+                Err(Selection::Fault(fault)) => {
+                    return EngineReport::Refused(Refusal::Failed(fault.catalog_code()))
+                }
+            };
+            let parameters = request
+                .target
+                .parameters()
+                .iter()
+                .map(|parameter| parameter.wire())
+                .collect();
+            let claim = request.target.claim().clone();
+            let Some(budget) = request.max_cases.or_else(|| engine.max_cases()) else {
+                return EngineReport::Refused(Refusal::Failed(
+                    InternalFault::new("value-check", "descriptor-publishes-max-cases")
+                        .catalog_code(),
+                ));
+            };
+            match check_value(&request, budget, cancel) {
+                Ok(outcome) => {
+                    EngineReport::Value(Box::new(ValueReport::Found(outcome, parameters, claim)))
+                }
+                Err(ValueRefusal::RequiresBound) => EngineReport::Refused(Refusal::RequiresBound),
+                Err(ValueRefusal::Unsupported(form, reason)) => {
+                    EngineReport::Value(Box::new(ValueReport::Unsupported(form, reason)))
+                }
+                Err(ValueRefusal::Fault(fault)) => {
+                    EngineReport::Refused(Refusal::Failed(fault.catalog_code()))
+                }
+            }
+        },
+    )
+}
+
+/// Settle the arm's report as the item's FR-331 terminal record (QSpec
+/// FR-483 "Outcomes and their mapping"), with the counterexample a
+/// `refuted` item keeps.
+pub(crate) fn settle(
+    report: ValueReport,
+    index: RequestIndex,
+    backend: qsl_foundation::BackendId,
+) -> (qsl_replay::TerminalRecord, Option<ValueCounterexample>) {
+    use qsl_replay::{
+        DisagreementCause, IncompleteCause, InconclusiveCause, ModelCheckLimit, TerminalRecord,
+        UnavailabilityCause, Verdict,
+    };
+    use quire_semantic_value::catalog::Category;
+
+    let (outcome, parameters, claim) = match report {
+        ValueReport::Unsupported(form, reason) => {
+            return (
+                TerminalRecord::unsupported(
+                    index,
+                    backend,
+                    UnavailabilityCause::ValueCheck { form, reason },
+                ),
+                None,
+            )
+        }
+        ValueReport::Found(outcome, parameters, claim) => (outcome, parameters, claim),
+    };
+    match outcome {
+        ValueOutcome::Proved { .. } => (TerminalRecord::exhaustive(index, backend), None),
+        ValueOutcome::Refuted(reproduced) => (
+            TerminalRecord::refuted_by_assignment(index, backend, &reproduced),
+            Some(ValueCounterexample {
+                claim,
+                parameters,
+                reproduced: *reproduced,
+            }),
+        ),
+        ValueOutcome::ReplayParity => (
+            TerminalRecord::inconclusive(
+                index,
+                backend,
+                InconclusiveCause::ReplayParity(DisagreementCause::Verdicts {
+                    proved: Verdict::from_category(Category::Violation),
+                    replayed: Verdict::from_category(Category::Success),
+                }),
+            ),
+            None,
+        ),
+        // A zero-check proof is the vacuity cause `kani_vacuous_proof`.
+        ValueOutcome::Vacuous => (TerminalRecord::proved(index, backend, 0), None),
+        ValueOutcome::Undecided => (
+            TerminalRecord::inconclusive(
+                index,
+                backend,
+                InconclusiveCause::SolverInconclusive {
+                    trace: None,
+                    replay: None,
+                },
+            ),
+            None,
+        ),
+        ValueOutcome::MaxCases(value) => (
+            TerminalRecord::incomplete(
+                index,
+                backend,
+                IncompleteCause::LimitReached {
+                    limit: ModelCheckLimit::ValueCheckMaxCases,
+                    value,
+                },
+            ),
+            None,
+        ),
+        ValueOutcome::Stopped(Stop::Cancelled(source)) => (
+            TerminalRecord::incomplete(index, backend, IncompleteCause::Cancelled { source }),
+            None,
+        ),
+        ValueOutcome::Stopped(Stop::Meter(incomplete)) => (
+            TerminalRecord::incomplete(
+                index,
+                backend,
+                IncompleteCause::LimitReached {
+                    limit: ModelCheckLimit::EvaluationMeter {
+                        counter: incomplete.limit_kind,
+                    },
+                    value: incomplete.limit,
+                },
+            ),
+            None,
+        ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use qsl_replay::value_check::Violation;
+    use quire_exact::CancelCause;
+
+    /// A verdict is a step: a refused evaluation is never a held goal, a
+    /// stop is never a pass, and a violation keeps the violation it found.
+    #[test]
+    fn a_verdict_is_judged_without_turning_a_refusal_or_a_stop_into_a_pass() {
+        assert_eq!(judge(Verdict::Holds), Step::Continue);
+        assert_eq!(judge(Verdict::NotDecisive), Step::Continue);
+        assert_eq!(judge(Verdict::Refused), Step::Refuse);
+        assert_eq!(judge(Verdict::Unlocated), Step::Unlocated);
+        let violation = Violation { undefined: None };
+        assert_eq!(
+            judge(Verdict::Violated(violation.clone())),
+            Step::Violated(violation)
+        );
+        let stop = Stop::Cancelled(CancelCause::Deadline);
+        assert_eq!(judge(Verdict::Stopped(stop.clone())), Step::Stop(stop));
+    }
+
+    /// A replay that does not reproduce is `replay-parity`, with no
+    /// counterexample; one that does is `refuted`.
+    #[test]
+    fn a_replay_that_does_not_reproduce_is_replay_parity() {
+        assert!(matches!(replayed(None), ValueOutcome::ReplayParity));
+    }
+
+    /// An undecided claim (a violation the package cannot locate, or a
+    /// scalar operation) settles `inconclusive` `solver-inconclusive`, and
+    /// a replay-parity outcome `inconclusive` `replay-parity`; neither
+    /// records a counterexample.
+    #[test]
+    fn undecided_and_parity_outcomes_settle_inconclusive_without_a_counterexample() {
+        use qsl_replay::{InconclusiveCause, TerminalValue};
+        let settle_one = |outcome| {
+            let report = ValueReport::Found(outcome, Vec::new(), claim_key());
+            settle(
+                report,
+                RequestIndex::new(0),
+                qsl_foundation::BackendId::new("value-checker"),
+            )
+        };
+        let (undecided, none) = settle_one(ValueOutcome::Undecided);
+        assert!(none.is_none());
+        assert!(matches!(
+            undecided.value(),
+            TerminalValue::Inconclusive(InconclusiveCause::SolverInconclusive { .. })
+        ));
+        let (parity, none) = settle_one(ValueOutcome::ReplayParity);
+        assert!(none.is_none());
+        assert!(matches!(
+            parity.value(),
+            TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(_))
+        ));
+    }
+
+    fn claim_key() -> qsl_replay::OccurrenceKey {
+        qsl_replay::OccurrenceKey::new(
+            qsl_replay::WireNodeId::from_digest([1; 32]),
+            quire_exact::Origin::new(quire_exact::Role::new("claim"), 0),
+        )
+    }
+}

@@ -24,12 +24,11 @@ pub const PACKAGE_ID_VERSION: &str = "quire.checked-package-id/v2";
 /// The node projection schema version constant.
 pub(crate) const NODE_SCHEMA_VERSION: &str = "quire.checked-semantic-graph/v2";
 
-const PREIMAGE_REQUIRED: [&str; 8] = [
+const PREIMAGE_REQUIRED: [&str; 7] = [
     "version",
     "edition",
     "profile_selections",
     "definition_selections",
-    "model_selections",
     "required_features",
     "dependency_selections",
     "identity_projection",
@@ -478,7 +477,7 @@ pub(crate) fn project_declarations(bytes: &[u8]) -> Result<ProjectedDeclarations
     if !preimage.get("edition").is_some_and(is_object) {
         return Err(PreimageDefect::MemberType("edition"));
     }
-    if let Some(name) = PREIMAGE_REQUIRED[2..7]
+    if let Some(name) = PREIMAGE_REQUIRED[2..6]
         .iter()
         .find(|name| !preimage.get(name).is_some_and(is_array))
     {
@@ -594,7 +593,6 @@ pub(super) mod fixtures {
                 "role": "edition",
             },
             "identity_projection": [node],
-            "model_selections": [],
             "profile_selections": [],
             "required_features": ["quire.value.complete/v1"],
             "version": "quire.checked-package-id/v2",

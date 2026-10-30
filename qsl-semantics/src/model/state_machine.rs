@@ -2,7 +2,7 @@
 //! FR-208 state-machine binder.
 #![allow(
     clippy::result_large_err,
-    reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline, matching state::evaluation's typed-failure precedent"
+    reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline for typed model-admission failures"
 )]
 
 use crate::model::domain_package::{

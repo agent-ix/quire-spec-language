@@ -94,7 +94,7 @@
 )]
 #![allow(
     clippy::result_large_err,
-    reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline, matching state::evaluation's typed-failure precedent"
+    reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline for typed model-admission failures"
 )]
 
 use quire_canonical::FixedShape;
@@ -995,7 +995,7 @@ fn cycle_walk(
 fn validate_selection(domain_package: &DomainPackage) -> Result<(), ModelRefusal> {
     // FR-321: "Missing required properties, duplicate keys, out-of-domain
     // values and non-canonical encodings refuse before consumption." An
-    // empty `identity`/`version` string is schema `minLength`-invalid (out
+    // empty `identity` string is schema `minLength`-invalid (out
     // of domain) under FR-321's own `ModelSelectionArtifact` shape.
     // `value-accounting.md:507-508`: "a refusal decided by an intake
     // admission check before a stage's first charge is reported first" --
@@ -1004,9 +1004,7 @@ fn validate_selection(domain_package: &DomainPackage) -> Result<(), ModelRefusal
     // after admitting the package and its selection), so it refuses
     // immediately, with no charge at all, unlike the per-node checks
     // `validate_references` runs once node reading has begun.
-    if domain_package.model_selection.identity.is_empty()
-        || domain_package.model_selection.version.is_empty()
-    {
+    if domain_package.model_selection.identity.is_empty() {
         // The unit `MalformedDeclaration` carries no node on purpose: the
         // selection is a field of the package reference, not an IR
         // declaration, so no node identity or origin exists to retain
@@ -1015,7 +1013,7 @@ fn validate_selection(domain_package: &DomainPackage) -> Result<(), ModelRefusal
             code: Code::InvalidModelBinding,
             cause: ModelRefusalCause::MalformedDeclaration,
             detail: format!(
-                "domain package selection has an empty identity or version: {:?}",
+                "domain package selection has an empty identity: {:?}",
                 domain_package.model_selection
             ),
         });

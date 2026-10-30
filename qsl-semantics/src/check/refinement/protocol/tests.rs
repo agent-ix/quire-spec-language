@@ -13,14 +13,15 @@ use qsl_foundation::SourceIdentity;
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
 
+use std::collections::BTreeMap;
+
 use qsl_foundation::Span;
 
 use crate::check::{
-    observation, step_row_refs, step_simulation_records, AbstractSide, CheckCause, CheckRefusal,
-    CheckedGraph, CheckedRefinement, LabelStep, MemoryStepKind, PackageDeclarations,
-    ProtocolStepKind, RefinementCatalogNode, RefinementCause, RefinementFairnessOrigin,
-    RefinementRefusal, RefinementThreadTarget, RowClass, RowObservation, StepClass, StepLabel,
-    StepRowRefusal, UnsupportedFeature,
+    observation, AbstractSide, CheckCause, CheckRefusal, CheckedGraph, CheckedRefinement,
+    LabelStep, MemoryStepKind, PackageDeclarations, ProtocolStepKind, RefinementCatalogNode,
+    RefinementCause, RefinementFairnessOrigin, RefinementRefusal, RefinementThreadTarget, RowClass,
+    RowObservation, StepClass, StepLabel, UnsupportedFeature,
 };
 use crate::model::accounting::ModelNormalizationLimits;
 use crate::model::domain_package::{
@@ -133,8 +134,6 @@ fn abstract_model() -> SelectedModel {
     let package = DomainPackage::new(
         DomainPackageRef {
             identity: ABSTRACT.to_owned(),
-            version: "1".to_owned(),
-            digest: [0_u8; 32],
         },
         records,
     );
@@ -161,10 +160,7 @@ fn header(protocol_profile: bool) -> String {
         ""
     };
     HEADER.replacen("model M", &format!("{profile}model M"), 1)
-        + &format!(
-            "model A = \"{ABSTRACT}\" version \"1\" digest \
-             \"sha256-jcs:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\";\n"
-        )
+        + &format!("model A = \"{ABSTRACT}\";\n")
 }
 
 /// A refusal with the text of the unit it is located at.
@@ -920,22 +916,41 @@ fn a_row_target_gives_its_observation() {
     );
 }
 
-/// A protocol subject's rows have no `StepRowRef` order yet: its nodes have
-/// no node key.
-#[trace("TC-551")]
+/// The `StepRowRef` of each of `graph`'s step rows, by its class spelling.
+fn row_refs_by_spelling(graph: &CheckedGraph) -> BTreeMap<String, u32> {
+    let refinement = only_refinement(graph);
+    refinement
+        .steps()
+        .iter()
+        .enumerate()
+        .map(|(source, row)| {
+            let reference = refinement
+                .step_row_ref(source)
+                .expect("the refinement emits");
+            (row.spelling().to_owned(), reference.index())
+        })
+        .collect()
+}
+
+/// FR-146-AC-5, protocol subject: the rows take their positions in QSpec
+/// FR-375's protocol order, the `memory` row after every row that names a
+/// declaration, and writing the rows in reverse changes none. A protocol
+/// subject writes no record yet: FR-146 gives no extent for a protocol
+/// row's `Step` record (STD-493 comment c699936f), and this interim is
+/// withdrawn when it does.
+#[trace("TC-551", "FR-146-AC-5")]
 #[test]
-fn a_protocol_subjects_rows_have_no_order_yet() {
+fn a_protocol_subjects_rows_take_their_fr375_positions() {
     let graph = checks(&unit(&fill(""), ROWS));
-    let refinement = only_refinement(&graph);
-    let key = quire_exact::NodeKey::from_digest([1; 32]);
-    assert_eq!(
-        step_row_refs(refinement, |_| key),
-        Err(StepRowRefusal::ProtocolSubject)
-    );
-    assert_eq!(
-        step_simulation_records(key, refinement, &[]),
-        Err(StepRowRefusal::ProtocolSubject)
-    );
+    let refs = row_refs_by_spelling(&graph);
+    let mut positions: Vec<u32> = refs.values().copied().collect();
+    positions.sort_unstable();
+    assert_eq!(positions, (0..6).collect::<Vec<_>>());
+    assert_eq!(refs.get("memory drain"), Some(&5), "{refs:?}");
+    let reversed: Vec<&str> = ROWS.split('\n').rev().collect();
+    let backward = checks(&unit(&fill(""), &reversed.join("\n")));
+    assert_eq!(row_refs_by_spelling(&backward), refs);
+    assert_eq!(only_refinement(&graph).step_simulations(), []);
 }
 
 /// TC-1057's `Refunds`: an attempt `Tried` of `step`, the effect `Applied`,

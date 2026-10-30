@@ -17,7 +17,7 @@ relationships:
 ## Description
 
 The `quire-exact` kernel `Value` type SHALL carry a `Population` variant
-whose payload is an opaque `PopulationId` digest, never a `PopulationBinding`
+whose payload is an opaque `PopulationId` key, never a `PopulationBinding`
 or any other `model::population` state. QSL `model` SHALL mint a
 `PopulationId` at binding-admission time and SHALL record the
 `PopulationId` → `PopulationBinding` correspondence it mints. The QSL
@@ -65,9 +65,9 @@ ID-5 decided the seven-member preimage the Behavior section now states.
 
 ## Behavior
 
-### PopulationId is opaque and content-addressed over the admission
+### PopulationId is opaque and structurally keyed over the admission
 
-`model` SHALL compute a binding's `PopulationId` as a 32-byte digest over the
+`model` SHALL compute a binding's `PopulationId` as the canonical byte string of the
 binding's own preimage: the domain package identity it was admitted against,
 the `population_key` declaring it, the binding's declared maximum, its
 member set, the `PopulationId` of its pre binding when it is a `Post`
@@ -85,7 +85,7 @@ package and `population_key`, which would otherwise carry an identical
 preimage under a two-state (`pre`/`post`-only) discriminator.
 
 The preimage is exactly this RFC 8785 object, encoded through
-`quire-canonical` and digested with SHA-256 under the unchanged
+`quire-canonical` and used directly, compared and ordered as a byte string, under the unchanged
 `POPULATION_ID_DOMAIN` version label ([ADR-016](../decisions/ADR-016-state-model-finite-execution-mapping.md)
 ID-5):
 
@@ -96,11 +96,11 @@ ID-5):
 - `declared_maximum`: the maximum as a decimal string, or `null` when the
   population declares none;
 - `members`: an array with one object per member,
-  `{"universe": <64 lowercase hex>, "type": <64 lowercase hex of the
-  EffectiveId>, "object": <the authored object identity>, "declaration":
+  `{"universe": <the universe's structural key>, "type": <the
+  EffectiveId's structural key>, "object": <the authored object identity>, "declaration":
   <$defs.DeclarationKey preimage object>}`, in ascending order of each
   object's RFC 8785 bytes; `[]` for an empty population;
-- `pre`: for a `Post` binding, the 64 lowercase hex of its pre binding's
+- `pre`: for a `Post` binding, its pre binding's
   `PopulationId`; otherwise `null`.
 
 A binding's field values are not in its preimage: a `PopulationBinding`
@@ -110,7 +110,7 @@ typed `PopulationConflict` refusal for a second, unequal binding under an id
 already recorded; with this preimage it is reached only by two bindings that
 differ in their admission limits (`ancestor_steps`).
 `PopulationId` SHALL have exactly one public constructor, taking this
-preimage digest, defined in `quire-exact` and callable only from QSL
+preimage byte string, defined in `quire-exact` and callable only from QSL
 `model` -- mirroring `EffectiveId`'s O-05 constructor discipline (ADR-011
 T-12's API-surface check enforces both).
 
@@ -165,7 +165,7 @@ key of its own: it calls `quire_exact::member_equal` and
 | FR-089-AC-3 | Given a `Value::Population(population_id)` whose `population_id` was minted for an admitted binding earlier in the same evaluation, evaluating an expression that consumes it (the `evaluate.rs:921`/`:934` sites) resolves the same `PopulationBinding` that admission produced, by lookup in the recorded correspondence, never by a payload the `Value` itself carries. | Test (TC-293) |
 | FR-089-AC-4 | Given a `Value::Population(population_id)` whose `population_id` names no binding recorded in the current evaluation's correspondence, evaluation produces a typed refusal naming the unresolved identity, not a panic and not `Undefined`. | Test (TC-294) |
 | FR-089-AC-5 | Given a `ValueType::Population(maximum)` and a `Value::Population(population_id)`, the QSL layer resolves `population_id` to its `PopulationBinding` through the recorded correspondence and admits the value when that binding's declared maximum equals `maximum`, and refuses it when the declared maximum differs. | Test (TC-295) |
-| FR-089-AC-7 | Given two `Direct` admissions that agree on domain package, `population_key` and declared maximum and differ only in one member, the two `PopulationId`s differ; given two that agree on everything except the declared maximum (3 and 7), they differ; given two `Post` bindings with equal post members whose pre bindings differ, they differ; one fixed preimage in the test, encoded independently of `population_id_preimage`, yields the expected digest. | Test (TC-291) |
+| FR-089-AC-7 | Given two `Direct` admissions that agree on domain package, `population_key` and declared maximum and differ only in one member, the two `PopulationId`s differ; given two that agree on everything except the declared maximum (3 and 7), they differ; given two `Post` bindings with equal post members whose pre bindings differ, they differ. Withdrawn: the clause that one fixed preimage yields the expected `PopulationId` byte string; QSL pins no hash value. | Test (TC-291) |
 
 ## Dependencies
 

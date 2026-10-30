@@ -51,8 +51,8 @@ their exits.
   layering <corpus>`, and through the make targets `refinement-versioning`
   and `refinement-layering`, each over its real corpus, both listed in
   `make ci`. The versioning gate's real corpus is generated at run time
-  with the model digest computed from the model file (FR-340 "Where it
-  runs"); nothing is committed with a frozen digest.
+  from the model file (FR-340 "Where it
+  runs"); nothing is committed with it.
 - The gate process SHALL write the report to stdout and exit with the
   verdict's code from the table below, and with no other code.
 - The `refinement-versioning` make target SHALL fail exactly when its CLI

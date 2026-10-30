@@ -158,7 +158,7 @@ impl Lowering<'_> {
                         .insert(ProtocolNodeId(anchor.owner), *target);
                 }
                 // A compensation is not written yet
-                // ([`ProtocolConstruct::Compensations`](crate::check::refusal::ProtocolConstruct)).
+                // (`compensate` templates are carried by the protocol clause).
                 AnchorSite::EventFor | AnchorSite::CompensateFor | AnchorSite::CompensateCommit => {
                 }
             }

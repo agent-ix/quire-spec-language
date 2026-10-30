@@ -42,8 +42,9 @@ use quire_exact::{Cancel, Meter};
 use serde_json::Value as Json;
 
 use crate::fill::{
-    class_of, contracts, document, instance, json_of, model_subject, package, package_id,
-    reachable, sc_system, source_memory, unit_text, universe, v, Documents, Reached, PACKAGE,
+    class_of, contracts, document, instance, json_of, model_subject, package_id, package_id_with,
+    package_with, reachable, sc_system, source_memory, unit_text, universe, v, Documents, Reached,
+    PACKAGE,
 };
 use crate::model_settle::{envelope_at, request};
 use crate::protocol_compensation::{pay_run, refund, REFUND};
@@ -92,6 +93,11 @@ pub(crate) struct World {
 
 impl World {
     pub(crate) fn new(body: &str, keys: &[&'static str], starts: &[i64]) -> Self {
+        Self::with_profiles("", body, keys, starts)
+    }
+
+    /// [`Self::new`] with the further header `profiles` lines.
+    fn with_profiles(profiles: &str, body: &str, keys: &[&'static str], starts: &[i64]) -> Self {
         let mut documents = Documents::new();
         let initial = starts
             .iter()
@@ -105,7 +111,7 @@ impl World {
             body: body.to_owned(),
             documents,
             initial,
-            checked: package(body),
+            checked: package_with(profiles, body),
             keys: keys.to_vec(),
         }
     }
@@ -220,7 +226,7 @@ impl World {
                 max_messages: None,
                 max_live_instances,
             },
-            &envelope_at(&unit, id, payload, clause_node, occurrence),
+            &envelope_at(id, payload, clause_node, occurrence),
             letters,
             ReplayLimits::default(),
         )
@@ -1519,4 +1525,107 @@ fn a_send_from_a_role_over_an_empty_universe_waits_with_no_role_instance() {
         deadlocked_at(&system, &reached, "Main/Tx"),
         [no_role_instance()]
     );
+}
+
+/// SR-1826002 FND-001 (QSpec FR-368-AC-20, FR-428): over an `on each`
+/// protocol the caller's `max_live_instances` reaches both EN-1's run and
+/// the certificate check through `derived_protocol_item`: the run is limited
+/// at the caller's bound, which it reports, and the record states the
+/// certificate check's bound, the same value; unset, both are EN-1's
+/// default 3.
+#[trace("QSpec-TC-431", "QSpec-FR-368-AC-20")]
+#[test]
+fn a_protocol_derived_items_max_live_instances_reaches_the_run_and_the_check() {
+    use crate::derived_request::{items_of_kind, protocol_request_under, settled};
+    use qsl_analyze::analyze::{analyze, derived_protocol_item, Engines, ProtocolItem};
+    use qsl_route::deadlock::ProtocolTemporalItem;
+    use qsl_route::request::{DerivedLimits, ItemKind};
+
+    let body =
+        unit(EACH, "", "", &format!("sequence Main {{ {} }}", touch("T"))) + &claim("k.v <= 3");
+    // The protocol profile anchors the clause's derived items.
+    let world = World::with_profiles(crate::litmus::PROTOCOL_PROFILE, &body, &["c"], &[0]);
+    let subject = world.subject();
+    let models: Vec<_> = subject
+        .memory
+        .parallels()
+        .iter()
+        .map(|resolved| (resolved.parallel.clone(), resolved.model))
+        .collect();
+    let graph = world.checked.graph();
+    let clause = node_occurrence(&graph.temporal_clauses()[0]);
+    let settle = |limits: &DerivedLimits| {
+        let written = protocol_request_under(
+            &[ProtocolTemporalItem {
+                occurrence: &clause,
+                subject: &subject.protocol,
+                protocol: graph.protocol("R").expect("R"),
+                models: &models,
+                non_atomic_access: false,
+            }],
+            limits,
+        );
+        let [(derived, obligation)] = &items_of_kind(&written, ItemKind::DeadlockFreedom)[..]
+        else {
+            panic!("one deadlock-freedom item");
+        };
+        let item = ProtocolItem {
+            request: ProtocolCheckRequest {
+                subject: world.subject(),
+                item: ModelCheckItem::DeadlockFreedom,
+                max_depth: Some(1),
+                max_store_buffer: None,
+                max_messages: None,
+                max_live_instances: None,
+                limits: ModelCheckLimits::default(),
+                ignore_memory_constraints: false,
+            },
+            certificate: ProtocolCertificateRequest {
+                subject: world.subject(),
+                item: ModelCheckItem::DeadlockFreedom,
+                max_store_buffer: None,
+                max_messages: None,
+                max_live_instances: None,
+            },
+            package_id: package_id_with(crate::litmus::PROTOCOL_PROFILE, &world.body),
+            replay: Box::new(|_| panic!("the run reports no counterexample")),
+        };
+        analyze(
+            &Engines::qsl().expect("the layer-A manifests register"),
+            vec![derived_protocol_item(derived, obligation, item).expect("the run")],
+            &Cancel::new(),
+        )
+        .remove(0)
+    };
+    for (limits, bound) in [
+        (
+            DerivedLimits::from_settings([("max_live_instances", 1)]).expect("a member"),
+            1,
+        ),
+        (
+            DerivedLimits::from_settings([("max_live_instances", 2)]).expect("a member"),
+            2,
+        ),
+        (DerivedLimits::default(), 3),
+    ] {
+        let record = settle(&limits);
+        let check = record.protocol_check.as_ref().expect("a protocol record");
+        assert_eq!(
+            check.instance_bound,
+            Some(StatedInstanceBound {
+                bound: InstanceBound { value: bound },
+                reached: true,
+            }),
+            "the certificate check's bound {bound}"
+        );
+        let (_, value) = settled(&record);
+        let TerminalValue::Inconclusive(InconclusiveCause::InstanceBoundReached {
+            bound: used,
+            ..
+        }) = value
+        else {
+            panic!("{bound}: {value:?}");
+        };
+        assert_eq!(used.value, bound, "the run's bound");
+    }
 }

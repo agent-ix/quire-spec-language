@@ -8,15 +8,15 @@
 
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
-use qsl_foundation::digest::{DigestDomain, DigestRecord};
 use qsl_foundation::source::provenance::RawSourceRef;
 use qsl_semantics::check::CheckedGraph;
 use qsl_semantics::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, ObjectTypeRecord,
 };
 use qsl_semantics::model::observation::{
-    AdmissionFailure, AdmissionRecord, BundleKey, BundlePart, Keyed, ObservationOrigin,
-    ObservationRole, PopulationEnumerationFailure, RelationshipExtents, ResolveBundle,
+    AdmissionFailure, AdmissionRecord, BundleKey, BundlePart, DocumentRef, Keyed,
+    ObservationOrigin, ObservationRole, PopulationEnumerationFailure, RelationshipExtents,
+    ResolveBundle,
 };
 use quire_checked::key::DeclarationKey;
 use quire_exact::{EffectiveId, NodeKey, ObjectId, ObjectReference, UniverseId};
@@ -987,7 +987,7 @@ fn condition_three_checks_the_type_of_an_end_whose_object_is_absent() {
 
 fn bundle_key(label: &str) -> BundleKey {
     BundleKey {
-        source: source("s", 1),
+        source: source("s"),
         clause: NodeKey::from_digest([3; 32]),
         documents: vec![],
         role: ObservationRole::Pre,
@@ -995,13 +995,8 @@ fn bundle_key(label: &str) -> BundleKey {
     }
 }
 
-fn source(identity: &str, digest: u8) -> RawSourceRef {
-    RawSourceRef::new(
-        "authority",
-        identity,
-        DigestRecord::mint(DigestDomain::SourceBytesV1, [digest; 32]),
-    )
-    .expect("a source reference")
+fn source(identity: &str) -> RawSourceRef {
+    RawSourceRef::new("authority", identity).expect("a source reference")
 }
 
 /// TC-1041 row 20: the first part whose key differs from the selected key
@@ -1037,9 +1032,9 @@ fn a_part_with_another_key_is_refused_before_it_can_classify_anything() {
         )
     };
 
-    // Another source digest under the same authority and identity.
+    // Another source identity under the same authority.
     let other_source = BundleKey {
-        source: source("s", 2),
+        source: source("t"),
         ..selected.clone()
     };
     let refusal = build(&selected, &selected, &other_source).expect_err("types differ");
@@ -1070,9 +1065,14 @@ fn a_part_with_another_key_is_refused_before_it_can_classify_anything() {
     assert_eq!(refusal.selected.role, ObservationRole::Pre);
     assert_eq!(refusal.differing.role, ObservationRole::Post);
 
-    // Another document digest of one identity.
+    // Another document of another identity.
     let other_document = BundleKey {
-        origin: ObservationOrigin::Document([9; 32]),
+        origin: ObservationOrigin::Document(DocumentRef {
+            authority: "agent-ix".to_owned(),
+            identity: "another".to_owned(),
+            revision_namespace: "fixture".to_owned(),
+            revision: "1".to_owned(),
+        }),
         ..selected.clone()
     };
     let refusal = build(&other_document, &selected, &selected).expect_err("manifest differs");

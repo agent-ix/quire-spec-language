@@ -6,7 +6,7 @@ use crate::support::native_protocol as setup;
 use crate::support::native_rule_model;
 
 use ix_trace_rs::trace;
-use qsl_foundation::{ByteDigest, Source, SourceIdentity};
+use qsl_foundation::{Source, SourceIdentity};
 use quire_contract_model as ir;
 use quire_spec_language::checking::composed::{proofs, CauseKind, TypeDisposition, TypeLimits};
 use quire_spec_language::formal_source::FormalSource;
@@ -183,10 +183,6 @@ fn original_object_roles_grant_distinct_populations_despite_equal_universe_names
                 assert_eq!(
                     exported.locus.formal.document,
                     inputs.model.source().identity().document().as_str()
-                );
-                assert_eq!(
-                    exported.locus.source.digest,
-                    inputs.model.source().source().digest()
                 );
                 let (index, declaration) = package
                     .declarations
@@ -483,13 +479,10 @@ fn reader_refuses_crossed_reference_object_universe_and_original_role_loci() {
                     }
                     _ => unreachable!(),
                 };
-                // This is adverse transport, independently resealed to reach the
+                // This is an adverse offer, re-encoded to reach the
                 // intended authority check. It never acquires FamilyAdmission.
                 let bytes = serde_json::to_vec(&changed).unwrap();
-                failure(
-                    &inputs.read_bytes(proofs, &bytes, ByteDigest::of(&bytes)),
-                    expected,
-                );
+                failure(&inputs.read_bytes(proofs, &bytes), expected);
             }
         },
     );
@@ -512,7 +505,7 @@ fn another_admitted_model_cannot_replace_the_original_population_owner() {
         inputs.model.roles().objects[0].record,
         foreign.roles().objects[0].record
     );
-    assert_ne!(inputs.model.digest(), foreign.digest());
+    assert_ne!(inputs.model.artifact_bytes(), foreign.artifact_bytes());
     inputs.with_proofs(
         TypeLimits::default(),
         proofs::ProofLimits::default(),

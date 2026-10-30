@@ -218,7 +218,7 @@ fn certificate_rejection_vocabulary_is_constructible_through_the_public_facade()
         InconclusiveCause::CertificateRejected {
             rule: CertificateRule::ProofStepInvalid,
             at: CertificateLocus::ProofStep {
-                part: QueryPart::Step,
+                part: QueryPart::Step { row: None },
                 index: u64::MAX,
             },
         },

@@ -25,8 +25,7 @@ use semantics::model::normalize::{normalize, NormalizeOutcome};
 pub const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
     profile v = \"quire.value.complete/v1\";\n\
     profile t = \"quire.temporal.infinite-trace/v1\";\n\
-    model M = \"example/protocol-fixture\" version \"1\" digest \
-    \"sha256-jcs:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\";\n";
+    model M = \"example/protocol-fixture\";\n";
 
 /// `M::Actor` and its own `op` and `other` operations (no parameters,
 /// no result, an empty frame), normalized to a [`SelectedModel`] aliased `M` --
@@ -43,8 +42,6 @@ pub fn m_actor_model() -> SelectedModel {
     let package = DomainPackage::new(
         DomainPackageRef {
             identity: "example/protocol-fixture".to_owned(),
-            version: "1".to_owned(),
-            digest: [0_u8; 32],
         },
         vec![
             DomainPackageRecord::ObjectType(ObjectTypeRecord {

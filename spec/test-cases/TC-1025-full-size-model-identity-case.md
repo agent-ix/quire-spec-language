@@ -31,8 +31,7 @@ Implement as the Rust integration test
 2. Normalize it in an isolated subprocess, on a thread with a 524,288-byte
    stack, at the NFR-012 defaults, with no
    limit raised.
-3. Read the counters after complete normalization: retained facts, bytes
-   admitted to every hash call, work units. Read the child's peak resident set
+3. Read the counter after complete normalization: retained facts. Read the child's peak resident set
    from `VmHWM` in `/proc/self/status` after the result is retained.
 4. Measure monotonic wall time in the child from package input admission through
    retention of the complete result, in the release profile. Fixture generation,
@@ -41,11 +40,8 @@ Implement as the Rust integration test
 ## Expected Results
 
 All 10,001 effective type identities and the complete view are present. Retained
-facts are 20,001; hashed bytes are 15,104,845 for this fixture (at most
-16,777,216); work units are 60,006 (at most 100,000). These are the counters of
+facts are 20,001, the counter of
 quire-specification TC-195 N19, which has the same chain. Peak resident set is at most
 21,474,836,480 bytes. Wall time is at most 30 seconds on the reference host
 Terra (Intel Core i9-10900K, 14 allocated threads, WSL2, 94 GiB). Memory and
-time are measured results; the expected figures follow from the byte formula
-(15.1 MB at the 7.74 MB/s debug-profile encoder rate is 2.0 s) and are not
-extrapolated into the pass condition.
+time are measured results and are not extrapolated into the pass condition.

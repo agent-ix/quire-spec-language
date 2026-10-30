@@ -1,0 +1,8 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Switch `adjust` operation with a precondition and a postcondition (FR-058-AC-1).
+language "ix:native" edition "1-draft";
+profile v = "quire.value.complete/v1";
+profile p = "quire.protocol.finite-global/v1";
+model M = "test/orders";
+pre P1 using v on M::Switch::adjust { true }
+post Q2 using v on M::Switch::adjust { self.on }

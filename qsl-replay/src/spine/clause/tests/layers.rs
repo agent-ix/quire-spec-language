@@ -11,7 +11,7 @@ use super::*;
 use crate::spine::{classify_refusal, CompileRefusal, RefinementClass};
 use qsl_foundation::Code;
 use qsl_semantics::check::{AssemblyCause, AssemblyError};
-use qsl_semantics::value::{DefinitionLock, HeaderLayer, LayerForm};
+use qsl_semantics::value::{always_roles, HeaderLayer, LayerForm};
 
 const CORE: &str = "quire.state.core/v1";
 const QUERIES: &str = "quire.state.queries/v1";
@@ -24,21 +24,20 @@ const PREDICATE: &str = "predicate Id using v(b: Boolean): Boolean { b }\n";
 
 /// A unit selecting the `test/nodes` model as `M` and `profiles` (alias,
 /// identity), holding `declarations`.
-fn unit(profiles: &[(&str, &str)], declarations: &str) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
+fn unit(
+    profiles: &[(&str, &str)],
+    declarations: &str,
+) -> (String, qsl_semantics::model::intake::PackageInput) {
     let document = domain_document();
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let headers: String = profiles
         .iter()
         .map(|(alias, identity)| format!("profile {alias} = \"{identity}\";\n"))
         .collect();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n{headers}\
-         model M = {PACKAGE_IDENTITY:?} version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
-         {declarations}",
-        hex(digest)
+         model M = {PACKAGE_IDENTITY:?};\n\
+         {declarations}"
     );
     (unit, packages)
 }
@@ -99,13 +98,12 @@ fn the_value_layer_selects_state_core_and_the_qualification_rows() {
         "invariant Any using v on M::Node at current { true }\n",
     );
     let selected = selected(&compiled.expect("the value layer compiles"));
-    let lock = DefinitionLock::pinned();
     let mut expected: BTreeSet<String> = [CORE, VALUE].map(str::to_owned).into();
     expected.extend(
-        lock.always_roles()
+        always_roles()
             .iter()
-            .filter(|role| **role != qsl_semantics::value::CatalogRole::Edition)
-            .map(|role| lock.entry(*role).identity.to_owned()),
+            .filter(|role| **role != qsl_semantics::value::DefinitionRole::Edition)
+            .map(|role| role.identity().to_owned()),
     );
     assert_eq!(selected, expected);
 }
@@ -145,7 +143,6 @@ fn each_layer_compiles_its_own_forms_and_locks_its_closure() {
              invariant NoCycle using v on M::Node at current { not reaches(self, self, next) }\n",
         ),
     ];
-    let lock = DefinitionLock::pinned();
     for (identity, declarations) in cases {
         let layer = HeaderLayer::from_identity(identity).expect("a layer");
         let (_, compiled) = compile(&[("v", identity)], declarations);
@@ -153,7 +150,7 @@ fn each_layer_compiles_its_own_forms_and_locks_its_closure() {
             &compiled
                 .unwrap_or_else(|refusal| panic!("{identity} refuses its own forms: {refusal:?}")),
         );
-        let closure = lock.closure(&[layer]);
+        let closure = HeaderLayer::closure(&[layer]);
         for candidate in HeaderLayer::ALL {
             assert_eq!(
                 selected.contains(candidate.identity()),

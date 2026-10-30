@@ -161,6 +161,12 @@ pub enum ModelCheckLimit {
     CertificateMaxEdges,
     /// FR-245: the bytes a zone certificate check reads.
     CertificateMaxBytes,
+    /// QSpec FR-483: the value-validity check arm's case budget; limit
+    /// `max_cases`, setting `value_check.max_cases`.
+    ValueCheckMaxCases,
+    /// QSpec FR-483: the operation-contract check arm's case budget; limit
+    /// `max_cases`, setting `contract_check.max_cases`.
+    ContractCheckMaxCases,
 }
 
 impl ModelCheckLimit {
@@ -209,6 +215,7 @@ impl ModelCheckLimit {
             Self::MaxClocks => "max_clocks",
             Self::CertificateMaxEdges => "max_certificate_edges",
             Self::CertificateMaxBytes => "max_certificate_bytes",
+            Self::ValueCheckMaxCases | Self::ContractCheckMaxCases => "max_cases",
         }
     }
 
@@ -248,6 +255,8 @@ impl ModelCheckLimit {
             Self::MaxClocks => "model_check.max_clocks",
             Self::CertificateMaxEdges => "certificate_check.max_certificate_edges",
             Self::CertificateMaxBytes => "certificate_check.max_certificate_bytes",
+            Self::ValueCheckMaxCases => "value_check.max_cases",
+            Self::ContractCheckMaxCases => "contract_check.max_cases",
         }
     }
 }
@@ -369,6 +378,8 @@ mod tests {
                 LimitKind::ResultUnits => ("result_units", "accounting.result_units"),
             },
             ModelCheckLimit::MaxCandidates => ("max_candidates", "expansion.max_candidates"),
+            ModelCheckLimit::ValueCheckMaxCases => ("max_cases", "value_check.max_cases"),
+            ModelCheckLimit::ContractCheckMaxCases => ("max_cases", "contract_check.max_cases"),
             ModelCheckLimit::SolverSteps => ("max_solver_steps", "hybrid.max_solver_steps"),
             ModelCheckLimit::SmtMaxSolverSteps => ("max_solver_steps", "smt.max_solver_steps"),
             ModelCheckLimit::SmtMaxSolverTime => ("max_solver_time", "smt.max_solver_time"),

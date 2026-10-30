@@ -23,8 +23,6 @@ relationships:
     type: references
   - target: ix://agent-ix/quire-spec-language/FR-289
     type: references
-  - target: ix://agent-ix/quire-spec-language/FR-292
-    type: references
   - target: ix://agent-ix/quire-spec-language/FR-099
     type: references
   - target: ix://agent-ix/quire-spec-language/FR-294
@@ -95,7 +93,7 @@ their FR-285 exit codes.
 - [FR-278](FR-278-parse-select-check-and-package-as-library-operations.md), [FR-279](FR-279-execute-a-checked-entry-as-a-library-operation.md): the library operations.
 - [FR-285](FR-285-map-every-outcome-category-to-one-exit-code.md), [FR-286](FR-286-serialize-every-outcome-as-one-json-outcome-document.md): exit codes and documents.
 - [FR-287](FR-287-reach-qsl-through-the-driver-cli.md): the CLI that calls these operations.
-- [FR-289](FR-289-keep-results-unchanged-by-provider-installation.md), [FR-292](FR-292-key-cached-results-by-content-identity.md): provider and cache parts QSL supplies.
+- [FR-289](FR-289-keep-results-unchanged-by-provider-installation.md): the provider part QSL supplies.
 - [FR-099](FR-099-compile-against-supplied-libraries.md): supplied libraries.
 - QSpec FR-300, FR-301: the lifecycle API and CLI.
 
@@ -105,12 +103,10 @@ The driver repository specifies and tests the same source through `quire
 check`, `compile`, `run`, `prove` and `version`: each `--format json`
 document equals the library outcome, `prove` routes each claim to the Kani
 provider (CG) through the registry, settles `p` `proved` and `q` `refuted`
-with a replayed counterexample, exits 10 and stores two cache entries, a
-repeated `prove` reads both entries and runs Kani zero times, and a
-cancelled `prove` writes no cache entry.
+with a replayed counterexample, and exits 10.
 
 ## References
 
-- QSL-392 (ARCH-52): the bounded CLI, library, provider and cache slice.
+- QSL-392 (ARCH-52): the bounded CLI, library, and provider slice.
 - QSL-390 (ARCH-50).
-- QSpec FR-300, FR-301, FR-306 (STD-141): the QSpec half.
+- QSpec FR-300, FR-301 (STD-141): the QSpec half.

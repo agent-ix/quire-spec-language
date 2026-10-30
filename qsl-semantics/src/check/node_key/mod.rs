@@ -63,6 +63,10 @@
 //! is a fixed-depth match and every preimage nests a depth the grammar fixes,
 //! whatever the expression's depth (ADR-030 D-2, FR-258).
 //!
+//! Conformance against QSpec's own published `operation_vectors` is the
+//! opt-in `conformance` test (`make conformance` with `QSPEC_DIR` pointing at
+//! a quire-specification checkout). QSpec is not public yet, so nothing of it
+//! is copied here; the test reads the vectors at run time.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -174,7 +178,7 @@ impl SourceOwner {
 /// content-only `ModelOwner{kind: "model", identity, node}`. `identity` is
 /// the declaring domain package's `DomainPackageRef` identity; `node` is the
 /// declaration's IR node identity. The owner carries no version, and the
-/// lock's `model_selections` selects the package by identity and digest, so
+/// source `model` selects the package by identity alone, so
 /// a change of the domain package that leaves a node's content unchanged keys
 /// the same node.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, FixedShape)]
@@ -235,11 +239,10 @@ impl ModelOwner {
 }
 
 /// The owner of a selected model package's `model_root` node (QSpec FR-322
-/// `ModelRootOwner`): the selected package's identity and `sha256-jcs` digest
-/// as lowercase hex, never a declaration or an alias.
+/// `ModelRootOwner`): the selected package's identity, never a declaration
+/// or an alias.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, FixedShape)]
 pub struct ModelRootOwner {
-    digest: String,
     identity: String,
     kind: ModelRootOwnerKind,
 }
@@ -251,21 +254,13 @@ enum ModelRootOwnerKind {
 }
 
 impl ModelRootOwner {
-    /// The root owner `{kind: "model_root", identity, digest}`.
-    pub fn new(
-        identity: impl Into<String>,
-        digest: impl Into<String>,
-    ) -> Result<Self, InvalidModelOwner> {
+    /// The root owner `{kind: "model_root", identity}`.
+    pub fn new(identity: impl Into<String>) -> Result<Self, InvalidModelOwner> {
         let identity = identity.into();
-        let digest = digest.into();
         if identity.is_empty() {
             return Err(InvalidModelOwner::EmptyIdentity);
         }
-        if digest.is_empty() {
-            return Err(InvalidModelOwner::EmptyNode);
-        }
         Ok(Self {
-            digest,
             identity,
             kind: ModelRootOwnerKind::ModelRoot,
         })
@@ -274,11 +269,6 @@ impl ModelRootOwner {
     /// The selected package's identity.
     pub fn identity(&self) -> &str {
         &self.identity
-    }
-
-    /// The selected package's digest, lowercase hex.
-    pub fn digest(&self) -> &str {
-        &self.digest
     }
 }
 
@@ -360,6 +350,10 @@ pub enum NodeTag {
     Correspondence,
     /// `hybrid`: a hybrid model, mode or transition (QSpec FR-481).
     Hybrid,
+    /// `timed_model`: a timed model's `clock_place` template, which a
+    /// `presence_read` over the place references (QSpec FR-322
+    /// "Presence").
+    TimedModel,
 }
 
 /// The Leaf stratum of QSpec FR-322's v2 body grammar (ADR-030 D-2): a
@@ -1250,6 +1244,10 @@ pub enum LiteralValue {
     Boolean(bool),
     /// `integer`: the canonical decimal string.
     Integer(Integer),
+    /// `integer`: a JSON number, as QSpec FR-322 "Timed-model nodes" spells
+    /// a `clock_place`'s path positions, collection bounds and row
+    /// positions.
+    Count(u64),
     /// `rational`: `"n/d"`, reduced, positive denominator.
     Rational(Rational),
     /// `float32_bits`: the eight lowercase hexadecimal binary32 bits.
@@ -1283,6 +1281,7 @@ impl LiteralValue {
         let (value_kind, value) = match self {
             Self::Boolean(value) => ("boolean", LiteralJson::Boolean(*value)),
             Self::Integer(value) => ("integer", LiteralJson::Spelled(value.to_string())),
+            Self::Count(value) => ("integer", LiteralJson::Number(*value)),
             // QSpec FR-322 "Scalar literal values": the canonical magnitude
             // spelling (`0`, `-3`, `1/2`), so one rational has one spelling.
             Self::Rational(value) => (
@@ -1337,11 +1336,12 @@ struct LiteralWire<'a> {
     value: LiteralJson<'a>,
 }
 
-/// A literal's JSON `value`: a boolean, a string, or `null`.
+/// A literal's JSON `value`: a boolean, a number, a string, or `null`.
 #[derive(Serialize, FixedShape)]
 #[serde(untagged)]
 enum LiteralJson<'a> {
     Boolean(bool),
+    Number(u64),
     Text(&'a str),
     Spelled(String),
     Null(()),

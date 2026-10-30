@@ -306,8 +306,6 @@ mod tests {
         DomainPackage::new(
             DomainPackageRef {
                 identity: "test/orders".to_owned(),
-                version: "1".to_owned(),
-                digest: [1; 32],
             },
             records,
         )

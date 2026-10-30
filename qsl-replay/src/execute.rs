@@ -4,7 +4,7 @@
 //!
 //! It reads the request (FR-071), recompiles the one source unit the
 //! package reference names through the spine ([`crate::spine::parse`],
-//! S1 to S4) from the digest-addressed byte provision, requires the
+//! S1 to S4) from the byte provision, requires the
 //! recompiled `package_id` to equal the request's, selects the function by
 //! its `QualifiedName` in the recompiled package's declarations, joins the
 //! replay source's arguments to the function's parameters by parameter node
@@ -24,7 +24,7 @@ use qsl_eval::temporal::{evaluate_observed, TemporalPosition, TemporalRefusal, T
 use qsl_eval::value::{
     input_refusal_code, supplied_stop_cause, supplied_stop_code, CheckedPackageEvaluation,
 };
-use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
+use qsl_foundation::digest::{DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::{Code, SourceIdentity};
 use qsl_package::CheckedPackage;
@@ -140,8 +140,8 @@ pub enum MalformedOperationReason {
 #[derive(Debug, thiserror::Error)]
 pub enum ReplayRefusal {
     /// FR-071: the request did not decode -- an unknown version, an input
-    /// absent from the byte provision or whose bytes do not match their
-    /// digest, or an encoding above the reader bound.
+    /// absent from the byte provision, or an encoding above the reader
+    /// bound.
     #[error(transparent)]
     Request(#[from] ReplayRequestRefusal),
     /// The request's S1 source limit is above the reader limit: the request
@@ -153,13 +153,6 @@ pub enum ReplayRefusal {
         .0.reader
     )]
     LimitAboveReader(LimitAboveReader),
-    /// A package reference entry is not a `quire.source.bytes/v1` source.
-    /// The recompile reads no definition document -- the definitions are
-    /// QSL's pinned catalog, which `package_id` already covers -- so such a
-    /// digest is one the executor cannot recompute and compare (QSpec
-    /// FR-323-AC-5).
-    #[error("the package reference names {} under {}, which is not a source the replay recompiles", .0.identity(), .0.digest().domain())]
-    NotASource(Box<RawSourceRef>),
     /// The package reference does not name exactly one source unit. The
     /// spine recompiles one unit: a package over more than one waits on
     /// E3 import resolution (FR-087-AC-13).
@@ -169,6 +162,10 @@ pub enum ReplayRefusal {
     /// stage limits the request carries (`stage_limit_exceeded`).
     #[error("the recompile refused at stage {stage}: {refusal}", stage = .0.stage().as_str(), refusal = .0)]
     Recompile(Box<CompileRefusal>),
+    /// QC-1: the request's domain package documents do not form a package
+    /// input (an unreadable document, or two for one identity).
+    #[error("{}", .0.detail)]
+    DomainPackages(Box<qsl_semantics::model::normalize::ModelRefusal>),
     /// ADR-015 D-4 rules 1 and 6: the package reference's `dependencies`
     /// are not in strictly ascending UTF-8 byte order of identity, or name
     /// an identity the recompiled package does not select
@@ -511,8 +508,9 @@ impl ReplayRefusal {
         match self {
             Self::Request(refusal) => refusal.code(),
             Self::LimitAboveReader(_) => Code::InvalidRequest,
-            Self::NotASource(_) | Self::SourceCount(_) => Code::InvalidRequest,
+            Self::SourceCount(_) => Code::InvalidRequest,
             Self::Recompile(refusal) => refusal.code(),
+            Self::DomainPackages(refusal) => refusal.code,
             Self::PackageIdMismatch { .. } | Self::DependencyIdentityMismatch { .. } => {
                 Code::StaleDependency
             }
@@ -574,6 +572,7 @@ impl ReplayRefusal {
         match self {
             Self::Request(refusal) => refusal.cause(),
             Self::Recompile(refusal) => refusal.cause(),
+            Self::DomainPackages(refusal) => Some(refusal.cause.as_str()),
             Self::DependencySelections(_) => Some("invalid-value"),
             Self::DependencyInput(refusal) => refusal.cause(),
             Self::DependencyIdentityMismatch { .. } | Self::PackageIdMismatch { .. } => {
@@ -614,7 +613,6 @@ impl ReplayRefusal {
                 AdmissionFailure::Refused(record) | AdmissionFailure::Incomplete(record),
             ) => Some(record.cause),
             Self::LimitAboveReader(_)
-            | Self::NotASource(_)
             | Self::SourceCount(_)
             | Self::Admission(AdmissionFailure::Fault(_))
             | Self::UnknownParameter(_)
@@ -654,7 +652,6 @@ impl ReplayRefusal {
                 "claim_identity" | "clause_node" => "/replay/source/model_graph/clause_node",
                 "occurrence_key" => "/replay/source/model_graph/occurrence_key",
                 "package_id" => "/replay/source/model_graph/package_id",
-                "source_digests" => "/replay/source_digests",
                 "profile_selections" => "/replay/profile_selections",
                 "declared_domains" => "/replay/declared_domains",
                 "undefined_locus" => "/replay/source/model_graph/undefined/where/locus",
@@ -737,10 +734,6 @@ pub enum DependencySelectionsCause {
 /// #     &small,
 /// # )
 /// # .unwrap();
-/// # let digest = DigestRecord::mint(
-/// #     DigestDomain::SourceBytesV1,
-/// #     ByteDigest::of(unit.as_bytes()).as_bytes(),
-/// # );
 /// # let unlimited = ScalarLimits {
 /// #     integer_bits: u64::MAX,
 /// #     decimal_digits: u64::MAX,
@@ -761,13 +754,11 @@ pub enum DependencySelectionsCause {
 /// #       Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
 /// #       site.package_id.hex(),
 /// #   ),
-/// #   source_digests: vec![(
+/// #   sources: vec![(
 /// #       "a".to_owned(),
 /// #       "u".to_owned(),
 /// #       "git".to_owned(),
 /// #       "1".to_owned(),
-/// #       Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-/// #       digest.hex(),
 /// #   )],
 /// #   dependencies: Vec::new(),
 /// #   source: ReplaySource::Input(vec![CanonicalAssignment {
@@ -782,11 +773,8 @@ pub enum DependencySelectionsCause {
 /// #   supplied_limits: None,
 /// #   object_environment: None,
 /// #   declared_domains: Vec::new(),
-/// #   byte_provision: vec![(
-/// #       Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-/// #       digest.hex(),
-/// #       unit.as_bytes().to_vec(),
-/// #   )],
+/// #   byte_provision: vec![("a".to_owned(), "u".to_owned(), unit.as_bytes().to_vec())],
+/// #   documents: vec![],
 ///     // ...every other member names the proved package and its input.
 /// };
 /// assert!(replay(wire, ReplayLimits::default()).is_ok());
@@ -810,10 +798,6 @@ pub enum DependencySelectionsCause {
 /// #     &small,
 /// # )
 /// # .unwrap();
-/// # let digest = DigestRecord::mint(
-/// #     DigestDomain::SourceBytesV1,
-/// #     ByteDigest::of(unit.as_bytes()).as_bytes(),
-/// # );
 /// # let unlimited = ScalarLimits {
 /// #     integer_bits: u64::MAX,
 /// #     decimal_digits: u64::MAX,
@@ -834,13 +818,11 @@ pub enum DependencySelectionsCause {
 /// #       Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
 /// #       site.package_id.hex(),
 /// #   ),
-/// #   source_digests: vec![(
+/// #   sources: vec![(
 /// #       "a".to_owned(),
 /// #       "u".to_owned(),
 /// #       "git".to_owned(),
 /// #       "1".to_owned(),
-/// #       Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-/// #       digest.hex(),
 /// #   )],
 /// #   dependencies: Vec::new(),
 /// #   source: ReplaySource::Input(vec![CanonicalAssignment {
@@ -855,11 +837,8 @@ pub enum DependencySelectionsCause {
 /// #   supplied_limits: None,
 /// #   object_environment: None,
 /// #   declared_domains: Vec::new(),
-/// #   byte_provision: vec![(
-/// #       Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-/// #       digest.hex(),
-/// #       unit.as_bytes().to_vec(),
-/// #   )],
+/// #   byte_provision: vec![("a".to_owned(), "u".to_owned(), unit.as_bytes().to_vec())],
+/// #   documents: vec![],
 ///     // ...every other member names the proved package and its input.
 /// };
 /// assert!(replay(wire, ReplayLimits::default()).is_ok());
@@ -1005,12 +984,7 @@ fn replay_observed_temporal(
         ));
     }
 
-    let mut snapshots = std::collections::BTreeMap::new();
-    for (digest, bytes) in request.byte_provision().entries() {
-        if digest.domain() == DigestDomain::Sha256Jcs {
-            snapshots.insert(*digest.as_bytes(), bytes.to_vec());
-        }
-    }
+    let snapshots = request.byte_provision().snapshots();
     let mut environments = Vec::with_capacity(documents.len());
     for document in &documents {
         let (environment, _) = admit_trace_snapshot(
@@ -1419,8 +1393,8 @@ pub(crate) struct Recompiled {
     pub(crate) checked: spine::CheckedUnit,
     /// The recompiled package's v2 bytes and `package_id`.
     pub(crate) emitted: spine::EmittedUnit,
-    /// The domain packages the recompile read, by `sha256-jcs` digest.
-    pub(crate) packages: std::collections::BTreeMap<[u8; 32], Vec<u8>>,
+    /// The domain packages the recompile read, by package identity.
+    pub(crate) packages: qsl_semantics::model::intake::PackageInput,
     /// The limits the models were normalized under.
     pub(crate) model_limits: qsl_semantics::model::accounting::ModelNormalizationLimits,
 }
@@ -1440,7 +1414,7 @@ pub(crate) fn run_spine(
     unit: &SourceIdentity,
     path: &str,
     bytes: &[u8],
-    packages: &std::collections::BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &qsl_semantics::model::intake::PackageInput,
     dependencies: &DependencyInput,
     limits: SpineLimits,
 ) -> Result<Recompiled, ReplayRefusal> {
@@ -1461,15 +1435,13 @@ pub(crate) fn run_spine_with_execution_points(
     unit: &SourceIdentity,
     path: &str,
     bytes: &[u8],
-    packages: &std::collections::BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &qsl_semantics::model::intake::PackageInput,
     dependencies: &DependencyInput,
     execution_points: &spine::StateClauseExecutionPoints,
     limits: SpineLimits,
 ) -> Result<Recompiled, ReplayRefusal> {
     #[cfg(test)]
     SPINE_RUNS.with(|runs| runs.set(runs.get() + 1));
-    use qsl_semantics::value::{CatalogRole, DefinitionLock};
-
     let cancel = Cancel::new();
     let refusal = |failure| match spine::refusal_or_fault(failure) {
         Ok(refusal) => ReplayRefusal::Recompile(refusal),
@@ -1489,18 +1461,11 @@ pub(crate) fn run_spine_with_execution_points(
     let models = spine::select(&parsed, packages, limits.model, &cancel)
         .map_err(refusal)?
         .into_value();
-    // Compile and replay select the Text law implemented by the same
-    // definition catalog that supplies the emitted package's lock.
-    let text_profile = DefinitionLock::pinned()
-        .entry(CatalogRole::TextProfile)
-        .reference();
-    let lock = spine::LockEvidence::default().with_text_profile(text_profile);
     let checked = spine::check_with_execution_points(
         &parsed,
         execution_points,
         &models,
         dependencies,
-        &lock,
         limits,
         &cancel,
     )
@@ -1529,7 +1494,7 @@ pub(crate) fn spine_run_count() -> u64 {
 
 /// Recompile the request's one source unit from the byte provision against
 /// the dependency input its `dependencies` entries build, with every domain
-/// package the provision carries under its `sha256-jcs` digest as I1's
+/// package the provision carries under its package identity as I1's
 /// package input, applying ADR-015 D-4's seven rules in order: each rule
 /// over every entry, in entry order, before the next.
 pub(crate) fn recompile(
@@ -1551,23 +1516,20 @@ pub(crate) fn recompile(
     }
     // Rule 2: the proved package's sources, and each entry's, name one
     // source unit.
-    let source = one_source(request.source_digests())?;
+    let source = one_source(request.sources())?;
     let library_sources = request
         .dependencies()
         .iter()
         .map(|entry| one_source(entry.sources()))
         .collect::<Result<Vec<_>, _>>()?;
     let provided = |reference: &RawSourceRef| {
-        request
-            .byte_provision()
-            .get(reference.digest())
-            .ok_or_else(|| {
-                // `ReplayRequest::decode` refuses an incomplete provision.
-                ReplayRefusal::Fault(InternalFault::new(
-                    "replay",
-                    "decoded-request-byte-provision-complete",
-                ))
-            })
+        request.byte_provision().get(reference).ok_or_else(|| {
+            // `ReplayRequest::decode` refuses an incomplete provision.
+            ReplayRefusal::Fault(InternalFault::new(
+                "replay",
+                "decoded-request-byte-provision-complete",
+            ))
+        })
     };
     // Rule 3: the dependency input.
     let libraries = request
@@ -1588,7 +1550,7 @@ pub(crate) fn recompile(
         .check_unit_owner(&labels(source))
         .map_err(ReplayRefusal::DependencyInput)?;
     let bytes = provided(source)?;
-    let packages = domain_packages(request);
+    let packages = domain_packages(request)?;
     // Rule 4: the recompile.
     let compiled = run_spine(
         &labels(source),
@@ -1641,29 +1603,18 @@ pub(crate) fn recompile(
     Ok(compiled)
 }
 
-/// I1's package input: every entry the byte provision carries under a
-/// `sha256-jcs` digest (QC-1). A state document there is keyed by its raw
-/// bytes' digest, which no model selection names.
-fn domain_packages(request: &ReplayRequest) -> std::collections::BTreeMap<[u8; 32], Vec<u8>> {
-    package_input(
-        request
-            .byte_provision()
-            .entries()
-            .filter(|(digest, _)| digest.domain() == DigestDomain::Sha256Jcs)
-            .map(|(_, bytes)| bytes),
-    )
+/// I1's package input: every domain package document the provision carries,
+/// keyed by the identity it declares (QC-1).
+fn domain_packages(
+    request: &ReplayRequest,
+) -> Result<qsl_semantics::model::intake::PackageInput, ReplayRefusal> {
+    package_input(request.byte_provision().package_documents())
+        .map_err(|refusal| ReplayRefusal::DomainPackages(Box::new(refusal)))
 }
 
-/// The one `quire.source.bytes/v1` source `references` names (ADR-015 D-4
-/// rule 2), else [`ReplayRefusal::NotASource`] or
+/// The one source `references` names (ADR-015 D-4 rule 2), else
 /// [`ReplayRefusal::SourceCount`].
 fn one_source(references: &[RawSourceRef]) -> Result<&RawSourceRef, ReplayRefusal> {
-    if let Some(other) = references
-        .iter()
-        .find(|reference| reference.digest().domain() != DigestDomain::SourceBytesV1)
-    {
-        return Err(ReplayRefusal::NotASource(Box::new(other.clone())));
-    }
     match references {
         [source] => Ok(source),
         _ => Err(ReplayRefusal::SourceCount(references.len())),

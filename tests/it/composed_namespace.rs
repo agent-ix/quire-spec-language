@@ -15,7 +15,7 @@ use quire_spec_language::Limits;
 const LANGUAGE: &str = "ix:native";
 const EDITION: &str = "1-draft";
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
-profile S = \"test:unresolved-profile\" version \"selected\" digest \"unresolved\";\n";
+profile S = \"test:unresolved-profile\";\n";
 
 /// The source authority and revision namespace every source here is read
 /// under; each is charged as its own metadata string.
@@ -313,7 +313,7 @@ fn malformed_source_retains_its_diagnostic_and_the_other_successful_parse() {
 #[test]
 #[trace("TC-114", "FR-036-AC-1")]
 fn mixed_historical_and_composed_headers_refuse_with_original_token_spans() {
-    let historical = "language \"ix:native\" edition \"0-draft\"; profile \"state-finite/0-draft\"; model M = \"test:model\" version \"1\" digest \"unresolved\"; invariant Old on M::Thing at current { true }";
+    let historical = "language \"ix:native\" edition \"0-draft\"; profile \"state-finite/0-draft\"; model M = \"test:model\"; invariant Old on M::Thing at current { true }";
     let old = source("test:old", "r1", "old.native", historical);
     let new = source("test:new", "r1", "new.native", &predicates(&["New"]));
     let selected = inventory(&[("old", &old), ("new", &new)]);

@@ -13,7 +13,7 @@ relationships:
 ---
 ## Scope
 
-Resolve PR #16's decoder-ownership and digest-codec findings under issue #27.
+Resolve PR #16's decoder-ownership findings under issue #27.
 Preserve native-state-input/1 bytes and the public draft field types. Replace
 per-field object adapters with closed type-owned decoding, retain validated
 foreign identifiers, and test direct/nested records and required nullable results.

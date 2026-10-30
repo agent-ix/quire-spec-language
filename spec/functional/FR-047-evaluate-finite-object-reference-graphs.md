@@ -46,7 +46,7 @@ The observation occurrence is the exact semantic anchor, snapshot identity,
 optional window identity and record identity supplied by F under the selected
 observation contract. Those identities remain opaque observation identities; they
 are not compiled-protocol `ArtifactRef` values and do not reuse
-the compiled artifact's raw-byte digest domain.
+any compiled-artifact reference.
 
 An object identifier string, payload field, trace identifier, same-shaped model
 or successful static type check is not a graph environment. The admitted domain

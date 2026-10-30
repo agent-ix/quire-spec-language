@@ -29,9 +29,7 @@ Use FR-126-AC-9's `Counter` unit.
    identity with the `when` declaration and with none.
 3. Compile FR-128-AC-6's unit with `terminal Done using v on Counter when {
    6 mod (3 - self.value) = 0 };` and replay its deadlock-freedom
-   counterexample; replay the same counterexample, its envelope naming the
-   `when` unit's `package_id`, in a request whose byte provision holds the
-   unit with `terminal Halt using v on Counter any;` in its place.
+   counterexample.
 4. Edit step 1's `when` node to `mode` `some`, and separately to `condition`
    the empty aggregate; after each edit set `dependencies` to the body's
    targets, recompute the node key and the
@@ -49,9 +47,7 @@ backs.
 - Step 2 (FR-411-AC-2): different `package_id`s for `when` and `any`; the
   same node id and `package_id` after the rename; different deadlock-freedom
   obligation identities.
-- Step 3 (FR-411-AC-3): the package holds the terminal node and the replay
-  settles as FR-128-AC-6 states; the `any` request is refused
-  `PackageIdMismatch`, naming both `package_id`s, before any step is
-  re-executed.
+- Step 3: the package holds the terminal node and the replay
+  settles as FR-128-AC-6 states (FR-411-AC-3 is retired).
 - Step 4 (FR-411-AC-4): `invalid_package`/`invalid-value` at `mode`;
   `invalid_semantic_graph` at `condition`.

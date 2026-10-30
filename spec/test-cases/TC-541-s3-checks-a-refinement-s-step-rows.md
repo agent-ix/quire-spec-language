@@ -70,7 +70,7 @@ Tag the tests `#[trace("TC-541", "FR-136-AC-n")]`.
 - Step 4: `missing_declaration`/`missing-name` naming the `fork` node;
   checks; checks with the node row recorded;
   `invalid_model_binding`/`conflicting-binding`.
-- Step 5: the same emitted `steps`, in ascending node-key digest order, and the same `StepRowRef`s.
+- Step 5: the same emitted `steps`, in ascending node-key order, and the same `StepRowRef`s.
 - Step 6: one protocol, recorded as `concrete_protocol`, and `None` for a
   refinement that names none; `invalid_model_binding`/`conflicting-binding`
   at the second protocol's first row naming both rows;
@@ -78,7 +78,7 @@ Tag the tests `#[trace("TC-541", "FR-136-AC-n")]`.
   `invalid_model_binding`/`malformed-declaration` at the protocol name;
   `missing_declaration`/`missing-name` at the kind for both memory rows; the
   unused operation row checks.
-- Step 7: equal `steps` arrays and `StepRowRef`s, ordered by node-key digest,
+- Step 7: equal `steps` arrays and `StepRowRef`s, ordered by node key,
   then step keyword, then memory kind name.
 - Step 8: the same coverage result whichever declares first; the protocol's
   own refusals and no coverage refusal for a class drawn from it, and no

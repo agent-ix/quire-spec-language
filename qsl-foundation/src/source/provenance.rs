@@ -25,7 +25,7 @@ use core::fmt;
 
 use quire_exact::{Location, Origin, Role};
 
-use crate::digest::{DigestDomain, DigestRecord, WireNodeId};
+use crate::digest::WireNodeId;
 
 /// Why a provenance value could not be formed. Each condition a caller must
 /// tell apart is its own variant.
@@ -37,10 +37,6 @@ pub enum InvalidProvenance {
     /// A [`RawSourceRef`]'s identity is empty (QSpec `Nonempty`).
     #[error("the source identity is empty")]
     EmptyIdentity,
-    /// A [`RawSourceRef`]'s digest is not a `quire.source.bytes/v1` digest
-    /// (QSpec `RawSourceRef.digest_domain` is that constant).
-    #[error("a raw source digest must be quire.source.bytes/v1, not {0}")]
-    NotSourceBytes(DigestDomain),
     /// A [`SourceRegion`]'s end precedes its start.
     #[error("region end {end} precedes start {start}")]
     ReversedRegion {
@@ -59,39 +55,32 @@ pub enum InvalidProvenance {
 }
 
 /// ADR-013 O-07 and QSpec `RawSourceRef`: names one source document by
-/// authority and identity and binds it to its bytes by their
-/// `quire.source.bytes/v1` digest (QSpec STD-150).
+/// its authority and identity.
 ///
 /// quire:canonical
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct RawSourceRef {
     authority: String,
     identity: String,
-    digest: DigestRecord,
 }
 
-/// QSpec FR-322 `RawSourceRef`, member for member: `authority`, `identity`,
-/// `digest_domain` (always `quire.source.bytes/v1`) and the lowercase-hex
-/// `digest`.
+/// QSpec FR-322 `RawSourceRef`, member for member: `authority` and
+/// `identity`.
 impl serde::Serialize for RawSourceRef {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
-        let mut record = serializer.serialize_struct("RawSourceRef", 4)?;
+        let mut record = serializer.serialize_struct("RawSourceRef", 2)?;
         record.serialize_field("authority", &self.authority)?;
         record.serialize_field("identity", &self.identity)?;
-        record.serialize_field("digest_domain", self.digest.domain().as_str())?;
-        record.serialize_field("digest", &self.digest.hex())?;
         record.end()
     }
 }
 
 impl RawSourceRef {
-    /// Name a source document. Refuses an empty authority or identity, and
-    /// a digest outside `quire.source.bytes/v1`.
+    /// Name a source document. Refuses an empty authority or identity.
     pub fn new(
         authority: impl Into<String>,
         identity: impl Into<String>,
-        digest: DigestRecord,
     ) -> Result<Self, InvalidProvenance> {
         let (authority, identity) = (authority.into(), identity.into());
         if authority.is_empty() {
@@ -100,13 +89,9 @@ impl RawSourceRef {
         if identity.is_empty() {
             return Err(InvalidProvenance::EmptyIdentity);
         }
-        if digest.domain() != DigestDomain::SourceBytesV1 {
-            return Err(InvalidProvenance::NotSourceBytes(digest.domain()));
-        }
         Ok(Self {
             authority,
             identity,
-            digest,
         })
     }
 
@@ -119,20 +104,14 @@ impl RawSourceRef {
     pub fn identity(&self) -> &str {
         &self.identity
     }
-
-    /// The `quire.source.bytes/v1` digest of the source's bytes.
-    pub fn digest(&self) -> DigestRecord {
-        self.digest
-    }
 }
 
 /// ADR-013 O-07/O-12: a half-open UTF-8 byte interval `[start, end)` under
 /// one source document.
 ///
-/// Equality, ordering and hashing are lexical over (`RawSourceRef` digest,
-/// start, end), exactly O-12's region equality: the document's digest names
-/// its bytes, so two regions over the same bytes and offsets are one region
-/// whatever authority or identity label named the document.
+/// Equality, ordering and hashing are lexical over (`RawSourceRef` authority,
+/// identity, start, end): two regions over the same document and offsets are
+/// one region.
 ///
 /// An empty region (`start == end`) is a point, which a diagnostic may
 /// name. A v2 source-map entry's regions are non-empty; IR's reader
@@ -168,9 +147,14 @@ impl SourceRegion {
         self.end
     }
 
-    /// The lexical key O-12's equality compares.
-    fn key(&self) -> (DigestRecord, u64, u64) {
-        (self.source.digest, self.start, self.end)
+    /// The lexical key a region's equality compares.
+    fn key(&self) -> (&str, &str, u64, u64) {
+        (
+            &self.source.authority,
+            &self.source.identity,
+            self.start,
+            self.end,
+        )
     }
 }
 
@@ -216,6 +200,19 @@ impl OccurrenceKey {
     /// Name an occurrence by wire node id, role and ordinal.
     pub fn new(node: WireNodeId, origin: Origin) -> Self {
         Self { node, origin }
+    }
+
+    /// The `generated` occurrence of `node` at ordinal 0: the one
+    /// occurrence of a node the producer writes with no source construct of
+    /// its own, such as a `model_root` node (QSpec FR-322-AC-132).
+    pub fn generated(node: WireNodeId) -> Self {
+        Self::new(node, Origin::new(Role::new("generated"), 0))
+    }
+
+    /// The `declaration` occurrence of `node` at ordinal 0, such as a
+    /// protocol clause node's (QSpec FR-368 "Claim and anchor").
+    pub fn declaration(node: WireNodeId) -> Self {
+        Self::new(node, Origin::new(Role::new("declaration"), 0))
     }
 
     /// The occurrence's wire node id.
@@ -345,16 +342,12 @@ mod tests {
 
     use super::*;
 
-    fn digest(domain: DigestDomain, fill: u8) -> DigestRecord {
-        DigestRecord::mint(domain, [fill; 32])
+    fn source(authority: &str) -> RawSourceRef {
+        RawSourceRef::new(authority, "unit").unwrap()
     }
 
-    fn source(authority: &str, fill: u8) -> RawSourceRef {
-        RawSourceRef::new(authority, "unit", digest(DigestDomain::SourceBytesV1, fill)).unwrap()
-    }
-
-    fn region(fill: u8, start: u64, end: u64) -> SourceRegion {
-        SourceRegion::new(source("a", fill), start, end).unwrap()
+    fn region(authority: &str, start: u64, end: u64) -> SourceRegion {
+        SourceRegion::new(source(authority), start, end).unwrap()
     }
 
     fn key(node: u8, role: &str, ordinal: u64) -> OccurrenceKey {
@@ -364,52 +357,42 @@ mod tests {
         )
     }
 
-    /// O-12 region equality is lexical over (digest, start, end): the
-    /// authority and identity labels take no part, while each of
-    /// the three compared members does.
+    /// A region's equality is lexical over (authority, identity, start,
+    /// end): each of the four compared members separates two regions.
     #[trace("TC-420", "FR-095-AC-2")]
     #[test]
-    fn region_equality_is_over_digest_start_and_end_only() {
-        let base = region(1, 4, 9);
-        let relabelled = SourceRegion::new(
-            RawSourceRef::new("b", "other", digest(DigestDomain::SourceBytesV1, 1)).unwrap(),
-            4,
-            9,
-        )
-        .unwrap();
-        assert_eq!(base, relabelled);
-        assert_eq!(base.cmp(&relabelled), core::cmp::Ordering::Equal);
-        assert_ne!(base, region(2, 4, 9));
-        assert_ne!(base, region(1, 5, 9));
-        assert_ne!(base, region(1, 4, 8));
+    fn region_equality_is_over_source_start_and_end() {
+        let base = region("a", 4, 9);
+        assert_eq!(base, region("a", 4, 9));
+        assert_eq!(base.cmp(&region("a", 4, 9)), core::cmp::Ordering::Equal);
+        assert_ne!(base, region("b", 4, 9));
+        assert_ne!(
+            base,
+            SourceRegion::new(RawSourceRef::new("a", "other").unwrap(), 4, 9).unwrap()
+        );
+        assert_ne!(base, region("a", 5, 9));
+        assert_ne!(base, region("a", 4, 8));
     }
 
     /// A `RawSourceRef` is QSpec's: non-empty authority and identity
-    /// members, and a `quire.source.bytes/v1` digest only. A region's end
-    /// never precedes its start; an empty region is a point.
+    /// members. A region's end never precedes its start; an empty region is a
+    /// point.
     #[trace("TC-420", "FR-095-AC-1")]
     #[test]
     fn raw_source_refs_and_regions_refuse_malformed_members() {
-        let bytes = digest(DigestDomain::SourceBytesV1, 1);
         assert_eq!(
-            RawSourceRef::new("", "u", bytes),
+            RawSourceRef::new("", "u"),
             Err(InvalidProvenance::EmptyAuthority)
         );
         assert_eq!(
-            RawSourceRef::new("a", "", bytes),
+            RawSourceRef::new("a", ""),
             Err(InvalidProvenance::EmptyIdentity)
         );
         assert_eq!(
-            RawSourceRef::new("a", "u", digest(DigestDomain::DefinitionBytesV1, 1)),
-            Err(InvalidProvenance::NotSourceBytes(
-                DigestDomain::DefinitionBytesV1
-            ))
-        );
-        assert_eq!(
-            SourceRegion::new(source("a", 1), 5, 4).unwrap_err(),
+            SourceRegion::new(source("a"), 5, 4).unwrap_err(),
             InvalidProvenance::ReversedRegion { start: 5, end: 4 }
         );
-        let point = SourceRegion::new(source("a", 1), 5, 5).unwrap();
+        let point = SourceRegion::new(source("a"), 5, 5).unwrap();
         assert_eq!((point.start(), point.end()), (5, 5));
     }
 
@@ -426,13 +409,13 @@ mod tests {
 
     fn map() -> PackageSourceMap {
         PackageSourceMap::from_entries([
-            (key(1, "declaration", 0), vec![region(1, 0, 4)]),
+            (key(1, "declaration", 0), vec![region("a", 0, 4)]),
             (
                 key(1, "expression", 0),
-                vec![region(1, 10, 12), region(1, 20, 22)],
+                vec![region("a", 10, 12), region("a", 20, 22)],
             ),
-            (key(1, "expression", 1), vec![region(1, 30, 31)]),
-            (key(2, "type", 0), vec![region(1, 40, 41)]),
+            (key(1, "expression", 1), vec![region("a", 30, 31)]),
+            (key(2, "type", 0), vec![region("a", 40, 41)]),
         ])
         .unwrap()
     }
@@ -446,11 +429,11 @@ mod tests {
         let map = map();
         assert_eq!(
             map.regions(&key(1, "expression", 0)),
-            Some(&[region(1, 10, 12), region(1, 20, 22)][..])
+            Some(&[region("a", 10, 12), region("a", 20, 22)][..])
         );
         assert_eq!(
             map.regions(&key(1, "expression", 1)),
-            Some(&[region(1, 30, 31)][..])
+            Some(&[region("a", 30, 31)][..])
         );
         assert_eq!(map.regions(&key(1, "expression", 2)), None);
         let node_one: Vec<_> = map
@@ -483,7 +466,7 @@ mod tests {
         };
         assert_eq!(
             map.resolve(&location(2, "type", 0)),
-            Ok(&[region(1, 40, 41)][..])
+            Ok(&[region("a", 40, 41)][..])
         );
         assert_eq!(
             map.resolve(&location(3, "type", 0)),
@@ -507,8 +490,8 @@ mod tests {
         );
         assert_eq!(
             PackageSourceMap::from_entries([
-                (key(1, "type", 0), vec![region(1, 0, 1)]),
-                (key(1, "type", 0), vec![region(1, 2, 3)]),
+                (key(1, "type", 0), vec![region("a", 0, 1)]),
+                (key(1, "type", 0), vec![region("a", 2, 3)]),
             ]),
             Err(InvalidProvenance::DuplicateOccurrence(key(1, "type", 0)))
         );

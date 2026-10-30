@@ -127,22 +127,20 @@ fn orders_document(modifies: &[String]) -> Vec<u8> {
 
 /// The orders unit selecting `document` as model `Orders`, with the
 /// postcondition that gives `rehome` its frame node.
-fn orders_unit(modifies: &[String]) -> (Unit, String) {
+fn orders_unit(modifies: &[String]) -> Unit {
     let document = orders_document(modifies);
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
-    let digest = hex(packages.keys().next().expect("one model"));
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
-         model Orders = {PACKAGE:?} version \"1.0.0\" digest \"sha256-jcs:{digest}\";\n\
+         model Orders = {PACKAGE:?};\n\
          post RehomePost using v on Orders::Pump::rehome {{ true }}\n"
     );
-    (unit_for(unit, document), digest)
+    unit_for(unit, document)
 }
 
-fn labelled(name: &str, digest: &str, mut document: serde_json::Value) -> serde_json::Value {
+fn labelled(name: &str, mut document: serde_json::Value) -> serde_json::Value {
     document["model"] = json!({
-        "identity": PACKAGE, "version": "1.0.0", "digest": format!("sha256-jcs:{digest}"),
+        "identity": PACKAGE,
     });
     document["identity"] = document_identity_json(&config_version_document_ref(name));
     document
@@ -186,29 +184,15 @@ fn side(observation: &str, instances: &[(&str, &str)]) -> serde_json::Value {
 }
 
 /// Invocation **I**: its three documents, by reference and bytes.
-fn invocation_i(digest: &str) -> (DocumentRef, Vec<(DocumentRef, Vec<u8>)>) {
+fn invocation_i() -> (DocumentRef, Vec<(DocumentRef, Vec<u8>)>) {
     let provision = |name: &str, document: serde_json::Value| {
         let label = config_version_document_ref(name);
         let bytes = document.to_string().into_bytes();
-        (
-            DocumentRef {
-                digest: document_digest(&bytes),
-                ..label
-            },
-            bytes,
-        )
+        (DocumentRef { ..label }, bytes)
     };
     let call = "replay-call";
-    let mut pre = labelled(
-        "replay-pre",
-        digest,
-        side("pre", &[("p1", "t1"), ("p2", "t1")]),
-    );
-    let mut post = labelled(
-        "replay-post",
-        digest,
-        side("post", &[("p1", "t2"), ("p2", "t1")]),
-    );
+    let mut pre = labelled("replay-pre", side("pre", &[("p1", "t1"), ("p2", "t1")]));
+    let mut post = labelled("replay-post", side("post", &[("p1", "t2"), ("p2", "t1")]));
     for document in [&mut pre, &mut post] {
         document["invocation"] = document_identity_json(&config_version_document_ref(call));
     }
@@ -217,12 +201,10 @@ fn invocation_i(digest: &str) -> (DocumentRef, Vec<(DocumentRef, Vec<u8>)>) {
     let reference = |held: &DocumentRef| {
         json!({
             "identity": document_identity_json(held),
-            "digest": format!("sha256-jcs:{}", hex(&held.digest)),
         })
     };
     let invocation = labelled(
         call,
-        digest,
         json!({
             "format": "quire.state.invocation/v1",
             "context": identity("Pump"),
@@ -257,8 +239,8 @@ fn link(difference: LinkDifference, source: &str, target: &str) -> ClaimedChange
 /// package whose frame modifies `modifies`, carrying invocation **I** and
 /// `change`.
 fn replay_rehome(modifies: &[String], change: ClaimedChange) -> FrameReplayResult {
-    let (unit, digest) = orders_unit(modifies);
-    let (invocation, documents) = invocation_i(&digest);
+    let unit = orders_unit(modifies);
+    let (invocation, documents) = invocation_i();
     let graph = unit.compiled.package.graph();
     let identifier = |text: &str| Identifier::new(text).expect("an identifier");
     let selection = graph

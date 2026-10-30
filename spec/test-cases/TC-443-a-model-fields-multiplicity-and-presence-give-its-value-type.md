@@ -36,7 +36,7 @@ outside `required`/`optional`. Scope: FR-056-AC-10.
   `ordered`/`unique` flags; any other multiplicity gives the bounded
   collection its flags name (`[0, unbounded]` unbounded, with no
   `collection_bounds`); `[1, unbounded]` refuses -- QSpec's merged
-  `model-member-type-vectors.json` MA-07 pins the same refusal. `presence`
+  `model-member-type-vectors.json` MA-07 covers the same refusal. `presence`
   alone decides `FieldDeclaration::presence()`: a required `[0, 1]`/`[0,
   3]` stays the bounded collection, never `Option`, and an optional `[1,
   1]`/`[0, 1]`/`[0, 3]` leaves the multiplicity's own value type unwrapped,

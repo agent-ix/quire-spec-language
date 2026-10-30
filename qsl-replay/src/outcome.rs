@@ -189,6 +189,28 @@ pub enum ItemLabel {
     Measured,
 }
 
+impl ItemLabel {
+    /// The result label `value` settles. A vacuous proof is `inconclusive`,
+    /// never `proved`.
+    pub fn of(value: &TerminalValue) -> Self {
+        match value {
+            TerminalValue::Proved {
+                basis: ProofBasis::Checks { success_checks: 0 },
+                ..
+            }
+            | TerminalValue::Inconclusive(_) => Self::Inconclusive,
+            TerminalValue::Proved { .. } => Self::Proved,
+            TerminalValue::Tested => Self::Tested,
+            TerminalValue::Refuted => Self::Refuted,
+            TerminalValue::Declined { .. } => Self::Declined,
+            TerminalValue::Unsupported(_) => Self::Unsupported,
+            TerminalValue::Incomplete(_) => Self::Incomplete,
+            TerminalValue::Failed => Self::Failed,
+            TerminalValue::Measured(_) => Self::Measured,
+        }
+    }
+}
+
 /// Why a replay settled inconclusive: its disagreement reason and the two
 /// verdicts' categories.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -198,6 +220,13 @@ pub struct ParityReason {
     proved: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     replayed: Option<&'static str>,
+}
+
+/// A checked-package node id on the wire: its domain and hex digest.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct WireNode {
+    domain: &'static str,
+    digest: String,
 }
 
 /// The typed cause an item's terminal record carries: its FR-331 spelling in
@@ -226,6 +255,12 @@ pub struct ItemCause {
         skip_serializing_if = "Option::is_none"
     )]
     source: Option<CancelCause>,
+    /// A `hypotheses-not-established` cause's invariant clause node.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hypothesis: Option<WireNode>,
+    /// A `hypotheses-not-established` cause's hypothesis item result.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    result: Option<ItemLabel>,
     #[serde(skip_serializing_if = "Option::is_none")]
     rule: Option<CertificateRule>,
     #[serde(rename = "at", skip_serializing_if = "Option::is_none")]
@@ -407,6 +442,8 @@ impl ItemCause {
             exhaustive: None,
             source: None,
             rule: None,
+            hypothesis: None,
+            result: None,
             certificate_at: None,
             limit: None,
             value: None,
@@ -449,6 +486,16 @@ impl ItemCause {
             }) => {
                 item.rule = Some(*rule);
                 item.certificate_at = Some(at.clone());
+            }
+            ReportedInconclusiveCause::Cause(InconclusiveCause::HypothesesNotEstablished {
+                hypothesis,
+                result,
+            }) => {
+                item.hypothesis = Some(WireNode {
+                    domain: quire_exact::NODE_KEY_DOMAIN,
+                    digest: hypothesis.to_string(),
+                });
+                item.result = Some(*result);
             }
             ReportedInconclusiveCause::Cause(
                 InconclusiveCause::BoundReached { depth }
@@ -654,30 +701,23 @@ impl OutcomeItem {
     /// `inconclusive` with its vacuity cause, never `proved`.
     pub fn from_terminal(record: &TerminalRecord) -> Self {
         let value = record.value();
-        let (result, cause) = match value {
+        let result = ItemLabel::of(value);
+        let cause = match value {
             TerminalValue::Proved {
                 basis: ProofBasis::Checks { success_checks: 0 },
                 ..
             }
-            | TerminalValue::Inconclusive(_) => (
-                ItemLabel::Inconclusive,
-                value
-                    .inconclusive_cause()
-                    .map(|cause| ItemCause::inconclusive(&cause)),
-            ),
-            TerminalValue::Proved { .. } => (ItemLabel::Proved, None),
-            TerminalValue::Tested => (ItemLabel::Tested, None),
-            TerminalValue::Refuted => (ItemLabel::Refuted, None),
-            TerminalValue::Declined { cause, code } => (
-                ItemLabel::Declined,
-                Some(ItemCause {
-                    code: Some(match code {
-                        DeclineCode::Qsl(code) => code.as_str().to_owned(),
-                        DeclineCode::Std001(code) => code.as_str().to_owned(),
-                    }),
-                    ..ItemCause::kind(cause.as_str())
+            | TerminalValue::Inconclusive(_) => value
+                .inconclusive_cause()
+                .map(|cause| ItemCause::inconclusive(&cause)),
+            TerminalValue::Proved { .. } | TerminalValue::Tested | TerminalValue::Refuted => None,
+            TerminalValue::Declined { cause, code } => Some(ItemCause {
+                code: Some(match code {
+                    DeclineCode::Qsl(code) => code.as_str().to_owned(),
+                    DeclineCode::Std001(code) => code.as_str().to_owned(),
                 }),
-            ),
+                ..ItemCause::kind(cause.as_str())
+            }),
             TerminalValue::Unsupported(cause) => {
                 let mut item = ItemCause {
                     code: cause.code().map(str::to_owned),
@@ -696,6 +736,12 @@ impl OutcomeItem {
                     UnavailabilityCause::RecoveryView { predicate } => {
                         item.predicate = Some(predicate.clone());
                     }
+                    UnavailabilityCause::ValueCheck { reason, .. } => {
+                        item.refusal = Some(reason.as_str());
+                    }
+                    UnavailabilityCause::ContractCheck { reason, .. } => {
+                        item.refusal = Some(reason.as_str());
+                    }
                     UnavailabilityCause::SolverAbsent
                     | UnavailabilityCause::HybridProviderAbsent
                     | UnavailabilityCause::BackendAbsent
@@ -709,7 +755,7 @@ impl OutcomeItem {
                     | UnavailabilityCause::ConfidenceBeyondPrecision
                     | UnavailabilityCause::PunctualInterval { .. } => {}
                 }
-                (ItemLabel::Unsupported, Some(item))
+                Some(item)
             }
             TerminalValue::Incomplete(cause) => {
                 let mut item = ItemCause::kind(cause.as_str());
@@ -722,16 +768,13 @@ impl OutcomeItem {
                     }
                     IncompleteCause::TimedOut | IncompleteCause::ResourceExhausted => {}
                 }
-                (ItemLabel::Incomplete, Some(item))
+                Some(item)
             }
-            TerminalValue::Failed => (
-                ItemLabel::Failed,
-                record.diagnostic().map(|diagnostic| ItemCause {
-                    code: Some(diagnostic.code().to_owned()),
-                    ..ItemCause::kind(diagnostic.cause())
-                }),
-            ),
-            TerminalValue::Measured(verdict) => (ItemLabel::Measured, measured(verdict).1),
+            TerminalValue::Failed => record.diagnostic().map(|diagnostic| ItemCause {
+                code: Some(diagnostic.code().to_owned()),
+                ..ItemCause::kind(diagnostic.cause())
+            }),
+            TerminalValue::Measured(verdict) => measured(verdict).1,
         };
         let (basis, certification) = match value {
             TerminalValue::Proved {
@@ -850,8 +893,8 @@ pub enum OutcomeLocus {
     },
     /// A region rendered over its source, as an evaluation records it.
     Located {
-        /// The `sha256:` digest of the source.
-        source_digest: String,
+        /// The authored path of the source.
+        file: String,
         /// The region's span.
         span: LocatedSpan,
     },
@@ -938,7 +981,7 @@ impl OutcomeDiagnostic {
             CallRefusal::Record {
                 locus: Some(locus), ..
             } => Some(OutcomeLocus::Located {
-                source_digest: locus.source_digest.clone(),
+                file: locus.file.clone(),
                 span: locus.span,
             }),
             CallRefusal::Record { locus: None, .. } | CallRefusal::Family { .. } => None,
@@ -1454,8 +1497,8 @@ fn replay_stage(refusal: &ReplayRefusal) -> Option<OutcomeStage> {
         | ReplayRefusal::ObservedTemporalRefusal(qsl_eval::temporal::TemporalRefusal::Fault(_))
         | ReplayRefusal::Admission(AdmissionFailure::Fault(_)) => None,
         ReplayRefusal::Request(_)
+        | ReplayRefusal::DomainPackages(_)
         | ReplayRefusal::LimitAboveReader(_)
-        | ReplayRefusal::NotASource(_)
         | ReplayRefusal::SourceCount(_)
         | ReplayRefusal::DependencySelections(_)
         | ReplayRefusal::DependencyInput(_)
@@ -1528,7 +1571,7 @@ mod tests {
     use crate::result::{DisagreementCause, EvaluatedValue, InputArmResult, Verdict, WitnessCheck};
     use crate::spine::{
         check, default_accounting, package, parse, run, select, Call, CallLocus, DependencyInput,
-        LockEvidence, PackageLimits, ParseRequest, SpineLimits,
+        PackageLimits, ParseRequest, SpineLimits,
     };
 
     const FIXTURE: &str = include_str!("../../tests/fixtures/spine-compile.native");
@@ -1560,7 +1603,6 @@ mod tests {
             &parsed,
             &models,
             &DependencyInput::default(),
-            &LockEvidence::default(),
             limits,
             &cancel,
         );
@@ -1957,7 +1999,8 @@ mod tests {
             for (part, expected_part) in [
                 (QueryPart::Unrolling, "unrolling"),
                 (QueryPart::Base, "base"),
-                (QueryPart::Step, "step"),
+                (QueryPart::Step { row: None }, "step"),
+                (QueryPart::Step { row: Some(3) }, "step/3"),
             ] {
                 let item = record(
                     2,
@@ -2034,7 +2077,8 @@ mod tests {
         for (part, expected_part) in [
             (QueryPart::Unrolling, "unrolling"),
             (QueryPart::Base, "base"),
-            (QueryPart::Step, "step"),
+            (QueryPart::Step { row: None }, "step"),
+            (QueryPart::Step { row: Some(4) }, "step/4"),
         ] {
             for (index, expected_index) in [
                 (0, "0"),
@@ -2196,6 +2240,21 @@ mod tests {
                     Code::StaleDependency,
                 )),
                 json!({"result": "inconclusive", "cause": {"kind": "replay-refused", "code": "stale_dependency"}, "category": "inconclusive"}),
+            ),
+            (
+                TerminalValue::Inconclusive(InconclusiveCause::HypothesesNotEstablished {
+                    hypothesis: qsl_foundation::digest::WireNodeId::from_digest([0xdc; 32]),
+                    result: ItemLabel::Refuted,
+                }),
+                json!({
+                    "result": "inconclusive",
+                    "cause": {
+                        "kind": "hypotheses-not-established",
+                        "hypothesis": {"domain": "quire.checked-semantic-node/v1", "digest": "dc".repeat(32)},
+                        "result": "refuted",
+                    },
+                    "category": "inconclusive",
+                }),
             ),
             (
                 TerminalValue::Inconclusive(InconclusiveCause::StaleDependency {
@@ -2493,7 +2552,6 @@ mod tests {
             &parsed,
             &models,
             &DependencyInput::default(),
-            &LockEvidence::default(),
             limits,
             &cancelled,
         );
@@ -2581,7 +2639,6 @@ mod tests {
             fields: BTreeMap::new(),
             locus: Some(CallLocus {
                 file: "fixture.native".to_owned(),
-                source_digest: "sha256:ab".to_owned(),
                 span,
             }),
             location: None,
@@ -2594,7 +2651,7 @@ mod tests {
             document["diagnostics"][0]["locus"],
             json!({
                 "kind": "located",
-                "source_digest": "sha256:ab",
+                "file": "fixture.native",
                 "span": serde_json::to_value(span).expect("a span"),
             })
         );

@@ -2,29 +2,15 @@
 //! TC-138: strict compiled-protocol v2 production, admission and L5 handoff.
 
 use crate::support::native_protocol as setup;
-use crate::support::static_authority::canonical;
 
-use std::{collections::BTreeMap, fs, path::Path};
+use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
-use qsl_foundation::ByteDigest;
 use quire_spec_language::checking::composed::{proofs, TypeDisposition, TypeLimits};
 use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
 use quire_spec_language::protocol_artifact::{
-    self as artifact,
-    handoff::{
-        MUTATION_MANIFEST_FORMAT, PUBLISHED_HANDOFF, PUBLISHED_MUTATION_MANIFEST_FILE,
-        PUBLISHED_SELECTION_FILE,
-    },
-    native, v2, v3, wire as w, Dimension as WorkDimension, Error, ExactInteger, Invalid, Limits,
-    NumberComponent, NumberError, NumberWire, ProtocolNumber, Unsupported,
-};
-use quire_spec_language::state::{
-    self, AssessmentAuthority, AuthorityAdapter, AuthorityEvidence, BinderInput, ContextualSlot,
-    Dimension as StateDimension, EvaluationOutcome, EvaluationRequest, FieldInput, FieldValue,
-    InputSlot, Limits as StateLimits, MissingInput, ObjectInput, ObjectKey, ObservationDigest,
-    ObservationIdentity, ObservationKey, PopulationInput, Refusal as StateRefusal, StateView,
-    StaticAuthority, Value as StateValue, ValueKind as StateValueKind,
+    self as artifact, native, v2, v3, wire as w, Dimension as WorkDimension, Error, Invalid,
+    Limits, NumberComponent, NumberError, NumberWire, Unsupported,
 };
 use quire_spec_language::temporal;
 use setup::{Inputs, TemporalDefinitionExpectation, TemporalExpectation, Unit};
@@ -35,12 +21,20 @@ const DECLARATIONS: [(&str, R); 3] = [
     ("ByTimestamp", R::TimestampedWindow),
 ];
 
+#[cfg(feature = "handoff-writer")]
 #[trace("TC-138", "FR-050-AC-1", "FR-050-AC-4")]
 #[test]
-fn committed_handoff_interchange_records_are_complete() {
-    let root = Path::new(PUBLISHED_HANDOFF);
+fn written_handoff_interchange_records_are_complete() {
+    use artifact::handoff::{
+        MUTATION_MANIFEST_FORMAT, PUBLISHED_MUTATION_MANIFEST_FILE, PUBLISHED_SELECTION_FILE,
+    };
+    use std::fs;
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let root = directory.path().join("handoff");
+    artifact::handoff::write_v2(&root).expect("write_v2 emits a complete handoff");
+    let root = root.as_path();
     let selection: artifact::handoff::SelectionV2 = serde_json::from_slice(
-        &fs::read(root.join(PUBLISHED_SELECTION_FILE)).expect("committed reader selection"),
+        &fs::read(root.join(PUBLISHED_SELECTION_FILE)).expect("written reader selection"),
     )
     .expect("decode expected-v2.json with the published type");
     assert_eq!(selection.temporal.len(), DECLARATIONS.len());
@@ -52,12 +46,29 @@ fn committed_handoff_interchange_records_are_complete() {
     );
 
     let manifest: artifact::handoff::MutationManifest = serde_json::from_slice(
-        &fs::read(root.join(PUBLISHED_MUTATION_MANIFEST_FILE))
-            .expect("committed mutation manifest"),
+        &fs::read(root.join(PUBLISHED_MUTATION_MANIFEST_FILE)).expect("written mutation manifest"),
     )
     .expect("decode mutations/manifest.json with the published type");
     assert_eq!(manifest.format, MUTATION_MANIFEST_FORMAT);
-    assert_eq!(manifest.cases.len(), 29);
+    assert!(!manifest.cases.is_empty(), "the adverse corpus has cases");
+    let mut case_ids = manifest
+        .cases
+        .iter()
+        .map(|case| case.identity.as_str())
+        .collect::<Vec<_>>();
+    case_ids.sort();
+    case_ids.dedup();
+    assert_eq!(case_ids.len(), manifest.cases.len(), "no duplicate case");
+    let case_files = fs::read_dir(root.join("mutations"))
+        .expect("written mutations directory")
+        .map(|entry| entry.expect("mutation entry").file_name())
+        .filter(|name| name.to_str() != Some("manifest.json"))
+        .count();
+    assert_eq!(
+        case_files,
+        manifest.cases.len(),
+        "one written case file per manifest case"
+    );
     let manifest_bytes =
         serde_json::to_vec(&manifest).expect("encode published mutation-manifest type");
     assert_eq!(
@@ -65,11 +76,7 @@ fn committed_handoff_interchange_records_are_complete() {
             .expect("round-trip published mutation-manifest type"),
         manifest
     );
-    for path in [
-        manifest.base_offer,
-        manifest.base_artifact,
-        manifest.independent_selection,
-    ] {
+    for path in [manifest.base_offer, manifest.independent_selection] {
         assert!(
             root.join(&path).is_file(),
             "manifest path {path} is not a published file"
@@ -155,270 +162,6 @@ fn compensation_inputs() -> Inputs {
     ]);
     let _ = inputs.step_contracts("Before", "After");
     inputs
-}
-
-fn observation_digest(value: char) -> ObservationDigest {
-    ObservationDigest(format!("sha256:{}", value.to_string().repeat(64)))
-}
-
-fn state_authority(
-    package: &v2::AdmittedPackage,
-    owner: u32,
-    requirement_index: u32,
-) -> AuthorityEvidence {
-    let inherited = package.inherited();
-    let requirement = &inherited.declarations[owner as usize].bindings[requirement_index as usize];
-    let selection = requirement
-        .model
-        .0
-        .as_ref()
-        .expect("model-bound requirement");
-    let producer = inherited.dependencies
-        [inherited.models[selection.model as usize].artifact as usize]
-        .artifact
-        .clone();
-    let static_selection = StaticAuthority {
-        document_identity: "document:selected".into(),
-        document_digest: canonical('1'),
-        model_identity: "model:selected".into(),
-        model_digest: canonical('2'),
-        profile_identity: "profile:selected".into(),
-        profile_digest: canonical('3'),
-        configuration_identity: "configuration:selected".into(),
-        configuration_digest: canonical('4'),
-    };
-    let assessment_selection = AssessmentAuthority {
-        population_identity: "population:selected".into(),
-        membership_digest: observation_digest('5'),
-        membership_complete: true,
-        snapshot_identity: "snapshot:selected".into(),
-        snapshot_digest: observation_digest('6'),
-        window_identity: None,
-        window_digest: None,
-        closure_identity: "closure:selected".into(),
-        closure_digest: observation_digest('7'),
-    };
-    let mut adapter_artifact = requirement.authority.clone();
-    adapter_artifact.kind = w::ArtifactKind::Binding;
-    adapter_artifact.identity = "explicit-d-f-compatibility".into();
-    adapter_artifact.digest = ByteDigest::of(b"explicit compatibility mapping fixture");
-    adapter_artifact.wire.identity = "quire.state.authority-adapter".into();
-    adapter_artifact.wire.version = "1".into();
-    let compiled = package.artifact().expect("strict package artifact").clone();
-    let observation = requirement.authority.clone();
-    let adapter = AuthorityAdapter {
-        artifact: adapter_artifact
-            .try_into()
-            .expect("an authority-adapter reference"),
-        compiled: compiled.clone(),
-        requirement: observation.clone(),
-        producer: producer.clone(),
-        observation: observation.clone(),
-        static_selection: static_selection.clone(),
-        assessment_selection: assessment_selection.clone(),
-    };
-    AuthorityEvidence {
-        producer,
-        observation,
-        compiled,
-        adapter: Some(adapter),
-        static_selection,
-        assessment_selection,
-    }
-}
-
-fn binder_requirement(package: &v2::AdmittedPackage, binder: &w::Handle) -> u32 {
-    let declaration = &package.inherited().declarations[binder.declaration as usize];
-    declaration.anchors[declaration.binders[binder.index as usize].anchor.index as usize]
-        .binding
-        .0
-        .expect("runtime-bound compensation binder")
-}
-
-fn field_export(
-    package: &v2::AdmittedPackage,
-    model: u32,
-    record: &str,
-    field: &str,
-) -> w::ExportRef {
-    let export = package.inherited().models[model as usize]
-        .exports
-        .iter()
-        .position(|export| export.kind == w::ExportKind::Field && export.path == [record, field])
-        .expect("selected model field");
-    w::ExportRef {
-        model,
-        export: u32::try_from(export).expect("bounded fixture export"),
-    }
-}
-
-fn plain_binder(package: &v2::AdmittedPackage, binder: w::Handle, ready: bool) -> BinderInput {
-    let declaration = &package.inherited().declarations[binder.declaration as usize];
-    let binding = &declaration.binders[binder.index as usize];
-    let w::Type::Record { export } = &package.inherited().types[binding.value_type as usize] else {
-        panic!("Plain binder record type")
-    };
-    let boolean_type = package
-        .inherited()
-        .types
-        .iter()
-        .position(|value| matches!(value, w::Type::Boolean {}))
-        .and_then(|index| u32::try_from(index).ok())
-        .expect("Boolean wire type");
-    let requirement = binder_requirement(package, &binder);
-    BinderInput {
-        binder,
-        requirement: Some(requirement),
-        authority: Some(state_authority(
-            package,
-            binding.anchor.declaration,
-            requirement,
-        )),
-        value: InputSlot::Available(StateValue::new(
-            binding.value_type,
-            StateValueKind::Record(vec![FieldInput {
-                field: field_export(package, export.model, "Plain", "ready"),
-                value: FieldValue::Compiled(InputSlot::Available(StateValue::new(
-                    boolean_type,
-                    StateValueKind::Boolean(ready),
-                ))),
-            }]),
-        )),
-    }
-}
-
-fn object_integer_view(
-    package: &v2::AdmittedPackage,
-    binder: w::Handle,
-    field_name: &str,
-    n: i64,
-) -> StateView {
-    let inherited = package.inherited();
-    let declaration = &inherited.declarations[binder.declaration as usize];
-    let binding = &declaration.binders[binder.index as usize];
-    let requirement_index = binder_requirement(package, &binder);
-    let w::Type::Object {
-        export: object_type,
-    } = &inherited.types[binding.value_type as usize]
-    else {
-        panic!("selected object type")
-    };
-    let population_index = declaration
-        .bindings
-        .iter()
-        .position(|requirement| {
-            requirement.kind == w::BindingKind::Population
-                && requirement.anchor == binding.anchor
-                && requirement
-                    .model
-                    .0
-                    .as_ref()
-                    .is_some_and(|model| model.model == object_type.model)
-        })
-        .and_then(|index| u32::try_from(index).ok())
-        .expect("selected object population requirement");
-    let closure_index = declaration
-        .bindings
-        .iter()
-        .position(|requirement| {
-            requirement.kind == w::BindingKind::Closure
-                && requirement.requires == [population_index]
-        })
-        .and_then(|index| u32::try_from(index).ok())
-        .expect("selected object population closure");
-    let population = declaration.bindings[population_index as usize]
-        .model
-        .0
-        .clone()
-        .expect("population export");
-    let key = ObjectKey {
-        observation: ObservationKey {
-            anchor: binding.anchor.clone(),
-            snapshot: ObservationIdentity("snapshot:selected".into()),
-            window: None,
-            record: ObservationIdentity(format!("record:{field_name}")),
-        },
-        model: object_type.model,
-        universe: population,
-        object_type: object_type.clone(),
-        identifier: format!("logical-{field_name}"),
-    };
-    let n_field = field_export(package, object_type.model, "Node", field_name);
-    let n_type = declaration
-        .values
-        .iter()
-        .find_map(|value| match &value.operation {
-            w::ValueOperation::Field { field, .. } if field == &n_field => Some(value.value_type),
-            _ => None,
-        })
-        .expect("selected recovery field type");
-    let fields = inherited.models[object_type.model as usize]
-        .exports
-        .iter()
-        .enumerate()
-        .filter(|(_, export)| {
-            export.kind == w::ExportKind::Field
-                && export.path.len() == 2
-                && export.path[0] == "Node"
-        })
-        .map(|(index, _)| w::ExportRef {
-            model: object_type.model,
-            export: u32::try_from(index).expect("bounded fixture field"),
-        })
-        .map(|field| FieldInput {
-            value: if field == n_field {
-                FieldValue::Compiled(InputSlot::Available(StateValue::new(
-                    n_type,
-                    StateValueKind::Number(ProtocolNumber::Integer(ExactInteger::new(n))),
-                )))
-            } else {
-                FieldValue::Contextual(ContextualSlot::Unavailable(MissingInput::Field {
-                    object: key.clone(),
-                    field: field.clone(),
-                }))
-            },
-            field,
-        })
-        .collect();
-    StateView {
-        binders: vec![BinderInput {
-            binder: binder.clone(),
-            requirement: Some(requirement_index),
-            authority: Some(state_authority(
-                package,
-                binder.declaration,
-                requirement_index,
-            )),
-            value: InputSlot::Available(StateValue::new(
-                binding.value_type,
-                StateValueKind::Object(key.clone()),
-            )),
-        }],
-        populations: vec![PopulationInput {
-            requirement: w::Handle {
-                declaration: binder.declaration,
-                index: population_index,
-            },
-            closure_requirement: w::Handle {
-                declaration: binder.declaration,
-                index: closure_index,
-            },
-            authority: state_authority(package, binder.declaration, population_index),
-            membership: Ok(()),
-            closure: Ok(()),
-            objects: vec![ObjectInput { key, fields }],
-        }],
-    }
-}
-
-fn recovery_view(package: &v2::AdmittedPackage, binder: w::Handle, n: i64) -> StateView {
-    object_integer_view(package, binder, "n", n)
-}
-
-fn merge_view(mut left: StateView, right: StateView) -> StateView {
-    left.binders.extend(right.binders);
-    left.populations.extend(right.populations);
-    left
 }
 
 fn inputs_with_event_body(event_body: &str) -> Inputs {
@@ -661,539 +404,6 @@ fn declaration(package: &v2::AdmittedPackage, name: &str) -> usize {
         .expect("authored temporal declaration")
 }
 
-/// Tracing: TC-142.
-#[trace("TC-142", "FR-049-AC-9", "NFR-009-AC-4")]
-#[test]
-fn admitted_v2_evaluates_exact_compensation_expressions_with_shared_accounting() {
-    with_v2_inputs(
-        compensation_inputs(),
-        |inputs, proofs, _, temporal, emitted| {
-            let unpublished = emitted.admitted();
-            let (owner, compensation) = unpublished
-                .inherited()
-                .declarations
-                .iter()
-                .enumerate()
-                .find_map(|(owner, declaration)| match &declaration.body {
-                    w::Body::Protocol { compensations, .. } => Some((
-                        u32::try_from(owner).expect("bounded owner"),
-                        &compensations[0],
-                    )),
-                    _ => None,
-                })
-                .expect("one compensation");
-            let request = |value: w::Handle| EvaluationRequest {
-                declaration: owner,
-                value,
-            };
-            assert_eq!(
-                state::evaluate_v2(
-                    unpublished,
-                    request(compensation.guard.clone()),
-                    &StateView::default(),
-                    StateLimits::default(),
-                )
-                .outcome(),
-                &EvaluationOutcome::Refused(StateRefusal::UnpublishedArtifact)
-            );
-
-            let admitted = inputs
-                .read_v2(proofs, emitted, &temporal.expected)
-                .into_result()
-                .expect("strict v2 package");
-            let compensation = match &admitted.inherited().declarations[owner as usize].body {
-                w::Body::Protocol { compensations, .. } => &compensations[0],
-                _ => panic!("protocol"),
-            };
-            let cases = [
-                (
-                    compensation.guard.clone(),
-                    StateView {
-                        binders: vec![plain_binder(&admitted, compensation.trigger.clone(), true)],
-                        populations: Vec::new(),
-                    },
-                ),
-                (
-                    compensation.retry.clone(),
-                    merge_view(
-                        object_integer_view(&admitted, compensation.forward.clone(), "total", 1),
-                        StateView {
-                            binders: vec![
-                                plain_binder(&admitted, compensation.earlier.clone(), true),
-                                plain_binder(&admitted, compensation.later.clone(), true),
-                                plain_binder(&admitted, compensation.trigger.clone(), false),
-                            ],
-                            populations: Vec::new(),
-                        },
-                    ),
-                ),
-                (compensation.recover.clone(), {
-                    let mut view = merge_view(
-                        object_integer_view(&admitted, compensation.forward.clone(), "total", 1),
-                        recovery_view(&admitted, compensation.recovery.clone(), 1),
-                    );
-                    view.binders
-                        .push(plain_binder(&admitted, compensation.trigger.clone(), false));
-                    view
-                }),
-            ];
-            for (value, view) in cases {
-                let selected = request(value);
-                assert!(matches!(
-                    state::evaluate_v2(
-                        &admitted,
-                        selected.clone(),
-                        &StateView::default(),
-                        StateLimits::default(),
-                    )
-                    .outcome(),
-                    EvaluationOutcome::Refused(StateRefusal::MissingBinding(_))
-                ));
-
-                let mut missing_source = view.clone();
-                let missing_binder = &missing_source.binders[0];
-                let selected_authority = missing_binder
-                    .authority
-                    .as_ref()
-                    .expect("selected source authority");
-                let binding = &admitted.inherited().declarations
-                    [missing_binder.binder.declaration as usize]
-                    .binders[missing_binder.binder.index as usize];
-                let missing = MissingInput::Observation(ObservationKey {
-                    anchor: binding.anchor.clone(),
-                    snapshot: ObservationIdentity(
-                        selected_authority
-                            .assessment_selection
-                            .snapshot_identity
-                            .clone(),
-                    ),
-                    window: selected_authority
-                        .assessment_selection
-                        .window_identity
-                        .clone()
-                        .map(ObservationIdentity),
-                    record: ObservationIdentity("record:missing".into()),
-                });
-                missing_source.binders[0].value = InputSlot::Unavailable(missing.clone());
-                assert_eq!(
-                    state::evaluate_v2(
-                        &admitted,
-                        selected.clone(),
-                        &missing_source,
-                        StateLimits::default(),
-                    )
-                    .outcome(),
-                    &EvaluationOutcome::Incomplete(missing)
-                );
-
-                let first =
-                    state::evaluate_v2(&admitted, selected.clone(), &view, StateLimits::default());
-                assert!(matches!(
-                    first.outcome(),
-                    EvaluationOutcome::Completed(value)
-                        if matches!(value.kind(), StateValueKind::Boolean(true))
-                ));
-                let replay =
-                    state::evaluate_v2(&admitted, selected.clone(), &view, StateLimits::default());
-                assert_eq!(replay.outcome(), first.outcome());
-                assert_eq!(replay.usage(), first.usage());
-
-                let usage = first.usage();
-                let exact_limits = StateLimits {
-                    input_value_nodes: usage.input_value_nodes,
-                    input_aggregate_entries: usage.input_aggregate_entries,
-                    input_text_bytes: usage.input_text_bytes,
-                    input_structural_depth: usage.input_structural_depth,
-                    expression_work: usage.expression_work,
-                    active_expression_depth: usage.active_expression_depth,
-                    predicate_call_depth: usage.predicate_call_depth,
-                    sequence_work: usage.sequence_work,
-                    retained_output: usage.retained_output,
-                    graph_expansion: usage.graph_expansion,
-                    graph_edges: usage.graph_edges,
-                    active_graph_depth: usage.active_graph_depth,
-                    value_comparison: usage.value_comparison,
-                };
-                assert!(matches!(
-                    state::evaluate_v2(&admitted, selected.clone(), &view, exact_limits).outcome(),
-                    EvaluationOutcome::Completed(value)
-                        if matches!(value.kind(), StateValueKind::Boolean(true))
-                ));
-
-                let one_short = StateLimits {
-                    expression_work: usage.expression_work - 1,
-                    ..StateLimits::default()
-                };
-                assert!(matches!(
-                    state::evaluate_v2(&admitted, selected.clone(), &view, one_short).outcome(),
-                    EvaluationOutcome::Exhausted(exhaustion)
-                        if exhaustion.dimension == StateDimension::ExpressionWork
-                ));
-
-                let one_short_retention = StateLimits {
-                    retained_output: usage
-                        .retained_output
-                        .checked_sub(1)
-                        .expect("completed value retains output"),
-                    ..StateLimits::default()
-                };
-                assert!(matches!(
-                    state::evaluate_v2(
-                        &admitted,
-                        selected.clone(),
-                        &view,
-                        one_short_retention,
-                    )
-                    .outcome(),
-                    EvaluationOutcome::Exhausted(exhaustion)
-                        if exhaustion.dimension == StateDimension::RetainedOutput
-                ));
-
-                let zero = state::evaluate_v2(
-                    &admitted,
-                    selected.clone(),
-                    &view,
-                    StateLimits {
-                        expression_work: 0,
-                        ..StateLimits::default()
-                    },
-                );
-                assert!(matches!(
-                    zero.outcome(),
-                    EvaluationOutcome::Exhausted(exhaustion)
-                        if exhaustion.dimension == StateDimension::ExpressionWork
-                ));
-                assert!(matches!(
-                    state::evaluate_v2(
-                        &admitted,
-                        selected.clone(),
-                        &view,
-                        StateLimits::default(),
-                    )
-                    .outcome(),
-                    EvaluationOutcome::Completed(value)
-                        if matches!(value.kind(), StateValueKind::Boolean(true))
-                ));
-
-                let mut crossed_authority = view.clone();
-                crossed_authority.binders[0]
-                    .authority
-                    .as_mut()
-                    .expect("binder authority")
-                    .compiled = admitted.inherited().producer.binary.clone();
-                assert!(matches!(
-                    state::evaluate_v2(
-                        &admitted,
-                        selected,
-                        &crossed_authority,
-                        StateLimits::default(),
-                    )
-                    .outcome(),
-                    EvaluationOutcome::Refused(StateRefusal::Authority(_))
-                ));
-            }
-
-            let mut crossed = request(compensation.guard.clone());
-            crossed.value.declaration = owner.saturating_add(1);
-            assert!(matches!(
-                state::evaluate_v2(
-                    &admitted,
-                    crossed,
-                    &StateView::default(),
-                    StateLimits::default(),
-                )
-                .outcome(),
-                EvaluationOutcome::Refused(StateRefusal::Owner(_))
-            ));
-
-            let compensations = match &admitted.inherited().declarations[owner as usize].body {
-                w::Body::Protocol { compensations, .. } => compensations,
-                _ => panic!("protocol"),
-            };
-            for selected_compensation in compensations {
-                let retry_view = merge_view(
-                    object_integer_view(
-                        &admitted,
-                        selected_compensation.forward.clone(),
-                        "total",
-                        1,
-                    ),
-                    StateView {
-                        binders: vec![
-                            plain_binder(&admitted, selected_compensation.earlier.clone(), true),
-                            plain_binder(&admitted, selected_compensation.later.clone(), true),
-                            plain_binder(&admitted, selected_compensation.trigger.clone(), false),
-                        ],
-                        populations: Vec::new(),
-                    },
-                );
-                let retry = state::evaluate_v2(
-                    &admitted,
-                    request(selected_compensation.retry.clone()),
-                    &retry_view,
-                    StateLimits::default(),
-                );
-                assert!(matches!(
-                    retry.outcome(),
-                    EvaluationOutcome::Completed(value)
-                        if matches!(value.kind(), StateValueKind::Boolean(true))
-                ));
-                let mut activated_retry = retry_view.clone();
-                *activated_retry
-                    .binders
-                    .iter_mut()
-                    .find(|input| input.binder == selected_compensation.trigger)
-                    .expect("trigger input remains selected") =
-                    plain_binder(&admitted, selected_compensation.trigger.clone(), true);
-                assert!(matches!(
-                    state::evaluate_v2(
-                        &admitted,
-                        request(selected_compensation.retry.clone()),
-                        &activated_retry,
-                        StateLimits::default(),
-                    )
-                    .outcome(),
-                    EvaluationOutcome::Completed(value)
-                        if matches!(value.kind(), StateValueKind::Boolean(false))
-                ));
-
-                let mut recover_view = merge_view(
-                    object_integer_view(
-                        &admitted,
-                        selected_compensation.forward.clone(),
-                        "total",
-                        1,
-                    ),
-                    recovery_view(&admitted, selected_compensation.recovery.clone(), 1),
-                );
-                recover_view.binders.push(plain_binder(
-                    &admitted,
-                    selected_compensation.trigger.clone(),
-                    false,
-                ));
-                assert!(matches!(
-                    state::evaluate_v2(
-                        &admitted,
-                        request(selected_compensation.recover.clone()),
-                        &recover_view,
-                        StateLimits::default(),
-                    )
-                    .outcome(),
-                    EvaluationOutcome::Completed(value)
-                        if matches!(value.kind(), StateValueKind::Boolean(true))
-                ));
-
-                for capture in selected_compensation
-                    .registration_captures
-                    .iter()
-                    .chain(&selected_compensation.activation_captures)
-                {
-                    let capture_owner =
-                        usize::try_from(capture.declaration).expect("bounded capture owner");
-                    let capture_index =
-                        usize::try_from(capture.index).expect("bounded capture index");
-                    let capture_type = admitted.inherited().declarations[capture_owner].binders
-                        [capture_index]
-                        .value_type;
-                    let injected_capture = StateView {
-                        binders: vec![BinderInput {
-                            binder: capture.clone(),
-                            requirement: None,
-                            authority: None,
-                            value: InputSlot::Available(StateValue::new(
-                                capture_type,
-                                StateValueKind::Boolean(false),
-                            )),
-                        }],
-                        populations: Vec::new(),
-                    };
-                    assert_eq!(
-                        state::evaluate_v2(
-                            &admitted,
-                            request(selected_compensation.retry.clone()),
-                            &injected_capture,
-                            StateLimits::default(),
-                        )
-                        .outcome(),
-                        &EvaluationOutcome::Refused(StateRefusal::SurplusBinding(capture.clone()))
-                    );
-                }
-
-                let mut missing_forward = retry_view.clone();
-                missing_forward
-                    .binders
-                    .retain(|input| input.binder != selected_compensation.forward);
-                assert_eq!(
-                    state::evaluate_v2(
-                        &admitted,
-                        request(selected_compensation.retry.clone()),
-                        &missing_forward,
-                        StateLimits::default(),
-                    )
-                    .outcome(),
-                    &EvaluationOutcome::Refused(StateRefusal::MissingBinding(
-                        selected_compensation.forward.clone(),
-                    ))
-                );
-
-                let mut crossed_forward_authority = retry_view.clone();
-                crossed_forward_authority
-                    .binders
-                    .iter_mut()
-                    .find(|input| input.binder == selected_compensation.forward)
-                    .expect("forward input remains selected")
-                    .requirement = Some(binder_requirement(
-                    &admitted,
-                    &selected_compensation.trigger,
-                ));
-                assert_eq!(
-                    state::evaluate_v2(
-                        &admitted,
-                        request(selected_compensation.retry.clone()),
-                        &crossed_forward_authority,
-                        StateLimits::default(),
-                    )
-                    .outcome(),
-                    &EvaluationOutcome::Refused(StateRefusal::Authority(
-                        selected_compensation.forward.clone(),
-                    ))
-                );
-
-                let mut missing_external = retry_view;
-                missing_external
-                    .binders
-                    .retain(|input| input.binder != selected_compensation.trigger);
-                assert_eq!(
-                    state::evaluate_v2(
-                        &admitted,
-                        request(selected_compensation.retry.clone()),
-                        &missing_external,
-                        StateLimits::default(),
-                    )
-                    .outcome(),
-                    &EvaluationOutcome::Refused(StateRefusal::MissingBinding(
-                        selected_compensation.trigger.clone(),
-                    ))
-                );
-            }
-            let other = &compensations[1];
-            let crossed_compensation_view = StateView {
-                binders: vec![plain_binder(&admitted, other.trigger.clone(), true)],
-                populations: Vec::new(),
-            };
-            assert!(matches!(
-                state::evaluate_v2(
-                    &admitted,
-                    request(compensation.guard.clone()),
-                    &crossed_compensation_view,
-                    StateLimits::default(),
-                )
-                .outcome(),
-                EvaluationOutcome::Refused(StateRefusal::SurplusBinding(_))
-            ));
-
-            let mut wrong_type = StateView {
-                binders: vec![plain_binder(&admitted, compensation.trigger.clone(), true)],
-                populations: Vec::new(),
-            };
-            let InputSlot::Available(value) = &mut wrong_type.binders[0].value else {
-                unreachable!("available fixture value")
-            };
-            value.value_type = u32::MAX;
-            assert!(matches!(
-                state::evaluate_v2(
-                    &admitted,
-                    request(compensation.guard.clone()),
-                    &wrong_type,
-                    StateLimits::default(),
-                )
-                .outcome(),
-                EvaluationOutcome::Refused(StateRefusal::Type { .. })
-            ));
-
-            let mut wrong_producer = StateView {
-                binders: vec![plain_binder(&admitted, compensation.trigger.clone(), true)],
-                populations: Vec::new(),
-            };
-            let authority = wrong_producer.binders[0]
-                .authority
-                .as_mut()
-                .expect("binder authority");
-            authority.producer = admitted.inherited().producer.binary.clone();
-            authority
-                .adapter
-                .as_mut()
-                .expect("explicit adapter")
-                .producer = authority.producer.clone();
-            assert!(matches!(
-                state::evaluate_v2(
-                    &admitted,
-                    request(compensation.guard.clone()),
-                    &wrong_producer,
-                    StateLimits::default(),
-                )
-                .outcome(),
-                EvaluationOutcome::Refused(StateRefusal::Authority(_))
-            ));
-
-            let mut wrong_anchor = StateView {
-                binders: vec![plain_binder(&admitted, compensation.trigger.clone(), true)],
-                populations: Vec::new(),
-            };
-            let mut observation = ObservationKey {
-                anchor: admitted.inherited().declarations[owner as usize].binders
-                    [compensation.trigger.index as usize]
-                    .anchor
-                    .clone(),
-                snapshot: ObservationIdentity("snapshot:selected".into()),
-                window: None,
-                record: ObservationIdentity("record:wrong-anchor".into()),
-            };
-            observation.anchor.index = observation.anchor.index.saturating_add(1);
-            wrong_anchor.binders[0].value =
-                InputSlot::Unavailable(MissingInput::Observation(observation));
-            assert!(matches!(
-                state::evaluate_v2(
-                    &admitted,
-                    request(compensation.guard.clone()),
-                    &wrong_anchor,
-                    StateLimits::default(),
-                )
-                .outcome(),
-                EvaluationOutcome::Refused(StateRefusal::Authority(_))
-            ));
-
-            let mut crossed_population = merge_view(
-                object_integer_view(&admitted, compensation.forward.clone(), "total", 1),
-                recovery_view(&admitted, compensation.recovery.clone(), 1),
-            );
-            crossed_population.binders.push(plain_binder(
-                &admitted,
-                compensation.trigger.clone(),
-                false,
-            ));
-            crossed_population.populations[1].requirement.index =
-                binder_requirement(&admitted, &compensation.trigger);
-            let crossed_population_outcome = state::evaluate_v2(
-                &admitted,
-                request(compensation.recover.clone()),
-                &crossed_population,
-                StateLimits::default(),
-            );
-            assert!(
-                matches!(
-                    crossed_population_outcome.outcome(),
-                    EvaluationOutcome::Refused(StateRefusal::SurplusBinding(_))
-                ),
-                "crossed population: {:?}",
-                crossed_population_outcome.outcome()
-            );
-        },
-    );
-}
-
-/// Tracing: TC-142.
-#[trace("TC-142", "FR-049-AC-9")]
 #[test]
 fn initialized_compensation_capture_graph_refuses_foreign_and_recursive_initializers() {
     with_v2_inputs(
@@ -1230,13 +440,7 @@ fn initialized_compensation_capture_graph_refuses_foreign_and_recursive_initiali
                 .declaration = capture.declaration.saturating_sub(1);
             let bytes = serde_json::to_vec(&foreign).expect("canonical adverse wire shape");
             assert_error(
-                &inputs.read_v2_bytes(
-                    proofs,
-                    &bytes,
-                    ByteDigest::of(&bytes),
-                    &temporal.expected,
-                    Limits::default(),
-                ),
+                &inputs.read_v2_bytes(proofs, &bytes, &temporal.expected, Limits::default()),
                 Error::Invalid(Invalid::Owner),
             );
 
@@ -1249,13 +453,7 @@ fn initialized_compensation_capture_graph_refuses_foreign_and_recursive_initiali
                 };
             let bytes = serde_json::to_vec(&recursive).expect("canonical adverse wire shape");
             assert_error(
-                &inputs.read_v2_bytes(
-                    proofs,
-                    &bytes,
-                    ByteDigest::of(&bytes),
-                    &temporal.expected,
-                    Limits::default(),
-                ),
+                &inputs.read_v2_bytes(proofs, &bytes, &temporal.expected, Limits::default()),
                 Error::Invalid(Invalid::Cycle),
             );
         },
@@ -1389,7 +587,6 @@ fn v3_control_temporal_activation_mapping_is_strict_and_non_inferential() {
             .read_v3_bytes(
                 proofs,
                 produced.bytes(),
-                produced.digest(),
                 &temporal.expected,
                 std::slice::from_ref(&activation),
                 Limits::default(),
@@ -1404,7 +601,6 @@ fn v3_control_temporal_activation_mapping_is_strict_and_non_inferential() {
             .read_v3_bytes(
                 proofs,
                 emitted.bytes(),
-                emitted.digest(),
                 &temporal.expected,
                 std::slice::from_ref(&activation),
                 Limits::default(),
@@ -1415,14 +611,13 @@ fn v3_control_temporal_activation_mapping_is_strict_and_non_inferential() {
             .read_v2_bytes(
                 proofs,
                 produced.bytes(),
-                produced.digest(),
                 &temporal.expected,
                 Limits::default(),
             )
             .result()
             .is_err());
         assert!(inputs
-            .read_bytes(proofs, produced.bytes(), produced.digest())
+            .read_bytes(proofs, produced.bytes())
             .result()
             .is_err());
         let mut reordered = package.clone();
@@ -1458,7 +653,6 @@ fn v3_control_temporal_activation_mapping_is_strict_and_non_inferential() {
             &inputs.read_v3_bytes(
                 proofs,
                 reordered.bytes(),
-                reordered.digest(),
                 &temporal.expected,
                 &[activation.clone(), second],
                 Limits::default(),
@@ -1476,7 +670,6 @@ fn v3_control_temporal_activation_mapping_is_strict_and_non_inferential() {
             &inputs.read_v3_bytes(
                 proofs,
                 substituted.bytes(),
-                substituted.digest(),
                 &temporal.expected,
                 std::slice::from_ref(&activation),
                 Limits::default(),
@@ -1492,7 +685,6 @@ fn v3_control_temporal_activation_mapping_is_strict_and_non_inferential() {
             &inputs.read_v3_bytes(
                 proofs,
                 missing.bytes(),
-                missing.digest(),
                 &temporal.expected,
                 std::slice::from_ref(&activation),
                 Limits::default(),
@@ -1513,7 +705,6 @@ fn v3_control_temporal_activation_mapping_is_strict_and_non_inferential() {
             &inputs.read_v3_bytes(
                 proofs,
                 duplicate.bytes(),
-                duplicate.digest(),
                 &temporal.expected,
                 std::slice::from_ref(&activation),
                 Limits::default(),
@@ -1532,7 +723,6 @@ fn v3_control_temporal_activation_mapping_is_strict_and_non_inferential() {
             &inputs.read_v3_bytes(
                 proofs,
                 non_temporal.bytes(),
-                non_temporal.digest(),
                 &temporal.expected,
                 &[activation],
                 Limits::default(),
@@ -1607,9 +797,6 @@ fn public_v2_refusal_codes_are_injective_across_every_declared_axis() {
             v2::ArtifactField::Kind,
             v2::ArtifactField::Authority,
             v2::ArtifactField::Identity,
-            v2::ArtifactField::RevisionNamespace,
-            v2::ArtifactField::RevisionValue,
-            v2::ArtifactField::Digest,
             v2::ArtifactField::WireIdentity,
             v2::ArtifactField::WireVersion,
         ]
@@ -1655,7 +842,6 @@ fn public_error_codes_are_injective_across_every_declared_axis() {
     errors.extend(
         [
             Invalid::Selection,
-            Invalid::Seal,
             Invalid::Name,
             Invalid::StructuralInteger,
             Invalid::WrongNumericKind,
@@ -1714,7 +900,6 @@ fn public_error_codes_are_injective_across_every_declared_axis() {
     // The two identities the downstream mutation corpus cannot express through
     // `v2::Refusal::code` alone.
     assert_eq!(Error::Json { line: 3, column: 9 }.code(), "json");
-    assert_eq!(Error::Invalid(Invalid::Seal).code(), "invalid.seal");
     // A version-2 refusal keeps its own established spelling.
     assert_eq!(
         Error::V2(v2::Refusal::Header(v2::HeaderField::Wire)).code(),
@@ -1731,8 +916,8 @@ fn native_v2_emission_reaches_the_strict_reader_and_authenticated_l5_adapter() {
             emitted
                 .admitted()
                 .schema_model(0)
-                .map(|model| model.digest()),
-            Some(selected.models[0].model.digest())
+                .map(|model| model.artifact_bytes()),
+            Some(selected.models[0].model.artifact_bytes())
         );
         assert_eq!(package.temporal_bindings.len(), 3);
         assert!(package
@@ -1748,19 +933,15 @@ fn native_v2_emission_reaches_the_strict_reader_and_authenticated_l5_adapter() {
 
         let read = inputs.read_v2(proofs, emitted, &temporal.expected);
         let admitted = read.result().expect("strict v2 reader");
-        assert_eq!(admitted.digest(), emitted.digest());
         assert_eq!(admitted.package(), emitted.admitted().package());
         assert_eq!(
-            admitted.schema_model(0).map(|model| model.digest()),
-            Some(selected.models[0].model.digest())
+            admitted.schema_model(0).map(|model| model.artifact_bytes()),
+            Some(selected.models[0].model.artifact_bytes())
         );
         // Emission produces bytes before any caller publishes an identity for
         // them; the reader retains the identity it independently admitted.
         assert!(emitted.admitted().artifact().is_none());
-        assert_eq!(
-            admitted.artifact().map(|artifact| artifact.digest),
-            Some(emitted.digest())
-        );
+        assert!(admitted.artifact().is_some());
 
         for (name, clock, profile, parameters) in [
             (
@@ -1802,7 +983,6 @@ fn native_v2_emission_reaches_the_strict_reader_and_authenticated_l5_adapter() {
             assert_eq!(authenticated.declaration, at);
             assert_eq!(authenticated.clock, clock);
             assert_eq!(authenticated.definition_identity, profile);
-            assert_eq!(authenticated.package_digest, admitted.digest().to_string());
             assert_eq!(
                 authenticated.parameters,
                 parameters
@@ -1823,15 +1003,11 @@ fn native_v2_emission_reaches_the_strict_reader_and_authenticated_l5_adapter() {
         // bytes are not frozen: FR-042 changes the shared `Model` in place.
         assert!(inputs.read(proofs, &v1_before).result().is_ok());
 
-        assert!(inputs
-            .read_bytes(proofs, emitted.bytes(), emitted.digest())
-            .result()
-            .is_err());
+        assert!(inputs.read_bytes(proofs, emitted.bytes()).result().is_err());
         assert!(inputs
             .read_v2_bytes(
                 proofs,
                 v1_before.bytes(),
-                v1_before.digest(),
                 &temporal.expected,
                 Limits::default(),
             )
@@ -1967,7 +1143,7 @@ fn producer_requires_one_exact_source_definition_and_clock_selection() {
 
 #[trace("TC-138", "FR-050-AC-2", "FR-050-AC-3")]
 #[test]
-fn strict_reader_rejects_resealed_structural_and_identity_substitutions() {
+fn strict_reader_rejects_structural_and_identity_substitutions() {
     with_v2(|inputs, proofs, _, temporal, emitted| {
         let temporal = &temporal.expected;
         let base = emitted.admitted().package();
@@ -2061,25 +1237,13 @@ fn strict_reader_rejects_resealed_structural_and_identity_substitutions() {
         for (offered, expected) in cases {
             let bytes = serde_json::to_vec(&offered).expect("canonical adverse wire shape");
             assert_error(
-                &inputs.read_v2_bytes(
-                    proofs,
-                    &bytes,
-                    ByteDigest::of(&bytes),
-                    temporal,
-                    Limits::default(),
-                ),
+                &inputs.read_v2_bytes(proofs, &bytes, temporal, Limits::default()),
                 expected,
             );
         }
 
         assert_error(
-            &inputs.read_v2_bytes(
-                proofs,
-                emitted.bytes(),
-                emitted.digest(),
-                &temporal[..2],
-                Limits::default(),
-            ),
+            &inputs.read_v2_bytes(proofs, emitted.bytes(), &temporal[..2], Limits::default()),
             binding(v2::InventorySide::Expected, v2::BindingCause::Missing),
         );
         let mut surplus_expected = temporal.to_vec();
@@ -2088,7 +1252,6 @@ fn strict_reader_rejects_resealed_structural_and_identity_substitutions() {
             &inputs.read_v2_bytes(
                 proofs,
                 emitted.bytes(),
-                emitted.digest(),
                 &surplus_expected,
                 Limits::default(),
             ),
@@ -2100,7 +1263,6 @@ fn strict_reader_rejects_resealed_structural_and_identity_substitutions() {
             &inputs.read_v2_bytes(
                 proofs,
                 emitted.bytes(),
-                emitted.digest(),
                 &duplicate_expected,
                 Limits::default(),
             ),
@@ -2109,13 +1271,7 @@ fn strict_reader_rejects_resealed_structural_and_identity_substitutions() {
         let mut changed_span = temporal.to_vec();
         changed_span[0].declaration.span.start += 1;
         assert_error(
-            &inputs.read_v2_bytes(
-                proofs,
-                emitted.bytes(),
-                emitted.digest(),
-                &changed_span,
-                Limits::default(),
-            ),
+            &inputs.read_v2_bytes(proofs, emitted.bytes(), &changed_span, Limits::default()),
             binding(v2::InventorySide::Expected, v2::BindingCause::Missing),
         );
         let changed_clock = v2::wire::ClockConfiguration::EventPosition {
@@ -2127,7 +1283,6 @@ fn strict_reader_rejects_resealed_structural_and_identity_substitutions() {
             &inputs.read_v2_bytes(
                 proofs,
                 emitted.bytes(),
-                emitted.digest(),
                 &changed_expected,
                 Limits::default(),
             ),
@@ -2143,7 +1298,6 @@ fn strict_reader_rejects_resealed_structural_and_identity_substitutions() {
             &inputs.read_v2_bytes(
                 proofs,
                 emitted.bytes(),
-                emitted.digest(),
                 &revision_expected,
                 Limits::default(),
             ),
@@ -2152,13 +1306,7 @@ fn strict_reader_rejects_resealed_structural_and_identity_substitutions() {
         let mut foreign_owner = temporal.to_vec();
         foreign_owner[0].source = inputs.source_references[1].clone();
         assert_error(
-            &inputs.read_v2_bytes(
-                proofs,
-                emitted.bytes(),
-                emitted.digest(),
-                &foreign_owner,
-                Limits::default(),
-            ),
+            &inputs.read_v2_bytes(proofs, emitted.bytes(), &foreign_owner, Limits::default()),
             v2_refusal(v2::Refusal::ForeignOwner(v2::SelectionSide::Expected)),
         );
 
@@ -2172,12 +1320,6 @@ fn strict_reader_rejects_resealed_structural_and_identity_substitutions() {
             authority.authority.push_str("/other");
             let mut identity = original.clone();
             identity.identity.push_str("/other");
-            let mut revision_namespace = original.clone();
-            revision_namespace.revision.namespace.push_str("/other");
-            let mut revision_value = original.clone();
-            revision_value.revision.value.push_str("-other");
-            let mut digest = original.clone();
-            digest.digest = emitted.digest();
             let mut wire_identity = original.clone();
             wire_identity.wire.identity.push_str("/canonical-json");
             let mut wire_version = original.clone();
@@ -2187,9 +1329,6 @@ fn strict_reader_rejects_resealed_structural_and_identity_substitutions() {
                 (v2::ArtifactField::Kind, kind),
                 (v2::ArtifactField::Authority, authority),
                 (v2::ArtifactField::Identity, identity),
-                (v2::ArtifactField::RevisionNamespace, revision_namespace),
-                (v2::ArtifactField::RevisionValue, revision_value),
-                (v2::ArtifactField::Digest, digest),
                 (v2::ArtifactField::WireIdentity, wire_identity),
                 (v2::ArtifactField::WireVersion, wire_version),
             ]
@@ -2197,13 +1336,7 @@ fn strict_reader_rejects_resealed_structural_and_identity_substitutions() {
             let mut changed = temporal.to_vec();
             changed[0].definition.artifact = artifact;
             assert_error(
-                &inputs.read_v2_bytes(
-                    proofs,
-                    emitted.bytes(),
-                    emitted.digest(),
-                    &changed,
-                    Limits::default(),
-                ),
+                &inputs.read_v2_bytes(proofs, emitted.bytes(), &changed, Limits::default()),
                 v2_refusal(v2::Refusal::Definition(v2::DefinitionField::Artifact(
                     field,
                 ))),
@@ -2242,13 +1375,7 @@ fn headers_indices_and_each_clock_member_have_stable_v2_refusals() {
         } {
             let bytes = serde_json::to_vec(&offered).unwrap();
             assert_error(
-                &inputs.read_v2_bytes(
-                    proofs,
-                    &bytes,
-                    ByteDigest::of(&bytes),
-                    temporal,
-                    Limits::default(),
-                ),
+                &inputs.read_v2_bytes(proofs, &bytes, temporal, Limits::default()),
                 v2_refusal(v2::Refusal::Header(field)),
             );
         }
@@ -2265,13 +1392,7 @@ fn headers_indices_and_each_clock_member_have_stable_v2_refusals() {
         } {
             let bytes = serde_json::to_vec(&offered).unwrap();
             assert_error(
-                &inputs.read_v2_bytes(
-                    proofs,
-                    &bytes,
-                    ByteDigest::of(&bytes),
-                    temporal,
-                    Limits::default(),
-                ),
+                &inputs.read_v2_bytes(proofs, &bytes, temporal, Limits::default()),
                 v2_refusal(v2::Refusal::OfferIndex(index)),
             );
         }
@@ -2337,13 +1458,7 @@ fn headers_indices_and_each_clock_member_have_stable_v2_refusals() {
             let mut expected = temporal.to_vec();
             expected[*index].definition.clock = clock.clone();
             assert_error(
-                &inputs.read_v2_bytes(
-                    proofs,
-                    emitted.bytes(),
-                    emitted.digest(),
-                    &expected,
-                    Limits::default(),
-                ),
+                &inputs.read_v2_bytes(proofs, emitted.bytes(), &expected, Limits::default()),
                 v2_refusal(v2::Refusal::Clock(*field)),
             );
         }
@@ -2352,9 +1467,8 @@ fn headers_indices_and_each_clock_member_have_stable_v2_refusals() {
 
 #[trace("TC-138", "FR-050-AC-2", "FR-050-AC-3")]
 #[test]
-fn malformed_clock_objects_and_changed_original_definition_bytes_refuse() {
-    with_v2(|inputs, proofs, selected, temporal, emitted| {
-        let producer_temporal = &temporal.producer;
+fn malformed_clock_objects_refuse() {
+    with_v2(|inputs, proofs, _, temporal, emitted| {
         let temporal = &temporal.expected;
         let original: serde_json::Value = serde_json::from_slice(emitted.bytes()).unwrap();
         for (binding_index, field, renamed) in [
@@ -2374,37 +1488,12 @@ fn malformed_clock_objects_and_changed_original_definition_bytes_refuse() {
                 let bytes = serde_json::to_vec(&changed).unwrap();
                 assert!(matches!(
                     inputs
-                        .read_v2_bytes(
-                            proofs,
-                            &bytes,
-                            ByteDigest::of(&bytes),
-                            temporal,
-                            Limits::default(),
-                        )
+                        .read_v2_bytes(proofs, &bytes, temporal, Limits::default(),)
                         .result(),
                     Err(Error::Json { .. })
                 ));
             }
         }
-
-        let definition = &producer_temporal[0].definition_artifact;
-        let at = selected
-            .dependencies
-            .iter()
-            .position(|dependency| &dependency.artifact == definition)
-            .unwrap();
-        let mut dependencies = selected.dependencies.to_vec();
-        let mut changed_bytes = dependencies[at].bytes.to_vec();
-        changed_bytes.push(b'\n');
-        dependencies[at].bytes = &changed_bytes;
-        let changed = native::Selections {
-            dependencies: &dependencies,
-            ..*selected
-        };
-        assert_error(
-            &native::admit_v2(proofs, &changed, producer_temporal, Limits::default()),
-            Error::Invalid(Invalid::Seal),
-        );
     });
 }
 
@@ -2413,13 +1502,7 @@ fn malformed_clock_objects_and_changed_original_definition_bytes_refuse() {
 fn added_v2_work_is_exactly_bounded_and_a_fresh_retry_is_reproducible() {
     with_v2(|inputs, proofs, _, temporal, emitted| {
         let temporal = &temporal.expected;
-        let complete = inputs.read_v2_bytes(
-            proofs,
-            emitted.bytes(),
-            emitted.digest(),
-            temporal,
-            Limits::default(),
-        );
+        let complete = inputs.read_v2_bytes(proofs, emitted.bytes(), temporal, Limits::default());
         let usage = complete.usage();
         assert!(
             usage.byte_work >= emitted.bytes().len(),
@@ -2440,8 +1523,7 @@ fn added_v2_work_is_exactly_bounded_and_a_fresh_retry_is_reproducible() {
                 WorkDimension::OutputBytes => limits.output_bytes = amount - 1,
                 _ => unreachable!(),
             }
-            let report =
-                inputs.read_v2_bytes(proofs, emitted.bytes(), emitted.digest(), temporal, limits);
+            let report = inputs.read_v2_bytes(proofs, emitted.bytes(), temporal, limits);
             let Error::Incomplete(exhaustion) = report.result().unwrap_err() else {
                 panic!("{dimension:?}: expected typed exhaustion")
             };
@@ -2456,7 +1538,7 @@ fn added_v2_work_is_exactly_bounded_and_a_fresh_retry_is_reproducible() {
                 _ => unreachable!(),
             }
             assert!(inputs
-                .read_v2_bytes(proofs, emitted.bytes(), emitted.digest(), temporal, exact)
+                .read_v2_bytes(proofs, emitted.bytes(), temporal, exact)
                 .result()
                 .is_ok());
         }
@@ -2476,13 +1558,7 @@ fn added_v2_work_is_exactly_bounded_and_a_fresh_retry_is_reproducible() {
             depth: usize::MAX,
             ..Limits::default()
         };
-        let clamped = inputs.read_v2_bytes(
-            proofs,
-            emitted.bytes(),
-            emitted.digest(),
-            temporal,
-            above_hard,
-        );
+        let clamped = inputs.read_v2_bytes(proofs, emitted.bytes(), temporal, above_hard);
         assert_eq!(clamped.limits(), Limits::default());
         assert!(clamped.result().is_ok());
         let retry = inputs
@@ -2602,9 +1678,9 @@ fn l5_refuses_each_parameter_axis_before_temporal_evaluation() {
     });
 }
 
-#[trace("TC-138", "FR-050-AC-6")]
+#[trace("TC-138", "TC-136", "FR-050-AC-6", "FR-049-AC-10")]
 #[test]
-fn progress_is_partitioned_by_package_definition_and_exact_clock_configuration() {
+fn progress_is_partitioned_by_definition_and_exact_clock_configuration() {
     with_v2(|inputs, proofs, selected, temporal, emitted| {
         let producer_temporal = &temporal.producer;
         let expected_temporal = &temporal.expected;
@@ -2628,7 +1704,7 @@ fn progress_is_partitioned_by_package_definition_and_exact_clock_configuration()
             native::admit_v2(proofs, selected, &changed_selections, Limits::default())
                 .into_result()
                 .expect("changed exact configuration emission");
-        assert_ne!(emitted.digest(), changed_emission.digest());
+        assert_ne!(emitted.bytes(), changed_emission.bytes());
         let mut changed_expected = expected_temporal.to_vec();
         changed_expected[1].definition.clock = changed_clock;
         let changed = inputs
@@ -2694,18 +1770,23 @@ fn progress_is_partitioned_by_package_definition_and_exact_clock_configuration()
         )
         .into_result()
         .expect("same clock under a different source-authorized artifact");
-        assert_ne!(emitted.digest(), other_emission.digest());
+        assert_ne!(emitted.bytes(), other_emission.bytes());
         let mut other_trace = original_trace.clone();
         other_trace.watermark = 5;
-        assert!(temporal::evaluate_with_progress_v2(
+        let same_selection_regression = temporal::evaluate_with_progress_v2(
             other_emission.admitted(),
             declaration(other_emission.admitted(), "BySample"),
             &other_trace,
             temporal::Limits::default(),
             &mut ledger,
-        )
-        .result()
-        .is_ok());
+        );
+        assert!(matches!(
+            same_selection_regression.result(),
+            Err(temporal::Error::Refused(temporal::Refusal::Progress {
+                dimension: temporal::Dimension::Watermark,
+                ..
+            }))
+        ));
 
         assert!(temporal::evaluate_with_progress_v2(
             &changed,
@@ -2732,67 +1813,5 @@ fn progress_is_partitioned_by_package_definition_and_exact_clock_configuration()
                 ..
             }))
         ));
-    });
-}
-
-#[trace("TC-138", "FR-050-AC-3", "FR-050-AC-4")]
-#[test]
-fn digest_domains_and_original_producer_bytes_cannot_be_reinterpreted() {
-    with_v2(|inputs, proofs, selected, temporal, emitted| {
-        let producer_temporal = &temporal.producer;
-        let expected_temporal = &temporal.expected;
-        let definition_digest = expected_temporal[0].definition.artifact.digest;
-        assert_ne!(definition_digest, emitted.digest());
-        assert_error(
-            &inputs.read_v2_bytes(
-                proofs,
-                emitted.bytes(),
-                definition_digest,
-                expected_temporal,
-                Limits::default(),
-            ),
-            Error::Invalid(Invalid::Seal),
-        );
-
-        let mut substituted_artifact = expected_temporal[0].definition.artifact.clone();
-        substituted_artifact.digest = emitted.digest();
-        let mut substituted_expected = expected_temporal.to_vec();
-        substituted_expected[0].definition.artifact = substituted_artifact;
-        assert_error(
-            &inputs.read_v2_bytes(
-                proofs,
-                emitted.bytes(),
-                emitted.digest(),
-                &substituted_expected,
-                Limits::default(),
-            ),
-            v2_refusal(v2::Refusal::Definition(v2::DefinitionField::Artifact(
-                v2::ArtifactField::Digest,
-            ))),
-        );
-
-        let model_dependency = selected
-            .dependencies
-            .iter()
-            .position(|dependency| dependency.artifact == &inputs.model_reference)
-            .expect("selected original model package");
-        let original = selected.dependencies[model_dependency].bytes;
-        let value: serde_json::Value = serde_json::from_slice(original).expect("model JSON");
-        let recanonicalized = serde_json::to_vec_pretty(&value).expect("recanonicalized model");
-        assert_ne!(original, recanonicalized);
-        assert_eq!(
-            serde_json::from_slice::<serde_json::Value>(original).unwrap(),
-            serde_json::from_slice::<serde_json::Value>(&recanonicalized).unwrap()
-        );
-        let mut dependencies = selected.dependencies.to_vec();
-        dependencies[model_dependency].bytes = &recanonicalized;
-        let changed = native::Selections {
-            dependencies: &dependencies,
-            ..*selected
-        };
-        assert_error(
-            &native::admit_v2(proofs, &changed, producer_temporal, Limits::default()),
-            Error::Invalid(Invalid::Seal),
-        );
     });
 }

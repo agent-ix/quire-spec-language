@@ -17,9 +17,7 @@ use crate::bounds::ReplayLimits;
 use crate::execute::{process_provider_obligation, BoundEntries};
 use crate::limits::CallerLimits;
 use crate::result::ReplayResult;
-use crate::spine::{
-    check, package, parse, select, DependencyInput, LockEvidence, PackageLimits, ParseRequest,
-};
+use crate::spine::{check, package, parse, select, DependencyInput, PackageLimits, ParseRequest};
 use crate::witness::{CanonicalAssignment, WitnessValue};
 
 fn wrong(pointer: &str) -> PluginResultRefusal {
@@ -366,6 +364,70 @@ fn tc_774_cause_reader_accepts_the_plugin_spellings() {
     }
 }
 
+/// QSpec FR-468 and FR-331: a plugin's `hypotheses-not-established` cause
+/// reads to its invariant clause node and its item's result; a node id
+/// outside the node-key domain, a bad digest, an extra member or a result
+/// outside FR-331's vocabulary is refused at its member.
+#[trace("TC-774")]
+#[test]
+fn the_cause_reader_reads_hypotheses_not_established() {
+    let node = |domain: &str, digest: String| json!({"domain": domain, "digest": digest});
+    let domain = quire_exact::NODE_KEY_DOMAIN;
+    assert_eq!(
+        read_plugin_inconclusive_cause(&json!({
+            "type": "hypotheses-not-established",
+            "hypothesis": node(domain, "dc".repeat(32)),
+            "result": "refuted",
+        })),
+        Ok(InconclusiveCause::HypothesesNotEstablished {
+            hypothesis: WireNodeId::from_digest([0xdc; 32]),
+            result: crate::outcome::ItemLabel::Refuted,
+        })
+    );
+    let cases: Vec<(Value, PluginResultRefusal)> = vec![
+        (
+            json!({"type": "hypotheses-not-established", "result": "refuted"}),
+            missing("/cause/hypothesis"),
+        ),
+        (
+            json!({"type": "hypotheses-not-established", "hypothesis": "dc", "result": "refuted"}),
+            wrong("/cause/hypothesis"),
+        ),
+        (
+            json!({"type": "hypotheses-not-established",
+                   "hypothesis": node("quire.package.semantic/v2", "dc".repeat(32)), "result": "refuted"}),
+            invalid("/cause/hypothesis/domain"),
+        ),
+        (
+            json!({"type": "hypotheses-not-established",
+                   "hypothesis": node(domain, "DC".repeat(32)), "result": "refuted"}),
+            invalid("/cause/hypothesis/digest"),
+        ),
+        (
+            json!({"type": "hypotheses-not-established",
+                   "hypothesis": {"domain": domain, "digest": "dc".repeat(32), "extra": 1}, "result": "refuted"}),
+            unknown("/cause/hypothesis/extra"),
+        ),
+        (
+            json!({"type": "hypotheses-not-established",
+                   "hypothesis": node(domain, "dc".repeat(32)), "result": "undefined"}),
+            invalid("/cause/result"),
+        ),
+        (
+            json!({"type": "hypotheses-not-established",
+                   "hypothesis": node(domain, "dc".repeat(32)), "result": 1}),
+            wrong("/cause/result"),
+        ),
+    ];
+    for (cause, expected) in cases {
+        assert_eq!(
+            read_plugin_inconclusive_cause(&cause),
+            Err(expected),
+            "{cause}"
+        );
+    }
+}
+
 /// FR-290-AC-9.
 #[trace("TC-774", "FR-290-AC-9")]
 #[test]
@@ -406,7 +468,6 @@ fn tc_774_cause_reader_refuses_in_order() {
         "no-admitted-behaviour",
         "transfer-not-preserving",
         "premise-unproved",
-        "hypotheses-not-established",
     ] {
         assert_eq!(
             read_plugin_inconclusive_cause(&json!({"type": spelling})),
@@ -697,7 +758,7 @@ fn fixture() -> Fixture {
 
 fn fixture_of(
     source: &str,
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &qsl_semantics::model::intake::PackageInput,
     dependencies: &DependencyInput,
 ) -> Fixture {
     let identity = SourceIdentity::new("agent-ix", "test:plugin", "fixture", "fixture:1");
@@ -717,16 +778,9 @@ fn fixture_of(
     let models = select(&parsed, packages, limits.spine.model, &cancel)
         .unwrap_or_else(|failure| panic!("select: {failure:?}"))
         .into_value();
-    let checked = check(
-        &parsed,
-        &models,
-        dependencies,
-        &LockEvidence::default(),
-        limits.spine,
-        &cancel,
-    )
-    .unwrap_or_else(|failure| panic!("check: {failure:?}"))
-    .into_value();
+    let checked = check(&parsed, &models, dependencies, limits.spine, &cancel)
+        .unwrap_or_else(|failure| panic!("check: {failure:?}"))
+        .into_value();
     let emitted = package(&checked, PackageLimits::default(), &cancel)
         .unwrap_or_else(|failure| panic!("package: {failure:?}"))
         .into_value();
@@ -805,7 +859,7 @@ fn tc_774_function_contract_and_application_items_replay() {
         Some("p".to_owned())
     );
     assert_eq!(wire.backend, "acme");
-    assert_eq!(wire.source_digests.len(), 1);
+    assert_eq!(wire.sources.len(), 1);
     assert_eq!(wire.declared_domains.len(), 1);
     assert!(wire.state_environment.entries().is_empty());
     assert!(wire.object_environment.is_none());

@@ -22,9 +22,12 @@
 #![forbid(unsafe_code)]
 
 pub mod analyze;
+pub mod contract_check;
 pub mod exact_probabilistic;
 pub mod model_check;
 pub mod monitor_plan;
 pub mod schedulability;
 pub mod statistical;
+pub mod step_simulation;
+pub mod value_check;
 pub mod zone_check;

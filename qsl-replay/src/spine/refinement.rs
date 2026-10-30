@@ -419,9 +419,7 @@ fn group(refusal: &CompileRefusal) -> Group {
         | CompileRefusal::Check { .. } => Group::Content,
         CompileRefusal::Intake { refusal, .. } => match refusal.cause {
             UnitIntakeCause::Limit(_) => Group::IntakeBudget,
-            UnitIntakeCause::ArtifactDigest
-            | UnitIntakeCause::Refused(_)
-            | UnitIntakeCause::Invariant => Group::Setup,
+            UnitIntakeCause::Refused(_) | UnitIntakeCause::Invariant => Group::Setup,
         },
         CompileRefusal::Profile { .. }
         | CompileRefusal::DependencyInput(_)

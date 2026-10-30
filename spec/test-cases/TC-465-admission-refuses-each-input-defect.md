@@ -21,15 +21,14 @@ Scope: FR-106-AC-3, FR-106-AC-4, FR-106-AC-5, FR-106-AC-7, FR-106-AC-11, FR-106-
 
 Start from TC-464's healthy-parent snapshot and selection (for the `Current`
 rows) or its changed-version invocation (for the `Invocation` rows). Apply one
-mutation per row and admit. The provision digest is recomputed for every
-mutated document except where the row says otherwise.
+mutation per row and admit.
 
 | # | Check | Mutation | Expected |
 | --- | --- | --- | --- |
 | 1 | 1.1 | selected snapshot missing from the provision | `Incomplete`, `unavailable_observation`/`missing-required-artifact` |
 | 2 | 1.2 | snapshot of 1 MiB + 1 byte | `stage_limit_exceeded`, `input-bytes-exceeded` |
 | 3 | 1.2 | a field value nested 10,000 `present` levels deep, within the byte limit | the same code and cause as that field value nested 2 levels deep (FR-261); no outcome names a depth |
-| 4 | 1.3 | the snapshot's bytes edited (`child.versionNumber` `"3"`), kept under the original digest | `stale_dependency`/`content-mismatch` |
+| 4 | 1.3 | **Retired (no provision digest; FR-106-AC-3 check 1.3 removed).** | n/a |
 | 5 | 1.4 | `format` `native-state-input/1` | `unknown_wire`/`unsupported-wire` |
 | 6 | 1.5 | `populations` removed | `invalid_runtime_input`/`missing-member` |
 | 7 | 1.6 | an extra top-level member `note` | `invalid_runtime_input`/`unknown-member` |
@@ -37,7 +36,7 @@ mutated document except where the row says otherwise.
 | 10 | 2 | `Current` selecting `VersionUnchanged` | `wrong_snapshot`/`wrong-observation` |
 | 11 | 3 | the current snapshot's `observation` set to `pre` (and `anchor` removed) | `wrong_snapshot`/`wrong-observation` |
 | 12 | 3 | the selection's anchor `{handler, other}` | `wrong_snapshot`/`wrong-anchor`, naming both |
-| 13 | 4 | `model.digest` of another package | `invalid_model_binding`/`wrong-model-selection` |
+| 13 | 4 | `model` identity of another package | `invalid_model_binding`/`wrong-model-selection` |
 | 14 | 5 | invocation `operation` `other` | `wrong_snapshot`/`wrong-invocation` |
 | 15 | 6.1 | population `ix://example/config-version/other` | `invalid_runtime_input`/`wrong-role-mapping` |
 | 16 | 6.3 | a second object keyed `root` | `invalid_runtime_input`/`conflicting-identity` at the second |
@@ -53,7 +52,7 @@ mutated document except where the row says otherwise.
 | 26 | 11.3 | post `child.parent` absent | `frame_violation`/`unauthorized-change`, naming `child` and `parent` |
 | 27 | 11.3 | a package whose `attemptUpdate` frame modifies only `parent`, with the changed-version invocation (post `child.versionNumber` 3) | `frame_violation`/`unauthorized-change`, naming `child` and `versionNumber` |
 | 28 | 11.4 | invocation `created: [{config_history, child}]` | `population_delta_mismatch`/`delta-disagreement` |
-| 29 | 1.3 over 1.6 | row 4's edit plus row 7's extra member, under the original digest | `stale_dependency`/`content-mismatch` |
+| 29 | 1.3 over 1.6 | **Retired (no provision digest; row 4 retired).** | n/a |
 | 30 | 6.5 walk order | `root.versionNumber` `"-1"` and `child.versionNumber` `"1001"` together | `invalid_runtime_input`/`invalid-value` at `root` |
 | 31 | 11.2 over 11.3 | post deletes `root` and sets `child.parent` absent | `frame_violation`/`unauthorized-change` naming the deletion of `root` |
 | 32 | 6.1 | a package variant that adds object type `Note`, a member type of no population, and an object `n1` of type `Note` in `config_history` | `invalid_runtime_input`/`wrong-role-mapping` at `n1` |

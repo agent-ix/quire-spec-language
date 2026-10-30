@@ -47,9 +47,8 @@ claims runtime observations or family evaluation.
 4. Create self recursion, mutual predicate recursion and a definition-dependency
    cycle. Compare with a diamond dependency and explicitly bounded protocol
    repetition; the latter two are valid graph shapes.
-5. Mutate one selected definition revision, digest, required dependency, model
-   declaration key or domain package identity at a time. Substitute a domain
-   package `sha256-jcs` digest in a native byte-digest position. Keep an unrelated valid
+5. Mutate one selected definition revision, required dependency, model
+   declaration key or domain package identity at a time. Keep an unrelated valid
    declaration and require its binding to survive each dependency-local refusal.
 6. Read the public accounting version, dimension charging rules, capacities and
    effective limits before traversal. Derive expected charges independently for

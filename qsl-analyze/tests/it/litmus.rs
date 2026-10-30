@@ -25,7 +25,6 @@ use qsl_package::CheckedPackage;
 use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
 use quire_checked::key::DeclarationKey;
 use quire_exact::Value;
@@ -212,10 +211,6 @@ pub(crate) fn document() -> Vec<u8> {
     .into_bytes()
 }
 
-fn document_digest(document: &[u8]) -> [u8; 32] {
-    *package_input([document]).keys().next().expect("one model")
-}
-
 /// The contracts: `IsX`/`IsY`/`IsZ` select a cell, `StoreZero` stores 0,
 /// `StoreOne` stores 1, `StoreTwo` stores 2, `StoreThree` stores 3, `AddOne` adds 1,
 /// `IsXw` and `FlagOne` store 1 to the `w` of `x`, `ReadFlag<n>` loads it,
@@ -263,20 +258,38 @@ pub(crate) fn contracts() -> String {
 /// The unit selecting the domain package as `M`, with `body` after the
 /// header.
 pub(crate) fn unit_text(body: &str) -> String {
+    unit_text_with("", body)
+}
+
+/// [`unit_text`] with the further `profiles` lines in its header.
+pub(crate) fn unit_text_with(profiles: &str, body: &str) -> String {
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
-         profile t0 = \"quire.temporal.infinite-trace/v1\";\n\
-         model M = \"{PACKAGE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n{body}",
-        hex(&document_digest(&document()))
+         profile t0 = \"quire.temporal.infinite-trace/v1\";\n{profiles}\
+         model M = \"{PACKAGE}\";\n{body}"
     )
 }
 
 /// The checked package of `body`.
 pub(crate) fn package(body: &str) -> CheckedPackage {
+    package_with("", body)
+}
+
+/// The checked package of `body` that also selects the protocol profile,
+/// so each protocol clause the package writes has its node.
+pub(crate) fn protocol_profiled_package(body: &str) -> CheckedPackage {
+    package_with(PROTOCOL_PROFILE, body)
+}
+
+/// The header line selecting the protocol profile.
+pub(crate) const PROTOCOL_PROFILE: &str = "profile pp = \"quire.protocol.finite-global/v1\";\n";
+
+/// The checked package of `body` under the header's further `profiles`.
+fn package_with(profiles: &str, body: &str) -> CheckedPackage {
     let document = document();
-    let text = unit_text(body);
-    let packages = package_input([document.as_slice()]);
+    let text = unit_text_with(profiles, body);
+    let packages = package_input([document.as_slice()]).unwrap();
     let parsed = qsl_cst::parse(
         SourceIdentity::new("agent-ix", "litmus", "git", "1"),
         "litmus.native",
@@ -377,8 +390,8 @@ pub(crate) fn sb_unit(run: &str) -> String {
 /// A subject's documents: the domain package and the snapshot.
 pub(crate) struct Documents {
     pub(crate) cells: Vec<&'static str>,
-    pub(crate) packages: BTreeMap<[u8; 32], Vec<u8>>,
-    pub(crate) snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    pub(crate) packages: qsl_semantics::model::intake::PackageInput,
+    pub(crate) snapshots: qsl_semantics::model::observation::DocumentProvision,
     pub(crate) initial: DocumentRef,
     /// Whether the universe also holds the `Spare` object `z`.
     spare: bool,
@@ -413,8 +426,7 @@ impl Documents {
             .zip(0..)
             .map(|(name, id)| cell(name, id))
             .collect();
-        let header = json!({"identity": PACKAGE, "version": "1.0.0",
-            "digest": format!("sha256-jcs:{}", hex(&document_digest(&document())))});
+        let header = json!({"identity": PACKAGE});
         let spares: Vec<Json> = if spare {
             vec![json!({"key": "z", "type": ident("Spare"),
                 "fields": {"v": int(0)}})]
@@ -438,20 +450,19 @@ impl Documents {
             ],
         });
         let bytes = snapshot.to_string().into_bytes();
-        let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-        let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-            .expect("canonical fixture")
-            .as_bytes();
         Self {
             cells: cells.to_vec(),
-            packages: package_input([document().as_slice()]),
-            snapshots: BTreeMap::from([(digest, bytes)]),
+            packages: package_input([document().as_slice()]).unwrap(),
+            snapshots: BTreeMap::from([(
+                qsl_semantics::model::observation::document_reference(&bytes)
+                    .expect("a document names itself"),
+                bytes,
+            )]),
             initial: DocumentRef {
                 authority: "test".to_owned(),
                 identity: "s0".to_owned(),
                 revision_namespace: "fixture".to_owned(),
                 revision: "fixture:1".to_owned(),
-                digest,
             },
             spare,
         }

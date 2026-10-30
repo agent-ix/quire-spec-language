@@ -33,7 +33,7 @@ mod protocol;
 mod rows;
 mod step_label;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub use catalog::{
     KeyedCatalogClass, KeyedClassCatalog, KeyedMemoryClass, RefinementCatalogClass,
@@ -77,13 +77,12 @@ use super::observation::Observations;
 use super::profile::TemporalProfile;
 use super::protocol_clause::ProtocolNodeId;
 use super::refusal::{CheckCause, CheckRefusal, KeyFault};
-use super::state_clause::{observation_of, ClauseDeclarations, ClauseOperation};
+use super::state_clause::{observation_of, ClauseDeclarations, ClauseOperation, PopulationDomain};
 use crate::family::CheckContext;
 use crate::model::clause_observation::Observation;
 use crate::model::domain_package::{DomainPackageRef, PopulationRecord};
 use crate::model::intake::type_identity_segment;
 use crate::model::operation::OperationLookup;
-use crate::value::definition::DefinitionLock;
 use crate::value::layer::HeaderLayer;
 use quire_checked::key::DeclarationKey;
 
@@ -1200,6 +1199,57 @@ pub struct StepRow {
     /// FR-432 spelling with the concrete alias removed, such as
     /// `Cell::increment`, `fork Flow::par` or `memory drain`.
     pub(crate) spelling: String,
+    /// An operation row's FR-146 record roots; `None` for a protocol row.
+    pub(crate) roots: Option<RowRoots>,
+}
+
+impl StepRow {
+    /// The concrete operation of an operation row, as a record references
+    /// it: its declaring type and name; `None` for a protocol row.
+    pub fn concrete_operation(&self) -> Option<(EffectiveId, &str)> {
+        self.roots
+            .as_ref()
+            .map(|roots| (roots.operation.0, roots.operation.1.as_str()))
+    }
+}
+
+/// FR-146 "Claim extent": what an operation row's `Step` record ranges over
+/// besides the populations its contract clauses and the state mapping walk.
+#[derive(Clone)]
+pub(crate) struct RowRoots {
+    /// The concrete operation, as a record references it (ADR-017 AR-4).
+    pub(crate) operation: (EffectiveId, String),
+    /// The receiver's type, the result's and each parameter's, then the
+    /// abstract parameter domain of each `_` argument.
+    pub(crate) types: Vec<ValueType>,
+    /// The one concrete population covering the receiver's type (FR-104),
+    /// or every one covering it in ascending `DeclarationKey` order.
+    pub(crate) context: Result<Option<PopulationDomain>, Vec<DeclarationKey>>,
+    /// The row's operation name, where an ambiguous context refuses.
+    pub(crate) name_span: Span,
+}
+
+/// The checked roots, without the row's source span, as [`CheckedRow`]'s
+/// value omits its site.
+impl std::fmt::Debug for RowRoots {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RowRoots")
+            .field("operation", &self.operation)
+            .field("types", &self.types)
+            .field("context", &self.context)
+            .finish_non_exhaustive()
+    }
+}
+
+/// FR-146 "Claim extent": the populations a model subject's records range
+/// over beyond each row's own roots.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct SimulationRoots {
+    /// The population covering each concrete object type the state mapping
+    /// maps: the `Initial` record's roots.
+    pub(crate) initial: BTreeSet<PopulationDomain>,
+    /// Each population a `reaches` in the state mapping walks.
+    pub(crate) mapping: BTreeSet<PopulationDomain>,
 }
 
 impl StepRow {
@@ -1376,6 +1426,16 @@ pub struct CheckedRefinement {
     /// The `declaration` occurrence of the refinement's V2 node, which keys
     /// its FR-144 requirement record; set when S3 writes the record.
     pub(crate) requirement: Option<qsl_foundation::source::provenance::OccurrenceKey>,
+    /// FR-146: the populations a model subject's per-step simulation
+    /// records range over; `None` when it writes none.
+    pub(crate) simulation: Option<SimulationRoots>,
+    /// FR-146: the per-step simulation records S3 wrote, `Initial` first and
+    /// then one per row in `steps` order.
+    pub(crate) simulations: Vec<super::step_simulation::StepSimulationEntry>,
+    /// For each authored step row, in source order, its zero-based position
+    /// in the V2 node's `steps` array (QSpec FR-375); empty for a
+    /// refinement S4 does not emit.
+    pub(crate) row_positions: Vec<quire_semantic_value::step_simulation::StepRowRef>,
 }
 
 impl CheckedRefinement {
@@ -1387,6 +1447,31 @@ impl CheckedRefinement {
         &self,
     ) -> Option<&qsl_foundation::source::provenance::OccurrenceKey> {
         self.requirement.as_ref()
+    }
+
+    /// FR-146: the per-step simulation records S3 wrote beside the
+    /// refinement record, `Initial` first and then one `Step` per row in
+    /// `steps` order, each with its ADR-013 O-07 occurrence. Empty for a
+    /// refinement with a hidden field, a history field or an `any` row.
+    ///
+    /// Interim, withdrawn when the spec defines a protocol row's `Step`
+    /// record extent (STD-493 comment c699936f): a protocol subject writes
+    /// none yet, though its rows have their FR-375 positions.
+    pub fn step_simulations(&self) -> &[super::step_simulation::StepSimulationEntry] {
+        &self.simulations
+    }
+
+    /// FR-146 "Row order": the [`StepRowRef`] of the authored step row at
+    /// `source` (its position in [`Self::steps`]): its position in the V2
+    /// node's `steps` array, which QSpec FR-375 sorts. `None` for a
+    /// refinement S4 does not emit.
+    ///
+    /// [`StepRowRef`]: quire_semantic_value::step_simulation::StepRowRef
+    pub fn step_row_ref(
+        &self,
+        source: usize,
+    ) -> Option<quire_semantic_value::step_simulation::StepRowRef> {
+        self.row_positions.get(source).copied()
     }
 
     /// FR-144 (ADR-020 "Negotiation"): the TP-5 property form of the
@@ -2133,6 +2218,9 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
     let history = checker.history_rows(headers, cx);
     let concrete_fairness = checker.fairness(form, FairnessSide::Assume);
     let abstract_fairness = checker.fairness(form, FairnessSide::Ensure);
+    let simulation = (protocol.is_none() && history.is_empty())
+        .then(|| checker.simulation_roots(&objects, &operations, form.name.span))
+        .flatten();
     let concrete_object_types = checker
         .concrete_side
         .model
@@ -2219,6 +2307,9 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
         abstract_subject_node: None,
         concrete_subject_node: None,
         requirement: None,
+        simulation,
+        simulations: Vec::new(),
+        row_positions: Vec::new(),
         declaration_span: form.span,
     };
     // A protocol abstract side refused by its own clause checks reported
@@ -2474,11 +2565,10 @@ struct Checker<'c, 'a> {
 /// infinite-trace profile does not admit, with the token span and the layer
 /// that admits it (QSpec FR-375 "Row layers").
 fn unsupported_row_form(expression: &ExpressionForm) -> Option<(&'static str, Span)> {
-    let lock = DefinitionLock::pinned();
-    let required: std::collections::BTreeSet<_> = lock
-        .admitted_forms(HeaderLayer::ValueComplete)
+    let required: std::collections::BTreeSet<_> = HeaderLayer::ValueComplete
+        .admitted_forms()
         .into_iter()
-        .chain(lock.admitted_forms(HeaderLayer::ModelComplete))
+        .chain(HeaderLayer::ModelComplete.admitted_forms())
         .collect();
     let predicates = std::collections::BTreeSet::new();
     let mut unsupported = None;
@@ -2501,7 +2591,7 @@ fn unsupported_row_form(expression: &ExpressionForm) -> Option<(&'static str, Sp
                     } else {
                         HeaderLayer::ALL
                             .into_iter()
-                            .find(|layer| lock.admits(*layer, form))
+                            .find(|layer| layer.admits(form))
                             .map(HeaderLayer::identity)
                     }
                 }),
@@ -3174,6 +3264,87 @@ impl<'c, 'a> Checker<'c, 'a> {
         }
     }
 
+    /// FR-146 "Claim extent": the populations a model subject's per-step
+    /// simulation records range over, when it writes them (no hidden field
+    /// and no `any` row; the caller checks history). An operation row whose
+    /// receiver two concrete populations cover, or a state mapping
+    /// reachability two cover, is refused `ambiguous_declaration`/
+    /// `ambiguous-name` naming them, and no record is written.
+    fn simulation_roots(
+        &mut self,
+        objects: &[ObjectRow],
+        operations: &[(usize, StepRow)],
+        name_span: Span,
+    ) -> Option<SimulationRoots> {
+        let writes = objects.iter().all(|object| object.hidden.is_empty())
+            && !operations
+                .iter()
+                .any(|(_, row)| matches!(row.target, StepTarget::Any));
+        if !writes {
+            return None;
+        }
+        let scope = self.declarations.scope;
+        let concrete = std::slice::from_ref(self.concrete_side.model);
+        let mut roots = SimulationRoots::default();
+        let mut ambiguous = false;
+        for (_, row) in operations {
+            if let Some(RowRoots {
+                context: Err(keys),
+                name_span: row_span,
+                ..
+            }) = &row.roots
+            {
+                self.ambiguous_populations(*row_span, row.spelling(), keys);
+                ambiguous = true;
+            }
+        }
+        for object in objects {
+            let mapped = self
+                .concrete_side
+                .model
+                .object_types()
+                .find(|(key, _)| **key == object.concrete_type)
+                .map(|(_, id)| id);
+            if let Some(id) = mapped {
+                match super::state_clause::population_of(concrete, id, scope.types()) {
+                    Ok(domain) => roots.initial.extend(domain),
+                    // A type with an operation row has refused at that row.
+                    Err(keys) if !ambiguous => {
+                        self.ambiguous_populations(name_span, &object.concrete_type.node, &keys);
+                        ambiguous = true;
+                    }
+                    Err(_) => {}
+                }
+            }
+            for field in &object.fields {
+                match super::state_clause::walked_populations(
+                    field.expression.body.root(),
+                    concrete,
+                    scope,
+                ) {
+                    Ok(walked) => roots.mapping.extend(walked),
+                    Err(keys) => {
+                        self.ambiguous_populations(name_span, &object.concrete_type.node, &keys);
+                        ambiguous = true;
+                    }
+                }
+            }
+        }
+        (!ambiguous).then_some(roots)
+    }
+
+    /// FR-146 "Claim extent" (FR-104's rule): `name` has no single context
+    /// population; `populations` are the ones covering it, ascending.
+    fn ambiguous_populations(&mut self, span: Span, name: &str, populations: &[DeclarationKey]) {
+        let populations: Vec<&str> = populations.iter().map(|key| key.node.as_str()).collect();
+        self.findings.refuse(
+            span,
+            RefinementCause::Ambiguous {
+                name: format!("{name} ({})", populations.join(", ")),
+            },
+        );
+    }
+
     /// FR-136: the operation rows, each right side checked, and, over a
     /// model subject, one row per concrete operation. The rows that select
     /// a protocol clause are classified here and resolved once the clause is
@@ -3261,11 +3432,13 @@ impl<'c, 'a> Checker<'c, 'a> {
             };
             written.push(key.clone());
             let target = match &row.target {
-                StepTargetForm::Stutter { .. } => Some(StepTarget::Stutter),
-                StepTargetForm::Any { .. } => Some(StepTarget::Any),
+                StepTargetForm::Stutter { .. } => Some((StepTarget::Stutter, Vec::new())),
+                StepTargetForm::Any { .. } => Some((StepTarget::Any, Vec::new())),
                 StepTargetForm::Node {
                     node, arguments, ..
-                } => self.node_target(row.span, node, arguments, (object, concrete), cx),
+                } => self
+                    .node_target(row.span, node, arguments, (object, concrete), cx)
+                    .map(|target| (target, Vec::new())),
                 StepTargetForm::Apply {
                     operation,
                     arguments,
@@ -3290,13 +3463,36 @@ impl<'c, 'a> Checker<'c, 'a> {
                 self.fault("concrete-object-has-alias-free-identity-segment");
                 continue;
             };
-            if let Some(target) = target {
+            if let Some((target, open)) = target {
+                // FR-146 "Claim extent": the receiver, result and parameter
+                // types, each `_` argument's abstract parameter domain, and
+                // the context population.
+                let mut root_types = vec![ValueType::Reference(object.id)];
+                root_types.extend(concrete.result().cloned());
+                root_types.extend(
+                    concrete
+                        .parameters()
+                        .iter()
+                        .map(|(_, value_type)| value_type.clone()),
+                );
+                root_types.extend(open);
+                let context = super::state_clause::population_of(
+                    std::slice::from_ref(self.concrete_side.model),
+                    object.id,
+                    types,
+                );
                 steps.push((
                     index,
                     StepRow {
                         class: StepClass::Operation(key.clone()),
                         target,
                         spelling: format!("{owner}::{}", concrete.name()),
+                        roots: Some(RowRoots {
+                            operation: (declaring, concrete.name().to_owned()),
+                            types: root_types,
+                            context,
+                            name_span: source.span,
+                        }),
                     },
                 ));
             }
@@ -3497,7 +3693,7 @@ impl<'c, 'a> Checker<'c, 'a> {
         (object, concrete): (&ObjectType, &crate::model::operation::OperationDeclaration),
         abstract_types: &[ObjectType],
         cx: &mut CheckContext<'a, ClauseDeclarations<'a>>,
-    ) -> Option<StepTarget> {
+    ) -> Option<(StepTarget, Vec<ValueType>)> {
         let types = self.types();
         let (target_type, declaring, abstract_operation) =
             self.operation_named(operation, abstract_types, None)?;
@@ -3540,9 +3736,13 @@ impl<'c, 'a> Checker<'c, 'a> {
         };
         complete &= receiver.is_some();
         let mut checked = Vec::new();
+        let mut open = Vec::new();
         for (argument, (_, declared)) in arguments[1..].iter().zip(parameters) {
             match argument {
-                ArgumentForm::Open { .. } => checked.push(None),
+                ArgumentForm::Open { .. } => {
+                    checked.push(None);
+                    open.push(lift(&self.lifting, declared));
+                }
                 ArgumentForm::Expression(expression) => {
                     let required = lift(&self.lifting, declared);
                     match self.check_row(expression, &required, context(&context_parameters), cx) {
@@ -3569,12 +3769,15 @@ impl<'c, 'a> Checker<'c, 'a> {
             _ => false,
         };
         let receiver = receiver?;
-        complete.then_some(StepTarget::Abstract {
-            operation: key,
-            receiver,
-            arguments: checked,
-            binds_result,
-        })
+        complete.then_some((
+            StepTarget::Abstract {
+                operation: key,
+                receiver,
+                arguments: checked,
+                binds_result,
+            },
+            open,
+        ))
     }
 
     /// FR-137: the rows of `side`, each constraint once, in source order.

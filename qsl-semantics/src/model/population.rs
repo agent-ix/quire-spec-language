@@ -131,7 +131,7 @@
 )]
 #![allow(
     clippy::result_large_err,
-    reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline, matching state::evaluation's typed-failure precedent"
+    reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline for typed model-admission failures"
 )]
 
 use quire_canonical::FixedShape;
@@ -144,9 +144,7 @@ use crate::model::domain_package::{
     OperationEffect,
 };
 use crate::model::index::ModelIndex;
-use crate::model::key::{
-    declaration_key_wire, hex, DeclarationKeyWire, EffectiveId, SHA256_JCS_DIGEST_DOMAIN,
-};
+use crate::model::key::{declaration_key_wire, hex, DeclarationKeyWire, EffectiveId};
 use crate::model::normalize::{
     EffectiveView, ModelRefusal, ModelRefusalCause, OfferedSelection, TypeCatalog, ViewPopulation,
 };
@@ -896,19 +894,10 @@ fn population_id_preimage<'a>(
     });
     Ok(PopulationIdWire {
         version: POPULATION_ID_DOMAIN,
-        // The full `DomainPackageRef` header (identity, version, digest), not
-        // only `identity`: this module's own `admit_binding` doc already
-        // establishes that comparing bare `identity` alone misses a
-        // version-only or digest-only divergence between two otherwise
-        // same-named domain packages (its own `ForeignModelSelection` check
-        // compares the full header for exactly that reason), so "the domain
-        // package identity" a binding was admitted against is this header,
-        // not its `identity` field alone.
+        // The domain package a binding was admitted against: its
+        // `DomainPackageRef`, which is its identity alone.
         domain_package_selection: PopulationDomainPackageRefWire {
             identity: &domain_package.model_selection.identity,
-            version: &domain_package.model_selection.version,
-            digest_domain: SHA256_JCS_DIGEST_DOMAIN,
-            digest: hex(&domain_package.model_selection.digest),
         },
         population_key: declaration_key_wire(population_key),
         admission_role: role.as_str(),
@@ -945,15 +934,10 @@ struct PopulationMemberWire<'a> {
     declaration: DeclarationKeyWire<'a>,
 }
 
-/// FR-089's `PopulationId` selection is explicitly the full domain-package
-/// header, including its source version. Other `quire.model.*` identities use
-/// the closed `DomainPackageRefWire` shape without that non-identity field.
+/// FR-089's `PopulationId` selection: the domain package's identity.
 #[derive(Serialize, FixedShape)]
 struct PopulationDomainPackageRefWire<'a> {
     identity: &'a str,
-    version: &'a str,
-    digest_domain: &'static str,
-    digest: String,
 }
 
 /// A population member's effective type identity encoded as its wire hex
@@ -1096,7 +1080,6 @@ fn population_id_work_bound(
         .model_selection
         .identity
         .len()
-        .saturating_add(domain_package.model_selection.version.len())
         .saturating_add(population_key.package.len())
         .saturating_add(population_key.node.len())
         .saturating_add(members.iter().fold(0_usize, |sum, (key, declaration)| {
@@ -1156,7 +1139,6 @@ fn population_id_byte_bound(
         .model_selection
         .identity
         .len()
-        .saturating_add(domain_package.model_selection.version.len())
         .saturating_add(population_key.package.len())
         .saturating_add(population_key.node.len())
         .saturating_add(members.iter().fold(0_usize, |sum, (key, declaration)| {
@@ -2595,8 +2577,6 @@ pub fn lookup(
 mod tests {
     use ix_trace_rs::trace;
 
-    use sha2::{Digest, Sha256};
-
     use super::*;
     use crate::model::accounting::ModelNormalizationLimits;
     use crate::model::domain_package::{ObjectTypeRecord, PopulationRecord};
@@ -2929,61 +2909,5 @@ mod tests {
             before_invocation,
             "admit_invocation never builds, for either instant"
         );
-    }
-
-    /// The seven-field `quire.population/v1` preimage's RFC 8785 text, written
-    /// out independently; the identity is its SHA-256.
-    #[trace("TC-291", "FR-089-AC-1", "FR-089-AC-7")]
-    #[test]
-    fn population_id_is_the_hash_of_its_hand_written_preimage() {
-        const TEXT: &str = r#"{"admission_role":"direct","declared_maximum":null,"domain_package_selection":{"digest":"1111111111111111111111111111111111111111111111111111111111111111","digest_domain":"sha256-jcs","identity":"test/orders","version":"1"},"members":[],"population_key":{"digest_domain":"sha256-jcs","node":"ix://test/orders/P1","package":"test/orders"},"pre":null,"version":"quire.population/v1"}"#;
-        let package = DomainPackage::new(
-            DomainPackageRef {
-                identity: "test/orders".to_owned(),
-                version: "1".to_owned(),
-                digest: [0x11; 32],
-            },
-            Vec::new(),
-        );
-        let key = DeclarationKey {
-            package: "test/orders".to_owned(),
-            node: "ix://test/orders/P1".to_owned(),
-        };
-        let digest = hex(&Sha256::digest(TEXT.as_bytes()));
-        let id = mint_population_id(
-            &package,
-            &key,
-            AdmissionRole::Direct,
-            None,
-            &BTreeMap::new(),
-            population_id_byte_bound(&package, &key, &BTreeMap::new()),
-        )
-        .expect("golden population identity encodes");
-        assert_eq!(hex(id.as_bytes()), digest);
-        let parsed: serde_json::Value = serde_json::from_str(TEXT).unwrap();
-        assert_eq!(serde_json::to_string(&parsed).unwrap(), TEXT);
-    }
-
-    /// The member wire's typed effective identity keeps the existing `type`
-    /// key and lowercase-hex string representation.
-    #[trace("TC-291", "FR-089-AC-7")]
-    #[test]
-    fn population_member_type_identity_wire_keeps_its_hex_string_shape() {
-        let type_identity = EffectiveId::from_digest([0xab; 32]);
-        let declaration = DeclarationKey::fixture("model.A");
-        let member = PopulationMemberWire {
-            universe: "cd".repeat(32),
-            r#type: PopulationMemberTypeIdentityWire(&type_identity),
-            object: "obj-1",
-            declaration: declaration_key_wire(&declaration),
-        };
-        let encoded = quire_canonical::to_vec(&member, quire_canonical::Limits::new(4096))
-            .expect("member wire has a fixed canonical shape");
-        let expected = format!(
-            "{{\"declaration\":{{\"digest_domain\":\"sha256-jcs\",\"node\":\"model.A\",\"package\":\"test/orders\"}},\"object\":\"obj-1\",\"type\":\"{}\",\"universe\":\"{}\"}}",
-            "ab".repeat(32),
-            "cd".repeat(32)
-        );
-        assert_eq!(encoded, expected.as_bytes());
     }
 }

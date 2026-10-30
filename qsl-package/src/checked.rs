@@ -894,10 +894,10 @@ mod tests {
     #[test]
     fn package_id_is_the_hash_of_its_hand_written_preimage() {
         use sha2::{Digest as _, Sha256};
-        const TEXT: &str = r#"{"definition_selections":[],"dependency_selections":[],"edition":{"definition":{"authority":"pkg","identity":"edition-def"},"role":"edition"},"identity_projection":[{"body":{"term":"literal","type":{"digest":"afbb1f4913f26cb385723382e760adb9d35629d8b46d83ff73bb33b0caf50768","domain":"quire.checked-semantic-node/v1"},"value":true,"value_kind":"boolean"},"declaration":{"qualified_name":["R"]},"dependencies":[],"node_id":{"digest":"afbb1f4913f26cb385723382e760adb9d35629d8b46d83ff73bb33b0caf50768","domain":"quire.checked-semantic-node/v1"},"node_tag":"scalar_type","schema_version":"quire.checked-semantic-graph/v2","semantic_form":"boolean","semantic_type":{"digest":"afbb1f4913f26cb385723382e760adb9d35629d8b46d83ff73bb33b0caf50768","domain":"quire.checked-semantic-node/v1"}}],"model_selections":[],"profile_selections":[],"required_features":[],"version":"quire.checked-package-id/v2"}"#;
+        const TEXT: &str = r#"{"definition_selections":[],"dependency_selections":[],"edition":{"definition":{"authority":"pkg","identity":"edition-def"},"role":"edition"},"identity_projection":[{"body":{"term":"literal","type":{"digest":"afbb1f4913f26cb385723382e760adb9d35629d8b46d83ff73bb33b0caf50768","domain":"quire.checked-semantic-node/v1"},"value":true,"value_kind":"boolean"},"declaration":{"qualified_name":["R"]},"dependencies":[],"node_id":{"digest":"afbb1f4913f26cb385723382e760adb9d35629d8b46d83ff73bb33b0caf50768","domain":"quire.checked-semantic-node/v1"},"node_tag":"scalar_type","schema_version":"quire.checked-semantic-graph/v2","semantic_form":"boolean","semantic_type":{"digest":"afbb1f4913f26cb385723382e760adb9d35629d8b46d83ff73bb33b0caf50768","domain":"quire.checked-semantic-node/v1"}}],"profile_selections":[],"required_features":[],"version":"quire.checked-package-id/v2"}"#;
         let digest = format!("{:x}", Sha256::digest(TEXT.as_bytes()));
         let value: serde_json::Value = serde_json::from_str(TEXT).unwrap();
-        // The wire preimage holds the seven selections only; the hashed
+        // The wire preimage holds the six selections only; the hashed
         // `identity_projection` is derived from the graph nodes.
         let mut selections = value.clone();
         selections
@@ -915,7 +915,6 @@ mod tests {
             edition: &preimage.edition,
             profile_selections: &preimage.profile_selections,
             definition_selections: &preimage.definition_selections,
-            model_selections: &preimage.model_selections,
             required_features: &preimage.required_features,
             dependency_selections: &preimage.dependency_selections,
             identity_projection: &nodes,

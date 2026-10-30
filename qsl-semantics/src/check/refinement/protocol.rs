@@ -993,7 +993,7 @@ impl<'a> Checker<'_, 'a> {
                                 &abstract_types,
                                 cx,
                             ) {
-                                Some(target) => target,
+                                Some((target, _)) => target,
                                 None => continue,
                             }
                         }
@@ -1017,6 +1017,7 @@ impl<'a> Checker<'_, 'a> {
                     class: entry.class.clone(),
                     target,
                     spelling: entry.spelling(&protocol),
+                    roots: None,
                 },
             ));
         }

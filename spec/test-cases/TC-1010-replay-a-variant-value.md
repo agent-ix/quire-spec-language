@@ -23,6 +23,6 @@ Verify the observation form of a variant value. Scope: FR-360-AC-9, FR-360-AC-10
 
 - Step 1 admits every value, equal to the literal of its case.
 - Step 2 refuses with the stated `invalid_runtime_input` cause at the nested path, the first defect in item 9's order.
-- Step 3 returns the same typed observation and digest, and the witness decodes to the same value.
+- Step 3 returns the same typed observation, and the witness decodes to the same value.
 - Step 4 finds equal keys and equal values.
 - Assertions compare typed codes, causes, keys and paths.

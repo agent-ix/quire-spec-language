@@ -24,6 +24,8 @@ use qsl_eval::simulation::{
 };
 use qsl_foundation::bound::DomainKey;
 use qsl_foundation::diagnostic::Code;
+use qsl_foundation::digest::WireNodeId;
+use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::MemoryModelName;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
@@ -33,13 +35,15 @@ use qsl_replay::{
     ProofBasis, ProtocolCertificateRequest, ProtocolTraceSubject, ReplayLimits, ReplayRefusal,
     ResultLabel, TemporalCounterexample, TerminalValue, UndefinedLocus,
 };
-use qsl_route::deadlock::{protocol_deadlock_freedom_items, ProtocolTemporalItem};
+use qsl_route::deadlock::ProtocolTemporalItem;
+use qsl_route::request::ItemKind;
 use qsl_semantics::model::observation::DocumentRef;
 use quire_canonical::{Encode, Error, Sink, Writer};
 use quire_exact::Cancel;
 use serde_json::{json, Value as Json};
 
 use crate::counter::Letters;
+use crate::derived_request::{derived_subjects, protocol_request};
 use crate::fill::{
     attempt, compiled, contracts, document, fill_unit, instance, json_of, package, package_id,
     projections, protocol, reachable, sc_system, subject, unit_text, universe, v, Documents,
@@ -159,7 +163,7 @@ impl Case {
                 max_messages: None,
                 max_live_instances: None,
             },
-            &envelope_at(&unit, recorded_id, payload, node, occurrence),
+            &envelope_at(recorded_id, payload, node, occurrence),
             &NO_ATOMS,
             ReplayLimits::default(),
         )
@@ -1070,8 +1074,11 @@ fn a_protocol_deadlock_names_its_blocked_threads_and_settles_refuted() {
         occurrence: &occurrence,
         subject: &"Fill",
         protocol,
+        models: &[],
+        non_atomic_access: false,
     }];
-    assert!(protocol_deadlock_freedom_items(&items).is_empty());
+    let written = protocol_request(&items);
+    assert!(derived_subjects(&written, ItemKind::DeadlockFreedom).is_empty());
 }
 
 /// Part of FR-211-AC-5 (TC-656, ADR-027 PD-4): each channel wait cause is reported
@@ -1261,14 +1268,19 @@ fn the_repaired_fill_is_deadlock_free_over_ten_states() {
     );
     let protocol = case.checked.graph().protocol("Fill").expect("Fill");
     let occurrence = deadlock_freedom_clause(&package_id(&case.body)).1;
-    let item = ProtocolTemporalItem {
-        occurrence: &occurrence,
+    let other = OccurrenceKey::generated(WireNodeId::from_digest([9; 32]));
+    let item = |occurrence| ProtocolTemporalItem {
+        occurrence,
         subject: &"Fill",
         protocol,
+        models: &[],
+        non_atomic_access: false,
     };
-    let derived = protocol_deadlock_freedom_items(&[item, item]);
-    assert_eq!(derived.len(), 1);
-    assert_eq!(*derived[0].subject(), "Fill");
+    let written = protocol_request(&[item(&occurrence), item(&other)]);
+    assert_eq!(
+        derived_subjects(&written, ItemKind::DeadlockFreedom),
+        ["Fill"]
+    );
 }
 
 /// FR-215-AC-4 (TC-660): a protocol with an `event` node whose record type

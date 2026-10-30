@@ -13,7 +13,7 @@ use qsl_foundation::bound::DomainKind;
 use qsl_foundation::ReductionKind;
 use qsl_route::{
     descriptor_from_manifest, BackendDescriptor, Candidate, FairnessKindsMember, FairnessLabel,
-    ManifestDigest, ManifestMembers, Mode, ProviderOrigin, RegistrationRefusal,
+    ManifestMembers, Mode, ProviderOrigin, RegistrationRefusal,
 };
 use qsl_semantics::check::Capability;
 
@@ -42,21 +42,16 @@ pub const REDUCTIONS: [&str; 1] = [ReductionKind::Symmetry.as_str()];
 /// EN-6's routed descriptor, converted from [`ADVERTISED`], [`DOMAINS`],
 /// [`FAIRNESS_KINDS`] and [`REDUCTIONS`] by FR-288's conversion, and
 /// marked as deciding a `time dense` subject, so an item over one routes to
-/// EN-6 alone (QSL FR-243, FR-430). `origin`
-/// and `manifest_digest` are the host's facts (ADR-029 PV-1).
+/// EN-6 alone (QSL FR-243, FR-430). `origin` is the host's fact (ADR-029 PV-1).
 ///
 /// # Errors
 ///
 /// Only if the registry's admission rules refuse this module's own data,
 /// which the tests of this module rule out.
-pub fn descriptor(
-    origin: ProviderOrigin,
-    manifest_digest: ManifestDigest,
-) -> Result<BackendDescriptor, RegistrationRefusal> {
+pub fn descriptor(origin: ProviderOrigin) -> Result<BackendDescriptor, RegistrationRefusal> {
     descriptor_from_manifest(
         Candidate::new(qsl_foundation::BackendId::new(BACKEND_ID)),
         origin,
-        manifest_digest,
         ADVERTISED,
         ManifestMembers {
             domains: Some(&DOMAINS),
@@ -66,5 +61,5 @@ pub fn descriptor(
             reductions: Some(&REDUCTIONS),
         },
     )
-    .map(BackendDescriptor::with_dense_time)
+    .map(BackendDescriptor::with_timed)
 }

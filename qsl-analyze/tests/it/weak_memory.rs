@@ -42,8 +42,8 @@ use serde_json::{json, Value as Json};
 
 use crate::fill::{reachable, Reached};
 use crate::litmus::{
-    attempt, contracts, core, document, field, key, package, protocol, protocol_with, sb_run,
-    sb_unit, unit_text, Documents, NO_BOTH_ZERO,
+    attempt, contracts, core, document, field, key, package, protocol, protocol_profiled_package,
+    protocol_with, sb_run, sb_unit, unit_text_with, Documents, NO_BOTH_ZERO, PROTOCOL_PROFILE,
 };
 use crate::model_settle::{envelope_at, request};
 
@@ -64,6 +64,8 @@ pub(crate) struct Case {
     letters: &'static dyn ModelLetters,
     /// The cell `SB`'s `over` input is bound to, when not the core.
     over: Option<ModelInstance>,
+    /// The further profile lines of the unit's header.
+    profiles: &'static str,
 }
 
 impl Case {
@@ -86,6 +88,17 @@ impl Case {
             checked: package(body),
             letters,
             over: None,
+            profiles: "",
+        }
+    }
+
+    /// [`Self::with_letters`] with the protocol profile selected, so `SB`'s
+    /// clause has its node.
+    pub(crate) fn protocol_profiled(body: &str, letters: &'static dyn ModelLetters) -> Self {
+        Self {
+            checked: protocol_profiled_package(body),
+            profiles: PROTOCOL_PROFILE,
+            ..Self::with_letters(body, letters)
         }
     }
 
@@ -112,6 +125,11 @@ impl Case {
         let mut case = Self::over_object(body, "cells", object, false);
         case.documents = Documents::with_cells(&["x", "y", "z"]);
         case
+    }
+
+    /// The unit's checked package.
+    pub(crate) fn checked(&self) -> &CheckedPackage {
+        &self.checked
     }
 
     pub(crate) fn subject(&self, selection: &[MemorySelection]) -> ProtocolSubject<'_> {
@@ -311,13 +329,13 @@ impl Case {
         selection: &[MemorySelection],
         payload: TemporalCounterexample<ProtocolTransition>,
     ) -> Result<ModelTraceReplayResult, ReplayRefusal> {
-        let unit = unit_text(&self.body).into_bytes();
+        let unit = unit_text_with(self.profiles, &self.body).into_bytes();
         let id = self.package_id();
         let (node, occurrence) = qsl_replay::race_freedom_clause(&id);
         replay_protocol_trace(
             request(&document(), self.documents.snapshots.iter(), &unit, id),
             &self.trace_subject(selection),
-            &envelope_at(&unit, id, payload, node, occurrence),
+            &envelope_at(id, payload, node, occurrence),
             self.letters,
             ReplayLimits::default(),
         )
@@ -328,7 +346,7 @@ impl Case {
         compile_package(
             SourceIdentity::new("agent-ix", "litmus", "git", "1"),
             "litmus.native",
-            unit_text(&self.body).as_bytes(),
+            unit_text_with(self.profiles, &self.body).as_bytes(),
             [document().as_slice()],
             &DependencyInput::default(),
             qsl_replay::StageLimits::default(),
@@ -366,7 +384,7 @@ impl Case {
         selection: &[MemorySelection],
         payload: TemporalCounterexample<ProtocolTransition>,
     ) -> Result<ModelTraceReplayResult, ReplayRefusal> {
-        let unit = unit_text(&self.body).into_bytes();
+        let unit = unit_text_with(self.profiles, &self.body).into_bytes();
         let id = self.package_id();
         let node = &self.checked.graph().temporal_clauses()[0];
         let clause_node = WireNodeId::from_digest(*node.identity().as_bytes());
@@ -374,7 +392,7 @@ impl Case {
         replay_protocol_trace(
             request(&document(), self.documents.snapshots.iter(), &unit, id),
             &self.trace_subject(selection),
-            &envelope_at(&unit, id, payload, clause_node, occurrence),
+            &envelope_at(id, payload, clause_node, occurrence),
             self.letters,
             ReplayLimits::default(),
         )

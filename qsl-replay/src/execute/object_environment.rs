@@ -6,7 +6,6 @@
 use std::collections::BTreeSet;
 
 use qsl_foundation::diagnostic::Code;
-use qsl_foundation::digest::DigestDomain;
 use qsl_foundation::source::provenance::RawSourceRef;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::observation::{
@@ -191,19 +190,13 @@ pub(super) fn admit(
         return Err(fault("environment-admitted-only-when-named"));
     };
     let package = compiled.checked.package();
-    let provision = request
-        .byte_provision()
-        .entries()
-        .filter(|(digest, _)| digest.domain() == DigestDomain::Sha256Jcs)
-        .map(|(digest, bytes)| (*digest.as_bytes(), bytes.to_vec()))
-        .collect();
+    let provision = request.byte_provision().snapshots();
     let labels = named.identity();
     let selected = DocumentRef {
         authority: labels.authority.clone(),
         identity: labels.identity.clone(),
         revision_namespace: labels.revision_namespace.clone(),
         revision: labels.revision.clone(),
-        digest: *named.digest().as_bytes(),
     };
     let held: Vec<ObjectReference> = references
         .iter()
@@ -222,17 +215,17 @@ pub(super) fn admit(
     .map_err(environment_refusal)?;
 
     let unit = request
-        .source_digests()
+        .sources()
         .first()
         .ok_or_else(|| fault("decoded-request-names-a-source"))?;
-    let source = RawSourceRef::new(unit.authority(), unit.identity(), unit.digest())
+    let source = RawSourceRef::new(unit.authority(), unit.identity())
         .map_err(|_| fault("package-source-names-a-source-document"))?;
     let key = BundleKey {
         source,
         clause: function,
-        documents: vec![selected.digest],
+        documents: vec![selected.clone()],
         role: ObservationRole::Current,
-        origin: ObservationOrigin::Document(selected.digest),
+        origin: ObservationOrigin::Document(selected.clone()),
     };
     let bundle = ResolveBundle::over(&environment, &key, package.graph().scope().types())
         .map_err(environment_refusal)?;

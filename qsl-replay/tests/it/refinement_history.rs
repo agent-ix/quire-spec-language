@@ -549,21 +549,15 @@ fn none_initialises_an_option_field_and_nothing_else() {
     assert_eq!(found[0].at, "none");
 }
 
-/// TC-551 step 2: a refinement with a history field writes no
-/// `StepSimulationRecord`, since `map` is no function of the concrete step.
-#[trace("TC-551")]
+/// FR-146-AC-2, the history case: a refinement with a history field writes
+/// no `StepSimulationRecord`, since `map` is no function of the concrete
+/// step.
+#[trace("TC-551", "FR-146-AC-2")]
 #[test]
 fn a_history_field_writes_no_simulation_record() {
     let unit = Unit::register();
     let world = unit.world(&register_history(LAST));
-    let graph = world.package().graph();
-    let records = qsl_semantics::check::step_simulation_records(
-        quire_exact::NodeKey::from_digest([7; 32]),
-        world.refinement(),
-        graph.state_clauses(),
-    )
-    .expect("the rows fit a step row reference");
-    assert_eq!(records, []);
+    assert_eq!(world.refinement().step_simulations(), []);
 }
 
 /// FR-138-AC-8: `writes` leaves its type on `write(r, 1)` and the `prev` row

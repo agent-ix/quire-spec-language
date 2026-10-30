@@ -61,7 +61,7 @@ loop is never reported as a violation.
   - `Lasso::Model{subject, initial, prefix: Vec<ModelStep>, loop:
     Vec<ModelStep>}`: a model subject (FR-125), the index of an initial
     state, and steps as FR-128 states them (transition identity and
-    post-state digest).
+    post-state).
 - The `over` binding and a `Meter`.
 
 ## Outputs
@@ -154,7 +154,7 @@ loop is never reported as a violation.
 - A protocol-subject `Lasso::Model` is the lasso of FR-217: the evaluator
   SHALL rebuild each position by re-executing its step through
   `ProtocolSystem` (ADR-027 TS-1, PX-2) with FR-101 `replay` from the named initial
-  state, steps being protocol transition identities with post-state digests,
+  state, steps being protocol transition identities with post-states,
   and SHALL refuse `invalid_runtime_input`/`invalid-value` when the loop's
   last post-state is not its entry state or a step is not enabled. A caller
   builds this lasso through FR-217's replay entry; the evaluator's own
@@ -203,7 +203,7 @@ loop is never reported as a violation.
   [FR-123](FR-123-check-fairness-and-interval-operators-of-infinite-trace-clauses.md),
   [FR-125](FR-125-read-a-model-subject-s-behaviours-as-temporal-traces.md),
   [FR-120](FR-120-simulate-a-checked-package-s-state-family.md),
-  [FR-101](FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md).
+  [FR-101](FR-101-explore-finite-models-with-canonical-order-and-the-qspec-sampler.md).
 - QSpec FR-161-AC-4 and AC-5 (lasso meaning; fairness filters traces
   before evaluation), FR-091, FR-362 (the missing fairness premise).
 

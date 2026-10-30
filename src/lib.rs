@@ -26,7 +26,6 @@ mod parser;
 pub mod population_fixtures;
 pub mod protocol_artifact;
 pub mod runtime;
-pub mod state;
 pub mod syntax;
 pub mod temporal;
 

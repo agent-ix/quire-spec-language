@@ -47,10 +47,7 @@ fn rule<'a>(models: &'a [NativeModel], expression: &str, kind: ClauseKind) -> Na
             format!("post Rule on M::Node::step {{ {expression} }}")
         }
     };
-    let text = format!(
-        "{HEADER}model M = \"example/rule-tests\" version \"1\" digest \"{}\";\n{clause}\n",
-        models[0].digest()
-    );
+    let text = format!("{HEADER}model M = \"example/rule-tests\";\n{clause}\n");
     NativePackage::new(
         checked(
             &text,
@@ -192,10 +189,7 @@ fn unused_selected_types_and_nested_wrappers_contribute_without_spurious_carrier
         })];
         let package = rule(&models, "true", ClauseKind::Invariant);
         assert_features(&package, &added, "unused selected declaration");
-        assert_ne!(
-            package.canonical_identity(),
-            original_package.canonical_identity()
-        );
+        assert_ne!(package.bytes(), original_package.bytes());
         let wire: Value = serde_json::from_slice(package.bytes()).unwrap();
         assert_eq!(
             wire["models"][0]["artifact"],
@@ -246,8 +240,7 @@ fn repeated_aliases_preserve_source_order_and_unselected_models_stay_out_of_clos
     let normal_wire: Value = serde_json::from_slice(normal.bytes()).unwrap();
     assert_eq!(normal_wire["models"].as_array().unwrap().len(), 1);
     let text = format!(
-        "{HEADER}model Z = \"example/rule-tests\" version \"1\" digest \"{digest}\";\nmodel A = \"example/rule-tests\" version \"1\" digest \"{digest}\";\ninvariant Rule on A::Node at current {{ true }}\n",
-        digest = models[0].digest(),
+        "{HEADER}model Z = \"example/rule-tests\";\nmodel A = \"example/rule-tests\";\ninvariant Rule on A::Node at current {{ true }}\n",
     );
     let package = NativePackage::new(
         checked(
@@ -276,7 +269,6 @@ fn repeated_aliases_preserve_source_order_and_unselected_models_stay_out_of_clos
             model["owner"],
             json!({"package":"example/rule-tests","requirement":"RuleModel","revision":1})
         );
-        assert_eq!(model["digest"], models[0].digest().to_string());
         assert_eq!(
             model["artifact"],
             std::str::from_utf8(models[0].artifact_bytes()).unwrap()

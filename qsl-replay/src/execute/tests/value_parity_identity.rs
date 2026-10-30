@@ -6,6 +6,7 @@
 use super::*;
 use crate::witness::{NoPayload, WitnessEnvelope, WitnessPacket};
 use crate::{ProfileSelection, TracePosition};
+use qsl_foundation::ByteDigest;
 use quire_canonical::Limits;
 use quire_exact::{IntegerInterval, NodeKey, Origin, Role};
 use quire_semantic_value::supplied_stop::{SuppliedLimitKind, SuppliedLimits};
@@ -558,7 +559,6 @@ fn tc_1252_the_input_arm_packet_round_trips_and_replays() {
                 Some(located.package_id.domain().as_str().to_owned()),
                 located.package_id.hex(),
             )),
-            source_digests: Some(wire.source_digests.clone()),
             profile_selections: Some(Vec::<ProfileSelection>::new()),
             run_limits: Some(wire.accounting_limits),
             declared_domains: Some(Vec::new()),
@@ -572,7 +572,7 @@ fn tc_1252_the_input_arm_packet_round_trips_and_replays() {
             WitnessEnvelope::reconstruct(packet, ReplayLimits::default()).expect("admitted");
         assert!(envelope.declared_domains().is_empty());
         assert_eq!(envelope.trace_position(), None);
-        // Every one of the thirteen members round-trips exactly.
+        // Every one of the twelve members round-trips exactly.
         let back = WitnessEnvelope::reconstruct(envelope.to_packet(), ReplayLimits::default())
             .expect("the round trip is admitted")
             .to_packet();
@@ -581,7 +581,6 @@ fn tc_1252_the_input_arm_packet_round_trips_and_replays() {
         assert_eq!(back.clause_node, sent.clause_node);
         assert_eq!(back.replay_target.select(), sent.replay_target.select());
         assert_eq!(back.package_id, sent.package_id);
-        assert_eq!(back.source_digests, sent.source_digests);
         assert_eq!(back.profile_selections, sent.profile_selections);
         assert_eq!(back.run_limits, sent.run_limits);
         assert_eq!(back.declared_domains, sent.declared_domains);
@@ -597,11 +596,6 @@ fn tc_1252_the_input_arm_packet_round_trips_and_replays() {
             Some(envelope.package_id().domain().as_str().to_owned()),
             envelope.package_id().hex(),
         );
-        built.source_digests = envelope
-            .source_digests()
-            .iter()
-            .map(crate::RawSourceRef::to_wire)
-            .collect();
         built.profile_selections = envelope.profile_selections().to_vec();
         built.accounting_limits = envelope.run_limits();
         built.backend = envelope.backend().as_str().to_owned();
@@ -671,16 +665,11 @@ fn tc_1252_the_supplied_ceilings_bind_into_the_claim() {
 }
 
 /// Replace the request's one source with bytes no recompile admits, keeping
-/// its digest and byte provision consistent so the request still decodes.
+/// its byte provision consistent so the request still decodes.
 fn make_unrecompilable(wire: &mut ReplayRequestWire) {
     let bytes = b"this is not a unit";
-    let digest = source_digest(bytes);
-    wire.source_digests[0].5 = digest.hex();
-    wire.byte_provision = vec![(
-        Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-        digest.hex(),
-        bytes.to_vec(),
-    )];
+    let (authority, identity) = (wire.sources[0].0.clone(), wire.sources[0].1.clone());
+    wire.byte_provision = vec![(authority, identity, bytes.to_vec())];
 }
 
 fn quire_selection() -> ProfileSelection {

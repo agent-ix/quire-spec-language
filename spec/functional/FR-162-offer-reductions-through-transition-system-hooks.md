@@ -103,7 +103,7 @@ pub struct RetainedEdge {
 - **Second phase.** FR-126's SCC phase and fairness filter, and FR-153's
   annotated quotient, SHALL run on the retained edges.
 - **Limits.** `max_states` SHALL count stored product states, boundary
-  states included; the frontier SHALL hold canonical state keys' digests
+  states included; the frontier SHALL hold canonical state keys
   (ADR-014 TR-7). FR-126's limit map holds; `max_depth` is the search horizon, not a limit,
   and FR-160 settles a partial-order run that completes to it.
 - **Simulation unchanged.** `explore`, `sample`, `explore_model` and

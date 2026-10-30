@@ -572,6 +572,7 @@ fn c11_the_bound_is_part_of_the_collection_type() {
 }
 
 #[trace("QSpec-TC-189", "QSpec-FR-144-AC-2")]
+#[trace("TC-136", "FR-049-AC-3")]
 #[test]
 fn formed_occurrences_outside_the_element_type_refuse_at_their_index() {
     let set = integers(CollectionKind::Set, 3);

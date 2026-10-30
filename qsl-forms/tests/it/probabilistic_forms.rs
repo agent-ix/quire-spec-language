@@ -15,15 +15,14 @@ use qsl_foundation::{SourceIdentity, Span};
 
 const EVENT_POSITION: &str = "quire.temporal.event-position.false-extension/v1";
 
-/// The header selecting `profile`, with the model's `version` padded by
+/// The header selecting `profile`, with the model's identity padded by
 /// `padding` bytes so two profile identities of different length give the
 /// header the same byte length.
 fn header(profile: &str, padding: usize) -> String {
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile ev = \"{profile}\";\n\
-         model Service = \"example/service\" version \"1{}\" digest \
-         \"sha256-jcs:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n",
+         model Service = \"example/service{}\";\n",
         "v".repeat(padding)
     )
 }

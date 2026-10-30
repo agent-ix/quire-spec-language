@@ -795,8 +795,8 @@ observation contracts without taking over their authority.
 ### 2.2 Out of Scope
 
 The standard and E own temporal/protocol/message meaning; B owns PT02 protocol
-conformance and results; D owns configuration and the version-locked
-ecosystem integration; F owns concrete observation admission, replay and
+conformance and results; D owns configuration and the ecosystem
+integration; F owns concrete observation admission, replay and
 completeness; C owns engineering assurance. Spec artifacts own the domain
 model, quire-rs owns artifact extraction, and filament-core-data owns the
 Semantic IR lowering and reader; this compiler parses no artifact Markdown. This compiler does not execute
@@ -1266,7 +1266,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-359](functional/FR-359-carry-a-child-record-value-at-an-ancestor-typed-slot.md) | FR |
 | [FR-360](functional/FR-360-type-a-field-by-a-variant-type-through-intake-check-evaluation-and-replay.md) | FR |
 | [FR-361](functional/FR-361-gate-model-constructs-on-the-model-profile-selection.md) | FR |
-| [FR-362](functional/FR-362-bind-a-checked-unit-to-its-source-by-digest.md) | FR |
+| [FR-362](functional/FR-362-produce-the-checked-graph-and-the-type-report-from-one-source.md) | FR |
 | [FR-363](functional/FR-363-type-navigation-over-a-relationship-end.md) | FR |
 | [FR-364](functional/FR-364-carry-relationship-instances-in-an-observation-and-read-them-for-navigation.md) | FR |
 | [FR-365](functional/FR-365-reach-an-object-over-a-relationship-end-in-a-state-clause.md) | FR |
@@ -1290,6 +1290,9 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-401](functional/FR-401-host-the-evaluation-interface-in-the-quire-eval-leaf.md) | FR |
 | [FR-404](functional/FR-404-carry-the-call-s-plugin-replay-context-through-the-replay-facade.md) | FR |
 | [FR-486](functional/FR-486-supplied-admission-and-conversion-owner-allocation.md) | FR |
+| [FR-490](functional/FR-490-retire-the-legacy-mapped-extraction-surface.md) | FR |
+| [FR-491](functional/FR-491-evaluate-a-state-clause-through-the-replay-facade.md) | FR |
+| [FR-492](functional/FR-492-expose-the-refinement-simulation-query-through-the-replay-facade.md) | FR |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR |
 | [NFR-013](non-functional/NFR-013-isolate-native-ci-feature-artifacts.md) | NFR |
 | [NFR-015](non-functional/NFR-015-build-evaluator-crates-no-std-behind-a-default-std-feature.md) | NFR |

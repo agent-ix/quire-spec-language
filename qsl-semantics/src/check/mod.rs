@@ -113,12 +113,6 @@ pub(crate) mod imports;
 mod ir;
 mod layer;
 mod lowering;
-// FR-092/093/094's golden vectors, resolved from the specs' hand-written
-// preimages; the package emitter's and the evaluator's tests recompute the
-// keys through it, so only `test-support` exposes it.
-#[cfg(any(test, feature = "test-support"))]
-#[path = "lowering/spec_vectors.rs"]
-pub mod spec_vectors;
 // FR-091's dimension, unit and enum key vectors, recomputed from the spec's
 // stated preimage content.
 #[cfg(any(test, feature = "test-support"))]
@@ -225,8 +219,8 @@ pub use profile::{resolve_profiles, ProfileCause, ProfileRefusal};
 #[cfg(any(test, feature = "test-support"))]
 pub use family::DeclarationMetrics;
 pub use lowering::{
-    model_root_key, AdmittedModel, AuthoredBound, ForeignView, LockEvidence, ModelClause,
-    ModelRootKeyError, NominalNode, SemanticGraph, SemanticNode,
+    model_root_key, AdmittedModel, AuthoredBound, ForeignView, ModelClause, ModelRootKeyError,
+    NominalNode, SemanticGraph, SemanticNode,
 };
 pub use node_key::AbstractionTerm;
 pub use node_key::{
@@ -348,9 +342,7 @@ pub use state_clause::{
     AttemptDeclaration, CheckedOperationFrame, CheckedStateClause, ClauseOperation,
     OperationSelection, PopulationDomain, ProtocolClauseFamily, StateClauseDeclaration,
 };
-pub use step_simulation::{
-    step_row_refs, step_simulation_records, StepRowRefusal, StepSimulationEntry,
-};
+pub use step_simulation::StepSimulationEntry;
 pub use type_form::{I128Limit, IntegerOutsideI128, IntegerSite, TypeFormFault};
 // PR #300 review finding 4: `mint_type_declaration_identity` was `pub(super)`
 // in `identity` for the same reason: no consumer outside `check` minted an
@@ -417,12 +409,13 @@ pub use qsl_forms::{
 pub use refusal::{
     AliasKind, AmbiguousMember, AmbiguousQualified, ArmFault, ChannelEnd, CheckCause, CheckRefusal,
     CheckingLimitKind, CheckingStage, DispatchFunctionRole, DispatchLinkCause,
-    DispatchSubtypeFailure, ExecutionPointRefusal, IdentityForm, IdentityNode, IdentityObserving,
-    InvalidDispatchDeclaration, JoinFault, KeyFault, MeasureObligation, MemberCandidate,
-    NavigationBound, Obligation, ObservationReason, PredicateRole, ProtocolAnchorCause,
-    ProtocolConstruct, ProtocolReferenceCause, ProvedInterval, QualifiedCandidate, RelatedEnd,
-    ShadowedDeclaration, SlotKind, StageLimitCause, StateGraphCause, TaskSetDefect, TaskTimeMember,
-    TemporalCause, TimeUnitCause, TimedConstruct,
+    DispatchSubtypeFailure, ExcludedClauseForm, ExecutionPointRefusal, IdentityForm, IdentityNode,
+    IdentityObserving, InvalidDispatchDeclaration, JoinFault, KeyFault, MeasureObligation,
+    MemberCandidate, NavigationBound, Obligation, ObservationReason, PredicateRole,
+    ProtocolAnchorCause, ProtocolConstruct, ProtocolReferenceCause, ProvedInterval,
+    QualifiedCandidate, RelatedEnd, ShadowedDeclaration, SlotKind, StageLimitCause,
+    StateGraphCause, TaskSetDefect, TaskTimeMember, TemporalCause, TimeUnitCause, TimedConstruct,
+    TimedOmission, UnwrittenTimedMember,
 };
 pub use state_graph_claim::{
     CheckedPredicateBody, CheckedStateGraphClaim, CheckedStatePredicate, OverParameter,
@@ -441,9 +434,10 @@ pub use temporal_clause::{
 };
 pub use timed_model::{
     CheckedTimedPredicate, ClockConstraint, ClockField, ClockGuard, ClockId, ClockOp,
-    ClockParameterRange, ClockReset, ClockResets, CollectionWrite, ConvexPart, ElementBinding,
-    QuantifiedFamily, SlotRef, SlotSelection, StateAlternative, TimeInvariant, TimedModel, Urgency,
-    Written,
+    ClockParameterRange, ClockReset, ClockResets, CollectionWrite, ConstraintNodes,
+    ConstraintTargetNodes, ConvexPart, ElementBinding, GuardNodes, InvariantNodes, PartNodes,
+    QuantifiedFamily, ResetNodes, ResetTargetNodes, SlotRef, SlotSelection, StateAlternative,
+    TimeInvariant, TimedClauseNodes, TimedModel, Urgency, Written,
 };
 
 /// A checked function.
@@ -1128,9 +1122,7 @@ impl PackageDeclarations {
         if !self.timed_forms.is_empty() {
             let required = crate::value::layer::HeaderLayer::TemporalComplete;
             let selected = self.header_layers.clone();
-            let admitted = crate::value::definition::DefinitionLock::pinned()
-                .closure(&selected)
-                .contains(&required);
+            let admitted = crate::value::layer::HeaderLayer::closure(&selected).contains(&required);
             let units = time_units::TimeUnits::new(
                 &self.units,
                 self.nominal_spans.keys().copied(),
@@ -1459,9 +1451,7 @@ impl PackageDeclarations {
         if !self.task_set_forms.is_empty() {
             let required = crate::value::layer::HeaderLayer::TemporalComplete;
             let selected = self.header_layers.clone();
-            let admitted = crate::value::definition::DefinitionLock::pinned()
-                .closure(&selected)
-                .contains(&required);
+            let admitted = crate::value::layer::HeaderLayer::closure(&selected).contains(&required);
             task_sets_admitted = admitted;
             if admitted {
                 let units = time_units::TimeUnits::new(
@@ -1617,8 +1607,7 @@ impl PackageDeclarations {
                 .iter()
                 .map(|protocol| protocol.name.name.as_str()),
         );
-        let model_selected = crate::value::definition::DefinitionLock::pinned()
-            .closure(&self.header_layers)
+        let model_selected = crate::value::layer::HeaderLayer::closure(&self.header_layers)
             .contains(&crate::value::layer::HeaderLayer::ModelComplete);
         let mut model_context_calls = Vec::new();
         if model_selected {
@@ -1917,7 +1906,7 @@ impl PackageDeclarations {
             .map(|function| function.parameter_spans().map(<[_]>::to_vec))
             .collect();
         let owner = node_key::SourceOwner::from(&source);
-        let lock_evidence = self.lock_evidence;
+        let protocol_profile = self.protocol_profile;
         let header_layers = self.header_layers;
         let models = self.models;
         let model_inputs = self.model_inputs;
@@ -1949,7 +1938,7 @@ impl PackageDeclarations {
             .iter()
             .map(|model| model.selection().clone())
             .collect();
-        model_selections.sort_by(|a, b| (&a.identity, &a.version).cmp(&(&b.identity, &b.version)));
+        model_selections.sort_by(|a, b| a.identity.cmp(&b.identity));
         // FR-094 (ADR-013 O-01): a check selects one version of each domain
         // package identity, so a model owner names one declaration.
         let mut selected = std::collections::BTreeSet::new();
@@ -2111,7 +2100,7 @@ impl PackageDeclarations {
                 &owner,
                 &models,
                 scope.types().units().clone(),
-                &lock_evidence,
+                protocol_profile.as_ref(),
                 0,
                 &mut sealing_occurrences,
                 &mut sealing_meter,
@@ -2537,8 +2526,7 @@ impl PackageDeclarations {
             let checking = timed_model::Checking {
                 declarations: &declarations,
                 state_clauses: &state_clause_forms,
-                complete_value: crate::value::definition::DefinitionLock::pinned()
-                    .closure(&header_layers)
+                complete_value: crate::value::layer::HeaderLayer::closure(&header_layers)
                     .contains(&crate::value::layer::HeaderLayer::ValueComplete),
                 presence_places: &[],
             };
@@ -2561,8 +2549,15 @@ impl PackageDeclarations {
         // FR-230: each `urgent when` predicate S3 lowers is located at its own
         // site, so its nodes' occurrences resolve.
         for model in &mut timed_models {
-            for (_, _, predicate) in model.urgency_predicates_mut() {
-                site_spans.insert(predicate.site.clone(), predicate.spans.clone());
+            for (_, _, predicate) in model.urgency_predicates() {
+                for (site, spans) in &predicate.sites {
+                    site_spans.insert(site.clone(), spans.clone());
+                }
+            }
+            // FR-230, QSpec FR-322 "Clause nodes": so is each guard part's
+            // and time invariant's predicate.
+            for (site, spans) in model.predicate_sites() {
+                site_spans.insert(site.clone(), spans.clone());
             }
         }
         // FR-135 to FR-137: each `refinement` declaration, its rows typed as
@@ -2829,8 +2824,8 @@ impl PackageDeclarations {
         let mut protocol_bindings = Vec::with_capacity(self.protocols.len());
         // The selected protocol profile, which the structural refusals of a
         // protocol's control tree name (FR-218, FR-381).
-        let protocol_profile = lock_evidence
-            .protocol_profile()
+        let protocol_profile_identity = protocol_profile
+            .as_ref()
             .map(|definition| definition.identity.clone());
         // FR-218 "Requirements": the unit's declarations a `requires
         // temporal` name resolves among, each other kind by its keyword.
@@ -2918,7 +2913,7 @@ impl PackageDeclarations {
                 attempts,
                 &state_clause_forms,
                 protocol_clause::Selections {
-                    protocol: protocol_profile.as_deref(),
+                    protocol: protocol_profile_identity.as_deref(),
                     temporal: &temporal_aliases,
                 },
             );
@@ -2947,7 +2942,7 @@ impl PackageDeclarations {
             let obligations = protocol_obligation::check(
                 protocol,
                 anchored.as_ref().ok().map(|(checked, _)| checked),
-                protocol_profile.as_deref(),
+                protocol_profile_identity.as_deref(),
                 &obligation_declarations,
                 &mut obligation_cx,
             );
@@ -3026,7 +3021,7 @@ impl PackageDeclarations {
                         &slot_declarations,
                         &mut slot_cx,
                         &regions,
-                        protocol_profile.as_deref(),
+                        protocol_profile_identity.as_deref(),
                     ) {
                         protocol_slots::Slots::Checked(slots, used) => {
                             checked.slots = *slots;
@@ -3736,7 +3731,7 @@ impl PackageDeclarations {
             &owner,
             &models,
             units,
-            &lock_evidence,
+            protocol_profile.as_ref(),
             drafts.len(),
             &mut occurrences,
             &mut contract_meter,
@@ -3776,11 +3771,40 @@ impl PackageDeclarations {
             }
         };
         lowering.begin_protocols(protocol_list.len());
-        let protocol_edges: Vec<(Vec<usize>, Vec<usize>)> = protocol_list
+        let temporal_positions: BTreeMap<usize, usize> = checked_temporal
             .iter()
-            .map(lowering::ProtocolInput::dependencies)
+            .enumerate()
+            .map(|(dense, (source, _, _))| (*source, dense))
             .collect();
-        let order = lowering::dependency_order(&function_edges, &protocol_edges);
+        let protocol_edges: Vec<(Vec<usize>, Vec<usize>, Vec<usize>)> = protocol_list
+            .iter()
+            .map(|protocol| {
+                let (functions, protocols, required) = protocol.dependencies();
+                let required = required
+                    .iter()
+                    .filter_map(|source| temporal_positions.get(source).copied())
+                    .collect();
+                (functions, protocols, required)
+            })
+            .collect();
+        let temporal_edges: Vec<(Vec<usize>, Vec<usize>)> = checked_temporal
+            .iter()
+            .map(|(_, _, conditions)| {
+                let mut functions = Vec::new();
+                let mut protocols = Vec::new();
+                for condition in conditions.all() {
+                    let root = condition.body.root();
+                    functions.extend(root.callees());
+                    protocols.extend(root.protocol_references());
+                }
+                functions.sort_unstable();
+                functions.dedup();
+                protocols.sort_unstable();
+                protocols.dedup();
+                (functions, protocols)
+            })
+            .collect();
+        let order = lowering::dependency_order(&function_edges, &protocol_edges, &temporal_edges);
         let lower_protocol = |lowering: &mut lowering::Lowering<'_>,
                               refusals: &mut Vec<CheckRefusal>,
                               index: usize,
@@ -3830,6 +3854,35 @@ impl PackageDeclarations {
                 .collect();
             refusals.extend(lowering.function_group(group, &inputs));
         };
+        let mut lowered_temporal: Vec<Option<lowering::LoweredTemporalClause>> =
+            std::iter::repeat_with(|| None)
+                .take(checked_temporal.len())
+                .collect();
+        let lower_temporal =
+            |lowering: &mut lowering::Lowering<'_>,
+             refusals: &mut Vec<CheckRefusal>,
+             dense: usize,
+             lowered_temporal: &mut Vec<Option<lowering::LoweredTemporalClause>>| {
+                let Some((index, checked, conditions)) = checked_temporal.get(dense) else {
+                    return;
+                };
+                match lowering.temporal_clause(&lowering::TemporalClauseInput {
+                    index: *index,
+                    clause: checked,
+                    conditions,
+                }) {
+                    Ok(lowered) => {
+                        lowering.record_temporal_key(*index, lowered.key);
+                        if let Some(slot) = lowered_temporal.get_mut(dense) {
+                            *slot = Some(lowered);
+                        }
+                    }
+                    Err(refusal) => {
+                        lowering.record_temporal_refused(*index);
+                        refusals.push(refusal);
+                    }
+                }
+            };
         for step in &order {
             match step {
                 lowering::LoweringStep::Functions(group) => {
@@ -3838,15 +3891,22 @@ impl PackageDeclarations {
                 lowering::LoweringStep::Protocol(index) => {
                     lower_protocol(&mut lowering, &mut refusals, *index, false);
                 }
+                lowering::LoweringStep::Temporal(index) => {
+                    lower_temporal(&mut lowering, &mut refusals, *index, &mut lowered_temporal);
+                }
                 lowering::LoweringStep::Cycle {
                     protocols,
                     functions,
+                    temporals,
                 } => {
                     for index in protocols {
                         lower_protocol(&mut lowering, &mut refusals, *index, true);
                     }
                     for group in functions {
                         lower_functions(&mut lowering, &mut refusals, group);
+                    }
+                    for index in temporals {
+                        lower_temporal(&mut lowering, &mut refusals, *index, &mut lowered_temporal);
                     }
                 }
             }
@@ -4140,6 +4200,27 @@ impl PackageDeclarations {
             };
             match lowering.time_source_anchor(&anchor) {
                 Ok(key) => self.time_sources[*index].tick_operation_anchor = Some(key),
+                Err(refusal) => refusals.push(refusal),
+            }
+        }
+        // QSpec FR-322 "Timed-model nodes": the `clock_place` template of
+        // each clock of each dense model, located at its time declaration,
+        // which a `presence_read` and a clause name, before any clause whose
+        // body reads a presence (QSpec FR-322 `CW-05`).
+        for model in &mut timed_models {
+            let Some((index, source)) = self
+                .time_sources
+                .iter()
+                .enumerate()
+                .find(|(_, source)| source.model == model.model())
+            else {
+                continue;
+            };
+            let declaration = root(Origin::TypeDeclaration {
+                name: time_source_origin(index),
+            });
+            match lowering.clock_places(model.clocks(), source.model_node, &declaration) {
+                Ok(places) => model.set_place_nodes(places),
                 Err(refusal) => refusals.push(refusal),
             }
         }
@@ -4495,38 +4576,9 @@ impl PackageDeclarations {
                 Err(refusal) => refusals.push(refusal),
             }
         }
-        // FR-135: the clause a refinement's rows select, by its node.
-        for (checked, selected) in refinements.iter_mut().zip(&selected_protocols) {
-            let Some(selected) = selected else {
-                continue;
-            };
-            match lowering.protocol_key(selected.protocol(), &root(Origin::Expression)) {
-                Ok(key) => checked.concrete_protocol = Some(key),
-                // Under the test opt-in a protocol with an unwritten
-                // construct has no clause key, and is refused nowhere.
-                Err(refusal)
-                    if self.emit_unwritten_protocols
-                        && matches!(
-                            &refusal.cause,
-                            CheckCause::ProtocolReference(cause)
-                                if cause.construct().is_some()
-                        ) => {}
-                // An attempt-bearing protocol is keyed only when no earlier
-                // refusal skipped its node; the earlier refusal is reported.
-                Err(refusal)
-                    if !attempt_nodes_written
-                        && matches!(
-                            &refusal.cause,
-                            CheckCause::ProtocolReference(cause)
-                                if cause.construct()
-                                    == Some(ProtocolConstruct::ReferenceToAttemptProtocol)
-                        ) => {}
-                Err(refusal) => refusals.push(selected.unkeyed(refusal)),
-            }
-        }
-        // FR-375: a protocol subject's `protocol` key, its abstract clause's
-        // node. A clause with no node refuses at the clause itself, and the
-        // refinement stays unemitted.
+        // FR-375: a protocol subject's abstract side names the emitted
+        // protocol clause node. Resolve it after dependency-ordered protocol
+        // lowering (and after attempt-bearing clauses receive their nodes).
         for checked in &mut refinements {
             let AbstractSide::Protocol { clause } = &checked.abstract_side else {
                 continue;
@@ -4537,18 +4589,38 @@ impl PackageDeclarations {
                 .position(|protocol| protocol.name.name == *clause)
                 .and_then(|index| lowering.protocol_key(index, &root(Origin::Expression)).ok());
         }
-        // FR-337: each emitted temporal clause, after every function its
-        // conditions may call, minting its node identity and recording its
-        // `claim` occurrence.
-        let mut lowered_temporal = Vec::with_capacity(checked_temporal.len());
-        for (index, checked, conditions) in &checked_temporal {
-            match lowering.temporal_clause(&lowering::TemporalClauseInput {
-                index: *index,
-                clause: checked,
-                conditions,
-            }) {
-                Ok(lowered) => lowered_temporal.push(lowered),
-                Err(refusal) => refusals.push(refusal),
+        // QSpec FR-368: each clause's own node, its subject's derived-item
+        // anchor; a clause with no node keeps none.
+        for (index, place) in protocol_places.iter().enumerate() {
+            if let Some(checked) = place.and_then(|place| checked_protocols.get_mut(place)) {
+                checked.node = lowering.protocol_key(index, &root(Origin::Expression)).ok();
+            }
+        }
+        // FR-135: the clause a refinement's rows select, by its node. This
+        // follows temporal lowering because a selected protocol may require
+        // one of those clause nodes.
+        for (checked, selected) in refinements.iter_mut().zip(&selected_protocols) {
+            let Some(selected) = selected else {
+                continue;
+            };
+            match lowering.protocol_key(selected.protocol(), &root(Origin::Expression)) {
+                Ok(key) => checked.concrete_protocol = Some(key),
+                Err(refusal)
+                    if self.emit_unwritten_protocols
+                        && matches!(
+                            &refusal.cause,
+                            CheckCause::ProtocolReference(cause)
+                                if cause.construct().is_some()
+                        ) => {}
+                Err(refusal)
+                    if !attempt_nodes_written
+                        && matches!(
+                            &refusal.cause,
+                            CheckCause::ProtocolReference(cause)
+                                if cause.construct()
+                                    == Some(ProtocolConstruct::ReferenceToAttemptProtocol)
+                        ) => {}
+                Err(refusal) => refusals.push(selected.unkeyed(refusal)),
             }
         }
         // FR-488: each emitted hyper clause over `behaviours`, after every
@@ -4633,7 +4705,8 @@ impl PackageDeclarations {
         // FR-230, QSpec FR-322 "Timed-model nodes": each `urgent when`
         // predicate's expression node, which its `urgency` node references.
         for model in &mut timed_models {
-            for (_, urgency, predicate) in model.urgency_predicates_mut() {
+            let mut lowered = Vec::new();
+            for (index, urgency, predicate) in model.urgency_predicates() {
                 let timed_model::Urgency::When {
                     context,
                     alternatives,
@@ -4642,14 +4715,55 @@ impl PackageDeclarations {
                 else {
                     continue;
                 };
-                let [alternative] = alternatives.as_slice() else {
-                    continue;
-                };
-                match lowering.urgency_predicate(*context, alternative.predicate(), &predicate.site)
-                {
-                    Ok(key) => predicate.node = Some(key),
+                let sites: Vec<_> = predicate
+                    .sites
+                    .iter()
+                    .map(|(site, _)| timed_model::site_location(site))
+                    .collect();
+                match lowering.timed_state(model.clocks(), *context, alternatives, &sites) {
+                    Ok(key) => lowered.push((index, key)),
                     Err(refusal) => refusals.push(refusal),
                 }
+            }
+            model.set_urgency_predicate_nodes(lowered);
+        }
+        // FR-230, QSpec FR-322 "Clause nodes": the terms of the guards,
+        // resets and time invariants of each model S4 writes whole.
+        for model in &mut timed_models {
+            if model.unwritten().is_some() {
+                continue;
+            }
+            let Some(source) = self
+                .time_sources
+                .iter()
+                .position(|source| source.model == model.model())
+            else {
+                continue;
+            };
+            let declaration = root(Origin::TypeDeclaration {
+                name: time_source_origin(source),
+            });
+            let name = model.model().to_owned();
+            let part_site = |guard: usize, part: usize| {
+                timed_model::site_location(&timed_model::guard_part_site(&name, guard, part))
+            };
+            let invariant_site = |invariant: usize, alternative: usize| {
+                timed_model::site_location(&timed_model::invariant_site(
+                    &name,
+                    invariant,
+                    alternative,
+                ))
+            };
+            let input = lowering::TimedClauseInput {
+                model,
+                clause_locations: &clause_locations,
+                declaration: &declaration,
+                part_site: &part_site,
+                invariant_site: &invariant_site,
+            };
+            match lowering.timed_clauses(&input) {
+                Ok(nodes) => model.set_clause_nodes(nodes),
+                Err(refusal) => refusals.push(refusal),
             }
         }
         for composite in scope.types().composites() {
@@ -4819,6 +4933,18 @@ impl PackageDeclarations {
                     cause: CheckCause::InternalFault(Box::new(fault)),
                 }]
             })?;
+        // FR-146 "Claim extent": the populations each operation's contract
+        // clauses range over, which its refinement `Step` records add.
+        let mut contract_populations: BTreeMap<
+            (quire_exact::EffectiveId, String),
+            std::collections::BTreeSet<state_clause::PopulationDomain>,
+        > = BTreeMap::new();
+        // ... and the populations each clause ranges over, by its node, which
+        // a hypothesis adds to every record.
+        let mut clause_populations: BTreeMap<
+            quire_exact::NodeKey,
+            std::collections::BTreeSet<state_clause::PopulationDomain>,
+        > = BTreeMap::new();
         // FR-104 "Requirements": one `operation-contract` record per clause,
         // keyed by its `claim` occurrence, and one per frame of an operation
         // a `pre` or `post` clause names, keyed by the frame node's own
@@ -4842,6 +4968,20 @@ impl PackageDeclarations {
                     .map(|(_, origin, _)| origin)
                     .ok_or_else(unkeyable)?;
                 let claims = state_clause::ProtocolClauseFamily::requirements(&typed);
+                let ranged = claims
+                    .iter()
+                    .filter(|claim| claim.subject == state_clause::ClaimSubject::Clause)
+                    .flat_map(|claim| claim.populations.iter().copied());
+                if let Some(operation) = &form.operation {
+                    contract_populations
+                        .entry(state_clause::operation_reference(operation))
+                        .or_default()
+                        .extend(ranged.clone());
+                }
+                clause_populations
+                    .entry(lowered.key)
+                    .or_default()
+                    .extend(ranged);
                 let keyed = state_clause::clause_records(
                     &typed,
                     &claims,
@@ -4947,7 +5087,9 @@ impl PackageDeclarations {
         // FR-337: each emitted temporal clause's node, its `claim`
         // occurrence and its `over` node; FR-326 "Requirement record": its
         // `temporal-satisfaction` record, keyed by that occurrence.
-        if lowered_temporal.len() != checked_temporal.len() {
+        if lowered_temporal.len() != checked_temporal.len()
+            || lowered_temporal.iter().any(Option::is_none)
+        {
             return Err(unlowered());
         }
         if lowered_hyper.len() != checked_hyper.len() {
@@ -5102,6 +5244,10 @@ impl PackageDeclarations {
                 .push(checked.assembled_at(OccurrenceKey::new(claims::wire(lowered.key), claim)));
         }
         let named_scope = NamedScope::of(&models, &scope);
+        let lowered_temporal = lowered_temporal
+            .into_iter()
+            .collect::<Option<Vec<_>>>()
+            .ok_or_else(unlowered)?;
         let temporal_clauses = checked_temporal
             .into_iter()
             .zip(lowered_temporal)
@@ -5166,11 +5312,11 @@ impl PackageDeclarations {
                                 ))),
                             }]
                         })?;
-                    // FR-243: a clause over a `time dense` subject is EN-6's
-                    // item.
+                    // FR-243: a clause over a timed subject, `dense` or
+                    // `tick`, is EN-6's item.
                     let record = claims::RequirementRecord::unguarded(
-                        if checked.dense_time() {
-                            extent.over_dense_time()
+                        if checked.timed() {
+                            extent.over_timed()
                         } else {
                             extent
                         },
@@ -5284,10 +5430,8 @@ impl PackageDeclarations {
                     cause: CheckCause::InternalFault(Box::new(KeyFault::UnkeyableRequirements)),
                 }]
             };
-            let node = checked
-                .v2_emission()
-                .map(|emission| claims::wire(emission.identity))
-                .map_err(|_| unkeyable())?;
+            let emission = checked.v2_emission().map_err(|_| unkeyable())?;
+            let node = claims::wire(emission.identity);
             let boolean = refinement_booleans
                 .get(checked.name())
                 .copied()
@@ -5297,17 +5441,15 @@ impl PackageDeclarations {
                 quire_exact::Origin::new(quire_exact::Role::new("declaration"), 0),
             );
             // FR-430: a refinement whose concrete model is `time dense` is
-            // EN-6's item.
+            // EN-6's item. EN-6's refinement product reads only a dense
+            // concrete subject, so a `tick` refinement is not marked and
+            // goes to the explicit-state engines.
             let dense = self.time_sources.iter().any(|source| {
                 source.model == checked.concrete_model() && source.source == TimeSourceKind::Dense
             });
             let wanted = checked.requirements(node);
             let record = claims::RequirementRecord::unguarded(
-                if dense {
-                    wanted.over_dense_time()
-                } else {
-                    wanted
-                },
+                if dense { wanted.over_timed() } else { wanted },
                 ValueType::Boolean,
                 claims::wire(boolean),
                 references::ModelReferences::new(Default::default(), [], None),
@@ -5322,6 +5464,40 @@ impl PackageDeclarations {
                 std::collections::btree_map::Entry::Occupied(_) => return Err(unkeyable()),
             }
             checked.requirement = Some(occurrence);
+            // FR-146: the per-step simulation records beside it, each keyed
+            // by its O-07 `generated` occurrence at the refinement node.
+            let object_node = |object: quire_exact::EffectiveId| {
+                object_node_of(&object_types, &object_nodes, object)
+            };
+            let inputs = step_simulation::ExtentInputs {
+                node: emission.identity,
+                step_sources: &emission.step_sources,
+                boolean,
+                contracts: &contract_populations,
+                clauses: &clause_populations,
+                object_node: &object_node,
+                types: scope.types(),
+                position_limit: limits.nodes(),
+                location: &location,
+            };
+            checked.row_positions =
+                step_simulation::row_positions(&emission.step_sources, &location)
+                    .map_err(|refusal| vec![refusal])?;
+            let written = step_simulation::simulation_records(checked, &state_clauses, &inputs)
+                .map_err(|refusal| vec![refusal])?;
+            let mut entries = Vec::with_capacity(written.len());
+            for (entry, record) in written {
+                match requirements.entry(entry.occurrence().clone()) {
+                    std::collections::btree_map::Entry::Vacant(slot) => {
+                        slot.insert(record);
+                    }
+                    std::collections::btree_map::Entry::Occupied(slot) if *slot.get() == record => {
+                    }
+                    std::collections::btree_map::Entry::Occupied(_) => return Err(unkeyable()),
+                }
+                entries.push(entry);
+            }
+            checked.simulations = entries;
         }
         // FR-114 "Requirements": one `operation-contract` record
         // per attempt's frame, keyed by the frame node's own occurrence,
@@ -5500,12 +5676,7 @@ impl PackageDeclarations {
             }));
         }
         if !self.emit_unwritten_timed_members {
-            unwritten.extend(
-                timed_models
-                    .iter()
-                    .filter(|model| model.has_unwritten_members())
-                    .map(timed_model::not_emitted),
-            );
+            unwritten.extend(timed_models.iter().filter_map(timed_model::not_emitted));
         }
         if !unwritten.is_empty() {
             return Err(unwritten);
@@ -6008,6 +6179,19 @@ fn population_key_table(
         .collect()
 }
 
+/// The `model`/`object_type` node of the object type `object`.
+fn object_node_of(
+    object_types: &BTreeMap<quire_checked::key::DeclarationKey, quire_exact::EffectiveId>,
+    object_nodes: &BTreeMap<quire_checked::key::DeclarationKey, quire_exact::NodeKey>,
+    object: quire_exact::EffectiveId,
+) -> Option<quire_exact::NodeKey> {
+    object_types
+        .iter()
+        .find_map(|(declaration, id)| (*id == object).then_some(declaration))
+        .and_then(|declaration| object_nodes.get(declaration))
+        .copied()
+}
+
 /// ADR-012 §15.7: the domain key of `domain` from the admitted models'
 /// object types and their `model`/`object_type` nodes: the one place a
 /// checked graph's `population_key` and the emitted `temporal-satisfaction`
@@ -6017,17 +6201,13 @@ fn population_domain_key(
     object_nodes: &BTreeMap<quire_checked::key::DeclarationKey, quire_exact::NodeKey>,
     domain: state_clause::PopulationDomain,
 ) -> Result<qsl_foundation::bound::DomainKey, quire_semantic_value::catalog::InternalFault> {
-    let node = object_types
-        .iter()
-        .find_map(|(declaration, id)| (*id == domain.object).then_some(declaration))
-        .and_then(|declaration| object_nodes.get(declaration))
-        .ok_or_else(|| {
-            quire_semantic_value::catalog::InternalFault::new(
-                "check.population-domain",
-                "member-type-has-a-model-node",
-            )
-        })?;
-    state_clause::population_key(&domain, *node)
+    let node = object_node_of(object_types, object_nodes, domain.object).ok_or_else(|| {
+        quire_semantic_value::catalog::InternalFault::new(
+            "check.population-domain",
+            "member-type-has-a-model-node",
+        )
+    })?;
+    state_clause::population_key(&domain, node)
 }
 
 impl CheckedGraph {
@@ -6051,6 +6231,23 @@ impl CheckedGraph {
     /// `model_selections`.
     pub fn model_selections(&self) -> &[DomainPackageRef] {
         &self.model_selections
+    }
+
+    /// The identity of the domain package the model `model` selects, where
+    /// `model` names it as [`ModelTimeSource::model`] and
+    /// [`CheckedTerminal::model`] do: the alias of the `model` declaration
+    /// that selects it, or the package identity when no alias names it.
+    /// `None` for a name no selection carries.
+    pub fn model_package_identity(&self, model: &str) -> Option<&str> {
+        self.model_names
+            .get(model)
+            .map(abstraction::ModelNames::package)
+            .or_else(|| {
+                self.model_selections
+                    .iter()
+                    .find(|selection| selection.identity == model)
+                    .map(|selection| selection.identity.as_str())
+            })
     }
 
     /// QSpec FR-322: each selection with its `model_root` node key, in
@@ -6573,6 +6770,33 @@ impl CheckedGraph {
         self.operation_frames
             .iter()
             .find(|operation| operation.frame == frame)
+    }
+
+    /// QSpec FR-485 "Forms": the operation frame whose
+    /// `state`/`operation_anchor` node identity is `anchor`, the node a
+    /// `frame` item's claim names.
+    pub fn operation_frame_by_anchor(
+        &self,
+        anchor: quire_exact::NodeKey,
+    ) -> Option<&CheckedOperationFrame> {
+        self.operation_frames
+            .iter()
+            .find(|operation| operation.anchor == anchor)
+    }
+
+    /// The `state`/`operation_anchor` node of the operation `name` that
+    /// `declaring` declares, when a clause or attempt of the unit names it.
+    pub fn operation_anchor_of(
+        &self,
+        declaring: quire_exact::EffectiveId,
+        name: &str,
+    ) -> Option<quire_exact::NodeKey> {
+        self.operation_frames
+            .iter()
+            .find(|frame| {
+                frame.operation.declaring == declaring && frame.operation.declaration.name() == name
+            })
+            .map(|frame| frame.anchor)
     }
 
     /// FR-107: the checked state clause whose minted node identity is

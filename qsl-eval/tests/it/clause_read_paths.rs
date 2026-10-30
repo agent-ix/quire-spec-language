@@ -99,12 +99,11 @@ fn orders_package() -> CheckedPackage {
         }),
     ];
     let package = DomainPackage::new(DomainPackageRef::fixture("bundle.orders"), records);
-    let digest = qsl_semantics::model::key::hex(&package.model_selection.digest);
     let identity = package.model_selection.identity.clone();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
-         model M = {identity:?} version \"1\" digest \"sha256-jcs:{digest}\";\n\
+         model M = {identity:?};\n\
          invariant TankLevel using v on M::Pump at current {{ self.home.level < 50 }}\n"
     );
     let selected = SelectedModels::fixture(
@@ -211,7 +210,6 @@ fn a_selection_on_a_navigation_is_located_at_the_referenced_object() {
             identity: "N".to_owned(),
             revision_namespace: "tc1040".to_owned(),
             revision: "1".to_owned(),
-            digest: [0; 32],
         },
         environment: ObjectEnvironment::new(closure).with_extents(extents),
         populations: BTreeMap::new(),

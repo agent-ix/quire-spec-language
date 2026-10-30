@@ -16,7 +16,6 @@ fn elevated_input_limit_cannot_admit_one_byte_over_the_hard_ceiling() {
     limits.package.artifact_bytes = usize::MAX;
     let error = NativePackage::read_verified(
         &bytes,
-        NativePackageRef::new(ByteDigest::of(b"different")),
         bindings,
         &models,
         &PackageSupport::default(),
@@ -71,7 +70,6 @@ fn exact_public_pass_counts_and_lowered_limits_preserve_inputs_and_retries() {
         let request = |package| {
             NativePackage::read_verified(
                 &vector.artifact,
-                NativePackageRef::new(ByteDigest::of(&vector.artifact)),
                 bindings.clone(),
                 &models,
                 &PackageSupport::default(),

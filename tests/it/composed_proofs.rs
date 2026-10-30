@@ -950,8 +950,8 @@ fn composed_discharge_does_not_upgrade_the_historical_model_boundary() {
         let bindings = [mapping(&formal[0], &["Exact"], handler())];
         let report = proofs::discharge(types, &bindings, ProofLimits::default());
         discharged(&report, "Exact");
-        let text = format!("language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"{}\" version \"{}\" digest \"{}\";\ninvariant Legacy on M::Node at current {{ true }}",
-            model.environment().owner().package().as_str(), model.environment().owner().revision().get(), model.digest());
+        let text = format!("language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"{}\";\ninvariant Legacy on M::Node at current {{ true }}",
+            model.environment().owner().package().as_str());
         let unit = parse(
             SourceIdentity {
                 authority: "test".into(),

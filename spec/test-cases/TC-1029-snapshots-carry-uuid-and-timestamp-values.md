@@ -28,7 +28,6 @@ Scope: FR-106-AC-18, FR-106-AC-19, FR-106-AC-20, FR-106-AC-21, FR-106-AC-22.
   `{"kind":"uuid","text":"00112233-4455-6677-8899-aabbccddeeff"}`, `stamp`
   `{"kind":"timestamp","nanoseconds":"0"}`, `prior` `{"absent":{}}` and
   `seen` `{"sequence":[]}`; `root` holds a different `token` and `stamp`.
-  Digests are recomputed for every mutated document.
 
 ## Test Procedure
 
@@ -37,7 +36,7 @@ Scope: FR-106-AC-18, FR-106-AC-19, FR-106-AC-20, FR-106-AC-21, FR-106-AC-22.
    UUID object and of the Timestamp object, and the whitespace of the
    document, and admit again.
 2. Admit one mutation per row of `token` (UUID) values, each with its
-   own digest: Nil `00000000-0000-0000-0000-000000000000`, Max
+   own document: Nil `00000000-0000-0000-0000-000000000000`, Max
    `ffffffff-ffff-ffff-ffff-ffffffffffff`, and
    `00112233-4455-0677-8899-aabbccddeeff`. Admit one mutation per row of
    `stamp` (Timestamp) values: `"1"`, `"-1"`,
@@ -91,7 +90,7 @@ Scope: FR-106-AC-18, FR-106-AC-19, FR-106-AC-20, FR-106-AC-21, FR-106-AC-22.
 
 - Step 1 admits one observation in which `child.token` is a UUID value and
   `child.stamp` a Timestamp value of the written payloads; the reordered
-  document gives the same typed observation and digest.
+  document gives the same typed observation.
 - Step 2 admits every row with the payload unchanged (version and variant
   bits retained); `prior` is present and `seen` holds `5`, `-5` in order.
 - Step 3 admits `id`, `at` and `result` as UUID, Timestamp and UUID values in

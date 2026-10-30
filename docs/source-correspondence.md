@@ -12,21 +12,19 @@ the original Quire output remains available unchanged.
 
 `Source::read` accepts the four explicit source labels of FR-001 (authority,
 identity, revision namespace, revision), a path and bounded UTF-8
-bytes, preserving the original content. The source stores its actual SHA-256;
-`Source::read_verified` additionally compares it with an independently selected
-expected ByteDigest. Digests bind bytes only and use sha2. No contract-IR canonical identity is redefined.
+bytes, preserving the original content. A source is identified by its authority
+and identity labels; no content hash is involved. No contract-IR canonical identity is redefined.
 
 `parse_source` consumes that immutable source directly, retaining the same bytes,
-identity and digest in ParsedUnit. It rechecks the caller's source-byte limit
+identity in ParsedUnit. It rechecks the caller's source-byte limit
 before tokenization. The existing `parse` convenience entry point loads bytes
-and delegates to this path. The CLI's successful parse output includes the actual
-source digest; it does not verify an expected artifact reference supplied elsewhere.
+and delegates to this path. The CLI's successful parse output names the source by its labels; it does not verify an expected artifact reference supplied elsewhere.
 
 SourceIdentity remains local parser metadata. Registered authority, revision
 namespace mapping, original obligation identity, positive numeric IR revision
 mapping, and source artifact selection belong to the reviewed shared contract.
-An adapter must verify those bindings as well as bytes; an arbitrary digest
-computed from arbitrary input does not authorize that input as an authored source.
+An adapter must verify those bindings as well as bytes; arbitrary input
+does not become an authored source by being supplied.
 
 ## Verifying a map
 
@@ -56,12 +54,12 @@ prove that the extractor selected the correct fence or obligation.
 
 ## Mapping diagnostics and regions
 
-`map_span(source, span)` requires the exact body identity, revision, path and
-content digest. Passing a different Source with the same offsets refuses.
+`map_span(source, span)` requires the exact body identity, revision and path.
+Passing a different Source with the same offsets refuses.
 Returned LocatedSpans retain original byte offsets and one-based Unicode scalar
 line/column coordinates. Concatenating their original slices reproduces the
 selected body bytes exactly. Discontiguous regions remain separate; their
-bounding box must not be used as an exact byte/digest correspondence.
+bounding box must not be used as an exact byte correspondence.
 
 At a zero-width segment boundary, select the next original segment. At body EOF,
 select the last mapped byte's end, before a trimmed final newline. An empty body
@@ -82,6 +80,6 @@ cargo test --locked --target-dir target --test it source_map:: --no-default-feat
 The tests include a parser unsupported diagnostic mapped through an indented
 CRLF native unit to a Unicode original document; exact and discontiguous regions;
 EOF behavior; explicit transform refusal; same-identity changed bytes; stale
-expected digest; malformed/out-of-order/overlapping/omitted segments; split UTF-8
+expected content; malformed/out-of-order/overlapping/omitted segments; split UTF-8
 boundaries; extreme offsets and exhausted budgets. These are executable source
 checks, not linked state evaluation or completion of existing adapter delivery.

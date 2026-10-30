@@ -12,12 +12,9 @@
     reason = "each including test module uses a different part of the fixture"
 )]
 
-use std::collections::BTreeMap;
-
 use qsl_semantics::check::{CheckRefusal, CheckedGraph, PackageDeclarations};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
-use qsl_semantics::model::key::hex;
 use quire_checked::key::DeclarationKey;
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
@@ -188,23 +185,21 @@ pub struct Checked {
     /// The checked graph.
     pub graph: CheckedGraph,
     /// The domain package, by digest.
-    pub packages: BTreeMap<[u8; 32], Vec<u8>>,
+    pub packages: qsl_semantics::model::intake::PackageInput,
 }
 
 /// The unit over the package (with `archive` when asked) holding
 /// `declarations`, checked, or its refusals each with its text.
 pub fn check(archive: bool, declarations: &str) -> Result<Checked, Vec<Refused>> {
     let document = document(archive);
-    let packages = package_input([document.as_slice()]);
-    let digest = *packages.keys().next().expect("one model");
+    let packages = package_input([document.as_slice()]).unwrap();
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
          profile t = \"quire.temporal.infinite-trace/v1\";\n\
          profile m = \"quire.model.complete/v1\";\n\
-         model M = \"{PACKAGE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         model M = \"{PACKAGE}\";\n\
          {declarations}\n",
-        hex(&digest),
     );
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("test", "tc-1076", "fixture", "1"),

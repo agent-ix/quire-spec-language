@@ -517,7 +517,6 @@ fn mixed_defects_preserve_diagnostics_under_inventory_population_object_and_fiel
     before.populations[1].complete = false;
     before.models.push(ModelBinding {
         model: authored_owner(),
-        digest: model.digest(),
     });
     let mut after = snapshot_values(model, shape);
     let invalid = push(&mut after.arena, ValueNode::Integer { value: 1001 });

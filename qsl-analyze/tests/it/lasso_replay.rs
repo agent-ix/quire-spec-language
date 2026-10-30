@@ -96,7 +96,7 @@ pub(crate) fn replay_with(
             id,
         ),
         &subject_of(fixture),
-        &envelope_at(&fixture.unit, id, payload, node, occurrence),
+        &envelope_at(id, payload, node, occurrence),
         &Letters { atom },
         ReplayLimits::default(),
     )
@@ -184,7 +184,7 @@ fn a_guarded_on_each_prefix_replays_through_production_letters() {
                   on each (q: M::Counter) when (c.value >= 3) \
                   { always holds(c.value <= 1) }\n";
     let body = format!("{CONTRACT}{clause}");
-    let unit = unit_text(&document, &body).into_bytes();
+    let unit = unit_text(&body).into_bytes();
     let package = package_from_text(&document, std::str::from_utf8(&unit).expect("UTF-8 source"));
     let clauses = package
         .graph()
@@ -259,7 +259,7 @@ fn a_guarded_on_each_prefix_replays_through_production_letters() {
         &fixture.unit,
         package_id,
     );
-    let envelope = envelope_at(&fixture.unit, package_id, payload, node_id, occurrence);
+    let envelope = envelope_at(package_id, payload, node_id, occurrence);
     let result = replay_model_trace(
         wire,
         &subject_of(&fixture),
@@ -429,7 +429,7 @@ fn a_counterexample_names_its_clause_by_node_and_occurrence() {
                 id,
             ),
             &subject_of(&fixture),
-            &envelope_at(&fixture.unit, id, payload.clone(), node, occurrence),
+            &envelope_at(id, payload.clone(), node, occurrence),
             &Letters { atom: is_three },
             ReplayLimits::default(),
         )
@@ -495,13 +495,7 @@ fn a_liveness_violation_settles_refuted_through_replay() {
                     id,
                 ),
                 &subject_of(&fixture),
-                &envelope_at(
-                    &fixture.unit,
-                    id,
-                    counterexample.clone(),
-                    node,
-                    occurrence.clone(),
-                ),
+                &envelope_at(id, counterexample.clone(), node, occurrence.clone()),
                 &letters,
                 ReplayLimits::default(),
             )
@@ -541,7 +535,7 @@ fn a_liveness_violation_settles_refuted_through_replay() {
                     id,
                 ),
                 &subject_of(&fixture),
-                &envelope_at(&fixture.unit, id, open, node, occurrence.clone()),
+                &envelope_at(id, open, node, occurrence.clone()),
                 &letters,
                 ReplayLimits::default(),
             )
@@ -567,7 +561,7 @@ pub(crate) fn bounded_fixture(formula: &str) -> Fixture {
         + &format!(
             "temporal C using tb over (c: M::Counter) clock \"model-steps\" on origin {{ {formula} }}\n"
         );
-    let text = unit_text(&doc, &body).replace(
+    let text = unit_text(&body).replace(
         "profile t0 = \"quire.temporal.infinite-trace/v1\";\n",
         "profile tb = \"quire.temporal.event-position.false-extension/v1\";\n",
     );
@@ -924,7 +918,7 @@ fn a_clause_with_a_capture_replays_through_the_production_letters() {
             id,
         ),
         &subject_of(&fixture),
-        &envelope_at(&fixture.unit, id, *counterexample, clause_node, occurrence),
+        &envelope_at(id, *counterexample, clause_node, occurrence),
         &letters,
         ReplayLimits::default(),
     )

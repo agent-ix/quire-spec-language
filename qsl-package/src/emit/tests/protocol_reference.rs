@@ -51,7 +51,7 @@ fn selecting(declarations: &str) -> String {
 
 /// The refusals the spine-model unit `text` checks to.
 fn refusals(text: &str) -> Vec<CheckRefusal> {
-    let packages = qsl_semantics::model::intake::package_input([SPINE_MODEL_DOCUMENT]);
+    let packages = qsl_semantics::model::intake::package_input([SPINE_MODEL_DOCUMENT]).unwrap();
     assemble_with_models(text.as_bytes(), &packages)
         .expect("the unit assembles")
         .check(CheckingLimits::default())
@@ -75,8 +75,7 @@ fn rooted(root: &str, profile: bool, reference: bool) -> String {
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n{profile}\
-         model Config = \"example/config-version\" version \"1\" digest \
-         \"sha256-jcs:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\";\n\
+         model Config = \"example/config-version\";\n\
          record Ack {{ ok: Boolean; }}\n\
          {function}\
          protocol Flow using v over (input: Config::ConfigVersion) on origin {{\n\
@@ -134,8 +133,6 @@ fn an_unwritten_construct_refuses_a_selected_profile_and_a_reference_to_it() {
         (ProtocolConstruct::Control("parallel"), "QSL-1126"),
         (ProtocolConstruct::PostTestRepeat, "STD-539"),
         (ProtocolConstruct::VisibleEntryNotAnExpression, "STD-539"),
-        (ProtocolConstruct::Requirements, "QSL-1127"),
-        (ProtocolConstruct::Compensations, "QSL-1127"),
         (ProtocolConstruct::ReferenceCycle, "QSL-844"),
     ] {
         assert_eq!(construct.tracking(), ticket, "{construct:?}");
@@ -324,7 +321,7 @@ fn assert_clause_graph(wire: &Value, clause: &Value) {
 }
 
 fn reference_key(text: &str) -> (String, Value) {
-    let (_, wire, _, read) = emit_model_unit(text, None);
+    let (_, wire, read) = emit_model_unit(text, None);
     assert!(matches!(read, Read::Verified { .. }), "{read:?}");
     let reference = node_of(&wire, "protocol", "protocol_reference").clone();
     (
@@ -361,7 +358,7 @@ pub(super) fn reference_unit() -> String {
 #[test]
 fn a_reference_emits_the_target_node_and_one_carrier_the_reader_admits() {
     let text = reference_unit();
-    let (emission, wire, _, read) = emit_model_unit(&text, None);
+    let (emission, wire, read) = emit_model_unit(&text, None);
     assert_eq!(emission.omitted, []);
     assert!(matches!(read, Read::Verified { .. }), "{read:?}");
 
@@ -459,7 +456,7 @@ fn a_trigger_nested_runs_roles_and_scheduling_emit_what_the_reader_admits() {
          finish End as (outcome: Boolean) { true };\n\
          }\n",
     );
-    let (emission, wire, _, read) = emit_model_unit(&text, None);
+    let (emission, wire, read) = emit_model_unit(&text, None);
     assert_eq!(emission.omitted, []);
     assert!(matches!(read, Read::Verified { .. }), "{read:?}");
     let clause = node_of(&wire, "protocol", "protocol_clause");
@@ -551,7 +548,7 @@ fn the_roles_set_does_not_follow_source_order() {
         ))
     };
     let roles_of = |text: &str| {
-        let (_, wire, _, read) = emit_model_unit(text, None);
+        let (_, wire, read) = emit_model_unit(text, None);
         assert!(matches!(read, Read::Verified { .. }), "{read:?}");
         let clause = node_of(&wire, "protocol", "protocol_clause");
         clause_argument(clause, "roles").clone()
@@ -605,7 +602,7 @@ fn a_sequences_children_follow_the_source_order() {
              finish End as (outcome: Boolean) {{ true }};\n\
              }}\n"
         ));
-        let (_, wire, _, read) = emit_model_unit(&text, None);
+        let (_, wire, read) = emit_model_unit(&text, None);
         assert!(matches!(read, Read::Verified { .. }), "{read:?}");
         let clause = node_of(&wire, "protocol", "protocol_clause");
         let run = node_by_id(
@@ -649,7 +646,7 @@ fn a_sequences_children_follow_the_source_order() {
 #[test]
 fn a_clause_key_is_distinct_per_protocol_and_independent_of_declaration_order() {
     let keys_of = |declarations: &str| -> BTreeMap<String, String> {
-        let (_, wire, _, read) = emit_model_unit(&selecting(declarations), None);
+        let (_, wire, read) = emit_model_unit(&selecting(declarations), None);
         assert!(matches!(read, Read::Verified { .. }), "{read:?}");
         nodes(&wire)
             .iter()
@@ -790,7 +787,7 @@ fn a_reference_without_a_selected_protocol_profile_refuses_missing_selection() {
 #[test]
 fn a_reference_bound_to_a_key_no_node_carries_refuses_missing_name() {
     let text = selecting(&format!("{REFERS_TO_FILL}{}", protocol("Fill")));
-    let packages = qsl_semantics::model::intake::package_input([SPINE_MODEL_DOCUMENT]);
+    let packages = qsl_semantics::model::intake::package_input([SPINE_MODEL_DOCUMENT]).unwrap();
     let mut graph = assemble_with_models(text.as_bytes(), &packages)
         .expect("the unit assembles")
         .check(CheckingLimits::default())

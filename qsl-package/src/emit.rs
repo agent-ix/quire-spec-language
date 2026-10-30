@@ -13,7 +13,7 @@
 //!
 //! # Lock
 //!
-//! - `edition` and `definition_selections` come from the `DefinitionLock`
+//! - `edition` and `definition_selections` come from closed typed role mappings
 //!   catalog: the `edition` role, every other always-selected role, and each
 //!   law `DefinitionRef` a node body names. Each is a QSpec `DefinitionRef`,
 //!   exactly `{authority, identity}`.
@@ -25,9 +25,8 @@
 //! - `profile_selections` holds one row per clause-profile law a node body
 //!   names (`protocol_profile`, FR-092); it is empty for a package of
 //!   `Value`-family nodes only.
-//! - `model_selections` is `CheckedGraph::model_selections`: each domain
-//!   package the package was checked against, by identity and
-//!   `sha256-jcs` digest (ADR-011 §2.4).
+//! - Each domain package the package was checked against appears as a
+//!   `model_root` node named by its identity (ADR-011 §2.4).
 //! - `dependency_selections` is [`CheckedPackage::dependency_selections`]:
 //!   the resolved library closure, one `{identity, package_id}`
 //!   entry per library identity in ascending UTF-8 byte order of `identity`
@@ -88,14 +87,14 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use quire_contract_model::{
     derive_structural_candidates, encode_checked_package_v2, CheckedArtifactRef, CheckedCapability,
     CheckedCapabilityDisposition, CheckedDeclaration, CheckedDependencySelection,
-    CheckedDiagnosticsV2, CheckedDomainPackageRef, CheckedNodeId, CheckedNodeKind,
-    CheckedNodeOwner, CheckedNodeTag, CheckedOccurrence, CheckedOccurrenceRole,
-    CheckedOperationAnchorBody, CheckedPackageEvidence, CheckedPackageIdentityPreimageRefV2,
-    CheckedPackageLockV2, CheckedPackageSourceCorrespondenceRef, CheckedPackageV2, CheckedRational,
+    CheckedDiagnosticsV2, CheckedNodeId, CheckedNodeKind, CheckedNodeOwner, CheckedNodeTag,
+    CheckedOccurrence, CheckedOccurrenceRole, CheckedOperationAnchorBody, CheckedPackageEvidence,
+    CheckedPackageIdentityPreimageRefV2, CheckedPackageLockV2,
+    CheckedPackageSourceCorrespondenceRef, CheckedPackageV2, CheckedRational,
     CheckedRefinementStepRowRegion, CheckedSelection, CheckedSelectionRole, CheckedSemanticGraphV2,
     CheckedSemanticId, CheckedSemanticNodeV2, CheckedSourceMapEntry, CheckedSourceRef,
     CheckedSourceRegion, CheckedTerm, ExecutionPoint, NominalIdentityPreimage, NominalOwner,
-    ProtocolForm, StateForm, ValueForm, DOMAIN_PACKAGE_DIGEST, PACKAGE_DOMAIN_V2,
+    ProtocolForm, StateForm, ValueForm, PACKAGE_DOMAIN_V2,
 };
 use serde::Deserialize;
 
@@ -110,16 +109,19 @@ use qsl_semantics::check::{
     LeafTerm, NodeTag, NominalNode, OperationLaw, Owner, SemanticNode, TemporalProfile,
 };
 use qsl_semantics::library::PackageId;
-use qsl_semantics::model::key::hex;
 use qsl_semantics::value::{
-    native_diagnostics_catalog, CatalogEntry, CatalogRole, DefinitionLock, DefinitionReference,
-    HeaderLayer, Member, ModelEntry, NodeOwner, TemporalEntry,
+    native_diagnostics_catalog, DefinitionReference, DefinitionRole, HeaderLayer, Member,
+    ModelRole, NodeOwner, TemporalRole,
 };
 use quire_exact::{Cancel, Integer, NodeKey, Origin, Role, NODE_KEY_DOMAIN};
 use quire_semantic_value::location::Location;
 
 use super::{CheckedPackage, EmittedPackage};
-use crate::checked_v2::{CheckedClockPlace, CheckedTimedModel, CheckedUrgency, TimedNodeMetadata};
+use crate::checked_v2::{
+    CheckedClockConstraint, CheckedClockGuard, CheckedClockPlace, CheckedClockReset,
+    CheckedConstraintTarget, CheckedGuardPart, CheckedResetTarget, CheckedTimeInvariant,
+    CheckedTimedModel, CheckedUrgency, ClockComparison, TimedNodeMetadata,
+};
 
 /// The FR-322 graph schema version every node carries.
 const GRAPH_V2: &str = "quire.checked-semantic-graph/v2";
@@ -224,6 +226,9 @@ pub enum EmitRefusal {
     /// already-admitted base package.
     #[error("typed timed models do not match the admitted package's timed-node set")]
     TimedModelNodeSetMismatch,
+    /// The timed nodes cannot be put in QSpec FR-322's declared order.
+    #[error("timed aggregate order: {0}")]
+    TimedOrder(#[source] timed_order::OrderFault),
     /// A typed timed model cannot be serialized with its available literals.
     #[error("typed timed-model writer invariant: {0}")]
     TimedModelWriterInvariant(&'static str),
@@ -277,7 +282,7 @@ impl EmitRefusal {
             Self::ProbabilisticModelNotEmitted { .. } | Self::TimedModelNotEmitted { .. } => {
                 Code::UnsupportedConstruct
             }
-            Self::TimedModelNodeSetMismatch => Code::RuntimeInvariant,
+            Self::TimedModelNodeSetMismatch | Self::TimedOrder(_) => Code::RuntimeInvariant,
             Self::TimedModelWriterInvariant(_) | Self::RefinementSubjectNotEmitted => {
                 Code::RuntimeInvariant
             }
@@ -307,6 +312,7 @@ impl EmitRefusal {
             | Self::Abstraction(_)
             | Self::Cancelled { .. }
             | Self::TimedModelNodeSetMismatch
+            | Self::TimedOrder(_)
             | Self::TimedModelWriterInvariant(_)
             | Self::RefinementSubjectNotEmitted
             | Self::RefinementIdentityEncoding
@@ -411,6 +417,7 @@ fn ir_tag(tag: NodeTag) -> CheckedNodeTag {
         NodeTag::Claim => CheckedNodeTag::Claim,
         NodeTag::Correspondence => CheckedNodeTag::Correspondence,
         NodeTag::Hybrid => CheckedNodeTag::Hybrid,
+        NodeTag::TimedModel => CheckedNodeTag::TimedModel,
     }
 }
 
@@ -742,7 +749,6 @@ fn wire_owner(owner: &Owner) -> CheckedNodeOwner {
         },
         Owner::ModelRoot(subject) => CheckedNodeOwner::ModelRoot {
             identity: subject.identity().into(),
-            digest: subject.digest().into(),
         },
     }
 }
@@ -1025,22 +1031,12 @@ fn artifact(reference: &DefinitionReference) -> CheckedArtifactRef {
     }
 }
 
-/// `source` as the wire's `RawSourceRef`: authority, identity and the
-/// digest of its bytes.
+/// `source` as the wire's `RawSourceRef`: authority and identity.
 fn source_artifact(source: &RawSourceRef) -> CheckedSourceRef {
-    let digest = source.digest();
     CheckedSourceRef {
         authority: source.authority().into(),
         identity: source.identity().into(),
-        digest_domain: digest.domain().to_string().into(),
-        digest: digest.hex().into(),
     }
-}
-
-/// The catalog's row for `role`. The closed catalog has a row for every
-/// role (`the_catalog_covers_every_role_exactly_once`).
-fn catalog_entry(lock: &DefinitionLock, role: CatalogRole) -> &CatalogEntry {
-    lock.entry(role)
 }
 
 /// The lock's `edition` and `definition_selections` (FR-110 "Lock rows"):
@@ -1055,7 +1051,6 @@ fn catalog_entry(lock: &DefinitionLock, role: CatalogRole) -> &CatalogEntry {
 /// lock's `without_layer` rows are for a unit that selects layers none of
 /// which is `quire.value.complete/v1`.
 fn catalog_selections(
-    lock: &DefinitionLock,
     layers: &[HeaderLayer],
     laws: &[DefinitionReference],
 ) -> (CheckedSelection, Vec<CheckedArtifactRef>) {
@@ -1063,36 +1058,36 @@ fn catalog_selections(
     // name the law.
     let edition = CheckedSelection {
         role: CheckedSelectionRole::Edition,
-        definition: artifact(&catalog_entry(lock, CatalogRole::Edition).reference()),
+        definition: artifact(&DefinitionRole::Edition.reference()),
     };
-    let closure = lock.closure(layers);
+    let closure = HeaderLayer::closure(layers);
     let qualification = if layers.is_empty() {
-        lock.always_roles()
+        qsl_semantics::value::always_roles()
     } else {
-        lock.qualification_roles(&closure)
+        qsl_semantics::value::qualification_roles(&closure)
     };
     let selected = closure
         .iter()
-        .map(|layer| lock.layer_reference(*layer))
+        .map(|layer| layer.reference())
         .chain(
             qualification
                 .iter()
-                .filter(|role| **role != CatalogRole::Edition)
-                .map(|role| catalog_entry(lock, *role).reference()),
+                .filter(|role| **role != DefinitionRole::Edition)
+                .map(|role| role.reference()),
         )
         // FR-361 item 3: the complete-model lock's `package_selection.always`
         // rows, for a unit whose layers hold the model layer.
         .chain(
             closure
                 .contains(&HeaderLayer::ModelComplete)
-                .then(|| lock.model_catalog().iter().map(ModelEntry::reference))
+                .then(|| ModelRole::ALL.into_iter().map(ModelRole::reference))
                 .into_iter()
                 .flatten(),
         )
         .chain(
             closure
                 .contains(&HeaderLayer::TemporalComplete)
-                .then(|| lock.temporal_catalog().iter().map(TemporalEntry::reference))
+                .then(|| TemporalRole::ALL.into_iter().map(TemporalRole::reference))
                 .into_iter()
                 .flatten(),
         )
@@ -1356,6 +1351,230 @@ pub fn emit_checked(package: &CheckedPackage) -> Result<Emission, EmitRefusal> {
     emit_checked_with_cancel(package, &Cancel::new())
 }
 
+/// The metadata of a timed clause node with one `expression` occurrence,
+/// keyed `id` until the emitter rekeys it.
+fn clause_metadata(id: CheckedNodeId) -> TimedNodeMetadata {
+    TimedNodeMetadata {
+        node_id: id.clone(),
+        schema_version: GRAPH_V2.into(),
+        semantic_type: id,
+        dependencies: Vec::new(),
+        occurrences: vec![CheckedOccurrence {
+            role: CheckedOccurrenceRole::Expression,
+            ordinal: 0,
+        }],
+        recursion_group: None,
+        nominal_identity_preimage: None,
+        declaration: None,
+        owner: None,
+    }
+}
+
+/// `span` as an emitted region's `(start, end)`.
+fn span_region(span: qsl_foundation::Span) -> (u64, u64) {
+    (span.start as u64, span.end as u64)
+}
+
+/// `value` as a reduced `numerator/denominator` quantity spelling.
+fn quantity_spelling(value: &quire_exact::Rational) -> String {
+    format!("{}/{}", value.numerator(), value.denominator())
+}
+
+/// The wire comparison of a checked clock comparison.
+fn clock_comparison(op: qsl_semantics::check::ClockOp) -> ClockComparison {
+    use qsl_semantics::check::ClockOp;
+    match op {
+        ClockOp::Less => ClockComparison::Lt,
+        ClockOp::LessOrEqual => ClockComparison::Le,
+        ClockOp::Equal => ClockComparison::Eq,
+        ClockOp::GreaterOrEqual => ClockComparison::Ge,
+        ClockOp::Greater => ClockComparison::Gt,
+    }
+}
+
+/// Add the node `metadata` stands for, or a further occurrence of an equal
+/// node already written, located at `region`; returns the node's id.
+fn occur(
+    metadata: &mut TimedNodeMetadata,
+    region: (u64, u64),
+    regions: &mut BTreeMap<CheckedNodeId, Vec<(u64, u64)>>,
+    fresh: bool,
+) -> CheckedNodeId {
+    if !fresh {
+        let ordinal = metadata.occurrences.len() as u64;
+        metadata.occurrences.push(CheckedOccurrence {
+            role: CheckedOccurrenceRole::Expression,
+            ordinal,
+        });
+    }
+    regions
+        .entry(metadata.node_id.clone())
+        .or_default()
+        .push(region);
+    metadata.node_id.clone()
+}
+
+/// QSpec FR-322 "Clause nodes": the `clock_constraint`, `clock_guard`,
+/// `clock_reset` and `time_invariant` nodes of `clauses` added to `model`,
+/// each located at its own source span. `places` holds each clock's
+/// `clock_place` by clock index and `unit` is the root's unit node. Clause
+/// nodes of equal content are one node with one `expression` occurrence at
+/// each source (FR-322: a node has one or more occurrences), listed once;
+/// the root lists every constraint a part or an invariant names.
+fn write_clauses(
+    model: &mut CheckedTimedModel,
+    clauses: &qsl_semantics::check::TimedClauseNodes,
+    places: &[CheckedNodeId],
+    unit: &CheckedNodeId,
+    placeholder: &dyn Fn(&str) -> CheckedNodeId,
+    regions: &mut BTreeMap<CheckedNodeId, Vec<(u64, u64)>>,
+) -> Result<(), EmitRefusal> {
+    use qsl_semantics::check::{ConstraintTargetNodes, ResetTargetNodes};
+    let place = |clock: qsl_semantics::check::ClockId| {
+        places
+            .get(clock.index())
+            .cloned()
+            .ok_or(EmitRefusal::TimedModelWriterInvariant(
+                "a clause names a clock with no place",
+            ))
+    };
+    let constraint = |model: &mut CheckedTimedModel,
+                      regions: &mut BTreeMap<CheckedNodeId, Vec<(u64, u64)>>,
+                      written: &qsl_semantics::check::ConstraintNodes|
+     -> Result<CheckedNodeId, EmitRefusal> {
+        let target = match &written.target {
+            ConstraintTargetNodes::Place {
+                clock,
+                owner,
+                slots,
+            } => CheckedConstraintTarget::Place {
+                place: place(*clock)?,
+                owner: node_id(*owner),
+                slots: slots.iter().copied().map(node_id).collect(),
+            },
+            ConstraintTargetNodes::Parameter {
+                operation,
+                parameter,
+            } => CheckedConstraintTarget::Parameter {
+                operation: node_id(*operation),
+                parameter: parameter.clone(),
+            },
+        };
+        let comparison = clock_comparison(written.comparison);
+        let bound = quantity_spelling(&written.bound);
+        let region = span_region(written.span);
+        if let Some(held) = model.constraints.iter_mut().find(|held| {
+            held.target == target && held.comparison == comparison && held.bound == bound
+        }) {
+            return Ok(occur(&mut held.metadata, region, regions, false));
+        }
+        let mut metadata = clause_metadata(placeholder(&format!(
+            "constraint-{}",
+            model.constraints.len()
+        )));
+        let id = occur(&mut metadata, region, regions, true);
+        model.constraints.push(CheckedClockConstraint {
+            metadata,
+            target,
+            comparison,
+            bound,
+            bound_type: unit.clone(),
+        });
+        Ok(id)
+    };
+    for guard in &clauses.guards {
+        let mut parts = Vec::with_capacity(guard.parts.len());
+        for part in &guard.parts {
+            let mut constraints = Vec::with_capacity(part.constraints.len());
+            for written in &part.constraints {
+                let id = constraint(model, regions, written)?;
+                if !constraints.contains(&id) {
+                    constraints.push(id);
+                }
+            }
+            parts.push(CheckedGuardPart {
+                predicate: node_id(part.predicate),
+                constraints,
+            });
+        }
+        let mut metadata = clause_metadata(placeholder(&format!("guard-{}", model.guards.len())));
+        occur(&mut metadata, span_region(guard.span), regions, true);
+        model.guards.push(CheckedClockGuard {
+            metadata,
+            operation: node_id(guard.operation),
+            parts,
+        });
+    }
+    for invariant in &clauses.invariants {
+        let mut bounds = Vec::with_capacity(invariant.bounds.len());
+        for written in &invariant.bounds {
+            let id = constraint(model, regions, written)?;
+            if !bounds.contains(&id) {
+                bounds.push(id);
+            }
+        }
+        let predicate = node_id(invariant.predicate);
+        let region = span_region(invariant.span);
+        if let Some(held) = model
+            .invariants
+            .iter_mut()
+            .find(|held| held.predicate == predicate && held.bounds == bounds)
+        {
+            occur(&mut held.metadata, region, regions, false);
+            continue;
+        }
+        let mut metadata = clause_metadata(placeholder(&format!(
+            "invariant-{}",
+            model.invariants.len()
+        )));
+        occur(&mut metadata, region, regions, true);
+        model.invariants.push(CheckedTimeInvariant {
+            metadata,
+            predicate,
+            bounds,
+        });
+    }
+    for reset in &clauses.resets {
+        let target = match &reset.target {
+            ResetTargetNodes::Place {
+                clock,
+                owner,
+                slots,
+                binders,
+                condition,
+            } => CheckedResetTarget::Place {
+                place: place(*clock)?,
+                owner: node_id(*owner),
+                slots: slots.iter().copied().map(node_id).collect(),
+                binders: binders.iter().copied().map(node_id).collect(),
+                condition: node_id(*condition),
+            },
+            ResetTargetNodes::Parameter { parameter } => CheckedResetTarget::Parameter {
+                parameter: parameter.clone(),
+            },
+        };
+        let operation = node_id(reset.operation);
+        let value = quantity_spelling(&reset.value);
+        let region = span_region(reset.span);
+        if let Some(held) = model.resets.iter_mut().find(|held| {
+            held.operation == operation && held.target == target && held.value == value
+        }) {
+            occur(&mut held.metadata, region, regions, false);
+            continue;
+        }
+        let mut metadata = clause_metadata(placeholder(&format!("reset-{}", model.resets.len())));
+        occur(&mut metadata, region, regions, true);
+        model.resets.push(CheckedClockReset {
+            metadata,
+            operation,
+            target,
+            value,
+            value_type: unit.clone(),
+        });
+    }
+    Ok(())
+}
+
 /// Add the built-in scalar type node `id` of `form` (QSpec FR-092) to
 /// `nodes`, with a `generated` source-map entry at `region`, unless the
 /// graph holds it already: a timed node's literal or selector type.
@@ -1467,8 +1686,8 @@ fn timed_model_node_id(node: &CheckedSemanticNodeV2) -> Result<CheckedNodeId, Em
 }
 
 /// QSpec FR-322 `model_root`, FR-322-AC-132 and AC-134: for each selected
-/// domain package, in `model_selections` order, one self-typed `model` node
-/// keyed by the selection's identity and digest alone, appended after every
+/// domain package, in `CheckedGraph::model_selections` order, one self-typed `model` node
+/// keyed by the selection's identity alone, appended after every
 /// other node, with one `generated` source-map entry appended after every
 /// other entry. The selection records no selecting occurrence, so the entry's
 /// region is the first byte of the checked unit (QSpec: the entry is a
@@ -1526,7 +1745,6 @@ fn model_root_node(
         declaration: None,
         owner: Some(CheckedNodeOwner::ModelRoot {
             identity: selection.identity.as_str().into(),
-            digest: hex(&selection.digest).into(),
         }),
         body: CheckedTerm::Aggregate {
             members: Vec::new(),
@@ -1642,7 +1860,6 @@ pub fn emit_timed_models(
         edition: &identity.edition,
         profile_selections: &identity.profile_selections,
         definition_selections: &identity.definition_selections,
-        model_selections: &identity.model_selections,
         required_features: &identity.required_features,
         dependency_selections: &identity.dependency_selections,
         identity_projection: &semantic_graph.nodes,
@@ -2040,25 +2257,24 @@ fn emit_package_inner(
                     &generated,
                 );
             }
-            // QSpec FR-322 "Timed-model nodes": one template `clock_place`
-            // for each clock path, its slot steps' symbolic selector the
-            // Integer type node.
+            // QSpec FR-322 "Timed-model nodes": the template `clock_place`
+            // of each clock path, which S3 wrote so that a `presence_read`
+            // names it, read back from its emitted node.
             let integer_type = node_id(qsl_semantics::check::builtin_integer_type_key());
             model.clock_places = graph
                 .timed_models()
                 .iter()
                 .filter(|timed| timed.model() == source.model)
-                .flat_map(|timed| timed.clocks())
-                .enumerate()
-                .map(|(at, clock)| {
-                    CheckedClockPlace::template(
-                        clock,
-                        placeholder(&format!("place-{at}")),
-                        &model.model,
-                        &integer_type,
-                    )
+                .flat_map(|timed| timed.place_nodes())
+                .map(|key| {
+                    let id = node_id(*key);
+                    let written = nodes.iter().find(|node| node.node_id == id).ok_or(
+                        EmitRefusal::TimedModelWriterInvariant("a clock place S3 wrote is emitted"),
+                    )?;
+                    CheckedClockPlace::project(written)
+                        .map_err(EmitRefusal::TimedModelWriterInvariant)
                 })
-                .collect();
+                .collect::<Result<_, _>>()?;
             // QSpec FR-322 "Timed-model nodes": one `urgency` node for each
             // `urgent` declaration, in declared order (FR-322 "Aggregate
             // order"), each located at its declaration so that its order key
@@ -2068,7 +2284,7 @@ fn emit_package_inner(
             // equal content are one node (its key is its content) with one
             // `expression` occurrence at each declaration (FR-322: every node
             // has one or more source occurrences); the root lists it once.
-            let mut urgency_regions: BTreeMap<CheckedNodeId, Vec<(u64, u64)>> = BTreeMap::new();
+            let mut regions_of: BTreeMap<CheckedNodeId, Vec<(u64, u64)>> = BTreeMap::new();
             let mut declared = Vec::new();
             for timed in graph
                 .timed_models()
@@ -2161,12 +2377,35 @@ fn emit_package_inner(
                         (false, id)
                     }
                 };
-                urgency_regions.entry(metadata).or_default().push(region);
+                regions_of.entry(metadata).or_default().push(region);
                 if !written {
                     urgencies.push(node);
                 }
             }
             model.urgencies = urgencies;
+            // QSpec FR-322 "Clause nodes": the guards, resets, invariants
+            // and constraints S3 lowered, each located at its own source.
+            if let Some(clauses) = graph
+                .timed_models()
+                .iter()
+                .find(|timed| timed.model() == source.model)
+                .and_then(qsl_semantics::check::TimedModel::clause_nodes)
+            {
+                let places: Vec<CheckedNodeId> = model
+                    .clock_places
+                    .iter()
+                    .map(|place| place.metadata.node_id.clone())
+                    .collect();
+                let unit = model.source.unit.clone();
+                write_clauses(
+                    &mut model,
+                    clauses,
+                    &places,
+                    &unit,
+                    &placeholder,
+                    &mut regions_of,
+                )?;
+            }
             if !model.clock_places.is_empty() {
                 push_scalar_type(
                     &mut nodes,
@@ -2246,12 +2485,16 @@ fn emit_package_inner(
                 .write_nodes()
                 .map_err(EmitRefusal::TimedModelWriterInvariant)?
             {
+                // A clock place is S3's node, emitted with the graph.
+                if nodes.iter().any(|written| written.node_id == node.node_id) {
+                    continue;
+                }
                 if node.occurrences.is_empty() {
                     return Err(EmitRefusal::TimedModelWriterInvariant(
                         "timed nodes must retain their source occurrence",
                     ));
                 }
-                let regions = urgency_regions.get(&node.node_id);
+                let regions = regions_of.get(&node.node_id);
                 for (at, occurrence) in node.occurrences.iter().enumerate() {
                     let (start, end) = regions
                         .and_then(|regions| regions.get(at))
@@ -2272,6 +2515,14 @@ fn emit_package_inner(
             }
         }
         rekey_timed_model_nodes(&mut nodes, &mut source_map)?;
+        // QSpec FR-322 "Aggregate order": the lists are written in declared
+        // order, which reads the nodes' regions and structure alone, and
+        // the nodes whose lists moved are rekeyed.
+        if timed_order::order_timed_aggregates(&mut nodes, &source_map)
+            .map_err(EmitRefusal::TimedOrder)?
+        {
+            rekey_timed_model_nodes(&mut nodes, &mut source_map)?;
+        }
     }
     append_model_roots(
         graph.model_roots(),
@@ -2312,25 +2563,13 @@ fn emit_package_inner(
         laws.push(profile.definition().clone());
     }
 
-    let catalog = DefinitionLock::pinned();
-    let (edition, definition_selections) =
-        catalog_selections(&catalog, graph.header_layers(), &laws);
-    let model_selections: Vec<CheckedDomainPackageRef> = graph
-        .model_selections()
-        .iter()
-        .map(|selection| CheckedDomainPackageRef {
-            identity: selection.identity.as_str().into(),
-            digest_domain: DOMAIN_PACKAGE_DIGEST.into(),
-            digest: hex(&selection.digest).into(),
-        })
-        .collect();
-    let root = catalog_entry(&catalog, CatalogRole::Root).identity;
+    let (edition, definition_selections) = catalog_selections(graph.header_layers(), &laws);
+    let root = DefinitionRole::Root.identity();
     let lock = CheckedPackageLockV2 {
         sources: sources.into_iter().collect(),
         edition: edition.clone(),
         profile_selections: profile_selections.clone(),
         definition_selections: definition_selections.clone(),
-        model_selections: model_selections.clone(),
         required_features: vec![root.into()],
         dependency_selections: dependency_selections(package),
     };
@@ -2344,7 +2583,6 @@ fn emit_package_inner(
         edition: &edition,
         profile_selections: &profile_selections,
         definition_selections: &definition_selections,
-        model_selections: &model_selections,
         required_features: &lock.required_features,
         dependency_selections: &lock.dependency_selections,
         identity_projection: &semantic_graph.nodes,
@@ -2400,3 +2638,5 @@ pub(crate) mod tests;
 /// IR's `requires-bound` at the pinned IR revision.
 #[cfg(test)]
 mod extent_agreement;
+mod timed_order;
+pub use timed_order::OrderFault as TimedOrderFault;

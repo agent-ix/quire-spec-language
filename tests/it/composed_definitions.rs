@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
-use qsl_foundation::{ByteDigest, Source, SourceIdentity, Span};
+use qsl_foundation::{Source, SourceIdentity, Span};
 use quire_spec_language::linking::composed::binding_work::{
     Dimension, Limits as BindingLimits, Work, ACCOUNTING_VERSION,
 };
@@ -36,7 +36,6 @@ fn rules() -> Vec<RuleInput<'static>> {
                 rule.path,
                 RuleInput {
                     path: rule.path,
-                    digest: ByteDigest::of(rule.path.as_bytes()),
                     bytes: rule.path.as_bytes(),
                 },
             )
@@ -48,10 +47,7 @@ fn rules() -> Vec<RuleInput<'static>> {
 
 fn profile(alias: &str, definition: R) -> String {
     let selected = definition.selection();
-    format!(
-        "profile {alias} = \"{}\" version \"{}\" digest \"{}\";\n",
-        selected.identity, selected.revision, selected.digest
-    )
+    format!("profile {alias} = \"{}\";\n", selected.identity)
 }
 
 fn source(name: &str, body: &str) -> Source {
@@ -162,85 +158,7 @@ fn installed_definition_bytes_never_fill_an_omitted_dependency() {
 
 #[test]
 #[trace("TC-114", "FR-036-AC-3")]
-fn stale_raw_bytes_refuse_while_resealed_content_still_selects_by_identity() {
-    let sources = [source(
-        "queries",
-        &(profile("Q", R::StateQueries) + "predicate Check using Q (): Boolean { true }"),
-    )];
-    let selection = inventory(&sources);
-    let namespace = admit_namespace(
-        &selection,
-        &sources,
-        WorkLimits::default(),
-        Limits::default(),
-    );
-    let rules = rules();
-    let mut altered = R::StateQueries.bytes().to_vec();
-    altered.extend_from_slice(b"\nChanged meaning.\n");
-    for resealed in [false, true] {
-        let mut definitions = definitions();
-        let index = definitions
-            .iter()
-            .position(|entry| entry.selection.identity == R::StateQueries.identity())
-            .unwrap();
-        definitions[index].bytes = &altered;
-        if resealed {
-            definitions[index].selection.digest = ByteDigest::of(&altered);
-        }
-        let selected = Inventory {
-            edition: R::Edition.selection(),
-            definitions: &definitions,
-            rules: &rules,
-        };
-        let report = definitions::resolve(
-            namespace.namespace().unwrap(),
-            &selected,
-            &mut Work::new(BindingLimits::default()),
-        );
-        let cause = report.declarations[0].uses[0].refusal.as_ref().unwrap();
-        if resealed {
-            assert!(matches!(cause, Cause::SelectionMismatch { .. }));
-        } else {
-            assert!(matches!(cause, Cause::DefinitionDigest { .. }));
-        }
-    }
-    // Recognition is by identity and revision alone: a resealed, self-consistent
-    // artifact matching the source's own declared digest still selects the
-    // compiler's StateQueries interpretation, regardless of its altered bytes.
-    let changed = source("resealed", &format!("profile Q = \"{}\" version \"{}\" digest \"{}\"; predicate Check using Q (): Boolean {{ true }}", R::StateQueries.identity(), R::StateQueries.revision(), ByteDigest::of(&altered)));
-    let changed = [changed];
-    let selection = inventory(&changed);
-    let namespace = admit_namespace(
-        &selection,
-        &changed,
-        WorkLimits::default(),
-        Limits::default(),
-    );
-    let mut definitions = definitions();
-    let index = definitions
-        .iter()
-        .position(|entry| entry.selection.identity == R::StateQueries.identity())
-        .unwrap();
-    definitions[index].bytes = &altered;
-    definitions[index].selection.digest = ByteDigest::of(&altered);
-    let selected = Inventory {
-        edition: R::Edition.selection(),
-        definitions: &definitions,
-        rules: &rules,
-    };
-    let report = definitions::resolve(
-        namespace.namespace().unwrap(),
-        &selected,
-        &mut Work::new(BindingLimits::default()),
-    );
-    let use_ = &report.declarations[0].uses[0];
-    assert!(use_.refusal.is_none());
-    assert_eq!(use_.closure, [R::StateQueries, R::StateCore, R::Edition]);
-}
-
-#[test]
-#[trace("TC-114", "FR-036-AC-3")]
-fn missing_or_reencoded_selected_rules_refuse_only_their_closures() {
+fn missing_selected_rules_refuse_only_their_closures() {
     let sources = [source(
         "queries",
         &(profile("Q", R::StateQueries) + "predicate Check using Q (): Boolean { true }"),
@@ -254,22 +172,9 @@ fn missing_or_reencoded_selected_rules_refuse_only_their_closures() {
     );
     let definitions = definitions();
     let target = R::StateQueries.rules()[0];
-    let mut changed = target.path.as_bytes().to_vec();
-    changed.push(b'\n');
-    for missing in [false, true] {
+    {
         let mut rules = rules();
-        if missing {
-            rules.retain(|rule| rule.path != target.path);
-        } else {
-            // A stale digest, not left matching the altered bytes: recognition
-            // is by path alone, so only the caller's own self-consistency
-            // check (declared digest vs. supplied bytes) can still refuse this.
-            let rule = rules
-                .iter_mut()
-                .find(|rule| rule.path == target.path)
-                .unwrap();
-            rule.bytes = &changed;
-        }
+        rules.retain(|rule| rule.path != target.path);
         let selected = Inventory {
             edition: R::Edition.selection(),
             definitions: &definitions,
@@ -282,11 +187,7 @@ fn missing_or_reencoded_selected_rules_refuse_only_their_closures() {
         );
         assert!(report.edition_refusal.is_none());
         let cause = report.declarations[0].uses[0].refusal.as_ref().unwrap();
-        if missing {
-            assert!(matches!(cause, Cause::MissingRule { path } if *path == target.path));
-        } else {
-            assert!(matches!(cause, Cause::RuleMismatch { path, .. } if *path == target.path));
-        }
+        assert!(matches!(cause, Cause::MissingRule { path } if *path == target.path));
     }
 }
 
@@ -574,14 +475,9 @@ fn zero_and_exact_limits_keep_immutable_partial_reports_and_fresh_retries() {
     // One alias candidate + root lookup: 2. Profile closure enter/leave: 6;
     // its two dependency lookups: 2. Every normative rule lookup costs one.
     let bytes = selected.edition.identity.len()
-        + selected.edition.revision.len()
         + definitions
             .iter()
-            .map(|artifact| {
-                artifact.selection.identity.len()
-                    + artifact.selection.revision.len()
-                    + artifact.bytes.len()
-            })
+            .map(|artifact| artifact.selection.identity.len() + artifact.bytes.len())
             .sum::<usize>()
         + rules
             .iter()

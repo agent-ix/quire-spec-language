@@ -60,7 +60,7 @@ use qsl_eval::temporal::{
 };
 use qsl_eval::temporal::{AtomReading, CaptureReading};
 use qsl_foundation::diagnostic::Code;
-use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
+use qsl_foundation::digest::{DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId};
@@ -692,8 +692,8 @@ fn no_value() -> ModelTraceSettlement {
 
 /// FR-128: replay `envelope`'s model counterexample over `subject`, with
 /// FR-098's request `wire` supplying the package reference, the byte
-/// provision (domain packages and initial-state snapshots by `sha256-jcs`
-/// digest) and the limits. `letters` reads the `holds` atoms of an authored
+/// provision (domain packages by package identity and initial-state snapshots by
+/// document labels) and the limits. `letters` reads the `holds` atoms of an authored
 /// clause at a replayed state (FR-125), as the engine that found the
 /// counterexample read them.
 ///
@@ -1029,12 +1029,7 @@ fn replay_on<P: crate::witness::FamilyPayload>(
             recompiled: package_id,
         });
     }
-    let documents: BTreeMap<[u8; 32], Vec<u8>> = request
-        .byte_provision()
-        .entries()
-        .filter(|(digest, _)| digest.domain() == DigestDomain::Sha256Jcs)
-        .map(|(digest, bytes)| (*digest.as_bytes(), bytes.to_vec()))
-        .collect();
+    let documents = request.byte_provision().snapshots();
     let meter = request.accounting_limits();
     let package = compiled.checked.package();
     let simulation = |subject: &ModelTraceSubject| ModelSimulationRequest {

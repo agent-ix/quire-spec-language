@@ -187,7 +187,6 @@ fn built_types(
     hash: fn(&NodeContent) -> u64,
 ) -> (Vec<NodeKey>, Vec<(NodeKey, Vec<u8>)>) {
     let owner = SourceOwner::from(&fixture_source());
-    let lock = LockEvidence::default();
     let mut occurrences = OccurrenceMap::default();
     let location = generated_location();
     let mut meter = quire_exact::Meter::new(crate::check::family::SCALAR_LIMITS_UNLIMITED);
@@ -196,7 +195,7 @@ fn built_types(
         &owner,
         &[],
         scope.types().units().clone(),
-        &lock,
+        None,
         0,
         &mut occurrences,
         &mut meter,

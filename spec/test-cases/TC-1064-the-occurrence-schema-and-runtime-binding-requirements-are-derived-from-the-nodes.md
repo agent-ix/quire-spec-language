@@ -20,7 +20,7 @@ package. Scope: FR-384-AC-1 to FR-384-AC-8.
 Catches an owner invented for a `sequence`, an `Exhaustion` dimension missing
 for the exhausted arm, a `repeat` with no maximum given a fabricated bound,
 two same-named roles of different protocols sharing a schema entry, a binding
-requirement written into a node, an authority guessed when the lock selects
+requirement written into a node, an authority guessed when the package selects
 none, and a schema that depends on the source order.
 
 Fixture **W** is TC-1061's.

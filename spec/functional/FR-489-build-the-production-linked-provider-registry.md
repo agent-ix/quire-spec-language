@@ -31,28 +31,23 @@ descriptors, or a process-global registry.
 
 The current linked production sources in `qsl_analyze::Engines::qsl()` are
 EN-1 (`temporal-satisfaction`), EN-4 (`probabilistic-satisfaction`) and EN-6
-(`temporal-satisfaction` over a dense-time subject, FR-243) under FR-281. No
-engine advertises either refinement-witness capability used
-by FR-345. The `ValueValidity` witness has no production provider; QSL-1200
-tracks its provider. The `OperationContract` witness has no production
-provider; QSL-1201 tracks its provider. QSL-905 supplies the operation-contract
-record needed by that path, but does not itself register or implement a
-provider. Until QSL-1200 and QSL-1201 land, the production snapshot SHALL
-return the empty candidate outcome for the corresponding witness capability,
-and FR-345 SHALL report the empty candidate set according to its existing
-requirement. In particular, FR-345-AC-9, FR-345-AC-12 and FR-345-AC-13 are
-satisfied only after QSL-1200 supplies `ValueValidity` and QSL-1201 supplies
-`OperationContract`; until then, `make refinement-layering` SHALL NOT be added
-to `make ci`. QSL-518 remains blocked by QSL-1200 and QSL-1201. This
-requirement does not change FR-345's empty-candidate outcome. The registry
-builder SHALL NOT insert a placeholder to change that outcome.
+(`temporal-satisfaction` over a dense-time subject, FR-243) under FR-281, and
+the two refinement-witness providers FR-345 uses. The `ValueValidity` witness
+is supplied by the value-validity check arm (`value-checker`, QSpec FR-483 and
+FR-484). The `OperationContract` witness is supplied by the operation-contract
+check arm (`contract-checker`, QSpec FR-483 and FR-485), which advertises
+`operation-contract` in `bounded` mode. QSL-905 supplies the operation-contract
+record the arm settles; it does not itself register or implement a provider.
+The production snapshot SHALL return each arm's descriptor as the candidate
+outcome for its witness capability. The registry builder SHALL NOT insert a
+placeholder for either capability.
 
 | Witness capability | Registration owner/source | Current production status |
 |---|---|---|
 | `temporal-satisfaction` | EN-1 and EN-6 in `qsl_analyze::Engines::qsl()`; FR-281 owns the engine behavior and FR-288 owns conversion of each provider manifest into a descriptor. | Present; expose and register the existing EN-1 and EN-6 descriptors. |
 | `probabilistic-satisfaction` | EN-4 in `qsl_analyze::Engines::qsl()`; FR-281 owns the engine behavior and FR-288 owns conversion of its provider manifest into a descriptor. | Present; expose and register the existing EN-4 descriptor. |
-| `ValueValidity` | No current provider registration. QSL-1200 owns supplying one. | Absent until QSL-1200 lands. |
-| `OperationContract` | No current provider registration. QSL-1201 owns supplying one; QSL-905 supplies a related operation-contract record, not a provider. | Absent until QSL-1201 lands. |
+| `ValueValidity` | The value-validity arm in `qsl_analyze::Engines::qsl()`; QSpec FR-483 and FR-484 own its behavior. | Present; expose and register its descriptor. |
+| `OperationContract` | The operation-contract arm in `qsl_analyze::Engines::qsl()`; QSpec FR-483 and FR-485 own its behavior. QSL-905 supplies the operation-contract record it settles, not a provider. | Present; expose and register its descriptor. |
 
 The current `qsl_analyze::Engines::qsl()` API does not expose its engine
 descriptors, and `xtask` does not yet depend on `qsl-analyze`. QSL SHALL add a
@@ -99,19 +94,19 @@ API and dependency changes, not claims about existing code.
 - The CLI SHALL NOT report the empty candidate set or FR-345's expected
   unsupported result when the production factory returns an error.
 - A production registry SHALL contain no registration solely to make a
-  refinement-layering witness candidate set nonempty. QSL-1200 and QSL-1201
-  are dependencies for the respective real providers; their absence remains
-  visible to FR-345.
+  refinement-layering witness candidate set nonempty. Each witness
+  capability's candidate is its real provider: `value-checker` for
+  `ValueValidity` and `contract-checker` for `OperationContract`.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-489-AC-1 | A production snapshot built from `qsl_analyze::Engines::qsl()` contains exactly the engine descriptors that collection exposes, including EN-1, EN-4 and EN-6, and no descriptor without its engine implementation. | Test (TC-1272) |
-| FR-489-AC-2 | Candidate queries over the production snapshot include EN-1 and EN-6 for `temporal-satisfaction` and EN-4 for `probabilistic-satisfaction` when the query supplies the evidence kind EN-4 advertises, as FR-075-AC-13 requires; where QSL has no production provider implementation for the FR-345 `ValueValidity` or `OperationContract` witness capability, the corresponding candidate outcome is empty. | Test (TC-1272) |
+| FR-489-AC-1 | A production snapshot built from `qsl_analyze::Engines::qsl()` contains exactly the engine descriptors that collection exposes, including EN-1, EN-4, EN-6, `value-checker` and `contract-checker`, and no descriptor without its engine implementation. | Test (TC-1272) |
+| FR-489-AC-2 | Candidate queries over the production snapshot include EN-1 and EN-6 for `temporal-satisfaction` and EN-4 for `probabilistic-satisfaction` when the query supplies the evidence kind EN-4 advertises, as FR-075-AC-13 requires; the FR-345 `ValueValidity` witness capability gives exactly `value-checker` and the `OperationContract` witness capability gives exactly `contract-checker`. | Test (TC-1272) |
 | FR-489-AC-3 | If the injected descriptor source fails or a production registration is refused, the factory returns a typed build error and the CLI reports tool failure; it never drops the descriptor and continues with a partial snapshot. | Test (TC-1272) |
 | FR-489-AC-4 | Two independently built production snapshots are equal, and the production builder uses no process-global registry state. | Test (TC-1272) |
-| FR-489-AC-5 | `Engines::registrations()` yields exactly the descriptors owned by the EN-1, EN-4 and EN-6 engines in `Engines::qsl()`; `xtask` declares `qsl-analyze` as a normal dependency and its production factory registers each yielded descriptor once. | Test (TC-1272) |
+| FR-489-AC-5 | `Engines::registrations()` yields exactly the descriptors owned by the EN-1, EN-4, EN-6, `value-checker` and `contract-checker` engines in `Engines::qsl()`; `xtask` declares `qsl-analyze` as a normal dependency and its production factory registers each yielded descriptor once. | Test (TC-1272) |
 | FR-489-AC-6 | Test-only injected descriptor-source failure and registration refusal each return their corresponding typed build error; the CLI maps either to FR-344 tool failure, exit 30, without returning a partial snapshot or the FR-345 expected unsupported result. | Test (TC-1272) |
 
 ## Dependencies
@@ -124,11 +119,7 @@ API and dependency changes, not claims about existing code.
   the provider descriptor source used by each engine.
 - [FR-345](./FR-345-run-the-profile-layering-refinement-gate.md) consumes the
   resulting snapshot for its layering witness requests.
-- FR-345-AC-9, FR-345-AC-12 and FR-345-AC-13 require the production provider
-  coverage owned by QSL-1200 and QSL-1201. Until both tickets land, the target
-  is not part of `make ci`, and QSL-518 remains blocked by those tickets.
-- [QSL-1200: Production provider for ValueValidity witnesses](https://linear.app/agent-ix/issue/QSL-1200/production-provider-for-valuevalidity-witnesses)
-  tracks the absent `ValueValidity` provider.
-- [QSL-1201: Production provider for OperationContract witnesses](https://linear.app/agent-ix/issue/QSL-1201/production-provider-for-operationcontract-witnesses)
-  tracks the absent `OperationContract` provider; [QSL-905](https://linear.app/agent-ix/issue/QSL-905)
-  is its related operation-contract record producer.
+- FR-345-AC-9, FR-345-AC-12 and FR-345-AC-13 read the witness candidates
+  this snapshot gives.
+- QSpec FR-483, FR-484 and FR-485 specify the value-validity and
+  operation-contract check arms.

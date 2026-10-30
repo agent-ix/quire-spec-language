@@ -382,7 +382,9 @@ fn an_unbound_alias_resolves_nothing_and_charges_nothing() {
 #[test]
 fn an_alias_naming_another_model_selection_is_foreign() {
     let world = world();
-    let other = DomainPackageRef::fixture("other");
+    let other = DomainPackageRef {
+        identity: "other".into(),
+    };
     assert_ne!(other, world.selection);
     let aliases = [
         ModelAlias {

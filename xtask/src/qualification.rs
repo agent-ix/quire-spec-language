@@ -318,7 +318,6 @@ pub fn run(workspace_root: &Path, operands: &[OsString]) -> Result<Outcome> {
     })?;
     validate_semantics(&corpus)?;
 
-    let profiles = qsl_profiles();
     let all_capabilities = corpus
         .coverage
         .primary
@@ -326,6 +325,7 @@ pub fn run(workspace_root: &Path, operands: &[OsString]) -> Result<Outcome> {
         .map(|cap| (cap.capability_id.as_str(), cap))
         .collect::<BTreeMap<_, _>>();
     let default_scope = args.capabilities.is_empty();
+    let profiles = qsl_profiles();
     let mut scope = if default_scope {
         corpus
             .coverage
@@ -503,18 +503,17 @@ fn parse_args(operands: &[OsString]) -> Result<Args> {
     })
 }
 
-fn qspec_dir(_workspace_root: &Path) -> Result<PathBuf> {
+fn qspec_dir(workspace_root: &Path) -> Result<PathBuf> {
     let path = std::env::var_os("QSPEC_DIR")
-        .filter(|path| !path.is_empty())
         .map(PathBuf::from)
-        .ok_or_else(|| {
-            Error::QualificationRefusal(
-                "QSPEC_DIR must point to an available QSpec checkout; no default is used"
-                    .to_owned(),
-            )
-        })?;
+        .unwrap_or_else(|| {
+            workspace_root
+                .parent()
+                .unwrap_or(workspace_root)
+                .join("quire-specification")
+        });
     fs::canonicalize(&path).map_err(|error| {
-        Error::QualificationRefusal(format!("QSpec checkout {}: {error}", path.display()))
+        Error::QualificationRefusal(format!("QSPEC_DIR {}: {error}", path.display()))
     })
 }
 
@@ -612,21 +611,19 @@ fn validate_semantics(corpus: &Corpus) -> Result<()> {
 }
 
 fn qsl_profiles() -> BTreeSet<String> {
-    let lock = qsl_semantics::value::DefinitionLock::pinned();
-    let mut profiles = lock
-        .catalog()
-        .iter()
-        .map(|entry| entry.identity.to_owned())
+    let mut profiles = qsl_semantics::value::DefinitionRole::ALL
+        .into_iter()
+        .map(|role| role.identity().to_owned())
         .collect::<BTreeSet<_>>();
     profiles.extend(
-        lock.model_catalog()
-            .iter()
-            .map(|entry| entry.identity.to_owned()),
+        qsl_semantics::value::ModelRole::ALL
+            .into_iter()
+            .map(|role| role.identity().to_owned()),
     );
     profiles.extend(
-        lock.temporal_catalog()
-            .iter()
-            .map(|entry| entry.identity.to_owned()),
+        qsl_semantics::value::TemporalRole::ALL
+            .into_iter()
+            .map(|role| role.identity().to_owned()),
     );
     profiles.extend(
         qsl_semantics::value::HeaderLayer::ALL

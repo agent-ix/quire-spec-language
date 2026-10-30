@@ -35,12 +35,12 @@ ROLES = [
 
 
 def config_version_unit():
-    """The ConfigVersion `1-draft` unit, one statement per line, digest elided."""
+    """The ConfigVersion `1-draft` unit, one statement per line, model line carrying its identity only."""
     source = (ROOT / "examples/config-version/spine_unit.rs").read_text(encoding="utf-8")
     body = source.split("format!(\n", 1)[1].split('",\n    )', 1)[0]
     text = body.replace("\\\n", "").replace('\\"', '"').replace("{{", "{").replace("}}", "}")
     text = text.replace("{PACKAGE_IDENTITY:?}", '"example/config-version"')
-    text = text.replace("{PACKAGE_VERSION:?}", '"1.0.0"').replace("{model_digest_hex}", "…")
+    text = text.replace("{PACKAGE_VERSION:?}", '"1.0.0"')
     lines = []
     for raw in text.split("\\n"):
         raw = " ".join(raw.split()).lstrip('"')
@@ -62,7 +62,7 @@ def capability_families():
 
 
 KEYWORDS = {
-    "language", "edition", "profile", "model", "version", "digest", "invariant",
+    "language", "edition", "profile", "model", "version", "invariant",
     "using", "on", "at", "post", "pre", "implies", "not", "present", "deref",
     "value", "reaches",
 }
@@ -131,14 +131,14 @@ def first_rule():
         330,
         "An annotated QSL unit: (1) the header names the language and edition, (2) the profile "
         "says which part of the language the rules use, (3) the model line imports a domain "
-        "package by exact identity and digest, (4) invariants must hold for every object, "
+        "package by its identity, (4) invariants must hold for every object, "
         "(5) a post rule compares a value after an operation with its value before.",
     )
     first = lambda prefix: next(i for i, s in enumerate(lines) if s.startswith(prefix))  # noqa: E731
     notes = [
         (first("language"), "edition"),
         (first("profile"), "allowed features"),
-        (first("model"), "model by digest"),
+        (first("model"), "model by identity"),
         (first("invariant"), "every object"),
         (first("post"), "after vs. before"),
     ]
@@ -213,7 +213,7 @@ def pipeline():
     f.box(180, row, 140, 56, "logic", "syntax tree", "lossless")
     f.box(360, row, 140, 56, "logic", "parsed forms", "unchecked")
     f.box(540, row, 160, 56, "logic", "checked graph", "typed · defined")
-    f.box(500, 10, 120, 50, "ink", "domain model", "by digest")
+    f.box(500, 10, 120, 50, "ink", "domain model", "by identity")
     f.box(640, 10, 140, 50, "ink", "dependencies", "checked packages")
     f.box(780, row, 200, 56, "model", "checked package", "identity + source map")
     f.line([(70, 60), (70, row - 3)], "code")

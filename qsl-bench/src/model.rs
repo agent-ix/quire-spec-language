@@ -44,7 +44,6 @@ use qsl_semantics::model::index::ModelIndex;
 use qsl_semantics::model::intake::{
     admit, meaning, read_domain_package, read_records, PackageDocument,
 };
-use qsl_semantics::model::key::SHA256_JCS_DIGEST_DOMAIN;
 use qsl_semantics::model::normalize::{
     normalize_shared, EffectiveView, ModelRefusal, NormalizeOutcome,
 };
@@ -57,7 +56,6 @@ use qsl_semantics::value::model_query::{evaluate_all_instances, ModelQueryHalt};
 use quire_checked::key::DeclarationKey;
 use quire_exact::{CardinalityBound, CollectionKind, CollectionType, Meter, ValueType};
 use serde_json::{json, Value};
-use sha2::{Digest, Sha256};
 
 /// The benchmark domain package's identity.
 pub const PACKAGE: &str = "bench/model";
@@ -203,8 +201,7 @@ pub fn document(shape: ModelShape) -> Vec<u8> {
         }],
     });
     // The document's RFC 8785 bytes, from the one encoder (ADR-013 §2,
-    // ADR-013:113) over the shared reader's tree of its JSON text, so
-    // `offer`'s digest over them is its `sha256-jcs` digest.
+    // ADR-013:113) over the shared reader's tree of its JSON text.
     let text = serde_json::to_vec(&document).expect("a json! document serializes");
     let tree = quire_canonical::read(&text, u64::MAX).expect("a serialized document reads");
     quire_canonical::to_vec(&tree, quire_semantic_value::semantic_node::IDENTITY_LIMITS)
@@ -215,22 +212,19 @@ pub fn document(shape: ModelShape) -> Vec<u8> {
 /// reads it from.
 #[derive(Clone, Debug)]
 pub struct Offer {
-    /// The offered `{identity, version, digest}` selection.
+    /// The offered `{identity}` selection.
     pub selection: DomainPackageRef,
-    /// The package bytes, keyed by their SHA-256-over-JCS digest.
-    pub bytes_by_digest: BTreeMap<[u8; 32], Vec<u8>>,
+    /// The package bytes, keyed by the identity they declare.
+    pub packages: BTreeMap<String, Vec<u8>>,
 }
 
-/// Offer `document` under its own identity, version and digest.
+/// Offer `document` under its own identity.
 pub fn offer(document: Vec<u8>) -> Offer {
-    let digest: [u8; 32] = Sha256::digest(&document).into();
     Offer {
         selection: DomainPackageRef {
             identity: PACKAGE.to_owned(),
-            version: VERSION.to_owned(),
-            digest,
         },
-        bytes_by_digest: BTreeMap::from([(digest, document)]),
+        packages: BTreeMap::from([(PACKAGE.to_owned(), document)]),
     }
 }
 
@@ -252,9 +246,8 @@ pub fn admit_offer(
     offer: &Offer,
 ) -> Result<(DomainPackageRef, PackageDocument), Box<ModelRefusal>> {
     admit(
-        &offer.selection,
-        SHA256_JCS_DIGEST_DOMAIN,
-        &offer.bytes_by_digest,
+        offer.selection.identity.as_str(),
+        &offer.packages,
         IntakeLimits::default(),
     )
     .map_err(Box::new)

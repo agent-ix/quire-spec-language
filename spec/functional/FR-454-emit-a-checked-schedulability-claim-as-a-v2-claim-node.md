@@ -30,7 +30,7 @@ states with the claim's whole task set inside it, and QSL's I2 reader SHALL
 read that node back. QSpec FR-482 owns the body, the obligation identity and
 the reader's refusals; this requirement states what QSL's emitter writes
 from its checked `TaskSet` and `ScheduleClaim` and what its I2 reader
-returns, so that the obligation identity FR-246 and FR-248-AC-4 rely on is
+returns, so that the obligation identity FR-246 relies on is
 keyed from a node.
 
 ## Use case
@@ -100,11 +100,6 @@ obligation.
 - If the triple does not resolve in the recompiled package, then the
   settlement SHALL settle the item `Failed` (FR-248's map) with no evidence
   checked, as FR-410 settles an unresolved state-graph triple.
-- An outcome checked against an item whose triple names another node (for
-  example the `under edf` claim's node for a fixed-priority outcome) SHALL
-  refuse `stale_dependency`/`content-mismatch` naming both obligation
-  identities, each keyed from its node, which is FR-248-AC-4's identity
-  mismatch.
 
 ## Acceptance Criteria
 
@@ -112,7 +107,7 @@ obligation.
 |----|----------|--------------|
 | FR-454-AC-1 | Compiling ADR-026 §12's `Ctl` (in `ms`, tasks `a`, `b`, `c` with priorities 1, 2, 3) with `CtlFp`, `CtlEdf` and `response R on Ctl.c <= 12 ms under fixed_priority;` emits three `claim`/`schedulability` nodes: `CtlFp` with `kind` `schedulable`, `policy` `fixed-priority`, `task` and `bound` the empty aggregate and `tasks` the three task aggregates in name order, every time value a `quantity` literal typed by the `ms` unit node and `jitter` and `blocking` `0`; `CtlEdf` the same with `policy` `edf`; `R` with `kind` `response`, `task` `c` and `bound` `12`. Each has `dependencies` `[]` and occurrences of role `claim`; the I2 reader admits each and returns its kind, policy, task, bound and task set. No checked claim is refused as not emitted. | Test (TC-1202) |
 | FR-454-AC-2 | `CtlFp` and `CtlEdf` emit different node ids and different obligation identities; `Ctl` with the third WCET 6 emits a different `CtlFp` node id and `package_id`; `Ctl` with its tasks listed in another order, or with `jitter 0 ms` written on one task, emits `CtlFp`'s node id; one unit that declares `CtlFp`'s claim twice under two names emits one node with two `claim` occurrences, ordinals 0 and 1. | Test (TC-1202) |
-| FR-454-AC-3 | The I2 reader returns for `CtlFp` the triple `[node, "claim", ordinal]`, and resolving it in the recompiled package returns the claim and its task set; a triple with an unknown NodeId, with a `claim`/`state_graph` node's NodeId, or with another ordinal returns `clause-root-unresolved` from the schedulability lookup, and `CtlFp`'s triple given to FR-337's temporal lookup or FR-410's state-graph lookup returns `clause-root-unresolved`; a request whose triple is unresolved checks no evidence and settles the item `Failed`. `CtlFp`'s outcome checked against `CtlEdf`'s triple refuses `stale_dependency`/`content-mismatch` naming both obligation identities. | Test (TC-1202) |
+| FR-454-AC-3 | The I2 reader returns for `CtlFp` the triple `[node, "claim", ordinal]`, and resolving it in the recompiled package returns the claim and its task set; a triple with an unknown NodeId, with a `claim`/`state_graph` node's NodeId, or with another ordinal returns `clause-root-unresolved` from the schedulability lookup, and `CtlFp`'s triple given to FR-337's temporal lookup or FR-410's state-graph lookup returns `clause-root-unresolved`; a request whose triple is unresolved checks no evidence and settles the item `Failed`. | Test (TC-1202) |
 | FR-454-AC-4 | Fed to QSL's I2 reader, AC-1's `CtlFp` node with `policy` `rate-monotonic` refuses `invalid_package`/`invalid-value`, with its tasks in the order `b`, `a`, `c` refuses `invalid_semantic_graph` at `tasks`, and with the first task's `period` `0` refuses `invalid_timed_model`/`invalid-task-set` at that task's aggregate, each at FR-482's locus, with the node key and `package_id` recomputed after each edit. | Test (TC-1202) |
 
 ## Dependencies

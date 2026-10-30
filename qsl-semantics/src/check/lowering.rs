@@ -23,10 +23,10 @@
 //! ([`super::node_key::group_keys`]), and two groups whose members' keys
 //! coincide refuse. Every key comes from
 //! [`super::node_key::node_key`], which runs once per distinct content: a
-//! node built again takes the key its content was given. Laws come only
-//! from the package's lock evidence ([`LockEvidence`]); a law it does not
-//! supply refuses the node (`missing_declaration`/`missing-selection`),
-//! never a constant.
+//! node built again takes the key its content was given. The text law is
+//! QSL's own text profile; the protocol law is the profile the unit's header
+//! selected, and a protocol node with none refuses
+//! (`missing_declaration`/`missing-selection`).
 //!
 //! FR-094 keys the rest (`model`): the model declaration nodes a
 //! `Reference<T>` or a model row's member names, the `Reference<T>` and
@@ -75,7 +75,7 @@ use super::node_key::{
 use super::refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, KeyFault, StageLimitCause,
 };
-use crate::value::definition::{CatalogRole, DefinitionLock, DefinitionReference};
+use crate::value::definition::{DefinitionReference, DefinitionRole};
 use crate::value::enumeration::{member_preimage_bytes, EnumDeclarationPreimage};
 use crate::value::member::Member;
 use crate::value::unit::{DimensionPreimage, UnitPreimage};
@@ -98,7 +98,7 @@ mod state_graph;
 mod state_transition;
 mod temporal;
 mod terminal;
-mod urgency;
+mod timed_clause;
 mod wire;
 
 pub(crate) use abstraction::{object_type_node, population_node, relation_node};
@@ -129,59 +129,11 @@ pub(crate) use state::{
 };
 pub(crate) use state_graph::StateGraphClaimInput;
 pub(crate) use state_transition::TransitionClause;
-pub(crate) use temporal::{temporal_location, temporal_site, TemporalClauseInput, TemporalSite};
+pub(crate) use temporal::{
+    temporal_location, temporal_site, LoweredTemporalClause, TemporalClauseInput, TemporalSite,
+};
 pub(crate) use terminal::{terminal_location, terminal_site, TerminalInput, TerminalSite};
-
-/// The package's lock evidence as the lowering reads it (ADR-011 §2.4): the
-/// `DefinitionRef` the `text_profile` law role selects. QSpec publishes no
-/// `complete-value-lock.json` accessor yet, so every production package
-/// supplies none, and each text-law operation refuses
-/// (`missing_declaration`/`missing-selection`, FR-093-AC-6). The
-/// `ieee_profile` law is the package's one admitted IEEE profile
-/// (`PackageDeclarations::ieee_profile`, admitted against the definition
-/// lock by `DefinitionLock::admit_ieee_profile`), so the two cannot
-/// disagree.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct LockEvidence {
-    text_profile: Option<DefinitionReference>,
-    protocol_profile: Option<DefinitionReference>,
-}
-
-impl LockEvidence {
-    /// Lock evidence selecting `definition` for the `text_profile` role.
-    pub fn with_text_profile(mut self, definition: DefinitionReference) -> Self {
-        self.text_profile = Some(definition);
-        self
-    }
-
-    /// Lock evidence selecting `definition` for the `protocol_profile` role,
-    /// the clause profile the unit's header selected (FR-110). Only the
-    /// assembler calls it, from the header's catalog resolution; a caller
-    /// cannot supply the selection.
-    pub(crate) fn with_protocol_profile(mut self, definition: DefinitionReference) -> Self {
-        self.protocol_profile = Some(definition);
-        self
-    }
-
-    /// These lock evidence's caller-supplied roles, with the
-    /// `protocol_profile` the unit's own header selected carried over from
-    /// `assembled` (FR-110): a unit that selects none keeps none.
-    pub fn with_header_selection_of(mut self, assembled: &Self) -> Self {
-        self.protocol_profile
-            .clone_from(&assembled.protocol_profile);
-        self
-    }
-
-    fn text_profile(&self) -> Option<&DefinitionReference> {
-        self.text_profile.as_ref()
-    }
-
-    /// The `protocol_profile` the unit's header selected, when it selected
-    /// one.
-    pub(crate) fn protocol_profile(&self) -> Option<&DefinitionReference> {
-        self.protocol_profile.as_ref()
-    }
-}
+pub(crate) use timed_clause::TimedClauseInput;
 
 /// A node's place in its recursion group (FR-092 "Recursion groups"): the
 /// group digest, the node's ordinal and the number of the group's nodes.
@@ -614,7 +566,8 @@ pub(crate) struct Lowering<'a> {
     /// Each model declaration node keyed, one-to-one with its
     /// `DeclarationKey` (FR-303).
     correspondence: ModelCorrespondence,
-    lock: &'a LockEvidence,
+    /// The `protocol_profile` the unit's header selected (FR-110).
+    protocol_profile: Option<&'a DefinitionReference>,
     graph: SemanticGraph,
     occurrences: &'a mut OccurrenceMap<Location>,
     /// Each lowered function's key, by function index.
@@ -637,6 +590,10 @@ pub(crate) struct Lowering<'a> {
     composite_placeholders: BTreeMap<NodeKey, NodeKey>,
     /// Whether a recursive function group is being lowered.
     functions_open: bool,
+    /// The `clock_place` template node of each clock place of the unit's
+    /// timed models, which a `presence_read` names (QSpec FR-322
+    /// "Presence").
+    timed_places: Vec<timed_clause::TimedPlace>,
     /// Each placeholder, and the draft it became once built.
     placeholders: BTreeMap<NodeKey, Option<NodeKey>>,
     /// How many placeholders this lowering has made.
@@ -707,6 +664,16 @@ pub(crate) struct Lowering<'a> {
     /// The member keys of each keyed protocol clause, by clause name: the
     /// nodes a refinement class catalog names (FR-375).
     protocol_members: BTreeMap<String, protocol::ProtocolMembers>,
+    /// Attempts and compensation nodes retained for clauses delayed until
+    /// their required temporal clause keys are available.
+    protocol_attempts: Vec<Vec<protocol::AttemptNodes>>,
+    protocol_compensations: Vec<Vec<protocol::CompensationNodes>>,
+    /// Temporal clause nodes keyed before a protocol that requires them.
+    temporal_keys: BTreeMap<usize, NodeKey>,
+    /// Temporal clauses whose lowering refused: the refusal is reported at
+    /// the clause, so a protocol requiring one is left unkeyed without a
+    /// second refusal of its own.
+    refused_temporals: BTreeSet<usize>,
     /// Parameter nodes minted while lowering one protocol's expression
     /// bodies, by enclosing protocol declaration.
     protocol_binder_keys:
@@ -1593,7 +1560,7 @@ impl<'a> Lowering<'a> {
         owner: &SourceOwner,
         models: &'a [AdmittedModel],
         units: UnitTable,
-        lock: &'a LockEvidence,
+        protocol_profile: Option<&'a DefinitionReference>,
         function_count: usize,
         occurrences: &'a mut OccurrenceMap<Location>,
         meter: &'a mut Meter,
@@ -1605,7 +1572,7 @@ impl<'a> Lowering<'a> {
             models,
             units,
             correspondence: ModelCorrespondence::default(),
-            lock,
+            protocol_profile,
             graph: SemanticGraph::default(),
             occurrences,
             functions: vec![None; function_count],
@@ -1616,6 +1583,7 @@ impl<'a> Lowering<'a> {
             composites_in_progress: Vec::new(),
             composite_placeholders: BTreeMap::new(),
             functions_open: false,
+            timed_places: Vec::new(),
             placeholders: BTreeMap::new(),
             placeholder_count: 0,
             drafts: BTreeMap::new(),
@@ -1638,6 +1606,10 @@ impl<'a> Lowering<'a> {
             bound_sites: BTreeSet::new(),
             protocol_keys: Vec::new(),
             protocol_members: BTreeMap::new(),
+            protocol_attempts: Vec::new(),
+            protocol_compensations: Vec::new(),
+            temporal_keys: BTreeMap::new(),
+            refused_temporals: BTreeSet::new(),
             protocol_binder_keys: BTreeMap::new(),
             protocol_expression_binders: BTreeMap::new(),
             active_protocol: None,
@@ -2518,10 +2490,10 @@ impl<'a> Lowering<'a> {
         }
     }
 
-    /// The law of `role` the lock evidence selects, or the FR-093 refusal.
+    /// The law of `role`, or the FR-093 refusal.
     fn law(&self, role: LawRole, location: &Location) -> Result<OperationLaw, CheckRefusal> {
         let definition = match role {
-            LawRole::TextProfile => self.lock.text_profile().cloned(),
+            LawRole::TextProfile => Some(DefinitionRole::TextProfile.reference()),
             LawRole::IeeeProfile => self
                 .scope
                 .ieee_profile
@@ -2530,16 +2502,16 @@ impl<'a> Lowering<'a> {
             LawRole::IntegerDivision => self.scope.integer_division.map(|selection| {
                 let role = match selection.profile() {
                     quire_exact::DivisionProfile::Euclidean => {
-                        CatalogRole::IntegerDivisionEuclidean
+                        DefinitionRole::IntegerDivisionEuclidean
                     }
-                    quire_exact::DivisionProfile::Floor => CatalogRole::IntegerDivisionFloor,
+                    quire_exact::DivisionProfile::Floor => DefinitionRole::IntegerDivisionFloor,
                     quire_exact::DivisionProfile::Truncating => {
-                        CatalogRole::IntegerDivisionTruncating
+                        DefinitionRole::IntegerDivisionTruncating
                     }
                 };
-                DefinitionLock::pinned().entry(role).reference()
+                role.reference()
             }),
-            LawRole::ProtocolProfile => self.lock.protocol_profile().cloned(),
+            LawRole::ProtocolProfile => self.protocol_profile.cloned(),
             LawRole::TemporalProfile => None,
         };
         definition
@@ -2948,7 +2920,7 @@ impl<'a> Lowering<'a> {
             // The member's content outside the group, as a later build of
             // the same type or node would write it.
             let body = bodies[at].map_keys(&mut to_key);
-            let semantic_type = types[at].map(&mut to_key);
+            let semantic_type = types[at].map(to_key);
             let rebuilt = node_key(
                 &NodeInput {
                     owner: draft.content.owner.as_ref(),
@@ -3632,15 +3604,47 @@ impl<'a> Lowering<'a> {
                     Operands::One(reference),
                 )
             }
+            // FR-230 "Presence is derived", QSpec FR-322 "Presence":
+            // `present(r.f)` of a clock place is the `presence_read`
+            // application over the place's `clock_place` template and the
+            // owner term `r`.
+            NodeKind::PlacePresence {
+                reference,
+                field,
+                case,
+            } => {
+                let mut path = vec![PlaceStep::Field(field.name.clone())];
+                path.extend(case.clone().map(PlaceStep::Union));
+                let place = self.timed_place(field.owner, &path).ok_or_else(|| {
+                    refuse(
+                        node.location(),
+                        CheckCause::UnsupportedFeature {
+                            loci: vec![node.location().clone()],
+                        },
+                    )
+                })?;
+                return self.next_operand(
+                    Box::new(OperandsFrame {
+                        node,
+                        operands: Operands::One(reference),
+                        next: 0,
+                        terms: vec![LeafTerm::reference(place)],
+                        keyed: Keyed::Application(
+                            Operator::Present,
+                            plain("quire.op.option.present"),
+                        ),
+                    }),
+                    frames,
+                );
+            }
             // FR-139, FR-138: a population-valued form and a history read
             // live in a refinement row, which S4 does not emit yet
-            // (FR-310's node): no FR-093 row lowers either.
-            // FR-230 "Presence is derived": a presence read lives in a timed
-            // predicate, which S4 does not emit yet; S3 keeps it out of
+            // (FR-310's node): no FR-093 row lowers either. A quantifier
+            // over a clock collection's slots has no checked form until
+            // STD-554, so S3 keeps `forall(e in r.q: present(e))` out of
             // every lowered clause body.
             NodeKind::PopulationObjects { .. }
             | NodeKind::History { .. }
-            | NodeKind::PlacePresence { .. }
             | NodeKind::SlotPresence { .. }
             | NodeKind::Seq { .. } => {
                 return Err(refuse(
@@ -4820,6 +4824,9 @@ pub(crate) enum LoweringStep {
     /// The `index`-th protocol, whose callees and referenced protocols are
     /// all keyed before it.
     Protocol(usize),
+    /// The `index`-th checked temporal clause, whose formula callees and
+    /// protocol references are keyed before its node.
+    Temporal(usize),
     /// A cyclic component of function calls and protocol references that
     /// holds a protocol (QSL-844): its protocols have no node, then its
     /// functions are lowered in their own order.
@@ -4828,6 +4835,8 @@ pub(crate) enum LoweringStep {
         protocols: Vec<usize>,
         /// The component's functions, each callee's group first.
         functions: Vec<FunctionGroup>,
+        /// Temporal clauses in the component, ascending.
+        temporals: Vec<usize>,
     },
 }
 
@@ -4838,13 +4847,14 @@ pub(crate) enum LoweringStep {
 /// bodies call and the protocols they refer to.
 pub(crate) fn dependency_order(
     function_edges: &[(Vec<usize>, Vec<usize>)],
-    protocol_edges: &[(Vec<usize>, Vec<usize>)],
+    protocol_edges: &[(Vec<usize>, Vec<usize>, Vec<usize>)],
+    temporal_edges: &[(Vec<usize>, Vec<usize>)],
 ) -> Vec<LoweringStep> {
     let functions = function_edges.len();
     let protocols = protocol_edges.len();
+    let temporals = temporal_edges.len();
     let edges: Vec<Vec<usize>> = function_edges
         .iter()
-        .chain(protocol_edges)
         .map(|(called, referenced)| {
             called
                 .iter()
@@ -4859,13 +4869,98 @@ pub(crate) fn dependency_order(
                 )
                 .collect()
         })
+        .chain(protocol_edges.iter().map(|(called, referenced, required)| {
+            called
+                .iter()
+                .copied()
+                .filter(|callee| *callee < functions)
+                .chain(
+                    referenced
+                        .iter()
+                        .copied()
+                        .filter(|protocol| *protocol < protocols)
+                        .map(|protocol| functions + protocol),
+                )
+                .chain(
+                    required
+                        .iter()
+                        .copied()
+                        .filter(|temporal| *temporal < temporals)
+                        .map(|temporal| functions + protocols + temporal),
+                )
+                .collect()
+        }))
+        .chain(temporal_edges.iter().map(|(called, referenced)| {
+            called
+                .iter()
+                .copied()
+                .filter(|callee| *callee < functions)
+                .chain(
+                    referenced
+                        .iter()
+                        .copied()
+                        .filter(|protocol| *protocol < protocols)
+                        .map(|protocol| functions + protocol),
+                )
+                .collect()
+        }))
         .collect();
     let mut steps = Vec::new();
     for mut members in strongly_connected(&edges) {
         members.sort_unstable();
-        let (members_functions, members_protocols): (Vec<usize>, Vec<usize>) =
+        let (members_functions, members_non_functions): (Vec<usize>, Vec<usize>) =
             members.iter().partition(|member| **member < functions);
+        let (members_protocols, members_temporals): (Vec<usize>, Vec<usize>) =
+            members_non_functions
+                .into_iter()
+                .partition(|member| *member < functions + protocols);
+        let protocol_indices: Vec<usize> = members_protocols
+            .iter()
+            .map(|member| member - functions)
+            .collect();
+        let temporal_indices: Vec<usize> = members_temporals
+            .iter()
+            .map(|member| member - functions - protocols)
+            .collect();
         if members_protocols.is_empty() {
+            if members_functions.is_empty()
+                && temporal_indices.len() == 1
+                && members
+                    .first()
+                    .is_some_and(|member| !edges[*member].contains(member))
+            {
+                steps.push(LoweringStep::Temporal(temporal_indices[0]));
+                continue;
+            }
+            if !temporal_indices.is_empty() {
+                let local: Vec<Vec<usize>> = members_functions
+                    .iter()
+                    .map(|member| {
+                        function_edges[*member]
+                            .0
+                            .iter()
+                            .filter_map(|callee| members_functions.iter().position(|m| m == callee))
+                            .collect()
+                    })
+                    .collect();
+                let groups = lowering_order(&local)
+                    .into_iter()
+                    .map(|group| FunctionGroup {
+                        members: group
+                            .members
+                            .into_iter()
+                            .map(|member| members_functions[member])
+                            .collect(),
+                        recursive: group.recursive,
+                    })
+                    .collect();
+                steps.push(LoweringStep::Cycle {
+                    protocols: Vec::new(),
+                    functions: groups,
+                    temporals: temporal_indices,
+                });
+                continue;
+            }
             let recursive = members_functions.len() > 1
                 || members_functions
                     .first()
@@ -4876,10 +4971,6 @@ pub(crate) fn dependency_order(
             }));
             continue;
         }
-        let protocol_indices: Vec<usize> = members_protocols
-            .iter()
-            .map(|member| member - functions)
-            .collect();
         let cyclic = members.len() > 1
             || members
                 .first()
@@ -4913,6 +5004,7 @@ pub(crate) fn dependency_order(
         steps.push(LoweringStep::Cycle {
             protocols: protocol_indices,
             functions: groups,
+            temporals: temporal_indices,
         });
     }
     steps

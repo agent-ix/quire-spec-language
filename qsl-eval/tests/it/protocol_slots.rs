@@ -21,23 +21,17 @@ const MODEL: &[u8] = include_bytes!("../../../tests/fixtures/spine-model.semanti
 )]
 mod compensation_model;
 
-/// The unit selecting `MODEL` as `M` by its `sha256-jcs` digest, computed
-/// from the fixture.
+/// The unit selecting `MODEL` as `M` by its identity.
 fn unit() -> String {
-    let packages = qsl_semantics::model::intake::package_input([MODEL]);
-    let digest = qsl_semantics::model::key::hex(packages.keys().next().expect("one model"));
-    format!(
-        "language \"ix:native\" edition \"1-draft\";\n\
+    String::from("language \"ix:native\" edition \"1-draft\";\n\
     profile v = \"quire.value.complete/v1\";\n\
     profile p = \"quire.protocol.finite-global/v1\";\n\
-    model M = \"acme/orders\" version \"1.0.0\" digest \
-    \"sha256-jcs:{digest}\";\n\
-    protocol P using v over (input: M::Gadget) on each (opened: Boolean) when ((1 + 2 = 3) and opened) {{\n\
+    model M = \"acme/orders\";\n\
+    protocol P using v over (input: M::Gadget) on each (opened: Boolean) when ((1 + 2 = 3) and opened) {\n\
       role R on M::Gadget;\n\
-      run sequence Main {{ check Ready using p {{ true }}; }}\n\
-      finish End as (outcome: Boolean) {{ true }};\n\
-    }}\n"
-    )
+      run sequence Main { check Ready using p { true }; }\n\
+      finish End as (outcome: Boolean) { true };\n\
+    }\n")
 }
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
@@ -54,10 +48,14 @@ const UNLIMITED: ScalarLimits = ScalarLimits {
 };
 
 fn package() -> CheckedPackage {
+    package_from_source(&unit())
+}
+
+fn package_from_source(source: &str) -> CheckedPackage {
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
         "unit.native",
-        unit().as_bytes(),
+        source.as_bytes(),
         qsl_cst::Limits::default(),
     )
     .expect("S1 reads the unit");
@@ -65,7 +63,7 @@ fn package() -> CheckedPackage {
     let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
     let models = qsl_semantics::model::intake::admit_unit(
         &unit.selections().models,
-        &qsl_semantics::model::intake::package_input([MODEL]),
+        &qsl_semantics::model::intake::package_input([MODEL]).unwrap(),
         qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
     )
     .expect("I1 admits the model");
@@ -85,18 +83,13 @@ fn package() -> CheckedPackage {
 fn compensation_package() -> CheckedPackage {
     let model = serde_json::to_vec(&compensation_model::document())
         .expect("the compensation model fixture serializes");
-    let package_input = qsl_semantics::model::intake::package_input([model.as_slice()]);
-    let digest = package_input
-        .keys()
-        .next()
-        .expect("the model fixture has one package");
-    let digest = qsl_semantics::model::key::hex(digest);
+    let package_input = qsl_semantics::model::intake::package_input([model.as_slice()]).unwrap();
     let source = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
          profile p = \"quire.protocol.finite-global/v1\";\n\
          profile t = \"quire.temporal.infinite-trace/v1\";\n\
-         model M = {:?} version \"1\" digest \"sha256-jcs:{}\";\n\
+         model M = {:?};\n\
          protocol P using p over (input: M::Ledger) on origin {{\n\
            role R on M::Ledger;\n\
            compensate Refund for Main::Applied as (fwd: M::Money)\n\
@@ -119,7 +112,6 @@ fn compensation_package() -> CheckedPackage {
            finish End as (outcome: Boolean) {{ true }};\n\
          }}\n",
         compensation_model::PACKAGE,
-        digest
     );
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("protocol-slots", "unit.native", "git", "1"),
@@ -174,7 +166,8 @@ fn money(package: &CheckedPackage, amount: i64) -> Value {
 }
 
 #[test]
-#[trace("TC-1071", "FR-390-AC-3", "FR-390-AC-4", "FR-390-AC-5")]
+#[trace("TC-1071", "FR-390-AC-3", "FR-390-AC-4", "FR-390-AC-5", "FR-049-AC-6")]
+#[trace("TC-1072", "FR-390-AC-7")]
 fn evaluates_a_protocol_slot_and_refuses_an_unread_binder_before_charging() {
     let package = package();
     let keys = package
@@ -445,6 +438,58 @@ fn evaluates_a_protocol_slot_and_refuses_an_unread_binder_before_charging() {
 }
 
 #[test]
+#[trace("TC-136", "FR-049-AC-4")]
+#[trace("TC-1072", "FR-390-AC-7")]
+fn an_unavailable_protocol_binder_is_not_observed_after_a_false_short_circuit() {
+    let source = unit().replace("(1 + 2 = 3) and opened", "(1 + 2 = 4) and opened");
+    let package = package_from_source(&source);
+    let keys = package
+        .graph()
+        .protocol_node_keys("P")
+        .expect("the protocol's emitted identity map");
+    let slot = ProtocolSlot {
+        node: keys.clause.expect("protocol clause key"),
+        member: "activation.guard".to_owned(),
+        index: None,
+    };
+    let opened = keys
+        .binders
+        .iter()
+        .find(|binder| binder.name == "opened")
+        .expect("activation binder identity")
+        .node;
+    let mut meter = Meter::new(UNLIMITED);
+    let result = package
+        .evaluate_protocol_slot(
+            &slot,
+            &ProtocolSupply {
+                binders: vec![(
+                    opened,
+                    SuppliedValue::Unavailable(CatalogCode::new(
+                        "incomplete_population",
+                        "incomplete-scope",
+                    )),
+                )],
+                observation: None,
+            },
+            &mut meter,
+        )
+        .expect("the decisive false prefix completes without reading opened");
+    assert!(matches!(
+        result,
+        ProtocolSlotEvaluation::Evaluated(quire_eval::Evaluation {
+            outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(
+                false
+            ))),
+            ..
+        })
+    ));
+}
+
+#[test]
+// Covers only the capture, trigger, retry and recovery rows of the
+// compensation matrix (rows 2-4, 6, 8 and 12); the remaining rows are not
+// asserted here, so the whole matrix is not tagged.
 #[trace("TC-142", "FR-049-AC-9", "FR-390-AC-1", "FR-390-AC-2")]
 fn evaluates_compensation_capture_trigger_retry_and_recovery_from_checked_nodes() {
     let package = compensation_package();
@@ -604,7 +649,11 @@ fn evaluates_compensation_capture_trigger_retry_and_recovery_from_checked_nodes(
     ));
 }
 
-#[trace("TC-1073", "FR-390-AC-9", "FR-390-AC-10")]
+#[trace("TC-1073", "FR-390-AC-9", "FR-390-AC-10", "FR-049-AC-6")]
+// Exercises the `work_units` counter only: exact, one-short and zero budgets,
+// fresh-meter retry and shared-meter accumulation. Per-counter accounting
+// coverage and the deep-stack cases are not asserted here.
+#[trace("FR-049-AC-8", "NFR-009-AC-4")]
 #[test]
 fn protocol_slot_calls_share_meter_usage_and_obey_work_boundaries() {
     let package = package();
@@ -629,18 +678,36 @@ fn protocol_slot_calls_share_meter_usage_and_obey_work_boundaries() {
     };
 
     let mut measured = Meter::new(UNLIMITED);
-    package
+    let measured_result = package
         .evaluate_protocol_slot(&slot, &supply, &mut measured)
         .expect("the measured call completes");
+    assert!(matches!(
+        measured_result,
+        ProtocolSlotEvaluation::Evaluated(quire_eval::Evaluation {
+            outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(
+                true
+            ))),
+            ..
+        })
+    ));
     let used = measured.consumed(quire_exact::LimitKind::WorkUnits);
     assert!(used > 0, "the arithmetic expression consumed work");
 
     let mut exact_limits = UNLIMITED;
     exact_limits.work_units = used;
     let mut exact = Meter::new(exact_limits);
-    package
+    let exact_result = package
         .evaluate_protocol_slot(&slot, &supply, &mut exact)
         .expect("exact measured usage completes");
+    assert!(matches!(
+        exact_result,
+        ProtocolSlotEvaluation::Evaluated(quire_eval::Evaluation {
+            outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(
+                true
+            ))),
+            ..
+        })
+    ));
     assert_eq!(exact.consumed(quire_exact::LimitKind::WorkUnits), used);
 
     let mut short_limits = UNLIMITED;
@@ -676,6 +743,25 @@ fn protocol_slot_calls_share_meter_usage_and_obey_work_boundaries() {
         }) if record.limit_kind == quire_exact::LimitKind::WorkUnits
     ));
     assert_eq!(zero.consumed(quire_exact::LimitKind::WorkUnits), 0);
+
+    let mut retry = Meter::new(UNLIMITED);
+    let retried = package
+        .evaluate_protocol_slot(&slot, &supply, &mut retry)
+        .expect("a fresh sufficient meter completes the same immutable call");
+    assert!(matches!(
+        retried,
+        ProtocolSlotEvaluation::Evaluated(quire_eval::Evaluation {
+            outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(
+                true
+            ))),
+            ..
+        })
+    ));
+    assert_eq!(
+        retry.consumed(quire_exact::LimitKind::WorkUnits),
+        used,
+        "fresh-meter retry reproduces the measured usage"
+    );
 
     let mut shared = Meter::new(UNLIMITED);
     package

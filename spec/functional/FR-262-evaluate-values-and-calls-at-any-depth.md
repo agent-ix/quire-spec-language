@@ -327,7 +327,7 @@ and JIT preparation retain their existing contracts.
   [FR-403](FR-403-implement-the-no-std-evaluator-in-quire-eval.md).
 - [ADR-030](../decisions/ADR-030-arbitrary-nesting-depth-no-fixed-caps.md)
   D-4.7 and D-6.
-- [FR-101](FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md)
+- [FR-101](FR-101-explore-finite-models-with-canonical-order-and-the-qspec-sampler.md)
   defines exploration and its state keys.
 - [FR-259](FR-259-encode-identities-and-read-json-through-quire-canonical-at-any-depth.md)
   defines the event API and the fixed-shape path.

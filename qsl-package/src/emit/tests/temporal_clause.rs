@@ -24,15 +24,6 @@ fn document() -> &'static [u8] {
     config_version_unit::DOMAIN_PACKAGE.as_bytes()
 }
 
-/// `document`'s `sha256-jcs` digest, as `intake::package_input` keys it.
-fn document_digest() -> String {
-    let packages = qsl_semantics::model::intake::package_input([document()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    qsl_semantics::model::key::hex(digest)
-}
-
 /// A unit selecting the ConfigVersion model and the temporal profile
 /// `profile` as `t`, then `declarations`.
 fn unit(profile: &str, declarations: &str) -> String {
@@ -40,9 +31,8 @@ fn unit(profile: &str, declarations: &str) -> String {
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
          profile t = \"{profile}\";\n\
-         model Config = \"example/config-version\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
-         {declarations}\n",
-        document_digest()
+         model Config = \"example/config-version\";\n\
+         {declarations}\n"
     )
 }
 
@@ -76,7 +66,7 @@ struct Compiled {
 /// `unit` through S1, S2, I1, the assembler, check, link and the v2
 /// emitter, with nothing omitted.
 fn compile(unit: &str) -> Compiled {
-    let packages = qsl_semantics::model::intake::package_input([document()]);
+    let packages = qsl_semantics::model::intake::package_input([document()]).unwrap();
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
         .check(CheckingLimits::default())
@@ -100,7 +90,7 @@ fn evidence(wire: &Value) -> CheckedPackageEvidence {
         evidence.support_feature(feature.as_str().unwrap());
     }
     evidence
-        .insert_domain_package_document(document_digest(), document().to_vec())
+        .insert_domain_package_document(package_identity(document()), document().to_vec())
         .expect("a fresh evidence key");
     evidence
 }
@@ -696,7 +686,7 @@ fn record_of(
     qsl_foundation::bound::DomainKey,
     qsl_semantics::family::Requirements,
 ) {
-    let packages = qsl_semantics::model::intake::package_input([document()]);
+    let packages = qsl_semantics::model::intake::package_input([document()]).unwrap();
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
         .check(CheckingLimits::default())
@@ -845,7 +835,7 @@ fn an_on_each_clause_emits_its_trigger_and_guard() {
     // The trigger node's `expression` occurrence and its type node's `type`
     // occurrence are located at the binder's name.
     let text = unit(INFINITE, &declared_on("Each", &guarded, BODY));
-    let packages = qsl_semantics::model::intake::package_input([document()]);
+    let packages = qsl_semantics::model::intake::package_input([document()]).unwrap();
     let declarations = assemble_with_models(text.as_bytes(), &packages).expect("assembles");
     let regions = declarations.regions();
     let graph = declarations
@@ -889,7 +879,7 @@ fn an_on_each_clause_emits_its_trigger_and_guard() {
         INFINITE,
         &declared_on("Each", &each("q", " when (true)"), BODY),
     );
-    let truth_packages = qsl_semantics::model::intake::package_input([document()]);
+    let truth_packages = qsl_semantics::model::intake::package_input([document()]).unwrap();
     let truth_declarations =
         assemble_with_models(truth_text.as_bytes(), &truth_packages).expect("assembles");
     let truth_regions = truth_declarations.regions();
@@ -948,7 +938,7 @@ fn an_on_each_clause_emits_its_trigger_and_guard() {
 /// start offset of its region in the unit text.
 fn refused_on(activation: &str, body: &str) -> (Code, Option<&'static str>, u64, String) {
     let text = unit(INFINITE, &declared_on("Each", activation, body));
-    let packages = qsl_semantics::model::intake::package_input([document()]);
+    let packages = qsl_semantics::model::intake::package_input([document()]).unwrap();
     let declarations = assemble_with_models(text.as_bytes(), &packages).expect("assembles");
     let regions = declarations.regions();
     let refusals = declarations
@@ -1068,7 +1058,7 @@ fn s3_checks_the_on_each_guard_and_binder() {
 /// The one refusal of `activation` and `body` and the unit text it refuses.
 fn refusal_of(activation: &str, body: &str) -> (qsl_semantics::check::CheckRefusal, String) {
     let text = unit(INFINITE, &declared_on("Each", activation, body));
-    let packages = qsl_semantics::model::intake::package_input([document()]);
+    let packages = qsl_semantics::model::intake::package_input([document()]).unwrap();
     let refusals = assemble_with_models(text.as_bytes(), &packages)
         .expect("assembles")
         .check(CheckingLimits::default())
@@ -1414,7 +1404,7 @@ fn the_captures_aggregate_and_nodes_are_emitted() {
 
     // The capture node and its type node are located at the capture's name.
     let text = unit(INFINITE, &declared_on("Each", &activation, CAPTURES));
-    let packages = qsl_semantics::model::intake::package_input([document()]);
+    let packages = qsl_semantics::model::intake::package_input([document()]).unwrap();
     let declarations = assemble_with_models(text.as_bytes(), &packages).expect("assembles");
     let regions = declarations.regions();
     let graph = declarations

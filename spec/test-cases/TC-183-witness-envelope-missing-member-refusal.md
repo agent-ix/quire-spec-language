@@ -24,7 +24,7 @@ silently lose it without a visible refusal. Scope: FR-070-AC-4, FR-070-AC-18.
 2. Remove exactly the `backend` member and attempt reconstruction.
 3. Remove exactly the trace position, using a family known to always retain
    one (temporal or protocol), and attempt reconstruction.
-4. Remove exactly one `RawSourceRef` digest from the package reference and
+4. Remove exactly the `sources` member from the package reference and
    attempt reconstruction.
 5. Remove exactly the obligation identity and attempt reconstruction.
 6. Reconstruct a function packet carrying `function`, a frame packet

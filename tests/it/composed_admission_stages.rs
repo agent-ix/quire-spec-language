@@ -9,7 +9,7 @@ use crate::support::runtime_setup as setup;
 use crate::support::package_vector_setup;
 
 use ix_trace_rs::trace;
-use qsl_foundation::{ByteDigest, Code, Source, SourceIdentity};
+use qsl_foundation::{Code, Source, SourceIdentity};
 use qsl_semantics::check::Capability;
 use quire_spec_language::linking::composed::binding::{self, Disposition as BindingDisposition};
 use quire_spec_language::linking::composed::binding_work::Limits as BindingLimits;
@@ -27,7 +27,7 @@ use quire_spec_language::linking::composed::{
 };
 use quire_spec_language::native_model::NativeModel;
 use quire_spec_language::package::{
-    NativePackage, NativePackageRef, PackageLimits, PackageReadLimits, PackageStage, PackageSupport,
+    NativePackage, PackageLimits, PackageReadLimits, PackageStage, PackageSupport,
 };
 use quire_spec_language::runtime::{
     ArtifactLimits, InputReadCause, InputReadStage, Snapshot, SnapshotRef,
@@ -56,7 +56,6 @@ fn artifacts() -> (Vec<Artifact<'static>>, Vec<RuleInput<'static>>) {
                 rule.path,
                 RuleInput {
                     path: rule.path,
-                    digest: ByteDigest::of(rule.path.as_bytes()),
                     bytes: rule.path.as_bytes(),
                 },
             )
@@ -71,16 +70,11 @@ fn source(id: &str, model: &NativeModel, profiles: &[(&str, R)], body: &str) -> 
     let mut text = "language \"ix:native\" edition \"1-draft\";\n".to_owned();
     for (alias, profile) in profiles {
         let selection = profile.selection();
-        text.push_str(&format!(
-            "profile {alias} = \"{}\" version \"{}\" digest \"{}\";\n",
-            selection.identity, selection.revision, selection.digest
-        ));
+        text.push_str(&format!("profile {alias} = \"{}\";\n", selection.identity));
     }
     text.push_str(&format!(
-        "model M = \"{}\" version \"{}\" digest \"{}\";\n",
-        model.environment().owner().package().as_str(),
-        model.environment().owner().revision().get(),
-        model.digest()
+        "model M = \"{}\";\n",
+        model.environment().owner().package().as_str()
     ));
     text.push_str(body);
     Source::read(
@@ -261,7 +255,7 @@ fn assessment_selections_leave_every_declared_component_unchanged() {
 }
 
 #[test]
-#[trace("TC-115", "FR-036-AC-5")]
+#[trace("TC-115", "TC-136", "FR-036-AC-5", "FR-049-AC-10")]
 fn a_resource_only_configuration_change_stays_visible_without_changing_meaning() {
     let model = setup::native_rule_model::parts().model();
     let sources = ecosystem(&model, R::StateGraph);
@@ -376,18 +370,23 @@ fn changing_a_required_profile_selection_changes_the_static_subject() {
     }
 }
 
+/// A different model package supplied in place of the selected one is a changed
+/// required selection: the import names no supplied package and no declaration
+/// inherits the other model's meaning.
 #[test]
 #[trace("TC-115", "FR-036-AC-5")]
-fn a_stale_model_selection_refuses_instead_of_inheriting_the_new_meaning() {
-    // The units select the original model; a later model is supplied instead.
+fn a_model_of_another_package_is_not_inherited_as_the_selected_meaning() {
     let authored = setup::native_rule_model::parts().model();
-    let replacement = setup::authored_model(|document| {
-        document["requirement"] = Value::from("Replacement");
+    let other = setup::authored_model(|document| {
+        document["package"] = Value::from("example/other-tests");
     });
-    assert_ne!(authored.digest(), replacement.digest());
+    assert_ne!(
+        authored.environment().owner().package(),
+        other.environment().owner().package()
+    );
 
     let sources = ecosystem(&authored, R::StateGraph);
-    let models = [ModelInput::Native(&replacement)];
+    let models = [ModelInput::Native(&other)];
     with_reports(
         &sources,
         &models,
@@ -398,9 +397,8 @@ fn a_stale_model_selection_refuses_instead_of_inheriting_the_new_meaning() {
             assert!(report.complete(), "{:?}", report.exhaustion());
             let subject = StaticSubject::of(inventory, report).unwrap();
             for component in subject.models() {
-                assert_eq!(component.selection, Err(ImportRefusal::StaleSelection));
+                assert_eq!(component.selection, Err(ImportRefusal::MissingPackage));
             }
-            // No declaration inherits the replacement's meaning.
             for entry in report.declarations() {
                 assert_eq!(
                     report.disposition(entry.declaration()),
@@ -687,8 +685,9 @@ fn a_claim_inapplicable_to_a_family_is_inapplicable_while_an_applicable_one_is_a
 #[trace("TC-115", "FR-036-AC-6")]
 fn refused_and_unknown_subjects_keep_their_own_dispositions() {
     let model = setup::native_rule_model::parts().model();
+    // A model of another package: the units' import names no supplied package.
     let replacement = setup::authored_model(|document| {
-        document["requirement"] = Value::from("Replacement");
+        document["package"] = Value::from("test/replacement");
     });
     let assessment = Assessment {
         population: None,
@@ -741,10 +740,10 @@ fn refused_and_unknown_subjects_keep_their_own_dispositions() {
     );
 
     // A statically refused subject keeps its own distinct disposition.
-    let stale = [ModelInput::Native(&replacement)];
+    let missing = [ModelInput::Native(&replacement)];
     with_reports(
         &sources,
-        &stale,
+        &missing,
         WorkLimits::default(),
         Limits::default(),
         BindingLimits::default(),
@@ -871,7 +870,6 @@ fn read_relabelled(
     let bytes = serde_json::to_vec(value).unwrap();
     NativePackage::read_verified(
         &bytes,
-        NativePackageRef::new(ByteDigest::of(&bytes)),
         bindings,
         models,
         &PackageSupport::default(),
@@ -889,16 +887,8 @@ fn historical_package_identities_and_atomic_refusals_are_unchanged() {
         let bindings = checked.bindings().clone();
         let package = NativePackage::new(checked, PackageLimits::default()).unwrap();
         assert_eq!(package.bytes(), vector.artifact, "{}", vector.name);
-        assert_eq!(
-            package.canonical_identity().to_string(),
-            vector.digest.as_str(),
-            "{}",
-            vector.name
-        );
-        let reference = package.reference();
         let reread = NativePackage::read_verified(
             package.bytes(),
-            reference,
             bindings,
             &models,
             &PackageSupport::default(),
@@ -906,8 +896,6 @@ fn historical_package_identities_and_atomic_refusals_are_unchanged() {
         )
         .expect("frozen historical bytes still read through the unchanged reader");
         assert_eq!(reread.bytes(), vector.artifact, "{}", vector.name);
-        assert_eq!(reread.canonical_identity(), package.canonical_identity());
-        assert_eq!(reread.reference(), reference);
     }
 }
 
@@ -968,29 +956,23 @@ fn a_changed_profile_label_cannot_admit_composed_input_into_the_historical_reade
     assert_eq!(error.stage, PackageStage::Decode);
     assert_eq!(format!("{:?}", error.path), "[Field(\"format\")]");
 
-    // Relabelling under the original reference is a stale selection, atomically.
+    // Relabelled bytes are refused by the reader, atomically.
     let mut relabelled = original.clone();
     relabelled["semantics"]["syntax_profile"] = Value::from("composed-native/1-draft");
     let bytes = serde_json::to_vec(&relabelled).unwrap();
     let error = *NativePackage::read_verified(
         &bytes,
-        package.reference(),
         bindings,
         &models,
         &PackageSupport::default(),
         PackageReadLimits::default(),
     )
-    .expect_err("the historical reference cannot carry relabelled bytes");
-    assert_eq!(error.code, Code::StaleDependency);
+    .expect_err("the reader cannot accept relabelled bytes");
+    assert_eq!(error.code, Code::UnknownProfile);
     assert_eq!(error.stage, PackageStage::Decode);
-    assert!(error.path.is_empty());
 
-    // The accepted fixture bytes and identities are untouched by every attempt.
+    // The accepted fixture bytes are untouched by every attempt.
     assert_eq!(package.bytes(), vector.artifact);
-    assert_eq!(
-        package.canonical_identity().to_string(),
-        vector.digest.as_str()
-    );
 }
 
 #[test]
@@ -1011,15 +993,12 @@ fn the_historical_runner_refuses_a_relabelled_composed_input() {
     let mut envelope: Value = serde_json::from_slice(&original).unwrap();
     envelope["version"] = Value::from("native-composed-input/1");
     let relabelled = serde_json::to_vec(&envelope).unwrap();
-    let expected = SnapshotRef::new(
-        SourceIdentity {
-            authority: "test".into(),
-            identity: "test:runtime-current".into(),
-            revision_namespace: "test".into(),
-            revision: "1".into(),
-        },
-        ByteDigest::of(&relabelled),
-    )
+    let expected = SnapshotRef::new(SourceIdentity {
+        authority: "test".into(),
+        identity: "test:runtime-current".into(),
+        revision_namespace: "test".into(),
+        revision: "1".into(),
+    })
     .unwrap();
     let error = *Snapshot::read_verified(&expected, &relabelled, ArtifactLimits::default())
         .expect_err("a composed label cannot enter the historical runner");
@@ -1029,13 +1008,6 @@ fn the_historical_runner_refuses_a_relabelled_composed_input() {
         error.cause,
         InputReadCause::Version { ref actual } if actual == "native-composed-input/1"
     ));
-
-    // Submitting the relabelled bytes under the accepted reference is stale.
-    let error = *Snapshot::read_verified(&accepted, &relabelled, ArtifactLimits::default())
-        .expect_err("the accepted reference cannot carry relabelled bytes");
-    assert_eq!(error.code, Code::StaleDependency);
-    assert_eq!(error.stage, InputReadStage::Selection);
-    assert!(matches!(error.cause, InputReadCause::DigestMismatch { .. }));
 
     // The accepted artifact bytes and identity are unchanged.
     assert_eq!(snapshot.bytes(), original);

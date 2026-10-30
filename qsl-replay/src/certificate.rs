@@ -21,15 +21,34 @@ use crate::certificate::closure::{DigestWire, ProductStateRef};
 use crate::certificate::simulation::FailedStep;
 
 /// FR-314's part of an SMT proof obligation.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "lowercase")]
+///
+/// It serializes with QSpec FR-331's query-part spelling: `unrolling`,
+/// `base`, `step`, and `step/<r>` for a refinement certificate's step row
+/// `r` (FR-338 "Locus spelling").
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum QueryPart {
     /// The bounded-complete unrolling query.
     Unrolling,
-    /// The induction base query.
+    /// The induction base query, or a refinement certificate's initial
+    /// query.
     Base,
-    /// The induction step query.
-    Step,
+    /// The induction step query (`row: None`), or a refinement
+    /// certificate's step query of the zero-based step row `row`.
+    Step {
+        /// The refinement step row, for a refinement certificate.
+        row: Option<u64>,
+    },
+}
+
+impl Serialize for QueryPart {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Unrolling => serializer.serialize_str("unrolling"),
+            Self::Base => serializer.serialize_str("base"),
+            Self::Step { row: None } => serializer.serialize_str("step"),
+            Self::Step { row: Some(row) } => serializer.serialize_str(&format!("step/{row}")),
+        }
+    }
 }
 
 /// FR-338 and FR-314's finite certificate rejection rule vocabulary.
@@ -144,63 +163,89 @@ pub enum CertificateLocus {
     },
 }
 
-/// A certificate member QSpec FR-331's certificate-member locus names.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CertificateMember {
-    /// `identity`.
-    Identity,
-    /// `objective`.
-    Objective,
-    /// `kind`.
-    Kind,
-    /// `values`.
-    Values,
-    /// `ranking`.
-    Ranking,
-    /// `policy`.
-    Policy,
-    /// `components`.
-    Components,
-    /// `scale`.
-    Scale,
-    /// `bounds`, a zone certificate's LU bounds.
-    Bounds,
-    /// `nodes`.
-    Nodes,
-    /// `edges`.
-    Edges,
-    /// `reasons`.
-    Reasons,
-    /// `divergence`.
-    Divergence,
-    /// `refinement`, a zone certificate's refinement part (FR-244
-    /// "Refinement form"; spec gap STD-493: FR-331's member list lags it).
-    Refinement,
-    /// `positions`, the refinement part's product positions (FR-244).
-    Positions,
+/// The certificate members QSpec FR-331's certificate-member locus names,
+/// each variant with its FR-331 spelling, in the row's order: the thirteen
+/// members of the FR-412 and Büchi parts, the eleven FR-418 adds, and the
+/// twenty-six members of the entries these hold (FR-331-AC-46). One table
+/// is the enum, its spellings and [`CertificateMember::ALL`].
+macro_rules! certificate_members {
+    ($($variant:ident => $name:literal,)*) => {
+        /// A certificate member QSpec FR-331's certificate-member locus
+        /// names: a member, at any depth, of the FR-412 or FR-418
+        /// certificate. The locus names the member and carries no path.
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        pub enum CertificateMember {
+            $(
+                #[doc = concat!("`", $name, "`.")]
+                $variant,
+            )*
+        }
+
+        impl CertificateMember {
+            /// Every member, in FR-331's order.
+            pub const ALL: &'static [Self] = &[$(Self::$variant,)*];
+
+            /// The member's FR-331 spelling.
+            pub fn as_str(self) -> &'static str {
+                match self {
+                    $(Self::$variant => $name,)*
+                }
+            }
+        }
+    };
 }
 
-impl CertificateMember {
-    /// The member's FR-331 spelling.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Identity => "identity",
-            Self::Objective => "objective",
-            Self::Kind => "kind",
-            Self::Values => "values",
-            Self::Ranking => "ranking",
-            Self::Policy => "policy",
-            Self::Components => "components",
-            Self::Scale => "scale",
-            Self::Bounds => "bounds",
-            Self::Nodes => "nodes",
-            Self::Edges => "edges",
-            Self::Reasons => "reasons",
-            Self::Divergence => "divergence",
-            Self::Refinement => "refinement",
-            Self::Positions => "positions",
-        }
-    }
+certificate_members! {
+    Identity => "identity",
+    Objective => "objective",
+    Kind => "kind",
+    Values => "values",
+    Ranking => "ranking",
+    Policy => "policy",
+    Components => "components",
+    Scale => "scale",
+    Bounds => "bounds",
+    Nodes => "nodes",
+    Edges => "edges",
+    Reasons => "reasons",
+    Divergence => "divergence",
+    Initials => "initials",
+    Admitted => "admitted",
+    Refinement => "refinement",
+    RefinementNode => "refinement_node",
+    ConcretePackage => "concrete_package",
+    AbstractPackage => "abstract_package",
+    Positions => "positions",
+    Taken => "taken",
+    Locked => "locked",
+    Start => "start",
+    Nested => "nested",
+    AbstractStates => "abstract_states",
+    Algorithm => "algorithm",
+    Automaton => "automaton",
+    Bias => "bias",
+    Bound => "bound",
+    Choice => "choice",
+    Clock => "clock",
+    Concrete => "concrete",
+    Constraint => "constraint",
+    Digest => "digest",
+    Domain => "domain",
+    Gain => "gain",
+    History => "history",
+    Lower => "lower",
+    Node => "node",
+    Rank => "rank",
+    Set => "set",
+    State => "state",
+    Strict => "strict",
+    Target => "target",
+    Transition => "transition",
+    Transitions => "transitions",
+    Type => "type",
+    Upper => "upper",
+    Value => "value",
+    Zone => "zone",
 }
 
 impl Serialize for CertificateLocus {
@@ -259,12 +304,14 @@ impl Serialize for CertificateLocus {
     }
 }
 
+mod alethe;
 mod check;
 pub mod closed_form;
 pub mod closure;
 mod recording;
 pub mod scc;
 pub mod simulation;
+pub mod smt;
 pub mod state_graph;
 pub mod zone;
 pub mod zone_certificate;
