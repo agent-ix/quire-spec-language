@@ -1692,7 +1692,10 @@ fn a_variant_type_with_non_identifier_cases_has_an_enum_shape_over_the_exact_nam
         .iter()
         .map(qsl_semantics::check::VariantCaseDeclaration::variant)
         .collect();
-    assert_eq!(members, expected);
+    assert_eq!(
+        members.iter().map(|member| (*member).clone()).collect::<Vec<_>>(),
+        expected
+    );
 }
 
 /// FR-360-AC-4: a unit names a type with non-identifier cases in a parameter,

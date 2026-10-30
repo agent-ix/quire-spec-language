@@ -724,11 +724,11 @@ fn tc_411_unit_ids_are_declared_node_keys_or_compound_digests() {
 #[test]
 fn u01_exact_conversion_then_arithmetic() {
     let f = fixture();
-    let source = f.quantity(whole(250), f.cm);
+    let source = f.quantity(whole(250), f.cm.clone());
     let mut meter = unlimited();
     let Outcome::Completed(conversion) = convert_quantity(
         f.at(&source),
-        &f.unit(f.m),
+        &f.unit(f.m.clone()),
         &QuantityTarget::Exact,
         &mut meter,
     )
@@ -738,16 +738,16 @@ fn u01_exact_conversion_then_arithmetic() {
     assert_eq!(conversion.source(), &source);
     assert_eq!(conversion.canonical(), &ratio(5, 2));
     assert_eq!(conversion.value(), &ConvertedValue::Exact(ratio(5, 2)));
-    assert_eq!(conversion.unit(), &f.unit(f.m));
+    assert_eq!(conversion.unit(), &f.unit(f.m.clone()));
     let sum = exact(evaluated(
         QuantityOperation::Add(
-            f.at(&f.quantity(ratio(5, 2), f.m)),
-            f.at(&f.quantity(whole(1), f.m)),
+            f.at(&f.quantity(ratio(5, 2), f.m.clone())),
+            f.at(&f.quantity(whole(1), f.m.clone())),
         ),
         &mut unlimited(),
     ));
     assert_eq!(sum.magnitude(), &ratio(7, 2));
-    assert_eq!(sum.unit(), f.unit(f.m).id().unwrap());
+    assert_eq!(*sum.unit(), f.unit(f.m.clone()).id().unwrap());
     let dimension: Vec<_> = f
         .at(&sum)
         .unit()
@@ -755,11 +755,11 @@ fn u01_exact_conversion_then_arithmetic() {
         .exponents()
         .map(|(key, exponent)| (key, exponent.clone()))
         .collect();
-    assert_eq!(dimension, [(f.length, int(1))]);
+    assert_eq!(dimension, [(f.length.clone(), int(1))]);
     // Conversion never occurs implicitly.
     assert_eq!(
         evaluate_quantity(
-            QuantityOperation::Add(f.at(&source), f.at(&f.quantity(whole(1), f.m))),
+            QuantityOperation::Add(f.at(&source), f.at(&f.quantity(whole(1), f.m.clone()))),
             &mut unlimited()
         ),
         typed(IllTypedCause::DistinctUnits)
@@ -842,8 +842,8 @@ fn u04_affine_conversions_compose_through_the_root() {
 fn u05_affine_arithmetic_refuses() {
     let f = fixture();
     let two = int(2);
-    for affine in [f.deg_c, f.deg_f] {
-        let point = f.quantity(whole(1), affine);
+    for affine in [f.deg_c.clone(), f.deg_f.clone()] {
+        let point = f.quantity(whole(1), affine.clone());
         let kelvin = f.quantity(whole(1), f.kelvin.clone());
         let metre = f.quantity(whole(1), f.m.clone());
         for operation in [
@@ -1181,9 +1181,9 @@ fn u11_invalid_topologies_refuse_admission() {
             nodes.units.retain(|(_, key)| *key != f.m);
         }
         let first = unit_json("first", f.length.clone(), Some(f.inch.clone()), ("2", "1"), ("0", "1"));
-        let second = unit_json("second", f.length, Some(f.cm.clone()), ("3", "1"), ("0", "1"));
-        nodes.units.push((first, f.cm));
-        nodes.units.push((second, f.inch));
+        let second = unit_json("second", f.length.clone(), Some(f.cm.clone()), ("3", "1"), ("0", "1"));
+        nodes.units.push((first, f.cm.clone()));
+        nodes.units.push((second, f.inch.clone()));
         nodes
     };
     refuses(&cycle(false), SemanticGraphCause::MissingRoot);
@@ -1192,8 +1192,8 @@ fn u11_invalid_topologies_refuse_admission() {
     let mut cross = f.nodes.clone();
     cross.unit(unit_json(
         "minute_length",
-        f.length,
-        Some(f.s),
+        f.length.clone(),
+        Some(f.s.clone()),
         ("60", "1"),
         ("0", "1"),
     ));
@@ -1206,23 +1206,23 @@ fn u12_multiplication_division_and_power_use_compound_units() {
     let f = fixture();
     let q = |value, key| f.quantity(whole(value), key);
     let (two_m, three_s, six_m, two_s, five_m) =
-        (q(2, f.m), q(3, f.s), q(6, f.m), q(2, f.s), q(5, f.m));
+        (q(2, f.m.clone()), q(3, f.s.clone()), q(6, f.m.clone()), q(2, f.s.clone()), q(5, f.m.clone()));
     let two = int(2);
     let cases = [
         (
             QuantityOperation::Multiply(f.at(&two_m), f.at(&three_s)),
             6,
-            compound_unit(&f, &[(f.m, "1"), (f.s, "1")]),
+            compound_unit(&f, &[(f.m.clone(), "1"), (f.s.clone(), "1")]),
         ),
         (
             QuantityOperation::Divide(f.at(&six_m), f.at(&two_s)),
             3,
-            compound_unit(&f, &[(f.m, "1"), (f.s, "-1")]),
+            compound_unit(&f, &[(f.m.clone(), "1"), (f.s.clone(), "-1")]),
         ),
         (
             QuantityOperation::Power(f.at(&two_m), &two),
             4,
-            compound_unit(&f, &[(f.m, "2")]),
+            compound_unit(&f, &[(f.m.clone(), "2")]),
         ),
         (
             QuantityOperation::Divide(f.at(&five_m), f.at(&five_m)),
@@ -1233,7 +1233,7 @@ fn u12_multiplication_division_and_power_use_compound_units() {
     for (operation, value, unit) in cases {
         let result = exact(evaluated(operation, &mut unlimited()));
         assert_eq!(result.magnitude(), &whole(value), "{operation:?}");
-        assert_eq!(result.unit(), unit.id().unwrap(), "{operation:?}");
+        assert_eq!(*result.unit(), unit.id().unwrap(), "{operation:?}");
     }
     // The evaluator's own compound-unit identity is the compound identity of
     // the same terms.
@@ -1241,7 +1241,8 @@ fn u12_multiplication_division_and_power_use_compound_units() {
         QuantityOperation::Divide(f.at(&six_m), f.at(&two_s)),
         &mut unlimited(),
     ))
-    .unit();
+    .unit()
+    .clone();
     assert_eq!(per_second.domain(), UnitDomain::Compound);
     assert_eq!(
         Some(per_second.clone()),
@@ -1256,7 +1257,8 @@ fn u12_multiplication_division_and_power_use_compound_units() {
         QuantityOperation::Divide(f.at(&five_m), f.at(&five_m)),
         &mut unlimited(),
     ))
-    .unit();
+    .unit()
+    .clone();
     assert_eq!(dimensionless.domain(), UnitDomain::Compound);
     assert_eq!(
         Some(dimensionless.clone()),
@@ -1269,17 +1271,17 @@ fn u12_multiplication_division_and_power_use_compound_units() {
     // A non-root operand converts to its root first: `150 cm * 2 s = 3 m*s`.
     let mut meter = unlimited();
     let product = exact(evaluated(
-        QuantityOperation::Multiply(f.at(&f.quantity(whole(150), f.cm)), f.at(&two_s)),
+        QuantityOperation::Multiply(f.at(&f.quantity(whole(150), f.cm.clone())), f.at(&two_s)),
         &mut meter,
     ));
     assert_eq!(product.magnitude(), &whole(3));
-    let metre_second = compound_unit(&f, &[(f.m, "1"), (f.s, "1")]);
-    assert_eq!(product.unit(), metre_second.id().unwrap());
+    let metre_second = compound_unit(&f, &[(f.m.clone(), "1"), (f.s.clone(), "1")]);
+    assert_eq!(*product.unit(), metre_second.id().unwrap());
     assert_eq!(meter.consumed(LimitKind::UnitEdges), 1);
     // A compound operand reads its unit from a table that holds it.
     let mut units = f.units.clone();
     units.insert(metre_second).unwrap();
-    let metre = compound_unit(&f, &[(f.m, "1")]);
+    let metre = compound_unit(&f, &[(f.m.clone(), "1")]);
     units.insert(metre.clone()).unwrap();
     // Multiplication and division are inverse on normalized units.
     let back = exact(evaluated(
@@ -1287,12 +1289,12 @@ fn u12_multiplication_division_and_power_use_compound_units() {
         &mut unlimited(),
     ));
     assert_eq!(back.magnitude(), &ratio(3, 2));
-    assert_eq!(back.unit(), metre.id().unwrap());
-    assert_eq!(metre.dimension(), f.unit(f.m).dimension());
+    assert_eq!(*back.unit(), metre.id().unwrap());
+    assert_eq!(metre.dimension(), f.unit(f.m.clone()).dimension());
     assert_eq!(
         converted(
             units.resolve(&back).unwrap(),
-            &f.unit(f.cm),
+            &f.unit(f.cm.clone()),
             &QuantityTarget::Exact,
             &mut unlimited()
         ),
@@ -1301,14 +1303,14 @@ fn u12_multiplication_division_and_power_use_compound_units() {
     // Division by a zero quantity is undefined.
     assert_eq!(
         evaluated(
-            QuantityOperation::Divide(f.at(&two_m), f.at(&q(0, f.s))),
+            QuantityOperation::Divide(f.at(&two_m), f.at(&q(0, f.s.clone()))),
             &mut unlimited()
         ),
         Outcome::Undefined(Undefined::DivisionByZero)
     );
     assert_eq!(
         evaluated(
-            QuantityOperation::Power(f.at(&q(0, f.m)), &int(-1)),
+            QuantityOperation::Power(f.at(&q(0, f.m.clone())), &int(-1)),
             &mut unlimited()
         ),
         Outcome::Undefined(Undefined::DivisionByZero)
@@ -1577,7 +1579,7 @@ fn extended() -> Extended {
     let mut nodes = base.nodes.clone();
     let mass = nodes.dimension(base_dimension("example-model", "Mass"));
     let kg = nodes.unit(root_json("kilogram", mass.clone()));
-    let work_terms = [(base.length.clone(), "2"), (mass, "1"), (base.time, "-2")];
+    let work_terms = [(base.length.clone(), "2"), (mass, "1"), (base.time.clone(), "-2")];
     let torque = nodes.dimension(derived_dimension("Torque", &work_terms));
     let energy = nodes.dimension(derived_dimension("Energy", &work_terms));
     let area = nodes.dimension(derived_dimension("Area", &[(base.length.clone(), "2")]));
@@ -1588,7 +1590,7 @@ fn extended() -> Extended {
     let u1 = nodes.unit(unit_json(
         "u1",
         theta.clone(),
-        Some(base.kelvin),
+        Some(base.kelvin.clone()),
         ("1", "1"),
         ("10", "1"),
     ));
@@ -1596,14 +1598,14 @@ fn extended() -> Extended {
     let u3 = nodes.unit(unit_json(
         "u3",
         theta,
-        Some(base.deg_c),
+        Some(base.deg_c.clone()),
         ("1", "1"),
         ("0", "1"),
     ));
     let rev = nodes.unit(unit_json(
         "rev",
-        base.length,
-        Some(base.m),
+        base.length.clone(),
+        Some(base.m.clone()),
         ("-1", "1"),
         ("0", "1"),
     ));
@@ -1903,14 +1905,14 @@ fn u20_affinity_is_the_composed_offset() {
 #[test]
 fn u21_zero_base_power_is_one_at_zero_and_undefined_below() {
     let f = fixture();
-    let zero = f.quantity(whole(0), f.m);
+    let zero = f.quantity(whole(0), f.m.clone());
     let mut meter = limits(1, 0, 0, 1, 4, 1);
     let result = exact(evaluated(
         QuantityOperation::Power(f.at(&zero), &int(0)),
         &mut meter,
     ));
     assert_eq!(result.magnitude(), &whole(1));
-    assert_eq!(result.unit(), compound_unit(&f, &[]).id().unwrap());
+    assert_eq!(*result.unit(), compound_unit(&f, &[]).id().unwrap());
     assert_eq!(
         admitted_points(&meter).as_slice(),
         [
@@ -2038,7 +2040,7 @@ fn u22_declared_conversion_requires_one_dimension_node() {
     );
     // Nominal identity guards only direct declared-to-declared conversion: a
     // pivot through the coherent compound unit is admitted.
-    let mut terms = [(x.base.m, "2"), (x.kg, "1"), (x.base.s, "-2")];
+    let mut terms = [(x.base.m.clone(), "2"), (x.kg.clone(), "1"), (x.base.s.clone(), "-2")];
     terms.sort_by(|(a, _), (b, _)| a.cmp(b));
     let compound = QuantityUnit::Compound(x.graph.compound_unit(compound(&terms).terms()).unwrap());
     let Outcome::Completed(ConvertedValue::Exact(pivot)) = converted(
@@ -2181,7 +2183,7 @@ fn u24_identical_unit_addition_traverses_no_edge() {
 #[test]
 fn u25_compound_pivot_between_nominal_dimensions() {
     let x = extended();
-    let mut terms = [(x.base.m, "2"), (x.kg, "1"), (x.base.s, "-2")];
+    let mut terms = [(x.base.m.clone(), "2"), (x.kg.clone(), "1"), (x.base.s.clone(), "-2")];
     terms.sort_by(|(a, _), (b, _)| a.cmp(b));
     let compound = QuantityUnit::Compound(x.graph.compound_unit(compound(&terms).terms()).unwrap());
     let no_edge = [
@@ -2269,14 +2271,14 @@ fn u27_zero_divisor_is_undefined_after_the_reads() {
 #[test]
 fn u28_multiplication_charges_left_then_right_then_the_product() {
     let f = fixture();
-    let (cm, inch) = (f.quantity(whole(1), f.cm), f.quantity(whole(1), f.inch));
+    let (cm, inch) = (f.quantity(whole(1), f.cm.clone()), f.quantity(whole(1), f.inch.clone()));
     let operation = QuantityOperation::Multiply(f.at(&cm), f.at(&inch));
     let mut meter = limits(20, 0, 2, 2, 11, 1);
     let product = exact(evaluated(operation, &mut meter));
     assert_eq!(product.magnitude(), &ratio(127, 500_000));
     assert_eq!(
-        product.unit(),
-        compound_unit(&f, &[(f.m, "2")]).id().unwrap()
+        *product.unit(),
+        compound_unit(&f, &[(f.m.clone(), "2")]).id().unwrap()
     );
     let mut expected = vec![ChargePoint::UnitIdentityRead; 2];
     expected.extend([ChargePoint::UnitEdge; 2]);
@@ -2511,9 +2513,9 @@ fn generated_unit_graphs_match_the_affine_oracle_and_every_denial() {
     for graph_index in 0..24 {
         let mut nodes = Nodes::default();
         let length = nodes.dimension(base_dimension("example-model", "Length"));
-        let root = nodes.unit(root_json("root", length));
+        let root = nodes.unit(root_json("root", length.clone()));
         // Each generated unit: key, target index, scale, offset, composed map.
-        let mut maps: Vec<(NodeKey, Fraction, Fraction)> = vec![(root, (1, 1), (0, 1))];
+        let mut maps: Vec<(NodeKey, Fraction, Fraction)> = vec![(root.clone(), (1, 1), (0, 1))];
         let count = 1 + stream.below(5);
         for index in 0..count {
             let target = usize::try_from(stream.below(u64::try_from(maps.len()).unwrap())).unwrap();
@@ -2531,10 +2533,10 @@ fn generated_unit_graphs_match_the_affine_oracle_and_every_denial() {
             };
             let spell = |(n, d): Fraction| (n.to_string(), d.to_string());
             let (scale_text, offset_text) = (spell(scale), spell(offset));
-            let (target_key, target_scale, target_offset) = maps[target];
+            let (target_key, target_scale, target_offset) = maps[target].clone();
             let key = nodes.unit(unit_json(
                 &format!("u{index}"),
-                length,
+                length.clone(),
                 Some(target_key),
                 (&scale_text.0, &scale_text.1),
                 (&offset_text.0, &offset_text.1),
@@ -2550,7 +2552,7 @@ fn generated_unit_graphs_match_the_affine_oracle_and_every_denial() {
         }
         let graph = nodes.admit().unwrap();
         for (key, scale, offset) in &maps {
-            let unit = graph.unit(*key).unwrap();
+            let unit = graph.unit(key.clone()).unwrap();
             assert_eq!(unit.canonical().scale(), &as_rational(*scale));
             assert_eq!(unit.canonical().offset(), &as_rational(*offset));
             assert_eq!(unit.root(), root);
@@ -2575,12 +2577,12 @@ fn generated_unit_graphs_match_the_affine_oracle_and_every_denial() {
                     canonical.1 * target_offset.1,
                 );
                 let expected = reduce(lifted.0 * target_scale.1, lifted.1 * target_scale.0);
-                let quantity = Quantity::new(as_rational(value), declared(*source).id().unwrap());
+                let quantity = Quantity::new(as_rational(value), declared(source.clone()).id().unwrap());
                 let at = |quantity| units.resolve(quantity).expect("a declared unit");
                 let mut meter = unlimited();
                 let Outcome::Completed(conversion) = convert_quantity(
                     at(&quantity),
-                    &declared(*target),
+                    &declared(target.clone()),
                     &QuantityTarget::Exact,
                     &mut meter,
                 )
@@ -2592,8 +2594,8 @@ fn generated_unit_graphs_match_the_affine_oracle_and_every_denial() {
                     conversion.value(),
                     &ConvertedValue::Exact(as_rational(expected))
                 );
-                let edges = graph.unit(*source).unwrap().path().len()
-                    + graph.unit(*target).unwrap().path().len();
+                let edges = graph.unit(source.clone()).unwrap().path().len()
+                    + graph.unit(target.clone()).unwrap().path().len();
                 assert_eq!(
                     meter.consumed(LimitKind::UnitEdges),
                     u64::try_from(edges).unwrap()
@@ -2617,7 +2619,7 @@ fn generated_unit_graphs_match_the_affine_oracle_and_every_denial() {
                     assert_eq!(
                         converted(
                             at(&quantity),
-                            &declared(*target),
+                            &declared(target.clone()),
                             &QuantityTarget::Exact,
                             &mut denied
                         ),
@@ -2633,7 +2635,7 @@ fn generated_unit_graphs_match_the_affine_oracle_and_every_denial() {
                 }
 
                 // Arithmetic in the source unit.
-                let other = Quantity::new(whole(3), declared(*source).id().unwrap());
+                let other = Quantity::new(whole(3), declared(source.clone()).id().unwrap());
                 let sum = evaluate_quantity(
                     QuantityOperation::Add(at(&quantity), at(&other)),
                     &mut unlimited(),
@@ -2658,9 +2660,9 @@ fn generated_unit_graphs_match_the_affine_oracle_and_every_denial() {
                     &as_rational(reduce(canonical.0 * three.0, canonical.1 * three.1))
                 );
                 assert_eq!(
-                    product.unit(),
+                    *product.unit(),
                     graph
-                        .compound_unit(compound(&[(root, "2")]).terms())
+                        .compound_unit(compound(&[(root.clone(), "2")]).terms())
                         .unwrap()
                         .id()
                         .unwrap()
@@ -2670,7 +2672,7 @@ fn generated_unit_graphs_match_the_affine_oracle_and_every_denial() {
 
         // Independent topology mutations of the generated graph.
         let mut two_roots = nodes.clone();
-        two_roots.unit(root_json("extra_root", length));
+        two_roots.unit(root_json("extra_root", length.clone()));
         assert_eq!(
             two_roots.admit().unwrap_err().cause,
             SemanticGraphCause::DuplicateRoot

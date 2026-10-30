@@ -508,7 +508,7 @@ fn nested_references_resolve_parameters_in_pre_and_results_in_post() {
     .check(CheckingLimits::default())
     .expect("check");
     let context = graph.state_clause("Holds").expect("clause").context();
-    let ty = ValueType::option(sequence(ValueType::Reference(context)));
+    let ty = ValueType::option(sequence(ValueType::Reference(context.clone())));
     let make = |key: &str| {
         let mut case = Case::new(
             ty.clone(),
@@ -535,7 +535,7 @@ fn nested_references_resolve_parameters_in_pre_and_results_in_post() {
             panic!("Reference")
         };
         assert_eq!(reference.object().as_str(), key);
-        assert_eq!(reference.object_type(), context);
+        assert_eq!(*reference.object_type(), context);
     }
     let record = assert_refused(
         make("after"),
