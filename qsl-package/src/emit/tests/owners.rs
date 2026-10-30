@@ -396,6 +396,7 @@ fn model_declaration_nodes_and_clause_functions_carry_their_model_owner() {
             },
             &clauses(order, sub),
             source(),
+            "test/package".to_owned(),
             &mut meter,
             qsl_foundation::IdentityLimits::default(),
         )
