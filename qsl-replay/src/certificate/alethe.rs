@@ -1685,15 +1685,19 @@ impl Step {
                 if f != g || xs.len() != ys.len() {
                     return false;
                 }
-                let mut next = premises.iter().peekable();
-                for (x, y) in xs.iter().zip(ys) {
-                    if next.peek().is_some_and(|(from, to)| from == x && to == y) {
-                        next.next();
-                    } else if !renames(x, y) {
-                        return false;
-                    }
-                }
-                next.next().is_none()
+                argument_orders(f, xs).iter().any(|xs| {
+                    argument_orders(g, ys).iter().any(|ys| {
+                        let mut next = premises.iter().peekable();
+                        for (x, y) in xs.iter().zip(ys) {
+                            if next.peek().is_some_and(|(from, to)| from == x && to == y) {
+                                next.next();
+                            } else if !renames(x, y) {
+                                return false;
+                            }
+                        }
+                        next.next().is_none()
+                    })
+                })
             }
             _ => false,
         }
@@ -2214,20 +2218,37 @@ fn congruent(left: &Rc<Term>, right: &Rc<Term>, equalities: &[(Rc<Term>, Rc<Term
     if f != g || xs.len() != ys.len() {
         return false;
     }
-    let mut next = equalities.iter();
-    let mut pending = next.next();
-    for (x, y) in xs.iter().zip(ys) {
-        if let Some((a, b)) = pending {
-            if (a == x && b == y) || (a == y && b == x) {
-                pending = next.next();
-                continue;
+    argument_orders(f, xs).iter().any(|xs| {
+        argument_orders(g, ys).iter().any(|ys| {
+            let mut next = equalities.iter();
+            let mut pending = next.next();
+            for (x, y) in xs.iter().zip(ys) {
+                if let Some((a, b)) = pending {
+                    if (a == x && b == y) || (a == y && b == x) {
+                        pending = next.next();
+                        continue;
+                    }
+                }
+                if x != y {
+                    return false;
+                }
             }
-        }
-        if x != y {
-            return false;
-        }
+            pending.is_none()
+        })
+    })
+}
+
+/// The orders in which `cong` may read the arguments of an application of
+/// `head`. A binary `=` holds its arguments in canonical order, but a proof's
+/// premises follow the source order of the arguments, and an equality is
+/// symmetric (the Alethe specification's implicit reordering of equalities),
+/// so both orders are read; every other application has its one order.
+fn argument_orders(head: &str, args: &[Rc<Term>]) -> Vec<Vec<Rc<Term>>> {
+    let mut orders = vec![args.to_vec()];
+    if op(head) == Some(Op::Eq) && args.len() == 2 {
+        orders.push(args.iter().rev().cloned().collect());
     }
-    pending.is_none()
+    orders
 }
 
 /// `eq_congruent`: each argument pair is equal or is one of the negated
@@ -3021,5 +3042,44 @@ mod tests {
             ),
             None
         );
+    }
+
+    /// `cong` over a binary `=`: the equality holds its arguments in
+    /// canonical order, but cvc5's premises follow the source order of the
+    /// arguments, so a `cong` whose application is `=` is checked in either
+    /// orientation of each side (the Alethe implicit reordering of
+    /// equalities), with a reflexive argument omitted from the premises, and
+    /// a premise in either orientation.
+    #[trace("TC-893")]
+    #[test]
+    fn cong_over_an_equality_reads_its_arguments_in_source_order() {
+        let premises = "(step t0 (cl (= y (+ y 1))) :rule hole)\
+             (step t1 (cl (= x (+ x 1))) :rule hole)\
+             (step t2 (cl (= y (+ x 1))) :rule hole)";
+        let conclusion = |text: &str, ids: &str| {
+            format!("{premises}(step t3 (cl {text}) :rule cong :premises ({ids}))")
+        };
+        let accepted = |proof: String| verdict(&proof) == Err("short 3".to_owned());
+        // Both arguments differ, the sides' canonical orders disagree.
+        assert!(accepted(conclusion(
+            "(= (= y x) (= (+ y 1) (+ x 1)))",
+            "t0 t1"
+        )));
+        // The conclusion's orientation and each premise's do not matter.
+        assert!(accepted(conclusion(
+            "(= (= (+ x 1) (+ y 1)) (= x y))",
+            "t1 t0"
+        )));
+        // A reflexive argument is omitted from the premises.
+        assert!(accepted(conclusion("(= (= y y) (= (+ y 1) y))", "t0")));
+        // The premises must still match the arguments in some orientation.
+        assert!(!accepted(conclusion(
+            "(= (= y x) (= (+ y 1) (+ x 1)))",
+            "t0 t2"
+        )));
+        assert!(!accepted(conclusion(
+            "(= (= y x) (= (+ y 1) (+ x 1)))",
+            "t0"
+        )));
     }
 }
