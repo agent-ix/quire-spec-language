@@ -86,11 +86,11 @@ pub enum HostCause {
     /// `invalid_source_map`: an edit names a different predecessor
     /// (FR-001-AC-12); the refusal names no region.
     EditPredecessor,
-    /// `invalid_source_map`: a CST node belongs to another parsed source
-    /// (FR-001-AC-12); the refusal names no region.
+    /// `invalid_source_map`: the node's structural identity does not resolve
+    /// in this CST; the refusal names no region.
     ForeignNode,
-    /// `invalid_source_map`: a request is bound to another revision
-    /// (FR-001-AC-12); the refusal names no region.
+    /// `invalid_source_map`: a request is bound to another revision; the
+    /// refusal names no region.
     RequestRevision,
     /// `invalid_source_map`: edits are unordered, overlapping or off a UTF-8
     /// boundary.
