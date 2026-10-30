@@ -221,7 +221,7 @@ impl Chatter {
                 max_messages: None,
                 max_live_instances: None,
             },
-            &envelope_at(&unit, id, payload, clause_node, occurrence),
+            &envelope_at(id, payload, clause_node, occurrence),
             self.letters,
             ReplayLimits::default(),
         )

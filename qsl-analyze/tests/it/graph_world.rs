@@ -17,11 +17,11 @@ use qsl_eval::simulation::model::{
     ExpansionLimits, ModelSimState, ModelSimulationRequest, PopulationUniverse,
 };
 use qsl_foundation::digest::{DigestDomain, DigestRecord};
-use qsl_foundation::{BackendId, ByteDigest, SourceIdentity};
+use qsl_foundation::{BackendId, SourceIdentity};
 use qsl_package::CheckedPackage;
 use qsl_replay::{
     GraphEvidence, GraphEvidenceEnvelope, GraphReplayResult, ModelCheckLimits, ModelPath,
-    ModelTraceSubject, ObligationIdentity, RawSourceRef, ReplayLimits, ReplayRequestWire,
+    ModelTraceSubject, ObligationIdentity, ReplayLimits, ReplayRequestWire,
     ReplayResult, ReplaySource, RequestTargetWire, StateEnvironment, WitnessPath, WitnessSource,
 };
 use qsl_semantics::check::{CheckedStateGraphClaim, PackageDeclarations};
@@ -376,22 +376,16 @@ impl World {
         source: WitnessSource,
         keys: &[&str],
     ) -> GraphReplayResult {
-        let source_record = DigestRecord::mint(
-            DigestDomain::SourceBytesV1,
-            ByteDigest::of(&self.source).as_bytes(),
-        );
-        let source_wire: (String, String, String, String, Option<String>, String) = (
+        let source_wire: (String, String, String, String) = (
             "agent-ix".to_owned(),
             "graph".to_owned(),
             "git".to_owned(),
             "1".to_owned(),
-            Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-            source_record.hex(),
         );
         let package_id = self.package_id().record();
         let byte_provision = vec![(
-            Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-            source_record.hex(),
+            "agent-ix".to_owned(),
+            "graph".to_owned(),
             self.source.clone(),
         )];
         let mut documents = vec![self.document.clone()];
@@ -405,13 +399,6 @@ impl World {
             occurrence.clone(),
             occurrence.node(),
             package_id,
-            vec![RawSourceRef::new(
-                "agent-ix".to_owned(),
-                "graph".to_owned(),
-                "git".to_owned(),
-                "1".to_owned(),
-                source_record,
-            )],
             Vec::new(),
             UNLIMITED,
             Vec::new(),
@@ -427,7 +414,7 @@ impl World {
                 Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
                 package_id.hex(),
             ),
-            source_digests: vec![source_wire],
+            sources: vec![source_wire],
             dependencies: Vec::new(),
             replay_target: RequestTargetWire::default(),
             source: ReplaySource::ModelGraph(Box::new(envelope)),

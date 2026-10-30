@@ -470,12 +470,12 @@ fn assert_requested<T>(outcome: Result<Staged<T>, FrontEndFailure>) {
     }
 }
 
-/// The digest of each source `emitted` carries, in order.
-fn references(emitted: &EmittedUnit) -> Vec<qsl_foundation::digest::DigestRecord> {
+/// The text of each source `emitted` carries, in order.
+fn references(emitted: &EmittedUnit) -> Vec<Vec<u8>> {
     emitted
         .sources()
         .iter()
-        .map(|source| source.reference().digest())
+        .map(|source| source.text().as_bytes().to_vec())
         .collect()
 }
 
@@ -1013,7 +1013,7 @@ fn the_producer_refuses_profile_version_and_digest_tails_as_invalid_syntax() {
 }
 
 /// FR-278-AC-3 (TC-759 step 3): the `EmittedUnit` carries a source
-/// provision whose digests name every source the package was compiled from.
+/// provision that carries every source the package was compiled from.
 /// (Replaying through that provision is checked beside the replay executor.)
 #[trace("TC-759", "FR-278-AC-3")]
 #[test]
@@ -1031,16 +1031,10 @@ fn the_provision_names_every_source_the_package_was_compiled_from() {
     )
     .unwrap_or_else(|failure| panic!("the importing unit compiles: {failure:?}"));
 
-    let digests = references(&chain.emitted);
-    let unit_digest = qsl_foundation::digest::DigestRecord::mint(
-        qsl_foundation::digest::DigestDomain::SourceBytesV1,
-        qsl_foundation::digest::ByteDigest::of(unit.as_bytes()).as_bytes(),
+    assert_eq!(
+        references(&chain.emitted),
+        vec![unit.as_bytes().to_vec(), geometry.bytes.clone()]
     );
-    let library_digest = qsl_foundation::digest::DigestRecord::mint(
-        qsl_foundation::digest::DigestDomain::SourceBytesV1,
-        qsl_foundation::digest::ByteDigest::of(&geometry.bytes).as_bytes(),
-    );
-    assert_eq!(digests, vec![unit_digest, library_digest]);
 }
 
 /// FR-275-AC-5 (TC-755 step 7): each operation reports the work of its own

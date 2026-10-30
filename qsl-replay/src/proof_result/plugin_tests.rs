@@ -868,7 +868,7 @@ fn tc_774_function_contract_and_application_items_replay() {
         Some("p".to_owned())
     );
     assert_eq!(wire.backend, "acme");
-    assert_eq!(wire.source_digests.len(), 1);
+    assert_eq!(wire.sources.len(), 1);
     assert_eq!(wire.declared_domains.len(), 1);
     assert!(wire.state_environment.entries().is_empty());
     assert!(wire.object_environment.is_none());

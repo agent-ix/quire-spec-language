@@ -1645,7 +1645,6 @@ mod tests {
                         )
                         .hex(),
                     )),
-                    source_digests: Some(vec![]),
                     profile_selections: Some(vec![]),
                     run_limits: Some(charges()),
                     declared_domains: Some(vec![]),

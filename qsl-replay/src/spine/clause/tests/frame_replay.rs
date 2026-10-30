@@ -221,13 +221,6 @@ fn changed_version() -> Invocation {
     )
 }
 
-pub(super) fn source_digest(bytes: &[u8]) -> DigestRecord {
-    DigestRecord::mint(
-        DigestDomain::SourceBytesV1,
-        qsl_foundation::ByteDigest::of(bytes).as_bytes(),
-    )
-}
-
 pub(super) fn package_digest(package_id: PackageId) -> DigestRecord {
     DigestRecord::mint(DigestDomain::PackageSemanticV2, *package_id.as_bytes())
 }
@@ -252,10 +245,9 @@ pub(super) fn request(
     documents: &[(DocumentRef, Vec<u8>)],
     target: ReplayTarget,
 ) -> ReplayRequestWire {
-    let source = source_digest(source_bytes);
     let byte_provision = vec![(
-        Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-        source.hex(),
+        AUTHORITY.to_owned(),
+        IDENTITY.to_owned(),
         source_bytes.to_vec(),
     )];
     let mut provided = vec![domain_document.to_vec()];
@@ -268,14 +260,7 @@ pub(super) fn request(
             Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
             package_id.hex(),
         ),
-        source_digests: vec![(
-            AUTHORITY.to_owned(),
-            IDENTITY.to_owned(),
-            "git".to_owned(),
-            "1".to_owned(),
-            Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-            source.hex(),
-        )],
+        sources: vec![(AUTHORITY.to_owned(), IDENTITY.to_owned(), "git".to_owned(), "1".to_owned())],
         dependencies: Vec::new(),
         replay_target: target.into(),
         source: witness_source(),
@@ -348,14 +333,6 @@ pub(super) fn packet<P: FamilyPayload>(
             Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
             package_id.hex(),
         )),
-        source_digests: Some(vec![(
-            AUTHORITY.to_owned(),
-            IDENTITY.to_owned(),
-            "git".to_owned(),
-            "1".to_owned(),
-            Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-            source_digest(source_bytes).hex(),
-        )]),
         profile_selections: Some(vec![ProfileSelection::new(
             "quire.profile.v1".to_owned(),
             "finite-state".to_owned(),
@@ -514,7 +491,6 @@ fn a_frame_counterexample_reproduces_and_keeps_its_identities() {
     );
     assert_eq!(arm.category(), Category::Violation);
     assert_eq!(arm.disagreement(), None);
-    assert_eq!(result.source().digest(), source_digest(&unit_bytes));
     assert_eq!(result.source().identity(), IDENTITY);
     assert_eq!(result.package_id(), package_id);
     assert_eq!(result.operation(), &operation("attemptUpdate"));
@@ -1095,9 +1071,7 @@ fn a_frame_replay_refuses_other_targets_before_the_recompile() {
                             target,
                         );
                     }
-                    Source::EntryRemoved => wire.byte_provision.retain(|(domain, _, _)| {
-                        domain.as_deref() != Some(DigestDomain::SourceBytesV1.as_str())
-                    }),
+                    Source::EntryRemoved => wire.byte_provision.clear(),
                 },
             );
             if replace_node {

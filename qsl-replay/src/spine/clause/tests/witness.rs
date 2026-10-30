@@ -584,7 +584,6 @@ fn native_result_two_retains_refused_outcome_members() {
         fields: BTreeMap::from([("expected", "Int[0, 9]".to_owned())]),
         locus: Some(crate::spine::CallLocus {
             file: "fixture.native".to_owned(),
-            source_digest: format!("sha256:{}", "0".repeat(64)),
             span: qsl_foundation::LocatedSpan {
                 start: qsl_foundation::Position {
                     byte: 0,

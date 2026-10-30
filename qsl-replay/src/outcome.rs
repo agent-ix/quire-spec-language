@@ -890,8 +890,8 @@ pub enum OutcomeLocus {
     },
     /// A region rendered over its source, as an evaluation records it.
     Located {
-        /// The `sha256:` digest of the source.
-        source_digest: String,
+        /// The authored path of the source.
+        file: String,
         /// The region's span.
         span: LocatedSpan,
     },
@@ -978,7 +978,7 @@ impl OutcomeDiagnostic {
             CallRefusal::Record {
                 locus: Some(locus), ..
             } => Some(OutcomeLocus::Located {
-                source_digest: locus.source_digest.clone(),
+                file: locus.file.clone(),
                 span: locus.span,
             }),
             CallRefusal::Record { locus: None, .. } | CallRefusal::Family { .. } => None,
@@ -1496,7 +1496,6 @@ fn replay_stage(refusal: &ReplayRefusal) -> Option<OutcomeStage> {
         ReplayRefusal::Request(_)
         | ReplayRefusal::DomainPackages(_)
         | ReplayRefusal::LimitAboveReader(_)
-        | ReplayRefusal::NotASource(_)
         | ReplayRefusal::SourceCount(_)
         | ReplayRefusal::DependencySelections(_)
         | ReplayRefusal::DependencyInput(_)
@@ -2639,7 +2638,7 @@ mod tests {
             fields: BTreeMap::new(),
             locus: Some(CallLocus {
                 file: "fixture.native".to_owned(),
-                source_digest: "sha256:ab".to_owned(),
+                file: "fixture.native".to_owned(),
                 span,
             }),
             location: None,
@@ -2652,7 +2651,7 @@ mod tests {
             document["diagnostics"][0]["locus"],
             json!({
                 "kind": "located",
-                "source_digest": "sha256:ab",
+                "file": "fixture.native",
                 "span": serde_json::to_value(span).expect("a span"),
             })
         );

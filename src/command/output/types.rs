@@ -209,11 +209,11 @@ pub(super) enum SpineValue {
 }
 
 /// FR-096/FR-100: a `refused` record's or cause's resolved locus -- the
-/// `sha256:` digest of the source the region belongs to, and its span
-/// rendered over that source.
+/// path of the source the region belongs to, and its span rendered over that
+/// source.
 #[derive(Serialize)]
 pub(super) struct SpineLocus {
-    pub source_digest: String,
+    pub file: String,
     pub span: LocatedSpan,
 }
 

@@ -9,7 +9,6 @@ use std::path::{Component, Path, PathBuf};
 use logos::Logos;
 use qsl_analyze::analyze::Engines;
 use qsl_cst::token::Kind;
-use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord};
 use qsl_foundation::source::provenance::RawSourceRef;
 use qsl_foundation::{Code, Setting, SettingLimits, SourceIdentity};
 use qsl_replay::spine::{
@@ -600,11 +599,7 @@ fn read_entry_file(root: &Path, name: &str) -> Result<Vec<u8>, String> {
     fs::read(canonical).map_err(|error| format!("cannot read {name}: {error}"))
 }
 
-fn source_reference(source: &SourceFile, bytes: &[u8]) -> Result<RawSourceRef, String> {
-    let digest = DigestRecord::mint(
-        DigestDomain::SourceBytesV1,
-        ByteDigest::of(bytes).as_bytes(),
-    );
+fn source_reference(source: &SourceFile) -> Result<RawSourceRef, String> {
     RawSourceRef::new(source.authority.clone(), source.identity.clone())
         .map_err(|error| format!("invalid source labels: {error}"))
 }
@@ -620,7 +615,7 @@ fn load_unit(
     let (identity, _, _) = profile_identity_span(&bytes)?;
     let layer = HeaderLayer::from_identity(&identity)
         .ok_or_else(|| format!("profile identity {identity:?} is not a header-selectable layer"))?;
-    let reference = source_reference(&source, &bytes)?;
+    let reference = source_reference(&source)?;
     let input = UnitInput {
         identity: SourceIdentity::new(
             source.authority,

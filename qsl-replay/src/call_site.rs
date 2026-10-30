@@ -872,23 +872,17 @@ mod tests {
         declaration: qsl_foundation::source::provenance::OccurrenceKey,
         assignments: Vec<CanonicalAssignment>,
     ) -> ReplayRequestWire {
-        let source_digest_record = DigestRecord::mint(
-            DigestDomain::SourceBytesV1,
-            ByteDigest::of(bytes).as_bytes(),
-        );
         ReplayRequestWire {
             profile_selections: vec![],
             package_id: (
                 Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
                 package_id.hex(),
             ),
-            source_digests: vec![(
+            sources: vec![(
                 "a".to_owned(),
                 "u".to_owned(),
                 "git".to_owned(),
                 "1".to_owned(),
-                Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-                source_digest_record.hex(),
             )],
             dependencies: Vec::new(),
             replay_target: crate::RequestTargetWire::function(function, declaration),
@@ -901,11 +895,7 @@ mod tests {
             supplied_limits: None,
             object_environment: None,
             declared_domains: Vec::new(),
-            byte_provision: vec![(
-                Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-                source_digest_record.hex(),
-                bytes.to_vec(),
-            )],
+            byte_provision: vec![("a".to_owned(), "u".to_owned(), bytes.to_vec())],
             documents: vec![],
         }
     }

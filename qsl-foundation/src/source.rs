@@ -369,7 +369,7 @@ impl Source {
         let digest = ByteDigest::of(bytes);
         // Every label is non-blank here, so the reference is minted unless
         // provenance itself refuses the values.
-        let reference = match identity.reference(digest) {
+        let reference = match identity.reference() {
             Ok(reference) => reference,
             Err(ReferenceError::Blank(label)) => {
                 return Err(refuse(
@@ -468,10 +468,10 @@ impl Source {
 
     /// FR-001: render a region of this source, deriving the one-based line
     /// and Unicode scalar column of each end from the admitted bytes. Returns
-    /// `None` for a region under another source's bytes, or one whose ends
+    /// `None` for a region under another source, or one whose ends
     /// are not scalar boundaries of this source.
     pub fn render(&self, region: &SourceRegion) -> Option<LocatedSpan> {
-        if region.source().digest() != self.0.reference.digest() {
+        if region.source() != &self.0.reference {
             return None;
         }
         self.locate(Span {
@@ -599,9 +599,8 @@ mod tests {
     }
 
     /// FR-001-AC-5: admission mints a `RawSourceRef` of the authority and
-    /// identity labels and the `quire.source.bytes/v1` digest of the bytes
-    /// (the type has no other member); other bytes under the same labels
-    /// change only the digest.
+    /// identity labels (the type has no other member); other bytes under the
+    /// same labels name the same reference.
     #[trace("TC-424", "FR-001-AC-5")]
     #[test]
     fn admission_mints_the_caller_named_source_reference() {
@@ -618,20 +617,10 @@ mod tests {
         let reference = first.reference();
         assert_eq!(reference.authority(), "agent-ix");
         assert_eq!(reference.identity(), "specs/a.quire");
-        assert_eq!(reference.digest().domain(), DigestDomain::SourceBytesV1);
-        assert_eq!(
-            reference.digest().as_bytes(),
-            &ByteDigest::of(b"b").as_bytes()
-        );
 
         let second = admit(b"b'");
         let other = second.reference();
-        assert_ne!(reference, other);
-        assert_eq!(
-            (other.authority(), other.identity()),
-            (reference.authority(), reference.identity())
-        );
-        assert_eq!(other.digest().as_bytes(), &ByteDigest::of(b"b'").as_bytes());
+        assert_eq!(reference, other);
     }
 
     /// FR-001-AC-6: exactly one empty, single-space or U+3000 label refuses
@@ -717,10 +706,6 @@ mod tests {
             assert_eq!((region.start(), region.end()), (start, end));
             let reference = region.source();
             assert_eq!((reference.authority(), reference.identity()), ("a", "u"));
-            assert_eq!(
-                reference.digest().as_bytes(),
-                &ByteDigest::of(bytes).as_bytes()
-            );
         }
     }
 

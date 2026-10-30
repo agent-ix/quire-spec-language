@@ -425,10 +425,10 @@ fn spine_location(location: &quire_semantic_value::location::Location) -> types:
 }
 
 /// FR-096/FR-100: a record's resolved locus, rendered as
-/// `{source_digest, span}`.
+/// `{file, span}`.
 fn spine_locus(locus: qsl_replay::spine::CallLocus) -> types::SpineLocus {
     types::SpineLocus {
-        source_digest: locus.source_digest,
+        file: locus.file,
         span: locus.span,
     }
 }
@@ -832,7 +832,7 @@ mod tests {
     }
 
     /// FR-100-AC-9 (TC-452 step 4, FND-019): a record refusal's `locus`
-    /// renders `{source_digest, span}` exactly -- the TC-452 fixture-F
+    /// renders `{file, span}` exactly -- the TC-452 fixture-F
     /// values -- and `location` renders on both a record refusal and a
     /// family refusal.
     #[test]
@@ -852,20 +852,8 @@ mod tests {
                 column: 55,
             },
         };
-        // The digest is opaque to rendering: the refusal's `locus` carries
-        // whatever the call recorded. It is the SHA-256 of the fixture's
-        // own source text, so input and expectation share one value.
-        let source_digest = {
-            use sha2::{Digest, Sha256};
-            let hex: String = Sha256::digest(b"fixture.native source")
-                .iter()
-                .map(|byte| format!("{byte:02x}"))
-                .collect();
-            format!("sha256:{hex}")
-        };
         let locus = CallLocus {
             file: "fixture.native".to_owned(),
-            source_digest: source_digest.clone(),
             span,
         };
         let location = Location::at(
@@ -895,7 +883,7 @@ mod tests {
                 "cause": "absent-key",
                 "fields": fields,
                 "locus": {
-                    "source_digest": source_digest,
+                    "file": "fixture.native",
                     "span": {
                         "start": {"byte": 225, "line": 3, "column": 54},
                         "end": {"byte": 226, "line": 3, "column": 55},

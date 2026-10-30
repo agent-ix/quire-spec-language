@@ -429,23 +429,14 @@ impl World {
 
 const AUTHORITY: &str = "agent-ix";
 
-fn source_digest(bytes: &[u8]) -> DigestRecord {
-    DigestRecord::mint(
-        DigestDomain::SourceBytesV1,
-        qsl_foundation::ByteDigest::of(bytes).as_bytes(),
-    )
-}
+type SourceWire = (String, String, String, String);
 
-type SourceWire = (String, String, String, String, Option<String>, String);
-
-fn source_wire(identity: &str, bytes: &[u8]) -> SourceWire {
+fn source_wire(identity: &str) -> SourceWire {
     (
         AUTHORITY.to_owned(),
         identity.to_owned(),
         "git".to_owned(),
         "1".to_owned(),
-        Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-        source_digest(bytes).hex(),
     )
 }
 
@@ -527,8 +518,8 @@ pub(crate) fn replay_unit_result(
 ) -> Result<qsl_replay::ModelTraceReplayResult, qsl_replay::ReplayRefusal> {
     let package_id = unit_package_id(unit);
     let byte_provision = vec![(
-        Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-        source_digest(unit.text).hex(),
+        AUTHORITY.to_owned(),
+        unit.identity.to_owned(),
         unit.text.to_vec(),
     )];
     let mut documents = vec![unit.document.to_vec()];
@@ -541,7 +532,7 @@ pub(crate) fn replay_unit_result(
             Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
             package_id.hex(),
         ),
-        source_digests: vec![source_wire(unit.identity, unit.text)],
+        sources: vec![source_wire(unit.identity)],
         dependencies: Vec::new(),
         replay_target: qsl_replay::RequestTargetWire::function(
             selected(),
@@ -573,7 +564,6 @@ pub(crate) fn replay_unit_result(
                 Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
                 package_id.hex(),
             )),
-            source_digests: Some(vec![source_wire(unit.identity, unit.text)]),
             profile_selections: Some(Vec::new()),
             run_limits: Some(UNLIMITED),
             declared_domains: Some(Vec::new()),

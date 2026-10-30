@@ -1507,10 +1507,6 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
                     ])
                 );
                 let locus = locus.expect("a record locus");
-                assert_eq!(
-                    locus.source_digest,
-                    qsl_foundation::ByteDigest::of(FIXTURE_F.as_bytes()).to_string()
-                );
                 assert_eq!(locus.span.start.byte, 132);
                 assert_eq!(locus.span.start.line, 3);
                 assert_eq!(locus.span.start.column, 54);
@@ -1666,10 +1662,6 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
                     assert_eq!(got_code, CatalogCode::new(code, cause), "{refusal:?}");
                     assert_eq!(fields, expected_fields, "{refusal:?}");
                     let locus = locus.expect("a record locus");
-                    assert_eq!(
-                        locus.source_digest,
-                        qsl_foundation::ByteDigest::of(FIXTURE_F.as_bytes()).to_string()
-                    );
                     assert_eq!(locus.span.start.byte, 132);
                     assert_eq!(locus.span.end.byte, 133);
                     assert_location(&got_location);
@@ -1702,10 +1694,6 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
                     BTreeMap::from([("required", "01".repeat(32)), ("supplied", "02".repeat(32)),])
                 );
                 let locus = locus.expect("a record locus");
-                assert_eq!(
-                    locus.source_digest,
-                    qsl_foundation::ByteDigest::of(FIXTURE_F.as_bytes()).to_string()
-                );
                 assert_eq!(locus.span.start.byte, 132);
                 assert_eq!(locus.span.end.byte, 133);
                 assert_location(&got_location);

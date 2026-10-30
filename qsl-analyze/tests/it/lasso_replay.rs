@@ -96,7 +96,7 @@ pub(crate) fn replay_with(
             id,
         ),
         &subject_of(fixture),
-        &envelope_at(&fixture.unit, id, payload, node, occurrence),
+        &envelope_at(id, payload, node, occurrence),
         &Letters { atom },
         ReplayLimits::default(),
     )
@@ -259,7 +259,7 @@ fn a_guarded_on_each_prefix_replays_through_production_letters() {
         &fixture.unit,
         package_id,
     );
-    let envelope = envelope_at(&fixture.unit, package_id, payload, node_id, occurrence);
+    let envelope = envelope_at(package_id, payload, node_id, occurrence);
     let result = replay_model_trace(
         wire,
         &subject_of(&fixture),
@@ -429,7 +429,7 @@ fn a_counterexample_names_its_clause_by_node_and_occurrence() {
                 id,
             ),
             &subject_of(&fixture),
-            &envelope_at(&fixture.unit, id, payload.clone(), node, occurrence),
+            &envelope_at(id, payload.clone(), node, occurrence),
             &Letters { atom: is_three },
             ReplayLimits::default(),
         )
@@ -495,9 +495,7 @@ fn a_liveness_violation_settles_refuted_through_replay() {
                     id,
                 ),
                 &subject_of(&fixture),
-                &envelope_at(
-                    &fixture.unit,
-                    id,
+                &envelope_at(id,
                     counterexample.clone(),
                     node,
                     occurrence.clone(),
@@ -541,7 +539,7 @@ fn a_liveness_violation_settles_refuted_through_replay() {
                     id,
                 ),
                 &subject_of(&fixture),
-                &envelope_at(&fixture.unit, id, open, node, occurrence.clone()),
+                &envelope_at(id, open, node, occurrence.clone()),
                 &letters,
                 ReplayLimits::default(),
             )
@@ -924,7 +922,7 @@ fn a_clause_with_a_capture_replays_through_the_production_letters() {
             id,
         ),
         &subject_of(&fixture),
-        &envelope_at(&fixture.unit, id, *counterexample, clause_node, occurrence),
+        &envelope_at(id, *counterexample, clause_node, occurrence),
         &letters,
         ReplayLimits::default(),
     )

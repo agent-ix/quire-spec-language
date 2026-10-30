@@ -274,7 +274,6 @@ fn member_request(
     assert_eq!(ours.package_id, theirs.package_id);
     assert_eq!(ours.obligation_identity, theirs.obligation_identity);
     assert_eq!(ours.replay_target, theirs.replay_target);
-    assert_eq!(ours.source_digests, theirs.source_digests);
     assert_eq!(ours.dependencies, theirs.dependencies);
     assert_eq!(ours.backend, theirs.backend);
     assert_eq!(ours.stage_limits, theirs.stage_limits);
@@ -427,7 +426,6 @@ fn another_runs_package_is_a_foreign_run() {
     let own_second = member_request(&second_source, &second, "q", 9);
     assert_eq!(own_first.package_id.1, first.package_id().hex());
     assert_eq!(own_second.package_id.1, second.package_id().hex());
-    assert_ne!(own_first.source_digests, own_second.source_digests);
     assert_ne!(first.package_id(), second.package_id());
     assert_eq!(
         first.requirements().members()[0].occurrence(),

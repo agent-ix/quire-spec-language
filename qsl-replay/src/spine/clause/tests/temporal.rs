@@ -770,7 +770,6 @@ fn observed_replay_request(
             Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
             package_record.hex(),
         )),
-        source_digests: Some(wire.source_digests.clone()),
         profile_selections: Some(Vec::new()),
         run_limits: Some(wire.accounting_limits),
         declared_domains: Some(Vec::new()),

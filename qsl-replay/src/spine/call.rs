@@ -106,15 +106,13 @@ pub enum CallValue {
     Reference(quire_exact::ObjectReference),
 }
 
-/// A refusal's [`Locus::Region`], resolved to the `sha256:` digest of the
-/// source it points into and its span rendered over that source's bytes
-/// (FR-096, FR-100).
+/// A refusal's [`Locus::Region`], resolved to the path of the source it
+/// points into and its span rendered over that source's bytes (FR-096,
+/// FR-100).
 #[derive(Clone, Debug)]
 pub struct CallLocus {
     /// Authored path of the source containing the region (FR-100's wire).
     pub file: String,
-    /// The `sha256:` digest of the source the region belongs to.
-    pub source_digest: String,
     /// The region's span, rendered over that source.
     pub span: qsl_foundation::LocatedSpan,
 }
@@ -946,7 +944,6 @@ pub(crate) fn resolve_locus(
     let span = source.render(region).ok_or_else(unresolved)?;
     Ok(CallLocus {
         file: source.path().to_owned(),
-        source_digest: format!("sha256:{}", region.source().digest().hex()),
         span,
     })
 }

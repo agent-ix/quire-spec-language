@@ -650,7 +650,7 @@ fn complete(
             .and_then(|region| {
                 std::iter::once(source)
                     .chain(libraries.iter().map(|(_, read)| read.source()))
-                    .find(|candidate| candidate.reference().digest() == region.source().digest())
+                    .find(|candidate| candidate.reference() == region.source())
             })
             .unwrap_or(source);
         RunCause::Spine(Box::new(SpineFailure {
@@ -1065,9 +1065,7 @@ fn spine_run_failure(
         .and_then(|region| {
             std::iter::once(source)
                 .chain(libraries.iter().map(|(_, read)| read))
-                .find(|candidate| {
-                    candidate.source().reference().digest() == region.source().digest()
-                })
+                .find(|candidate| candidate.source().reference() == region.source())
         })
         .unwrap_or(source);
     RunCause::Spine(Box::new(SpineFailure {

@@ -97,17 +97,11 @@ fn a_unit_whose_lock_selects_profiles_replays_with_an_empty_selection_list() {
 
     let site = &located.site;
     let parity = site.value_parity.as_ref().expect("inc is a value function");
-    let source_digest = DigestRecord::mint(
-        DigestDomain::SourceBytesV1,
-        qsl_foundation::digest::ByteDigest::of(source.as_bytes()).as_bytes(),
-    );
     let source_wire = (
         "agent-ix".to_owned(),
         "test:value-parity-uc".to_owned(),
         "git".to_owned(),
         "r1".to_owned(),
-        Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-        source_digest.hex(),
     );
     let bindings = vec![CanonicalAssignment {
         parameter: site.parameters[0].1,
@@ -124,7 +118,6 @@ fn a_unit_whose_lock_selects_profiles_replays_with_an_empty_selection_list() {
             Some(located.package_id.domain().as_str().to_owned()),
             located.package_id.hex(),
         )),
-        source_digests: Some(vec![source_wire.clone()]),
         profile_selections: Some(Vec::<ProfileSelection>::new()),
         run_limits: Some(UNLIMITED),
         declared_domains: Some(Vec::new()),
@@ -142,11 +135,7 @@ fn a_unit_whose_lock_selects_profiles_replays_with_an_empty_selection_list() {
             Some(envelope.package_id().domain().as_str().to_owned()),
             envelope.package_id().hex(),
         ),
-        source_digests: envelope
-            .source_digests()
-            .iter()
-            .map(qsl_replay::RawSourceRef::to_wire)
-            .collect(),
+        sources: vec![source_wire],
         dependencies: Vec::new(),
         replay_target: RequestTargetWire::function(inc(), envelope.occurrence_key().clone()),
         source: envelope.source().clone().into(),
@@ -158,13 +147,11 @@ fn a_unit_whose_lock_selects_profiles_replays_with_an_empty_selection_list() {
         supplied_limits: None,
         object_environment: None,
         declared_domains: Vec::new(),
-        byte_provision: vec![
-            (
-                Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-                source_digest.hex(),
-                source.as_bytes().to_vec(),
-            ),
-        ],
+        byte_provision: vec![(
+            "agent-ix".to_owned(),
+            "test:value-parity-uc".to_owned(),
+            source.as_bytes().to_vec(),
+        )],
         documents: vec![document.to_vec()],
     };
     assert!(

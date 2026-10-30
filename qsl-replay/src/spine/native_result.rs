@@ -821,10 +821,10 @@ pub enum RefusalLocusRead {
         /// Byte after the region.
         end: u64,
     },
-    /// Source digest and line-column span.
+    /// Source path and line-column span.
     Located {
-        /// Source digest.
-        source_digest: String,
+        /// Source path.
+        file: String,
         /// Source span.
         span: SpanRead,
     },

@@ -23,7 +23,7 @@ use crate::target::{
     ReplayOverBinding, ReplayTarget, RequestTargetWire, TargetMember, TargetSelectionRefusal,
 };
 use crate::witness::ReplaySource;
-use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord, InvalidDigestRecord};
+use qsl_foundation::digest::{DigestDomain, DigestRecord, InvalidDigestRecord};
 use qsl_foundation::BackendId;
 use qsl_foundation::Code;
 use qsl_foundation::{AccountingSetting, Setting, SettingName};
@@ -948,7 +948,7 @@ mod tests {
     use crate::identity::QualifiedName;
     use crate::target::ReplayTargetMembers;
     use ix_trace_rs::trace;
-    use qsl_foundation::digest::{ByteDigest, DigestDomain, WireNodeId};
+    use qsl_foundation::digest::{DigestDomain, WireNodeId};
     use qsl_foundation::source::provenance::OccurrenceKey as OccurrenceKeyForTest;
     use quire_exact::Identifier;
 
@@ -980,7 +980,6 @@ mod tests {
 
     fn wire(stage_seed: u64) -> ReplayRequestWire {
         let source_bytes = source_bytes(0xAB, 64);
-        let source_digest = ByteDigest::of(&source_bytes).as_bytes();
         ReplayRequestWire {
             profile_selections: vec![ProfileSelection::new(
                 "quire.profile.v1".to_owned(),
@@ -990,13 +989,11 @@ mod tests {
                 Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
                 DigestRecord::mint(DigestDomain::PackageSemanticV2, [4; 32]).hex(),
             ),
-            source_digests: vec![(
+            sources: vec![(
                 "registry".to_owned(),
                 "pkg-a".to_owned(),
                 "git".to_owned(),
                 "rev-1".to_owned(),
-                Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-                DigestRecord::mint(DigestDomain::SourceBytesV1, source_digest).hex(),
             )],
             dependencies: Vec::new(),
             replay_target: RequestTargetWire::function(
@@ -1019,11 +1016,7 @@ mod tests {
             supplied_limits: None,
             object_environment: None,
             declared_domains: Vec::new(),
-            byte_provision: vec![(
-                Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-                DigestRecord::mint(DigestDomain::SourceBytesV1, source_digest).hex(),
-                source_bytes,
-            )],
+            byte_provision: vec![("registry".to_owned(), "pkg-a".to_owned(), source_bytes)],
             documents: vec![],
         }
     }
@@ -1083,10 +1076,6 @@ mod tests {
     /// A `dependencies` entry over one `fill`-byte source under `identity`.
     fn dependency(identity: &str, fill: u8) -> (DependencyEntryWire, Vec<u8>) {
         let bytes = source_bytes(fill, 32);
-        let digest = DigestRecord::mint(
-            DigestDomain::SourceBytesV1,
-            ByteDigest::of(&bytes).as_bytes(),
-        );
         (
             DependencyEntryWire {
                 identity: identity.to_owned(),
@@ -1099,8 +1088,6 @@ mod tests {
                     format!("lib-{fill}"),
                     "git".to_owned(),
                     "rev-1".to_owned(),
-                    Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-                    digest.hex(),
                 )],
             },
             bytes,
@@ -1112,8 +1099,8 @@ mod tests {
     fn with_dependencies(entries: Vec<(DependencyEntryWire, Vec<u8>)>) -> ReplayRequestWire {
         let mut wire = wire(1);
         for (entry, bytes) in entries {
-            let (domain, hex) = (entry.sources[0].4.clone(), entry.sources[0].5.clone());
-            wire.byte_provision.push((domain, hex, bytes));
+            let (authority, identity) = (entry.sources[0].0.clone(), entry.sources[0].1.clone());
+            wire.byte_provision.push((authority, identity, bytes));
             wire.dependencies.push(entry);
         }
         wire
@@ -1154,18 +1141,13 @@ mod tests {
         // An entry's source absent from the byte provision.
         let mut incomplete = with_dependencies(vec![dependency("test/a", 0x0A)]);
         incomplete.byte_provision.pop();
-        let (omitted, _) = dependency("test/a", 0x0A);
         let refused =
             ReplayRequest::decode(incomplete, crate::ReplayLimits::default()).unwrap_err();
         assert_eq!(refused.code(), Code::MissingImport);
         assert_eq!(
             refused,
             ReplayRequestRefusal::IncompleteByteProvision {
-                requested: format!(
-                    "{} {}",
-                    DigestDomain::SourceBytesV1.as_str(),
-                    omitted.sources[0].5
-                ),
+                requested: "registry lib-10".to_owned(),
                 named_by: "dependencies[0] (test/a)".to_owned(),
             }
         );
@@ -1197,53 +1179,19 @@ mod tests {
         ));
     }
 
-    /// FR-071-AC-2, FR-071-AC-5, FR-071-AC-6, FR-071-AC-7 (TC-186): no
-    /// path-typed member exists (structural: `ReplayRequest`'s only byte
-    /// accessor is digest-keyed `ByteProvision::get`); an out-of-domain
-    /// byte-provision digest refuses; a byte/digest mismatch refuses; an
-    /// incomplete byte provision refuses; an oversized encoding refuses.
-    #[trace("TC-186", "FR-071-AC-2", "FR-071-AC-5", "FR-071-AC-6", "FR-071-AC-7")]
+    /// FR-071-AC-2, FR-071-AC-5, FR-071-AC-7 (TC-186): no path-typed member
+    /// exists (structural: `ReplayRequest`'s only byte accessor is the
+    /// source-keyed `ByteProvision::get`); an incomplete byte provision
+    /// refuses; an oversized encoding refuses.
+    #[trace("TC-186", "FR-071-AC-2", "FR-071-AC-5", "FR-071-AC-7")]
     #[test]
-    fn tc_186_byte_provision_is_digest_only_complete_and_bounded() {
-        // Well-formed request: lookup succeeds by digest alone.
+    fn tc_186_byte_provision_is_source_keyed_complete_and_bounded() {
+        // Well-formed request: lookup succeeds by the source alone.
         let request = ReplayRequest::decode(wire(1), crate::ReplayLimits::default()).unwrap();
-        let source_digest = request.source_digests()[0].digest();
-        assert!(request.byte_provision().get(source_digest).is_some());
-
-        // Out-of-domain digest domain.
-        let mut bad_domain = wire(1);
-        bad_domain.byte_provision[0].0 = Some("quire.not-a-real-domain/v1".to_owned());
-        assert!(matches!(
-            ReplayRequest::decode(bad_domain, crate::ReplayLimits::default()),
-            Err(ReplayRequestRefusal::DigestDomainMismatch(_))
-        ));
-
-        // N5: a valid FR-201 domain with a malformed hex encoding refuses
-        // distinctly from a domain mismatch -- never spelled
-        // `digest-domain-mismatch`, since the domain itself named no
-        // problem.
-        let mut malformed_hex = wire(1);
-        malformed_hex.byte_provision[0].1 = "ab".repeat(31); // 62 chars, not 64
-        assert!(matches!(
-            ReplayRequest::decode(malformed_hex, crate::ReplayLimits::default()),
-            Err(ReplayRequestRefusal::MalformedDigest(_))
-        ));
-
-        // N3: a valid FR-201 domain this reader cannot recompute (a
-        // structural domain, which digests a form this reader never builds)
-        // refuses with the real cause instead of a spurious
-        // `byte-digest-mismatch`.
-        let mut ineligible_domain = wire(1);
-        ineligible_domain.byte_provision[0].0 =
-            Some(DigestDomain::CheckedSemanticNodeV1.as_str().to_owned());
-        ineligible_domain.byte_provision[0].1 =
-            DigestRecord::mint(DigestDomain::CheckedSemanticNodeV1, [0xAB; 32]).hex();
-        assert!(matches!(
-            ReplayRequest::decode(ineligible_domain, crate::ReplayLimits::default()),
-            Err(ReplayRequestRefusal::IneligibleByteProvisionDomain(
-                DigestDomain::CheckedSemanticNodeV1
-            ))
-        ));
+        assert!(request
+            .byte_provision()
+            .get(&request.sources()[0])
+            .is_some());
 
         // QC-1: a domain package document enters by what it declares.
         let mut domain_package = wire(1);
@@ -1251,25 +1199,6 @@ mod tests {
         let admitted =
             ReplayRequest::decode(domain_package, crate::ReplayLimits::default()).unwrap();
         assert_eq!(admitted.byte_provision().documents().count(), 1);
-
-        // Byte/digest mismatch.
-        let mut mismatched = wire(1);
-        mismatched.byte_provision[0].2 = source_bytes(0xCD, 64);
-        let declared = DigestRecord::mint(
-            DigestDomain::SourceBytesV1,
-            ByteDigest::of(&source_bytes(0xAB, 64)).as_bytes(),
-        );
-        let actual = DigestRecord::mint(
-            DigestDomain::SourceBytesV1,
-            ByteDigest::of(&source_bytes(0xCD, 64)).as_bytes(),
-        );
-        assert_eq!(
-            ReplayRequest::decode(mismatched, crate::ReplayLimits::default()).unwrap_err(),
-            ReplayRequestRefusal::ByteDigestMismatch {
-                declared: format!("{declared:?}"),
-                actual: format!("{actual:?}"),
-            }
-        );
 
         // Incomplete byte provision: omit the one entry.
         let mut incomplete = wire(1);
@@ -1280,16 +1209,8 @@ mod tests {
         assert_eq!(
             refused,
             ReplayRequestRefusal::IncompleteByteProvision {
-                requested: format!(
-                    "{} {}",
-                    DigestDomain::SourceBytesV1.as_str(),
-                    DigestRecord::mint(
-                        DigestDomain::SourceBytesV1,
-                        ByteDigest::of(&source_bytes(0xAB, 64)).as_bytes()
-                    )
-                    .hex()
-                ),
-                named_by: "source_digests[0]".to_owned(),
+                requested: "registry pkg-a".to_owned(),
+                named_by: "sources[0]".to_owned(),
             }
         );
         assert!(refused
@@ -1403,7 +1324,6 @@ mod tests {
             crate::target::test_key(),
             WireNodeId::from_digest([3; 32]),
             DigestRecord::mint(DigestDomain::PackageSemanticV2, [4; 32]),
-            Vec::new(),
             Vec::new(),
             wire(1).accounting_limits,
             Vec::new(),
@@ -1634,9 +1554,7 @@ mod tests {
 
     /// A semantic-profile identifier outside the closed set refuses at
     /// decode with the catalog's profile-selection refusal, before the byte
-    /// provision is read: a malformed byte-provision entry alongside it
-    /// would otherwise refuse `ByteDigestMismatch` (FR-071-AC-10, TC-186
-    /// step 8).
+    /// provision is read (FR-071-AC-10, TC-186 step 8).
     #[trace("TC-186", "FR-071-AC-10")]
     #[test]
     fn refuses_an_unknown_semantic_profile_before_the_byte_provision() {
@@ -1678,18 +1596,9 @@ mod tests {
     fn tc_210_debug_never_reproduces_byte_provision_raw_bytes() {
         let mut request_wire = wire(1);
         let distinctive: Vec<u8> = (0..4096u32).map(|i| (i % 251) as u8).collect();
-        let digest = ByteDigest::of(&distinctive).as_bytes();
-        request_wire.source_digests[0] = (
+        request_wire.byte_provision = vec![(
             "registry".to_owned(),
             "pkg-a".to_owned(),
-            "git".to_owned(),
-            "rev-1".to_owned(),
-            Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-            DigestRecord::mint(DigestDomain::SourceBytesV1, digest).hex(),
-        );
-        request_wire.byte_provision = vec![(
-            Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-            DigestRecord::mint(DigestDomain::SourceBytesV1, digest).hex(),
             distinctive.clone(),
         )];
         // B2's second half: a distinctive concrete-argument value on the
@@ -1716,7 +1625,7 @@ mod tests {
         // The typed accessors still return the full content.
         let looked_up = request
             .byte_provision()
-            .get(DigestRecord::mint(DigestDomain::SourceBytesV1, digest))
+            .get(&request.sources()[0])
             .unwrap();
         assert_eq!(looked_up, distinctive.as_slice());
         match request.source() {

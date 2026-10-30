@@ -7,7 +7,7 @@
 
 use super::frame::object;
 use super::frame_replay::{
-    config_version_unit, package_digest, packet, request, source_digest, unit_for, wire,
+    config_version_unit, package_digest, packet, request, unit_for, wire,
     witness_source, Unit, IDENTITY,
 };
 use super::*;
@@ -342,7 +342,6 @@ fn assert_reproduces_keeping_identities(case: Case, clause: &str) -> StateClause
     // FR-122-AC-1, FR-268-AC-4: neither clause reaches a decisive
     // occurrence (FR-265), so the result carries no QSpec FR-351 record.
     assert!(arm.record().is_none());
-    assert_eq!(result.source().digest(), source_digest(&unit_bytes));
     assert_eq!(result.source().identity(), IDENTITY);
     assert_eq!(result.package_id(), package_id);
     assert_eq!(result.clause().to_string(), clause);
@@ -389,7 +388,6 @@ fn an_input_arm_envelope_reproduces_without_a_witness() {
     };
     assert_eq!(arm.settlement(), InputSettlement::ReproducedWithoutWitness);
     assert_eq!(arm.value(), Some(EvaluatedValue::Boolean(false)));
-    assert_eq!(result.source().digest(), source_digest(&unit_bytes));
     assert_eq!(result.package_id(), package_id);
     assert_eq!(result.clause().to_string(), "VersionUnchanged");
     assert_eq!(result.clause_node(), node);
@@ -986,9 +984,7 @@ fn a_replay_target_the_entry_does_not_read_refuses_before_the_recompile() {
                             target,
                         );
                     }
-                    Source::EntryRemoved => wire.byte_provision.retain(|(domain, _, _)| {
-                        domain.as_deref() != Some(DigestDomain::SourceBytesV1.as_str())
-                    }),
+                    Source::EntryRemoved => wire.byte_provision.clear(),
                 },
             ))
             .unwrap_err();

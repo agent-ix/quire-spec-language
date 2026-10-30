@@ -215,7 +215,7 @@ pub(super) fn admit(
     .map_err(environment_refusal)?;
 
     let unit = request
-        .source_digests()
+        .sources()
         .first()
         .ok_or_else(|| fault("decoded-request-names-a-source"))?;
     let source = RawSourceRef::new(unit.authority(), unit.identity())

@@ -4,7 +4,7 @@
 //!
 //! It reads the request (FR-071), recompiles the one source unit the
 //! package reference names through the spine ([`crate::spine::parse`],
-//! S1 to S4) from the digest-addressed byte provision, requires the
+//! S1 to S4) from the byte provision, requires the
 //! recompiled `package_id` to equal the request's, selects the function by
 //! its `QualifiedName` in the recompiled package's declarations, joins the
 //! replay source's arguments to the function's parameters by parameter node
@@ -140,8 +140,8 @@ pub enum MalformedOperationReason {
 #[derive(Debug, thiserror::Error)]
 pub enum ReplayRefusal {
     /// FR-071: the request did not decode -- an unknown version, an input
-    /// absent from the byte provision or whose bytes do not match their
-    /// digest, or an encoding above the reader bound.
+    /// absent from the byte provision, or an encoding above the reader
+    /// bound.
     #[error(transparent)]
     Request(#[from] ReplayRequestRefusal),
     /// The request's S1 source limit is above the reader limit: the request
@@ -153,13 +153,6 @@ pub enum ReplayRefusal {
         .0.reader
     )]
     LimitAboveReader(LimitAboveReader),
-    /// A package reference entry is not a `quire.source.bytes/v1` source.
-    /// The recompile reads no definition document -- the definitions are
-    /// QSL's pinned catalog, which `package_id` already covers -- so such a
-    /// digest is one the executor cannot recompute and compare (QSpec
-    /// FR-323-AC-5).
-    #[error("the package reference names {} under {}, which is not a source the replay recompiles", .0.identity(), .0.digest().domain())]
-    NotASource(Box<RawSourceRef>),
     /// The package reference does not name exactly one source unit. The
     /// spine recompiles one unit: a package over more than one waits on
     /// E3 import resolution (FR-087-AC-13).
@@ -515,7 +508,7 @@ impl ReplayRefusal {
         match self {
             Self::Request(refusal) => refusal.code(),
             Self::LimitAboveReader(_) => Code::InvalidRequest,
-            Self::NotASource(_) | Self::SourceCount(_) => Code::InvalidRequest,
+            Self::SourceCount(_) => Code::InvalidRequest,
             Self::Recompile(refusal) => refusal.code(),
             Self::DomainPackages(refusal) => refusal.code,
             Self::PackageIdMismatch { .. } | Self::DependencyIdentityMismatch { .. } => {
@@ -620,7 +613,6 @@ impl ReplayRefusal {
                 AdmissionFailure::Refused(record) | AdmissionFailure::Incomplete(record),
             ) => Some(record.cause),
             Self::LimitAboveReader(_)
-            | Self::NotASource(_)
             | Self::SourceCount(_)
             | Self::Admission(AdmissionFailure::Fault(_))
             | Self::UnknownParameter(_)
@@ -742,10 +734,6 @@ pub enum DependencySelectionsCause {
 /// #     &small,
 /// # )
 /// # .unwrap();
-/// # let digest = DigestRecord::mint(
-/// #     DigestDomain::SourceBytesV1,
-/// #     ByteDigest::of(unit.as_bytes()).as_bytes(),
-/// # );
 /// # let unlimited = ScalarLimits {
 /// #     integer_bits: u64::MAX,
 /// #     decimal_digits: u64::MAX,
@@ -766,13 +754,11 @@ pub enum DependencySelectionsCause {
 /// #       Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
 /// #       site.package_id.hex(),
 /// #   ),
-/// #   source_digests: vec![(
+/// #   sources: vec![(
 /// #       "a".to_owned(),
 /// #       "u".to_owned(),
 /// #       "git".to_owned(),
 /// #       "1".to_owned(),
-/// #       Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-/// #       digest.hex(),
 /// #   )],
 /// #   dependencies: Vec::new(),
 /// #   source: ReplaySource::Input(vec![CanonicalAssignment {
@@ -787,11 +773,7 @@ pub enum DependencySelectionsCause {
 /// #   supplied_limits: None,
 /// #   object_environment: None,
 /// #   declared_domains: Vec::new(),
-/// #   byte_provision: vec![(
-/// #       Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-/// #       digest.hex(),
-/// #       unit.as_bytes().to_vec(),
-/// #   )],
+/// #   byte_provision: vec![("a".to_owned(), "u".to_owned(), unit.as_bytes().to_vec())],
 /// #   documents: vec![],
 ///     // ...every other member names the proved package and its input.
 /// };
@@ -816,10 +798,6 @@ pub enum DependencySelectionsCause {
 /// #     &small,
 /// # )
 /// # .unwrap();
-/// # let digest = DigestRecord::mint(
-/// #     DigestDomain::SourceBytesV1,
-/// #     ByteDigest::of(unit.as_bytes()).as_bytes(),
-/// # );
 /// # let unlimited = ScalarLimits {
 /// #     integer_bits: u64::MAX,
 /// #     decimal_digits: u64::MAX,
@@ -840,13 +818,11 @@ pub enum DependencySelectionsCause {
 /// #       Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
 /// #       site.package_id.hex(),
 /// #   ),
-/// #   source_digests: vec![(
+/// #   sources: vec![(
 /// #       "a".to_owned(),
 /// #       "u".to_owned(),
 /// #       "git".to_owned(),
 /// #       "1".to_owned(),
-/// #       Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-/// #       digest.hex(),
 /// #   )],
 /// #   dependencies: Vec::new(),
 /// #   source: ReplaySource::Input(vec![CanonicalAssignment {
@@ -861,11 +837,7 @@ pub enum DependencySelectionsCause {
 /// #   supplied_limits: None,
 /// #   object_environment: None,
 /// #   declared_domains: Vec::new(),
-/// #   byte_provision: vec![(
-/// #       Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-/// #       digest.hex(),
-/// #       unit.as_bytes().to_vec(),
-/// #   )],
+/// #   byte_provision: vec![("a".to_owned(), "u".to_owned(), unit.as_bytes().to_vec())],
 /// #   documents: vec![],
 ///     // ...every other member names the proved package and its input.
 /// };
@@ -1651,16 +1623,9 @@ fn domain_packages(
     package_input(request.byte_provision().package_documents()).map_err(ReplayRefusal::DomainPackages)
 }
 
-/// The one `quire.source.bytes/v1` source `references` names (ADR-015 D-4
-/// rule 2), else [`ReplayRefusal::NotASource`] or
+/// The one source `references` names (ADR-015 D-4 rule 2), else
 /// [`ReplayRefusal::SourceCount`].
 fn one_source(references: &[RawSourceRef]) -> Result<&RawSourceRef, ReplayRefusal> {
-    if let Some(other) = references
-        .iter()
-        .find(|reference| reference.digest().domain() != DigestDomain::SourceBytesV1)
-    {
-        return Err(ReplayRefusal::NotASource(Box::new(other.clone())));
-    }
     match references {
         [source] => Ok(source),
         _ => Err(ReplayRefusal::SourceCount(references.len())),

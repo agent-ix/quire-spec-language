@@ -605,7 +605,6 @@ impl From<ReplayRefusal> for AdmittedRefusal {
             // new variant forces a decision.
             ReplayRefusal::Request(_)
             | ReplayRefusal::DomainPackages(_)
-            | ReplayRefusal::NotASource(_)
             | ReplayRefusal::SourceCount(_)
             | ReplayRefusal::DependencySelections(_)
             | ReplayRefusal::DependencyIdentityMismatch { .. }
