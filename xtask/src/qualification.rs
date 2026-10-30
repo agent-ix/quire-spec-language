@@ -714,21 +714,26 @@ fn execute_vector(vector: &Vector, root: &Path, limits: &qsl_replay::CallerLimit
         (ConsumerType::Language, Operation::Compile) => {
             let stage_limits = qsl_replay::StageLimits::from_iter(limits.spine.bounds());
             match qsl_replay::compile_package(
-                identity,
-                &source.path,
-                bytes,
+                qsl_replay::CompileUnit {
+                    source: identity,
+                    package_name: "qualification".to_owned(),
+                    path: &source.path,
+                    bytes,
+                },
                 std::iter::empty::<&[u8]>(),
                 &qsl_replay::DependencyInput::default(),
                 stage_limits,
                 limits.replay,
             ) {
                 Ok(compiled) => {
-                    let package_id = compiled.package_id();
-                    (
-                        json!({"domain": package_id.domain().as_str(), "hex": package_id.hex()}),
-                        None,
-                        None,
-                    )
+                    match serde_json::from_slice::<serde_json::Value>(compiled.bytes()) {
+                        Ok(package) => (package, None, None),
+                        Err(error) => (
+                            json!({"code": "invalid-package", "cause": error.to_string()}),
+                            None,
+                            None,
+                        ),
+                    }
                 }
                 Err(refusal) => (
                     json!({"code": refusal.code().as_str(), "cause": refusal.to_string()}),

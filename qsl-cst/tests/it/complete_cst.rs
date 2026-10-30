@@ -7,7 +7,7 @@
 use std::collections::BTreeSet;
 
 use ix_trace_rs::trace;
-use qsl_cst::{CompleteCause, CompleteCode, HostCause, Limits, Production, TokenClass};
+use qsl_cst::{CompleteCause, CompleteCode, Limits, Production, TokenClass};
 use qsl_foundation::SourceIdentity;
 
 const SOURCE: &str = concat!(
@@ -269,40 +269,6 @@ fn invalid_source_retains_bytes_and_exposes_recovery_without_admission() {
 }
 
 #[trace("QSpec-TC-222", "QSpec-FR-302-AC-3")]
-#[trace("TC-424", "FR-001-AC-12")]
-#[test]
-fn rendering_a_foreign_cst_node_is_a_typed_refusal() {
-    let first = qsl_cst::parse(
-        identity("first"),
-        "first.native",
-        SOURCE.as_bytes(),
-        Limits::default(),
-    )
-    .unwrap();
-    let second = qsl_cst::parse(
-        SourceIdentity {
-            authority: "test".into(),
-            identity: "test:other-cst".into(),
-            revision_namespace: "test".into(),
-            revision: "second".into(),
-        },
-        "second.native",
-        SOURCE.as_bytes(),
-        Limits::default(),
-    )
-    .unwrap();
-    let foreign = first.cst().render_node(second.cst().root()).unwrap_err();
-    assert_eq!(
-        (foreign.code, foreign.cause),
-        (
-            CompleteCode::InvalidSourceMap,
-            CompleteCause::Host(HostCause::ForeignNode)
-        )
-    );
-    assert_eq!(foreign.region, None);
-}
-
-#[trace("QSpec-TC-222", "QSpec-FR-302-AC-3")]
 #[test]
 fn rendering_an_exchanged_clone_from_the_same_cst_succeeds() {
     let parsed = qsl_cst::parse(
@@ -316,57 +282,6 @@ fn rendering_an_exchanged_clone_from_the_same_cst_succeeds() {
     assert_eq!(
         parsed.cst().render_node(&exchanged).unwrap(),
         SOURCE.as_bytes()
-    );
-}
-
-#[trace("QSpec-TC-222", "QSpec-FR-302-AC-3")]
-#[test]
-fn revision_bound_node_identity_includes_the_document_identity() {
-    let first = qsl_cst::parse(
-        SourceIdentity {
-            authority: "test".into(),
-            identity: "test:first-document".into(),
-            revision_namespace: "test".into(),
-            revision: "shared-revision".into(),
-        },
-        "first.native",
-        SOURCE.as_bytes(),
-        Limits::default(),
-    )
-    .unwrap();
-    let second = qsl_cst::parse(
-        SourceIdentity {
-            authority: "test".into(),
-            identity: "test:second-document".into(),
-            revision_namespace: "test".into(),
-            revision: "shared-revision".into(),
-        },
-        "second.native",
-        SOURCE.as_bytes(),
-        Limits::default(),
-    )
-    .unwrap();
-    assert_ne!(
-        first.cst().root().identity(),
-        second.cst().root().identity()
-    );
-
-    let changed = qsl_cst::parse(
-        SourceIdentity {
-            authority: "test".into(),
-            identity: "test:first-document".into(),
-            revision_namespace: "test".into(),
-            revision: "shared-revision".into(),
-        },
-        "first.native",
-        SOURCE.replace("Reading", "Changed").as_bytes(),
-        Limits::default(),
-    )
-    .unwrap();
-    assert_ne!(
-        first.cst().root().identity(),
-        changed.cst().root().identity(),
-        "opaque caller labels cannot substitute for the exact source digest"
     );
 }
 

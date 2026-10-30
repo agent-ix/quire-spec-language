@@ -44,7 +44,6 @@ fn emit_unit(unit_body: &str) -> (Emission, Value, Read) {
         library(),
         V2ReadLimits::default(),
         &evidence,
-        &qsl_semantics::library::fixtures::single_pin(library(), emission.package.package_id()),
     );
     (emission, wire, read)
 }
@@ -110,11 +109,9 @@ fn records_are_model_owned_nodes_and_the_call_takes_its_argument_by_ref() {
 #[trace("FR-359-AC-3", "FR-359-AC-8", "TC-998", "TC-1001")]
 #[test]
 fn a_child_record_argument_reads_back_verified() {
-    let (emission, _, read) = emit_unit(UNIT);
+    let (_, _, read) = emit_unit(UNIT);
     match read {
-        Read::Verified { package, .. } => {
-            assert_eq!(package.package_id(), emission.package.package_id());
-        }
+        Read::Verified { .. } => {}
         other => panic!("expected Verified, got {other:?}"),
     }
 }
@@ -127,7 +124,7 @@ fn a_child_record_argument_reads_back_verified() {
 #[trace("FR-359-AC-8", "TC-1001")]
 #[test]
 fn an_operation_over_a_record_parameter_emits_and_reads_back() {
-    let (emission, wire, read) = emit_unit(
+    let (_, wire, read) = emit_unit(
         "function keep using v(m: M::Money): M::Money pure { m }\n\
          function passTaxed using v(m: M::TaxedMoney): M::Money pure { keep(m) }\n\
          pre PayHolds using v on M::Ledger::pay { m.amount_minor > 0 }\n\
@@ -144,9 +141,7 @@ fn an_operation_over_a_record_parameter_emits_and_reads_back() {
         "no conversion node between an argument and its parameter"
     );
     match read {
-        Read::Verified { package, .. } => {
-            assert_eq!(package.package_id(), emission.package.package_id());
-        }
+        Read::Verified { .. } => {}
         other => panic!("expected Verified, got {other:?}"),
     }
 }

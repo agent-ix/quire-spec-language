@@ -5,11 +5,10 @@
 //! These authored wire inputs do not qualify artifact extraction or runtime.
 
 use ix_trace_rs::trace;
-use qsl_foundation::{ByteDigest, IntakeLimits};
+use qsl_foundation::IntakeLimits;
 use qsl_semantics::model::accounting::{ChargePoint, ModelNormalizationLimits};
 use qsl_semantics::model::domain_package::{DomainPackage, DomainPackageRecord};
 use qsl_semantics::model::intake::{admit, meaning, package_input, read_domain_package};
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::normalize::{normalize_with_meter, EffectiveView, NormalizeOutcome};
 use quire_checked::key::DeclarationKey;
 use serde_json::{json, Value};
@@ -100,24 +99,17 @@ fn clause(package: &str, owner: &str, name: &str, text: &str) -> Value {
     })
 }
 
-fn document(package: &str, version: &str, mut constructs: Vec<Value>, types: Vec<Value>) -> Value {
-    // The wire requires content digests even for generated test inputs. Bind
-    // them to these authored declarations; do not use a fixed digest catalog.
-    let source = serde_json::to_vec(&types).expect("authored declarations serialize");
-    let digest = format!("sha256:{}", hex(&ByteDigest::of(&source).as_bytes()));
-    for construct in &mut constructs {
-        construct["manifestDigest"] = json!(digest);
-    }
+fn document(package: &str, version: &str, constructs: Vec<Value>, types: Vec<Value>) -> Value {
     json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
         "source": {
             "identity": identity(package, "spec"), "version": "1.0.0",
-            "dialect": "spec-bundle", "digest": digest,
+            "dialect": "spec-bundle"
         },
         "package": {
-            "identity": package, "version": version, "manifestDigest": digest,
-            "mappingVersions": [], "profileVersions": [], "lockDigest": digest,
+            "identity": package, "version": version,
+            "mappingVersions": [], "profileVersions": [],
         },
         "constructs": constructs, "types": types, "occurrences": [], "extensions": [],
     })
@@ -424,7 +416,7 @@ fn object_clauses_preserve_order_identity_and_effective_declarations() {
         assert_eq!(original.origin, origin(p, &format!("Order/{name}")));
     }
     let view = normalized(&package, 4);
-    let owner = view.type_identities()[&key(p, "Order")];
+    let owner = view.type_identities()[&key(p, "Order")].clone();
     for clause in clauses {
         assert_eq!(
             view.declarations()
@@ -432,7 +424,7 @@ fn object_clauses_preserve_order_identity_and_effective_declarations() {
                 .filter(|entry| {
                     entry.visible
                         && entry.preimage.original == clause.key
-                        && entry.preimage.owner_effective_type == Some(owner)
+                        && entry.preimage.owner_effective_type == Some(owner.clone())
                 })
                 .count(),
             1,
@@ -913,11 +905,13 @@ fn record_subtype_inherits_invariant_without_an_object_universe() {
     assert_eq!(clause.language, "ocl");
     assert_eq!(clause.text, "self.amount_minor >= 0");
     let view = normalized(&package, 5);
-    let subtype = view.type_identities()[&key(p, "SpecialAmount")];
+    let subtype = view.type_identities()[&key(p, "SpecialAmount")].clone();
     let mut inherited: Vec<_> = view
         .declarations()
         .iter()
-        .filter(|entry| entry.visible && entry.preimage.owner_effective_type == Some(subtype))
+        .filter(|entry| {
+            entry.visible && entry.preimage.owner_effective_type == Some(subtype.clone())
+        })
         .map(|entry| entry.preimage.original.clone())
         .collect();
     inherited.sort();
@@ -1274,12 +1268,12 @@ fn inherited_business_members_derive_the_inherit_fact_only() {
     };
 
     let facts = |owner: &str, member: &str| {
-        let owner = view.type_identities()[&key(p, owner)];
+        let owner = view.type_identities()[&key(p, owner)].clone();
         let entry = view
             .declarations()
             .iter()
             .find(|entry| {
-                entry.preimage.owner_effective_type == Some(owner)
+                entry.preimage.owner_effective_type == Some(owner.clone())
                     && entry.preimage.original == key(p, member)
             })
             .unwrap_or_else(|| panic!("{member} is an effective member"));

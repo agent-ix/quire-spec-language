@@ -371,20 +371,20 @@ fn rekey_object_types(
         if let DomainPackageRecord::ObjectType(object_type) = record {
             let subtype_key = type_identities
                 .get(&object_type.key)
-                .copied()
+                .cloned()
                 .ok_or_else(|| DispatchBridgeRefusal::MissingObjectKey {
                     subtype: Box::new(object_type.key.clone()),
                 })?;
             let mut mapped = Vec::with_capacity(object_type.supertypes.len());
             for supertype in &object_type.supertypes {
-                let supertype_key = type_identities.get(supertype).copied().ok_or_else(|| {
+                let supertype_key = type_identities.get(supertype).cloned().ok_or_else(|| {
                     DispatchBridgeRefusal::MissingObjectKey {
                         subtype: Box::new(supertype.clone()),
                     }
                 })?;
                 mapped.push(supertype_key);
             }
-            if let Some(first) = keyed_by.insert(subtype_key, &object_type.key) {
+            if let Some(first) = keyed_by.insert(subtype_key.clone(), &object_type.key) {
                 return Err(DispatchBridgeRefusal::DuplicateObjectKey {
                     identity: subtype_key,
                     first: Box::new(first.clone()),
@@ -896,7 +896,8 @@ fn substitute_names(expression: &Expression, rename: &BTreeMap<String, String>) 
 /// FR-151 dispatch-eligible operation, and assembles the checked-layer
 /// [`DispatchTable`] the evaluator needs. See the module docs for this
 /// bridge's exact scope. `source` is the checked package's
-/// [`PackageDeclarations::source`], the source unit's `RawSourceRef`. Each synthesized
+/// [`PackageDeclarations::source`], the source unit's `RawSourceRef`, and
+/// `package_name` its manifest's top-level name. Each synthesized
 /// clause function is keyed with its own `ModelOwner` instead (FR-094): the
 /// authoring operation member for an authored precondition, the candidate
 /// for an effective precondition and a body. The returned package admits
@@ -908,6 +909,7 @@ pub fn checked_dispatch_operation(
     root: &DispatchRoot,
     clauses: &OperationClauses,
     source: qsl_foundation::source::provenance::RawSourceRef,
+    package_name: String,
     meter: &mut Meter,
     identity: qsl_foundation::IdentityLimits,
 ) -> Result<PackageDeclarations, DispatchBridgeRefusal> {
@@ -1142,13 +1144,13 @@ pub fn checked_dispatch_operation(
     let mut exposing_receiver_types: Vec<EffectiveId> = Vec::new();
     let mut exposing_seen: BTreeSet<EffectiveId> = BTreeSet::new();
     for (subtype, candidate) in table.entries() {
-        let subtype_key = type_identities.get(subtype).copied().ok_or_else(|| {
+        let subtype_key = type_identities.get(subtype).cloned().ok_or_else(|| {
             DispatchBridgeRefusal::MissingObjectKey {
                 subtype: Box::new(subtype.clone()),
             }
         })?;
-        if candidate == &root.key && exposing_seen.insert(subtype_key) {
-            exposing_receiver_types.push(subtype_key);
+        if candidate == &root.key && exposing_seen.insert(subtype_key.clone()) {
+            exposing_receiver_types.push(subtype_key.clone());
         }
         let &body = body_index
             .get(candidate)
@@ -1212,7 +1214,7 @@ pub fn checked_dispatch_operation(
         resolved_signatures,
         models: vec![model],
         model_clauses,
-        ..PackageDeclarations::new(source, identity)
+        ..PackageDeclarations::new(source, package_name, identity)
     })
 }
 
@@ -1238,6 +1240,7 @@ pub fn checked_dispatch_selected_operation(
         root,
         clauses,
         source,
+        "fixture".to_owned(),
         &mut meter,
         identity,
     )?;
@@ -1295,12 +1298,18 @@ mod tests {
                 object_type("model.C", &[]),
             ],
         );
-        let shared = EffectiveId::from_digest([0x0B; 32]);
-        let a = EffectiveId::from_digest([0x0A; 32]);
+        let effective = |index: u8| {
+            EffectiveId::new(
+                None,
+                quire_exact::OriginalDeclarationKey::new("test", format!("Node{index}")),
+            )
+        };
+        let shared = effective(0x0B);
+        let a = effective(0x0A);
         let identities: BTreeMap<DeclarationKey, EffectiveId> = [
-            (DeclarationKey::fixture("model.A"), a),
-            (DeclarationKey::fixture("model.B"), shared),
-            (DeclarationKey::fixture("model.C"), shared),
+            (DeclarationKey::fixture("model.A"), a.clone()),
+            (DeclarationKey::fixture("model.B"), shared.clone()),
+            (DeclarationKey::fixture("model.C"), shared.clone()),
         ]
         .into_iter()
         .collect();
@@ -1318,17 +1327,14 @@ mod tests {
         }
 
         let injective: BTreeMap<DeclarationKey, EffectiveId> = [
-            (DeclarationKey::fixture("model.A"), a),
-            (DeclarationKey::fixture("model.B"), shared),
-            (
-                DeclarationKey::fixture("model.C"),
-                EffectiveId::from_digest([0x0C; 32]),
-            ),
+            (DeclarationKey::fixture("model.A"), a.clone()),
+            (DeclarationKey::fixture("model.B"), shared.clone()),
+            (DeclarationKey::fixture("model.C"), effective(0x0C)),
         ]
         .into_iter()
         .collect();
         let rekeyed = rekey_object_types(&package, &injective).unwrap();
-        assert_eq!(rekeyed.get(&shared), Some(&vec![a]));
+        assert_eq!(rekeyed.get(&shared), Some(&vec![a.clone()]));
         assert_eq!(rekeyed.len(), 3);
     }
     use crate::model::normalize::ModelRefusalCause;

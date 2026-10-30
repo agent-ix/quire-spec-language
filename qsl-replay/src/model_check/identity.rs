@@ -12,7 +12,6 @@
 //! package does not declare, or that the lookup does not find, is
 //! `clause-root-unresolved` ([`ClauseRootRefusal`]).
 
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::{
     emit_checked_with_cancel, read_import_view, resolve_clause_root, resolve_hyper_root,
@@ -22,16 +21,14 @@ use qsl_package::{
 use qsl_semantics::check::{
     CheckedHyperClause, CheckedStateGraphClaim, CheckedTemporalClause, TemporalClauseNode,
 };
-use qsl_semantics::library::{LibraryName, PackageId};
+use qsl_semantics::library::LibraryName;
+use quire_exact::NodeKey;
 use quire_exact::{Cancel, CancelCause};
 
 /// The `claim` occurrence of a checked clause `node`: its node id and claim
 /// origin (ADR-013 O-07).
 pub fn node_occurrence(node: &TemporalClauseNode) -> OccurrenceKey {
-    OccurrenceKey::new(
-        WireNodeId::from_digest(*node.identity().as_bytes()),
-        node.claim().clone(),
-    )
+    OccurrenceKey::new(node.identity().clone(), node.claim().clone())
 }
 
 /// A clause's identity in its package: the checked occurrence and the node of
@@ -41,7 +38,7 @@ pub fn node_occurrence(node: &TemporalClauseNode) -> OccurrenceKey {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClauseIdentity {
     occurrence: OccurrenceKey,
-    over: Option<WireNodeId>,
+    over: Option<NodeKey>,
 }
 
 impl ClauseIdentity {
@@ -51,8 +48,8 @@ impl ClauseIdentity {
     }
 
     /// The `over` parameter's checked node.
-    pub fn over(&self) -> Option<WireNodeId> {
-        self.over
+    pub fn over(&self) -> Option<NodeKey> {
+        self.over.clone()
     }
 
     /// The identity of `clause` in `package`, read from the package's
@@ -80,25 +77,25 @@ impl ClauseIdentity {
                 name: clause.name().to_owned(),
             })?;
         let triple = node_occurrence(node);
-        let (admitted, package_id) = read_back(package, domain_packages, cancel)?;
+        let (admitted, library) = read_back(package, domain_packages, cancel)?;
         let read = admitted
-            .package(&package_id)
+            .package(&library)
             .ok_or_else(|| ClauseRootRefusal::Package("the read recorded no package".to_owned()))?;
         let root = resolve_clause_root(read, &triple)?;
         Ok(Self {
             occurrence: root.occurrence().clone(),
-            over: root.over(),
+            over: root.over().cloned(),
         })
     }
 }
 
 /// `package` emitted under `cancel` and read back through the I2 reader,
-/// with the emitted `package_id` the read recorded it at.
+/// with the library name the read recorded it under.
 fn read_back(
     package: &CheckedPackage,
     domain_packages: &qsl_semantics::model::intake::PackageInput,
     cancel: &Cancel,
-) -> Result<(AdmittedPackages, PackageId), ClauseRootRefusal> {
+) -> Result<(AdmittedPackages, LibraryName), ClauseRootRefusal> {
     let emission = emit_checked_with_cancel(package, cancel).map_err(|refusal| match refusal {
         EmitRefusal::Cancelled { cause } => ClauseRootRefusal::Cancelled(cause),
         other => ClauseRootRefusal::Package(other.to_string()),
@@ -109,13 +106,13 @@ fn read_back(
     read_import_view(
         package,
         &emission,
-        library,
+        library.clone(),
         domain_packages,
         &mut admitted,
         V2ReadLimits::default(),
     )
     .map_err(|refusal| ClauseRootRefusal::Package(format!("{refusal:?}")))?;
-    Ok((admitted, emission.package().package_id()))
+    Ok((admitted, library))
 }
 
 /// A state-graph claim's identity in its package: the checked occurrence and
@@ -126,7 +123,7 @@ fn read_back(
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StateGraphIdentity {
     occurrence: OccurrenceKey,
-    over: Option<WireNodeId>,
+    over: Option<NodeKey>,
 }
 
 impl StateGraphIdentity {
@@ -136,8 +133,8 @@ impl StateGraphIdentity {
     }
 
     /// The `over` parameter's checked node.
-    pub fn over(&self) -> Option<WireNodeId> {
-        self.over
+    pub fn over(&self) -> Option<NodeKey> {
+        self.over.clone()
     }
 
     /// The identity of `claim` in `package`, read from the package's emitted
@@ -159,15 +156,15 @@ impl StateGraphIdentity {
             .ok_or_else(|| ClauseRootRefusal::Undeclared {
                 name: claim.name().to_owned(),
             })?;
-        let (admitted, package_id) = read_back(package, domain_packages, cancel)?;
+        let (admitted, library) = read_back(package, domain_packages, cancel)?;
         let read = admitted
-            .package(&package_id)
+            .package(&library)
             .ok_or_else(|| ClauseRootRefusal::Package("the read recorded no package".to_owned()))?;
         let root = resolve_state_graph_root(read, triple)
             .map_err(|fault| ClauseRootRefusal::Package(format!("{fault:?}")))??;
         Ok(Self {
             occurrence: root.occurrence().clone(),
-            over: root.over(),
+            over: root.over().cloned(),
         })
     }
 }
@@ -203,15 +200,20 @@ impl HyperIdentity {
             .hyper_clauses()
             .iter()
             .find(|candidate| {
-                candidate.name() == clause.name() && candidate.occurrence() == clause.occurrence()
+                candidate.name() == clause.name()
+                    && candidate.assembled_occurrence() == clause.assembled_occurrence()
             })
             .ok_or_else(|| ClauseRootRefusal::Undeclared {
                 name: clause.name().to_owned(),
             })?;
-        let occurrence = assembled.occurrence().clone();
-        let (admitted, package_id) = read_back(package, domain_packages, cancel)?;
+        let occurrence = assembled.assembled_occurrence().cloned().ok_or_else(|| {
+            ClauseRootRefusal::Undeclared {
+                name: clause.name().to_owned(),
+            }
+        })?;
+        let (admitted, library) = read_back(package, domain_packages, cancel)?;
         let read = admitted
-            .package(&package_id)
+            .package(&library)
             .ok_or_else(|| ClauseRootRefusal::Package("the read recorded no package".to_owned()))?;
         let root = resolve_hyper_root(read, &occurrence)
             .map_err(|fault| ClauseRootRefusal::Package(format!("{fault:?}")))?;

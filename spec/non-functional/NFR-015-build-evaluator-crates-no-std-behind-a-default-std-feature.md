@@ -125,42 +125,28 @@ feature for the evaluator.
 ### The checked-IR path
 
 The checked-IR path is the in-memory checked package an evaluator reads:
-the checked graph, its dependency closure keyed by `package_id`, the
-resolved library selections and the checked abstraction relation, held by
-`qsl-package`'s `CheckedPackage`. It is not the `quire.checked-package/v2`
-JSON wire.
+the checked graph, dependency closure keyed by package identity, resolved
+library selections and checked abstraction relation. It is separate from
+the `quire.checked-package/v2` JSON wire.
 
-With `std` disabled, `CheckedPackage::link(graph)` is the only constructor,
-and the package it builds has an empty dependency closure and no
-selections. The dependency-bearing constructor, `link_with`, recomputes
-each dependency's `package_id` by emitting it (`emit_checked`), and
-ADR-013 O-02 forbids accepting a `package_id` from a caller, so `link_with`
-and everything it alone uses are `std` items. Recomputing a dependency's
-`package_id` builds its `quire.checked-package-id/v2` identity preimage from
-IR's preimage types and encodes it through `quire-canonical`; it reads
-nothing. A `no_std` constructor of a package with dependencies therefore
-needs IR's preimage types (`quire-contract-model`) to build without `std`; a
-`no_std` reader matters only for a dependency that arrives as bytes. Both
-are outside this requirement.
+With `std` disabled, `CheckedPackage::link(graph)` builds a package with an
+empty dependency closure and no selections. The dependency-bearing
+`link_with` constructor and wire intake remain `std` items. A `no_std`
+constructor with dependencies and a `no_std` dependency reader are outside
+this requirement.
 
-With `std` disabled the checked-IR path reads no JSON and computes no
-`package_id`. `qsl-package`'s shipped source does not name `serde_json`; it
-reaches the crate through `quire-contract-model` (which also brings
-`jsonschema`, `serde_path_to_error`, `serde_stacker` and `stacker`, none
-`no_std`) and through `qsl-semantics` and `qsl-cst`. The first edge is
-behind `qsl-package`'s `std` feature. The others stay: `qsl-package` is
-crate tier, so its host check needs only its own source to be `no_std`.
+With `std` disabled the checked-IR path reads no JSON. The shipped source of
+`qsl-package` does not name `serde_json`; it reaches the crate through
+`quire-contract-model` and through `qsl-semantics` and `qsl-cst`. The first
+edge is behind `qsl-package`'s `std` feature. The others stay:
+`qsl-package` is crate tier, so its host check needs only its own source to
+be `no_std`.
 
-The wire representation is unchanged: QSpec FR-322 defines
-`quire.checked-package/v2`, IR's `quire-contract-model` owns its reader,
-and QSL's emitter writes it. `package_id` is the QSpec FR-322 identity
-member of the `quire.checked-package-id/v2` identity preimage, encoded
-through `quire-canonical`, the one encoder (ADR-013 §2); QSL computes no hash
-of it (BLOCKED-BY QSL-1282 (owner: planner titan:QSL:plan): the `package_id` hash computation and its `PackageId`/`verify_binding` deletion). When a `no_std`
-crate must read JSON, it reads through `quire-canonical`'s `read` (the one
-shared iterative reader, ADR-030 RU-2, which builds `no_std` + `alloc`),
-never through `serde_json` or a second reader, and it encodes identities
-through `quire-canonical`'s encoder only.
+QSpec FR-322 defines the `quire.checked-package/v2` wire. IR's
+`quire-contract-model` owns its reader, and QSL's emitter writes it. Node
+ids are `{package, path, ordinal}` objects, compared componentwise and never
+hashed. A `no_std` crate that must read JSON uses `quire-canonical`'s
+shared iterative reader (ADR-030 RU-2), never a second reader.
 
 ### `qsl-package` surface with `std` disabled
 
@@ -168,19 +154,16 @@ Every public export of `qsl-package`, by module:
 
 | Module | With `std` disabled | Behind `std` |
 | --- | --- | --- |
-| `checked` | `CheckedPackage` with `link`, `bind_abstraction`, `bind_abstraction_at`, `abstraction`, `graph`, `shared_graph`, `dependencies`, `dependency_selections`; `ResolvedDependency` | `CheckedPackage::link_with`, `CheckedPackage::emitted_package_id` and the remembered emission (`OnceLock`); `Import`, the input only `link_with` takes; `LinkRefusal`, which only `link_with` returns, with both variants (`ConflictingDefinition`, and `DependencyEmission`, which carries an `EmitRefusal`); `EmittedPackage` |
+| `checked` | `CheckedPackage` with `link`, `bind_abstraction`, `bind_abstraction_at`, `abstraction`, `graph`, `shared_graph`, `dependencies`, `dependency_selections`; `ResolvedDependency` | `CheckedPackage::link_with` and the remembered emission (`OnceLock`); `Import`, the input only `link_with` takes; `LinkRefusal`, which only `link_with` returns; `EmittedPackage` |
 | `export` | `export_bindings`, `BoundItem`, `ExportRefusal`, `UnboundElement` | none |
 | `emit` | none | the whole module: `emit_checked`, `emit_checked_with_cancel`, `emit_package`, `checked_node_id`, `checked_occurrence`, `Emission`, `EmitRefusal`, `OmissionCause`, `OmittedNode`, and the `test-support` items `checked_node_id_of` and `emit_checked_with_fault` |
 | `checked_v2` | none | the whole module: `read_import_view`, `supply_closure`, `clause_roots`, `resolve_clause_root`, `AdmittedPackages`, `ClauseRoot`, `ClauseRootUnresolved`, `ImportViewRefusal`, `SourceMapDefect`, `UnsupportedWire`, `V2ReadLimits`, `V2ReadRefusal` |
 
 `bind_abstraction` and `bind_abstraction_at` behave the same with `std`
-disabled. With `std` enabled, each of them also clears the remembered
-emission when it binds a relation, so a later `emitted_package_id` is `None`
-until the package is emitted again. A bound relation changes what the
-emitter writes (the relation node and, for `bind_abstraction_at`, one
-`declaration` occurrence of it at each site, QSpec FR-451), so an emission
-remembered before the binding no longer identifies the package's content. A
-refused binding leaves the package, its remembered emission included,
+disabled. With `std` enabled, each clears the remembered emission when it
+binds a relation, because the relation changes what the emitter writes
+(and `bind_abstraction_at` adds a `declaration` occurrence at each site,
+QSpec FR-451). A refused binding leaves the package and remembered emission
 unchanged.
 
 ### Gate
@@ -212,8 +195,7 @@ A default-on `std` feature keeps each slice from changing any dependent: the
 workspace, the CLI and every test lane build `std`. Gating the JSON wire
 instead of rewriting it keeps one reader (IR's) and one encoder
 (`quire-canonical`) for `quire.checked-package/v2`, as ADR-013 §2 and
-ADR-030 RU-2 require, and keeps `package_id` computed, never supplied
-(ADR-013 O-02).
+ADR-030 RU-2 require, and keeps structural node ids in their QSpec FR-322 form.
 
 ## Measurement and Evaluation
 
@@ -231,11 +213,11 @@ ADR-030 RU-2 require, and keeps `package_id` computed, never supplied
 | NFR-015-AC-3 | `cargo test --locked -p qsl-foundation` and `cargo test --locked -p qsl-foundation --no-default-features` both pass on the host, and every workspace test lane passes with `qsl-foundation`'s default features. | Test (TC-1110) |
 | NFR-015-AC-4 | `qsl-package` declares a `std` feature with `default = ["std"]` that enables `dep:quire-contract-model` and `qsl-foundation/std`; `cargo check --locked -p qsl-package --no-default-features` succeeds on the host with the crate root `no_std`; and the full `cargo tree --locked -p qsl-package --no-default-features -e normal -i quire-contract-model` finds no path to `quire-contract-model`. | Test (TC-1111) |
 | NFR-015-AC-5 | With `std` disabled, every export in the "With `std` disabled" column of the `qsl-package` surface table resolves, and every export in its "Behind `std`" column does not. | Test (TC-1111) |
-| NFR-015-AC-6 | With default features, the `quire.checked-package/v2` bytes and `package_id` that `qsl-package` emits match the QSpec FR-322 conformance vectors (`cargo test -p qsl-package --lib checked_v2` against `QSPEC_DIR`), and the FR-091 S1-to-S4 round trip passes. | Test (TC-1111) |
+| NFR-015-AC-6 | With default features, the `quire.checked-package/v2` bytes that `qsl-package` emits match the QSpec FR-322 conformance vectors (`cargo test -p qsl-package --lib checked_v2` against `QSPEC_DIR`), and the FR-091 S1-to-S4 round trip passes. | Test (TC-1111) |
 | NFR-015-AC-7 | With `std` disabled, no shipped source of a crate in the per-crate table names `serde_json`, `HashMap` or `HashSet`, and the `arch-lint canonical-encoder` check passes. | Inspection (TC-1111) |
 | NFR-015-AC-8 | `make build-no-std` runs AC-1's build for each closure-tier row and AC-4's host check for each crate-tier row, each with `-p`, plus `cargo clippy --no-default-features -D warnings` per row, `cargo test --no-default-features` for `qsl-package` (AC-5's evidence), in its own `no-std` target directory, and `build-no-std` is listed in the Makefile's `CI_CHECKS`; a shipped `std::` path added to a closure-tier crate outside `#[cfg(feature = "std")]` makes the target fail. | Test (TC-1110) |
-| NFR-015-AC-9 | With default features, after `emit_checked` records an emission, `bind_abstraction` with valid bindings leaves `emitted_package_id` `None`. | Test (TC-1111) |
-| NFR-015-AC-10 | With default features, after `emit_checked` records an emission of a package with no abstraction relation, `bind_abstraction_at` with valid bindings and one site leaves `emitted_package_id` `None`, and emitting the package again records a `package_id` different from the first. After an emission, `bind_abstraction_at` with one binding whose key names a declaration the package does not hold, which it refuses with `AbstractionRefusal::MissingDeclaration`, leaves `emitted_package_id` equal to the emitted `package_id`. | Test (TC-1111) |
+| NFR-015-AC-9 | With default features, after `emit_checked` records an emission, `bind_abstraction` with valid bindings clears the remembered emission, and emitting again includes the bound abstraction. | Test (TC-1111) |
+| NFR-015-AC-10 | With default features, after `emit_checked` records an emission of a package with no abstraction relation, `bind_abstraction_at` with valid bindings and one site clears the remembered emission, and emitting again includes the relation and its declaration occurrence. After an emission, `bind_abstraction_at` with one binding whose key names a declaration the package does not hold refuses with `AbstractionRefusal::MissingDeclaration` and retains the remembered emission unchanged. | Test (TC-1111) |
 
 ## Verification
 
@@ -253,9 +235,7 @@ carry `#[trace("TC-...", "NFR-015-AC-...")]` attributes (NFR-005).
   S3 (IR-587) and S5 (IR-589).
 - [ADR-011](../decisions/ADR-011-stage-dag-and-dependency-architecture.md)
   §6.1 layer rows, FB-05 and §7.2 with X-11.
-- ADR-013 §2 (one RFC 8785 encoder) and O-02 (`package_id` is computed,
-  never accepted from a caller);
-  [ADR-030](../decisions/ADR-030-arbitrary-nesting-depth-no-fixed-caps.md)
+- [ADR-030](../decisions/ADR-030-arbitrary-nesting-depth-no-fixed-caps.md)
   RU-2 (one shared JSON reader in `quire-canonical`).
 - [NFR-013](NFR-013-isolate-native-ci-feature-artifacts.md) (lane target
   directories).

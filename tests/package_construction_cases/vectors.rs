@@ -2,7 +2,6 @@
 //! TC-078/090: independently composed expectations for a real minimal unit.
 
 use quire_spec_language::native_model::NativeModel;
-use sha2::{Digest, Sha256};
 
 use super::native_rule_model;
 
@@ -94,12 +93,6 @@ fn expected_inner(
     multiple: bool,
 ) -> Expected {
     let native_prefix = source_prefix();
-    let original = if multiple {
-        source_multiple()
-    } else {
-        source()
-    };
-    let original_digest = format!("sha256:{:x}", Sha256::digest(original.as_bytes()));
     let record_start = MODEL_PREFIX.len();
     let record_end = record_start + MODEL_NODE.len();
     let record_end_column = 5 + MODEL_NODE.len();
@@ -176,14 +169,13 @@ fn expected_inner(
         concat!(
             "{{\"format\":\"native-linked-package/1\",\"semantics\":{SEMANTICS},",
             "\"required_features\":[\"boolean\",\"object\",\"reference\",\"text\"],",
-            "\"source\":{{\"authority\":\"agent-ix\",\"identity\":{identity_json},\"revision_namespace\":\"draft\",\"revision\":{revision_json},\"digest\":\"{original_digest}\",\"formal\":{{\"document\":\"PackageSource\",\"revision\":{formal_revision}}}}},",
+            "\"source\":{{\"authority\":\"agent-ix\",\"identity\":{identity_json},\"revision_namespace\":\"draft\",\"revision\":{revision_json},\"formal\":{{\"document\":\"PackageSource\",\"revision\":{formal_revision}}}}},",
             "\"models\":[{{\"alias\":\"M\",\"owner\":{OWNER},\"artifact\":{model_string}}}],\"clauses\":["
         ),
         SEMANTICS = SEMANTICS,
         OWNER = OWNER,
         identity_json = identity_json,
         revision_json = revision_json,
-        original_digest = original_digest,
         formal_revision = formal_revision,
         model_string = model_string,
     );

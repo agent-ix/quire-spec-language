@@ -17,7 +17,6 @@ use qsl_eval::temporal::{
 };
 use qsl_foundation::digest::DigestRecord;
 use qsl_semantics::check::{CheckedHyperClause, FormulaNode, HyperForm, PredicateRole};
-use qsl_semantics::library::PackageId;
 use quire_exact::{Cancel, LimitKind, Meter, ScalarLimits};
 use quire_semantic_value::catalog::Category;
 use quire_semantic_value::fairness::FairnessGranularity;
@@ -44,7 +43,6 @@ pub(super) fn replay_evidence(
     package: &qsl_package::CheckedPackage,
     clause: &CheckedHyperClause,
     evidence: &GraphEvidence,
-    package_id: PackageId,
     max_states: usize,
     max_transitions: usize,
     max_automaton_states: u64,
@@ -104,7 +102,6 @@ pub(super) fn replay_evidence(
                     Some(false) | None => {
                         return Ok(result(
                             inconclusive(Category::Success, Category::Violation),
-                            package_id,
                             Vec::new(),
                             None,
                             None,
@@ -114,7 +111,6 @@ pub(super) fn replay_evidence(
             }
             Ok(result(
                 GraphReplaySettlement::Reproduced,
-                package_id,
                 Vec::new(),
                 None,
                 None,
@@ -136,7 +132,6 @@ pub(super) fn replay_evidence(
                 &letters,
                 &bindings,
                 stem,
-                package_id,
                 max_states,
                 max_transitions,
                 max_automaton_states,
@@ -156,17 +151,10 @@ pub(super) fn replay_evidence(
                 clause, &letters, &bindings, &positions, undefined, accounting, cancel,
             )?;
             Ok(if reproduced {
-                result(
-                    GraphReplaySettlement::Reproduced,
-                    package_id,
-                    Vec::new(),
-                    None,
-                    None,
-                )
+                result(GraphReplaySettlement::Reproduced, Vec::new(), None, None)
             } else {
                 result(
                     inconclusive(Category::Violation, Category::Success),
-                    package_id,
                     Vec::new(),
                     None,
                     None,
@@ -424,7 +412,6 @@ fn replay_product_trap(
     letters: &CheckedHyperLetters<'_, '_>,
     bindings: &[ParameterBinding],
     stem: &ModelPath,
-    package_id: PackageId,
     max_states: usize,
     max_transitions: usize,
     max_automaton_states: u64,
@@ -448,16 +435,12 @@ fn replay_product_trap(
     let mut product = match built {
         Ok(product) => product,
         Err(qsl_eval::automaton::AutomatonError::StateLimit { limit }) => {
-            return Ok(stopped_result(
-                package_id,
-                ModelCheckLimit::MaxAutomatonStates,
-                limit,
-            ));
+            return Ok(stopped_result(ModelCheckLimit::MaxAutomatonStates, limit));
         }
         Err(_) => return Err(fault("the-HP-5-body-translates")),
     };
     if product.start().is_err() {
-        return product_halt_result(&product, package_id, max_candidates, accounting);
+        return product_halt_result(&product, max_candidates, accounting);
     }
     let initial = system
         .initial()
@@ -503,7 +486,6 @@ fn replay_product_trap(
         }
         if nodes.len() >= max_states {
             return Ok(stopped_result(
-                package_id,
                 ModelCheckLimit::MaxStates,
                 max_states as u64,
             ));
@@ -528,14 +510,13 @@ fn replay_product_trap(
             .ok_or_else(|| fault("a-product-queue-entry-is-a-node"))?;
         let expansion = match product.successors(&state) {
             Ok(expansion) => expansion,
-            Err(_) => return product_halt_result(&product, package_id, max_candidates, accounting),
+            Err(_) => return product_halt_result(&product, max_candidates, accounting),
         };
         if state_has_open_finding(&expansion.findings)
             || matches!(state.property, Property::Undefined { .. })
         {
             return Ok(result(
                 inconclusive(Category::Violation, Category::Success),
-                package_id,
                 Vec::new(),
                 Some(nodes.len() as u64),
                 None,
@@ -559,7 +540,6 @@ fn replay_product_trap(
             transitions = transitions.saturating_add(1);
             if transitions > max_transitions {
                 return Ok(stopped_result(
-                    package_id,
                     ModelCheckLimit::MaxTransitions,
                     max_transitions as u64,
                 ));
@@ -567,7 +547,6 @@ fn replay_product_trap(
             if matches!(next.property, Property::Undefined { .. }) {
                 return Ok(result(
                     inconclusive(Category::Violation, Category::Success),
-                    package_id,
                     Vec::new(),
                     Some(nodes.len() as u64),
                     None,
@@ -579,7 +558,6 @@ fn replay_product_trap(
             } else {
                 if nodes.len() >= max_states {
                     return Ok(stopped_result(
-                        package_id,
                         ModelCheckLimit::MaxStates,
                         max_states as u64,
                     ));
@@ -607,7 +585,6 @@ fn replay_product_trap(
     {
         Ok(result(
             inconclusive(Category::Violation, Category::Success),
-            package_id,
             Vec::new(),
             Some(nodes.len() as u64),
             None,
@@ -615,7 +592,6 @@ fn replay_product_trap(
     } else {
         Ok(result(
             GraphReplaySettlement::Reproduced,
-            package_id,
             Vec::new(),
             Some(nodes.len() as u64),
             None,
@@ -781,7 +757,6 @@ fn fairness_constraints(
 
 fn product_halt_result(
     product: &HyperProduct<'_, '_>,
-    package_id: PackageId,
     max_candidates: u64,
     accounting: ScalarLimits,
 ) -> Result<GraphReplayResult, ReplayRefusal> {
@@ -811,10 +786,9 @@ fn product_halt_result(
         }
     };
     match reached {
-        Some((limit, value)) => Ok(stopped_result(package_id, limit, value)),
+        Some((limit, value)) => Ok(stopped_result(limit, value)),
         None => Ok(result(
             inconclusive(Category::Violation, Category::Success),
-            package_id,
             Vec::new(),
             None,
             None,
@@ -837,10 +811,9 @@ fn accounting_value(limits: ScalarLimits, counter: LimitKind) -> u64 {
     }
 }
 
-fn stopped_result(package_id: PackageId, limit: ModelCheckLimit, value: u64) -> GraphReplayResult {
+fn stopped_result(limit: ModelCheckLimit, value: u64) -> GraphReplayResult {
     result(
         GraphReplaySettlement::Stopped(ReachedLimit { limit, value }),
-        package_id,
         Vec::new(),
         None,
         None,

@@ -311,9 +311,9 @@ pub struct PreconditionCase {
 fn clause_of(info: &ClauseInfo, kind: ContractClauseKind) -> ContractClause {
     ContractClause {
         name: info.name.clone(),
-        identity: info.identity,
+        identity: info.identity.clone(),
         kind,
-        context: info.context,
+        context: info.context.clone(),
         operation: info.operation.clone(),
     }
 }
@@ -354,9 +354,12 @@ impl<'a> ModelSystem<'a> {
         let mut operations: Vec<(EffectiveId, String)> = self
             .applications
             .iter()
-            .filter(|(type_id, _)| self.types.conforms(**type_id, context))
+            .filter(|(type_id, _)| {
+                self.types
+                    .conforms(EffectiveId::clone(type_id), context.clone())
+            })
             .flat_map(|(_, applications)| applications)
-            .map(|application| (application.declaring, application.name.clone()))
+            .map(|application| (application.declaring.clone(), application.name.clone()))
             .collect();
         operations.sort();
         operations.dedup();
@@ -588,9 +591,9 @@ impl<'a> ModelSystem<'a> {
             return Ok(Vec::new());
         };
         let operation = OperationRef {
-            declaring: *declaring,
+            declaring: declaring.clone(),
             name,
-            receiver: info.context,
+            receiver: info.context.clone(),
         };
         let walk = walk_of(self, state, None)?;
         let mut budget = self.budget();
@@ -600,7 +603,7 @@ impl<'a> ModelSystem<'a> {
                 continue;
             };
             if walk
-                .applicable(std::slice::from_ref(info), row, *declaring, name)
+                .applicable(std::slice::from_ref(info), row, declaring.clone(), name)
                 .is_empty()
             {
                 continue;

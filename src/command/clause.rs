@@ -89,12 +89,14 @@ pub(super) fn read(
         };
         observations.insert(key.clone(), observed);
     }
+    let source_identity = source.source().identity().clone();
     let source = ClauseRunSource::Program {
         identity: source.source().identity().clone(),
         path: source.source().path().to_owned(),
         bytes: source.source().text().as_bytes().to_vec(),
     };
     qsl_replay::spine::read_clause_run_request(ClauseRequestParts {
+        package_name: super::package_name(&source_identity),
         source,
         packages,
         dependencies,
@@ -103,7 +105,6 @@ pub(super) fn read(
             .selection
             .into_parts()
             .map_err(|error| invalid(error.member, error.reason))?,
-        expected_package_id_claim: clause.package_id.clone(),
         limits: SpineLimits::default(),
         observation_limits,
         accounting: super::call_accounting(&clause.accounting),

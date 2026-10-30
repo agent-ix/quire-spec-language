@@ -106,7 +106,7 @@ fn reference() -> ObjectReference {
         .unwrap()
         .key();
     ObjectReference::new(
-        quire_exact::UniverseId::from_digest([0; 32]),
+        crate::test_ids::universe_id([0]),
         object_type,
         quire_exact::ObjectId::new("receiver").unwrap(),
     )
@@ -142,9 +142,9 @@ fn admitted_owner_fixture(
     let owner = view
         .type_identities()
         .get(&owner_key)
-        .copied()
+        .cloned()
         .expect("the Owner model identity is present");
-    assert_eq!(owner, reference().object_type());
+    assert_eq!(owner, reference().object_type().clone());
     let types = quire_semantic_value::declaration::TypeEnvironment::new(
         [],
         [quire_semantic_value::declaration::ObjectTypeDeclaration::new(owner, "Owner", fields)],
@@ -230,7 +230,7 @@ fn checked_dispatch_package() -> qsl_package::CheckedPackage {
     use qsl_forms::{BuiltinType, Expression, FunctionDeclaration, TypeForm};
     use qsl_semantics::check::{DispatchCandidate, DispatchOperation, PackageDeclarations};
     let span = qsl_foundation::Span { start: 0, end: 0 };
-    let owner = reference().object_type();
+    let owner = reference().object_type().clone();
     let (types, model) = admitted_owner_fixture(vec![]);
     let receiver = || {
         TypeForm::builtin(BuiltinType::Reference, span)
@@ -260,7 +260,7 @@ fn checked_dispatch_package() -> qsl_package::CheckedPackage {
             ),
         ],
         dispatch_operations: vec![DispatchOperation {
-            receiver_type: owner,
+            receiver_type: owner.clone(),
             member: "step".to_owned(),
             parameters: vec![],
             result: ValueType::Boolean,
@@ -268,7 +268,7 @@ fn checked_dispatch_package() -> qsl_package::CheckedPackage {
         }],
         dispatch_tables: vec![DispatchTable::new(
             vec![(
-                owner,
+                owner.clone(),
                 DispatchCandidate {
                     body: 0,
                     precondition: Some(1),
@@ -279,6 +279,7 @@ fn checked_dispatch_package() -> qsl_package::CheckedPackage {
         )],
         ..PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
         )
     };
@@ -330,8 +331,8 @@ fn dispatch_table_candidate_and_each_callable_consumer_fault_at_its_own_site() {
         arguments: vec![],
     });
     let foreign = ObjectReference::new(
-        quire_exact::UniverseId::from_digest([0; 32]),
-        quire_exact::EffectiveId::from_digest([0xfe; 32]),
+        crate::test_ids::universe_id([0]),
+        crate::test_ids::effective_id([0xfe]),
         quire_exact::ObjectId::new("foreign-subtype").unwrap(),
     );
     probe_package!(
@@ -364,7 +365,7 @@ fn dispatch_table_candidate_and_each_callable_consumer_fault_at_its_own_site() {
     ] {
         let tables = [DispatchTable::new(
             vec![(
-                reference().object_type(),
+                reference().object_type().clone(),
                 DispatchCandidate {
                     body: selected,
                     precondition,
@@ -428,7 +429,7 @@ fn resolved_dispatch_and_callable_consumers_keep_the_matching_valid_prefixes() {
     let objects = ObjectEnvironment::default();
     let receiver = reference();
     let node = CheckedBody::fixture(
-        vec![ValueType::Reference(receiver.object_type())],
+        vec![ValueType::Reference(receiver.object_type().clone())],
         |ids| NodeKind::Dispatch {
             receiver: ids[0],
             operation: 0,
@@ -440,7 +441,7 @@ fn resolved_dispatch_and_callable_consumers_keep_the_matching_valid_prefixes() {
     for guarded in [true, false] {
         let tables = [DispatchTable::new(
             vec![(
-                receiver.object_type(),
+                receiver.object_type().clone(),
                 DispatchCandidate {
                     body: 0,
                     precondition: guarded.then_some(1),
@@ -492,7 +493,7 @@ fn resolved_dispatch_and_callable_consumers_keep_the_matching_valid_prefixes() {
     drop(machine);
     assert_eq!(admitted_charge_points(&meter), [ChargePoint::FunctionCall]);
     let node = CheckedBody::fixture(
-        vec![ValueType::Reference(receiver.object_type())],
+        vec![ValueType::Reference(receiver.object_type().clone())],
         |ids| NodeKind::Call {
             function: 0,
             arguments: vec![ids[0]],
@@ -519,21 +520,21 @@ fn resolved_dispatch_and_callable_consumers_keep_the_matching_valid_prefixes() {
 
 fn quantity_units() -> quire_semantic_value::quantity::UnitTable {
     use quire_semantic_value::unit::{DimensionNode, NominalDeclaration, UnitGraph, UnitNode};
-    let dimension_a = quire_exact::NodeKey::from_digest([0xa1; 32]);
-    let dimension_b = quire_exact::NodeKey::from_digest([0xb1; 32]);
-    let unit_a = quire_exact::NodeKey::from_digest([0xa2; 32]);
-    let unit_b = quire_exact::NodeKey::from_digest([0xb2; 32]);
+    let dimension_a = crate::test_ids::node_key([0xa1]);
+    let dimension_b = crate::test_ids::node_key([0xb1]);
+    let unit_a = crate::test_ids::node_key([0xa2]);
+    let unit_b = crate::test_ids::node_key([0xb2]);
     let nominal = |name: &str| NominalDeclaration {
         qualified_declaration: vec![name.to_owned()],
         preimage: vec![],
     };
     let dimensions = std::collections::BTreeMap::from([
         (
-            dimension_a,
+            dimension_a.clone(),
             DimensionNode::checked(vec![], nominal("Length")).unwrap(),
         ),
         (
-            dimension_b,
+            dimension_b.clone(),
             DimensionNode::checked(vec![], nominal("Time")).unwrap(),
         ),
     ]);
@@ -541,7 +542,7 @@ fn quantity_units() -> quire_semantic_value::quantity::UnitTable {
         (
             unit_a,
             UnitNode::checked(
-                *dimension_a.as_bytes(),
+                dimension_a.clone(),
                 None,
                 Rational::from_integer(Integer::one()),
                 Rational::from_integer(Integer::zero()),
@@ -552,7 +553,7 @@ fn quantity_units() -> quire_semantic_value::quantity::UnitTable {
         (
             unit_b,
             UnitNode::checked(
-                *dimension_b.as_bytes(),
+                dimension_b.clone(),
                 None,
                 Rational::from_integer(Integer::one()),
                 Rational::from_integer(Integer::zero()),
@@ -572,13 +573,14 @@ fn imported_callable_consumer_uses_a_real_emitted_and_admitted_library() {
         BuiltinType, DeclarationSpans, Expression, ExpressionSpans, FunctionDeclaration, TypeForm,
     };
     use qsl_semantics::check::{AdmittedImport, PackageDeclarations};
-    use qsl_semantics::library::{LibraryName, PackageNodeKey};
+    use qsl_semantics::library::LibraryName;
     let span = qsl_foundation::Span { start: 0, end: 4 };
     let mut declarations = PackageDeclarations::new(
         qsl_semantics::check::admitted_source(
             qsl_foundation::SourceIdentity::new("a", "callable", "git", "1"),
             b"true",
         ),
+        "fixture:callable".to_owned(),
         qsl_foundation::IdentityLimits::default(),
     );
     declarations.functions.push(
@@ -612,19 +614,10 @@ fn imported_callable_consumer_uses_a_real_emitted_and_admitted_library() {
         qsl_package::V2ReadLimits::default(),
     )
     .unwrap();
-    let callee = PackageNodeKey::new(
-        emission.package().package_id(),
-        qsl_foundation::digest::WireNodeId::from_digest(
-            *library
-                .graph()
-                .callable("Body")
-                .unwrap()
-                .identity
-                .as_bytes(),
-        ),
-    );
+    let callee = library.graph().callable("Body").unwrap().identity.clone();
     let mut declarations = PackageDeclarations::new(
         qsl_semantics::check::fixture_source(),
+        "fixture".to_owned(),
         qsl_foundation::IdentityLimits::default(),
     );
     declarations.imports.insert(
@@ -641,7 +634,7 @@ fn imported_callable_consumer_uses_a_real_emitted_and_admitted_library() {
             .unwrap(),
     );
     let node = body(|_| NodeKind::ImportedCall {
-        callee,
+        callee: callee.clone(),
         function: usize::MAX,
         arguments: vec![],
     });
@@ -753,6 +746,7 @@ fn query_stop_provenance_rejects_a_missing_selected_position_at_the_real_quantif
     let span = qsl_foundation::Span { start: 0, end: 0 };
     let mut declarations = PackageDeclarations::new(
         qsl_semantics::check::fixture_source(),
+        "fixture".to_owned(),
         qsl_foundation::IdentityLimits::default(),
     );
     declarations.functions.push(FunctionDeclaration::new(
@@ -846,7 +840,7 @@ fn result_stack_reference_and_import_shapes_reach_their_actual_producers() {
         m.push_value(Value::Boolean(false), false);
         m.drive(literal.root()).map(|_| ()).map_err(Halt::Fault)
     });
-    let field = FieldRef::new(reference().object_type(), "missing");
+    let field = FieldRef::new(reference().object_type().clone(), "missing");
     let reaches = body(|ids| NodeKind::Reaches {
         source: ids[0],
         target: ids[1],
@@ -885,10 +879,8 @@ fn result_stack_reference_and_import_shapes_reach_their_actual_producers() {
         m.push_value(Value::Reference(reference()), false);
         m.apply(dispatch.root())
     });
-    let callee = qsl_semantics::library::PackageNodeKey::new(
-        qsl_semantics::library::PackageId::of_preimage(b"unresolved fixture package"),
-        qsl_foundation::digest::WireNodeId::from_digest([0xfe; 32]),
-    );
+    // A node of a package no import supplies.
+    let callee = crate::test_ids::node_key([0xfe]);
     let imported = body(|_| NodeKind::ImportedCall {
         callee,
         function: 0,
@@ -897,7 +889,7 @@ fn result_stack_reference_and_import_shapes_reach_their_actual_producers() {
     probe!("evaluation-imported-graph-unresolved", m, [], {
         m.apply(imported.root())
     });
-    let edge = FieldRef::new(reference().object_type(), "missing");
+    let edge = FieldRef::new(reference().object_type().clone(), "missing");
     probe!("edge-attribute-unresolved", m, [], {
         m.edge_targets(literal.root(), &reference(), &edge)
             .map(|_| ())
@@ -952,7 +944,7 @@ fn query_type_consumers_are_exercised_individually_after_population_resolution()
         let lookup = CheckedBody::fixture(
             vec![
                 ValueType::Population(Some(3)),
-                ValueType::Reference(reference().object_type()),
+                ValueType::Reference(reference().object_type().clone()),
             ],
             |ids| NodeKind::Lookup {
                 population: ids[0],
@@ -1020,6 +1012,7 @@ fn both_ieee_profile_checks_and_conversion_operand_check_are_real_producers() {
         ieee_profile: Some(profile),
         ..qsl_semantics::check::PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
         )
     }
@@ -1048,16 +1041,16 @@ fn both_ieee_profile_checks_and_conversion_operand_check_are_real_producers() {
 #[test]
 #[trace("TC-917", "FR-090-AC-15", "FR-090-AC-16")]
 fn field_slot_and_record_constructor_fail_at_the_actual_application_sites() {
-    let key = quire_exact::NodeKey::from_digest([4; 32]);
+    let key = crate::test_ids::node_key([4]);
     let field = body(|ids| NodeKind::Field {
         operand: ids[0],
-        field: qsl_semantics::check::RecordField::new(key, "absent"),
+        field: qsl_semantics::check::RecordField::new(key.clone(), "absent"),
         optional: false,
     });
     probe!("field-slot-unresolved", m, [], {
         m.push_value(
             quire_exact::from_admitted_slots(
-                key,
+                key.clone(),
                 vec![FieldValue::Present(Value::Boolean(true))].into_boxed_slice(),
             ),
             false,
@@ -1065,7 +1058,7 @@ fn field_slot_and_record_constructor_fail_at_the_actual_application_sites() {
         m.apply(field.root())
     });
     let declaration = quire_semantic_value::declaration::CompositeDeclaration::new(
-        key,
+        key.clone(),
         "Holder",
         CompositeShape::Record(vec![
             quire_semantic_value::declaration::FieldDeclaration::new(
@@ -1079,6 +1072,7 @@ fn field_slot_and_record_constructor_fail_at_the_actual_application_sites() {
         types: quire_semantic_value::declaration::TypeEnvironment::new([declaration], []).unwrap(),
         ..qsl_semantics::check::PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
         )
     }
@@ -1111,6 +1105,7 @@ fn object_package(
         models: vec![model],
         ..qsl_semantics::check::PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
         )
     }
@@ -1123,17 +1118,17 @@ fn object_package(
 #[trace("TC-917", "FR-090-AC-15", "FR-090-AC-16")]
 fn edge_traversal_shape_probes_reach_all_seven_detecting_sites() {
     let literal = body(|_| NodeKind::Literal(CheckedLiteral(Value::Boolean(true))));
-    let field = FieldRef::new(reference().object_type(), "edge");
+    let field = FieldRef::new(reference().object_type().clone(), "edge");
     let unknown = ObjectReference::new(
-        quire_exact::UniverseId::from_digest([0; 32]),
-        quire_exact::EffectiveId::from_digest([0xfe; 32]),
+        crate::test_ids::universe_id([0]),
+        crate::test_ids::effective_id([0xfe]),
         quire_exact::ObjectId::new("unknown").unwrap(),
     );
     probe!("edge-attribute-declarations-unresolved", m, [], {
         m.edge_targets(literal.root(), &unknown, &field).map(|_| ())
     });
     let package = object_package(
-        ValueType::Reference(reference().object_type()),
+        ValueType::Reference(reference().object_type().clone()),
         quire_exact::Presence::Required,
     );
     probe_package!(
@@ -1147,7 +1142,7 @@ fn edge_traversal_shape_probes_reach_all_seven_detecting_sites() {
                 .map(|_| ())
         }
     );
-    let reference_type = ValueType::Reference(reference().object_type());
+    let reference_type = ValueType::Reference(reference().object_type().clone());
     let sequence = ValueType::collection(quire_exact::CollectionType::new(
         CollectionKind::Sequence,
         reference_type.clone(),
@@ -1235,7 +1230,7 @@ fn edge_traversal_shape_probes_reach_all_seven_detecting_sites() {
 #[trace("TC-917", "FR-090-AC-15", "FR-090-AC-16")]
 fn ordering_lookup_and_profile_rejections_are_not_kernel_refusals() {
     let member = Value::Enum(quire_exact::EnumMember::new(
-        quire_exact::VariantId::from_digest([0xfd; 32]),
+        crate::test_ids::variant_id([0xfd]),
         0,
     ));
     probe!("ordered-enumeration-variant-unresolved", m, [], {
@@ -1244,14 +1239,14 @@ fn ordering_lookup_and_profile_rejections_are_not_kernel_refusals() {
     });
     for distinct in [false, true] {
         let declaration = quire_semantic_value::enumeration::EnumDeclaration::new(
-            quire_exact::NodeKey::from_digest([0xfa; 32]),
+            crate::test_ids::node_key([0xfa]),
             distinct,
             vec!["A".to_owned()],
         )
         .unwrap();
         let other = if distinct {
             quire_semantic_value::enumeration::EnumDeclaration::new(
-                quire_exact::NodeKey::from_digest([0xfb; 32]),
+                crate::test_ids::node_key([0xfb]),
                 true,
                 vec!["A".to_owned()],
             )
@@ -1260,10 +1255,10 @@ fn ordering_lookup_and_profile_rejections_are_not_kernel_refusals() {
             declaration.clone()
         };
         let left = declaration
-            .member("A", quire_exact::NodeKey::from_digest([0xfc; 32]))
+            .member("A", crate::test_ids::node_key([0xfc]))
             .unwrap();
         let right = other
-            .member("A", quire_exact::NodeKey::from_digest([0xfd; 32]))
+            .member("A", crate::test_ids::node_key([0xfd]))
             .unwrap();
         let left_value = Value::Enum(quire_exact::EnumMember::new(left.variant(), 0));
         let right_value = Value::Enum(quire_exact::EnumMember::new(right.variant(), 0));
@@ -1303,7 +1298,7 @@ fn ordering_lookup_and_profile_rejections_are_not_kernel_refusals() {
 #[trace("TC-917", "FR-090-AC-16")]
 fn real_required_reference_and_sequence_edges_have_the_uncharged_valid_prefix() {
     let receiver = reference();
-    let reference_type = ValueType::Reference(receiver.object_type());
+    let reference_type = ValueType::Reference(receiver.object_type().clone());
     let sequence_type =
         quire_exact::CollectionType::new(CollectionKind::Sequence, reference_type.clone(), None);
     let sequence = quire_exact::from_admitted(
@@ -1311,7 +1306,7 @@ fn real_required_reference_and_sequence_edges_have_the_uncharged_valid_prefix() 
         vec![Value::Reference(receiver.clone())],
     );
     let literal = body(|_| NodeKind::Literal(CheckedLiteral(Value::Boolean(true))));
-    let field = FieldRef::new(receiver.object_type(), "edge");
+    let field = FieldRef::new(receiver.object_type().clone(), "edge");
     for (value_type, stored) in [
         (reference_type.clone(), Value::Reference(receiver.clone())),
         (ValueType::collection(sequence_type), sequence),
@@ -1394,6 +1389,7 @@ fn received_equality_source_cause_crosses_actual_public_call_and_evaluate_unchan
     let expression = Expression::binary(BinaryOperator::Equal, operand(), operand());
     let mut declarations = PackageDeclarations::new(
         qsl_semantics::check::fixture_source(),
+        "fixture".to_owned(),
         qsl_foundation::IdentityLimits::default(),
     );
     declarations.types = types;
@@ -1419,7 +1415,7 @@ fn received_equality_source_cause_crosses_actual_public_call_and_evaluate_unchan
         .check_expression(
             vec![(
                 "receiver".to_owned(),
-                ValueType::Reference(reference().object_type()),
+                ValueType::Reference(reference().object_type().clone()),
             )],
             &expression,
             None,
@@ -1691,7 +1687,7 @@ fn stack_extraction_and_frame_producers_report_their_own_invariants() {
                 "probe".to_owned(),
                 "probe".to_owned(),
                 ObjectReference::new(
-                    quire_exact::UniverseId::from_digest([0; 32]),
+                    crate::test_ids::universe_id([0]),
                     m.scope.types().object_types().next().unwrap().key(),
                     quire_exact::ObjectId::new("receiver").unwrap(),
                 ),
@@ -1878,7 +1874,7 @@ fn valid_required_and_optional_projection_preserves_values_without_a_charge() {
 #[test]
 #[trace("TC-917", "FR-090-AC-15", "FR-090-AC-16")]
 fn application_shapes_and_constructor_rejections_reach_their_detecting_sites() {
-    let bad_key = quire_exact::NodeKey::from_digest([0xfe; 32]);
+    let bad_key = crate::test_ids::node_key([0xfe]);
     let target = DecimalType::new(
         Integer::from(-10_i64),
         Integer::from(10_i64),
@@ -1913,10 +1909,7 @@ fn application_shapes_and_constructor_rejections_reach_their_detecting_sites() {
         (
             body(|ids| NodeKind::Field {
                 operand: ids[0],
-                field: qsl_semantics::check::RecordField::new(
-                    quire_exact::NodeKey::from_digest([4; 32]),
-                    "x",
-                ),
+                field: qsl_semantics::check::RecordField::new(crate::test_ids::node_key([4]), "x"),
                 optional: false,
             }),
             vec![Value::Boolean(true)],
@@ -1942,7 +1935,7 @@ fn application_shapes_and_constructor_rejections_reach_their_detecting_sites() {
         ),
         (
             body(|ids| NodeKind::Tuple {
-                declaration: bad_key,
+                declaration: bad_key.clone(),
                 arguments: vec![ids[0]],
             }),
             vec![Value::Boolean(true)],
@@ -2088,7 +2081,7 @@ fn projection_and_ordering_shape_faults_keep_their_original_channels() {
 #[trace("FR-359-AC-10", "TC-1002")]
 fn a_conforming_option_payload_projects_and_an_unrelated_one_is_rejected() {
     use quire_semantic_value::declaration::{CompositeDeclaration, FieldDeclaration};
-    let [money, taxed, fee] = [1, 2, 3].map(|byte| quire_exact::NodeKey::from_digest([byte; 32]));
+    let [money, taxed, fee] = [1, 2, 3].map(|byte| crate::test_ids::node_key([byte]));
     let record = |key, name: &str, supertypes: Vec<quire_exact::NodeKey>| {
         CompositeDeclaration::new(
             key,
@@ -2103,9 +2096,9 @@ fn a_conforming_option_payload_projects_and_an_unrelated_one_is_rejected() {
     };
     let types = TypeEnvironment::new(
         [
-            record(money, "Money", vec![]),
-            record(taxed, "TaxedMoney", vec![money]),
-            record(fee, "Fee", vec![]),
+            record(money.clone(), "Money", vec![]),
+            record(taxed.clone(), "TaxedMoney", vec![money.clone()]),
+            record(fee.clone(), "Fee", vec![]),
         ],
         [],
     )
@@ -2124,7 +2117,7 @@ fn a_conforming_option_payload_projects_and_an_unrelated_one_is_rejected() {
     let payload = ValueType::option(ValueType::Composite(money));
     let child = Machine::project(
         &types,
-        &FieldValue::Present(value(taxed)),
+        &FieldValue::Present(value(taxed.clone())),
         true,
         &payload,
         false,

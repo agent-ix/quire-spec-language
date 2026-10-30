@@ -26,10 +26,6 @@ fn reconstruct<'a>(checked: CheckedPackage<'a>, models: &'a [NativeModel]) -> Na
     let bytes = original.bytes().to_vec();
     let bindings = original.checked().bindings().clone();
     let manifest: Value = serde_json::from_slice(&bytes).unwrap();
-    assert_eq!(
-        manifest["source"]["digest"],
-        bindings.source.source().digest().to_string()
-    );
     assert_eq!(manifest["clauses"].as_array().unwrap().len(), 2);
     assert_eq!(
         manifest["models"][0]["artifact"],

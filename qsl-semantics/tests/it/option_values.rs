@@ -28,6 +28,7 @@ fn check(
     let unit = build_unit(&parsed).expect("S2 builds the unit");
     PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        crate::TEST_PACKAGE_NAME.to_owned(),
         unit,
         SelectedModels::default(),
         Vec::new(),

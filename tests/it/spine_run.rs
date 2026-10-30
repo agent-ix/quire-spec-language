@@ -2,7 +2,6 @@
 //! FR-100: CLI `run` routes a `1-draft` program through the spine.
 
 use ix_trace_rs::trace;
-use qsl_foundation::ByteDigest;
 use serde_json::{json, Value};
 use std::{
     path::Path,
@@ -25,10 +24,10 @@ const SEVEN_FIXTURE: &str = "tests/fixtures/spine-compile.native";
 /// The TC-451 fixture: `lt`, `flag`, `id`, `px`, `corner` and `seven`.
 const RUN_FIXTURE: &str = "tests/fixtures/spine-run.native";
 
-fn program_source(program: &[u8]) -> Value {
+fn program_source() -> Value {
     json!({"file":"program.native","authority":"agent-ix","identity":"test:spine-run",
         "revision_namespace":"fixture","revision":"fixture:1",
-        "digest":ByteDigest::of(program).to_string(),"document":"SpineRun","formal_revision":1})
+        "document":"SpineRun","formal_revision":1})
 }
 
 /// FR-289-AC-1 / TC-773 step 1: the front end has no registry input, so
@@ -122,7 +121,7 @@ fn spine_run_request(directory: &Path, program: &[u8], call: Value) {
     std::fs::write(directory.join("program.native"), program).unwrap();
     let request = json!({"format":"native-run/1","request":{
         "models":[],
-        "program":{"source":program_source(program)},
+        "program":{"source":program_source()},
         "call":call,
     }});
     std::fs::write(
@@ -241,7 +240,7 @@ fn native_result_two_reader_refuses_invalid_command_error_members() {
 }
 
 /// FR-100-AC-1 (TC-450 step 1): `seven()` completes integer `7`, and the
-/// document's `package_id`, `source` and `request_digest` agree with a
+/// document's `source` agrees with a
 /// composition of the `qsl_replay::spine` operations.
 #[test]
 #[trace("TC-450", "FR-100-AC-1")]
@@ -258,33 +257,12 @@ fn tc_450_step_1_seven_completes_through_the_spine() {
     );
     assert!(output.stderr.is_empty());
     assert!(output.stdout.ends_with(b"\n"), "{output:?}");
-    let request_bytes = std::fs::read(directory.path().join("request.json")).unwrap();
     let document: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(document["format"], "spine-run-result/1");
-    assert_eq!(
-        document["request_digest"],
-        ByteDigest::of(&request_bytes).to_string()
-    );
-    let compiled = crate::support::front_end::emitted(
-        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-run", "fixture", "fixture:1"),
-        "program.native",
-        &program,
-        &std::collections::BTreeMap::new(),
-        &qsl_replay::spine::DependencyInput::default(),
-    )
-    .unwrap();
-    assert_eq!(
-        document["package_id"],
-        compiled.package().package_id().hex()
-    );
     assert_eq!(document["source"]["authority"], "agent-ix");
     assert_eq!(document["source"]["identity"], "test:spine-run");
     assert_eq!(document["source"]["revision_namespace"], "fixture");
     assert_eq!(document["source"]["revision"], "fixture:1");
-    assert_eq!(
-        document["source"]["digest"],
-        ByteDigest::of(&program).to_string()
-    );
     assert_eq!(document["source"]["path"], "program.native");
     assert_eq!(document["function"], "seven");
     assert_eq!(
@@ -298,14 +276,11 @@ fn tc_450_step_1_seven_completes_through_the_spine() {
         document,
         json!({
             "format": "spine-run-result/1",
-            "request_digest": ByteDigest::of(&request_bytes).to_string(),
-            "package_id": compiled.package().package_id().hex(),
             "source": {
                 "authority": "agent-ix",
                 "identity": "test:spine-run",
                 "revision_namespace": "fixture",
                 "revision": "fixture:1",
-                "digest": ByteDigest::of(&program).to_string(),
                 "path": "program.native",
             },
             "function": "seven",
@@ -363,8 +338,8 @@ fn tc_450_step_4_native_only_members_refuse_before_any_model_is_read() {
             "models":[{"format":"native-rule-model/1","source":{
                 "file":"missing-model.json","authority":"agent-ix","identity":"acme/model",
                 "revision_namespace":"fixture","revision":"fixture:1",
-                "digest":format!("sha256:{}", "0".repeat(64)),"document":"M","formal_revision":1}}],
-            "program":{"source":program_source(&program)},
+                "document":"M","formal_revision":1}}],
+            "program":{"source":program_source()},
             "call":call("seven", json!([])),
         }})
     };
@@ -451,8 +426,8 @@ fn tc_450_step_4_native_model_refuses_alone() {
         "models":[{"format":"native-rule-model/1","source":{
             "file":"missing-model.json","authority":"agent-ix","identity":"acme/model",
             "revision_namespace":"fixture","revision":"fixture:1",
-            "digest":format!("sha256:{}", "0".repeat(64)),"document":"M","formal_revision":1}}],
-        "program":{"source":program_source(&program)},
+            "document":"M","formal_revision":1}}],
+        "program":{"source":program_source()},
         "call":call("seven", json!([])),
     }});
     std::fs::write(
@@ -484,7 +459,7 @@ fn tc_450_step_4_no_call_refuses_alone() {
     std::fs::write(directory.path().join("program.native"), &program).unwrap();
     let job = json!({"format":"native-run/1","request":{
         "models":[],
-        "program":{"source":program_source(&program)},
+        "program":{"source":program_source()},
     }});
     std::fs::write(
         directory.path().join("request.json"),
@@ -520,7 +495,7 @@ fn tc_450_step_4_extraction_refuses_alone() {
     let job = json!({"format":"native-run/1","request":{
         "models":[],
         "program":{
-            "source":program_source(&program),
+            "source":program_source(),
             "extraction":{"body":{
                 "authority":"agent-ix","identity":"test:spine-run","revision_namespace":"fixture",
                 "revision":"fixture:1","document":"SpineRun","formal_revision":1,
@@ -560,7 +535,7 @@ fn tc_450_step_5_zero_draft_carrying_call_or_libraries_refuses() {
         (|job: &mut Value| {
             job["request"]["libraries"] = json!([{"identity":"x","source":{
                 "file":"lib.native","authority":"agent-ix","identity":"x","revision_namespace":"fixture",
-                "revision":"fixture:1","digest":format!("sha256:{}", "0".repeat(64)),"document":"L","formal_revision":1}}]);
+                "revision":"fixture:1","document":"L","formal_revision":1}}]);
         }) as fn(&mut Value),
     ] {
         let directory = tempfile::tempdir().unwrap();
@@ -864,7 +839,7 @@ fn tc_450_step_4_malformed_work_units_refuses() {
         placeholder_call["accounting"] = json!({"work_units": 0});
         let request = json!({"format":"native-run/1","request":{
             "models":[],
-            "program":{"source":program_source(&program)},
+            "program":{"source":program_source()},
             "call": placeholder_call,
         }});
         let text = serde_json::to_string(&request).unwrap().replacen(
@@ -960,12 +935,12 @@ fn tc_450_step_6_libraries_and_models_both_present_runs() {
         "models":[{"format":"semantic-ir/2.0.0","source":{
             "file":"orders.json","authority":"agent-ix","identity":"acme/orders",
             "revision_namespace":"fixture","revision":"fixture:1",
-            "digest":ByteDigest::of(&document).to_string(),"document":"Orders","formal_revision":1}}],
+            "document":"Orders","formal_revision":1}}],
         "libraries":[{"identity":"test/geometry","source":{
             "file":"geometry.native","authority":"agent-ix","identity":"test:geometry",
             "revision_namespace":"fixture","revision":"fixture:1",
-            "digest":ByteDigest::of(&library).to_string(),"document":"Geometry","formal_revision":1}}],
-        "program":{"source":program_source(&program)},
+            "document":"Geometry","formal_revision":1}}],
+        "program":{"source":program_source()},
         "call":call("seven", json!([])),
     }});
     std::fs::write(
@@ -1032,6 +1007,7 @@ fn tc_786_run_exit_statuses_come_from_the_exit_function() {
                 "fixture",
                 "fixture:1",
             ),
+            crate::TEST_PACKAGE_NAME.to_owned(),
             "program.native",
             &program,
             &std::collections::BTreeMap::new(),
@@ -1047,7 +1023,7 @@ fn tc_786_run_exit_statuses_come_from_the_exit_function() {
             &quire_exact::Cancel::new(),
         );
         let category = match direct {
-            Ok((_, outcome)) => outcome.category(),
+            Ok(outcome) => outcome.category(),
             Err(refusal) => refusal.category(),
         };
         assert_eq!(

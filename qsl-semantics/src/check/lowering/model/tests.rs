@@ -14,6 +14,7 @@ use qsl_forms::{
 use quire_exact::{Integer, IntegerInterval, Presence};
 use serde_json::{json, Value as Json};
 
+use super::super::tests::view::{node_ref, preimage};
 use super::super::{generated_location, type_declaration, Lowering, SemanticGraph, SemanticNode};
 use super::*;
 use crate::check::checked_dispatch::{checked_dispatch_operation, DispatchRoot, OperationClauses};
@@ -37,10 +38,6 @@ mod expression_depth;
 mod place_rows;
 
 const SPAN: qsl_foundation::Span = qsl_foundation::Span { start: 0, end: 0 };
-
-fn preimage(node: &SemanticNode) -> Json {
-    serde_json::from_slice(node.preimage()).expect("a preimage is JSON")
-}
 
 /// Every application node whose operation is `identity`.
 fn applications<'g>(graph: &'g SemanticGraph, identity: &str) -> Vec<&'g SemanticNode> {
@@ -78,7 +75,7 @@ fn model_node_of(graph: &SemanticGraph, name: &str) -> NodeKey {
         .map(SemanticNode::key)
         .collect();
     assert_eq!(found.len(), 1, "one model node for {name}");
-    found[0]
+    found[0].clone()
 }
 
 // ---------------------------------------------------------------------
@@ -211,7 +208,7 @@ fn admitted(version: &str) -> Acme {
         panic!("acme/orders {version} normalizes");
     };
     let model = AdmittedModel::new(&package, &view).expect("the view is the package's own");
-    let id = |name: &str| view.type_identities()[&key(name)];
+    let id = |name: &str| view.type_identities()[&key(name)].clone();
     Acme {
         order: id("Order"),
         invoice: id("Invoice"),
@@ -236,10 +233,10 @@ fn types(acme: &Acme) -> TypeEnvironment {
     TypeEnvironment::new(
         [],
         [
-            ObjectTypeDeclaration::new(acme.order, "M::Order", total),
-            ObjectTypeDeclaration::new(acme.invoice, "M::Invoice", Vec::new()),
-            ObjectTypeDeclaration::new(acme.sub, "M::Sub", Vec::new())
-                .with_supertypes(vec![acme.order]),
+            ObjectTypeDeclaration::new(acme.order.clone(), "M::Order", total),
+            ObjectTypeDeclaration::new(acme.invoice.clone(), "M::Invoice", Vec::new()),
+            ObjectTypeDeclaration::new(acme.sub.clone(), "M::Sub", Vec::new())
+                .with_supertypes(vec![acme.order.clone()]),
         ],
     )
     .expect("the acme object types admit")
@@ -286,7 +283,11 @@ fn check(acme: &Acme, functions: Vec<FunctionDeclaration>) -> CheckedGraph {
         types: types(acme),
         models: vec![acme.model.clone()],
         functions,
-        ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
+        ..PackageDeclarations::new(
+            fixture_source(),
+            "fixture",
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
     .check(CheckingLimits::default())
     .unwrap_or_else(|refusals| panic!("the acme functions check: {refusals:?}"))
@@ -305,7 +306,7 @@ fn clauses(acme: &Acme) -> OperationClauses {
         (
             "Order/size",
             "size",
-            acme.order,
+            acme.order.clone(),
             "self",
             None,
             true,
@@ -314,7 +315,7 @@ fn clauses(acme: &Acme) -> OperationClauses {
         (
             "Order/count",
             "count",
-            acme.order,
+            acme.order.clone(),
             "self",
             None,
             true,
@@ -323,7 +324,7 @@ fn clauses(acme: &Acme) -> OperationClauses {
         (
             "Sub/size",
             "size",
-            acme.sub,
+            acme.sub.clone(),
             "self",
             None,
             false,
@@ -332,7 +333,7 @@ fn clauses(acme: &Acme) -> OperationClauses {
         (
             "Order/scaled",
             "scaled",
-            acme.order,
+            acme.order.clone(),
             "self",
             Some("n"),
             true,
@@ -341,7 +342,7 @@ fn clauses(acme: &Acme) -> OperationClauses {
         (
             "Sub/scaled",
             "scaled",
-            acme.sub,
+            acme.sub.clone(),
             "this",
             Some("m"),
             false,
@@ -379,6 +380,7 @@ fn dispatch_with(acme: &Acme, root: &str, clauses: &OperationClauses) -> Package
         },
         clauses,
         fixture_source(),
+        "fixture".to_owned(),
         &mut meter,
         qsl_foundation::IdentityLimits::default(),
     )
@@ -422,7 +424,7 @@ fn lower_with_occurrences<T>(
         0,
         &mut occurrences,
         &mut meter,
-        qsl_foundation::IdentityLimits::default(),
+        "fixture",
     );
     let built = build(&mut lowering);
     let graph = lowering.finish(&generated_location()).graph;
@@ -453,7 +455,7 @@ fn reference_types_key_over_their_model_nodes_and_record_the_correspondence() {
     assert_ne!(r_type, s_type);
     let m1 = model_node_of(graph, "Order");
     let m3 = model_node_of(graph, "Invoice");
-    let m1_preimage = preimage(graph.node(m1).unwrap());
+    let m1_preimage = preimage(graph.node(m1.clone()).unwrap());
     assert_eq!(
         m1_preimage["owner"],
         json!({"kind": "model", "identity": "acme/orders", "node": "ix://acme/orders/Order"})
@@ -463,7 +465,7 @@ fn reference_types_key_over_their_model_nodes_and_record_the_correspondence() {
         "no version member"
     );
     assert!(m1_preimage["declaration"].is_null());
-    let r = preimage(graph.node(r_type).unwrap());
+    let r = preimage(graph.node(r_type.clone()).unwrap());
     assert!(r.get("owner").is_none());
     assert!(
         serde_json::to_string(&r["body"])
@@ -479,7 +481,7 @@ fn reference_types_key_over_their_model_nodes_and_record_the_correspondence() {
         .map(SemanticNode::key)
         .collect();
     assert_eq!(model_nodes, {
-        let mut expected = vec![m1, m3];
+        let mut expected = vec![m1.clone(), m3.clone()];
         expected.sort();
         expected
     });
@@ -734,7 +736,10 @@ fn unmappable_model_inputs_are_internal_faults() {
     let acme = admitted("1.0.0");
     let models = std::slice::from_ref(&acme.model);
     let location = generated_location();
-    let unknown = EffectiveId::from_digest([9; 32]);
+    let unknown = quire_exact::EffectiveId::new(
+        None,
+        quire_exact::OriginalDeclarationKey::new("acme/unknown", "ix://acme/unknown/Missing"),
+    );
     let other = DeclarationKey {
         package: "acme/other".to_owned(),
         node: "ix://acme/other/Order".to_owned(),
@@ -746,7 +751,7 @@ fn unmappable_model_inputs_are_internal_faults() {
     let ((by_id, by_package, by_node, by_kind), graph) =
         lower(models, Default::default(), |lowering| {
             (
-                lowering.reference_type(unknown, &location),
+                lowering.reference_type(unknown.clone(), &location),
                 lowering.model_node(&other, &location),
                 lowering.model_node(&empty, &location),
                 lowering.model_node(&key("Order/total"), &location),
@@ -759,7 +764,7 @@ fn unmappable_model_inputs_are_internal_faults() {
         }) => *fault,
         other => panic!("expected an internal fault, got {other:?}"),
     };
-    assert_eq!(fault(by_id), KeyFault::UnknownEffectiveId(unknown));
+    assert_eq!(fault(by_id), KeyFault::UnknownEffectiveId(unknown.clone()));
     assert_eq!(fault(by_package), KeyFault::UnadmittedPackage(other));
     assert_eq!(fault(by_node), KeyFault::EmptyNode(empty));
     assert_eq!(
@@ -767,7 +772,8 @@ fn unmappable_model_inputs_are_internal_faults() {
         KeyFault::UnnamedRecordKind(key("Order/total"))
     );
     assert_eq!(graph.nodes().count(), 0, "no node was keyed");
-    let refusal = CheckCause::InternalFault(Box::new(KeyFault::UnknownEffectiveId(unknown)));
+    let refusal =
+        CheckCause::InternalFault(Box::new(KeyFault::UnknownEffectiveId(unknown.clone())));
     assert_eq!(
         refusal.code(),
         qsl_foundation::diagnostic::Code::RuntimeInvariant
@@ -794,9 +800,12 @@ fn keying_a_second_declaration_onto_a_recorded_node_refuses() {
     });
     let n = n.expect("`Order` keys");
     let ((keyed, resolved), _) = lower(models, Default::default(), |lowering| {
-        assert_eq!(lowering.correspondence.record(n, d1.clone()), Ok(()));
+        assert_eq!(
+            lowering.correspondence.record(n.clone(), d1.clone()),
+            Ok(())
+        );
         let keyed = lowering.model_node(&d2, &location);
-        (keyed, lowering.correspondence.resolve(n).cloned())
+        (keyed, lowering.correspondence.resolve(n.clone()).cloned())
     });
     let Err(CheckRefusal {
         cause: CheckCause::InternalFault(fault),
@@ -978,70 +987,55 @@ fn a_redefining_candidates_clauses_key_once_under_its_own_owner() {
 
 mod quantities {
     use super::*;
+    use crate::value::nominal_payload::NominalPayload;
     use crate::value::semantic_node::{NodeOwner, OwnerSelection, OwnerSubject};
     use crate::value::unit::{admit_unit_graph, DimensionPreimage, UnitPreimage};
     use quire_semantic_value::quantity::UnitTable;
 
-    fn owner_json() -> Json {
-        json!({"kind": "definition", "authority": "agent-ix", "identity": "example-model"})
-    }
-
-    fn node_id(key: &str) -> Json {
-        json!({"domain": "quire.checked-semantic-node/v1", "digest": resolved(key)})
+    fn owner() -> NodeOwner {
+        NodeOwner::Definition(OwnerSubject::new(
+            "agent-ix",
+            "example-model",
+            "example-model",
+        ))
     }
 
     fn dimension(name: &str) -> DimensionPreimage {
-        DimensionPreimage::from_json(json!({
-            "version": "quire.dimension-node/v1",
-            "owner": owner_json(),
-            "qualified_declaration": ["Example", name],
-            "terms": [],
-        }))
+        DimensionPreimage::new(
+            owner(),
+            vec!["Example".to_owned(), name.to_owned()],
+            Vec::new(),
+        )
         .expect("a base dimension")
     }
 
     fn unit(name: &str, dimension: &str) -> UnitPreimage {
-        UnitPreimage::from_json(json!({
-            "version": "quire.unit-node/v1",
-            "owner": owner_json(),
-            "qualified_declaration": ["Example", name],
-            "dimension_node_id": node_id(dimension),
-            "target_unit_node_id": null,
-            "scale": {"numerator": "1", "denominator": "1"},
-            "offset": {"numerator": "0", "denominator": "1"},
-        }))
+        UnitPreimage::new(
+            owner(),
+            vec!["Example".to_owned(), name.to_owned()],
+            node_key(dimension),
+            None,
+            &quire_exact::Rational::from_integer(Integer::from(1_i64)),
+            &quire_exact::Rational::from_integer(Integer::from(0_i64)),
+        )
         .expect("a root unit")
     }
 
-    // Four nominal nodes, by name; each is admitted under the key its
-    // preimage gives (`admit` refuses a stale key).
+    // Four nominal nodes, by name; each is admitted under its structural key.
     const LENGTH: &str = "dimension-length";
     const TIME: &str = "dimension-time";
     const METRE: &str = "unit-metre";
     const SECOND: &str = "unit-second";
 
-    /// `name_or_hex`, with a nominal node name replaced by the key its
-    /// preimage gives.
-    fn resolved(name_or_hex: &str) -> String {
-        use crate::value::semantic_node::NodeIdentityPreimage;
-        let limits = qsl_foundation::IdentityLimits::default();
-        let digest = match name_or_hex {
-            LENGTH => dimension("Length").digest(limits),
-            TIME => dimension("Time").digest(limits),
-            METRE => unit("metre", LENGTH).digest(limits),
-            SECOND => unit("second", TIME).digest(limits),
-            other => return other.to_owned(),
-        };
-        crate::model::key::hex(&digest.expect("a nominal preimage keys"))
-    }
-
-    fn node_key(hex: &str) -> NodeKey {
-        let hex = &resolved(hex);
-        let mut digest = [0_u8; 32];
-        for (index, byte) in digest.iter_mut().enumerate() {
-            *byte = u8::from_str_radix(&hex[2 * index..2 * index + 2], 16).expect("hex");
+    fn node_key(name: &str) -> NodeKey {
+        match name {
+            LENGTH => dimension("Length").key(),
+            TIME => dimension("Time").key(),
+            METRE => unit("metre", LENGTH).key(),
+            SECOND => unit("second", TIME).key(),
+            other => panic!("unknown nominal node {other}"),
         }
-        NodeKey::from_digest(digest)
+        .expect("a nominal preimage keys")
     }
 
     /// The `dimension-length`, `dimension-time`, `unit-metre` and
@@ -1061,11 +1055,7 @@ mod quantities {
                 (unit("metre", LENGTH), node_key(METRE)),
                 (unit("second", TIME), node_key(SECOND)),
             ],
-            &OwnerSelection::new([NodeOwner::Definition(OwnerSubject {
-                authority: "agent-ix".into(),
-                identity: "example-model".into(),
-            })]),
-            qsl_foundation::IdentityLimits::default(),
+            &OwnerSelection::new([owner()]),
         )
         .expect("the unit nodes admit")
     }
@@ -1099,7 +1089,11 @@ mod quantities {
                 builtin(BuiltinType::Boolean),
                 body,
             )],
-            ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
+            ..PackageDeclarations::new(
+                fixture_source(),
+                "fixture",
+                qsl_foundation::IdentityLimits::default(),
+            )
         };
         let plain = check_declarations(package(Expression::boolean(true)));
         let graph = plain.semantic_graph();
@@ -1117,15 +1111,17 @@ mod quantities {
             (metre.node_tag(), metre.semantic_form()),
             (NodeTag::ScalarType, "unit")
         );
-        assert!(matches!(metre.nominal(), Some(NominalNode::Unit(None))));
+        assert!(
+            matches!(metre.nominal_payload(), Some(NominalPayload::Unit(unit)) if unit.target().is_none())
+        );
         assert_eq!(metre.semantic_type(), Some(node_key(LENGTH)));
         let length = graph
             .node(node_key(LENGTH))
             .expect("the Length dimension node");
         assert_eq!(length.semantic_form(), "dimension");
         assert!(matches!(
-            length.nominal(),
-            Some(NominalNode::Dimension(None))
+            length.nominal_payload(),
+            Some(NominalPayload::Dimension(dimension)) if dimension.is_base()
         ));
         assert!(graph.node(node_key(SECOND)).is_some() && graph.node(node_key(TIME)).is_some());
 
@@ -1139,7 +1135,10 @@ mod quantities {
         let product = applications(graph, "quire.op.quantity.mul");
         assert_eq!(product.len(), 1);
         let u1 = product[0].semantic_type().expect("a typed product");
-        assert_eq!(graph.node(u1).unwrap().semantic_form(), "compound_unit");
+        assert_eq!(
+            graph.node(u1.clone()).unwrap().semantic_form(),
+            "compound_unit"
+        );
         assert_ne!(u1, node_key(METRE));
 
         use quire_semantic_value::quantity::{result_unit, UnitOperation};
@@ -1158,14 +1157,15 @@ mod quantities {
         let ratio = form(UnitOperation::Divide, &metre, &metre);
         let square = form(UnitOperation::Multiply, &metre, &metre);
         let back = form(UnitOperation::Divide, &square, &metre);
+        let inverse = form(UnitOperation::Divide, &ratio, &metre);
         let mut formed = table.clone();
-        for unit in [&per_second, &ratio, &back] {
+        for unit in [&per_second, &ratio, &back, &square, &inverse] {
             formed
                 .insert(unit.clone())
                 .expect("a compound unit has an id");
         }
         let (keys, graph) = lower(&[], formed, |lowering| {
-            [&per_second, &ratio, &back].map(|unit| {
+            [&per_second, &ratio, &back, &square, &inverse].map(|unit| {
                 lowering
                     .type_node(
                         &ValueType::Quantity(unit.id().expect("a compound unit has an id")),
@@ -1174,11 +1174,13 @@ mod quantities {
                     .expect("a held compound unit keys")
             })
         });
-        assert_eq!(keys.iter().collect::<BTreeSet<_>>().len(), 3);
-        let u2 = preimage(graph.node(keys[0]).unwrap());
+        assert_eq!(keys.iter().collect::<BTreeSet<_>>().len(), 5);
+        // metre^2 and metre^-1 differ by exponent operand, not only ordinal.
+        assert_ne!(keys[3], keys[4]);
+        let u2 = preimage(graph.node(keys[0].clone()).unwrap());
         assert_eq!(
             u2["body"]["members"][0]["members"][0]["value"]["target"]["digest"],
-            json!(resolved(METRE))
+            json!(node_key(METRE).to_string())
         );
         assert_ne!(keys[2], node_key(METRE));
     }
@@ -1190,22 +1192,16 @@ mod quantities {
     #[trace("FR-093-AC-3", "TC-415")]
     #[test]
     fn a_quantity_conversion_is_exact() {
-        use crate::value::semantic_node::NodeIdentityPreimage;
-        let kilometre = UnitPreimage::from_json(json!({
-            "version": "quire.unit-node/v1",
-            "owner": owner_json(),
-            "qualified_declaration": ["Example", "kilometre"],
-            "dimension_node_id": node_id(LENGTH),
-            "target_unit_node_id": node_id(METRE),
-            "scale": {"numerator": "1000", "denominator": "1"},
-            "offset": {"numerator": "0", "denominator": "1"},
-        }))
+        let kilometre = UnitPreimage::new(
+            owner(),
+            vec!["Example".to_owned(), "kilometre".to_owned()],
+            node_key(LENGTH),
+            Some(node_key(METRE)),
+            &quire_exact::Rational::from_integer(Integer::from(1000_i64)),
+            &quire_exact::Rational::from_integer(Integer::from(0_i64)),
+        )
         .expect("a derived unit");
-        let km = NodeKey::from_digest(
-            kilometre
-                .digest(qsl_foundation::IdentityLimits::default())
-                .expect("the unit digests"),
-        );
+        let km = kilometre.key().expect("the unit keys");
         let graph = admit_unit_graph(
             [
                 (dimension("Length"), node_key(LENGTH)),
@@ -1214,16 +1210,12 @@ mod quantities {
             [
                 (unit("metre", LENGTH), node_key(METRE)),
                 (unit("second", TIME), node_key(SECOND)),
-                (kilometre, km),
+                (kilometre, km.clone()),
             ],
-            &OwnerSelection::new([NodeOwner::Definition(OwnerSubject {
-                authority: "agent-ix".into(),
-                identity: "example-model".into(),
-            })]),
-            qsl_foundation::IdentityLimits::default(),
+            &OwnerSelection::new([owner()]),
         )
         .expect("metre, second and kilometre admit");
-        let km_type = ValueType::Quantity(UnitId::declared(km));
+        let km_type = ValueType::Quantity(UnitId::declared(km.clone()));
         let checked = check_declarations(PackageDeclarations {
             types: TypeEnvironment::default().with_units(UnitTable::declared(&graph)),
             aliases: vec![
@@ -1236,7 +1228,11 @@ mod quantities {
                 named("Km"),
                 Expression::convert(named("Km"), name("a")),
             )],
-            ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
+            ..PackageDeclarations::new(
+                fixture_source(),
+                "fixture",
+                qsl_foundation::IdentityLimits::default(),
+            )
         });
         let convert = applications(checked.semantic_graph(), "quire.op.quantity.convert");
         assert_eq!(convert.len(), 1);
@@ -1245,7 +1241,7 @@ mod quantities {
         let operation = &convert["body"]["operation"];
         assert_eq!(
             operation["member"],
-            json!({"kind": "type_argument", "declaration": node_id(&km.to_string())})
+            json!({"kind": "type_argument", "declaration": node_ref(&crate::check::node_key::NodeRef::Admitted(km.clone()))})
         );
         assert_eq!(
             operation["mode"],
@@ -1260,9 +1256,12 @@ mod quantities {
     #[trace("FR-094-AC-7", "TC-419")]
     #[test]
     fn an_unheld_compound_unit_is_an_internal_fault() {
-        let unheld = UnitId::compound([5; 32]);
+        let unheld = UnitId::compound(vec![(
+            super::super::super::tests::fixture_key("unheld"),
+            Integer::from(2_i64),
+        )]);
         let (result, graph) = lower(&[], units(), |lowering| {
-            lowering.type_node(&ValueType::Quantity(unheld), &generated_location())
+            lowering.type_node(&ValueType::Quantity(unheld.clone()), &generated_location())
         });
         assert!(matches!(
             result,
@@ -1333,19 +1332,19 @@ mod quantities {
             Some((NodeTag::Model, "record_value_type"))
         );
         assert_eq!(record_form(&event), Some((NodeTag::Model, "event_type")));
-        let limits = qsl_foundation::IdentityLimits::default();
-        let record_key = record_node_key(&record, limits).unwrap().unwrap();
-        let event_key = record_node_key(&event, limits).unwrap().unwrap();
+        let keyed = |record: &DomainPackageRecord, form| {
+            model_declaration_key(
+                &record.key().package,
+                NodeTag::Model,
+                form,
+                &record.key().node,
+            )
+            .unwrap()
+        };
+        let record_key = keyed(&record, "record_value_type");
+        let event_key = keyed(&event, "event_type");
         assert_ne!(record_key, event_key);
-        // The supertypes are not part of the key: it is a function of the
-        // owner and the form alone.
-        let bare = DomainPackageRecord::EventType(EventTypeRecord {
-            key,
-            identity_fields: Vec::new(),
-            occurrence_field: None,
-            supertypes: Vec::new(),
-        });
-        assert_eq!(record_node_key(&bare, limits).unwrap().unwrap(), event_key);
+        assert_eq!(keyed(&event, "event_type"), event_key);
     }
 }
 

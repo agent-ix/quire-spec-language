@@ -52,8 +52,6 @@ use crate::counter::UNLIMITED;
 use crate::reduction_world::{clause_identity, replay_unit, ReplayUnit};
 use crate::units::{checked, clause, unit, Domain};
 
-const PLACEHOLDER: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
-
 /// The keys of the subject's population.
 pub(crate) const KEYS: [&str; 2] = ["a", "b"];
 
@@ -260,19 +258,17 @@ impl Subject {
         .into_iter()
         .map(|(name, meaning)| {
             json!({"kind": {"module": package, "name": name}, "moduleVersion": "1.0.0",
-                "manifestDigest": PLACEHOLDER,
                 "construct": {"identity": "none", "shape": "record", "members": {},
                     "meaning": meaning}})
         })
         .collect();
         let document = json!({
             "contractVersion": "2.0.0",
-            "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
+            "canonicalization": {"algorithm": "rfc8785-v1"},
             "source": {"identity": self.ident("spec"), "version": "1.0.0",
-                "dialect": "spec-bundle", "digest": PLACEHOLDER},
+                "dialect": "spec-bundle"},
             "package": {"identity": package, "version": "1.0.0",
-                "manifestDigest": PLACEHOLDER, "mappingVersions": [], "profileVersions": [],
-                "lockDigest": PLACEHOLDER},
+                "mappingVersions": [], "profileVersions": []},
             "occurrences": [], "extensions": [],
             "constructs": constructs,
             "types": [
@@ -466,7 +462,6 @@ impl World {
         replay_unit(
             &ReplayUnit {
                 identity: "units",
-                path: "units.native",
                 text: self.text.as_bytes(),
                 document: &self.document,
                 snapshots: &self.snapshots,

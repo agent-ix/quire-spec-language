@@ -50,7 +50,7 @@ fn graph_of(text: &str) -> CheckedGraph {
         qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
     )
     .expect("the model is admitted");
-    PackageDeclarations::assemble(raw, unit, models, Vec::new())
+    PackageDeclarations::assemble(raw, "fixture".to_string(), unit, models, Vec::new())
         .expect("the unit assembles")
         .check(CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("{refusals:?}"))
@@ -158,8 +158,8 @@ fn a_relation_changes_no_clause_disposition() {
 
         let plain = run_clause(plain).expect("a plain report");
         let carried = run_clause(carried).expect("a report with the relation");
-        // A compile-stage refusal names the digest of the source bytes, which
-        // the declaration changes by being there; its stage and category are
+        // A compile-stage refusal may name the source that contains the
+        // declaration; its stage and category are
         // what must agree. Every other disposition is compared whole.
         if plain.disposition.stage() == ClauseRunStage::Compile {
             assert_eq!(carried.disposition.stage(), ClauseRunStage::Compile);

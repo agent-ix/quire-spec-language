@@ -187,7 +187,7 @@ struct Document {
 #[derive(Clone, Debug)]
 pub struct Source(Arc<Document>);
 
-/// Why [`Source::read_typed`] or [`Source::read_verified_typed`] refused
+/// Why [`Source::read_typed`] refused
 /// its input. `pub`: the `qsl-cst` crate's `read_source` maps this cause
 /// onto its own `CompleteCode`, a real cross-crate call site.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -212,8 +212,6 @@ pub enum SourceReadCause {
     Bom,
     /// The text contains NUL.
     Nul,
-    /// Verified intake: the bytes differ from the selected digest.
-    DigestMismatch,
 }
 
 /// The catalog cause tag of a blank label
@@ -252,8 +250,7 @@ impl SourceReadCause {
             | Self::ByteBudget
             | Self::InvalidUtf8
             | Self::Bom
-            | Self::Nul
-            | Self::DigestMismatch => None,
+            | Self::Nul => None,
         }
     }
 }
@@ -270,7 +267,7 @@ pub struct SourceReadError {
     pub path: String,
     /// FR-001: the refusal's region, under a `RawSourceRef` minted over the
     /// offered bytes, for invalid UTF-8, a BOM and NUL; `None` for an
-    /// unnamed source, a byte-budget refusal and a digest mismatch.
+    /// unnamed source and a byte-budget refusal.
     pub region: Option<SourceRegion>,
     /// Human-readable detail.
     pub message: String,
@@ -417,34 +414,6 @@ impl Source {
             ));
         }
         Ok(Self::admit(identity, reference, path, text, digest))
-    }
-
-    // BLOCKED-BY PLAT-1205 (owner: planner titan:QSL:plan): Source::digest (this verified intake and
-    // `Source::digest`), the schema `source.digest` member and the `Source`
-    // record's `digest` in `src/package/wire.rs`.
-    /// Verified intake: [`Source::read_typed`], then the admitted bytes'
-    /// digest against the independently selected one. A mismatch concerns
-    /// the bytes as a whole and refuses with no region (FR-001).
-    pub fn read_verified_typed(
-        identity: SourceIdentity,
-        path: impl Into<String>,
-        bytes: &[u8],
-        expected: ByteDigest,
-        byte_limit: usize,
-    ) -> Result<Self, Box<SourceReadRefusal>> {
-        let source = Self::read_typed(identity, path, bytes, byte_limit)?;
-        if source.digest() != expected {
-            return Err(Box::new(SourceReadRefusal {
-                cause: SourceReadCause::DigestMismatch,
-                error: SourceReadError {
-                    source: source.identity().clone(),
-                    path: source.path().into(),
-                    region: None,
-                    message: "source bytes differ from the selected digest".into(),
-                },
-            }));
-        }
-        Ok(source)
     }
 
     /// SHA-256 of the exact admitted bytes, without normalization.
@@ -714,8 +683,7 @@ mod tests {
     }
 
     /// FR-001-AC-10: an empty revision namespace, five bytes under a
-    /// four-byte ceiling and a digest mismatch under verified intake each
-    /// refuse with no region.
+    /// four-byte ceiling each refuse with no region.
     #[trace("TC-424", "FR-001-AC-10")]
     #[test]
     fn unnamed_over_budget_and_mismatched_refusals_have_no_region() {
@@ -731,18 +699,6 @@ mod tests {
         let over = refusal(labels("a", "u", "git", "1"), b"abcde", 4);
         assert_eq!(over.cause, SourceReadCause::ByteBudget);
         assert_eq!(over.error.region, None);
-
-        let Err(mismatch) = Source::read_verified_typed(
-            labels("a", "u", "git", "1"),
-            "a.quire",
-            b"b",
-            ByteDigest::of(b"c"),
-            MAX_SOURCE_BYTES,
-        ) else {
-            panic!("a mismatched digest was admitted");
-        };
-        assert_eq!(mismatch.cause, SourceReadCause::DigestMismatch);
-        assert_eq!(mismatch.error.region, None);
     }
 
     /// FR-001-AC-9: a region holds its reference and two bytes; the

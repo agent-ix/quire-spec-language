@@ -103,7 +103,11 @@ where
             if !seen.insert(std::ptr::from_ref(package)) {
                 continue;
             }
-            if package.graph().callable_by_identity(identity).is_some() {
+            if package
+                .graph()
+                .callable_by_identity(identity.clone())
+                .is_some()
+            {
                 return Some(package);
             }
             pending.extend(package.dependencies().values().map(|d| &**d));
@@ -164,8 +168,8 @@ where
     type Task = PackageTask<X>;
 
     fn signature(&self, callable: &NodeKey) -> Option<Signature> {
-        let package = self.declaring(*callable)?;
-        let function = package.graph().callable_by_identity(*callable)?;
+        let package = self.declaring(callable.clone())?;
+        let function = package.graph().callable_by_identity(callable.clone())?;
         Some(Signature::new(
             function
                 .parameters
@@ -177,11 +181,11 @@ where
     }
 
     fn root_call_site(&self, callable: &NodeKey) -> Option<Location> {
-        let package = self.declaring(*callable)?;
+        let package = self.declaring(callable.clone())?;
         Some(
             package
                 .graph()
-                .function_by_identity(*callable)?
+                .function_by_identity(callable.clone())?
                 .body
                 .location()
                 .clone(),
@@ -196,14 +200,14 @@ where
         meter: &Meter,
     ) -> Result<(), CallFailure> {
         let package = self
-            .declaring(*callable)
+            .declaring(callable.clone())
             .ok_or_else(|| InputRefusal::UnknownFunction(identity_spelling(callable)))?;
         if self.pre_admitted {
             return Ok(());
         }
         let function = package
             .graph()
-            .callable_by_identity(*callable)
+            .callable_by_identity(callable.clone())
             .ok_or_else(|| InputRefusal::UnknownFunction(identity_spelling(callable)))?;
         self.admit(function.parameters, arguments, environment, meter)
     }
@@ -215,14 +219,14 @@ where
         environment: &ObjectEnvironment,
     ) -> Result<(), RequestRefusal> {
         let function = self
-            .declaring(*callable)
-            .and_then(|package| package.graph().callable_by_identity(*callable))
+            .declaring(callable.clone())
+            .and_then(|package| package.graph().callable_by_identity(callable.clone()))
             .ok_or(RequestRefusal::NotAdmitted)?;
         if function.parameters.len() != arguments.len() {
             return Err(RequestRefusal::NotAdmitted);
         }
         let types = self
-            .declaring(*callable)
+            .declaring(callable.clone())
             .ok_or(RequestRefusal::NotAdmitted)?
             .graph()
             .scope()
@@ -234,7 +238,7 @@ where
                 // `Population<T>[N]` is admitted by its resolved binding's
                 // declared maximum (FR-089-AC-5), as `admit_arguments` does.
                 (ValueType::Population(maximum), Value::Population(id)) => environment
-                    .resolve_population(*id)
+                    .resolve_population(id.clone())
                     .is_some_and(|binding| binding.declared_maximum() == *maximum),
                 _ => types
                     .admits(value_type, argument)
@@ -267,7 +271,7 @@ where
         _environment: &ObjectEnvironment,
     ) -> Result<Self::Task, InternalFault> {
         Ok(PackageTask(Frame::Call {
-            callable: *callable,
+            callable: callable.clone(),
             arguments,
         }))
     }
@@ -302,7 +306,7 @@ where
                 callable,
                 arguments,
             } => {
-                let package = self.declaring(callable).ok_or_else(|| {
+                let package = self.declaring(callable.clone()).ok_or_else(|| {
                     InternalFault::new("S6a", "checked-identity-not-resolved-by-package")
                 })?;
                 // The scheduler charged this application's `function.call`.
@@ -338,12 +342,8 @@ where
     }
 }
 
-/// The hex spelling of a callable identity, for the refusal that names a
+/// The spelling of a callable identity, for the refusal that names a
 /// callable no checked closure declares.
 fn identity_spelling(identity: &NodeKey) -> String {
-    identity
-        .as_bytes()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
+    identity.to_string()
 }

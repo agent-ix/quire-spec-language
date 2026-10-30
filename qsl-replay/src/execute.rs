@@ -4,12 +4,11 @@
 //!
 //! It reads the request (FR-071), recompiles the one source unit the
 //! package reference names through the spine ([`crate::spine::parse`],
-//! S1 to S4) from the byte provision, requires the
-//! recompiled `package_id` to equal the request's, selects the function by
+//! S1 to S4) from the byte provision, selects the function by
 //! its `QualifiedName` in the recompiled package's declarations, joins the
 //! replay source's arguments to the function's parameters by parameter node
-//! id (each `WireNodeId` becomes a `NodeKey` only by lookup in the
-//! recompiled package), calls it through S6a (`CheckedPackage::call`) and
+//! id (an id names a parameter only by lookup in the recompiled
+//! package), calls it through S6a (`CheckedPackage::call`) and
 //! settles the verdict against the counterexample's. No `CheckedPackage` is
 //! built from wire bytes, and nothing is read from a path, environment
 //! variable or search location.
@@ -24,12 +23,11 @@ use qsl_eval::temporal::{evaluate_observed, TemporalPosition, TemporalRefusal, T
 use qsl_eval::value::{
     input_refusal_code, supplied_stop_cause, supplied_stop_code, CheckedPackageEvaluation,
 };
-use qsl_foundation::digest::{DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::{Code, SourceIdentity};
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{Capability, CheckedInterval};
-use qsl_semantics::library::{LibraryName, PackageId};
+use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::intake::package_input;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::value::environment_stage::{membership_failure_cause, membership_failure_code};
@@ -115,10 +113,6 @@ pub struct LimitAboveReader {
     pub reader: u64,
 }
 
-fn hex(digest: &[u8; 32]) -> WireNodeId {
-    WireNodeId::from_digest(*digest)
-}
-
 /// Why a `frame_operation` object is not the operation's declaring object
 /// (FR-116, QSpec FR-323).
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
@@ -153,6 +147,9 @@ pub enum ReplayRefusal {
         .0.reader
     )]
     LimitAboveReader(LimitAboveReader),
+    /// The package name is not a library name (it is empty).
+    #[error("invalid-request: the package name is not a library name: {0}")]
+    InvalidPackageName(qsl_semantics::library::InvalidLibraryName),
     /// The package reference does not name exactly one source unit. The
     /// spine recompiles one unit: a package over more than one waits on
     /// E3 import resolution (FR-087-AC-13).
@@ -176,34 +173,15 @@ pub enum ReplayRefusal {
     /// dependency input (ADR-015 D-1).
     #[error("the package reference's dependencies are no dependency input: {0}")]
     DependencyInput(DependencyInputRefusal),
-    /// ADR-015 D-4 rule 7: an entry's `package_id` is not the recompiled
-    /// closure's selection of its identity
-    /// (`stale_dependency`/`content-mismatch`).
-    #[error("stale_dependency/content-mismatch: the request names {identity} as {} but it recompiles to {}", .requested.hex(), .recompiled.hex())]
-    DependencyIdentityMismatch {
-        /// The entry's identity.
-        identity: LibraryName,
-        /// The `package_id` the entry names.
-        requested: DigestRecord,
-        /// The closure's recomputed selection of that identity.
-        recompiled: PackageId,
-    },
-    /// The recompiled `package_id` is not the request's: the source's
-    /// meaning changed since the proving run.
-    #[error("stale_dependency/content-mismatch: the request names package {} but the source recompiles to {}", .requested.hex(), .recompiled.hex())]
-    PackageIdMismatch {
-        /// The `package_id` the request names.
-        requested: DigestRecord,
-        /// The `package_id` the recompile computed.
-        recompiled: PackageId,
-    },
     /// The selection names no function node of the recompiled package.
-    #[error("missing_declaration/missing-name: package {} declares no function {selection}", .package.hex())]
+    #[error(
+        "missing_declaration/missing-name: package {package} declares no function {selection}"
+    )]
     UnknownFunction {
         /// The request's selection.
         selection: QualifiedName,
         /// The recompiled package it was looked up in.
-        package: PackageId,
+        package: LibraryName,
     },
     /// FR-098 "The claim a function request decides": the request's
     /// `occurrence_key` selects no claim of the selected function. It is
@@ -222,13 +200,13 @@ pub enum ReplayRefusal {
     /// An argument names a node that is not a parameter of the selected
     /// function.
     #[error("invalid_runtime_input: node {0} is not a parameter of the selected function")]
-    UnknownParameter(WireNodeId),
+    UnknownParameter(NodeKey),
     /// Two arguments name the same parameter.
     #[error("invalid_runtime_input: parameter {0} is bound twice")]
-    DuplicateArgument(WireNodeId),
+    DuplicateArgument(NodeKey),
     /// A parameter of the selected function has no argument.
     #[error("invalid_runtime_input: parameter {0} has no argument")]
-    UnboundParameter(WireNodeId),
+    UnboundParameter(NodeKey),
     /// The backend witness does not decode against the selected function's
     /// parameters. Carries the obligation the request replays (ADR-013
     /// O-25), so a caller replaying many obligations knows which failed.
@@ -291,22 +269,22 @@ pub enum ReplayRefusal {
     /// The selected function's declared result is not `Boolean`, so it
     /// states no property a counterexample refutes. Refused before the
     /// call, from the declaration alone.
-    #[error("the selected function {selection} of package {} is not a predicate: its declared result is not Boolean", .package.hex())]
+    #[error("the selected function {selection} of package {package} is not a predicate: its declared result is not Boolean")]
     NotAPredicate {
         /// The request's selection.
         selection: QualifiedName,
         /// The recompiled package that declares it.
-        package: PackageId,
+        package: LibraryName,
     },
     /// FR-357: the selected function's declared result is `Boolean`, so its
     /// claim is a predicate's, replayed by [`replay`], not a value-parity
     /// claim. Refused before the call, from the declaration alone.
-    #[error("the selected function {selection} of package {} is a predicate: its declared result is Boolean, so it has no value-parity replay", .package.hex())]
+    #[error("the selected function {selection} of package {package} is a predicate: its declared result is Boolean, so it has no value-parity replay")]
     NotAValueFunction {
         /// The request's selection.
         selection: QualifiedName,
         /// The recompiled package that declares it.
-        package: PackageId,
+        package: LibraryName,
     },
     /// FR-357: an operator-level claim's scalar node, enclosing function or
     /// operator is not the recompiled package's.
@@ -366,34 +344,36 @@ pub enum ReplayRefusal {
     },
     /// FR-116: the request's `frame_operation` names no operation frame of
     /// the recompiled package.
-    #[error("missing_declaration/missing-name: package {} holds no operation frame {operation}", .package.hex())]
+    #[error(
+        "missing_declaration/missing-name: package {package} holds no operation frame {operation}"
+    )]
     UnknownOperation {
         /// The request's operation.
         operation: FrameOperation,
         /// The recompiled package it was looked up in.
-        package: PackageId,
+        package: LibraryName,
     },
     /// FR-116: the request's `frame_operation` names an object that cannot
     /// be its operation's declaring object (`invalid_model_binding`/
     /// `malformed-declaration`).
-    #[error("invalid_model_binding/malformed-declaration: package {} cannot select operation {operation}: {reason}", .package.hex())]
+    #[error("invalid_model_binding/malformed-declaration: package {package} cannot select operation {operation}: {reason}")]
     MalformedOperationTarget {
         /// The request's operation.
         operation: FrameOperation,
         /// The recompiled package it was looked up in.
-        package: PackageId,
+        package: LibraryName,
         /// Why the object cannot be the declaring object.
         reason: MalformedOperationReason,
     },
     /// FR-116: two supertypes of the request's `frame_operation` object
     /// expose the operation's name (`ambiguous_declaration`/
     /// `ambiguous-name`).
-    #[error("ambiguous_declaration/ambiguous-name: package {} exposes operation {operation} through two supertypes", .package.hex())]
+    #[error("ambiguous_declaration/ambiguous-name: package {package} exposes operation {operation} through two supertypes")]
     AmbiguousOperation {
         /// The request's operation.
         operation: FrameOperation,
         /// The recompiled package it was looked up in.
-        package: PackageId,
+        package: LibraryName,
     },
     /// FR-116: a frame counterexample's anchor, frame or occurrence
     /// identity is not the recompiled package's (refused before any
@@ -403,12 +383,14 @@ pub enum ReplayRefusal {
     FrameIdentity(Box<FrameIdentityMismatch>),
     /// FR-122: the request's `state_clause` names no state clause of the
     /// recompiled package (a function's name included).
-    #[error("missing_declaration/missing-name: package {} declares no state clause {clause}", .package.hex())]
+    #[error(
+        "missing_declaration/missing-name: package {package} declares no state clause {clause}"
+    )]
     UnknownClause {
         /// The request's `state_clause`.
         clause: QualifiedName,
         /// The recompiled package it was looked up in.
-        package: PackageId,
+        package: LibraryName,
     },
     /// FR-331: an observed trace carries no enabledness with which to check
     /// this fairness constraint, so the formula is not evaluated.
@@ -461,7 +443,7 @@ pub enum ReplayRefusal {
     UnusedObjectEnvironment,
     /// FR-484: a function-value parity request carries `profile_selections`.
     /// A value-parity claim has no proving run, so the list is fixed empty
-    /// and lock rows bind through the `package_id` alone
+    /// and lock rows bind through the package alone
     /// (`invalid_runtime_input`/`unknown-member`). Refused before the
     /// recompile, with no call and no charge.
     #[error("invalid_runtime_input/unknown-member: `profile_selections` is supplied for a function-value parity claim, which has no proving run")]
@@ -472,14 +454,14 @@ pub enum ReplayRefusal {
     /// FR-098 step 2, FR-100: a reference argument's universe is not the
     /// universe of its declared `Reference<T>`'s object type
     /// (`foreign_reference`/`foreign-universe`).
-    #[error("foreign_reference/foreign-universe: the reference at position {position} is in universe {supplied}, not {required}", required = hex(.required), supplied = hex(.supplied))]
+    #[error("foreign_reference/foreign-universe: the reference at position {position} is in universe {supplied:?}, not {required:?}")]
     ForeignReference {
         /// The parameter's zero-based declared position.
         position: usize,
         /// The universe of the declared object type.
-        required: [u8; 32],
+        required: quire_exact::UniverseId,
         /// The universe the reference names.
-        supplied: [u8; 32],
+        supplied: quire_exact::UniverseId,
     },
     /// FR-098 steps 3 and 4: FR-106 admission of the environment document, or
     /// FR-364's `resolve` of a reference argument, refused.
@@ -509,11 +491,9 @@ impl ReplayRefusal {
             Self::Request(refusal) => refusal.code(),
             Self::LimitAboveReader(_) => Code::InvalidRequest,
             Self::SourceCount(_) => Code::InvalidRequest,
+            Self::InvalidPackageName(_) => Code::InvalidRequest,
             Self::Recompile(refusal) => refusal.code(),
             Self::DomainPackages(refusal) => refusal.code,
-            Self::PackageIdMismatch { .. } | Self::DependencyIdentityMismatch { .. } => {
-                Code::StaleDependency
-            }
             Self::DependencySelections(_) => Code::InvalidPackage,
             Self::DependencyInput(refusal) => refusal.code(),
             Self::UnknownFunction { .. }
@@ -575,9 +555,6 @@ impl ReplayRefusal {
             Self::DomainPackages(refusal) => Some(refusal.cause.as_str()),
             Self::DependencySelections(_) => Some("invalid-value"),
             Self::DependencyInput(refusal) => refusal.cause(),
-            Self::DependencyIdentityMismatch { .. } | Self::PackageIdMismatch { .. } => {
-                Some("content-mismatch")
-            }
             Self::UnknownFunction { .. }
             | Self::UnknownOperation { .. }
             | Self::ClaimOccurrence { .. }
@@ -614,6 +591,7 @@ impl ReplayRefusal {
             ) => Some(record.cause),
             Self::LimitAboveReader(_)
             | Self::SourceCount(_)
+            | Self::InvalidPackageName(_)
             | Self::Admission(AdmissionFailure::Fault(_))
             | Self::UnknownParameter(_)
             | Self::DuplicateArgument(_)
@@ -651,7 +629,6 @@ impl ReplayRefusal {
             Self::ModelGraphMismatch { member } => Some(match *member {
                 "claim_identity" | "clause_node" => "/replay/source/model_graph/clause_node",
                 "occurrence_key" => "/replay/source/model_graph/occurrence_key",
-                "package_id" => "/replay/source/model_graph/package_id",
                 "profile_selections" => "/replay/profile_selections",
                 "declared_domains" => "/replay/declared_domains",
                 "undefined_locus" => "/replay/source/model_graph/undefined/where/locus",
@@ -727,6 +704,7 @@ pub enum DependencySelectionsCause {
 /// # let small = QualifiedName::new(vec![Identifier::new("small").unwrap()]).unwrap();
 /// # let site = call_site(
 /// #     SourceIdentity::new("a", "u", "git", "1"),
+/// #     "fixture".to_owned(),
 /// #     "u",
 /// #     unit.as_bytes(),
 /// #     [],
@@ -750,10 +728,7 @@ pub enum DependencySelectionsCause {
 /// let wire = ReplayRequestWire {
 ///     replay_target: RequestTargetWire::function("small", key),
 /// #   profile_selections: vec![],
-/// #   package_id: (
-/// #       Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
-/// #       site.package_id.hex(),
-/// #   ),
+/// #   package_name: "fixture".to_owned(),
 /// #   sources: vec![(
 /// #       "a".to_owned(),
 /// #       "u".to_owned(),
@@ -762,10 +737,10 @@ pub enum DependencySelectionsCause {
 /// #   )],
 /// #   dependencies: Vec::new(),
 /// #   source: ReplaySource::Input(vec![CanonicalAssignment {
-/// #       parameter: site.site.parameters[0].1,
+/// #       parameter: site.site.parameters[0].1.clone(),
 /// #       value: WitnessValue::Integer(7),
 /// #   }]),
-/// #   obligation_identity: [0; 32],
+/// #   obligation_identity: crate::ObligationIdentity::new(crate::fixture_node(0), None, 0),
 /// #   backend: "kani-backend-1".to_owned(),
 /// #   state_environment: StateEnvironment::new(vec![]),
 /// #   accounting_limits: unlimited,
@@ -791,6 +766,7 @@ pub enum DependencySelectionsCause {
 /// # let small = QualifiedName::new(vec![Identifier::new("small").unwrap()]).unwrap();
 /// # let site = call_site(
 /// #     SourceIdentity::new("a", "u", "git", "1"),
+/// #     "fixture".to_owned(),
 /// #     "u",
 /// #     unit.as_bytes(),
 /// #     [],
@@ -814,10 +790,7 @@ pub enum DependencySelectionsCause {
 /// let wire = ReplayRequestWire {
 ///     replay_target: RequestTargetWire::function(small, key),
 /// #   profile_selections: vec![],
-/// #   package_id: (
-/// #       Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
-/// #       site.package_id.hex(),
-/// #   ),
+/// #   package_name: "fixture".to_owned(),
 /// #   sources: vec![(
 /// #       "a".to_owned(),
 /// #       "u".to_owned(),
@@ -826,10 +799,10 @@ pub enum DependencySelectionsCause {
 /// #   )],
 /// #   dependencies: Vec::new(),
 /// #   source: ReplaySource::Input(vec![CanonicalAssignment {
-/// #       parameter: site.site.parameters[0].1,
+/// #       parameter: site.site.parameters[0].1.clone(),
 /// #       value: WitnessValue::Integer(7),
 /// #   }]),
-/// #   obligation_identity: [0; 32],
+/// #   obligation_identity: crate::ObligationIdentity::new(crate::fixture_node(0), None, 0),
 /// #   backend: "kani-backend-1".to_owned(),
 /// #   state_environment: StateEnvironment::new(vec![]),
 /// #   accounting_limits: unlimited,
@@ -881,7 +854,7 @@ fn replay_observed_temporal(
             member: "profile_selections",
         });
     }
-    let package_id = compiled.emitted.package().package_id();
+    let package_name = compiled.package.clone();
     let package = compiled.checked.package();
     let graph = package.graph();
     let Some(clause_node) = graph
@@ -891,15 +864,16 @@ fn replay_observed_temporal(
     else {
         return Err(ReplayRefusal::UnknownClause {
             clause: name.clone(),
-            package: package_id,
+            package: package_name,
         });
     };
-    let expected_node = WireNodeId::from_digest(*clause_node.identity().as_bytes());
-    let expected_occurrence = OccurrenceKey::new(expected_node, clause_node.claim().clone());
-    if envelope.clause_node() != expected_node || envelope.occurrence_key() != &expected_occurrence
+    let expected_node = clause_node.identity().clone();
+    let expected_occurrence =
+        OccurrenceKey::new(expected_node.clone(), clause_node.claim().clone());
+    if envelope.clause_node() != &expected_node || envelope.occurrence_key() != &expected_occurrence
     {
         return Err(ReplayRefusal::ObservedTemporalMismatch {
-            member: if envelope.clause_node() != expected_node {
+            member: if envelope.clause_node() != &expected_node {
                 "clause_node"
             } else {
                 "occurrence_key"
@@ -1014,7 +988,7 @@ fn replay_observed_temporal(
         graph.model_selections(),
         &compiled.packages,
         compiled.model_limits,
-        *type_identity,
+        type_identity.clone(),
     )
     .map_err(ReplayRefusal::Admission)?;
     let reference = environments
@@ -1106,14 +1080,7 @@ pub fn replay_with_cancel(
     )?;
     let compiled = recompile(&request, &caller)?;
     let package = compiled.checked.package();
-    let package_id = compiled.emitted.package().package_id();
-    if let ReplaySource::ObservedTemporal(envelope) = request.source() {
-        if !package_id.matches(&envelope.package_id()) {
-            return Err(ReplayRefusal::PackageIdMismatch {
-                requested: envelope.package_id(),
-                recompiled: package_id,
-            });
-        }
+    if let ReplaySource::ObservedTemporal(_) = request.source() {
         return replay_observed_temporal(request, compiled, caller, cancel);
     }
     let function = function.ok_or_else(|| {
@@ -1128,7 +1095,6 @@ pub fn replay_with_cancel(
     let claim = function_claim(&compiled, function, replay_target)?;
     let call = select(&compiled, function, claim.kind())?;
     let joined = arguments(
-        package,
         &call,
         request.source(),
         request.obligation_identity(),
@@ -1391,8 +1357,10 @@ pub(crate) fn request_limits(
 pub(crate) struct Recompiled {
     /// The recompiled in-process package, with the sources it came from.
     pub(crate) checked: spine::CheckedUnit,
-    /// The recompiled package's v2 bytes and `package_id`.
+    /// The recompiled package's v2 bytes.
     pub(crate) emitted: spine::EmittedUnit,
+    /// The package the unit declares, by its source identity.
+    pub(crate) package: LibraryName,
     /// The domain packages the recompile read, by package identity.
     pub(crate) packages: qsl_semantics::model::intake::PackageInput,
     /// The limits the models were normalized under.
@@ -1412,6 +1380,7 @@ impl Recompiled {
 /// both run it, so a compile and a replay's recompile refuse alike.
 pub(crate) fn run_spine(
     unit: &SourceIdentity,
+    package: &LibraryName,
     path: &str,
     bytes: &[u8],
     packages: &qsl_semantics::model::intake::PackageInput,
@@ -1419,9 +1388,12 @@ pub(crate) fn run_spine(
     limits: SpineLimits,
 ) -> Result<Recompiled, ReplayRefusal> {
     run_spine_with_execution_points(
-        unit,
-        path,
-        bytes,
+        SpineUnit {
+            identity: unit,
+            package,
+            path,
+            bytes,
+        },
         packages,
         dependencies,
         &spine::StateClauseExecutionPoints::new(),
@@ -1429,17 +1401,30 @@ pub(crate) fn run_spine(
     )
 }
 
+/// The one source unit a spine run recompiles: its identity, the library name
+/// its nodes are keyed under, its display path and its bytes.
+pub(crate) struct SpineUnit<'a> {
+    pub(crate) identity: &'a SourceIdentity,
+    pub(crate) package: &'a LibraryName,
+    pub(crate) path: &'a str,
+    pub(crate) bytes: &'a [u8],
+}
+
 /// [`run_spine`] with accepted state-clause execution points
 /// (FR-104-AC-15), checked through `spine::check_with_execution_points`.
 pub(crate) fn run_spine_with_execution_points(
-    unit: &SourceIdentity,
-    path: &str,
-    bytes: &[u8],
+    unit: SpineUnit<'_>,
     packages: &qsl_semantics::model::intake::PackageInput,
     dependencies: &DependencyInput,
     execution_points: &spine::StateClauseExecutionPoints,
     limits: SpineLimits,
 ) -> Result<Recompiled, ReplayRefusal> {
+    let SpineUnit {
+        identity: unit,
+        package,
+        path,
+        bytes,
+    } = unit;
     #[cfg(test)]
     SPINE_RUNS.with(|runs| runs.set(runs.get() + 1));
     let cancel = Cancel::new();
@@ -1463,6 +1448,7 @@ pub(crate) fn run_spine_with_execution_points(
         .into_value();
     let checked = spine::check_with_execution_points(
         &parsed,
+        package.as_str().to_owned(),
         execution_points,
         &models,
         dependencies,
@@ -1477,6 +1463,7 @@ pub(crate) fn run_spine_with_execution_points(
     Ok(Recompiled {
         checked,
         emitted,
+        package: package.clone(),
         packages: packages.clone(),
         model_limits: limits.model,
     })
@@ -1552,16 +1539,18 @@ pub(crate) fn recompile(
     let bytes = provided(source)?;
     let packages = domain_packages(request)?;
     // Rule 4: the recompile.
+    let package_name =
+        LibraryName::new(request.package_name()).map_err(ReplayRefusal::InvalidPackageName)?;
     let compiled = run_spine(
         &labels(source),
+        &package_name,
         source.identity(),
         bytes,
         &packages,
         &dependencies,
         limits.spine,
     )?;
-    // Rules 6 and 7: every entry names a selection of the recompiled
-    // closure, then at its recomputed `package_id`, before rule 5.
+    // Rule 6: every entry names a selection of the recompiled closure.
     let selections = compiled.checked.package().dependency_selections();
     for entry in request.dependencies() {
         if !selections.contains_key(entry.identity()) {
@@ -1571,34 +1560,6 @@ pub(crate) fn recompile(
                 },
             ));
         }
-    }
-    for entry in request.dependencies() {
-        let Some(selected) = selections.get(entry.identity()) else {
-            return Err(ReplayRefusal::DependencySelections(
-                DependencySelectionsCause::Unselected {
-                    identity: entry.identity().clone(),
-                },
-            ));
-        };
-        let selected = selected.package_id;
-        if !selected.matches(&entry.package_id()) {
-            return Err(ReplayRefusal::DependencyIdentityMismatch {
-                identity: entry.identity().clone(),
-                requested: entry.package_id(),
-                recompiled: selected,
-            });
-        }
-    }
-    // Rule 5: the proved package's `package_id`. It runs after rules 6 and 7,
-    // so a stale dependency is named by its identity before the proved
-    // package's own mismatch, which the dependency's id also changes.
-    let requested = request.package_id();
-    let recompiled = compiled.emitted.package().package_id();
-    if !recompiled.matches(&requested) {
-        return Err(ReplayRefusal::PackageIdMismatch {
-            requested,
-            recompiled,
-        });
     }
     Ok(compiled)
 }
@@ -1702,7 +1663,7 @@ fn function_claim(
     let key = target
         .occurrence_key()
         .ok_or_else(|| fault("function-request-carries-an-occurrence-key"))?;
-    if *key == declaration_occurrence(wire_id(callable.identity)) {
+    if *key == declaration_occurrence(callable.identity.clone()) {
         return Ok(FunctionClaim::Predicate);
     }
     let graph = compiled.checked.package().graph();
@@ -1719,7 +1680,10 @@ fn function_claim(
         })
         .ok_or_else(refused)?;
     let semantic = graph.semantic_graph();
-    let node = semantic.resolve_wire(key.node()).ok_or_else(refused)?;
+    let node = semantic
+        .node(key.node().clone())
+        .map(|node| node.key().clone())
+        .ok_or_else(refused)?;
     let site = graph
         .occurrence(node, key.origin())
         .cloned()
@@ -1729,12 +1693,13 @@ fn function_claim(
         .iter()
         .map(|root| {
             semantic
-                .resolve_wire(*root)
+                .node(root.clone())
+                .map(|node| node.key().clone())
                 .ok_or_else(|| fault("extent-root-is-a-node"))
         })
         .collect::<Result<_, _>>()?;
     let recursive = semantic
-        .node(callable.identity)
+        .node(callable.identity.clone())
         .is_some_and(|node| node.recursion().is_some());
     Ok(FunctionClaim::Application(ApplicationClaim {
         site,
@@ -1746,7 +1711,7 @@ fn function_claim(
 /// A function node's one `declaration` occurrence (ADR-013 O-07): the node,
 /// role `declaration`, ordinal 0. The one constructor `call_site`, the
 /// predicate claim and the value-parity claim share.
-pub(crate) fn declaration_occurrence(function: WireNodeId) -> OccurrenceKey {
+pub(crate) fn declaration_occurrence(function: NodeKey) -> OccurrenceKey {
     OccurrenceKey::new(function, Origin::new(Role::new("declaration"), 0))
 }
 
@@ -1772,7 +1737,7 @@ pub(crate) fn callable_parameter_keys(
     let parameters = package
         .graph()
         .semantic_graph()
-        .node(callable.identity)
+        .node(callable.identity.clone())
         .and_then(|node| node.function_parameters())
         .ok_or_else(|| InternalFault::new("replay", "callable-identity-is-a-function-node"))?;
     if parameters.len() != callable.parameters.len() {
@@ -1800,20 +1765,20 @@ pub(crate) fn value_parity_preimage(
         .enumerate()
         .map(|(position, parameter)| {
             let semantic_type = graph
-                .node(*parameter)
+                .node(parameter.clone())
                 .and_then(|node| node.semantic_type())
                 .ok_or_else(|| {
                     InternalFault::new("replay", "parameter-node-has-a-semantic-type")
                 })?;
             Ok(ValueParityArgument {
-                parameter: wire_id(*parameter),
+                parameter: parameter.clone(),
                 position,
-                semantic_type: wire_id(semantic_type),
+                semantic_type: semantic_type.clone(),
             })
         })
         .collect::<Result<Vec<_>, InternalFault>>()?;
     Ok(ValueParityPreimage {
-        node: wire_id(function),
+        node: function.clone(),
         arguments,
     })
 }
@@ -1873,7 +1838,7 @@ pub(crate) fn lookup<'a>(
 ) -> Result<(&'a Identifier, qsl_semantics::check::CallableFunction<'a>), ReplayRefusal> {
     let unknown = || ReplayRefusal::UnknownFunction {
         selection: name.clone(),
-        package: compiled.emitted.package().package_id(),
+        package: compiled.package.clone(),
     };
     let [segment] = name.segments() else {
         return Err(unknown());
@@ -1906,13 +1871,13 @@ fn select(
         (Claim::Predicate, false) => {
             return Err(ReplayRefusal::NotAPredicate {
                 selection: name.clone(),
-                package: compiled.emitted.package().package_id(),
+                package: compiled.package.clone(),
             });
         }
         (Claim::ValueParity, true) => {
             return Err(ReplayRefusal::NotAValueFunction {
                 selection: name.clone(),
-                package: compiled.emitted.package().package_id(),
+                package: compiled.package.clone(),
             });
         }
     }
@@ -1925,7 +1890,7 @@ fn select(
     let name = qsl_eval::value::QualifiedName::unqualified(segment.as_str()).map_err(|_| {
         ReplayRefusal::UnknownFunction {
             selection: name.clone(),
-            package: compiled.emitted.package().package_id(),
+            package: compiled.package.clone(),
         }
     })?;
     Ok(Selected {
@@ -1941,7 +1906,6 @@ fn select(
 /// `Witness` source's transcript decoded against one binding per
 /// parameter, each naming the parameter's node id and declared type.
 fn arguments(
-    package: &CheckedPackage,
     call: &Selected,
     source: &ReplaySource,
     obligation: ObligationIdentity,
@@ -1982,17 +1946,18 @@ fn arguments(
                 .take(call.parameters.len())
                 .collect();
             for assignment in assignments {
-                let position = package
-                    .graph()
-                    .semantic_graph()
-                    .resolve_wire(assignment.parameter)
-                    .and_then(|key| call.parameters.iter().position(|&p| p == key))
-                    .ok_or(ReplayRefusal::UnknownParameter(assignment.parameter))?;
+                let position = call
+                    .parameters
+                    .iter()
+                    .position(|parameter| *parameter == assignment.parameter)
+                    .ok_or_else(|| ReplayRefusal::UnknownParameter(assignment.parameter.clone()))?;
                 let slot = values
                     .get_mut(position)
-                    .ok_or(ReplayRefusal::UnknownParameter(assignment.parameter))?;
+                    .ok_or_else(|| ReplayRefusal::UnknownParameter(assignment.parameter.clone()))?;
                 if slot.replace(assignment.value.clone()).is_some() {
-                    return Err(ReplayRefusal::DuplicateArgument(assignment.parameter));
+                    return Err(ReplayRefusal::DuplicateArgument(
+                        assignment.parameter.clone(),
+                    ));
                 }
             }
             values
@@ -2002,7 +1967,7 @@ fn arguments(
                 .map(|(position, (value, parameter))| {
                     value
                         .or_else(|| filled(position))
-                        .ok_or(ReplayRefusal::UnboundParameter(wire_id(*parameter)))
+                        .ok_or_else(|| ReplayRefusal::UnboundParameter(parameter.clone()))
                 })
                 .collect::<Result<Vec<_>, _>>()?
         }
@@ -2014,7 +1979,7 @@ fn arguments(
                 .enumerate()
                 .map(|(position, (parameter, value_type))| {
                     Ok(WitnessBinding {
-                        parameter: wire_id(*parameter),
+                        parameter: parameter.clone(),
                         value_type: witness_type(position, value_type)?,
                     })
                 })
@@ -2023,7 +1988,7 @@ fn arguments(
                 .decode_optional(&bindings, |binding| {
                     call.parameters
                         .iter()
-                        .position(|parameter| wire_id(*parameter) == binding.parameter)
+                        .position(|parameter| parameter.clone() == binding.parameter)
                         .is_some_and(|position| filled(position).is_some())
                 })
                 .map_err(|refusal| ReplayRefusal::Witness {
@@ -2092,12 +2057,6 @@ fn witness_type(
             }))
         }
     }
-}
-
-/// A checked node's wire spelling, for reporting and for the witness's
-/// binding names. Wire ids carry no claim that they resolve.
-fn wire_id(key: NodeKey) -> WireNodeId {
-    WireNodeId::from_digest(*key.as_bytes())
 }
 
 /// The replay's charges: what `meter` consumed of each counter.

@@ -134,39 +134,32 @@
     reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline for typed model-admission failures"
 )]
 
-use quire_canonical::FixedShape;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 
 use crate::model::dispatch::GeneralizationClosure;
 use crate::model::domain_package::{
-    DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, FieldMemberRecord,
-    OperationEffect,
+    DomainPackageRecord, DomainPackageRef, Extent, FieldMemberRecord, OperationEffect,
 };
 use crate::model::index::ModelIndex;
-use crate::model::key::{declaration_key_wire, hex, DeclarationKeyWire, EffectiveId};
+use crate::model::key::EffectiveId;
 use crate::model::normalize::{
     EffectiveView, ModelRefusal, ModelRefusalCause, OfferedSelection, TypeCatalog, ViewPopulation,
 };
 use qsl_foundation::absence::AbsenceMode;
 use qsl_foundation::diagnostic::Code;
 use quire_checked::key::DeclarationKey;
-use quire_semantic_value::catalog::InternalFault;
-use serde::Serialize;
 
 use quire_exact::{
     length_amount, CardinalityBound, Charge as ScalarCharge, ChargePoint as ScalarChargePoint,
     Incomplete as ScalarIncomplete, Integer, LimitKind as ScalarLimitKind, Meter as ScalarMeter,
-    UniverseId, POPULATION_ID_DOMAIN,
+    UniverseId,
 };
 
-/// The kernel's canonical `PopulationId` (ADR-013 O-13 Population row,
-/// QC-21): 32 bytes in domain `quire.population/v1`, minted only through
-/// [`quire_exact::PopulationId::from_digest`] -- this module's own T12-D
-/// call (ADR-011 T-12(d)), the only one the `arch-lint api-surface` check
-/// permits (`tools/arch-lint/api_surface.rs`). Re-exported at this path so
-/// callers reach it as `crate::model::population::PopulationId`, mirroring
-/// [`crate::model::key::EffectiveId`]'s identical re-export of its own
+/// The kernel's structural `PopulationId`: the population declaration's node
+/// identity ([`crate::model::key::population_node_key`]). Re-exported at this
+/// path so callers reach it as `crate::model::population::PopulationId`,
+/// mirroring [`crate::model::key::EffectiveId`]'s re-export of its own
 /// kernel identity type.
 pub use quire_exact::PopulationId;
 
@@ -588,10 +581,8 @@ pub struct PopulationDocument {
 /// realized identity triple, read directly off `r`'s checked value, exactly
 /// as supplied. `r` is supplied by an untrusted producer, so not every
 /// component is necessarily well-formed, and [`lookup`] itself -- never this
-/// type -- decides which: `universe` is compared against `binding`'s own by
-/// raw bytes (a length other than 32 can never equal a real universe, so
-/// [`lookup`]'s own byte comparison already decides it correctly with no
-/// separate malformed case); `object` is raw identity bytes, and [`lookup`]
+/// type -- decides which: `universe` is compared against `binding`'s own
+/// structurally; `object` is raw identity bytes, and [`lookup`]
 /// only treats them as a candidate member identity when they are valid
 /// UTF-8 -- every real population member's own object identity is a JSON
 /// string (`PopulationDocument`'s member records), so bytes that are not
@@ -599,15 +590,13 @@ pub struct PopulationDocument {
 /// its own (no public "this identity is malformed"
 /// constructor) precisely so a caller cannot assert a false classification
 /// for well-formed bytes and force a present member to read as absent, or
-/// the reverse. `type_identity` is always well-formed
-/// (`quire_exact::NodeKey` is a fixed 32-byte digest already, so
-/// there is nothing to bridge).
+/// the reverse. `type_identity` is always well-formed.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LookupKey {
     /// `r`'s own static type `S`.
     pub static_type: DeclarationKey,
     /// `r`'s realized reference's universe, exactly as supplied.
-    pub universe: Vec<u8>,
+    pub universe: UniverseId,
     /// `r`'s realized reference's most-specific type.
     pub type_identity: EffectiveId,
     /// `r`'s realized reference's own declared object identity, exactly as
@@ -694,11 +683,8 @@ pub struct PopulationBinding {
     /// indirection, never chained: the pre binding [`admit_invocation`]
     /// attaches here is itself always admitted with `pre_anchor: None`.
     pre_anchor: Option<Arc<PopulationBinding>>,
-    /// This binding's minted `PopulationId` (FR-089-AC-1, ADR-013 O-13
-    /// Population row, QC-21): a digest over the domain package identity
-    /// this binding was admitted against, the `population_key` declaring
-    /// it, its declared maximum, canonical member set, admission role and
-    /// (for `Post`) pre binding identity -- see [`mint_population_id`]. The evaluator
+    /// This binding's `PopulationId` (FR-089-AC-1): the structural node
+    /// identity of the population declaration `population_key` names. The evaluator
     /// carries this identity alone as `Value::Population`, resolving it
     /// back to this binding through the caller's own recorded
     /// correspondence (`crate::model::object_environment::ObjectEnvironment::resolve_population`).
@@ -754,7 +740,7 @@ impl PopulationBinding {
     /// This binding's minted `PopulationId` (FR-089-AC-1); see the field's
     /// own doc comment.
     pub fn population_id(&self) -> PopulationId {
-        self.population_id
+        self.population_id.clone()
     }
 
     /// Every declared object type of the admitted effective view,
@@ -772,406 +758,14 @@ impl PopulationBinding {
     }
 }
 
-/// FR-089-AC-1's closed three-state admission-role discriminator, part of
-/// every [`PopulationId`]'s preimage: `Direct` for a binding [`admit_binding`]
-/// mints standalone, `Pre`/`Post` for the two bindings [`admit_invocation`]
-/// attaches to one invocation frame. Deliberately not a two-state
-/// `Option<AnchorSide>` (`None`/`Some(Pre)`/`Some(Post)`): a review
-/// found that a standalone `Direct` admission and an invocation's `Post`
-/// binding sharing a domain package and `population_key` would carry an
-/// identical preimage under a two-state discriminator whenever `None` and
-/// one of the `Some` values end up compared the same way (TC-296); naming
-/// all three states directly, with no `Option` wrapper to discard, closes
-/// that collision.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum AdmissionRole {
-    /// A standalone [`admit_binding`] admission.
-    Direct,
-    /// [`admit_invocation`]'s pre-instant binding.
-    Pre,
-    /// [`admit_invocation`]'s post-instant binding.
-    Post(PopulationId),
-}
-
-#[cfg(test)]
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-struct PopulationIdentityWorkObservations {
-    member_encodings: usize,
-    member_sort_comparisons: usize,
-    digest_calls: usize,
-}
-
-#[cfg(test)]
-thread_local! {
-    /// Counts real PopulationId encoding, sorting and digest operations so
-    /// tests can verify NFR-012 rejects before any priced identity work runs.
-    static POPULATION_IDENTITY_WORK: std::cell::Cell<PopulationIdentityWorkObservations> =
-        const { std::cell::Cell::new(PopulationIdentityWorkObservations {
-            member_encodings: 0,
-            member_sort_comparisons: 0,
-            digest_calls: 0,
-        }) };
-}
-
-#[cfg(test)]
-fn reset_population_identity_work_observations() {
-    POPULATION_IDENTITY_WORK.with(|counts| {
-        counts.set(PopulationIdentityWorkObservations::default());
-    });
-}
-
-#[cfg(test)]
-fn population_identity_work_observations() -> PopulationIdentityWorkObservations {
-    POPULATION_IDENTITY_WORK.with(std::cell::Cell::get)
-}
-
-#[cfg(test)]
-fn record_population_identity_member_encoding() {
-    POPULATION_IDENTITY_WORK.with(|counts| {
-        let mut current = counts.get();
-        current.member_encodings = current.member_encodings.saturating_add(1);
-        counts.set(current);
-    });
-}
-
-#[cfg(test)]
-fn record_population_identity_sort_comparison() {
-    POPULATION_IDENTITY_WORK.with(|counts| {
-        let mut current = counts.get();
-        current.member_sort_comparisons = current.member_sort_comparisons.saturating_add(1);
-        counts.set(current);
-    });
-}
-
-#[cfg(test)]
-fn record_population_identity_digest() {
-    POPULATION_IDENTITY_WORK.with(|counts| {
-        let mut current = counts.get();
-        current.digest_calls = current.digest_calls.saturating_add(1);
-        counts.set(current);
-    });
-}
-
-impl AdmissionRole {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Direct => "direct",
-            Self::Pre => "pre",
-            Self::Post(_) => "post",
-        }
-    }
-}
-
-/// [`PopulationId`]'s FR-089 seven-field preimage. Members are ordered by
-/// each member object's own RFC 8785 bytes, independently of reference-key
-/// order; field values are not membership identity.
-fn population_id_preimage<'a>(
-    domain_package: &'a DomainPackage,
-    population_key: &'a DeclarationKey,
-    role: AdmissionRole,
-    declared_maximum: Option<u64>,
-    members: &'a BTreeMap<ReferenceKey, DeclarationKey>,
-    member_encoding_limit: u64,
-) -> Result<PopulationIdWire<'a>, quire_canonical::Error> {
-    let mut encoded_members = Vec::with_capacity(members.len());
-    for (key, declaration) in members {
-        let member = PopulationMemberWire {
-            universe: hex(key.universe.as_bytes()),
-            r#type: PopulationMemberTypeIdentityWire(&key.type_identity),
-            object: &key.object,
-            declaration: declaration_key_wire(declaration),
-        };
-        #[cfg(test)]
-        record_population_identity_member_encoding();
-        let bytes =
-            quire_canonical::to_vec(&member, quire_canonical::Limits::new(member_encoding_limit))?;
-        encoded_members.push((bytes, member));
-    }
-    encoded_members.sort_by(|left, right| {
-        #[cfg(test)]
-        record_population_identity_sort_comparison();
-        left.0.cmp(&right.0)
-    });
-    Ok(PopulationIdWire {
-        version: POPULATION_ID_DOMAIN,
-        // The domain package a binding was admitted against: its
-        // `DomainPackageRef`, which is its identity alone.
-        domain_package_selection: PopulationDomainPackageRefWire {
-            identity: &domain_package.model_selection.identity,
-        },
-        population_key: declaration_key_wire(population_key),
-        admission_role: role.as_str(),
-        declared_maximum: declared_maximum.map(|maximum| maximum.to_string()),
-        members: encoded_members
-            .into_iter()
-            .map(|(_, member)| member)
-            .collect(),
-        pre: match role {
-            AdmissionRole::Direct | AdmissionRole::Pre => None,
-            AdmissionRole::Post(id) => Some(hex(id.as_bytes())),
-        },
-    })
-}
-
-/// [`population_id_preimage`]'s typed form.
-#[derive(Serialize, FixedShape)]
-struct PopulationIdWire<'a> {
-    version: &'static str,
-    domain_package_selection: PopulationDomainPackageRefWire<'a>,
-    population_key: DeclarationKeyWire<'a>,
-    admission_role: &'static str,
-    declared_maximum: Option<String>,
-    members: Vec<PopulationMemberWire<'a>>,
-    pre: Option<String>,
-}
-
-/// One member in FR-089's PopulationId preimage.
-#[derive(Serialize, FixedShape)]
-struct PopulationMemberWire<'a> {
-    universe: String,
-    r#type: PopulationMemberTypeIdentityWire<'a>,
-    object: &'a str,
-    declaration: DeclarationKeyWire<'a>,
-}
-
-/// FR-089's `PopulationId` selection: the domain package's identity.
-#[derive(Serialize, FixedShape)]
-struct PopulationDomainPackageRefWire<'a> {
-    identity: &'a str,
-}
-
-/// A population member's effective type identity encoded as its wire hex
-/// string, keeping the semantic identity typed until serialization.
-struct PopulationMemberTypeIdentityWire<'a>(&'a EffectiveId);
-
-impl PopulationMemberTypeIdentityWire<'_> {
-    #[ix_trace_rs::string_edge]
-    fn wire_value(&self) -> String {
-        hex(self.0.as_bytes())
-    }
-}
-
-impl Serialize for PopulationMemberTypeIdentityWire<'_> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serializer.serialize_str(&self.wire_value())
-    }
-}
-
-impl FixedShape for PopulationMemberTypeIdentityWire<'_> {
-    const DEPTH: usize = 0;
-}
-
-/// Mints the [`PopulationId`] (ADR-013 O-13 Population row, QC-21,
-/// FR-089-AC-1/AC-7) for a binding admitted against `domain_package`/
-/// `population_key` under `role`: this module's only call of the kernel's
-/// `PopulationId::from_digest` (T12-D). The preimage is RFC 8785-encoded by
-/// `quire-canonical` (ADR-013 §2, ADR-013:113: one RFC 8785 implementation).
-fn mint_population_id(
-    domain_package: &DomainPackage,
-    population_key: &DeclarationKey,
-    role: AdmissionRole,
-    declared_maximum: Option<u64>,
-    members: &BTreeMap<ReferenceKey, DeclarationKey>,
-    byte_bound: u64,
-) -> Result<PopulationId, PopulationIdentityFailure> {
-    let preimage = population_id_preimage(
-        domain_package,
-        population_key,
-        role,
-        declared_maximum,
-        members,
-        byte_bound,
-    );
-    let preimage = match preimage {
-        Ok(preimage) => preimage,
-        Err(error) => return Err(population_identity_encoding_failure(error)),
-    };
-    #[cfg(test)]
-    record_population_identity_digest();
-    let digest = quire_canonical::sha256(&preimage, quire_canonical::Limits::new(byte_bound));
-    match digest {
-        Ok(digest) => Ok(PopulationId::from_digest(*digest.as_bytes())),
-        Err(error) => Err(population_identity_encoding_failure(error)),
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-enum PopulationIdentityFailure {
-    Refusal(ModelRefusal),
-    InternalFault {
-        fault: InternalFault,
-        upstream_error: String,
-        encoder_limit: Option<EncoderLimit>,
-    },
-}
-
-/// The canonical encoder's limit record, retained when the derived identity
-/// byte bound is reached (a broken invariant, not a limit).
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct EncoderLimit {
-    /// The encoder limit that was reached.
-    pub kind: quire_canonical::LimitKind,
-    /// The derived byte bound.
-    pub bound: u64,
-    /// The bytes the encoder required.
-    pub required: u64,
-}
-
-fn population_identity_encoding_failure(
-    error: quire_canonical::Error,
-) -> PopulationIdentityFailure {
-    let detail = format!("bounded population identity encoding failed: {error}");
-    let cause = match error {
-        // The byte bound is derived from the members (`population_id_byte_bound`),
-        // not configured, so a correct preimage never reaches it.
-        quire_canonical::Error::Limit(limit) => {
-            return PopulationIdentityFailure::InternalFault {
-                fault: InternalFault::new("population.identity", "identity-byte-bound-reached"),
-                upstream_error: error.to_string(),
-                encoder_limit: Some(EncoderLimit {
-                    kind: limit.kind,
-                    bound: limit.bound,
-                    required: limit.required,
-                }),
-            };
-        }
-        quire_canonical::Error::Allocation { requested } => {
-            ModelRefusalCause::AllocationFailed { requested }
-        }
-        other => {
-            return PopulationIdentityFailure::InternalFault {
-                fault: InternalFault::new("population.identity", "canonical-encoding-failed"),
-                upstream_error: other.to_string(),
-                encoder_limit: None,
-            };
-        }
-    };
-    PopulationIdentityFailure::Refusal(ModelRefusal {
-        code: Code::ResourceExhausted,
-        cause,
-        detail,
-    })
-}
-
-fn population_identity_admission_failure(failure: PopulationIdentityFailure) -> AdmissionOutcome {
-    match failure {
-        PopulationIdentityFailure::Refusal(refusal) => AdmissionOutcome::Refused(refusal),
-        PopulationIdentityFailure::InternalFault {
-            fault,
-            upstream_error,
-            encoder_limit,
-        } => AdmissionOutcome::InternalFault {
-            fault,
-            upstream_error,
-            encoder_limit,
-        },
-    }
-}
-
-fn population_id_work_bound(
-    domain_package: &DomainPackage,
-    population_key: &DeclarationKey,
-    members: &BTreeMap<ReferenceKey, DeclarationKey>,
-) -> u64 {
-    let variable = domain_package
-        .model_selection
-        .identity
-        .len()
-        .saturating_add(population_key.package.len())
-        .saturating_add(population_key.node.len())
-        .saturating_add(members.iter().fold(0_usize, |sum, (key, declaration)| {
-            sum.saturating_add(key.object.len())
-                .saturating_add(declaration.package.len())
-                .saturating_add(declaration.node.len())
-        }));
-    let encoded_member_bytes = members
-        .iter()
-        .map(|(key, declaration)| {
-            key.object
-                .len()
-                .saturating_add(declaration.package.len())
-                .saturating_add(declaration.node.len())
-        })
-        .max()
-        .unwrap_or(0);
-    let member_count = length_amount(members.len());
-    let maximum_encoded_member_bytes = u64::try_from(encoded_member_bytes)
-        .unwrap_or(u64::MAX)
-        .saturating_mul(6)
-        .saturating_add(512);
-    let sorting_work = population_id_sort_work_bound(member_count, maximum_encoded_member_bytes);
-    u64::try_from(variable)
-        .unwrap_or(u64::MAX)
-        .saturating_mul(12)
-        .saturating_add(member_count.saturating_mul(2))
-        .saturating_add(sorting_work)
-}
-
-fn population_id_sort_work_bound(member_count: u64, maximum_encoded_member_bytes: u64) -> u64 {
-    let sort_levels = if member_count <= 1 {
-        0
-    } else {
-        u64::BITS - (member_count - 1).leading_zeros()
-    };
-    // Sorting performs O(n log n) bytewise comparisons. Each comparison may
-    // rescan a full common prefix, so price the worst encoded member length
-    // for every comparison, not merely the total input length. The factor of
-    // four conservatively covers the comparison bound of the slice sort.
-    member_count
-        .saturating_mul(u64::from(sort_levels))
-        .saturating_mul(4)
-        .saturating_mul(maximum_encoded_member_bytes)
-}
-
-/// Conservative RFC 8785 byte ceiling for the preimage and each member
-/// sort-key encoding. Every input byte can expand to at most six escaped
-/// bytes; fixed JSON keys, separators, hex IDs and per-member punctuation fit
-/// the additional per-member allowance.
-fn population_id_byte_bound(
-    domain_package: &DomainPackage,
-    population_key: &DeclarationKey,
-    members: &BTreeMap<ReferenceKey, DeclarationKey>,
-) -> u64 {
-    let variable = domain_package
-        .model_selection
-        .identity
-        .len()
-        .saturating_add(population_key.package.len())
-        .saturating_add(population_key.node.len())
-        .saturating_add(members.iter().fold(0_usize, |sum, (key, declaration)| {
-            sum.saturating_add(key.object.len())
-                .saturating_add(declaration.package.len())
-                .saturating_add(declaration.node.len())
-        }));
-    u64::try_from(variable)
-        .unwrap_or(u64::MAX)
-        .saturating_mul(6)
-        .saturating_add(length_amount(members.len()).saturating_mul(512))
-        .saturating_add(4096)
-}
-
 /// The outcome of one [`admit_binding`] attempt.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AdmissionOutcome {
     /// Every member was charged and admitted.
     Admitted(PopulationBinding),
-    /// A real model defect or canonical identity-work bound refused
+    /// A real model defect refused
     /// admission outright; no binding.
     Refused(ModelRefusal),
-    /// Canonical population identity work failed internally; this is a
-    /// typed fault, never a model refusal or resource-exhaustion result.
-    InternalFault {
-        /// The stable internal-fault classification.
-        fault: InternalFault,
-        /// The canonical encoder's diagnostic text for investigation.
-        upstream_error: String,
-        /// The encoder's limit record, when the fault is the derived
-        /// identity byte bound being reached.
-        encoder_limit: Option<EncoderLimit>,
-    },
     /// Object or subtype closure is not established. Not a refusal
     /// (`Code::IncompletePopulation`); no charge and no binding.
     UnknownClosure(ModelRefusal),
@@ -1225,24 +819,19 @@ pub fn admit_binding(
             declared_maximum,
         },
         document,
-        AdmissionRole::Direct,
         meter,
     )
 }
 
-/// [`admit_binding`]'s own admission logic, parameterized by the
-/// FR-089-AC-1 admission role its caller mints the resulting binding's
-/// [`PopulationId`] under: [`admit_binding`] itself always calls this with
-/// [`AdmissionRole::Direct`], and [`admit_invocation`] calls it directly
-/// (bypassing the public [`admit_binding`]) with [`AdmissionRole::Pre`]/
-/// [`AdmissionRole::Post`] for its own two constituent bindings. Takes
+/// [`admit_binding`]'s own admission logic, which [`admit_invocation`] calls
+/// directly (bypassing the public [`admit_binding`]) for its two constituent
+/// bindings. Takes
 /// [`InvocationContext`] rather than its constituent fields: that type
 /// already exists to bundle exactly this admission surface for
 /// [`admit_invocation`]'s own two calls.
 fn admit_binding_as(
     context: InvocationContext<'_>,
     document: &PopulationDocument,
-    role: AdmissionRole,
     meter: &mut AdmissionMeter,
 ) -> AdmissionOutcome {
     let InvocationContext {
@@ -1320,7 +909,10 @@ fn admit_binding_as(
             ),
         });
     }
-    let universe = universe.identity();
+    let universe = match universe.identity() {
+        Ok(universe) => universe,
+        Err(error) => return AdmissionOutcome::Refused(universe_identity_refusal(&error)),
+    };
 
     // Indexed once, not re-scanned per member: `view.declarations()` and
     // `admitted` would otherwise each be linearly searched per member,
@@ -1407,8 +999,8 @@ fn admit_binding_as(
         }
 
         let key = ReferenceKey {
-            universe,
-            type_identity: *effective_type,
+            universe: universe.clone(),
+            type_identity: effective_type.clone(),
             object: member.object.clone(),
         };
         if let Some(existing) = by_object.get(&key.object) {
@@ -1419,11 +1011,11 @@ fn admit_binding_as(
                 code: Code::InvalidRuntimeInput,
                 cause: ModelRefusalCause::ConflictingIdentity {
                     object: key.object.clone(),
-                    existing_type: existing.type_identity,
-                    declared_type: key.type_identity,
+                    existing_type: existing.type_identity.clone(),
+                    declared_type: key.type_identity.clone(),
                 },
                 detail: format!(
-                    "object {} is declared with conflicting types {} and {}",
+                    "object {} is declared with conflicting types {:?} and {:?}",
                     key.object, existing.type_identity, key.type_identity
                 ),
             });
@@ -1553,27 +1145,13 @@ fn admit_binding_as(
         }
     }
 
-    let identity_byte_bound = population_id_byte_bound(domain_package, population_key, &admitted);
-    let identity_work_bound = population_id_work_bound(domain_package, population_key, &admitted);
-    if let Err(incomplete) = meter
-        .charge(AdmissionCharge::new(AdmissionChargePoint::BindingMember).work(identity_work_bound))
-    {
-        return AdmissionOutcome::Incomplete(incomplete);
-    }
-    let population_id = match mint_population_id(
-        domain_package,
-        population_key,
-        role,
-        declared_maximum,
-        &admitted,
-        identity_byte_bound,
-    ) {
-        Ok(id) => id,
-        Err(failure) => return population_identity_admission_failure(failure),
+    let population_id = match crate::model::key::population_node_key(population_key) {
+        Ok(node) => PopulationId::new(node),
+        Err(error) => return AdmissionOutcome::Refused(node_key_refusal(&error)),
     };
     AdmissionOutcome::Admitted(PopulationBinding {
         population_key: population_key.clone(),
-        universe,
+        universe: universe.clone(),
         members: admitted,
         declared_member_types: population.member_types.iter().cloned().collect(),
         declared_maximum,
@@ -1643,7 +1221,7 @@ pub struct InvocationDelta<'a> {
 /// against `declared.declared_created`/`declared_deleted` (FR-046's
 /// caller-supplied delta).
 ///
-/// Either admission failing (`Refused`/`UnknownClosure`/`Incomplete`/`InternalFault`) is
+/// Either admission failing (`Refused`/`UnknownClosure`/`Incomplete`) is
 /// returned as-is; a frame violation is `Refused` with
 /// `Code::FrameViolation`/cause `unauthorized-change`, and a delta
 /// disagreement (a duplicate or intersecting declared identity, or a
@@ -1747,16 +1325,11 @@ pub fn admit_invocation_bound(
     post_meter: &mut AdmissionMeter,
     frame_meter: &mut AdmissionMeter,
 ) -> AdmissionOutcome {
-    let pre = match admit_binding_as(context, pre_document, AdmissionRole::Pre, pre_meter) {
+    let pre = match admit_binding_as(context, pre_document, pre_meter) {
         AdmissionOutcome::Admitted(binding) => binding,
         other => return other,
     };
-    let post = match admit_binding_as(
-        context,
-        post_document,
-        AdmissionRole::Post(pre.population_id()),
-        post_meter,
-    ) {
+    let post = match admit_binding_as(context, post_document, post_meter) {
         AdmissionOutcome::Admitted(binding) => binding,
         other => return other,
     };
@@ -2465,22 +2038,33 @@ fn charge_result_retain(meter: &mut ScalarMeter, occ: u64) -> Result<(), ScalarI
 }
 
 /// One [`ModelRefusal`]/`Code::ForeignReference` for a reference key naming a
-/// universe other than `binding`'s own. `actual` is the raw universe bytes
-/// exactly as supplied -- not always a well-formed 32-byte identity (see
-/// [`ModelRefusalCause::ForeignUniverse`]'s own doc comment).
-fn foreign_universe(binding: &PopulationBinding, actual: &[u8]) -> ModelRefusal {
+/// universe other than `binding`'s own. `actual` is the universe's root type
+/// node as supplied.
+fn foreign_universe(binding: &PopulationBinding, actual: &UniverseId) -> ModelRefusal {
     ModelRefusal {
         code: Code::ForeignReference,
         cause: ModelRefusalCause::ForeignUniverse {
-            actual: actual.to_vec(),
-            expected: *binding.universe(),
+            actual: actual.root_type().clone(),
+            expected: binding.universe().clone(),
         },
         detail: format!(
             "reference key names universe {}, not the binding's {}",
-            hex(actual),
-            binding.universe()
+            actual.root_type(),
+            binding.universe().root_type()
         ),
     }
+}
+
+/// The refusal for a node identity that cannot be carried structurally.
+fn node_key_refusal(error: &quire_exact::InvalidNodeKey) -> ModelRefusal {
+    crate::model::key::node_key_refusal(error)
+}
+
+/// The refusal for a universe that has no structural identity.
+fn universe_identity_refusal(
+    error: &crate::model::normalize::UniverseIdentityError,
+) -> ModelRefusal {
+    crate::model::key::universe_identity_refusal(error)
 }
 
 /// `lookup<T>(p, r) absent m`: `r`'s presence in `binding`, per `mode`, in
@@ -2527,7 +2111,7 @@ pub fn lookup(
         return LookupOutcome::Incomplete(incomplete);
     }
 
-    if r.universe.as_slice() != binding.universe().as_bytes().as_slice() {
+    if &r.universe != binding.universe() {
         return LookupOutcome::Refused(foreign_universe(binding, &r.universe));
     }
 
@@ -2537,8 +2121,8 @@ pub fn lookup(
     let present = match std::str::from_utf8(&r.object) {
         Ok(object) => {
             let key = ReferenceKey {
-                universe: *binding.universe(),
-                type_identity: r.type_identity,
+                universe: binding.universe().clone(),
+                type_identity: r.type_identity.clone(),
                 object: object.to_owned(),
             };
             binding.members().contains_key(&key).then_some(key)
@@ -2561,7 +2145,7 @@ pub fn lookup(
     match mode {
         AbsenceMode::Undefined => LookupOutcome::Undefined,
         AbsenceMode::Refused => LookupOutcome::Refused(ModelRefusal::absent_key(
-            binding.population_id().to_string(),
+            binding.population_id().node().to_string(),
             r.object.clone(),
         )),
         AbsenceMode::Empty => {
@@ -2579,7 +2163,7 @@ mod tests {
 
     use super::*;
     use crate::model::accounting::ModelNormalizationLimits;
-    use crate::model::domain_package::{ObjectTypeRecord, PopulationRecord};
+    use crate::model::domain_package::{DomainPackage, ObjectTypeRecord, PopulationRecord};
     use crate::model::normalize::{build_calls, normalize, NormalizeOutcome};
 
     /// A production `AdmissionMeter` and `AdmissionCharge`
@@ -2620,169 +2204,6 @@ mod tests {
                 ancestor_steps: 16_777_216,
             }
         );
-    }
-
-    /// Sorting canonical member encodings prices repeated-prefix comparisons,
-    /// not only the bytes emitted once by each member.
-    #[trace("TC-434", "NFR-012")]
-    #[test]
-    fn population_identity_sort_work_bound_covers_repeated_prefixes() {
-        let short_keys = population_id_sort_work_bound(32, 512);
-        let long_repeated_prefix_keys = population_id_sort_work_bound(32, 6 * 4096 + 512);
-        let twice_as_many_keys = population_id_sort_work_bound(64, 512);
-
-        assert_eq!(short_keys, 32 * 5 * 4 * 512);
-        assert!(long_repeated_prefix_keys > short_keys * 8);
-        assert!(twice_as_many_keys > short_keys);
-    }
-
-    /// A denied identity-work charge leaves the actual canonical encoder,
-    /// member comparator and digest untouched; an admitted control proves
-    /// the observation points cover the real producer path.
-    #[trace("TC-434", "NFR-012")]
-    #[test]
-    fn population_identity_encoding_is_charged_before_hashing() {
-        let package = domain_package();
-        let view = match normalize(&package, ModelNormalizationLimits::UNLIMITED) {
-            NormalizeOutcome::Completed(view) => view,
-            other => panic!("expected a completed view, got {other:?}"),
-        };
-        let population_key = DeclarationKey::fixture("model.pop");
-        let mut population = document();
-        population.members[0].object = "x".repeat(4096);
-
-        reset_population_identity_work_observations();
-        let denied = admit_binding(
-            &view,
-            &population,
-            &population_key,
-            GeneralizationClosure::Closed,
-            Some(3),
-            &mut AdmissionMeter::new(PopulationAdmissionLimits {
-                work_units: 128,
-                ..PopulationAdmissionLimits::UNLIMITED
-            }),
-        );
-        assert!(matches!(
-            denied,
-            AdmissionOutcome::Incomplete(AdmissionIncomplete {
-                limit_kind: AdmissionLimitKind::WorkUnits,
-                limit: 128,
-                consumed: 2,
-                charge_point: AdmissionChargePoint::BindingMember,
-                next_charge,
-            }) if next_charge > 126
-        ));
-        assert_eq!(
-            population_identity_work_observations(),
-            PopulationIdentityWorkObservations::default(),
-            "a denied charge must precede member encoding, sorting and hashing"
-        );
-
-        reset_population_identity_work_observations();
-        let admitted = admit_binding(
-            &view,
-            &population,
-            &population_key,
-            GeneralizationClosure::Closed,
-            Some(3),
-            &mut AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED),
-        );
-        assert!(matches!(admitted, AdmissionOutcome::Admitted(_)));
-        let observations = population_identity_work_observations();
-        assert_eq!(observations.member_encodings, population.members.len());
-        assert!(observations.member_sort_comparisons > 0);
-        assert_eq!(observations.digest_calls, 1);
-    }
-
-    /// FND-008 and QSL-745: the identity preimage's byte bound is derived from
-    /// the members, not configured (no setting, limits field or contract), so
-    /// reaching it is a broken invariant, `runtime_invariant`/
-    /// `established-invariant-broken`, never a limit. The fault retains the
-    /// canonical encoder's kind, bound and required-byte count.
-    #[trace("TC-434", "NFR-012")]
-    #[test]
-    fn population_identity_digest_limit_is_a_broken_invariant_retaining_encoder_details() {
-        let members = BTreeMap::new();
-        let failure = mint_population_id(
-            &domain_package(),
-            &DeclarationKey::fixture("model.pop"),
-            AdmissionRole::Direct,
-            None,
-            &members,
-            0,
-        )
-        .expect_err("the nonempty identity preimage exceeds a zero-byte digest bound");
-
-        let AdmissionOutcome::InternalFault {
-            fault,
-            encoder_limit: Some(limit),
-            ..
-        } = population_identity_admission_failure(failure)
-        else {
-            panic!("the derived byte bound is an internal fault, not a refusal");
-        };
-        assert_eq!(fault.catalog_code().code(), "runtime_invariant");
-        assert_eq!(fault.catalog_code().cause(), "established-invariant-broken");
-        assert_eq!(fault.stage(), "population.identity");
-        assert_eq!(fault.invariant(), "identity-byte-bound-reached");
-        assert_eq!(limit.kind, quire_canonical::LimitKind::CanonicalBytes);
-        assert_eq!(limit.bound, 0);
-        assert!(limit.required > 0);
-    }
-
-    /// A reservation failure keeps its actual requested size.
-    #[trace("TC-434", "NFR-012")]
-    #[test]
-    fn population_identity_allocation_refusal_preserves_requested_size() {
-        let failure = population_identity_encoding_failure(quire_canonical::Error::Allocation {
-            requested: 4096,
-        });
-        let AdmissionOutcome::Refused(refusal) = population_identity_admission_failure(failure)
-        else {
-            panic!("allocation failure must remain a refusal");
-        };
-
-        assert_eq!(refusal.code, Code::ResourceExhausted);
-        assert_eq!(
-            refusal.cause,
-            ModelRefusalCause::AllocationFailed { requested: 4096 }
-        );
-        assert!(refusal.detail.contains("allocation of 4096 bytes"));
-    }
-
-    /// The mandatory non-exhaustive fallback is a typed internal fault, not
-    /// a refusal or an exhausted-resource result.
-    #[trace("TC-434", "NFR-012")]
-    #[test]
-    fn population_identity_unexpected_encoder_refusal_is_internal_failure() {
-        let outcome = population_identity_admission_failure(population_identity_encoding_failure(
-            quire_canonical::Error::Serialize("unexpected serializer error".to_owned()),
-        ));
-
-        let AdmissionOutcome::InternalFault {
-            fault,
-            upstream_error,
-            encoder_limit,
-        } = outcome
-        else {
-            panic!("unexpected canonical error must be an internal fault");
-        };
-        assert_eq!(fault.catalog_code().code(), "runtime_invariant");
-        assert_eq!(fault.catalog_code().cause(), "established-invariant-broken");
-        assert_eq!(
-            fault.category(),
-            quire_semantic_value::catalog::Category::InternalFailure
-        );
-        assert_eq!(
-            qsl_foundation::diagnostic::catalog_category(fault.catalog_code().code()),
-            Some(quire_semantic_value::catalog::Category::InternalFailure)
-        );
-        assert_ne!(fault.catalog_code().code(), "resource_exhausted");
-        assert_eq!(Code::RuntimeInvariant.category(), fault.category());
-        assert_ne!(Code::RuntimeInvariant, Code::ResourceExhausted);
-        assert_eq!(upstream_error, "unexpected serializer error");
-        assert_eq!(encoder_limit, None);
     }
 
     fn object_type(identity: &str, supertypes: &[&str]) -> DomainPackageRecord {
@@ -2882,7 +2303,9 @@ mod tests {
         assert_eq!(build_calls(), before_binding, "admit_binding never builds");
         assert_eq!(
             *binding.universe(),
-            view.object_universe().identity(),
+            view.object_universe()
+                .identity()
+                .expect("a populated universe"),
             "the binding's universe is the view's own"
         );
 

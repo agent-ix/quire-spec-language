@@ -212,7 +212,7 @@ pub(super) fn end_name(end: EndSide) -> &'static str {
 /// when the model declares no object type of it.
 fn type_name(types: &TypeEnvironment, id: quire_exact::EffectiveId) -> String {
     types
-        .object_type(id)
+        .object_type(id.clone())
         .map_or_else(|| format!("{id:?}"), |declared| declared.name().to_owned())
 }
 
@@ -444,7 +444,7 @@ impl super::AdmittedObservations {
         .ok_or_else(|| fault("bundle-observation-missing"))?;
         let key = BundleKey {
             source: source.clone(),
-            clause: self.clause,
+            clause: self.clause.clone(),
             documents: [&self.current, &self.pre, &self.post]
                 .into_iter()
                 .flatten()

@@ -25,7 +25,7 @@ use crate::timed_world::{
     document, ident, symmetric_document, world, world_armed, World, DENSE, PACKAGE,
 };
 use crate::zone_liveness::decide;
-use crate::zone_replay::{package_id, replay, reproduced};
+use crate::zone_replay::{replay, reproduced};
 use crate::zone_search::{
     check, claim_with, deadlock, deadlock_result, deadlock_with, delays, operations, proved,
     time_lock_item_with, violated, INFINITE,
@@ -118,17 +118,17 @@ fn stored(outcome: &ZoneCheckOutcome<&'static str>) -> u64 {
 }
 
 /// The receiver key of each step of `counterexample`, read from the
-/// receiver reference's hex-encoded identity.
+/// receiver reference's identity.
 fn receivers(counterexample: &qsl_replay::TemporalCounterexample) -> Vec<&'static str> {
     counterexample
         .prefix
         .iter()
         .map(|step| {
             let receiver = step.transition.receiver().expect("a receiver");
-            [("t1", "7431"), ("t2", "7432"), ("t3", "7433")]
+            ["t1", "t2", "t3"]
                 .into_iter()
-                .find(|(_, hex)| receiver.contains(&format!("\"identity\":\"{hex}\"")))
-                .map_or("?", |(key, _)| key)
+                .find(|key| receiver.contains(&format!("\"identity\":\"{key}\"")))
+                .unwrap_or("?")
         })
         .collect()
 }
@@ -159,7 +159,6 @@ fn symmetry_permutes_each_timer_with_its_clock() {
     assert_eq!(groups, stabiliser);
     let record = settle_zone_check(
         ZoneItem::Outcome(&reduced),
-        &package_id(),
         &Cancel::new(),
         |_| panic!("a reduced proof has no certificate"),
         |_| panic!("a proof has no counterexample"),
@@ -323,7 +322,6 @@ fn partial_order_reduction_and_a_constraint_are_not_applied() {
     let outcome = deadlock_with(&world, &por);
     let record = settle_zone_check(
         ZoneItem::Outcome(&outcome),
-        &package_id(),
         &Cancel::new(),
         |_| panic!("no certificate"),
         |_| panic!("no counterexample"),
@@ -459,7 +457,6 @@ fn symmetry_admission_is_judged_before_the_search() {
     assert_eq!(stats.symbolic_states, 0);
     let record = settle_zone_check(
         ZoneItem::Outcome(&outcome),
-        &package_id(),
         &Cancel::new(),
         |_| panic!("no certificate"),
         |_| panic!("no counterexample"),

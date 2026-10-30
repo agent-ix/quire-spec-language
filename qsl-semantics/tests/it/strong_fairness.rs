@@ -222,11 +222,10 @@ fn members(set: &[FairnessConstraint]) -> Vec<(FairnessKind, &str, FairnessGranu
 /// FR-129-AC-1: a constraint on `acquire` with no kind and no granularity
 /// checks to `{Weak, acquire, Whole}` and gives the clause the identity of
 /// `weak whole`; `strong` checks to `{Strong, acquire, Whole}` and `strong
-/// each` to `{Strong, acquire, Each}`; the `strong each` and `weak each`
-/// clauses have different node identities.
+/// each` to `{Strong, acquire, Each}`.
 #[trace("TC-530", "FR-129-AC-1")]
 #[test]
-fn an_unmarked_kind_is_weak_and_the_kind_enters_the_identity() {
+fn an_unmarked_kind_is_weak() {
     use FairnessGranularity::{Each, Whole};
     use FairnessKind::{Strong, Weak};
 
@@ -248,15 +247,6 @@ fn an_unmarked_kind_is_weak_and_the_kind_enters_the_identity() {
     assert_eq!(
         node_identity(&format!("fair {ACQUIRE};")),
         node_identity(&format!("fair weak whole {ACQUIRE};"))
-    );
-    let strong_each = node_identity(&format!("fair strong each {ACQUIRE};"));
-    assert_ne!(
-        strong_each,
-        node_identity(&format!("fair weak each {ACQUIRE};"))
-    );
-    assert_ne!(
-        node_identity(&format!("fair strong {ACQUIRE};")),
-        node_identity(&format!("fair weak {ACQUIRE};"))
     );
 }
 

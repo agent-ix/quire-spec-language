@@ -8,8 +8,8 @@
 use ix_trace_rs::trace;
 use qsl_foundation::{Code, Source, SourceIdentity, Span};
 use qsl_source::{
-    extract, semantic_core_version, Cause, Limits, PreflightFailure, Selection, SemanticContext,
-    CONTRACT_VERSION, MAX_LINES, MAX_SOURCE_BYTES,
+    extract, Cause, Limits, PreflightFailure, Selection, SemanticContext, CONTRACT_VERSION,
+    MAX_LINES, MAX_SOURCE_BYTES,
 };
 use quire_rs::semantic::{extract_clauses, read_semantic_block, BundleIndex};
 use serde_json::json;
@@ -33,7 +33,7 @@ fn source(text: &str) -> Source {
 fn context() -> SemanticContext {
     // Use Quire's real module validator, not an invented semantic context decoder.
     let module = read_semantic_block(
-        &json!({"contract_version":CONTRACT_VERSION,"semantic_core":semantic_core_version(),"package":PACKAGE,"exports":["entity"],"targets":["markdown"]}),
+        &json!({"contract_version":CONTRACT_VERSION,"package":PACKAGE,"exports":["entity"],"targets":["markdown"]}),
         &["entity".to_owned()],
     ).unwrap();
     SemanticContext::new(module, "rules.md", BundleIndex::default())
@@ -70,6 +70,7 @@ fn document(expression: &str, crlf: bool) -> Source {
 fn stale_foreign_unavailable_and_inconsistent_source_selections_refuse() {
     let original = document("true", false);
     let ctx = context();
+
     for text in [
         original
             .text()
@@ -241,7 +242,6 @@ fn each_foreign_context_refuses_with_its_own_typed_preflight_cause() {
         Path,
         Package,
         Contract,
-        Semantic,
     }
     let original = document("true", false);
     for change in [
@@ -249,7 +249,6 @@ fn each_foreign_context_refuses_with_its_own_typed_preflight_cause() {
         Foreign::Path,
         Foreign::Package,
         Foreign::Contract,
-        Foreign::Semantic,
     ] {
         let mut foreign = context();
         let expected = match change {
@@ -281,13 +280,6 @@ fn each_foreign_context_refuses_with_its_own_typed_preflight_cause() {
                     expected: CONTRACT_VERSION,
                 }
             }
-            Foreign::Semantic => {
-                foreign.module.semantic_core = "future".into();
-                PreflightFailure::SemanticCore {
-                    actual: "future".into(),
-                    expected: semantic_core_version(),
-                }
-            }
         };
         let error =
             extract(original.clone(), &foreign, selection(), Limits::default()).unwrap_err();
@@ -297,6 +289,6 @@ fn each_foreign_context_refuses_with_its_own_typed_preflight_cause() {
         assert_eq!(**actual, expected, "{change:?}");
         assert_eq!(error.code(), expected.code());
         assert!(error.extraction().is_none());
-        assert_eq!(error.original().text(), original.text());
+        assert_eq!(error.original().digest(), original.digest());
     }
 }

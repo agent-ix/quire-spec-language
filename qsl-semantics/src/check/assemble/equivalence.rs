@@ -3,8 +3,7 @@
 //! QSpec FR-142 "Dimension equivalence"): each `dimension A ~ B by x U =
 //! y V;` is decided by FR-142's steps 1 to 7, the first match winning, base
 //! pairs (steps 1 to 5, then step 7) before every other pair (steps 1 to
-//! 6), and the admitted ones are keyed over their
-//! `quire.dimension-equivalence-node/v1` preimages. [`EquivalenceClasses`]
+//! 6), and the admitted ones have structural node keys. [`EquivalenceClasses`]
 //! derives the classes and each member's root ratio to its class root, which
 //! the checker converts time quantities through (FR-230).
 
@@ -13,12 +12,12 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use qsl_forms::{DimensionEquivalenceForm, NameForm, RatioNumberForm, RatioNumberKind};
 use qsl_foundation::diagnostic::LimitExceeded;
 use qsl_foundation::{Setting, Span};
-use quire_exact::{Integer, NodeKey, Rational};
+use quire_exact::{Integer, NodeKey, PathSegment, Rational};
 
 use super::units::{Assembled, Provisional};
 use super::{AssemblyCause, AssemblyError, AssemblyLimits};
 use crate::check::lowering::AdmittedModel;
-use crate::check::node_key::{nominal_key, SourceOwner};
+use crate::check::node_key::{NodeTag, SourceOwner};
 use crate::check::time_units::package_unit_scale;
 use crate::value::unit::DimensionEquivalencePreimage;
 use quire_checked::key::DeclarationKey;
@@ -85,11 +84,9 @@ impl std::fmt::Display for EquivalenceRetained {
 /// One admitted dimension equivalence.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DimensionEquivalence {
-    /// The node key over its preimage.
+    /// The structural node key.
     pub key: NodeKey,
-    /// The preimage's RFC 8785 bytes.
-    pub preimage: Vec<u8>,
-    /// The two related dimension nodes, in ascending digest order.
+    /// The two related dimension nodes, in ascending structural key order.
     pub dimensions: [NodeKey; 2],
     /// One canonical root of `dimensions[0]` in canonical roots of
     /// `dimensions[1]`.
@@ -112,7 +109,7 @@ impl EquivalenceClasses {
         let pairs: Vec<_> = equivalences
             .iter()
             .map(|equivalence| {
-                let [first, second] = equivalence.dimensions;
+                let [first, second] = equivalence.dimensions.clone();
                 (first, second, equivalence.root_scale.clone())
             })
             .collect();
@@ -138,11 +135,14 @@ fn sizes(pairs: &[(NodeKey, NodeKey, Rational)]) -> BTreeMap<NodeKey, (NodeKey, 
     let mut adjacent: BTreeMap<NodeKey, Vec<(NodeKey, Rational)>> = BTreeMap::new();
     for (first, second, ratio) in pairs {
         adjacent
-            .entry(*first)
+            .entry(first.clone())
             .or_default()
-            .push((*second, ratio.clone()));
+            .push((second.clone(), ratio.clone()));
         if let Some(inverse) = Rational::from_integer(Integer::one()).div(ratio) {
-            adjacent.entry(*second).or_default().push((*first, inverse));
+            adjacent
+                .entry(second.clone())
+                .or_default()
+                .push((first.clone(), inverse));
         }
     }
     let mut members = BTreeMap::new();
@@ -151,8 +151,11 @@ fn sizes(pairs: &[(NodeKey, NodeKey, Rational)]) -> BTreeMap<NodeKey, (NodeKey, 
         if members.contains_key(root) {
             continue;
         }
-        members.insert(*root, (*root, Rational::from_integer(Integer::one())));
-        let mut pending = VecDeque::from([*root]);
+        members.insert(
+            root.clone(),
+            (root.clone(), Rational::from_integer(Integer::one())),
+        );
+        let mut pending = VecDeque::from([root.clone()]);
         while let Some(node) = pending.pop_front() {
             let Some((_, size)) = members.get(&node).cloned() else {
                 continue;
@@ -164,8 +167,8 @@ fn sizes(pairs: &[(NodeKey, NodeKey, Rational)]) -> BTreeMap<NodeKey, (NodeKey, 
                 // root(node) = ratio × root(next), so root(next) is
                 // size / ratio class roots.
                 if let Some(next_size) = size.div(ratio) {
-                    members.insert(*next, (*root, next_size));
-                    pending.push_back(*next);
+                    members.insert(next.clone(), (root.clone(), next_size));
+                    pending.push_back(next.clone());
                 }
             }
         }
@@ -197,7 +200,7 @@ impl Dimension {
     fn retained(&self) -> EquivalenceRetained {
         EquivalenceRetained::Dimension {
             name: self.label.clone(),
-            key: self.key,
+            key: self.key.clone(),
         }
     }
 }
@@ -234,8 +237,8 @@ impl SourceView<'_> {
                     return Some(Dimension {
                         id,
                         label: name.to_owned(),
-                        key: Some(*key),
-                        map: Some(BTreeMap::from([(*key, Integer::one())])),
+                        key: Some(key.clone()),
+                        map: Some(BTreeMap::from([(key.clone(), Integer::one())])),
                         base: true,
                     });
                 }
@@ -253,7 +256,7 @@ impl SourceView<'_> {
                 Some(Dimension {
                     id,
                     label: name.to_owned(),
-                    key: Some(*key),
+                    key: Some(key.clone()),
                     map: Some(map.clone()),
                     base,
                 })
@@ -295,7 +298,6 @@ impl SourceView<'_> {
 struct Scope<'a> {
     source: SourceView<'a>,
     models: &'a [AdmittedModel],
-    identity: qsl_foundation::IdentityLimits,
 }
 
 impl Scope<'_> {
@@ -312,8 +314,7 @@ impl Scope<'_> {
         };
         let model = self.model(alias)?;
         let dimension = model.dimensions.iter().find(|d| d.name == rest)?;
-        let (key, map, _) =
-            super::units::package_dimension(model, dimension, self.identity, &mut Vec::new())?;
+        let (key, map, _) = super::units::package_dimension(model, dimension, &mut Vec::new())?;
         Some(Dimension {
             id: DimensionRef::Package(dimension.key.clone()),
             label: name.name.clone(),
@@ -364,7 +365,10 @@ impl Resolved<'_> {
     /// The two dimensions' keys, both fixed for a base pair and after the
     /// last turn.
     fn keys(&self) -> Option<[NodeKey; 2]> {
-        Some([self.dimensions[0].key?, self.dimensions[1].key?])
+        Some([
+            self.dimensions[0].key.clone()?,
+            self.dimensions[1].key.clone()?,
+        ])
     }
 }
 
@@ -437,14 +441,11 @@ pub(super) fn assemble(
     source: SourceView<'_>,
     models: &[AdmittedModel],
     owner: &SourceOwner,
+    package_name: &str,
     limits: AssemblyLimits,
     phase: Phase,
 ) -> Result<Vec<DimensionEquivalence>, Vec<AssemblyError>> {
-    let scope = Scope {
-        source,
-        models,
-        identity: limits.identity,
-    };
+    let scope = Scope { source, models };
     let mut errors = Vec::new();
     // Steps 1 and 2, in source order.
     let mut base = Vec::new();
@@ -573,7 +574,7 @@ pub(super) fn assemble(
         let mut map: BTreeMap<NodeKey, Integer> = BTreeMap::new();
         let mut size = Rational::from_integer(Integer::one());
         for (base, exponent) in dimension.map.as_ref()? {
-            let (representative, ratio) = class_of(*base);
+            let (representative, ratio) = class_of(base.clone());
             let entry = map.entry(representative).or_insert_with(Integer::zero);
             *entry = entry.add(exponent);
             size = size.mul(&ratio.pow(exponent)?);
@@ -620,7 +621,7 @@ pub(super) fn assemble(
 
     // Keys, in source order.
     kept.sort_by_key(|(resolved, _)| resolved.form.span.start);
-    let node_owner = owner.node_owner();
+    let node_owner = owner.node_owner(package_name);
     let mut equivalences = Vec::with_capacity(kept.len());
     for (resolved, ratio) in kept {
         let fault = |cause| vec![error(cause, resolved.form.span)];
@@ -636,14 +637,17 @@ pub(super) fn assemble(
         let [first, second] = resolved.keys().ok_or_else(non_canonical)?;
         let preimage = DimensionEquivalencePreimage::new(node_owner.clone(), first, second, &ratio)
             .ok_or_else(non_canonical)?;
-        let key = nominal_key(&preimage, limits.identity)
-            .map_err(|refusal| fault(AssemblyCause::nominal(refusal)))?;
-        let bytes = preimage
-            .preimage_bytes(limits.identity)
-            .map_err(|refusal| fault(AssemblyCause::nominal(refusal)))?;
+        let [first, second] = preimage.dimensions();
+        let key = crate::check::derived_node_key(
+            package_name,
+            NodeTag::ScalarType,
+            "dimension_equivalence",
+            vec![PathSegment::Node(first), PathSegment::Node(second)],
+            0,
+        )
+        .map_err(|refusal| fault(AssemblyCause::nominal(super::nominal_key_refusal(refusal))))?;
         equivalences.push(DimensionEquivalence {
             key,
-            preimage: bytes,
             dimensions: preimage.dimensions(),
             root_scale: preimage.root_scale().clone(),
             span: resolved.form.span,
@@ -764,7 +768,7 @@ fn path(
 ) -> Option<(Rational, Vec<usize>)> {
     let one = Rational::from_integer(Integer::one());
     let mut reached: BTreeMap<NodeKey, (Rational, Vec<usize>)> =
-        BTreeMap::from([(from, (one, Vec::new()))]);
+        BTreeMap::from([(from.clone(), (one, Vec::new()))]);
     let mut pending = VecDeque::from([from]);
     while let Some(node) = pending.pop_front() {
         let Some((size, via)) = reached.get(&node).cloned() else {
@@ -790,7 +794,7 @@ fn path(
             }
             let mut next_via = via.clone();
             next_via.push(index);
-            reached.insert(next, (next_size, next_via));
+            reached.insert(next.clone(), (next_size, next_via));
             pending.push_back(next);
         }
     }

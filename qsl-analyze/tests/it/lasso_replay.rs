@@ -18,16 +18,14 @@ use qsl_eval::simulation::model::{ExpansionLimits, ModelSystem};
 use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::source::provenance::OccurrenceKey;
-use qsl_foundation::SourceIdentity;
 use qsl_replay::{
-    compile_package, replay_model_trace, settle_model_check, CertificateRequest, DependencyInput,
-    DigestDomain, DigestRecord, DisagreementCause, InconclusiveCause, ModelCheckItem,
-    ModelCheckLimits, ModelCheckOutcome, ModelTraceRefusal, ModelTraceReplayResult,
-    ModelTraceSettlement, ModelTraceSubject, ModelTraceValue, ReplayLimits, ReplayRefusal,
-    ResultLabel, TemporalCounterexample, TerminalValue, UndefinedEvaluation, UndefinedLocus,
-    WireNodeId,
+    replay_model_trace, settle_model_check, CertificateRequest, DigestDomain, DigestRecord,
+    DisagreementCause, InconclusiveCause, ModelCheckItem, ModelCheckLimits, ModelCheckOutcome,
+    ModelTraceRefusal, ModelTraceReplayResult, ModelTraceSettlement, ModelTraceSubject,
+    ModelTraceValue, ReplayLimits, ReplayRefusal, ResultLabel, TemporalCounterexample,
+    TerminalValue, UndefinedEvaluation, UndefinedLocus,
 };
-use quire_exact::Cancel;
+use quire_exact::{Cancel, NodeKey};
 
 use crate::counter::{
     document, document_with_ranged_parameter, package_from_text, subject, unit_text, universe,
@@ -46,26 +44,11 @@ fn below_two(value: i64) -> Option<bool> {
     Some(value < 2)
 }
 
-/// A fixture's compiled `package_id`, as the replay request recompiles it.
-pub(crate) fn package_id(fixture: &Fixture) -> DigestRecord {
-    compile_package(
-        SourceIdentity::new("agent-ix", "counter", "git", "1"),
-        "counter.native",
-        &fixture.unit,
-        [fixture.documents.document.as_slice()],
-        &DependencyInput::default(),
-        qsl_replay::StageLimits::default(),
-        ReplayLimits::default(),
-    )
-    .expect("the unit compiles")
-    .package_id()
-}
-
 /// The identities of the fixture's one clause, as an envelope carries them.
-pub(crate) fn clause_identity(fixture: &Fixture) -> (WireNodeId, OccurrenceKey) {
+pub(crate) fn clause_identity(fixture: &Fixture) -> (NodeKey, OccurrenceKey) {
     let node = &fixture.package.graph().temporal_clauses()[0];
-    let id = WireNodeId::from_digest(*node.identity().as_bytes());
-    (id, OccurrenceKey::new(id, node.claim().clone()))
+    let id = node.identity().clone();
+    (id.clone(), OccurrenceKey::new(id, node.claim().clone()))
 }
 
 pub(crate) fn subject_of(fixture: &Fixture) -> ModelTraceSubject {
@@ -86,17 +69,15 @@ pub(crate) fn replay_with(
     payload: TemporalCounterexample,
     atom: fn(i64) -> Option<bool>,
 ) -> Result<ModelTraceReplayResult, ReplayRefusal> {
-    let id = package_id(fixture);
     let (node, occurrence) = clause_identity(fixture);
     replay_model_trace(
         request(
             &fixture.documents.document,
             fixture.documents.snapshot_bytes(),
             &fixture.unit,
-            id,
         ),
         &subject_of(fixture),
-        &envelope_at(id, payload, node, occurrence),
+        &envelope_at(payload, node, occurrence),
         &Letters { atom },
         ReplayLimits::default(),
     )
@@ -251,15 +232,13 @@ fn a_guarded_on_each_prefix_replays_through_production_letters() {
         other => panic!("the activation guard refutes the clause: {other:?}"),
     };
     assert_eq!(payload.prefix.len(), 3);
-    let package_id = package_id(&fixture);
     let (node_id, occurrence) = clause_identity(&fixture);
     let wire = request(
         &fixture.documents.document,
         fixture.documents.snapshot_bytes(),
         &fixture.unit,
-        package_id,
     );
-    let envelope = envelope_at(package_id, payload, node_id, occurrence);
+    let envelope = envelope_at(payload, node_id, occurrence);
     let result = replay_model_trace(
         wire,
         &subject_of(&fixture),
@@ -418,7 +397,6 @@ fn an_unfair_lasso_refuses_naming_the_constraint() {
 fn a_counterexample_names_its_clause_by_node_and_occurrence() {
     let fixture = counter(document_with_ranged_parameter(), "", FORMULA);
     let payload = found(&fixture, is_three);
-    let id = package_id(&fixture);
     let (node, occurrence) = clause_identity(&fixture);
     let replay_at = |node, occurrence| {
         replay_model_trace(
@@ -426,19 +404,18 @@ fn a_counterexample_names_its_clause_by_node_and_occurrence() {
                 &fixture.documents.document,
                 fixture.documents.snapshot_bytes(),
                 &fixture.unit,
-                id,
             ),
             &subject_of(&fixture),
-            &envelope_at(id, payload.clone(), node, occurrence),
+            &envelope_at(payload.clone(), node, occurrence),
             &Letters { atom: is_three },
             ReplayLimits::default(),
         )
     };
-    assert!(replay_at(node, occurrence.clone()).is_ok());
+    assert!(replay_at(node.clone(), occurrence.clone()).is_ok());
 
-    let other = WireNodeId::from_digest([7; 32]);
-    let other_key = OccurrenceKey::new(other, occurrence.origin().clone());
-    let (cause, code, tag) = refusal(replay_at(other, other_key));
+    let other = crate::fixture_ids::node_key([7]);
+    let other_key = OccurrenceKey::new(other.clone(), occurrence.origin().clone());
+    let (cause, code, tag) = refusal(replay_at(other.clone(), other_key));
     assert_eq!(
         cause,
         ModelTraceRefusal::UnknownTemporalClause { clause_node: other }
@@ -446,7 +423,7 @@ fn a_counterexample_names_its_clause_by_node_and_occurrence() {
     assert_eq!((code, tag), (Code::StaleDependency, "content-mismatch"));
 
     let moved = OccurrenceKey::new(
-        node,
+        node.clone(),
         quire_exact::Origin::new(quire_exact::Role::new("claim"), 9),
     );
     let (cause, ..) = refusal(replay_at(node, moved));
@@ -464,13 +441,11 @@ fn a_counterexample_names_its_clause_by_node_and_occurrence() {
 fn a_liveness_violation_settles_refuted_through_replay() {
     let fixture = counter(document_with_ranged_parameter(), "", FORMULA);
     let outcome = fixture.decide(is_three).expect("checked");
-    let id = package_id(&fixture);
     let (node, occurrence) = clause_identity(&fixture);
     let letters = Letters { atom: is_three };
     let record = settle_model_check(
         &outcome,
         &ModelCheckLimits::default(),
-        &id,
         &CertificateRequest {
             subject: subject(
                 &fixture.package,
@@ -492,10 +467,9 @@ fn a_liveness_violation_settles_refuted_through_replay() {
                     &fixture.documents.document,
                     fixture.documents.snapshot_bytes(),
                     &fixture.unit,
-                    id,
                 ),
                 &subject_of(&fixture),
-                &envelope_at(id, counterexample.clone(), node, occurrence.clone()),
+                &envelope_at(counterexample.clone(), node.clone(), occurrence.clone()),
                 &letters,
                 ReplayLimits::default(),
             )
@@ -508,7 +482,6 @@ fn a_liveness_violation_settles_refuted_through_replay() {
     let stale = settle_model_check(
         &outcome,
         &ModelCheckLimits::default(),
-        &id,
         &CertificateRequest {
             subject: subject(
                 &fixture.package,
@@ -532,10 +505,9 @@ fn a_liveness_violation_settles_refuted_through_replay() {
                     &fixture.documents.document,
                     fixture.documents.snapshot_bytes(),
                     &fixture.unit,
-                    id,
                 ),
                 &subject_of(&fixture),
-                &envelope_at(id, open, node, occurrence.clone()),
+                &envelope_at(open, node.clone(), occurrence.clone()),
                 &letters,
                 ReplayLimits::default(),
             )
@@ -908,17 +880,15 @@ fn a_clause_with_a_capture_replays_through_the_production_letters() {
     let ModelCheckOutcome::Violated { counterexample, .. } = outcome else {
         panic!("expected a violation, got {outcome:?}");
     };
-    let id = package_id(&fixture);
     let (clause_node, occurrence) = clause_identity(&fixture);
     let result = replay_model_trace(
         request(
             &fixture.documents.document,
             fixture.documents.snapshot_bytes(),
             &fixture.unit,
-            id,
         ),
         &subject_of(&fixture),
-        &envelope_at(id, *counterexample, clause_node, occurrence),
+        &envelope_at(*counterexample, clause_node, occurrence),
         &letters,
         ReplayLimits::default(),
     )

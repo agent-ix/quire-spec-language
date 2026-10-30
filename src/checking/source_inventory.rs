@@ -26,7 +26,7 @@ use quire_contract_model::source_obligation::{
     SourceObligationSite, SourcePendingObligationId, SourcePendingObligationKind,
     SourceRequirementOccurrenceId, SourceTypeExhaustion, SourceTypeWorkDimension, SourceUnitHandle,
 };
-use quire_contract_model::SourceIdentity;
+use quire_contract_model::{CheckedNodeId, SourceIdentity};
 
 use super::composed::work::Dimension;
 use super::composed::{Exhaustion, Obligation, ObligationKind, Site, TypeDisposition, TypeReport};
@@ -116,6 +116,22 @@ fn stop_reason(types: &TypeReport<'_, '_>) -> Option<SourceInventoryIncompleteRe
         )
 }
 
+/// The wire identity of the checked node `key` names, through the structural
+/// node wire form.
+fn checked_node_id(
+    key: &quire_exact::NodeKey,
+) -> Result<CheckedNodeId, SourceInventoryIncompleteReason> {
+    let failed = |cause: String| SourceInventoryIncompleteReason::RequestFailed {
+        owner: SourceInventoryOwner::Qsl,
+        cause: cause.into(),
+    };
+    let value =
+        qsl_foundation::node_wire::node_key_to_json(key).map_err(|e| failed(e.to_string()))?;
+    let text = serde_json::to_string(&value).map_err(|e| failed(e.to_string()));
+    qsl_foundation::node_wire::discard_node_json(value);
+    serde_json::from_str(&text?).map_err(|e| failed(e.to_string()))
+}
+
 /// One checked unit: the selected source reference and formal identity, with
 /// its checked graph and type report borrowed together. Built through
 /// [`Self::new`].
@@ -159,25 +175,33 @@ impl<'g, 'r, 'a> CheckedUnit<'g, 'r, 'a> {
 /// the graph, then every retained pending obligation of the type report.
 struct Traversal<'u> {
     unit: &'u CheckedUnit<'u, 'u, 'u>,
-    rows: Box<dyn Iterator<Item = SourceInventoryIdentity> + 'u>,
+    rows: Box<
+        dyn Iterator<Item = Result<SourceInventoryIdentity, SourceInventoryIncompleteReason>> + 'u,
+    >,
     observed: usize,
 }
 
 impl<'u> Traversal<'u> {
     fn new(unit: &'u CheckedUnit<'u, 'u, 'u>) -> Self {
         let requirements = unit.graph.requirements().keys().map(|key| {
-            SourceInventoryIdentity::RequirementRecord(SourceRequirementOccurrenceId {
-                node: *key.node().as_bytes(),
-                role: key.origin().role().as_str().into(),
-                ordinal: key.origin().ordinal(),
-            })
+            Ok(SourceInventoryIdentity::RequirementRecord(
+                SourceRequirementOccurrenceId {
+                    node: checked_node_id(key.node())?,
+                    role: key.origin().role().as_str().into(),
+                    ordinal: key.origin().ordinal(),
+                },
+            ))
         });
         let obligations = unit
             .types
             .declarations()
             .iter()
             .flat_map(|typed| typed.obligations())
-            .map(|obligation| SourceInventoryIdentity::PendingObligation(pending(obligation)));
+            .map(|obligation| {
+                Ok(SourceInventoryIdentity::PendingObligation(pending(
+                    obligation,
+                )))
+            });
         Self {
             unit,
             rows: Box::new(requirements.chain(obligations)),
@@ -202,7 +226,7 @@ impl SourceInventoryEnumerator for Traversal<'_> {
     /// The end of the rows is the normal end only when QSL's type work neither
     /// exhausted its budget nor left a declaration unfinished.
     fn next_row(&mut self) -> Result<Option<SourceInventoryRow>, SourceInventoryIncompleteReason> {
-        match self.rows.next() {
+        match self.rows.next().transpose()? {
             Some(identity) => {
                 self.observed += 1;
                 Ok(Some(SourceInventoryRow::new(

@@ -40,6 +40,7 @@ fn members(function: &str) -> Vec<(OccurrenceKey, usize)> {
     };
     let result = run_with_requirements(
         SourceIdentity::new("a", "u", "git", "1"),
+        "fixture".to_owned(),
         "unit.native",
         K.as_bytes(),
         &BTreeMap::new(),
@@ -75,7 +76,7 @@ fn check(text: &str, packages: &qsl_semantics::model::intake::PackageInput) -> C
         qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
     )
     .expect("the model is admitted");
-    PackageDeclarations::assemble(raw, unit, models, Vec::new())
+    PackageDeclarations::assemble(raw, "fixture".to_string(), unit, models, Vec::new())
         .expect("the unit assembles")
         .check(CheckingLimits::default())
         .expect("the unit checks")

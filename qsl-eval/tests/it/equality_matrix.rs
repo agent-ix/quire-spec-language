@@ -58,7 +58,6 @@ use quire_semantic_value::loss::{LocatedLoss, ValueLoss};
 use quire_semantic_value::object_closure::ObjectClosure;
 use quire_semantic_value::quantity::UnitTable;
 use serde_json::json;
-use sha2::{Digest, Sha256};
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
     integer_bits: u64::MAX,
@@ -88,57 +87,32 @@ const ZERO: ScalarLimits = ScalarLimits {
 
 // ---- fixtures --------------------------------------------------------------
 
-/// Independent RFC 8785 JCS for the string/Boolean-only preimages.
-fn jcs(value: &serde_json::Value) -> String {
-    use serde_json::Value as Json;
-    match value {
-        Json::Null | Json::Bool(_) | Json::String(_) => value.to_string(),
-        Json::Number(_) => panic!("preimages carry no JSON numbers"),
-        Json::Array(items) => format!("[{}]", items.iter().map(jcs).collect::<Vec<_>>().join(",")),
-        Json::Object(members) => {
-            let mut entries: Vec<_> = members.iter().collect();
-            entries.sort_by(|(a, _), (b, _)| a.encode_utf16().cmp(b.encode_utf16()));
-            let body: Vec<_> = entries
-                .into_iter()
-                .map(|(key, item)| format!("{}:{}", Json::String(key.clone()), jcs(item)))
-                .collect();
-            format!("{{{}}}", body.join(","))
-        }
-    }
-}
-
-fn hex(bytes: &[u8]) -> NodeKey {
-    NodeKey::from_digest(Sha256::digest(bytes).into())
-}
-
-fn fixture_key(preimage: &serde_json::Value) -> NodeKey {
-    hex(jcs(preimage).as_bytes())
-}
-
 /// An opaque producer-assigned declaration key.
 fn key(label: &str) -> NodeKey {
-    hex(label.as_bytes())
+    crate::support::ids::node_key(label.as_bytes())
 }
 
 /// A model object type's effective-declaration identity (ADR-013 O-05): the
 /// identity `Reference<T>` and `ObjectTypeDeclaration` carry.
 fn object_type(label: &str) -> EffectiveId {
-    EffectiveId::from_digest(Sha256::digest(label.as_bytes()).into())
+    crate::support::ids::effective_id(label.as_bytes())
 }
 
 fn owners() -> OwnerSelection {
-    OwnerSelection::new([NodeOwner::Definition(OwnerSubject {
-        authority: "agent-ix".into(),
-        identity: "example-model".into(),
-    })])
+    OwnerSelection::new([NodeOwner::Definition(OwnerSubject::new(
+        "agent-ix",
+        "example-model",
+        "fixture",
+    ))])
 }
 
 fn owner_json() -> serde_json::Value {
-    json!({"kind": "definition", "authority": "agent-ix", "identity": "example-model"})
+    json!({"kind": "definition", "authority": "agent-ix", "identity": "example-model",
+        "package_name": "fixture"})
 }
 
 fn node_id(key: NodeKey) -> serde_json::Value {
-    json!({"domain": "quire.checked-semantic-node/v1", "digest": key.to_string()})
+    qsl_foundation::node_wire::node_key_to_json(&key).expect("a fixture node key encodes")
 }
 
 /// Three declared units by their kernel ids, and the table that resolves
@@ -170,32 +144,43 @@ fn units() -> Units {
             "offset": {"numerator": "0", "denominator": "1"},
         })
     };
+    let dimension_key = |preimage: &serde_json::Value| {
+        DimensionPreimage::from_json(preimage.clone())
+            .unwrap()
+            .key()
+            .unwrap()
+    };
+    let unit_key = |preimage: &serde_json::Value| {
+        UnitPreimage::from_json(preimage.clone())
+            .unwrap()
+            .key()
+            .unwrap()
+    };
     let length = dimension("Length");
     let time = dimension("Time");
-    let (length_key, time_key) = (fixture_key(&length), fixture_key(&time));
-    let m = unit("metre", length_key, None, "1");
-    let m_key = fixture_key(&m);
+    let (length_key, time_key) = (dimension_key(&length), dimension_key(&time));
+    let m = unit("metre", length_key.clone(), None, "1");
+    let m_key = unit_key(&m);
     let s = unit("second", time_key, None, "1");
     let cm = unit("centimetre", length_key, Some(m_key), "100");
-    let keys = [fixture_key(&m), fixture_key(&cm), fixture_key(&s)];
+    let keys = [unit_key(&m), unit_key(&cm), unit_key(&s)];
     let graph = admit_unit_graph(
         [length, time].into_iter().map(|preimage| {
-            let key = fixture_key(&preimage);
+            let key = dimension_key(&preimage);
             (DimensionPreimage::from_json(preimage).unwrap(), key)
         }),
         [m, cm, s].into_iter().map(|preimage| {
-            let key = fixture_key(&preimage);
+            let key = unit_key(&preimage);
             (UnitPreimage::from_json(preimage).unwrap(), key)
         }),
         &owners(),
-        qsl_foundation::IdentityLimits::default(),
     )
     .unwrap();
-    let declared = |key| graph.declared_unit_id(key).unwrap();
+    let declared = |key: NodeKey| graph.declared_unit_id(key).unwrap();
     Units {
-        m: declared(keys[0]),
-        cm: declared(keys[1]),
-        s: declared(keys[2]),
+        m: declared(keys[0].clone()),
+        cm: declared(keys[1].clone()),
+        s: declared(keys[2].clone()),
         table: UnitTable::declared(&graph),
     }
 }
@@ -208,14 +193,9 @@ fn enum_declaration(name: &str) -> AdmittedEnumDeclaration {
         "ordered": false,
         "members": ["DONE", "READY"],
     });
-    let key = fixture_key(&preimage);
-    AdmittedEnumDeclaration::admit(
-        EnumDeclarationPreimage::from_json(preimage).unwrap(),
-        key,
-        &owners(),
-        qsl_foundation::IdentityLimits::default(),
-    )
-    .unwrap()
+    let parsed = EnumDeclarationPreimage::from_json(preimage).unwrap();
+    let key = parsed.key().unwrap();
+    AdmittedEnumDeclaration::admit(parsed, key, &owners()).unwrap()
 }
 
 fn enum_value(
@@ -227,14 +207,9 @@ fn enum_value(
         "declaration_node_id": node_id(declaration.key()),
         "case": case,
     });
-    let key = fixture_key(&preimage);
-    declaration
-        .admit_member(
-            &EnumMemberPreimage::from_json(preimage).unwrap(),
-            key,
-            qsl_foundation::IdentityLimits::default(),
-        )
-        .unwrap()
+    let parsed = EnumMemberPreimage::from_json(preimage).unwrap();
+    let key = parsed.key().unwrap();
+    declaration.admit_member(&parsed, key).unwrap()
 }
 
 /// ADR-013 O-14/OQ-D: a bare kernel `Value::Enum` (`VariantId` and rank),
@@ -296,6 +271,7 @@ fn real_public_enum_comparator_fault_retains_its_nested_ill_typed_cause() {
             )],
             ..PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
             )
         };
@@ -686,9 +662,9 @@ fn e05_quantities_after_explicit_canonical_unit_conversion() {
     let env = TypeEnvironment::default().with_units(units.table.clone());
     let whole = |value: i64| Rational::from_integer(integer(value));
     let (metres, centimetres, seconds) = (
-        ValueType::Quantity(units.m),
-        ValueType::Quantity(units.cm),
-        ValueType::Quantity(units.s),
+        ValueType::Quantity(units.m.clone()),
+        ValueType::Quantity(units.cm.clone()),
+        ValueType::Quantity(units.s.clone()),
     );
     let source = Quantity::new(whole(100), units.cm);
     let snapshot = source.clone();
@@ -1101,7 +1077,7 @@ fn object_environment() -> TypeEnvironment {
 }
 
 fn universe_id(tag: &str) -> UniverseId {
-    UniverseId::from_digest(Sha256::digest(tag.as_bytes()).into())
+    crate::support::ids::universe_id(tag.as_bytes())
 }
 
 fn reference(universe: &str, identity: &str) -> ObjectReference {
@@ -1659,7 +1635,7 @@ fn e24_quantity_leaf_charges_only_its_pair() {
             "Length",
             CompositeShape::Record(vec![FieldDeclaration::new(
                 "d",
-                ValueType::Quantity(units.cm),
+                ValueType::Quantity(units.cm.clone()),
                 Presence::Required,
             )]),
         )],
@@ -1668,7 +1644,7 @@ fn e24_quantity_leaf_charges_only_its_pair() {
     .unwrap();
     let length = ValueType::Composite(key("Length"));
     let record = || {
-        let d = Quantity::new(Rational::from_integer(integer(1)), units.cm);
+        let d = Quantity::new(Rational::from_integer(integer(1)), units.cm.clone());
         env.record(
             key("Length"),
             vec![("d", FieldValue::Present(Value::Quantity(d)))],
@@ -1684,7 +1660,7 @@ fn e24_quantity_leaf_charges_only_its_pair() {
     };
     let mut meter = Meter::new(limits);
     assert_eq!(
-        checked.evaluate(&env, &record(), &record(), &mut meter),
+        checked.evaluate(&env, &record().clone(), &record().clone(), &mut meter),
         Outcome::Completed(true)
     );
     assert_eq!(
@@ -1715,7 +1691,7 @@ fn e24_quantity_leaf_charges_only_its_pair() {
             ..limits
         });
         assert_eq!(
-            checked.evaluate(&env, &record(), &record(), &mut short),
+            checked.evaluate(&env, &record().clone(), &record(), &mut short),
             expected
         );
     }
@@ -2077,6 +2053,7 @@ fn expression_package(types: TypeEnvironment, ieee: bool) -> CheckedPackage {
         ieee_profile: ieee.then(|| profile().clone()),
         ..PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
         )
     }
@@ -2368,20 +2345,20 @@ fn x04_quantities_order_and_add_only_in_one_unit() {
         false,
     );
     let whole = |value: i64| Rational::from_integer(integer(value));
-    let metres = ValueType::Quantity(units.m);
-    let metre = |value| Value::Quantity(Quantity::new(whole(value), units.m));
+    let metres = ValueType::Quantity(units.m.clone());
+    let metre = |value| Value::Quantity(Quantity::new(whole(value), units.m.clone()));
     let parameters = [
         ("x", metres.clone()),
         ("y", metres.clone()),
-        ("c", ValueType::Quantity(units.cm)),
-        ("s", ValueType::Quantity(units.s)),
+        ("c", ValueType::Quantity(units.cm.clone())),
+        ("s", ValueType::Quantity(units.s.clone())),
     ];
     let arguments = || {
         vec![
             metre(1),
             metre(2),
-            Value::Quantity(Quantity::new(whole(1), units.cm)),
-            Value::Quantity(Quantity::new(whole(1), units.s)),
+            Value::Quantity(Quantity::new(whole(1), units.cm.clone())),
+            Value::Quantity(Quantity::new(whole(1), units.s.clone())),
         ]
     };
     let (ordered, _) = run_in(
@@ -2441,15 +2418,15 @@ fn x04_compound_results_feed_further_quantity_operations() {
     );
     let whole = |value: i64| Rational::from_integer(integer(value));
     let parameters = [
-        ("x", ValueType::Quantity(units.m)),
-        ("y", ValueType::Quantity(units.m)),
-        ("t", ValueType::Quantity(units.s)),
+        ("x", ValueType::Quantity(units.m.clone())),
+        ("y", ValueType::Quantity(units.m.clone())),
+        ("t", ValueType::Quantity(units.s.clone())),
     ];
     let arguments = || {
         vec![
-            Value::Quantity(Quantity::new(whole(2), units.m)),
-            Value::Quantity(Quantity::new(whole(3), units.m)),
-            Value::Quantity(Quantity::new(whole(4), units.s)),
+            Value::Quantity(Quantity::new(whole(2), units.m.clone())),
+            Value::Quantity(Quantity::new(whole(3), units.m.clone())),
+            Value::Quantity(Quantity::new(whole(4), units.s.clone())),
         ]
     };
     let binary = |operator, left, right| Expression::binary(operator, left, right);
@@ -2469,7 +2446,7 @@ fn x04_compound_results_feed_further_quantity_operations() {
     assert_eq!(quotient.magnitude(), &whole(2));
     // `m*s/s` is the compound unit `m^1`, never the declared unit `m`.
     assert_eq!(quotient.unit().domain(), UnitDomain::Compound);
-    assert_ne!(quotient.unit(), units.m);
+    assert_ne!(quotient.unit(), &units.m);
 
     // Ordering and FR-149 equality over two compound operands: checking
     // resolves the formed unit, and the checked equality evaluates with it.
@@ -2504,7 +2481,7 @@ fn x04_an_unresolved_unit_past_admission_is_an_internal_fault() {
         TypeEnvironment::default().with_units(units.table.clone()),
         false,
     );
-    let parameters = [("x", ValueType::Quantity(units.m))];
+    let parameters = [("x", ValueType::Quantity(units.m.clone()))];
     let one_metre = Value::Quantity(Quantity::new(Rational::from_integer(integer(1)), units.m));
     for operator in [BinaryOperator::Add, BinaryOperator::Less] {
         let checked = check_in(
@@ -2699,6 +2676,7 @@ fn e20_source_order_row_evaluates_fields_in_declaration_order() {
         )],
         ..PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
         )
     }

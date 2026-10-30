@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-030: distinguish input ceilings, profile skew and foreign Quire context.
 
-use super::{semantic_core_version, Limits, Selection, SemanticContext, Source, CONTRACT_VERSION};
+use super::{Limits, Selection, SemanticContext, Source, CONTRACT_VERSION};
 use qsl_foundation::Code;
 
 /// Failure before invoking Quire, with a typed discriminator and actual context.
@@ -28,14 +28,6 @@ pub enum PreflightFailure {
     /// The context selects a different Quire contract version.
     #[error("Quire contract version {actual} differs from {expected}")]
     ContractVersion {
-        /// Context-supplied version.
-        actual: String,
-        /// Consumer-selected version.
-        expected: &'static str,
-    },
-    /// The context selects a different semantic-core version.
-    #[error("Quire semantic core {actual} differs from {expected}")]
-    SemanticCore {
         /// Context-supplied version.
         actual: String,
         /// Consumer-selected version.
@@ -72,7 +64,7 @@ impl PreflightFailure {
     pub fn code(&self) -> Code {
         match self {
             Self::SourceBytes { .. } | Self::SourceLines { .. } => Code::ResourceExhausted,
-            Self::ContractVersion { .. } | Self::SemanticCore { .. } => Code::UnknownProfile,
+            Self::ContractVersion { .. } => Code::UnknownProfile,
             Self::SourceIdentity { .. } | Self::SourcePath { .. } | Self::Package { .. } => {
                 Code::InvalidModelBinding
             }
@@ -103,12 +95,6 @@ pub(super) fn check(
         return Err(Box::new(PreflightFailure::ContractVersion {
             actual: context.module.contract_version.clone(),
             expected: CONTRACT_VERSION,
-        }));
-    }
-    if context.module.semantic_core != semantic_core_version() {
-        return Err(Box::new(PreflightFailure::SemanticCore {
-            actual: context.module.semantic_core.clone(),
-            expected: semantic_core_version(),
         }));
     }
     if context.source_identity.as_deref() != Some(original.identity().identity.as_str()) {

@@ -2,9 +2,8 @@
 //! FR-020: closed representation adapters; admitted models still come from callers.
 
 use qsl_foundation::serde_object::from_object;
-use qsl_foundation::ByteDigest;
 use quire_contract_model as ir;
-use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{de, Deserialize, Deserializer, Serialize};
 use std::fmt;
 
 // These record orders match the producer contract. Serializing a decoded claim
@@ -36,14 +35,11 @@ record!(Semantics {
     model_profile: String,
     checking_contract: String,
 });
-// BLOCKED-BY PLAT-1205 (owner: planner titan:QSL:plan): Source::digest, the schema `source.digest`
-// member and this record's `digest`.
 record!(Source {
     authority: Text,
     identity: Text,
     revision_namespace: Text,
     revision: Text,
-    digest: Digest,
     formal: Formal
 });
 record!(Model {
@@ -265,22 +261,6 @@ impl TryFrom<String> for Text {
             return Err("package label cannot be empty");
         }
         Ok(Self(value))
-    }
-}
-
-#[derive(Debug)]
-pub(super) struct Digest(pub ByteDigest);
-impl<'de> Deserialize<'de> for Digest {
-    fn deserialize<D: Deserializer<'de>>(decoder: D) -> Result<Self, D::Error> {
-        String::deserialize(decoder)?
-            .parse()
-            .map(Self)
-            .map_err(de::Error::custom)
-    }
-}
-impl Serialize for Digest {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_str(&self.0)
     }
 }
 

@@ -47,7 +47,6 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_foundation::bound::{DomainKey, DomainKind};
 use qsl_foundation::diagnostic::LimitExceeded;
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::Setting;
 use quire_exact::{NodeKey, ValueType};
 use quire_semantic_value::catalog::InternalFault;
@@ -337,7 +336,7 @@ struct Position<'t> {
 /// reaches itself is one `Recursive` domain at the position where the
 /// recursion starts, and the walk does not descend into it again.
 pub fn classify_extent(
-    roots: &[(WireNodeId, &ValueType)],
+    roots: &[(NodeKey, &ValueType)],
     types: &TypeEnvironment,
     position_limit: u64,
 ) -> Result<ClaimExtent, ClassifyFailure> {
@@ -350,7 +349,13 @@ pub fn classify_extent(
                 "domain-root-classified",
             )));
         };
-        domains.insert(DomainKey::Node { node: *node, path }, kind);
+        domains.insert(
+            DomainKey::Node {
+                node: node.clone(),
+                path,
+            },
+            kind,
+        );
     }
     Ok(ClaimExtent::from_domains(domains))
 }
@@ -418,7 +423,7 @@ pub fn classify_domains(
                     domains.insert((position.root, entered.clone()), DomainKind::Recursive);
                     continue;
                 }
-                let Some(composite) = types.composite(*declaration) else {
+                let Some(composite) = types.composite(declaration.clone()) else {
                     return Err(ClassifyFailure::Fault(InternalFault::new(
                         STAGE,
                         "checked-composite-type-not-in-environment",
@@ -436,7 +441,7 @@ pub fn classify_domains(
                 };
                 // Pushed last-first so the stack visits them in order.
                 for (index, member) in members.into_iter().enumerate().rev() {
-                    pending.push(child(&position, index, member, Some(*declaration))?);
+                    pending.push(child(&position, index, member, Some(declaration.clone()))?);
                 }
             }
             ValueType::Boolean
@@ -494,8 +499,13 @@ mod tests {
 
     const LIMIT: u64 = 1_000;
 
-    fn node(fill: u8) -> WireNodeId {
-        WireNodeId::from_digest([fill; 32])
+    fn node(fill: u8) -> NodeKey {
+        NodeKey::new(
+            "test",
+            vec![quire_exact::PathSegment::Text(fill.to_string())],
+            0,
+        )
+        .expect("a test node key")
     }
 
     fn int_0_9() -> ValueType {
@@ -511,11 +521,11 @@ mod tests {
     }
 
     fn point_key() -> NodeKey {
-        NodeKey::from_digest([1; 32])
+        node(1)
     }
 
     fn tree_key() -> NodeKey {
-        NodeKey::from_digest([2; 32])
+        node(2)
     }
 
     /// `record Point { x: Int[0, 9]; y: Integer; }` and the recursive
@@ -686,7 +696,7 @@ mod tests {
     #[trace("TC-437", "FR-097-AC-2")]
     #[test]
     fn tc_437_a_composite_outside_the_environment_is_a_fault() {
-        let missing = ValueType::Composite(NodeKey::from_digest([9; 32]));
+        let missing = ValueType::Composite(node(9));
         let Err(ClassifyFailure::Fault(fault)) =
             classify_extent(&[(node(7), &missing)], &types(), LIMIT)
         else {
@@ -758,7 +768,7 @@ mod tests {
     /// A claim declaration: its source region and its argument types.
     struct ClaimForm {
         region: qsl_foundation::source::provenance::SourceRegion,
-        arguments: Vec<(WireNodeId, ValueType)>,
+        arguments: Vec<(NodeKey, ValueType)>,
     }
 
     impl crate::family::FamilyContract for ValidityClaim {
@@ -772,10 +782,10 @@ mod tests {
             form: &Self::Form,
             cx: &mut crate::family::CheckContext<'a, TypeEnvironment>,
         ) -> crate::family::CheckOutcome<CheckedClaim, InternalFault> {
-            let roots: Vec<(WireNodeId, &ValueType)> = form
+            let roots: Vec<(NodeKey, &ValueType)> = form
                 .arguments
                 .iter()
-                .map(|(node, value_type)| (*node, value_type))
+                .map(|(node, value_type)| (node.clone(), value_type))
                 .collect();
             let extent = classify_extent(&roots, cx.declarations(), cx.limits().node_count)
                 .map_err(|failure| match failure {
@@ -808,14 +818,14 @@ mod tests {
         qsl_foundation::source::provenance::SourceRegion::new(source, 0, 5).unwrap()
     }
 
-    fn check_claim(form: &[(WireNodeId, ValueType)]) -> CheckedClaim {
+    fn check_claim(form: &[(NodeKey, ValueType)]) -> CheckedClaim {
         try_check_claim(form, LIMIT)
             .expect("the claim checks")
             .into_value()
     }
 
     fn try_check_claim(
-        form: &[(WireNodeId, ValueType)],
+        form: &[(NodeKey, ValueType)],
         node_count: u64,
     ) -> crate::family::CheckOutcome<CheckedClaim, InternalFault> {
         use crate::family::{
@@ -909,8 +919,7 @@ mod tests {
     #[trace("TC-437", "FR-097-AC-2")]
     #[test]
     fn tc_437_a_quantity_is_an_unboundable_domain() {
-        let metre =
-            ValueType::Quantity(quire_exact::UnitId::declared(NodeKey::from_digest([5; 32])));
+        let metre = ValueType::Quantity(quire_exact::UnitId::declared(node(5)));
         let extent = extent(&metre);
         assert_eq!(extent, unbounded(&[(vec![], DomainKind::Quantity)]));
         let ClaimExtent::Unbounded(domains) = extent else {
@@ -924,7 +933,7 @@ mod tests {
     #[trace("TC-437", "FR-097-AC-2")]
     #[test]
     fn tc_437_a_bounded_quantity_is_a_quantity_domain() {
-        let metre = quire_exact::UnitId::declared(NodeKey::from_digest([5; 32]));
+        let metre = quire_exact::UnitId::declared(node(5));
         let bounded = ValueType::BoundedQuantity(std::sync::Arc::new(
             quire_exact::BoundedQuantityType::new(metre, None, None).expect("in the unit"),
         ));
@@ -943,8 +952,7 @@ mod tests {
         let map =
             |values| ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(values, None)));
         assert_eq!(extent(&map(int_0_9())), ClaimExtent::Bounded);
-        let metre =
-            ValueType::Quantity(quire_exact::UnitId::declared(NodeKey::from_digest([5; 32])));
+        let metre = ValueType::Quantity(quire_exact::UnitId::declared(node(5)));
         assert_eq!(
             extent(&map(metre)),
             unbounded(&[(vec![0], DomainKind::Quantity)])

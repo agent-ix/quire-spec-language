@@ -26,7 +26,7 @@ use quire_exact::{
 use quire_exact::{CollectionType, FieldValue, OptionValue, RationalDomain, Value, ValueType};
 use quire_exact::{
     Decimal, DecimalType, IeeeValue, IeeeWidth, IllTypedCause, ObjectId, ObjectReference, Presence,
-    Rational, RoundingMode, UniverseId,
+    Rational, RoundingMode,
 };
 use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 use quire_semantic_value::declaration::{
@@ -35,8 +35,6 @@ use quire_semantic_value::declaration::{
 use quire_semantic_value::location::{Location, Origin};
 use quire_semantic_value::loss::{LocatedLoss, ValueLoss};
 use quire_semantic_value::object_closure::ObjectClosure;
-
-use sha2::{Digest, Sha256};
 
 /// FR-090: `CheckedPackage::call`/`evaluate` return `Evaluation { outcome:
 /// FamilyOutcome, .. }` (FR-090-OQ-3, ruled option A); every fixture in this
@@ -70,13 +68,13 @@ fn work_limit(work_units: u64) -> ScalarLimits {
 }
 
 fn key(label: &str) -> NodeKey {
-    NodeKey::from_digest(Sha256::digest(label.as_bytes()).into())
+    crate::support::ids::node_key(label.as_bytes())
 }
 
 /// A model object type's effective-declaration identity (ADR-013 O-05): the
 /// identity `Reference<T>` and `ObjectTypeDeclaration` carry.
 fn object_type(label: &str) -> EffectiveId {
-    EffectiveId::from_digest(Sha256::digest(label.as_bytes()).into())
+    crate::support::ids::effective_id(label.as_bytes())
 }
 
 fn integer(value: i64) -> Integer {
@@ -194,6 +192,7 @@ fn declarations(
         functions,
         ..PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
         )
     }
@@ -538,6 +537,7 @@ fn p05_unreachable_calls_still_resolve_and_model_operations_are_ineligible() {
         functions: vec![calling("M::pay")],
         ..PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
         )
     }
@@ -877,7 +877,7 @@ fn ieee_reference() -> DefinitionReference {
 
 fn object() -> ObjectReference {
     ObjectReference::new(
-        UniverseId::from_digest(Sha256::digest(b"u1").into()),
+        crate::support::ids::universe_id(b"u1"),
         object_type("M::Obj"),
         ObjectId::new("o1").unwrap(),
     )
@@ -951,6 +951,7 @@ fn p10_stable_paths_ieee_conversion_references_duplicates_and_node_limits() {
             models: vec![obj_model()],
             ..PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
             )
         }
@@ -1066,6 +1067,7 @@ fn p10_stable_paths_ieee_conversion_references_duplicates_and_node_limits() {
         functions: vec![down()],
         ..PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
         )
     }
@@ -1117,6 +1119,7 @@ fn nodes_limit_is_enforced_across_the_whole_package_not_per_declaration() {
         functions: vec![small("a")],
         ..PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
         )
     }
@@ -1129,6 +1132,7 @@ fn nodes_limit_is_enforced_across_the_whole_package_not_per_declaration() {
         functions: vec![small("a"), small("b")],
         ..PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
         )
     }
@@ -1144,6 +1148,7 @@ fn nodes_limit_is_enforced_across_the_whole_package_not_per_declaration() {
             functions: vec![small("a"), small("b")],
             ..PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
             )
         }
@@ -1178,6 +1183,7 @@ fn p_input_bytes_limit_refuses_through_package_declarations_check() {
         functions: vec![down()],
         ..PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
         )
     }
@@ -1201,6 +1207,7 @@ fn p_input_bytes_limit_refuses_through_package_declarations_check() {
         functions: vec![down()],
         ..PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
         )
     }
@@ -1221,6 +1228,7 @@ fn p_work_budget_limit_refuses_through_package_declarations_check() {
         functions: vec![down()],
         ..PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
         )
     }
@@ -1244,6 +1252,7 @@ fn p_work_budget_limit_refuses_through_package_declarations_check() {
         functions: vec![down()],
         ..PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
         )
     }
@@ -1461,6 +1470,7 @@ fn s6a_returns_kernel_outcomes_unchanged_in_evaluated() {
         ieee_profile: Some(ieee_profile()),
         ..PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
         )
     }

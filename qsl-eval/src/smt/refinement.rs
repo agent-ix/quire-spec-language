@@ -505,7 +505,10 @@ impl Sides<'_, '_> {
         let mut hypotheses = Vec::new();
         for clause in clauses {
             for (index, object) in subject.objects.iter().enumerate() {
-                if !subject.types.conforms(object.type_id, clause.context()) {
+                if !subject
+                    .types
+                    .conforms(object.type_id.clone(), clause.context())
+                {
                     continue;
                 }
                 let (value, defined) = Reader::new(

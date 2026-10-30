@@ -185,12 +185,12 @@ fn refused(result: Result<ResolvedSystemsElement, ResolveFailure>) -> Box<ModelR
 /// The effective member of `original` owned by effective type `owner`,
 /// found by the test directly in the view's declarations.
 fn member_entry(view: &EffectiveView, owner: &str, original: &str) -> EffectiveId {
-    let owner = view.type_identities()[&key(owner)];
+    let owner = view.type_identities()[&key(owner)].clone();
     let entries: Vec<_> = view
         .declarations()
         .iter()
         .filter(|entry| {
-            entry.preimage.owner_effective_type == Some(owner)
+            entry.preimage.owner_effective_type == Some(owner.clone())
                 && entry.preimage.original == key(original)
         })
         .collect();
@@ -199,7 +199,7 @@ fn member_entry(view: &EffectiveView, owner: &str, original: &str) -> EffectiveI
         1,
         "{original} has one entry owned by {owner:?}"
     );
-    entries[0].effective_id
+    entries[0].effective_id.clone()
 }
 
 /// TC-197 Y01: each supported kind resolves with its exact declaration key
@@ -219,27 +219,27 @@ fn y01_each_systems_kind_resolves_with_declaration_key_and_effective_identity() 
         vec![ChargePoint::SystemsKind; 8],
         "kind mapping charges eight systems.kind"
     );
-    let flow = world.view.type_identities()[&key("Flow")];
-    let sys = world.view.type_identities()[&key("Sys")];
-    let pump = world.view.type_identities()[&key("Pump")];
+    let flow = world.view.type_identities()[&key("Flow")].clone();
+    let sys = world.view.type_identities()[&key("Sys")].clone();
+    let pump = world.view.type_identities()[&key("Pump")].clone();
     let cases = [
         (
             Kind::Part,
             "sys_pump",
-            Some(sys),
+            Some(sys.clone()),
             member_entry(&world.view, "Sys", "sys_pump"),
         ),
         (
             Kind::Port,
             "pump_out",
-            Some(sys),
+            Some(sys.clone()),
             member_entry(&world.view, "Sys", "pump_out"),
         ),
         (Kind::Interface, "Flow", None, flow),
         (
             Kind::Connection,
             "pipe",
-            Some(sys),
+            Some(sys.clone()),
             member_entry(&world.view, "Sys", "pipe"),
         ),
         (

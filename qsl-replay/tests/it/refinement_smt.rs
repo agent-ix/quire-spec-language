@@ -674,7 +674,12 @@ fn a_rejected_part_rejects_only_its_record() {
 #[trace("TC-551", "FR-146-AC-8")]
 #[test]
 fn the_safety_half_settles_by_the_first_rule_that_applies() {
-    let hypothesis = quire_exact::NodeKey::from_digest([7; 32]);
+    let hypothesis = quire_exact::NodeKey::new(
+        "fixture",
+        vec![quire_exact::PathSegment::Text("7".to_owned())],
+        0,
+    )
+    .expect("a fixture node");
     let certified = proved(Certification::Certified);
     let uncertified = proved(Certification::Uncertified);
     let verified = StepCertification::of_check(Some(Ok(SmtProofCheck::Verified)), 7);
@@ -695,7 +700,7 @@ fn the_safety_half_settles_by_the_first_rule_that_applies() {
     let unproved = TerminalValue::Inconclusive(InconclusiveCause::InductionNotClosed { depth: 1 });
     let not_established =
         TerminalValue::Inconclusive(InconclusiveCause::HypothesesNotEstablished {
-            hypothesis: qsl_foundation::digest::WireNodeId::from_digest(*hypothesis.as_bytes()),
+            hypothesis: hypothesis.clone(),
             result: ItemLabel::Inconclusive,
         });
     let induction = TerminalValue::Inconclusive(InconclusiveCause::InductionNotClosed { depth: 1 });
@@ -705,7 +710,7 @@ fn the_safety_half_settles_by_the_first_rule_that_applies() {
         settle_step_records(
             verdicts,
             certification,
-            &[(hypothesis, item.clone())],
+            &[(hypothesis.clone(), item.clone())],
             no_replay,
         )
         .safety
@@ -925,7 +930,12 @@ fn a_refused_initial_query_rejects_the_initial_record() {
 #[trace("TC-551", "FR-146-AC-8")]
 #[test]
 fn the_rule_order_outranks_the_query_order() {
-    let hypothesis = quire_exact::NodeKey::from_digest([7; 32]);
+    let hypothesis = quire_exact::NodeKey::new(
+        "fixture",
+        vec![quire_exact::PathSegment::Text("7".to_owned())],
+        0,
+    )
+    .expect("a fixture node");
     let unknown = StepRecordVerdict::Other(OtherBackendResult::Inconclusive(
         InconclusiveCause::SolverInconclusive {
             trace: None,
@@ -979,7 +989,11 @@ fn the_rule_order_outranks_the_query_order() {
     // half takes the first other result in query order.
     let two_others = with(&[(2, unknown.clone()), (4, timeout.clone())]);
     assert_eq!(
-        half(&two_others, &verified, &[(hypothesis, certified.clone())]),
+        half(
+            &two_others,
+            &verified,
+            &[(hypothesis.clone(), certified.clone())]
+        ),
         solver
     );
     // AC-14: an unproved hypothesis item outranks the initial query's
@@ -989,10 +1003,10 @@ fn the_rule_order_outranks_the_query_order() {
         half(
             &with(&[(0, unknown.clone())]),
             &verified,
-            &[(hypothesis, unproved)]
+            &[(hypothesis.clone(), unproved)]
         ),
         TerminalValue::Inconclusive(InconclusiveCause::HypothesesNotEstablished {
-            hypothesis: qsl_foundation::digest::WireNodeId::from_digest(*hypothesis.as_bytes()),
+            hypothesis: hypothesis.clone(),
             result: ItemLabel::Inconclusive,
         })
     );

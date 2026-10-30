@@ -3,7 +3,6 @@
 //! `Counter` subject (`crate::counter`) made timed by a `time` member.
 
 use ix_trace_rs::trace;
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_route::deadlock::{ItemObligation, ModelTemporalItem, ObligationKind};
 use qsl_route::request::{ExtentClassification, ItemKind, RequestItem};
@@ -33,7 +32,7 @@ fn of_kind<S: Clone>(
 
 fn occurrence(byte: u8) -> OccurrenceKey {
     OccurrenceKey::new(
-        WireNodeId::from_digest([byte; 32]),
+        crate::fixture_ids::node_key([byte]),
         Origin::new(Role::new("temporal"), 0),
     )
 }

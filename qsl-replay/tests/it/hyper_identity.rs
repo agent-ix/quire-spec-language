@@ -4,14 +4,23 @@
 
 use ix_trace_rs::trace;
 use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound, ProofBound};
-use qsl_foundation::digest::WireNodeId;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
     HyperProductIdentity, HyperQueryRequest, SmtEncodingLimits, SmtEncodingRefusal, SubjectIdentity,
 };
 use qsl_semantics::check::{admitted_source, PackageDeclarations};
+use quire_exact::NodeKey;
 use quire_exact::{LimitKind, Meter};
 use quire_semantic_value::checking::CheckingLimits;
+
+fn fixture_node(fill: u8) -> NodeKey {
+    NodeKey::new(
+        "fixture",
+        vec![quire_exact::PathSegment::Text(fill.to_string())],
+        0,
+    )
+    .expect("fixture node")
+}
 
 use crate::vault_world::{
     non_interference, World, EQUAL_INPUTS, FORALL_EXISTS, LIVENESS, SAVES_POWER, UNLIMITED,
@@ -55,7 +64,7 @@ fn refused(result: Result<HyperProductIdentity, SmtEncodingRefusal>) -> SmtEncod
 fn bound(maximum: u64) -> ProofBound {
     ProofBound::new(
         DomainKey::Node {
-            node: WireNodeId::from_digest([7; 32]),
+            node: fixture_node(7),
             path: Vec::new(),
         },
         Some(DomainKind::Population),
@@ -78,10 +87,7 @@ fn the_identity_is_the_clause_the_subjects_and_the_instance() {
         world.clause().assembled_occurrence(),
         "the clause member is the assembled occurrence"
     );
-    assert_eq!(
-        base.subjects(),
-        [SubjectIdentity::of(&world.subject()).expect("emits")]
-    );
+    assert_eq!(base.subjects(), [SubjectIdentity::of(&world.subject())]);
     assert_eq!(base.instance(), instance("v"));
 
     let other = identity(&world, &instance("w")).expect("instance w");
@@ -225,6 +231,7 @@ fn a_package_with_no_emission_names_product_identity() {
             qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
             b"",
         ),
+        "fixture",
         qsl_foundation::IdentityLimits::default(),
     )
     .check(CheckingLimits::default())

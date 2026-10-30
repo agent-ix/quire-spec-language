@@ -7,8 +7,7 @@
 
 use super::frame::object;
 use super::frame_replay::{
-    config_version_unit, package_digest, packet, request, unit_for, wire, witness_source, Unit,
-    IDENTITY,
+    config_version_unit, packet, request, unit_for, wire, witness_source, Unit, IDENTITY,
 };
 use super::*;
 use crate::{
@@ -17,10 +16,10 @@ use crate::{
     ReplayResult, ReplaySource, ReplayTarget, SnapshotValue, StateClauseCounterexample,
     StateClauseKind, StateClauseReplayResult, Verdict, WitnessEnvelope, WitnessSettlement,
 };
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_exact::Identifier;
+use quire_exact::NodeKey;
 use quire_semantic_value::catalog::Category;
 
 fn name(text: &str) -> Identifier {
@@ -33,7 +32,7 @@ fn clause_target(clause: &str) -> ReplayTarget {
 }
 
 /// `clause`'s node and `claim` occurrence in `unit`'s compiled package.
-fn clause_identity(unit: &Unit, clause: &str) -> (WireNodeId, OccurrenceKey) {
+fn clause_identity(unit: &Unit, clause: &str) -> (NodeKey, OccurrenceKey) {
     let clause = unit
         .compiled
         .package
@@ -41,14 +40,17 @@ fn clause_identity(unit: &Unit, clause: &str) -> (WireNodeId, OccurrenceKey) {
         .state_clause(clause)
         .expect("the clause is declared");
     let node = wire(clause.identity());
-    (node, OccurrenceKey::new(node, clause.claim().clone()))
+    (
+        node.clone(),
+        OccurrenceKey::new(node, clause.claim().clone()),
+    )
 }
 
 /// `occurrence` at the next ordinal of its role.
 fn next_ordinal(occurrence: &OccurrenceKey) -> OccurrenceKey {
     let origin = occurrence.origin();
     OccurrenceKey::new(
-        occurrence.node(),
+        occurrence.node().clone(),
         quire_exact::Origin::new(origin.role().clone(), origin.ordinal() + 1),
     )
 }
@@ -223,7 +225,7 @@ fn case_with(
     clause: &str,
     documents: Documents,
     source: ReplaySource,
-    adjust: impl FnOnce(&mut ReplayRequestWire, &mut (WireNodeId, OccurrenceKey)),
+    adjust: impl FnOnce(&mut ReplayRequestWire, &mut (NodeKey, OccurrenceKey)),
 ) -> Case {
     case_targeting(
         unit,
@@ -245,14 +247,12 @@ fn case_targeting(
     source: ReplaySource,
     request_target: ReplayTarget,
     envelope_target: ReplayTarget,
-    adjust: impl FnOnce(&mut ReplayRequestWire, &mut (WireNodeId, OccurrenceKey)),
+    adjust: impl FnOnce(&mut ReplayRequestWire, &mut (NodeKey, OccurrenceKey)),
 ) -> Case {
-    let package_id = package_digest(unit.compiled.emitted.package_id());
     let mut identity = clause_identity(&unit, clause);
     let mut wire = request(
         &unit.bytes,
         &unit.domain_document,
-        package_id,
         &documents.bytes,
         request_target,
     );
@@ -265,7 +265,6 @@ fn case_targeting(
     let envelope = WitnessEnvelope::reconstruct(
         packet(
             &unit.bytes,
-            package_id,
             source,
             clause_node,
             occurrence_key,
@@ -304,17 +303,16 @@ fn without(wire: &mut ReplayRequestWire, reference: &DocumentRef) {
 /// Replays `case` and checks it reproduced with an evaluated witness, whose
 /// FR-351 record decides by `false` at index 0, with an empty value path and
 /// no trace position, and that the result keeps the source digest, the
-/// `package_id`, the clause, the envelope's identities and every document
+/// clause, the envelope's identities and every document
 /// admission read.
 fn assert_reproduces_keeping_identities(case: Case, clause: &str) -> StateClauseReplayResult {
     let _unit_bytes = case.unit.bytes.clone();
-    let package_id = case.unit.compiled.emitted.package_id();
     let (node, occurrence) = (
-        case.envelope.clause_node(),
+        case.envelope.clause_node().clone(),
         case.envelope.occurrence_key().clone(),
     );
     assert_eq!(
-        (node, occurrence.clone()),
+        (node.clone(), occurrence.clone()),
         clause_identity(&case.unit, clause)
     );
     let read = case.documents.read.clone();
@@ -330,9 +328,8 @@ fn assert_reproduces_keeping_identities(case: Case, clause: &str) -> StateClause
     // occurrence (FR-265), so the result carries no QSpec FR-351 record.
     assert!(arm.record().is_none());
     assert_eq!(result.source().identity(), IDENTITY);
-    assert_eq!(result.package_id(), package_id);
     assert_eq!(result.clause().to_string(), clause);
-    assert_eq!(result.clause_node(), node);
+    assert_eq!(result.clause_node().clone(), node);
     assert_eq!(result.occurrence_key(), &occurrence);
     assert_eq!(result.documents(), &read[..]);
     result
@@ -367,7 +364,6 @@ fn an_input_arm_envelope_reproduces_without_a_witness() {
         |_, _| {},
     );
     let _unit_bytes = case.unit.bytes.clone();
-    let package_id = case.unit.compiled.emitted.package_id();
     let (node, occurrence) = clause_identity(&case.unit, "VersionUnchanged");
     let result = replay(case).expect("the replay settles");
     let ReplayResult::Input(arm) = result.result() else {
@@ -375,9 +371,8 @@ fn an_input_arm_envelope_reproduces_without_a_witness() {
     };
     assert_eq!(arm.settlement(), InputSettlement::ReproducedWithoutWitness);
     assert_eq!(arm.value(), Some(EvaluatedValue::Boolean(false)));
-    assert_eq!(result.package_id(), package_id);
     assert_eq!(result.clause().to_string(), "VersionUnchanged");
-    assert_eq!(result.clause_node(), node);
+    assert_eq!(result.clause_node().clone(), node);
     assert_eq!(result.occurrence_key(), &occurrence);
     assert_eq!(result.documents(), &read[..]);
 }
@@ -471,7 +466,7 @@ fn an_exhausted_evaluation_budget_is_inconclusive_with_no_value() {
 /// the provision when `drop_invocation`.
 fn stale_identity(
     drop_invocation: bool,
-    adjust: impl FnOnce(&mut (WireNodeId, OccurrenceKey)),
+    adjust: impl FnOnce(&mut (NodeKey, OccurrenceKey)),
 ) -> ReplayRefusal {
     let documents = changed_version();
     let invocation = documents.read[0].clone();
@@ -515,7 +510,7 @@ fn a_stale_clause_node_refuses_naming_both_nodes_before_admission() {
     for drop_invocation in [false, true] {
         for bump_occurrence in [false, true] {
             let refusal = stale_identity(drop_invocation, |(node, occurrence)| {
-                *node = parent_order;
+                *node = parent_order.clone();
                 if bump_occurrence {
                     *occurrence = next_ordinal(occurrence);
                 }
@@ -525,8 +520,8 @@ fn a_stale_clause_node_refuses_naming_both_nodes_before_admission() {
                     &refusal,
                     ReplayRefusal::ClauseIdentity(mismatch)
                         if **mismatch == ClauseIdentityMismatch::Node {
-                            envelope: parent_order,
-                            recompiled: version_unchanged,
+                            envelope: parent_order.clone(),
+                            recompiled: version_unchanged.clone(),
                         }
                 ),
                 "{refusal:?}"
@@ -561,54 +556,6 @@ fn a_stale_occurrence_refuses_naming_both_occurrences_before_admission() {
         );
         assert_content_mismatch(&refusal);
     }
-}
-
-/// TC-517 step 3 (FR-122-AC-3): a source edit that changes the `package_id`
-/// refuses by FR-098's stale `package_id` rule.
-#[trace("TC-517", "FR-122-AC-3")]
-#[test]
-fn a_source_edit_refuses_by_the_stale_package_rule() {
-    let unit = config_version_unit();
-    let original = package_digest(unit.compiled.emitted.package_id());
-    let (clause_node, occurrence_key) = clause_identity(&unit, "VersionUnchanged");
-    let mut edited = unit.bytes.clone();
-    edited.extend_from_slice(
-        b"function extra using v(a: Config::ConfigVersion): Integer pure { 2 }\n",
-    );
-    let documents = changed_version();
-    let wire = request(
-        &edited,
-        &unit.domain_document,
-        original,
-        &documents.bytes,
-        clause_target("VersionUnchanged"),
-    );
-    let envelope = WitnessEnvelope::reconstruct(
-        packet(
-            &edited,
-            original,
-            witness_source(),
-            clause_node,
-            occurrence_key,
-            StateClauseCounterexample {
-                observation: documents.observation,
-                witness: None,
-            },
-            clause_target("VersionUnchanged"),
-        ),
-        crate::ReplayLimits::default(),
-    )
-    .unwrap();
-    let refusal = replay_state_clause(wire, &envelope, crate::ReplayLimits::default()).unwrap_err();
-    assert!(
-        matches!(
-            &refusal,
-            ReplayRefusal::PackageIdMismatch { requested, recompiled }
-                if *requested == original && !recompiled.matches(&original)
-        ),
-        "{refusal:?}"
-    );
-    assert_eq!(refusal.code(), qsl_foundation::Code::StaleDependency);
 }
 
 /// TC-517 step 3 (FR-122-AC-3): a request `state_clause` naming `Absent`,
@@ -948,7 +895,6 @@ fn a_replay_target_the_entry_does_not_read_refuses_before_the_recompile() {
             Source::EntryRemoved,
         ] {
             let unit = config_version_unit();
-            let package_id = package_digest(unit.compiled.emitted.package_id());
             let domain_document = unit.domain_document.clone();
             let documents = changed_version();
             let bytes = documents.bytes.clone();
@@ -966,7 +912,6 @@ fn a_replay_target_the_entry_does_not_read_refuses_before_the_recompile() {
                         *wire = request(
                             b"this is not a QSL unit\n",
                             &domain_document,
-                            package_id,
                             &bytes,
                             target,
                         );

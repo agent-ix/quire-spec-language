@@ -36,8 +36,8 @@ Scope: FR-001-AC-5 to FR-001-AC-12.
 6. Admit `b` with the identity and the authority blank; with the identity
    blank and an empty path; and with both labels non-blank and an empty
    path.
-7. Apply an incremental edit that changes the authority or identity; and
-   render a CST node against a parsed source it does not belong to.
+7. Apply an incremental edit with a stale expected source identity and send a
+   complete-editor request bound to another source revision.
 
 Tag the tests `#[trace("TC-424", "FR-001-AC-n")]` with the AC each backs.
 
@@ -59,6 +59,6 @@ Tag the tests `#[trace("TC-424", "FR-001-AC-n")]` with the AC each backs.
 - Step 6: `blank-label` with `label` `authority`; `blank-label` with `label`
   `identity`, not `empty-path`; `invalid_source_identity`/`empty-path` with
   no field.
-- Step 7: each refuses with `invalid_source_map`, host cause
-  `EditPredecessor` and `ForeignNode` respectively, and
-  no region; none is `invalid_source_identity`.
+- Step 7: the edit and editor request each refuse with `invalid_source_map`
+  and no region, with host causes `EditPredecessor` and `RequestRevision`
+  respectively; neither is `invalid_source_identity`.

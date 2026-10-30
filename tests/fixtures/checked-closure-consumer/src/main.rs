@@ -45,6 +45,7 @@ pub fn run() {
     let name = QualifiedName::new(vec![Identifier::new("f").expect("identifier")]).expect("name");
     let site = call_site(
         source.clone(),
+        "consumer.native".to_owned(),
         "consumer.native",
         SOURCE.as_bytes(),
         [],
@@ -53,19 +54,22 @@ pub fn run() {
     )
     .expect("function site");
     let compilation = acquire_checked_closure(
-        source,
-        "consumer.native",
-        SOURCE.as_bytes(),
+        qsl_replay::CompileUnit {
+            source,
+            package_name: "consumer.native".to_owned(),
+            path: "consumer.native",
+            bytes: SOURCE.as_bytes(),
+        },
         [],
         &DependencyInput::default(),
         StageLimits::default(),
         ReplayLimits::default(),
     )
     .expect("checked closure");
-    assert_eq!(site.package_id, compilation.package().package_id());
+    assert_eq!(site.package, compilation.package().bytes());
     let selection = compilation
         .handle()
-        .lookup_callable(site.package_id, site.site.function)
+        .lookup_callable(compilation.handle().package_name(), &site.site.function)
         .expect("callable selection");
     let mut registry = compilation.handle().registry();
     assert_eq!(

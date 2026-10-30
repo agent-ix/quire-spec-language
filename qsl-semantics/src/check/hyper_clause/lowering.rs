@@ -249,7 +249,7 @@ impl AtomSlots {
                 if parameter_alias == alias {
                     slots.push(AtomSlot { trace, parameter });
                     names.push(atom_slot_name(name, variable));
-                    types.push(ValueType::Reference(*object));
+                    types.push(ValueType::Reference(object.clone()));
                 }
             }
         }

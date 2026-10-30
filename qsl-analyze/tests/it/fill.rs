@@ -32,7 +32,6 @@ use serde_json::{json, Value as Json};
 use crate::counter::UNLIMITED;
 
 pub(crate) const PACKAGE: &str = "test/fill";
-const PLACEHOLDER: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 
 fn ident(suffix: &str) -> String {
     format!("ix://{PACKAGE}/{suffix}")
@@ -129,12 +128,11 @@ pub(crate) fn document() -> Vec<u8> {
     .into_iter()
     .map(|(name, meaning)| {
         json!({"kind": {"module": PACKAGE, "name": name}, "moduleVersion": "1.0.0",
-            "manifestDigest": PLACEHOLDER,
             "construct": {"identity": "none", "shape": "record", "members": {},
                 "meaning": meaning}})
     })
     .chain([json!({"kind": {"module": PACKAGE, "name": "variant_type"},
-        "moduleVersion": "1.0.0", "manifestDigest": PLACEHOLDER,
+        "moduleVersion": "1.0.0",
         "construct": {"identity": "none", "shape": "enumeration",
             "members": {"variants": "required"}, "meaning": meaning::VARIANT_TYPE}})])
     .collect();
@@ -180,11 +178,10 @@ pub(crate) fn document() -> Vec<u8> {
         .collect();
     json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
-        "source": {"identity": ident("spec"), "version": "1.0.0", "dialect": "spec-bundle",
-            "digest": PLACEHOLDER},
-        "package": {"identity": PACKAGE, "version": "1.0.0", "manifestDigest": PLACEHOLDER,
-            "mappingVersions": [], "profileVersions": [], "lockDigest": PLACEHOLDER},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
+        "source": {"identity": ident("spec"), "version": "1.0.0", "dialect": "spec-bundle"},
+        "package": {"identity": PACKAGE, "version": "1.0.0",
+            "mappingVersions": [], "profileVersions": []},
         "occurrences": [], "extensions": [],
         "constructs": constructs,
         "types": [
@@ -280,6 +277,10 @@ pub(crate) fn package(body: &str) -> CheckedPackage {
     package_with("", body)
 }
 
+/// The header line selecting the protocol profile, so each protocol clause
+/// the package writes has its node.
+pub(crate) const PROTOCOL_PROFILE: &str = "profile pp = \"quire.protocol.finite-global/v1\";\n";
+
 /// [`package`] with the further header `profiles` lines.
 pub(crate) fn package_with(profiles: &str, body: &str) -> CheckedPackage {
     let document = document();
@@ -310,6 +311,7 @@ pub(crate) fn package_with(profiles: &str, body: &str) -> CheckedPackage {
     .expect("the operation clauses parse");
     let graph = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "package".to_owned(),
         built,
         models,
         Vec::new(),
@@ -519,19 +521,6 @@ pub(crate) fn v(state: &ModelSimState, object: &str) -> i64 {
     }
 }
 
-/// The compiled `package_id` of the unit with `body`, through FR-098's
-/// compile.
-pub(crate) fn package_id(body: &str) -> qsl_replay::DigestRecord {
-    package_id_with("", body)
-}
-
-/// [`package_id`] with the further header `profiles` lines.
-pub(crate) fn package_id_with(profiles: &str, body: &str) -> qsl_replay::DigestRecord {
-    compiled_with(profiles, body)
-        .expect("the unit compiles")
-        .package_id()
-}
-
 /// FR-098's compile of the unit with `body`.
 pub(crate) fn compiled(
     body: &str,
@@ -546,9 +535,12 @@ fn compiled_with(
 ) -> Result<qsl_replay::CompiledPackage, qsl_replay::ReplayRefusal> {
     let document = document();
     qsl_replay::compile_package(
-        SourceIdentity::new("agent-ix", "counter", "git", "1"),
-        "counter.native",
-        unit_text_with(profiles, body).as_bytes(),
+        qsl_replay::CompileUnit {
+            source: SourceIdentity::new("agent-ix", "counter", "git", "1"),
+            package_name: "package".to_owned(),
+            path: "counter.native",
+            bytes: unit_text_with(profiles, body).as_bytes(),
+        },
         [document.as_slice()],
         &qsl_replay::DependencyInput::default(),
         qsl_replay::StageLimits::default(),

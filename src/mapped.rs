@@ -158,7 +158,7 @@ impl<'model> MappedPackage<'model> {
 
 /// Compile an adapter-selected complete native unit containing exactly one clause.
 ///
-/// The caller selects and verifies the original document/digest/region before
+/// The caller selects and verifies the original document/region before
 /// constructing `mapping`. This function neither extracts Markdown nor changes
 /// the adapter's availability metadata. A language tag alone grants no success.
 pub fn compile<'model>(

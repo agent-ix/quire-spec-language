@@ -125,10 +125,10 @@ pub(super) fn holds_reference(types: &TypeEnvironment, declared: &[ValueType]) -
             ValueType::Collection(collection) => pending.push(collection.element()),
             ValueType::Map(map) => pending.push(map.values()),
             ValueType::Composite(declaration) => {
-                if !entered.insert(*declaration) {
+                if !entered.insert(declaration.clone()) {
                     continue;
                 }
-                let Some(composite) = types.composite(*declaration) else {
+                let Some(composite) = types.composite(declaration.clone()) else {
                     continue;
                 };
                 match composite.shape() {

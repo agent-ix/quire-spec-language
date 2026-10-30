@@ -1127,7 +1127,7 @@ impl<'a> References<'a> {
                 let Some(effective) = view.view.type_identities().get(&key) else {
                     continue;
                 };
-                let Ok(reference) = object_reference(views, *effective, &object.key) else {
+                let Ok(reference) = object_reference(views, effective.clone(), &object.key) else {
                     continue;
                 };
                 admitted
@@ -1155,13 +1155,9 @@ impl<'a> References<'a> {
         let views = self.views;
         self.variant_keys
             .get_or_insert_with(|| {
-                let unbounded = qsl_foundation::IdentityLimits {
-                    input_bytes: u64::MAX,
-                };
                 let mut found = BTreeMap::new();
                 for view in views {
-                    let Ok(declared) =
-                        crate::check::variant_type_declarations(&view.view, "", unbounded)
+                    let Ok(declared) = crate::check::variant_type_declarations(&view.view, "")
                     else {
                         continue;
                     };
@@ -1188,7 +1184,7 @@ impl<'a> References<'a> {
         self.record_keys
             .get_or_insert_with(|| record_keys(views))
             .get(identity)
-            .copied()
+            .cloned()
     }
 
     /// FR-106 check 8 over one check-10 value (a parameter or the result):
@@ -1236,7 +1232,7 @@ impl<'a> References<'a> {
     ) -> Result<ObjectReference, AdmissionRecord> {
         let wire = (reference.population.as_str(), reference.key.as_str());
         if let Some(target) = self.admitted.get(&wire) {
-            return if self.types.conforms(target.object_type(), declared) {
+            return if self.types.conforms(target.object_type().clone(), declared) {
                 Ok(target.clone())
             } else {
                 Err(admission_record(
@@ -1357,14 +1353,14 @@ fn admit_leaf(
         }
         (RawForm::Reference(reference), quire_exact::ValueType::Reference(type_identity)) => {
             references
-                .resolve(reference, *type_identity)
+                .resolve(reference, type_identity.clone())
                 .map(Value::Reference)
         }
         (RawForm::Variant(variant), quire_exact::ValueType::Enum(slot)) => {
             admit_variant(references, variant, slot)
         }
         (RawForm::Variant(variant), quire_exact::ValueType::Composite(handle)) => {
-            admit_union_case(references, variant, *handle)
+            admit_union_case(references, variant, handle.clone())
         }
         (RawForm::Native(native), value_type) => admit_native(native, value_type, references.types),
         _ => Err(admission_record(
@@ -1491,9 +1487,8 @@ pub(super) fn quantity_magnitude(
 /// The qualified name of the declared unit `unit` in `types`, segments
 /// joined by `::`, or `None` for a unit with no declared name.
 pub(crate) fn unit_name(types: &TypeEnvironment, unit: quire_exact::UnitId) -> Option<String> {
-    types
-        .units()
-        .nominal_node(unit.as_bytes())
+    unit.declared_key()
+        .and_then(|key| types.units().nominal_node(key))
         .map(|node| node.declaration.qualified_declaration.join("::"))
 }
 
@@ -1560,7 +1555,7 @@ fn admit_native(
             }
         }
         (NativeKind::Quantity, quire_exact::ValueType::Quantity(unit)) => {
-            if unit_name(types, *unit).as_deref() != Some(payload_text(native, "unit")) {
+            if unit_name(types, unit.clone()).as_deref() != Some(payload_text(native, "unit")) {
                 return Err(wrong("unit"));
             }
             let magnitude = native
@@ -1568,7 +1563,7 @@ fn admit_native(
                 .ok_or_else(|| wrong("magnitude"))?;
             Ok(Value::Quantity(quire_exact::Quantity::new(
                 quantity_magnitude(magnitude)?,
-                *unit,
+                unit.clone(),
             )))
         }
         // Type fit (check 6) refuses every other pairing before any length,
@@ -1713,17 +1708,14 @@ fn admit_union_case(
     if variant.has_extra_member() {
         return Err(refuse("unknown-member"));
     }
-    let unbounded = qsl_foundation::IdentityLimits {
-        input_bytes: u64::MAX,
-    };
     let names = references.views.iter().any(|view| {
         view.view.domain_package().records.iter().any(|record| {
             matches!(
                 record,
                 crate::model::domain_package::DomainPackageRecord::Enum(_)
             ) && record.key().node == type_identity
-                && crate::check::record_node_key(record, unbounded)
-                    .is_ok_and(|key| key == Some(handle))
+                && crate::check::record_node_key(record)
+                    .is_ok_and(|key| key == Some(handle.clone()))
         })
     });
     let Some(CompositeShape::Union(members)) = names
@@ -1735,7 +1727,7 @@ fn admit_union_case(
     };
     members
         .iter()
-        .find(|member| member.identifier().as_str() == case && member.positions().is_empty())
+        .find(|member| member.identifier() == case && member.positions().is_empty())
         .and_then(|member| member.member())
         .map(|member| quire_exact::UnionValue::from_admitted(member.clone(), Vec::new()))
         .ok_or_else(|| refuse("invalid-value"))
@@ -1957,11 +1949,12 @@ fn admit_value<'a: 'w, 'w>(
                         let Some(own) = references.record_type(record.type_identity()) else {
                             return Err(refuse_at("wrong-value-kind", &path));
                         };
-                        if !types.composite_conforms(own, *slot) {
+                        if !types.composite_conforms(own.clone(), slot.clone()) {
                             return Err(refuse_at("wrong-value-kind", &path));
                         }
-                        let Some(CompositeShape::Record(declared)) =
-                            types.composite(own).map(|declaration| declaration.shape())
+                        let Some(CompositeShape::Record(declared)) = types
+                            .composite(own.clone())
+                            .map(|declaration| declaration.shape())
                         else {
                             return Err(refuse_at("wrong-value-kind", &path));
                         };
@@ -2240,9 +2233,6 @@ fn form_collection_value(
 /// record the unit assembled had already keyed under the unit's own identity
 /// limits, and the key does not depend on the limit.
 pub(super) fn record_keys(views: &[ModelView]) -> BTreeMap<String, quire_exact::NodeKey> {
-    let unbounded = qsl_foundation::IdentityLimits {
-        input_bytes: u64::MAX,
-    };
     let mut keys = BTreeMap::new();
     for view in views {
         for record in &view.view.domain_package().records {
@@ -2251,7 +2241,7 @@ pub(super) fn record_keys(views: &[ModelView]) -> BTreeMap<String, quire_exact::
             else {
                 continue;
             };
-            if let Ok(Some(key)) = crate::check::record_node_key(record, unbounded) {
+            if let Ok(Some(key)) = crate::check::record_node_key(record) {
                 keys.entry(declared.key.node.clone()).or_insert(key);
             }
         }
@@ -2268,7 +2258,8 @@ pub(super) fn record_field_type<'t>(
     identity: &str,
     field: &str,
 ) -> Option<&'t quire_exact::ValueType> {
-    let CompositeShape::Record(declared) = types.composite(*keys.get(identity)?)?.shape() else {
+    let CompositeShape::Record(declared) = types.composite(keys.get(identity)?.clone())?.shape()
+    else {
         return None;
     };
     declared
@@ -2380,7 +2371,6 @@ impl<'t> PopulationValues<'t> {
     pub(super) fn attach_read_context(
         &mut self,
         machine: &str,
-        role: ObservationRole,
         snapshot: &DocumentRef,
         receiver: &DocumentRef,
     ) -> Result<ObjectReference, AdmissionFailure> {
@@ -2407,11 +2397,10 @@ impl<'t> PopulationValues<'t> {
             )
         })?;
         let reference = ObjectReference::new(
-            // BLOCKED-BY QSL-1282 (owner: planner titan:QSL:plan): UniverseId::from_digest, the only
-            // `UniverseId` constructor in the locked quire-exact (identity.rs:65),
-            // and `ObjectReference::new` (src/reference.rs:26) takes a `UniverseId`;
-            // the token is the observation's role ordinal, not a hash.
-            UniverseId::from_digest(role_token(role)),
+            // QSpec FR-208 "Context universe key": the universe of a
+            // state-machine context is the model declaration node of the
+            // most-specific machine; no node is added for it.
+            UniverseId::new(context_universe_key(&context.effective)?),
             context.effective,
             object,
         );
@@ -2557,13 +2546,14 @@ pub(super) fn admit_population_values<'t>(
                         .with("object", object.key.clone()),
                 ));
             }
-            let effective_type = *population_view
+            let effective_type = population_view
                 .view
                 .type_identities()
                 .get(&object_key)
-                .ok_or_else(|| fault("object-type-has-no-effective-id"))?;
+                .ok_or_else(|| fault("object-type-has-no-effective-id"))?
+                .clone();
 
-            let declared = types.attributes(effective_type).ok_or_else(|| {
+            let declared = types.attributes(effective_type.clone()).ok_or_else(|| {
                 AdmissionFailure::Fault(quire_semantic_value::catalog::InternalFault::new(
                     "observation-admission",
                     "object-type-has-no-checked-attributes",
@@ -2792,13 +2782,14 @@ fn admit_contexts<'t>(
             ));
         }
         machines.push(machine);
-        let effective = *view
+        let effective = view
             .view
             .type_identities()
             .get(&key)
-            .ok_or_else(|| fault("context-machine-has-no-effective-id"))?;
+            .ok_or_else(|| fault("context-machine-has-no-effective-id"))?
+            .clone();
         let declared = types
-            .attributes(effective)
+            .attributes(effective.clone())
             .ok_or_else(|| fault("context-machine-has-no-checked-attributes"))?;
         // 6.12: the fields, in the machine's exposed effective order.
         if let Some(field) = population_collection_field(declared) {
@@ -2881,7 +2872,10 @@ fn admit_contexts<'t>(
             }));
             attributes.push((name, value));
         }
-        if read_machine.is_some_and(|clause| types.conforms(effective, clause)) {
+        if read_machine
+            .as_ref()
+            .is_some_and(|clause| types.conforms(effective.clone(), clause.clone()))
+        {
             read.push(ReadContext {
                 machine: machine.to_owned(),
                 entry,
@@ -2907,9 +2901,9 @@ pub(super) fn read_context<'s>(
 ) -> Option<(&'s RawContext, quire_exact::EffectiveId)> {
     snapshot.contexts.contexts().find_map(|(_, context)| {
         let (view, key) = find_declaration(views, &context.machine)?;
-        let effective = *view.view.type_identities().get(&key)?;
+        let effective = view.view.type_identities().get(&key)?.clone();
         types
-            .conforms(effective, machine)
+            .conforms(effective.clone(), machine.clone())
             .then_some((context, effective))
     })
 }
@@ -3552,9 +3546,9 @@ pub(super) fn resolve_self(
         .type_identities()
         .iter()
         .find(|(key, _)| key.node == context_name)
-        .map(|(_, effective)| *effective)
+        .map(|(_, effective)| effective.clone())
         .ok_or_else(|| fault("context-type-unresolved"))?;
-    let universe = population_universe(views, context_effective)?;
+    let universe = population_universe(views, context_effective.clone())?;
     let wrong_role_mapping = || {
         refuse(admission_record(
             Code::InvalidRuntimeInput,
@@ -3565,7 +3559,7 @@ pub(super) fn resolve_self(
         .objects()
         .find(universe, &self_object.key)
         .ok_or_else(wrong_role_mapping)?;
-    if types.conforms(reference.object_type(), context_effective) {
+    if types.conforms(reference.object_type().clone(), context_effective) {
         Ok(reference.clone())
     } else {
         Err(wrong_role_mapping())
@@ -3650,16 +3644,20 @@ pub(super) fn admit_result(
     }
 }
 
-/// The fixed-width token `quire_exact::UniverseId` takes for the universe of
-/// one observation: its role ordinal, not a hash.
-fn role_token(role: ObservationRole) -> [u8; 32] {
-    let mut token = [0_u8; 32];
-    token[0] = match role {
-        ObservationRole::Current => 1,
-        ObservationRole::Pre => 2,
-        ObservationRole::Post => 3,
-    };
-    token
+/// The universe of a state-machine context object (FR-208-AC-20): the model
+/// declaration node of the most-specific machine,
+/// `{package, ["model", "state_machine", <machine identity>], 0}`.
+fn context_universe_key(
+    effective: &quire_exact::EffectiveId,
+) -> Result<quire_exact::NodeKey, AdmissionFailure> {
+    let original = effective.original();
+    crate::model::key::model_node_key(
+        original.package(),
+        "model",
+        "state_machine",
+        original.node(),
+    )
+    .map_err(|_| fault("context-universe-unkeyed"))
 }
 
 #[cfg(test)]
@@ -4352,7 +4350,7 @@ mod tests {
             quire_exact::IeeeWidth::Binary64,
             quire_exact::RoundingMode::Exact,
         ));
-        let quantity = quire_exact::ValueType::Quantity(quire_exact::UnitId::compound([1; 32]));
+        let quantity = quire_exact::ValueType::Quantity(quire_exact::UnitId::compound(Vec::new()));
         let decimal = r#"{"kind":"decimal","coefficient":"5","scale":"1"}"#;
         let in_quantity = r#"{"kind":"quantity","unit":"s","magnitude":{"kind":"rational","numerator":"1","denominator":"2"}}"#;
         let rational = rational_object("1", "2");

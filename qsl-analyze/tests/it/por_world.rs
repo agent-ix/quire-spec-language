@@ -42,7 +42,6 @@ use crate::counter::UNLIMITED;
 use crate::reduction_world::{clause_identity, replay_unit, ReplayUnit};
 
 const PACKAGE: &str = "test/por";
-const PLACEHOLDER: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 const BOOLEAN: &str = "ix://quire/native/Boolean";
 
 fn ident(suffix: &str) -> String {
@@ -181,7 +180,6 @@ fn document(types: Vec<Json>, populations: &[(&str, &str)]) -> Vec<u8> {
     })
     .map(|(name, meaning)| {
         json!({"kind": {"module": PACKAGE, "name": name}, "moduleVersion": "1.0.0",
-            "manifestDigest": PLACEHOLDER,
             "construct": {"identity": "none", "shape": "record", "members": {},
                 "meaning": meaning}})
     })
@@ -199,11 +197,10 @@ fn document(types: Vec<Json>, populations: &[(&str, &str)]) -> Vec<u8> {
         .collect();
     json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
-        "source": {"identity": ident("spec"), "version": "1.0.0", "dialect": "spec-bundle",
-            "digest": PLACEHOLDER},
-        "package": {"identity": PACKAGE, "version": "1.0.0", "manifestDigest": PLACEHOLDER,
-            "mappingVersions": [], "profileVersions": [], "lockDigest": PLACEHOLDER},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
+        "source": {"identity": ident("spec"), "version": "1.0.0", "dialect": "spec-bundle"},
+        "package": {"identity": PACKAGE, "version": "1.0.0",
+            "mappingVersions": [], "profileVersions": []},
         "occurrences": [], "extensions": [],
         "constructs": constructs, "types": types, "populations": populations,
     })
@@ -324,6 +321,7 @@ impl Fixture {
         .expect("the operation clauses parse");
         let graph = PackageDeclarations::assemble(
             parsed.source().reference().clone(),
+            "package".to_owned(),
             built,
             models,
             Vec::new(),
@@ -559,7 +557,6 @@ impl Fixture {
         replay_unit(
             &ReplayUnit {
                 identity: "por",
-                path: "por.native",
                 text: self.text.as_bytes(),
                 document: &self.document,
                 snapshots: &self.snapshots,

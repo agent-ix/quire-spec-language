@@ -107,7 +107,7 @@ impl<'r> Declarations<'r> {
                 .flat_map(|model| {
                     let (rest, holder) = match object {
                         Some(object) => {
-                            let (walked, holder) = model.through_references(*object, steps);
+                            let (walked, holder) = model.through_references(object.clone(), steps);
                             (&steps[walked..], Some(holder))
                         }
                         None => (steps, None),
@@ -116,7 +116,9 @@ impl<'r> Declarations<'r> {
                         .clock_places()
                         .iter()
                         .filter(|place| {
-                            holder.is_none_or(|holder| model.conforms(holder, place.owner))
+                            holder
+                                .clone()
+                                .is_none_or(|holder| model.conforms(holder, place.owner.clone()))
                         })
                         .map(|place| (place.path.clone(), rest))
                         .collect::<Vec<_>>()
@@ -606,7 +608,7 @@ pub(crate) fn check_declaration(
                         Some(false) => {
                             return Err(TemporalCause::NotAPlaceExpression {
                                 span: body.span(*argument),
-                            })
+                            });
                         }
                     };
                     pending.push((*argument, read));
@@ -837,7 +839,7 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
             ExprNode::SelfRef => Vec::new(),
             _ => super::self_path(self.located.form, argument)?,
         };
-        let (walked, holder) = model.through_references(self.context, &path);
+        let (walked, holder) = model.through_references(self.context.clone(), &path);
         (walked == path.len() && model.conforms(holder, expected)).then_some(path)
     }
 
@@ -857,7 +859,7 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
             return Err(not_a_place());
         };
         let path = super::self_path(self.located.form, argument).ok_or_else(not_a_place)?;
-        if self.clocks.model.record_at(self.context, &path) != Some(&expected) {
+        if self.clocks.model.record_at(self.context.clone(), &path) != Some(&expected) {
             return Err(not_a_place());
         }
         Ok(path)
@@ -871,7 +873,9 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
         let path = super::self_path(self.located.form, argument)
             .ok_or_else(|| timed(TemporalCause::NotAPlaceExpression { span }))?;
         let collection = self.clocks.fields.iter().any(|clock| {
-            self.clocks.model.conforms(self.context, clock.owner)
+            self.clocks
+                .model
+                .conforms(self.context.clone(), clock.owner.clone())
                 && clock.path.starts_with(&path)
                 && matches!(clock.path.get(path.len()), Some(PlaceStep::Slot(_)))
         });
@@ -946,7 +950,7 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
                         path.extend(steps);
                         let expected = self.declarations.record_type(type_form);
                         if expected.as_ref().map(|(_, key)| key)
-                            != self.clocks.model.record_at(self.context, &path)
+                            != self.clocks.model.record_at(self.context.clone(), &path)
                         {
                             return Err(timed(TemporalCause::NotAPlaceExpression {
                                 span: body.span(argument),
@@ -1049,7 +1053,7 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
                 Some(Argument::Places(_)) | None => {
                     return Err(timed(TemporalCause::ClockReadOutsideConstraint {
                         span: body.span(occurrence),
-                    }))
+                    }));
                 }
             }
         }
@@ -1075,10 +1079,10 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
         budget: &mut PartBudget,
     ) -> Result<Option<(Dnf, Dnf)>, CheckCause> {
         let form = self.grafted(frame, id)?;
-        let Some(located) = Located::of(&form, self.clocks, self.context) else {
+        let Some(located) = Located::of(&form, self.clocks, &self.context) else {
             return Ok(None);
         };
-        super::quantified::read(&located, located.root(), self.clocks, self.context, budget)
+        super::quantified::read(&located, located.root(), self.clocks, &self.context, budget)
     }
 
     /// The expression a data term denotes.
@@ -1128,14 +1132,21 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
                 path.extend(steps);
                 // A clock of another object: the leading reference fields
                 // select the object holding it (FR-230-AC-10's `peer`).
-                let (walked, holder) = self.clocks.model.through_references(self.context, &path);
+                let (walked, holder) = self
+                    .clocks
+                    .model
+                    .through_references(self.context.clone(), &path);
                 let (via, rest) = path.split_at(walked);
                 let clock = self
                     .clocks
                     .fields
                     .iter()
                     .position(|clock| {
-                        clock.path == rest && self.clocks.model.conforms(holder, clock.owner)
+                        clock.path == rest
+                            && self
+                                .clocks
+                                .model
+                                .conforms(holder.clone(), clock.owner.clone())
                     })
                     .map(ClockId)
                     .ok_or_else(not_a_place)?;

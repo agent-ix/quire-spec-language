@@ -22,7 +22,6 @@ use crate::statistical::{Decision, StatisticalVerdict};
 use qsl_eval::simulation::{Permutation, SymmetryClass};
 use qsl_eval::temporal::TemporalOutcome;
 use qsl_foundation::diagnostic::Code;
-use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::BackendId;
 use qsl_foundation::ReductionKind;
 use qsl_foundation::RequestIndex;
@@ -31,6 +30,7 @@ use qsl_semantics::family::UnsupportedItem;
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_checked::key::DeclarationKey;
 use quire_contract_model::Std001Code;
+use quire_exact::NodeKey;
 use quire_exact::{CancelCause, Integer};
 use quire_semantic_value::catalog::{CatalogCode, Category};
 use quire_semantic_value::fairness::{FairnessConstraint, PropertyForm};
@@ -652,7 +652,7 @@ pub enum InconclusiveCause {
     /// can settle the safety half `proved`.
     HypothesesNotEstablished {
         /// The invariant clause's node, as its wire id.
-        hypothesis: qsl_foundation::digest::WireNodeId,
+        hypothesis: NodeKey,
         /// The result its item settled.
         result: crate::outcome::ItemLabel,
     },
@@ -800,12 +800,9 @@ pub enum InconclusiveCause {
 }
 
 /// The domain-specific identity retained by a stale-dependency result.
-/// Package IDs remain package semantic identities; refinement names remain
-/// refinement identities. They are tagged on the FR-331 result wire.
+/// A refinement name is a refinement identity.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum StaleIdentity {
-    /// A `quire.package.semantic/v2` package identity.
-    Package(DigestRecord),
     /// An FR-149 refinement name.
     Refinement(String),
 }
@@ -1126,13 +1123,6 @@ impl TerminalValue {
             ReplayRefusal::Fault(_) | ReplayRefusal::Admission(AdmissionFailure::Fault(_)) => {
                 Self::Failed
             }
-            ReplayRefusal::PackageIdMismatch {
-                requested,
-                recompiled,
-            } => Self::Inconclusive(InconclusiveCause::StaleDependency {
-                requested: StaleIdentity::Package(*requested),
-                recompiled: StaleIdentity::Package(recompiled.record()),
-            }),
             _ => Self::Inconclusive(InconclusiveCause::ReplayRefused(refusal.code())),
         }
     }
@@ -1666,10 +1656,7 @@ mod tests {
         use quire_semantic_value::fairness::FairnessOperation;
         FairnessConstraint::new(
             kind,
-            FairnessOperation::new(
-                quire_exact::EffectiveId::from_digest([7; 32]),
-                name.to_owned(),
-            ),
+            FairnessOperation::new(crate::fixture_effective(7), name.to_owned()),
             granularity,
         )
     }
@@ -1761,7 +1748,6 @@ mod tests {
     use crate::scalar::{ScalarClaim, ScalarOutcome};
     use crate::witness::{CanonicalAssignment, WitnessValue};
     use ix_trace_rs::trace;
-    use qsl_foundation::digest::WireNodeId;
     use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
     use quire_contract_model::std001_code;
 
@@ -1774,8 +1760,8 @@ mod tests {
 
     fn function_claim(assignments: Vec<CanonicalAssignment>) -> ScalarClaim {
         ScalarClaim::Function(Box::new(crate::ValueIdentity {
-            obligation: crate::ObligationIdentity::from_digest([1; 32]),
-            package_id: (None, String::new()),
+            obligation: crate::ObligationIdentity::new(crate::fixture_node(1), None, 0),
+            package_name: "fixture".to_owned(),
             function: Some(
                 crate::QualifiedName::new(vec![quire_exact::Identifier::new("f").unwrap()])
                     .unwrap(),
@@ -2183,7 +2169,7 @@ mod tests {
     fn a_replay_refusal_settles_inconclusive_with_its_code_and_a_fault_failed() {
         use quire_semantic_value::catalog::InternalFault;
 
-        let refusal = ReplayRefusal::UnboundParameter(WireNodeId::from_digest([1; 32]));
+        let refusal = ReplayRefusal::UnboundParameter(crate::fixture_node(1));
         assert_eq!(
             TerminalValue::from_replay_refusal(&refusal),
             TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(refusal.code()))
@@ -2328,7 +2314,7 @@ mod tests {
         use quire_exact::{Origin, Role, Value};
 
         let occurrence = OccurrenceKey::new(
-            WireNodeId::from_digest([7; 32]),
+            crate::fixture_node(7),
             Origin::new(Role::new("expression"), 0),
         );
         let record = crate::SeparatingWitnessRecord {
@@ -2455,10 +2441,8 @@ mod tests {
         }
 
         fn base_witness() -> crate::SeparatingWitnessRecord {
-            let quantifier = OccurrenceKey::new(
-                WireNodeId::from_digest([7; 32]),
-                Origin::new(Role::new("q"), 0),
-            );
+            let quantifier =
+                OccurrenceKey::new(crate::fixture_node(7), Origin::new(Role::new("q"), 0));
             crate::SeparatingWitnessRecord {
                 quantifier: quantifier.clone(),
                 deciding_element: Value::Integer(Integer::from(1_u64)),
@@ -2569,10 +2553,8 @@ mod tests {
         type WitnessEdit = (&'static str, fn(&mut crate::SeparatingWitnessRecord));
         let witness_edits: &[WitnessEdit] = &[
             ("quantifier role String", |record| {
-                record.quantifier = OccurrenceKey::new(
-                    WireNodeId::from_digest([7; 32]),
-                    Origin::new(Role::new("qq"), 0),
-                );
+                record.quantifier =
+                    OccurrenceKey::new(crate::fixture_node(7), Origin::new(Role::new("qq"), 0));
             }),
             ("deciding Integer", |record| {
                 record.deciding_element = Value::Integer(Integer::from(10_u64));
@@ -2591,7 +2573,7 @@ mod tests {
             }),
             ("subject role String", |record| {
                 record.value_path.subject = ValuePathSubject::Built(OccurrenceKey::new(
-                    WireNodeId::from_digest([7; 32]),
+                    crate::fixture_node(7),
                     Origin::new(Role::new("qq"), 0),
                 ));
             }),
@@ -2727,7 +2709,6 @@ mod tests {
     #[test]
     fn a_call_site_refusal_settles_declined_with_its_code_and_a_fault_failed() {
         use crate::identity::QualifiedName;
-        use qsl_foundation::digest::{DigestDomain, DigestRecord};
         use quire_exact::Identifier;
         use quire_semantic_value::catalog::InternalFault;
 
@@ -2744,7 +2725,7 @@ mod tests {
         );
         let unknown = CallSiteRefusal::UnknownFunction {
             selection: QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap(),
-            package: DigestRecord::mint(DigestDomain::SourceBytesV1, [1; 32]),
+            package: qsl_semantics::library::LibraryName::new("fixture").unwrap(),
         };
         let settled = TerminalValue::from_call_site_refusal(&unknown);
         assert_eq!(
@@ -2834,7 +2815,7 @@ mod tests {
         let oversized = ScalarAgreement::new(
             function_claim(vec![
                 CanonicalAssignment {
-                    parameter: WireNodeId::from_digest([0; 32]),
+                    parameter: crate::fixture_node(0),
                     value: WitnessValue::Integer(0),
                 };
                 DEFAULT_INPUT_BYTES / 40 + 1

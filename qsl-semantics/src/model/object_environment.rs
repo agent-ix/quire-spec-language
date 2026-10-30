@@ -25,7 +25,7 @@ use quire_semantic_value::object_closure::ObjectClosure;
 /// already recorded under a binding that does not equal the one this call
 /// tried to record.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
-#[error("population {population_id} is already recorded under a different binding")]
+#[error("population {population_id:?} is already recorded under a different binding")]
 pub struct PopulationConflict {
     /// The colliding [`PopulationId`].
     pub population_id: PopulationId,
@@ -267,7 +267,7 @@ impl ObjectEnvironment {
         reference: &ObjectReference,
         field: &FieldRef,
     ) -> bool {
-        let Some(attributes) = types.attributes(reference.object_type()) else {
+        let Some(attributes) = types.attributes(reference.object_type().clone()) else {
             return false;
         };
         self.out_of_range.iter().any(|witnessed| {

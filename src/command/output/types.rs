@@ -49,7 +49,6 @@ impl Serialize for Stage {
 pub(super) struct Source<'a> {
     #[serde(flatten)]
     pub identity: &'a SourceIdentity,
-    pub digest: String,
     pub path: &'a str,
     pub formal: &'a ir::SourceIdentity,
 }
@@ -171,13 +170,12 @@ pub(super) struct AdmissionDeclarationKey {
 }
 
 /// FR-100: the program source as `spine-run-result/1` renders one -- its
-/// four FR-001 labels, `sha256:` source digest and authored path. Narrower
+/// four FR-001 labels and authored path. Narrower
 /// than [`Source`]: no formal document/revision member.
 #[derive(Serialize)]
 pub(super) struct RunSource<'a> {
     #[serde(flatten)]
     pub identity: &'a SourceIdentity,
-    pub digest: String,
     pub path: &'a str,
 }
 
@@ -282,8 +280,6 @@ pub(super) enum SpineOutcome {
 #[derive(Serialize)]
 pub(super) struct SpineRunReport<'a> {
     pub format: Format,
-    pub request_digest: String,
-    pub package_id: String,
     pub source: RunSource<'a>,
     pub function: &'a str,
     pub outcome: SpineOutcome,
@@ -301,13 +297,11 @@ pub(super) struct Failure<'a> {
     pub basis: &'static str,
 }
 
-/// Artifact commands retain their request identity and completion status on
-/// stderr. The `run` command uses the closed command-error shape above.
+/// Artifact commands retain their completion status on stderr. The `run` command uses the closed command-error shape above.
 #[derive(Serialize)]
 pub(super) struct ArtifactFailure<'a> {
     #[serde(flatten)]
     pub failure: Failure<'a>,
-    pub request_digest: Option<String>,
     pub status: ArtifactFailureStatus,
 }
 

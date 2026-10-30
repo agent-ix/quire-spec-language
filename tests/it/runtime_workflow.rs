@@ -85,9 +85,8 @@ fn record_result(name: &str, report: &EvaluationReport<'_, '_, '_>) {
         report.events()
     );
     println!(
-        "case={name} source={:?} source_digest={} authored={:?} clause={:?} selected={:?}",
+        "case={name} source={:?} authored={:?} clause={:?} selected={:?}",
         source.identity(),
-        source.digest(),
         context.clause().binding().requirement,
         context.clause().binding().clause,
         context.selection().observation
@@ -166,8 +165,8 @@ fn native_pipeline_distinguishes_parent_order_cycle_and_duplicate_aggregate_trut
         ));
         assert_eq!(checked.clauses()[0].binding().requirement, authored_owner());
         assert_eq!(
-            checked.bindings().source.source().digest(),
-            checked.linked().unit().source().digest()
+            checked.bindings().source.source().identity(),
+            checked.linked().unit().source().identity()
         );
         let artifact = snapshot(parent_data(&models[0], parent_version, cycle));
         let reference = artifact.reference();

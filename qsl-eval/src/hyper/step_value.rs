@@ -28,7 +28,7 @@ pub(crate) fn slot_value(read: &StepRead, label: &StepLabel<'_>) -> Result<Value
             Ok(Value::String(step.operation().to_owned()))
         }
         (StepRead::Receiver { object, .. }, label) => {
-            let payload = ValueType::Reference(*object);
+            let payload = ValueType::Reference(object.clone());
             let present = match label {
                 StepLabel::Stutter => None,
                 StepLabel::Operation(step) => match step.receiver() {

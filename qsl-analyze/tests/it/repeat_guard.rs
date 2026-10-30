@@ -10,17 +10,15 @@ use qsl_eval::model_subject::{AtomStop, ModelInstance, ModelLetters};
 use qsl_eval::simulation::model::ModelSimState;
 use qsl_eval::simulation::protocol::MemorySelection;
 use qsl_eval::temporal::AtomReading;
-use qsl_foundation::digest::DigestRecord;
-use qsl_foundation::{MemoryModelName, SourceIdentity};
+use qsl_foundation::MemoryModelName;
 use qsl_replay::{
-    compile_package, settle_protocol_check, Certification, DependencyInput, ModelCheckItem,
-    ModelCheckLimits, ModelCheckOutcome, ProofBasis, ProofCertificate, ProtocolCertificateRequest,
-    ReplayLimits, ResultLabel, StageLimits, TerminalValue,
+    settle_protocol_check, Certification, ModelCheckItem, ModelCheckLimits, ModelCheckOutcome,
+    ProofBasis, ProofCertificate, ProtocolCertificateRequest, ResultLabel, TerminalValue,
 };
 use qsl_semantics::check::FormulaNodeId;
 use quire_exact::{Cancel, Meter};
 
-use crate::litmus::{attempt, contracts, document, field, package, protocol, unit_text, Documents};
+use crate::litmus::{attempt, contracts, field, package, protocol, Documents};
 use crate::weak_memory::select;
 
 const CLAIM: &str = "temporal Eventually using t0 over (k: M::Core) clock \"model-steps\" \
@@ -56,7 +54,6 @@ static READS_ONE: ReadsValue = ReadsValue(1);
 static READS_THREE: ReadsValue = ReadsValue(3);
 
 struct Fixture {
-    body: String,
     checked: qsl_package::CheckedPackage,
     documents: Documents,
     memory: Vec<MemorySelection>,
@@ -113,7 +110,6 @@ impl Fixture {
             + claim;
         let checked = package(&body);
         Self {
-            body,
             checked,
             documents: Documents::new(),
             memory: vec![select("SB::Both", MemoryModelName::Tso)],
@@ -130,20 +126,6 @@ impl Fixture {
             clause: self.checked.graph().temporal_clauses()[0].clause(),
             letters: self.letters,
         }
-    }
-
-    fn package_id(&self) -> DigestRecord {
-        compile_package(
-            SourceIdentity::new("agent-ix", "litmus", "git", "1"),
-            "litmus.native",
-            unit_text(&self.body).as_bytes(),
-            [document().as_slice()],
-            &DependencyInput::default(),
-            StageLimits::default(),
-            ReplayLimits::default(),
-        )
-        .expect("the unit compiles")
-        .package_id()
     }
 }
 
@@ -193,7 +175,6 @@ fn a_repeat_guard_reads_its_latest_attempt_and_settles_certified() {
     let record = settle_protocol_check(
         &outcome,
         &ModelCheckLimits::default(),
-        &fixture.package_id(),
         &request,
         &Cancel::new(),
         |_| unreachable!("a proved outcome does not replay a counterexample"),

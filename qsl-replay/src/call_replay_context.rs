@@ -4,18 +4,17 @@
 //! from that same compile, a [`CallReplayContext`] bound to the run.
 //!
 //! The context wraps a [`PluginReplayContext`] built from the run's own
-//! units and limits, and names an item by FR-395's pairing key, the run's
-//! `package_id` and a member's request index. A consumer reaches the entry
+//! units and limits, and names an item by a member's request index. A consumer reaches the entry
 //! and the context through the `qsl_replay` root and never names
 //! [`crate::spine`] (FR-060 T12-A).
 
 use qsl_foundation::bound::ProofBound;
 use qsl_foundation::{BackendId, RequestIndex, SourceIdentity};
-use qsl_semantics::library::PackageId;
+use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_exact::Cancel;
 
-use crate::call_requirements::{associate, CallRequirement, CallRequirements};
+use crate::call_requirements::{associate, package_name_of, CallRequirement, CallRequirements};
 use crate::limits::CallerLimits;
 use crate::proof_result::{PluginReplayContext, PluginReplayRefusal};
 use crate::request::ReplayRequestWire;
@@ -29,7 +28,7 @@ use crate::witness::CanonicalAssignment;
 /// None of these compiles:
 ///
 /// ```compile_fail
-/// let _ = qsl_replay::CallReplayContext { package_id: todo!(), context: todo!(), members: todo!() };
+/// let _ = qsl_replay::CallReplayContext { context: todo!(), members: todo!() };
 /// ```
 ///
 /// ```compile_fail
@@ -57,41 +56,32 @@ use crate::witness::CanonicalAssignment;
 /// ```
 #[derive(Clone, Debug)]
 pub struct CallReplayContext {
-    package_id: PackageId,
+    package_name: LibraryName,
     context: PluginReplayContext,
     members: Vec<CallRequirement>,
 }
 
 impl CallReplayContext {
-    /// The `package_id` of the run that produced this context.
-    pub fn package_id(&self) -> PackageId {
-        self.package_id
+    /// The library name of the package of the run that produced this context.
+    pub fn package_name(&self) -> &LibraryName {
+        &self.package_name
     }
 
-    /// The `ReplayRequestWire` for the item at the pairing key
-    /// (`package_id`, `request_index`): FR-290's
+    /// The `ReplayRequestWire` for the item at `request_index`: FR-290's
     /// [`PluginReplayContext::request`] at the member's occurrence key.
     ///
     /// # Errors
     ///
-    /// The first [`PluginReplayRefusal`], in this order: `ForeignRun` when
-    /// `package_id` is not the run's; `NotACallItem` when `request_index` is
-    /// no member's; then FR-290's `NotReplayable`, `UnresolvedDependency`,
+    /// The first [`PluginReplayRefusal`], in this order: `NotACallItem` when
+    /// `request_index` is no member's; then FR-290's `NotReplayable`, `UnresolvedDependency`,
     /// `DuplicateBoundKey` and `Fault`.
     pub fn request(
         &self,
-        package_id: PackageId,
         request_index: RequestIndex,
         proof_bounds: &[ProofBound],
         plugin: &BackendId,
         assignments: Vec<CanonicalAssignment>,
     ) -> Result<ReplayRequestWire, PluginReplayRefusal> {
-        if package_id != self.package_id {
-            return Err(PluginReplayRefusal::ForeignRun {
-                received: package_id,
-                run: self.package_id,
-            });
-        }
         let member = self
             .members
             .iter()
@@ -102,21 +92,21 @@ impl CallReplayContext {
     }
 }
 
-/// What [`run_with_replay_context`] returns: `run`'s `package_id` and
-/// outcome, the selected call's [`CallRequirements`] and the run's
+/// What [`run_with_replay_context`] returns: `run`'s outcome, the selected call's [`CallRequirements`] and the run's
 /// [`CallReplayContext`], all from one compile.
 #[derive(Debug)]
 pub struct RunWithReplayContext {
-    package_id: PackageId,
+    package_name: LibraryName,
     outcome: CallOutcome,
     requirements: CallRequirements,
     context: CallReplayContext,
 }
 
 impl RunWithReplayContext {
-    /// The compiled package's id, as `run` returns it for the same inputs.
-    pub fn package_id(&self) -> PackageId {
-        self.package_id
+    /// The compiled package's library name: the identity of the source unit
+    /// the run compiled.
+    pub fn package_name(&self) -> &LibraryName {
+        &self.package_name
     }
 
     /// The call's outcome, as `run` returns it for the same inputs.
@@ -134,20 +124,15 @@ impl RunWithReplayContext {
         &self.context
     }
 
-    /// The package id, the outcome, the requirement items and the context.
-    pub fn into_parts(self) -> (PackageId, CallOutcome, CallRequirements, CallReplayContext) {
-        (
-            self.package_id,
-            self.outcome,
-            self.requirements,
-            self.context,
-        )
+    /// The outcome, the requirement items and the context.
+    pub fn into_parts(self) -> (CallOutcome, CallRequirements, CallReplayContext) {
+        (self.outcome, self.requirements, self.context)
     }
 }
 
 /// [`run_with_requirements`](crate::run_with_requirements) that also returns
 /// the run's [`CallReplayContext`] (FR-404). The source compiles once; the
-/// outcome, `package_id`, members and context come from that compile. The
+/// outcome, members and context come from that compile. The
 /// run's `SpineLimits` are `limits.spine`; the context copies the rest of
 /// `limits` into each request it builds.
 ///
@@ -159,6 +144,7 @@ impl RunWithReplayContext {
 )]
 pub fn run_with_replay_context(
     source: SourceIdentity,
+    package_name: String,
     path: &str,
     bytes: &[u8],
     packages: &qsl_semantics::model::intake::PackageInput,
@@ -168,8 +154,10 @@ pub fn run_with_replay_context(
     objects: &ObjectEnvironment,
     cancel: &Cancel,
 ) -> Result<RunWithReplayContext, Box<RunRefusal>> {
-    let (package_id, outcome, (members, context)) = run_reading(
+    let library_name = package_name_of(&package_name)?;
+    let (outcome, (members, context)) = run_reading(
         source,
+        package_name,
         path,
         bytes,
         packages,
@@ -187,11 +175,11 @@ pub fn run_with_replay_context(
         },
     )?;
     Ok(RunWithReplayContext {
-        package_id,
+        package_name: library_name.clone(),
         outcome,
-        requirements: CallRequirements::new(package_id, call, members.clone()),
+        requirements: CallRequirements::new(call, members.clone()),
         context: CallReplayContext {
-            package_id,
+            package_name: library_name,
             context,
             members,
         },
@@ -201,9 +189,8 @@ pub fn run_with_replay_context(
 #[cfg(test)]
 mod tests {
     use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound};
-    use qsl_foundation::digest::WireNodeId;
     use qsl_foundation::source::provenance::OccurrenceKey;
-    use quire_exact::{Integer, Origin, Role, Value};
+    use quire_exact::{Integer, NodeKey, Origin, Role, Value};
     use std::collections::BTreeMap;
 
     use super::*;
@@ -236,6 +223,7 @@ mod tests {
         };
         run_with_replay_context(
             SourceIdentity::new("a", "u", "git", "1"),
+            "fixture".to_owned(),
             "unit.native",
             source.as_bytes(),
             &BTreeMap::new(),
@@ -250,7 +238,7 @@ mod tests {
 
     /// `p`'s declaration occurrence and its parameter's node, read through
     /// a separate compile of `source`.
-    fn declaration(source: &str, function: &str) -> (OccurrenceKey, WireNodeId) {
+    fn declaration(source: &str, function: &str) -> (OccurrenceKey, NodeKey) {
         let identity = SourceIdentity::new("a", "u", "git", "1");
         let limits = CallerLimits::default().spine;
         let cancel = Cancel::new();
@@ -270,6 +258,7 @@ mod tests {
             .into_value();
         let checked = spine::check(
             &parsed,
+            "fixture".to_owned(),
             &models,
             &DependencyInput::default(),
             limits,
@@ -282,18 +271,19 @@ mod tests {
             .graph()
             .callable(function)
             .expect("declared");
-        let parameter =
-            callable_parameter_keys(checked.package(), &callable).expect("a function node")[0];
+        let parameter = callable_parameter_keys(checked.package(), &callable)
+            .expect("a function node")[0]
+            .clone();
         (
             OccurrenceKey::new(
-                WireNodeId::from_digest(*callable.identity.as_bytes()),
+                callable.identity.clone(),
                 Origin::new(Role::new("declaration"), 0),
             ),
-            WireNodeId::from_digest(*parameter.as_bytes()),
+            parameter,
         )
     }
 
-    fn bound_at(node: WireNodeId) -> ProofBound {
+    fn bound_at(node: NodeKey) -> ProofBound {
         ProofBound::new(
             DomainKey::Node { node, path: vec![] },
             Some(DomainKind::Integer),
@@ -302,15 +292,14 @@ mod tests {
         .unwrap()
     }
 
-    fn input(parameter: WireNodeId, x: i128) -> Vec<CanonicalAssignment> {
+    fn input(parameter: NodeKey, x: i128) -> Vec<CanonicalAssignment> {
         vec![CanonicalAssignment {
             parameter,
             value: WitnessValue::Integer(x),
         }]
     }
 
-    /// A member's request carries the run's package, its
-    /// source and the run's limits (FR-404-AC-6), and replays and settles.
+    /// A member's request carries the run's source and limits (FR-404-AC-6), and replays and settles.
     #[trace("TC-1173", "FR-404-AC-6")]
     #[test]
     fn a_member_request_carries_the_run_and_replays() {
@@ -321,22 +310,19 @@ mod tests {
         ])
         .unwrap();
         let result = run(SOURCE, limits);
-        let package_id = result.package_id();
         let (_, parameter) = declaration(SOURCE, "q");
         let member = result.requirements().members()[0].clone();
         let key = member.occurrence().clone();
-        let context = result.into_parts().3;
-        let bounds = [bound_at(parameter)];
+        let context = result.into_parts().2;
+        let bounds = [bound_at(parameter.clone())];
         let wire = context
             .request(
-                package_id,
                 member.request_index(),
                 &bounds,
                 &plugin(),
                 input(parameter, 9),
             )
             .expect("an application item");
-        assert_eq!(wire.package_id.1, package_id.hex());
         assert_eq!(wire.replay_target.occurrence_key.as_ref(), Some(&key));
         assert_eq!(wire.byte_provision[0].2, SOURCE.as_bytes());
         assert_eq!(wire.stage_limits["s1.tokens"], 200_000);
@@ -359,23 +345,6 @@ mod tests {
             TerminalValue::Inconclusive(crate::InconclusiveCause::ReplayParity(_))
         ));
         assert_eq!(settled.backend(), Some(&plugin()));
-
-        // Another package's id is refused before the item is looked at.
-        let other = SOURCE.replace("x + 1", "x + 2");
-        let foreign = run(&other, CallerLimits::default()).package_id();
-        assert_ne!(foreign, package_id);
-        assert!(matches!(
-            context
-                .request(
-                    foreign,
-                    member.request_index(),
-                    &bounds,
-                    &plugin(),
-                    Vec::new()
-                )
-                .err(),
-            Some(PluginReplayRefusal::ForeignRun { .. })
-        ));
     }
 
     /// The member's `obligation_identity` is the `process-provider` identity
@@ -399,6 +368,7 @@ mod tests {
         };
         let result = run_with_replay_context(
             SourceIdentity::new("a", "u", "git", "1"),
+            "fixture".to_owned(),
             "unit.native",
             source.as_bytes(),
             &BTreeMap::new(),
@@ -412,11 +382,10 @@ mod tests {
         assert!(matches!(result.outcome(), CallOutcome::Undefined { .. }));
         let (_, parameter) = declaration(&source, "r");
         let member = result.requirements().members()[0].clone();
-        let bounds = [bound_at(parameter)];
+        let bounds = [bound_at(parameter.clone())];
         let wire = result
             .context()
             .request(
-                result.package_id(),
                 member.request_index(),
                 &bounds,
                 &plugin(),
@@ -429,7 +398,7 @@ mod tests {
             &crate::BoundEntries::new(bounds.to_vec()).unwrap(),
         )
         .unwrap();
-        assert_eq!(wire.obligation_identity, *expected.as_bytes());
+        assert_eq!(wire.obligation_identity, expected);
         let replayed = crate::replay(wire, ReplayLimits::default());
         let refuted =
             TerminalRecord::from_plugin_counterexample(RequestIndex::new(0), plugin(), &replayed);

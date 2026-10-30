@@ -13,17 +13,15 @@ use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::value::enumeration::{
     AdmittedEnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
 };
-use qsl_semantics::value::{NodeIdentityPreimage, NodeOwner, OwnerSelection, OwnerSubject};
+use qsl_semantics::value::{NodeOwner, OwnerSelection, OwnerSubject};
 use quire_eval::Evaluation;
 use quire_eval::FamilyOutcome;
-use quire_exact::{EffectiveId, Presence, ValueType};
+use quire_exact::{EffectiveId, OriginalDeclarationKey, Presence, ValueType};
 use quire_exact::{Integer, Meter, Outcome, ScalarLimits, Value};
-use quire_exact::{NodeKey, NODE_KEY_DOMAIN};
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::{
     Admission, FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment, TypeEnvironmentLimits,
 };
-use sha2::{Digest, Sha256};
 
 /// A kernel limit set no evaluation in this crate runs out of.
 pub const SCALAR_UNLIMITED: ScalarLimits = ScalarLimits {
@@ -96,7 +94,11 @@ pub fn call_chain(functions: usize) -> PackageDeclarations {
         .collect();
     PackageDeclarations {
         functions: declarations,
-        ..PackageDeclarations::new(source(), qsl_foundation::IdentityLimits::default())
+        ..PackageDeclarations::new(
+            source(),
+            "qsl-bench",
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
 }
 
@@ -118,7 +120,11 @@ pub fn independent(functions: usize) -> PackageDeclarations {
         .collect();
     PackageDeclarations {
         functions: declarations,
-        ..PackageDeclarations::new(source(), qsl_foundation::IdentityLimits::default())
+        ..PackageDeclarations::new(
+            source(),
+            "qsl-bench",
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
 }
 
@@ -132,52 +138,29 @@ pub fn case_name(index: usize) -> String {
 /// # Panics
 ///
 /// Panics when the generated declaration or a member does not admit: a
-/// harness defect, since both are built from their own preimages' keys.
+/// harness defect, since both are built from their own structural keys.
 pub fn enum_binding(members: usize) -> EnumBinding {
-    let owners = OwnerSelection::new([NodeOwner::Definition(OwnerSubject {
-        authority: "agent-ix".into(),
-        identity: "qsl-bench".into(),
-    })]);
+    let owner = NodeOwner::Definition(OwnerSubject::new("agent-ix", "qsl-bench", "qsl-bench"));
+    let owners = OwnerSelection::new([owner.clone()]);
     let cases: Vec<String> = (0..members).map(case_name).collect();
-    let preimage = EnumDeclarationPreimage::from_json(serde_json::json!({
-        "version": "quire.enum-declaration-node/v1",
-        "owner": {"kind": "definition", "authority": "agent-ix", "identity": "qsl-bench"},
-        "qualified_declaration": ["Bench", "E"],
-        "ordered": true,
-        "members": cases,
-    }))
-    .expect("a well-formed enum declaration preimage");
-    let key = NodeKey::from_digest(
-        preimage
-            .digest(qsl_foundation::IdentityLimits::default())
-            .expect("the preimage encodes"),
-    );
-    let declaration = AdmittedEnumDeclaration::admit(
-        preimage,
-        key,
-        &owners,
-        qsl_foundation::IdentityLimits::default(),
+    let preimage = EnumDeclarationPreimage::new(
+        owner,
+        vec!["Bench".to_owned(), "E".to_owned()],
+        true,
+        cases.clone(),
     )
-    .expect("the declaration admits");
+    .expect("a well-formed enum declaration preimage");
+    let key = preimage.key().expect("the declaration key builds");
+    let declaration =
+        AdmittedEnumDeclaration::admit(preimage, key, &owners).expect("the declaration admits");
     let members = cases
         .iter()
         .map(|case| {
-            let member = EnumMemberPreimage::from_json(serde_json::json!({
-                "version": "quire.enum-member-node/v1",
-                "declaration_node_id": {
-                    "domain": NODE_KEY_DOMAIN,
-                    "digest": declaration.key().to_string(),
-                },
-                "case": case,
-            }))
-            .expect("a well-formed enum member preimage");
-            let key = NodeKey::from_digest(
-                member
-                    .digest(qsl_foundation::IdentityLimits::default())
-                    .expect("the preimage encodes"),
-            );
+            let member = EnumMemberPreimage::new(declaration.key(), case)
+                .expect("a well-formed enum member preimage");
+            let key = member.key().expect("the member key builds");
             declaration
-                .admit_member(&member, key, qsl_foundation::IdentityLimits::default())
+                .admit_member(&member, key)
                 .expect("the member admits")
         })
         .collect();
@@ -216,7 +199,11 @@ pub fn enum_members(functions: usize, binding: &EnumBinding) -> PackageDeclarati
     PackageDeclarations {
         functions: declarations,
         enums: vec![binding.clone()],
-        ..PackageDeclarations::new(source(), qsl_foundation::IdentityLimits::default())
+        ..PackageDeclarations::new(
+            source(),
+            "qsl-bench",
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
 }
 
@@ -269,7 +256,10 @@ pub fn completed_with_five(evaluation: &Evaluation) -> bool {
 /// cost shape: type `k` flattens to `k + 1` slots).
 pub fn object_chain(depth: usize) -> Vec<ObjectTypeDeclaration> {
     let key = |level: usize| {
-        EffectiveId::from_digest(Sha256::digest(format!("M::T{level}").as_bytes()).into())
+        EffectiveId::new(
+            None,
+            OriginalDeclarationKey::new("bench", format!("M::T{level}")),
+        )
     };
     (0..depth)
         .map(|level| {

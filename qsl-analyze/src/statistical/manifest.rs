@@ -11,7 +11,7 @@
 //! owns it, so this module restates no wire string.
 //!
 //! The driver reads the manifest and supplies the host-side facts the
-//! manifest does not carry, the [`ProviderOrigin`] and the manifest digest;
+//! manifest does not carry, the [`ProviderOrigin`];
 //! [`descriptor`] converts the rest through FR-288's one conversion.
 
 use qsl_foundation::bound::DomainKind;

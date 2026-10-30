@@ -21,7 +21,6 @@ use qsl_eval::simulation::protocol::{
     MemoryModel, MemorySelection, ProtocolTransition, Ra, StepKind, Tso,
 };
 use qsl_eval::simulation::{Location, SubjectSystem, TransitionSystem};
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::MemoryModelName;
 use qsl_replay::node_occurrence;
@@ -133,7 +132,7 @@ fn models_of(subject: &ProtocolSubject<'_>) -> Vec<(String, MemoryModelName)> {
 
 /// A second caller item's claim over `SB`, beside the unit's clause.
 fn other_claim() -> OccurrenceKey {
-    OccurrenceKey::generated(WireNodeId::from_digest([9; 32]))
+    OccurrenceKey::generated(crate::fixture_ids::node_key([9]))
 }
 
 /// The request over `case`'s two temporal items over `SB` under
@@ -1052,10 +1051,9 @@ fn tso_keys_after(case: &Case, path: &[Hop]) -> Vec<Json> {
     keys
 }
 
-/// The identity of the object a location of the unit names: its key's
-/// characters in hexadecimal.
+/// The identity of the object a location of the unit names: its key.
 fn identity(name: &str) -> String {
-    name.bytes().map(|byte| format!("{byte:02x}")).collect()
+    name.to_owned()
 }
 
 /// The value of the entry of the map member `member` whose key has `kind`
@@ -1522,7 +1520,7 @@ fn a_protocol_subjects_derived_items_follow_the_callers_at_its_clause_node() {
     }
 
     let node = protocol.node().expect("SB's clause has a node");
-    let anchor = OccurrenceKey::declaration(WireNodeId::from_digest(*node.as_bytes()));
+    let anchor = OccurrenceKey::declaration(node.clone());
     let emission = qsl_package::emit_checked(case.checked()).expect("the package emits");
     assert!(emission.source_map().regions(&anchor).is_some());
     for item in &written.items()[3..5] {
@@ -1562,7 +1560,7 @@ fn each_set_of_resolved_models_of_one_subject_gets_its_derived_items() {
     let graph = case.checked().graph();
     let protocol = graph.protocol("SB").expect("SB");
     let clause = node_occurrence(&graph.temporal_clauses()[0]);
-    let between = OccurrenceKey::generated(WireNodeId::from_digest([8; 32]));
+    let between = OccurrenceKey::generated(crate::fixture_ids::node_key([8]));
     let other = other_claim();
     let sb = under_ra.protocol.clone();
     let elsewhere = "Elsewhere".to_owned();
@@ -1794,7 +1792,6 @@ fn protocol_run<'c>(
             max_messages: None,
             max_live_instances: None,
         },
-        package_id: case.package_id(),
         replay: Box::new(move |payload| {
             if race {
                 case.replay_race(selection, payload.clone())

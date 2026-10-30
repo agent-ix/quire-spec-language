@@ -82,7 +82,7 @@ There is no predicate-replay route for these items. Neither entry selects a
 ## Inputs
 
 Both entries take an FR-071 replay request carrying the original proving
-context: the `package_id`, package reference, dependencies and byte
+context: the package reference, dependencies and byte
 provision; the enclosing function of the claimed node as the `function`
 replay target (QSpec FR-323), a request with another target refusing as
 FR-098 does; the R-6 `obligation_identity` CG minted (CG AD-002

@@ -103,7 +103,7 @@ pub(crate) fn checked_refinement_failures(
             if form.kind != StateClauseKind::Postcondition {
                 continue;
             }
-            let Some(context) = model.declaration_key(form.context) else {
+            let Some(context) = model.declaration_key(form.context.clone()) else {
                 continue;
             };
             if !model.reaches_owner(&member.owner, context) {

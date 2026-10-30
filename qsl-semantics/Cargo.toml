@@ -34,7 +34,7 @@ quire-checked = { workspace = true, features = ["construct"] }
 quire-semantic-value = { workspace = true }
 # FR-307's identity projection reads the IR-owned closed V2 node-tag
 # vocabulary; it must not carry a second QSL copy that can drift from I2.
-quire-contract-model = { git = "https://github.com/agent-ix/quire-contract-ir", branch = "main" }
+quire-contract-model = { git = "https://github.com/agent-ix/quire-contract-ir", rev = "0fa7cfdcd067eae9a8f0f2f7c8f48b081ceda221" }
 # ADR-011 §6.1 layer W: the shared no_std walker toolkit (ADR-030 D-1).
 quire-walk = { workspace = true }
 serde_json = { version = "1.0.151", features = ["unbounded_depth", "raw_value"] }
@@ -45,8 +45,8 @@ serde_json = { version = "1.0.151", features = ["unbounded_depth", "raw_value"] 
 quire-canonical = { workspace = true, features = ["std", "serde_json"] }
 serde = { version = "1.0.228", features = ["derive"] }
 thiserror = "2.0.20"
-agent-ix-extraction-frontend = { git = "https://github.com/agent-ix/filament-core-data", rev = "27c085347abe4e16b31afd1d166b6aaeb3e8f22a" }
-agent-ix-semantic-ir = { git = "https://github.com/agent-ix/filament-core-data", rev = "27c085347abe4e16b31afd1d166b6aaeb3e8f22a" }
+agent-ix-extraction-frontend = { git = "https://github.com/agent-ix/filament-core-data", rev = "1530aceea135ddc711bd98826b3c096864890899" }
+agent-ix-semantic-ir = { git = "https://github.com/agent-ix/filament-core-data", rev = "1530aceea135ddc711bd98826b3c096864890899" }
 # `model::intake::lift_document` calls FCD's `lift`, which always writes its
 # document to a required output path (FR-099); this is that scratch
 # directory, not test-only.

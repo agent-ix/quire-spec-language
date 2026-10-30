@@ -4,13 +4,10 @@
 //! nodes.
 //!
 //! A model declaration node stands for one domain package declaration. It
-//! is keyed by `quire.structural-node/v1` with QSpec's content-only
-//! `ModelOwner` (the declaring package's `DomainPackageRef` identity and
-//! the declaration's IR node identity, no version), a `null` `declaration`
-//! and an empty body. A `Reference<T>` carries `T` as an `EffectiveId` (ADR-013 O-05);
+//! is identified by its admitted structural `NodeKey`. A `Reference<T>`
+//! carries `T` as an `EffectiveId` (ADR-013 O-05);
 //! `check` maps it to its `DeclarationKey` through the admitted effective
-//! view's `type_identities` and keys the node by that key, so no preimage
-//! member is computed from an `EffectiveId` (FR-094-CON-2). Each model
+//! view's `type_identities` (FR-094-CON-2). Each model
 //! declaration node `check` keys is one model correspondence entry, and
 //! `check` is the correspondence's only writer.
 
@@ -18,11 +15,12 @@ use std::collections::BTreeMap;
 
 use quire_exact::{EffectiveId, Integer, NodeKey, UnitDomain, UnitId, ValueType};
 
-use super::{identifiers, refuse, type_declaration, Lowering, NodeContent, NominalNode};
+use super::{identifiers, refuse, require_admitted, type_declaration, Lowering, NodeContent};
+use crate::check::assemble::DimensionEquivalence;
 use crate::check::family::OccurrenceRole;
 use crate::check::node_key::{
-    Binding, BodyTerm, GroupMember, GroupTerm, LeafTerm, MemberTerm, ModelOwner, ModelRootOwner,
-    NodeTag, Owner,
+    Binding, BodyTerm, GroupMember, GroupTerm, LeafTerm, MemberTerm, ModelOwner, NodeRef, NodeTag,
+    Owner,
 };
 use crate::check::refusal::{CheckCause, CheckRefusal, KeyFault};
 use crate::check::VariantTypeDeclaration;
@@ -30,7 +28,9 @@ use crate::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, PopulationRecord,
 };
 use crate::model::normalize::EffectiveView;
-use crate::value::unit::{DimensionPreimage, UnitPreimage};
+use crate::value::nominal_payload::{
+    DimensionEquivalencePayload, DimensionPayload, NominalPayload, UnitPayload,
+};
 use qsl_forms::{DeclaredClauseKind, NameForm};
 use quire_checked::key::DeclarationKey;
 use quire_semantic_value::location::Location;
@@ -397,7 +397,8 @@ impl AdmittedModel {
         let (owner, _) = self.types.iter().find(|(_, key)| *key == &field.owner)?;
         let name = crate::model::intake::member_identity_name(&field.owner.node, &field.key.node)?;
         Some(quire_semantic_value::declaration::FieldRef::new(
-            *owner, name,
+            owner.clone(),
+            name,
         ))
     }
 
@@ -405,7 +406,7 @@ impl AdmittedModel {
     pub(crate) fn effective_id(&self, key: &DeclarationKey) -> Option<EffectiveId> {
         self.types
             .iter()
-            .find_map(|(identity, declared)| (declared == key).then_some(*identity))
+            .find_map(|(identity, declared)| (declared == key).then_some(identity.clone()))
     }
 
     /// The field record a staged admission's field identity stands for.
@@ -527,7 +528,7 @@ impl AdmittedModel {
             let Some(parent) = self.effective_id(edge) else {
                 continue;
             };
-            let slot = staged.parent_field(child, parent, &target_ref, (), ())?;
+            let slot = staged.parent_field(child.clone(), parent, &target_ref, (), ())?;
             if slots.iter().any(|known| known.field == slot.field) {
                 continue;
             }
@@ -612,7 +613,7 @@ impl AdmittedModel {
                 quire_exact::Presence::Required
             };
             projections.insert(
-                FieldRef::new(context, name),
+                FieldRef::new(context.clone(), name),
                 (first.value_type.clone(), presence),
             );
         }
@@ -672,7 +673,7 @@ impl AdmittedModel {
             types: view
                 .type_identities()
                 .iter()
-                .map(|(key, id)| (*id, key.clone()))
+                .map(|(key, id)| (id.clone(), key.clone()))
                 .collect(),
         }
         .with_places()
@@ -844,7 +845,7 @@ impl AdmittedModel {
                     Some(DomainPackageRecord::ObjectType(_))
                 )
             })
-            .map(|(id, key)| (key, *id))
+            .map(|(id, key)| (key, id.clone()))
     }
 
     /// Every state-machine declaration of this package and its effective
@@ -863,19 +864,29 @@ impl AdmittedModel {
                         matches!(record, DomainPackageRecord::FieldMember(field) if &field.owner == *key)
                     })
             })
-            .map(|(id, key)| (key, *id))
+            .map(|(id, key)| (key, id.clone()))
     }
 
     /// Every semantic object-type model node in this selected package, in
     /// declaration-key order. FR-230 resolves a time-source alias only when
     /// this package names exactly one such node.
-    pub(crate) fn object_type_model_node_keys(
-        &self,
-        identity: qsl_foundation::IdentityLimits,
-    ) -> Vec<NodeKey> {
+    pub(crate) fn object_type_model_node_keys(&self) -> Vec<NodeKey> {
         self.object_types()
-            .filter_map(|(declaration, _)| self.model_node_key(declaration, identity))
+            .filter_map(|(declaration, _)| self.model_node_key(declaration))
             .collect()
+    }
+
+    /// The key of `declaration`'s model node, minted by the same recipe
+    /// [`Lowering::model_node`] uses, without adding a node to any graph.
+    /// `None` when this package does not declare `declaration`, or declares
+    /// it as a record kind no checked node names.
+    pub(crate) fn model_node_key(&self, declaration: &DeclarationKey) -> Option<NodeKey> {
+        if self.selection.identity != declaration.package {
+            return None;
+        }
+        record_node_key(self.records.get(declaration)?)
+            .ok()
+            .flatten()
     }
 
     /// The object type a `terminal` declaration's model node names (FR-411):
@@ -888,7 +899,7 @@ impl AdmittedModel {
         let populated = self.population_objects();
         let mut populated = populated.iter();
         match (populated.next(), populated.next()) {
-            (Some(only), None) => Some(*only),
+            (Some(only), None) => Some(only.clone()),
             _ => self
                 .object_types()
                 .min_by(|(left, _), (right, _)| left.cmp(right))
@@ -926,7 +937,7 @@ impl AdmittedModel {
                     )
                 )
             })
-            .map(|(id, key)| (key, *id))
+            .map(|(id, key)| (key, id.clone()))
     }
 
     /// The declaration key of every top-level declaration of this package
@@ -953,25 +964,6 @@ impl AdmittedModel {
         self.records.iter().filter_map(|(key, record)| {
             matches!(record, DomainPackageRecord::Relationship(_)).then_some(key)
         })
-    }
-
-    /// The key of `declaration`'s model node, keyed from the same content
-    /// [`Lowering::model_node`] keys, without adding a node to any graph:
-    /// a model node's key depends on its declaration alone, so this names
-    /// the node whether or not the package's own lowering minted it.
-    /// `None` when this package does not declare `declaration`, or declares
-    /// it as a record kind no checked node names.
-    pub(crate) fn model_node_key(
-        &self,
-        declaration: &DeclarationKey,
-        identity: qsl_foundation::IdentityLimits,
-    ) -> Option<NodeKey> {
-        if self.selection.identity != declaration.package {
-            return None;
-        }
-        record_node_key(self.records.get(declaration)?, identity)
-            .ok()
-            .flatten()
     }
 
     /// The record `key` names in this package.
@@ -1005,7 +997,7 @@ impl AdmittedModel {
     ) -> Vec<(usize, &DeclarationKey, EffectiveId, Option<&AuthoredBound>)> {
         let covers = |member: &DeclarationKey| {
             self.types.iter().any(|(id, declared)| {
-                declared == member && (*id == target || conforms(target, *id))
+                declared == member && (*id == target || conforms(target.clone(), id.clone()))
             })
         };
         self.population_domains()
@@ -1033,7 +1025,9 @@ impl AdmittedModel {
         let overlaps = |member: &DeclarationKey| {
             self.types.iter().any(|(id, declared)| {
                 declared == member
-                    && (*id == target || conforms(target, *id) || conforms(*id, target))
+                    && (*id == target
+                        || conforms(target.clone(), id.clone())
+                        || conforms(id.clone(), target.clone()))
             })
         };
         self.population_domains()
@@ -1067,7 +1061,7 @@ impl AdmittedModel {
                     .filter_map(|member| {
                         self.types
                             .iter()
-                            .find_map(|(id, declared)| (declared == member).then_some(*id))
+                            .find_map(|(id, declared)| (declared == member).then_some(id.clone()))
                     })
                     .collect();
                 Some(NamedPopulationRecord {
@@ -1102,7 +1096,9 @@ impl AdmittedModel {
                 let covers = |member: &DeclarationKey| {
                     self.types.iter().any(|(id, declared)| {
                         declared == member
-                            && (*id == target || conforms(target, *id) || conforms(*id, target))
+                            && (*id == target
+                                || conforms(target.clone(), id.clone())
+                                || conforms(id.clone(), target.clone()))
                     })
                 };
                 symmetric
@@ -1365,7 +1361,7 @@ impl AdmittedModel {
     ) -> Option<&PackagePlace> {
         self.clock_places()
             .iter()
-            .find(|place| place.path == path && self.conforms(object, place.owner))
+            .find(|place| place.path == path && self.conforms(object.clone(), place.owner.clone()))
     }
 
     /// The package record type a written name `T` or `M::T` names, when
@@ -1476,8 +1472,8 @@ impl AdmittedModel {
     pub(crate) fn referenced_object(&self, object: EffectiveId, name: &str) -> Option<EffectiveId> {
         self.references
             .iter()
-            .find(|(owner, field, _)| field == name && self.conforms(object, *owner))
-            .map(|(_, _, target)| *target)
+            .find(|(owner, field, _)| field == name && self.conforms(object.clone(), owner.clone()))
+            .map(|(_, _, target)| target.clone())
     }
 
     /// Every required single-valued field of a package object type
@@ -1519,7 +1515,7 @@ impl AdmittedModel {
             let PlaceStep::Field(name) = step else {
                 return (walked, at);
             };
-            match self.referenced_object(at, name) {
+            match self.referenced_object(at.clone(), name) {
                 Some(next) => at = next,
                 None => return (walked, at),
             }
@@ -1546,7 +1542,7 @@ impl AdmittedModel {
             let owner = self.object_type_id(&field.owner)?;
             let name =
                 crate::model::intake::member_identity_name(&field.owner.node, &field.key.node)?;
-            (name == first && self.conforms(object, owner) && single(field))
+            (name == first && self.conforms(object.clone(), owner) && single(field))
                 .then_some(&field.value_type)
         })?;
         for step in rest {
@@ -1720,7 +1716,7 @@ impl AdmittedModel {
                 let node = self
                     .types
                     .iter()
-                    .find_map(|(id, declared)| (declared == canonical).then_some(*id))?;
+                    .find_map(|(id, declared)| (declared == canonical).then_some(id.clone()))?;
                 Some((ordinal, population, node))
             })
     }
@@ -1743,19 +1739,6 @@ fn fault(location: &Location, fault: KeyFault) -> CheckRefusal {
     refuse(location, CheckCause::InternalFault(Box::new(fault)))
 }
 
-/// The refusal for a record whose model node key [`record_node_key`] could
-/// not form.
-fn record_key_refusal(
-    location: &Location,
-    declaration: &DeclarationKey,
-    error: RecordKeyError,
-) -> CheckRefusal {
-    match error {
-        RecordKeyError::EmptyOwner => fault(location, KeyFault::EmptyNode(declaration.clone())),
-        RecordKeyError::Preimage(refusal) => super::preimage_refusal(location, refusal),
-    }
-}
-
 /// FR-094's `clause` binding value. No postcondition arm:
 /// `DeclaredClauseKind` has none (FR-094-CON-1).
 fn clause_spelling(kind: DeclaredClauseKind) -> &'static str {
@@ -1770,7 +1753,7 @@ fn clause_spelling(kind: DeclaredClauseKind) -> &'static str {
 /// node tag and form, no semantic type, a `null` `declaration` and an empty
 /// body. The one definition [`Lowering::model_node`] keys and adds and
 /// [`AdmittedModel::model_node_key`] only keys.
-pub(super) fn model_node_content(
+pub(crate) fn model_node_content(
     owner: ModelOwner,
     node_tag: NodeTag,
     form: &'static str,
@@ -1786,95 +1769,81 @@ pub(super) fn model_node_content(
     }
 }
 
-/// QSpec FR-322 `model_root`: the key of the root of the selected model
-/// package `selection`, a function of its identity and digest alone. The one
-/// definition the refinement body and the package emitter both use.
+/// The text of the two node tags a model declaration node carries.
+fn model_tag_text(tag: NodeTag) -> &'static str {
+    match tag {
+        NodeTag::Relation => "relation",
+        _ => "model",
+    }
+}
+
+/// The structural key of a model declaration node: the declaring package's
+/// identity, the path `[tag, form, node]` (the IR node string is one opaque
+/// segment, never split or hashed) and ordinal 0.
 ///
 /// # Errors
 ///
-/// A refusal when the selection's identity is empty or the preimage has no
-/// key.
-pub fn model_root_key(
-    selection: &DomainPackageRef,
-    identity: qsl_foundation::IdentityLimits,
-) -> Result<NodeKey, ModelRootKeyError> {
-    let owner = ModelRootOwner::new(selection.identity.clone())
-        .map_err(|_| ModelRootKeyError::EmptyIdentity)?;
-    let content = NodeContent {
-        owner_model: None,
-        node_tag: NodeTag::Model,
-        semantic_form: "model_root",
-        semantic_type: None,
-        declaration: None,
-        owner: Some(Owner::ModelRoot(owner)),
-        body: BodyTerm::aggregate(Vec::new()),
-    };
-    crate::check::node_key::node_key(&content.input(), identity)
-        .map(|keyed| keyed.key)
-        .map_err(|error| ModelRootKeyError::Preimage(error.to_string()))
+/// A refusal when the identity is empty or the key cannot be formed.
+pub(crate) fn model_declaration_key(
+    identity: &str,
+    tag: NodeTag,
+    form: &str,
+    node: &str,
+) -> Result<NodeKey, quire_exact::InvalidNodeKey> {
+    crate::check::declared_node_key(
+        identity.to_owned(),
+        vec![
+            model_tag_text(tag).to_owned(),
+            form.to_owned(),
+            node.to_owned(),
+        ],
+        0,
+    )
 }
 
-/// Why a selection has no `model_root` key.
-#[derive(Clone, Debug, Eq, Hash, PartialEq, thiserror::Error)]
-pub enum ModelRootKeyError {
-    /// The selection's package identity is empty.
-    #[error("the selected model package's identity is empty")]
-    EmptyIdentity,
-    /// The root's preimage has no key.
-    #[error("the model root's preimage has no key: {0}")]
-    Preimage(String),
+/// QSpec FR-322 `model_root`: the key of the root node of the selected
+/// model package `selection`: package `selection.identity`, path
+/// `["model", "model_root"]`, ordinal 0. It is separate from the least root
+/// type declaration's key.
+///
+/// # Errors
+///
+/// A refusal when the selection's identity is empty or the key cannot be
+/// formed.
+pub fn model_root_key(
+    selection: &DomainPackageRef,
+) -> Result<NodeKey, quire_exact::InvalidNodeKey> {
+    crate::check::declared_node_key(
+        selection.identity.clone(),
+        vec!["model".to_owned(), "model_root".to_owned()],
+        0,
+    )
 }
 
 /// The content of a `relation`/`population` node (QSpec FR-322 "Population
 /// references"): the one definition lowering's population reference and an
 /// abstraction relation's population target both key.
-pub(super) fn population_node_content(owner: ModelOwner) -> NodeContent {
+pub(crate) fn population_node_content(owner: ModelOwner) -> NodeContent {
     model_node_content(owner, NodeTag::Relation, "population")
 }
 
 /// The key of the model declaration node of `record`, or `None` for a record
-/// kind no checked node names. It is a function of the declaring package's
-/// identity and the record's node alone (FR-322 "Model-owned members"
-/// step 2), so it is also the declaration key under which a model record
-/// value type or event type is declared in the type environment (FR-359
-/// item 9): a unit's alias for the model never enters it.
+/// kind no checked node names: `[tag, form, node]` under the declaring
+/// package's identity (FR-322 "Model-owned members" step 2), so it is also
+/// the declaration key under which a model record value type or event type
+/// is declared in the type environment (FR-359 item 9).
+///
+/// # Errors
+///
+/// A refusal when the package identity is empty or the key cannot be formed.
 pub(crate) fn record_node_key(
     record: &DomainPackageRecord,
-    identity: qsl_foundation::IdentityLimits,
-) -> Result<Option<NodeKey>, RecordKeyError> {
+) -> Result<Option<NodeKey>, quire_exact::InvalidNodeKey> {
     let Some((node_tag, form)) = record_form(record) else {
         return Ok(None);
     };
     let key = record.key();
-    let owner = ModelOwner::new(key.package.clone(), key.node.clone())
-        .map_err(|_| RecordKeyError::EmptyOwner)?;
-    crate::check::node_key::node_key(&model_node_content(owner, node_tag, form).input(), identity)
-        .map(|keyed| Some(keyed.key))
-        .map_err(RecordKeyError::Preimage)
-}
-
-/// The key of the model declaration node of the variant type `record`
-/// declares (QSpec FR-322 "Model-owned members" step 2), a function of the
-/// declaring package's identity and the type's node alone, so no alias a
-/// unit gives the model enters it (FR-360 item 11). `None` for a record that
-/// declares no variant type.
-pub(crate) fn variant_type_node_key(
-    record: &DomainPackageRecord,
-    identity: qsl_foundation::IdentityLimits,
-) -> Result<Option<NodeKey>, RecordKeyError> {
-    match record {
-        DomainPackageRecord::Enum(_) => record_node_key(record, identity),
-        _ => Ok(None),
-    }
-}
-
-/// Why [`record_node_key`] has no key for a record it names.
-#[derive(Debug)]
-pub(crate) enum RecordKeyError {
-    /// The record's package identity or node is empty.
-    EmptyOwner,
-    /// The node's preimage has no key.
-    Preimage(crate::check::node_key::NodeKeyRefusal),
+    model_declaration_key(&key.package, node_tag, form, &key.node).map(Some)
 }
 
 /// A domain package record's model node tag and form, or `None` for a
@@ -1945,30 +1914,25 @@ impl<'a> Lowering<'a> {
         handle: NodeKey,
         location: &Location,
     ) -> Result<Option<DeclarationKey>, CheckRefusal> {
-        if self.model_records.is_none() {
-            let mut records = BTreeMap::new();
-            for model in self.models {
-                for (declaration, record) in &model.records {
-                    if !matches!(
-                        record,
-                        DomainPackageRecord::RecordValueType(_) | DomainPackageRecord::EventType(_)
-                    ) {
-                        continue;
-                    }
-                    let key = record_node_key(record, self.identity)
-                        .map_err(|error| record_key_refusal(location, declaration, error))?;
-                    if let Some(key) = key {
-                        records.insert(key, declaration.clone());
-                    }
+        for model in self.models {
+            for (declaration, record) in &model.records {
+                let Some((tag, form)) = record_form(record) else {
+                    continue;
+                };
+                if !matches!(
+                    record,
+                    DomainPackageRecord::RecordValueType(_) | DomainPackageRecord::EventType(_)
+                ) {
+                    continue;
+                }
+                let key = model_declaration_key(&declaration.package, tag, form, &declaration.node)
+                    .map_err(|_| fault(location, KeyFault::EmptyNode(declaration.clone())))?;
+                if key == handle {
+                    return Ok(Some(declaration.clone()));
                 }
             }
-            self.model_records = Some(records);
         }
-        Ok(self
-            .model_records
-            .as_ref()
-            .and_then(|records| records.get(&handle))
-            .cloned())
+        Ok(None)
     }
 
     /// The model declaration node of `declaration`, recorded in the model
@@ -1985,9 +1949,18 @@ impl<'a> Lowering<'a> {
             .ok_or_else(|| fault(location, KeyFault::UnknownDeclaration(declaration.clone())))?;
         let (node_tag, form) = record_form(record)
             .ok_or_else(|| fault(location, KeyFault::UnnamedRecordKind(declaration.clone())))?;
-        let key = self.insert_node(location, model_node_content(owner, node_tag, form))?;
+        let key =
+            model_declaration_key(&model.selection.identity, node_tag, form, &declaration.node)
+                .map_err(|_| fault(location, KeyFault::EmptyNode(declaration.clone())))?;
+        // COMPILE GAP: add the keyed content to the graph; `insert_node`
+        // mints content keys, so a keyed insert is owned by lowering.rs.
+        self.insert_declared_node(
+            location,
+            key.clone(),
+            model_node_content(owner, node_tag, form),
+        )?;
         self.correspondence
-            .record(key, declaration.clone())
+            .record(key.clone(), declaration.clone())
             .map_err(|conflict| fault(location, KeyFault::CorrespondenceConflict(conflict)))?;
         Ok(key)
     }
@@ -2001,8 +1974,15 @@ impl<'a> Lowering<'a> {
         declaration: &DeclarationKey,
         location: &Location,
     ) -> Result<NodeKey, CheckRefusal> {
-        let (owner, _) = self.model_owner(declaration, location)?;
-        self.insert_node(location, population_node_content(owner))
+        let (owner, model) = self.model_owner(declaration, location)?;
+        let key = model_declaration_key(
+            &model.selection.identity,
+            NodeTag::Relation,
+            "population",
+            &declaration.node,
+        )
+        .map_err(|_| fault(location, KeyFault::EmptyNode(declaration.clone())))?;
+        self.insert_declared_node(location, key, population_node_content(owner))
     }
 
     /// The model declaration node of the variant type `variant` and one
@@ -2016,7 +1996,7 @@ impl<'a> Lowering<'a> {
     ) -> Result<NodeKey, CheckRefusal> {
         let declaration = self.model_node(variant.declaration(), location)?;
         for member in variant.members() {
-            self.enum_member_node(location, declaration, member)?;
+            self.enum_member_node(location, declaration.clone(), member)?;
         }
         Ok(declaration)
     }
@@ -2088,13 +2068,13 @@ impl<'a> Lowering<'a> {
         location: &Location,
     ) -> Result<NodeKey, CheckRefusal> {
         match value_type {
-            ValueType::Reference(target) => self.object_node(*target, location),
+            ValueType::Reference(target) => self.object_node(target.clone(), location),
             ValueType::Option(payload) => match payload.as_ref() {
-                ValueType::Reference(target) => self.object_node(*target, location),
+                ValueType::Reference(target) => self.object_node(target.clone(), location),
                 _ => Err(mismatch(location)),
             },
             ValueType::Collection(collection) => match collection.element() {
-                ValueType::Reference(target) => self.object_node(*target, location),
+                ValueType::Reference(target) => self.object_node(target.clone(), location),
                 _ => Err(mismatch(location)),
             },
             _ => Err(mismatch(location)),
@@ -2146,7 +2126,8 @@ impl<'a> Lowering<'a> {
             None => Vec::new(),
         };
         let node = self.bounded("model_population", set, bindings, location)?;
-        self.population_nodes.insert(node);
+        let node = require_admitted(node, location)?;
+        self.population_nodes.insert(node.clone());
         Ok(node)
     }
 
@@ -2164,8 +2145,8 @@ impl<'a> Lowering<'a> {
     ) -> Result<NodeKey, CheckRefusal> {
         let site = type_declaration(&bound_origin(&bound.label));
         let node = self.population_type(near, Some(bound.maximum), reachability)?;
-        if self.bound_sites.insert((bound.label.clone(), node)) {
-            self.record(node, OccurrenceRole::Type, site);
+        if self.bound_sites.insert((bound.label.clone(), node.clone())) {
+            self.record(node.clone(), OccurrenceRole::Type, site);
         }
         Ok(node)
     }
@@ -2180,15 +2161,18 @@ impl<'a> Lowering<'a> {
     ) -> Result<NodeKey, CheckRefusal> {
         match unit.domain() {
             UnitDomain::Declared => {
-                let key = NodeKey::from_digest(*unit.as_bytes());
-                self.unit_nodes(key, location)?;
+                let key = unit
+                    .declared_key()
+                    .cloned()
+                    .ok_or_else(|| fault(location, KeyFault::UnheldUnit(unit.clone())))?;
+                self.unit_nodes(key.clone(), location)?;
                 Ok(key)
             }
             UnitDomain::Compound => {
-                let terms: Vec<(NodeKey, Integer)> = match self.units.get(unit) {
+                let terms: Vec<(NodeKey, Integer)> = match self.units.get(unit.clone()) {
                     Some(QuantityUnit::Compound(compound)) => compound
                         .terms()
-                        .map(|(root, exponent)| (root, exponent.clone()))
+                        .map(|(root, exponent)| (root.clone(), exponent.clone()))
                         .collect(),
                     Some(QuantityUnit::Declared(_)) | None => {
                         return Err(fault(location, KeyFault::UnheldUnit(unit)))
@@ -2196,7 +2180,7 @@ impl<'a> Lowering<'a> {
                 };
                 let mut members = Vec::with_capacity(terms.len());
                 for (root, exponent) in terms {
-                    self.unit_nodes(root, location)?;
+                    self.unit_nodes(root.clone(), location)?;
                     let exponent = self.integer_literal(exponent, location)?;
                     members.push(MemberTerm::Group(GroupTerm::new(vec![
                         GroupMember::Binding(Binding::new("unit", LeafTerm::reference(root))),
@@ -2218,88 +2202,125 @@ impl<'a> Lowering<'a> {
     /// FR-094, FR-092 rule 1: add the declared unit node `unit` to the
     /// graph, and every node it names: its dimension, that dimension's base
     /// dimensions and its target units. Each is built from the admitted node
-    /// the unit table holds for it, keyed by its admitted preimage bytes, as
-    /// QSpec's `scalar_type`/`unit` or `scalar_type`/`dimension` node: its
-    /// preimage's qualified name as its `declaration`, with a `declaration`
-    /// occurrence at that declared name, an empty body, and a unit typed by
-    /// its dimension. Its nominal preimage is rebuilt under the checked
-    /// unit's own source owner and kept when its bytes are the admitted ones;
-    /// a node another owner declares keeps none. A node already in the graph
+    /// the unit table holds for it, as QSpec's `scalar_type`/`unit` or
+    /// `scalar_type`/`dimension` node: its qualified name as its
+    /// `declaration`, with a `declaration` occurrence at that declared name,
+    /// an empty body, and a unit typed by its dimension. A node already in the graph
     /// is left as it is. The walk is a heap work list, bounded by the unit
     /// table's size.
     fn unit_nodes(&mut self, unit: NodeKey, location: &Location) -> Result<(), CheckRefusal> {
-        let owner = self.owner.node_owner();
         let mut pending = vec![unit];
         while let Some(key) = pending.pop() {
             if self.graph.nodes.contains_key(&key) {
                 continue;
             }
-            let Some(node) = self.units.nominal_node(key.as_bytes()).cloned() else {
+            let Some(node) = self.units.nominal_node(&key).cloned() else {
                 return Err(fault(location, KeyFault::UnheldNominal(key)));
             };
             let NominalDeclaration {
                 qualified_declaration: qualified,
-                preimage: bytes,
+                ..
             } = node.declaration;
-            let own = |rebuilt: Result<Vec<u8>, _>| rebuilt.is_ok_and(|rebuilt| rebuilt == bytes);
-            let (kind, semantic_form, semantic_type, nominal) = match node.form {
+            let (kind, semantic_form, semantic_type, payload) = match node.form {
                 NominalUnitForm::Unit {
                     dimension,
                     target,
                     scale,
                     offset,
                 } => {
-                    pending.push(dimension);
-                    pending.extend(target);
-                    let preimage = UnitPreimage::new(
-                        owner.clone(),
-                        qualified.clone(),
-                        dimension,
-                        target,
-                        &scale,
-                        &offset,
-                    )
-                    .ok()
-                    .filter(|preimage| own(preimage.preimage_bytes(self.identity)));
+                    pending.push(dimension.clone());
+                    pending.extend(target.clone());
+                    let payload = UnitPayload::new(dimension.clone(), target, scale, offset);
                     (
                         QuantityKind::Unit,
                         "unit",
                         Some(dimension),
-                        NominalNode::Unit(preimage.map(Box::new)),
+                        NominalPayload::Unit(payload),
                     )
                 }
                 NominalUnitForm::Dimension { terms } => {
-                    pending.extend(terms.iter().map(|(base, _)| *base));
-                    let preimage = DimensionPreimage::new(owner.clone(), qualified.clone(), terms)
-                        .ok()
-                        .filter(|preimage| own(preimage.preimage_bytes(self.identity)));
+                    pending.extend(terms.iter().map(|(base, _)| base.clone()));
                     (
                         QuantityKind::Dimension,
                         "dimension",
                         None,
-                        NominalNode::Dimension(preimage),
+                        NominalPayload::Dimension(DimensionPayload::new(terms)),
                     )
                 }
             };
             let site = type_declaration(&quantity_origin(kind, &qualified.join(".")));
             let declaration = identifiers(qualified.iter().map(String::as_str), &site)?;
+            // FR-322: a node this unit declares carries its `SourceOwner`.
+            let owner =
+                (key.package() == self.package_name).then(|| Owner::Source(self.owner.clone()));
             let inserted = self.insert_nominal(
                 &site,
-                key,
-                bytes,
+                key.clone(),
                 NodeContent {
                     owner_model: None,
                     node_tag: NodeTag::ScalarType,
                     semantic_form,
-                    semantic_type,
+                    semantic_type: semantic_type.map(Into::into),
                     declaration: Some(declaration),
-                    owner: None,
+                    owner,
                     body: BodyTerm::aggregate(Vec::new()),
                 },
-                nominal,
+                Some(payload),
             )?;
             if inserted {
                 self.record(key, OccurrenceRole::Declaration, site);
+            }
+        }
+        Ok(())
+    }
+
+    /// FR-094 "Dimension equivalence", FR-322-AC-118: one
+    /// `scalar_type`/`dimension_equivalence` node per admitted equivalence,
+    /// in source order: self-typed, no `declaration`, the unit's source
+    /// owner, a body referencing its two dimension nodes in ascending key
+    /// order, its `root_scale` in the nominal payload, and one `anchor`
+    /// occurrence whose ordinal is the declaration's place. The two
+    /// dimension nodes it depends on are built as a declared unit's are.
+    pub(crate) fn dimension_equivalence_nodes(
+        &mut self,
+        equivalences: &[DimensionEquivalence],
+    ) -> Result<(), CheckRefusal> {
+        for (index, equivalence) in equivalences.iter().enumerate() {
+            let site = type_declaration(&equivalence_origin(index));
+            for dimension in &equivalence.dimensions {
+                self.unit_nodes(dimension.clone(), &site)?;
+            }
+            let key = equivalence.key.clone();
+            let inserted = self.insert_nominal(
+                &site,
+                key.clone(),
+                NodeContent {
+                    owner_model: None,
+                    node_tag: NodeTag::ScalarType,
+                    semantic_form: "dimension_equivalence",
+                    semantic_type: Some(NodeRef::Admitted(key.clone())),
+                    declaration: None,
+                    owner: Some(Owner::Source(self.owner.clone())),
+                    body: BodyTerm::aggregate(
+                        equivalence
+                            .dimensions
+                            .iter()
+                            .cloned()
+                            .map(|dimension| {
+                                MemberTerm::reference_node(NodeRef::Admitted(dimension))
+                            })
+                            .collect(),
+                    ),
+                },
+                Some(NominalPayload::DimensionEquivalence(
+                    DimensionEquivalencePayload::new(
+                        equivalence.dimensions.clone(),
+                        equivalence.root_scale.clone(),
+                    ),
+                )),
+            )?;
+            if inserted {
+                self.record(key, OccurrenceRole::Anchor, site);
             }
         }
         Ok(())
@@ -2315,6 +2336,12 @@ impl<'a> Lowering<'a> {
         let spelling = self.text_literal(clause_spelling(clause.kind), location)?;
         Ok((Owner::Model(owner), MemberTerm::bound("clause", spelling)))
     }
+}
+
+/// The `Origin` name of the `index`th dimension-equivalence declaration, the
+/// key its anchor occurrence's region resolves under.
+pub(crate) fn equivalence_origin(index: usize) -> String {
+    format!("dimension equivalence {index}")
 }
 
 fn mismatch(location: &Location) -> CheckRefusal {

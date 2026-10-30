@@ -44,7 +44,7 @@ pub use liveness::LivenessRefusal;
 pub use product::{
     Product, ProductFinding, ProductKey, ProductState, ProductTransition, PropertyComponent,
 };
-pub use qsl_replay::{SubjectIdentity, SubjectIdentityRefusal};
+pub use qsl_replay::SubjectIdentity;
 pub use reduce::{
     admit, closure, generators, instance_groups, not_preserving, preserves, unoffered,
     ClosureRefusal, InstanceGroup, TableForm,

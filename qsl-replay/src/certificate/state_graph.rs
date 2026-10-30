@@ -133,11 +133,11 @@ fn bound_over(
         (None, None) => Ok(None),
         (Some(parameter), Some(reference)) => {
             let instances = system
-                .instances(&ValueType::Reference(parameter.object))
+                .instances(&ValueType::Reference(parameter.object.clone()))
                 .map_err(|refusal| ClosureRefusal::NotSimulated(Box::new(refusal)))?;
             for instance in &instances {
                 let bound = system
-                    .bound_reference(parameter.object, instance)
+                    .bound_reference(parameter.object.clone(), instance)
                     .map_err(ClosureRefusal::Fault)?;
                 if bound == *reference {
                     return Ok(Some(bound));

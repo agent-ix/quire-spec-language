@@ -9,7 +9,6 @@
 use ix_trace_rs::trace;
 use qsl_foundation::bound::{DomainKey, DomainKind};
 use qsl_foundation::diagnostic::Code;
-use qsl_foundation::digest::WireNodeId;
 use qsl_semantics::check::{
     Capability, CheckCause, CheckRefusal, CheckedGraph, CheckedNode, CheckedStateGraphClaim,
     NodeKind, StateGraphCause, StateGraphForm,
@@ -22,6 +21,16 @@ use crate::model_operations::{
     admit_and_assemble_with_body, attempt_update_modifies_version_number, config_unit_with_body,
     config_version_document, tc464_integer_argument_source,
 };
+
+/// A structural node key for a fixture, distinct per `tag`.
+fn fixture_key(tag: u8) -> quire_exact::NodeKey {
+    quire_exact::NodeKey::new(
+        "fixture",
+        vec![quire_exact::PathSegment::Text(format!("node{tag}"))],
+        0,
+    )
+    .expect("a valid fixture key")
+}
 
 fn document() -> Vec<u8> {
     config_version_document(
@@ -217,8 +226,8 @@ fn a_claim_records_temporal_satisfaction_over_an_unbounded_extent() {
     for name in ["ReachesTwo", "Guarded", "InOneWay"] {
         let record = claim(&graph, name).claim();
         assert_eq!(record.kind(), Capability::TemporalSatisfaction);
-        let node = WireNodeId::from_digest([7; 32]);
-        let requirements = record.requirements(node);
+        let node = fixture_key(7);
+        let requirements = record.requirements(node.clone());
         assert_eq!(requirements.kind(), Capability::TemporalSatisfaction);
         let ClaimExtent::Unbounded(domains) = requirements.extent() else {
             panic!("{name}: an unbounded extent");
@@ -231,7 +240,7 @@ fn a_claim_records_temporal_satisfaction_over_an_unbounded_extent() {
         assert_eq!(domains.kind(&key), Some(DomainKind::InfiniteTrace));
         assert_eq!(requirements.extent().to_wire(), "unbounded");
         // The record names the node it is keyed by and no other.
-        let other = WireNodeId::from_digest([8; 32]);
+        let other = fixture_key(8);
         let ClaimExtent::Unbounded(other_domains) = record.requirements(other).extent().clone()
         else {
             panic!("{name}: an unbounded extent");
