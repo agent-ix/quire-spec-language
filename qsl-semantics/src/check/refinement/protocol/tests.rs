@@ -503,6 +503,10 @@ fn a_protocol_refinement_has_one_row_per_step_class() {
     // `Fill`'s whole graph is written (its `parallel` since QSL-1186), so
     // its clause key is recorded.
     assert!(refinement.concrete_protocol().is_some());
+    // A protocol subject writes no per-step simulation record yet: FR-146
+    // gives no extent for a protocol row's `Step` record (STD-493 comment
+    // c699936f).
+    assert_eq!(refinement.step_simulations(), []);
 }
 
 /// Selection half of FR-135-AC-10 (the header grammar is not built): the rows
