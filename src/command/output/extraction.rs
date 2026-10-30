@@ -188,7 +188,6 @@ mod tests {
         assert!(!diagnostics.is_empty());
         let expected = serde_json::to_value(&diagnostics).unwrap();
         let error = RunError {
-            request_digest: None,
             cause: RunCause::Extraction(Box::new(ExtractionError::Context(diagnostics))),
         };
         assert_eq!(error.category().exit_code(), 20);
