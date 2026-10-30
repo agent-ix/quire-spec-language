@@ -307,10 +307,10 @@ domain:
   term is `aggregate{[binding "unit" = reference(the root unit's node),
   binding "exponent" = the exponent as an integer literal typed at the
   `Integer` node]}`. The dimensionless unit's body is `aggregate{[]}`.
-  BLOCKED-BY QSL-1310 (owner: planner titan:QSL:plan): exponent operands in compound-unit node paths.
-  Until then the node's `path` is `[scalar_type, compound_unit, ...]` with
-  its terms' root-unit node ids as operands (FR-322), and `check` assigns the
-  `ordinal`.
+  The node's `path` is `[scalar_type, compound_unit, U_1, e_1, ..., U_n, e_n]`:
+  each term's root-unit node id followed by its exponent as canonical decimal
+  text, in ascending root-unit node key (FR-322); the dimensionless unit's
+  path is `[scalar_type, compound_unit]`. `check` assigns the `ordinal`.
 
 `check` reads a compound unit's terms from the `CompoundUnit` that the check
 stage's unit scope holds for its `UnitId`: the package's unit table, or the

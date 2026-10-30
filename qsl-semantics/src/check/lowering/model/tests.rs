@@ -1157,14 +1157,15 @@ mod quantities {
         let ratio = form(UnitOperation::Divide, &metre, &metre);
         let square = form(UnitOperation::Multiply, &metre, &metre);
         let back = form(UnitOperation::Divide, &square, &metre);
+        let inverse = form(UnitOperation::Divide, &ratio, &metre);
         let mut formed = table.clone();
-        for unit in [&per_second, &ratio, &back] {
+        for unit in [&per_second, &ratio, &back, &square, &inverse] {
             formed
                 .insert(unit.clone())
                 .expect("a compound unit has an id");
         }
         let (keys, graph) = lower(&[], formed, |lowering| {
-            [&per_second, &ratio, &back].map(|unit| {
+            [&per_second, &ratio, &back, &square, &inverse].map(|unit| {
                 lowering
                     .type_node(
                         &ValueType::Quantity(unit.id().expect("a compound unit has an id")),
@@ -1173,7 +1174,9 @@ mod quantities {
                     .expect("a held compound unit keys")
             })
         });
-        assert_eq!(keys.iter().collect::<BTreeSet<_>>().len(), 3);
+        assert_eq!(keys.iter().collect::<BTreeSet<_>>().len(), 5);
+        // metre^2 and metre^-1 differ by exponent operand, not only ordinal.
+        assert_ne!(keys[3], keys[4]);
         let u2 = preimage(graph.node(keys[0].clone()).unwrap());
         assert_eq!(
             u2["body"]["members"][0]["members"][0]["value"]["target"]["digest"],

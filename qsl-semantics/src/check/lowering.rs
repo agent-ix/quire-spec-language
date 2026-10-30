@@ -5333,6 +5333,45 @@ fn derived_operands(content: &NodeContent) -> Vec<quire_exact::PathSegment> {
             }
             operands
         }
+        NodeTag::ScalarType if content.semantic_form == "compound_unit" => {
+            // QSpec FR-322: one `(unit node, exponent)` pair per term, in
+            // ascending root-unit node key.
+            let mut terms: Vec<(&NodeKey, String)> = Vec::new();
+            for member in &aggregate.members {
+                let MemberTerm::Group(group) = member else {
+                    continue;
+                };
+                let mut unit = None;
+                let mut exponent = None;
+                for entry in &group.members {
+                    let GroupMember::Binding(binding) = entry else {
+                        continue;
+                    };
+                    match (binding.name.as_str(), &binding.value) {
+                        (
+                            "unit",
+                            LeafTerm::Reference {
+                                target: NodeRef::Admitted(key),
+                            },
+                        ) => unit = Some(key),
+                        ("exponent", LeafTerm::Literal { value, .. }) => {
+                            exponent = Some(literal_operand_text(value));
+                        }
+                        _ => {}
+                    }
+                }
+                if let (Some(unit), Some(exponent)) = (unit, exponent) {
+                    terms.push((unit, exponent));
+                }
+            }
+            terms.sort_by(|left, right| left.0.cmp(right.0));
+            terms
+                .into_iter()
+                .flat_map(|(unit, exponent)| {
+                    [PathSegment::Node(unit.clone()), PathSegment::Text(exponent)]
+                })
+                .collect()
+        }
         _ => Vec::new(),
     }
 }

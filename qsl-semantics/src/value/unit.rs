@@ -483,8 +483,6 @@ impl CompoundUnitPreimage {
 
     /// The compound-arm [`UnitId`] of exactly these spelled terms
     /// (`UnitId::compound`), or `None` when a term key cannot be cloned.
-    // BLOCKED-BY QSL-1310 (owner: planner titan:QSL:plan): exponent operands in
-    // compound-unit node paths
     pub fn id(&self) -> Option<UnitId> {
         let terms = self
             .terms
