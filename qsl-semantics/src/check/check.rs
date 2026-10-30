@@ -1507,7 +1507,8 @@ impl Scope {
         declaration: quire_exact::NodeKey,
         field: &RecordField,
     ) -> Option<usize> {
-        let CompositeShape::Record(fields) = self.types.composite(declaration)?.shape() else {
+        let CompositeShape::Record(fields) = self.types.composite(declaration.clone())?.shape()
+        else {
             return None;
         };
         let name = self.model_records.own_name(declaration, field);
@@ -2915,7 +2916,7 @@ impl<'a> Typer<'a> {
                 OrderedKind::Texts
             }
             (ValueType::Quantity(l), ValueType::Quantity(r)) => {
-                let (Some(l), Some(r)) = (self.units.get(*l), self.units.get(*r)) else {
+                let (Some(l), Some(r)) = (self.units.get(l.clone()), self.units.get(r.clone())) else {
                     return Err(mismatch(location));
                 };
                 check_comparable(l, r)
@@ -3054,7 +3055,8 @@ impl<'a> Typer<'a> {
                     ArithmeticOperator::Multiply => UnitOperation::Multiply,
                     ArithmeticOperator::Divide => UnitOperation::Divide,
                 };
-                let (Some(l), Some(r)) = (self.units.get(*l), self.units.get(*r)) else {
+                let (Some(l), Some(r)) = (self.units.get(l.clone()), self.units.get(r.clone()))
+                else {
                     return Err(mismatch(location));
                 };
                 let unit = result_unit(operation, l, r)
@@ -3599,10 +3601,11 @@ impl<'a> Typer<'a> {
         } else {
             declared.value_type().clone()
         };
+        let key = key.clone();
         Ok(node(
             NodeKind::Field {
                 operand: self.push(operand),
-                field: RecordField::new(key.clone(), field),
+                field: RecordField::new(key, field),
                 optional,
             },
             value_type,
@@ -3690,9 +3693,11 @@ impl<'a> Typer<'a> {
         location: &Location,
     ) -> Result<(quire_exact::NodeKey, &'a [FieldDeclaration]), CheckRefusal> {
         let scope: &'a Scope = self.scope;
-        let ValueType::Composite(key) = self.type_named(name, location)? else {
+        let value_type = self.type_named(name, location)?;
+        let ValueType::Composite(key) = &value_type else {
             return Err(mismatch(location));
         };
+        let key = key.clone();
         let Some(CompositeShape::Record(declared)) = scope
             .types
             .composite(key.clone())

@@ -246,7 +246,11 @@ pub(crate) fn declared_node_key(
     let mut path = Vec::new();
     path.try_reserve_exact(declared_path.len())
         .map_err(|_| quire_exact::InvalidNodeKey::Allocation { requested })?;
-    path.extend(declared_path.into_iter().map(quire_exact::PathSegment::Text));
+    path.extend(
+        declared_path
+            .into_iter()
+            .map(quire_exact::PathSegment::Text),
+    );
     quire_exact::NodeKey::new(package, path, ordinal)
 }
 
@@ -487,7 +491,9 @@ impl CheckedFunctions {
     fn new(functions: Vec<(Signature, CheckedFunction)>) -> Self {
         let mut by_identity = BTreeMap::new();
         for (position, (_, function)) in functions.iter().enumerate() {
-            by_identity.entry(function.identity).or_insert(position);
+            by_identity
+                .entry(function.identity.clone())
+                .or_insert(position);
         }
         let (signatures, bodies): (Vec<_>, Vec<_>) = functions.into_iter().unzip();
         Self {
@@ -745,7 +751,7 @@ impl TemporalClauseNode {
 
     /// The clause's `temporal`/`temporal_clause` node.
     pub fn identity(&self) -> quire_exact::NodeKey {
-        self.identity
+        self.identity.clone()
     }
 
     /// The `claim` occurrence of this declaration of the clause node.
@@ -755,7 +761,7 @@ impl TemporalClauseNode {
 
     /// The `value`/`parameter` node of the clause's `over` parameter.
     pub fn over(&self) -> quire_exact::NodeKey {
-        self.over
+        self.over.clone()
     }
 
     /// The checked Boolean condition of the `holds` atom `atom` and its
@@ -979,8 +985,8 @@ fn operation_frames<'a>(
         if !seen {
             frames.push(CheckedOperationFrame {
                 operation: operation.clone(),
-                anchor: binding.anchor,
-                frame: binding.frame,
+                anchor: binding.anchor.clone(),
+                frame: binding.frame.clone(),
                 frame_origin: binding.frame_origin.clone(),
             });
         }
@@ -1144,7 +1150,7 @@ impl PackageDeclarations {
             let admitted = crate::value::layer::HeaderLayer::closure(&selected).contains(&required);
             let units = time_units::TimeUnits::new(
                 &self.units,
-                self.nominal_spans.keys().copied(),
+                self.nominal_spans.keys().cloned(),
                 &self.models,
                 &self.dimension_equivalences,
                 self.identity,
@@ -1426,7 +1432,7 @@ impl PackageDeclarations {
         let timed_drafts = {
             let units = time_units::TimeUnits::new(
                 &self.units,
-                self.nominal_spans.keys().copied(),
+                self.nominal_spans.keys().cloned(),
                 &self.models,
                 &self.dimension_equivalences,
                 self.identity,
@@ -1475,7 +1481,7 @@ impl PackageDeclarations {
             if admitted {
                 let units = time_units::TimeUnits::new(
                     &self.units,
-                    self.nominal_spans.keys().copied(),
+                    self.nominal_spans.keys().cloned(),
                     &self.models,
                     &self.dimension_equivalences,
                     self.identity,
@@ -3257,7 +3263,7 @@ impl PackageDeclarations {
             model_selections
                 .iter()
                 .position(|held| held.identity == selection.identity)
-                .and_then(|index| model_roots.get(index).copied())
+                .and_then(|index| model_roots.get(index).cloned())
         };
         for checked in &mut refinements {
             let abstract_model = models
@@ -3282,7 +3288,7 @@ impl PackageDeclarations {
         // the package (`temporal_clause::not_emitted`).
         let time_units = time_units::TimeUnits::new(
             &self.units,
-            self.nominal_spans.keys().copied(),
+            self.nominal_spans.keys().cloned(),
             &models,
             &self.dimension_equivalences,
             self.identity,
@@ -4925,7 +4931,7 @@ impl PackageDeclarations {
                 }]);
             };
             for pending in std::mem::take(&mut checked.pending_predicate_joins) {
-                let identity = identities.get(pending.function).copied().flatten();
+                let identity = identities.get(pending.function).cloned().flatten();
                 let Some(identity) = identity else {
                     return Err(vec![CheckRefusal {
                         location: root(Origin::Expression),
@@ -4987,18 +4993,19 @@ impl PackageDeclarations {
                     .map(|(_, origin, _)| origin)
                     .ok_or_else(unkeyable)?;
                 let claims = state_clause::ProtocolClauseFamily::requirements(&typed);
-                let ranged = claims
+                let ranged: Vec<_> = claims
                     .iter()
                     .filter(|claim| claim.subject == state_clause::ClaimSubject::Clause)
-                    .flat_map(|claim| claim.populations.iter().copied());
+                    .flat_map(|claim| claim.populations.iter().cloned())
+                    .collect();
                 if let Some(operation) = &form.operation {
                     contract_populations
                         .entry(state_clause::operation_reference(operation))
                         .or_default()
-                        .extend(ranged.clone());
+                        .extend(ranged.iter().cloned());
                 }
                 clause_populations
-                    .entry(lowered.key)
+                    .entry(lowered.key.clone())
                     .or_default()
                     .extend(ranged);
                 let keyed = state_clause::clause_records(
@@ -5575,7 +5582,7 @@ impl PackageDeclarations {
                 let contracts = bound
                     .contracts
                     .iter()
-                    .map(|&index| lowered_clause_keys.get(index).copied())
+                    .map(|&index| lowered_clause_keys.get(index).cloned())
                     .collect::<Option<Vec<_>>>()
                     .ok_or_else(unkeyable)?;
                 attempts.push(protocol_clause::CheckedAttempt {
@@ -6206,9 +6213,9 @@ fn object_node_of(
 ) -> Option<quire_exact::NodeKey> {
     object_types
         .iter()
-        .find_map(|(declaration, id)| (*id == object).then_some(declaration))
+        .find_map(|(declaration, id)| (id == &object).then_some(declaration))
         .and_then(|declaration| object_nodes.get(declaration))
-        .copied()
+        .cloned()
 }
 
 /// ADR-012 §15.7: the domain key of `domain` from the admitted models'
@@ -6220,12 +6227,13 @@ fn population_domain_key(
     object_nodes: &BTreeMap<quire_checked::key::DeclarationKey, quire_exact::NodeKey>,
     domain: state_clause::PopulationDomain,
 ) -> Result<qsl_foundation::bound::DomainKey, quire_semantic_value::catalog::InternalFault> {
-    let node = object_node_of(object_types, object_nodes, domain.object).ok_or_else(|| {
-        quire_semantic_value::catalog::InternalFault::new(
-            "check.population-domain",
-            "member-type-has-a-model-node",
-        )
-    })?;
+    let node =
+        object_node_of(object_types, object_nodes, domain.object.clone()).ok_or_else(|| {
+            quire_semantic_value::catalog::InternalFault::new(
+                "check.population-domain",
+                "member-type-has-a-model-node",
+            )
+        })?;
     state_clause::population_key(&domain, node)
 }
 
@@ -6274,7 +6282,7 @@ impl CheckedGraph {
     pub fn model_roots(&self) -> impl Iterator<Item = (&DomainPackageRef, quire_exact::NodeKey)> {
         self.model_selections
             .iter()
-            .zip(self.model_roots.iter().copied())
+            .zip(self.model_roots.iter().cloned())
     }
 
     /// FR-110: the header-selectable layers the unit's header profiles
@@ -6641,7 +6649,7 @@ impl CheckedGraph {
             return Ok(None);
         };
         let types = self.scope.types();
-        let Some(attribute) = types.attribute(*context, field.as_str()) else {
+        let Some(attribute) = types.attribute(context.clone(), field.as_str()) else {
             return Ok(None);
         };
         let fault = |invariant| {
@@ -6651,7 +6659,7 @@ impl CheckedGraph {
         let node = self
             .object_types
             .iter()
-            .find_map(|(declaration, id)| (*id == declaring).then_some(declaration))
+            .find_map(|(declaration, id)| (id == &declaring).then_some(declaration))
             .and_then(|declaration| self.object_nodes.get(declaration))
             .ok_or_else(|| fault("declaring-type-has-a-model-node"))?;
         let mut names: Vec<&str> = types
@@ -6668,7 +6676,7 @@ impl CheckedGraph {
             .map_err(|_| fault("field-is-declared-by-its-owner"))?;
         let ordinal = u32::try_from(position).map_err(|_| fault("field-ordinal-past-u32"))?;
         Ok(Some(qsl_foundation::bound::DomainKey::Node {
-            node: claims::wire(*node),
+            node: claims::wire(node.clone()),
             path: vec![ordinal],
         }))
     }
@@ -6695,7 +6703,7 @@ impl CheckedGraph {
         else {
             return Ok(None);
         };
-        self.population_key(*domain).map(Some)
+        self.population_key(domain.clone()).map(Some)
     }
 
     /// The declaration of the object type `id`, when the package admits one.
@@ -6705,7 +6713,7 @@ impl CheckedGraph {
     ) -> Option<&quire_checked::key::DeclarationKey> {
         self.object_types
             .iter()
-            .find_map(|(key, known)| (*known == id).then_some(key))
+            .find_map(|(key, known)| (known == &id).then_some(key))
     }
 
     /// ADR-012 §15.7: the domain key of `domain`, a population a checked
@@ -6738,13 +6746,13 @@ impl CheckedGraph {
         &self,
         selection: &OperationSelection,
     ) -> Option<(quire_exact::EffectiveId, &CheckedOperationFrame)> {
-        let context = *self.owner_types.get(&selection.object)?;
+        let context = self.owner_types.get(&selection.object)?.clone();
         let crate::model::operation::OperationLookup::Declared {
             declaring,
             operation,
         } = self.scope.operations().resolve(
             self.scope.types(),
-            context,
+            context.clone(),
             selection.operation.as_str(),
         )
         else {
@@ -6770,7 +6778,7 @@ impl CheckedGraph {
         matches!(
             self.scope.operations().resolve(
                 self.scope.types(),
-                *context,
+                context.clone(),
                 selection.operation.as_str(),
             ),
             crate::model::operation::OperationLookup::Ambiguous(_)
@@ -6815,7 +6823,7 @@ impl CheckedGraph {
             .find(|frame| {
                 frame.operation.declaring == declaring && frame.operation.declaration.name() == name
             })
-            .map(|frame| frame.anchor)
+            .map(|frame| frame.anchor.clone())
     }
 
     /// FR-107: the checked state clause whose minted node identity is
@@ -6862,7 +6870,8 @@ impl CheckedGraph {
     /// unchanged by anything else in the package. `None` for an undeclared
     /// name.
     pub fn function_identity(&self, name: &str) -> Option<quire_exact::NodeKey> {
-        self.function(name).map(|(_, function)| function.identity)
+        self.function(name)
+            .map(|(_, function)| function.identity.clone())
     }
 
     /// FR-062-AC-2/FR-065-AC-3: the source location recorded for one
@@ -6916,22 +6925,16 @@ impl CheckedGraph {
         self.functions.with_identity(identity).map(function_state)
     }
 
-    /// ADR-015 D-5: the signature of the function callable by name whose
-    /// checked identity has the bytes of `node`, found among the identities
-    /// this graph holds and never by minting a `NodeKey` (ADR-013 O-04,
-    /// R-10), with its function index in this graph, which the imported
+    /// ADR-015 D-5: the signature of the function callable by name with
+    /// structural identity `node`, found among the identities this graph
+    /// holds, with its function index in this graph, which the imported
     /// call records so evaluation reads it by [`Self::function_state`].
     /// `None` when no such function is declared.
     pub(crate) fn imported_function(
         &self,
-        node: &qsl_foundation::digest::WireNodeId,
+        node: &quire_exact::NodeKey,
     ) -> Option<(usize, &Signature)> {
-        let position = self
-            .functions
-            .by_identity
-            .iter()
-            .find(|(identity, _)| identity.as_bytes() == node.as_bytes())
-            .map(|(_, position)| *position)?;
+        let position = *self.functions.by_identity.get(node)?;
         self.functions
             .get(position)
             .map(|(signature, _)| (position, signature))
@@ -6948,7 +6951,7 @@ impl CheckedGraph {
         self.function(name)
             .filter(|(signature, _)| signature.callable_by_name)
             .map(|(signature, function)| CallableFunction {
-                identity: function.identity,
+                identity: function.identity.clone(),
                 parameters: &signature.parameters,
                 result: &signature.result,
             })
@@ -6967,7 +6970,7 @@ impl CheckedGraph {
             .with_identity(identity)
             .filter(|(signature, _)| signature.callable_by_name)
             .map(|(signature, function)| CallableFunction {
-                identity: function.identity,
+                identity: function.identity.clone(),
                 parameters: &signature.parameters,
                 result: &signature.result,
             })
