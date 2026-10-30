@@ -114,7 +114,6 @@ impl<'a, 'model> Manifest<'a, 'model> {
 struct Model<'a> {
     alias: &'a str,
     owner: &'a ir::RequirementRef,
-    digest: DisplayValue<ByteDigest>,
     artifact: &'a str,
 }
 
@@ -138,7 +137,6 @@ impl Serialize for Models<'_, '_> {
             seq.serialize_element(&Model {
                 alias: &import.alias.value,
                 owner: model.environment().owner(),
-                digest: DisplayValue(model.digest()),
                 artifact,
             })?;
         }

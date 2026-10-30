@@ -130,7 +130,10 @@ fn used_context_unused_declarations_and_selected_roles_change_the_expected_ident
             baseline.canonical_identity(),
             "{name}"
         );
-        assert_ne!(models[0].digest(), baseline_models[0].digest());
+        assert_ne!(
+            models[0].artifact_bytes(),
+            baseline_models[0].artifact_bytes()
+        );
     }
 }
 

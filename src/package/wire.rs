@@ -53,7 +53,6 @@ record!(CanonicalIdentity {
 record!(Model {
     alias: Text,
     owner: Owner,
-    digest: Digest,
     artifact: Text
 });
 record!(Clause {

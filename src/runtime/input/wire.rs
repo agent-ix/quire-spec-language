@@ -113,14 +113,12 @@ impl From<Object<QualifiedName>> for super::QualifiedName {
 #[serde(deny_unknown_fields)]
 pub(super) struct ModelBinding {
     model: Requirement,
-    digest: Digest,
 }
 
 impl From<Object<ModelBinding>> for super::ModelBinding {
     fn from(Object(value): Object<ModelBinding>) -> Self {
         Self {
             model: value.model.0,
-            digest: value.digest.0,
         }
     }
 }

@@ -255,16 +255,6 @@ fn schema_checks_kind_pairing_identifiers_and_exact_representable_scalar_bounds(
     ] {
         adverse.push(("/body/models/0/model/package", json!(package)));
     }
-    for digest in [
-        "0".repeat(63),
-        "0".repeat(65),
-        "A".repeat(64),
-        "g".repeat(64),
-        format!("sha256:{}", "0".repeat(64)),
-        format!("{}\n", "0".repeat(64)),
-    ] {
-        adverse.push(("/body/models/0/digest", json!(digest)));
-    }
     for (pointer, replacement) in adverse {
         let mut changed = original.clone();
         *changed.pointer_mut(pointer).unwrap() = replacement.clone();

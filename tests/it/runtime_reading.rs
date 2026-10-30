@@ -254,7 +254,6 @@ fn malformed_values_and_limits_refuse_without_losing_fresh_read_behavior() {
     for (pointer, value) in [
         ("/body/models/0/model/revision", json!(0)),
         ("/body/models/0/model/package", json!("")),
-        ("/body/models/0/digest", json!("A".repeat(64))),
         ("/body/populations/0/record", json!("")),
         ("/body/arena/0/value", json!(1.5)),
         ("/body/arena/0/value", json!(9_223_372_036_854_775_808_u64)),

@@ -95,7 +95,6 @@ fn tc_044_native_reference_fields_and_operations_keep_declared_targets() {
     let linked = link_native(read(&text), &models, LinkLimits::default()).unwrap();
     assert_eq!(linked.binding_profile(), "native-state-model/1");
     assert_eq!(linked.unit().source().text(), text);
-    assert_eq!(linked.models()[0].digest(), models[0].digest());
     assert!(std::ptr::eq(
         linked.models()[0].native_model().unwrap(),
         &models[0]

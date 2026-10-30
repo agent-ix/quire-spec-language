@@ -195,19 +195,11 @@ impl<F: FnMut() -> bool> Validator<'_, '_, F> {
                     "duplicate input model binding",
                 )?;
             }
-            let digest = self
-                .catalog(&binding.model)
-                .map(|catalog| catalog.model.digest());
-            match digest {
+            match self.catalog(&binding.model) {
                 None => self.budget.issue(
                     Stage::Binding,
                     Code::InvalidModelBinding,
                     "input names a model outside the checked package",
-                )?,
-                Some(digest) if digest != binding.digest => self.budget.issue(
-                    Stage::Binding,
-                    Code::StaleDependency,
-                    "input model binding selects stale native model bytes",
                 )?,
                 Some(_) => {
                     admitted.insert(binding.model.clone());

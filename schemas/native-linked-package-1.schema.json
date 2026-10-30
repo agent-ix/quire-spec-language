@@ -194,7 +194,6 @@
       "required": [
         "alias",
         "owner",
-        "digest",
         "artifact"
       ],
       "properties": {
@@ -204,10 +203,6 @@
         },
         "owner": {
           "$ref": "#/$defs/owner"
-        },
-        "digest": {
-          "type": "string",
-          "pattern": "^sha256:[0-9a-f]{64}$"
         },
         "artifact": {
           "type": "string",

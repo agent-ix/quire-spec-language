@@ -59,10 +59,7 @@ fn label_and_observation_family_preserves_exact_bytes_on_repeat() {
 #[trace("TC-056", "FR-018-AC-3")]
 fn each_snapshot_component_is_byte_bound_and_vectors_keep_order() {
     let mut baseline = empty();
-    baseline.models.push(ModelBinding {
-        model: owner(),
-        digest: zero_digest(),
-    });
+    baseline.models.push(ModelBinding { model: owner() });
     baseline.populations.push(Population {
         model: owner(),
         record: symbol("Node"),
@@ -79,23 +76,22 @@ fn each_snapshot_component_is_byte_bound_and_vectors_keep_order() {
         ValueNode::Integer { value: 2 },
     ];
     let original = Snapshot::new(identity(), baseline.clone(), ArtifactLimits::default()).unwrap();
-    for choice in 0..10 {
+    for choice in 0..9 {
         let mut selected = identity();
         let mut draft = baseline.clone();
         match choice {
             0 => selected.identity.push('x'),
             1 => selected.revision.push('x'),
             2 => draft.observation = ir::StateObservation::Pre,
-            3 => draft.models[0].digest = ByteDigest::of(b"changed"),
-            4 => {
+            3 => {
                 draft.models[0].model =
                     ir::RequirementRef::parse("example/runtime", "RuntimeModel", 2).unwrap()
             }
-            5 => draft.populations[0].complete = false,
-            6 => draft.populations[0].objects[0].key.push('x'),
-            7 => draft.populations[0].objects[0].fields.reverse(),
-            8 => draft.values[0].value = ValueId::new(1),
-            9 => draft.arena.reverse(),
+            4 => draft.populations[0].complete = false,
+            5 => draft.populations[0].objects[0].key.push('x'),
+            6 => draft.populations[0].objects[0].fields.reverse(),
+            7 => draft.values[0].value = ValueId::new(1),
+            8 => draft.arena.reverse(),
             _ => unreachable!(),
         }
         let artifact = Snapshot::new(selected, draft, ArtifactLimits::default()).unwrap();
@@ -129,10 +125,7 @@ fn expected_refs_and_invocation_mutations_retain_complete_correspondence() {
     for choice in 0..11 {
         let mut draft = baseline.clone();
         match choice {
-            0 => draft.models.push(ModelBinding {
-                model: owner(),
-                digest: zero_digest(),
-            }),
+            0 => draft.models.push(ModelBinding { model: owner() }),
             1 => draft.context.name = symbol("Other"),
             2 => draft.operation = symbol("other_step"),
             3 => draft.anchor = ir::AnchorName::new("other_anchor").unwrap(),

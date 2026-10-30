@@ -66,10 +66,9 @@
     "model_binding": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["model", "digest"],
+      "required": ["model"],
       "properties": {
-        "model": {"$ref": "#/$defs/requirement"},
-        "digest": {"$ref": "#/$defs/digest"}
+        "model": {"$ref": "#/$defs/requirement"}
       }
     },
     "object_identity": {

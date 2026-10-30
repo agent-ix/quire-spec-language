@@ -65,7 +65,6 @@ pub fn model() -> io::Result<NativeModel> {
 fn binding(model: &NativeModel) -> ModelBinding {
     ModelBinding {
         model: model.environment().owner().clone(),
-        digest: model.digest(),
     }
 }
 

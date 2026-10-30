@@ -272,7 +272,6 @@ fn repeated_aliases_preserve_source_order_and_unselected_models_stay_out_of_clos
             model["owner"],
             json!({"package":"example/rule-tests","requirement":"RuleModel","revision":1})
         );
-        assert_eq!(model["digest"], models[0].digest().to_string());
         assert_eq!(
             model["artifact"],
             std::str::from_utf8(models[0].artifact_bytes()).unwrap()

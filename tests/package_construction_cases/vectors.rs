@@ -178,7 +178,7 @@ fn expected_inner(
             "{{\"format\":\"native-linked-package/1\",\"semantics\":{SEMANTICS},",
             "\"required_features\":[\"boolean\",\"object\",\"reference\",\"text\"],",
             "\"source\":{{\"authority\":\"agent-ix\",\"identity\":{identity_json},\"revision_namespace\":\"draft\",\"revision\":{revision_json},\"digest\":\"{original_digest}\",\"formal\":{{\"document\":\"PackageSource\",\"revision\":{formal_revision}}}}},",
-            "\"models\":[{{\"alias\":\"M\",\"owner\":{OWNER},\"digest\":\"{model_digest}\",\"artifact\":{model_string}}}],\"clauses\":["
+            "\"models\":[{{\"alias\":\"M\",\"owner\":{OWNER},\"artifact\":{model_string}}}],\"clauses\":["
         ),
         SEMANTICS = SEMANTICS,
         OWNER = OWNER,
@@ -186,7 +186,6 @@ fn expected_inner(
         revision_json = revision_json,
         original_digest = original_digest,
         formal_revision = formal_revision,
-        model_digest = model.digest(),
         model_string = model_string,
     );
     let canonical = format!("{prefix}{}]}}", canonical_clauses.join(","));
