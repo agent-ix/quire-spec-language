@@ -39,8 +39,6 @@ use serde_json::{json, Value as Json};
 
 use crate::counter::UNLIMITED;
 
-const PLACEHOLDER: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
-
 /// An integer field `name`: `Int[low, high]`, or the unbounded native
 /// `Integer` for `None`.
 pub(crate) struct Field {
@@ -149,7 +147,6 @@ impl Model {
         .filter(|(name, _)| ranged || *name != "value_type")
         .map(|(name, meaning)| {
             json!({"kind": {"module": self.package, "name": name}, "moduleVersion": "1.0.0",
-                "manifestDigest": PLACEHOLDER,
                 "construct": {"identity": "none", "shape": "record", "members": {},
                     "meaning": meaning}})
         })
@@ -191,12 +188,11 @@ impl Model {
         let population = self.ident(self.population);
         json!({
             "contractVersion": "2.0.0",
-            "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
+            "canonicalization": {"algorithm": "rfc8785-v1"},
             "source": {"identity": self.ident("spec"), "version": "1.0.0",
-                "dialect": "spec-bundle", "digest": PLACEHOLDER},
+                "dialect": "spec-bundle"},
             "package": {"identity": self.package, "version": "1.0.0",
-                "manifestDigest": PLACEHOLDER, "mappingVersions": [], "profileVersions": [],
-                "lockDigest": PLACEHOLDER},
+                "mappingVersions": [], "profileVersions": []},
             "occurrences": [], "extensions": [],
             "constructs": constructs,
             "types": types,

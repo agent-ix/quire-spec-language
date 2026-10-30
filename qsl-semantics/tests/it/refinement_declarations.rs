@@ -49,7 +49,6 @@ fn construct(package: &str, name: &str, semantic_meaning: &str) -> Value {
     json!({
         "kind": {"module": package, "name": name},
         "moduleVersion": "1.0.0",
-        "manifestDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
         "construct": {
             "identity": "none", "shape": "record", "members": {},
             "meaning": semantic_meaning,
@@ -193,14 +192,14 @@ fn document_with(
     .collect();
     json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
         "source": {
             "identity": node(package, "spec"), "version": "1.0.0",
             "dialect": "spec-bundle", "digest": DIGEST,
         },
         "package": {
-            "identity": package, "version": "1.0.0", "manifestDigest": DIGEST,
-            "mappingVersions": [], "profileVersions": [], "lockDigest": DIGEST,
+            "identity": package, "version": "1.0.0",
+            "mappingVersions": [], "profileVersions": [],
         },
         "occurrences": [], "extensions": [],
         "constructs": constructs,

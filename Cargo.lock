@@ -5,25 +5,24 @@ version = 4
 [[package]]
 name = "agent-ix-extraction-frontend"
 version = "0.2.1"
-source = "git+https://github.com/agent-ix/filament-core-data?rev=27c085347abe4e16b31afd1d166b6aaeb3e8f22a#27c085347abe4e16b31afd1d166b6aaeb3e8f22a"
+source = "git+https://github.com/agent-ix/filament-core-data?rev=1530aceea135ddc711bd98826b3c096864890899#1530aceea135ddc711bd98826b3c096864890899"
 dependencies = [
  "agent-ix-semantic-ir",
  "clap",
- "quire-rs",
+ "quire-rs 0.50.3 (git+https://github.com/agent-ix/quire-rs?rev=5b4be36d594a488b21c854051f05116eb9302d78)",
  "serde",
  "serde_json",
- "sha2",
 ]
 
 [[package]]
 name = "agent-ix-semantic-ir"
 version = "0.1.1"
-source = "git+https://github.com/agent-ix/filament-core-data?rev=27c085347abe4e16b31afd1d166b6aaeb3e8f22a#27c085347abe4e16b31afd1d166b6aaeb3e8f22a"
+source = "git+https://github.com/agent-ix/filament-core-data?rev=1530aceea135ddc711bd98826b3c096864890899#1530aceea135ddc711bd98826b3c096864890899"
 
 [[package]]
 name = "agent-ix-semantic-schema"
 version = "0.3.0"
-source = "git+https://github.com/agent-ix/filament-core-data?branch=main#27c085347abe4e16b31afd1d166b6aaeb3e8f22a"
+source = "git+https://github.com/agent-ix/filament-core-data?branch=main#1530aceea135ddc711bd98826b3c096864890899"
 
 [[package]]
 name = "ahash"
@@ -1590,7 +1589,7 @@ version = "0.1.0"
 dependencies = [
  "ix-trace-rs",
  "qsl-foundation",
- "quire-rs",
+ "quire-rs 0.50.3 (git+https://github.com/agent-ix/quire-rs?rev=da10e4c2ea502b9a86f38a7b50d0cceec9aea386)",
  "serde",
  "serde_json",
  "thiserror",
@@ -1699,6 +1698,26 @@ dependencies = [
  "once_cell",
  "thiserror",
  "unicode-normalization",
+]
+
+[[package]]
+name = "quire-rs"
+version = "0.50.3"
+source = "git+https://github.com/agent-ix/quire-rs?rev=5b4be36d594a488b21c854051f05116eb9302d78#5b4be36d594a488b21c854051f05116eb9302d78"
+dependencies = [
+ "agent-ix-semantic-schema",
+ "globset",
+ "ignore",
+ "indexmap",
+ "jsonschema 0.18.3",
+ "loom",
+ "rayon",
+ "regex",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "uuid",
+ "yaml_serde",
 ]
 
 [[package]]

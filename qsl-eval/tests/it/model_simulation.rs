@@ -70,8 +70,6 @@ fn operation_text(name: &str) -> String {
 // The fixture domain package
 // ---------------------------------------------------------------------------
 
-const PLACEHOLDER: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
-
 fn origin(identity: &str) -> Json {
     json!({"generated": {"generatorIdentity": identity, "generatorVersion": "1.0.0",
         "inputIdentities": [identity]}})
@@ -177,7 +175,6 @@ pub(crate) fn counters_document(operations: Vec<Json>, extras: bool) -> Vec<u8> 
         .into_iter()
         .map(|(name, meaning)| {
             json!({"kind": {"module": PACKAGE, "name": name}, "moduleVersion": "1.0.0",
-                "manifestDigest": PLACEHOLDER,
                 "construct": {"identity": "none", "shape": "record", "members": {},
                     "meaning": meaning}})
         })
@@ -195,11 +192,10 @@ pub(crate) fn counters_document(operations: Vec<Json>, extras: bool) -> Vec<u8> 
     }
     json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
-        "source": {"identity": ident("spec"), "version": "1.0.0", "dialect": "spec-bundle",
-            "digest": PLACEHOLDER},
-        "package": {"identity": PACKAGE, "version": "1.0.0", "manifestDigest": PLACEHOLDER,
-            "mappingVersions": [], "profileVersions": [], "lockDigest": PLACEHOLDER},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
+        "source": {"identity": ident("spec"), "version": "1.0.0", "dialect": "spec-bundle"},
+        "package": {"identity": PACKAGE, "version": "1.0.0",
+            "mappingVersions": [], "profileVersions": []},
         "occurrences": [], "extensions": [],
         "constructs": constructs,
         "types": [

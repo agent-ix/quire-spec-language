@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Shared TC-235 K2 fixture builder used by QSL semantics and evaluator tests.
 
-use qsl_foundation::ByteDigest;
 use qsl_semantics::model::intake::meaning;
 use serde_json::{json, Value};
 
@@ -89,47 +88,15 @@ pub(crate) fn clause(owner: &str, name: &str, text: &str) -> Value {
     })
 }
 
-pub(crate) fn jcs_digest(value: &Value) -> String {
-    let input = serde_json::to_vec(value).expect("fixture value serializes");
-    let document = quire_canonical::read(&input, u64::MAX).expect("fixture value is JSON");
-    let canonical = quire_canonical::to_vec(&document, quire_canonical::Limits::new(u64::MAX))
-        .expect("fixture value has a JCS encoding");
-    format!(
-        "sha256:{}",
-        qsl_semantics::model::key::hex(&ByteDigest::of(&canonical).as_bytes())
-    )
-}
-
-pub(crate) fn domain_document(types: Vec<Value>, mut constructs: Vec<Value>) -> Value {
-    // Construct manifests identify this QSL-owned fixture's authored types.
-    // The selected package digest is independently computed by package_input
-    // from the complete bytes through quire-canonical's JCS reader.
-    let digest = jcs_digest(&Value::Array(types.clone()));
-    for item in &mut constructs {
-        item["manifestDigest"] = json!(digest);
-    }
+pub(crate) fn domain_document(types: Vec<Value>, constructs: Vec<Value>) -> Value {
     json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
-        "source": {"identity": id("spec"), "version": "1.0.0", "dialect": "spec-bundle", "digest": digest},
-        "package": {"identity": PACKAGE, "version": "1", "manifestDigest": digest,
-                    "mappingVersions": [], "profileVersions": [], "lockDigest": digest},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
+        "source": {"identity": id("spec"), "version": "1.0.0", "dialect": "spec-bundle"},
+        "package": {"identity": PACKAGE, "version": "1",
+                    "mappingVersions": [], "profileVersions": []},
         "constructs": constructs, "types": types, "occurrences": [], "extensions": [],
     })
-}
-
-#[test]
-fn qsl_owned_digest_fixture_uses_sha256_jcs() {
-    // The digest of the value's hand-written RFC 8785 text, hashed
-    // independently of `quire-canonical`.
-    let expected = qsl_semantics::model::key::hex(&ByteDigest::of(br#"{"a":1}"#).as_bytes());
-    assert_eq!(jcs_digest(&json!({"a": 1})), format!("sha256:{expected}"));
-    // Key order and whitespace do not change the digest; the value does.
-    assert_eq!(
-        jcs_digest(&serde_json::from_str::<Value>(r#"{ "b": 2, "a": 1 }"#).unwrap()),
-        jcs_digest(&serde_json::from_str::<Value>(r#"{"a":1,"b":2}"#).unwrap())
-    );
-    assert_ne!(jcs_digest(&json!({"a": 1})), jcs_digest(&json!({"a": 2})));
 }
 
 pub(crate) fn k2() -> Value {
@@ -257,13 +224,6 @@ pub(crate) fn k2() -> Value {
 pub(crate) fn mutate_k2(mutate: impl FnOnce(&mut Value)) -> Value {
     let mut document = k2();
     mutate(&mut document);
-    let digest = jcs_digest(&document["types"]);
-    document["source"]["digest"] = json!(digest);
-    document["package"]["manifestDigest"] = json!(digest);
-    document["package"]["lockDigest"] = json!(digest);
-    for item in document["constructs"].as_array_mut().unwrap() {
-        item["manifestDigest"] = json!(digest);
-    }
     document
 }
 
@@ -277,7 +237,7 @@ pub(crate) fn type_named_mut<'a>(document: &'a mut Value, node: &str) -> &'a mut
 }
 
 #[test]
-fn tc235_shared_k2_fixture_preserves_meaning_and_digest_contract() {
+fn tc235_shared_k2_fixture_preserves_meaning() {
     let document = k2();
     assert_eq!(document["types"].as_array().unwrap().len(), 8);
     assert_eq!(
@@ -288,7 +248,4 @@ fn tc235_shared_k2_fixture_preserves_meaning_and_digest_contract() {
         document["types"][1]["target"],
         "ix://quire/native/Timestamp"
     );
-    let digest = jcs_digest(&document["types"]);
-    assert_eq!(document["source"]["digest"], digest);
-    assert_eq!(document["package"]["manifestDigest"], digest);
 }

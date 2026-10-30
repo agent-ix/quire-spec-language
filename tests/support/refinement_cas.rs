@@ -37,7 +37,6 @@ pub const CAS: &str = "example/counter-cas";
 /// `Third` and no refinement names.
 pub const THIRD: &str = "example/counter-third";
 
-const PLACEHOLDER: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 const INTEGER: &str = "ix://quire/native/Integer";
 const BOOLEAN: &str = "ix://quire/native/Boolean";
 
@@ -190,7 +189,6 @@ fn document_with(
     .into_iter()
     .map(|(name, meaning)| {
         json!({"kind": {"module": package, "name": name}, "moduleVersion": "1.0.0",
-            "manifestDigest": PLACEHOLDER,
             "construct": {"identity": "none", "shape": "record", "members": {},
                 "meaning": meaning}})
     })
@@ -227,11 +225,11 @@ fn document_with(
     }
     json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
         "source": {"identity": ident(package, "spec"), "version": "1.0.0",
-            "dialect": "spec-bundle", "digest": PLACEHOLDER},
-        "package": {"identity": package, "version": "1.0.0", "manifestDigest": PLACEHOLDER,
-            "mappingVersions": [], "profileVersions": [], "lockDigest": PLACEHOLDER},
+            "dialect": "spec-bundle"},
+        "package": {"identity": package, "version": "1.0.0",
+            "mappingVersions": [], "profileVersions": []},
         "occurrences": [], "extensions": [],
         "constructs": constructs,
         "types": types,

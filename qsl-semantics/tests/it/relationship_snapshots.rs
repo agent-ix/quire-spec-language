@@ -135,14 +135,14 @@ fn provenance(identity: &str) -> Value {
 fn envelope(constructs: Value, types: Value, populations: Value) -> Value {
     json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
         "source": {
             "identity": identity("spec"), "version": "1.0.0",
             "dialect": "spec-bundle", "digest": DIGEST,
         },
         "package": {
-            "identity": PACKAGE, "version": "1.0.0", "manifestDigest": DIGEST,
-            "mappingVersions": [], "profileVersions": [], "lockDigest": DIGEST,
+            "identity": PACKAGE, "version": "1.0.0",
+            "mappingVersions": [], "profileVersions": [],
         },
         "occurrences": [],
         "extensions": [],
@@ -156,7 +156,6 @@ fn construct(name: &str, meaning: &str) -> Value {
     json!({
         "kind": {"module": PACKAGE, "name": name},
         "moduleVersion": "1.0.0",
-        "manifestDigest": DIGEST,
         "construct": {"identity": "none", "shape": "record", "members": {}, "meaning": meaning},
     })
 }

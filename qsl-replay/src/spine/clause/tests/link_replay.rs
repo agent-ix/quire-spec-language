@@ -35,7 +35,6 @@ fn construct(name: &str, meaning: &str) -> serde_json::Value {
     json!({
         "kind": {"module": PACKAGE, "name": name},
         "moduleVersion": "1.0.0",
-        "manifestDigest": DIGEST,
         "construct": {"identity": "none", "shape": "record", "members": {}, "meaning": meaning},
     })
 }
@@ -105,14 +104,14 @@ fn orders_document(modifies: &[String]) -> Vec<u8> {
     });
     serde_json::to_vec(&json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
         "source": {
             "identity": identity("spec"), "version": "1.0.0",
             "dialect": "spec-bundle", "digest": DIGEST,
         },
         "package": {
-            "identity": PACKAGE, "version": "1.0.0", "manifestDigest": DIGEST,
-            "mappingVersions": [], "profileVersions": [], "lockDigest": DIGEST,
+            "identity": PACKAGE, "version": "1.0.0",
+            "mappingVersions": [], "profileVersions": [],
         },
         "occurrences": [], "extensions": [],
         "constructs": [
