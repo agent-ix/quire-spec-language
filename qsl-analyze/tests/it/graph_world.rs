@@ -16,13 +16,13 @@ use qsl_eval::model_subject::{ModelInstance, ModelSubject};
 use qsl_eval::simulation::model::{
     ExpansionLimits, ModelSimState, ModelSimulationRequest, PopulationUniverse,
 };
-use qsl_foundation::digest::{DigestDomain, DigestRecord};
+use qsl_foundation::digest::DigestDomain;
 use qsl_foundation::{BackendId, SourceIdentity};
 use qsl_package::CheckedPackage;
 use qsl_replay::{
     GraphEvidence, GraphEvidenceEnvelope, GraphReplayResult, ModelCheckLimits, ModelPath,
-    ModelTraceSubject, ObligationIdentity, ReplayLimits, ReplayRequestWire,
-    ReplayResult, ReplaySource, RequestTargetWire, StateEnvironment, WitnessPath, WitnessSource,
+    ModelTraceSubject, ObligationIdentity, ReplayLimits, ReplayRequestWire, ReplayResult,
+    ReplaySource, RequestTargetWire, StateEnvironment, WitnessPath, WitnessSource,
 };
 use qsl_semantics::check::{CheckedStateGraphClaim, PackageDeclarations};
 use qsl_semantics::library::PackageId;

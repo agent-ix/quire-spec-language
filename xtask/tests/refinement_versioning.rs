@@ -8,7 +8,6 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use ix_trace_rs::trace;
-use qsl_foundation::digest::{DigestDomain, DigestRecord};
 use qsl_foundation::source::provenance::RawSourceRef;
 use serde_json::{json, Value};
 use xtask::refinement::compare::CaseResult;
@@ -888,10 +887,7 @@ fn cases_differing_only_in_their_self_object_have_distinct_names() {
 }
 
 fn dummy_reference(identity: &str) -> RawSourceRef {
-    RawSourceRef::new(
-        AUTHORITY,
-        identity,)
-    .unwrap()
+    RawSourceRef::new(AUTHORITY, identity).unwrap()
 }
 
 fn side(class: &'static str, stage: &'static str) -> Option<SideReport> {

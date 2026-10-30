@@ -257,7 +257,12 @@ pub(super) fn request(
             Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
             package_id.hex(),
         ),
-        sources: vec![(AUTHORITY.to_owned(), IDENTITY.to_owned(), "git".to_owned(), "1".to_owned())],
+        sources: vec![(
+            AUTHORITY.to_owned(),
+            IDENTITY.to_owned(),
+            "git".to_owned(),
+            "1".to_owned(),
+        )],
         dependencies: Vec::new(),
         replay_target: target.into(),
         source: witness_source(),
@@ -313,7 +318,7 @@ fn envelope_with(
 /// A complete packet carrying `payload` at `package_id`, from
 /// `source_bytes`, with `clause_node` and `occurrence_key` as given.
 pub(super) fn packet<P: FamilyPayload>(
-    source_bytes: &[u8],
+    _source_bytes: &[u8],
     package_id: DigestRecord,
     source: ReplaySource,
     clause_node: WireNodeId,
@@ -465,7 +470,7 @@ fn found_field_write(result: &FrameReplayResult) -> (&str, &str) {
 fn a_frame_counterexample_reproduces_and_keeps_its_identities() {
     let case = case(forbidden_parent_change(), child_change("parent"));
     let payload = case.envelope.family_payload().clone();
-    let (documents, unit_bytes, package_id) = (
+    let (documents, _unit_bytes, package_id) = (
         (
             case.input.invocation.clone(),
             case.input.pre.clone(),

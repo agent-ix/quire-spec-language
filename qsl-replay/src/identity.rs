@@ -24,7 +24,6 @@
 use std::fmt;
 
 use qsl_foundation::bound::{DomainKey, FiniteBound, ProofBound};
-use qsl_foundation::digest::{DigestRecord, InvalidDigestRecord};
 use quire_exact::Identifier;
 
 /// ADR-013 O-09: the digest identifying one obligation. For a clause, an

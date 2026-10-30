@@ -7,7 +7,7 @@
 
 use std::collections::BTreeSet;
 
-use crate::identity::{DeclaredDomain, ObligationIdentity, ProfileSelection, RawSourceRef};
+use crate::identity::{DeclaredDomain, ObligationIdentity, ProfileSelection};
 use crate::witness::FamilyPayload;
 use qsl_eval::simulation::SampleProvenance;
 use qsl_eval::temporal::UndefinedCause;

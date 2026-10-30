@@ -174,7 +174,12 @@ fn request(
             Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
             package_id.hex(),
         ),
-        sources: vec![(AUTHORITY.to_owned(), IDENTITY.to_owned(), NAMESPACE.to_owned(), REVISION.to_owned())],
+        sources: vec![(
+            AUTHORITY.to_owned(),
+            IDENTITY.to_owned(),
+            NAMESPACE.to_owned(),
+            REVISION.to_owned(),
+        )],
         dependencies: Vec::new(),
         replay_target: crate::RequestTargetWire::function(
             function.clone(),
@@ -1271,16 +1276,8 @@ fn transitive_only_library_source_reaches_replay() {
         input(parameter(&compiled, "q", 0), 3),
     );
     wire.dependencies = vec![
-        entry(
-            "test/b",
-            b_id,
-            vec![source_ref("test:b", REVISION)],
-        ),
-        entry(
-            "test/c",
-            c_id,
-            vec![source_ref("test:c", REVISION)],
-        ),
+        entry("test/b", b_id, vec![source_ref("test:b", REVISION)]),
+        entry("test/c", c_id, vec![source_ref("test:c", REVISION)]),
     ];
     for (identity, bytes) in [("test:b", b.as_bytes()), ("test:c", c.as_bytes())] {
         wire.byte_provision
@@ -1682,8 +1679,7 @@ fn tc_444_dependency_entries_refuse_by_the_d4_rules() {
 
     // The entry naming a second source.
     let mut two = units.clone();
-    two.sources
-        .push(source_ref("test:zzz", REVISION));
+    two.sources.push(source_ref("test:zzz", REVISION));
     let refused = replay(
         importing.request(vec![two], provision),
         ReplayLimits::default(),

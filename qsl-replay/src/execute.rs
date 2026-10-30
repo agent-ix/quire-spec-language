@@ -24,7 +24,7 @@ use qsl_eval::temporal::{evaluate_observed, TemporalPosition, TemporalRefusal, T
 use qsl_eval::value::{
     input_refusal_code, supplied_stop_cause, supplied_stop_code, CheckedPackageEvaluation,
 };
-use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
+use qsl_foundation::digest::{DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::{Code, SourceIdentity};
 use qsl_package::CheckedPackage;
@@ -1523,16 +1523,13 @@ pub(crate) fn recompile(
         .map(|entry| one_source(entry.sources()))
         .collect::<Result<Vec<_>, _>>()?;
     let provided = |reference: &RawSourceRef| {
-        request
-            .byte_provision()
-            .get(reference)
-            .ok_or_else(|| {
-                // `ReplayRequest::decode` refuses an incomplete provision.
-                ReplayRefusal::Fault(InternalFault::new(
-                    "replay",
-                    "decoded-request-byte-provision-complete",
-                ))
-            })
+        request.byte_provision().get(reference).ok_or_else(|| {
+            // `ReplayRequest::decode` refuses an incomplete provision.
+            ReplayRefusal::Fault(InternalFault::new(
+                "replay",
+                "decoded-request-byte-provision-complete",
+            ))
+        })
     };
     // Rule 3: the dependency input.
     let libraries = request

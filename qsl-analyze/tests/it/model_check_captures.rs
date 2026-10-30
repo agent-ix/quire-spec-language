@@ -456,11 +456,7 @@ fn replay_reproduces_an_undefined_capture_located_at_it() {
         replay_model_trace(
             request(document, world.snapshot_bytes(), &world.unit, package_id),
             &subject,
-            &envelope_at(package_id,
-                payload,
-                identity,
-                occurrence.clone(),
-            ),
+            &envelope_at(package_id, payload, identity, occurrence.clone()),
             &letters,
             ReplayLimits::default(),
         )

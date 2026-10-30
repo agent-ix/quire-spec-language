@@ -179,7 +179,11 @@ pub struct ByteProvision {
 impl std::fmt::Debug for ByteProvision {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_map()
-            .entries(self.bytes.iter().map(|(source, bytes)| (source, bytes.len())))
+            .entries(
+                self.bytes
+                    .iter()
+                    .map(|(source, bytes)| (source, bytes.len())),
+            )
             .finish()
     }
 }
@@ -901,11 +905,7 @@ impl ReplayRequest {
                 Some(self.package_id.domain().as_str().to_owned()),
                 self.package_id.hex(),
             ),
-            sources: self
-                .sources
-                .iter()
-                .map(RawSourceRef::to_wire)
-                .collect(),
+            sources: self.sources.iter().map(RawSourceRef::to_wire).collect(),
             dependencies: self
                 .dependencies
                 .iter()
@@ -1625,10 +1625,7 @@ mod tests {
         assert!(!debug.contains(&distinctive_value.to_string()));
 
         // The typed accessors still return the full content.
-        let looked_up = request
-            .byte_provision()
-            .get(&request.sources()[0])
-            .unwrap();
+        let looked_up = request.byte_provision().get(&request.sources()[0]).unwrap();
         assert_eq!(looked_up, distinctive.as_slice());
         match request.source() {
             ReplaySource::Input(assignments) => {

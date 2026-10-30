@@ -1761,7 +1761,7 @@ mod tests {
     use crate::scalar::{ScalarClaim, ScalarOutcome};
     use crate::witness::{CanonicalAssignment, WitnessValue};
     use ix_trace_rs::trace;
-    use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
+    use qsl_foundation::digest::WireNodeId;
     use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
     use quire_contract_model::std001_code;
 
@@ -2266,10 +2266,7 @@ mod tests {
     }
 
     fn refuted_source_with_region(authority: &str, identity: String) -> BackendProviderSource {
-        let source_ref = RawSourceRef::new(
-            authority,
-            identity,)
-        .unwrap();
+        let source_ref = RawSourceRef::new(authority, identity).unwrap();
         let region = SourceRegion::new(source_ref, 0, 1).unwrap();
         let replay = ReplayResult::Witness(crate::WitnessArmResult::settle_range_violation(
             None,
@@ -2618,15 +2615,7 @@ mod tests {
             );
         }
 
-        let region = SourceRegion::new(
-            RawSourceRef::new(
-                "a",
-                "i",)
-            .unwrap(),
-            0,
-            1,
-        )
-        .unwrap();
+        let region = SourceRegion::new(RawSourceRef::new("a", "i").unwrap(), 0, 1).unwrap();
         let input = |regions| {
             ReplayResult::Input(crate::InputArmResult::settle_range_violation(
                 None,

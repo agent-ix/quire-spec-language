@@ -7,8 +7,8 @@
 
 use super::frame::object;
 use super::frame_replay::{
-    config_version_unit, package_digest, packet, request, unit_for, wire,
-    witness_source, Unit, IDENTITY,
+    config_version_unit, package_digest, packet, request, unit_for, wire, witness_source, Unit,
+    IDENTITY,
 };
 use super::*;
 use crate::{
@@ -17,7 +17,7 @@ use crate::{
     ReplayResult, ReplaySource, ReplayTarget, SnapshotValue, StateClauseCounterexample,
     StateClauseKind, StateClauseReplayResult, Verdict, WitnessEnvelope, WitnessSettlement,
 };
-use qsl_foundation::digest::{DigestDomain, WireNodeId};
+use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_exact::Identifier;
@@ -307,7 +307,7 @@ fn without(wire: &mut ReplayRequestWire, reference: &DocumentRef) {
 /// `package_id`, the clause, the envelope's identities and every document
 /// admission read.
 fn assert_reproduces_keeping_identities(case: Case, clause: &str) -> StateClauseReplayResult {
-    let unit_bytes = case.unit.bytes.clone();
+    let _unit_bytes = case.unit.bytes.clone();
     let package_id = case.unit.compiled.emitted.package_id();
     let (node, occurrence) = (
         case.envelope.clause_node(),
@@ -366,7 +366,7 @@ fn an_input_arm_envelope_reproduces_without_a_witness() {
         ReplaySource::Input(Vec::new()),
         |_, _| {},
     );
-    let unit_bytes = case.unit.bytes.clone();
+    let _unit_bytes = case.unit.bytes.clone();
     let package_id = case.unit.compiled.emitted.package_id();
     let (node, occurrence) = clause_identity(&case.unit, "VersionUnchanged");
     let result = replay(case).expect("the replay settles");

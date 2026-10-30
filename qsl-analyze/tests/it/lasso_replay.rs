@@ -495,11 +495,7 @@ fn a_liveness_violation_settles_refuted_through_replay() {
                     id,
                 ),
                 &subject_of(&fixture),
-                &envelope_at(id,
-                    counterexample.clone(),
-                    node,
-                    occurrence.clone(),
-                ),
+                &envelope_at(id, counterexample.clone(), node, occurrence.clone()),
                 &letters,
                 ReplayLimits::default(),
             )

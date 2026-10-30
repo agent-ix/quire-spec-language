@@ -796,7 +796,7 @@ fn wire_id(key: NodeKey) -> WireNodeId {
 #[cfg(test)]
 mod tests {
     use ix_trace_rs::trace;
-    use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord};
+    use qsl_foundation::digest::{DigestDomain, DigestRecord};
     use qsl_foundation::SourceIdentity;
     use quire_exact::{Identifier, ScalarLimits};
 

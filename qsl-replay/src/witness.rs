@@ -20,10 +20,7 @@ use quire_exact::Origin;
 use quire_exact::ScalarLimits;
 
 use crate::bounds::{BoundExceeded, ReplayLimits};
-use crate::identity::{
-    DeclaredDomain, ObligationIdentity, ProfileSelection, 
-    TracePosition,
-};
+use crate::identity::{DeclaredDomain, ObligationIdentity, ProfileSelection, TracePosition};
 use crate::model_check::state_graph::GraphEvidenceEnvelope;
 use crate::target::{ReplayTarget, ReplayTargetMembers, TargetMember, TargetSelectionRefusal};
 use qsl_foundation::bound::{DomainKey, FiniteBound};

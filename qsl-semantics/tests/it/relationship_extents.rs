@@ -8,7 +8,6 @@
 
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
-use qsl_foundation::digest::{DigestDomain, DigestRecord};
 use qsl_foundation::source::provenance::RawSourceRef;
 use qsl_semantics::check::CheckedGraph;
 use qsl_semantics::model::domain_package::{
@@ -995,11 +994,8 @@ fn bundle_key(label: &str) -> BundleKey {
     }
 }
 
-fn source(identity: &str, digest: u8) -> RawSourceRef {
-    RawSourceRef::new(
-        "authority",
-        identity,)
-    .expect("a source reference")
+fn source(identity: &str, _digest: u8) -> RawSourceRef {
+    RawSourceRef::new("authority", identity).expect("a source reference")
 }
 
 /// TC-1041 row 20: the first part whose key differs from the selected key

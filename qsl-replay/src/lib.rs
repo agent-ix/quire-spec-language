@@ -498,12 +498,4 @@ mod redaction_tests {
             .iter()
             .any(|(name, _)| name == marker));
     }
-
-    /// Whether `haystack` contains `needle`'s bytes reinterpreted as a
-    /// lossy UTF-8 string (the shape a `{:?}`/`{}` rendering of a `Vec<u8>`
-    /// field would produce if it leaked raw bytes through `derive(Debug)`).
-    fn contains_bytes(haystack: &str, needle: &[u8]) -> bool {
-        let needle_text = String::from_utf8_lossy(needle);
-        haystack.contains(needle_text.as_ref())
-    }
 }

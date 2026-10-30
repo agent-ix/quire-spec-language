@@ -113,7 +113,8 @@ impl SourceIdentity {
         if let Some(label) = self.first_blank_label() {
             return Err(ReferenceError::Blank(label));
         }
-        RawSourceRef::new(self.authority.clone(), self.identity.clone()).map_err(ReferenceError::Provenance)
+        RawSourceRef::new(self.authority.clone(), self.identity.clone())
+            .map_err(ReferenceError::Provenance)
     }
 }
 
