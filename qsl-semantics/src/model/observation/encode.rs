@@ -40,9 +40,6 @@ impl ValueEncoder {
         limits: ModelNormalizationLimits,
     ) -> Result<Self, AdmissionFailure> {
         let views = model_views(model_selections, packages, limits)?;
-        let unbounded = qsl_foundation::IdentityLimits {
-            input_bytes: u64::MAX,
-        };
         let mut variants = BTreeMap::new();
         let mut records = BTreeMap::new();
         for view in &views {
@@ -51,12 +48,12 @@ impl ValueEncoder {
                     declared,
                 ) = record
                 {
-                    if let Ok(Some(key)) = crate::check::record_node_key(record, unbounded) {
+                    if let Ok(Some(key)) = crate::check::record_node_key(record) {
                         records.insert(key, declared.key.node.clone());
                     }
                 }
             }
-            let declared = crate::check::variant_type_declarations(&view.view, "", unbounded)
+            let declared = crate::check::variant_type_declarations(&view.view, "")
                 .map_err(|_| fault("variant-type-declaration"))?;
             for (key, declaration) in declared {
                 for case in declaration.cases() {

@@ -396,9 +396,6 @@ impl StateModel {
     /// components in an enumerated value domain (FR-120, FR-215). The
     /// record's slots stay name-sorted.
     pub fn record_orders(&self) -> BTreeMap<quire_exact::NodeKey, Vec<String>> {
-        let unbounded = qsl_foundation::IdentityLimits {
-            input_bytes: u64::MAX,
-        };
         let mut orders = BTreeMap::new();
         for view in &self.views {
             let records = &view.view.domain_package().records;
@@ -406,7 +403,7 @@ impl StateModel {
                 let DomainPackageRecord::RecordValueType(declared) = record else {
                     continue;
                 };
-                let Ok(Some(node)) = crate::check::record_node_key(record, unbounded) else {
+                let Ok(Some(node)) = crate::check::record_node_key(record) else {
                     continue;
                 };
                 let mut fields: Vec<(usize, &str)> = records

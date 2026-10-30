@@ -1155,13 +1155,9 @@ impl<'a> References<'a> {
         let views = self.views;
         self.variant_keys
             .get_or_insert_with(|| {
-                let unbounded = qsl_foundation::IdentityLimits {
-                    input_bytes: u64::MAX,
-                };
                 let mut found = BTreeMap::new();
                 for view in views {
-                    let Ok(declared) =
-                        crate::check::variant_type_declarations(&view.view, "", unbounded)
+                    let Ok(declared) = crate::check::variant_type_declarations(&view.view, "")
                     else {
                         continue;
                     };
@@ -1712,16 +1708,13 @@ fn admit_union_case(
     if variant.has_extra_member() {
         return Err(refuse("unknown-member"));
     }
-    let unbounded = qsl_foundation::IdentityLimits {
-        input_bytes: u64::MAX,
-    };
     let names = references.views.iter().any(|view| {
         view.view.domain_package().records.iter().any(|record| {
             matches!(
                 record,
                 crate::model::domain_package::DomainPackageRecord::Enum(_)
             ) && record.key().node == type_identity
-                && crate::check::record_node_key(record, unbounded)
+                && crate::check::record_node_key(record)
                     .is_ok_and(|key| key == Some(handle.clone()))
         })
     });
@@ -2240,9 +2233,6 @@ fn form_collection_value(
 /// record the unit assembled had already keyed under the unit's own identity
 /// limits, and the key does not depend on the limit.
 pub(super) fn record_keys(views: &[ModelView]) -> BTreeMap<String, quire_exact::NodeKey> {
-    let unbounded = qsl_foundation::IdentityLimits {
-        input_bytes: u64::MAX,
-    };
     let mut keys = BTreeMap::new();
     for view in views {
         for record in &view.view.domain_package().records {
@@ -2251,7 +2241,7 @@ pub(super) fn record_keys(views: &[ModelView]) -> BTreeMap<String, quire_exact::
             else {
                 continue;
             };
-            if let Ok(Some(key)) = crate::check::record_node_key(record, unbounded) {
+            if let Ok(Some(key)) = crate::check::record_node_key(record) {
                 keys.entry(declared.key.node.clone()).or_insert(key);
             }
         }
