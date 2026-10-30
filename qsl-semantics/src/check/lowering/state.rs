@@ -335,7 +335,11 @@ impl Lowering<'_> {
             Some(anchor) => {
                 let binding =
                     self.operation_anchor(anchor, clause.execution_point.as_ref(), location)?;
-                self.record(binding.anchor.clone(), OccurrenceRole::Anchor, location.clone());
+                self.record(
+                    binding.anchor.clone(),
+                    OccurrenceRole::Anchor,
+                    location.clone(),
+                );
                 (binding.anchor.clone(), Some(binding))
             }
         };
@@ -424,7 +428,8 @@ impl Lowering<'_> {
         // parameter's type node records.
         let population_object = input
             .frame_population
-            .map(|domain| self.object_node(domain.object, input.location))
+            .as_ref()
+            .map(|domain| self.object_node(domain.object.clone(), input.location))
             .transpose()?;
         if let Some(ref object) = population_object {
             self.record(object.clone(), OccurrenceRole::Type, input.location.clone());

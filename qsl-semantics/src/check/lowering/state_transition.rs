@@ -262,7 +262,7 @@ impl Lowering<'_> {
             let mut visited = BTreeSet::new();
             if let Some(found) = self.subject_read(
                 clause.lowered.condition.clone(),
-                self_parameter,
+                self_parameter.clone(),
                 object.clone(),
                 field,
                 &mut visited,
@@ -424,7 +424,9 @@ impl Lowering<'_> {
                             ),
                         ));
                     };
-                    built.conjunctions.insert((condition, right), target.0.clone());
+                    built
+                        .conjunctions
+                        .insert((condition, right), target.0.clone());
                     target.0
                 }
             };

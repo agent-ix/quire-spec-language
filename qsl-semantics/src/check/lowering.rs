@@ -47,7 +47,6 @@ fn content_hash(content: &NodeContent) -> u64 {
     BuildHasherDefault::<DefaultHasher>::default().hash_one(content)
 }
 
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::IdentityLimits;
 use quire_exact::{
     ArithmeticOperator, Charge, ChargePoint, CollectionKind, CollectionType, EffectiveId,
@@ -334,17 +333,6 @@ impl SemanticGraph {
             btree_map::Entry::Occupied(slot) if slot.get().content == node.content => Ok(()),
             btree_map::Entry::Occupied(_) => Err(()),
         }
-    }
-
-    /// ADR-013 O-04, R-10: the key of the node a wire node id names, by
-    /// lookup in this graph -- the only way a `WireNodeId` becomes a
-    /// `NodeKey` (ADR-011 §2.1 E9). `None` when no node of this graph has
-    /// that id. It mints no key: it returns one `check` already minted.
-    pub fn resolve_wire(&self, id: WireNodeId) -> Option<NodeKey> {
-        self.nodes
-            .keys()
-            .cloned()
-            .find(|key| key.as_bytes() == id.as_bytes())
     }
 
     /// Take out the node keyed `key`, as a re-key leaves the key it had.
@@ -1756,6 +1744,7 @@ impl<'a> Lowering<'a> {
         self.placeholder_count += 1;
         let label = b"qsl.check.lowering-placeholder\0";
         let preimage = [&label[..], &self.placeholder_count.to_be_bytes()].concat();
+        // BLOCKED-BY QSL-1282 (owner: planner titan:QSL:plan): placeholder handle needs a structural NodeKey source from C's node_key API
         let key = NodeKey::from_digest(qsl_foundation::ByteDigest::of(&preimage).as_bytes());
         self.placeholders.insert(key, None);
         key
@@ -2798,7 +2787,12 @@ impl<'a> Lowering<'a> {
                 .collect();
             let types: Vec<Option<NodeKey>> = component
                 .iter()
-                .map(|at| <std::option::Option<NodeKey> as Clone>::clone(&drafts[*at].content.semantic_type).map(&mut substitute))
+                .map(|at| {
+                    <std::option::Option<NodeKey> as Clone>::clone(
+                        &drafts[*at].content.semantic_type,
+                    )
+                    .map(&mut substitute)
+                })
                 .collect();
             if stranded {
                 return Err(unresolved(&drafts[component[0]].location));
@@ -4540,7 +4534,8 @@ impl<'a> Lowering<'a> {
                 for _ in &arm.binders {
                     binders.pop();
                 }
-                let name = self.union_member_name(frame.declaration.clone(), arm.member, location)?;
+                let name =
+                    self.union_member_name(frame.declaration.clone(), arm.member, location)?;
                 let parameters = GroupTerm::references(open.parameters);
                 frame.lowered.push(MemberTerm::binding(
                     name,
@@ -4695,6 +4690,7 @@ impl<'a> Lowering<'a> {
                 // key is its `VariantId` (ADR-013 O-14). A model variant
                 // type's nodes are built where it is first named, here.
                 self.type_node(node.value_type(), node.location())?;
+        // BLOCKED-BY QSL-1282 (owner: planner titan:QSL:plan): enum_value node key needs the structural path/ordinal source for a VariantId (owner NodeKey + case)
                 let key = NodeKey::from_digest(*member.variant().as_bytes());
                 self.record(key, OccurrenceRole::Expression, node.location().clone());
                 return Ok(LeafTerm::reference(key));

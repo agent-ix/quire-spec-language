@@ -227,7 +227,11 @@ impl Lowering<'_> {
         let binding = self.operation_anchor(&anchor, None, location)?;
         // An `operation_anchor`'s every occurrence is an `anchor` (FR-322).
         if !self.occurrences.has(binding.anchor.clone()) {
-            self.record(binding.anchor.clone(), OccurrenceRole::Anchor, location.clone());
+            self.record(
+                binding.anchor.clone(),
+                OccurrenceRole::Anchor,
+                location.clone(),
+            );
         }
         Ok(binding.anchor)
     }

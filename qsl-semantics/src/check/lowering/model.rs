@@ -2185,15 +2185,18 @@ impl<'a> Lowering<'a> {
     ) -> Result<NodeKey, CheckRefusal> {
         match unit.domain() {
             UnitDomain::Declared => {
-                let key = NodeKey::from_digest(*unit.as_bytes());
-                self.unit_nodes(key, location)?;
+                let key = unit
+                    .declared_key()
+                    .cloned()
+                    .ok_or_else(|| fault(location, KeyFault::UnheldUnit(unit.clone())))?;
+                self.unit_nodes(key.clone(), location)?;
                 Ok(key)
             }
             UnitDomain::Compound => {
-                let terms: Vec<(NodeKey, Integer)> = match self.units.get(unit) {
+                let terms: Vec<(NodeKey, Integer)> = match self.units.get(unit.clone()) {
                     Some(QuantityUnit::Compound(compound)) => compound
                         .terms()
-                        .map(|(root, exponent)| (root, exponent.clone()))
+                        .map(|(root, exponent)| (root.clone(), exponent.clone()))
                         .collect(),
                     Some(QuantityUnit::Declared(_)) | None => {
                         return Err(fault(location, KeyFault::UnheldUnit(unit)))
@@ -2201,7 +2204,7 @@ impl<'a> Lowering<'a> {
                 };
                 let mut members = Vec::with_capacity(terms.len());
                 for (root, exponent) in terms {
-                    self.unit_nodes(root, location)?;
+                    self.unit_nodes(root.clone(), location)?;
                     let exponent = self.integer_literal(exponent, location)?;
                     members.push(MemberTerm::Group(GroupTerm::new(vec![
                         GroupMember::Binding(Binding::new("unit", LeafTerm::reference(root))),
@@ -2239,6 +2242,7 @@ impl<'a> Lowering<'a> {
             if self.graph.nodes.contains_key(&key) {
                 continue;
             }
+        // BLOCKED-BY QSL-1282 (owner: planner titan:QSL:plan): unit table lookup by structural NodeKey (E's unit table) replaces the preimage-byte lookup
             let Some(node) = self.units.nominal_node(key.as_bytes()).cloned() else {
                 return Err(fault(location, KeyFault::UnheldNominal(key)));
             };
