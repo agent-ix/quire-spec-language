@@ -49,7 +49,7 @@ use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::{ReductionKind, RequestIndex};
 use qsl_semantics::check::{Capability, PathGuard, RequirementRecord};
 use qsl_semantics::family::{ClaimExtent, Requirements, UnsupportedItem};
-use qsl_semantics::library::PackageId;
+use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::NodeKey;
 use quire_semantic_value::catalog::{CatalogCode, CatalogCoded};
@@ -138,8 +138,8 @@ impl ItemKind {
 /// neither.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AbstractSubject {
-    /// The abstract subject's package id.
-    pub package_id: PackageId,
+    /// The abstract subject's library.
+    pub library: LibraryName,
     /// The abstract subject's initial-state snapshots, in order.
     pub initial_states: Vec<DocumentRef>,
 }

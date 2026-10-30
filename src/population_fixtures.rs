@@ -31,15 +31,12 @@ use std::{
 use qsl_forms::{BuiltinType, Expression, FunctionDeclaration, TypeForm, TypeFormHead};
 use qsl_foundation::{source::provenance::SourceRegion, Span};
 use qsl_package::{read_import_view, AdmittedPackages, CheckedPackage, V2ReadLimits};
-use qsl_semantics::{
-    check::PackageDeclarations,
-    library::{LibraryName, PackageId},
-};
+use qsl_semantics::{check::PackageDeclarations, library::LibraryName};
 use quire_contract_model::{
     encode_checked_package_v2, BoundedDomainForm, CheckedNodeId, CheckedNodeKind,
-    CheckedPackageEvidence, CheckedPackageIdentityPreimageRefV2, CheckedPackageReadLimits,
-    CheckedPackageSourceCorrespondenceRef, CheckedPackageV2, CheckedPackageV2ReadResult,
-    CheckedSemanticGraphV2, CheckedSemanticId, CheckedSemanticNodeV2, CheckedTerm,
+    CheckedPackageEvidence, CheckedPackageReadLimits, CheckedPackageSourceCorrespondenceRef,
+    CheckedPackageV2, CheckedPackageV2ReadResult, CheckedSemanticGraphV2, CheckedSemanticNodeV2,
+    CheckedTerm,
 };
 use quire_semantic_value::checking::CheckingLimits;
 
@@ -68,7 +65,7 @@ pub enum Variant {
     ChangedMax,
     /// Contract IR TC-453 step 5: [`Self::SameTypeAndOtherType`] with the `Gadget[0]`
     /// parameter's `semantic_type` retargeted to the `Gadget[5]` population
-    /// node, `package_id` rederived, source rows kept.
+    /// node, source rows kept.
     RetargetedParameter,
 }
 
@@ -260,21 +257,19 @@ fn assemble(
         .map_err(|refusal| stage("assemble")(format!("{refusal:?}")))
 }
 
-/// One case: the v2 bytes the emitter wrote for a bound list and the
-/// `package_id` IR's reader admitted them at.
+/// One case: the v2 bytes the emitter wrote for a bound list and the node
+/// kinds IR's reader decoded from them.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Fixture {
     /// The `quire.checked-package/v2` bytes.
     pub bytes: Vec<u8>,
-    /// The `package_id` the checked-package v2 reader admitted `bytes` at.
-    pub package_id: PackageId,
     /// Each graph node's family and form as IR's reader decoded it.
     pub node_kinds: Vec<CheckedNodeKind>,
 }
 
 /// `bounds`' package through the v2 emitter, with nothing omitted, and read
 /// back through QSL's I2 read, which runs IR's checked-package v2 reader and
-/// refuses unless it admits the bytes at the emitted `package_id`.
+/// refuses unless it admits the bytes.
 pub fn fixture(bounds: &[u64]) -> Result<Fixture, Error> {
     let bindings: Vec<Binding> = bounds
         .iter()
@@ -337,18 +332,17 @@ fn emit_and_read(package: &CheckedPackage) -> Result<EmittedRead, Error> {
     let domain_packages = qsl_semantics::model::intake::package_input([DOMAIN_PACKAGE])
         .map_err(|refusal| Error::Admission(format!("{refusal:?}")))?;
     let mut admitted = AdmittedPackages::default();
-    let view = read_import_view(
+    read_import_view(
         package,
         &emission,
-        library,
+        library.clone(),
         &domain_packages,
         &mut admitted,
         V2ReadLimits::default(),
     )
     .map_err(|refusal| Error::Admission(format!("{refusal:?}")))?;
-    let package_id = view.package();
     let admitted = admitted
-        .package(&package_id)
+        .package(&library)
         .ok_or_else(|| Error::Admission("the read recorded no admitted package".to_owned()))?
         .clone();
     let mut evidence = emission.evidence().clone();
@@ -360,7 +354,6 @@ fn emit_and_read(package: &CheckedPackage) -> Result<EmittedRead, Error> {
     Ok(EmittedRead {
         fixture: Fixture {
             bytes: emission.package().bytes().to_vec(),
-            package_id,
             node_kinds: admitted.node_kinds().to_vec(),
         },
         admitted,
@@ -434,30 +427,8 @@ fn retarget(
         graph_version: base.graph().graph_version.clone(),
         nodes,
     };
-    let base_preimage = base.identity_preimage();
-    let preimage = CheckedPackageIdentityPreimageRefV2 {
-        version: base_preimage.version.as_ref(),
-        edition: &base_preimage.edition,
-        profile_selections: &base_preimage.profile_selections,
-        definition_selections: &base_preimage.definition_selections,
-        required_features: &base_preimage.required_features,
-        dependency_selections: &base_preimage.dependency_selections,
-        identity_projection: &graph.nodes,
-    };
-    let digest = quire_canonical::sha256(&preimage, limits)
-        .map_err(|error| refuse(RetargetRefusal::Encode(error.to_string())))?;
-    let package_id = CheckedSemanticId {
-        digest: digest
-            .as_bytes()
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect::<String>()
-            .into(),
-        ..base.package_id().clone()
-    };
     let bytes = encode_checked_package_v2(
-        &preimage,
-        &package_id,
+        base.name(),
         base.lock(),
         &graph,
         CheckedPackageSourceCorrespondenceRef {
@@ -728,7 +699,6 @@ mod tests {
         let changed = variant_fixture(Variant::ChangedMax).unwrap();
         assert_eq!(maxima(&changed.package), [0, 3, 6]);
         assert_ne!(base.bytes, changed.bytes);
-        assert_ne!(base.package.package_id(), changed.package.package_id());
         // The zero and the other-type bindings keep their nodes.
         for max in [0, 3] {
             assert_eq!(
@@ -776,7 +746,6 @@ mod tests {
             ),
             (0, 2)
         );
-        assert_ne!(base.package_id(), retargeted.package_id());
         assert_eq!(base.graph().nodes.len(), retargeted.graph().nodes.len());
     }
 

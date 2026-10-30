@@ -283,7 +283,6 @@ pub(super) enum SpineOutcome {
 pub(super) struct SpineRunReport<'a> {
     pub format: Format,
     pub request_digest: String,
-    pub package_id: String,
     pub source: RunSource<'a>,
     pub function: &'a str,
     pub outcome: SpineOutcome,

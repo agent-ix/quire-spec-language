@@ -101,8 +101,6 @@ pub(super) struct ClauseRun {
     /// counter object and defaults.
     #[serde(default, deserialize_with = "from_object")]
     pub accounting: Accounting,
-    #[serde(default)]
-    pub package_id: Option<String>,
     #[serde(default, deserialize_with = "from_object_opt")]
     pub observation_limits: Option<qsl_replay::spine::ObservationLimitsWire>,
 }

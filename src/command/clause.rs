@@ -103,7 +103,6 @@ pub(super) fn read(
             .selection
             .into_parts()
             .map_err(|error| invalid(error.member, error.reason))?,
-        expected_package_id_claim: clause.package_id.clone(),
         limits: SpineLimits::default(),
         observation_limits,
         accounting: super::call_accounting(&clause.accounting),

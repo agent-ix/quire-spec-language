@@ -141,10 +141,7 @@ pub fn case_name(index: usize) -> String {
 /// Panics when the generated declaration or a member does not admit: a
 /// harness defect, since both are built from their own structural keys.
 pub fn enum_binding(members: usize) -> EnumBinding {
-    let owner = NodeOwner::Definition(OwnerSubject {
-        authority: "agent-ix".into(),
-        identity: "qsl-bench".into(),
-    });
+    let owner = NodeOwner::Definition(OwnerSubject::new("agent-ix", "qsl-bench", "qsl-bench"));
     let owners = OwnerSelection::new([owner.clone()]);
     let cases: Vec<String> = (0..members).map(case_name).collect();
     let preimage = EnumDeclarationPreimage::new(

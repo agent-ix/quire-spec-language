@@ -15,8 +15,6 @@ use crate::{check_cancel, EntryBudget, InspectCause, InspectLimits, View};
 pub struct OutcomeView<'a> {
     /// The typed terminal document.
     pub document: &'a qsl_replay::OutcomeDocument,
-    /// The package identity associated with occurrence loci, when supplied.
-    pub package_id: Option<qsl_semantics::library::PackageId>,
     /// The document's loci and their corresponding source regions.
     pub loci: Vec<(Option<qsl_replay::OutcomeLocus>, Vec<SourceRegion>)>,
 }
@@ -25,7 +23,6 @@ pub struct OutcomeView<'a> {
 pub fn inspect_outcome<'a>(
     document: &'a qsl_replay::OutcomeDocument,
     occurrence_keys: &[Option<OccurrenceKey>],
-    package_id: Option<qsl_semantics::library::PackageId>,
     emission: Option<&'a qsl_package::Emission>,
     limits: InspectLimits,
     cancel: &Cancel,
@@ -35,11 +32,6 @@ pub fn inspect_outcome<'a>(
         return Err(StageFailure::Refused(InspectCause::IncompatibleSelection {
             selector: String::from("outcome"),
         }));
-    }
-    if let (Some(package_id), Some(emission)) = (package_id, emission) {
-        if package_id != emission.package().package_id() {
-            return Err(StageFailure::Refused(InspectCause::PackageEmissionMismatch));
-        }
     }
     let mut budget = EntryBudget::new(limits);
     let mut projected = Vec::with_capacity(occurrence_keys.len());
@@ -53,7 +45,6 @@ pub fn inspect_outcome<'a>(
                     SourceRegion::new(source.clone(), *start, *end).map_err(|_| {
                         StageFailure::Refused(InspectCause::SourceCorrespondence {
                             selector: String::from("outcome region"),
-                            package_id: package_id.map_or_else(String::new, |id| id.hex()),
                         })
                     })?,
                 ]
@@ -67,26 +58,13 @@ pub fn inspect_outcome<'a>(
                 let Some(emission) = emission else {
                     return Err(StageFailure::Refused(InspectCause::SourceCorrespondence {
                         selector: alloc::format!("{}", key),
-                        package_id: package_id.map_or_else(String::new, |id| id.hex()),
                     }));
                 };
-                if let Some(package_id) = package_id {
-                    if package_id != emission.package().package_id() {
-                        return Err(StageFailure::Refused(InspectCause::SourceCorrespondence {
-                            selector: alloc::format!("{}", key),
-                            package_id: package_id.hex(),
-                        }));
-                    }
-                }
                 match emission.source_map().regions(key) {
                     Some(regions) => regions.to_vec(),
                     None => {
                         return Err(StageFailure::Refused(InspectCause::SourceCorrespondence {
                             selector: alloc::format!("{}", key),
-                            package_id: package_id.map_or_else(
-                                || emission.package().package_id().hex(),
-                                |id| id.hex(),
-                            ),
                         }))
                     }
                 }
@@ -94,7 +72,6 @@ pub fn inspect_outcome<'a>(
             (Some(qsl_replay::OutcomeLocus::Occurrence { occurrence }), None) => {
                 return Err(StageFailure::Refused(InspectCause::SourceCorrespondence {
                     selector: occurrence.clone(),
-                    package_id: package_id.map_or_else(String::new, |id| id.hex()),
                 }));
             }
             (Some(qsl_replay::OutcomeLocus::Artifact { .. }), None)
@@ -113,7 +90,6 @@ pub fn inspect_outcome<'a>(
     }
     Ok(Staged::new(View::Outcome(OutcomeView {
         document,
-        package_id,
         loci: projected,
     })))
 }

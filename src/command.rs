@@ -1004,7 +1004,7 @@ fn run_complete(
         accounting: call_accounting(&call.accounting),
         supplied: request.limits.supplied.unwrap_or_default(),
     };
-    let (package_id, outcome) = qsl_replay::spine::run(
+    let outcome = qsl_replay::spine::run(
         source.source().identity().clone(),
         source.source().path(),
         source.source().text().as_bytes(),
@@ -1021,7 +1021,7 @@ fn run_complete(
         }
         other => RunCause::SpineRun(Box::new(other)),
     })?;
-    output::spine_run_result(*digest, package_id, &source, &call.function, outcome)
+    output::spine_run_result(*digest, &source, &call.function, outcome)
 }
 
 /// The call's accounting limits (FR-100): each named counter uses the

@@ -394,7 +394,6 @@ fn spine_locus(locus: qsl_replay::spine::CallLocus) -> types::SpineLocus {
 /// document and FR-301 exit status, from `qsl_replay::spine::run`'s result.
 pub(super) fn spine_run_result(
     digest: ByteDigest,
-    package_id: qsl_semantics::library::PackageId,
     source: &FormalSource,
     function: &str,
     outcome: qsl_replay::spine::CallOutcome,
@@ -446,7 +445,6 @@ pub(super) fn spine_run_result(
     let document = types::SpineRunReport {
         format: types::Format::SpineRunResult,
         request_digest: digest.to_string(),
-        package_id: package_id.hex(),
         source: types::RunSource {
             identity: source.source().identity(),
             digest: source.source().digest().to_string(),
@@ -468,7 +466,6 @@ mod tests {
     use ix_trace_rs::trace;
     use qsl_foundation::SourceIdentity;
     use qsl_replay::spine::CallOutcome;
-    use qsl_semantics::library::PackageId;
     use quire_semantic_value::catalog::Category;
 
     fn formal_source() -> FormalSource {
@@ -500,22 +497,14 @@ mod tests {
     fn assert_undefined_renders(reason: &'static str) {
         let source = formal_source();
         let digest = ByteDigest::of(b"request");
-        let package_id = PackageId::of_preimage(b"package");
-        let result = spine_run_result(
-            digest,
-            package_id,
-            &source,
-            "seven",
-            CallOutcome::Undefined { reason },
-        )
-        .unwrap();
+        let result =
+            spine_run_result(digest, &source, "seven", CallOutcome::Undefined { reason }).unwrap();
         assert_eq!(result.exit_code, 10, "{reason}");
         assert_eq!(
             result.value.as_value(),
             &serde_json::json!({
                 "format": "spine-run-result/1",
                 "request_digest": digest.to_string(),
-                "package_id": package_id.hex(),
                 "source": {
                     "authority": "agent-ix",
                     "identity": "test:spine-run",
@@ -574,7 +563,6 @@ mod tests {
     fn render(outcome: CallOutcome) -> RunResult {
         spine_run_result(
             ByteDigest::of(b"request"),
-            PackageId::of_preimage(b"package"),
             &formal_source(),
             "seven",
             outcome,
