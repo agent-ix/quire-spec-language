@@ -197,24 +197,28 @@ pub(crate) fn reference_enc(reference: &ObjectReference) -> Enc {
     )
 }
 
-/// A unit identity: its declared node, or its compound terms in order, each
-/// a node and its exact exponent.
+/// FR-201's unit identity: `{declared: <NodeId>}` for a declared unit, and
+/// `{terms: [{unit: <root-unit NodeId>, exponent: <canonical decimal>}, ...]}`
+/// for a compound one, its terms in order.
 fn unit_enc(unit: &quire_exact::UnitId) -> Enc {
     if let Some(node) = unit.declared_key() {
-        return Enc::Node(node.clone());
+        return Enc::Object(vec![("declared", Enc::Node(node.clone()))]);
     }
     let terms = unit.compound_terms().unwrap_or_default();
-    Enc::Array(
-        terms
-            .iter()
-            .map(|(node, exponent)| {
-                Enc::Array(vec![
-                    Enc::Node(node.clone()),
-                    Enc::text(exponent.to_string()),
-                ])
-            })
-            .collect(),
-    )
+    Enc::Object(vec![(
+        "terms",
+        Enc::Array(
+            terms
+                .iter()
+                .map(|(node, exponent)| {
+                    Enc::Object(vec![
+                        ("unit", Enc::Node(node.clone())),
+                        ("exponent", Enc::text(exponent.to_string())),
+                    ])
+                })
+                .collect(),
+        ),
+    )])
 }
 
 /// The first JSON value of `text` and the text after it.
@@ -954,6 +958,27 @@ mod tests {
         );
     }
 
+    /// FR-201: a compound unit writes its terms in order, each a root-unit
+    /// node and its canonical decimal exponent.
+    #[test]
+    fn a_compound_unit_encodes_its_terms() {
+        let unit = UnitId::compound(vec![
+            (crate::test_ids::node_key([1]), Integer::from(1_i64)),
+            (crate::test_ids::node_key([2]), Integer::from(-2_i64)),
+        ]);
+        let text = Enc::Object(vec![("unit", unit_enc(&unit))])
+            .canonical_text(Limits::new(1024))
+            .expect("a compound unit encodes");
+        assert_eq!(
+            text,
+            format!(
+                r#"{{"unit":{{"terms":[{{"exponent":"1","unit":{}}},{{"exponent":"-2","unit":{}}}]}}}}"#,
+                node_json(1),
+                node_json(2)
+            )
+        );
+    }
+
     /// The structural object text of `crate::test_ids::node_key([seed])`.
     fn node_json(seed: u8) -> String {
         format!(r#"{{"ordinal":0,"package":"fixture","path":["[{seed}]"]}}"#)
@@ -1176,7 +1201,7 @@ mod tests {
         assert_eq!(
             text,
             format!(
-                r#"{{"denominator":"2","numerator":"3","type":"rational","unit":{}}}"#,
+                r#"{{"denominator":"2","numerator":"3","type":"rational","unit":{{"declared":{}}}}}"#,
                 node_json(0xab)
             )
         );
