@@ -101,7 +101,7 @@ unicode-normalization = "0.1.25"
 # one-copy-deps (agent-ix org-wide, IR #225/RT #88): branch = "main", no rev,
 # so an identical spec in every dependent unifies to one lockfile entry
 # instead of pinning independently per repo.
-quire-contract-model = { git = "https://github.com/agent-ix/quire-contract-ir", branch = "main" }
+quire-contract-model = { git = "https://github.com/agent-ix/quire-contract-ir", rev = "d8a034f5ab74010f2d5837e6e899f1c8845d8bc0" }
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 
 [dev-dependencies]
