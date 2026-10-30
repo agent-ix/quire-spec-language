@@ -14,7 +14,6 @@ use ix_trace_rs::trace;
 use qsl_analyze::model_check::{RequestRefusal, SubjectContext};
 use qsl_eval::model_subject::ModelSubject;
 use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound, ProofBound};
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::{BackendId, RequestIndex};
 use qsl_replay::{node_occurrence, SubjectIdentity, SubjectIdentityRefusal, TerminalRecord};
 use qsl_route::deadlock::{ItemObligation, ObligationKind};

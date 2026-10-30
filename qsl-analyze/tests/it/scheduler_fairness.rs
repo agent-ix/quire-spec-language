@@ -23,7 +23,6 @@ use qsl_eval::simulation::protocol::{
 use qsl_eval::simulation::TransitionSystem;
 use qsl_eval::temporal::AtomReading;
 use qsl_foundation::diagnostic::Code;
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::MemoryModelName;
 use qsl_foundation::SourceIdentity;

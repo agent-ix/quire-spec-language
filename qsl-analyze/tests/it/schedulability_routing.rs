@@ -7,7 +7,6 @@ use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
 use qsl_analyze::schedulability::manifest;
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::Span;
 use qsl_route::request::items_from_requirements;

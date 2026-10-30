@@ -21,7 +21,6 @@ use qsl_eval::simulation::protocol::{
     MemoryModel, MemorySelection, ProtocolTransition, Ra, StepKind, Tso,
 };
 use qsl_eval::simulation::{Location, SubjectSystem, TransitionSystem};
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::MemoryModelName;
 use qsl_replay::node_occurrence;

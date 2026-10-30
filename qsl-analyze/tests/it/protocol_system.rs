@@ -24,7 +24,6 @@ use qsl_eval::simulation::{
 };
 use qsl_foundation::bound::DomainKey;
 use qsl_foundation::diagnostic::Code;
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::MemoryModelName;
 use qsl_package::CheckedPackage;

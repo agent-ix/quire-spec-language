@@ -22,7 +22,6 @@ use qsl_analyze::analyze::{
     analyze, value_item, AnalyzeItem, AnalyzeRecord, DispositionKind, Engine, Engines, Settlement,
 };
 use qsl_analyze::value_check::{manifest, ValueRequest};
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::RequestIndex;
 use qsl_package::CheckedPackage;
 use qsl_replay::value_check::{ParameterDomain, Selection, ValueTarget, Verdict, Violation};
@@ -331,7 +330,7 @@ fn package_of(declarations: &str) -> CheckedPackage {
     )
 }
 
-fn wire_of(package: &CheckedPackage, function: &str) -> WireNodeId {
+fn wire_of(package: &CheckedPackage, function: &str) -> quire_exact::NodeKey {
     let callable = package
         .graph()
         .callable(function)

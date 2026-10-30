@@ -23,7 +23,6 @@ use qsl_eval::simulation::protocol::{
 };
 use qsl_eval::simulation::{independent, Location, SubjectSystem, TransitionSystem};
 use qsl_eval::temporal::AtomReading;
-use qsl_foundation::digest::{DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::{MemoryModelName, SourceIdentity};
 use qsl_package::CheckedPackage;

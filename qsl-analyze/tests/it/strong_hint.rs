@@ -15,7 +15,7 @@ use qsl_replay::{
     CounterexampleKind, DependencyInput, DigestRecord, ModelCheckItem, ModelCheckLimits,
     ModelCheckOutcome, ModelCheckRecord, ModelTraceReplayResult, ModelTraceSettlement,
     ModelTraceSubject, ReplayLimits, ResultLabel, StrongFairnessHint, TemporalCounterexample,
-    TerminalValue, WireNodeId,
+    TerminalValue,
 };
 use qsl_semantics::check::CheckedTemporalClause;
 use quire_exact::Cancel;

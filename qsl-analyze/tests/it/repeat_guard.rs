@@ -10,12 +10,11 @@ use qsl_eval::model_subject::{AtomStop, ModelInstance, ModelLetters};
 use qsl_eval::simulation::model::ModelSimState;
 use qsl_eval::simulation::protocol::MemorySelection;
 use qsl_eval::temporal::AtomReading;
-use qsl_foundation::digest::DigestRecord;
-use qsl_foundation::{MemoryModelName, SourceIdentity};
+use qsl_foundation::{MemoryModelName};
 use qsl_replay::{
-    compile_package, settle_protocol_check, Certification, DependencyInput, ModelCheckItem,
+    settle_protocol_check, Certification, ModelCheckItem,
     ModelCheckLimits, ModelCheckOutcome, ProofBasis, ProofCertificate, ProtocolCertificateRequest,
-    ReplayLimits, ResultLabel, StageLimits, TerminalValue,
+    ResultLabel, TerminalValue,
 };
 use qsl_semantics::check::FormulaNodeId;
 use quire_exact::{Cancel, Meter};
@@ -131,20 +130,6 @@ impl Fixture {
             letters: self.letters,
         }
     }
-
-    fn package_id(&self) -> DigestRecord {
-        compile_package(
-            SourceIdentity::new("agent-ix", "litmus", "git", "1"),
-            "litmus.native",
-            unit_text(&self.body).as_bytes(),
-            [document().as_slice()],
-            &DependencyInput::default(),
-            StageLimits::default(),
-            ReplayLimits::default(),
-        )
-        .expect("the unit compiles")
-        .package_id()
-    }
 }
 
 #[trace("TC-1268", "FR-228-AC-2")]
@@ -193,7 +178,6 @@ fn a_repeat_guard_reads_its_latest_attempt_and_settles_certified() {
     let record = settle_protocol_check(
         &outcome,
         &ModelCheckLimits::default(),
-        &fixture.package_id(),
         &request,
         &Cancel::new(),
         |_| unreachable!("a proved outcome does not replay a counterexample"),

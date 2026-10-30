@@ -26,7 +26,7 @@ use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::ReductionKind;
 use qsl_replay::{
     settle_model_check, AppliedReduction, CertificateRequest, Certification, CounterexampleKind,
-    DigestDomain, DigestRecord, IncompleteCause, InconclusiveCause, ModelCheckItem,
+    IncompleteCause, InconclusiveCause, ModelCheckItem,
     ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ModelTraceSettlement, ModelTraceValue,
     ProofBasis, ReachedLimit, ReductionCause, ResultLabel, RunStats, SettlementBasis,
     SymmetryBrokenCause, SymmetryRefusal, TerminalValue, UnavailabilityCause, UndefinedLocus,
@@ -1042,7 +1042,6 @@ fn settle(world: &World, outcome: &ModelCheckOutcome) -> qsl_replay::ModelCheckR
     settle_model_check(
         outcome,
         &ModelCheckLimits::default(),
-        &DigestRecord::mint(DigestDomain::PackageSemanticV2, [0; 32]),
         &CertificateRequest {
             subject: world.subject(),
             item: ModelCheckItem::DeadlockFreedom,

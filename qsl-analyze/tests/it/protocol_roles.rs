@@ -24,7 +24,6 @@ use qsl_eval::simulation::protocol::{
 };
 use qsl_eval::simulation::{Location, SubjectSystem, TransitionSystem};
 use qsl_eval::temporal::AtomReading;
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::CheckedPackage;
 use qsl_replay::{

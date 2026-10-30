@@ -14,7 +14,6 @@ use qsl_analyze::analyze::{analyze, contract_item, AnalyzeRecord, Engines, Settl
 use qsl_analyze::contract_check::{manifest, ContractRequest};
 use qsl_eval::simulation::model::ModelSystem;
 use qsl_forms::StateClauseKind;
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::RequestIndex;
 use qsl_replay::contract_check::{
     select_contract, CaseVerdict, ContractCase, ContractObligation, ContractSelection,

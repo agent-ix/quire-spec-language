@@ -22,7 +22,6 @@ use qsl_eval::simulation::protocol::{
 };
 use qsl_eval::simulation::{SubjectSystem, TransitionSystem};
 use qsl_eval::temporal::AtomReading;
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::{Code, MemoryModelName, SourceIdentity};
 use qsl_package::CheckedPackage;

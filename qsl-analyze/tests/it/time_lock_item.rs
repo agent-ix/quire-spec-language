@@ -3,7 +3,6 @@
 //! `Counter` subject (`crate::counter`) made timed by a `time` member.
 
 use ix_trace_rs::trace;
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_route::deadlock::{ItemObligation, ModelTemporalItem, ObligationKind};
 use qsl_route::request::{ExtentClassification, ItemKind, RequestItem};

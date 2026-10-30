@@ -9,7 +9,6 @@ use std::collections::BTreeMap;
 use ix_trace_rs::trace;
 use qsl_analyze::statistical::manifest;
 use qsl_foundation::bound::{DomainKey, DomainKind};
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::BackendId;
 use qsl_route::request::{items_with_evidence, EvidenceSelection, RequirementItem};
@@ -35,7 +34,7 @@ const CLAIMS: &str = "probabilistic P95 using ev on M over (s: M::Server) under 
      probabilistic Expected using inf on M over (s: M::Server) under Steady on origin \
      { expected accumulate duration until holds(s.phase = 2) <= 5 }";
 
-fn node(fill: u8) -> WireNodeId {
+fn node(fill: u8) -> quire_exact::NodeKey {
     crate::fixture_ids::node_key([fill])
 }
 
