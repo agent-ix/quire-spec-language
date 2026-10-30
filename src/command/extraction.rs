@@ -111,7 +111,7 @@ pub struct JoinFailure {
 }
 
 impl JoinFailure {
-    /// Original immutable document, including exact byte digest.
+    /// Original immutable document, including its exact bytes.
     pub fn original(&self) -> &Source {
         &self.original
     }

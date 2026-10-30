@@ -19,7 +19,7 @@ The generator writes one directory per case. Each holds `spine-unit.native`,
 `spine-model.semantic-ir.json` (the domain model), `spine-snapshot.json` and,
 for operation cases, invocation documents. [`requests.sh`](requests.sh) then
 writes `run.json` and `compile.json` beside them, selecting each file by its
-digest. `run.json` checks the named clause for the object keyed `child`; the
+identity. `run.json` checks the named clause for the object keyed `child`; the
 [run request reference](../../docs/native-standalone.md) describes every
 member.
 

@@ -177,7 +177,6 @@ fn exact_source_owner_field_and_source_identity() {
     let linked = link(original, &envs, LinkLimits::default()).unwrap();
     assert_eq!(linked.unit().source().text(), source.text());
     assert_eq!(linked.unit().source().identity(), source.identity());
-    assert_eq!(linked.unit().source().identity(), source.identity());
     assert!(std::ptr::eq(linked.models()[0].environment(), &envs[0]));
     let c = &linked.clauses()[0];
     assert_eq!(c.model(), 0);
