@@ -54,6 +54,49 @@ fn equality(name: &str, (left, right): (&str, &str), operand: TypeForm) -> Funct
     )
 }
 
+fn record_a() -> CompositeDeclaration {
+    record(
+        "A",
+        vec![
+            required("name", text(8, TextProfile::BinaryUtf8)),
+            optional("b", ValueType::Composite(handle("B"))),
+        ],
+    )
+}
+
+fn record_b() -> CompositeDeclaration {
+    record(
+        "B",
+        vec![
+            required("tag", text(4, TextProfile::Nfc)),
+            optional("a", ValueType::Composite(handle("A"))),
+        ],
+    )
+}
+
+/// `eq`, `has`, `eqa` and `eqo`: equality over a recursive record, a
+/// sequence membership test, equality over a mutually recursive record, and
+/// equality over `Option<Node>`.
+fn recursive_functions() -> Vec<FunctionDeclaration> {
+    let nodes = TypeForm::collection(CollectionKind::Sequence, SPAN)
+        .with_arguments(vec![named("Node")])
+        .with_bounds(vec!["0".into(), "3".into()]);
+    let option_node =
+        TypeForm::builtin(BuiltinType::Option, SPAN).with_arguments(vec![named("Node")]);
+    vec![
+        equality("eq", ("a", "b"), named("Node")),
+        function(
+            "has",
+            &[("s", nodes), ("b", named("Node"))],
+            boolean(),
+            None,
+            Expression::contains(name_expr("s"), name_expr("b")),
+        ),
+        equality("eqa", ("x", "y"), named("A")),
+        equality("eqo", ("a", "b"), option_node),
+    ]
+}
+
 /// A package declaring `records` and holding `functions`.
 fn package(
     records: Vec<CompositeDeclaration>,
@@ -516,4 +559,74 @@ fn long_leaf_paths_refuse_on_the_default_work_budget() {
     // The same shape with one-letter names and a shorter tree fits.
     eq_over(deep_wide(4, 5, "n"), "C0", CheckingLimits::default())
         .expect("sixteen short leaves check");
+}
+
+/// TC-415 step 8 (FR-093-AC-10): `eq`, `has`, `eqa` and `eqo` check over
+/// recursive text-leaf records, and their nodes key the same with `A`
+/// declared before `B` and after it.
+#[trace("FR-093-AC-10", "TC-415")]
+#[test]
+fn recursive_text_leaf_functions_check_and_key_in_either_order() {
+    let mut keys = Vec::new();
+    for records in [
+        vec![node_record(), record_a(), record_b()],
+        vec![node_record(), record_b(), record_a()],
+    ] {
+        let checked = package(records, recursive_functions())
+            .check(CheckingLimits::default())
+            .unwrap_or_else(|refusals| panic!("the recursive functions check: {refusals:?}"));
+        keys.push(
+            checked
+                .semantic_graph()
+                .nodes()
+                .map(SemanticNode::key)
+                .collect::<Vec<_>>(),
+        );
+    }
+    assert_eq!(keys[0], keys[1], "declaring B before A gives the same keys");
+}
+
+/// FR-092 "Recursion groups" (FR-093-AC-10): `Option<Node>` is one node
+/// wherever it is named, whichever function names it first, and the nodes key
+/// the same under every order of the functions.
+#[trace("FR-093-AC-10", "TC-415")]
+#[test]
+fn an_in_group_type_is_its_member_in_every_declaration_order() {
+    let keys_of = |functions: Vec<FunctionDeclaration>| {
+        let checked = package(vec![node_record(), record_a(), record_b()], functions)
+            .check(CheckingLimits::default())
+            .unwrap_or_else(|refusals| panic!("the functions check: {refusals:?}"));
+        let graph = checked.semantic_graph();
+        let node_record = graph
+            .nodes()
+            .find(|node| {
+                node.semantic_form() == "record"
+                    && node.recursion().is_some()
+                    && preimage(node)["declaration"]["qualified_name"] == json!(["Node"])
+            })
+            .expect("the graph holds record Node");
+        let member = preimage(node_record);
+        let options = graph
+            .nodes()
+            .filter(|node| {
+                let held = preimage(node);
+                node.semantic_form() == "option"
+                    && held["recursion"]["group"] == member["recursion"]["group"]
+                    && held["body"]["members"][0]
+                        == json!({"ordinal": member["recursion"]["ordinal"], "term": "group_reference"})
+            })
+            .count();
+        assert_eq!(options, 1, "exactly one Option<Node> option node");
+        graph.nodes().map(SemanticNode::key).collect::<Vec<_>>()
+    };
+    let eqo = || recursive_functions().remove(3);
+    keys_of(vec![eqo()]);
+    keys_of(vec![eqo(), recursive_functions().remove(0)]);
+    let forward = keys_of(recursive_functions());
+    let mut reversed = recursive_functions();
+    reversed.reverse();
+    assert_eq!(keys_of(reversed), forward);
+    let mut rotated = recursive_functions();
+    rotated.rotate_left(2);
+    assert_eq!(keys_of(rotated), forward);
 }

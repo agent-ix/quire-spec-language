@@ -1504,8 +1504,10 @@ pub(crate) fn view_of(views: &[ModelView], effective: EffectiveId) -> Option<&Mo
 /// with the `document_pointer` of the first such number) refuse here. A number
 /// with no finite double is the reader's own refusal, classified from its
 /// lexeme: it is named when the reader reaches it, so ahead of an earlier
-/// inexact number. A lone surrogate escape or non-UTF-8 bytes refuse `invalid-value` at the root. Any other reader refusal is the document being no JSON
-/// object, which check 1.4 refuses.
+/// inexact number. Any other refusal of the shared reader (malformed text, a lone
+/// surrogate escape, non-UTF-8 bytes, a repeated name) refuses
+/// `invalid_runtime_input`/`invalid-value` at the root, naming the reader's
+/// cause.
 fn check_document_valid(
     read: &Result<quire_canonical::Document, quire_canonical::ReadError>,
     limits: ObservationLimits,
@@ -1529,9 +1531,25 @@ fn check_document_valid(
     }
 }
 
+/// The stable spelling of a shared-reader refusal's cause.
+fn malformed_cause(kind: quire_canonical::Malformed) -> &'static str {
+    use quire_canonical::Malformed;
+    match kind {
+        Malformed::InvalidUtf8 => "invalid-utf8",
+        Malformed::UnexpectedEnd => "unexpected-end",
+        Malformed::UnexpectedCharacter => "unexpected-character",
+        Malformed::ControlCharacter => "control-character",
+        Malformed::InvalidEscape => "invalid-escape",
+        Malformed::LoneSurrogate => "lone-surrogate",
+        Malformed::InvalidNumber => "invalid-number",
+        Malformed::DuplicateName => "duplicate-name",
+        Malformed::TrailingContent => "trailing-content",
+        _ => "malformed",
+    }
+}
+
 /// [`check_document_valid`]'s refusal for a refusal of the shared reader,
-/// or `None` for malformed bytes and any other refusal of the bytes
-/// themselves.
+/// or `None` for a refusal this check does not own.
 fn read_error_refusal(
     error: &quire_canonical::ReadError,
     limits: ObservationLimits,
@@ -1555,16 +1573,13 @@ fn read_error_refusal(
                 )
             })
         }
-        // A lone UTF-16 surrogate escape or bytes that are not UTF-8 are texts
-        // the shared reader refuses, which check 1.3 settles at the document
-        // root before any value is read (FR-106-AC-32, FR-106-AC-38).
-        quire_canonical::ReadError::Malformed {
-            kind:
-                quire_canonical::Malformed::InvalidUtf8 | quire_canonical::Malformed::LoneSurrogate,
-            ..
-        } => Some(refuse(
+        // Any other refusal of the shared reader settles at the document
+        // root before any member is read, naming the reader's cause
+        // (FR-106 check 1.3, FR-106-AC-3, AC-32, AC-38).
+        quire_canonical::ReadError::Malformed { kind, .. } => Some(refuse(
             AdmissionRecord::new(Code::InvalidRuntimeInput, "invalid-value")
-                .with("document_pointer", ""),
+                .with("document_pointer", "")
+                .with("reader_cause", malformed_cause(*kind)),
         )),
         _ => None,
     }
@@ -3412,21 +3427,25 @@ mod tests {
         check_document_valid(&read, limits)
     }
 
-    /// FR-106 check 1.3: a repeated member name is malformed JSON, which the
-    /// check leaves to check 1.4; a lone surrogate escape or a byte that is
-    /// not UTF-8 refuses `invalid_runtime_input`/`invalid-value` at the root.
+    /// FR-106 check 1.3: any text the shared reader refuses (a repeated
+    /// member name, a lone surrogate escape, a byte that is not UTF-8, text
+    /// that is not JSON) refuses `invalid_runtime_input`/`invalid-value` at
+    /// the document root, naming the reader's cause.
     #[trace("TC-465", "FR-106-AC-3")]
     #[test]
     fn the_shared_reader_settles_a_text_it_refuses_at_check_1_3() {
-        assert_eq!(check(br#"{"a":1,"a":2}"#), Ok(()));
-        let invalid_value = || {
+        let invalid_value = |cause: &'static str| {
             Err(refuse(
                 AdmissionRecord::new(Code::InvalidRuntimeInput, "invalid-value")
-                    .with("document_pointer", ""),
+                    .with("document_pointer", "")
+                    .with("reader_cause", cause),
             ))
         };
-        assert_eq!(check(br#"{"s":"\ud800"}"#), invalid_value());
-        assert_eq!(check(b"{\"s\":\"\xC0\"}"), invalid_value());
+        assert_eq!(check(br#"{"a":1,"a":2}"#), invalid_value("duplicate-name"));
+        assert_eq!(check(br#"{"s":"\ud800"}"#), invalid_value("lone-surrogate"));
+        assert_eq!(check(b"{\"s\":\"\xC0\"}"), invalid_value("invalid-utf8"));
+        assert_eq!(check(b"{\"a\":"), invalid_value("unexpected-end"));
+        assert_eq!(check(b"{} {}"), invalid_value("trailing-content"));
     }
 
     /// FR-056: a number with no finite double refuses `noncanonical_wire` at
@@ -3460,11 +3479,18 @@ mod tests {
     }
 
     /// A repeated member name the reader detects before it reaches an
-    /// underflowing number is the reader's refusal, left to check 1.4.
+    /// underflowing number is the reader's refusal.
     #[trace("TC-145", "FR-056-AC-2")]
     #[test]
-    fn a_repeated_name_before_an_underflow_is_left_to_check_1_4() {
-        assert_eq!(check(br#"{"a":1,"a":2,"n":1e-400}"#), Ok(()));
+    fn a_repeated_name_before_an_underflow_is_the_readers_refusal() {
+        assert_eq!(
+            check(br#"{"a":1,"a":2,"n":1e-400}"#),
+            Err(refuse(
+                AdmissionRecord::new(Code::InvalidRuntimeInput, "invalid-value")
+                    .with("document_pointer", "")
+                    .with("reader_cause", "duplicate-name")
+            ))
+        );
     }
 
     /// FR-261-AC-2 (TC-733 step 2): on a 512 KiB stack, check 1.3 over a
