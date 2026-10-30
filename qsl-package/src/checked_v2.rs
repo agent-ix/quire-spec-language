@@ -591,11 +591,9 @@ fn refused(refusal: V2ReadRefusal) -> V2ReadOutcome {
 /// that is an FR-307 source-level fact the caller already knows (the import
 /// declaration, or the compiled unit's own manifest) -- so it is supplied
 /// here rather than read from the bytes.
-/// `evidence` supplies the selected domain package documents, the admitted
-/// dependency packages and the supported features; the caller owns it, as
-/// this reader holds none of them itself. `pinned` is condition 3's own input: the
-/// consumer's library lock (`PinnedRequest::from(&LibraryLock)`) or pinned
-/// request, one selection per library identity.
+/// `evidence` supplies selected domain package documents, admitted
+/// dependency packages and supported features. The caller supplies the
+/// package's expected library name from its manifest or import declaration.
 pub(crate) fn read_checked_package_v2(
     bytes: &[u8],
     identity: LibraryName,
@@ -786,14 +784,12 @@ impl ImportViewRefusal {
 }
 
 /// ADR-015 D-1 step 6: read `package`'s `emission` through the I2
-/// reader, pinned to the one selection `identity` and the recomputed
-/// `package_id`, into the [`VerifiedPackage`]'s [`ImportView`]
-/// (ADR-011 §4 verified binding). The lock is checked against the
+/// reader under the expected `identity`, into an [`ImportView`]. The lock is checked against the
 /// emission's own evidence of the artifacts it compiled against, against
 /// `domain_packages` (FR-056's package input, by identity) for
 /// its `model_root` nodes, and against the admitted package of every entry
 /// of its `dependency_selections` (QSpec FR-322-AC-36): taken from
-/// `admitted`, by `package_id`, where an earlier read admitted it, and
+/// `admitted`, by library name, where an earlier read admitted it, and
 /// otherwise read the same way from the closure `package` holds. Every
 /// package this read admits, `package` among them, is added to `admitted`
 /// for the next read. Every read runs under `limits`, the caller's `i2.*`

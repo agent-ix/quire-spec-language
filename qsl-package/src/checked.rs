@@ -257,6 +257,14 @@ pub struct Import {
 #[cfg(feature = "std")]
 #[derive(Debug, thiserror::Error)]
 pub enum LinkRefusal {
+    /// An import names a different library than the emitted package declares.
+    #[error("import {expected} resolves to package {actual}")]
+    IdentityMismatch {
+        /// The imported library name.
+        expected: LibraryName,
+        /// The package's own manifest name.
+        actual: Box<str>,
+    },
     /// FR-307 diamond rule: two dependency paths select one library
     /// identity with a different `package_id`
     /// (`invalid_package`/`conflicting-definition`), listing both paths.
@@ -287,7 +295,9 @@ impl LinkRefusal {
     /// The catalog code.
     pub fn code(&self) -> Code {
         match self {
-            Self::ConflictingDefinition { .. } => Code::InvalidPackage,
+            Self::ConflictingDefinition { .. } | Self::IdentityMismatch { .. } => {
+                Code::InvalidPackage
+            }
             Self::DependencyEmission {
                 refusal: Some(refusal),
                 ..
@@ -300,6 +310,7 @@ impl LinkRefusal {
     pub fn cause(&self) -> Option<&'static str> {
         match self {
             Self::ConflictingDefinition { .. } => Some("conflicting-definition"),
+            Self::IdentityMismatch { .. } => None,
             Self::DependencyEmission { .. } => None,
         }
     }
@@ -448,7 +459,7 @@ impl CheckedPackage {
                 unify(&mut selections, identity, resolved)?;
             }
             match dependencies.get(&import.identity) {
-                Some(existing) if !Arc::ptr_eq(existing, &import.package) => {
+                Some(existing) if !same_package(existing, &import.package, &import.identity)? => {
                     return Err(LinkRefusal::ConflictingDefinition {
                         identity: import.identity.clone(),
                         selections: Box::new([
@@ -583,9 +594,8 @@ impl CheckedPackage {
     }
 }
 
-/// `import`'s dependency `package_id`, taken from the emitter's output for
-/// its package: the remembered emission when it has been emitted, else a
-/// fresh `emit_checked`, which remembers its result.
+/// Check that the imported package emits complete bytes under the imported
+/// library name. A remembered emission is reused when available.
 #[cfg(feature = "std")]
 fn check_dependency_emission(import: &Import) -> Result<(), LinkRefusal> {
     let fresh;
@@ -607,7 +617,33 @@ fn check_dependency_emission(import: &Import) -> Result<(), LinkRefusal> {
             refusal: None,
         });
     }
+    if emission.package().name() != import.identity.as_str() {
+        return Err(LinkRefusal::IdentityMismatch {
+            expected: import.identity.clone(),
+            actual: emission.package().name().into(),
+        });
+    }
     Ok(())
+}
+
+#[cfg(feature = "std")]
+fn same_package(
+    left: &CheckedPackage,
+    right: &CheckedPackage,
+    identity: &LibraryName,
+) -> Result<bool, LinkRefusal> {
+    if core::ptr::eq(left, right) {
+        return Ok(true);
+    }
+    let emit = |package: &CheckedPackage| {
+        emit_checked(package).map_err(|refusal| LinkRefusal::DependencyEmission {
+            identity: identity.clone(),
+            refusal: Some(refusal),
+        })
+    };
+    let left = emit(left)?;
+    let right = emit(right)?;
+    Ok(left.package().bytes() == right.package().bytes())
 }
 
 /// A dependency path written `a -> b -> c`.
@@ -628,7 +664,7 @@ fn unify(
     resolved: ResolvedDependency,
 ) -> Result<(), LinkRefusal> {
     match selections.get(&identity) {
-        Some(existing) if Arc::ptr_eq(&existing.package, &resolved.package) => Ok(()),
+        Some(existing) if same_package(&existing.package, &resolved.package, &identity)? => Ok(()),
         Some(existing) => Err(LinkRefusal::ConflictingDefinition {
             selections: Box::new([existing.clone(), resolved]),
             identity,
@@ -640,23 +676,22 @@ fn unify(
     }
 }
 
-/// S4 wire output (ADR-013 T-1): the `quire.checked-package/v2` bytes with
-/// their `package_id`. Distinct from `protocol_artifact::native::EmittedPackage`
+/// S4 wire output (ADR-013 T-1): canonical checked-package/v2 bytes and
+/// the manifest package name. Distinct from `protocol_artifact::native::EmittedPackage`
 /// (SEAM-3, unrelated: FR-087-AC-8/TC-247) -- two separate types under two
 /// separate module paths, with no shared field, method or re-export, and
 /// with no `pub use`/glob anywhere that would place both names in one import
 /// scope.
 ///
-/// A caller cannot supply a `package_id`: both fields are private, and this
-/// type's own (`pub(super)`, so not documented on this public page)
-/// constructor takes no `package_id` parameter to forge one through --
+/// A caller cannot supply a forged name or bytes: both fields are private,
+/// and this type's own (`pub(super)`) constructor is crate-local --
 /// naming this struct's private fields directly from outside `qsl-package`
 /// (ADR-013 O-02) does not compile:
 /// ```compile_fail,E0451
 /// use qsl_package::EmittedPackage;
 /// let forged = EmittedPackage {
 ///     bytes: Vec::new(),
-///     package_id: todo!(),
+///     name: todo!(),
 /// };
 /// ```
 ///
@@ -670,17 +705,9 @@ pub struct EmittedPackage {
 
 #[cfg(feature = "std")]
 impl EmittedPackage {
-    /// The v2 emitter's sole constructor (ADR-011 T-8, M-4).
-    /// `identity_preimage` is IR's own typed
-    /// `CheckedPackageIdentityPreimageRefV2`, JCS-encoded inside this
-    /// constructor before `package_id` is minted from those bytes
-    /// (`PackageId::of_preimage`, ADR-013 O-02): there is no parameter
-    /// through which a caller could instead supply arbitrary preimage
-    /// bytes, let alone an arbitrary `package_id` directly. `encode` writes
-    /// the wire around the minted `package_id`. A preimage the encoder
-    /// refuses (a failed heap reservation) is returned as `E`, never a
-    /// panic. `pub(super)`: reachable from anywhere in
-    /// `qsl-package` (in particular, `emit`), never from outside it.
+    /// The v2 emitter's crate-local constructor (ADR-011 T-8, M-4).
+    /// The encoder writes canonical bytes under `name`; an encoding refusal
+    /// is returned as `E`. External callers cannot construct this type.
     pub(super) fn new<E>(
         name: &str,
         encode: impl FnOnce(&str) -> Result<Vec<u8>, E>,
