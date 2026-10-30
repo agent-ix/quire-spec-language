@@ -129,8 +129,7 @@ fn tc213_fixture() -> Value {
 fn tc213_retained_map(
     document: &Value,
 ) -> (BTreeSet<DeclarationKey>, BTreeMap<DeclarationKey, Value>) {
-    let document = document.clone();
-    let package = read_k2(&document).expect("TC-213 fixture admits");
+    let package = read_k2(document).expect("TC-213 fixture admits");
     let admitted_keys = package
         .records
         .iter()
@@ -192,8 +191,7 @@ fn tc213_retained_map(
 fn tc213_type_identities(
     document: &Value,
 ) -> BTreeMap<DeclarationKey, qsl_semantics::model::key::EffectiveId> {
-    let document = document.clone();
-    let package = read_k2(&document).expect("TC-213 fixture admits");
+    let package = read_k2(document).expect("TC-213 fixture admits");
     let (outcome, _) = normalize_with_meter(&package, ModelNormalizationLimits::UNLIMITED);
     let NormalizeOutcome::Completed(view) = outcome else {
         panic!("TC-213 fixture normalizes: {outcome:?}");

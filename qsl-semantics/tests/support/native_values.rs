@@ -270,17 +270,14 @@ fn build_with(flavor: Flavor) -> Value {
         document["constructs"]
             .as_array_mut()
             .expect("constructs")
-            .push({
-                let bounded = json!({
-                    "kind": {"module": base::BUSINESS, "name": "bounded"},
-                    "moduleVersion": "1.0.0",
-                    "construct": {
-                        "identity": "none", "shape": "record", "members": {},
-                        "meaning": "quire.meaning.model.value-type/v1",
-                    },
-                });
-                bounded
-            });
+            .push(json!({
+                "kind": {"module": base::BUSINESS, "name": "bounded"},
+                "moduleVersion": "1.0.0",
+                "construct": {
+                    "identity": "none", "shape": "record", "members": {},
+                    "meaning": "quire.meaning.model.value-type/v1",
+                },
+            }));
     }
     let population = |name: &str| {
         json!({
