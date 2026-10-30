@@ -59,7 +59,7 @@ whose members are the twelve labels FR-290 fixes and FR-057 admits into QSL.
   `bounded` or `unbounded` (ADR-012 §7.1). `BackendId` is the backend
   identity alone (ADR-013 O-19); origin, pairs, domains, evidence kinds,
   dynamics and state-graph forms are descriptor members, not identity
-  components (FR-288-AC-5/6). The registry's
+  components (FR-288-AC-5/6). The descriptor holds no copy of the manifest. The registry's
   uniqueness key is `BackendId` (FR-290 "Candidate set and negotiation": "a
   backend identity is unique within a registry"), so a second registration
   under an already-held `BackendId` is judged against the held descriptor:
@@ -347,12 +347,11 @@ inserted into the registry; the refused descriptor contributes no
 registration, and any registration already held under that identity stands.
 An admitted descriptor SHALL keep `dynamics` exactly as supplied: a
 descriptor that supplies none holds none, and every FR-331 manifest QSL
-writes from it carries no `dynamics` member, so the descriptor bytes of such a registration (the production engines en-1 and en-6 both supply none)
-and the request identity (QSpec FR-306) of
+writes from it carries no `dynamics` member, so the descriptor of such a registration (the production engines en-1 and en-6 both supply none) and the request identity (QSpec FR-331, "Request identity") of
 every temporal request over it are those it has without this member.
 `{discrete}` is only how candidate computation reads an absent member. A
-descriptor that supplies `["discrete"]` explicitly has other descriptor
-bytes, so two registrations of one identity
+descriptor that supplies `["discrete"]` explicitly holds a different
+`dynamics` set, so two registrations of one identity
 that differ only in absent and explicit `["discrete"]` conflict as
 FR-075-AC-4 states.
 
@@ -370,7 +369,8 @@ candidate.
 
 If a registration names a `BackendId` the registry already holds, the
 registry SHALL compare identity, provider origin, advertised
-pairs, retained `domains`, the evidence-kind set and the `dynamics` member as supplied. A different identity is a different registry key and is
+pairs, retained `domains`, the evidence-kind set and the `dynamics` member as supplied. A second registration of one identity is
+refused whatever its manifest (QSpec FR-290-AC-10, TC-282). A different identity is a different registry key and is
 not a duplicate-registration conflict:
 
 - If the two are equal in every equality-compared member, the

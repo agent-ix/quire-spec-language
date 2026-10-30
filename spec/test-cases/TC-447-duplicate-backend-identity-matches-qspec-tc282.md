@@ -70,7 +70,7 @@ above:
 
 Every ordering of a vector's registrations gives the same registry, the same
 refusals in the same reported order, and the same candidate set for every
-item. A repeat of an identical complete manifest is never refused
+item. A repeat of an identical registration is never refused
 (FR-075-AC-7). A repeat differing only in evidence-kind set is conflicting,
 not identical. A conflicting identity is never held, contributes no candidate, and never
 refuses a registration of another identity (FR-075-AC-4). The
