@@ -467,11 +467,11 @@ impl<'a> ModelBindings<'a> {
                 continue;
             }
             work.charge(Dimension::References, 1)?;
-            let first = inputs[0].1.digest();
+            let first = inputs[0].1.artifact_bytes();
             let mut different = false;
             for (_, model) in &inputs[1..] {
                 work.charge(Dimension::References, 1)?;
-                if model.digest() != first {
+                if model.artifact_bytes() != first {
                     different = true;
                     break;
                 }

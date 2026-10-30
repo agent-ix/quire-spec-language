@@ -230,8 +230,8 @@ fn independently_changed_static_claims_have_distinct_preimages() {
         ),
         (r#""validate_frame":false"#, r#""validate_frame":true"#),
         (
-            r#""expression":null,"span":{"start":221,"end":225}"#,
-            r#""expression":null,"span":{"start":220,"end":225}"#,
+            r#""expression":null,"span":{"start":128,"end":132}"#,
+            r#""expression":null,"span":{"start":127,"end":132}"#,
         ),
         (
             r#""universe":"nodes","observations":["current"]"#,

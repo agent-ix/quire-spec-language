@@ -318,8 +318,11 @@ fn conflicting_formal_owner_retains_both_artifacts_and_independent_import() {
             assert_eq!(bindings.conflicts().len(), 1);
             assert_eq!(bindings.conflicts()[0].kind, ModelConflictKind::Owner);
             assert_eq!(bindings.conflicts()[0].inputs, [0, 1]);
-            assert!(
-                matches!(&bindings.imports()[0].selection, Err(ImportRefusal::ConflictingModel { groups }) if groups == &[0])
+            // Selection is by package identity alone: the package both
+            // conflicting artifacts own is ambiguous, not silently chosen.
+            assert_eq!(
+                bindings.imports()[0].selection,
+                Err(ImportRefusal::AmbiguousSelection { inputs: vec![0, 1] })
             );
             assert_eq!(bindings.imports()[1].selection, Ok(2));
             let (unit, name) = parameter(namespace, "Spare", 0);

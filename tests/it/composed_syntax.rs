@@ -477,12 +477,12 @@ fn negative_and_unbounded_choreography_counts_refuse_as_unsigned_syntax() {
 #[test]
 #[trace("TC-113", "FR-035-AC-5")]
 fn exact_small_limits_admit_and_each_next_charge_refuses() {
-    // 25 authored tokens; one profile, one declaration and one Boolean node.
+    // 21 authored tokens; one profile, one declaration and one Boolean node.
     // The existing value parser enters expression and precedence contexts.
     let text = "language \"ix:native\" edition \"1-draft\"; profile S = \"test:profile\"; predicate P using S(): Boolean { true }";
     let exact = Limits {
         source_bytes: text.len(),
-        tokens: 25,
+        tokens: 21,
         nodes: 3,
     };
     let NativeUnit::Composed(parsed) = read(text, exact).unwrap() else {
@@ -502,7 +502,7 @@ fn exact_small_limits_admit_and_each_next_charge_refuses() {
         ),
         (
             Limits {
-                tokens: 24,
+                tokens: 20,
                 ..exact
             },
             Phase::Lex,

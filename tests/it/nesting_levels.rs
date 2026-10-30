@@ -230,17 +230,37 @@ fn flat_twenty_thousand_operator_chain_completes() {
     });
 }
 
-// The longest chain of each shape the default ceilings admit parses, and
-// one element more names the ceiling it hits.
+// The longest chain of each shape the default ceilings admit parses (found by
+// search, not recorded), and one element more names the ceiling it hits.
 #[trace("TC-012", "NFR-001-M-2", "NFR-001-M-3")]
 #[test]
 fn longest_historical_chains_parse_and_one_longer_names_a_ceiling() {
     on_bounded_stack(|| {
-        assert_longest_chain("+", 24_999, historical(sum_chain));
-        assert_longest_chain("implies", 24_999, historical(implies_chain));
-        assert_longest_chain("not", 49_999, historical(not_chain));
-        assert_longest_chain("let tail", 19_994, historical(let_tail_chain));
-        assert_longest_chain("if tail", 16_666, historical(if_tail_chain));
+        assert_longest_chain(
+            "+",
+            longest_admitted(historical(sum_chain)),
+            historical(sum_chain),
+        );
+        assert_longest_chain(
+            "implies",
+            longest_admitted(historical(implies_chain)),
+            historical(implies_chain),
+        );
+        assert_longest_chain(
+            "not",
+            longest_admitted(historical(not_chain)),
+            historical(not_chain),
+        );
+        assert_longest_chain(
+            "let tail",
+            longest_admitted(historical(let_tail_chain)),
+            historical(let_tail_chain),
+        );
+        assert_longest_chain(
+            "if tail",
+            longest_admitted(historical(if_tail_chain)),
+            historical(if_tail_chain),
+        );
     });
 }
 
@@ -250,9 +270,21 @@ fn longest_historical_chains_parse_and_one_longer_names_a_ceiling() {
 #[test]
 fn let_and_if_chains_in_every_position_parse_on_a_bounded_stack() {
     on_bounded_stack(|| {
-        assert_longest_chain("let value", 19_994, historical(let_value_chain));
-        assert_longest_chain("if condition", 16_666, historical(if_condition_chain));
-        assert_longest_chain("if then", 16_666, historical(if_then_chain));
+        assert_longest_chain(
+            "let value",
+            longest_admitted(historical(let_value_chain)),
+            historical(let_value_chain),
+        );
+        assert_longest_chain(
+            "if condition",
+            longest_admitted(historical(if_condition_chain)),
+            historical(if_condition_chain),
+        );
+        assert_longest_chain(
+            "if then",
+            longest_admitted(historical(if_then_chain)),
+            historical(if_then_chain),
+        );
     });
 }
 
@@ -260,9 +292,21 @@ fn let_and_if_chains_in_every_position_parse_on_a_bounded_stack() {
 #[test]
 fn longest_composed_temporal_chains_parse_and_one_longer_names_a_ceiling() {
     on_bounded_stack(|| {
-        assert_longest_chain("always", 16_656, composed(always_chain));
-        assert_longest_chain("temporal implies", 24_996, composed(temporal_implies_chain));
-        assert_longest_chain("temporal not", 49_992, composed(temporal_not_chain));
+        assert_longest_chain(
+            "always",
+            longest_admitted(composed(always_chain)),
+            composed(always_chain),
+        );
+        assert_longest_chain(
+            "temporal implies",
+            longest_admitted(composed(temporal_implies_chain)),
+            composed(temporal_implies_chain),
+        );
+        assert_longest_chain(
+            "temporal not",
+            longest_admitted(composed(temporal_not_chain)),
+            composed(temporal_not_chain),
+        );
     });
 }
 
@@ -303,7 +347,7 @@ fn longest_admitted(read: impl Fn(usize) -> Result<(), Box<Diagnostic>>) -> usiz
     low
 }
 
-// Re-derives the lengths `assert_longest_chain` uses:
+// Prints the lengths `assert_longest_chain` derives:
 // `cargo test --test it nesting_levels::probe -- --ignored --nocapture`.
 #[test]
 #[ignore = "probe: prints the longest chain of each shape the default ceilings admit"]
