@@ -167,8 +167,9 @@ impl TimeUnits {
                 };
                 let package_nodes = dimension.and_then(|dimension| {
                     let time_key = time_key.clone()?;
-                    (unit.dimension == dimension.key)
-                        .then(|| package_unit_nominal_nodes(unit, &model.units, time_key, &package.identity))?
+                    (unit.dimension == dimension.key).then(|| {
+                        package_unit_nominal_nodes(unit, &model.units, time_key, &package.identity)
+                    })?
                 });
                 if let Some(package_nodes) = &package_nodes {
                     for node in package_nodes {
