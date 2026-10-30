@@ -72,6 +72,12 @@ enum Task<'v> {
     EndArray,
 }
 
+/// A declaration node as value text spells it: the node's compact JSON
+/// object, as a string member.
+fn node_text(node: &NodeKey) -> String {
+    super::parameter_name(node).unwrap_or_default()
+}
+
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
@@ -469,7 +475,7 @@ fn value_steps<'v>(value: &'v WitnessValue, order: Option<&[usize]>) -> Vec<Task
         } => object(
             vec![
                 tag("enum"),
-                ("name", Task::Owned(declaration.to_string())),
+                ("name", Task::Owned(node_text(declaration))),
                 ("member", Task::Str(member)),
             ],
             vec![],
@@ -575,7 +581,7 @@ fn value_steps<'v>(value: &'v WitnessValue, order: Option<&[usize]>) -> Vec<Task
             with_array(
                 vec![
                     tag("record"),
-                    ("name", Task::Owned(declaration.to_string())),
+                    ("name", Task::Owned(node_text(declaration))),
                 ],
                 "fields",
                 elements,
@@ -585,7 +591,7 @@ fn value_steps<'v>(value: &'v WitnessValue, order: Option<&[usize]>) -> Vec<Task
             declaration,
             components,
         } => with_array(
-            vec![tag("tuple"), ("name", Task::Owned(declaration.to_string()))],
+            vec![tag("tuple"), ("name", Task::Owned(node_text(declaration)))],
             "components",
             array(components.iter().collect()),
         ),
@@ -596,7 +602,7 @@ fn value_steps<'v>(value: &'v WitnessValue, order: Option<&[usize]>) -> Vec<Task
         } => with_array(
             vec![
                 tag("union"),
-                ("name", Task::Owned(declaration.to_string())),
+                ("name", Task::Owned(node_text(declaration))),
                 ("member", Task::Str(member)),
             ],
             "components",
@@ -775,16 +781,23 @@ fn integer_member(members: &[(&str, NodeRef<'_>)], name: &str) -> Result<Integer
 }
 
 fn digest_member(members: &[(&str, NodeRef<'_>)], name: &str) -> Result<[u8; 32], EntryFault> {
-    NodeKey::from_hex(string_member(members, name)?)
-        .map(|id| *id.as_bytes())
-        .ok_or(EntryFault::Spelling)
+    let text = string_member(members, name)?;
+    if text.len() != 64 || !lower_hex(text, 64) {
+        return Err(EntryFault::Spelling);
+    }
+    let mut bytes = [0_u8; 32];
+    for (slot, pair) in bytes.iter_mut().zip(text.as_bytes().chunks(2)) {
+        let digits = std::str::from_utf8(pair).map_err(|_| EntryFault::Spelling)?;
+        *slot = u8::from_str_radix(digits, 16).map_err(|_| EntryFault::Spelling)?;
+    }
+    Ok(bytes)
 }
 
 fn declaration_member(
     members: &[(&str, NodeRef<'_>)],
     name: &str,
 ) -> Result<NodeKey, EntryFault> {
-    NodeKey::from_hex(string_member(members, name)?).ok_or(EntryFault::Spelling)
+    super::parameter_node(string_member(members, name)?).ok_or(EntryFault::Spelling)
 }
 
 /// Whether `text` is lowercase hex of exactly `digits` digits.

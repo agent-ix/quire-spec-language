@@ -121,25 +121,22 @@ impl EnumDeclaration {
 /// keyed by its checked node (FR-360 item 11), and its cases are in the
 /// ascending UTF-8 byte order of their names.
 pub(super) fn enum_declarations(package: &CheckedPackage) -> Vec<EnumDeclaration> {
-    let declared =
-        package
-            .graph()
-            .semantic_graph()
-            .nodes()
-            .filter_map(|node| match node.nominal() {
-                Some(NominalNode::EnumDeclaration(preimage)) => Some(EnumDeclaration {
-                    key: node.key(),
-                    members: preimage.members().to_vec(),
-                }),
-                _ => None,
-            });
+    let declared = package
+        .graph()
+        .scope()
+        .enums()
+        .iter()
+        .map(|binding| EnumDeclaration {
+            key: binding.declaration.key(),
+            members: binding.declaration.declaration().members().to_vec(),
+        });
     let variant_types = package
         .graph()
         .scope()
         .variant_types()
         .iter()
         .map(|variant_type| EnumDeclaration {
-            key: variant_type.node(),
+            key: variant_type.node().clone(),
             members: variant_type
                 .cases()
                 .iter()
@@ -155,7 +152,7 @@ fn declares_shape(candidate: &EnumDeclaration, shape: &quire_exact::EnumShape) -
         && candidate
             .members
             .iter()
-            .map(|case| mint_variant_id(candidate.key, case))
+            .map(|case| mint_variant_id(candidate.key.clone(), case))
             .eq(shape.variants())
 }
 
