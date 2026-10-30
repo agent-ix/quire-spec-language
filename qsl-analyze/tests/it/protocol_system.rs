@@ -14,10 +14,10 @@ use qsl_eval::simulation::model::{
     ExpansionLimits, ModelFinding, ModelSimState, ModelSystem, TerminalClass,
 };
 use qsl_eval::simulation::protocol::{
-    binder_root, explore_protocol, Access, BlockedThread, Chosen, Disposition, FootprintStep,
-    GatedStep, MemoryBranch, MemoryModel, MemoryStep, ProtocolFairness, ProtocolRefusal,
-    ProtocolState, ProtocolSystem, ProtocolTransition, ReadChoice, RestKind, RestPoint, Sc,
-    ScComponent, SendOutcome, SharedCell, StepKind, ThreadPath, WaitCause, Written,
+    explore_protocol, Access, BlockedThread, Chosen, Disposition, FootprintStep, GatedStep,
+    MemoryBranch, MemoryModel, MemoryStep, ProtocolFairness, ProtocolRefusal, ProtocolState,
+    ProtocolSystem, ProtocolTransition, ReadChoice, RestKind, RestPoint, Sc, ScComponent,
+    SendOutcome, SharedCell, StepKind, ThreadPath, WaitCause, Written,
 };
 use qsl_eval::simulation::{
     Footprint, Limits, Location, NotSimulated, Outcome, SubjectSystem, TransitionSystem,
@@ -1324,7 +1324,14 @@ fn a_protocol_model_check_is_deterministic() {
     assert_eq!(
         named,
         [DomainKey::Node {
-            node: binder_root("P", "tally"),
+            node: counted
+                .checked
+                .graph()
+                .protocol_node_keys("P")
+                .and_then(|keys| keys.binders.iter().find(|key| key.name == "tally"))
+                .expect("the protocol keys its tally binder")
+                .node
+                .clone(),
             path: vec![0],
         }]
     );

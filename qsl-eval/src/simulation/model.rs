@@ -1099,13 +1099,6 @@ impl<'a> ModelSystem<'a> {
         };
         for declaration in self.types.object_types() {
             for operation in self.operations.declared_by(declaration.key()) {
-                let Some(owner) = self.model.type_key(declaration.key()) else {
-                    continue;
-                };
-                let key = DeclarationKey {
-                    package: owner.package.clone(),
-                    node: format!("{}/{}", owner.node, operation.name()),
-                };
                 for (position, (name, value_type)) in operation.parameters().iter().enumerate() {
                     // A random parameter's finite domain is its support
                     // (ADR-024 PM-1), whatever its declared type.
@@ -1117,19 +1110,12 @@ impl<'a> ModelSystem<'a> {
                     {
                         continue;
                     }
-                    root(
-                        root_node(
-                            &key.package,
-                            vec!["operation", &key.node, "parameter", name],
-                        ),
-                        value_type,
-                    );
+                    // BLOCKED-BY QSL-1309 (owner: planner titan:QSL:plan): admitted node for operation parameter roots
+                    let _ = (name, value_type);
                 }
                 if let Some(result) = operation.result() {
-                    root(
-                        root_node(&key.package, vec!["operation", &key.node, "result"]),
-                        result,
-                    );
+                    // BLOCKED-BY QSL-1309 (owner: planner titan:QSL:plan): admitted node for operation result roots
+                    let _ = result;
                 }
             }
         }
@@ -1156,10 +1142,8 @@ impl<'a> ModelSystem<'a> {
         // "Initial element count").
         for key in &granted {
             if let Some(value_type) = field_types.get(key) {
-                root(
-                    root_node(&key.package, vec!["declaration", &key.node]),
-                    value_type,
-                );
+                // BLOCKED-BY QSL-1309 (owner: planner titan:QSL:plan): admitted node for granted-field roots
+                let _ = value_type;
             }
         }
         let held: BTreeSet<&DeclarationKey> = self
@@ -1740,17 +1724,4 @@ mod tests {
         assert_eq!(BROKEN.code(), "runtime_invariant");
         assert_eq!(BROKEN.cause(), "established-invariant-broken");
     }
-}
-
-/// The requires-bound root node of a modelled declaration: the declaring
-/// package and the structural `path` that names the position, ordinal zero.
-fn root_node(package: &str, path: Vec<&str>) -> Option<NodeKey> {
-    NodeKey::new(
-        package,
-        path.into_iter()
-            .map(|segment| quire_exact::PathSegment::Text(segment.to_owned()))
-            .collect(),
-        0,
-    )
-    .ok()
 }

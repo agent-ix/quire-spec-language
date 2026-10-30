@@ -46,7 +46,9 @@ use qsl_foundation::bound::{DomainKey, DomainKind};
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::digest::DigestRecord;
 use qsl_package::CheckedPackage;
-use qsl_semantics::check::{CheckedActivation, CheckedProtocol, CheckedTerminalMember};
+use qsl_semantics::check::{
+    CheckedActivation, CheckedGraph, CheckedProtocol, CheckedTerminalMember,
+};
 use qsl_semantics::family::ClaimExtent;
 use quire_canonical::{Encode, Error, Limits as CanonicalLimits, Sink, Writer};
 use quire_exact::{Meter, NodeKey, ObjectReference, Value, ValueType};
@@ -595,36 +597,40 @@ impl<C: Encode> Encode for ProtocolKey<C> {
 
 /// FR-215 "Model checking a protocol subject" (ADR-027 TS-5): the roots of
 /// `protocol` beside its model's: the record type of every binder of an
-/// `event`, `send`, `receive` and `finish` step, each named by the
-/// protocol and the binder, and the attempt type of every compensation
-/// template. A binder's bounded record type this module cannot enumerate is
-/// refused when the system is built ([`Unsupported::UnenumerableRecord`]); an
-/// attempt type it cannot enumerate is an unbounded root.
-pub fn protocol_domains(protocol: &CheckedProtocol) -> Vec<(NodeKey, ValueType)> {
+/// `event`, `send`, `receive` and `finish` step, each at the admitted
+/// parameter node `graph` keys it by, and the attempt type of every
+/// compensation template, at its admitted compensation node. A binder's
+/// bounded record type this module cannot enumerate is refused when the
+/// system is built ([`Unsupported::UnenumerableRecord`]); an attempt type it
+/// cannot enumerate is an unbounded root.
+pub fn protocol_domains(
+    protocol: &CheckedProtocol,
+    graph: &CheckedGraph,
+) -> Vec<(NodeKey, ValueType)> {
+    let Some(keys) = graph.protocol_node_keys(&protocol.name) else {
+        return Vec::new();
+    };
     let binders = protocol
         .slots
         .binders
         .iter()
-        .filter(|binder| binder.ranged)
-        .map(|binder| {
-            (
-                binder_root(&protocol.name, &binder.name),
-                binder.value_type.clone(),
-            )
+        .enumerate()
+        .filter(|(_, binder)| binder.ranged)
+        .filter_map(|(level, binder)| {
+            let key = keys
+                .binders
+                .iter()
+                .find(|key| key.level == level && key.name == binder.name)?;
+            Some((key.node.clone(), binder.value_type.clone()))
         });
     // A `cattempt` takes one record of its template's attempt type (ST-11).
-    let attempts = protocol.obligations.compensations.iter().map(|template| {
-        (
-            attempt_root(protocol, &template.name),
-            template.attempt_type.clone(),
-        )
-    });
+    let attempts = protocol
+        .obligations
+        .compensations
+        .iter()
+        .zip(&keys.compensations)
+        .map(|(template, node)| (node.clone(), template.attempt_type.clone()));
     binders.chain(attempts).collect()
-}
-
-/// The root a template's attempt type is named by.
-fn attempt_root(protocol: &CheckedProtocol, template: &str) -> NodeKey {
-    binder_root(&protocol.name, &format!("{template}.attempt"))
 }
 
 /// ADR-027 TS-5, ST-11: a bounded attempt type that `values_of` cannot
@@ -634,16 +640,20 @@ fn attempt_root(protocol: &CheckedProtocol, template: &str) -> NodeKey {
 fn check_attempt_types(
     model: &ModelSystem<'_>,
     protocol: &CheckedProtocol,
+    graph: &CheckedGraph,
 ) -> Result<(), NotSimulated> {
     let mut domains = BTreeMap::new();
-    for template in &protocol.obligations.compensations {
+    let nodes = graph
+        .protocol_node_keys(&protocol.name)
+        .map_or(&[][..], |keys| keys.compensations.as_slice());
+    for (template, node) in protocol.obligations.compensations.iter().zip(nodes) {
         if model.enumerates(&template.attempt_type) {
             continue;
         }
         for path in model.unenumerable_paths(&template.attempt_type) {
             domains.insert(
                 DomainKey::Node {
-                    node: attempt_root(protocol, &template.name),
+                    node: node.clone(),
                     path,
                 },
                 DomainKind::Integer,
@@ -658,20 +668,6 @@ fn check_attempt_types(
     }
 }
 
-/// The root a protocol binder's record type is named by: the node of
-/// package `protocol` at path `["binder", <name>]`.
-pub fn binder_root(protocol: &str, binder: &str) -> NodeKey {
-    NodeKey::new(
-        protocol,
-        vec![
-            quire_exact::PathSegment::Text("binder".to_owned()),
-            quire_exact::PathSegment::Text(binder.to_owned()),
-        ],
-        0,
-    )
-    .expect("a protocol binder root is a well-formed node identity")
-}
-
 /// FR-215 (ADR-027 TS-5): FR-101's requires-bound pre-check over the roots
 /// of `model` and of `protocol`, with no state explored.
 ///
@@ -682,20 +678,22 @@ pub fn binder_root(protocol: &str, binder: &str) -> NodeKey {
 pub fn check_protocol_bounds(
     model: &ModelSystem<'_>,
     protocol: &CheckedProtocol,
+    graph: &CheckedGraph,
     position_limit: u64,
 ) -> Result<(), NotSimulated> {
-    let domains = subject_domains(model, protocol);
+    let domains = subject_domains(model, protocol, graph);
     check_requires_bound(&roots(&domains), model.types(), position_limit)?;
-    check_attempt_types(model, protocol)
+    check_attempt_types(model, protocol, graph)
 }
 
 /// The roots of `model` and of `protocol`.
 fn subject_domains(
     model: &ModelSystem<'_>,
     protocol: &CheckedProtocol,
+    graph: &CheckedGraph,
 ) -> Vec<(NodeKey, ValueType)> {
     let mut domains = model.domains();
-    domains.extend(protocol_domains(protocol));
+    domains.extend(protocol_domains(protocol, graph));
     domains
 }
 
@@ -720,8 +718,8 @@ pub fn explore_protocol<M: MemoryModel>(
     limits: crate::simulation::explore::Limits,
     poll: impl FnMut() -> bool,
 ) -> Result<crate::simulation::explore::Exploration<ModelFinding>, NotSimulated> {
-    check_attempt_types(&system.model, system.protocol)?;
-    let domains = subject_domains(&system.model, system.protocol);
+    check_attempt_types(&system.model, system.protocol, system.package.graph())?;
+    let domains = subject_domains(&system.model, system.protocol, system.package.graph());
     crate::simulation::explore::explore_request(
         system,
         &roots(&domains),

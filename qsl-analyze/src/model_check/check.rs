@@ -686,7 +686,13 @@ pub fn check_protocol(
                 protocol: subject.protocol.clone(),
             })
         })?;
-    check_protocol_bounds(&model, protocol, BOUND_POSITIONS).map_err(not_simulated)?;
+    check_protocol_bounds(
+        &model,
+        protocol,
+        subject.simulation.package.graph(),
+        BOUND_POSITIONS,
+    )
+    .map_err(not_simulated)?;
     let live_instances = live_instance_bound(request.max_live_instances);
     let instance_bound = activates_on_each(protocol).then_some(InstanceBound {
         value: live_instances,
@@ -821,7 +827,13 @@ fn check_protocol_liveness(
                 protocol: subject.protocol.clone(),
             })
         })?;
-    check_protocol_bounds(&model, protocol, BOUND_POSITIONS).map_err(not_simulated)?;
+    check_protocol_bounds(
+        &model,
+        protocol,
+        subject.simulation.package.graph(),
+        BOUND_POSITIONS,
+    )
+    .map_err(not_simulated)?;
     let memory = SubjectMemory::of(
         &subject.memory,
         request.max_store_buffer,
