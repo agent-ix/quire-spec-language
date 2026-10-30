@@ -137,7 +137,9 @@ pub enum ClauseIncomplete {
         code: &'static str,
     },
     /// The observation lacks evidence the clause reads (an incomplete
-    /// population or an unresolved closure), at admission.
+    /// population or an unresolved closure), at admission, or its snapshot
+    /// exceeds `observation_limits.document_bytes` (`resource_exhausted`,
+    /// `observation-input-bytes`) and is not read.
     Observation {
         /// The catalog code.
         code: &'static str,
