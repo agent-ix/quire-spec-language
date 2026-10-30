@@ -103,11 +103,11 @@ belong to Agent-C; they are not silently reassigned to this lane.
   repository owner, with final QSL qualification consuming the merged
   lifecycle tooling.
 - QSL #131 and #120 consume the merged filament-core-data semantic IR crates and
-  quire-rs extraction by exact git revision; they edit neither repository.
+  quire-rs extraction; they edit neither repository.
 - QSL #121 consumes merged temporal/protocol artifacts and preserves their
   semantic authority rather than importing their evaluators.
-- QSL #123 consumes merged temporal, protocol, IR and integration results under
-  the exact I18 ecosystem lock; absent results remain missing qualification.
+- QSL #123 consumes merged temporal, protocol, IR and integration results;
+  absent results remain missing qualification.
 
 ## Existing Evidence Reconciliation
 
