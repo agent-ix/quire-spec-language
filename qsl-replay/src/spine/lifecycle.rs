@@ -877,7 +877,6 @@ pub(crate) fn composed_declaration(
 ) -> Option<qsl_foundation::source::provenance::OccurrenceKey> {
     DECLARATIONS.with(|declarations| declarations.borrow().get(callable).cloned())
 }
-}
 
 #[cfg(test)]
 mod tests;

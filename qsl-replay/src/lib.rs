@@ -333,6 +333,7 @@ pub use quire_exact::{Identifier, NodeKey, Origin, Role, ScalarLimits, Value};
 // export, so a consumer calls `run_with_requirements` and reads its result
 // without naming `qsl_replay::spine` or `qsl_semantics`.
 pub use qsl_semantics::model::object_environment::ObjectEnvironment;
+pub use qsl_semantics::library::LibraryName;
 pub use quire_exact::{Cancel, CancelCause};
 pub use spine::{
     Call, CallArgument, CallIncomplete, CallLocus, CallOutcome, CallRefusal, CallValue,

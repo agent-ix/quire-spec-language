@@ -57,7 +57,7 @@ fn a_consumer_runs_builds_and_settles_through_the_crate_root() {
         supplied: SuppliedLimits::default(),
     };
     let result = run_with_replay_context(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u", "git", "1"), "fixture".to_owned(),
         "unit.native",
         SOURCE.as_bytes(),
         &BTreeMap::new(),
@@ -68,13 +68,14 @@ fn a_consumer_runs_builds_and_settles_through_the_crate_root() {
         &Cancel::new(),
     )
     .expect("the call runs");
-    let (package_id, _, requirements, context) = result.into_parts();
-    assert_eq!(context.package_id(), package_id);
+    let package_name = result.package_name().clone();
+    let (_, requirements, context) = result.into_parts();
+    assert_eq!(context.package_name(), &package_name);
     assert_eq!(requirements.members().len(), 1);
     let plugin = BackendId::new("acme");
     let node = fixture_node(7);
     let bounds = [ProofBound::new(
-        DomainKey::Node { node, path: vec![] },
+        DomainKey::Node { node: node.clone(), path: vec![] },
         Some(DomainKind::Integer),
         FiniteBound::integer_range(Integer::from(0_i64), Integer::from(9_i64)).unwrap(),
     )
@@ -86,14 +87,13 @@ fn a_consumer_runs_builds_and_settles_through_the_crate_root() {
     let member = &requirements.members()[0];
     let request: ReplayRequestWire = context
         .request(
-            package_id,
             member.request_index(),
             &bounds,
             &plugin,
             assignments.clone(),
         )
         .expect("a member is an application item");
-    assert_eq!(request.package_id.1, package_id.hex());
+    assert_eq!(request.package_name, package_name.as_str());
     assert_eq!(
         request.replay_target.occurrence_key.as_ref(),
         Some(member.occurrence())
@@ -101,7 +101,7 @@ fn a_consumer_runs_builds_and_settles_through_the_crate_root() {
 
     let index = RequestIndex::new(99);
     let built: Result<ReplayRequestWire, PluginReplayRefusal> =
-        context.request(package_id, index, &bounds, &plugin, assignments);
+        context.request(index, &bounds, &plugin, assignments);
     let refusal = built.err().expect("no such item");
     assert_eq!(
         refusal,

@@ -198,7 +198,7 @@ fn fixture() -> Fixture {
         .expect("fixture selects")
         .into_value();
     let checked = spine::check(
-        &parsed,
+        &parsed, "fixture".to_owned(),
         &models,
         &DependencyInput::default(),
         limits,
@@ -208,12 +208,10 @@ fn fixture() -> Fixture {
     .into_value();
     let graph = checked.package().graph();
     let function_node = |name: &str| {
-        NodeKey::from_digest(
-            *graph
-                .function_identity(name)
-                .expect("checked function identity")
-                .as_bytes(),
-        )
+        graph
+            .function_identity(name)
+            .expect("checked function identity")
+            .clone()
     };
     let composite_node = |name: &str| {
         let node = graph
@@ -234,7 +232,7 @@ fn fixture() -> Fixture {
     drop(checked);
 
     let acquired = acquire_checked_closure(
-        source,
+        source, "fixture".to_owned(),
         "body-failure.native",
         UNIT.as_bytes(),
         [],
@@ -245,10 +243,10 @@ fn fixture() -> Fixture {
     .expect("closure acquired");
     let handle = acquired.handle().clone();
     let selection = handle
-        .lookup_callable(handle.package_id(), f_node)
+        .lookup_callable(handle.package_name(), &f_node)
         .expect("f selected");
     let other_selection = handle
-        .lookup_callable(handle.package_id(), g_node)
+        .lookup_callable(handle.package_name(), &g_node)
         .expect("g selected");
     let payload_view = handle
         .nominal_declaration(&selection, payload_node)

@@ -31,8 +31,7 @@ fn node_id(package: &[u8], tag: &str, name: &str) -> NodeKey {
                     .and_then(JsonValue::as_str)
                     == Some(name)
         })
-        .and_then(|node| node["node_id"]["digest"].as_str())
-        .and_then(NodeKey::from_hex)
+        .and_then(|node| qsl_foundation::node_wire::node_key_from_json(&node["node_id"]).ok())
         .expect("matching node id")
 }
 
@@ -40,7 +39,7 @@ fn node_id(package: &[u8], tag: &str, name: &str) -> NodeKey {
 #[test]
 fn public_consumer_reads_complete_ordered_nominal_members_from_one_selection() {
     let acquisition = acquire_checked_closure(
-        SourceIdentity::new("a", "unit", "git", "1"),
+        SourceIdentity::new("a", "unit", "git", "1"), "fixture".to_owned(),
         "unit.native",
         SOURCE.as_bytes(),
         [],
@@ -55,13 +54,13 @@ fn public_consumer_reads_complete_ordered_nominal_members_from_one_selection() {
     let shape_id = node_id(acquisition.package().bytes(), "composite_type", "Shape");
     let handle = acquisition.handle();
     let selection = handle
-        .lookup_callable(handle.package_id(), function)
+        .lookup_callable(handle.package_name(), &function)
         .expect("checked callable selection");
 
     let holder = handle
-        .nominal_declaration(&selection, holder_id)
+        .nominal_declaration(&selection, &holder_id)
         .expect("signature's record declaration");
-    assert_eq!(holder.package_id(), handle.package_id());
+    assert_eq!(holder.package_name(), handle.package_name());
     assert_eq!(
         selection.signature().parameters(),
         &[ValueType::Composite(holder.key())]

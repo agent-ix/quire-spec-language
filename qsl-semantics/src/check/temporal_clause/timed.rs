@@ -94,24 +94,28 @@ pub struct TimeNominalNode {
     pub key: quire_exact::NodeKey,
     /// `dimension` or `unit`.
     pub form: String,
-    /// The declaration's qualified name segments.
-    pub qualified_declaration: Vec<String>,
+    /// The declaration's qualified name segments: `Some` exactly when
+    /// [`Self::owner`] is [`NodeOwner::Source`], `None` for a model-owned
+    /// node, which carries no declaration (FR-322, AC-105).
+    pub qualified_declaration: Option<Vec<String>>,
     /// The admitted owner of the declaration. A node of the checked unit's
     /// own unit graph is owned by the unit's source
     /// ([`NodeOwner::Source`], whose `package_name` is the manifest
-    /// package name). A node a selected domain package declares (its
-    /// `Time` dimension or a unit of the `Time` dimension) is owned by that
-    /// model ([`NodeOwner::Model`], whose `identity` is the package identity
-    /// and `node` the declaration's IR node identity).
+    /// package name) and has a declaration. A node a selected domain
+    /// package declares (its `Time` dimension or a unit of the `Time`
+    /// dimension) is owned by that model ([`NodeOwner::Model`], whose
+    /// `identity` is the package identity and `node` the declaration's IR
+    /// node identity) and has none.
     pub owner: crate::value::NodeOwner,
     /// Nominal nodes this node names.
     pub dependencies: Vec<quire_exact::NodeKey>,
 }
 
 impl TimeNominalNode {
-    /// The declaration's qualified name segments (FR-322).
-    pub fn declaration(&self) -> &[String] {
-        &self.qualified_declaration
+    /// The declaration's qualified name segments (FR-322): `Some` for a
+    /// [`NodeOwner::Source`] node, `None` for a [`NodeOwner::Model`] node.
+    pub fn declaration(&self) -> Option<&[String]> {
+        self.qualified_declaration.as_deref()
     }
 
     /// The admitted owner of the declaration; see the field's owner rule.

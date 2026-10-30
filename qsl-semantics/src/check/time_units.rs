@@ -102,7 +102,7 @@ impl TimeUnits {
                         NominalUnitForm::Unit { .. } => "unit",
                     }
                     .to_owned(),
-                    qualified_declaration: node.declaration.qualified_declaration.clone(),
+                    qualified_declaration: Some(node.declaration.qualified_declaration.clone()),
                     owner: source_owner.clone(),
                     dependencies,
                 },
@@ -146,7 +146,7 @@ impl TimeUnits {
                     TimeNominalNode {
                         key: time_key,
                         form: "dimension".to_owned(),
-                        qualified_declaration: vec![TIME_DIMENSION.to_owned()],
+                        qualified_declaration: None,
                         owner: NodeOwner::Model(ModelSubject {
                             identity: package.identity.clone(),
                             node: dimension
@@ -405,7 +405,7 @@ fn package_unit_nominal_nodes(
         nodes.push(TimeNominalNode {
             key,
             form: "unit".to_owned(),
-            qualified_declaration: vec![unit.name.clone()],
+            qualified_declaration: None,
             owner: NodeOwner::Model(ModelSubject {
                 identity: identity.to_owned(),
                 node: unit.key.node.clone(),
