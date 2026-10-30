@@ -200,7 +200,7 @@ pub use member::{AcceptedPoint, Member};
 // `quire_semantic_value::semantic_node`'s (ADR-011 §6.1 layer SV); consumers
 // import them from there, not through a re-export here.
 pub use semantic_node::{
-    identity_limit, ModelSubject, NodeIdentityPreimage, NodeOwner, NominalRefusal, OwnerSelection,
+    identity_limit, ModelSubject, NodeOwner, NominalRefusal, OwnerSelection,
     OwnerSubject,
 };
 // `admit_text`, `compare_text`, `Text`, `TextPayload` and
