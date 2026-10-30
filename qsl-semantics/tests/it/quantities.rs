@@ -23,7 +23,7 @@ use quire_exact::{
 };
 use quire_exact::{
     ComparisonOperator, Decimal, DecimalType, IllTyped, IllTypedCause, Quantity, Rational,
-    RoundingMode, UnitDomain, UnitId, COMPOUND_UNIT_DOMAIN, NODE_KEY_DOMAIN,
+    RoundingMode, UnitDomain, UnitId,
 };
 use quire_semantic_value::quantity::{
     compare_quantity, convert_quantity, ConvertedValue, QuantityOperation, QuantityRefusal,
@@ -34,7 +34,6 @@ use quire_semantic_value::unit::{
     CompoundUnitCause, Dimension, InvalidCompoundUnit, NotAUnitKey, UnitGraph,
 };
 use serde_json::{json, Value};
-use sha2::{Digest, Sha256};
 use std::num::NonZeroU64;
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
@@ -53,48 +52,33 @@ const UNLIMITED: ScalarLimits = ScalarLimits {
 use crate::admitted_charge_points as admitted_points;
 
 /// Independent RFC 8785 JCS for the string-only preimages.
-fn jcs(value: &Value) -> String {
-    match value {
-        Value::Null | Value::Bool(_) | Value::String(_) => value.to_string(),
-        Value::Number(_) => panic!("preimages carry no JSON numbers"),
-        Value::Array(items) => format!("[{}]", items.iter().map(jcs).collect::<Vec<_>>().join(",")),
-        Value::Object(members) => {
-            let mut entries: Vec<_> = members.iter().collect();
-            entries.sort_by(|(a, _), (b, _)| a.encode_utf16().cmp(b.encode_utf16()));
-            let body: Vec<_> = entries
-                .into_iter()
-                .map(|(key, item)| format!("{}:{}", Value::String(key.clone()), jcs(item)))
-                .collect();
-            format!("{{{}}}", body.join(","))
-        }
-    }
+/// The structural key of a dimension preimage.
+fn dimension_key(preimage: &Value) -> NodeKey {
+    DimensionPreimage::from_json(preimage.clone())
+        .unwrap()
+        .key()
+        .unwrap()
 }
 
-fn digest_hex(preimage: &Value) -> String {
-    Sha256::digest(jcs(preimage).as_bytes())
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
-}
-
-fn digest_bytes(preimage: &Value) -> [u8; 32] {
-    Sha256::digest(jcs(preimage).as_bytes()).into()
-}
-
-fn fixture_key(preimage: &Value) -> NodeKey {
-    NodeKey::from_digest(digest_bytes(preimage))
+/// The structural key of a unit preimage.
+fn unit_key(preimage: &Value) -> NodeKey {
+    UnitPreimage::from_json(preimage.clone())
+        .unwrap()
+        .key()
+        .unwrap()
 }
 
 // ---- graph fixtures --------------------------------------------------------
 
 fn owner_json(identity: &str) -> Value {
-    json!({"kind": "definition", "authority": "agent-ix", "identity": identity})
+    json!({"kind": "definition", "authority": "agent-ix", "identity": identity, "package_name": "example"})
 }
 
 fn example_owner(identity: &str) -> NodeOwner {
     NodeOwner::Definition(OwnerSubject {
         authority: "agent-ix".into(),
         identity: identity.into(),
+        package_name: "example".into(),
     })
 }
 
@@ -103,7 +87,7 @@ fn owners() -> OwnerSelection {
 }
 
 fn node_id(key: NodeKey) -> Value {
-    json!({"domain": "quire.checked-semantic-node/v1", "digest": key.to_string()})
+    qsl_foundation::node_wire::node_key_to_json(&key).unwrap()
 }
 
 fn base_dimension(identity: &str, name: &str) -> Value {
@@ -150,14 +134,14 @@ struct Nodes {
 
 impl Nodes {
     fn dimension(&mut self, preimage: Value) -> NodeKey {
-        let key = fixture_key(&preimage);
-        self.dimensions.push((preimage, key));
+        let key = dimension_key(&preimage);
+        self.dimensions.push((preimage, key.clone()));
         key
     }
 
     fn unit(&mut self, preimage: Value) -> NodeKey {
-        let key = fixture_key(&preimage);
-        self.units.push((preimage, key));
+        let key = unit_key(&preimage);
+        self.units.push((preimage, key.clone()));
         key
     }
 
@@ -165,20 +149,16 @@ impl Nodes {
         let dimensions: Result<Vec<_>, _> = self
             .dimensions
             .iter()
-            .map(|(preimage, key)| Ok((DimensionPreimage::from_json(preimage.clone())?, *key)))
+            .map(|(preimage, key)| {
+                Ok((DimensionPreimage::from_json(preimage.clone())?, key.clone()))
+            })
             .collect();
         let units: Result<Vec<_>, _> = self
             .units
             .iter()
-            .map(|(preimage, key)| Ok((UnitPreimage::from_json(preimage.clone())?, *key)))
+            .map(|(preimage, key)| Ok((UnitPreimage::from_json(preimage.clone())?, key.clone())))
             .collect();
-        admit_unit_graph(
-            dimensions?,
-            units?,
-            &owners(),
-            qsl_foundation::IdentityLimits::default(),
-        )
-        .map_err(|refusal| match refusal {
+        admit_unit_graph(dimensions?, units?, &owners()).map_err(|refusal| match refusal {
             NominalRefusal::Graph(invalid) => invalid,
             other @ (NominalRefusal::Limit(_) | NominalRefusal::Allocation { .. }) => {
                 panic!("a fixture preimage encodes: {other:?}")
@@ -388,8 +368,7 @@ fn dimension_and_unit_node_preimages_are_content_addressed_and_admit() {
     );
     let celsius = nodes.unit(celsius_preimage.clone());
 
-    // Every preimage's independently recomputed content digest matches the
-    // crate's own node key, for both the dimension and unit preimage shapes.
+    // Every preimage's structural key matches the crate's own node key, for both the dimension and unit preimage shapes.
     let dimensions = [(velocity_preimage, velocity)];
     let units = [
         (metre_preimage, metre),
@@ -400,24 +379,10 @@ fn dimension_and_unit_node_preimages_are_content_addressed_and_admit() {
         (celsius_preimage, celsius),
     ];
     for (preimage, key) in &dimensions {
-        assert_eq!(NodeKey::from_digest(digest_bytes(preimage)), *key);
-        assert_eq!(
-            DimensionPreimage::from_json(preimage.clone())
-                .unwrap()
-                .digest(qsl_foundation::IdentityLimits::default())
-                .unwrap(),
-            *key.as_bytes()
-        );
+        assert_eq!(dimension_key(preimage), *key);
     }
     for (preimage, key) in &units {
-        assert_eq!(NodeKey::from_digest(digest_bytes(preimage)), *key);
-        assert_eq!(
-            UnitPreimage::from_json(preimage.clone())
-                .unwrap()
-                .digest(qsl_foundation::IdentityLimits::default())
-                .unwrap(),
-            *key.as_bytes()
-        );
+        assert_eq!(unit_key(preimage), *key);
     }
 
     let graph = nodes.admit().unwrap();
@@ -566,7 +531,7 @@ fn stale_keys_and_foreign_owners_refuse_admission() {
     let mut unknown = base.nodes.clone();
     unknown.units.push((
         root_json("orphan", velocity_key),
-        fixture_key(&root_json("orphan", velocity_key)),
+        unit_key(&root_json("orphan", velocity_key)),
     ));
     assert_eq!(
         unknown.admit().unwrap_err().cause,
@@ -574,7 +539,7 @@ fn stale_keys_and_foreign_owners_refuse_admission() {
     );
     // A derived dimension whose term names a dimension that is not admitted:
     // the term's wire id resolves to no admitted key.
-    let never_admitted = fixture_key(&base_dimension("example-model", "Absent"));
+    let never_admitted = dimension_key(&base_dimension("example-model", "Absent"));
     let mut unknown_term = base.nodes.clone();
     unknown_term.dimension(json!({
         "version": "quire.dimension-node/v1",
@@ -594,7 +559,7 @@ fn stale_keys_and_foreign_owners_refuse_admission() {
 /// requires, kept as raw JSON so its digest can be independently recomputed.
 fn compound_preimage(terms: &[(NodeKey, &str)]) -> Value {
     let mut terms = terms.to_vec();
-    terms.sort_by_key(|(key, _)| *key);
+    terms.sort_by(|(a, _), (b, _)| a.cmp(b));
     let terms: Vec<Value> = terms
         .iter()
         .map(|(key, exponent)| json!({"unit_node_id": node_id(*key), "exponent": exponent}))
@@ -604,7 +569,7 @@ fn compound_preimage(terms: &[(NodeKey, &str)]) -> Value {
 
 #[trace("QSpec-TC-187", "QSpec-FR-142-AC-6")]
 #[test]
-fn compound_unit_preimages_are_content_addressed_and_mutations_refuse() {
+fn compound_unit_preimages_identify_by_terms_and_mutations_refuse() {
     let mut nodes = Nodes::default();
     let length = nodes.dimension(base_dimension("example-model", "Length"));
     let time = nodes.dimension(base_dimension("example-model", "Time"));
@@ -620,29 +585,25 @@ fn compound_unit_preimages_are_content_addressed_and_mutations_refuse() {
     let graph = nodes.admit().unwrap();
 
     let dimensionless_preimage = compound_preimage(&[]);
-    let per_time_preimage = compound_preimage(&[(metre, "1"), (second, "-1")]);
+    let per_time_preimage = compound_preimage(&[(metre.clone(), "1"), (second, "-1")]);
     for (preimage, is_dimensionless) in [
         (dimensionless_preimage.clone(), true),
         (per_time_preimage.clone(), false),
     ] {
-        let expected_digest = digest_hex(&preimage);
         let parsed = CompoundUnitPreimage::from_json(preimage).unwrap();
-        assert_eq!(
-            parsed
-                .id(qsl_foundation::IdentityLimits::default())
-                .unwrap()
-                .to_string(),
-            expected_digest
-        );
         let unit = graph.compound_unit(parsed.terms()).unwrap();
-        assert_eq!(unit.id().unwrap().to_string(), expected_digest);
+        assert_eq!(parsed.id(), unit.id().cloned());
         assert_eq!(unit.id().unwrap().domain(), UnitDomain::Compound);
         assert_eq!(unit.dimension().is_dimensionless(), is_dimensionless);
     }
     assert_ne!(
-        digest_hex(&dimensionless_preimage),
-        digest_hex(&per_time_preimage),
-        "distinct preimages have distinct content-addressed identities"
+        CompoundUnitPreimage::from_json(dimensionless_preimage)
+            .unwrap()
+            .id(),
+        CompoundUnitPreimage::from_json(per_time_preimage)
+            .unwrap()
+            .id(),
+        "distinct preimages have distinct identities"
     );
 
     assert_eq!(
@@ -678,7 +639,12 @@ fn compound_unit_preimages_are_content_addressed_and_mutations_refuse() {
         })
     );
     // A term whose unit id resolves to no admitted unit.
-    let not_in_graph = NodeKey::from_digest([0xab; 32]);
+    let not_in_graph = NodeKey::new(
+        "example",
+        vec![quire_exact::PathSegment::Text("absent".into())],
+        0,
+    )
+    .unwrap();
     assert_eq!(
         graph.compound_unit(compound(&[(not_in_graph, "1")]).terms()),
         Err(InvalidCompoundUnit {
@@ -726,14 +692,8 @@ fn tc_411_unit_ids_are_declared_node_keys_or_compound_digests() {
         assert_ne!(a, b);
     }
     assert_eq!(metre.domain(), UnitDomain::Declared);
-    assert_eq!(metre.domain().label(), NODE_KEY_DOMAIN);
-    assert_eq!(metre.as_bytes(), m.as_bytes());
+    assert_eq!(metre.declared_key(), Some(&m));
     assert_eq!(compound_metre.domain(), UnitDomain::Compound);
-    assert_eq!(compound_metre.domain().label(), COMPOUND_UNIT_DOMAIN);
-    assert_eq!(
-        compound_metre.to_string(),
-        digest_hex(&compound_preimage(&[(m, "1")]))
-    );
     // `m` and `m^1` share a root and a dimension, and still differ as units.
     let table = UnitTable::declared(&graph);
     assert_eq!(
@@ -757,47 +717,6 @@ fn tc_411_unit_ids_are_declared_node_keys_or_compound_digests() {
         Err(NotAUnitKey { key: length })
     );
     assert!(table.get(UnitId::declared(length)).is_none());
-}
-
-/// TC-411 step 3: every compound-unit vector QSpec publishes, read at run time
-/// from `$QSPEC_DIR/proposals/quire-v1/definitions/value-compound-unit-vectors.json`,
-/// mints the vector's digest under the compound label. Skipped (and passing)
-/// when `QSPEC_DIR` is unset; nothing of QSpec is copied into this repository.
-#[trace("FR-088-AC-12", "TC-411")]
-#[test]
-fn tc_411_compound_unit_ids_match_qspec_vectors() {
-    let Some(qspec) = std::env::var_os("QSPEC_DIR") else {
-        println!("skipped: QSPEC_DIR not set");
-        return;
-    };
-    let path = std::path::Path::new(&qspec)
-        .join("proposals/quire-v1/definitions/value-compound-unit-vectors.json");
-    let bytes =
-        std::fs::read(&path).unwrap_or_else(|error| panic!("reading {}: {error}", path.display()));
-    let document: Value = serde_json::from_slice(&bytes)
-        .unwrap_or_else(|error| panic!("parsing {}: {error}", path.display()));
-    let vectors = document["vectors"]
-        .as_array()
-        .unwrap_or_else(|| panic!("{} has no vectors array", path.display()));
-    assert!(
-        !vectors.is_empty(),
-        "{} publishes no vectors",
-        path.display()
-    );
-    for vector in vectors {
-        let name = vector["name"].as_str().expect("vector name is a string");
-        let id = CompoundUnitPreimage::from_json(vector["preimage"].clone())
-            .unwrap_or_else(|refusal| panic!("{name}: {refusal}"))
-            .id(qsl_foundation::IdentityLimits::default())
-            .unwrap();
-        assert_eq!(id.domain(), UnitDomain::Compound, "{name}");
-        assert_eq!(
-            Some(id.to_string().as_str()),
-            vector["sha256"].as_str(),
-            "{name}"
-        );
-    }
-    println!("conformance: {} compound-unit vectors", vectors.len());
 }
 
 // ---- U01–U13 -----------------------------------------------------------------
@@ -1317,9 +1236,8 @@ fn u12_multiplication_division_and_power_use_compound_units() {
         assert_eq!(result.magnitude(), &whole(value), "{operation:?}");
         assert_eq!(result.unit(), unit.id().unwrap(), "{operation:?}");
     }
-    // The evaluator's own compound-unit identity matches an independently
-    // recomputed content digest over the same terms, under the compound
-    // label.
+    // The evaluator's own compound-unit identity is the compound identity of
+    // the same terms.
     let per_second = exact(evaluated(
         QuantityOperation::Divide(f.at(&six_m), f.at(&two_s)),
         &mut unlimited(),
@@ -1327,8 +1245,13 @@ fn u12_multiplication_division_and_power_use_compound_units() {
     .unit();
     assert_eq!(per_second.domain(), UnitDomain::Compound);
     assert_eq!(
-        per_second.to_string(),
-        digest_hex(&compound_preimage(&[(f.m, "1"), (f.s, "-1")]))
+        Some(per_second.clone()),
+        CompoundUnitPreimage::from_json(compound_preimage(&[
+            (f.m.clone(), "1"),
+            (f.s.clone(), "-1")
+        ]))
+        .unwrap()
+        .id()
     );
     let dimensionless = exact(evaluated(
         QuantityOperation::Divide(f.at(&five_m), f.at(&five_m)),
@@ -1337,8 +1260,10 @@ fn u12_multiplication_division_and_power_use_compound_units() {
     .unit();
     assert_eq!(dimensionless.domain(), UnitDomain::Compound);
     assert_eq!(
-        dimensionless.to_string(),
-        digest_hex(&compound_preimage(&[]))
+        Some(dimensionless.clone()),
+        CompoundUnitPreimage::from_json(compound_preimage(&[]))
+            .unwrap()
+            .id()
     );
     assert!(compound_unit(&f, &[]).dimension().is_dimensionless());
 
@@ -1570,7 +1495,7 @@ fn rounded_target_sizes_bound_the_materialized_coefficient() {
 
 fn derived_dimension(name: &str, terms: &[(NodeKey, &str)]) -> Value {
     let mut terms = terms.to_vec();
-    terms.sort_by_key(|(key, _)| *key);
+    terms.sort_by(|(a, _), (b, _)| a.cmp(b));
     let terms: Vec<Value> = terms
         .iter()
         .map(|(key, exponent)| json!({"dimension_node_id": node_id(*key), "exponent": exponent}))
@@ -2115,7 +2040,7 @@ fn u22_declared_conversion_requires_one_dimension_node() {
     // Nominal identity guards only direct declared-to-declared conversion: a
     // pivot through the coherent compound unit is admitted.
     let mut terms = [(x.base.m, "2"), (x.kg, "1"), (x.base.s, "-2")];
-    terms.sort_by_key(|(key, _)| *key);
+    terms.sort_by(|(a, _), (b, _)| a.cmp(b));
     let compound = QuantityUnit::Compound(x.graph.compound_unit(compound(&terms).terms()).unwrap());
     let Outcome::Completed(ConvertedValue::Exact(pivot)) = converted(
         x.at(&x.quantity(whole(5), x.n_m)),
@@ -2258,7 +2183,7 @@ fn u24_identical_unit_addition_traverses_no_edge() {
 fn u25_compound_pivot_between_nominal_dimensions() {
     let x = extended();
     let mut terms = [(x.base.m, "2"), (x.kg, "1"), (x.base.s, "-2")];
-    terms.sort_by_key(|(key, _)| *key);
+    terms.sort_by(|(a, _), (b, _)| a.cmp(b));
     let compound = QuantityUnit::Compound(x.graph.compound_unit(compound(&terms).terms()).unwrap());
     let no_edge = [
         ChargePoint::UnitIdentityRead,
