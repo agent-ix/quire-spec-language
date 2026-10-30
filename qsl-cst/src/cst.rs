@@ -450,7 +450,7 @@ impl LosslessCst {
     ) -> Self {
         materialize_elements(&tokens, &mut nodes);
         let mut revision_preimage = b"quire.complete.document-revision/1\0".to_vec();
-        let source_digest = source.digest().to_string();
+        let source_digest = ByteDigest::of(source.text().as_bytes()).to_string();
         let labels = source.identity();
         for value in [
             labels.authority.as_bytes(),
