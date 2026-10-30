@@ -26,7 +26,7 @@ Every fixture unit below starts with the complete-V1 header
 (`language "ix:native" edition "1-draft";`) and one profile selection whose
 alias is `v`.
 
-1. Assemble, with the same required `package_name` in every run and under source owner authority `a`, identity `u`, a unit with
+1. Assemble, with a required `package_name` held fixed for the first three runs and under source owner authority `a`, identity `u`, a unit with
    `record Point { x: Int[0, 9]; y: Int[0, 9]; }`,
    `tuple Pair(Int[0, 9], Int[0, 9]);` and
    `function px using v(p: Point): Int[0, 9] pure { p.x }`.
