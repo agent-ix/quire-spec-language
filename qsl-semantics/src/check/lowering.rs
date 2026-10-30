@@ -570,6 +570,9 @@ pub(crate) struct Lowering<'a> {
     binders: BTreeMap<BinderSite, NodeKey>,
     /// Binders whose parameter node is a draft, recorded once it is keyed.
     draft_binders: Vec<(BinderSite, NodeRef)>,
+    /// The declared key a field member named for a composite that was
+    /// still a draft, checked against the key settle mints for it.
+    peeked_declarations: BTreeMap<PlaceholderId, NodeKey>,
     /// Authored function parameters, located by the same binder site whose
     /// node is resolved when a recursion group settles.
     parameter_spans: BTreeMap<BinderSite, qsl_foundation::Span>,
@@ -1573,6 +1576,7 @@ impl<'a> Lowering<'a> {
             draft_occurrences: Vec::new(),
             binders: BTreeMap::new(),
             draft_binders: Vec::new(),
+            peeked_declarations: BTreeMap::new(),
             parameter_spans: BTreeMap::new(),
             meter,
             node_limit: u64::MAX,
@@ -2989,6 +2993,9 @@ impl<'a> Lowering<'a> {
                 let NodeRef::Admitted(key) = key else {
                     return Err(unresolved(&draft.location));
                 };
+                if self.peeked_declarations.get(&handles[*at]).is_some_and(|peeked| *peeked != key) {
+                    return Err(fault(&draft.location, KeyFault::InvalidGroup));
+                }
                 resolved.insert(handles[*at], key);
             }
         }
@@ -3093,6 +3100,9 @@ impl<'a> Lowering<'a> {
                         body,
                     },
                 });
+            if self.peeked_declarations.get(&handles[at]).is_some_and(|peeked| *peeked != key) {
+                return Err(fault(&draft.location, KeyFault::InvalidGroup));
+            }
             resolved.insert(handles[at], key);
         }
         Ok(())
@@ -4872,13 +4882,35 @@ impl<'a> Lowering<'a> {
                 CheckCause::NodePreimage(NodeKeyRefusal::EmptyBindingName),
             )
         })?;
+        let node = self.composite_type_node(field.declaration(), location)?;
         Ok(Member::Field {
-            declaration: require_admitted(
-                self.composite_type_node(field.declaration(), location)?,
-                location,
-            )?,
+            declaration: self.declared_member_key(node, location)?,
             name,
         })
+    }
+
+    /// The key of the composite `node` names, which a member holds as a
+    /// plain key. A composite that reaches itself is still a draft while
+    /// its functions are lowered; its key is its declared path at ordinal
+    /// 0, which settle checks it is minted at.
+    fn declared_member_key(
+        &mut self,
+        node: NodeRef,
+        location: &Location,
+    ) -> Result<NodeKey, CheckRefusal> {
+        let mut handle = match node {
+            NodeRef::Admitted(key) => return Ok(key),
+            NodeRef::Pending(handle) => handle,
+        };
+        while let Some(Some(NodeRef::Pending(next))) = self.placeholders.get(&handle) {
+            handle = *next;
+        }
+        let Some(draft) = self.drafts.get(&handle) else {
+            return Err(fault(location, KeyFault::UnresolvedDraft));
+        };
+        let key = admitted_step_relation_key(&self.package_name, &draft.content, location)?;
+        self.peeked_declarations.insert(handle, key.clone());
+        Ok(key)
     }
 
     /// The equality operation for operands of `compared` type (FR-093
