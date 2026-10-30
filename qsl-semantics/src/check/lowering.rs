@@ -48,13 +48,13 @@ use super::ir::{
     NodeKind, OrderedKind, RecordField, RecordSlot, Slot, Visit,
 };
 use super::node_key::{
-    LawRole, LeafSegment, LiteralValue, NodeInput, NodeKeyRefusal, NodeTag,
-    Operation, OperationLaw, OperationLeaf, OperationMode, Operator, Owner, PackageRef,
-    SourceOwner, WireNodeRef, UNION_VALUE_FORM,
-};
-use super::node_key::{
     AggregateTerm, Binding, BindingValue, BodyTerm, GroupMember, GroupTerm, LeafTerm, MemberTerm,
     TupleMember, TupleTerm,
+};
+use super::node_key::{
+    LawRole, LeafSegment, LiteralValue, NodeInput, NodeKeyRefusal, NodeTag, Operation,
+    OperationLaw, OperationLeaf, OperationMode, Operator, Owner, PackageRef, SourceOwner,
+    WireNodeRef, UNION_VALUE_FORM,
 };
 use super::refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, KeyFault, StageLimitCause,
@@ -83,7 +83,6 @@ mod terminal;
 mod timed_clause;
 mod wire;
 
-pub(crate) use abstraction::{object_type_node, population_node, relation_node};
 pub(crate) use hybrid::{
     hybrid_location, hybrid_site, HybridClaimInput, HybridModelInput, HybridSite,
 };
@@ -91,13 +90,10 @@ pub(crate) use hyper::{
     finish_step_relation, HyperClauseInput, LoweredStepRelation, StepRelationInput,
 };
 pub(crate) use model::ParentSlotFailure;
-pub(crate) use model::{
-    bound_origin, quantity_origin, record_node_key, strictly_below, variant_type_node_key,
-    QuantityKind, RecordKeyError,
-};
+pub(crate) use model::{bound_origin, quantity_origin, strictly_below, QuantityKind};
 pub use model::{
-    collection_kind, model_root_key, AdmittedModel, AuthoredBound, CollectionShape, ForeignView,
-    ModelClause, ModelRootKeyError, PlaceRow, PlaceStep,
+    collection_kind, AdmittedModel, AuthoredBound, CollectionShape, ForeignView, ModelClause,
+    PlaceRow, PlaceStep,
 };
 pub(crate) use protocol::{
     compensation_origin, declaration_origin, protocol_location, protocol_site, AttemptNodes,
@@ -494,7 +490,6 @@ pub(crate) struct Lowering<'a> {
     composites: BTreeMap<NodeKey, NodeKey>,
     /// The model record value type or event type each model-owned composite
     /// declaration key stands for (FR-359 item 9), built on first use.
-    model_records: Option<BTreeMap<NodeKey, DeclarationKey>>,
     /// The `functions` slots and `composites` entries written since the
     /// last settle, the only keys that settle can still resolve
     /// (a settle per function group resolves its own keys, not every key
@@ -1483,7 +1478,6 @@ impl<'a> Lowering<'a> {
             occurrences,
             functions: vec![None; function_count],
             composites: BTreeMap::new(),
-            model_records: None,
             unsettled_functions: Vec::new(),
             unsettled_composites: Vec::new(),
             composites_in_progress: Vec::new(),
@@ -2060,6 +2054,7 @@ impl<'a> Lowering<'a> {
         }
         // FR-359 item 3: a model record value type or event type is a
         // model-owned node, never a `composite_type`.
+        // BLOCKED-BY QSL-1282 (owner: planner titan:QSL:plan): model record declaration lookup was keyed by a digest node key; needs the structural model-record key source
         if let Some(model_record) = self.model_record_declaration(declaration.clone(), location)? {
             let key = self.model_node(&model_record, location)?;
             // The record has no checked occurrence of its own: root it at the
@@ -4482,12 +4477,16 @@ impl<'a> Lowering<'a> {
                 let variant = member.variant();
                 let key = super::sum_case::mint_union_member_key(variant.owner(), variant.case())
                     .map_err(|_| {
-                        fault(
-                            node.location(),
-                            KeyFault::InvalidMemberKey(variant.owner().clone()),
-                        )
-                    })?;
-                self.record(key.clone(), OccurrenceRole::Expression, node.location().clone());
+                    fault(
+                        node.location(),
+                        KeyFault::InvalidMemberKey(variant.owner().clone()),
+                    )
+                })?;
+                self.record(
+                    key.clone(),
+                    OccurrenceRole::Expression,
+                    node.location().clone(),
+                );
                 return Ok(LeafTerm::reference(key));
             }
             // FR-093-AC-33: a quantity literal is a `quantity` literal typed

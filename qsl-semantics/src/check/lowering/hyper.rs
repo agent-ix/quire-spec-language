@@ -658,15 +658,13 @@ pub(crate) fn finish_step_relation(
         owner: Some(super::Owner::Source(lowered.owner)),
         body: lowered.body,
     };
-    let keyed = super::node_key(&content.input(), identity)
-        .map_err(|refusal| super::preimage_refusal(&lowered.location, refusal))?;
+    // BLOCKED-BY QSL-1282 (owner: planner titan:QSL:plan): the step_relation node's admitted NodeKey comes from C's node_key API
+    let key = super::admitted_step_relation_key(&content, &lowered.location)?;
     Ok((
         super::SemanticNode {
-            key: keyed.key,
-            preimage: keyed.preimage,
+            key,
             recursion: None,
             content,
-            nominal: None,
         },
         code_roots,
     ))
