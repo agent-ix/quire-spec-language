@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 
 use quire_exact::{EffectiveId, Integer, NodeKey, UnitDomain, UnitId, ValueType};
 
-use super::{identifiers, refuse, type_declaration, Lowering, NodeContent, NominalNode};
+use super::{identifiers, refuse, type_declaration, Lowering, NodeContent};
 use crate::check::family::OccurrenceRole;
 use crate::check::node_key::{
     Binding, BodyTerm, GroupMember, GroupTerm, LeafTerm, MemberTerm, ModelOwner, NodeTag, Owner,
@@ -1774,6 +1774,25 @@ pub(crate) fn model_declaration_key(
     )
 }
 
+/// QSpec FR-322 `model_root`: the key of the root node of the selected
+/// model package `selection`: package `selection.identity`, path
+/// `["model", "model_root"]`, ordinal 0. It is separate from the least root
+/// type declaration's key.
+///
+/// # Errors
+///
+/// A refusal when the selection's identity is empty or the key cannot be
+/// formed.
+pub fn model_root_key(
+    selection: &DomainPackageRef,
+) -> Result<NodeKey, quire_exact::InvalidNodeKey> {
+    crate::check::declared_node_key(
+        selection.identity.clone(),
+        vec!["model".to_owned(), "model_root".to_owned()],
+        0,
+    )
+}
+
 /// The content of a `relation`/`population` node (QSpec FR-322 "Population
 /// references"): the one definition lowering's population reference and an
 /// abstraction relation's population target both key.
@@ -1838,6 +1857,36 @@ impl<'a> Lowering<'a> {
         let owner = ModelOwner::new(model.selection.identity.clone(), declaration.node.clone())
             .map_err(|_| fault(location, KeyFault::EmptyNode(declaration.clone())))?;
         Ok((owner, model))
+    }
+
+    /// The model record value type or event type whose model node key is
+    /// `handle`, the declaration key a model record carries in the type
+    /// environment (FR-359 item 9); `None` when `handle` is a source
+    /// composite.
+    pub(super) fn model_record_declaration(
+        &mut self,
+        handle: NodeKey,
+        location: &Location,
+    ) -> Result<Option<DeclarationKey>, CheckRefusal> {
+        for model in self.models {
+            for (declaration, record) in &model.records {
+                let Some((tag, form)) = record_form(record) else {
+                    continue;
+                };
+                if !matches!(
+                    record,
+                    DomainPackageRecord::RecordValueType(_) | DomainPackageRecord::EventType(_)
+                ) {
+                    continue;
+                }
+                let key = model_declaration_key(&declaration.package, tag, form, &declaration.node)
+                    .map_err(|_| fault(location, KeyFault::EmptyNode(declaration.clone())))?;
+                if key == handle {
+                    return Ok(Some(declaration.clone()));
+                }
+            }
+        }
+        Ok(None)
     }
 
     /// The model declaration node of `declaration`, recorded in the model
@@ -2125,27 +2174,17 @@ impl<'a> Lowering<'a> {
                 qualified_declaration: qualified,
                 ..
             } = node.declaration;
-            let (kind, semantic_form, semantic_type, nominal) = match node.form {
+            let (kind, semantic_form, semantic_type) = match node.form {
                 NominalUnitForm::Unit {
                     dimension, target, ..
                 } => {
                     pending.push(dimension.clone());
                     pending.extend(target);
-                    (
-                        QuantityKind::Unit,
-                        "unit",
-                        Some(dimension),
-                        NominalNode::Unit,
-                    )
+                    (QuantityKind::Unit, "unit", Some(dimension))
                 }
                 NominalUnitForm::Dimension { terms } => {
                     pending.extend(terms.iter().map(|(base, _)| base.clone()));
-                    (
-                        QuantityKind::Dimension,
-                        "dimension",
-                        None,
-                        NominalNode::Dimension,
-                    )
+                    (QuantityKind::Dimension, "dimension", None)
                 }
             };
             let site = type_declaration(&quantity_origin(kind, &qualified.join(".")));
@@ -2162,7 +2201,6 @@ impl<'a> Lowering<'a> {
                     owner: None,
                     body: BodyTerm::aggregate(Vec::new()),
                 },
-                nominal,
             )?;
             if inserted {
                 self.record(key, OccurrenceRole::Declaration, site);
