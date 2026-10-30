@@ -692,6 +692,9 @@ package. The test reads the fixtures from the `QSPEC_DIR` checkout under
 
 ### Recursive text-leaf vectors
 
+The `digest` and `domain` members of a node-id object in the vectors below
+are QSpec FR-322 wire members that QSL carries as opaque strings (BLOCKED-BY STD-583 (owner: planner titan:QSL:plan)).
+
 Each vector below is the exact preimage bytes and the key `check` SHALL mint
 for the named node, under owner (`a`, `u`), from these declarations:
 
@@ -707,7 +710,7 @@ for the named node, under owner (`a`, `u`), from these declarations:
 - `function eqo using v(a: Option<Node>, b: Option<Node>): Boolean pure { a = b }`
   (E17), whose recursion leaf's prefix is `inner`, one segment.
 
-The text definition is QSpec's
+The lock evidence selects QSpec's text definition
 `quire.value.text.unicode-17.0.0/v1`, the `DefinitionRef`
 `{agent-ix, quire.value.text.unicode-17.0.0/v1}`; every text leaf carries it as its `text_profile` law. The leaves
 are:
@@ -718,212 +721,169 @@ are:
 | E16 | `A` | `field:name` (`binary-utf8`); `field:b`, `inner`, `field:tag` (`nfc`); `field:b`, `inner`, `field:a`, `inner`, `recursion:0` |
 | E17 | `Option<Node>` | `inner`, `field:label` (`binary-utf8`); `inner`, `field:next`, `inner`, `recursion:1` |
 
-T1 to T3 are FR-092's. The QSpec `structural-eq-record` and `collection-contains` operation vectors
+T1 to T3 are FR-092's. The keys were computed by a script that also
+recomputes FR-092's T1 to T4, T7, T8, P1, P4, E11, E13, G2 to G15 and the
+QSpec `structural-eq-record` and `collection-contains` operation vectors, which
 fix the leaf spelling.
-
-The `digest` and `domain` members of a node-id object in the vectors below
-are QSpec FR-322 wire members that QSL carries as opaque strings (BLOCKED-BY STD-583 (owner: planner titan:QSL:plan)).
 
 | Vector | Node | Key |
 |---|---|---|
-| T13 | `Text[0, 8; binary-utf8]` | the node id QSpec FR-322 assigns to its preimage |
-| T14 | `Text[0, 4; nfc]` | the node id QSpec FR-322 assigns to its preimage |
-| G16 | `record Node`, ordinal 1 | the node id QSpec FR-322 assigns to its preimage |
-| G17 | `Option<Node>`, ordinal 0 | the node id QSpec FR-322 assigns to its preimage |
-| G18 | `Option<A>`, ordinal 0 | the node id QSpec FR-322 assigns to its preimage |
-| G19 | `record B`, ordinal 2 | the node id QSpec FR-322 assigns to its preimage |
-| G20 | `record A`, ordinal 3 | the node id QSpec FR-322 assigns to its preimage |
-| G21 | `Option<B>`, ordinal 1 | the node id QSpec FR-322 assigns to its preimage |
-| S4 | `Sequence<Node>` | the node id QSpec FR-322 assigns to its preimage |
-| S5 | `Sequence<Node>[0, 3]` | the node id QSpec FR-322 assigns to its preimage |
-| P10 | parameter `a: Node`, level 0 | the node id QSpec FR-322 assigns to its preimage |
-| P11 | parameter `b: Node`, level 1 | the node id QSpec FR-322 assigns to its preimage |
-| P12 | parameter `s: Sequence<Node>[0, 3]`, level 0 | the node id QSpec FR-322 assigns to its preimage |
-| P13 | parameter `x: A`, level 0 | the node id QSpec FR-322 assigns to its preimage |
-| P14 | parameter `y: A`, level 1 | the node id QSpec FR-322 assigns to its preimage |
-| P15 | parameter `a: Option<Node>`, level 0 | the node id QSpec FR-322 assigns to its preimage |
-| P16 | parameter `b: Option<Node>`, level 1 | the node id QSpec FR-322 assigns to its preimage |
-| E14 | `a = b` over `Node` | the node id QSpec FR-322 assigns to its preimage |
-| E15 | `contains(s, b)` over `Sequence<Node>[0, 3]` | the node id QSpec FR-322 assigns to its preimage |
-| E16 | `x = y` over `A` | the node id QSpec FR-322 assigns to its preimage |
-| E17 | `a = b` over `Option<Node>` | the node id QSpec FR-322 assigns to its preimage |
+| T13 | `Text[0, 8; binary-utf8]` | its preimage |
+| T14 | `Text[0, 4; nfc]` | its preimage |
+| G16 | `record Node`, ordinal 1 | its preimage |
+| G17 | `Option<Node>`, ordinal 0 | its preimage |
+| G18 | `Option<A>`, ordinal 0 | its preimage |
+| G19 | `record B`, ordinal 2 | its preimage |
+| G20 | `record A`, ordinal 3 | its preimage |
+| G21 | `Option<B>`, ordinal 1 | its preimage |
+| S4 | `Sequence<Node>` | its preimage |
+| S5 | `Sequence<Node>[0, 3]` | its preimage |
+| P10 | parameter `a: Node`, level 0 | its preimage |
+| P11 | parameter `b: Node`, level 1 | its preimage |
+| P12 | parameter `s: Sequence<Node>[0, 3]`, level 0 | its preimage |
+| P13 | parameter `x: A`, level 0 | its preimage |
+| P14 | parameter `y: A`, level 1 | its preimage |
+| P15 | parameter `a: Option<Node>`, level 0 | its preimage |
+| P16 | parameter `b: Option<Node>`, level 1 | its preimage |
+| E14 | `a = b` over `Node` | its preimage |
+| E15 | `contains(s, b)` over `Sequence<Node>[0, 3]` | its preimage |
+| E16 | `x = y` over `A` | its preimage |
+| E17 | `a = b` over `Option<Node>` | its preimage |
 
-**T13**: `Text[0, 8; binary-utf8]` (node-id `digest`/`domain` members: BLOCKED-BY STD-583 (owner: planner titan:QSL:plan))
-
-```json
-{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"<node id of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"<node id of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"8","value_kind":"integer"}},{"name":"text_profile","term":"binding","value":{"term":"literal","type":{"digest":"<node id of FR-092 T3>","domain":"quire.checked-semantic-node/v1"},"value":"binary-utf8","value_kind":"text"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"text_bounds","semantic_type":{"digest":"<node id of FR-092 T3>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
-```
-
-Key: the node id QSpec FR-322 assigns to the preimage above.
-
-**T14**: `Text[0, 4; nfc]` (node-id `digest`/`domain` members: BLOCKED-BY STD-583 (owner: planner titan:QSL:plan))
+**T13**: `Text[0, 8; binary-utf8]`
 
 ```json
-{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"<node id of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"<node id of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"4","value_kind":"integer"}},{"name":"text_profile","term":"binding","value":{"term":"literal","type":{"digest":"<node id of FR-092 T3>","domain":"quire.checked-semantic-node/v1"},"value":"nfc","value_kind":"text"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"text_bounds","semantic_type":{"digest":"<node id of FR-092 T3>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"<digest of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"<digest of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"8","value_kind":"integer"}},{"name":"text_profile","term":"binding","value":{"term":"literal","type":{"digest":"<digest of FR-092 T3>","domain":"quire.checked-semantic-node/v1"},"value":"binary-utf8","value_kind":"text"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"text_bounds","semantic_type":{"digest":"<digest of FR-092 T3>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
 
-Key: the node id QSpec FR-322 assigns to the preimage above.
-
-**G16**: `record Node`, ordinal 1 (node-id `digest`/`domain` members: BLOCKED-BY STD-583 (owner: planner titan:QSL:plan))
+**T14**: `Text[0, 4; nfc]`
 
 ```json
-{"body":{"members":[{"name":"label","term":"binding","value":{"target":{"digest":"<node id of T13>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"next","term":"binding","value":{"members":[{"name":"optional","term":"binding","value":{"ordinal":0,"term":"group_reference"}}],"term":"aggregate"}}],"term":"aggregate"},"declaration":{"qualified_name":["Node"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"<group label of G16>","ordinal":1,"size":2},"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"<digest of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"<digest of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"4","value_kind":"integer"}},{"name":"text_profile","term":"binding","value":{"term":"literal","type":{"digest":"<digest of FR-092 T3>","domain":"quire.checked-semantic-node/v1"},"value":"nfc","value_kind":"text"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"text_bounds","semantic_type":{"digest":"<digest of FR-092 T3>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
 
-Key: the node id QSpec FR-322 assigns to the preimage above.
+**G16**: `record Node`, ordinal 1
+
+```json
+{"body":{"members":[{"name":"label","term":"binding","value":{"target":{"digest":"<digest of T13>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"next","term":"binding","value":{"members":[{"name":"optional","term":"binding","value":{"ordinal":0,"term":"group_reference"}}],"term":"aggregate"}}],"term":"aggregate"},"declaration":{"qualified_name":["Node"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"<group digest of G16>","ordinal":1,"size":2},"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
+```
 
 **G17**: `Option<Node>`, ordinal 0
 
 ```json
-{"body":{"members":[{"ordinal":1,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"<group label of G16>","ordinal":0,"size":2},"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"ordinal":1,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"<group digest of G16>","ordinal":0,"size":2},"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
-
-Key: the node id QSpec FR-322 assigns to the preimage above.
 
 **G18**: `Option<A>`, ordinal 0
 
 ```json
-{"body":{"members":[{"ordinal":3,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"<group label of G18>","ordinal":0,"size":4},"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"ordinal":3,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"<group digest of G18>","ordinal":0,"size":4},"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: the node id QSpec FR-322 assigns to the preimage above.
-
-**G19**: `record B`, ordinal 2 (node-id `digest`/`domain` members: BLOCKED-BY STD-583 (owner: planner titan:QSL:plan))
+**G19**: `record B`, ordinal 2
 
 ```json
-{"body":{"members":[{"name":"tag","term":"binding","value":{"target":{"digest":"<node id of T14>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"a","term":"binding","value":{"members":[{"name":"optional","term":"binding","value":{"ordinal":0,"term":"group_reference"}}],"term":"aggregate"}}],"term":"aggregate"},"declaration":{"qualified_name":["B"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"<group label of G18>","ordinal":2,"size":4},"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"tag","term":"binding","value":{"target":{"digest":"<digest of T14>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"a","term":"binding","value":{"members":[{"name":"optional","term":"binding","value":{"ordinal":0,"term":"group_reference"}}],"term":"aggregate"}}],"term":"aggregate"},"declaration":{"qualified_name":["B"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"<group digest of G18>","ordinal":2,"size":4},"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: the node id QSpec FR-322 assigns to the preimage above.
-
-**G20**: `record A`, ordinal 3 (node-id `digest`/`domain` members: BLOCKED-BY STD-583 (owner: planner titan:QSL:plan))
+**G20**: `record A`, ordinal 3
 
 ```json
-{"body":{"members":[{"name":"name","term":"binding","value":{"target":{"digest":"<node id of T13>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"b","term":"binding","value":{"members":[{"name":"optional","term":"binding","value":{"ordinal":1,"term":"group_reference"}}],"term":"aggregate"}}],"term":"aggregate"},"declaration":{"qualified_name":["A"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"<group label of G18>","ordinal":3,"size":4},"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"name","term":"binding","value":{"target":{"digest":"<digest of T13>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"b","term":"binding","value":{"members":[{"name":"optional","term":"binding","value":{"ordinal":1,"term":"group_reference"}}],"term":"aggregate"}}],"term":"aggregate"},"declaration":{"qualified_name":["A"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"<group digest of G18>","ordinal":3,"size":4},"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
-
-Key: the node id QSpec FR-322 assigns to the preimage above.
 
 **G21**: `Option<B>`, ordinal 1
 
 ```json
-{"body":{"members":[{"ordinal":2,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"<group label of G18>","ordinal":1,"size":4},"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"ordinal":2,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"<group digest of G18>","ordinal":1,"size":4},"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: the node id QSpec FR-322 assigns to the preimage above.
-
-**S4**: `Sequence<Node>` (node-id `digest`/`domain` members: BLOCKED-BY STD-583 (owner: planner titan:QSL:plan))
+**S4**: `Sequence<Node>`
 
 ```json
-{"body":{"members":[{"target":{"digest":"<node id of G16>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":null,"semantic_form":"sequence","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"target":{"digest":"<digest of G16>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":null,"semantic_form":"sequence","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: the node id QSpec FR-322 assigns to the preimage above.
-
-**S5**: `Sequence<Node>[0, 3]` (node-id `digest`/`domain` members: BLOCKED-BY STD-583 (owner: planner titan:QSL:plan))
+**S5**: `Sequence<Node>[0, 3]`
 
 ```json
-{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"<node id of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"<node id of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"3","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"collection_bounds","semantic_type":{"digest":"<node id of S4>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"<digest of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"<digest of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"3","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"collection_bounds","semantic_type":{"digest":"<digest of S4>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
 
-Key: the node id QSpec FR-322 assigns to the preimage above.
-
-**P10**: parameter `a: Node`, level 0 (node-id `digest`/`domain` members: BLOCKED-BY STD-583 (owner: planner titan:QSL:plan))
+**P10**: parameter `a: Node`, level 0
 
 ```json
-{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"<node id of FR-092 T3>","domain":"quire.checked-semantic-node/v1"},"value":"a","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"<node id of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"<node id of G16>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"<digest of FR-092 T3>","domain":"quire.checked-semantic-node/v1"},"value":"a","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"<digest of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"<digest of G16>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
 
-Key: the node id QSpec FR-322 assigns to the preimage above.
-
-**P11**: parameter `b: Node`, level 1 (node-id `digest`/`domain` members: BLOCKED-BY STD-583 (owner: planner titan:QSL:plan))
+**P11**: parameter `b: Node`, level 1
 
 ```json
-{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"<node id of FR-092 T3>","domain":"quire.checked-semantic-node/v1"},"value":"b","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"<node id of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"1","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"<node id of G16>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"<digest of FR-092 T3>","domain":"quire.checked-semantic-node/v1"},"value":"b","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"<digest of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"1","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"<digest of G16>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
 
-Key: the node id QSpec FR-322 assigns to the preimage above.
-
-**P12**: parameter `s: Sequence<Node>[0, 3]`, level 0 (node-id `digest`/`domain` members: BLOCKED-BY STD-583 (owner: planner titan:QSL:plan))
+**P12**: parameter `s: Sequence<Node>[0, 3]`, level 0
 
 ```json
-{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"<node id of FR-092 T3>","domain":"quire.checked-semantic-node/v1"},"value":"s","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"<node id of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"<node id of S5>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"<digest of FR-092 T3>","domain":"quire.checked-semantic-node/v1"},"value":"s","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"<digest of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"<digest of S5>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
 
-Key: the node id QSpec FR-322 assigns to the preimage above.
-
-**P13**: parameter `x: A`, level 0 (node-id `digest`/`domain` members: BLOCKED-BY STD-583 (owner: planner titan:QSL:plan))
+**P13**: parameter `x: A`, level 0
 
 ```json
-{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"<node id of FR-092 T3>","domain":"quire.checked-semantic-node/v1"},"value":"x","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"<node id of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"<node id of G20>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"<digest of FR-092 T3>","domain":"quire.checked-semantic-node/v1"},"value":"x","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"<digest of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"<digest of G20>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
 
-Key: the node id QSpec FR-322 assigns to the preimage above.
-
-**P14**: parameter `y: A`, level 1 (node-id `digest`/`domain` members: BLOCKED-BY STD-583 (owner: planner titan:QSL:plan))
+**P14**: parameter `y: A`, level 1
 
 ```json
-{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"<node id of FR-092 T3>","domain":"quire.checked-semantic-node/v1"},"value":"y","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"<node id of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"1","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"<node id of G20>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"<digest of FR-092 T3>","domain":"quire.checked-semantic-node/v1"},"value":"y","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"<digest of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"1","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"<digest of G20>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
 
-Key: the node id QSpec FR-322 assigns to the preimage above.
-
-**P15**: parameter `a: Option<Node>`, level 0 (node-id `digest`/`domain` members: BLOCKED-BY STD-583 (owner: planner titan:QSL:plan))
+**P15**: parameter `a: Option<Node>`, level 0
 
 ```json
-{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"<node id of FR-092 T3>","domain":"quire.checked-semantic-node/v1"},"value":"a","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"<node id of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"<node id of G17>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"<digest of FR-092 T3>","domain":"quire.checked-semantic-node/v1"},"value":"a","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"<digest of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"<digest of G17>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
 
-Key: the node id QSpec FR-322 assigns to the preimage above.
-
-**P16**: parameter `b: Option<Node>`, level 1 (node-id `digest`/`domain` members: BLOCKED-BY STD-583 (owner: planner titan:QSL:plan))
+**P16**: parameter `b: Option<Node>`, level 1
 
 ```json
-{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"<node id of FR-092 T3>","domain":"quire.checked-semantic-node/v1"},"value":"b","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"<node id of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"1","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"<node id of G17>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"<digest of FR-092 T3>","domain":"quire.checked-semantic-node/v1"},"value":"b","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"<digest of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"1","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"<digest of G17>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
 
-Key: the node id QSpec FR-322 assigns to the preimage above.
-
-**E14**: `a = b` over `Node` (node-id `digest`/`domain` members: BLOCKED-BY STD-583 (owner: planner titan:QSL:plan))
+**E14**: `a = b` over `Node`
 
 ```json
-{"body":{"arguments":[{"target":{"digest":"<node id of P10>","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"<node id of P11>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.structural.eq","laws":[],"leaves":[{"laws":[{"definition":{"authority":"agent-ix","identity":"quire.value.text.unicode-17.0.0/v1"},"role":"text_profile"}],"mode":{"kind":"text_profile","value":"binary-utf8"},"path":["field:label"]},{"laws":[],"mode":null,"path":["field:next","inner","recursion:0"]}],"member":null,"mode":null},"operator":"binary","result_type":{"digest":"<node id of FR-092 T1>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"binary","semantic_type":{"digest":"<node id of FR-092 T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+{"body":{"arguments":[{"target":{"digest":"<digest of P10>","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"<digest of P11>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.structural.eq","laws":[],"leaves":[{"laws":[{"definition":{"authority":"agent-ix","identity":"quire.value.text.unicode-17.0.0/v1"},"role":"text_profile"}],"mode":{"kind":"text_profile","value":"binary-utf8"},"path":["field:label"]},{"laws":[],"mode":null,"path":["field:next","inner","recursion:0"]}],"member":null,"mode":null},"operator":"binary","result_type":{"digest":"<digest of FR-092 T1>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"binary","semantic_type":{"digest":"<digest of FR-092 T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
 ```
 
-Key: the node id QSpec FR-322 assigns to the preimage above.
-
-**E15**: `contains(s, b)` over `Sequence<Node>[0, 3]` (node-id `digest`/`domain` members: BLOCKED-BY STD-583 (owner: planner titan:QSL:plan))
+**E15**: `contains(s, b)` over `Sequence<Node>[0, 3]`
 
 ```json
-{"body":{"arguments":[{"target":{"digest":"<node id of P12>","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"<node id of P11>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.collection.contains","laws":[],"leaves":[{"laws":[{"definition":{"authority":"agent-ix","identity":"quire.value.text.unicode-17.0.0/v1"},"role":"text_profile"}],"mode":{"kind":"text_profile","value":"binary-utf8"},"path":["field:label"]},{"laws":[],"mode":null,"path":["field:next","inner","recursion:0"]}],"member":null,"mode":null},"operator":"collection","result_type":{"digest":"<node id of FR-092 T1>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"collection","semantic_type":{"digest":"<node id of FR-092 T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+{"body":{"arguments":[{"target":{"digest":"<digest of P12>","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"<digest of P11>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.collection.contains","laws":[],"leaves":[{"laws":[{"definition":{"authority":"agent-ix","identity":"quire.value.text.unicode-17.0.0/v1"},"role":"text_profile"}],"mode":{"kind":"text_profile","value":"binary-utf8"},"path":["field:label"]},{"laws":[],"mode":null,"path":["field:next","inner","recursion:0"]}],"member":null,"mode":null},"operator":"collection","result_type":{"digest":"<digest of FR-092 T1>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"collection","semantic_type":{"digest":"<digest of FR-092 T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
 ```
 
-Key: the node id QSpec FR-322 assigns to the preimage above.
-
-**E16**: `x = y` over `A` (node-id `digest`/`domain` members: BLOCKED-BY STD-583 (owner: planner titan:QSL:plan))
+**E16**: `x = y` over `A`
 
 ```json
-{"body":{"arguments":[{"target":{"digest":"<node id of P13>","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"<node id of P14>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.structural.eq","laws":[],"leaves":[{"laws":[{"definition":{"authority":"agent-ix","identity":"quire.value.text.unicode-17.0.0/v1"},"role":"text_profile"}],"mode":{"kind":"text_profile","value":"binary-utf8"},"path":["field:name"]},{"laws":[{"definition":{"authority":"agent-ix","identity":"quire.value.text.unicode-17.0.0/v1"},"role":"text_profile"}],"mode":{"kind":"text_profile","value":"nfc"},"path":["field:b","inner","field:tag"]},{"laws":[],"mode":null,"path":["field:b","inner","field:a","inner","recursion:0"]}],"member":null,"mode":null},"operator":"binary","result_type":{"digest":"<node id of FR-092 T1>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"binary","semantic_type":{"digest":"<node id of FR-092 T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+{"body":{"arguments":[{"target":{"digest":"<digest of P13>","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"<digest of P14>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.structural.eq","laws":[],"leaves":[{"laws":[{"definition":{"authority":"agent-ix","identity":"quire.value.text.unicode-17.0.0/v1"},"role":"text_profile"}],"mode":{"kind":"text_profile","value":"binary-utf8"},"path":["field:name"]},{"laws":[{"definition":{"authority":"agent-ix","identity":"quire.value.text.unicode-17.0.0/v1"},"role":"text_profile"}],"mode":{"kind":"text_profile","value":"nfc"},"path":["field:b","inner","field:tag"]},{"laws":[],"mode":null,"path":["field:b","inner","field:a","inner","recursion:0"]}],"member":null,"mode":null},"operator":"binary","result_type":{"digest":"<digest of FR-092 T1>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"binary","semantic_type":{"digest":"<digest of FR-092 T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
 ```
 
-Key: the node id QSpec FR-322 assigns to the preimage above.
-
-**E17**: `a = b` over `Option<Node>` (node-id `digest`/`domain` members: BLOCKED-BY STD-583 (owner: planner titan:QSL:plan))
+**E17**: `a = b` over `Option<Node>`
 
 ```json
-{"body":{"arguments":[{"target":{"digest":"<node id of P15>","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"<node id of P16>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.structural.eq","laws":[],"leaves":[{"laws":[{"definition":{"authority":"agent-ix","identity":"quire.value.text.unicode-17.0.0/v1"},"role":"text_profile"}],"mode":{"kind":"text_profile","value":"binary-utf8"},"path":["inner","field:label"]},{"laws":[],"mode":null,"path":["inner","field:next","inner","recursion:1"]}],"member":null,"mode":null},"operator":"binary","result_type":{"digest":"<node id of FR-092 T1>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"binary","semantic_type":{"digest":"<node id of FR-092 T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+{"body":{"arguments":[{"target":{"digest":"<digest of P15>","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"<digest of P16>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.structural.eq","laws":[],"leaves":[{"laws":[{"definition":{"authority":"agent-ix","identity":"quire.value.text.unicode-17.0.0/v1"},"role":"text_profile"}],"mode":{"kind":"text_profile","value":"binary-utf8"},"path":["inner","field:label"]},{"laws":[],"mode":null,"path":["inner","field:next","inner","recursion:1"]}],"member":null,"mode":null},"operator":"binary","result_type":{"digest":"<digest of FR-092 T1>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"binary","semantic_type":{"digest":"<digest of FR-092 T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
 ```
 
-Key: the node id QSpec FR-322 assigns to the preimage above.
-
-G16-G17, recursion group label (QSpec FR-322 `recursion.group`):
+G16-G17, group digest (the SHA-256 of the group preimage):
 
 | Ordinal | Member |
 |---|---|
 | 0 | G17 `Option<Node>` |
 | 1 | G16 `Node` |
 
-G18-G21, recursion group label (QSpec FR-322 `recursion.group`):
+G18-G21, group digest (the SHA-256 of the group preimage):
 
 | Ordinal | Member |
 |---|---|
