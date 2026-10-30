@@ -341,7 +341,7 @@ fn emitted_measure() -> (
     quire_exact::UnitId,
 ) {
     let (units, metre) = source_metre_units();
-    let measure = record(10, "Measure", vec![("len", ValueType::Quantity(metre))]);
+    let measure = record(10, "Measure", vec![("len", ValueType::Quantity(metre.clone()))]);
     let types = TypeEnvironment::new([measure.clone()], [])
         .expect("FR-143 admits Measure")
         .with_units(units);
@@ -610,7 +610,7 @@ fn requirement_records(
         .filter(|(key, _)| {
             let node = graph
                 .semantic_graph()
-                .node(key.node())
+                .node(key.node().clone())
                 .expect("the record's node is lowered");
             matches!(
                 node.body(),
@@ -619,7 +619,7 @@ fn requirement_records(
                 ) if applied.identity() == operation
             )
         })
-        .map(|(key, record)| (key.node(), record.requirements().extent().clone()))
+        .map(|(key, record)| (key.node().clone(), record.requirements().extent().clone()))
         .collect()
 }
 

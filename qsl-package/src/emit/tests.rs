@@ -2376,16 +2376,16 @@ fn a_model_bearing_unit_emits_its_model_selection_and_reads_back_verified() {
             package: "acme/orders".to_owned(),
             node: format!("ix://acme/orders/{artifact}"),
         };
-        let id = views[0].view.type_identities()[&key];
+        let id = views[0].view.type_identities()[&key].clone();
         let declared = declarations
             .types
-            .object_type(id)
+            .object_type(id.clone())
             .unwrap_or_else(|| panic!("{artifact} is declared"));
         assert_eq!(declared.name(), format!("M::{artifact}"));
         id
     };
     let (gadget, widget) = (object("Gadget"), object("Widget"));
-    assert!(declarations.types.conforms(gadget, widget));
+    assert!(declarations.types.conforms(gadget.clone(), widget.clone()));
     assert!(!declarations.types.conforms(widget, gadget));
 
     let (emission, wire, read) = emit_model_unit(&unit, None);
