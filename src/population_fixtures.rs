@@ -267,7 +267,7 @@ fn assemble(
         qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
     )
     .map_err(|refusal| stage("I1")(format!("{refusal:?}")))?;
-    PackageDeclarations::assemble(raw, unit, models, Vec::new())
+    PackageDeclarations::assemble(raw, "spine-model".into(), unit, models, Vec::new())
         .map_err(|refusal| stage("assemble")(format!("{refusal:?}")))
 }
 

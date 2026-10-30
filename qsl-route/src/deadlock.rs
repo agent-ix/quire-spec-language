@@ -39,13 +39,13 @@
 
 use std::collections::BTreeSet;
 
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::MemoryModelName;
 use qsl_semantics::check::{
     CheckedGraph, CheckedProtocol, CheckedRefinement, CheckedTerminalMember, TerminalDeclaration,
 };
 use qsl_semantics::model::observation::DocumentRef;
+use quire_exact::NodeKey;
 
 use crate::reductions::{ObligationReductions, Reductions};
 
@@ -207,7 +207,7 @@ impl<S> ItemObligation<S> {
 /// another model of the package has no effect on it.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct SubjectReading {
-    roots: BTreeSet<WireNodeId>,
+    roots: BTreeSet<NodeKey>,
     opted_out: bool,
     timed: bool,
     /// For a protocol subject, what its clause gives the derivation.
@@ -220,7 +220,7 @@ pub struct SubjectReading {
 struct ProtocolReading {
     /// The clause's node; `None` for a clause with no node. A subject names
     /// one protocol clause, so every reading of it has the same node.
-    node: Option<WireNodeId>,
+    node: Option<NodeKey>,
     /// The resolved model of each outermost `parallel`, by scoped path, in
     /// ascending path order. They are part of the protocol subject (QSpec
     /// FR-425), so two readings with other models are two subjects.
@@ -239,7 +239,7 @@ impl SubjectReading {
             roots: package
                 .model_roots()
                 .filter(|(selection, _)| reads(&selection.identity))
-                .map(|(_, key)| WireNodeId::from_digest(*key.as_bytes()))
+                .map(|(_, key)| key)
                 .collect(),
             opted_out: package.terminals().iter().any(|terminal| {
                 own(terminal.model()) && matches!(terminal.declaration(), TerminalDeclaration::Any)
@@ -430,10 +430,7 @@ impl<S: Clone> ProtocolTemporalItem<'_, S> {
             opted_out: matches!(self.protocol.slots.terminal, CheckedTerminalMember::Any),
             timed: false,
             protocol: Some(ProtocolReading {
-                node: self
-                    .protocol
-                    .node()
-                    .map(|key| WireNodeId::from_digest(*key.as_bytes())),
+                node: self.protocol.node(),
                 models: self.models.to_vec(),
                 races: weak && self.non_atomic_access,
             }),

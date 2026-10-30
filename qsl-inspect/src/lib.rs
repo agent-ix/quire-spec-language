@@ -9,7 +9,6 @@ use alloc::{string::String, vec::Vec};
 use core::fmt;
 use qsl_foundation::{
     diagnostic::{LimitExceeded, StageFailure, Staged},
-    digest::WireNodeId,
     setting::Setting,
     source::provenance::{OccurrenceKey, SourceRegion, UnresolvedOccurrence},
 };
@@ -297,29 +296,20 @@ pub fn inspect_node<'a>(
     let source_map = emission.source_map();
     let graph = package.graph();
     let (node_key, selected_occurrence) = match selector {
-        NodeSelector::Node(key) => (*key, None),
-        NodeSelector::Occurrence(key) => {
-            let node = graph.semantic_graph().resolve_wire(key.node());
-            let Some(node) = node else {
-                return Err(StageFailure::Refused(InspectCause::UnknownNode {
-                    selector: format!("{}", key.node()),
-                    package_id,
-                }));
-            };
-            (node, Some(key))
-        }
+        NodeSelector::Node(key) => (key, None),
+        NodeSelector::Occurrence(key) => (key.node(), Some(key)),
     };
-    let Some(node) = graph.semantic_graph().node(node_key) else {
+    let Some(node) = graph.semantic_graph().node(node_key.clone()) else {
         return Err(StageFailure::Refused(InspectCause::UnknownNode {
             selector: node_key.to_string(),
             package_id,
         }));
     };
-    let wire_id = WireNodeId::from_digest(*node_key.as_bytes());
+    let checked_id = qsl_package::checked_node_id_of(node_key);
     if emission
         .omitted()
         .iter()
-        .any(|omitted| omitted.node.digest.as_ref() == node_key.to_string())
+        .any(|omitted| omitted.node == checked_id)
     {
         return Err(StageFailure::Refused(InspectCause::SourceCorrespondence {
             selector: node_key.to_string(),
@@ -341,7 +331,7 @@ pub fn inspect_node<'a>(
                 });
             }
             None => {
-                let cause = if source_map.occurrences(wire_id).next().is_some() {
+                let cause = if source_map.occurrences(node_key).next().is_some() {
                     InspectCause::UnknownOccurrence {
                         selector: format!("{key:?}"),
                         package_id,
@@ -358,7 +348,7 @@ pub fn inspect_node<'a>(
         None => {
             let mut budget = EntryBudget::new(limits);
             let mut found = false;
-            for (key, regions) in source_map.occurrences(wire_id) {
+            for (key, regions) in source_map.occurrences(node_key) {
                 found = true;
                 budget.charge(cancel)?;
                 for _ in regions {
@@ -457,10 +447,19 @@ mod tests {
         NodeSelector, View,
     };
     use ix_trace_rs::trace;
-    use qsl_foundation::{diagnostic::StageFailure, digest::WireNodeId, setting::Setting};
+    use qsl_foundation::{diagnostic::StageFailure, setting::Setting};
     use qsl_semantics::check::PackageDeclarations;
     use quire_exact::{Cancel, CancelCause, Location, NodeKey, Origin, Role};
     use quire_semantic_value::checking::CheckingLimits;
+
+    fn fixture_node(name: &str) -> NodeKey {
+        NodeKey::new(
+            "fixture",
+            vec![quire_exact::PathSegment::Text(name.to_owned())],
+            0,
+        )
+        .expect("a fixture node key is well formed")
+    }
 
     fn emitted_spine_package() -> (qsl_package::CheckedPackage, qsl_package::Emission) {
         const FIXTURE: &[u8] = include_bytes!("../../tests/fixtures/spine-compile.native");
@@ -476,6 +475,7 @@ mod tests {
         let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the checked-package fixture");
         let graph = PackageDeclarations::assemble(
             raw,
+            "checked-package-fixture".into(),
             unit,
             qsl_semantics::model::intake::SelectedModels::default(),
             Vec::new(),
@@ -568,7 +568,7 @@ mod tests {
         let result = inspect_node(
             &package,
             &emission,
-            &NodeSelector::Node(node_key),
+            &NodeSelector::Node(node_key.clone()),
             InspectLimits::default(),
             &Cancel::new(),
         )
@@ -582,9 +582,10 @@ mod tests {
             .occurrences
             .iter()
             .all(|occurrence| !occurrence.regions.is_empty()));
-        assert!(view.occurrences.iter().all(
-            |occurrence| occurrence.key.node() == WireNodeId::from_digest(*node_key.as_bytes())
-        ));
+        assert!(view
+            .occurrences
+            .iter()
+            .all(|occurrence| occurrence.key.node() == &node_key));
         let selected_entries = view
             .occurrences
             .iter()
@@ -593,7 +594,7 @@ mod tests {
         assert!(inspect_node(
             &package,
             &emission,
-            &NodeSelector::Node(node_key),
+            &NodeSelector::Node(node_key.clone()),
             InspectLimits {
                 max_view_entries: selected_entries,
             },
@@ -604,7 +605,7 @@ mod tests {
             inspect_node(
                 &package,
                 &emission,
-                &NodeSelector::Node(node_key),
+                &NodeSelector::Node(node_key.clone()),
                 InspectLimits {
                     max_view_entries: selected_entries - 1,
                 },
@@ -615,11 +616,11 @@ mod tests {
                     && limit.actual() == u128::from(selected_entries)
         ));
 
-        let absent = NodeKey::from_digest([0xFF; 32]);
+        let absent = fixture_node("absent");
         let refusal = inspect_node(
             &package,
             &emission,
-            &NodeSelector::Node(absent),
+            &NodeSelector::Node(absent.clone()),
             InspectLimits::default(),
             &Cancel::new(),
         )
@@ -630,7 +631,7 @@ mod tests {
         );
 
         let absent_occurrence = qsl_foundation::source::provenance::OccurrenceKey::new(
-            WireNodeId::from_digest(*node_key.as_bytes()),
+            node_key.clone(),
             Origin::new(Role::new("missing-role"), 0),
         );
         let refusal = inspect_node(
@@ -659,7 +660,7 @@ mod tests {
             .expect("fixture has a declared node");
         let key = emission
             .source_map()
-            .occurrences(WireNodeId::from_digest(*node.key().as_bytes()))
+            .occurrences(&node.key())
             .next()
             .expect("the declaration has a mapped occurrence")
             .0
@@ -699,7 +700,7 @@ mod tests {
                 &document,
                 &[Some(
                     qsl_foundation::source::provenance::OccurrenceKey::new(
-                        WireNodeId::from_digest([0xFF; 32]),
+                        fixture_node("absent"),
                         key.origin().clone(),
                     )
                 )],

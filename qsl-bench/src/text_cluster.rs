@@ -131,7 +131,7 @@ fn equality_package(
     PackageDeclarations {
         types: TypeEnvironment::new(declarations, []).expect("FR-143 admits the records"),
         functions: vec![eq],
-        ..PackageDeclarations::new(source(), qsl_foundation::IdentityLimits::default())
+        ..PackageDeclarations::new(source(), "qsl-bench", qsl_foundation::IdentityLimits::default())
     }
 }
 
