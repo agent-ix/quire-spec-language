@@ -887,6 +887,7 @@ mod tests {
     fn acquire(text: &str, dependencies: &DependencyInput) -> CheckedClosureCompilation {
         acquire_checked_closure(
             identity("unit"),
+            "fixture".to_owned(),
             "unit.native",
             text.as_bytes(),
             [],
@@ -897,13 +898,11 @@ mod tests {
         .expect("checked acquisition")
     }
     fn wire(package: &CheckedPackage, name: &str) -> NodeKey {
-        NodeKey::from_digest(
-            *package
-                .graph()
-                .function_identity(name)
-                .expect("function")
-                .as_bytes(),
-        )
+        package
+            .graph()
+            .function_identity(name)
+            .expect("function")
+            .clone()
     }
     fn meter(work_units: u64) -> Meter {
         let large = u64::from(u32::MAX);
@@ -938,7 +937,9 @@ mod tests {
     impl BodyFactory for Host {
         fn begin(&self) -> Box<dyn Body> {
             self.begun.fetch_add(1, Ordering::SeqCst);
-            Box::new(HostBody { child: self.child })
+            Box::new(HostBody {
+                child: self.child.clone(),
+            })
         }
     }
     struct HostBody {
@@ -947,7 +948,7 @@ mod tests {
     impl Body for HostBody {
         fn resume(&mut self, input: Resume, _meter: &mut Meter) -> Result<Transition, BodyFailure> {
             Ok(match input {
-                Resume::Start(arguments) => match self.child {
+                Resume::Start(arguments) => match self.child.clone() {
                     Some(callee) => Transition::Call(ChildRequest {
                         callee,
                         arguments,
@@ -983,6 +984,7 @@ mod tests {
         .expect("dependency input");
         let expected = crate::compile_admitted(
             identity("unit"),
+            "fixture".to_owned(),
             "unit.native",
             text.as_bytes(),
             [],
@@ -996,12 +998,8 @@ mod tests {
         assert_eq!(crate::execute::spine_run_count(), spine_runs + 1);
         assert_eq!(acquired.package().bytes(), expected.package().bytes());
         assert_eq!(
-            acquired.package().package_id(),
-            expected.package().package_id()
-        );
-        assert_eq!(
-            acquired.context().package_id(),
-            expected.context().package_id()
+            acquired.context().package_name(),
+            expected.context().package_name()
         );
         assert_eq!(
             format!("{:?}", acquired.context()),
@@ -1011,9 +1009,9 @@ mod tests {
         let (bytes, context, handle) = acquired.into_parts();
         drop((bytes, context, text, input));
         let selection = handle
-            .lookup_callable(handle.package_id(), own)
+            .lookup_callable(handle.package_name(), &own)
             .expect("retained callable");
-        assert_eq!(selection.key().as_bytes(), own.as_bytes());
+        assert_eq!(selection.key(), &own);
         assert_eq!(selection.signature().parameters().len(), 1);
         let mut registry = handle.registry();
         let environment = ApplicationEnvironment::new(ObjectClosure::default());
@@ -1061,6 +1059,7 @@ mod tests {
         };
         let lib_acquired = acquire_checked_closure(
             library.source.clone(),
+            "test/lib".to_owned(),
             &library.path,
             &library.bytes,
             [],
@@ -1077,42 +1076,36 @@ mod tests {
         );
         let handle = acquired.handle();
         assert_eq!(
-            handle.lookup_callable(handle.package_id(), lib_wire).err(),
+            handle.lookup_callable(handle.package_name(), &lib_wire).err(),
             Some(CallableLookupRefusal::Foreign(
-                lib_acquired.package().package_id()
+                lib_acquired.handle().package_name()
             ))
         );
         let dependency = handle
-            .lookup_callable(lib_acquired.package().package_id(), lib_wire)
+            .lookup_callable(lib_acquired.handle().package_name(), &lib_wire)
             .expect("dependency callable");
         assert_eq!(
-            dependency.owner_package_id(),
-            lib_acquired.package().package_id()
+            dependency.owner_package_name(),
+            lib_acquired.handle().package_name()
         );
         assert_eq!(
             handle
-                .lookup_callable(handle.package_id(), crate::fixture_node(9))
+                .lookup_callable(handle.package_name(), &crate::fixture_node(9))
                 .err(),
             Some(CallableLookupRefusal::Unknown)
         );
         assert_eq!(
             handle
                 .lookup_callable(
-                    lib_acquired.package().package_id(),
-                    wire(&handle.package, "f")
+                    lib_acquired.handle().package_name(),
+                    &wire(&handle.package, "f")
                 )
                 .err(),
-            Some(CallableLookupRefusal::Foreign(handle.package_id()))
+            Some(CallableLookupRefusal::Foreign(handle.package_name().clone()))
         );
         assert_eq!(
             handle
-                .lookup_callable(
-                    DigestRecord::mint(
-                        qsl_foundation::digest::DigestDomain::PackageSemanticV2,
-                        [8; 32]
-                    ),
-                    lib_wire
-                )
+                .lookup_callable(&LibraryName::new("absent").unwrap(), &lib_wire)
                 .err(),
             Some(CallableLookupRefusal::Unknown)
         );
@@ -1140,11 +1133,11 @@ mod tests {
         let own = wire(&first.handle.package, "f");
         let selection = first
             .handle()
-            .lookup_callable(first.package().package_id(), own)
+            .lookup_callable(first.handle().package_name(), &own)
             .expect("selection");
         let foreign = second
             .handle()
-            .lookup_callable(second.package().package_id(), own)
+            .lookup_callable(second.handle().package_name(), &own)
             .expect("same key second acquisition");
         assert_eq!(selection.key(), foreign.key());
         let mut registry = first.handle().registry();
@@ -1241,6 +1234,7 @@ mod tests {
         let input = DependencyInput::default();
         let expected = crate::compile_admitted(
             identity("unit"),
+            "fixture".to_owned(),
             "unit.native",
             malformed.as_bytes(),
             [],
@@ -1251,6 +1245,7 @@ mod tests {
         .unwrap_err();
         let actual = acquire_checked_closure(
             identity("unit"),
+            "fixture".to_owned(),
             "unit.native",
             malformed.as_bytes(),
             [],
@@ -1268,8 +1263,8 @@ mod tests {
         let selected = acquired
             .handle()
             .lookup_callable(
-                acquired.package().package_id(),
-                wire(&acquired.handle.package, "f"),
+                acquired.handle().package_name(),
+                &wire(&acquired.handle.package, "f"),
             )
             .expect("selection");
         let mut registry = acquired.handle().registry();
@@ -1295,7 +1290,7 @@ mod tests {
         let acquired = acquire(&source, &DependencyInput::default());
         let handle = acquired.handle();
         let own = handle
-            .lookup_callable(handle.package_id(), wire(&handle.package, "f"))
+            .lookup_callable(handle.package_name(), &wire(&handle.package, "f"))
             .expect("own selection");
         let enum_key = acquired
             .context()
@@ -1306,8 +1301,8 @@ mod tests {
         assert_eq!(
             handle
                 .lookup_callable(
-                    handle.package_id(),
-                    enum_key.clone()
+                    handle.package_name(),
+                    &enum_key.clone()
                 )
                 .err(),
             Some(CallableLookupRefusal::WrongKind)
@@ -1326,7 +1321,7 @@ mod tests {
         .expect("function site");
         let parameter = site.site.parameters[0].1;
         assert_eq!(
-            handle.lookup_callable(handle.package_id(), parameter).err(),
+            handle.lookup_callable(handle.package_name(), &parameter).err(),
             Some(CallableLookupRefusal::WrongKind)
         );
         let unrelated = acquire(
@@ -1341,7 +1336,7 @@ mod tests {
             .expect("other");
         let missing = missing_key.clone();
         assert_eq!(
-            handle.lookup_callable(handle.package_id(), missing).err(),
+            handle.lookup_callable(handle.package_name(), &missing).err(),
             Some(CallableLookupRefusal::Unknown)
         );
         let mut malformed = own.clone();
@@ -1369,10 +1364,10 @@ mod tests {
         let acquired = acquire(&format!("{HEADER}{FUNCTIONS}"), &DependencyInput::default());
         let handle = acquired.handle();
         let f = handle
-            .lookup_callable(handle.package_id(), wire(&handle.package, "f"))
+            .lookup_callable(handle.package_name(), &wire(&handle.package, "f"))
             .expect("f");
         let g = handle
-            .lookup_callable(handle.package_id(), wire(&handle.package, "g"))
+            .lookup_callable(handle.package_name(), &wire(&handle.package, "g"))
             .expect("g");
         let begun = Arc::new(AtomicUsize::new(0));
         let mut registry = handle.registry();
@@ -1419,7 +1414,7 @@ mod tests {
         );
         let handle = acquired.handle();
         let selection = handle
-            .lookup_callable(handle.package_id(), wire(&handle.package, "f"))
+            .lookup_callable(handle.package_name(), &wire(&handle.package, "f"))
             .expect("f");
         let own_location = handle
             .package
@@ -1436,7 +1431,7 @@ mod tests {
             .next()
             .expect("retained checked dependency");
         let imported = handle
-            .lookup_callable(imported_id.record(), wire(imported_package, "imported"))
+            .lookup_callable(imported_id.record(), &wire(imported_package, "imported"))
             .expect("imported function");
         let imported_location = imported_package
             .graph()
@@ -1563,7 +1558,7 @@ mod tests {
         let acquired = acquire(&format!("{HEADER}{FUNCTIONS}"), &DependencyInput::default());
         let handle = acquired.handle();
         let selection = handle
-            .lookup_callable(handle.package_id(), wire(&handle.package, "f"))
+            .lookup_callable(handle.package_name(), &wire(&handle.package, "f"))
             .expect("f");
         let begun = Arc::new(AtomicUsize::new(0));
         let started = Arc::new(AtomicUsize::new(0));
@@ -1637,6 +1632,7 @@ mod tests {
         ] {
             let expected = crate::compile_admitted(
                 identity("unit"),
+            "fixture".to_owned(),
                 "unit.native",
                 source.as_bytes(),
                 [],
@@ -1647,6 +1643,7 @@ mod tests {
             .expect_err("existing refusal");
             let actual = acquire_checked_closure(
                 identity("unit"),
+            "fixture".to_owned(),
                 "unit.native",
                 source.as_bytes(),
                 [],
@@ -1681,6 +1678,7 @@ mod tests {
             .to_string();
         let acquired = acquire_checked_closure(
             identity("unit"),
+            "fixture".to_owned(),
             "unit.native",
             source.as_bytes(),
             [document.as_slice()],
@@ -1691,7 +1689,7 @@ mod tests {
         .expect("model function compiles");
         let handle = acquired.handle();
         let selection = handle
-            .lookup_callable(handle.package_id(), wire(&handle.package, "h"))
+            .lookup_callable(handle.package_name(), &wire(&handle.package, "h"))
             .expect("h");
         let mut registry = handle.registry();
         let begun = Arc::new(AtomicUsize::new(0));
@@ -1799,12 +1797,12 @@ mod tests {
     }
     fn select(
         handle: &CheckedClosureHandle,
-        owner: DigestRecord,
+        owner: &LibraryName,
         package: &CheckedPackage,
         name: &str,
     ) -> CallableSelection {
         handle
-            .lookup_callable(owner, wire(package, name))
+            .lookup_callable(owner, &wire(package, name))
             .expect("callable")
     }
 
@@ -1816,7 +1814,7 @@ mod tests {
     impl BodyFactory for SitedHost {
         fn begin(&self) -> Box<dyn Body> {
             Box::new(SitedBody {
-                callee: self.callee,
+                callee: self.callee.clone(),
                 site: self.site.clone(),
             })
         }
@@ -1827,7 +1825,7 @@ mod tests {
     }
     impl Body for SitedBody {
         fn resume(&mut self, input: Resume, _meter: &mut Meter) -> Result<Transition, BodyFailure> {
-            Ok(match (input, self.callee) {
+            Ok(match (input, self.callee.clone()) {
                 (Resume::Start(arguments), Some(callee)) => Transition::Call(ChildRequest {
                     callee,
                     arguments,
@@ -1903,7 +1901,7 @@ mod tests {
     fn own_caller_call_sites_are_the_checked_call_expressions() {
         let acquired = acquire(&site_source(), &site_dependencies());
         let handle = acquired.handle();
-        let own = handle.package_id();
+        let own = handle.package_name();
         let package = Arc::clone(&handle.package);
         let f = select(handle, own, &package, "f");
         let twice = select(handle, own, &package, "twice");
@@ -1922,7 +1920,7 @@ mod tests {
         assert!(sites.iter().all(|(_, site)| site.location() != &root));
         assert_ne!(sites[0].1.location(), sites[1].1.location());
         for (_, site) in &sites {
-            assert_eq!(site.owner_package_id(), own);
+            assert_eq!(site.owner_package_name(), own);
             assert!(!site.location().path().is_empty(), "a child path");
             assert!(matches!(
                 &site.location().origin,
@@ -1957,20 +1955,20 @@ mod tests {
             .iter()
             .next()
             .expect("retained dependency");
-        let dependency_id = dependency_id.record();
-        let outer = select(handle, dependency_id, dependency, "outer");
-        let leaf = select(handle, dependency_id, dependency, "leaf");
+        let dependency_id = dependency_id.clone();
+        let outer = select(handle, &dependency_id, dependency, "outer");
+        let leaf = select(handle, &dependency_id, dependency, "leaf");
 
         let sites = issued(handle, dependency, &outer);
         assert_eq!(sites.len(), 2);
         assert_eq!(sorted(&sites), oracle(dependency, &outer));
         let own_functions: Vec<_> = ["f", "g", "twice", "k"]
             .iter()
-            .map(|name| select(handle, handle.package_id(), &handle.package, name))
+            .map(|name| select(handle, handle.package_name(), &handle.package, name))
             .collect();
         for (_, site) in &sites {
-            assert_eq!(site.owner_package_id(), dependency_id);
-            assert_ne!(dependency_id, handle.package_id());
+            assert_eq!(site.owner_package_name(), &dependency_id);
+            assert_ne!(&dependency_id, handle.package_name());
             assert!(matches!(
                 &site.location().origin,
                 quire_semantic_value::location::Origin::Body { function, index: 1 } if function == "outer"
@@ -1993,16 +1991,16 @@ mod tests {
     fn call_site_refusals_are_distinct_and_charge_nothing() {
         let acquired = acquire(&site_source(), &site_dependencies());
         let handle = acquired.handle();
-        let own = handle.package_id();
+        let own = handle.package_name();
         let package = Arc::clone(&handle.package);
         let (dependency_id, dependency) = package
             .dependencies()
             .iter()
             .next()
             .expect("retained dependency");
-        let dependency_id = dependency_id.record();
+        let dependency_id = dependency_id.clone();
         let g = select(handle, own, &package, "g");
-        let outer = select(handle, dependency_id, dependency, "outer");
+        let outer = select(handle, &dependency_id, dependency, "outer");
         let g_call = issued(handle, &package, &g)[0].0;
         let k = select(handle, own, &package, "k");
         let k_call = issued(handle, &package, &k)[0].0;
@@ -2075,7 +2073,7 @@ mod tests {
         let acquired = acquire(&site_source(), &site_dependencies());
         let handle = acquired.handle();
         let package = Arc::clone(&handle.package);
-        let own = handle.package_id();
+        let own = handle.package_name();
         let g = select(handle, own, &package, "g");
         let f = select(handle, own, &package, "f");
         let (occurrence, before) = issued(handle, &package, &g).remove(0);
@@ -2110,7 +2108,7 @@ mod tests {
         drop(session);
         for later in [&registered, &begun, &cloned] {
             assert_eq!(later.location(), before.location());
-            assert_eq!(later.owner_package_id(), before.owner_package_id());
+            assert_eq!(later.owner_package_name(), before.owner_package_name());
         }
     }
 
@@ -2120,17 +2118,11 @@ mod tests {
     /// is therefore tested on its pure decision.
     #[test]
     fn a_call_node_in_several_other_packages_is_unknown() {
-        let first = DigestRecord::mint(
-            qsl_foundation::digest::DigestDomain::PackageSemanticV2,
-            [1; 32],
-        );
-        let second = DigestRecord::mint(
-            qsl_foundation::digest::DigestDomain::PackageSemanticV2,
-            [2; 32],
-        );
+        let first = LibraryName::new("first").unwrap();
+        let second = LibraryName::new("second").unwrap();
         assert_eq!(
-            foreign_or_unknown(&[first]),
-            NestedCallSiteRefusal::ForeignCall(first)
+            foreign_or_unknown(&[first.clone()]),
+            NestedCallSiteRefusal::ForeignCall(first.clone())
         );
         assert_eq!(
             foreign_or_unknown(&[first, second]),
@@ -2194,7 +2186,7 @@ mod tests {
         let handle = acquired.handle();
         let graph = handle.package.graph();
         let selection = handle
-            .lookup_callable(handle.package_id, wire(&handle.package, "consume"))
+            .lookup_callable(handle.package_name(), &wire(&handle.package, "consume"))
             .expect("the function selection is checked");
         let composite_id = |name: &str| {
             let node = graph
@@ -2211,10 +2203,10 @@ mod tests {
 
         let holder_id = composite_id("Holder");
         let holder = handle
-            .nominal_declaration(&selection, holder_id)
+            .nominal_declaration(&selection, &holder_id)
             .expect("the signature's record declaration is available");
-        assert_eq!(holder.package_id(), handle.package_id());
-        assert_eq!(holder.node().as_bytes(), holder_id.as_bytes());
+        assert_eq!(holder.package_name(), handle.package_name());
+        assert_eq!(holder.node(), &holder_id);
         assert_eq!(holder.form(), NominalDeclarationForm::Record);
         assert_eq!(holder.qualified_name().last().unwrap().as_str(), "Holder");
         let [NominalDeclarationMember::RecordField {
@@ -2236,7 +2228,7 @@ mod tests {
 
         let pair_id = composite_id("Pair");
         let pair = handle
-            .nominal_declaration(&selection, pair_id)
+            .nominal_declaration(&selection, &pair_id)
             .expect("the nested tuple is reachable through Holder");
         assert_eq!(pair.form(), NominalDeclarationForm::Tuple);
         assert_eq!(
@@ -2255,7 +2247,7 @@ mod tests {
 
         let shape_id = composite_id("Shape");
         let shape = handle
-            .nominal_declaration(&selection, shape_id)
+            .nominal_declaration(&selection, &shape_id)
             .expect("the nested union is reachable through Holder");
         assert_eq!(shape.form(), NominalDeclarationForm::Union);
         let [NominalDeclarationMember::UnionMember {
@@ -2395,7 +2387,7 @@ mod tests {
         let acquired = acquire(&source, &dependencies);
         let handle = acquired.handle();
         let own_selection = handle
-            .lookup_callable(handle.package_id, wire(&handle.package, "own_fn"))
+            .lookup_callable(handle.package_name(), &wire(&handle.package, "own_fn"))
             .expect("own callable");
         let own_id = handle
             .package
@@ -2409,7 +2401,7 @@ mod tests {
             })
             .map(|node| node.key().clone())
             .expect("own composite");
-        assert!(handle.nominal_declaration(&own_selection, own_id).is_ok());
+        assert!(handle.nominal_declaration(&own_selection, &own_id).is_ok());
 
         let (dependency_id, dependency) = handle
             .package
@@ -2417,7 +2409,7 @@ mod tests {
             .iter()
             .next()
             .expect("dependency package");
-        let dependency_record = dependency_id.record();
+        let dependency_record = dependency_id.clone();
         let imported_node = dependency
             .graph()
             .semantic_graph()
@@ -2430,32 +2422,32 @@ mod tests {
             .map(|node| node.key().clone())
             .expect("imported composite");
         assert_eq!(
-            handle.nominal_declaration(&own_selection, imported_node),
+            handle.nominal_declaration(&own_selection, &imported_node),
             Err(NominalDeclarationRefusal::Foreign(dependency_record))
         );
         let imported_selection = handle
-            .lookup_callable(dependency_record, wire(dependency, "imported"))
+            .lookup_callable(&dependency_record, &wire(dependency, "imported"))
             .expect("imported callable selection");
         let imported_view = handle
-            .nominal_declaration(&imported_selection, imported_node)
+            .nominal_declaration(&imported_selection, &imported_node)
             .expect("imported owner's declaration");
-        assert_eq!(imported_view.package_id(), dependency_record);
-        assert_ne!(imported_view.package_id(), handle.package_id());
+        assert_eq!(imported_view.package_name(), &dependency_record);
+        assert_ne!(imported_view.package_name(), handle.package_name());
 
         let function_node = wire(&handle.package, "own_fn");
         assert_eq!(
-            handle.nominal_declaration(&own_selection, function_node),
+            handle.nominal_declaration(&own_selection, &function_node),
             Err(NominalDeclarationRefusal::WrongKind)
         );
         assert_eq!(
-            handle.nominal_declaration(&own_selection, crate::fixture_node(0xA5),),
+            handle.nominal_declaration(&own_selection, &crate::fixture_node(0xA5)),
             Err(NominalDeclarationRefusal::Unknown)
         );
         let other_acquisition = acquire(&source, &dependencies);
         assert_eq!(
             other_acquisition
                 .handle()
-                .nominal_declaration(&own_selection, own_id),
+                .nominal_declaration(&own_selection, &own_id),
             Err(NominalDeclarationRefusal::WrongAcquisition)
         );
     }
