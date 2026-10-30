@@ -621,18 +621,24 @@ mod tests {
     /// `required`/`supplied` universes and exits 20, no longer the bare
     /// `{"kind":"refused"}` a kernel-no-record row renders. Goes through the
     /// real conversion (`kernel_refusal_record`) rather than a hand-built
-    /// `CallRefusal::Record`, so a `UniverseId::Display` change (uppercase, a
-    /// `0x` prefix, `Debug` spelling) that kept a hand-built record's
-    /// literals green would still be caught here against TC-452's literal
-    /// lowercase hex (SR-680 FND-003).
+    /// `CallRefusal::Record`. Each universe renders as its root type node.
     #[test]
     #[trace("TC-452", "FR-100-AC-9")]
     fn refused_foreign_reference_renders_record_and_exits_20() {
         use qsl_replay::spine::CallRefusal;
+        let root = |name: &str| {
+            quire_exact::NodeKey::new(
+                "pkg",
+                vec![quire_exact::PathSegment::Text(name.to_owned())],
+                0,
+            )
+            .expect("a fixture root type key is well formed")
+        };
+        let (required, supplied) = (root("first"), root("second"));
         let record = qsl_foundation::diagnostic::kernel_refusal_record(
             &quire_exact::Refusal::ForeignReference {
-                required: quire_exact::UniverseId::from_digest([0x01; 32]),
-                supplied: quire_exact::UniverseId::from_digest([0x02; 32]),
+                required: quire_exact::UniverseId::new(required.clone()),
+                supplied: quire_exact::UniverseId::new(supplied.clone()),
             },
             None,
         )
@@ -651,8 +657,8 @@ mod tests {
                 "code": "foreign_reference",
                 "cause": "foreign-universe",
                 "fields": {
-                    "required": "01".repeat(32),
-                    "supplied": "02".repeat(32),
+                    "required": required.to_string(),
+                    "supplied": supplied.to_string(),
                 },
             })
         );
