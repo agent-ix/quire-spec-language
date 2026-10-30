@@ -292,12 +292,12 @@ fn instances<'a>(
                 match entry.claim.over() {
                     None => vec![(None, None)],
                     Some(over) => system
-                        .instances(&ValueType::Reference(over.object))
+                        .instances(&ValueType::Reference(over.object.clone()))
                         .map_err(bounds_refusal)?
                         .iter()
                         .map(|instance| {
                             system
-                                .bound_reference(over.object, instance)
+                                .bound_reference(over.object.clone(), instance)
                                 .map(|reference| (Some(reference), Some(instance.clone())))
                                 .map_err(|_| fault("state-graph-instance-references"))
                         })
@@ -655,7 +655,7 @@ pub fn check_state_graph(
             let Some(over) = item.claim.over() else {
                 continue;
             };
-            let parameter = (over.name.clone(), ValueType::Reference(over.object));
+            let parameter = (over.name.clone(), ValueType::Reference(over.object.clone()));
             for (_, predicate) in predicates(item.claim.form()) {
                 let CheckedStatePredicate::Checked(body) = predicate else {
                     continue;

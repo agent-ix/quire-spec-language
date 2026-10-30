@@ -305,7 +305,7 @@ pub fn check_timed_refinement<S>(
                 .ok_or(Halt::from(ZoneCheckRefusal::Fault("refinement-record")))?
                 .node();
             let part = RefinementPart {
-                refinement_node,
+                refinement_node: refinement_node.clone(),
                 positions: certified.positions,
                 taken: certified.taken,
             };
