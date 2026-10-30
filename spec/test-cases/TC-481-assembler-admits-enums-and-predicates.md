@@ -13,25 +13,25 @@ relationships:
 ## Description
 
 Verify that the assembler admits each enum form as an `EnumBinding` whose
-declaration and member keys `check` mints over the unit's source owner, by
-QSpec FR-141's nominal preimages; that it admits a predicate as a function
+declaration and member keys `check` mints from the required package name and qualified paths, by
+QSpec FR-322; that it admits a predicate as a function
 of kind `Predicate`; and that the checked package calls both and lowers them
 to the nodes FR-092 fixes.
 
-This catches: members left in source order for an unordered enum (the
-preimage sorts them); a display string entering a key; a constant owner;
+This catches: members left in source order for an unordered enum; a display
+string entering a key; a source-owner unit label entering a structural key;
 enum admission reached only from tests; a duplicate case accepted; an enum
 name missing from type-name resolution; and a predicate keyed as a
 `pure_function`.
 
-Scope: FR-091-AC-27, FR-091-AC-28, FR-091-AC-29, FR-091-AC-30,
+Scope: FR-091-AC-66, FR-091-AC-28, FR-091-AC-29, FR-091-AC-30,
 FR-092-AC-13.
 
 ## Test Procedure
 
 Every fixture unit below starts with the complete-V1 header
 (`language "ix:native" edition "1-draft";`) and one profile selection whose
-alias is `v`. The owner is authority `a`, identity `u` unless stated.
+alias is `v`. The owner is authority `a`, identity `u` unless stated; every run uses the same required `package_name`.
 
 1. Assemble `ordered enum Status { READY, DONE }` and then
    `enum Color { RED, BLUE = "Blue" }`. Read `enums` and
@@ -61,17 +61,17 @@ alias is `v`. The owner is authority `a`, identity `u` unless stated.
 10. Lower step 7's checked package and read `Positive`'s node. Lower
     `function Positive using v(x: Int[0, 9]): Boolean pure { x > 0 }` alone
     in another unit and read its node.
-11. Lower step 3's checked package and read the nodes keyed N1 and N2.
+11. Lower step 3's checked package and read the `Status` declaration node and its `READY` member node by their structural keys.
 
 Tag the tests with the AC ids they back and `TC-481`.
 
 ## Expected Results
 
 - Step 1: `enums` holds `Status` and then `Color`. `Status`'s declaration
-  key is FR-091 vector N1, with members `READY` then `DONE`, and `READY`'s
-  member key is N2. `Color`'s key is N3, with members `BLUE` then `RED`.
+  key has the required package, declared `Status` path and ordinal zero, with members `READY` then `DONE`; `READY`'s
+  member key extends that declared path with `READY`. `Color`'s key has the same package, declared `Color` path and ordinal zero, with members `BLUE` then `RED`.
   `declared_type_spans` holds the span of `Status` and of `Color`.
-- Step 2: the `Color` key is N3; the `Status` key under (`a`, `w`) is N4.
+- Step 2: the `Color` key and member keys are unchanged by removing the display string; the `Status` key and member keys under (`a`, `w`) equal those under (`a`, `u`).
 - Step 3: `isReady`'s parameter type is `ValueType::Enum` of `Status`'s
   shape; `ok` and `later` each complete with `true`.
 - Step 4: check refuses with `ill_typed`.
@@ -91,6 +91,6 @@ Tag the tests with the AC ids they back and `TC-481`.
   `predicate`, `declaration.qualified_name` `["Positive"]` and the unit's
   owner; the function's node has `semantic_form` `pure_function` and a
   different key.
-- Step 11: N1 is a `scalar_type`/`enum` node with
-  `declaration.qualified_name` `["Status"]`, and N2 a `value`/`enum_value`
+- Step 11: the `Status` declaration key identifies a `scalar_type`/`enum` node with
+  `declaration.qualified_name` `["Status"]`, and its `READY` member key identifies a `value`/`enum_value`
   node.
