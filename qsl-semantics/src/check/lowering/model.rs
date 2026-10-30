@@ -2250,6 +2250,9 @@ impl<'a> Lowering<'a> {
             };
             let site = type_declaration(&quantity_origin(kind, &qualified.join(".")));
             let declaration = identifiers(qualified.iter().map(String::as_str), &site)?;
+            // FR-322: a node this unit declares carries its `SourceOwner`.
+            let owner = (key.package() == self.package_name)
+                .then(|| Owner::Source(self.owner.clone()));
             let inserted = self.insert_nominal(
                 &site,
                 key.clone(),
@@ -2259,7 +2262,7 @@ impl<'a> Lowering<'a> {
                     semantic_form,
                     semantic_type: semantic_type.map(Into::into),
                     declaration: Some(declaration),
-                    owner: Some(Owner::Source(self.owner.clone())),
+                    owner,
                     body: BodyTerm::aggregate(Vec::new()),
                 },
                 Some(payload),
