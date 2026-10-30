@@ -200,7 +200,7 @@ pub(crate) struct World {
     pub(crate) package: CheckedPackage,
     pub(crate) clauses: Vec<CheckedTemporalClause>,
     packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
     pub(crate) initial: Vec<DocumentRef>,
     /// The universe of `counters`; `None` gives the subject no universe.
     pub(crate) keys: Option<Vec<String>>,
@@ -329,14 +329,15 @@ impl World {
         let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
             .expect("canonical fixture")
             .as_bytes();
-        self.snapshots.insert(digest, bytes);
-        DocumentRef {
+        let reference = DocumentRef {
             authority: "test".to_owned(),
             identity: name.to_owned(),
             revision_namespace: "fixture".to_owned(),
             revision: "fixture:1".to_owned(),
             digest,
-        }
+        };
+        self.snapshots.insert(reference.source_identity(), bytes);
+        reference
     }
 
     /// The subject: the initial states and the universe, if any.
@@ -481,7 +482,7 @@ pub(crate) struct ReplayUnit<'u> {
     pub(crate) path: &'u str,
     pub(crate) text: &'u [u8],
     pub(crate) document: &'u [u8],
-    pub(crate) snapshots: &'u BTreeMap<[u8; 32], Vec<u8>>,
+    pub(crate) snapshots: &'u BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
 }
 
 /// The node and occurrence of `package`'s temporal clause `index`, as an
@@ -535,28 +536,24 @@ pub(crate) fn replay_unit_result(
     letters: &dyn ModelLetters,
 ) -> Result<qsl_replay::ModelTraceReplayResult, qsl_replay::ReplayRefusal> {
     let package_id = unit_package_id(unit);
-    let sha256_jcs = |bytes: &[u8]| {
-        let digest = *package_input([bytes]).keys().next().expect("one package");
-        (
-            Some(DigestDomain::Sha256Jcs.as_str().to_owned()),
-            DigestRecord::mint(DigestDomain::Sha256Jcs, digest).hex(),
-        )
-    };
     let mut byte_provision = vec![
         (
-            Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-            source_digest(unit.text).hex(),
+            qsl_replay::ProvisionIdentity::Source(qsl_foundation::SourceIdentity::new(
+                "agent-ix",
+                unit.identity,
+                "git",
+                "1",
+            )),
             unit.text.to_vec(),
         ),
-        {
-            let (domain, hex) = sha256_jcs(unit.document);
-            (domain, hex, unit.document.to_vec())
-        },
+        (
+            qsl_replay::ProvisionIdentity::DomainPackage,
+            unit.document.to_vec(),
+        ),
     ];
-    for (digest, bytes) in unit.snapshots {
+    for (identity, bytes) in unit.snapshots {
         byte_provision.push((
-            Some(DigestDomain::Sha256Jcs.as_str().to_owned()),
-            DigestRecord::mint(DigestDomain::Sha256Jcs, *digest).hex(),
+            qsl_replay::ProvisionIdentity::Source(identity.clone()),
             bytes.clone(),
         ));
     }

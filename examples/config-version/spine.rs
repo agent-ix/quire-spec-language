@@ -180,8 +180,8 @@ fn write_json(directory: &Path, file: &str, bytes: &[u8]) -> io::Result<()> {
 
 /// Every input document [`request`] needs, plus the selection it names.
 struct Written {
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
-    invocations: BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
+    invocations: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
     selection: ClauseRunSelection,
 }
 
@@ -196,6 +196,7 @@ fn write_current(
     write_json(directory, "spine-snapshot.json", &bytes)?;
     let digest = document_digest(&bytes);
     let label = document_ref(&identity_json(case, "current"), digest);
+    let identity = label.source_identity();
     let selection = ClauseSelection {
         name: case.spec().clause.name.to_owned(),
         input: ClauseSelectionInput::Current {
@@ -211,7 +212,7 @@ fn write_current(
         },
     };
     Ok(Written {
-        snapshots: BTreeMap::from([(digest, bytes)]),
+        snapshots: BTreeMap::from([(identity, bytes)]),
         invocations: BTreeMap::new(),
         selection: ClauseRunSelection::Clause(selection),
     })
@@ -231,15 +232,18 @@ fn write_update(directory: &Path, case: Case, pre: &[Row], post: &[Row]) -> io::
     write_json(directory, "spine-invocation.json", &invocation_bytes)?;
     let invocation_digest = document_digest(&invocation_bytes);
     let invocation_ref = document_ref(&identity_json(case, "invocation"), invocation_digest);
+    let invocation_identity = invocation_ref.source_identity();
     let selection = ClauseSelection {
         name: case.spec().clause.name.to_owned(),
         input: ClauseSelectionInput::Invocation {
             invocation: invocation_ref,
         },
     };
+    let pre_identity = pre_ref.source_identity();
+    let post_identity = post_ref.source_identity();
     Ok(Written {
-        snapshots: BTreeMap::from([(pre_digest, pre_bytes), (post_digest, post_bytes)]),
-        invocations: BTreeMap::from([(invocation_digest, invocation_bytes)]),
+        snapshots: BTreeMap::from([(pre_identity, pre_bytes), (post_identity, post_bytes)]),
+        invocations: BTreeMap::from([(invocation_identity, invocation_bytes)]),
         selection: ClauseRunSelection::Clause(selection),
     })
 }
@@ -259,6 +263,7 @@ fn write_function(
     write_json(directory, "spine-snapshot.json", &bytes)?;
     let digest = document_digest(&bytes);
     let label = document_ref(&identity_json(case, "current"), digest);
+    let identity = label.source_identity();
     let reference = |key: &str| ClauseArgumentValue::Reference {
         population: population_identity(),
         key: key.to_owned(),
@@ -278,7 +283,7 @@ fn write_function(
         snapshot: label,
     };
     Ok(Written {
-        snapshots: BTreeMap::from([(digest, bytes)]),
+        snapshots: BTreeMap::from([(identity, bytes)]),
         invocations: BTreeMap::new(),
         selection,
     })
@@ -350,8 +355,18 @@ pub fn write(directory: &Path, case: Case) -> io::Result<()> {
     let request = json!({"format": "clause-run/1", "request": {
         "source": {"file": "spine-unit.native", "identity": "example/config-version-spine-unit"},
         "models": [{"format": "semantic-ir/2.0.0", "file": "spine-model.semantic-ir.json"}],
-        "snapshots": written.snapshots.keys().map(|digest| qsl_semantics::model::key::hex(digest)).collect::<Vec<_>>(),
-        "invocations": written.invocations.keys().map(|digest| qsl_semantics::model::key::hex(digest)).collect::<Vec<_>>(),
+        "snapshots": written.snapshots.keys().map(|identity| json!({
+            "authority": identity.authority,
+            "identity": identity.identity,
+            "revision_namespace": identity.revision_namespace,
+            "revision": identity.revision,
+        })).collect::<Vec<_>>(),
+        "invocations": written.invocations.keys().map(|identity| json!({
+            "authority": identity.authority,
+            "identity": identity.identity,
+            "revision_namespace": identity.revision_namespace,
+            "revision": identity.revision,
+        })).collect::<Vec<_>>(),
         "selection": selection,
     }});
     write_json(

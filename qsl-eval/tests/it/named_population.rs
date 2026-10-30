@@ -47,8 +47,8 @@ const UNLIMITED: ScalarLimits = ScalarLimits {
 struct Unit {
     package: CheckedPackage,
     packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
-    invocations: BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
+    invocations: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
 }
 
 /// What a snapshot of the fixture lists: the counters (key and `v`), and
@@ -122,7 +122,7 @@ impl Unit {
         }))
         .expect("the invocation serializes");
         let document = document_ref(label, &bytes);
-        self.invocations.insert(document.digest, bytes);
+        self.invocations.insert(document.source_identity(), bytes);
         document
     }
 
@@ -205,7 +205,7 @@ impl Unit {
         }
         let bytes = serde_json::to_vec(&document).expect("the snapshot serializes");
         let document = document_ref(label, &bytes);
-        self.snapshots.insert(document.digest, bytes);
+        self.snapshots.insert(document.source_identity(), bytes);
         document
     }
 

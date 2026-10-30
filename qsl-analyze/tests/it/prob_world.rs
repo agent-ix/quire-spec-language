@@ -220,7 +220,7 @@ impl Model {
 pub(crate) struct World {
     pub(crate) package: CheckedPackage,
     packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
     initial: Vec<DocumentRef>,
     universe: PopulationUniverse,
 }
@@ -402,14 +402,15 @@ impl World {
             let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
                 .expect("canonical fixture")
                 .as_bytes();
-            snapshots.insert(digest, snapshot);
-            initial.push(DocumentRef {
+            let reference = DocumentRef {
                 authority: "test".to_owned(),
-                identity,
+                identity: identity.clone(),
                 revision_namespace: "fixture".to_owned(),
                 revision: "fixture:1".to_owned(),
                 digest,
-            });
+            };
+            snapshots.insert(reference.source_identity(), snapshot);
+            initial.push(reference);
         }
         let population = quire_checked::key::DeclarationKey {
             package: model.package.to_owned(),

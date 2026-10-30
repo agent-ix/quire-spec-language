@@ -398,7 +398,7 @@ impl Replay {
         limits: ObservationLimits,
     ) -> Result<ObjectClosure, AdmissionFailure> {
         let (reference, bytes) = snapshot(self, "current", "current", fields);
-        let provision = BTreeMap::from([(reference.digest, bytes)]);
+        let provision = BTreeMap::from([(reference.source_identity(), bytes)]);
         admit_current_snapshot(
             self.graph.model_selections(),
             self.graph.scope().types(),
@@ -414,7 +414,7 @@ impl Replay {
     /// `fields` as the current snapshot, admitted with its usage.
     fn values_used(&self, fields: &[(String, Value)]) -> u64 {
         let (reference, bytes) = snapshot(self, "current", "current", fields);
-        let provision = BTreeMap::from([(reference.digest, bytes)]);
+        let provision = BTreeMap::from([(reference.source_identity(), bytes)]);
         admit_current_snapshot(
             self.graph.model_selections(),
             self.graph.scope().types(),
@@ -506,8 +506,11 @@ impl Replay {
         .expect("the invocation serializes");
         let call = document_ref("call", &bytes);
         Invoked {
-            snapshots: BTreeMap::from([(pre.digest, pre_bytes), (post.digest, post_bytes)]),
-            invocations: BTreeMap::from([(call.digest, bytes)]),
+            snapshots: BTreeMap::from([
+                (pre.source_identity(), pre_bytes),
+                (post.source_identity(), post_bytes),
+            ]),
+            invocations: BTreeMap::from([(call.source_identity(), bytes)]),
             call,
         }
     }
@@ -579,8 +582,8 @@ impl Replay {
         &self,
         operation: &str,
         selected: Selected,
-        snapshots: &BTreeMap<[u8; 32], Vec<u8>>,
-        invocations: &BTreeMap<[u8; 32], Vec<u8>>,
+        snapshots: &BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
+        invocations: &BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
         input: ClauseSelectionInput,
         limits: ObservationLimits,
     ) -> Result<AdmittedObservations, AdmissionFailure> {
@@ -620,7 +623,7 @@ impl Replay {
         parameters: Vec<(&str, SnapshotValue)>,
     ) -> Result<AdmittedObservations, AdmissionFailure> {
         let (reference, bytes) = snapshot(self, "pre", "pre", &self.base);
-        let snapshots = BTreeMap::from([(reference.digest, bytes)]);
+        let snapshots = BTreeMap::from([(reference.source_identity(), bytes)]);
         let parameters = parameters
             .into_iter()
             .map(|(name, value)| (Identifier::new(name).expect("an identifier"), value))
@@ -692,8 +695,8 @@ impl Replay {
 
 /// An invocation document, its two snapshots and its reference.
 struct Invoked {
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
-    invocations: BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
+    invocations: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
     call: DocumentRef,
 }
 
@@ -1298,7 +1301,7 @@ fn any_scalar_sequence_admits_as_a_string_unchanged() {
         let bytes = text.into_bytes();
         (document_ref("current", &bytes), bytes)
     };
-    let provision = BTreeMap::from([(reference.digest, bytes)]);
+    let provision = BTreeMap::from([(reference.source_identity(), bytes)]);
     let (environment, _) = admit_current_snapshot(
         replay.graph.model_selections(),
         replay.graph.scope().types(),
@@ -1611,7 +1614,7 @@ fn the_document_edge_refuses_before_any_value_is_read() {
     let replay = replay();
     let (base, _) = snapshot(&replay, "current", "current", &base_fields());
     let admit_bytes = |bytes: Vec<u8>| {
-        let provision = BTreeMap::from([(base.digest, bytes)]);
+        let provision = BTreeMap::from([(base.source_identity(), bytes)]);
         admit_current_snapshot(
             replay.graph.model_selections(),
             replay.graph.scope().types(),
@@ -1829,7 +1832,7 @@ fn the_base_snapshot_admits_a_text() {
     let (plain, _) = snapshot(&replay, "current", "current", &replay.base);
     let (respelled, _) = snapshot(&replay, "current", "current", &reordered);
     assert_eq!(plain.digest, respelled.digest, "the digest is canonical");
-    let provision = BTreeMap::from([(plain.digest, spaced.into_bytes())]);
+    let provision = BTreeMap::from([(plain.source_identity(), spaced.into_bytes())]);
     let (environment, _) = admit_current_snapshot(
         replay.graph.model_selections(),
         replay.graph.scope().types(),
@@ -2034,7 +2037,7 @@ fn the_document_edge_refuses_a_title_before_any_value_is_read() {
     let replay = text_replay();
     let (base, _) = snapshot(&replay, "current", "current", &replay.base);
     let admit_bytes = |bytes: Vec<u8>| {
-        let provision = BTreeMap::from([(base.digest, bytes)]);
+        let provision = BTreeMap::from([(base.source_identity(), bytes)]);
         admit_current_snapshot(
             replay.graph.model_selections(),
             replay.graph.scope().types(),

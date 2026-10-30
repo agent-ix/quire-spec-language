@@ -308,7 +308,7 @@ pub(crate) fn package_with_clauses(
 pub(crate) struct Documents {
     pub(crate) document: Vec<u8>,
     pub(crate) packages: BTreeMap<[u8; 32], Vec<u8>>,
-    pub(crate) snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    pub(crate) snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
 }
 
 impl Documents {
@@ -346,18 +346,21 @@ impl Documents {
         let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
             .expect("canonical fixture")
             .as_bytes();
-        self.snapshots.insert(digest, bytes);
-        DocumentRef {
+        let reference = DocumentRef {
             authority: "test".to_owned(),
             identity: name.to_owned(),
             revision_namespace: "fixture".to_owned(),
             revision: "fixture:1".to_owned(),
             digest,
-        }
+        };
+        self.snapshots.insert(reference.source_identity(), bytes);
+        reference
     }
 
     /// The bytes of each provisioned snapshot, by digest.
-    pub(crate) fn snapshot_bytes(&self) -> impl Iterator<Item = (&[u8; 32], &Vec<u8>)> {
+    pub(crate) fn snapshot_bytes(
+        &self,
+    ) -> impl Iterator<Item = (&qsl_foundation::SourceIdentity, &Vec<u8>)> {
         self.snapshots.iter()
     }
 }

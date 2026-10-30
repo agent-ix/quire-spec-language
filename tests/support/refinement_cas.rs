@@ -519,6 +519,7 @@ pub fn check(variant: Variant, refinement: &str) -> Result<CheckedGraph, String>
 /// fields are each `fields`.
 fn snapshot(
     package: &str,
+    label: &str,
     document: &[u8],
     (fields, keys): (Json, &[String]),
     snapshots: &mut BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
@@ -533,7 +534,7 @@ fn snapshot(
         .expect("one package");
     let header = json!({"identity": package, "version": "1.0.0",
         "digest": format!("sha256-jcs:{}", hex(&model_digest))});
-    let name = format!("{package}/start");
+    let name = format!("{package}/{label}");
     let snapshot = json!({
         "format": "quire.state.snapshot/v1",
         "identity": {"authority": "test", "identity": name, "revision_namespace": "fixture",
@@ -595,24 +596,28 @@ impl World {
         let mut snapshots = BTreeMap::new();
         let spec_initial = snapshot(
             SPEC,
+            "start-zero",
             &spec_document(SPEC, variant.add),
             (json!({"value": {"integer": "0"}}), &keys),
             &mut snapshots,
         );
         let spec_one = snapshot(
             SPEC,
+            "start-one",
             &spec_document(SPEC, variant.add),
             (json!({"value": {"integer": "1"}}), &keys),
             &mut snapshots,
         );
         let third_initial = snapshot(
             THIRD,
+            "start-zero",
             &spec_document(THIRD, false),
             (json!({"value": {"integer": "0"}}), &keys),
             &mut snapshots,
         );
         let cas_initial = snapshot(
             CAS,
+            "start-cas",
             &cas_document(variant),
             (
                 json!({

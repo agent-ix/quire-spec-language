@@ -206,7 +206,7 @@ struct Subject {
     package: CheckedPackage,
     packages: BTreeMap<[u8; 32], Vec<u8>>,
     header: Json,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
 }
 
 /// The fixture `document` checked with `clauses` as its unit.
@@ -316,14 +316,15 @@ impl Subject {
         let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
             .expect("canonical fixture")
             .as_bytes();
-        self.snapshots.insert(digest, bytes);
-        DocumentRef {
+        let reference = DocumentRef {
             authority: "test".to_owned(),
             identity: name.to_owned(),
             revision_namespace: "fixture".to_owned(),
             revision: "fixture:1".to_owned(),
             digest,
-        }
+        };
+        self.snapshots.insert(reference.source_identity(), bytes);
+        reference
     }
 
     fn model(&self) -> qsl_semantics::model::state::StateModel {

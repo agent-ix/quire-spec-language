@@ -651,7 +651,7 @@ fn admit_order_usage(
         .expect("the snapshot is canonical")
         .as_bytes();
     let selected = DocumentRef { digest, ..label };
-    let snapshots = BTreeMap::from([(digest, bytes)]);
+    let snapshots = BTreeMap::from([(selected.source_identity(), bytes)]);
     admit_current_snapshot(
         graph.model_selections(),
         graph.scope().types(),

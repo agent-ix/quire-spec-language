@@ -161,7 +161,7 @@ pub(crate) struct World {
     pub(crate) package: CheckedPackage,
     pub(crate) clauses: Vec<CheckedTemporalClause>,
     pub(crate) packages: BTreeMap<[u8; 32], Vec<u8>>,
-    pub(crate) snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    pub(crate) snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
     pub(crate) initial: Vec<DocumentRef>,
     pub(crate) keys: Vec<&'static str>,
 }
@@ -211,7 +211,10 @@ impl World {
         let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
             .expect("canonical fixture")
             .as_bytes();
-        self.snapshots.insert(digest, bytes);
+        self.snapshots.insert(
+            qsl_foundation::SourceIdentity::new("test", name, "fixture", "fixture:1"),
+            bytes,
+        );
         DocumentRef {
             authority: "test".to_owned(),
             identity: name.to_owned(),

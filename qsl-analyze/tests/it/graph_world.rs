@@ -224,7 +224,7 @@ pub(crate) struct World {
     document: Vec<u8>,
     source: Vec<u8>,
     packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
     pub(crate) initial: Vec<DocumentRef>,
 }
 
@@ -332,14 +332,15 @@ impl World {
         let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
             .expect("canonical fixture")
             .as_bytes();
-        self.snapshots.insert(digest, bytes);
-        DocumentRef {
+        let reference = DocumentRef {
             authority: "test".to_owned(),
             identity: name.to_owned(),
             revision_namespace: "fixture".to_owned(),
             revision: "fixture:1".to_owned(),
             digest,
-        }
+        };
+        self.snapshots.insert(reference.source_identity(), bytes);
+        reference
     }
 
     /// The subject over the world's initial snapshots with universe `keys`.
@@ -395,26 +396,23 @@ impl World {
             source_record.hex(),
         );
         let package_id = self.package_id().record();
-        let sha256_jcs = |digest: [u8; 32]| {
-            (
-                Some(DigestDomain::Sha256Jcs.as_str().to_owned()),
-                DigestRecord::mint(DigestDomain::Sha256Jcs, digest).hex(),
-            )
-        };
         let mut byte_provision = vec![
             (
-                Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-                source_record.hex(),
+                qsl_replay::ProvisionIdentity::Source(qsl_foundation::SourceIdentity::new(
+                    "agent-ix", "graph", "git", "1",
+                )),
                 self.source.clone(),
             ),
-            {
-                let (domain, hex) = sha256_jcs(digest_of(&self.document));
-                (domain, hex, self.document.clone())
-            },
+            (
+                qsl_replay::ProvisionIdentity::DomainPackage,
+                self.document.clone(),
+            ),
         ];
-        byte_provision.extend(self.snapshots.iter().map(|(digest, bytes)| {
-            let (domain, hex) = sha256_jcs(*digest);
-            (domain, hex, bytes.clone())
+        byte_provision.extend(self.snapshots.iter().map(|(identity, bytes)| {
+            (
+                qsl_replay::ProvisionIdentity::Source(identity.clone()),
+                bytes.clone(),
+            )
         }));
         let obligation = [3; 32];
         let occurrence = claim

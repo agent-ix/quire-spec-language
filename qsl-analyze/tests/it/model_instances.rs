@@ -171,7 +171,7 @@ struct World {
     document: Vec<u8>,
     package: CheckedPackage,
     packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
     initial: Vec<DocumentRef>,
 }
 
@@ -216,7 +216,10 @@ fn world(populations: &[(&str, &[&str])], held: &[Held<'_>]) -> World {
         .as_bytes();
     World {
         packages: package_input([document.as_slice()]),
-        snapshots: BTreeMap::from([(digest, snapshot)]),
+        snapshots: BTreeMap::from([(
+            qsl_foundation::SourceIdentity::new("test", "s0", "fixture", "fixture:1"),
+            snapshot,
+        )]),
         initial: vec![DocumentRef {
             authority: "test".to_owned(),
             identity: "s0".to_owned(),
@@ -1456,10 +1459,10 @@ fn two_state_world() -> World {
     let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
         .expect("canonical fixture")
         .as_bytes();
-    first.snapshots.insert(digest, bytes);
     let mut reference = first.initial[0].clone();
     reference.identity = "s1".to_owned();
     reference.digest = digest;
+    first.snapshots.insert(reference.source_identity(), bytes);
     first.initial.push(reference);
     first
 }

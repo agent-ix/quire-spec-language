@@ -39,8 +39,8 @@ struct Orders {
 /// The documents offered to one admission.
 #[derive(Clone, Default)]
 struct Docs {
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
-    invocations: BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
+    invocations: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
 }
 
 impl Docs {
@@ -51,7 +51,7 @@ impl Docs {
             .to_owned();
         let bytes = serde_json::to_vec(document).unwrap();
         let reference = lifecycle_document_ref(&label, &bytes);
-        self.snapshots.insert(reference.digest, bytes);
+        self.snapshots.insert(reference.source_identity(), bytes);
         reference
     }
 
@@ -62,7 +62,7 @@ impl Docs {
             .to_owned();
         let bytes = serde_json::to_vec(document).unwrap();
         let reference = lifecycle_document_ref(&label, &bytes);
-        self.invocations.insert(reference.digest, bytes);
+        self.invocations.insert(reference.source_identity(), bytes);
         reference
     }
 }
@@ -665,27 +665,29 @@ fn side_pre_ignores_the_post_side_and_the_parameters() {
         let document: Json = serde_json::from_slice(&bytes).unwrap();
         document["post"].clone()
     });
-    let q1_digest = {
-        let hex = q1.as_ref().unwrap()["digest"]
-            .as_str()
-            .unwrap()
-            .trim_start_matches("sha256-jcs:");
-        let mut digest = [0u8; 32];
-        for (at, byte) in digest.iter_mut().enumerate() {
-            *byte = u8::from_str_radix(&hex[at * 2..at * 2 + 2], 16).unwrap();
-        }
-        digest
-    };
+    let q1_identity = q1
+        .as_ref()
+        .map(|reference| {
+            qsl_foundation::SourceIdentity::new(
+                reference["identity"]["authority"].as_str().unwrap(),
+                reference["identity"]["identity"].as_str().unwrap(),
+                reference["identity"]["revision_namespace"]
+                    .as_str()
+                    .unwrap(),
+                reference["identity"]["revision"].as_str().unwrap(),
+            )
+        })
+        .unwrap();
 
     // The post snapshot absent, and its bytes not JSON.
     let mut absent = docs.clone();
-    absent.snapshots.remove(&q1_digest);
+    absent.snapshots.remove(&q1_identity);
     let admitted = orders
         .context(&absent, "Consistent", &i1, ContextSide::Pre)
         .unwrap();
     assert!(orders.verdict("Consistent", &admitted));
     let mut garbage = docs.clone();
-    garbage.snapshots.insert(q1_digest, b"not json".to_vec());
+    garbage.snapshots.insert(q1_identity, b"not json".to_vec());
     let admitted = orders
         .context(&garbage, "Consistent", &i1, ContextSide::Pre)
         .unwrap();
@@ -698,7 +700,7 @@ fn side_pre_ignores_the_post_side_and_the_parameters() {
             .invocations
             .iter()
             .next()
-            .map(|(k, v)| (*k, v.clone()))
+            .map(|(k, v)| (k.clone(), v.clone()))
             .unwrap();
         let mut document: Json = serde_json::from_slice(&bytes).unwrap();
         edit(&mut document);

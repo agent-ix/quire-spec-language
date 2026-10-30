@@ -372,7 +372,7 @@ pub(crate) fn fill_unit(two_pre: &str, members: &str) -> String {
 /// A subject's documents: the domain package and the snapshots.
 pub(crate) struct Documents {
     pub(crate) packages: BTreeMap<[u8; 32], Vec<u8>>,
-    pub(crate) snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    pub(crate) snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
 }
 
 impl Documents {
@@ -421,14 +421,15 @@ impl Documents {
         let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
             .expect("canonical fixture")
             .as_bytes();
-        self.snapshots.insert(digest, bytes);
-        DocumentRef {
+        let reference = DocumentRef {
             authority: "test".to_owned(),
             identity: name.to_owned(),
             revision_namespace: "fixture".to_owned(),
             revision: "fixture:1".to_owned(),
             digest,
-        }
+        };
+        self.snapshots.insert(reference.source_identity(), bytes);
+        reference
     }
 }
 

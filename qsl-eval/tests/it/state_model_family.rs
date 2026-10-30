@@ -720,7 +720,7 @@ fn observations(graph: &CheckedGraph, view: &EffectiveView) -> AdmittedObservati
         revision: "1".to_owned(),
         digest,
     };
-    let snapshots = BTreeMap::from([(digest, bytes)]);
+    let snapshots = BTreeMap::from([(snapshot.source_identity(), bytes)]);
     let invocations = BTreeMap::new();
     let model_bytes = model_document();
     let packages = qsl_semantics::model::intake::package_input([model_bytes.as_slice()]);

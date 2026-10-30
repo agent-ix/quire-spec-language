@@ -37,8 +37,7 @@ use quire_semantic_value::catalog::Category;
 use quire_semantic_value::catalog::InternalFault;
 
 use crate::counter::{
-    document, document_digest, package, subject, unit_text, universe, Documents, Letters, CONTRACT,
-    UNLIMITED,
+    document, package, subject, unit_text, universe, Documents, Letters, CONTRACT, UNLIMITED,
 };
 
 /// The letters of a replay that reads no atom: the deadlock-freedom item has
@@ -184,31 +183,29 @@ fn selected() -> QualifiedName {
 /// the snapshots in the byte provision.
 pub(crate) fn request<'a>(
     document: &[u8],
-    snapshots: impl Iterator<Item = (&'a [u8; 32], &'a Vec<u8>)>,
+    snapshots: impl Iterator<Item = (&'a qsl_foundation::SourceIdentity, &'a Vec<u8>)>,
     unit: &[u8],
     package_id: DigestRecord,
 ) -> ReplayRequestWire {
-    let sha256_jcs = |digest: [u8; 32]| {
-        (
-            Some(DigestDomain::Sha256Jcs.as_str().to_owned()),
-            DigestRecord::mint(DigestDomain::Sha256Jcs, digest).hex(),
-        )
-    };
-    let source = source_digest(unit);
     let mut byte_provision = vec![
         (
-            Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-            source.hex(),
+            qsl_replay::ProvisionIdentity::Source(qsl_foundation::SourceIdentity::new(
+                AUTHORITY, IDENTITY, "git", "1",
+            )),
             unit.to_vec(),
         ),
         {
-            let (domain, hex) = sha256_jcs(document_digest(document));
-            (domain, hex, document.to_vec())
+            (
+                qsl_replay::ProvisionIdentity::DomainPackage,
+                document.to_vec(),
+            )
         },
     ];
-    for (digest, bytes) in snapshots {
-        let (domain, hex) = sha256_jcs(*digest);
-        byte_provision.push((domain, hex, bytes.clone()));
+    for (identity, bytes) in snapshots {
+        byte_provision.push((
+            qsl_replay::ProvisionIdentity::Source(identity.clone()),
+            bytes.clone(),
+        ));
     }
     ReplayRequestWire {
         profile_selections: Vec::new(),

@@ -233,7 +233,7 @@ struct World {
     package: CheckedPackage,
     packages: BTreeMap<[u8; 32], Vec<u8>>,
     header: Json,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
 }
 
 /// The fixture package with `operations`, checked with `clauses` as its unit.
@@ -349,14 +349,15 @@ impl World {
         let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
             .expect("canonical fixture")
             .as_bytes();
-        self.snapshots.insert(digest, bytes);
-        DocumentRef {
+        let reference = DocumentRef {
             authority: "test".to_owned(),
             identity: name.to_owned(),
             revision_namespace: "fixture".to_owned(),
             revision: "fixture:1".to_owned(),
             digest,
-        }
+        };
+        self.snapshots.insert(reference.source_identity(), bytes);
+        reference
     }
 
     /// The initial snapshot `s0`: `c1` with `value` `value`, anchored
@@ -1131,7 +1132,6 @@ fn a_universe_population_the_snapshot_omits_is_incomplete() {
     let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
         .expect("canonical fixture")
         .as_bytes();
-    world.snapshots.insert(digest, bytes);
     let omitted = DocumentRef {
         authority: "test".to_owned(),
         identity: "empty".to_owned(),
@@ -1139,6 +1139,7 @@ fn a_universe_population_the_snapshot_omits_is_incomplete() {
         revision: "fixture:1".to_owned(),
         digest,
     };
+    world.snapshots.insert(omitted.source_identity(), bytes);
     let failure = ModelSystem::new(request(
         &world,
         vec![omitted],
@@ -1461,7 +1462,7 @@ fn ambient_reads_refuse_before_a_package_exists() {
 struct OrdersWorld {
     package: CheckedPackage,
     packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
     reference: DocumentRef,
 }
 
@@ -1496,7 +1497,6 @@ impl OrdersWorld {
             *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
                 .expect("canonical fixture")
                 .as_bytes();
-        let snapshots = BTreeMap::from([(snapshot_digest, bytes)]);
         let reference = DocumentRef {
             authority: "test".to_owned(),
             identity: "t1".to_owned(),
@@ -1504,6 +1504,7 @@ impl OrdersWorld {
             revision: "fixture:1".to_owned(),
             digest: snapshot_digest,
         };
+        let snapshots = BTreeMap::from([(reference.source_identity(), bytes)]);
         Self {
             package,
             packages,

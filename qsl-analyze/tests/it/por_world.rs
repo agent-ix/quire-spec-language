@@ -258,7 +258,7 @@ pub(crate) struct Fixture {
     package: CheckedPackage,
     clauses: Vec<CheckedTemporalClause>,
     packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
     initial: Vec<DocumentRef>,
     universes: Vec<(String, Vec<String>)>,
     digest: [u8; 32],
@@ -399,14 +399,15 @@ impl Fixture {
         let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
             .expect("canonical fixture")
             .as_bytes();
-        self.snapshots.insert(digest, bytes);
-        DocumentRef {
+        let reference = DocumentRef {
             authority: "test".to_owned(),
             identity: name.to_owned(),
             revision_namespace: "fixture".to_owned(),
             revision: "fixture:1".to_owned(),
             digest,
-        }
+        };
+        self.snapshots.insert(reference.source_identity(), bytes);
+        reference
     }
 
     fn universes(&self) -> Vec<PopulationUniverse> {

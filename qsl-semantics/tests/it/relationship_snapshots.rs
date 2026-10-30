@@ -480,7 +480,7 @@ impl Admission {
             qsl_semantics::model::key::hex(&self.model_digest)
         ));
         let (snapshot, bytes) = provision(&label("current"), &document);
-        let snapshots = BTreeMap::from([(snapshot.digest, bytes)]);
+        let snapshots = BTreeMap::from([(snapshot.source_identity(), bytes)]);
         let invocations = BTreeMap::new();
         let clause = self.graph.state_clause("SysOk").expect("SysOk is checked");
         let facts = ClauseFacts {
@@ -1191,8 +1191,8 @@ fn post_of_i() -> Value {
 /// The documents of one invocation.
 struct Documents {
     invocation: DocumentRef,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
-    invocations: BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
+    invocations: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
 }
 
 impl Admission {
@@ -1214,7 +1214,7 @@ impl Admission {
             document["identity"] = labels(&label(name));
             document["invocation"] = labels(&call);
             let (reference, bytes) = provision(&label(name), &document);
-            snapshots.insert(reference.digest, bytes);
+            snapshots.insert(reference.source_identity(), bytes);
             referenced.push(reference);
         }
         let reference = |held: &DocumentRef| {
@@ -1238,7 +1238,7 @@ impl Admission {
         edit(&mut invocation);
         let (invocation, bytes) = provision(&call, &invocation);
         Documents {
-            invocations: BTreeMap::from([(invocation.digest, bytes)]),
+            invocations: BTreeMap::from([(invocation.source_identity(), bytes)]),
             invocation,
             snapshots,
         }

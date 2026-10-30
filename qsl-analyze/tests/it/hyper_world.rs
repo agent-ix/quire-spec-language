@@ -364,7 +364,7 @@ fn declarations(documents: &[&[u8]], text: &str) -> PackageDeclarations {
 /// each vault of a busy world has `busy` as its flag.
 fn snapshot(
     document: &[u8],
-    snapshots: &mut BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: &mut BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
     name: &str,
     vaults: &[(&str, (i64, i64))],
     busy: Option<i64>,
@@ -401,7 +401,10 @@ fn snapshot(
     let hash = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
         .expect("canonical fixture")
         .as_bytes();
-    snapshots.insert(hash, bytes);
+    snapshots.insert(
+        qsl_foundation::SourceIdentity::new("test", name, "fixture", "fixture:1"),
+        bytes,
+    );
     DocumentRef {
         authority: "test".to_owned(),
         identity: name.to_owned(),
@@ -447,7 +450,7 @@ pub(crate) struct World {
     pub(crate) package: CheckedPackage,
     pub(crate) clause: CheckedHyperClause,
     packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
     initial: Vec<DocumentRef>,
     pub(crate) max_candidates: u64,
     /// The search horizon of an HP-2, HP-3 or HP-6 run (`max_depth`).

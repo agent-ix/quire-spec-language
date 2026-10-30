@@ -306,7 +306,7 @@ pub(crate) struct World {
     document: Vec<u8>,
     text: String,
     packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
     initial: Vec<DocumentRef>,
 }
 
@@ -343,7 +343,7 @@ impl World {
                 .collect();
             let document = json!({
                 "format": "quire.state.snapshot/v1",
-                "identity": {"authority": "test", "identity": name,
+                "identity": {"authority": "test", "identity": name.clone(),
                     "revision_namespace": "fixture", "revision": "fixture:1"},
                 "observation": "current", "model": header,
                 "anchor": {"kind": "initialization", "name": "start"},
@@ -360,10 +360,13 @@ impl World {
             let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
                 .expect("canonical fixture")
                 .as_bytes();
-            snapshots.insert(digest, bytes);
+            snapshots.insert(
+                qsl_foundation::SourceIdentity::new("test", name.clone(), "fixture", "fixture:1"),
+                bytes,
+            );
             initial.push(DocumentRef {
                 authority: "test".to_owned(),
-                identity: name,
+                identity: name.clone(),
                 revision_namespace: "fixture".to_owned(),
                 revision: "fixture:1".to_owned(),
                 digest,

@@ -607,8 +607,8 @@ fn clause_facts(package: &CheckedPackage, name: &str) -> ClauseFacts {
 struct Documents {
     package: CheckedPackage,
     packages: Packages,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
-    invocations: BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
+    invocations: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
 }
 
 impl Documents {
@@ -617,7 +617,8 @@ impl Documents {
     }
 
     fn add_snapshot(&mut self, snapshot: (DocumentRef, Vec<u8>)) -> DocumentRef {
-        self.snapshots.insert(snapshot.0.digest, snapshot.1);
+        self.snapshots
+            .insert(snapshot.0.source_identity(), snapshot.1);
         snapshot.0
     }
 
@@ -684,7 +685,9 @@ fn invoked(
         (&s2, &s3),
         parameters,
     );
-    documents.invocations.insert(invocation.digest, bytes);
+    documents
+        .invocations
+        .insert(invocation.source_identity(), bytes);
     let current = documents.admit(
         "Any",
         ClauseSelectionInput::Current {
@@ -1392,8 +1395,8 @@ fn a_process_invariant_has_one_result_for_each_run() {
 
 type LifecycleDocuments = (
     Documents,
-    BTreeMap<[u8; 32], Vec<u8>>,
-    BTreeMap<[u8; 32], Vec<u8>>,
+    BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
+    BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
     DocumentRef,
 );
 
@@ -1432,8 +1435,11 @@ fn lifecycle_documents(unit: &str) -> LifecycleDocuments {
     );
     (
         documents,
-        BTreeMap::from([(p1.digest, p1_bytes), (q1.digest, q1_bytes)]),
-        BTreeMap::from([(i1.digest, i1_bytes)]),
+        BTreeMap::from([
+            (p1.source_identity(), p1_bytes),
+            (q1.source_identity(), q1_bytes),
+        ]),
+        BTreeMap::from([(i1.source_identity(), i1_bytes)]),
         i1,
     )
 }

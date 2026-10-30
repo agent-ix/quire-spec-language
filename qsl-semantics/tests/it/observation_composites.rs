@@ -181,7 +181,10 @@ impl Case {
             population: POPULATION.to_owned(),
             key: "self".to_owned(),
         };
-        let snapshots = BTreeMap::from([(pre.digest, pre_bytes), (post.digest, post_bytes)]);
+        let snapshots = BTreeMap::from([
+            (pre.source_identity(), pre_bytes),
+            (post.source_identity(), post_bytes),
+        ]);
         let invocation = label("call");
         let (invocation, invocation_bytes) = provision(
             &invocation,
@@ -194,7 +197,7 @@ impl Case {
                 "deleted": [{"population": POPULATION, "key": "before"}],
             }),
         );
-        let invocations = BTreeMap::from([(invocation.digest, invocation_bytes)]);
+        let invocations = BTreeMap::from([(invocation.source_identity(), invocation_bytes)]);
         let input = if self.pre_call {
             ClauseSelectionInput::PreCall {
                 snapshot: pre,

@@ -397,7 +397,7 @@ pub(crate) fn sb_unit(run: &str) -> String {
 pub(crate) struct Documents {
     pub(crate) cells: Vec<&'static str>,
     pub(crate) packages: BTreeMap<[u8; 32], Vec<u8>>,
-    pub(crate) snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    pub(crate) snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
     pub(crate) initial: DocumentRef,
     /// Whether the universe also holds the `Spare` object `z`.
     spare: bool,
@@ -464,7 +464,10 @@ impl Documents {
         Self {
             cells: cells.to_vec(),
             packages: package_input([document().as_slice()]),
-            snapshots: BTreeMap::from([(digest, bytes)]),
+            snapshots: BTreeMap::from([(
+                qsl_foundation::SourceIdentity::new("test", "s0", "fixture", "fixture:1"),
+                bytes,
+            )]),
             initial: DocumentRef {
                 authority: "test".to_owned(),
                 identity: "s0".to_owned(),

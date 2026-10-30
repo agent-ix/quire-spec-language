@@ -374,8 +374,8 @@ pub(crate) fn lifecycle_observations(
     package: &CheckedPackage,
     packages: &BTreeMap<[u8; 32], Vec<u8>>,
     clause: &str,
-    snapshots: &BTreeMap<[u8; 32], Vec<u8>>,
-    invocations: &BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: &BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
+    invocations: &BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
     invocation: DocumentRef,
 ) -> Result<AdmittedObservations, AdmissionFailure> {
     lifecycle_selection(
@@ -393,8 +393,8 @@ pub(crate) fn lifecycle_selection(
     package: &CheckedPackage,
     packages: &BTreeMap<[u8; 32], Vec<u8>>,
     clause: &str,
-    snapshots: &BTreeMap<[u8; 32], Vec<u8>>,
-    invocations: &BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: &BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
+    invocations: &BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
     input: ClauseSelectionInput,
 ) -> Result<AdmittedObservations, AdmissionFailure> {
     lifecycle_selection_with(
@@ -413,8 +413,8 @@ pub(crate) fn lifecycle_selection_with(
     package: &CheckedPackage,
     packages: &BTreeMap<[u8; 32], Vec<u8>>,
     clause: &str,
-    snapshots: &BTreeMap<[u8; 32], Vec<u8>>,
-    invocations: &BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: &BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
+    invocations: &BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
     input: ClauseSelectionInput,
     limits: ObservationLimits,
 ) -> Result<AdmittedObservations, AdmissionFailure> {
@@ -453,8 +453,8 @@ pub(crate) fn lifecycle_selection_with(
 pub(crate) fn lifecycle_context(
     package: &CheckedPackage,
     packages: &BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: &BTreeMap<[u8; 32], Vec<u8>>,
-    invocations: &BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: &BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
+    invocations: &BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
     invocation: &DocumentRef,
     side: qsl_semantics::model::observation::ContextSide,
 ) -> AdmittedObservations {
@@ -926,8 +926,11 @@ fn tc235_m15_lifecycle_invariant_keeps_receiver_context() {
         let (invocation_ref, invocation_bytes) =
             lifecycle_invocation(model_digest, &pre_ref, &post_ref);
         (
-            BTreeMap::from([(pre_ref.digest, pre_bytes), (post_ref.digest, post_bytes)]),
-            BTreeMap::from([(invocation_ref.digest, invocation_bytes)]),
+            BTreeMap::from([
+                (pre_ref.source_identity(), pre_bytes),
+                (post_ref.source_identity(), post_bytes),
+            ]),
+            BTreeMap::from([(invocation_ref.source_identity(), invocation_bytes)]),
             invocation_ref,
         )
     };
@@ -1746,8 +1749,8 @@ fn tc235_m16_run3_a_clause_set_reports_one_result_for_a_false_precondition() {
 type OrdersFixture = (
     CheckedPackage,
     BTreeMap<[u8; 32], Vec<u8>>,
-    BTreeMap<[u8; 32], Vec<u8>>,
-    BTreeMap<[u8; 32], Vec<u8>>,
+    BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
+    BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
     DocumentRef,
 );
 
@@ -1802,8 +1805,11 @@ fn orders_fixture() -> OrdersFixture {
     (
         package,
         packages,
-        BTreeMap::from([(pre_ref.digest, pre_bytes), (post_ref.digest, post_bytes)]),
-        BTreeMap::from([(invocation_ref.digest, invocation_bytes)]),
+        BTreeMap::from([
+            (pre_ref.source_identity(), pre_bytes),
+            (post_ref.source_identity(), post_bytes),
+        ]),
+        BTreeMap::from([(invocation_ref.source_identity(), invocation_bytes)]),
         invocation_ref,
     )
 }
@@ -1938,7 +1944,7 @@ fn tc235_m22_receiver_and_parameter_reads_are_located_at_their_bindings() {
     let model_digest = packages.keys().next().expect("M22 package");
     let (pre_ref, pre_bytes) = lifecycle_observation(model_digest, "p1", "pre", &[(false, false)]);
     let mut snapshots = snapshots;
-    snapshots.insert(pre_ref.digest, pre_bytes);
+    snapshots.insert(pre_ref.source_identity(), pre_bytes);
     let pre_call = lifecycle_pre_call(
         &package,
         &packages,
@@ -1965,7 +1971,7 @@ fn tc235_m22_receiver_and_parameter_reads_are_located_at_their_bindings() {
 fn lifecycle_pre_call(
     package: &CheckedPackage,
     packages: &BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: &BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: &BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
     clause: &str,
     input: ClauseSelectionInput,
 ) -> AdmittedObservations {
@@ -2067,8 +2073,11 @@ fn items_fixture() -> OrdersFixture {
     (
         package,
         packages,
-        BTreeMap::from([(pre_ref.digest, pre_bytes), (post_ref.digest, post_bytes)]),
-        BTreeMap::from([(invocation_ref.digest, invocation_bytes)]),
+        BTreeMap::from([
+            (pre_ref.source_identity(), pre_bytes),
+            (post_ref.source_identity(), post_bytes),
+        ]),
+        BTreeMap::from([(invocation_ref.source_identity(), invocation_bytes)]),
         invocation_ref,
     )
 }
@@ -2122,7 +2131,7 @@ fn a_context_collection_read_under_pre_call_has_no_path() {
         })
         .map(|(digest, bytes)| {
             let reference = lifecycle_document_ref("p1", bytes);
-            assert_eq!(&reference.digest, digest);
+            assert_eq!(&reference.source_identity(), digest);
             reference
         })
         .expect("the pre snapshot");

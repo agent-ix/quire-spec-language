@@ -214,7 +214,7 @@ pub(crate) struct World {
     pub(crate) package: CheckedPackage,
     pub(crate) clauses: Vec<CheckedTemporalClause>,
     packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
     pub(crate) initial: Vec<DocumentRef>,
     /// The native unit the package was checked from.
     pub(crate) unit: Vec<u8>,
@@ -304,7 +304,9 @@ impl World {
     }
 
     /// The bytes of each provisioned snapshot, by digest.
-    pub(crate) fn snapshot_bytes(&self) -> impl Iterator<Item = (&[u8; 32], &Vec<u8>)> {
+    pub(crate) fn snapshot_bytes(
+        &self,
+    ) -> impl Iterator<Item = (&qsl_foundation::SourceIdentity, &Vec<u8>)> {
         self.snapshots.iter()
     }
 
@@ -332,14 +334,15 @@ impl World {
         let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
             .expect("canonical fixture")
             .as_bytes();
-        self.snapshots.insert(digest, bytes);
-        DocumentRef {
+        let reference = DocumentRef {
             authority: "test".to_owned(),
             identity: "s0".to_owned(),
             revision_namespace: "fixture".to_owned(),
             revision: "fixture:1".to_owned(),
             digest,
-        }
+        };
+        self.snapshots.insert(reference.source_identity(), bytes);
+        reference
     }
 
     /// The subject from the initial snapshot with universe `keys`.

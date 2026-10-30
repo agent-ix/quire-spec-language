@@ -175,7 +175,7 @@ struct World {
     package: CheckedPackage,
     clauses: Vec<CheckedTemporalClause>,
     packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
     initial: DocumentRef,
 }
 
@@ -264,19 +264,20 @@ fn world(
     let snapshot_digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
         .expect("canonical fixture")
         .as_bytes();
+    let initial = DocumentRef {
+        authority: "test".to_owned(),
+        identity: "s0".to_owned(),
+        revision_namespace: "fixture".to_owned(),
+        revision: "fixture:1".to_owned(),
+        digest: snapshot_digest,
+    };
     World {
         keys: start.iter().map(|(key, _)| (*key).to_owned()).collect(),
         package: CheckedPackage::link(graph),
         clauses,
         packages,
-        snapshots: BTreeMap::from([(snapshot_digest, bytes)]),
-        initial: DocumentRef {
-            authority: "test".to_owned(),
-            identity: "s0".to_owned(),
-            revision_namespace: "fixture".to_owned(),
-            revision: "fixture:1".to_owned(),
-            digest: snapshot_digest,
-        },
+        snapshots: BTreeMap::from([(initial.source_identity(), bytes)]),
+        initial,
     }
 }
 

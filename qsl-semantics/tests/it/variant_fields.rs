@@ -819,7 +819,7 @@ impl Replay {
         }))
         .expect("the snapshot serializes");
         let reference = document_ref("current", &bytes);
-        let provision = BTreeMap::from([(reference.digest, bytes)]);
+        let provision = BTreeMap::from([(reference.source_identity(), bytes)]);
         admit_current_snapshot(
             self.graph.model_selections(),
             self.graph.scope().types(),
@@ -1331,8 +1331,11 @@ impl Replay {
         }))
         .expect("the invocation serializes");
         let invocation = document_ref("call", &invocation_bytes);
-        let snapshots = BTreeMap::from([(pre.digest, pre_bytes), (post.digest, post_bytes)]);
-        let invocations = BTreeMap::from([(invocation.digest, invocation_bytes)]);
+        let snapshots = BTreeMap::from([
+            (pre.source_identity(), pre_bytes),
+            (post.source_identity(), post_bytes),
+        ]);
+        let invocations = BTreeMap::from([(invocation.source_identity(), invocation_bytes)]);
         admit_observations(
             self.graph.model_selections(),
             self.graph.scope().types(),

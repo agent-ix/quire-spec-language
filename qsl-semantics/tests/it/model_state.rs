@@ -129,7 +129,10 @@ fn snapshot(
     anchor: serde_json::Value,
     complete: bool,
     objects: Vec<serde_json::Value>,
-) -> (DocumentRef, BTreeMap<[u8; 32], Vec<u8>>) {
+) -> (
+    DocumentRef,
+    BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
+) {
     let reference = label("start");
     let mut document = json!({
         "format": "quire.state.snapshot/v1",
@@ -146,13 +149,12 @@ fn snapshot(
     let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
         .expect("canonical fixture")
         .as_bytes();
-    (
-        DocumentRef {
-            digest,
-            ..reference
-        },
-        BTreeMap::from([(digest, bytes)]),
-    )
+    let selected = DocumentRef {
+        digest,
+        ..reference
+    };
+    let provision = BTreeMap::from([(selected.source_identity(), bytes)]);
+    (selected, provision)
 }
 
 fn initial_anchor() -> serde_json::Value {
@@ -641,12 +643,13 @@ fn a_states_observation_navigates_the_relationships_its_snapshot_listed() {
         let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
             .expect("canonical fixture")
             .as_bytes();
+        let selected = DocumentRef {
+            digest,
+            ..reference
+        };
         (
-            DocumentRef {
-                digest,
-                ..reference
-            },
-            BTreeMap::from([(digest, bytes)]),
+            selected.clone(),
+            BTreeMap::from([(selected.source_identity(), bytes)]),
         )
     };
     let (state, _) = fixture

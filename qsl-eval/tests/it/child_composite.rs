@@ -1132,8 +1132,11 @@ fn admit_invocation(
     }))
     .expect("the invocation serializes");
     let invocation = document_ref("call", &invocation_bytes);
-    let snapshots = BTreeMap::from([(pre.digest, pre_bytes), (post.digest, post_bytes)]);
-    let invocations = BTreeMap::from([(invocation.digest, invocation_bytes)]);
+    let snapshots = BTreeMap::from([
+        (pre.source_identity(), pre_bytes),
+        (post.source_identity(), post_bytes),
+    ]);
+    let invocations = BTreeMap::from([(invocation.source_identity(), invocation_bytes)]);
     let checked = package.graph().state_clause(clause).expect("the clause");
     let facts = ClauseFacts {
         identity: checked.identity(),

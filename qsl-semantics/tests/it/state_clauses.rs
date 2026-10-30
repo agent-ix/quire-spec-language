@@ -1481,10 +1481,10 @@ fn run_frame_clause_with(
     };
 
     let mut snapshots = BTreeMap::new();
-    snapshots.insert(pre.digest, pre_bytes);
-    snapshots.insert(post.digest, post_bytes);
+    snapshots.insert(pre.source_identity(), pre_bytes);
+    snapshots.insert(post.source_identity(), post_bytes);
     let mut invocations = BTreeMap::new();
-    invocations.insert(invocation.digest, invocation_bytes);
+    invocations.insert(invocation.source_identity(), invocation_bytes);
     let provisions = qsl_semantics::model::observation::Provisions {
         snapshots: &snapshots,
         invocations: &invocations,
@@ -1866,9 +1866,9 @@ fn tc464_step2_a_reserialized_snapshot_gives_the_same_digest_and_an_equal_value(
         ..label.clone()
     };
     let mut snapshots_a = BTreeMap::new();
-    snapshots_a.insert(canonical_digest, canonical_bytes);
+    snapshots_a.insert(selected.source_identity(), canonical_bytes);
     let mut snapshots_b = BTreeMap::new();
-    snapshots_b.insert(reserialized_digest, reserialized_bytes);
+    snapshots_b.insert(selected.source_identity(), reserialized_bytes);
 
     let selection = || qsl_semantics::model::observation::ClauseSelectionInput::Current {
         snapshot: selected.clone(),
@@ -2104,7 +2104,7 @@ fn run_tc464_pre_call(
         ..frame_label("pre-call-snap")
     };
     let mut snapshots = BTreeMap::new();
-    snapshots.insert(snapshot.digest, snapshot_bytes);
+    snapshots.insert(snapshot.source_identity(), snapshot_bytes);
     run_tc465(
         document,
         clause_name,
@@ -2343,7 +2343,7 @@ fn tc464_step5_a_non_reference_parameter_requires_no_population() {
                 tc464_reference(archive, "a1"),
             )]),
         },
-        BTreeMap::from([(snapshot.digest, snapshot_bytes)]),
+        BTreeMap::from([(snapshot.source_identity(), snapshot_bytes)]),
         BTreeMap::new(),
         qsl_semantics::model::observation::ObservationLimits::default(),
     );
@@ -2470,7 +2470,7 @@ fn a_supertype_object_refuses_a_subtype_parameter_with_wrong_value_kind() {
                 tc464_reference(TC464_CONFIG_HISTORY, "a"),
             )]),
         },
-        BTreeMap::from([(snapshot.digest, snapshot_bytes)]),
+        BTreeMap::from([(snapshot.source_identity(), snapshot_bytes)]),
         BTreeMap::new(),
         qsl_semantics::model::observation::ObservationLimits::default(),
     );
@@ -2777,8 +2777,8 @@ fn run_tc465(
     document: &[u8],
     clause_name: &str,
     selection: qsl_semantics::model::observation::ClauseSelectionInput,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
-    invocations: BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
+    invocations: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
 ) -> Result<
     qsl_semantics::model::observation::AdmittedObservations,
     qsl_semantics::model::observation::AdmissionFailure,
@@ -2799,8 +2799,8 @@ fn run_tc465_with_limits(
     document: &[u8],
     clause_name: &str,
     selection: qsl_semantics::model::observation::ClauseSelectionInput,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
-    invocations: BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
+    invocations: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
     limits: qsl_semantics::model::observation::ObservationLimits,
 ) -> Result<
     qsl_semantics::model::observation::AdmittedObservations,
@@ -2823,8 +2823,8 @@ fn run_tc465_with_clauses(
     clauses: &str,
     clause_name: &str,
     selection: qsl_semantics::model::observation::ClauseSelectionInput,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
-    invocations: BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
+    invocations: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
     limits: qsl_semantics::model::observation::ObservationLimits,
 ) -> Result<
     qsl_semantics::model::observation::AdmittedObservations,
@@ -2851,8 +2851,8 @@ fn run_tc465_with_clauses_under(
     clauses: &str,
     clause_name: &str,
     selection: qsl_semantics::model::observation::ClauseSelectionInput,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
-    invocations: BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
+    invocations: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
     limits: qsl_semantics::model::observation::ObservationLimits,
     model_limits: qsl_semantics::model::accounting::ModelNormalizationLimits,
 ) -> Result<
@@ -2934,7 +2934,7 @@ fn run_tc465_current(
         ..label
     };
     let mut snapshots = BTreeMap::new();
-    snapshots.insert(selected.digest, bytes);
+    snapshots.insert(selected.source_identity(), bytes);
     run_tc465(
         document,
         "ParentOrder",
@@ -2974,7 +2974,7 @@ fn run_tc465_current_with_limits(
         ..label
     };
     let mut snapshots = BTreeMap::new();
-    snapshots.insert(selected.digest, bytes);
+    snapshots.insert(selected.source_identity(), bytes);
     run_tc465_with_limits(
         document,
         "ParentOrder",
@@ -3021,8 +3021,8 @@ fn run_tc465_invocation(
 /// invocation provisions holding its three documents.
 struct Tc465Documents {
     invocation: qsl_semantics::model::observation::DocumentRef,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
-    invocations: BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
+    invocations: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
 }
 
 /// The changed-version invocation's documents, with `mutate_pre`/
@@ -3063,10 +3063,10 @@ fn tc465_invocation_documents(
     };
 
     let mut snapshots = BTreeMap::new();
-    snapshots.insert(pre.digest, pre_bytes);
-    snapshots.insert(post.digest, post_bytes);
+    snapshots.insert(pre.source_identity(), pre_bytes);
+    snapshots.insert(post.source_identity(), post_bytes);
     let mut invocations = BTreeMap::new();
-    invocations.insert(invocation.digest, invocation_bytes);
+    invocations.insert(invocation.source_identity(), invocation_bytes);
     Tc465Documents {
         invocation,
         snapshots,
@@ -3259,10 +3259,10 @@ fn run_tc465_probe_limited(
     };
 
     let mut snapshots = BTreeMap::new();
-    snapshots.insert(pre.digest, pre_bytes);
-    snapshots.insert(post.digest, post_bytes);
+    snapshots.insert(pre.source_identity(), pre_bytes);
+    snapshots.insert(post.source_identity(), post_bytes);
     let mut invocations = BTreeMap::new();
-    invocations.insert(invocation.digest, invocation_bytes);
+    invocations.insert(invocation.source_identity(), invocation_bytes);
     run_tc465_with_limits(
         document,
         clause,
@@ -3492,7 +3492,7 @@ fn run_tc465_current_text(
         ..label
     };
     let mut snapshots = BTreeMap::new();
-    snapshots.insert(selected.digest, bytes);
+    snapshots.insert(selected.source_identity(), bytes);
     run_tc465_with_limits(
         document,
         "ParentOrder",
@@ -3689,7 +3689,7 @@ fn tc465_row8_blank_authority_refuses_blank_label() {
         ..label
     };
     let mut snapshots = BTreeMap::new();
-    snapshots.insert(digest, bytes);
+    snapshots.insert(selected.source_identity(), bytes);
     let result = run_tc465(
         &document,
         "ParentOrder",
@@ -3727,7 +3727,7 @@ fn tc465_row10_current_selecting_a_postcondition_refuses_wrong_observation() {
     let digest = frame_document_digest(&bytes);
     let selected = qsl_semantics::model::observation::DocumentRef { digest, ..label };
     let mut snapshots = BTreeMap::new();
-    snapshots.insert(digest, bytes);
+    snapshots.insert(selected.source_identity(), bytes);
     let result = run_tc465(
         &document,
         "VersionUnchanged",
@@ -3777,7 +3777,7 @@ fn tc465_row12_anchor_mismatch_refuses_wrong_anchor() {
     let digest = frame_document_digest(&bytes);
     let selected = qsl_semantics::model::observation::DocumentRef { digest, ..label };
     let mut snapshots = BTreeMap::new();
-    snapshots.insert(digest, bytes);
+    snapshots.insert(selected.source_identity(), bytes);
     let result = run_tc465(
         &document,
         "ParentOrder",
@@ -4123,7 +4123,7 @@ fn tc465_row21_unresolved_self_refuses_wrong_role_mapping() {
     let digest = frame_document_digest(&bytes);
     let selected = qsl_semantics::model::observation::DocumentRef { digest, ..label };
     let mut snapshots = BTreeMap::new();
-    snapshots.insert(digest, bytes);
+    snapshots.insert(selected.source_identity(), bytes);
     let result = run_tc465(
         &document,
         "ParentOrder",
@@ -4576,7 +4576,7 @@ fn a_deep_hierarchy_is_judged_by_the_callers_ancestor_steps_not_a_fixed_ceiling(
             ..label
         };
         let mut snapshots = BTreeMap::new();
-        snapshots.insert(selected.digest, bytes);
+        snapshots.insert(selected.source_identity(), bytes);
         run_tc465_with_clauses_under(
             &document,
             TC465_CLAUSES,
@@ -5093,7 +5093,7 @@ fn tc465_row42_two_blank_labels_names_the_first_in_order() {
         ..label
     };
     let mut snapshots = BTreeMap::new();
-    snapshots.insert(digest, bytes);
+    snapshots.insert(selected.source_identity(), bytes);
     let result = run_tc465(
         &document,
         "ParentOrder",
@@ -5386,7 +5386,7 @@ fn an_out_of_range_argument_refuses_whatever_the_limits() {
                     qsl_semantics::model::observation::SnapshotValue::integer(amount),
                 )]),
             },
-            BTreeMap::from([(snapshot.digest, snapshot_bytes.clone())]),
+            BTreeMap::from([(snapshot.source_identity(), snapshot_bytes.clone())]),
             BTreeMap::new(),
             limits,
         )

@@ -236,7 +236,7 @@ pub(crate) const DENSE: &str = "dimension Time;\nunit s : Time = rational(1, 1);
 pub(crate) struct World {
     pub(crate) package: CheckedPackage,
     packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
     initial: DocumentRef,
     keys: Vec<String>,
 }
@@ -344,7 +344,10 @@ pub(crate) fn world_built(
     World {
         package: CheckedPackage::link(graph),
         packages,
-        snapshots: BTreeMap::from([(snapshot_digest, bytes)]),
+        snapshots: BTreeMap::from([(
+            qsl_foundation::SourceIdentity::new("test", "s0", "fixture", "fixture:1"),
+            bytes,
+        )]),
         initial: DocumentRef {
             authority: "test".to_owned(),
             identity: "s0".to_owned(),
@@ -415,7 +418,7 @@ pub(crate) fn renamed_package(document: &[u8], package: &str) -> Vec<u8> {
 pub(crate) struct Refining {
     pub(crate) package: CheckedPackage,
     packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
     /// `M`'s initial states, in index order.
     concrete_initials: Vec<DocumentRef>,
     /// `A`'s initial state.
@@ -544,7 +547,7 @@ pub(crate) fn refining_from(
 /// `flags` gives them, stored in `snapshots`.
 fn snapshot(
     packages: &BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: &mut BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: &mut BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
     (package, document): (&str, &[u8]),
     name: &str,
     [inflight, late, retried]: [bool; 3],
@@ -573,7 +576,10 @@ fn snapshot(
     let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
         .expect("canonical fixture")
         .as_bytes();
-    snapshots.insert(digest, bytes);
+    snapshots.insert(
+        qsl_foundation::SourceIdentity::new("test", name, "fixture", "fixture:1"),
+        bytes,
+    );
     DocumentRef {
         authority: "test".to_owned(),
         identity: name.to_owned(),
