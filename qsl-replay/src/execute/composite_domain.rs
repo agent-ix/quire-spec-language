@@ -267,7 +267,7 @@ pub(super) fn derive(
         .iter()
         .rev()
         .map(|(root, value_type)| Pending {
-            root: *root,
+            root: root.clone(),
             path: None,
             value_type,
             composites: None,
@@ -336,7 +336,7 @@ pub(super) fn derive(
                     continue;
                 }
                 let composite = types
-                    .composite(*declaration)
+                    .composite(declaration.clone())
                     .ok_or_else(|| fault("composite-type-in-environment"))?;
                 let members: Vec<&ValueType> = match composite.shape() {
                     CompositeShape::Record(fields) => {
@@ -349,7 +349,7 @@ pub(super) fn derive(
                         .collect(),
                 };
                 for (index, member) in members.into_iter().enumerate().rev() {
-                    pending.push(child(&position, index, member, Some(*declaration))?);
+                    pending.push(child(&position, index, member, Some(declaration.clone()))?);
                 }
             }
             ValueType::Rational(_)

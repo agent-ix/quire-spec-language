@@ -314,7 +314,7 @@ impl CheckedClosureHandle {
         else {
             return Err(NominalDeclarationRefusal::WrongKind);
         };
-        if **checked_node != node.key()
+        if checked_node.clone() != node.key().clone()
             || node.node_tag() != qsl_semantics::check::NodeTag::CompositeType
         {
             return Err(NominalDeclarationRefusal::Inconsistent);

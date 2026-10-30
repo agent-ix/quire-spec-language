@@ -869,7 +869,7 @@ impl<'a> Converter<'a, '_> {
                     .get(declaration)
                     .ok_or_else(|| self.wrong(parameter))?;
                 let key = record.key();
-                if !types.composite_conforms(key, *slot_key) {
+                if !types.composite_conforms(key, slot_key.clone()) {
                     return Err(self.wrong(parameter));
                 }
                 let CompositeShape::Record(declared_fields) = record.shape() else {
@@ -902,7 +902,7 @@ impl<'a> Converter<'a, '_> {
                     }
                 }
                 pending.push(Step::Composite {
-                    key,
+                    key: key.clone(),
                     slots,
                     position: self.position,
                 });
@@ -917,7 +917,7 @@ impl<'a> Converter<'a, '_> {
             ) => {
                 let types: &'a TypeEnvironment = self.types;
                 self.charge(parameter, SuppliedEvent::DescriptorQuery)?;
-                let tuple = types.composite(*key).ok_or_else(|| self.wrong(parameter))?;
+                let tuple = types.composite(key.clone()).ok_or_else(|| self.wrong(parameter))?;
                 let CompositeShape::Tuple(positions) = tuple.shape() else {
                     return Err(self.wrong(parameter));
                 };
@@ -928,7 +928,7 @@ impl<'a> Converter<'a, '_> {
                     self.charge(parameter, SuppliedEvent::DescriptorQuery)?;
                 }
                 pending.push(Step::Composite {
-                    key: *key,
+                    key: key.clone(),
                     slots: vec![Slot::Present; components.len()],
                     position: self.position,
                 });
@@ -956,13 +956,13 @@ impl<'a> Converter<'a, '_> {
                 let types: &'a TypeEnvironment = self.types;
                 self.charge(parameter, SuppliedEvent::DescriptorQuery)?;
                 let settled = types
-                    .union_key(*slot_key)
+                    .union_key(slot_key.clone())
                     .ok_or_else(|| self.wrong(parameter))?;
                 if declaration != &settled {
                     return Err(self.wrong(parameter));
                 }
                 let (_, declared) = types
-                    .union_member_named(*slot_key, member)
+                    .union_member_named(slot_key.clone(), member)
                     .ok_or_else(|| self.wrong(parameter))?;
                 let binding = declared.member().ok_or_else(|| self.wrong(parameter))?;
                 let positions = declared.positions();

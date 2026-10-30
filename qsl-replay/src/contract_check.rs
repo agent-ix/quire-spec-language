@@ -318,7 +318,7 @@ pub fn select_contract(
             }
             let operation = clause.operation().ok_or(ContractSelection::MissingNode)?;
             let name = operation.declaration.name().to_owned();
-            let key = operation_key(package, operation.declaring, &name)?;
+            let key = operation_key(package, operation.declaring.clone(), &name)?;
             let elements = graph
                 .item_elements(claim)
                 .transpose()
@@ -334,7 +334,7 @@ pub fn select_contract(
                 Target::Postcondition {
                     clause: node.clone(),
                     context,
-                    operation: (operation.declaring, name),
+                    operation: (operation.declaring.clone(), name),
                 }
             };
             Ok(selected(ContractForm::Clause, target, bound))
@@ -350,7 +350,7 @@ pub fn select_contract(
             if operation.declaration.effect().is_empty() {
                 return Err(ContractSelection::NoForm);
             }
-            let key = operation_key(package, operation.declaring, operation.declaration.name())?;
+            let key = operation_key(package, operation.declaring.clone(), operation.declaration.name())?;
             let elements = [AbstractionKey::Object(key.declaring.clone())];
             let bound = binding(relation, &key, elements)?;
             Ok(selected(ContractForm::Frame, Target::Frame, bound))
@@ -666,7 +666,7 @@ impl<'s, 'a> ContractTarget<'s, 'a> {
             }
             Target::Invariant { context, .. } => {
                 let relation = package.abstraction();
-                for (declaring, name) in concrete.context_operations(*context) {
+                for (declaring, name) in concrete.context_operations(context.clone()) {
                     let Ok(key) = operation_key(package, declaring, &name) else {
                         return Err(fault("operation-owner-is-admitted"));
                     };
@@ -907,15 +907,15 @@ impl<'s, 'a> ContractTarget<'s, 'a> {
     /// reading was open.
     fn violations(&self, case: &ContractCase) -> Result<Evaluated, Stop> {
         match &self.claim.target {
-            Target::Invariant { clause, context } => self.invariant(case, *clause, *context),
+            Target::Invariant { clause, context } => self.invariant(case, clause.clone(), context.clone()),
             Target::Precondition { clause, context } => {
-                self.precondition(case.state(), *clause, *context)
+                self.precondition(case.state(), clause.clone(), context.clone())
             }
             Target::Postcondition {
                 clause,
                 context,
                 operation,
-            } => self.postcondition(case.state(), *clause, *context, operation),
+            } => self.postcondition(case.state(), clause.clone(), context.clone(), operation),
             Target::Frame | Target::NotStepSimulable | Target::StepRelation => {
                 Err(Stop::Fault(fault("an-unsupported-item-is-not-evaluated")))
             }
@@ -1080,7 +1080,7 @@ impl<'s, 'a> ContractTarget<'s, 'a> {
                         state,
                         declaring.clone(),
                         &operation,
-                        context,
+                        context.clone(),
                         &|_| true,
                     )?;
                     open_contracts(&cases, &mut evaluated);
@@ -1091,7 +1091,7 @@ impl<'s, 'a> ContractTarget<'s, 'a> {
                             Ok(Some(undefined)) => evaluated.violations.push(self.violation(
                                 ContractObligation::Preservation,
                                 self.execution(
-                                    Some((declaring, &operation)),
+                                    Some((declaring.clone(), &operation)),
                                     Some(step.transition),
                                     state,
                                     step.arguments,
@@ -1137,7 +1137,7 @@ impl<'s, 'a> ContractTarget<'s, 'a> {
                         self.execution(
                             operation
                                 .as_ref()
-                                .map(|(declaring, name)| (*declaring, name.as_str())),
+                                .map(|(declaring, name)| (declaring.clone(), name.as_str())),
                             Some(case.transition),
                             state,
                             case.arguments,
@@ -1179,7 +1179,7 @@ impl<'s, 'a> ContractTarget<'s, 'a> {
         };
         let cases = self
             .concrete
-            .operation_cases(state, *declaring, operation, context, &select)?;
+            .operation_cases(state, declaring.clone(), operation, context, &select)?;
         evaluated.checks = cases.enabled;
         for contract in cases.undecided {
             let undefined = undefined_of(&contract.evaluation);
@@ -1188,7 +1188,7 @@ impl<'s, 'a> ContractTarget<'s, 'a> {
                     evaluated.violations.push(self.violation(
                         ContractObligation::Definedness,
                         self.execution(
-                            Some((*declaring, operation)),
+                            Some((declaring.clone(), operation)),
                             Some(contract.transition),
                             state,
                             contract.arguments,
@@ -1327,7 +1327,7 @@ impl<'s, 'a> ContractTarget<'s, 'a> {
                 ContractObligation::SimulationStep,
                 || {
                     self.execution(
-                        Some((declaring, operation)),
+                        Some((declaring.clone(), operation)),
                         Some(transition),
                         state,
                         arguments,

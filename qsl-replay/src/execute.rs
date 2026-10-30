@@ -982,7 +982,7 @@ fn replay_observed_temporal(
         graph.model_selections(),
         &compiled.packages,
         compiled.model_limits,
-        *type_identity,
+        type_identity.clone(),
     )
     .map_err(ReplayRefusal::Admission)?;
     let reference = environments
