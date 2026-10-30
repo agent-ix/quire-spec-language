@@ -1069,7 +1069,7 @@ fn an_effect_waits_for_its_attempts_binder() {
 
     let chosen = format!(
         "sequence Main {{ event X by w as (x: Boolean) {{ true }}; \
-         choice Pick by w visible (x) {{ case yes when {{ x }} {CHARGE} case no when {{ not x }} {} }} \
+         choice Pick by w visible (x and true) {{ case yes when {{ x and true }} {CHARGE} case no when {{ not (x and true) }} {} }} \
          {} {FAIL} }}",
         crate::protocol_system::touch("TN"),
         paid("Main::Pick::yes::C"),

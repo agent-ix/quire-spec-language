@@ -78,8 +78,8 @@ fn put(node: &str, cell: &str, ordering: &str) -> String {
 /// reader loads `data` only after a flag load that read 1.
 fn message_passing(data: &str, flag_store: &str, flag_load: &str) -> String {
     let reader = format!(
-        "{} choice Pick by c visible (bLy) {{ case yes when {{ bLy }} {} \
-         case no when {{ not bLy }} sequence Skip {{ }} }}",
+        "{} choice Pick by c visible (bLy and true) {{ case yes when {{ bLy and true }} {} \
+         case no when {{ not (bLy and true) }} sequence Skip {{ }} }}",
         attempt("Ly", "c", "Core::look", flag_load, "LooksY, Looked"),
         load_ordered("Lx", "x", 2, data),
     );
@@ -97,7 +97,7 @@ fn message_passing(data: &str, flag_store: &str, flag_load: &str) -> String {
 
 /// The unit over `run` with the claim `MP`'s letters.
 fn unit(run: &str, letters: &'static dyn ModelLetters) -> Case {
-    Case::with_letters(
+    Case::protocol_profiled(
         &(contracts() + &protocol("SB", run) + NO_BOTH_ZERO),
         letters,
     )
@@ -475,7 +475,7 @@ fn a_race_changes_no_authored_claims_verdict_under_ra() {
 /// and the channel members `members`.
 fn unit_with(members: &str, extra: &str, a: &str, b: &str) -> Case {
     let run = litmus_run(&[("a", a.to_owned()), ("b", b.to_owned())], "");
-    Case::with_letters(
+    Case::protocol_profiled(
         &(contracts() + extra + &protocol_with("SB", members, &run) + NO_BOTH_ZERO),
         &MP,
     )
@@ -485,9 +485,9 @@ fn unit_with(members: &str, extra: &str, a: &str, b: &str) -> Case {
 /// `flag_load` that read 1, then `after`.
 fn reader(flag_load: &str, before_data: &str) -> String {
     format!(
-        "sequence B {{ {} choice Pick by c visible (bLy) {{ case yes when {{ bLy }} \
+        "sequence B {{ {} choice Pick by c visible (bLy and true) {{ case yes when {{ bLy and true }} \
          sequence Yes {{ {before_data} {} }} \
-         case no when {{ not bLy }} sequence Skip {{ }} }} }}",
+         case no when {{ not (bLy and true) }} sequence Skip {{ }} }} }}",
         attempt("Ly", "c", "Core::look", flag_load, "LooksY, Looked"),
         load_ordered("Lx", "x", 2, ""),
     )
@@ -625,7 +625,7 @@ fn channel_case(store_before_send: bool) -> Case {
         "sequence Main {{ parallel Both {{ branch s {sender} branch r {receiver} }} \
          join all [s, r]; }}"
     );
-    Case::with_letters(
+    Case::protocol_profiled(
         &(contracts() + &protocol_with("SB", LOSSY, &run) + NO_BOTH_ZERO),
         &MP,
     )
@@ -798,7 +798,7 @@ fn repeat_case(ordering: &str, capacity: u32, overflow: &str, store_first: bool)
         "channel ch from w to w carries Boolean ordering {ordering} delivery unknown \
          capacity {capacity} overflow {overflow};"
     );
-    Case::with_letters(
+    Case::protocol_profiled(
         &(contracts() + &protocol_with("SB", &channel, &run) + NO_BOTH_ZERO),
         &MP,
     )
@@ -895,9 +895,9 @@ fn a_second_receiver_of_an_older_equal_entry_races_with_the_store() {
         put("Sy", "y", "relaxed"),
     );
     let second = format!(
-        "sequence R2 {{ {} choice Pick2 by c visible (bLy) {{ case yes when {{ bLy }} \
+        "sequence R2 {{ {} choice Pick2 by c visible (bLy and true) {{ case yes when {{ bLy and true }} \
          sequence Y {{ receive Rb via ch of s::S::Loop::Body::Tx as (rb: Boolean) \
-         {{ true }}; {} }} case no when {{ not bLy }} sequence Skip2 {{ }} }} }}",
+         {{ true }}; {} }} case no when {{ not (bLy and true) }} sequence Skip2 {{ }} }} }}",
         attempt("Ly", "c", "Core::look", "relaxed", "LooksY, Looked"),
         load_ordered("Lx", "x", 2, ""),
     );
@@ -909,7 +909,7 @@ fn a_second_receiver_of_an_older_equal_entry_races_with_the_store() {
                     delivery exactly-once-premise capacity 2 overflow block; \
                     channel ch2 from w to w carries Boolean ordering unordered \
                     delivery exactly-once-premise capacity 2 overflow block;";
-    let case = Case::with_letters(
+    let case = Case::protocol_profiled(
         &(contracts() + &protocol_with("SB", channels, &run) + NO_BOTH_ZERO),
         &MP,
     );
@@ -948,9 +948,9 @@ fn a_second_receiver_of_an_older_equal_entry_races_with_the_store_under_tso() {
         put("Sy", "y", "relaxed"),
     );
     let second = format!(
-        "sequence R2 {{ {} choice Pick2 by c visible (bLy) {{ case yes when {{ bLy }} \
+        "sequence R2 {{ {} choice Pick2 by c visible (bLy and true) {{ case yes when {{ bLy and true }} \
          sequence Y {{ receive Rb via ch of s::S::Loop::Body::Tx as (rb: Boolean) \
-         {{ true }}; {} }} case no when {{ not bLy }} sequence Skip2 {{ }} }} }}",
+         {{ true }}; {} }} case no when {{ not (bLy and true) }} sequence Skip2 {{ }} }} }}",
         attempt("Ly", "c", "Core::look", "relaxed", "LooksY, Looked"),
         load_ordered("Lx", "x", 2, ""),
     );
@@ -962,7 +962,7 @@ fn a_second_receiver_of_an_older_equal_entry_races_with_the_store_under_tso() {
                     delivery exactly-once-premise capacity 2 overflow block; \
                     channel ch2 from w to w carries Boolean ordering unordered \
                     delivery exactly-once-premise capacity 2 overflow block;";
-    let case = Case::with_letters(
+    let case = Case::protocol_profiled(
         &(contracts() + &protocol_with("SB", channels, &run) + NO_BOTH_ZERO),
         &MP,
     );
@@ -1410,8 +1410,8 @@ fn seq_cst_fences_do_not_order_threads_under_tso() {
         ],
     );
     let reader = format!(
-        "sequence B {{ fence F2 ordering seq_cst; {} choice Pick by c visible (bLy) {{ \
-         case yes when {{ bLy }} {} case no when {{ not bLy }} sequence Skip {{ }} }} }}",
+        "sequence B {{ fence F2 ordering seq_cst; {} choice Pick by c visible (bLy and true) {{ \
+         case yes when {{ bLy and true }} {} case no when {{ not (bLy and true) }} sequence Skip {{ }} }} }}",
         attempt("Ly", "c", "Core::look", "relaxed", "LooksY, Looked"),
         load_ordered("Lx", "x", 2, ""),
     );
@@ -1709,7 +1709,10 @@ fn one_clause_under_two_sets_of_resolved_models_is_two_items() {
 #[trace("QSpec-TC-431", "QSpec-FR-368-AC-25")]
 #[test]
 fn a_protocol_subject_of_a_unit_with_no_protocol_profile_is_settled_unsupported() {
-    let case = unit(&message_passing("", "release", "acquire"), &MP);
+    let case = Case::with_letters(
+        &(contracts() + &protocol("SB", &message_passing("", "release", "acquire")) + NO_BOTH_ZERO),
+        &MP,
+    );
     let graph = case.checked().graph();
     let protocol = graph.protocol("SB").expect("SB");
     assert_eq!(protocol.node(), None);
