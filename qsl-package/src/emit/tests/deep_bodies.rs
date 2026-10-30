@@ -205,16 +205,11 @@ fn a_100000_term_sum_reads_back_verifies_clones_compares_and_drops_on_a_small_st
                 diagnostics: u64::MAX,
                 work: u64::MAX,
             };
-            let pinned: PinnedRequest = qsl_semantics::library::fixtures::single_pin(
-                library(),
-                emission.package.package_id(),
-            );
             let read = crate::checked_v2::read_checked_package_v2(
                 bytes,
                 library(),
                 limits,
                 &read_evidence(&emission),
-                &pinned,
             )
             .unwrap_or_else(|failure| panic!("verifies at its package_id: {failure:?}"))
             .into_value();

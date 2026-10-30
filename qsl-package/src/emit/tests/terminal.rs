@@ -312,7 +312,7 @@ fn the_i2_read_refuses_a_malformed_terminal_node_at_its_locus() {
     assert_eq!(some.code, RefusalCode::InvalidPackage);
     assert_eq!(some.cause, Some(Cause::InvalidValue));
     assert_eq!(
-        some.path.as_ref().map(|path| path.as_str()),
+        some.loci[0].path.as_ref().map(|path| path.as_str()),
         Some(&*format!("{body}/1"))
     );
 
@@ -321,7 +321,7 @@ fn the_i2_read_refuses_a_malformed_terminal_node_at_its_locus() {
     });
     assert_eq!(empty.code, RefusalCode::InvalidSemanticGraph);
     assert_eq!(
-        empty.path.as_ref().map(|path| path.as_str()),
+        empty.loci[0].path.as_ref().map(|path| path.as_str()),
         Some(&*format!("{body}/3"))
     );
 }

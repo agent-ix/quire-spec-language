@@ -18,13 +18,13 @@ fn a_100000_node_cycle_emits_and_reads_back_under_supplied_limits() {
         .collect();
     let records = (0..RECORDS).map(|index| {
         CompositeDeclaration::new(
-            keys[index],
+            keys[index].clone(),
             names[index].clone(),
             CompositeShape::Record(vec![FieldDeclaration::new(
                 "next",
                 ValueType::collection(CollectionType::new(
                     CollectionKind::Sequence,
-                    ValueType::Composite(keys[(index + 1) % RECORDS]),
+                    ValueType::Composite(keys[(index + 1) % RECORDS].clone()),
                     None,
                 )),
                 Presence::Required,

@@ -10,7 +10,7 @@ use qsl_foundation::Code;
 use quire_contract_model::{CheckedPackageRefusalCause, CheckedPackageRefusalCode};
 
 use super::*;
-use crate::checked_v2::tests::rekey_stale;
+
 use crate::checked_v2::V2ReadRefusal;
 
 #[path = "../../../../qsl-semantics/tests/support/receiver_frames.rs"]
@@ -84,16 +84,13 @@ fn emit(operations: &[&str], overrides: &[(&str, Value)]) -> Emitted {
 }
 
 impl Emitted {
-    /// QSL's I2 read of `envelope` as the package pinned at its own
-    /// recomputed `package_id`.
+    /// QSL's I2 read of `envelope` as the package it names.
     fn read_envelope(&self, envelope: &Value) -> Read {
-        let package_id = crate::checked_v2::tests::derived_package_id(envelope);
         read_v2(
             &jcs(envelope),
             library(),
             V2ReadLimits::default(),
             &self.evidence,
-            &qsl_semantics::library::fixtures::single_pin(library(), package_id),
         )
     }
 
@@ -198,12 +195,11 @@ fn the_frame_bodies_of_scoped_entries_are_the_wire_vectors() {
 
 /// FR-154-AC-7, FR-105 (TC-1043 steps 1 and 2): `own`, `all` and `drop` are
 /// vectors W4, W5 and W6; frames differing only by one entry's scope, or only
-/// by `deletes self`, have different node ids; two packages differing only by
-/// that one scope have different `package_id`s; a frame of type-wide entries
+/// by `deletes self`, have different node ids; a frame of type-wide entries
 /// carries `deletes_scoped: []` and every field entry `every-object`.
 #[trace("TC-1043", "FR-154-AC-7")]
 #[test]
-fn a_scope_or_a_scoped_delete_changes_the_node_id_and_the_package_id() {
+fn a_scope_or_a_scoped_delete_changes_the_node_id() {
     let emitted = emit(&ALL, &[]);
     let counter = emitted.counter();
     let [_, _, w3, w4, w5, w6] = vectors(&counter);
@@ -214,20 +210,6 @@ fn a_scope_or_a_scoped_delete_changes_the_node_id_and_the_package_id() {
     assert_ne!(emitted.frame_id("drop"), emitted.frame_id("noop"));
     assert_eq!(emitted.frame("noop")["body"], w3);
     assert_eq!(emitted.frame("all")["body"]["deletes_scoped"], json!([]));
-
-    let without_all: Vec<&str> = ALL.iter().copied().filter(|name| *name != "all").collect();
-    let b1 = emit(&without_all, &[]);
-    let b2 = emit(
-        &without_all,
-        &[(
-            "own",
-            json!({"modifies": [fixture::id("Counter/value")], "creates": [], "deletes": []}),
-        )],
-    );
-    assert_ne!(
-        b1.emission.package().package_id(),
-        b2.emission.package().package_id()
-    );
 }
 
 /// FR-154-AC-4 (TC-573): the frame node of an operation under `modifies self.value`
@@ -339,7 +321,6 @@ fn read_edited(emitted: &Emitted, operation: &str, edit: impl FnOnce(&mut Value)
         .find(|node| node["node_id"] == id)
         .expect("the frame node");
     edit(&mut node["body"]);
-    rekey_stale(&mut envelope);
     emitted.read_envelope(&envelope)
 }
 
@@ -433,49 +414,13 @@ fn a_misordered_deletes_scoped_and_an_unknown_parameter_refuse() {
     let Read::Refused(V2ReadRefusal::Envelope { refusal, .. }) = &x6 else {
         panic!("{x6:?}");
     };
-    let rekeyed = frame_with_parameter_c(&emitted);
     assert_eq!(
-        refusal.locus.as_ref().map(|node| node.digest.as_ref()),
-        Some(rekeyed.as_str())
+        refusal
+            .locus
+            .as_ref()
+            .map(|node| serde_json::to_value(node).expect("a node id serialises")),
+        Some(emitted.frame_id("merge"))
     );
-}
-
-/// The digest of the re-keyed frame node holding X6's `parameter c` entry.
-fn frame_with_parameter_c(emitted: &Emitted) -> String {
-    let mut envelope = emitted.wire.clone();
-    let id = emitted.frame_id("merge");
-    let node = envelope["semantic_graph"]["nodes"]
-        .as_array_mut()
-        .expect("nodes")
-        .iter_mut()
-        .find(|node| node["node_id"] == id)
-        .expect("the frame node");
-    node["body"]["deletes_scoped"] = json!([
-        {"kind": "receiver"},
-        {"kind": "parameter", "name": "a"},
-        {"kind": "parameter", "name": "b"},
-        {"kind": "parameter", "name": "c"},
-    ]);
-    rekey_stale(&mut envelope);
-    let nodes = envelope["semantic_graph"]["nodes"]
-        .as_array()
-        .expect("nodes");
-    let frames: Vec<&Value> = nodes
-        .iter()
-        .filter(|node| {
-            node["semantic_form"] == "frame"
-                && node["body"]["deletes_scoped"]
-                    .as_array()
-                    .is_some_and(|entries| entries.len() == 4)
-        })
-        .collect();
-    let [frame] = frames[..] else {
-        panic!("one re-keyed frame: {frames:#?}");
-    };
-    frame["node_id"]["digest"]
-        .as_str()
-        .expect("digest")
-        .to_owned()
 }
 
 /// FR-154-AC-10 (X7 to X9): the body of W1 re-keyed is admitted; two entries
@@ -674,7 +619,6 @@ fn execution_point_on_clause_and_anchor_reads_back() {
         }
     }
     assert_eq!((clause, anchor), (1, 1));
-    rekey_stale(&mut envelope);
     assert!(
         matches!(emitted.read_envelope(&envelope), Read::Verified { .. }),
         "the exact clause and anchor carriers read back together"
@@ -715,14 +659,12 @@ fn constraint_state_clause_reads_back_as_a_distinct_kind() {
             parts.document.as_slice(),
         )
         .expect("a fresh evidence key");
-    let package_id = crate::checked_v2::tests::derived_package_id(&wire);
     assert!(matches!(
         read_v2(
             &jcs(&wire),
             library(),
             V2ReadLimits::default(),
             &evidence,
-            &qsl_semantics::library::fixtures::single_pin(library(), package_id),
         ),
         Read::Verified { .. }
     ));

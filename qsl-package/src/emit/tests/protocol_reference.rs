@@ -801,7 +801,7 @@ fn a_reference_bound_to_a_key_no_node_carries_refuses_missing_name() {
             .key()
     };
     let (target, reference) = (key_of("protocol_clause"), key_of("protocol_reference"));
-    assert!(graph.semantic_graph_mut().remove(target).is_some());
+    assert!(graph.semantic_graph_mut().remove(target.clone()).is_some());
     let refusal = emit_checked(&CheckedPackage::link(graph)).expect_err("no package");
     assert_eq!(refusal.code(), qsl_foundation::Code::MissingDeclaration);
     assert_eq!(refusal.cause(), Some("missing-name"));

@@ -117,13 +117,14 @@ fn a_clock_collection_emits_one_template_place() {
         .expect("the unit assembles")
         .check(CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("a model of clocks alone checks: {refusals:?}"));
+    let integer = qsl_semantics::check::builtin_integer_type_key(graph.package_name())
+        .expect("the built-in integer key");
     let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
     let wire = wire(&emission);
-    let integer = qsl_semantics::check::builtin_integer_type_key().to_string();
     assert!(
         nodes(&wire)
             .iter()
-            .any(|node| node["node_id"]["digest"] == integer
+            .any(|node| qsl_foundation::node_wire::node_key_from_json(&node["node_id"]).as_ref() == Ok(&integer)
                 && node["node_tag"] == "scalar_type"
                 && node["semantic_form"] == "integer"),
         "the selector's Integer type node is in the graph"
@@ -258,7 +259,6 @@ fn read_back(document: &[u8]) -> Result<Vec<CheckedTimedModel>, String> {
         library(),
         V2ReadLimits::default(),
         &evidence,
-        &qsl_semantics::library::fixtures::single_pin(library(), emission.package.package_id()),
     )
     .map_err(|failure| format!("{failure:?}"))?;
     CheckedTimedModel::from_admitted(&read.into_value().admitted).map_err(str::to_owned)
@@ -506,7 +506,6 @@ fn read_back_with(document: &[u8], body: &str) -> Result<Vec<CheckedTimedModel>,
         library(),
         V2ReadLimits::default(),
         &evidence,
-        &qsl_semantics::library::fixtures::single_pin(library(), emission.package.package_id()),
     )
     .map_err(|failure| format!("{failure:?}"))?;
     CheckedTimedModel::from_admitted(&read.into_value().admitted).map_err(str::to_owned)

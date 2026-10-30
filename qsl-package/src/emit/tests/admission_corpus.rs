@@ -773,16 +773,11 @@ fn read(emitted: &Emitted) -> Result<V2Read, StageFailure<V2ReadRefusal>> {
             .insert_domain_package_document(package_identity(document), document.to_vec())
             .expect("a fresh evidence key");
     }
-    let pinned: PinnedRequest = qsl_semantics::library::fixtures::single_pin(
-        library(),
-        emitted.emission.package.package_id(),
-    );
     read_checked_package_v2(
         emitted.emission.package.bytes(),
         library(),
         V2ReadLimits::default(),
         &evidence,
-        &pinned,
     )
     .map(Staged::into_value)
 }
@@ -853,13 +848,8 @@ fn check_fixture(fixture: Fixture, rows: &[Row], outcomes: &[Outcome], failures:
         failures.push(format!("{fixture:?}: backs no row"));
     }
     for outcome in outcomes {
-        let emitted_at = outcome.emitted.emission.package.package_id();
         match &outcome.read {
-            Ok(read) if read.package.package_id() == emitted_at => {}
-            Ok(read) => failures.push(format!(
-                "{fixture:?}: admitted at {:?}, emitted at {emitted_at:?}",
-                read.package.package_id(),
-            )),
+            Ok(_) => {}
             Err(failure) => failures.push(format!("{fixture:?}: not admitted: {failure:?}")),
         }
         for omission in &outcome.emitted.emission.omitted {
@@ -1065,70 +1055,6 @@ fn row_empty_refinement() -> (String, Vec<Vec<u8>>) {
     (unit, vec![abstract_document, concrete_document])
 }
 
-/// QSpec FR-375-AC-20's refusal half: the reader recomputes the refinement
-/// node's key from the closed `quire.refinement-node/v1` preimage, so
-/// changing only its `semantic_type` root, or only one body row, while
-/// keeping its node id (the package id and dependencies recomputed) refuses
-/// `invalid_package`/`stale-node-key` at that node.
-#[trace("FR-375-AC-20", "TC-310")]
-#[test]
-fn a_refinement_changed_under_its_node_id_is_a_stale_node_key() {
-    let (unit, documents) = row_empty_refinement();
-    let package = modelled_with_documents(&unit, &documents, Vec::new());
-    let emission = emit_checked(&package).expect("the row-empty refinement emits");
-    let wire = wire(&emission);
-    let position = nodes(&wire)
-        .iter()
-        .position(|node| node["node_tag"] == "relation" && node["semantic_form"] == "refinement")
-        .expect("one refinement relation node");
-    let refinement = &wire["semantic_graph"]["nodes"][position];
-    let abstract_root = refinement["body"]["abstract"].clone();
-    let verdict = |envelope: &Value| {
-        let mut evidence = read_evidence(&emission);
-        for document in &documents {
-            evidence
-                .insert_domain_package_document(package_identity(document), document.to_vec())
-                .expect("a fresh evidence key");
-        }
-        match quire_contract_model::read_checked_package(
-            &jcs(envelope),
-            quire_contract_model::CheckedPackageReadLimits::bounded(),
-            &evidence,
-        ) {
-            quire_contract_model::CheckedPackageDispatchResult::AdmittedV2(_) => {
-                "admitted".to_owned()
-            }
-            quire_contract_model::CheckedPackageDispatchResult::Refused(refusal) => format!(
-                "{:?} at {} ({:?})",
-                refusal.code,
-                refusal.path.as_ref().map_or("-", |path| path.as_str()),
-                refusal.cause
-            ),
-            other => format!("{other:?}"),
-        }
-    };
-    assert_eq!(verdict(&wire), "admitted");
-    let expected =
-        format!("InvalidPackage at /semantic_graph/nodes/{position}/node_id (Some(StaleNodeKey))");
-
-    // The concrete root swapped for the abstract one: the subject changes,
-    // the dependencies (the abstract root alone) do not.
-    let mut retyped = wire.clone();
-    retyped["semantic_graph"]["nodes"][position]["semantic_type"] = abstract_root.clone();
-    crate::checked_v2::tests::refresh_frame_identity(&mut retyped);
-    assert_ne!(retyped["package_id"], wire["package_id"]);
-    assert_eq!(verdict(&retyped), expected);
-
-    // One body member changed: the selected profile. This model has no
-    // population or object to write a valid row over, so the profile is the
-    // body change that leaves every other member admissible.
-    let mut reprofiled = wire.clone();
-    reprofiled["semantic_graph"]["nodes"][position]["body"]["profile"]["identity"] =
-        json!("quire.temporal.finite-trace/v1");
-    crate::checked_v2::tests::refresh_frame_identity(&mut reprofiled);
-    assert_eq!(verdict(&reprofiled), expected);
-}
-
 /// The declaration occurrence is provenance rather than refinement identity:
 /// moving the authored declaration changes its source-map region while the
 /// refinement node and package identities stay fixed.
@@ -1216,7 +1142,6 @@ fn a_row_empty_refinement_identity_excludes_its_source_region() {
         assert_eq!(first_node["body"][array], json!([]), "{array}");
     }
     assert_eq!(first_node["node_id"], shifted_node["node_id"]);
-    assert_eq!(first.package.package_id(), shifted.package.package_id());
     let declaration_region = |emission: &Emission, node: &Value| {
         wire(emission)["source_map"]
             .as_array()
@@ -1435,12 +1360,12 @@ fn protocol_subject() -> (String, Vec<Vec<u8>>) {
 const MODEL_SUBJECT_R2: &str = "refinement R2 using inf abstract A concrete C {}\n";
 
 /// `unit` over `documents` with the `refinement_internals` value `internals`,
-/// checked and emitted: the package id and every refinement node by name.
+/// checked and emitted: every refinement node by name.
 fn emit_with_internals(
     unit: &str,
     documents: &[Vec<u8>],
     internals: Option<Value>,
-) -> (Value, BTreeMap<String, Value>) {
+) -> BTreeMap<String, Value> {
     let packages =
         qsl_semantics::model::intake::package_input(documents.iter().map(Vec::as_slice)).unwrap();
     let mut declarations =
@@ -1487,7 +1412,7 @@ fn emit_with_internals(
             (name, node)
         })
         .collect();
-    (wire["package_id"].clone(), by_name)
+    by_name
 }
 
 /// QSpec FR-375-AC-12: the `refinement_internals` value is the only host of
@@ -1500,14 +1425,14 @@ fn the_internal_list_value_hosts_abstract_internal() {
     let (unit, documents) = protocol_subject();
     let internal =
         |name: &str, entries: &[&str]| json!([{"refinement": name, "internal": entries}]);
-    let (_, listed) =
+    let listed =
         emit_with_internals(&unit, &documents, Some(internal("R", &["A::Local::Done"])));
     assert_eq!(
         listed["R"]["body"]["abstract_internal"],
         json!(["Local::Done"])
     );
     for value in [None, Some(json!([]))] {
-        let (_, plain) = emit_with_internals(&unit, &documents, value.clone());
+        let plain = emit_with_internals(&unit, &documents, value.clone());
         assert!(
             plain["R"]["body"].get("abstract_internal").is_none(),
             "{value:?}"
@@ -1515,21 +1440,19 @@ fn the_internal_list_value_hosts_abstract_internal() {
     }
     // A value naming only another refinement, the model subject `R2`.
     let two = format!("{unit}{MODEL_SUBJECT_R2}");
-    let (_, nodes) = emit_with_internals(&two, &documents, Some(internal("R2", &[])));
+    let nodes = emit_with_internals(&two, &documents, Some(internal("R2", &[])));
     assert!(nodes["R"]["body"].get("abstract_internal").is_none());
     assert!(nodes["R2"]["body"].get("abstract_internal").is_none());
 }
 
-/// QSpec FR-375-AC-13: a list and none give different refinement node ids
-/// and package ids; reordering the value's objects or entries changes
-/// neither, nor does renaming the abstract alias with the value's spellings
-/// renamed to match.
+/// QSpec FR-375-AC-13: reordering the value's objects or entries changes
+/// neither the refinement node nor its written internal list, nor does
+/// renaming the abstract alias with the value's spellings renamed to match.
 #[trace("FR-375-AC-13", "TC-310")]
 #[test]
-fn the_internal_list_enters_the_identity_and_its_order_does_not() {
+fn the_internal_list_order_does_not_change_the_refinement_node() {
     let (unit, documents) = protocol_subject();
     let two = format!("{unit}{MODEL_SUBJECT_R2}");
-    let (none_id, none) = emit_with_internals(&two, &documents, None);
     let value = |alias: &str, entries: [&str; 2], objects_reversed: bool| {
         let r = json!({"refinement": "R", "internal": entries.map(|entry| entry.replace("A::", &format!("{alias}::")))});
         let r2 = json!({"refinement": "R2", "internal": []});
@@ -1541,19 +1464,16 @@ fn the_internal_list_enters_the_identity_and_its_order_does_not() {
     };
     let entries = ["A::Local::Done", "lose A::Local::ch"];
     let reversed = ["lose A::Local::ch", "A::Local::Done"];
-    let (listed_id, listed) =
-        emit_with_internals(&two, &documents, Some(value("A", entries, false)));
-    assert_ne!(listed["R"]["node_id"], none["R"]["node_id"]);
-    assert_ne!(listed_id, none_id);
+    let listed = emit_with_internals(&two, &documents, Some(value("A", entries, false)));
     assert_eq!(
         listed["R"]["body"]["abstract_internal"],
         json!(["Local::Done", "lose Local::ch"])
     );
     for (order, objects_reversed) in [(reversed, false), (entries, true), (reversed, true)] {
-        let (id, nodes) =
+        let nodes =
             emit_with_internals(&two, &documents, Some(value("A", order, objects_reversed)));
-        assert_eq!(id, listed_id, "{order:?} {objects_reversed}");
         assert_eq!(nodes["R"]["node_id"], listed["R"]["node_id"]);
+        assert_eq!(nodes["R"]["body"], listed["R"]["body"]);
         assert_eq!(nodes["R2"]["node_id"], listed["R2"]["node_id"]);
     }
     // The abstract alias renamed, with the value's spellings to match.
@@ -1561,10 +1481,8 @@ fn the_internal_list_enters_the_identity_and_its_order_does_not() {
         .replace("model A ", "model S ")
         .replace("abstract A ", "abstract S ")
         .replace("A::", "S::");
-    let (renamed_id, renamed_nodes) =
-        emit_with_internals(&renamed, &documents, Some(value("S", entries, false)));
+    let renamed_nodes = emit_with_internals(&renamed, &documents, Some(value("S", entries, false)));
     assert_eq!(renamed_nodes["R"]["node_id"], listed["R"]["node_id"]);
-    assert_eq!(renamed_id, listed_id);
 }
 
 /// QSpec FR-375 (AC-11, AC-25): a row-empty protocol subject keeps the
@@ -1840,8 +1758,7 @@ fn quantity_typed_source_operations_are_admitted_by_the_strict_reader() {
             failures.push(format!("{name}: no application of {identity:?}"));
         }
         match &outcome.read {
-            Ok(read)
-                if read.package.package_id() == outcome.emitted.emission.package.package_id() => {}
+            Ok(_) => {}
             other => failures.push(format!("{name}: not admitted: {other:?}")),
         }
     }
@@ -1935,7 +1852,7 @@ fn quantity_literals_lower_to_shared_quantity_literal_nodes_the_strict_reader_ad
         want.sort_by_key(|(value, unit)| (value.clone(), unit.to_string()));
         assert_eq!(literals, want, "{functions}");
         match read(&emitted) {
-            Ok(read) if read.package.package_id() == emitted.emission.package.package_id() => {}
+            Ok(_) => {}
             other => panic!("{functions}: not admitted: {other:?}"),
         }
     }
@@ -2229,10 +2146,6 @@ fn step_rows_carry_their_source_regions_by_canonical_ordinal() {
     );
     assert_eq!(forward_node["node_id"], reversed_node["node_id"]);
     assert_eq!(forward_node["body"], reversed_node["body"]);
-    assert_eq!(
-        wire(&forward.emission)["package_id"],
-        wire(&reversed.emission)["package_id"]
-    );
     let classes: Vec<&str> = forward_node["body"]["steps"]
         .as_array()
         .expect("steps")
@@ -2617,10 +2530,6 @@ fn memory_rows_go_last_drain_before_flush() {
         refinement_node(&reversed.emission)["node_id"],
         node["node_id"]
     );
-    assert_eq!(
-        wire(&reversed.emission)["package_id"],
-        wire(&forward.emission)["package_id"]
-    );
 }
 
 /// QSpec FR-375-AC-23 and AC-26: over `parallel` controls defaulting to
@@ -2684,29 +2593,8 @@ fn memory_rows_read_back() {
     assert!(admitted.is_ok(), "the memory rows read back: {admitted:?}");
 }
 
-/// IR's verdict on `envelope`, a rewrite of `emitted`'s package, with the
-/// refinement node at `position` rekeyed from its closed
-/// `quire.refinement-node/v1` preimage and the frame identity refreshed.
-fn refinement_verdict(emitted: &Emitted, envelope: &Value, position: usize) -> String {
-    let mut envelope = envelope.clone();
-    let node = &envelope["semantic_graph"]["nodes"][position];
-    let old = node["node_id"]["digest"]
-        .as_str()
-        .expect("a digest")
-        .to_owned();
-    let preimage = json!({
-        "version": "quire.refinement-node/v1",
-        "semantic_type": node["semantic_type"],
-        "body": node["body"],
-    });
-    let new = quire_canonical::sha256(&preimage, quire_canonical::Limits::new(u64::MAX))
-        .expect("the preimage encodes")
-        .to_string();
-    let text = serde_json::to_string(&envelope)
-        .expect("the envelope serializes")
-        .replace(&old, &new);
-    envelope = serde_json::from_str(&text).expect("the envelope parses");
-    crate::checked_v2::tests::refresh_frame_identity(&mut envelope);
+/// IR's verdict on `envelope`, a rewrite of `emitted`'s package.
+fn refinement_verdict(emitted: &Emitted, envelope: &Value, _position: usize) -> String {
     let mut evidence = read_evidence(&emitted.emission);
     for document in &emitted.documents {
         evidence
@@ -2714,7 +2602,7 @@ fn refinement_verdict(emitted: &Emitted, envelope: &Value, position: usize) -> S
             .expect("a fresh evidence key");
     }
     match quire_contract_model::read_checked_package(
-        &jcs(&envelope),
+        &jcs(envelope),
         quire_contract_model::CheckedPackageReadLimits::bounded(),
         &evidence,
     ) {
@@ -2722,7 +2610,7 @@ fn refinement_verdict(emitted: &Emitted, envelope: &Value, position: usize) -> S
         quire_contract_model::CheckedPackageDispatchResult::Refused(refusal) => format!(
             "{:?} at {} ({:?})",
             refusal.code,
-            refusal.path.as_ref().map_or("-", |path| path.as_str()),
+            refusal.loci[0].path.as_ref().map_or("-", |path| path.as_str()),
             refusal.cause
         ),
         other => format!("{other:?}"),

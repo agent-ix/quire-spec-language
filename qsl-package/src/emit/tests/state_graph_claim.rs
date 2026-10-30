@@ -385,6 +385,7 @@ fn ir_refusal(
 
 fn path(refusal: &quire_contract_model::CheckedPackageRefusal) -> String {
     refusal
+        .loci[0]
         .path
         .as_ref()
         .map(|pointer| pointer.as_str().to_owned())

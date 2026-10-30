@@ -393,6 +393,7 @@ fn ir_refusal(
 /// The JSON pointer IR reported, as text.
 fn path(refusal: &quire_contract_model::CheckedPackageRefusal) -> String {
     refusal
+        .loci[0]
         .path
         .as_ref()
         .map(|pointer| pointer.as_str().to_owned())

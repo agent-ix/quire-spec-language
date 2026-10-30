@@ -338,7 +338,6 @@ fn length_units() -> (
             (kilometre, kilometre_key.clone()),
         ],
         &OwnerSelection::new([selection]),
-        qsl_foundation::IdentityLimits::default(),
     )
     .expect("the unit graph admits");
     (
