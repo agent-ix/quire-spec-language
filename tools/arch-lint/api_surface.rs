@@ -388,7 +388,7 @@ pub(crate) const RULES: &[Rule] = &[
     },
     Rule {
         id: "T12-G",
-        description: "only `check`, `library` and `value::definition` of `qsl-semantics` call a \
+        description: "only `check` and `value::definition` of `qsl-semantics` call a \
                       `quire_checked::construct` constructor (ADR-011 FB-14, FR-400 \"Checking \
                       authority\" rule 3)",
         role: Role::Qsl,
@@ -400,8 +400,8 @@ pub(crate) const RULES: &[Rule] = &[
         // through the module, spelled through the crate or an alias of it,
         // matches as a `use` leaf (plain, nested or glob), a call or a
         // function value. `check` and every module under it may build any
-        // checked term; `library` mints `PackageId` and `value::definition`
-        // admits `AdmittedIntegerDivision`, each only its own constructor.
+        // checked term; `value::definition` admits
+        // `AdmittedIntegerDivision`, only its own constructor.
         call_patterns: &["quire_checked::construct"],
         forbidden_patterns: &[],
         forbidden_modules: &[],
@@ -417,13 +417,6 @@ pub(crate) const RULES: &[Rule] = &[
              `construct` feature to `qsl-semantics`",
         ),
         constructors: &[
-            ConstructorCallers {
-                function: "package_id",
-                callers: &[AllowedCaller {
-                    crate_src: "qsl-semantics/src",
-                    module_prefix: "library",
-                }],
-            },
             ConstructorCallers {
                 function: "admitted_integer_division",
                 callers: &[AllowedCaller {
@@ -2888,7 +2881,7 @@ mod tests {
     /// tc_arch_lint_api_surface_029 (T12-G, FR-400-AC-3): a `quire_checked::construct`
     /// path from `qsl-eval`, `qsl-package` or `qsl-semantics`' `model` fails,
     /// naming file, line and module; `check` and
-    /// `value::definition` pass; `library` fails for this constructor.
+    /// `value::definition` pass; `library` fails.
     #[trace("TC-157", "FR-060-AC-2", "FR-400-AC-3")]
     #[test]
     fn tc_arch_lint_api_surface_029_construct_outside_the_checker_is_a_violation() {
@@ -2925,7 +2918,6 @@ mod tests {
             vec![
                 ("qsl-eval/src/run.rs".to_owned(), 2, "run".to_owned()),
                 ("qsl-package/src/emit.rs".to_owned(), 2, "emit".to_owned()),
-                // `library` may build only the `PackageId` constructor.
                 (
                     "qsl-semantics/src/library/mod.rs".to_owned(),
                     2,
@@ -2950,8 +2942,8 @@ mod tests {
 
     /// tc_arch_lint_api_surface_031 (T12-G, FR-400-AC-3): a crate alias, a
     /// nested use tree and a glob import of the `construct` module count as
-    /// references, and `library` and `value::definition` may reference only
-    /// their own constructor.
+    /// references, and `value::definition` may reference only its own
+    /// constructor.
     #[trace("TC-157", "FR-060-AC-2", "FR-400-AC-3")]
     #[test]
     fn tc_arch_lint_api_surface_031_construct_is_found_through_alias_group_and_glob() {
@@ -2987,10 +2979,6 @@ mod tests {
             (
                 "qsl-semantics/src/check/mod.rs",
                 "use quire_checked as qc;\nuse qc::construct::*;\nuse quire_checked::{construct::package_id};\n",
-            ),
-            (
-                "qsl-semantics/src/library/ok.rs",
-                "use quire_checked::{construct::package_id};\n",
             ),
             (
                 "qsl-semantics/src/value/definition/inner.rs",

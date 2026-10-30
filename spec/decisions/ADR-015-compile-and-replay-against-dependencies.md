@@ -109,13 +109,9 @@ these steps to each import in this order:
    under the same stage limits. Each library compile is charged the full S1
    to S4 limits as its own unit, and the number of library compiles is at
    most the number of supplied libraries.
-5. **View.** The library's identity and version are read from its
-   emitted checked package and its `package_id` is the library's selection (the
-   FR-322 `package_id` member is carried as the opaque string the emit wrote).
-   The emitted v2 bytes are read through the I2 reader, with a selection
-   request holding that one selection, into a
-   `VerifiedPackage` and then its `ImportView` (ADR-011 §4 verified
-   binding).
+5. **View.** The library is identified by its `LibraryName` alone. The
+   emitted v2 bytes are read through the I2 reader into a `LibraryPackage`,
+   and `ImportView::of(&LibraryPackage)` builds its `ImportView` (ADR-011 §4).
 
 Two kinds of refusal are **closure-level** and are reported unwrapped by
 the top-level compile, wherever in the closure they are found:
@@ -154,8 +150,7 @@ A library identity is the FR-322 `DependencySelection.identity`: a
 non-empty string with no segment structure, equal to another only when
 their UTF-8 bytes are equal and ordered by UTF-8 bytes (QSpec FR-307,
 FR-322). `library::LibraryName` wraps that string. Its constructor refuses
-only the empty string, and it has no segment accessor. `verify_binding`,
-`SelectionRequest`, `ImportDeclaration`, the E4 closure and the dependency
+only the empty string, and it has no segment accessor. `SelectionRequest`, `ImportDeclaration`, the E4 closure and the dependency
 input key libraries by it. The S1 parser's identity bound (at most 512
 bytes) is a source limit, not part of the identity.
 
@@ -210,11 +205,11 @@ verdict.
 ### D-5 E3 types an imported name from the dependency's checked graph
 
 E3 resolves `a::Name` through the import's `ImportView`, as FR-087-AC-13
-states, to `PackageNodeKey{package, node: WireNodeId}`. It then types the
-use from the dependency's `CheckedGraph`, which D-1 compiled from source
-and handed to E3 beside the view: it finds the node whose `NodeKey` bytes
-equal the `WireNodeId`, by lookup among the keys that graph holds and
-never by minting a `NodeKey` (ADR-013 O-04, R-10; ADR-011 FB-13), and reads
+states, to the exported structural `NodeKey`, whose `package` component
+names the dependency. It then types the use from the dependency's
+`CheckedGraph`, which D-1 compiled from source and handed to E3 beside the
+view: it finds that `NodeKey` by lookup among the keys that graph holds and
+never by minting one (ADR-013 O-04, R-10; ADR-011 FB-13), and reads
 the checked declaration there. A call `l::f(x)` checks as a call of that
 function: its arguments against the function's checked parameter types, and
 its result type is the function's checked result type. An `ImportView`
@@ -282,8 +277,8 @@ stays acyclic.
   D-1.
 - ADR-011 §5, spine `compile`: it takes the dependency input (D-1), and E3
   refuses an `import` only by D-1's causes.
-- ADR-013 O-02: every `PackageId` is recomputed, never built from an
-  import (D-2).
+- ADR-013 O-02: a library is identified by its `LibraryName` alone, never
+  by a digest built from an import (D-2).
 - ADR-013 O-04: a `WireNodeId` from an import view also becomes a `NodeKey`
   by lookup at E3, in the dependency's checked graph compiled from source
   (D-5).
