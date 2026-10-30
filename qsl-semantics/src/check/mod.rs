@@ -113,11 +113,6 @@ pub(crate) mod imports;
 mod ir;
 mod layer;
 mod lowering;
-// FR-091's dimension, unit and enum key vectors, recomputed from the spec's
-// stated preimage content.
-#[cfg(any(test, feature = "test-support"))]
-#[path = "lowering/fr091_vectors.rs"]
-pub mod fr091_vectors;
 pub(crate) use assemble::variant_type_declarations;
 pub(crate) use lowering::record_node_key;
 mod hybrid;
