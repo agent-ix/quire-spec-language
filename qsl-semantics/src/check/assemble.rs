@@ -2990,22 +2990,24 @@ impl PackageDeclarations {
     /// admitted entry of its identity is refused.
     pub fn assemble(
         source: RawSourceRef,
+        package_name: String,
         unit: ParsedUnit,
         models: impl Into<SelectedModels>,
         imports: Vec<AdmittedImport>,
     ) -> Result<Self, AssemblyRefusal> {
-        Self::assemble_with_limits(source, unit, models, imports, AssemblyLimits::default())
+        Self::assemble_with_limits(source, package_name, unit, models, imports, AssemblyLimits::default())
     }
 
     /// [`Self::assemble`] under explicit `limits` (ADR-011 §2.3).
     pub fn assemble_with_limits(
         source: RawSourceRef,
+        package_name: String,
         unit: ParsedUnit,
         models: impl Into<SelectedModels>,
         imports: Vec<AdmittedImport>,
         limits: AssemblyLimits,
     ) -> Result<Self, AssemblyRefusal> {
-        Self::assemble_with_cancel(source, unit, models, imports, limits, &Cancel::new())
+        Self::assemble_with_cancel(source, package_name, unit, models, imports, limits, &Cancel::new())
     }
 
     /// [`Self::assemble_with_limits`] under the caller's [`Cancel`] handle,
@@ -3015,6 +3017,7 @@ impl PackageDeclarations {
     /// apart.
     pub fn assemble_with_cancel(
         source: RawSourceRef,
+        package_name: String,
         unit: ParsedUnit,
         models: impl Into<SelectedModels>,
         imports: Vec<AdmittedImport>,
@@ -3023,6 +3026,7 @@ impl PackageDeclarations {
     ) -> Result<Self, AssemblyRefusal> {
         Self::assemble_with_execution_points_and_cancel(
             source,
+            package_name,
             unit,
             models,
             imports,
@@ -3036,6 +3040,7 @@ impl PackageDeclarations {
     /// by exact authored state-clause name (FR-104-AC-15).
     pub fn assemble_with_execution_points_and_cancel(
         source: RawSourceRef,
+        package_name: String,
         unit: ParsedUnit,
         models: impl Into<SelectedModels>,
         imports: Vec<AdmittedImport>,
@@ -3968,7 +3973,7 @@ impl PackageDeclarations {
             selected_views.insert(model.alias.clone(), view);
         }
 
-        let mut package = PackageDeclarations::new(source, limits.identity);
+        let mut package = PackageDeclarations::new(source, package_name, limits.identity);
         package.execution_point_keys = execution_points.keys().cloned().collect();
         package.types = types;
         package.operations = operations;

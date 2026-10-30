@@ -337,6 +337,12 @@ pub struct PackageDeclarations {
     /// enter no key. The checked graph carries it on for the lock's
     /// `sources` entry. `check` holds no constant owner.
     pub source: qsl_foundation::source::provenance::RawSourceRef,
+    /// The package's name: the package manifest's top-level `name`, required
+    /// on every compile or check request (FR-091-OQ-3). It is the `package`
+    /// of every source-owned declared or derived node key. A unit label
+    /// (`SourceOwner::identity`) is never a package, and nothing here
+    /// defaults, falls back or derives it from source text.
+    pub package_name: String,
     /// The `protocol_profile` the unit's header selected (FR-110), the law
     /// `DefinitionRef` a protocol node names (FR-093). The assembler sets it
     /// from the header's catalog resolution.
@@ -637,12 +643,14 @@ impl PackageDeclarations {
     /// under `identity`.
     pub fn new(
         source: qsl_foundation::source::provenance::RawSourceRef,
+        package_name: impl Into<String>,
         identity: qsl_foundation::IdentityLimits,
     ) -> Self {
         Self {
             model_inputs: None,
             pending_types: None,
             source,
+            package_name: package_name.into(),
             protocol_profile: None,
             header_layers: Vec::new(),
             types: TypeEnvironment::default(),
