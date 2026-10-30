@@ -10,8 +10,8 @@
 use ix_trace_rs::trace;
 use quire_contract_model::{
     CheckedArtifactRef, CheckedExtensionDefinition, CheckedPackageEvidence,
-    CheckedPackageRefusalCause, CheckedPackageRefusalCode, NominalIdentityPreimage,
-    CHECKED_PACKAGE_V2, PACKAGE_DOMAIN_V2,
+    CheckedPackageRefusalCause, CheckedPackageRefusalCode, 
+    CHECKED_PACKAGE_V2,
 };
 use serde_json::{json, Value};
 
@@ -24,7 +24,7 @@ use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::Setting;
 use qsl_semantics::check::imports::ImportedNames;
 use qsl_semantics::check::CheckCause;
-use qsl_semantics::library::{ImportView, LibraryName, LibraryRefusal, RefusalClass};
+use qsl_semantics::library::{ImportView, LibraryName, LibraryRefusal};
 use quire_exact::{NodeKey, Origin, Role};
 use quire_semantic_value::catalog::{CatalogCode, CatalogCoded, Category};
 
@@ -1526,7 +1526,7 @@ fn conformance_a_model_with_every_variable_clocked_is_refused_at_a_class_literal
                 refusal.cause,
                 Some(CheckedPackageRefusalCause::InvalidValue)
             );
-            let path = refusal.path.as_ref().expect("a locus").to_string();
+            let path = locus_pointer(&refusal).expect("a locus");
             assert!(
                 path.ends_with("/body/members/0/value/members/0/members/1/value/value"),
                 "{path}"
@@ -2546,11 +2546,7 @@ fn conformance_timed_clause_vectors_keep_their_published_outcomes() {
                     CheckedPackageRefusalCode::MalformedWire,
                     "{id}"
                 );
-                let pointer = refusal
-                    .path
-                    .as_ref()
-                    .map(|path| path.as_str())
-                    .unwrap_or("");
+                let pointer = locus_pointer(&refusal).unwrap_or_default();
                 assert!(pointer.starts_with(locus), "{id}: {pointer} within {locus}");
             }
             "refused" => {
@@ -3484,7 +3480,7 @@ fn extension_definition_absent_from_selections_refuses_missing_selection() {
             "holds={holds}"
         );
         assert_eq!(
-            refusal.path.as_ref().map(|p| p.as_str().to_owned()),
+            locus_pointer(&refusal),
             Some(format!("/semantic_graph/nodes/{index}/body/definition")),
             "holds={holds}"
         );
@@ -3575,4 +3571,13 @@ fn an_ir_wrong_snapshot_refusal_maps_to_the_wrong_snapshot_code() {
 
 fn qspec_directory() -> Option<std::path::PathBuf> {
     std::env::var_os("QSPEC_DIR").map(std::path::PathBuf::from)
+}
+
+/// The primary location's pointer of an IR refusal, if it has one.
+fn locus_pointer(refusal: &quire_contract_model::CheckedPackageRefusal) -> Option<String> {
+    refusal
+        .loci
+        .first()
+        .and_then(|location| location.path.as_ref())
+        .map(|path| path.as_str().to_owned())
 }
