@@ -1119,10 +1119,7 @@ impl Run<'_, '_, '_> {
             let state_key = encode::model_key(&system.model, candidate, system.typing());
             let (bytes, digest) =
                 key::state_key(&state_key, identity_limits()).map_err(|_| stop(BROKEN))?;
-            let observation = system
-                .model
-                .observation(candidate, state_document(&digest))
-                .map_err(|_| stop(BROKEN))?;
+            let observation = self.post_observation(candidate, &digest)?;
             *evidence = Some((bytes.as_bytes().to_vec(), digest, observation));
         }
         let (_, _, post) = evidence.as_ref().ok_or_else(|| stop(BROKEN))?;
@@ -1234,6 +1231,28 @@ impl Run<'_, '_, '_> {
         Ok((candidate, written))
     }
 
+    /// The observation of `candidate` as a post-state, keyed `digest`, with
+    /// the presence of each guarded clock place it holds, which a
+    /// postcondition's `present(self.v)` reads (QSpec FR-322 `CW-05`).
+    fn post_observation(
+        &self,
+        candidate: &ModelState,
+        digest: &DigestRecord,
+    ) -> Result<Observation, ExpansionStop> {
+        let mut observation = self
+            .walk
+            .system
+            .model
+            .observation(candidate, state_document(digest))
+            .map_err(|_| stop(BROKEN))?;
+        if let Some(presence) = self.walk.post_presence {
+            observation
+                .environment
+                .set_place_presence(presence(candidate));
+        }
+        Ok(observation)
+    }
+
     /// The observations of the postcondition `info` with `candidate` as
     /// the post-state.
     fn post_observations(
@@ -1246,10 +1265,7 @@ impl Run<'_, '_, '_> {
         let state_key = encode::model_key(&system.model, candidate, system.typing());
         let (_, digest) =
             key::state_key(&state_key, identity_limits()).map_err(|_| stop(BROKEN))?;
-        let post = system
-            .model
-            .observation(candidate, state_document(&digest))
-            .map_err(|_| stop(BROKEN))?;
+        let post = self.post_observation(candidate, &digest)?;
         let effect = self.effect_of(candidate, delta)?;
         Ok(AdmittedObservations {
             usage: AdmissionUsage::default(),

@@ -2231,6 +2231,7 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
         context_population: None,
         frame_population: None,
         spans: expression_spans(&body),
+        presence_places: Vec::new(),
         body,
     };
     declarations_a.state_clauses.extend([
