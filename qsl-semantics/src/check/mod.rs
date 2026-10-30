@@ -254,6 +254,40 @@ pub(crate) fn declared_node_key(
     quire_exact::NodeKey::new(package, path, ordinal)
 }
 
+/// Mint a producer-selected structural identity, including the special
+/// clock-binding path and recursion-group members.
+pub(crate) fn structural_node_key(
+    package_name: &str,
+    path: Vec<quire_exact::PathSegment>,
+    ordinal: u64,
+) -> Result<quire_exact::NodeKey, quire_exact::InvalidNodeKey> {
+    quire_exact::NodeKey::new(package_name.to_owned(), path, ordinal)
+}
+
+/// Mint a derived node under the containing package from its closed tag,
+/// semantic form and ordered semantic operands. Recursion-group members use
+/// their producer-chosen path instead of this non-group recipe.
+pub(crate) fn derived_node_key(
+    package_name: &str,
+    node_tag: NodeTag,
+    semantic_form: &str,
+    operands: Vec<quire_exact::PathSegment>,
+    ordinal: u64,
+) -> Result<quire_exact::NodeKey, quire_exact::InvalidNodeKey> {
+    let requested = operands
+        .len()
+        .checked_add(2)
+        .and_then(|len| len.checked_mul(std::mem::size_of::<quire_exact::PathSegment>()))
+        .unwrap_or(usize::MAX);
+    let mut path = Vec::new();
+    path.try_reserve_exact(operands.len().saturating_add(2))
+        .map_err(|_| quire_exact::InvalidNodeKey::Allocation { requested })?;
+    path.push(quire_exact::PathSegment::Text(node_tag.as_str().to_owned()));
+    path.push(quire_exact::PathSegment::Text(semantic_form.to_owned()));
+    path.extend(operands);
+    structural_node_key(package_name, path, ordinal)
+}
+
 /// The structural key of QSpec's built-in Rational scalar type (FR-092).
 /// Timed tick sources use this primitive literal type even when the checked
 /// unit contains no other rational expression from which S4 could discover it.

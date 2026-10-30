@@ -228,6 +228,12 @@ pub enum NodeRef {
     Pending(PlaceholderId),
 }
 
+impl From<NodeKey> for NodeRef {
+    fn from(node: NodeKey) -> Self {
+        Self::Admitted(node)
+    }
+}
+
 impl NodeRef {
     /// Borrow the admitted node identity after placeholder resolution.
     pub fn admitted(&self) -> Option<&NodeKey> {
@@ -289,6 +295,29 @@ pub enum NodeTag {
     /// `presence_read` over the place references (QSpec FR-322
     /// "Presence").
     TimedModel,
+}
+
+impl NodeTag {
+    /// The closed v2 node tag spelling used as a derived path segment.
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::ScalarType => "scalar_type",
+            Self::CompositeType => "composite_type",
+            Self::BoundedDomain => "bounded_domain",
+            Self::Value => "value",
+            Self::Expression => "expression",
+            Self::Function => "function",
+            Self::Model => "model",
+            Self::Relation => "relation",
+            Self::State => "state",
+            Self::Temporal => "temporal",
+            Self::Protocol => "protocol",
+            Self::Claim => "claim",
+            Self::Correspondence => "correspondence",
+            Self::Hybrid => "hybrid",
+            Self::TimedModel => "timed_model",
+        }
+    }
 }
 
 /// The Leaf stratum of QSpec FR-322's v2 body grammar (ADR-030 D-2): a
@@ -545,17 +574,22 @@ impl FrameField {
 impl LeafTerm {
     /// `{term: "reference", target}`.
     pub(crate) fn reference(target: NodeKey) -> Self {
-        Self::Reference {
-            target: NodeRef::Admitted(target),
-        }
+        Self::reference_node(target.into())
+    }
+
+    /// A reference to an admitted identity or lowering-local placeholder.
+    pub(crate) fn reference_node(target: NodeRef) -> Self {
+        Self::Reference { target }
     }
 
     /// `{term: "literal", type, value_kind, value}`.
     pub(crate) fn literal(ty: NodeKey, value: LiteralValue) -> Self {
-        Self::Literal {
-            ty: NodeRef::Admitted(ty),
-            value,
-        }
+        Self::literal_node(ty.into(), value)
+    }
+
+    /// A literal typed by an admitted identity or lowering-local placeholder.
+    pub(crate) fn literal_node(ty: NodeRef, value: LiteralValue) -> Self {
+        Self::Literal { ty, value }
     }
 
     /// The node key this leaf names in its own graph: a `reference`'s
@@ -624,10 +658,15 @@ impl GroupTerm {
 
     /// An aggregate of the references to `targets`, in order.
     pub(crate) fn references(targets: impl IntoIterator<Item = NodeKey>) -> Self {
+        Self::references_nodes(targets.into_iter().map(NodeRef::from))
+    }
+
+    /// An aggregate of admitted references and pending local handles.
+    pub(crate) fn references_nodes(targets: impl IntoIterator<Item = NodeRef>) -> Self {
         Self::new(
             targets
                 .into_iter()
-                .map(|target| GroupMember::Leaf(LeafTerm::reference(target)))
+                .map(|target| GroupMember::Leaf(LeafTerm::reference_node(target)))
                 .collect(),
         )
     }
@@ -729,7 +768,12 @@ impl BindingValue {
 impl MemberTerm {
     /// `{term: "reference", target}` as a Member.
     pub(crate) fn reference(target: NodeKey) -> Self {
-        Self::Leaf(LeafTerm::reference(target))
+        Self::reference_node(target.into())
+    }
+
+    /// A Member reference to an admitted identity or pending local handle.
+    pub(crate) fn reference_node(target: NodeRef) -> Self {
+        Self::Leaf(LeafTerm::reference_node(target))
     }
 
     /// `{term: "binding", name, value}` as a Member.
@@ -774,7 +818,12 @@ impl AggregateTerm {
 impl BodyTerm {
     /// `{term: "literal", type, value_kind, value}` as a body.
     pub(crate) fn literal(ty: NodeKey, value: LiteralValue) -> Self {
-        Self::Leaf(LeafTerm::literal(ty, value))
+        Self::literal_node(ty.into(), value)
+    }
+
+    /// A literal body typed by an admitted identity or pending handle.
+    pub(crate) fn literal_node(ty: NodeRef, value: LiteralValue) -> Self {
+        Self::Leaf(LeafTerm::literal_node(ty, value))
     }
 
     /// `{term: "aggregate", members}` as a body.
