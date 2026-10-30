@@ -2768,7 +2768,7 @@ enum ClauseClocks {
     /// collection it reads.
     Guard(Vec<PartDraft>, Option<Span>),
     /// A postcondition's resets.
-    Resets(ResetCut),
+    Resets(Box<ResetCut>),
 }
 
 /// What a postcondition's resets cut from its body: each reset conjunct,
@@ -3532,7 +3532,10 @@ fn read_clause(
                 }));
             }
             removed = std::mem::take(&mut cut.removed);
-            (std::mem::take(&mut cut.leaves), ClauseClocks::Resets(cut))
+            (
+                std::mem::take(&mut cut.leaves),
+                ClauseClocks::Resets(Box::new(cut)),
+            )
         }
     };
     let rewritten = form
@@ -4078,6 +4081,7 @@ fn prepare_models(
                     guards.push((index, parts, quantifier));
                 }
                 ClauseClocks::Resets(cut) => {
+                    let cut = *cut;
                     if let (false, Some(operation)) = (
                         cut.resets.is_empty()
                             && cut.writes.is_empty()
