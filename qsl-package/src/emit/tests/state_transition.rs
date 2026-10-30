@@ -819,16 +819,16 @@ fn an_execution_point_on_a_clause_of_the_operation_gives_no_transition() {
         );
     }
 }
-
-/// The node id of the condition of the one `kind` clause `declaration`
-/// declares: nodes are content-keyed, so the same body gives the same id in
-/// any package over this model.
-fn condition_id(declaration: &str, kind: &str) -> Value {
-    let alone = compile(declaration);
-    let [clause] = alone.clauses(kind)[..] else {
-        panic!("one {kind} clause in {declaration}");
-    };
-    alone.condition(clause)["node_id"].clone()
+/// The node ids of the conditions of the authored (not derived)
+/// preconditions of `compiled`, in source order.
+fn authored_conditions(compiled: &Compiled) -> Vec<Value> {
+    compiled
+        .clauses("precondition")
+        .into_iter()
+        .map(|clause| compiled.condition(clause))
+        .filter(|condition| condition["body"]["operation"]["identity"] != "quire.op.boolean.and")
+        .map(|condition| condition["node_id"].clone())
+        .collect()
 }
 
 /// The operands of a left fold of `quire.op.boolean.and` rooted at `node`,
@@ -857,7 +857,6 @@ fn the_fold_follows_ascending_clause_names_not_source_order() {
         "not flag or self.lit",
         "flag or self.lit",
     );
-    let [ia, ib, id] = [a, b, d].map(|body| condition_id(&c("P", body), "precondition"));
     // Source order is P3, P1, P2; clause-name order is P1, P2, P3.
     let compiled = compile(&format!(
         "{BASE_POST}{}{}{}",
@@ -869,9 +868,13 @@ fn the_fold_follows_ascending_clause_names_not_source_order() {
         panic!("one transition");
     };
     let derived = compiled.node(&member_targets(Compiled::bound(transition, "pre"))[0]);
+    // The authored clauses' conditions, read from this same compile in source
+    // order (P3, P1, P2), so clause-name order is positions 1, 2, 0.
+    let [p3, p1, p2] = <[Value; 3]>::try_from(authored_conditions(&compiled))
+        .expect("three authored preconditions");
     assert_eq!(
         fold_operands(&compiled, compiled.condition(derived)),
-        [ia.clone(), ib.clone(), id.clone()]
+        [p1, p2, p3]
     );
 
     // One node declared as P1 and P9 sorts by its least name P1, before P5.
@@ -885,9 +888,14 @@ fn the_fold_follows_ascending_clause_names_not_source_order() {
         panic!("one transition");
     };
     let derived = shared.node(&member_targets(Compiled::bound(transition, "pre"))[0]);
+    // Source order is P9, P5, P1; P9 and P1 check to the one node, whose
+    // listed position is P9's.
+    let authored = authored_conditions(&shared);
+    let operands = fold_operands(&shared, shared.condition(derived));
+    assert_eq!(operands.len(), 2, "two clauses, not three");
     assert_eq!(
-        fold_operands(&shared, shared.condition(derived)),
-        [ia, ib],
-        "the node declared as P1 and P9 comes first; two clauses, not three"
+        operands,
+        [authored[0].clone(), authored[1].clone()],
+        "the node declared as P1 and P9 comes first"
     );
 }
