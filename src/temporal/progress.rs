@@ -28,8 +28,6 @@ use super::trace::Trace;
 /// retains none of this.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct AuthenticatedBinding {
-    /// Raw-byte digest of the admitted version-2 package.
-    pub package_digest: String,
     /// Declaration index in that package.
     pub declaration: usize,
     /// Registered temporal definition identity.

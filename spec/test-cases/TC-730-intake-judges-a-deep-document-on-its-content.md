@@ -22,9 +22,9 @@ Run every step on a thread spawned with a 512 KiB stack unless the step says oth
 1. With `intake.input_bytes` raised to fit, admit a package document whose
    declarations are valid and which holds an array nested 100,000 deep at a
    member the semantic-IR schema does not admit.
-2. Admit every corpus package FR-056's tests admit, and read each digest.
+2. Admit every corpus package FR-056's tests admit.
 3. Read a package document holding `"\udc00"` in a string through
-   `PackageDocument::parse`, intake's one read. FR-154 admission digests
+   `PackageDocument::parse`, intake's one read. FR-154 admission takes
    such bytes raw (FR-056) and does not reach this refusal.
 4. Build both derived views of a reader tree nested 100,000 deep, as arrays
    and as objects, and drop the `serde_json` view. Drop a
@@ -41,7 +41,7 @@ Tag the tests `#[trace("TC-730", "FR-260-AC-1")]`, `#[trace("TC-730", "FR-260-AC
   `agent-ix-semantic-ir` reader's diagnostic for that member with its IR
   node, artifact id and span (FR-056's reader-refusal rule); no
   `resource_exhausted` cause, and no intake outcome names a depth.
-- Step 2: each is admitted with the `sha256-jcs` digest it had.
+- Step 2: each is admitted.
 - Step 3: refused `invalid_model_binding`/`malformed-declaration` at `$`,
   carrying the escape's byte offset.
 - Step 4: both views build and the `serde_json` view drops with no stack

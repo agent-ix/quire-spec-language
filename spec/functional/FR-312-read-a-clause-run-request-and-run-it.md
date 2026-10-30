@@ -76,7 +76,6 @@ place of `call`. `clause` is a closed object:
 - `observations`: an object mapping each key to the file of a
   `quire.state.snapshot/v1` or `quire.state.invocation/v1` document
   (FR-106);
-- `package_id`: optional, the expected `package_id`, lowercase hex;
 - `accounting`: optional, a closed object whose members are any subset of
   the ten `quire.value.accounting/v1` counter names, each a JSON integer
   from 0 to `u64::MAX`, with the same defaults as FR-100's
@@ -169,7 +168,7 @@ package and dependency inputs.
 | FR-312-AC-1 | Through `run`, FR-108's healthy-parent case as a clause-run request (`ParentOrder` over its current snapshot) returns one `native-run-result/2` result document with `success`, `truth: true` and `basis`, exit 0; violating-parent returns `violation`, exit 10. | Test |
 | FR-312-AC-2 | A request carrying both `call` and `clause`, one carrying neither, one whose `selection` holds both `clause` and `function`, one with an unknown member in `clause`, and one whose selection names an observation key `observations` lacks each refuse `invalid-request` at stage `request`, exit 20, no result document, naming the member or key. | Test |
 | FR-312-AC-3 | Observation files whose total size exceeds `dependent_bytes` refuse at the intake limit, and the same request with the limit raised to their size runs. | Test |
-| FR-312-AC-4 | A `function` selection of `sameIdentity` with object arguments, and a `frame` selection, each give the report FR-109 and FR-115 give for the same `ClauseRunRequest` built in process; a request whose `package_id` names another unit gives FR-109's stage `compile` `stale_dependency` report, exit 20, as a `/2` document, not a command-error envelope. | Test |
+| FR-312-AC-4 | A `function` selection of `sameIdentity` with object arguments, and a `frame` selection, each give the report FR-109 and FR-115 give for the same `ClauseRunRequest` built directly in code. | Test |
 | FR-312-AC-5 | A current clause request with `self` and `anchor` constructs FR-106 `Current` and checks the supplied anchor against the snapshot; a pre clause request with `parameters` and, for an object receiver, `self` constructs `PreCall`; a current or pre request without `self` constructs the selection with no `self`, and admission refuses it as `wrong-observation` at stage `admit` when the receiver is an object; a pre request without `self` for a state machine's precondition admits, and a state machine's invariant selected by `Current` is refused by FR-106-AC-46 (it is selected by `Context`); an invocation clause request constructs `Invocation` and reads `self` from that document. Omitting `anchor` from a current request or `parameters` from a pre request, or adding a role-forbidden member, refuses `invalid-request` at stage `request`, naming that member, before `run_clause`. Selecting a post snapshot or a document with an unrecognized format or observation role refuses `invalid-request` at stage `request`, naming `observation`. | Test |
 | FR-312-AC-6 | A clause request's `accounting` object accepts all ten counter names and passes their values unchanged to `ClauseRunRequest.accounting`; omitted `accounting` uses the FR-100 defaults. A direct `work_units` member of `clause` refuses `invalid-request` at stage `request`, exit 20, no result document. | Test (TC-891) |
 | FR-312-AC-7 | Through `run`, a request selecting `{"temporal": {"name": "Reaches", "trace": {"lasso": {"prefix": [], "loop": ["s0", "s1"]}}, "over": {"reference": {"population": P, "key": "c1"}}}}` over FR-330-AC-2's `Counter` snapshots `s0` (`c.value` 0), `s1` (1) and `s2` (2) returns the `/2` document FR-267-AC-13 states, exit 10; with loop `["s0", "s1", "s2"]` it returns `success`, exit 0, byte-identical to the report of the same `ClauseRunRequest` built in process. A trace key naming an invocation document or a pre snapshot, a `trace` of `{"model": {}}`, a `trace` holding both `finite` and `lasso`, and an unknown member in `temporal` each refuse `invalid-request` at stage `request`, exit 20, no result document, naming `trace` or the member. A `finite` array of zero keys reaches FR-330 and reports stage `evaluate`, `refusal`, `invalid_runtime_input`/`invalid-value`. | Test (TC-1160) |
@@ -199,8 +198,8 @@ is UNRUN. The accounting setting member is owned by QSL-656; this
 clarification does not duplicate that contract or define a compatibility
 member.
 
-The deletion of native `run` (ADR-031 R-1) also removes the per-file `sha256:`
-digests the native-v1 request selections carry and their checks (FR-026,
+The deletion of native `run` (ADR-031 R-1) also removes the per-file content
+checks the native-v1 request selections carry (FR-026,
 FR-027, FR-100): a request names its files, and the command reads their
 bytes as they are.
 

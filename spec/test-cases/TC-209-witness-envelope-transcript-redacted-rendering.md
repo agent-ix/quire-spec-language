@@ -41,7 +41,7 @@ panic message that formats the envelope. Scope: FR-073-AC-1.
 
 - Neither captured output (steps 2, 3) contains the step 1 marker string.
 - Neither captured output is as long as the full transcript; each is
-  bounded to a fixed size or shows only a descriptor (digest, byte length,
+  bounded to a fixed size or shows only a descriptor (byte length,
   or a short fixed-length excerpt).
 - Step 5's typed accessors return their full, correct results, unaffected
   by the rendering redaction in steps 2-3.

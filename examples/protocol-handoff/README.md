@@ -7,8 +7,6 @@ through the public model frontend, namespace, binding, type, definedness and
 family-admission APIs. It emits through
 `protocol_artifact::native::emit` and checks the unchanged bytes with
 `protocol_artifact::read` against selections derived from the original inputs.
-The output seal is selected by the producer after emission; this local reader
-check does not independently authenticate that seal or exercise tamper controls.
 The units retain cross-unit calls, bounded `sum`/`size` queries, exact rational types and
 object/reference population requirements. The `Wide` and `Exact` scalars declare the
 full signed-64 integer domain and the exact-rational domain at the denominator
@@ -18,7 +16,7 @@ literalises `-9223372036854775808`, `9223372036854775807` and
 `rational(-9223372036854775808, 9223372036854775807)` so a consumer sees those
 endpoints as emitted `M::Wide`/`M::Exact` values rather than inferring them.
 The second rational exercises the actual denominator ceiling `i64::MAX`, which
-the pinned Contract IR `RationalType::new` accepts; the first exercises the
+the Contract IR `RationalType::new` accepts; the first exercises the
 maximum numerator without reduction collapsing the pair. The negative pair
 also exercises the minimum numerator. No declared domain or compiler limit is
 weakened to admit these values.
@@ -73,7 +71,6 @@ incomplete output before reusing its path.
 The output directory contains:
 
 - `compiled-protocol.json`: exact canonical bytes from native emission.
-- `compiled-protocol.ref.json`: the existing `ix.artifact-ref/3-draft` external seal.
 - `expected.json`: this example's independent selections, using the existing
   wire records and `Expected` fields, plus relative dependency/model filenames.
 - `predicates.native`, `state.native`, `temporal.native`, `workflow.native` and
@@ -85,7 +82,7 @@ No handoff copy is checked in. A consumer that must admit a handoff calls
 `write_v1`/`write_v2` (feature `handoff-writer`) from its own build or test
 into a directory it chooses; the version-explicit member constants in
 `protocol_artifact::handoff` prevent consumers from guessing filenames, and the
-written tree includes `dependencies/`. Selecting the pinned crate and the
+written tree includes `dependencies/`. Selecting the crate and the
 directory it wrote is separate from offering the package bytes:
 decoding `Selection` remains inert until the caller constructs and invokes the
 strict public reader.

@@ -13,8 +13,8 @@ relationships:
 ## Description
 
 Verify that the native-run/1 request wire requires both FR-001 labels on a
-`1-draft` program source, that `spine-run-result/1` renders them with the
-source digest and no other identity member, and that a request missing a
+`1-draft` program source, that `spine-run-result/1` renders them with
+no other identity member, and that a request missing a
 label refuses as malformed. This catches a label defaulted by the command.
 It also verifies that the clause-run request accepts `program.extraction`
 only in the `quire-extraction` build and refuses extraction on a function call.
@@ -34,9 +34,7 @@ Scope: FR-026-AC-6, FR-027-AC-4, FR-031-AC-5 and FR-031-AC-6.
 5. Through the command built with `--features qsl-replay/quire-extraction`,
    run a `1-draft` FR-312 clause-run request whose program selects an original
    Markdown document and whose extraction body record names `authority`
-   `agent-ix`, `identity` `b`, `document` `B` and the raw-artifact digest of
-   the extracted body's bytes. Then run it without the body's `authority`,
-   without its `digest`, and with a digest of other bytes. Run the valid request
+   `agent-ix`, `identity` `b`, and `document` `B`. Then run it without the body's `authority`. Run the valid request
    through the command built with no features.
 6. Run an ordinary `1-draft` function-call request carrying `program.extraction`
    through the command built with no features and with
@@ -48,19 +46,18 @@ Tag steps 1 and 2 `#[trace("TC-430", "FR-026-AC-6")]`, steps 3 and 4
 
 ## Expected Results
 
-- Step 1: the result renders each selection with its two labels and its
-  digest, and no other identity member.
+- Step 1: the result renders each selection with its two labels and no
+  other identity member.
 - Step 2: the first two refuse at the request stage with `invalid-request`,
   exit 20; the blank label refuses with `invalid_source_identity`, cause
   `blank-label`, `label` `authority`.
-- Step 3: the package `source` names the two labels and source digest, and the
+- Step 3: the package `source` names the two labels, and the
   schema accepts it.
 - Step 4: `invalid-request`, exit 20.
 - Step 5: the valid feature-enabled clause run produces the FR-267 `/2`
   document with the extraction member rendering the native identity
-  (`agent-ix`, `b`, digest) and formal identity (`B`, digest); missing
-  authority or digest refuses `invalid-request`, and a wrong digest refuses
-  `stale_dependency`/`content-mismatch`, naming both digests. The no-feature
+  (`agent-ix`, `b`) and formal identity (`B`); missing
+  authority refuses `invalid-request`. The no-feature
   build refuses `invalid-request` at stage `request`, naming `extraction`,
   exit 20, with empty stdout.
 - Step 6: the no-feature call request refuses `invalid-request` naming

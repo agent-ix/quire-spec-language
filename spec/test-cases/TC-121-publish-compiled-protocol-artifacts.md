@@ -59,9 +59,9 @@ observations belong only to the later consumer fixture.
    accepted selection. Include native versus formal source revisions, rule
    bytes, domain package identity, version and declaration keys, manifest/lock closure,
    baseline, inner versus outer profile, feature omission/addition and unknown
-   optional feature. Change the domain package `sha256-jcs` value in the
+   optional feature. Change the domain package version in the
    compiled `Model` while retaining the independently selected package; require
-   typed refusal. Do not use a digest as an external ArtifactRef member.
+   typed refusal.
 4. Inspect original unit-local expression/control handles, source slices,
    nominal types/units, call order and callee owners, all eight query/graph
    representations and immutable capture origins. Individually break a reference
@@ -253,7 +253,7 @@ observations belong only to the later consumer fixture.
     its domain package through the real FR-056 intake seam (parts, interfaces,
     ports and a connection between two ports, as IT-012 exercises), link a
     native package that references it, and emit the compiled-protocol package.
-    Decode the emitted `Model` and confirm its identity, version and digest,
+    Decode the emitted `Model` and confirm its identity and version,
     read directly from the `Model` record, equal the `DomainPackageRef` the
     intake seam admitted, with no `correspondence`, `producer` or `interface`
     member present. Separately, hand-construct a decoder input whose `Model`
@@ -293,7 +293,7 @@ observations belong only to the later consumer fixture.
     requirement naming `population` export `[Pump, <population>]`, the
     operation is named by its `operation` export `[Pump, run]` with `Pump` as
     context, and the strict reader reads the bytes back unchanged. Require a
-    changed package digest, an undeclared population or operation export, a
+    changed package version, an undeclared population or operation export, a
     population pair keyed to `Sys` and a precondition context of `Sys` each to
     refuse, and a `Pump` covered by no population declaration, or by two, to
     refuse emission as `Unsupported::Export`. Drop the population pair of a

@@ -186,9 +186,7 @@ fn the_state_graph_pipeline_runs_and_settles_each_instance() {
     let world = config_world(REACHES_TWO, &[(0, 0)]);
     let request = StateGraphRequest {
         subject: world.subject(AB, UNLIMITED),
-        items: vec![StateGraphItem {
-            claim: world.claim("ReachesTwo"),
-        }],
+        items: vec![StateGraphItem::new(world.claim("ReachesTwo"))],
         reductions: Default::default(),
         deadlock_freedom: false,
         max_depth: None,
@@ -377,6 +375,7 @@ fn a_reduced_holds_outcome_settles_uncertified_with_its_reductions() {
     let reduced = StateGraphInstanceOutcome {
         outcome: StateGraphOutcome::HoldsReduced {
             reductions: reductions.clone(),
+            witnesses: None,
         },
         ..instance.clone()
     };

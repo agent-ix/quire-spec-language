@@ -12,8 +12,8 @@ relationships:
 
 ## Description
 
-Verify that a package selects the `ieee_profile` row exactly when it declares or
-evaluates a float, that the IEEE nodes carry the selected row as their law, that
+Verify that the IEEE nodes carry the `ieee_profile` law, whose `definition` is the
+QSpec definition prose's `DefinitionRef` for that role, that
 the V2 reader admits the emitted packages, and that every float source form
 (bit constructors, arithmetic, comparison operators, the reserved intrinsic
 calls and the conversions into and out of a float) checks, lowers and evaluates
@@ -24,9 +24,9 @@ FR-397-AC-8 and FR-397-AC-10 to FR-397-AC-23, FR-091-AC-48 and FR-091-AC-49
 ## Test Procedure
 
 1. Compile `add` of FR-397-AC-1 over `Float64[nearest-even]` and over
-   `Float32[nearest-even]` through `compile_admitted`; read the lock and the
+   `Float32[nearest-even]` through `compile_admitted`; read the
    IEEE node.
-2. Compile `keep` and `plain` of FR-397-AC-2; read the lock.
+2. (Retired: FR-397-AC-2 is withdrawn.)
 3. Compile `to_r` of FR-397-AC-3.
 4. Read the packages of steps 1, 3, 6, 9, 10, 13, 14, 16 and 17 through the V2 reader.
 5. Compile a unit with the header `profile w` naming the `ieee_profile`
@@ -52,7 +52,7 @@ FR-397-AC-8 and FR-397-AC-10 to FR-397-AC-23, FR-091-AC-48 and FR-091-AC-49
     of FR-397-AC-17 (exact types to floats, float to float).
 13. Check and run the conversions of FR-397-AC-18 (float to exact, and the
     refused pairs).
-14. Compile the functions of FR-397-AC-19; read the lock of each.
+14. Compile the functions of FR-397-AC-19; read the IEEE node of each.
 15. Evaluate the state clauses of FR-397-AC-20 and FR-397-AC-21 through `evaluate_clause_set`.
 16. Compile and run the negations of FR-397-AC-21; read the `negate` nodes.
 17. Compile the structural comparisons of FR-397-AC-22; read the
@@ -63,11 +63,10 @@ FR-397-AC-8 and FR-397-AC-10 to FR-397-AC-23, FR-091-AC-48 and FR-091-AC-49
 
 ## Expected Results
 
-1. One `ieee_profile` selection; `quire.op.ieee.float64.add` and
+1. `quire.op.ieee.float64.add` and
    `quire.op.ieee.float32.add` nodes carry the law and mode `nearest-even`.
-2. `keep` selects the row once; `plain` selects none and no node carries the law.
-3. The conversion lowers to `quire.op.ieee.to_rational` with the law; the
-   selection is present.
+2. (Retired.)
+3. The conversion lowers to `quire.op.ieee.to_rational` with the law.
 4. The V2 reader admits each package.
 5. `unknown_profile`/`wrong-selection-role` both times.
 6. Each constructor body gives one `FloatBits` with the width and bits listed;
@@ -96,8 +95,7 @@ FR-397-AC-8 and FR-397-AC-10 to FR-397-AC-23, FR-091-AC-48 and FR-091-AC-49
     mode change build no node, and the latter gives the operand's exact bits; the
     `to_rational` vectors give `Undefined`, the rational 0 and the
     `ieee_rational_out_of_domain` refusal.
-14. Each package selects the `ieee_profile` row once and its IEEE node carries
-    the law.
+14. Each package's IEEE node carries the law.
 15. The NaN clause is `Completed(true)`, the strict-exact clause is the kernel
     `Refused` `ieee_not_exact`, and the clause set is `Undecided`; the
     negated-NaN clause is `Completed(true)`.

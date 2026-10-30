@@ -68,7 +68,7 @@ Number = Integer | {kind:"rational",numerator:String,denominator:String}
 Revision = {namespace:Name,value:Name}
 Wire = {identity:Name,version:Name}
 Ref = {refVersion:"ix.artifact-ref/3-draft",kind:ArtifactKind,authority:Name,
-       identity:Name,revision:Revision,wire:Wire}
+       identity:Name,wire:Wire}
 Formal = {document:Name,revision:Revision}
 Span = {start:U,end:U}
 Locus = {source:U,span:Span}
@@ -77,7 +77,7 @@ Handle = {declaration:U,index:U}
 Producer = {implementation:Name,revision:Revision}
 Dependency = {artifact:Ref,requires:[U]}
 Definition = {identity:Name,revision:Revision,artifact:U,rules:[U],requires:[U]}
-DomainPackage = {identity:Name,version:Name,digest:JcsDigest}
+DomainPackage = {identity:Name,version:Name}
 Export = {kind:ExportKind,path:[Name],locus:ForeignLocus}
 Model = {artifact:U,profile:Name,exports:[Export],domain_package:DomainPackage?}
 Source = {artifact:Ref,native:{authority:Name,identity:Name,revision_namespace:Name,revision:Name},path:Name,formal:Formal,text:String}
@@ -124,10 +124,8 @@ and selected values preserve their contributing origins. Nested record/reference
 traversal visits each key once, including cycles, under the declared work limits.
 Absent relationship/component/endpoint exports are not
 supplied by declaring their tags. `Model.domain_package` names, directly, the
-domain package the model was linked against under FR-056: its identity, its
-version and the `sha256-jcs` digest of its Semantic IR 2.0.0 document.
-`JcsDigest` is exactly 64 lowercase hex digits with no algorithm prefix, so a
-raw-byte `ByteDigest` spelling cannot occupy it. The member is required: a
+domain package the model was linked against under FR-056: its identity and
+its version. The member is required: a
 directly admitted native model carries an explicit `null`, and an omitted
 member refuses. A `Model` carrying any other member, such as `correspondence`,
 `producer` or `interface`, refuses as an unrecognized field. The reader
@@ -136,8 +134,7 @@ including one offered where the accepted model links no domain package, refuses
 as `Invalid::Model`.
 A model that names a domain package selects, through `artifact`, the
 `model-package` dependency whose bytes are that package's Semantic IR 2.0.0
-document; the reader re-admits those bytes under the named identity, version and
-`sha256-jcs` digest. Its `profile` is `semantic-ir/2.0.0`. Its exports are the
+document; the reader re-admits those bytes under the named identity and version. Its `profile` is `semantic-ir/2.0.0`. Its exports are the
 package's object types and Interfaces (`object`, path `[artifact id]`), record
 value types (`record`, path `[artifact id]`), their fields and operations
 (`field`/`operation`, path `[artifact id, name]`), and one `population` export,
@@ -181,17 +178,17 @@ native record does.
 indexes definitions, while its `artifact`/`rules` and `Dependency.requires` index
 dependencies. `Model.artifact` also indexes dependencies.
 Dependency and definition closure is acyclic and complete under the selected
-package contract. Source/dependency revision values are copied exactly from the
+package contract. Source/dependency identities are copied exactly from the
 selected producer reference, never regenerated in the artifact domain.
 
-Native source labels, external source-artifact revision and the explicitly
+Native source labels and the explicitly
 authored formal document/revision remain separate. Spans use the original decoded
 UTF-8 source bytes and must be scalar-boundary aligned. Declaration loci are disjoint in each source;
 all local loci lie inside their owning declaration. Foreign model loci are
 validated against their separately supplied exact source bytes. No display
 path, occurrence ordinal or equal name establishes authority.
 
-Dependencies sort by `(kind,authority,identity,revision.namespace,revision.value,wire.identity,wire.version)`;
+Dependencies sort by `(kind,authority,identity,wire.identity,wire.version)`;
 sources sort by their artifact key; definitions by `(identity,revision.namespace,revision.value)`;
 models by dependency index; exports by `(kind,path)`; declarations by
 `(source index,span.start,span.end)`. Comparisons use lexicographic UTF-8 byte
@@ -620,8 +617,7 @@ The Rust reader accepts bytes plus an explicit expected selection. It decodes th
 checks header/accepted identities and dependency bytes before interpreting their
 dependent records, validates numbers and table/reference/scope/type/control
 invariants, then performs bounded canonical byte comparison. Source text is
-hashed/indexed for original loci; it is never parsed. External producer digests
-are verified only by their selected domain adapter. Profile/rule closure, source
+indexed for original loci; it is never parsed. Profile/rule closure, source
 inventory and every retained dependency must match the expected inputs exactly.
 
 The public Rust refusal vocabulary is part of this boundary; callers inspect
@@ -658,14 +654,14 @@ The following independent dimensions each use the listed default and hard maximu
 8 MiB payload/output bytes;
 1 MiB per source; 8 MiB decoded source/string content; 10,000 sources/dependencies/
 definitions/models/declarations each; 100,000 aggregate table entries; 1,000,000
-reference/edge/type visits; 64 MiB total copied, hashed, indexed or compared byte
+reference/edge/type visits; 64 MiB total copied, indexed or compared byte
 work; depth 64. Each logical wire array entry/object member and each compiler-owned
 index entry charges an entry before allocation; each subsequent reference/edge/type
 visit charges again. These are content/work limits, not measurements of allocator
 capacity or Serde's temporary buffers. The decode census bounds logical entries,
 decoded content and depth before typed deserialization; temporary Serde storage
 remains bounded by that input. Content decoding,
-hashing, indexing, reference validation and canonical writing charge before work.
+indexing, reference validation and canonical writing charge before work.
 Bounded-repeat graphs are not eagerly unfolded. Lowered limits, including zero,
 are honored; overflow or the next unaffordable step yields typed incomplete with
 dimension, prior usage, requested work and available locus, never an admitted
@@ -703,7 +699,7 @@ The Rust path is `checking::composed::proofs::discharge` →
 `protocol_artifact::native::admit` → `native::emit`. Admission borrows the actual
 proof report and independent `native::Selections`: original formal sources,
 exact source/dependency references and bytes, admitted models, contract, baseline
-and producer. Each selected source retains its opaque external artifact revision
+and producer. Each selected source retains its opaque external artifact identity
 separately from the native/formal revision. The caller explicitly selects
 namespaces for formal-source, requirement and registered-definition revisions;
 a registered definition's semantic revision comes from its actual registered

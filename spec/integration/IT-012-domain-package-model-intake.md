@@ -37,8 +37,8 @@ All three are Rust crate calls. The integration type is an in-process library ca
 
 - agent-ix/filament-core-data#172 (Semantic IR 2.0.0 with embedded `constructs`
   table) is merged and its revision is selected in `Cargo.lock`.
-- The architecture fixture of agent-ix/filament-core-data#173, with its IR
-  golden, is available at that revision. It declares parts, interfaces, ports
+- The architecture fixture of agent-ix/filament-core-data#173 is available at
+  that revision. It declares parts, interfaces, ports
   and at least one connection between two ports.
 - Quire specification FR-208 and FR-154 fix the meaning ids the fixture's constructs bind to and
   artifact-id identity.
@@ -46,17 +46,14 @@ All three are Rust crate calls. The integration type is an in-process library ca
 ## Inputs
 
 - The fixture bundle's artifact paths and bytes, and the exact module manifests.
-- The IR golden for that bundle from filament-core-data.
-- A ModelSelection naming the fixture's domain package identity, version and
-  `sha256-jcs` digest.
+- A ModelSelection naming the fixture's domain package identity.
 - A native package whose model references name a fixture object field, a Port
   and a Connection.
 
 ## Test Procedure
 
 1. Run the bundle entry point: extraction and lift over the fixture bundle.
-   - IT-012-SC-01: the lifted bytes equal the filament-core-data golden and their
-     independently computed `sha256-jcs` digest equals the selection's digest.
+   - IT-012-SC-01: **RETIRED (golden-bytes comparison withdrawn).**
 2. Run the intake seam over the lifted bytes with the ModelSelection.
    - IT-012-SC-02: intake admits one declaration per IR node with no refusal,
      each type keyed by its artifact id and bound through its construct's
@@ -67,14 +64,14 @@ All three are Rust crate calls. The integration type is an in-process library ca
      connection rule.
 4. Link the native package against the admitted domain package.
    - IT-012-SC-04: every model reference binds to its declaration key and kind
-     under the selected domain package identity and digest.
+     under the selected domain package identity.
 5. Inspect the resolved dependency graph and compiler source.
    - IT-012-SC-05: the FCD crates stay `publish = false`, and no compiler source contains a module object-type name
      used for dispatch.
 
 ## Expected Results
 
-All five success criteria hold. Model declarations come from the real
+Every success criterion except the retired IT-012-SC-01 holds. Model declarations come from the real
 extraction, lift and reader, not from copied types or hand-built JSON. Linking
 establishes static model binding only; evaluation, observation and protocol
 assessment are verified elsewhere.

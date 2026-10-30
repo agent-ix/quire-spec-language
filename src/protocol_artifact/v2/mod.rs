@@ -13,7 +13,6 @@ pub use refusal::{
 
 use super::wire::ArtifactRef;
 use super::ExpectedDeclaration;
-use qsl_foundation::ByteDigest;
 
 /// Exact version-2 payload selection.
 pub const WIRE: &str = "quire.compiled-protocol/2";
@@ -59,7 +58,6 @@ pub struct Expected<'a> {
 #[derive(Clone, Debug)]
 pub struct AdmittedPackage {
     pub(super) package: wire::Package,
-    pub(super) digest: ByteDigest,
     // Present only on the reader path, which admits an independently selected
     // artifact identity. Compiler emission has no published identity yet.
     pub(super) artifact: Option<ArtifactRef>,
@@ -76,15 +74,9 @@ impl AdmittedPackage {
     pub fn package(&self) -> &wire::Package {
         &self.package
     }
-
     /// The inherited version-1-shaped graph retained without translation.
     pub fn inherited(&self) -> &super::wire::Package {
         &self.package.inherited
-    }
-
-    /// Digest of the exact admitted version-2 bytes.
-    pub fn digest(&self) -> ByteDigest {
-        self.digest
     }
 
     /// Independently admitted model schema retained for this model-table entry.
@@ -96,9 +88,9 @@ impl AdmittedPackage {
 
     /// Independently selected compiled artifact identity admitted by the reader.
     ///
-    /// This is `None` for a compiler emission, which produces bytes and their
-    /// raw-byte digest before any caller publishes an artifact identity for
-    /// them. It is never synthesized from the payload.
+    /// This is `None` for a compiler emission; a caller supplies an artifact
+    /// identity separately if it later reads the emitted bytes. It is never
+    /// synthesized from the payload.
     pub fn artifact(&self) -> Option<&ArtifactRef> {
         self.artifact.as_ref()
     }

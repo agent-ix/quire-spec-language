@@ -63,8 +63,8 @@ FR-057-AC-8 and FR-057-AC-12.
   descriptor, so it conflicts (FR-075-AC-4): both it and the registration
   already held under that identity are refused, and the held registration is
   withdrawn rather than left standing.
-- Step 4: the unnamed request carries both backends as (identity, manifest
-  digest) candidates ordered by identity then digest, and no chosen one; the named request carries exactly the named
+- Step 4: the unnamed request carries both backends as (identity, manifest)
+  candidates ordered by identity, and no chosen one; the named request carries exactly the named
   backend; the backend lacking the kind yields an empty candidate set; the
   unregistered name carries the unknown-backend mark.
 - Step 5: only the `global-conformance` item is routed. The

@@ -26,7 +26,7 @@ QSL SHALL read each source text once, with one grammar, and from that single
 parse produce both the `CheckedGraph` and the `TypeReport`. The producer SHALL
 return one `CheckedUnit` carrying the `Source`'s single `RawSourceRef`; its graph
 and type report are outputs of that same parse, not independent inputs bound by
-comparing copied source digests.
+comparing copied source references.
 
 ## Target design
 
@@ -39,13 +39,12 @@ comparing copied source digests.
 2. **One reading.** The producer takes one `Source` and one parse of it. The
    graph and type report are both derived from this parse; their source
    locations resolve through the checked unit's single source reference. The
-   authored-document identity and raw-byte digest semantics of that reference
-   follow QSpec FR-202-AC-2 and FR-018/FR-201; the checked-package
+   authored-document identity of that reference
+   follows QSpec FR-202-AC-2; the checked-package
    source-map contract follows QSpec FR-322.
 3. **One producer, one `CheckedUnit`.** The producer is the spine front end
    (parse, build, assemble, check over one `Source`) extended by the type
-   phase. It takes the source, the selected formal identity, the spine's
-   `LockEvidence` and the stage limits, and returns the checked unit or
+   phase. It takes the source, the selected formal identity and the stage limits, and returns the checked unit or
    the typed refusal of the first stage that refused. Exactly one public
    `CheckedUnit` type exists: the spine's, which carries the graph's
    requirement records, the type report, the formal identity and the source's
@@ -57,19 +56,17 @@ comparing copied source digests.
    from the same parse; the producer does not accept separately supplied graph,
    report and source references, and no constructor compares copied references
    to re-establish that association. The graph and report do not carry separate
-   unit-level source digest fields; source locations use the checked unit's
+   unit-level source fields; source locations use the checked unit's
    reference.
 5. **No mismatch outcome.** A graph/report/source mismatch is not a producer
    refusal case: the single producer constructs all three from one `Source` and
    one parse, so no public mismatch constructor or typed refusal exists.
 6. **No duplicate binding guard.** No type, function or flag copies the
    `CheckedUnit` source reference to compare it against graph or type-report
-   digests. Source intake still verifies the bytes against the `Source`'s own
-   reference (FR-001).
+   fields.
 7. **Profile selection.** A source selects a profile by identity alone
-   (FR-110). The one grammar refuses a profile line that carries a `version`
-   or a `digest` after the identity. Profiles resolve through `DefinitionLock::pinned`
-   and the spine's `LockEvidence`; a revision or digest never belongs to the
+   (FR-110). The one grammar refuses a profile line that carries any clause
+   after the identity. Profiles resolve through the layer table; a revision never belongs to the
    source.
 8. **Moved families.** The producer admits a family only once its
    type phase runs in S3 over S2 forms. S2 builds a form for a `relation`
@@ -113,7 +110,7 @@ comparing copied source digests.
 11. **Several source units.** A package of several source units (FR-480) has
     one checked unit per source unit. Each carries its own source reference and
     the type report of its own parse. The shared graph lists every unit's
-    source reference in `lock.sources` (FR-001); each entry conforms to the
+    source reference in `sources` (FR-001); each entry conforms to the
     source-reference shape in QSpec FR-322. Each type report covers one unit by
     construction.
 
@@ -121,11 +118,11 @@ comparing copied source digests.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-362-AC-1 | For a source the grammar admits, the producer returns one `CheckedUnit` containing the graph, type report and the source's single `RawSourceRef`; the graph and type report come from that source's one parse. The carried reference's digest is the `quire.source.bytes/v1` digest of the input bytes (QSpec FR-018). | Test (TC-1026) |
-| FR-362-AC-2 | For a source whose profile line carries `version` or `digest` after the identity, `qsl_cst::parse` returns a recovered `ParsedSource` with an `invalid_syntax` diagnostic at that token, and `build_unit` and the producer refuse it with `invalid_syntax`; no other parser admits it. | Test |
+| FR-362-AC-1 | For a source the grammar admits, the producer returns one `CheckedUnit` containing the graph, type report and the source's single `RawSourceRef`; the graph and type report come from that source's one parse. The carried reference holds the source's `authority` and `identity` labels. | Test (TC-1026) |
+| FR-362-AC-2 | For a source whose profile line carries any clause after the identity, `qsl_cst::parse` returns a recovered `ParsedSource` with an `invalid_syntax` diagnostic at that token, and `build_unit` and the producer refuse it with `invalid_syntax`; no other parser admits it. | Test |
 | FR-362-AC-3 | The producer does not accept separately supplied graph, type report and formal source inputs, and exposes no graph/report/source mismatch constructor or typed refusal. Its sole `CheckedUnit` is created from the one source parse. | Inspection |
 | FR-362-AC-4 | A producer-created checked unit yields the inventory rows derived from its own graph and type report. | Test |
-| FR-362-AC-5 | No type, function or flag copies the checked unit's source reference to compare it against graph or type-report digests; source intake verifies the bytes against the source's own reference (FR-001). | Inspection |
+| FR-362-AC-5 | No type, function or flag copies the checked unit's source reference to compare it against graph or type-report fields. | Inspection |
 | FR-362-AC-6 | The producer and the type phase it runs call no composed entry point (`parse_native`, `parse_native_source`) and name no composed type (`ComposedUnit`, `syntax::composed`), and no conversion from `ParsedUnit` to a composed tree exists. Retiring those symbols and the composed linker and checker is open work tracked as QSL-868. | Inspection |
 | FR-362-AC-7 | A unit that holds a `predicate` and a `relation` clause over model operations whose body checks yields both a graph and a type report, the graph holding the clause's `claim`/`step_relation` node (FR-180). A unit that holds a `hyper` clause whose body checks is refused only as `NotEmitted` for that clause (a typed temporal cause naming the clause and its span), and produces no graph and no type report; the same unit without the `hyper` clause yields both. S2 refuses neither clause with `NoDispatchEntry` or `UnrepresentedConstruct`. A clause with a fault is refused with its typed hyper cause, or its typed temporal cause for temporal operators, fairness and profile selection, and never with `NotEmitted`. No second parser reads the unit. | Test |
 | FR-362-AC-8 | A unit that the S3 type phase refuses is an error outcome of `check` and yields no inventory rows. A unit whose type phase stops on `TypeWorkExhausted` or `TypeAdmissionUnfinished` yields an `Incomplete` inventory that retains the partial rows and carries the typed cause. | Test |
@@ -136,9 +133,8 @@ comparing copied source digests.
   requirement follows.
 - FR-087 and FR-091 state the checked graph and the assembler; FR-110 states
   profile selection by identity. QSpec FR-202-AC-2 owns authored-document key
-  equality; QSpec FR-018 owns raw-byte digest derivation, and QSpec
-  FR-322-AC-5/AC-13 and its source-map definition own the checked-package
-  digest-domain and source-map contract.
+  equality; QSpec FR-322 and its source-map definition own the checked-package
+  source-map contract.
 - FR-035, FR-036, FR-040 and FR-049 state the composed lane's parse, link,
   check and evaluation inputs. They stay normative for unmoved families and are
   retired family by family (item 9).

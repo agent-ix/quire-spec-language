@@ -15,7 +15,7 @@ component of an identity preimage (for example inside `DeclarationKey`'s
 or a checked node's own preimage where a domain package's declared name
 participates), and that no equality, hashing, or lookup implementation on
 any identity type treats a `QualifiedName` as the sole identity-bearing
-field where a node id or digest is available instead. Scope: FR-088-AC-6.
+field where a node id or key is available instead. Scope: FR-088-AC-6.
 
 ## Test Procedure
 
@@ -24,7 +24,7 @@ field where a node id or digest is available instead. Scope: FR-088-AC-6.
    implementation (derived or manual).
 2. Confirm every such type's equality/hashing is over its full preimage
    (including the `QualifiedName` as one component among others that
-   ultimately reduce to a node id or digest), not over the `QualifiedName`
+   ultimately reduce to a node id or key), not over the `QualifiedName`
    alone as if it were itself the identity.
 3. Search for any `HashMap`/`BTreeMap`/similar collection keyed solely by
    `QualifiedName` used to answer an identity question (rather than, for

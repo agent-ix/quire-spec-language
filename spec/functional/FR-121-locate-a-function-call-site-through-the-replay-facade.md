@@ -85,7 +85,7 @@ can bound a domain nested inside a state field's type as it bounds the field.
 - `source`: the unit's FR-001 source identity.
 - `path`, `bytes`: the unit's authored path and source bytes.
 - `packages`: the domain package documents, each keyed by its own
-  `sha256-jcs` digest as I1's package input, exactly as `replay` keys the
+  package identity as I1's package input, exactly as `replay` keys the
   documents of its byte provision.
 - `dependencies`: the `DependencyInput` of supplied libraries (ADR-015
   D-1), built by `DependencyInput::new`.
@@ -102,7 +102,7 @@ can bound a domain nested inside a state field's type as it bounds the field.
 
 ## Outputs
 
-- A `CallSite` on success: `package_id` (`DigestRecord`), `package`
+- A `CallSite` on success: `package_id` (QSpec FR-322's checked-package `package_id` member), `package`
   (`Vec<u8>`, the compiled package's `quire.checked-package/v2` bytes
   exactly as the S4 emitter wrote them when it minted `package_id`), and
   `site`, whose type the selection decides:
@@ -323,15 +323,7 @@ can bound a domain nested inside a state field's type as it bounds the field.
   backend run (the replay of a refutation) is no refusal of the obligation's
   input: it settles `TerminalValue::Inconclusive` with
   `InconclusiveCause::ReplayRefused` carrying its code, which
-  `TerminalValue::from_replay_refusal` builds. The one exception is not this
-  mapping's: in a model-check counterexample replay (FR-127) and a
-  state-graph evidence replay (FR-169), a `PackageIdMismatch` of the proved
-  package's own `package_id` settles
-  `InconclusiveCause::StaleDependency{requested, recompiled}` (QSpec
-  FR-331). A stale dependency's own `package_id`
-  (`DependencyIdentityMismatch`), and a stale `package_id` in a call-site,
-  scalar-parity (FR-357, FR-358) or plugin replay (FR-289), settle
-  `ReplayRefused` through `from_replay_refusal`. A `Fault` of either,
+  `TerminalValue::from_replay_refusal` builds. A `Fault` of either,
   `CallSiteRefusal::Fault` or `ReplayRefusal::Fault` (and
   `ReplayRefusal::Admission` with `AdmissionFailure::Fault`), settles
   `failed` (`TerminalValue::Failed`).
@@ -353,7 +345,7 @@ can bound a domain nested inside a state field's type as it bounds the field.
 | FR-121-AC-9 | The AC-6 unit with no domain package supplied refuses `CallSiteRefusal::ModelIntake` with the alias `Config`. | Test (TC-516) |
 | FR-121-AC-10 | For the AC-4 unit, a `DependencyInput` supplying the imported library from a source with the unit's own authority and identity refuses `CallSiteRefusal::DependencyInput`, carrying `DependencyInputRefusal::SharedOwner` with `first` the unit, `second` the library and that shared authority and identity. | Test (TC-516) |
 | FR-121-AC-11 | For the AC-4 unit, a `DependencyInput` supplying the imported library from source bytes that do not parse refuses `CallSiteRefusal::Dependency`, its `path` exactly that library's identity. | Test (TC-516) |
-| FR-121-AC-12 | A `CallSite`'s `package` equals the S4 emitter's bytes for the same compile, and the RFC 8785 bytes of its `identity_preimage` member digest, under `quire.package.semantic/v2`, to the `CallSite`'s `package_id`. | Test (TC-516) |
+| FR-121-AC-12 | A `CallSite`'s `package` equals the S4 emitter's bytes for the same compile, and the `identity_preimage` member of those bytes (QSpec FR-322) equals the identity the `CallSite`'s `package_id` carries, compared structurally. | Test (TC-516) |
 | FR-121-AC-13 | From outside the crate, a `DeclaredDomain` over an integer range on a parameter node `call_site` returned is built through `qsl_replay`'s root paths alone (`ProofBound`, `DomainKey`, `FiniteBound`, `Integer`), its kind is `FiniteBoundKind::IntegerRange` and its interval equals the `IntegerInterval` built there; an inverted range refuses `EmptyFiniteBound::InvertedIntegerRange` through `FiniteBound::integer_range` and `EmptyInterval` through `IntegerInterval::new`. | Test (TC-516) |
 | FR-121-AC-14 | `CallSiteRefusal::code` returns `missing_declaration` for AC-2's `UnknownFunction`, AC-5's `UnknownOperation` and AC-8's `UnknownClause`; for AC-9's `ModelIntake`, AC-10's `DependencyInput`, AC-11's `Dependency` and AC-4's `Import`, the code `ReplayRefusal::code` returns when `replay` is given the same unit, packages and dependency input; and for a unit with a syntax error, `Compile` carrying the same code as the `ReplayRefusal::Recompile` `replay` returns for it. | Test (TC-516) |
 | FR-121-AC-15 | Worked example. For a unit declaring `p(x: Int[0, 9]): Boolean { x < 5 }` and `q(x: Int[0, 9]): Boolean { x < 5 }`, the `FunctionSite` for `p` carries `function` equal to the compiled graph's `function` node whose `declaration` is `p`, and `declaration` equal to `OccurrenceKey::new(function, Origin::new(Role::new("declaration"), 0))`. With a CG obligation kind and `arguments` `[(x's parameter node id, [0, 9])]`, these are the members of `p`'s ADR-013 O-09 function-contract obligation preimage. `q`'s `FunctionSite` has the same `parameters` (one shared parameter node) and a different `function`, so the two obligations differ. Recompiling the unit with a comment and blank lines inserted before `p` gives `p` the same `function` and `declaration`. Over the AC-6 unit, `sameIdentity`'s `function` equals no `ClauseSite` `node` returned for `attemptUpdate`, `probe` or any AC-8 clause selection. | Test (TC-516) |

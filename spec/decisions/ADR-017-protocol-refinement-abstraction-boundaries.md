@@ -125,9 +125,8 @@ FR-116):
   FrameOperation { object: QualifiedName, operation: Identifier }, anchor,
   frame: WireNodeId, occurrence: OccurrenceKey, invocation: DocumentRef,
   change: ClaimedChange }` (`qsl-replay/src/witness/frame.rs:133-152`).
-  `replay_frame` recompiles, checks `package_id`, resolves the operation, then
-  compares the frame, occurrence and anchor ids before admission
-  (`qsl-replay/src/execute/frame.rs:167-395`).
+  `replay_frame` recompiles, resolves the operation, then
+  admits the invocation (`qsl-replay/src/execute/frame.rs:167-395`).
 - Requirement records: one `operation-contract` record per clause and per
   frame, keyed by the frame's occurrence (`check/mod.rs:1452-1572`).
 - Tests: TC-462, TC-463, TC-514 and TC-515 pass locally; TC-463 step 1 (the
@@ -166,8 +165,8 @@ relation: authored, never inferred; a model object maps to one
 implementation state representation, a population to one collection
 representation, an operation frame to one implementation function's
 parameters, result and framed state; keys are the QSpec AD-006
-effective-declaration key (domain package identity, IR node identity,
-`sha256-jcs`) and, for a frame, its QSpec FR-013 frame identity and QSpec
+effective-declaration key (domain package identity, IR node identity)
+and, for a frame, its QSpec FR-013 frame identity and QSpec
 FR-012 pre/post/result anchor identities; duplicate or conflicting bindings
 refuse `invalid_model_binding`/`conflicting-binding`; emission referencing an
 unbound element refuses before generation with `missing_declaration`/
@@ -256,12 +255,6 @@ FR-115 (operation frame) and FR-116 (frame replay). They are one rule:
 - If the name resolves to no item of the selected kind, the entry reports
   stage `select`, `missing_declaration`/`missing-name` (FR-109, FR-115), and
   replay refuses `missing_declaration`/`missing-name` (FR-116).
-- At E9, after the `package_id` check (FR-098), replay compares each resolved
-  identity with the packet's: for a frame, the frame node and its occurrence
-  and the anchor node. A mismatch refuses `stale_dependency`/
-  `content-mismatch` (QSpec FR-272-AC-14 and native-diagnostics, quire-specification#174 and #176) naming both, before admission (FR-116). This detects a
-  packet whose members disagree with a recompile of the same `package_id`; a
-  stale packet already refuses at the `package_id` check.
 - A member name inside an O-06 pair, and an operation `Identifier` looked up
   under a resolved `DeclarationKey`, are declared keys, not names under R-06.
   No other post-check code resolves a name.
@@ -283,8 +276,8 @@ PF-3 requires a typed name. TK-1 fixes it (§6).
 `FrameCounterexample` carries its own `operation`, `occurrence` and `frame`.
 `replay_frame` reads the payload's members and not the envelope's three.
 
-**G-2.** Two carriers of one identity, one unread, can disagree silently.
-Decision (the first two bullets change no wire; the third is QSpec FR-323's
+**G-2.** Two carriers of one identity, one unread.
+Decision (the first bullet changes no wire; the second is QSpec FR-323's
 replay target, Q-4):
 
 - For a frame packet, the envelope's `clause_node` is the frame node, its
@@ -292,17 +285,12 @@ replay target, Q-4):
   `obligation_identity` is the O-09 obligation identity of the frame's
   `operation-contract` record (the frame node and that occurrence in place
   of a clause's).
-- If the envelope's `clause_node` differs from the payload's `frame`, or its
-  `occurrence_key` from the payload's `occurrence`, `replay_frame` refuses
-  `stale_dependency`/`content-mismatch` naming both, before it recompiles.
 - The packet, the envelope and the request carry no `selected_function`.
   Each carries the QSpec FR-323 replay target (Q-4): a frame packet's is
   `frame_operation`, which `replay_frame` resolves, and the payload names
-  no operation (FR-070, FR-071, FR-116). A request target that differs from
-  the envelope's refuses `stale_dependency`/`content-mismatch` naming both,
-  before the recompile.
+  no operation (FR-070, FR-071, FR-116).
 
-TK-2 implements the first two bullets (§6); QSL-972 implements the third.
+TK-2 implements the first bullet (§6); QSL-972 implements the second.
 
 #### PF-5 Frame representations
 
@@ -318,14 +306,9 @@ third representation that only its own test uses
 (`frame_subjects_resolve_only_through_the_recorded_correspondence`, TC-248,
 FR-088-AC-2). TK-3 fixes it (§6).
 
-#### PF-6 Staleness
+#### PF-6 Document identity
 
-| Input | Identity carrier | Check | Effect of a change |
-| --- | --- | --- | --- |
-| Domain package (frames) | `DomainPackageRef` identity and `sha256-jcs` digest (O-01) | I1 digest recompute; document `model` header equality (`invalid_model_binding`/`wrong-model-selection`) | A content change changes the model-owned node ids (O-04) and so the `package_id`; an old packet refuses by FR-098's `package_id` rule |
-| Checked package | `quire.checked-package/v2`, `package_id` (O-02, O-22) | `WitnessEnvelope::reconstruct` reads the contract; `replay_frame` checks `package_id` | A meaning edit changes `package_id`; replay refuses by FR-098 |
-| Snapshots and invocation | `sha256-jcs` digest (FR-106) | byte check at admission | `stale_dependency`/`content-mismatch` |
-| Frame payload | none | identity equality only | Staleness is detected through content-addressed identities (O-02, O-04) |
+**RETIRED (document-label mismatch withdrawn).** A missing label is already `Incomplete` (FR-106 read check); no mismatch refusal exists. PF-6 is kept so no other PF id renumbers.
 
 #### PF-7 No protocol-internal redesign
 
@@ -420,7 +403,7 @@ snapshot, or `Frame` with its invocation), and the four limit sets the
 request takes (`limits`, `observation_limits`, `model_limits`,
 `accounting`; a case that states none uses their published defaults). It is
 run through `qsl_replay::spine::run_clause` against each revision of its
-pair, with no expected `package_id`. A case is named in every report by the
+pair. A case is named in every report by the
 pair's two `RawSourceRef`s (O-12) and the selection. It is never named by a
 display string.
 
@@ -456,7 +439,7 @@ reads the first). The first rule that matches wins:
 | `ClauseDisposition` | Class |
 | --- | --- |
 | `Compile(r)` | the compile classification of `r` (admitted cannot occur) |
-| `UnknownLanguage`, `StalePackage` | tool failure (the gate supplies neither an extracted source nor an expected `package_id`) |
+| `UnknownLanguage` | tool failure (the gate supplies no extracted source) |
 | `MissingName` | absent |
 | `NotAPredicate` | refused |
 | `Admit(Refused)`, `ArgumentRefusal` | refused |
@@ -731,7 +714,7 @@ There is no totality check.
 
 | Mapping | Types and owners | Conversions | Version effect | Failure oracle | Tests | Tickets |
 | --- | --- | --- | --- | --- | --- | --- |
-| Protocol/frame | PF-1; `check`, `package`, `qsl-replay` | ADR-013 C-02, C-03, C-11, C-13, C-14 | PF-6 | stale ids refuse `content-mismatch` (PF-3, PF-4); `frame_violation`/`unauthorized-change` | TC-462, TC-463, TC-514, TC-515 pass; TC-510 to TC-513 specified; each TK adds its own (§6) | TK-1 to TK-4 |
+| Protocol/frame | PF-1; `check`, `package`, `qsl-replay` | ADR-013 C-02, C-03, C-11, C-13, C-14 | none (PF-6 withdrawn) | `frame_violation`/`unauthorized-change` | TC-462, TC-463, TC-514, TC-515 pass; TC-510 to TC-513 specified; each TK adds its own (§6) | TK-1 to TK-4 |
 | Refinement | `xtask refinement`; spine `run_clause` and `compile`; `ClauseDisposition`, `CompileRefusal` | disposition → class and compile result → class (RF-2) | RF-6 | RF-2 and RF-3 tables; RF-5 seed and controls | RF-5 | #191; #192 |
 | Abstraction relation | AR-2, AR-3; `check` core; layer-4 export | checked relation → v2 node (Q-2); export → driver → CG | AR-4 relation revision | AR-3 and AR-4 refusals | AR-7 | #198 slices; Q-1, Q-2 |
 
@@ -788,7 +771,7 @@ These are proposed; the team lead files them.
 | ID | Scope | Verification | Repository |
 | --- | --- | --- | --- |
 | TK-1 | G-1: retype `qsl_replay::spine::OperationName` to (model alias `Identifier`, object `Identifier`, operation `Identifier`); add one resolver in `check` from it to (object `DeclarationKey`, operation `Identifier`), the `DeclarationKey` carrying its domain package, refusing `missing_declaration`/`missing-name` when the alias or type does not resolve; make `CheckedGraph::operation_frame` take its output; update `resolve_frame`, its two entry paths, `execute/frame.rs::operation_name` and the test at `spine/clause/tests/frame_replay.rs:85` | an inherited operation selects its declaring frame through the resolver; a formatted string no longer type-checks as a selection; TC-514 and TC-515 pass unchanged | QSL |
-| TK-2 | G-2: `replay_frame` checks the envelope's `clause_node` and `occurrence_key` against the payload; the frame envelope's members as PF-4 states; amend FR-116 | a frame envelope whose `clause_node` or `occurrence_key` differs from the payload refuses `stale_dependency`/`content-mismatch` naming both, before recompiling; TC-515 extended | QSL |
+| TK-2 | G-2: the frame envelope's members as PF-4 states; amend FR-116 | a frame envelope carries the frame node, its `generated` occurrence and the frame's O-09 obligation identity | QSL |
 | TK-3 | G-3: delete `check::identity::{Frame, FrameSubjects, ResolvedFrameSubjects}`; re-home TC-248 onto `CheckedOperationFrame` and `OperationEffect` subject resolution (FR-088-AC-2); correct the stale `model/intake.rs:17-23` module doc | TC-248 passes against the live types; FR-088-AC-2 stays backed | QSL |
 | TK-4 | Consume IR-370's `reaches_field` reference-edge check; TC-463 step 1 and TC-469 step 6 run without `#[ignore]` (FR-105-AC-3, FR-108-AC-6) | TC-463 step 1 and TC-469 step 6 pass | QSL |
 | Q-1 | Surface spelling of the QSpec FR-353 abstraction relation in the shared grammar. Decided: QSpec FR-450 (STD-116) | QSpec | QSpec |

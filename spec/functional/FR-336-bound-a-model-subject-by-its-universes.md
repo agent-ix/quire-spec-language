@@ -104,7 +104,7 @@ pub enum SubjectIdentityRefusal {
   as the whole subject: the subject's checked package (its canonical package
   identity, which covers every contract the package's successor relation
   reads, not only the clause's own nodes), the initial states, each
-  population's universe, the digests of the domain packages the checked
+  population's universe, the identities of the domain packages the checked
   package's model selections name, and the proof bounds. The order of the
   initial states and of a universe's keys SHALL NOT change the identity. The
   expansion limits, the evaluation meter, the observation and normalization

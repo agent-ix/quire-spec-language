@@ -34,17 +34,17 @@ T12-A/T12-B/T12-C/T12-D/T12-E against QSL's own head. Scope: FR-060-AC-1 through
    allowed caller is `model`. Run the check.
 5. Run `arch-lint api-surface` against QSL's real source tree at head.
 6. T12-B fixtures, each a small source tree:
-   - a shipped `NodeKey::from_digest(` call in a `check` submodule;
-   - a shipped `.map(NodeKey::from_digest)` in a module outside `check`, in a
+   - a shipped `NodeKey::new(` call in a `check` submodule;
+   - a shipped `.map(NodeKey::new)` in a module outside `check`, in a
      function not on the debt list;
    - a shipped mint in a function that is on the debt list, and the same
      module and function in another crate (a debt-list entry names its
      crate);
    - a debt-list entry whose function no longer mints;
-   - a `NodeKey::from_digest(` call inside a `#[cfg(test)]` item outside
+   - a `NodeKey::new(` call inside a `#[cfg(test)]` item outside
      `check`;
-   - a doc comment naming `NodeKey::from_digest` in a module outside `check`.
-7. T12-C fixture: a shipped `EffectiveId::from_digest(` call in
+   - a doc comment naming `NodeKey::new` in a module outside `check`.
+7. T12-C fixture: a shipped `EffectiveId::new(` call in
    `value::model_query`, in a function not on T12-C's debt list.
 
 ## Expected Results
@@ -65,7 +65,7 @@ T12-A/T12-B/T12-C/T12-D/T12-E against QSL's own head. Scope: FR-060-AC-1 through
   list entry has no mint left (FR-060-AC-4). **Amended by the layer-rule
   ruling (2026-09-22)**: fixed site counts are replaced by the debt lists.
   T12-D reports `PASS` with zero call sites: no
-  module outside `model` calls `PopulationId::from_digest(`. T12-E reports
+  module outside `model` calls `PopulationId::new(`. T12-E reports
   `PASS`: the witness minter's only shipped caller is
   `qsl-package`'s `checked_v2` (`tc_arch_lint_api_surface_024`, which runs
   on the real tree in `cargo test --workspace`; a call added from another

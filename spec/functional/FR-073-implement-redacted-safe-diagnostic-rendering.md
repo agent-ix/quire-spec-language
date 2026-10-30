@@ -65,24 +65,22 @@ on purpose.
   the full transcript text in its rendered output, and its `Display`
   implementation, if any, SHALL NOT include the full transcript text
   either; either implementation SHALL render a bounded descriptor instead
-  (a digest, byte length, or a fixed-length excerpt below the reader's
+  (a byte length, or a fixed-length excerpt below the reader's
   configured bound) wherever it names the transcript.
 - The replay request's (FR-071) and replay result's (FR-072) `Debug`
   implementations SHALL NOT include a byte-provision entry's full raw
   bytes or a concrete argument/value payload's full content in their
   rendered output, and their `Display` implementations, if any, SHALL NOT
   include that content either; each implementation SHALL render such an
-  entry's digest or a bounded descriptor only.
+  entry's identity label or a bounded descriptor only.
 - FR-069 through FR-072 SHALL type every refusal-cause field they define
-  (including the fields of the `stale_dependency`/`byte-digest-mismatch`,
-  `stale_dependency`/`content-mismatch`,
-  `stale_dependency`/`digest-domain-mismatch`, and bound-exceeded causes)
-  to hold only a digest, a locus, a category, or another bounded
+  (including the fields of the bound-exceeded causes)
+  to hold only an identity label, a locus, a category, or another bounded
   descriptor, so no refusal cause's `Debug`/`Display` rendering can expose
   unredacted transcript, byte-provision, or full concrete-value content.
 - Redaction SHALL apply only to `Debug`/`Display` rendering. Every typed
   accessor FR-069 through FR-072 already define (`transcript()`-derived
-  methods, byte-provision entry lookup by digest, concrete-value
+  methods, byte-provision entry lookup by identity, concrete-value
   accessors) SHALL continue to return its full, unredacted content when a
   caller invokes it directly; this requirement adds no access control and
   makes no content unreachable, only unrendered by default.
@@ -92,7 +90,7 @@ on purpose.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-073-AC-1 | Given a constructed witness envelope (FR-070) whose transcript names a specific concrete value, neither its `Debug` nor its `Display` rendering contains the full transcript text; both contain only a bounded descriptor. | Test (TC-209) |
-| FR-073-AC-2 | Given a constructed replay request (FR-071) whose byte provision carries a multi-kilobyte source entry, neither its `Debug` nor its `Display` rendering contains the entry's full raw bytes; both contain only the entry's digest or a bounded descriptor. | Test (TC-210) |
+| FR-073-AC-2 | Given a constructed replay request (FR-071) whose byte provision carries a multi-kilobyte source entry, neither its `Debug` nor its `Display` rendering contains the entry's full raw bytes; both contain only the entry's identity label or a bounded descriptor. | Test (TC-210) |
 | FR-073-AC-3 | Given a refusal produced by any of FR-069 through FR-072 that names transcript, byte-provision, or concrete-value content in its typed cause, the cause's `Debug`/`Display` rendering contains no unredacted instance of that content, and the same content remains fully readable through its typed accessor called directly on the pre-refusal or referenced value. | Test (TC-211) |
 
 ## Dependencies

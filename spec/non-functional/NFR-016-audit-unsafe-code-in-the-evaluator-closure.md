@@ -148,7 +148,7 @@ these keys:
 | `purpose` | One or more sentences naming what the crate's unsafe code does. |
 | `acceptance` | One or more sentences stating why the evaluator may link that code. |
 
-An entry names a crate, never a version, a source, a checksum, a digest or
+An entry names a crate, never a version, a source or
 the dependency path that reaches it. The resolved versions and the
 dependency graph live in `Cargo.lock` only, so a version change of an
 inventoried crate, or a change in which first-party crate reaches it, needs

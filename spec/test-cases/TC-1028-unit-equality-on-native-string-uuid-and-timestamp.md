@@ -99,8 +99,7 @@ fields; TC-1052 covers the literal forms of these types.
 - Step 3: the String comparisons lower to `quire.op.string.eq` and `.ne`, the
   UUID comparisons to `quire.op.uuid.eq` and `.ne`, the Timestamp comparisons
   to `quire.op.timestamp.eq` and `.ne`, each `binary` with result `boolean`,
-  arguments `[ref(a), ref(b)]`, and no law, mode, member or leaves, with no
-  text-profile definition in the lock evidence.
+  arguments `[ref(a), ref(b)]`, and no law, mode, member or leaves.
 - Step 4: the use of `UUID` refuses `ambiguous_declaration`/`ambiguous-name`,
   naming the use, the span of the record declaration and the native `UUID`
   candidate with no span.

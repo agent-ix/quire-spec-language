@@ -28,7 +28,7 @@ Every row that admits `Title` or reaches the Text reader (steps 1, 3, 4 and
 step 2 rows (b) to (k)) depends on the amended semantic-IR validator that
 FR-056's Text paragraph states: a `minLength`, `maxLength` or `format`
 constraint applied to a value type of `scalar` `string` is applicable. At the
-pinned validator those rows refuse `invalid_model_binding`/
+current validator those rows refuse `invalid_model_binding`/
 `malformed-declaration` at `Title`. Rows (a), (l), (m), (n) and the field row
 are decided by the validator or the reader without it and are reachable today.
 

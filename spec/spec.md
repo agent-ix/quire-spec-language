@@ -795,8 +795,8 @@ observation contracts without taking over their authority.
 ### 2.2 Out of Scope
 
 The standard and E own temporal/protocol/message meaning; B owns PT02 protocol
-conformance and results; D owns configuration and the version-locked
-ecosystem integration; F owns concrete observation admission, replay and
+conformance and results; D owns configuration and the ecosystem
+integration; F owns concrete observation admission, replay and
 completeness; C owns engineering assurance. Spec artifacts own the domain
 model, quire-rs owns artifact extraction, and filament-core-data owns the
 Semantic IR lowering and reader; this compiler parses no artifact Markdown. This compiler does not execute
@@ -1266,7 +1266,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-359](functional/FR-359-carry-a-child-record-value-at-an-ancestor-typed-slot.md) | FR |
 | [FR-360](functional/FR-360-type-a-field-by-a-variant-type-through-intake-check-evaluation-and-replay.md) | FR |
 | [FR-361](functional/FR-361-gate-model-constructs-on-the-model-profile-selection.md) | FR |
-| [FR-362](functional/FR-362-bind-a-checked-unit-to-its-source-by-digest.md) | FR |
+| [FR-362](functional/FR-362-produce-the-checked-graph-and-the-type-report-from-one-source.md) | FR |
 | [FR-363](functional/FR-363-type-navigation-over-a-relationship-end.md) | FR |
 | [FR-364](functional/FR-364-carry-relationship-instances-in-an-observation-and-read-them-for-navigation.md) | FR |
 | [FR-365](functional/FR-365-reach-an-object-over-a-relationship-end-in-a-state-clause.md) | FR |

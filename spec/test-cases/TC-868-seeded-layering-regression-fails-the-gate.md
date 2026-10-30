@@ -144,6 +144,5 @@ Each expected result is a literal in the test. Tag the test
   `not-negotiated`. Neither call writes to stdout or stderr, and the dependency tree contains no
   quire-contract-codegen crate.
 - Step 10: both runs write the whole corpus; each unit over the model names
-  the version and the digest computed from the model bytes, and after the
-  edit the edited version and a different digest, with no other digest
-  (FR-345-AC-14).
+  the model identity and version, and after the
+  edit the edited version, with no other change (FR-345-AC-14).
