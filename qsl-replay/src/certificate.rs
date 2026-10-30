@@ -213,8 +213,6 @@ certificate_members! {
     Admitted => "admitted",
     Refinement => "refinement",
     RefinementNode => "refinement_node",
-    ConcretePackage => "concrete_package",
-    AbstractPackage => "abstract_package",
     Positions => "positions",
     Taken => "taken",
     Locked => "locked",

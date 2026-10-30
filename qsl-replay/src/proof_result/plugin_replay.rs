@@ -23,12 +23,10 @@ use crate::request::{DependencyEntryWire, ReplayRequestWire, StateEnvironment};
 use crate::spine::{AdmittedModels, CheckedUnit, EmittedUnit};
 use crate::witness::{CanonicalAssignment, ReplaySource};
 use qsl_foundation::bound::ProofBound;
-use qsl_foundation::digest::{DigestRecord};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::source::{Source, SourceLabel};
 use qsl_foundation::{BackendId, Code, RequestIndex, Setting, SettingLimits};
 use qsl_semantics::check::Capability;
-use qsl_semantics::library::PackageId;
 use quire_exact::{Identifier, Origin, Role, ScalarLimits, ValueType};
 use quire_semantic_value::catalog::InternalFault;
 
@@ -51,18 +49,15 @@ struct FunctionDeclaration {
 #[derive(Clone, Debug)]
 struct DependencySelection {
     identity: String,
-    package_id: DigestRecord,
     source: Option<RawSourceRef>,
 }
 
 /// The package-wide members of a plugin counterexample's replay request
 /// (FR-290 "Replay context"). It copies what it needs from the units and
 /// refuses nothing: a pair of units that do not match is caught by the
-/// replay's own recompile, which requires the recompiled `package_id` to
-/// equal the request's (FR-098).
+/// replay's own recompile (FR-098).
 #[derive(Clone, Debug)]
 pub struct PluginReplayContext {
-    package_id: DigestRecord,
     source: RawSourceRef,
     dependencies: Vec<DependencySelection>,
     functions: BTreeMap<NodeKey, FunctionDeclaration>,
@@ -117,10 +112,9 @@ impl PluginReplayContext {
         let dependencies = checked
             .package()
             .dependency_selections()
-            .iter()
-            .map(|(identity, resolved)| DependencySelection {
+            .keys()
+            .map(|identity| DependencySelection {
                 identity: identity.as_str().to_owned(),
-                package_id: resolved.package_id.record(),
                 source: checked.library_source(identity).map(source_reference),
             })
             .collect();
@@ -151,7 +145,6 @@ impl PluginReplayContext {
             .map(|(setting, bound)| (setting.name().to_owned(), bound))
             .collect();
         Self {
-            package_id: emitted.package().package_id().record(),
             source: source_reference(checked.source()),
             dependencies,
             functions,
@@ -230,10 +223,6 @@ impl PluginReplayContext {
                 })?;
                 Ok(DependencyEntryWire {
                     identity: selection.identity.clone(),
-                    package_id: (
-                        Some(selection.package_id.domain().as_str().to_owned()),
-                        selection.package_id.hex(),
-                    ),
                     sources: vec![source.to_wire()],
                 })
             })
@@ -268,10 +257,6 @@ impl PluginReplayContext {
         let selected_function = QualifiedName::new(vec![name]).map_err(|_| fault())?;
         Ok(ReplayRequestWire {
             profile_selections: Vec::new(),
-            package_id: (
-                Some(self.package_id.domain().as_str().to_owned()),
-                self.package_id.hex(),
-            ),
             sources: vec![self.source.to_wire()],
             dependencies,
             replay_target: crate::RequestTargetWire::function(
@@ -335,16 +320,6 @@ pub enum PluginReplayRefusal {
         /// The repeated key, in its display form.
         key: String,
     },
-    /// The request names a `package_id` other than the run's (FR-404). A node's
-    /// occurrence key carries no package, so only the pairing key tells two
-    /// runs that hold the same function apart.
-    #[error("stale_dependency/content-mismatch: the request names package {} but the run is package {}", received.hex(), run.hex())]
-    ForeignRun {
-        /// The `package_id` the request named.
-        received: PackageId,
-        /// The run's `package_id`.
-        run: PackageId,
-    },
     /// The request index is no member of the run's call: a record of the
     /// package that belongs to another function, or an index past the
     /// package's records (FR-404).
@@ -368,7 +343,6 @@ impl PluginReplayRefusal {
             Self::NotReplayable { .. } => (Code::UnknownRequiredFeature, "unsupported-feature"),
             Self::UnresolvedDependency { .. } => (Code::MissingImport, "missing-selection"),
             Self::DuplicateBoundKey { .. } => (Code::InvalidRuntimeInput, "duplicate-member"),
-            Self::ForeignRun { .. } => (Code::StaleDependency, "content-mismatch"),
             Self::NotACallItem { .. } => (Code::MissingDeclaration, "missing-name"),
             Self::Fault(_) => (Code::RuntimeInvariant, "established-invariant-broken"),
         };
@@ -397,7 +371,6 @@ impl PluginReplayRefusal {
             Self::UnknownOccurrence { .. }
             | Self::UnresolvedDependency { .. }
             | Self::DuplicateBoundKey { .. }
-            | Self::ForeignRun { .. }
             | Self::NotACallItem { .. }
             | Self::Fault(_) => TerminalRecord::failed(request_index, plugin),
         }

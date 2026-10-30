@@ -11,7 +11,6 @@ use qsl_foundation::digest::DigestRecord;
 use qsl_semantics::check::{
     CheckedStateGraphClaim, CheckedStatePredicate, PredicateRole, StateGraphForm,
 };
-use qsl_semantics::library::PackageId;
 use quire_exact::ObjectReference;
 use quire_semantic_value::catalog::Category;
 
@@ -75,18 +74,6 @@ pub fn replay_model_graph_with_cancel(
     )?;
     let compiled = recompile(&request, &caller)?;
     let package = compiled.checked.package();
-    let package_id = compiled.emitted.package().package_id();
-    if !package_id.matches(&request.package_id()) {
-        return Err(ReplayRefusal::PackageIdMismatch {
-            requested: request.package_id(),
-            recompiled: package_id,
-        });
-    }
-    if !package_id.matches(&envelope.package_id()) {
-        return Err(ReplayRefusal::ModelGraphMismatch {
-            member: "package_id",
-        });
-    }
     if envelope.claim_node() != envelope.occurrence_key().node() {
         return Err(ReplayRefusal::ModelGraphMismatch {
             member: "occurrence_key",
@@ -164,7 +151,6 @@ pub fn replay_model_graph_with_cancel(
             package,
             claim,
             envelope.family_payload(),
-            package_id,
             model_limits.limits.max_states,
             model_limits.limits.max_transitions,
         )?
@@ -174,7 +160,6 @@ pub fn replay_model_graph_with_cancel(
             package,
             clause,
             envelope.family_payload(),
-            package_id,
             model_limits.limits.max_states,
             model_limits.limits.max_transitions,
             model_limits.max_automaton_states,
@@ -199,7 +184,6 @@ pub(super) fn replay_evidence(
     package: &qsl_package::CheckedPackage,
     claim: &CheckedStateGraphClaim,
     evidence: &GraphEvidence,
-    package_id: PackageId,
     max_states: usize,
     max_transitions: usize,
 ) -> Result<GraphReplayResult, ReplayRefusal> {
@@ -290,7 +274,6 @@ pub(super) fn replay_evidence(
                 if !record_reading(source_role(claim), reading, &mut evaluated)? {
                     return Ok(result(
                         inconclusive(Category::Violation, Category::Success),
-                        package_id,
                         evaluated,
                         None,
                         None,
@@ -339,7 +322,6 @@ pub(super) fn replay_evidence(
                 if !record_reading(source_role(claim), reading, &mut evaluated)? {
                     return Ok(result(
                         inconclusive(Category::Violation, Category::Success),
-                        package_id,
                         evaluated,
                         None,
                         None,
@@ -390,7 +372,6 @@ pub(super) fn replay_evidence(
     };
     Ok(result(
         settlement,
-        package_id,
         evaluated,
         closure_nodes,
         first_target,
@@ -804,14 +785,12 @@ pub(super) fn inconclusive(proved: Category, replayed: Category) -> GraphReplayS
 
 pub(super) fn result(
     settlement: GraphReplaySettlement,
-    package_id: PackageId,
     evaluated_predicates: Vec<(PredicateRole, bool)>,
     closure_nodes: Option<u64>,
     first_target: Option<DigestRecord>,
 ) -> GraphReplayResult {
     GraphReplayResult {
         settlement,
-        package_id,
         evaluated_predicates,
         closure_nodes,
         first_target,

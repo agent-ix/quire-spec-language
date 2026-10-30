@@ -68,8 +68,8 @@
 //! binds each number to the state it recomputes, one to one.
 //!
 //! A timed refinement's safety half (QSpec FR-430) is checked in FR-244's
-//! refinement form: the part's refinement and both packages are compared
-//! with the recompiled ones first; each node's second component is a
+//! refinement form: the part's refinement is compared
+//! with the recompiled one first; each node's second component is a
 //! position, not an automaton state; `check_initial` and `check_step`,
 //! run on the listed positions, replace the claim automaton and its
 //! badness (`InitialMismatch`, `StepFails`, `PostDiffers`); the locked
@@ -98,11 +98,10 @@ use qsl_eval::temporal::AtomReading;
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::digest::{DigestRecord};
 use qsl_foundation::source::provenance::OccurrenceKey;
-use qsl_package::{CheckedPackage, EmitRefusal};
+use qsl_package::CheckedPackage;
 use qsl_semantics::check::{
     CheckedRefinement, ClockOp, FormulaNodeId, TemporalProfile, TimedPropertyForm,
 };
-use qsl_semantics::library::PackageId;
 use qsl_semantics::model::observation::{AdmissionFailure, DocumentRef};
 use quire_exact::{Cancel, Integer, Meter, Rational};
 use quire_semantic_value::model_transition::ModelTransition;
@@ -169,10 +168,6 @@ pub struct ZoneCertificate<O> {
 pub struct RefinementPart {
     /// QSpec FR-418 `refinement_node`: the refinement node's id.
     pub refinement_node: NodeKey,
-    /// The package of the concrete subject.
-    pub concrete_package: PackageId,
-    /// The package holding the abstract model.
-    pub abstract_package: PackageId,
     /// The product positions, FR-149's type.
     pub positions: Vec<CertifiedPosition>,
     /// What `check_step` took on each edge, one per entry of `edges` in
@@ -185,10 +180,6 @@ pub struct RefinementPart {
 pub struct RefinementIdentity {
     /// The refinement node's id.
     pub refinement_node: NodeKey,
-    /// The concrete subject's package.
-    pub concrete_package: PackageId,
-    /// The abstract model's package.
-    pub abstract_package: PackageId,
 }
 
 /// What a node of FR-240's liveness product carries beyond a search
@@ -628,8 +619,8 @@ pub enum ZoneCertificateRefusal<O> {
         /// The recompiled item's.
         recompiled: Box<ItemIdentity>,
     },
-    /// The refinement part names another refinement or package than the
-    /// recompiled ones (FR-245 "Refinement form"):
+    /// The refinement part names another refinement than the
+    /// recompiled one (FR-245 "Refinement form"):
     /// `stale_dependency`/`content-mismatch`, naming both.
     RefinementMismatch {
         /// The part's.
@@ -637,8 +628,6 @@ pub enum ZoneCertificateRefusal<O> {
         /// The recompiled.
         recompiled: Box<RefinementIdentity>,
     },
-    /// A package the refinement part names writes no `package_id`.
-    Package(Box<EmitRefusal>),
     /// FR-106's admission of the subject failed.
     Admission(Box<AdmissionFailure>),
     /// The model's timed reading does not build (FR-231).
@@ -661,7 +650,6 @@ impl<O> ZoneCertificateRefusal<O> {
             Self::ObligationMismatch { .. }
             | Self::IdentityMismatch { .. }
             | Self::RefinementMismatch { .. } => Code::StaleDependency,
-            Self::Package(refusal) => refusal.code(),
             Self::UnsupportedItem => Code::UnsupportedConstruct,
             Self::Fault(_) => Code::RuntimeInvariant,
             Self::Admission(_) | Self::TimedSubject(_) | Self::Unbounded | Self::Undecided => {
@@ -824,11 +812,6 @@ pub fn check_zone_certificate<O: Clone + Eq>(
             let Some(part) = &certificate.refinement else {
                 return Ok(malformed_verdict(CertificateMember::Refinement));
             };
-            let package_id = |package: &CheckedPackage| {
-                qsl_package::emit_checked(package)
-                    .map(|emission| emission.package().package_id())
-                    .map_err(|refusal| ZoneCertificateRefusal::Package(Box::new(refusal)))
-            };
             // The refinement node is the recompiled record's occurrence's,
             // which the identity check above found.
             let ItemIdentity::Refinement { occurrence, .. } = &recompiled else {
@@ -838,14 +821,10 @@ pub fn check_zone_certificate<O: Clone + Eq>(
                 });
             };
             let recompiled = RefinementIdentity {
-                refinement_node: occurrence.node(),
-                concrete_package: package_id(request.simulation.package)?,
-                abstract_package: package_id(abstract_package)?,
+                refinement_node: occurrence.node().clone(),
             };
             let listed = RefinementIdentity {
-                refinement_node: part.refinement_node,
-                concrete_package: part.concrete_package,
-                abstract_package: part.abstract_package,
+                refinement_node: part.refinement_node.clone(),
             };
             if listed != recompiled {
                 return Err(ZoneCertificateRefusal::RefinementMismatch {

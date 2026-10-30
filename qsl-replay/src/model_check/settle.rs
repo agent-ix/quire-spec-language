@@ -5,7 +5,7 @@
 //! A `Violated` outcome settles `refuted` only on a replay result (ADR-018
 //! SM-7) that reproduced it against the package the run checked: the
 //! caller's `replay` (in production [`replay_model_trace`]) supplies the
-//! result, and the map checks its `package_id`. A `Holds` outcome settles
+//! result. A `Holds` outcome settles
 //! only through the core's own checker of its certificate, [`check_closure`]
 //! or, for a liveness item, [`check_components`], which the map runs itself
 //! on the outcome's certificate (ADR-018 PC-3, PC-4, PC-5):
@@ -208,22 +208,15 @@ impl<T: SubjectTransition> ModelCheckRecord<T> {
     }
 }
 
-/// FR-127: settle `outcome`, a run under `limits` over the package
-/// `package_id`, as one terminal record. A `Holds` outcome settles only
-/// after the request's own package is emitted and its `package_id` equals
-/// `package_id` (another package settles
-/// `Inconclusive(ReplayRefused(stale_dependency))`, one that does not emit
-/// settles `failed`, or `Incomplete(Cancelled)` when `cancel` stopped it) and
-/// its certificate is checked for `certificate` under `limits` and `cancel`:
+/// FR-127: settle `outcome`, a run under `limits`, as one terminal record. A
+/// `Holds` outcome settles only after its certificate is checked for `certificate` under `limits` and `cancel`:
 /// a closure by [`check_closure`], a component certificate (a liveness proof)
 /// by [`check_components`], and a closure offered for a TP-4 clause is
 /// refused, which settles `failed`; a refused check settles
 /// `inconclusive` by `NoInstance` or `NoInitialState` and `failed`
 /// otherwise, `clause-root-unresolved` among the causes. A `Violated` outcome's
 /// counterexample is handed to `replay` (FR-128) and settles by its result:
-/// reproduced against `package_id` is `Refuted`; a result settled against
-/// any other package is `Inconclusive(ReplayRefused(stale_dependency))`; a
-/// disagreement is `Inconclusive(ReplayParity)`; a refusal is
+/// reproduced is `Refuted`; a disagreement is `Inconclusive(ReplayParity)`; a refusal is
 /// `Inconclusive(ReplayRefused)`, except an internal fault, which is
 /// `Failed`.
 ///
@@ -231,7 +224,6 @@ impl<T: SubjectTransition> ModelCheckRecord<T> {
 pub fn settle_model_check(
     outcome: &ModelCheckOutcome,
     limits: &ModelCheckLimits,
-    package_id: &DigestRecord,
     certificate: &CertificateRequest<'_>,
     cancel: &Cancel,
     replay: impl FnOnce(&TemporalCounterexample) -> Result<ModelTraceReplayResult, ReplayRefusal>,
@@ -239,8 +231,6 @@ pub fn settle_model_check(
     settle(
         outcome,
         limits,
-        package_id,
-        certificate.subject.simulation.package,
         cancel,
         |proof| match proof {
             ProofCertificate::Closure(closure) => {
@@ -266,7 +256,6 @@ pub fn settle_model_check(
 pub fn settle_protocol_check(
     outcome: &ModelCheckOutcome<ProtocolTransition>,
     limits: &ModelCheckLimits,
-    package_id: &DigestRecord,
     certificate: &ProtocolCertificateRequest<'_>,
     cancel: &Cancel,
     replay: impl FnOnce(
@@ -276,8 +265,6 @@ pub fn settle_protocol_check(
     let mut record = settle(
         outcome,
         limits,
-        package_id,
-        certificate.subject.model.simulation.package,
         cancel,
         |proof| match proof {
             ProofCertificate::Closure(closure) => {
@@ -410,9 +397,6 @@ fn weak_access_shape(shape: &WeakAccessShape) -> Option<UnavailabilityCause> {
 fn settle<T: SubjectTransition>(
     outcome: &ModelCheckOutcome<T>,
     limits: &ModelCheckLimits,
-    package_id: &DigestRecord,
-    package: &CheckedPackage,
-    cancel: &Cancel,
     closure: impl FnOnce(&ProofCertificate) -> Result<TemporalCertificateCheck, ClosureRefusal>,
     replay: impl FnOnce(&TemporalCounterexample<T>) -> Result<ModelTraceReplayResult, ReplayRefusal>,
 ) -> ModelCheckRecord<T> {
@@ -421,10 +405,8 @@ fn settle<T: SubjectTransition>(
     let mut depth = None;
     let row = match outcome {
         ModelCheckOutcome::Holds { certificate, .. } => {
-            Row::bound(package_id, package, cancel, || {
-                Row::of_check(closure(certificate), || {
-                    Row::proved(ProofBasis::Exhaustive, SettlementBasis::ClosedScope)
-                })
+            Row::of_check(closure(certificate), || {
+                Row::proved(ProofBasis::Exhaustive, SettlementBasis::ClosedScope)
             })
         }
         // ADR-021 RV-1: a reduced proof is its own technique, and a
@@ -508,12 +490,6 @@ fn settle<T: SubjectTransition>(
             counterexample: payload,
             ..
         } => match replay(payload) {
-            Ok(ModelTraceReplayResult {
-                package_id: replayed,
-                ..
-            }) if !replayed.matches(package_id) => {
-                Row::stale_dependency(*package_id, replayed.record())
-            }
             Ok(ModelTraceReplayResult {
                 settlement: ModelTraceSettlement::Reproduced { .. },
                 hints: replayed_hints,
@@ -669,24 +645,11 @@ impl Row {
         })
     }
 
-    /// A package identity mismatch whose two sides are known (FR-282,
-    /// FR-331).
-    pub(super) fn stale_dependency(requested: DigestRecord, recompiled: DigestRecord) -> Self {
-        Self::inconclusive(InconclusiveCause::StaleDependency {
-            requested: StaleIdentity::Package(requested),
-            recompiled: StaleIdentity::Package(recompiled),
-        })
-    }
-
     /// A refused replay: `ReplayRefused` with its code, or `failed` for a
     /// fault.
     pub(super) fn refused(refusal: &ReplayRefusal) -> Self {
         match refusal {
             ReplayRefusal::Fault(_) => Self::failed(),
-            ReplayRefusal::PackageIdMismatch {
-                requested,
-                recompiled,
-            } => Self::stale_dependency(*requested, recompiled.record()),
             refusal => Self::inconclusive(InconclusiveCause::ReplayRefused(refusal.code())),
         }
     }
@@ -715,10 +678,6 @@ impl Row {
     ) -> Self {
         match check {
             Ok(TemporalCertificateCheck::Accepted) => accepted(),
-            Ok(TemporalCertificateCheck::PackageMismatch {
-                certificate,
-                recompiled,
-            }) => Self::stale_dependency(certificate.record(), recompiled.record()),
             Ok(TemporalCertificateCheck::Rejected(CertificateRejection { rule, at })) => {
                 Self::inconclusive(InconclusiveCause::CertificateRejected { rule, at })
             }
@@ -745,80 +704,5 @@ impl Row {
             }
             Err(_) => Self::failed(),
         }
-    }
-
-    /// FR-282's package binding of a certificate: `check`'s row only when
-    /// `package`, the checker's own package, emits and its `package_id`
-    /// equals `package_id`, the package the run checked. Another package
-    /// settles `ReplayRefused(stale_dependency)`; a package that does not
-    /// emit settles `failed`, or `Incomplete(Cancelled)` when `cancel`
-    /// stopped it.
-    pub(super) fn bound(
-        package_id: &DigestRecord,
-        package: &CheckedPackage,
-        cancel: &Cancel,
-        check: impl FnOnce() -> Self,
-    ) -> Self {
-        Self::bound_after_emission(
-            package_id,
-            cancel,
-            || emitted_package_id(package, cancel),
-            check,
-        )
-    }
-
-    /// Settle after the boundary's package emission, keeping the non-emitting
-    /// row testable without constructing an invalid `CheckedPackage`.
-    fn bound_after_emission(
-        package_id: &DigestRecord,
-        cancel: &Cancel,
-        emission: impl FnOnce() -> Option<DigestRecord>,
-        check: impl FnOnce() -> Self,
-    ) -> Self {
-        match emission() {
-            Some(checked) if checked != *package_id => Self::stale_dependency(*package_id, checked),
-            Some(_) => check(),
-            None => match cancel.cause() {
-                Some(source) => Self::incomplete(IncompleteCause::Cancelled { source }, None),
-                None => Self::failed(),
-            },
-        }
-    }
-}
-
-/// The `package_id` of `package`, by emitting it (FR-322) under `cancel`;
-/// `None` when it does not emit or the handle stopped it.
-fn emitted_package_id(package: &CheckedPackage, cancel: &Cancel) -> Option<DigestRecord> {
-    qsl_package::emit_checked_with_cancel(package, cancel)
-        .ok()
-        .map(|emission| emission.package().package_id().record())
-}
-
-#[cfg(test)]
-mod bound_tests {
-    use super::*;
-
-    /// FR-282: a package the emission boundary refuses to write cannot stand
-    /// behind a certificate result.
-    #[ix_trace_rs::trace("FR-169-AC-10")]
-    #[test]
-    fn a_non_emitting_package_fails_before_certificate_check() {
-        let package_id = DigestRecord::mint(
-            qsl_foundation::digest::DigestDomain::PackageSemanticV2,
-            [1; 32],
-        );
-        let checked = std::cell::Cell::new(false);
-        let row = Row::bound_after_emission(
-            &package_id,
-            &Cancel::new(),
-            || None,
-            || {
-                checked.set(true);
-                Row::proved(ProofBasis::Exhaustive, SettlementBasis::ClosedScope)
-            },
-        );
-
-        assert_eq!(row.value, TerminalValue::Failed);
-        assert!(!checked.get(), "a failed emission must not check evidence");
     }
 }

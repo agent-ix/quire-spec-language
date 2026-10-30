@@ -23,7 +23,6 @@ use crate::statistical::{Decision, StatisticalVerdict};
 use qsl_eval::simulation::{Permutation, SymmetryClass};
 use qsl_eval::temporal::TemporalOutcome;
 use qsl_foundation::diagnostic::Code;
-use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::BackendId;
 use qsl_foundation::ReductionKind;
 use qsl_foundation::RequestIndex;
@@ -801,12 +800,9 @@ pub enum InconclusiveCause {
 }
 
 /// The domain-specific identity retained by a stale-dependency result.
-/// Package IDs remain package semantic identities; refinement names remain
-/// refinement identities. They are tagged on the FR-331 result wire.
+/// A refinement name is a refinement identity.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum StaleIdentity {
-    /// A `quire.package.semantic/v2` package identity.
-    Package(DigestRecord),
     /// An FR-149 refinement name.
     Refinement(String),
 }
@@ -1127,13 +1123,6 @@ impl TerminalValue {
             ReplayRefusal::Fault(_) | ReplayRefusal::Admission(AdmissionFailure::Fault(_)) => {
                 Self::Failed
             }
-            ReplayRefusal::PackageIdMismatch {
-                requested,
-                recompiled,
-            } => Self::Inconclusive(InconclusiveCause::StaleDependency {
-                requested: StaleIdentity::Package(*requested),
-                recompiled: StaleIdentity::Package(recompiled.record()),
-            }),
             _ => Self::Inconclusive(InconclusiveCause::ReplayRefused(refusal.code())),
         }
     }
@@ -1775,7 +1764,6 @@ mod tests {
     fn function_claim(assignments: Vec<CanonicalAssignment>) -> ScalarClaim {
         ScalarClaim::Function(Box::new(crate::ValueIdentity {
             obligation: crate::ObligationIdentity::from_digest([1; 32]),
-            package_id: (None, String::new()),
             function: Some(
                 crate::QualifiedName::new(vec![quire_exact::Identifier::new("f").unwrap()])
                     .unwrap(),
@@ -2727,7 +2715,6 @@ mod tests {
     #[test]
     fn a_call_site_refusal_settles_declined_with_its_code_and_a_fault_failed() {
         use crate::identity::QualifiedName;
-        use qsl_foundation::digest::{DigestDomain, DigestRecord};
         use quire_exact::Identifier;
         use quire_semantic_value::catalog::InternalFault;
 
@@ -2744,7 +2731,7 @@ mod tests {
         );
         let unknown = CallSiteRefusal::UnknownFunction {
             selection: QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap(),
-            package: DigestRecord::mint(DigestDomain::SourceBytesV1, [1; 32]),
+            package: qsl_semantics::library::LibraryName::new("fixture").unwrap(),
         };
         let settled = TerminalValue::from_call_site_refusal(&unknown);
         assert_eq!(
