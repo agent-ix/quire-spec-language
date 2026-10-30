@@ -121,8 +121,8 @@ impl FrameEntry {
 impl AbstractionTerm {
     /// The body holding these entries, each array in FR-451's canonical
     /// order: `objects` by `type`, `populations` by `population`, and
-    /// `frames` by `context` and then `operation` as UTF-8 bytes, each digest
-    /// compared as unsigned bytes.
+    /// `frames` by `context` and then `operation` as UTF-8 bytes, each
+    /// structural node identity compared by its component order.
     pub(crate) fn new(
         mut objects: Vec<ObjectEntry>,
         mut populations: Vec<PopulationEntry>,

@@ -81,7 +81,7 @@ impl SourceOwner {
         })
     }
 
-    /// This owner as the nominal preimages' `{kind: "source", authority,
+    /// This owner as the nominal source descriptor `{kind: "source", authority,
     /// identity}` owner subject (FR-091 "Enum declarations").
     pub(crate) fn node_owner(&self, package_name: &str) -> NodeOwner {
         NodeOwner::Source(OwnerSubject {
@@ -258,7 +258,7 @@ impl NodeRef {
     }
 }
 
-/// The preimage schema's closed `node_tag` vocabulary.
+/// The checked semantic graph's closed `node_tag` vocabulary.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, FixedShape)]
 #[cfg_attr(test, derive(serde::Deserialize))]
 #[serde(rename_all = "snake_case")]
@@ -321,13 +321,8 @@ impl NodeTag {
 }
 
 /// The Leaf stratum of QSpec FR-322's v2 body grammar (ADR-030 D-2): a
-/// term that holds no other term. Its depth is fixed, so it encodes through
-/// `quire-canonical`'s serde path (its `flatten` and tag only make the
-/// derived depth an overestimate).
+/// term that holds no other term. Its depth is fixed by the grammar.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-// No `deny_unknown_fields`: serde does not combine it with the literal's
-// `flatten`, and the conformance test compares re-encoded bytes with the
-// published ones, so a dropped member fails there instead.
 pub enum LeafTerm {
     /// A typed literal: its kind and JSON value come from [`LiteralValue`].
     Literal {
@@ -447,20 +442,18 @@ pub struct AggregateTerm {
 }
 
 /// A `state`/`frame` node's own body shape (QSpec FR-340), valid only as a
-/// node's body. It contains no `application`, so `node_key` always keys a
-/// frame node through the FR-092 structural preimage, never the application
-/// one.
+/// node's body.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct FrameTerm {
     /// Every field or relationship the operation may write, ascending by
-    /// (declaring node digest, field name), a relationship's name being
+    /// (declaring node identity, field name), a relationship's name being
     /// empty (FR-340).
     pub modifies: Vec<FrameModifies>,
     /// Every object type or process the operation may create, ascending by
-    /// node digest.
+    /// structural node identity.
     pub creates: Vec<NodeRef>,
     /// Every object type or process the operation may delete, ascending by
-    /// node digest.
+    /// structural node identity.
     pub deletes: Vec<NodeRef>,
     /// The scoped deletes: `receiver` first, then each reference parameter
     /// by name as UTF-8 bytes (QSpec FR-340). Always present.
@@ -469,7 +462,7 @@ pub struct FrameTerm {
 
 /// A node's body: the Body stratum of QSpec FR-322's v2 body grammar
 /// (ADR-030 D-2, FR-258). No stratum names itself or a higher one, so every
-/// body, and its node-key preimage, nests a depth the grammar fixes, and
+/// body nests a depth the grammar fixes, and
 /// every composite subterm is its own node, reached by `reference`.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum BodyTerm {
@@ -1415,8 +1408,6 @@ pub enum LeafSegment {
     /// `d` segments.
     Recursion(usize),
 }
-
-/// A [`LeafSegment`] serializes as one string.
 
 /// Semantic content retained during lowering before a producer-assigned
 /// structural identity is attached.
