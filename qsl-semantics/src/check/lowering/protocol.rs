@@ -824,6 +824,17 @@ impl Lowering<'_> {
     ) -> Result<Binder, CheckRefusal> {
         let semantic_type = self.binder_type(&binder.value_type, None, location)?;
         let parameter = self.parameter(&binder.name, level, semantic_type.clone(), location)?;
+        // The checked key `parameter` just appended names the protocol node
+        // that introduced this binder.
+        if let Some(keys) = self
+            .active_protocol
+            .as_ref()
+            .and_then(|protocol| self.protocol_binder_keys.get_mut(protocol))
+        {
+            if let Some(last) = keys.last_mut() {
+                last.introducing = binder.node;
+            }
+        }
         Ok(Binder {
             slot,
             parameter: parameter.into(),

@@ -2783,6 +2783,7 @@ impl<'a> Lowering<'a> {
                 .push(crate::check::protocol_clause::CheckedProtocolBinderKey {
                     name: name.to_owned(),
                     level,
+                    introducing: None,
                     node: require_admitted(key.clone(), location)?,
                     semantic_type: require_admitted(semantic_type, location)?,
                 });
@@ -3351,6 +3352,7 @@ impl<'a> Lowering<'a> {
                     Some(crate::check::protocol_clause::CheckedProtocolBinderKey {
                         name: binders.slot_names.get(binder.slot)?.clone(),
                         level: binder.slot,
+                        introducing: None,
                         node: binder.parameter.admitted()?.clone(),
                         semantic_type: binder.semantic_type.admitted()?.clone(),
                     })
