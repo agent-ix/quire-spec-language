@@ -2492,61 +2492,6 @@ pub(super) const PROTOCOL_ROWS: [&str; 3] = [
     "step duplicate C::Impl::ch -> stutter;",
 ];
 
-/// QSpec FR-375-AC-19 (the declaration-naming rows): a protocol subject's
-/// `steps` are ordered by their node's digest, rows of one node by their
-/// alias-free class spelling (`duplicate Impl::ch` before `lose Impl::ch`),
-/// each naming its class catalog node, whatever order they are written in.
-#[trace("FR-375-AC-19", "TC-310")]
-#[test]
-fn protocol_step_rows_order_by_node_then_class_spelling() {
-    let steps = |rows: &[&str]| {
-        let (unit, documents) = protocol_rows(rows);
-        let package = modelled_with_documents(&unit, &documents, Vec::new());
-        let emission = emit_checked(&package).expect("the protocol rows emit");
-        let node = refinement_node(&emission);
-        let catalog = node["body"]["class_catalog"]["concrete"].clone();
-        (node["body"]["steps"].clone(), catalog)
-    };
-    let (written, catalog) = steps(&PROTOCOL_ROWS);
-    let steps_of = |steps: &Value| -> Vec<(String, String)> {
-        steps
-            .as_array()
-            .expect("steps")
-            .iter()
-            .map(|step| {
-                (
-                    step["source_node"]["digest"]
-                        .as_str()
-                        .expect("a node")
-                        .to_owned(),
-                    step["source_class"].as_str().expect("a class").to_owned(),
-                )
-            })
-            .collect()
-    };
-    let ordered = steps_of(&written);
-    let mut sorted = ordered.clone();
-    sorted.sort();
-    assert_eq!(ordered, sorted);
-    let classes: Vec<&str> = ordered.iter().map(|(_, class)| class.as_str()).collect();
-    let duplicate = classes
-        .iter()
-        .position(|class| *class == "duplicate Impl::ch");
-    let lose = classes.iter().position(|class| *class == "lose Impl::ch");
-    assert!(duplicate < lose && lose.is_some(), "{classes:?}");
-    for step in written.as_array().expect("steps") {
-        let entry = catalog
-            .as_array()
-            .expect("a concrete catalog")
-            .iter()
-            .find(|entry| entry["class"] == step["source_class"])
-            .unwrap_or_else(|| panic!("{} is catalogued", step["source_class"]));
-        assert_eq!(entry["node"], step["source_node"]);
-    }
-    let reversed: Vec<&str> = PROTOCOL_ROWS.iter().rev().copied().collect();
-    assert_eq!(steps(&reversed).0, written);
-}
-
 /// A protocol subject's step rows read back through IR's catalog rebuild.
 #[trace("FR-375-AC-19", "TC-310")]
 #[test]
@@ -2586,41 +2531,6 @@ fn memory_emission(run: &str, rows: &[&str]) -> Emitted {
         emission,
         documents,
     }
-}
-
-/// QSpec FR-375-AC-19 (the memory rows, QSL-1181): the `memory`
-/// rows come after every declaration-naming row, `drain` before `flush`,
-/// neither with a `source_node`; writing the rows in another order changes
-/// neither the node id nor the package id.
-#[trace("FR-375-AC-19", "TC-310")]
-#[test]
-fn memory_rows_go_last_drain_before_flush() {
-    let forward = memory_emission(MEMORY_RUN, &MEMORY_ROWS);
-    let reversed: Vec<&str> = MEMORY_ROWS.iter().rev().copied().collect();
-    let reversed = memory_emission(MEMORY_RUN, &reversed);
-    let node = refinement_node(&forward.emission);
-    let steps = node["body"]["steps"].as_array().expect("steps");
-    let tail: Vec<&Value> = steps[steps.len() - 2..].iter().collect();
-    assert_eq!(
-        tail.iter()
-            .map(|step| step["source_class"].as_str().expect("a class"))
-            .collect::<Vec<_>>(),
-        ["memory drain", "memory flush"]
-    );
-    for step in &tail {
-        assert!(step.get("source_node").is_none(), "{step}");
-    }
-    for step in &steps[..steps.len() - 2] {
-        assert!(step.get("source_node").is_some(), "{step}");
-    }
-    assert_eq!(
-        refinement_node(&reversed.emission)["node_id"],
-        node["node_id"]
-    );
-    assert_eq!(
-        wire(&reversed.emission)["package_id"],
-        wire(&forward.emission)["package_id"]
-    );
 }
 
 /// QSpec FR-375-AC-23 and AC-26: over `parallel` controls defaulting to

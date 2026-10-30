@@ -573,8 +573,8 @@ impl PopulationUse {
 impl CheckedRefinement {
     /// The typed V2 body and key of this refinement (QSpec FR-375): its
     /// `abstract` root, a protocol subject's `protocol` clause and internal
-    /// list, its keyed rows in canonical order and its lowered class
-    /// catalog, with, for each `steps` entry in that order, the position of
+    /// list, its keyed rows (`steps` in declaration order) and its lowered
+    /// class catalog, with, for each `steps` entry, the position of
     /// the source row it was written as (its [`Self::step_sources`] entry).
     /// Construction remains in the check core; the package writer can
     /// serialize the checked body without depending on JSON or minting a
@@ -647,24 +647,9 @@ impl CheckedRefinement {
                 })
             })
             .collect::<Result<Vec<_>, RefinementV2EncodingError>>()?;
-        // The wire order IR's checked-package reader requires of the
-        // `steps` array; no row reference reads it.
-        let mut ordered: Vec<&KeyedStepRow> = rows.steps.iter().collect();
-        ordered.sort_by(|left, right| {
-            (
-                left.source_node.is_none(),
-                left.source_node,
-                left.source_class.as_bytes(),
-            )
-                .cmp(&(
-                    right.source_node.is_none(),
-                    right.source_node,
-                    right.source_class.as_bytes(),
-                ))
-        });
-        let mut steps = Vec::with_capacity(ordered.len());
-        let mut step_sources = Vec::with_capacity(ordered.len());
-        for row in ordered {
+        let mut steps = Vec::with_capacity(rows.steps.len());
+        let mut step_sources = Vec::with_capacity(rows.steps.len());
+        for row in &rows.steps {
             let target = match &row.target {
                 KeyedStepTarget::Operation {
                     operation,
