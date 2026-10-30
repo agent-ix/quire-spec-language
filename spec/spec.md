@@ -1293,6 +1293,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-490](functional/FR-490-retire-the-legacy-mapped-extraction-surface.md) | FR |
 | [FR-491](functional/FR-491-evaluate-a-state-clause-through-the-replay-facade.md) | FR |
 | [FR-492](functional/FR-492-expose-the-refinement-simulation-query-through-the-replay-facade.md) | FR |
+| [FR-490](functional/FR-490-retire-the-legacy-mapped-extraction-surface.md) | FR |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR |
 | [NFR-013](non-functional/NFR-013-isolate-native-ci-feature-artifacts.md) | NFR |
 | [NFR-015](non-functional/NFR-015-build-evaluator-crates-no-std-behind-a-default-std-feature.md) | NFR |

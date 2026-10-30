@@ -34,5 +34,8 @@ pub use kind::SmtQueryKind;
 pub use limits::SmtEncodingLimits;
 pub use monitor::{MonitorTable, Move};
 pub use query::{encode_smt_query, SmtItem};
-pub use refinement::{encode_refinement_query, RefinementCertificateRequest, RefinementQueryKind};
+pub use refinement::{
+    encode_refinement_query, refinement_step_sources, RefinementCertificateRequest,
+    RefinementQueryKind,
+};
 pub use refusal::{ExpressionLocus, LifecycleLocus, Measure, Refusal, SmtEncodingRefusal};

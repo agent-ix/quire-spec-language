@@ -254,19 +254,12 @@ pub use monitor_plan::{
     TimingObligation, TimingObligationSettings,
 };
 
-// FR-492: the refinement simulation query, its request and its kind, with the
-// subject and package types the request is built from, at the root so CG
-// names them without naming `spine` or `qsl_eval` (ADR-011 FB-05, T-12).
-pub use qsl_eval::model_subject::ModelSubject;
-pub use qsl_eval::simulation::model::{
-    ExpansionLimits, ModelSimulationRequest, PopulationUniverse,
+// FR-492: the refinement simulation query, its request and kind, as
+// replay-owned wrappers (FR-100-AC-8), so CG names neither `spine` nor
+// `qsl_eval` (ADR-011 FB-05, T-12).
+pub use refinement_query::{
+    encode_refinement_query, refinement_step_sources, RefinementQueryKind, RefinementQueryRequest,
 };
-pub use qsl_eval::smt::{
-    encode_refinement_query, RefinementCertificateRequest, RefinementQueryKind,
-};
-pub use qsl_package::CheckedPackage;
-pub use qsl_semantics::model::observation::ObservationLimits;
-pub use refinement_query::refinement_step_sources;
 
 pub use refinement::{
     abstract_classes, check_initial, check_step, initial_history, map_state, open_systems,

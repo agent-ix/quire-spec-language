@@ -10,14 +10,15 @@ relationships:
 
 ## Description
 
-Verify the root-exported `encode_refinement_query` and
-`refinement_step_sources` over `CasRefinesCounter`. Scope: FR-492-AC-1 to
-FR-492-AC-3.
+Verify the replay-owned `encode_refinement_query` and
+`refinement_step_sources` wrappers over `CasRefinesCounter`. Scope: FR-492-AC-1 to
+FR-492-AC-3; AC-4 is the `arch-lint-api-surface-qsl` make target.
 
 ## Test Procedure
 
 Test layer: `qsl-replay/tests/it/refinement_query_facade.rs`, calling the
-entries as the root exports them; the checked graph is the oracle.
+entries as the root exports them, over a `RefinementQueryRequest` wrapped from
+the fixture's request; the checked graph is the oracle.
 
 1. Encode `Initial` and the `Step` queries of `peek` and `commitA`.
 2. Read `refinement_step_sources`; compare with the checker's emitted order

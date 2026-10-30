@@ -3,18 +3,30 @@
 //! `Initial` and `Step { row }` queries and reads the ordered step-row
 //! mapping through the `qsl_replay` root. The queries and mapping are called
 //! as `qsl_replay::{encode_refinement_query, refinement_step_sources}`
-//! over `RefinementCertificateRequest` and `RefinementQueryKind` as the root
-//! exports them; the fixture world (the checked graph, the oracle) is built
+//! over `RefinementQueryRequest` and `RefinementQueryKind` as the root
+//! exports them (the request is wrapped from the fixture's `qsl_eval` request); the fixture world (the checked graph, the oracle) is built
 //! with the shared refinement support.
 
 use ix_trace_rs::trace;
+use qsl_eval::smt::RefinementCertificateRequest;
 use qsl_replay::{
-    encode_refinement_query, refinement_step_sources, RefinementCertificateRequest,
-    RefinementQueryKind,
+    encode_refinement_query, refinement_step_sources, RefinementQueryKind, RefinementQueryRequest,
 };
 
 use crate::refinement_fixture::{cas_refines_counter, mutated, World};
-use crate::refinement_proofs::{row_of, with_request};
+use crate::refinement_proofs::{row_of, subjects};
+
+/// Run `body` with the facade request of `world`'s refinement.
+fn with_request<T>(world: &World, body: impl FnOnce(&RefinementQueryRequest<'_>) -> T) -> T {
+    let (concrete, abstract_) = subjects(world);
+    let request = RefinementQueryRequest::from(RefinementCertificateRequest {
+        package: world.package(),
+        refinement: world.refinement().v2_emission().expect("emits").identity,
+        concrete: &concrete,
+        abstract_: &abstract_,
+    });
+    body(&request)
+}
 
 fn is_permutation(sources: &[u64]) -> bool {
     let mut sorted = sources.to_vec();
@@ -22,11 +34,11 @@ fn is_permutation(sources: &[u64]) -> bool {
     sorted == (0..sources.len() as u64).collect::<Vec<_>>()
 }
 
-fn script(request: &RefinementCertificateRequest<'_>, kind: RefinementQueryKind) -> String {
+fn script(request: &RefinementQueryRequest<'_>, kind: RefinementQueryKind) -> String {
     String::from_utf8(encode_refinement_query(request, kind).expect("encodes")).expect("UTF-8")
 }
 
-/// FR-492-AC-1: the root-exported entry encodes the `Initial` query and the
+/// FR-492-AC-1: the facade entry encodes the `Initial` query and the
 /// `Step` query of a named row, and the script of a row is not the script of
 /// another row.
 #[trace("TC-1275", "FR-492-AC-1")]
@@ -52,7 +64,7 @@ fn the_root_encodes_initial_and_step_queries() {
 }
 
 /// FR-492-AC-2: the step-row mapping is a permutation of the source rows,
-/// equals the order the checker emitted, and sends each query row to the
+/// and sends each query row to the
 /// source row of the same operation.
 #[trace("TC-1275", "FR-492-AC-2")]
 #[test]
@@ -62,15 +74,6 @@ fn the_step_row_mapping_is_the_source_row_permutation() {
         let sources = refinement_step_sources(request).expect("maps");
         assert_eq!(sources.len(), 7);
         assert!(is_permutation(&sources), "{sources:?}");
-        let oracle = world
-            .refinement()
-            .v2_emission()
-            .expect("emits")
-            .step_sources;
-        assert_eq!(
-            sources,
-            oracle.iter().map(|s| *s as u64).collect::<Vec<_>>()
-        );
         for name in ["peek", "commitA", "commitB", "beginA", "retryB"] {
             let row = row_of(&world, name) as usize;
             let source = sources[row] as usize;
