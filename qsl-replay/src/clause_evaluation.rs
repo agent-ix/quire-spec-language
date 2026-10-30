@@ -16,7 +16,7 @@
 
 use std::collections::BTreeMap;
 
-use qsl_foundation::SourceIdentity;
+use qsl_foundation::{Code, SourceIdentity};
 use qsl_semantics::model::intake::package_input;
 use qsl_semantics::model::observation::{
     ClauseSelection, ClauseSelectionInput, ObservationLimits, SelectedAnchor, SelectedObject,
@@ -35,6 +35,7 @@ use qsl_semantics::model::observation::AdmissionFailure;
 /// The observation a clause is evaluated at, of the clause's own kind. Each
 /// variant carries the exact bytes of one `quire.state.snapshot/v1` document.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub enum ClauseObservation {
     /// An invariant's or constraint's current snapshot.
     Current {
@@ -76,26 +77,33 @@ pub struct ClauseEvaluationRequest {
     pub observation: ClauseObservation,
     /// The spine's stage limits.
     pub limits: SpineLimits,
+    /// FR-106's observation limits; `document_bytes` also bounds the
+    /// snapshot bytes read before admission.
+    pub observation_limits: ObservationLimits,
     /// The evaluation meter's accounting limits.
     pub accounting: ScalarLimits,
 }
 
 /// Why no value was computed (the `Refused` result).
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum ClauseRefusal {
     /// The unit's source is empty.
     EmptySource,
     /// The observation bytes are not a readable `quire.state.snapshot/v1`
     /// document.
     UnreadableObservation,
+    /// The observation is of the wrong kind for the clause (`wrong_snapshot`,
+    /// `wrong-observation`): an invariant read at a pre-call observation or a
+    /// precondition at a current one.
+    WrongObservation,
     /// The unit names no state clause `name`.
     MissingClause {
         /// The requested clause name.
         name: String,
     },
     /// A refusal with a catalog code and cause: a compile refusal, an
-    /// observation of the wrong kind for the clause (`wrong_snapshot`,
-    /// `wrong-observation`), an admission refusal, or an evaluation refusal.
+    /// admission refusal, or an evaluation refusal.
     Coded {
         /// The stage that refused.
         stage: ClauseRunStage,
@@ -117,10 +125,17 @@ pub enum ClauseRefusal {
 
 /// Why the evaluation could not finish (the `Incomplete` result).
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum ClauseIncomplete {
     /// An accounting limit was exhausted during evaluation; the value names
     /// the counter that raises it.
     Accounting(CallIncomplete),
+    /// The evaluation's inputs stopped at a resource bound or a cancel
+    /// before a value was computed.
+    Stopped {
+        /// The catalog code.
+        code: &'static str,
+    },
     /// The observation lacks evidence the clause reads (an incomplete
     /// population or an unresolved closure), at admission.
     Observation {
@@ -133,6 +148,7 @@ pub enum ClauseIncomplete {
 
 /// The typed result of [`evaluate_clause`].
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum ClauseEvaluation {
     /// The clause evaluated: `true` when it holds at the observation,
     /// `false` when it does not.
@@ -160,8 +176,12 @@ pub fn evaluate_clause(request: ClauseEvaluationRequest) -> ClauseEvaluation {
         clause,
         observation,
         limits,
+        observation_limits,
         accounting,
     } = request;
+    if bytes.is_empty() {
+        return ClauseEvaluation::Refused(ClauseRefusal::EmptySource);
+    }
     let (snapshot_bytes, input) = match observation {
         ClauseObservation::Current {
             snapshot,
@@ -186,6 +206,14 @@ pub fn evaluate_clause(request: ClauseEvaluationRequest) -> ClauseEvaluation {
             },
         ),
     };
+    if u64::try_from(snapshot_bytes.len())
+        .map_or(true, |len| len > observation_limits.document_bytes)
+    {
+        return ClauseEvaluation::Incomplete(ClauseIncomplete::Observation {
+            code: Code::ResourceExhausted.as_str(),
+            cause: "observation-input-bytes",
+        });
+    }
     let supplied = match SuppliedObservation::from_document("snapshot", snapshot_bytes) {
         Ok(supplied) if supplied.format == "quire.state.snapshot/v1" => supplied,
         _ => return ClauseEvaluation::Refused(ClauseRefusal::UnreadableObservation),
@@ -226,7 +254,7 @@ pub fn evaluate_clause(request: ClauseEvaluationRequest) -> ClauseEvaluation {
         expected_package_id: None,
         expected_package_id_claim: None,
         limits,
-        observation_limits: ObservationLimits::default(),
+        observation_limits,
         accounting,
     };
     match run_clause(run) {
@@ -298,7 +326,11 @@ fn settle(disposition: ClauseDisposition) -> ClauseEvaluation {
             ClauseEvaluation::Refused(ClauseRefusal::MissingClause { name })
         }
         ClauseDisposition::Admit(AdmissionFailure::Refused(record)) => {
-            coded(stage, category, record.code.as_str(), record.cause)
+            if record.code == Code::WrongSnapshot && record.cause == "wrong-observation" {
+                ClauseEvaluation::Refused(ClauseRefusal::WrongObservation)
+            } else {
+                coded(stage, category, record.code.as_str(), record.cause)
+            }
         }
         ClauseDisposition::Admit(AdmissionFailure::Incomplete(record)) => {
             ClauseEvaluation::Incomplete(ClauseIncomplete::Observation {
@@ -313,10 +345,21 @@ fn settle(disposition: ClauseDisposition) -> ClauseEvaluation {
                 invariant: fault.invariant(),
             })
         }
+        // A refusal of the evaluation's own inputs (a dangling reference, a
+        // value of the wrong kind, a supplied-value or storage stop): its
+        // catalog code, as `Coded`, or `Incomplete` when it is a resource
+        // stop (category incomplete).
+        ClauseDisposition::ArgumentRefusal(refusal) => {
+            let code = refusal.code().as_str();
+            if category == Category::Incomplete {
+                ClauseEvaluation::Incomplete(ClauseIncomplete::Stopped { code })
+            } else {
+                coded(stage, category, code, "")
+            }
+        }
         ClauseDisposition::UnknownLanguage { .. }
         | ClauseDisposition::StalePackage { .. }
         | ClauseDisposition::NotAPredicate { .. }
-        | ClauseDisposition::ArgumentRefusal(_)
         | ClauseDisposition::FrameViolation(_)
         | ClauseDisposition::Temporal(_)
         | ClauseDisposition::TemporalRefusal(_) => unreachable_disposition(),
@@ -353,6 +396,51 @@ mod tests {
         assert!(
             matches!(holds, ClauseEvaluation::Completed(true)),
             "{holds:?}"
+        );
+    }
+
+    /// FR-491-AC-7: a refusal of the evaluation's inputs settles by its own
+    /// cause, not as a fault.
+    #[trace("TC-1274", "FR-491-AC-7")]
+    #[test]
+    fn an_input_refusal_settles_by_its_cause() {
+        use crate::spine::RunRefusal;
+        let dangling = settle(ClauseDisposition::ArgumentRefusal(Box::new(
+            RunRefusal::DanglingReference { position: 0 },
+        )));
+        assert!(
+            matches!(
+                dangling,
+                ClauseEvaluation::Refused(ClauseRefusal::Coded {
+                    stage: ClauseRunStage::Admit,
+                    code: "dangling_reference",
+                    ..
+                })
+            ),
+            "{dangling:?}"
+        );
+        let wrong_kind = settle(ClauseDisposition::ArgumentRefusal(Box::new(
+            RunRefusal::WrongValueKind { position: 1 },
+        )));
+        assert!(
+            matches!(
+                wrong_kind,
+                ClauseEvaluation::Refused(ClauseRefusal::Coded {
+                    code: "invalid_runtime_input",
+                    ..
+                })
+            ),
+            "{wrong_kind:?}"
+        );
+        let stopped = settle(ClauseDisposition::ArgumentRefusal(Box::new(
+            RunRefusal::Cancelled(quire_exact::CancelCause::Requested),
+        )));
+        assert!(
+            matches!(
+                stopped,
+                ClauseEvaluation::Incomplete(ClauseIncomplete::Stopped { code: "cancelled" })
+            ),
+            "{stopped:?}"
         );
     }
 }

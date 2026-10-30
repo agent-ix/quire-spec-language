@@ -33,8 +33,8 @@ beside `replay_state_clause` (FR-122). It runs FR-109's `Clause` selection
 
 - A `ClauseEvaluationRequest`: the unit (source identity, display path and
   bytes), the domain package documents it selects, its dependency input, the
-  authored state clause's declared name, the spine and accounting limits and
-  one `ClauseObservation`.
+  authored state clause's declared name, the spine, observation and accounting limits
+  and one `ClauseObservation`.
 - A `ClauseObservation` is of the clause's own kind (FR-106 check 2):
   `Current` (snapshot document bytes, anchor, self object) for an invariant
   or constraint, `PreCall` (pre snapshot document bytes, self object,
@@ -48,12 +48,13 @@ beside `replay_state_clause` (FR-122). It runs FR-109's `Clause` selection
   observation, `false` when it does not.
 - `Undefined { reason }`: the clause has no value at the observation.
 - `Refused(ClauseRefusal)`: the request was refused before a value was
-  computed: `EmptySource`, `UnreadableObservation`, `MissingClause`, or
+  computed: `EmptySource`, `UnreadableObservation`, `WrongObservation` (an
+  observation of the wrong kind for the clause), `MissingClause`, or
   `Coded` (stage, category, catalog code and cause) for a compile, admission
-  or evaluation refusal, including an observation of the wrong kind
-  (`wrong_snapshot`/`wrong-observation`); or `Fault` for a broken invariant.
-- `Incomplete(ClauseIncomplete)`: `Accounting` (the exhausted counter) or
-  `Observation` (evidence the clause reads is missing at admission).
+  or evaluation refusal, including a refusal of the evaluation's own inputs; or `Fault` for a broken invariant.
+- `Incomplete(ClauseIncomplete)`: `Accounting` (the exhausted counter), `Stopped` (a resource stop or cancel
+  of the evaluation's inputs) or `Observation` (evidence the clause reads is
+  missing at admission, or the snapshot exceeds its byte limit).
 
 ## Behavior
 
@@ -75,10 +76,12 @@ beside `replay_state_clause` (FR-122). It runs FR-109's `Clause` selection
 |----|----------|--------------|
 | FR-491-AC-1 | Over the `example/config-version` unit, the invariant `ParentOrder` at a `Current` snapshot where the parent's version is below the child's completes `true`, and where it is not completes `false`. | Test (TC-1274) |
 | FR-491-AC-2 | The precondition `ParentPresent` at a `PreCall` snapshot completes `true` for an object with a parent and `false` for one without. | Test (TC-1274) |
-| FR-491-AC-3 | `ParentOrder` at a `PreCall` observation and `ParentPresent` at a `Current` observation each return `Refused(Coded)` with code `wrong_snapshot` and cause `wrong-observation`. | Test (TC-1274) |
-| FR-491-AC-4 | An S6a `Undefined` outcome of the clause settles as `Undefined` carrying the reason's tabled spelling, and a completed Boolean settles as `Completed`. | Test (TC-1274) |
+| FR-491-AC-3 | `ParentOrder` at a `PreCall` observation and `ParentPresent` at a `Current` observation each return `Refused(WrongObservation)`. | Test (TC-1274) |
+| FR-491-AC-4 | An invariant whose body is `10 mod self.versionNumber >= 0` is undefined at an object whose version is 0 (`Undefined`, reason `division-by-zero`) and completes `true` at version 1. A unit test of the disposition mapping also covers `Undefined` and `Completed`. | Test (TC-1274) |
 | FR-491-AC-5 | A clause name the unit does not declare returns `Refused(MissingClause)`; bytes that are not a snapshot document return `Refused(UnreadableObservation)`; accounting `work_units = 0` returns `Incomplete(Accounting)`. | Test (TC-1274) |
-| FR-491-AC-6 | A consumer reaches the entry and every type of its request and result through the `qsl_replay` root alone, without naming `qsl_replay::spine`. | Test (TC-1274) |
+| FR-491-AC-6 | A consumer reaches the entry and every type of its request and result through the `qsl_replay` root alone: a test that names only `qsl_replay` root items compiles and runs the entry. | Test (TC-1274) |
+| FR-491-AC-7 | A refusal of the evaluation's own inputs (a dangling reference, a value of the wrong kind) returns `Refused(Coded)` with its catalog code at stage `admit`; one that is a resource stop or cancel returns `Incomplete(Stopped)`. | Test (TC-1274) |
+| FR-491-AC-8 | A snapshot longer than the request's `observation_limits.document_bytes` returns `Incomplete(Observation)` (`resource_exhausted`, `observation-input-bytes`) before it is read; at the limit it evaluates. | Test (TC-1274) |
 
 ## Dependencies
 

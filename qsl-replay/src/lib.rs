@@ -406,7 +406,8 @@ pub use quire_checked::key::DeclarationKey;
 pub use execute::{replay_state_clause, ClauseIdentityMismatch, StateClauseReplayResult};
 pub use qsl_forms::StateClauseKind;
 pub use qsl_semantics::model::observation::{
-    AnchorKind, ClauseSelectionInput, ObservationForm, SelectedAnchor, SnapshotValue,
+    AnchorKind, ClauseSelectionInput, ObservationForm, ObservationLimits, SelectedAnchor,
+    SnapshotValue,
 };
 pub use witness::StateClauseCounterexample;
 

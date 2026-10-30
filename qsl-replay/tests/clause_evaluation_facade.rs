@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! TC-1274 (FR-491-AC-1 to -3, -5, -6; AC-4 is the unit test in `src/clause_evaluation.rs`): `evaluate_clause` evaluates one
+//! TC-1274 (FR-491-AC-1 to -5, -8; AC-6 is `clause_evaluation_root_only.rs`, AC-7 a unit test): `evaluate_clause` evaluates one
 //! state clause at a kind-correct current or pre-call observation and returns
 //! a typed `Completed`, `Undefined`, `Refused` or `Incomplete` result. The
 //! calls and result types reach only the `qsl_replay` root (FR-491-AC-6);
-//! this file names no `qsl_replay::spine` item. The unit is the
+//! this file names no `qsl_replay::spine` item; only its model fixture (the
+//! digest the unit's `model` statement names) reads `qsl_semantics`. The unit is the
 //! `example/config-version` model.
 
 use std::collections::BTreeMap;
@@ -11,10 +12,9 @@ use std::collections::BTreeMap;
 use ix_trace_rs::trace;
 use qsl_replay::{
     evaluate_clause, AnchorKind, ClauseEvaluation, ClauseEvaluationRequest, ClauseIncomplete,
-    ClauseObservation, ClauseRefusal, DependencyInput, SelectedAnchor, SelectedObject,
-    SourceIdentity, SpineLimits,
+    ClauseObservation, ClauseRefusal, DependencyInput, ObservationLimits, ScalarLimits,
+    SelectedAnchor, SelectedObject, SourceIdentity, SpineLimits,
 };
-use quire_exact::ScalarLimits;
 use serde_json::{json, Value};
 
 const PACKAGE: &str = "example/config-version";
@@ -35,6 +35,8 @@ fn unit() -> String {
          model Config = {PACKAGE:?} version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
          invariant ParentOrder using v on Config::ConfigVersion at current {{ \
          present(self.parent) implies deref(value(self.parent)).versionNumber < self.versionNumber }}\n\
+         invariant Quotient using v on Config::ConfigVersion at current {{ \
+         10 mod self.versionNumber >= 0 }}\n\
          pre ParentPresent using v on Config::ConfigVersion::attemptUpdate {{ \
          present(self.parent) }}\n",
         model_digest_hex()
@@ -132,6 +134,7 @@ fn evaluate(clause: &str, observation: ClauseObservation, work_units: u64) -> Cl
         clause: clause.to_owned(),
         observation,
         limits: SpineLimits::default(),
+        observation_limits: ObservationLimits::default(),
         accounting: accounting(work_units),
     })
 }
@@ -192,9 +195,7 @@ fn an_observation_of_the_wrong_kind_is_refused() {
         ("ParentPresent", current(&rows, "child")),
     ] {
         match evaluate(clause, observation, 1_000_000) {
-            ClauseEvaluation::Refused(ClauseRefusal::Coded { code, cause, .. }) => {
-                assert_eq!((code, cause), ("wrong_snapshot", "wrong-observation"));
-            }
+            ClauseEvaluation::Refused(ClauseRefusal::WrongObservation) => {}
             other => panic!("{clause}: {other:?}"),
         }
     }
@@ -236,4 +237,59 @@ fn refusals_and_exhausted_limits_have_their_own_variants() {
         ),
         "{exhausted:?}"
     );
+}
+
+#[trace("TC-1274", "FR-491-AC-4")]
+#[test]
+fn a_clause_with_no_value_at_the_observation_is_undefined() {
+    // `10 mod self.versionNumber` is undefined at version 0.
+    let zero = [("root", 0, None)];
+    let result = evaluate("Quotient", current(&zero, "root"), 1_000_000);
+    assert!(
+        matches!(
+            result,
+            ClauseEvaluation::Undefined {
+                reason: "division-by-zero"
+            }
+        ),
+        "{result:?}"
+    );
+    let one = [("root", 1, None)];
+    let defined = evaluate("Quotient", current(&one, "root"), 1_000_000);
+    assert!(
+        matches!(defined, ClauseEvaluation::Completed(true)),
+        "{defined:?}"
+    );
+}
+
+#[trace("TC-1274", "FR-491-AC-8")]
+#[test]
+fn a_snapshot_over_the_observation_byte_limit_is_incomplete() {
+    let rows = rows_with_parent(2);
+    let size = snapshot("current", &rows).len() as u64;
+    let request = |bound: u64| ClauseEvaluationRequest {
+        source: SourceIdentity::new("a", "u", "git", "1"),
+        path: "unit.native".to_owned(),
+        bytes: unit().into_bytes(),
+        packages: vec![MODEL.as_bytes().to_vec()],
+        dependencies: DependencyInput::default(),
+        clause: "ParentOrder".to_owned(),
+        observation: current(&rows, "child"),
+        limits: SpineLimits::default(),
+        observation_limits: ObservationLimits::default().with_document_bytes(bound),
+        accounting: accounting(1_000_000),
+    };
+    match evaluate_clause(request(size - 1)) {
+        ClauseEvaluation::Incomplete(ClauseIncomplete::Observation { code, cause }) => {
+            assert_eq!(
+                (code, cause),
+                ("resource_exhausted", "observation-input-bytes")
+            );
+        }
+        other => panic!("{other:?}"),
+    }
+    assert!(matches!(
+        evaluate_clause(request(size)),
+        ClauseEvaluation::Completed(true)
+    ));
 }
