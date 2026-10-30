@@ -573,9 +573,9 @@ impl PopulationUse {
 impl CheckedRefinement {
     /// The typed V2 body and key of this refinement (QSpec FR-375): its
     /// `abstract` root, a protocol subject's `protocol` clause and internal
-    /// list, its keyed rows (`steps` in declaration order) and its lowered
-    /// class catalog, with, for each `steps` entry, the position of
-    /// the source row it was written as (its [`Self::step_sources`] entry).
+    /// list, its keyed rows and its lowered class catalog. `steps` holds the
+    /// authored step rows in declaration order, so the emission's
+    /// `step_sources` names entry `i`'s own position, `i`.
     /// Construction remains in the check core; the package writer can
     /// serialize the checked body without depending on JSON or minting a
     /// semantic identity.

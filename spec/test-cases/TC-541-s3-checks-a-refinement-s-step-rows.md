@@ -28,25 +28,27 @@ protocol subject over a model with operations `incA` and `incB`.
 4. Check the protocol subject with no control-node rows, then with `fork`,
    `join` and `finish` rows, then with an extra attempt-node row, then with
    two `join` rows.
-5. Check FR-136-AC-4's protocol (named `Run`) with rows naming `Run` only;
+5. Withdrawn: the step compared the digest-ordered `steps` and `StepRowRef`s (FR-136-AC-5, retired); the step number is not reused.
+6. Check FR-136-AC-4's protocol (named `Run`) with rows naming `Run` only;
    with a row naming a second protocol clause `Other`; a row naming
    `Nope`; a row naming a clause that acts only on another model; a
    `step memory flush` row under a model subject and one naming a kind the
    memory model lacks; and an operation row for an operation no attempt uses.
-6. Declare the protocol before and after the refinement in the source; give
+7. Withdrawn: the step compared the digest-ordered protocol `steps` and `StepRowRef`s (FR-136-AC-7, retired); the step number is not reused.
+8. Declare the protocol before and after the refinement in the source; give
    the protocol a defect of its own and leave one coverage row missing.
-7. Name protocols `P`, `Q` and `R` in rows; name a clause of another package.
-8. Check `memory flush` and `memory nope` rows over FR-136-AC-10's `tso` protocol; a
+9. Name protocols `P`, `Q` and `R` in rows; name a clause of another package.
+10. Check `memory flush` and `memory nope` rows over FR-136-AC-10's `tso` protocol; a
     `memory flush` row over an `sc` protocol; admit a check request selecting
     `tso` for the `sc` protocol with no `flush` row, and one selecting `sc`
     for the `tso` protocol; check a protocol with an `sc` and a `tso`
     outermost `parallel` and one `flush` row.
-9. In a build that holds `protocol-abstract-side`, check a unit declaring,
+11. In a build that holds `protocol-abstract-side`, check a unit declaring,
     in this order, an invariant over a concrete object type whose body is a
     non-Boolean field read, `CasTwice` with its `population` row written twice, and
-    step 5's `Run` refinement with a row naming `Other` and no control-node
+    step 6's `Run` refinement with a row naming `Other` and no control-node
     rows; then check it with the invariant and the `Other` row removed.
-10. Emit `CasRefinesCounter` over object-type-only models. Then declare two
+12. Emit `CasRefinesCounter` over object-type-only models. Then declare two
     `state_machine` records on each side, give each a corresponding `object`
     field-set row, and emit the refinement.
 
@@ -64,31 +66,33 @@ Tag the tests `#[trace("TC-541", "FR-136-AC-n")]`.
 - Step 4: `missing_declaration`/`missing-name` naming the `fork` node;
   checks; checks with the node row recorded;
   `invalid_model_binding`/`conflicting-binding`.
-- Step 5: one protocol, recorded as `concrete_protocol`, and `None` for a
+- Step 5: withdrawn.
+- Step 6: one protocol, recorded as `concrete_protocol`, and `None` for a
   refinement that names none; `invalid_model_binding`/`conflicting-binding`
   at the second protocol's first row naming both rows;
   `missing_declaration`/`missing-name` at `Nope`;
   `invalid_model_binding`/`malformed-declaration` at the protocol name;
   `missing_declaration`/`missing-name` at the kind for both memory rows; the
   unused operation row checks.
-- Step 6: the same coverage result whichever declares first; the protocol's
+- Step 7: withdrawn.
+- Step 8: the same coverage result whichever declares first; the protocol's
   own refusals and no coverage refusal for a class drawn from it, and no
   `CheckedRefinement`.
-- Step 7: two `conflicting-binding` refusals, at `Q`'s and `R`'s first rows,
+- Step 9: two `conflicting-binding` refusals, at `Q`'s and `R`'s first rows,
   each naming that row and `P`'s first row; `missing-name` for the foreign
   clause.
-- Step 8: the `flush` row checks over `tso`; `nope` refuses `missing-name`;
+- Step 10: the `flush` row checks over `tso`; `nope` refuses `missing-name`;
   the `sc` protocol refuses at `flush`; the request selecting `tso` refuses
   `missing-name` naming `flush` when admitted; the request selecting `sc`
   admits with the row unused; one row covers both `parallel` nodes.
-- Step 9: exactly three refusals, in order: `ill_typed`/`non-boolean-root`
+- Step 11: exactly three refusals, in order: `ill_typed`/`non-boolean-root`
   at the invariant, `invalid_model_binding`/`conflicting-binding` naming
   both `population` rows, and `invalid_model_binding`/`conflicting-binding` at
   `Other`'s first row; none for `Twice`'s header or for coverage, and no
   `CheckedRefinement`. Without the invariant and the `Other` row: the
   `population` `conflicting-binding` and `missing-name` naming the `fork`
   node.
-- Step 10: `CasRefinesCounter` emits and reads back with its model header keys
+- Step 12: `CasRefinesCounter` emits and reads back with its model header keys
   and ordinary `Counter` object row, with no synthetic state-machine key.
   The two-machine fixture emits and reads back with both field-set rows in
   canonical order and no missing-subject or ambiguous-subject refusal.
