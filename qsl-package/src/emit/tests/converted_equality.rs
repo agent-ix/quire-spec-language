@@ -300,17 +300,9 @@ fn length_units() -> (
     ValueType,
 ) {
     use qsl_semantics::value::{
-        admit_unit_graph, DimensionPreimage, NodeIdentityPreimage, NodeOwner, OwnerSelection,
-        UnitPreimage,
+        admit_unit_graph, DimensionPreimage, NodeOwner, OwnerSelection, UnitPreimage,
     };
-    let owner = json!({"kind": "source", "authority": "a", "identity": "u"});
-    let digest = |preimage: &dyn NodeIdentityPreimage| {
-        NodeKey::from_digest(
-            preimage
-                .digest(qsl_foundation::IdentityLimits::default())
-                .expect("a digest"),
-        )
-    };
+    let owner = json!({"kind": "source", "authority": "a", "identity": "u", "package_name": "pkg"});
     let length = DimensionPreimage::from_json(json!({
         "version": "quire.dimension-node/v1",
         "owner": owner,
@@ -318,28 +310,33 @@ fn length_units() -> (
         "terms": [],
     }))
     .expect("a base dimension");
-    let length_key = digest(&length);
-    let node_ref = |key: NodeKey| json!({"domain": NODE_KEY_DOMAIN, "digest": key.to_string()});
+    let length_key = length.key().expect("a dimension declaration key");
+    let node_ref = |key: &NodeKey| {
+        qsl_foundation::node_wire::node_key_to_json(key).expect("a structural fixture key")
+    };
     let unit = |name: &str, target: Option<NodeKey>, scale: &str| {
         UnitPreimage::from_json(json!({
             "version": "quire.unit-node/v1",
             "owner": owner,
             "qualified_declaration": ["Example", name],
-            "dimension_node_id": node_ref(length_key),
-            "target_unit_node_id": target.map(node_ref),
+            "dimension_node_id": node_ref(&length_key),
+            "target_unit_node_id": target.as_ref().map(node_ref),
             "scale": {"numerator": scale, "denominator": "1"},
             "offset": {"numerator": "0", "denominator": "1"},
         }))
         .expect("a unit")
     };
     let metre = unit("metre", None, "1");
-    let metre_key = digest(&metre);
-    let kilometre = unit("kilometre", Some(metre_key), "1000");
-    let kilometre_key = digest(&kilometre);
+    let metre_key = metre.key().expect("a unit declaration key");
+    let kilometre = unit("kilometre", Some(metre_key.clone()), "1000");
+    let kilometre_key = kilometre.key().expect("a unit declaration key");
     let selection: NodeOwner = serde_json::from_value(owner).expect("an owner");
     let graph = admit_unit_graph(
         [(length, length_key)],
-        [(metre, metre_key), (kilometre, kilometre_key)],
+        [
+            (metre, metre_key.clone()),
+            (kilometre, kilometre_key.clone()),
+        ],
         &OwnerSelection::new([selection]),
         qsl_foundation::IdentityLimits::default(),
     )

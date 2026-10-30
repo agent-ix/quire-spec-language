@@ -18,8 +18,8 @@ use qsl_semantics::library::LibraryName;
 use qsl_semantics::value::{always_roles, native_diagnostics_catalog, DefinitionRole};
 use quire_contract_model::CheckedPackageEvidence;
 use quire_exact::{
-    CardinalityBound, CollectionKind, CollectionType, NodeKey, Presence, Role, ValueType,
-    NODE_KEY_DOMAIN,
+    CardinalityBound, CollectionKind, CollectionType, NodeKey, PathSegment, Presence, Role,
+    ValueType, NODE_KEY_DOMAIN,
 };
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::{
@@ -170,9 +170,20 @@ fn h() -> FunctionDeclaration {
 }
 
 fn graph_of(functions: Vec<FunctionDeclaration>) -> qsl_semantics::check::CheckedGraph {
+    graph_of_named("pkg", functions)
+}
+
+fn graph_of_named(
+    package_name: &str,
+    functions: Vec<FunctionDeclaration>,
+) -> qsl_semantics::check::CheckedGraph {
     PackageDeclarations {
         functions,
-        ..PackageDeclarations::new(source(), "pkg", qsl_foundation::IdentityLimits::default())
+        ..PackageDeclarations::new(
+            source(),
+            package_name,
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
     .check(CheckingLimits::default())
     .expect("the fixture functions check")
@@ -184,7 +195,7 @@ fn package(functions: Vec<FunctionDeclaration>) -> CheckedPackage {
 
 /// `record Tree { kids: Sequence<Tree>[0, 3]; }`, FR-092's G7 to G9.
 fn tree() -> CheckedPackage {
-    let tree = NodeKey::from_digest([6; 32]);
+    let tree = fixture_type_key("Tree");
     let kids = ValueType::collection(CollectionType::new(
         CollectionKind::Sequence,
         ValueType::Composite(tree),
@@ -242,6 +253,12 @@ fn sha256_hex(bytes: &[u8]) -> String {
 
 fn library() -> LibraryName {
     LibraryName::new("pkg").unwrap()
+}
+
+/// A declared fixture type under this test package.
+fn fixture_type_key(name: &str) -> NodeKey {
+    NodeKey::new("pkg", vec![PathSegment::Text(name.to_owned())], 0)
+        .expect("a fixture type has a structural declaration key")
 }
 
 /// QSL's full I2 read of `emission` with the emitted lock's required
@@ -871,7 +888,7 @@ fn point_and_pair_types() -> TypeEnvironment {
     TypeEnvironment::new(
         [
             CompositeDeclaration::new(
-                NodeKey::from_digest([1; 32]),
+                fixture_type_key("Point"),
                 "Point",
                 CompositeShape::Record(vec![
                     FieldDeclaration::new("x", int_0_9(), Presence::Required),
@@ -879,7 +896,7 @@ fn point_and_pair_types() -> TypeEnvironment {
                 ]),
             ),
             CompositeDeclaration::new(
-                NodeKey::from_digest([2; 32]),
+                fixture_type_key("Pair"),
                 "Pair",
                 CompositeShape::Tuple(vec![int_0_9(), int_0_9()]),
             ),
@@ -1023,7 +1040,7 @@ fn emit_checked_cannot_place_a_type_declaration() {
 fn a_declared_name_segment_that_is_no_identifier_refuses_by_that_segment() {
     let types = TypeEnvironment::new(
         [CompositeDeclaration::new(
-            NodeKey::from_digest([3; 32]),
+            fixture_type_key("Geo::1Point"),
             "Geo::1Point",
             CompositeShape::Tuple(vec![int_0_9()]),
         )],
@@ -1717,10 +1734,7 @@ fn emit_checked_places_the_calls_occurrence_at_its_own_source_span() {
     let Read::Verified { source_map, .. } = outcome else {
         panic!("expected Verified, got {outcome:?}");
     };
-    let key = OccurrenceKey::new(
-        WireNodeId::from_digest(*identity.as_bytes()),
-        origin.clone(),
-    );
+    let key = OccurrenceKey::new(identity.clone(), origin.clone());
     let regions = source_map
         .regions(&key)
         .expect("the decoded source map carries the call's own occurrence");
@@ -1950,20 +1964,17 @@ fn source_text_compiles_through_the_spine_and_reads_back_verified() {
     }
 }
 
-/// QSpec's `unit-metre` node key (FR-094's vector key).
-pub(super) const METRE: [u8; 32] = [
-    0x79, 0x63, 0x76, 0x23, 0xa4, 0x6d, 0x29, 0xe8, 0x84, 0xb6, 0x2c, 0x6f, 0xa2, 0x92, 0xae, 0xb2,
-    0x9d, 0x41, 0xe4, 0xec, 0xc4, 0xe8, 0x00, 0xb4, 0xd7, 0xee, 0x91, 0x0a, 0x3e, 0xaf, 0x23, 0xa4,
-];
-
 /// The `metre` unit of dimension `Length`, owned by a definition, as the
-/// quantity table `check` types a `Length` quantity against. Its keys are
-/// QSpec's vector keys ([`METRE`] and `dimension-length`).
+/// quantity table `check` types a `Length` quantity against.
 pub(super) fn metre_units() -> quire_semantic_value::quantity::UnitTable {
-    let owner = json!({"kind": "definition", "authority": "agent-ix", "identity": "example-model"});
-    let (table, metre) = metre_units_owned_by(owner);
-    assert_eq!(metre, NodeKey::from_digest(METRE), "QSpec's unit-metre key");
-    table
+    definition_metre_units().0
+}
+
+fn definition_metre_units() -> (quire_semantic_value::quantity::UnitTable, NodeKey) {
+    metre_units_owned_by(json!({
+        "kind": "definition", "authority": "agent-ix", "identity": "example-model",
+        "package_name": "example-model"
+    }))
 }
 
 /// The `metre` unit of dimension `Length`, declared by the fixture unit's
@@ -1972,7 +1983,7 @@ pub(super) fn source_metre_units() -> (
     quire_semantic_value::quantity::UnitTable,
     quire_exact::UnitId,
 ) {
-    let owner = json!({"kind": "source", "authority": "a", "identity": "u"});
+    let owner = json!({"kind": "source", "authority": "a", "identity": "u", "package_name": "pkg"});
     let (table, metre) = metre_units_owned_by(owner);
     (table, quire_exact::UnitId::declared(metre))
 }
@@ -1981,8 +1992,7 @@ pub(super) fn source_metre_units() -> (
 /// admitted under their recomputed keys, and the `metre` key.
 fn metre_units_owned_by(owner: Value) -> (quire_semantic_value::quantity::UnitTable, NodeKey) {
     use qsl_semantics::value::{
-        admit_unit_graph, DimensionPreimage, NodeIdentityPreimage, NodeOwner, OwnerSelection,
-        UnitPreimage,
+        admit_unit_graph, DimensionPreimage, NodeOwner, OwnerSelection, UnitPreimage,
     };
     let length = DimensionPreimage::from_json(json!({
         "version": "quire.dimension-node/v1",
@@ -1991,30 +2001,22 @@ fn metre_units_owned_by(owner: Value) -> (quire_semantic_value::quantity::UnitTa
         "terms": [],
     }))
     .expect("a base dimension");
-    let length_key = NodeKey::from_digest(
-        length
-            .digest(qsl_foundation::IdentityLimits::default())
-            .expect("the dimension digests"),
-    );
+    let length_key = length.key().expect("the dimension has a structural key");
     let metre = UnitPreimage::from_json(json!({
         "version": "quire.unit-node/v1",
         "owner": owner,
         "qualified_declaration": ["Example", "metre"],
-        "dimension_node_id": {"domain": NODE_KEY_DOMAIN, "digest": length_key.to_string()},
+        "dimension_node_id": qsl_foundation::node_wire::node_key_to_json(&length_key).expect("a dimension key"),
         "target_unit_node_id": null,
         "scale": {"numerator": "1", "denominator": "1"},
         "offset": {"numerator": "0", "denominator": "1"},
     }))
     .expect("a root unit");
-    let metre_key = NodeKey::from_digest(
-        metre
-            .digest(qsl_foundation::IdentityLimits::default())
-            .expect("the unit digests"),
-    );
+    let metre_key = metre.key().expect("the unit has a structural key");
     let selection: NodeOwner = serde_json::from_value(owner).expect("an owner");
     let graph = admit_unit_graph(
         [(length, length_key)],
-        [(metre, metre_key)],
+        [(metre, metre_key.clone())],
         &OwnerSelection::new([selection]),
         qsl_foundation::IdentityLimits::default(),
     )
@@ -2030,8 +2032,8 @@ fn metre_units_owned_by(owner: Value) -> (quire_semantic_value::quantity::UnitTa
 /// unit node, which the emitted lock does not select, beside `t`, which
 /// names no omitted node.
 fn q_and_t_package() -> CheckedPackage {
-    let metre = quire_exact::UnitId::declared(NodeKey::from_digest(METRE));
-    q_and_t_package_over(metre_units(), metre)
+    let (units, metre) = definition_metre_units();
+    q_and_t_package_over(units, quire_exact::UnitId::declared(metre))
 }
 
 /// TC-160 step 8's `q` and `t`, with `Length` the quantity of `metre` in
@@ -2102,7 +2104,7 @@ fn a_compound_unit_is_omitted_only_for_its_omitted_unit() {
         .find(|node| node.key().to_string() != t_key)
         .map(|node| node_id(node.key()))
         .expect("q's declaration node");
-    let metre_id = node_id(NodeKey::from_digest(METRE));
+    let metre_id = node_id(definition_metre_units().1);
     let cause_of = |id: &CheckedNodeId| {
         emission
             .omitted
@@ -2783,8 +2785,8 @@ fn normalization_refusals_and_limits_stop_intake_at_the_declaration() {
 
 /// A checked graph of `t` read from [`TEXT`], so `emit_checked` places its
 /// occurrences: an E4 dependency's `package_id` is recomputed by emitting it.
-fn dependency() -> CheckedPackage {
-    package(vec![t_read_from_text()])
+fn dependency(name: &str) -> CheckedPackage {
+    CheckedPackage::link(graph_of_named(name, vec![t_read_from_text()]))
 }
 
 /// The `package_id` `package` emits under.
@@ -2811,8 +2813,8 @@ fn import(identity: &str, package: CheckedPackage) -> crate::Import {
 }
 
 /// `mid`-style package: `t` read from [`TEXT`], linked with `imports`.
-fn linked(imports: Vec<crate::Import>) -> CheckedPackage {
-    CheckedPackage::link_with(graph_of(vec![t_read_from_text()]), imports)
+fn linked(name: &str, imports: Vec<crate::Import>) -> CheckedPackage {
+    CheckedPackage::link_with(graph_of_named(name, vec![t_read_from_text()]), imports)
         .expect("the intermediate package links")
 }
 
@@ -2858,13 +2860,13 @@ fn path(identities: &[&str]) -> Vec<LibraryName> {
 #[trace("FR-093-AC-16", "TC-416")]
 #[test]
 fn the_lock_records_direct_imports_and_derives_the_closure() {
-    let d = emitted_id(&dependency());
+    let d = emitted_id(&dependency("test/units"));
     let unlinked = emit(&CheckedPackage::link(root_graph()));
     let linked_root = CheckedPackage::link_with(
         root_graph(),
         vec![
-            import("test/units", dependency()),
-            import("test/geometry", dependency()),
+            import("test/units", dependency("test/units")),
+            import("test/geometry", dependency("test/geometry")),
         ],
     )
     .expect("two imports of one package link");
@@ -2887,13 +2889,16 @@ fn the_lock_records_direct_imports_and_derives_the_closure() {
     assert_ne!(emission.package.package_id(), unlinked.package.package_id());
 
     // A chain four packages deep: root -> b -> c -> units.
-    let c = linked(vec![import("test/units", dependency())]);
+    let c = linked(
+        "test/c",
+        vec![import("test/units", dependency("test/units"))],
+    );
     assert_eq!(
         wire(&emit(&c))["lock"]["dependency_selections"][0]["identity"],
         "test/units"
     );
     let c_id = emitted_id(&c);
-    let b = linked(vec![import("test/c", c)]);
+    let b = linked("test/b", vec![import("test/c", c)]);
     assert_eq!(
         wire(&emit(&b))["lock"]["dependency_selections"][0]["identity"],
         "test/c"
@@ -2951,39 +2956,94 @@ fn the_lock_records_direct_imports_and_derives_the_closure() {
 #[trace("QSpec-FR-307-AC-7", "QSpec-TC-227")]
 #[test]
 fn direct_only_chain_reads_with_recursively_admitted_dependencies() {
-    let c = linked(vec![import("test/units", dependency())]);
-    let b = linked(vec![import("test/c", c)]);
+    let c = linked(
+        "test/c",
+        vec![import("test/units", dependency("test/units"))],
+    );
+    let b = linked("test/b", vec![import("test/c", c)]);
     let root = CheckedPackage::link_with(root_graph(), vec![import("test/b", b)])
         .expect("A links through B and C");
     read_linked(&root);
 }
 
-/// FR-307's diamond rule, admitted side: `test/units` reached by two paths
-/// (root -> units, root -> mid -> units) with one `package_id`
-/// unifies to one selection, which keeps the first path.
+/// FR-307's diamond rule admits two separately allocated packages with
+/// identical canonical bytes under the same library name. The first path
+/// remains the selected path.
 #[trace("FR-087-AC-14", "TC-253")]
 #[test]
 fn a_diamond_selecting_one_package_unifies() {
-    let d = emitted_id(&dependency());
-    let mid = linked(vec![import("test/units", dependency())]);
+    let first = Arc::new(dependency("test/units"));
+    let second = Arc::new(dependency("test/units"));
+    assert!(!Arc::ptr_eq(&first, &second));
+    let first_bytes = emit_checked(&first)
+        .expect("first emits")
+        .package()
+        .bytes()
+        .to_vec();
+    let second_bytes = emit_checked(&second)
+        .expect("second emits")
+        .package()
+        .bytes()
+        .to_vec();
+    assert_eq!(
+        first_bytes, second_bytes,
+        "both selections have equal content"
+    );
+    let mid = CheckedPackage::link_with(
+        graph_of_named("test/mid", vec![t_read_from_text()]),
+        vec![crate::Import {
+            identity: lib("test/units"),
+            package: second,
+        }],
+    )
+    .expect("the intermediate package links");
     let root = CheckedPackage::link_with(
         root_graph(),
-        vec![import("test/units", dependency()), import("test/mid", mid)],
+        vec![
+            crate::Import {
+                identity: lib("test/units"),
+                package: Arc::clone(&first),
+            },
+            import("test/mid", mid),
+        ],
     )
-    .expect("one selection of test/units by two paths unifies");
+    .expect("equal canonical package bytes unify across distinct allocations");
     let units = &root.dependency_selections()[&lib("test/units")];
-    assert_eq!(units.package_id, d);
     assert_eq!(units.path(&lib("test/units")), path(&["test/units"]));
+    assert!(Arc::ptr_eq(
+        &root.dependencies()[&lib("test/units")],
+        &first
+    ));
     read_linked(&root);
+}
+
+/// Linking an import under another library's name refuses before admission.
+#[trace("FR-093-AC-16", "TC-416")]
+#[test]
+fn e4_refuses_an_import_whose_manifest_names_another_library() {
+    let wrong = dependency("test/actual");
+    let refusal = CheckedPackage::link_with(root_graph(), vec![import("test/expected", wrong)])
+        .expect_err("an import must match its emitted manifest name");
+    let crate::LinkRefusal::IdentityMismatch { expected, actual } = refusal else {
+        panic!("expected IdentityMismatch, got {refusal:?}");
+    };
+    assert_eq!(expected, lib("test/expected"));
+    assert_eq!(actual.as_ref(), "test/actual");
 }
 
 #[trace("QSpec-FR-307-AC-7", "QSpec-TC-227")]
 #[test]
 fn a_direct_import_reached_transitively_first_stays_in_the_lock() {
-    let mid = linked(vec![import("test/units", dependency())]);
+    let mid = linked(
+        "test/mid",
+        vec![import("test/units", dependency("test/units"))],
+    );
     let root = CheckedPackage::link_with(
         root_graph(),
-        vec![import("test/mid", mid), import("test/units", dependency())],
+        vec![
+            import("test/mid", mid),
+            import("test/units", dependency("test/units")),
+        ],
     )
     .expect("equal direct and transitive paths unify");
     assert_eq!(
@@ -3010,8 +3070,8 @@ fn dependency_selections_are_written_in_utf8_byte_order() {
     let root = CheckedPackage::link_with(
         root_graph(),
         vec![
-            import("test/\u{1F600}", dependency()),
-            import("test/\u{FF61}", dependency()),
+            import("test/\u{1F600}", dependency("test/\u{1F600}")),
+            import("test/\u{FF61}", dependency("test/\u{FF61}")),
         ],
     )
     .expect("two identities link");
@@ -3035,15 +3095,18 @@ fn dependency_selections_are_written_in_utf8_byte_order() {
 #[trace("QSpec-FR-307-AC-2", "QSpec-TC-227")]
 #[test]
 fn e4_refuses_a_conflicting_diamond() {
-    let d = emitted_id(&dependency());
+    let d = emitted_id(&dependency("test/units"));
 
-    // Two `package_id`s: mid's units is `dependency()`, and mid2's units is
+    // Two `package_id`s: mid's units is `dependency("test/units")`, and mid2's units is
     // another package.
-    let another = linked(vec![import("test/x", dependency())]);
+    let another = linked("test/units", vec![import("test/x", dependency("test/x"))]);
     let another_id = emitted_id(&another);
     assert_ne!(another_id, d);
-    let mid = linked(vec![import("test/units", dependency())]);
-    let mid2 = linked(vec![import("test/units", another)]);
+    let mid = linked(
+        "test/mid",
+        vec![import("test/units", dependency("test/units"))],
+    );
+    let mid2 = linked("test/mid2", vec![import("test/units", another)]);
     assert_eq!(
         wire(&emit(&mid))["lock"]["dependency_selections"][0]["identity"],
         "test/units"
@@ -3281,11 +3344,11 @@ fn emit_attempt_unit(unit: &str, with_sub: bool) -> AttemptEmission {
         .iter()
         .map(|clause| clause.identity())
         .collect();
-    let frame = qsl_foundation::digest::WireNodeId::from_digest(*attempt.frame.as_bytes());
+    let frame = attempt.frame.clone();
     let frame_records = graph
         .requirements()
         .keys()
-        .filter(|key| key.node() == frame)
+        .filter(|key| key.node() == &frame)
         .count();
     let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
     assert_eq!(emission.omitted, []);
@@ -3324,10 +3387,18 @@ fn emit_attempt_unit(unit: &str, with_sub: bool) -> AttemptEmission {
         [],
         "formatted attempt S4 omissions"
     );
+    let ids = |emission: &Emission| {
+        wire(emission)["semantic_graph"]["nodes"]
+            .as_array()
+            .expect("emitted graph nodes")
+            .iter()
+            .map(|node| node["node_id"].clone())
+            .collect::<Vec<_>>()
+    };
     assert_eq!(
-        formatted_emission.package().package_id(),
-        emission.package().package_id(),
-        "attempt formatting changed checked package identity"
+        ids(&formatted_emission),
+        ids(&emission),
+        "formatting changed the attempt's structural node identities"
     );
     AttemptEmission {
         attempt,
@@ -3885,7 +3956,7 @@ fn a_node_a_state_clause_places_does_not_move_to_a_type_name() {
 /// repeat emit and a `link_with` reuse it rather than emitting again.
 #[test]
 fn a_package_remembers_its_emission_and_link_with_reuses_it() {
-    let shared = Arc::new(dependency());
+    let shared = Arc::new(dependency("test/units"));
     assert!(shared.remembered_emission().is_none());
     let first = emit_checked(&shared).expect("the dependency emits");
     let remembered = shared
@@ -3907,7 +3978,7 @@ fn a_package_remembers_its_emission_and_link_with_reuses_it() {
         first.package().package_id()
     );
 
-    let unemitted = Arc::new(dependency());
+    let unemitted = Arc::new(dependency("test/units"));
     CheckedPackage::link_with(
         root_graph(),
         vec![crate::Import {
