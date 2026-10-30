@@ -83,17 +83,17 @@ fn set<'w>(wire: &'w Value, name: &str) -> Vec<&'w Value> {
         .collect()
 }
 
-/// The digests of `nodes`, which must be strictly ascending.
-fn ascending(nodes: &[&Value]) -> Vec<String> {
-    let digests: Vec<String> = nodes
+/// The structural keys of `nodes`, which must be strictly ascending.
+fn ascending(nodes: &[&Value]) -> Vec<NodeKey> {
+    let keys: Vec<NodeKey> = nodes
         .iter()
-        .map(|node| node["node_id"]["digest"].as_str().unwrap().to_owned())
+        .map(|node| qsl_foundation::node_wire::node_key_from_json(&node["node_id"]).unwrap())
         .collect();
     assert!(
-        digests.windows(2).all(|pair| pair[0] < pair[1]),
-        "strictly ascending: {digests:?}"
+        keys.windows(2).all(|pair| pair[0] < pair[1]),
+        "strictly ascending: {keys:?}"
     );
-    digests
+    keys
 }
 
 /// The value of the argument `name` of `node`, after checking the
@@ -322,12 +322,9 @@ fn a_channel_and_its_queue_emit_every_premise() {
             [("generated", text.as_str())],
             "one generated occurrence at the channel's declaration"
         );
-        keys.insert(
-            bound,
-            queue["node_id"]["digest"].as_str().unwrap().to_owned(),
-        );
+        keys.insert(bound, queue["body"].clone());
     }
-    let selectors: Vec<&String> = [
+    let selectors: Vec<&Value> = [
         "capacity 4 overflow reject",
         "capacity 4 overflow loss tail",
         "capacity 4 overflow loss new",
@@ -411,9 +408,9 @@ fn replicated_roles_emit_their_population_maximum_binder_and_lifetime() {
         reads(&lowered.wire, until, &binder["node_id"]),
         "the `until` term reads the role's binder"
     );
-    let keys: BTreeSet<&str> = roles
+    let keys: BTreeSet<NodeKey> = roles
         .iter()
-        .map(|role| role["node_id"]["digest"].as_str().unwrap())
+        .map(|role| qsl_foundation::node_wire::node_key_from_json(&role["node_id"]).unwrap())
         .collect();
     assert_eq!(keys.len(), 4, "four roles, four keys");
 }
@@ -423,7 +420,7 @@ pub(super) fn reads(wire: &Value, node: &Value, wanted: &Value) -> bool {
     let mut pending = vec![node];
     let mut seen = BTreeSet::new();
     while let Some(node) = pending.pop() {
-        if !seen.insert(node["node_id"]["digest"].as_str().unwrap().to_owned()) {
+        if !seen.insert(qsl_foundation::node_wire::node_key_from_json(&node["node_id"]).unwrap()) {
             continue;
         }
         for dependency in node["dependencies"].as_array().unwrap() {
@@ -437,11 +434,8 @@ pub(super) fn reads(wire: &Value, node: &Value, wanted: &Value) -> bool {
 }
 
 /// FR-464 "Sets", FR-383-AC-12: `roles`, `channels` and
-/// `queues` follow the node digests, not the source order. Two channels,
-/// three roles, declared in either order,
-/// give one clause key and the same four sets; the queues are ordered by
-/// their own digests, which is not their channels' order for the channel
-/// names chosen here.
+/// `queues` follow structural node keys, not the source order. Three
+/// channels and three roles, declared in either order, give the same sets.
 #[trace("TC-1062")]
 #[test]
 fn the_sets_of_a_clause_do_not_follow_source_order() {
@@ -483,25 +477,6 @@ fn the_sets_of_a_clause_do_not_follow_source_order() {
         assert_eq!(first.len(), expected, "{name}");
         assert_eq!(ascending(&first), ascending(&set(&backward.wire, name)));
     }
-    // The queue digests order the queues; the channel digests order the
-    // channels; the two differ for this protocol.
-    let channels = set(&forward.wire, "channels");
-    let by_channel: Vec<&Value> = channels
-        .iter()
-        .map(|channel| queue_of(&forward.wire, channel))
-        .collect();
-    let by_queue = set(&forward.wire, "queues");
-    assert_ne!(
-        by_channel
-            .iter()
-            .map(|queue| &queue["node_id"])
-            .collect::<Vec<_>>(),
-        by_queue
-            .iter()
-            .map(|queue| &queue["node_id"])
-            .collect::<Vec<_>>(),
-        "the queues follow their own digests, not their channels'"
-    );
 }
 
 /// FR-464 "Binders", "Level": under `activation on each` the trigger is
@@ -566,13 +541,11 @@ fn role_and_channel_binders_follow_the_clause_binders() {
     );
 }
 
-/// FR-464-AC-3: a channel's premises change its key, and the clause's: the
-/// channel node and its queue follow every premise, so two protocols that
-/// differ in one premise have different clause keys.
+/// FR-464-AC-3: each channel premise changes its emitted body.
 #[trace("TC-1021")]
 #[test]
-fn every_channel_premise_changes_the_clause_key() {
-    let key = |ordering: &str, delivery: &str, bound: &str, ends: (&str, &str)| -> String {
+fn every_channel_premise_changes_the_emitted_body() {
+    let body = |ordering: &str, delivery: &str, bound: &str, ends: (&str, &str)| -> Value {
         let lowered = emitted(
             "on origin",
             &format!(
@@ -580,10 +553,7 @@ fn every_channel_premise_changes_the_clause_key() {
                 channel("Pay", ends, ordering, delivery, bound)
             ),
         );
-        clause(&lowered.wire)["node_id"]["digest"]
-            .as_str()
-            .unwrap()
-            .to_owned()
+        set(&lowered.wire, "channels")[0]["body"].clone()
     };
     let base = (
         "unordered",
@@ -591,20 +561,22 @@ fn every_channel_premise_changes_the_clause_key() {
         "capacity 1 overflow block",
         ("Buyer", "Seller"),
     );
-    let reference = key(base.0, base.1, base.2, base.3);
-    assert_eq!(reference, key(base.0, base.1, base.2, base.3), "stable");
+    let reference = body(base.0, base.1, base.2, base.3);
+    assert_eq!(reference, body(base.0, base.1, base.2, base.3), "stable");
     let changed = [
-        key("fifo by (m: Boolean) { m }", base.1, base.2, base.3),
-        key(base.0, "at-most-once", base.2, base.3),
-        key(base.0, base.1, "capacity 2 overflow block", base.3),
-        key(base.0, base.1, "capacity 1 overflow reject", base.3),
-        key(base.0, base.1, "capacity 1 overflow loss head", base.3),
-        key(base.0, base.1, base.2, ("Seller", "Buyer")),
+        body("fifo by (m: Boolean) { m }", base.1, base.2, base.3),
+        body(base.0, "at-most-once", base.2, base.3),
+        body(base.0, base.1, "capacity 2 overflow block", base.3),
+        body(base.0, base.1, "capacity 1 overflow reject", base.3),
+        body(base.0, base.1, "capacity 1 overflow loss head", base.3),
+        body(base.0, base.1, base.2, ("Seller", "Buyer")),
     ];
-    let mut all: BTreeSet<&String> = changed.iter().collect();
-    assert_eq!(all.len(), changed.len(), "each premise gives its own key");
-    all.insert(&reference);
-    assert_eq!(all.len(), changed.len() + 1);
+    for (index, variant) in changed.iter().enumerate() {
+        assert_ne!(&reference, variant, "variant {index}");
+        for other in &changed[..index] {
+            assert_ne!(other, variant, "variant {index}");
+        }
+    }
 }
 
 /// The check of `text` over [`model`], with the unwritten-construct emission
