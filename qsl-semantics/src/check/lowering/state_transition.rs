@@ -424,19 +424,14 @@ impl Lowering<'_> {
                             ),
                         ));
                     };
-                    let Some(node) = target.admitted().cloned() else {
-                        return Err(fault(
-                            next.location,
-                            KeyFault::StageFault(
-                                quire_semantic_value::catalog::InternalFault::new(
-                                    "S4",
-                                    "conjunction-is-a-node",
-                                ),
-                            ),
-                        ));
-                    };
-                    built.conjunctions.insert((condition, right), node.clone());
-                    node
+                    let target = target
+                        .admitted()
+                        .cloned()
+                        .ok_or_else(|| fault(next.location, KeyFault::UnresolvedDraft))?;
+                    built
+                        .conjunctions
+                        .insert((condition, right), target.clone());
+                    target
                 }
             };
         }
@@ -512,9 +507,13 @@ impl Lowering<'_> {
             .iter()
             .flat_map(MemberTerm::leaves)
             .find_map(|leaf| match leaf {
-                LeafTerm::Reference { target } => target.admitted().cloned().and_then(|node| {
-                    self.subject_read(node, self_parameter.clone(), object.clone(), field, visited)
-                }),
+                LeafTerm::Reference { target } => target.admitted().and_then(|target| self.subject_read(
+                    target.clone(),
+                    self_parameter.clone(),
+                    object.clone(),
+                    field,
+                    visited,
+                )),
                 LeafTerm::Literal { .. } | LeafTerm::DependencyReference { .. } => None,
             })
     }
@@ -525,12 +524,9 @@ impl Lowering<'_> {
         let Some(MemberTerm::Leaf(LeafTerm::Reference { target })) = argument else {
             return false;
         };
-        let Some(node) = target.admitted().cloned() else {
-            return false;
-        };
-        let Some(application) = self
-            .graph
-            .node(node)
+        let Some(application) = target
+            .admitted()
+            .and_then(|target| self.graph.node(target.clone()))
             .and_then(|node| node.content.body.application_term())
         else {
             return false;

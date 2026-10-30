@@ -482,19 +482,15 @@ impl Lowering<'_> {
             return false;
         };
         wrapper.node_tag == NodeTag::Expression
-            && target
-                .admitted()
-                .cloned()
-                .and_then(content)
-                .is_some_and(|literal| {
-                    matches!(
-                        &literal.body,
-                        BodyTerm::Leaf(LeafTerm::Literal {
-                            value: LiteralValue::Boolean(true),
-                            ..
-                        })
-                    )
-                })
+            && target.admitted().cloned().and_then(&content).is_some_and(|literal| {
+                matches!(
+                    &literal.body,
+                    BodyTerm::Leaf(LeafTerm::Literal {
+                        value: LiteralValue::Boolean(true),
+                        ..
+                    })
+                )
+            })
     }
 
     /// The `clock_place` template node of every clock of `clocks`, the

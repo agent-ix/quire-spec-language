@@ -64,8 +64,8 @@ reference, never copied): FR-322, `proposals/checked-package-v2/schema.json`,
 
 ## Outputs
 
-- Each node's RFC 8785 preimage bytes and its `quire.checked-semantic-node/v1`
-  key, and the model correspondence entries (node key, `DeclarationKey`).
+- Each node's structural key, and the model correspondence entries (node key,
+  `DeclarationKey`).
 - Or a typed refusal and no key.
 
 ## Behavior
@@ -281,19 +281,16 @@ domain:
   other node stands for the quantity type. `check` builds it, and every
   dimension and unit node it names (its dimension, that dimension's base
   dimensions, its target units), from the admitted node the unit table
-  holds for each, keyed by its admitted preimage bytes, as QSpec's nominal
-  fixtures spell them: the preimage's qualified name as `declaration`, with
-  a `declaration` occurrence at the declared name, an empty `aggregate`
-  body, a unit typed by its dimension and a dimension self-typed. A
-  compound unit's root units are built the same way. The node carries its
-  nominal preimage when that preimage, rebuilt under the checked unit's own
-  `SourceOwner`, has the admitted bytes; a node another owner declares
-  carries none, and the emission omits it as a nominal node whose owner
-  the package does not select.
+  holds for each, as QSpec's nominal fixtures spell them: the qualified
+  name as `declaration`, with a `declaration` occurrence at the declared
+  name, an empty `aggregate` body, a unit typed by its dimension and a
+  dimension self-typed. A compound unit's root units are built the same
+  way. No node carries a nominal identity preimage, and none is recomputed
+  or compared.
 - **Compound unit.** The type node is `scalar_type` / `compound_unit`, its own
   semantic type, with no `declaration` and no `owner`. Its body is an
-  `aggregate` of one term per compound-unit term, in the order of the unit's
-  `quire.value.compound-unit/v1` preimage (ascending root-unit node key). A
+  `aggregate` of one term per compound-unit term, in ascending root-unit node key
+  (the derived `Ord` of the structural node id, QSpec FR-322). A
   term is `aggregate{[binding "unit" = reference(the root unit's node),
   binding "exponent" = the exponent as an integer literal typed at the
   `Integer` node]}`. The dimensionless unit's body is `aggregate{[]}`.
@@ -320,15 +317,13 @@ quotient units U2 to U4 from the units `value::quantity::result_unit` forms,
 which is the forming `check` does while it types a quantity division, and
 FR-094-AC-11 keys the quotient of a division by a literal.
 
-- **Dimension equivalence.** The unit table holds the admitted preimage of each
-  dimension equivalence the unit declares (FR-091). `check` builds one
-  `scalar_type`/`dimension_equivalence` node for each, in source order, from
-  that preimage as QSpec FR-322 spells it (FR-322-AC-118): self-typed, with no
-  `declaration`, its `nominal_identity_preimage`
-  `{version: quire.dimension-equivalence-node/v1, owner, dimension_node_ids,
-  root_scale}` with the two related dimension keys in ascending key order
-  and the root ratio the unit table holds (FR-091 step 6) as `root_scale`, stated
-  for the node listed first, depending on
+- **Dimension equivalence.** The unit table holds each dimension equivalence the
+  unit declares (FR-091). `check` builds one
+  `scalar_type`/`dimension_equivalence` node for each, in source order, as
+  QSpec FR-322 spells it (FR-322-AC-118): self-typed, with no
+  `declaration`, relating the two dimension nodes in ascending node-key order
+  (the derived `Ord`), with the root ratio the unit table holds (FR-091
+  step 6) as `root_scale`, stated for the node listed first, depending on
   exactly those two dimension nodes, and carrying one `anchor` occurrence whose
   ordinal is the declaration's place among the unit's equivalence declarations
   and whose region is the declaration's. It builds the node whether or not a
@@ -357,7 +352,7 @@ yield no key for the node that needs it:
   identity, or whose `node` is empty;
 - a compound `UnitId` that the check stage's unit scope does not hold;
 - a declared unit, or a dimension or unit a held unit names, or a dimension
-  equivalence, whose nominal preimage the unit table does not hold;
+  equivalence, whose node the unit table does not hold;
 - a domain package record kind that no checked node names.
 
 Type admission refuses an unknown `Reference` target for a source-compiled
@@ -449,7 +444,8 @@ T1 to T4, L1 and L2 are FR-092's. The root units of U1 to U4 are QSpec's
 | FR-094-AC-8 | Under a unit graph its own source declares, with base dimensions `Length` and `Time`, the derived dimension `Velocity = Length / Time`, root units `metre`, `second` and `mps` (of `Velocity`) and `km = 1000 × metre`, a record `Trip{d: km, v: mps}` is emitted with no node omitted. The `km` node depends on `Length` and `metre` and its preimage targets `metre` with scale `1000`; the `Velocity` node depends on `Length` and `Time` and its preimage holds both terms; `mps` is typed by `Velocity`; and IR's checked-package/v2 reader admits the package. | Test (TC-419) |
 | FR-094-AC-9 | For the unreferenced `billedTo` relationship selected through model alias `M`, `check` emits its `relation`/`relationship` node and records one `generated` occurrence at `M`'s declaration-site/source span, regardless of function or frame reachability; fallback `generated_location` and `UnlocatedOccurrence` are forbidden. | Test (TC-417) |
 | FR-094-AC-11 | With FR-093-AC-36's units, the quotient `a / 3 ms` over `a: Quantity<m>` has one `scalar_type`/`compound_unit` node, with no `declaration` and no `owner`, whose body is an `aggregate` of two terms in ascending root-unit node-key order: `unit` the `m` node with `exponent` the integer literal `1`, and `unit` the `s` node with `exponent` the integer literal `-1`. The quotient `d / 3 ms` over `d: Quantity<ms>` has a `compound_unit` node whose body is `aggregate{[]}`, and `d / 3 s`, `d / rational(-3, 1) ms` and `d / -(3 ms)` have that same node, and `a / -(3 ms)` has the node of `a / 3 ms`. Neither node is the `m` unit node, and the node of `a / 3 ms` is the node of `a / 0.5 s`. | Test (TC-419) |
-| FR-094-AC-12 | With a unit declaring `model R = "acme/rpc" …` and `model F = "acme/flow" …`, each package declaring base dimension `Time` and a root unit of it (`s`; flow's `ms` is `1/1000` of its root), and `dimension R::Time ~ F::Time by 1 R::s = 1000 F::ms;`, the checked graph holds one `scalar_type`/`dimension_equivalence` node with no `declaration`, self-typed, whose preimage is `{version: quire.dimension-equivalence-node/v1, owner: SourceOwner, dimension_node_ids: [the two package Time keys in ascending key order], root_scale: 1/1}` (FR-091-AC-61's the QSpec vector key under QSpec's vector owner), whose `dependencies` are exactly those two keys and whose one occurrence has role `anchor` and ordinal 0; `dimension F::Time ~ R::Time by 1000 F::ms = 1 R::s;` in its place gives the same key; with `acme/clock` as a third package (root `ms`), `dimension R::Time ~ G::Time by 1 R::s = 1000 G::ms;` gives the node with `root_scale` `1000/1` and `dimension G::Time ~ R::Time by 1000 G::ms = 1 R::s;` the same key; a second declaration `dimension R::Time ~ Time by 1 R::s = 1 s;` over a source `Time` gives a second node with ordinal 1; the package `Time` nodes keep the keys they have with no equivalence; the equivalence node is emitted though no quantity type names either dimension; and IR's checked-package/v2 reader admits the package and derives the classes the declarations give, refusing `invalid_semantic_graph` the same package with a `root_scale` of `0/1`, `-1/1`, `2000/2` or none, or with the ratios of its base pairs not multiplying to one. | Test (TC-419) |
+| FR-094-AC-12 | **Withdrawn.** The fixed QSpec vector key and `nominal_identity_preimage` oracle for the dimension-equivalence node was superseded by QSpec FR-322 structural node identity; the node's non-identity behavior is retained in FR-094-AC-13. | Withdrawn |
+| FR-094-AC-13 | With a unit declaring `model R = "acme/rpc" …` and `model F = "acme/flow" …`, each package declaring base dimension `Time` and a root unit of it (`s`; flow's `ms` is `1/1000` of its root), and `dimension R::Time ~ F::Time by 1 R::s = 1000 F::ms;`, the checked graph holds one `scalar_type`/`dimension_equivalence` node with no `declaration`, self-typed, relating the two package `Time` nodes in ascending node-key order with `root_scale` `1/1`, whose `dependencies` are exactly those two nodes and whose one occurrence has role `anchor` and ordinal 0; `dimension F::Time ~ R::Time by 1000 F::ms = 1 R::s;` in its place gives the same node; with `acme/clock` as a third package (root `ms`), `dimension R::Time ~ G::Time by 1 R::s = 1000 G::ms;` gives the node with `root_scale` `1000/1` and `dimension G::Time ~ R::Time by 1000 G::ms = 1 R::s;` the same node; a second declaration `dimension R::Time ~ Time by 1 R::s = 1 s;` over a source `Time` gives a second node with ordinal 1; the package `Time` nodes are the nodes they are with no equivalence; the equivalence node is emitted though no quantity type names either dimension; and IR's checked-package/v2 reader admits the package and derives the classes the declarations give, refusing `invalid_semantic_graph` the same package with a `root_scale` of `0/1`, `-1/1`, `2000/2` or none, or with the ratios of its base pairs not multiplying to one. | Test (TC-419) |
 
 A check with two admitted versions of one domain package
 identity refuses as an internal fault.

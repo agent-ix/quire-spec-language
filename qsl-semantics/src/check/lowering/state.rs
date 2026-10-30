@@ -382,15 +382,10 @@ impl Lowering<'_> {
             population_objects.push(object);
         }
         let condition = match condition {
-            LeafTerm::Reference { target } => target.admitted().cloned().ok_or_else(|| {
-                fault(
-                    location,
-                    KeyFault::StageFault(quire_semantic_value::catalog::InternalFault::new(
-                        "S4",
-                        "state-clause-condition-is-a-node",
-                    )),
-                )
-            })?,
+            LeafTerm::Reference { target } => target
+                .admitted()
+                .cloned()
+                .ok_or_else(|| fault(location, KeyFault::UnresolvedDraft))?,
             LeafTerm::Literal { .. } | LeafTerm::DependencyReference { .. } => {
                 return Err(fault(
                     location,
