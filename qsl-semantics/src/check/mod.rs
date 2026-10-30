@@ -228,7 +228,7 @@ pub use node_key::{
     FrameField, FrameModifies, FrameScope, FrameTerm, GroupMember, GroupTerm, InvalidModelOwner,
     InvalidSourceOwner, LawRole, LeafSegment, LeafTerm, LiteralValue, MemberTerm, ModelOwner,
     NodeKeyRefusal, NodeRef, NodeTag, Operation, OperationLaw, OperationLeaf, OperationMode,
-    Operator, Owner, PackageRef, SourceOwner, TupleMember, TupleTerm, WireNodeRef,
+    Operator, Owner, SourceOwner, TupleMember, TupleTerm,
 };
 
 /// Carry a declared node identity from an admitted package name and its
@@ -257,58 +257,40 @@ pub(crate) fn declared_node_key(
 /// The structural key of QSpec's built-in Rational scalar type (FR-092).
 /// Timed tick sources use this primitive literal type even when the checked
 /// unit contains no other rational expression from which S4 could discover it.
-pub fn builtin_rational_type_key() -> quire_exact::NodeKey {
-    let body = BodyTerm::aggregate(Vec::new());
-    let input = node_key::NodeInput {
-        owner: None,
-        node_tag: NodeTag::ScalarType,
-        semantic_form: "rational",
-        semantic_type: None,
-        declaration: None,
-        body: &body,
-        owner_model: None,
-    };
-    node_key::node_key(&input, qsl_foundation::IdentityLimits::default())
-        .expect("the built-in Rational scalar has a valid structural key")
-        .key
+pub fn builtin_rational_type_key(
+    package_name: &str,
+) -> Result<quire_exact::NodeKey, quire_exact::InvalidNodeKey> {
+    declared_node_key(
+        package_name.to_owned(),
+        vec!["scalar_type".to_owned(), "rational".to_owned()],
+        0,
+    )
 }
 
 /// The structural key of QSpec's built-in Integer scalar type (FR-092): the
 /// symbolic element selector of a `clock_place` slot step (QSpec FR-322
 /// "Timed-model nodes") references it.
-pub fn builtin_integer_type_key() -> quire_exact::NodeKey {
-    let body = BodyTerm::aggregate(Vec::new());
-    let input = node_key::NodeInput {
-        owner: None,
-        node_tag: NodeTag::ScalarType,
-        semantic_form: "integer",
-        semantic_type: None,
-        declaration: None,
-        body: &body,
-        owner_model: None,
-    };
-    node_key::node_key(&input, qsl_foundation::IdentityLimits::default())
-        .expect("the built-in Integer scalar has a valid structural key")
-        .key
+pub fn builtin_integer_type_key(
+    package_name: &str,
+) -> Result<quire_exact::NodeKey, quire_exact::InvalidNodeKey> {
+    declared_node_key(
+        package_name.to_owned(),
+        vec!["scalar_type".to_owned(), "integer".to_owned()],
+        0,
+    )
 }
 
 /// The structural key of QSpec's built-in Text scalar type (FR-092).
 /// Timed source metadata uses this primitive even when no source expression
 /// already caused its scalar node to enter the checked graph.
-pub fn builtin_text_type_key() -> quire_exact::NodeKey {
-    let body = BodyTerm::aggregate(Vec::new());
-    let input = node_key::NodeInput {
-        owner: None,
-        node_tag: NodeTag::ScalarType,
-        semantic_form: "text",
-        semantic_type: None,
-        declaration: None,
-        body: &body,
-        owner_model: None,
-    };
-    node_key::node_key(&input, qsl_foundation::IdentityLimits::default())
-        .expect("the built-in Text scalar has a valid structural key")
-        .key
+pub fn builtin_text_type_key(
+    package_name: &str,
+) -> Result<quire_exact::NodeKey, quire_exact::InvalidNodeKey> {
+    declared_node_key(
+        package_name.to_owned(),
+        vec!["scalar_type".to_owned(), "text".to_owned()],
+        0,
+    )
 }
 // PR #303 review, finding N7b: `empty_scope`/`root_location` used to be
 // defined twice -- once here (`check::family`'s own `checking_tests`
@@ -5323,7 +5305,7 @@ impl PackageDeclarations {
                                 &lowered
                                     .parameters
                                     .iter()
-                                    .copied()
+                                    .cloned()
                                     .map(claims::wire)
                                     .collect::<Vec<_>>(),
                                 &populations,
@@ -5460,7 +5442,7 @@ impl PackageDeclarations {
             let node = claims::wire(emission.identity);
             let boolean = refinement_booleans
                 .get(checked.name())
-                .copied()
+                .cloned()
                 .ok_or_else(unkeyable)?;
             let occurrence = OccurrenceKey::new(
                 node,
@@ -5904,7 +5886,7 @@ fn finish_step_relations(
         if let Some(code_claim) =
             abstraction.and_then(|abstraction| relation.code_claim(abstraction))
         {
-            let roots: Vec<_> = code_roots.iter().copied().map(claims::wire).collect();
+            let roots: Vec<_> = code_roots.iter().cloned().map(claims::wire).collect();
             let code_requirements = code_claim.requirements(&roots).map_err(|_| {
                 vec![CheckRefusal {
                     location: root(Origin::Expression),
