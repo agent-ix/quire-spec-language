@@ -75,7 +75,6 @@ settings! {
     ModelDerivationFacts => "model.derivation_facts", "model normalization", NodeCount;
     ModelEffectiveDeclarations => "model.effective_declarations", "model normalization", NodeCount;
     ModelDispatchCandidates => "model.dispatch_candidates", "model normalization", NodeCount;
-    ModelHashedBytes => "model.hashed_bytes", "model normalization", InputBytes;
     ModelWorkUnits => "model.work_units", "model normalization", WorkBudget;
     ModelAncestorSteps => "model.ancestor_steps", "model normalization", EdgeCount;
     ModelFamilySteps => "model.family_steps", "model normalization", EdgeCount;
