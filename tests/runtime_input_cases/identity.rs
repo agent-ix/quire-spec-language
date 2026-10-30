@@ -8,7 +8,7 @@ use serde_json::json;
 #[trace("TC-056", "FR-018-AC-3", "FR-018-AC-4")]
 fn empty_invocation_has_exact_independent_field_order() {
     let artifact = Invocation::new(identity(), invocation(), ArtifactLimits::default()).unwrap();
-    let expected = r#"{"version":"native-state-input/1","kind":"invocation","identity":{"authority":"agent-ix","identity":"snapshot:current","revision_namespace":"git","revision":"1"},"body":{"models":[],"context":{"model":{"package":"example/runtime","requirement":"RuntimeModel","revision":1},"name":"Node"},"operation":"step","anchor":"step","self_object":{"model":{"package":"example/runtime","requirement":"RuntimeModel","revision":1},"record":"Node","universe":"nodes","key":""},"pre":{"identity":{"authority":"agent-ix","identity":"snapshot:current","revision_namespace":"git","revision":"1"},"digest":"0000000000000000000000000000000000000000000000000000000000000000"},"post":{"identity":{"authority":"agent-ix","identity":"snapshot:current","revision_namespace":"git","revision":"1"},"digest":"0000000000000000000000000000000000000000000000000000000000000000"},"parameters":[],"result":null,"created":[],"deleted":[],"arena":[]}}"#;
+    let expected = r#"{"version":"native-state-input/1","kind":"invocation","identity":{"authority":"agent-ix","identity":"snapshot:current","revision_namespace":"git","revision":"1"},"body":{"models":[],"context":{"model":{"package":"example/runtime","requirement":"RuntimeModel","revision":1},"name":"Node"},"operation":"step","anchor":"step","self_object":{"model":{"package":"example/runtime","requirement":"RuntimeModel","revision":1},"record":"Node","universe":"nodes","key":""},"pre":{"identity":{"authority":"agent-ix","identity":"snapshot:current","revision_namespace":"git","revision":"1"}},"post":{"identity":{"authority":"agent-ix","identity":"snapshot:current","revision_namespace":"git","revision":"1"}},"parameters":[],"result":null,"created":[],"deleted":[],"arena":[]}}"#;
     assert_eq!(artifact.bytes(), expected.as_bytes());
     assert_eq!(artifact.reference().identity(), artifact.identity());
 }
@@ -103,6 +103,9 @@ fn expected_refs_and_invocation_mutations_retain_complete_correspondence() {
     let first = Snapshot::new(identity(), empty(), ArtifactLimits::default()).unwrap();
     let expected = SnapshotRef::new(identity()).unwrap();
     assert_eq!(first.reference(), expected);
+    let mut other_labels = identity();
+    other_labels.revision = "2".into();
+    let other = SnapshotRef::new(other_labels).unwrap();
     let invocation_ref = InvocationRef::new(identity()).unwrap();
     assert_eq!(invocation_ref.identity(), &identity());
     let mut baseline = invocation();
@@ -122,8 +125,8 @@ fn expected_refs_and_invocation_mutations_retain_complete_correspondence() {
             2 => draft.operation = symbol("other_step"),
             3 => draft.anchor = ir::AnchorName::new("other_anchor").unwrap(),
             4 => draft.self_object.key = "different".into(),
-            5 => draft.pre = expected.clone(),
-            6 => draft.post = expected.clone(),
+            5 => draft.pre = other.clone(),
+            6 => draft.post = other.clone(),
             7 => draft.parameters.push(binding("arg", 0)),
             8 => draft.result = Some(ValueId::new(1)),
             9 => draft.created.push(object("created")),
