@@ -176,34 +176,6 @@ pub(crate) const EXEMPT: &[Exemption] = &[
     },
     Exemption {
         crate_src: "src",
-        module: "runtime::reading",
-        functions: &["read_selected"],
-        calls: &[],
-        kind: ExemptionKind::NotAnIdentity,
-        reason: "the FR-001 `ByteDigest` of supplied artifact bytes, checked against the \
-                 expected digest before decoding; not an identity over a canonical form",
-    },
-    Exemption {
-        crate_src: "src",
-        module: "runtime::construction",
-        functions: &["Artifact::new"],
-        calls: &[],
-        kind: ExemptionKind::NotAnIdentity,
-        reason: "the FR-001 `ByteDigest` of the artifact bytes it has just emitted: an \
-                 exact-byte digest of those bytes, not an identity over a canonical form",
-    },
-    Exemption {
-        crate_src: "qsl-semantics/src",
-        module: "model::intake",
-        functions: &["check_package_digest"],
-        calls: &["raw_bytes_digest"],
-        kind: ExemptionKind::NotAnIdentity,
-        reason: "the FR-154 raw-byte digest of a package document that did not parse, \
-                 reported against its declared digest, through `raw_bytes_digest` only; the \
-                 parsed document's `sha256-jcs` digest is `quire-canonical`'s",
-    },
-    Exemption {
-        crate_src: "src",
         module: "protocol_artifact::handoff::writer",
         functions: &["reference", "DefinitionInputs::new"],
         calls: &[],
@@ -1511,123 +1483,6 @@ pub(super) fn digest_of(value: &serde_json::Value) -> [u8; 32] {
         assert_eq!(sites[0].function, "fresh");
     }
 
-    /// Intake's exemption is pinned to its `raw_bytes_digest`
-    /// call. The pre-#389 `check_package_digest`, hashing a
-    /// `jcs_bytes` JSON producer with `Sha256` directly, fails on both
-    /// counts, and hashing JSON through the pinned call still fails.
-    #[test]
-    fn intake_exemption_is_pinned_to_its_raw_bytes_digest_call() {
-        const INTAKE: &str = "qsl-semantics/src/model/intake.rs";
-        let dir = tree();
-        write(
-            dir.path(),
-            "qsl-semantics/src/model/key.rs",
-            "pub fn jcs_bytes(v: &Tree) -> Vec<u8> { serde_json::to_vec(v).unwrap() }\n",
-        );
-        write(
-            dir.path(),
-            INTAKE,
-            "use super::key::jcs_bytes;\nuse serde_json::Value;\n\
-             fn check_package_digest(b: &[u8], d: Option<&Doc>) -> [u8; 32] {\n\
-             \x20   match d {\n\
-             \x20       Some(d) => Sha256::digest(jcs_bytes(&d.tree)).into(),\n\
-             \x20       None => Sha256::digest(b).into(),\n\
-             \x20   }\n}\n",
-        );
-        let outcome = evaluate(dir.path()).unwrap();
-        assert!(!outcome.passed());
-        let unlisted: Vec<usize> = outcome
-            .unlisted
-            .iter()
-            .flat_map(|(_, sites)| sites.iter().map(|site| site.line))
-            .collect();
-        assert_eq!(unlisted, vec![5, 6], "{}", report(&outcome));
-        let json: Vec<(usize, &str)> = outcome
-            .json_in_pinned
-            .iter()
-            .map(|(_, site)| (site.line, site.function.as_str()))
-            .collect();
-        assert_eq!(json, vec![(5, "check_package_digest")]);
-
-        write(
-            dir.path(),
-            INTAKE,
-            "use super::key::jcs_bytes;\nuse crate::exempt_pinned_callees::*;\n\
-             fn check_package_digest(b: &[u8], d: Option<&Doc>) -> [u8; 32] {\n\
-             \x20   match d {\n\
-             \x20       Some(d) => raw_bytes_digest(&jcs_bytes(&d.tree)),\n\
-             \x20       None => raw_bytes_digest(b),\n\
-             \x20   }\n}\n",
-        );
-        let outcome = evaluate(dir.path()).unwrap();
-        assert!(outcome.unlisted.is_empty(), "{}", report(&outcome));
-        let json: Vec<usize> = outcome
-            .json_in_pinned
-            .iter()
-            .map(|(_, site)| site.line)
-            .collect();
-        assert_eq!(json, vec![5], "{}", report(&outcome));
-        assert!(!outcome.passed());
-    }
-
-    /// The JSON lines a call-pinned exemption reports for `intake` text.
-    fn pinned_json_lines(intake: &str) -> Vec<(usize, String)> {
-        let dir = tree();
-        write(dir.path(), "qsl-semantics/src/model/intake.rs", intake);
-        let outcome = evaluate(dir.path()).unwrap();
-        assert!(outcome.unlisted.is_empty(), "{}", report(&outcome));
-        assert!(outcome.stale.is_empty(), "{}", report(&outcome));
-        assert_eq!(
-            outcome.passed(),
-            outcome.json_in_pinned.is_empty(),
-            "{}",
-            report(&outcome)
-        );
-        outcome
-            .json_in_pinned
-            .into_iter()
-            .map(|(_, site)| (site.line, site.function))
-            .collect()
-    }
-
-    /// Review M1 (A): a serializer imported by name and hashed
-    /// through the pinned call fails.
-    #[test]
-    fn pinned_exemption_refuses_an_imported_serializer() {
-        let found = pinned_json_lines(
-            "use crate::exempt_pinned_callees::*;\nuse serde_json::to_vec;\n\
-             fn check_package_digest(v: &Tree) -> [u8; 32] {\n\
-             \x20   raw_bytes_digest(&to_vec(v).unwrap())\n}\n",
-        );
-        assert_eq!(found, vec![(4, "check_package_digest".to_owned())]);
-    }
-
-    /// Review M1 (B): a JSON producer defined in the same file and
-    /// hashed through the pinned call fails.
-    #[test]
-    fn pinned_exemption_refuses_a_same_file_json_producer() {
-        let found = pinned_json_lines(
-            "use crate::exempt_pinned_callees::*;\n\
-             fn json(v: &Tree) -> Vec<u8> {\n    serde_json::to_vec(v).unwrap()\n}\n\
-             fn check_package_digest(v: &Tree) -> [u8; 32] {\n\
-             \x20   raw_bytes_digest(&json(v))\n}\n",
-        );
-        assert_eq!(found, vec![(6, "check_package_digest".to_owned())]);
-    }
-
-    /// The pinned call over exact bytes, next to JSON elsewhere in the
-    /// file, passes.
-    #[test]
-    fn pinned_exemption_accepts_raw_bytes_beside_json_elsewhere() {
-        let found = pinned_json_lines(
-            "use crate::exempt_pinned_callees::*;\n\
-             fn json(v: &Tree) -> Vec<u8> {\n    serde_json::to_vec(v).unwrap()\n}\n\
-             fn check_package_digest(b: &[u8]) -> [u8; 32] {\n\
-             \x20   raw_bytes_digest(b)\n}\n",
-        );
-        assert_eq!(found, Vec::new());
-    }
-
     /// An exemption whose file no longer pairs the two fails as stale, and
     /// so does a listed function with no hash site left.
     #[test]
@@ -1635,7 +1490,7 @@ pub(super) fn digest_of(value: &serde_json::Value) -> [u8; 32] {
         let dir = tree();
         write(
             dir.path(),
-            "src/runtime/construction.rs",
+            "src/protocol_artifact/encoding.rs",
             "pub fn encode(v: &V) -> Vec<u8> { quire_canonical::to_vec(v, L).unwrap() }\n",
         );
         write(
@@ -1652,6 +1507,6 @@ pub(super) fn digest_of(value: &serde_json::Value) -> [u8; 32] {
             .iter()
             .map(|(exemption, function)| (exemption.module, *function))
             .collect();
-        assert_eq!(stale, vec![("runtime::construction", None)]);
+        assert_eq!(stale, vec![("protocol_artifact::encoding", None)]);
     }
 }
