@@ -1024,11 +1024,11 @@ impl TypeNames for Names {
     }
 
     fn object_type_named(&self, name: &str) -> Option<EffectiveId> {
-        self.object_types.get(name).copied()
+        self.object_types.get(name).cloned()
     }
 
     fn unit_named(&self, name: &str) -> Option<quire_exact::UnitId> {
-        self.units.get(name).copied()
+        self.units.get(name).cloned()
     }
 }
 
@@ -1087,14 +1087,12 @@ pub(crate) fn variant_type_declarations(
             }
         };
         let mut cases = Vec::with_capacity(variant_type.members.len());
-        for entry in view
-            .declarations()
-            .iter()
-            .filter(|entry| entry.visible && entry.preimage.owner_effective_type == Some(*identity))
-        {
+        for entry in view.declarations().iter().filter(|entry| {
+            entry.visible && entry.preimage.owner_effective_type == Some(identity.clone())
+        }) {
             match by_key.get(&entry.preimage.original).copied() {
                 Some(DomainPackageRecord::Variant(case)) => {
-                    cases.push((entry.effective_id, case.case.clone()))
+                    cases.push((entry.effective_id.clone(), case.case.clone()))
                 }
                 Some(_) | None => return Err(broken(&entry.preimage.original.node)),
             }
@@ -1103,7 +1101,7 @@ pub(crate) fn variant_type_declarations(
             return Err(broken(&variant_type.key.node));
         }
         let Some(type_declaration) = VariantTypeDeclaration::new(
-            *identity,
+            identity.clone(),
             format!("{alias}::{}", variant_type.name),
             variant_type.key.clone(),
             node,
@@ -1395,16 +1393,16 @@ fn model_object_types(
         let mut effective_supertypes = Vec::with_capacity(supertypes.len());
         for supertype in supertypes {
             match identities.get(supertype) {
-                Some(id) => effective_supertypes.push(*id),
+                Some(id) => effective_supertypes.push(id.clone()),
                 None => errors.push(broken(&supertype.node)),
             }
         }
         if let Some(declared) = operations.remove(key) {
-            table.declare(*identity, declared);
+            table.declare(identity.clone(), declared);
         }
         declarations.push(
             ObjectTypeDeclaration::new(
-                *identity,
+                identity.clone(),
                 format!("{alias}::{artifact}"),
                 fields.remove(key).unwrap_or_default(),
             )
@@ -1453,7 +1451,7 @@ fn model_object_types(
             .declarations()
             .iter()
             .filter(|entry| {
-                entry.visible && entry.preimage.owner_effective_type == Some(*effective_type)
+                entry.visible && entry.preimage.owner_effective_type == Some(effective_type.clone())
             })
             .filter_map(|entry| match records.get(&entry.preimage.original) {
                 Some(DomainPackageRecord::FieldMember(field)) => Some(field),
@@ -1521,13 +1519,13 @@ fn model_object_types(
         let mut composite_supertypes = Vec::with_capacity(declared_supertypes.len());
         for supertype in declared_supertypes {
             match meaning_handles.get(supertype) {
-                Some(general) => composite_supertypes.push(*general),
+                Some(general) => composite_supertypes.push(general.clone()),
                 None => errors.push(broken(&supertype.node)),
             }
         }
         composites.push(
             CompositeDeclaration::new(
-                *handle,
+                handle.clone(),
                 format!("{alias}::{artifact}"),
                 CompositeShape::Record(declared_fields),
             )
@@ -1538,7 +1536,7 @@ fn model_object_types(
         let DomainPackageRecord::TupleValueType(tuple) = record else {
             continue;
         };
-        let Some(handle) = meaning_handles.get(&tuple.key).copied() else {
+        let Some(handle) = meaning_handles.get(&tuple.key).cloned() else {
             errors.push(broken(&tuple.key.node));
             continue;
         };
@@ -1623,7 +1621,7 @@ fn model_object_types(
         if !cases.iter().any(|case| case.payload_type.is_some()) {
             continue;
         }
-        let Some(handle) = meaning_handles.get(&variant_type.key).copied() else {
+        let Some(handle) = meaning_handles.get(&variant_type.key).cloned() else {
             errors.push(broken(&variant_type.key.node));
             continue;
         };
@@ -1694,7 +1692,7 @@ fn model_object_types(
     let mut model_records = record_renames(model, &records, &meaning_handles);
     for (key, handle) in &meaning_handles {
         if matches!(records.get(key), Some(DomainPackageRecord::EventType(_))) {
-            model_records.declare_event(*handle);
+            model_records.declare_event(handle.clone());
         }
     }
     let relationships = relationship_declarations(package, identities, &declarations);
@@ -1752,7 +1750,7 @@ fn relationship_declarations(
     objects: &[ObjectTypeDeclaration],
 ) -> Vec<RelationshipDeclaration> {
     let object = |key: &DeclarationKey| {
-        let identity = *identities.get(key)?;
+        let identity = identities.get(key)?.clone();
         objects
             .iter()
             .any(|declared| declared.key() == identity)
@@ -1805,7 +1803,7 @@ fn record_renames(
             .declarations()
             .iter()
             .filter(|entry| {
-                entry.visible && entry.preimage.owner_effective_type == Some(*effective_type)
+                entry.visible && entry.preimage.owner_effective_type == Some(effective_type.clone())
             })
             .filter_map(|entry| match records.get(&entry.preimage.original) {
                 Some(DomainPackageRecord::FieldMember(field)) => Some(field),
@@ -1867,7 +1865,7 @@ fn record_renames(
                         continue;
                     };
                     if chain.contains(&&inherited.key) && name != own_name {
-                        slots.rename(*handle, *read_at, name, own_name);
+                        slots.rename(handle.clone(), read_at.clone(), name, own_name);
                     }
                 }
             }
@@ -1980,19 +1978,20 @@ fn model_value_type(
             }
         },
         ValueTypeRef::Unit(name) => ValueType::Quantity(
-            *units
+            units
                 .get(name)
-                .ok_or_else(|| Unmapped::QuantityName(name.clone()))?,
+                .ok_or_else(|| Unmapped::QuantityName(name.clone()))?
+                .clone(),
         ),
         ValueTypeRef::Package(key) => match records.get(key) {
             Some(DomainPackageRecord::ObjectType(_)) => {
-                ValueType::Reference(*identities.get(key).ok_or(Unmapped::Broken)?)
+                ValueType::Reference(identities.get(key).ok_or(Unmapped::Broken)?.clone())
             }
             Some(
                 DomainPackageRecord::RecordValueType(_)
                 | DomainPackageRecord::TupleValueType(_)
                 | DomainPackageRecord::EventType(_),
-            ) => ValueType::Composite(*meaning_handles.get(key).ok_or(Unmapped::Broken)?),
+            ) => ValueType::Composite(meaning_handles.get(key).ok_or(Unmapped::Broken)?.clone()),
             Some(DomainPackageRecord::ScalarType(scalar)) => match &scalar.domain {
                 ScalarValueDomain::Integer { lower, upper } => ValueType::Int(
                     IntegerInterval::new(Integer::from(*lower), Integer::from(*upper))
@@ -2008,9 +2007,12 @@ fn model_value_type(
             // composite handle instead.
             Some(DomainPackageRecord::Enum(_)) => match variant_shapes.get(key) {
                 Some(shape) => ValueType::Enum(shape.clone()),
-                None => {
-                    ValueType::Composite(*meaning_handles.get(key).ok_or(Unmapped::Unsupported)?)
-                }
+                None => ValueType::Composite(
+                    meaning_handles
+                        .get(key)
+                        .ok_or(Unmapped::Unsupported)?
+                        .clone(),
+                ),
             },
             Some(_) => return Err(Unmapped::Unsupported),
             None => return Err(Unmapped::Broken),
@@ -2104,7 +2106,7 @@ fn model_field(
     let owner = identities.get(&redefined.owner).ok_or(Unmapped::Broken)?;
     let redefined_name =
         member_identity_name(&redefined.owner.node, &redefined.key.node).ok_or(Unmapped::Broken)?;
-    Ok(declaration.with_redefines(FieldRef::new(*owner, redefined_name)))
+    Ok(declaration.with_redefines(FieldRef::new(owner.clone(), redefined_name)))
 }
 
 /// `operation` as an object type's operation (FR-103): named by its member
@@ -2236,17 +2238,17 @@ fn operation_clause_declarations(
                     _ => None,
                 })
                 .ok_or_else(broken)?;
-            let owner = *identities.get(&operation.owner).ok_or_else(broken)?;
+            let owner = identities.get(&operation.owner).ok_or_else(broken)?.clone();
             let name = member_identity_name(&operation.owner.node, &operation.key.node)
                 .ok_or_else(broken)?;
             let declaration = table
-                .declared_by(owner)
+                .declared_by(owner.clone())
                 .iter()
                 .find(|declared| declared.name() == name)
                 .ok_or_else(broken)?;
             Ok(OperationClauseDeclaration {
                 clause: clause.clone(),
-                context: owner,
+                context: owner.clone(),
                 operation: ClauseOperation {
                     declaring: owner,
                     declaration: declaration.clone(),
@@ -2270,8 +2272,8 @@ fn type_invariant_declarations(
     let identities = model.view.type_identities();
     let roles = model.view.type_clause_roles();
     let slot = |key: &DeclarationKey| match (handles.get(key), identities.get(key)) {
-        (Some(handle), _) => Some(TypeSlot::Composite(*handle)),
-        (None, Some(identity)) => Some(TypeSlot::Object(*identity)),
+        (Some(handle), _) => Some(TypeSlot::Composite(handle.clone())),
+        (None, Some(identity)) => Some(TypeSlot::Object(identity.clone())),
         (None, None) => None,
     };
     model
@@ -2294,7 +2296,7 @@ fn type_invariant_declarations(
                             | DomainPackageRecord::PersistenceInterface(_)
                     )
             });
-            let context = *identities.get(&invariant.owner).ok_or_else(broken)?;
+            let context = identities.get(&invariant.owner).ok_or_else(broken)?.clone();
             if !owner_is_typed {
                 return Err(broken());
             }
@@ -3554,7 +3556,7 @@ impl PackageDeclarations {
                 .types
                 .entry(name.clone())
                 .or_default()
-                .push(ValueType::Reference(*identity));
+                .push(ValueType::Reference(identity.clone()));
         }
         // FR-360 item 4: `M::T` names the variant type `T` as its enum type.
         for declared in &model_variant_types {
@@ -3598,7 +3600,7 @@ impl PackageDeclarations {
                         .types
                         .entry(composite.name.name.clone())
                         .or_default()
-                        .push(ValueType::Composite(handle));
+                        .push(ValueType::Composite(handle.clone()));
                     handles.push(handle);
                 }
                 Err(refusal) => errors.push(AssemblyError {
@@ -3780,7 +3782,7 @@ impl PackageDeclarations {
                 }
             };
             declarations.push(CompositeDeclaration::new(
-                *handle,
+                handle.clone(),
                 composite.name.name.clone(),
                 shape,
             ));
@@ -4014,7 +4016,7 @@ impl PackageDeclarations {
         for equivalence in &equivalences {
             package
                 .nominal_spans
-                .insert(equivalence.key, equivalence.span);
+                .insert(equivalence.key.clone(), equivalence.span);
         }
         package.dimension_equivalences = equivalences;
         package.functions = unit.functions;
@@ -4329,7 +4331,7 @@ fn state_clauses(
                 }
             }
         }
-        let context = object_names.get(&form.context.name).copied();
+        let context = object_names.get(&form.context.name).cloned();
         let Some(context) = context else {
             errors.push(error(
                 AssemblyCause::UnresolvedTypeName {
@@ -4342,7 +4344,7 @@ fn state_clauses(
         let mut operation_key = None;
         let operation = match &form.operation {
             None => None,
-            Some(operation) => match operations.resolve(types, context, &operation.name) {
+            Some(operation) => match operations.resolve(types, context.clone(), &operation.name) {
                 OperationLookup::Declared {
                     declaring,
                     operation: declaration,
@@ -4351,7 +4353,7 @@ fn state_clauses(
                     // clause to the body and the model record.
                     let alias = form.context.name.split("::").next().unwrap_or_default();
                     operation_key =
-                        operation_key_of(selected, alias, declaring, declaration.name());
+                        operation_key_of(selected, alias, declaring.clone(), declaration.name());
                     if operation_key.is_none() {
                         errors.push(error(
                             AssemblyCause::ModelType {
@@ -4398,7 +4400,7 @@ fn state_clauses(
                 form.context.span,
             )
         };
-        let context_population = match population_of(models, context, types) {
+        let context_population = match population_of(models, context.clone(), types) {
             Ok(domain) => domain,
             Err(populations) => {
                 errors.push(ambiguous(populations));
@@ -4410,8 +4412,8 @@ fn state_clauses(
         // type (an inherited operation) needs its own resolution.
         let frame_population = match &operation {
             None => None,
-            Some(operation) if operation.declaring == context => context_population,
-            Some(operation) => match population_of(models, operation.declaring, types) {
+            Some(operation) if operation.declaring == context => context_population.clone(),
+            Some(operation) => match population_of(models, operation.declaring.clone(), types) {
                 Ok(domain) => domain,
                 Err(populations) => {
                     errors.push(ambiguous(populations));
@@ -4638,7 +4640,7 @@ fn state_graph_claims(
                     ));
                     continue;
                 };
-                let Some(context) = object_names.get(&name.name).copied() else {
+                let Some(context) = object_names.get(&name.name).cloned() else {
                     errors.push(error(
                         AssemblyCause::UnresolvedTypeName {
                             name: name.name.clone(),
@@ -4647,7 +4649,7 @@ fn state_graph_claims(
                     ));
                     continue;
                 };
-                let context_population = match population_of(models, context, types) {
+                let context_population = match population_of(models, context.clone(), types) {
                     Ok(domain) => domain,
                     Err(populations) => {
                         errors.push(error(
@@ -4756,8 +4758,8 @@ fn terminal_declarations(
                     errors.push(error(cause, form.model.span));
                     continue;
                 };
-                let context = *context;
-                let population = match population_of(models, context, types) {
+                let context = context.clone();
+                let population = match population_of(models, context.clone(), types) {
                     Ok(domain) => domain,
                     Err(populations) => {
                         errors.push(error(
@@ -5033,40 +5035,42 @@ fn operation_bodies(
             continue;
         };
         let context_name = format!("{}::{}", model.name, object.name);
-        let Some(context) = object_names.get(&context_name).copied() else {
+        let Some(context) = object_names.get(&context_name).cloned() else {
             errors.push(error(
                 AssemblyCause::UnresolvedTypeName { name: context_name },
                 form.target_span,
             ));
             continue;
         };
-        let (declaring, declaration) = match operations.resolve(types, context, &member.name) {
-            OperationLookup::Declared {
-                declaring,
-                operation,
-            } => (declaring, operation),
-            OperationLookup::Missing => {
-                errors.push(error(
-                    AssemblyCause::UnresolvedOperation {
-                        context: context_name,
-                        operation: member.name.clone(),
-                    },
-                    member.span,
-                ));
-                continue;
-            }
-            OperationLookup::Ambiguous(_) => {
-                errors.push(error(
-                    AssemblyCause::AmbiguousOperation {
-                        context: context_name,
-                        operation: member.name.clone(),
-                    },
-                    member.span,
-                ));
-                continue;
-            }
-        };
-        let Some(key) = operation_key_of(selected, &model.name, declaring, declaration.name())
+        let (declaring, declaration) =
+            match operations.resolve(types, context.clone(), &member.name) {
+                OperationLookup::Declared {
+                    declaring,
+                    operation,
+                } => (declaring, operation),
+                OperationLookup::Missing => {
+                    errors.push(error(
+                        AssemblyCause::UnresolvedOperation {
+                            context: context_name,
+                            operation: member.name.clone(),
+                        },
+                        member.span,
+                    ));
+                    continue;
+                }
+                OperationLookup::Ambiguous(_) => {
+                    errors.push(error(
+                        AssemblyCause::AmbiguousOperation {
+                            context: context_name,
+                            operation: member.name.clone(),
+                        },
+                        member.span,
+                    ));
+                    continue;
+                }
+            };
+        let Some(key) =
+            operation_key_of(selected, &model.name, declaring.clone(), declaration.name())
         else {
             errors.push(error(
                 AssemblyCause::ModelType {
@@ -5141,7 +5145,7 @@ fn protocol_attempts(
         let mut attempts = Vec::with_capacity(protocol.attempts.len());
         for attempt in &protocol.attempts {
             let error = |cause, span| AssemblyError { cause, span };
-            let context = object_names.get(&attempt.context.name).copied();
+            let context = object_names.get(&attempt.context.name).cloned();
             let Some(context) = context else {
                 errors.push(error(
                     AssemblyCause::UnresolvedTypeName {
@@ -5151,36 +5155,37 @@ fn protocol_attempts(
                 ));
                 continue;
             };
-            let operation = match operations.resolve(types, context, &attempt.operation.name) {
-                OperationLookup::Declared {
-                    declaring,
-                    operation,
-                } => ClauseOperation {
-                    declaring,
-                    declaration: operation.clone(),
-                },
-                OperationLookup::Missing => {
-                    errors.push(error(
-                        AssemblyCause::UnresolvedOperation {
-                            context: attempt.context.name.clone(),
-                            operation: attempt.operation.name.clone(),
-                        },
-                        attempt.operation.span,
-                    ));
-                    continue;
-                }
-                OperationLookup::Ambiguous(_) => {
-                    errors.push(error(
-                        AssemblyCause::AmbiguousOperation {
-                            context: attempt.context.name.clone(),
-                            operation: attempt.operation.name.clone(),
-                        },
-                        attempt.operation.span,
-                    ));
-                    continue;
-                }
-            };
-            let frame_population = match population_of(models, operation.declaring, types) {
+            let operation =
+                match operations.resolve(types, context.clone(), &attempt.operation.name) {
+                    OperationLookup::Declared {
+                        declaring,
+                        operation,
+                    } => ClauseOperation {
+                        declaring,
+                        declaration: operation.clone(),
+                    },
+                    OperationLookup::Missing => {
+                        errors.push(error(
+                            AssemblyCause::UnresolvedOperation {
+                                context: attempt.context.name.clone(),
+                                operation: attempt.operation.name.clone(),
+                            },
+                            attempt.operation.span,
+                        ));
+                        continue;
+                    }
+                    OperationLookup::Ambiguous(_) => {
+                        errors.push(error(
+                            AssemblyCause::AmbiguousOperation {
+                                context: attempt.context.name.clone(),
+                                operation: attempt.operation.name.clone(),
+                            },
+                            attempt.operation.span,
+                        ));
+                        continue;
+                    }
+                };
+            let frame_population = match population_of(models, operation.declaring.clone(), types) {
                 Ok(domain) => domain,
                 Err(populations) => {
                     errors.push(error(

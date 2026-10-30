@@ -112,7 +112,7 @@ impl EquivalenceClasses {
         let pairs: Vec<_> = equivalences
             .iter()
             .map(|equivalence| {
-                let [first, second] = equivalence.dimensions;
+                let [first, second] = equivalence.dimensions.clone();
                 (first, second, equivalence.root_scale.clone())
             })
             .collect();
@@ -138,11 +138,14 @@ fn sizes(pairs: &[(NodeKey, NodeKey, Rational)]) -> BTreeMap<NodeKey, (NodeKey, 
     let mut adjacent: BTreeMap<NodeKey, Vec<(NodeKey, Rational)>> = BTreeMap::new();
     for (first, second, ratio) in pairs {
         adjacent
-            .entry(*first)
+            .entry(first.clone())
             .or_default()
-            .push((*second, ratio.clone()));
+            .push((second.clone(), ratio.clone()));
         if let Some(inverse) = Rational::from_integer(Integer::one()).div(ratio) {
-            adjacent.entry(*second).or_default().push((*first, inverse));
+            adjacent
+                .entry(second.clone())
+                .or_default()
+                .push((first.clone(), inverse));
         }
     }
     let mut members = BTreeMap::new();
@@ -151,8 +154,11 @@ fn sizes(pairs: &[(NodeKey, NodeKey, Rational)]) -> BTreeMap<NodeKey, (NodeKey, 
         if members.contains_key(root) {
             continue;
         }
-        members.insert(*root, (*root, Rational::from_integer(Integer::one())));
-        let mut pending = VecDeque::from([*root]);
+        members.insert(
+            root.clone(),
+            (root.clone(), Rational::from_integer(Integer::one())),
+        );
+        let mut pending = VecDeque::from([root.clone()]);
         while let Some(node) = pending.pop_front() {
             let Some((_, size)) = members.get(&node).cloned() else {
                 continue;
@@ -164,8 +170,8 @@ fn sizes(pairs: &[(NodeKey, NodeKey, Rational)]) -> BTreeMap<NodeKey, (NodeKey, 
                 // root(node) = ratio × root(next), so root(next) is
                 // size / ratio class roots.
                 if let Some(next_size) = size.div(ratio) {
-                    members.insert(*next, (*root, next_size));
-                    pending.push_back(*next);
+                    members.insert(next.clone(), (root.clone(), next_size));
+                    pending.push_back(next.clone());
                 }
             }
         }
@@ -197,7 +203,7 @@ impl Dimension {
     fn retained(&self) -> EquivalenceRetained {
         EquivalenceRetained::Dimension {
             name: self.label.clone(),
-            key: self.key,
+            key: self.key.clone(),
         }
     }
 }
@@ -234,8 +240,8 @@ impl SourceView<'_> {
                     return Some(Dimension {
                         id,
                         label: name.to_owned(),
-                        key: Some(*key),
-                        map: Some(BTreeMap::from([(*key, Integer::one())])),
+                        key: Some(key.clone()),
+                        map: Some(BTreeMap::from([(key.clone(), Integer::one())])),
                         base: true,
                     });
                 }
@@ -253,7 +259,7 @@ impl SourceView<'_> {
                 Some(Dimension {
                     id,
                     label: name.to_owned(),
-                    key: Some(*key),
+                    key: Some(key.clone()),
                     map: Some(map.clone()),
                     base,
                 })
@@ -364,7 +370,10 @@ impl Resolved<'_> {
     /// The two dimensions' keys, both fixed for a base pair and after the
     /// last turn.
     fn keys(&self) -> Option<[NodeKey; 2]> {
-        Some([self.dimensions[0].key?, self.dimensions[1].key?])
+        Some([
+            self.dimensions[0].key.clone()?,
+            self.dimensions[1].key.clone()?,
+        ])
     }
 }
 
@@ -573,7 +582,7 @@ pub(super) fn assemble(
         let mut map: BTreeMap<NodeKey, Integer> = BTreeMap::new();
         let mut size = Rational::from_integer(Integer::one());
         for (base, exponent) in dimension.map.as_ref()? {
-            let (representative, ratio) = class_of(*base);
+            let (representative, ratio) = class_of(base.clone());
             let entry = map.entry(representative).or_insert_with(Integer::zero);
             *entry = entry.add(exponent);
             size = size.mul(&ratio.pow(exponent)?);
@@ -764,7 +773,7 @@ fn path(
 ) -> Option<(Rational, Vec<usize>)> {
     let one = Rational::from_integer(Integer::one());
     let mut reached: BTreeMap<NodeKey, (Rational, Vec<usize>)> =
-        BTreeMap::from([(from, (one, Vec::new()))]);
+        BTreeMap::from([(from.clone(), (one, Vec::new()))]);
     let mut pending = VecDeque::from([from]);
     while let Some(node) = pending.pop_front() {
         let Some((size, via)) = reached.get(&node).cloned() else {
@@ -790,7 +799,7 @@ fn path(
             }
             let mut next_via = via.clone();
             next_via.push(index);
-            reached.insert(next, (next_size, next_via));
+            reached.insert(next.clone(), (next_size, next_via));
             pending.push_back(next);
         }
     }

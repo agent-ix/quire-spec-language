@@ -208,7 +208,7 @@ fn a_state_machine_meaning_is_emitted_as_an_object_type() {
         .expect("normalization indexed the state-machine identity");
     assert_eq!(
         operations
-            .declared_by(*identity)
+            .declared_by(identity.clone())
             .iter()
             .map(|operation| operation.name())
             .collect::<Vec<_>>(),
@@ -582,7 +582,10 @@ fn records_and_tuples_are_keyed_over_the_units_owner() {
             .resolved_signatures
             .get(0)
             .expect("px's resolved signature");
-        assert_eq!(parameters, &[("p".to_owned(), ValueType::Composite(point))]);
+        assert_eq!(
+            parameters,
+            &[("p".to_owned(), ValueType::Composite(point.clone()))]
+        );
         let graph = package
             .check(CheckingLimits::default())
             .expect("the package checks");
@@ -2057,8 +2060,13 @@ fn the_preimage_constructors_apply_the_reader_checks() {
     ] {
         assert!(refused.is_err());
     }
-    let key = quire_exact::NodeKey::from_digest([7; 32]);
-    assert!(EnumMemberPreimage::new(key, "A").is_ok());
+    let key = quire_exact::NodeKey::new(
+        "test",
+        vec![quire_exact::PathSegment::Text("enum".to_owned())],
+        0,
+    )
+    .expect("fixture node key");
+    assert!(EnumMemberPreimage::new(key.clone(), "A").is_ok());
     assert!(EnumMemberPreimage::new(key, "not an identifier").is_err());
 }
 
@@ -2141,7 +2149,7 @@ fn dimensions_and_units_are_admitted_with_the_vector_keys() {
             .nominal_spans
             .keys()
             .find(|key| key.to_string() == hex)
-            .copied()
+            .cloned()
             .unwrap_or_else(|| panic!("nominal_spans holds {hex}"));
         graph
             .dimension(key)
@@ -2428,7 +2436,7 @@ fn a_quantity_type_form_resolves_to_its_unit_and_refuses_a_non_unit_name() {
         .get(0)
         .expect("f's resolved signature");
     let ms = match parameters.as_slice() {
-        [(name, ValueType::Quantity(unit))] if name == "d" => *unit,
+        [(name, ValueType::Quantity(unit))] if name == "d" => unit.clone(),
         other => panic!("d is a quantity: {other:?}"),
     };
     let declared = package
@@ -2801,9 +2809,12 @@ fn the_dimension_and_unit_causes_have_their_catalog_codes() {
 }
 
 fn composite_node(label: &str) -> quire_exact::NodeKey {
-    let mut digest = [0; 32];
-    digest[..label.len()].copy_from_slice(label.as_bytes());
-    quire_exact::NodeKey::from_digest(digest)
+    quire_exact::NodeKey::new(
+        "test",
+        vec![quire_exact::PathSegment::Text(label.to_owned())],
+        0,
+    )
+    .expect("fixture node key")
 }
 
 fn empty_record(
@@ -2925,7 +2936,12 @@ fn a_child_of_a_refused_composite_parent_is_a_consequence() {
 #[test]
 fn relaxing_a_widening_leaves_a_sibling_redefinition_alone() {
     use quire_semantic_value::declaration::{FieldDeclaration, FieldRef, ObjectTypeDeclaration};
-    let id = |byte: u8| EffectiveId::from_digest([byte; 32]);
+    let id = |byte: u8| {
+        EffectiveId::new(
+            None,
+            quire_exact::OriginalDeclarationKey::new("test", byte.to_string()),
+        )
+    };
     let (a, b) = (id(1), id(2));
     let int = |upper: i64| {
         ValueType::Int(
@@ -2937,7 +2953,7 @@ fn relaxing_a_widening_leaves_a_sibling_redefinition_alone() {
         )
     };
     let parent = ObjectTypeDeclaration::new(
-        a,
+        a.clone(),
         "M::A",
         vec![
             FieldDeclaration::new("x", int(5), Presence::Required),
@@ -2945,16 +2961,16 @@ fn relaxing_a_widening_leaves_a_sibling_redefinition_alone() {
         ],
     );
     let child = ObjectTypeDeclaration::new(
-        b,
+        b.clone(),
         "M::B",
         vec![
             FieldDeclaration::new("x", int(7), Presence::Required)
-                .with_redefines(FieldRef::new(a, "x")),
+                .with_redefines(FieldRef::new(a.clone(), "x")),
             FieldDeclaration::new("y", int(3), Presence::Required)
-                .with_redefines(FieldRef::new(a, "y")),
+                .with_redefines(FieldRef::new(a.clone(), "y")),
         ],
     )
-    .with_supertypes(vec![a]);
+    .with_supertypes(vec![a.clone()]);
     let mut types = vec![parent, child];
     assert!(super::relax_widening(
         &mut types,
@@ -2995,12 +3011,7 @@ fn members_of(
     };
     members
         .iter()
-        .map(|member| {
-            (
-                member.identifier().as_str().to_owned(),
-                member.positions().to_vec(),
-            )
-        })
+        .map(|member| (member.identifier().to_owned(), member.positions().to_vec()))
         .collect()
 }
 
