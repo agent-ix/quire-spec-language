@@ -1201,6 +1201,44 @@ fn admitted_fixture(
     read.into_value().admitted
 }
 
+/// The typed graph nodes and source map of a read package.
+pub(crate) type FixtureGraph = (
+    Vec<quire_contract_model::CheckedSemanticNodeV2>,
+    Vec<quire_contract_model::CheckedSourceMapEntry>,
+);
+
+/// IR's whole read of the published fixture `fixture` (a path relative to
+/// QSpec's `proposals/checked-package-v2`) after the optional JSON `patch`:
+/// the typed graph nodes and source map it admits, or the refusal code and
+/// the primary locus pointer. Tests read typed nodes this way:
+/// `CheckedTerm` has no serde decoder.
+pub(crate) fn read_fixture_graph(
+    fixture: &str,
+    patch: Option<&Value>,
+) -> Result<FixtureGraph, (CheckedPackageRefusalCode, Option<String>)> {
+    let directory = qspec_directory().expect("QSPEC_DIR supplies owner fixtures");
+    let mut envelope = read_fixture(&directory.join("proposals/checked-package-v2").join(fixture));
+    if let Some(patch) = patch {
+        apply_json_patch(&mut envelope, patch);
+    }
+    match read_fixture_wire(fixture, &envelope).1 {
+        Read::Verified { .. } => {
+            let package = admitted_fixture(fixture, &envelope);
+            Ok((package.graph().nodes.clone(), package.source_map().to_vec()))
+        }
+        Read::Refused(V2ReadRefusal::Envelope { refusal, .. }) => {
+            Err((refusal.code, locus_pointer(&refusal)))
+        }
+        other => panic!("{fixture}: unexpected outcome {other:?}"),
+    }
+}
+
+/// [`read_fixture_graph`] of a fixture the reader admits.
+pub(crate) fn admitted_fixture_graph(fixture: &str, patch: Option<&Value>) -> FixtureGraph {
+    read_fixture_graph(fixture, patch)
+        .unwrap_or_else(|refusal| panic!("{fixture} is admitted: {refusal:?}"))
+}
+
 /// ADR-013 C-14 over QSpec's published positive `quire.checked-package/v2`
 /// fixtures, read at run time from
 /// `the QSpec checkout/proposals/checked-package-v2/fixtures/positive-*.json`: QSL's

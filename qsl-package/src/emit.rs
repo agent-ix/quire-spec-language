@@ -273,8 +273,8 @@ pub enum OmissionCause {
     NamesOmittedNode(CheckedNodeId),
 }
 
-/// The typed timed graph the last emission on this thread built, for tests:
-/// IR's typed bodies cannot be decoded from JSON outside its reader.
+// The typed timed graph the last emission on this thread built, for tests:
+// IR's typed bodies cannot be decoded from JSON outside its reader.
 #[cfg(test)]
 thread_local! {
     pub(crate) static TIMED_GRAPH: std::cell::RefCell<

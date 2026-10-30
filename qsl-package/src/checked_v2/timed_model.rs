@@ -1305,25 +1305,15 @@ mod intake_proofs {
     use super::*;
 
     fn fixture_node(form: &str) -> CheckedSemanticNodeV2 {
-        let directory = std::env::var_os("QSPEC_DIR").expect("QSPEC_DIR supplies owner fixtures");
         let fixture = if form == "time_source" {
-            "positive-tick-timed-model-nodes.json"
+            "fixtures/positive-tick-timed-model-nodes.json"
         } else {
-            "positive-timed-model-nodes.json"
+            "fixtures/positive-timed-model-nodes.json"
         };
-        let path = std::path::Path::new(&directory)
-            .join("proposals/checked-package-v2/fixtures")
-            .join(fixture);
-        let bytes = std::fs::read(path).expect("the published timed-model fixture is readable");
-        let package: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-        let node = package["semantic_graph"]["nodes"]
-            .as_array()
+        fixture_nodes(fixture)
+            .into_iter()
+            .find(|node| node.semantic_form.as_ref() == form)
             .unwrap()
-            .iter()
-            .find(|node| node["semantic_form"] == form)
-            .unwrap()
-            .clone();
-        serde_json::from_value(node).unwrap()
     }
 
     fn replace_binding(body: &mut CheckedTerm, name: &str, replacement: CheckedTerm) {
@@ -1343,15 +1333,9 @@ mod intake_proofs {
         **value = replacement;
     }
 
-    /// The graph nodes of the published fixture `name`.
-    fn fixture_nodes(name: &str) -> Vec<CheckedSemanticNodeV2> {
-        let directory = std::env::var_os("QSPEC_DIR").expect("QSPEC_DIR supplies owner fixtures");
-        let path = std::path::Path::new(&directory)
-            .join("proposals/checked-package-v2/fixtures")
-            .join(name);
-        let bytes = std::fs::read(path).expect("the published fixture is readable");
-        let package: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-        serde_json::from_value(package["semantic_graph"]["nodes"].clone()).unwrap()
+    /// The admitted graph nodes of the published fixture `fixture`.
+    fn fixture_nodes(fixture: &str) -> Vec<CheckedSemanticNodeV2> {
+        crate::checked_v2::tests::admitted_fixture_graph(fixture, None).0
     }
 
     /// QSpec FR-322-AC-261, FR-322-AC-266 (TC-367 CK-32): the clause
@@ -1361,7 +1345,7 @@ mod intake_proofs {
     #[ix_trace_rs::trace("QSpec-FR-322-AC-261", "QSpec-FR-322-AC-266")]
     #[test]
     fn clause_intake_is_total_and_round_trips_the_clause_fixture() {
-        let nodes = fixture_nodes("positive-timed-clause-nodes.json");
+        let nodes = fixture_nodes("fixtures/positive-timed-clause-nodes.json");
         let models = CheckedTimedModel::from_nodes(&nodes).expect("the clause fixture projects");
         let [model] = models.as_slice() else {
             panic!("one timed model");
@@ -1509,10 +1493,12 @@ mod intake_proofs {
         let text_type = literal_type(binding(&source.body, "kind").unwrap()).unwrap();
         let text = |value: &str| CheckedTerm::literal_text(text_type.clone(), value);
         let integer = |value| CheckedTerm::literal_integer(text_type.clone(), value);
-        let integer_type = || checked_id(
-            qsl_semantics::check::builtin_integer_type_key(&source.node_id.package)
-                .expect("the built-in integer key"),
-        );
+        let integer_type = || {
+            checked_id(
+                qsl_semantics::check::builtin_integer_type_key(&source.node_id.package)
+                    .expect("the built-in integer key"),
+            )
+        };
         let step = |kind: &str, name: &str, value| {
             CheckedTerm::aggregate(vec![
                 CheckedTerm::binding("kind", text(kind)),

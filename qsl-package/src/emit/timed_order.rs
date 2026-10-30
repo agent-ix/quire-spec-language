@@ -605,30 +605,45 @@ mod tests {
         .expect("published JSON")
     }
 
-    fn graph(package: &Value) -> (Vec<CheckedSemanticNodeV2>, Vec<CheckedSourceMapEntry>) {
-        (
-            serde_json::from_value(package["semantic_graph"]["nodes"].clone()).expect("nodes"),
-            serde_json::from_value(package["source_map"].clone()).expect("source map"),
-        )
+    fn graph(
+        fixture: &str,
+        patch: Option<&Value>,
+    ) -> (Vec<CheckedSemanticNodeV2>, Vec<CheckedSourceMapEntry>) {
+        crate::checked_v2::tests::admitted_fixture_graph(fixture, patch)
     }
 
-    /// Replay each case of `cases` on its fixture and compare the first
-    /// member out of declared order with the case's locus.
-    fn replay(directory: &std::path::Path, cases: &[Value], selected: impl Fn(&Value) -> bool) {
+    /// Replay each case of `cases` on its fixture. IR's reader enforces
+    /// declared order: an ordered case is admitted and its typed graph is in
+    /// order; a refused case is refused `invalid_semantic_graph` at the
+    /// case's locus.
+    fn replay(cases: &[Value], selected: impl Fn(&Value) -> bool) {
         let mut replayed = 0;
         for case in cases.iter().filter(|case| selected(case)) {
             let id = &case["id"];
-            let mut package = read(&directory.join(case["fixture"].as_str().expect("a fixture")));
-            if let Some(patch) = case.get("patch") {
-                crate::checked_v2::tests::apply_json_patch(&mut package, patch);
-            }
-            let (nodes, source_map) = graph(&package);
-            let found = first_out_of_order(&nodes, &source_map)
-                .unwrap_or_else(|fault| panic!("{id}: {fault}"));
-            let expected = case["locus"].as_str().map(str::to_owned);
-            match case["expected"].as_str() {
-                Some("admitted") => assert_eq!(found, None, "{id} is in declared order"),
-                _ => assert_eq!(found, expected, "{id} refuses at its locus"),
+            let outcome = crate::checked_v2::tests::read_fixture_graph(
+                case["fixture"].as_str().expect("a fixture"),
+                case.get("patch"),
+            );
+            match (case["expected"].as_str(), outcome) {
+                (Some("admitted"), Ok((nodes, source_map))) => {
+                    let found = first_out_of_order(&nodes, &source_map)
+                        .unwrap_or_else(|fault| panic!("{id}: {fault}"));
+                    assert_eq!(found, None, "{id} is in declared order");
+                }
+                (Some("admitted"), Err(refusal)) => panic!("{id} is admitted: {refusal:?}"),
+                (_, Err((code, locus))) => {
+                    assert_eq!(
+                        code,
+                        quire_contract_model::CheckedPackageRefusalCode::InvalidSemanticGraph,
+                        "{id}"
+                    );
+                    assert_eq!(
+                        locus.as_deref(),
+                        case["locus"].as_str(),
+                        "{id} refuses at its locus"
+                    );
+                }
+                (_, Ok(_)) => panic!("{id} is refused"),
             }
             replayed += 1;
         }
@@ -647,7 +662,7 @@ mod tests {
         let cases = vectors["aggregate_order"]["cases"]
             .as_array()
             .expect("AO cases");
-        replay(&directory, cases, |_| true);
+        replay(cases, |_| true);
     }
 
     /// QSpec FR-322-AC-265 (TC-367 CK-36): the clause vectors' order cases
@@ -660,7 +675,7 @@ mod tests {
         let directory = proposals();
         let vectors = read(&directory.join("timed-clause-node-vectors.json"));
         let cases = vectors["cases"].as_array().expect("CL cases");
-        replay(&directory, cases, |case| {
+        replay(cases, |case| {
             case["expected"] == "admitted" || case["expected_code"] == "invalid_semantic_graph"
         });
     }
@@ -672,13 +687,11 @@ mod tests {
     #[trace("QSpec-FR-322-AC-260", "QSpec-FR-322-AC-265")]
     #[test]
     fn the_producer_writes_the_declared_order() {
-        let directory = proposals();
         for fixture in [
             "fixtures/positive-timed-clause-nodes.json",
             "fixtures/positive-timed-slot-nodes.json",
         ] {
-            let package = read(&directory.join(fixture));
-            let (published, source_map) = graph(&package);
+            let (published, source_map) = graph(fixture, None);
             let mut nodes = published.clone();
             for (index, pointer, first, _) in aggregates(&published) {
                 let list = aggregate_at(&mut nodes[index].body, &pointer).expect("an aggregate");
