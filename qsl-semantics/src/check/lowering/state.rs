@@ -319,14 +319,14 @@ impl Lowering<'_> {
             );
             scope.push(Binder {
                 slot: level,
-                parameter: key,
-                semantic_type: type_key,
+                parameter: key.into(),
+                semantic_type: type_key.into(),
             });
         }
         let parameters: Vec<NodeKey> = scope
             .iter()
-            .map(|binder| binder.parameter.clone())
-            .collect();
+            .map(|binder| super::require_admitted(binder.parameter.clone(), location))
+            .collect::<Result<_, _>>()?;
         let mut binders = Binders::new(clause.body_slots, &scope);
         let condition = self.expression(clause.body, &mut binders)?;
         let boolean = self.type_node(&ValueType::Boolean, location)?;

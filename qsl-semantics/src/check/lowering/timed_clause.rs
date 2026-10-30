@@ -400,8 +400,8 @@ impl Lowering<'_> {
             let parameter = self.parameter(name, slot, semantic_type.clone(), site)?;
             scope.push(Binder {
                 slot,
-                parameter,
-                semantic_type,
+                parameter: parameter.into(),
+                semantic_type: semantic_type.into(),
             });
         }
         let mut binders = Binders::new(predicate.slot_names(), &scope);

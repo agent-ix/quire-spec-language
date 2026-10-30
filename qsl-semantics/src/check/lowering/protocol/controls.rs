@@ -271,10 +271,16 @@ impl Lowering<'_> {
             controls
                 .own
                 .get(&node)
-                .map(|binder| {
-                    MemberTerm::bound("binder", LeafTerm::reference(binder.parameter.clone()))
-                })
                 .ok_or_else(unchecked)
+                .and_then(|binder| {
+                    Ok(MemberTerm::bound(
+                        "binder",
+                        LeafTerm::reference(super::super::require_admitted(
+                            binder.parameter.clone(),
+                            location,
+                        )?),
+                    ))
+                })
         };
         let role = |name: Option<&str>| {
             let name = name.ok_or_else(unchecked)?;
@@ -562,7 +568,10 @@ impl Lowering<'_> {
                     .find(|join| join.node == control.node)
                     .and_then(|join| self.functions.get(join.function).cloned().flatten())
                     .ok_or_else(unchecked)?;
-                join.push(member("predicate", LeafTerm::reference(function)));
+                join.push(member(
+                    "predicate",
+                    LeafTerm::reference(super::super::require_admitted(function, location)?),
+                ));
             }
         }
         let mut joined: Vec<&str> = form

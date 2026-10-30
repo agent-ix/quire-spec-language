@@ -237,8 +237,8 @@ impl Lowering<'_> {
                 .ok_or_else(|| stage_fault(&claim, "step-relation-parameter-has-type"))?;
             binders_scope.push(Binder {
                 slot,
-                parameter,
-                semantic_type,
+                parameter: parameter.into(),
+                semantic_type: semantic_type.into(),
             });
         }
         let body_slot_names: Vec<String> = relation
@@ -309,8 +309,8 @@ impl Lowering<'_> {
             self.record(semantic_type.clone(), OccurrenceRole::Type, site);
             scope.push(Binder {
                 slot: level,
-                parameter: node,
-                semantic_type,
+                parameter: node.into(),
+                semantic_type: semantic_type.into(),
             });
         }
         let over = scope
@@ -363,7 +363,7 @@ impl Lowering<'_> {
                 },
                 boolean.clone(),
                 vec![
-                    MemberTerm::reference(over),
+                    MemberTerm::reference(super::require_admitted(over, &wrapper_at)?),
                     MemberTerm::Leaf(clock),
                     MemberTerm::Group(GroupTerm::new(vec![GroupMember::Binding(Binding::new(
                         "kind", kind,
@@ -542,8 +542,8 @@ impl Lowering<'_> {
                 self.record(semantic_type.clone(), OccurrenceRole::Type, slot_at);
                 scope.push(Binder {
                     slot: level,
-                    parameter,
-                    semantic_type,
+                    parameter: parameter.into(),
+                    semantic_type: semantic_type.into(),
                 });
             }
             let mut binders = Binders::new(&lowered.slot_names, &scope);
@@ -649,26 +649,16 @@ pub(crate) fn finish_step_relation(
             })?,
         ));
     }
-    let declaration_path = lowered.declaration.as_str().to_owned();
     let content = super::NodeContent {
         owner_model: None,
         node_tag: NodeTag::Claim,
         semantic_form: "step_relation",
-        semantic_type: Some(lowered.boolean),
+        semantic_type: Some(lowered.boolean.into()),
         declaration: Some(vec![lowered.declaration]),
         owner: Some(super::Owner::Source(lowered.owner)),
         body: lowered.body,
     };
-    let key = crate::check::declared_node_key(package_name.to_owned(), vec![declaration_path], 0)
-        .map_err(|cause| match cause {
-        quire_exact::InvalidNodeKey::Allocation { requested } => super::refuse(
-            &lowered.location,
-            crate::check::refusal::CheckCause::Identity(
-                quire_semantic_value::semantic_node::IdentityRefusal::Allocation { requested },
-            ),
-        ),
-        _ => stage_fault(&lowered.location, "step-relation-declaration-key-valid"),
-    })?;
+    let key = super::admitted_step_relation_key(package_name, &content, &lowered.location)?;
     Ok((
         super::SemanticNode {
             key,
