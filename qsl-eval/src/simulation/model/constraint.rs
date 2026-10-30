@@ -54,7 +54,10 @@ impl ModelSystem<'_> {
         let mut boundary = false;
         for row in order {
             let reference = &walk.rows[row].reference;
-            if !self.types.conforms(reference.object_type(), clause.context) {
+            if !self
+                .types
+                .conforms(reference.object_type().clone(), clause.context.clone())
+            {
                 continue;
             }
             let observations = invariant_observations(&walk, clause, row);

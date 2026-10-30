@@ -86,7 +86,7 @@ pub(super) struct Row {
 impl Row {
     /// The object's most-specific type.
     pub(super) fn type_id(&self) -> EffectiveId {
-        self.reference.object_type()
+        self.reference.object_type().clone()
     }
 }
 
@@ -129,9 +129,9 @@ impl Walk<'_, '_> {
     ) -> Selected<'c> {
         let clauses = &self.system.clauses;
         let pick = |group: &'c [ClauseInfo]| {
-            self.applicable(group, row, application.declaring, &application.name)
+            self.applicable(group, row, application.declaring.clone(), &application.name)
                 .into_iter()
-                .filter(|clause| select(clause.identity))
+                .filter(|clause| select(clause.identity.clone()))
                 .collect()
         };
         Selected {
@@ -158,7 +158,10 @@ impl Walk<'_, '_> {
                     .operation
                     .as_ref()
                     .is_some_and(|(owner, operation)| *owner == declaring && operation == name)
-                    && self.system.types.conforms(row.type_id(), clause.context)
+                    && self
+                        .system
+                        .types
+                        .conforms(row.type_id(), clause.context.clone())
             })
             .collect()
     }

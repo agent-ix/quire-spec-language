@@ -1043,7 +1043,11 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         self.scope_writes(&mut built, instance, ordinal)?;
         if let (StepKind::Retire, Some(role)) = (step.kind(), self.program.replicated.get(index)) {
             if let super::program::Lifetime::Until(predicate) = role.lifetime {
-                let object = self.program.replicated.get(index).map(|role| role.object);
+                let object = self
+                    .program
+                    .replicated
+                    .get(index)
+                    .map(|role| role.object.clone());
                 let mut parameters =
                     self.slot_parameters(&[Some(0), self.program.activation_slot])?;
                 parameters.push((

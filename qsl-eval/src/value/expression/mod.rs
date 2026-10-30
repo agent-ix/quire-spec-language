@@ -499,7 +499,7 @@ pub fn admit_arguments(
             (value_type, argument)
         {
             let resolved = objects
-                .resolve_population(*population_id)
+                .resolve_population(population_id.clone())
                 .is_some_and(|binding| binding.declared_maximum() == *maximum);
             if !resolved {
                 return Err(InputRefusal::WrongValueKind { parameter }.into());
@@ -1084,9 +1084,12 @@ fn resolve_quantifier<'g>(
 )> {
     use qsl_semantics::check::{NodeKind, Visit};
     let key = quantifier.node();
-    let location = graph.occurrence(key, quantifier.origin())?;
+    let location = graph.occurrence(key.clone(), quantifier.origin())?;
     let applies_quantify = matches!(
-        graph.semantic_graph().node(key).map(|node| node.body()),
+        graph
+            .semantic_graph()
+            .node(key.clone())
+            .map(|node| node.body()),
         Some(qsl_semantics::check::BodyTerm::Application(
             qsl_semantics::check::ApplicationTerm {
                 operator: qsl_semantics::check::Operator::Quantify,
@@ -1222,6 +1225,7 @@ impl CheckedPackageEvaluation for CheckedPackage {
             .map(|(index, source)| {
                 source
                     .node
+                    .clone()
                     .map(|node| (index, source, node))
                     .ok_or_else(|| {
                         CallFailure::Fault(InternalFault::new(
@@ -1237,9 +1241,9 @@ impl CheckedPackageEvaluation for CheckedPackage {
                 selected
                     .frame
                     .iter()
-                    .find(|source| source.node == Some(*key))
+                    .find(|source| source.node == Some(key.clone()))
                     .map_or(usize::MAX, |source| source.level),
-                *key,
+                key.clone(),
             )
         });
         for (position, (key, _)) in supplied.iter().enumerate() {
@@ -1247,7 +1251,7 @@ impl CheckedPackageEvaluation for CheckedPackage {
                 return Err(protocol_slot::resolve::refused(
                     "invalid_runtime_input",
                     "duplicate-member",
-                    CallAdmissionLocus::Binder(*key),
+                    CallAdmissionLocus::Binder(key.clone()),
                 ));
             }
         }
@@ -1256,7 +1260,7 @@ impl CheckedPackageEvaluation for CheckedPackage {
                 return Err(protocol_slot::resolve::refused(
                     "invalid_runtime_input",
                     "unknown-member",
-                    CallAdmissionLocus::Binder(*key),
+                    CallAdmissionLocus::Binder(key.clone()),
                 ));
             }
         }
@@ -1265,7 +1269,7 @@ impl CheckedPackageEvaluation for CheckedPackage {
                 return Err(protocol_slot::resolve::refused(
                     "invalid_runtime_input",
                     "missing-member",
-                    CallAdmissionLocus::Binder(*key),
+                    CallAdmissionLocus::Binder(key.clone()),
                 ));
             }
         }

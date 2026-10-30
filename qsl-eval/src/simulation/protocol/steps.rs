@@ -1188,9 +1188,9 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             .get(&node)
             .ok_or_else(|| ProtocolRefusal::fault("an-attempt-node-is-an-attempt"))?;
         Ok(OperationRef {
-            declaring: attempt.declaring,
+            declaring: attempt.declaring.clone(),
             name: &attempt.operation,
-            receiver: attempt.receiver,
+            receiver: attempt.receiver.clone(),
         })
     }
 

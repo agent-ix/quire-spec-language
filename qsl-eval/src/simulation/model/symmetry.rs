@@ -47,8 +47,8 @@ impl Renaming<'_> {
             let image = map.get(reference.object().as_str())?;
             let object = ObjectId::new(image.clone()).ok()?;
             Some(ObjectReference::new(
-                reference.universe(),
-                reference.object_type(),
+                reference.universe().clone(),
+                reference.object_type().clone(),
                 object,
             ))
         })
@@ -108,7 +108,7 @@ impl Renaming<'_> {
                         })
                     })
                     .collect::<Result<Vec<FieldValue>, ExpansionStop>>()?;
-                from_admitted_slots(composite.declaration(), slots.into_boxed_slice())
+                from_admitted_slots(composite.declaration().clone(), slots.into_boxed_slice())
             }
             Value::Union(union) => UnionValue::from_admitted(
                 union.member().clone(),
@@ -184,7 +184,7 @@ impl ModelSystem<'_> {
             // A reference's universe is its type's; any key names it.
             if let Ok(reference) = self.model.object_reference(member, "k") {
                 if !universes.contains(&reference.universe()) {
-                    universes.push(reference.universe());
+                    universes.push(reference.universe().clone());
                 }
             }
         }

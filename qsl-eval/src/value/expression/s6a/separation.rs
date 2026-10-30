@@ -385,7 +385,7 @@ pub(crate) fn occurrence_at(
         )
     };
     let at = || graph.occurrences().filter(|(_, _, at)| *at == location);
-    at().find(|(key, _, _)| applies(*key, operator))
+    at().find(|(key, _, _)| applies(key.clone(), operator))
         .or_else(|| operator.is_none().then(|| at().next()).flatten())
         .map(|(key, origin, _)| OccurrenceKey::new(key.clone(), origin))
 }

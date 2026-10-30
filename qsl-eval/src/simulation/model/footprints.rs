@@ -342,7 +342,7 @@ fn lower(
 /// The object type a reference or optional-reference parameter binds.
 fn declared_target(value_type: &ValueType) -> Option<EffectiveId> {
     match value_type {
-        ValueType::Reference(target) => Some(*target),
+        ValueType::Reference(target) => Some(target.clone()),
         ValueType::Option(payload) => declared_target(payload),
         _ => None,
     }
@@ -366,12 +366,12 @@ fn holds_reference(
                 return false;
             }
             let Some(CompositeShape::Record(fields)) = types
-                .composite(*declaration)
+                .composite(declaration.clone())
                 .map(CompositeDeclaration::shape)
             else {
                 return true;
             };
-            visiting.push(*declaration);
+            visiting.push(declaration.clone());
             let holds = fields
                 .iter()
                 .any(|field| holds_reference(field.value_type(), types, visiting));
@@ -423,11 +423,11 @@ impl<'a> ModelSystem<'a> {
             .filter_map(|(name, bound)| {
                 bound
                     .as_ref()
-                    .map(|bound| (name.clone(), bound.object_type()))
+                    .map(|bound| (name.clone(), bound.object_type().clone()))
             })
             .collect();
         let key = (
-            receiver.object_type(),
+            receiver.object_type().clone(),
             application.text.clone(),
             types,
             selected.cloned(),
@@ -443,8 +443,8 @@ impl<'a> ModelSystem<'a> {
                 derive_selected_footprint(
                     self.package.graph(),
                     &self.model,
-                    receiver.object_type(),
-                    application.declaring,
+                    receiver.object_type().clone(),
+                    application.declaring.clone(),
                     &application.declaration,
                     types,
                     &|clause| selected.as_ref().is_none_or(|set| set.contains(&clause)),
@@ -563,8 +563,8 @@ impl<'a> ModelSystem<'a> {
                 derive_footprint(
                     self.package.graph(),
                     &self.model,
-                    *receiver_type,
-                    application.declaring,
+                    receiver_type.clone(),
+                    application.declaring.clone(),
                     &application.declaration,
                     &arguments,
                 )?;

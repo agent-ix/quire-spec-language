@@ -209,7 +209,7 @@ impl super::s6a::ReferenceEvaluation for ValueFunctionFamily {
         let function = env
             .package
             .graph()
-            .function_by_identity(*checked)
+            .function_by_identity(checked.clone())
             .ok_or_else(|| InternalFault::new("S6a", "checked-identity-not-resolved-by-package"))?;
         // A second `evaluate` call on the same `env` finds its arguments
         // already taken: a broken S6a invariant (FR-090-AC-3), with its own
