@@ -17,8 +17,8 @@ FR-492-AC-3; AC-4 is the `arch-lint-api-surface-qsl` make target.
 ## Test Procedure
 
 Test layer: `qsl-replay/tests/it/refinement_query_facade.rs`, calling the
-entries as the root exports them, over a `RefinementQueryRequest` wrapped from
-the fixture's request; the checked graph is the oracle.
+entries as the root exports them, over a `RefinementQueryRequest` built from root items
+alone (`acquire_checked_closure`, `NodeKey`, `RefinementQuerySubject`); the checked graph is the oracle.
 
 1. Encode `Initial` and the `Step` queries of `peek` and `commitA`.
 2. Read `refinement_step_sources`; compare with the checker's emitted order

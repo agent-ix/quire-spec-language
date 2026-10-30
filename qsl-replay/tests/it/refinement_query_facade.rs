@@ -3,29 +3,64 @@
 //! `Initial` and `Step { row }` queries and reads the ordered step-row
 //! mapping through the `qsl_replay` root. The queries and mapping are called
 //! as `qsl_replay::{encode_refinement_query, refinement_step_sources}`
-//! over `RefinementQueryRequest` and `RefinementQueryKind` as the root
-//! exports them (the request is wrapped from the fixture's `qsl_eval` request); the fixture world (the checked graph, the oracle) is built
+//! over a `RefinementQueryRequest` built from `qsl_replay` root items alone
+//! (the retained checked closure from `acquire_checked_closure`); the fixture world (the checked graph, the oracle) is built
 //! with the shared refinement support.
 
 use ix_trace_rs::trace;
-use qsl_eval::smt::RefinementCertificateRequest;
 use qsl_replay::{
-    encode_refinement_query, refinement_step_sources, RefinementQueryKind, RefinementQueryRequest,
+    acquire_checked_closure, encode_refinement_query, refinement_step_sources, DependencyInput,
+    ModelNormalizationLimits, ObservationLimits, RefinementQueryKind, RefinementQueryRequest,
+    RefinementQuerySubject, RefinementUniverse, ReplayLimits, SourceIdentity, StageLimits,
 };
 
-use crate::refinement_fixture::{cas_refines_counter, mutated, World};
-use crate::refinement_proofs::{row_of, subjects};
+use crate::refinement_fixture::{
+    cas_refines_counter, key, mutated, packages, unit_text, Variant, World, CAS, SPEC, UNLIMITED,
+};
+use crate::refinement_proofs::row_of;
 
-/// Run `body` with the facade request of `world`'s refinement.
-fn with_request<T>(world: &World, body: impl FnOnce(&RefinementQueryRequest<'_>) -> T) -> T {
-    let (concrete, abstract_) = subjects(world);
-    let request = RefinementQueryRequest::from(RefinementCertificateRequest {
-        package: world.package(),
-        refinement: world.refinement().v2_emission().expect("emits").identity,
-        concrete: &concrete,
-        abstract_: &abstract_,
-    });
-    body(&request)
+/// Run `body` with the facade request of the refinement text `refinement`,
+/// built from `qsl_replay` root items alone: the retained checked closure of
+/// the unit, the refinement's node key and the two subjects. The `World`
+/// supplies only the fixture's values (documents, snapshots, the node key).
+fn with_request<T>(
+    refinement: &str,
+    body: impl FnOnce(&RefinementQueryRequest<'_>, &World) -> T,
+) -> T {
+    let world = World::new(refinement);
+    let documents = packages(Variant::CAS);
+    let text = unit_text(&documents, refinement, Variant::CAS);
+    let compiled = acquire_checked_closure(
+        SourceIdentity::new("agent-ix", "refinement", "git", "1"),
+        "refinement.native",
+        text.as_bytes(),
+        documents.values().map(Vec::as_slice),
+        &DependencyInput::default(),
+        StageLimits::default(),
+        ReplayLimits::default(),
+    )
+    .expect("the unit compiles");
+    let subject = |model: &str, initial| RefinementQuerySubject {
+        packages: world.package_provision(),
+        snapshots: world.snapshot_provision(),
+        initial: vec![initial],
+        universes: vec![RefinementUniverse {
+            population: key(model, "counters"),
+            keys: world.object_keys().to_vec(),
+        }],
+        max_candidates: 1_000_000,
+        normalization: ModelNormalizationLimits::default(),
+        observation: ObservationLimits::default(),
+        meter: UNLIMITED,
+        proof_bounds: Vec::new(),
+    };
+    let request = RefinementQueryRequest::new(
+        compiled.handle(),
+        world.refinement().v2_emission().expect("emits").identity,
+        subject(CAS, world.concrete_initial()),
+        subject(SPEC, world.abstract_initial()),
+    );
+    body(&request, &world)
 }
 
 fn is_permutation(sources: &[u64]) -> bool {
@@ -43,11 +78,10 @@ fn script(request: &RefinementQueryRequest<'_>, kind: RefinementQueryKind) -> St
 /// another row.
 #[trace("TC-1275", "FR-492-AC-1")]
 #[test]
-fn the_root_encodes_initial_and_step_queries() {
-    let world = World::new(&cas_refines_counter());
-    let peek = row_of(&world, "peek");
-    let commit = row_of(&world, "commitA");
-    with_request(&world, |request| {
+fn the_facade_encodes_initial_and_step_queries() {
+    with_request(&cas_refines_counter(), |request, world| {
+        let peek = row_of(world, "peek");
+        let commit = row_of(world, "commitA");
         let initial = script(request, RefinementQueryKind::Initial);
         assert!(initial.starts_with("(set-logic QF_LIA)\n"));
         assert!(initial.ends_with("(check-sat)\n"));
@@ -63,19 +97,17 @@ fn the_root_encodes_initial_and_step_queries() {
     });
 }
 
-/// FR-492-AC-2: the step-row mapping is a permutation of the source rows,
-/// and sends each query row to the
-/// source row of the same operation.
+/// FR-492-AC-2: the step-row mapping is a permutation of the source rows and
+/// sends each query row to the source row of the same operation.
 #[trace("TC-1275", "FR-492-AC-2")]
 #[test]
 fn the_step_row_mapping_is_the_source_row_permutation() {
-    let world = World::new(&cas_refines_counter());
-    with_request(&world, |request| {
+    with_request(&cas_refines_counter(), |request, world| {
         let sources = refinement_step_sources(request).expect("maps");
         assert_eq!(sources.len(), 7);
         assert!(is_permutation(&sources), "{sources:?}");
         for name in ["peek", "commitA", "commitB", "beginA", "retryB"] {
-            let row = row_of(&world, name) as usize;
+            let row = row_of(world, name) as usize;
             let source = sources[row] as usize;
             assert!(world.refinement().steps()[source]
                 .spelling()
@@ -95,16 +127,17 @@ fn reordering_the_written_rows_changes_the_mapping_not_the_query() {
         "step Impl::Counter::commitA -> Spec::Counter::inc(self);\nstep Impl::Counter::commitB -> Spec::Counter::inc(self);\n",
         "step Impl::Counter::commitB -> Spec::Counter::inc(self);\nstep Impl::Counter::commitA -> Spec::Counter::inc(self);\n",
     );
-    let first = World::new(&base);
-    let second = World::new(&swapped);
-    let sources =
-        |world: &World| with_request(world, |r| refinement_step_sources(r).expect("maps"));
-    let (a, b) = (sources(&first), sources(&second));
+    let probe = |text: &str| {
+        with_request(text, |request, world| {
+            let row = row_of(world, "commitA");
+            (
+                refinement_step_sources(request).expect("maps"),
+                script(request, RefinementQueryKind::Step { row }),
+            )
+        })
+    };
+    let ((a, a_query), (b, b_query)) = (probe(&base), probe(&swapped));
     assert!(is_permutation(&a) && is_permutation(&b));
     assert_ne!(a, b, "the written order differs, so the mapping differs");
-    let query = |world: &World, name: &str| {
-        let row = row_of(world, name);
-        with_request(world, |r| script(r, RefinementQueryKind::Step { row }))
-    };
-    assert_eq!(query(&first, "commitA"), query(&second, "commitA"));
+    assert_eq!(a_query, b_query);
 }

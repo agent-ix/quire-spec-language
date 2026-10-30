@@ -17,20 +17,124 @@
 //! for each position, the zero-based position of the same row among the
 //! refinement's rows as written.
 
-use qsl_eval::smt::{self, RefinementCertificateRequest};
+use std::collections::BTreeMap;
 
+use qsl_eval::model_subject::ModelSubject;
+use qsl_eval::simulation::model::{ExpansionLimits, ModelSimulationRequest, PopulationUniverse};
+use qsl_eval::smt::{self, RefinementCertificateRequest};
+use qsl_foundation::bound::ProofBound;
+use qsl_semantics::model::accounting::ModelNormalizationLimits;
+use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
+use quire_checked::key::DeclarationKey;
+use quire_exact::{NodeKey, ScalarLimits};
+
+use qsl_package::CheckedPackage;
+
+use crate::application::CheckedClosureHandle;
 use crate::SmtEncodingRefusal;
 
-/// The request of a refinement query: the refinement of a recompiled package
-/// and its concrete and abstract subjects (FR-314's request of a refinement
-/// item).
-pub struct RefinementQueryRequest<'a> {
-    inner: RefinementCertificateRequest<'a>,
+/// One simulated population and its finite key set.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RefinementUniverse {
+    /// The population's declaration key.
+    pub population: DeclarationKey,
+    /// The object keys the population may hold.
+    pub keys: Vec<String>,
 }
 
-impl<'a> From<RefinementCertificateRequest<'a>> for RefinementQueryRequest<'a> {
-    fn from(inner: RefinementCertificateRequest<'a>) -> Self {
-        Self { inner }
+/// One subject of a refinement query, the concrete or the abstract model
+/// (FR-314's subject): the provisions its initial states are read from, the
+/// initial states, the finite universes, the per-expansion candidate bound,
+/// the limits and the proof bounds it is qualified by. The provision maps and
+/// document labels are passed through unchanged (QSL-1282 scope).
+pub struct RefinementQuerySubject<'a> {
+    /// FR-056's domain package input.
+    pub packages: &'a BTreeMap<[u8; 32], Vec<u8>>,
+    /// The FR-106 snapshot provision.
+    pub snapshots: &'a BTreeMap<[u8; 32], Vec<u8>>,
+    /// The initial states: documents of `snapshots`.
+    pub initial: Vec<DocumentRef>,
+    /// For each simulated population, its finite key set.
+    pub universes: Vec<RefinementUniverse>,
+    /// The most candidates one expansion generates.
+    pub max_candidates: u64,
+    /// The normalization limits FR-106 admission takes.
+    pub normalization: ModelNormalizationLimits,
+    /// FR-106's document limits.
+    pub observation: ObservationLimits,
+    /// The evaluation meter budget; each clause evaluation gets a fresh meter.
+    pub meter: ScalarLimits,
+    /// The ADR-014 B-4 proof bounds the item is qualified by.
+    pub proof_bounds: Vec<ProofBound>,
+}
+
+impl RefinementQuerySubject<'_> {
+    fn model_subject<'p>(&'p self, package: &'p CheckedPackage) -> ModelSubject<'p> {
+        ModelSubject {
+            simulation: ModelSimulationRequest {
+                package,
+                packages: self.packages,
+                normalization: self.normalization,
+                snapshots: self.snapshots,
+                initial: self.initial.clone(),
+                universes: self
+                    .universes
+                    .iter()
+                    .map(|universe| PopulationUniverse {
+                        population: universe.population.clone(),
+                        keys: universe.keys.clone(),
+                    })
+                    .collect(),
+                observation: self.observation,
+                expansion: ExpansionLimits {
+                    max_candidates: self.max_candidates,
+                },
+                meter: self.meter,
+            },
+            proof_bounds: self.proof_bounds.clone(),
+        }
+    }
+}
+
+/// The request of a refinement query: the retained checked closure that
+/// declares the refinement, the refinement's node key and the concrete and
+/// abstract subjects (FR-314's request of a refinement item).
+pub struct RefinementQueryRequest<'a> {
+    closure: &'a CheckedClosureHandle,
+    refinement: NodeKey,
+    concrete: RefinementQuerySubject<'a>,
+    abstract_: RefinementQuerySubject<'a>,
+}
+
+impl<'a> RefinementQueryRequest<'a> {
+    /// The request over the refinement `refinement` of `closure`.
+    pub fn new(
+        closure: &'a CheckedClosureHandle,
+        refinement: NodeKey,
+        concrete: RefinementQuerySubject<'a>,
+        abstract_: RefinementQuerySubject<'a>,
+    ) -> Self {
+        Self {
+            closure,
+            refinement,
+            concrete,
+            abstract_,
+        }
+    }
+
+    fn with_certificate_request<T>(
+        &self,
+        body: impl FnOnce(&RefinementCertificateRequest<'_>) -> T,
+    ) -> T {
+        let package = self.closure.checked_package();
+        let concrete = self.concrete.model_subject(package);
+        let abstract_ = self.abstract_.model_subject(package);
+        body(&RefinementCertificateRequest {
+            package,
+            refinement: self.refinement,
+            concrete: &concrete,
+            abstract_: &abstract_,
+        })
     }
 }
 
@@ -68,7 +172,7 @@ pub fn encode_refinement_query(
     request: &RefinementQueryRequest<'_>,
     kind: RefinementQueryKind,
 ) -> Result<Vec<u8>, SmtEncodingRefusal> {
-    smt::encode_refinement_query(&request.inner, kind.into())
+    request.with_certificate_request(|inner| smt::encode_refinement_query(inner, kind.into()))
 }
 
 /// The source row of each row of the refinement `request` names, in `steps`
@@ -83,7 +187,8 @@ pub fn encode_refinement_query(
 pub fn refinement_step_sources(
     request: &RefinementQueryRequest<'_>,
 ) -> Result<Vec<u64>, SmtEncodingRefusal> {
-    smt::refinement_step_sources(&request.inner)?
+    request
+        .with_certificate_request(smt::refinement_step_sources)?
         .into_iter()
         .map(|source| {
             u64::try_from(source)

@@ -259,6 +259,7 @@ pub use monitor_plan::{
 // `qsl_eval` (ADR-011 FB-05, T-12).
 pub use refinement_query::{
     encode_refinement_query, refinement_step_sources, RefinementQueryKind, RefinementQueryRequest,
+    RefinementQuerySubject, RefinementUniverse,
 };
 
 pub use refinement::{
