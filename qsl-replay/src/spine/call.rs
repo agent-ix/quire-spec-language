@@ -24,7 +24,6 @@ use qsl_foundation::diagnostic::{Code, Locus, RefusalRecord};
 use qsl_foundation::source::Source;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::CheckedGraph;
-use qsl_semantics::library::PackageId;
 use qsl_semantics::model::normalize::{ModelRefusal, ModelRefusalCause};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::refusal::OfferedSelection;
@@ -409,8 +408,8 @@ impl RunRefusal {
 }
 
 /// Compile `bytes` through the spine and call `call`'s named function with
-/// its arguments, under `call`'s accounting limits. Returns the compiled
-/// package's `package_id` and the call's outcome (FR-100).
+/// its arguments, under `call`'s accounting limits. Returns the call's
+/// outcome (FR-100).
 ///
 /// `cancel` is the caller's handle (ADR-029: every operation takes one): a
 /// cancel stops the run at its next charge, whichever stage it is in, as
@@ -429,7 +428,7 @@ pub fn run(
     call: &Call,
     objects: &ObjectEnvironment,
     cancel: &Cancel,
-) -> Result<(PackageId, CallOutcome), Box<RunRefusal>> {
+) -> Result<CallOutcome, Box<RunRefusal>> {
     run_reading(
         source,
         path,
@@ -442,14 +441,13 @@ pub fn run(
         cancel,
         |_, _, _| Ok(()),
     )
-    .map(|(package_id, outcome, ())| (package_id, outcome))
+    .map(|(outcome, ())| outcome)
 }
 
 /// [`run`] over one compile, and, once the call has run, `read` over the
 /// compile's checked unit, emitted unit and admitted models (FR-395 "One
 /// checked graph", FR-404 "One compile"): the value `read` returns comes from
-/// the same compile as the call and the
-/// `package_id`. A refusal before the call, including a cancel, returns
+/// the same compile as the call. A refusal before the call, including a cancel, returns
 /// before `read` runs.
 #[allow(
     clippy::too_many_arguments,
@@ -466,7 +464,7 @@ pub(crate) fn run_reading<T>(
     objects: &ObjectEnvironment,
     cancel: &Cancel,
     read: impl FnOnce(&CheckedUnit, &EmittedUnit, &AdmittedModels) -> Result<T, Box<RunRefusal>>,
-) -> Result<(PackageId, CallOutcome, T), Box<RunRefusal>> {
+) -> Result<(CallOutcome, T), Box<RunRefusal>> {
     let refusal = |failure| match failure {
         StageFailure::Cancelled(cause) => Box::new(RunRefusal::Cancelled(cause)),
         other => match front_end::refusal_or_fault(other) {
@@ -494,7 +492,6 @@ pub(crate) fn run_reading<T>(
     let emitted = front_end::package(&checked, front_end::PackageLimits::default(), cancel)
         .map_err(refusal)?
         .into_value();
-    let package_id = emitted.package().package_id();
     let package = checked.package();
     let selected = select(package, &call.function)?;
     let arguments = bind_arguments(selected.parameters, &call.arguments)?;
@@ -530,7 +527,7 @@ pub(crate) fn run_reading<T>(
     sources.extend(checked.libraries().iter().cloned());
     let outcome = convert_outcome(evaluation, package.graph(), &sources)?;
     let read = read(&checked, &emitted, &models)?;
-    Ok((package_id, outcome, read))
+    Ok((outcome, read))
 }
 
 /// The selected function: its S6a name and declared parameters.

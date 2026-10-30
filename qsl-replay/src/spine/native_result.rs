@@ -93,11 +93,6 @@ pub enum NativeRunResult {
 pub struct ClauseRunRecord(ClauseRead, Option<Vec<u8>>, Option<FrameWitness>);
 
 impl ClauseRunRecord {
-    /// The compiled package identity, absent before compile completed.
-    pub fn package_id(&self) -> Option<&str> {
-        self.0.package_id.as_deref()
-    }
-
     /// The settlement basis label.
     pub fn basis(&self) -> &'static str {
         self.0.basis.as_str()
@@ -871,8 +866,6 @@ struct DispositionRead {
 #[serde(deny_unknown_fields)]
 struct ClauseRead {
     format: String,
-    #[serde(default, deserialize_with = "present")]
-    package_id: Option<String>,
     disposition: DispositionRead,
     usage: UsageRead,
     basis: Basis,
@@ -1519,7 +1512,6 @@ pub fn read_native_run_result(bytes: &[u8]) -> Result<NativeRunResult, NativeRun
     if !command_shape
         && (root.get("disposition").is_some()
             || root.get("usage").is_some()
-            || root.get("package_id").is_some()
             || root.get("witness").is_some())
     {
         if root.get("disposition").is_none() {
@@ -1554,23 +1546,6 @@ pub fn read_native_run_result(bytes: &[u8]) -> Result<NativeRunResult, NativeRun
             .transpose()?;
         if document.format != format {
             return Err(NativeRunReadError::UnsupportedFormat(document.format));
-        }
-        if document.package_id.as_ref().is_some_and(|id| {
-            id.len() != 64
-                || !id
-                    .bytes()
-                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-        }) {
-            return Err(NativeRunReadError::Invalid {
-                member: "package_id",
-                reason: "expected 64 lowercase hex digits",
-            });
-        }
-        if !matches!(document.disposition.stage, Stage::Compile) && document.package_id.is_none() {
-            return Err(NativeRunReadError::Invalid {
-                member: "package_id",
-                reason: "completed compilation needs its package identity",
-            });
         }
         if document.basis.is_decisive() != document.witness.is_some() {
             return Err(NativeRunReadError::Invalid {
@@ -2015,8 +1990,6 @@ struct Disposition {
 #[derive(Serialize)]
 struct ClauseRunDocument {
     format: WireFormat,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    package_id: Option<String>,
     disposition: Disposition,
     usage: Usage,
     basis: &'static str,
@@ -2059,13 +2032,6 @@ impl Disposition {
                 result.refusal = Some(
                     RefusalWire::new(Code::UnknownLanguage.as_str(), None)
                         .fields(BTreeMap::from([("language", language.clone())])),
-                );
-            }
-            ClauseDisposition::StalePackage { expected, actual } => {
-                result.refusal = Some(
-                    RefusalWire::new(Code::StaleDependency.as_str(), Some("stale-package")).fields(
-                        BTreeMap::from([("expected", expected.clone()), ("actual", actual.hex())]),
-                    ),
                 );
             }
             ClauseDisposition::MissingName { name } => {
@@ -2310,7 +2276,6 @@ pub fn write_clause_run_result(report: &ClauseRunReport) -> Result<Vec<u8>, Nati
     let witness = report.witness.as_ref().map(RecordWire::of).transpose()?;
     let document = ClauseRunDocument {
         format: WireFormat::RunResult,
-        package_id: report.package_id.as_ref().map(|id| id.hex()),
         disposition: Disposition::of(&report.disposition),
         usage: Usage {
             admission: AdmissionUsage {

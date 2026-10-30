@@ -17,7 +17,6 @@ use qsl_foundation::source::Source;
 use qsl_foundation::source_map::NativeLanguage;
 use qsl_foundation::SourceIdentity;
 use qsl_semantics::check::{CheckedGraph, CheckedStateClause};
-use qsl_semantics::library::PackageId;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::observation::{
     admit_current_snapshot, admit_frame_invocation, admit_observations, population_universe_for,
@@ -208,11 +207,6 @@ pub struct ClauseRunRequest {
     pub invocations: qsl_semantics::model::observation::DocumentProvision,
     /// The selection.
     pub selection: ClauseRunSelection,
-    /// An optional expected `package_id` (FR-098's stale package rule).
-    pub expected_package_id: Option<PackageId>,
-    /// A wire caller's lowercase hex claim, kept separate from a minted
-    /// `PackageId` until it is compared with the compiled package.
-    pub expected_package_id_claim: Option<String>,
     /// The spine's stage limits.
     pub limits: SpineLimits,
     /// FR-106's observation limits.
@@ -259,14 +253,6 @@ pub enum ClauseDisposition {
         /// The declared fence language.
         language: String,
     },
-    /// Stage `compile`, category `refusal`, `stale_dependency`: the
-    /// recompiled `package_id` differs from the request's expected one.
-    StalePackage {
-        /// The expected `package_id`.
-        expected: String,
-        /// The recompiled `package_id`.
-        actual: PackageId,
-    },
     /// Stage `select`, `missing_declaration`/`missing-name`.
     MissingName {
         /// The selected name.
@@ -309,7 +295,7 @@ impl ClauseDisposition {
     /// The FR-109 stage this disposition reports at.
     pub fn stage(&self) -> ClauseRunStage {
         match self {
-            Self::Compile(_) | Self::UnknownLanguage { .. } | Self::StalePackage { .. } => {
+            Self::Compile(_) | Self::UnknownLanguage { .. } => {
                 ClauseRunStage::Compile
             }
             Self::MissingName { .. } | Self::NotAPredicate { .. } => ClauseRunStage::Select,
@@ -337,7 +323,6 @@ impl ClauseDisposition {
             Self::Compile(refusal) => refusal.code().category(),
             Self::ArgumentRefusal(refusal) => refusal.category(),
             Self::UnknownLanguage { .. }
-            | Self::StalePackage { .. }
             | Self::MissingName { .. }
             | Self::NotAPredicate { .. } => Category::Refusal,
             Self::Admit(AdmissionFailure::Refused(record)) => record.code.category(),
@@ -633,8 +618,6 @@ pub struct ConsequentSourceEvent {
     /// walk of the checked clause body. It equals the event's position in
     /// the stream and does not depend on the evaluated values.
     pub index: usize,
-    /// The `package_id` of the checked package that owns the clause.
-    pub package_id: PackageId,
     /// The source region of the implication expression, which identifies
     /// the generated activation site.
     pub implication: qsl_foundation::source::provenance::SourceRegion,
@@ -709,11 +692,9 @@ impl ClauseRunUsage {
 }
 
 /// FR-109's `ClauseRunReport`: the disposition, the usage and, where compile
-/// reached it, the compiled `package_id`.
+/// reached it.
 #[derive(Debug)]
 pub struct ClauseRunReport {
-    /// The compiled `package_id`, when compile completed.
-    pub package_id: Option<PackageId>,
     /// The disposition.
     pub disposition: ClauseDisposition,
     /// FR-109 Outputs' usage.
@@ -825,12 +806,10 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
     if unit.bytes.is_empty() {
         return Err(ClauseRunRefusal::EmptySource);
     }
-    // Every pre-compile disposition reports no `package_id`, and the usage is
-    // empty until an evaluation meter has run.
-    let report = |package_id, disposition: ClauseDisposition| ClauseRunReport {
+    // The usage is empty until an evaluation meter has run.
+    let report = |disposition: ClauseDisposition| ClauseRunReport {
         basis: undecided_basis(&disposition),
         witness: None,
-        package_id,
         disposition,
         usage: ClauseRunUsage::default(),
         consequent_source_events: ConsequentSourceEvents::Unavailable,
@@ -838,12 +817,9 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
 
     if let Some(language) = unit.language {
         if NativeLanguage::of(language).is_none() {
-            return Ok(report(
-                None,
-                ClauseDisposition::UnknownLanguage {
-                    language: language.to_owned(),
-                },
-            ));
+            return Ok(report(ClauseDisposition::UnknownLanguage {
+                language: language.to_owned(),
+            }));
         }
     }
 
@@ -880,26 +856,10 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
                 Ok(refusal) => ClauseDisposition::Compile(refusal),
                 Err(fault) => ClauseDisposition::EvaluateFault(fault),
             };
-            return Ok(report(None, disposition));
+            return Ok(report(disposition));
         }
     };
-    let package_id = emitted.package().package_id();
     let package = checked.package();
-    if let Some(expected) = request
-        .expected_package_id
-        .map(|id| id.hex())
-        .or_else(|| request.expected_package_id_claim.clone())
-    {
-        if package_id.hex() != expected {
-            return Ok(report(
-                Some(package_id),
-                ClauseDisposition::StalePackage {
-                    expected,
-                    actual: package_id,
-                },
-            ));
-        }
-    }
     // FND-016: the unit's and every resolved library's source, reused
     // exactly as the check already read them (mirroring `call::run`'s own
     // `sources` build), so a locus resolves without a second read of
@@ -918,7 +878,6 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
         observation_limits: request.observation_limits,
         accounting: request.accounting,
         package,
-        package_id,
         sources: &sources,
     };
     match request.selection {
@@ -965,8 +924,6 @@ pub(crate) struct CompiledRun<'a> {
     pub(crate) accounting: ScalarLimits,
     /// The compiled package.
     pub(crate) package: &'a qsl_package::CheckedPackage,
-    /// The compiled `package_id`.
-    pub(crate) package_id: PackageId,
     /// The unit's and every resolved library's source, for loci.
     pub(crate) sources: &'a [Source],
 }
@@ -976,7 +933,6 @@ impl CompiledRun<'_> {
         ClauseRunReport {
             basis: undecided_basis(&disposition),
             witness: None,
-            package_id: Some(self.package_id),
             disposition,
             usage: ClauseRunUsage::default(),
             consequent_source_events: ConsequentSourceEvents::Unavailable,
@@ -1003,7 +959,6 @@ pub(crate) fn check_clause(
 /// refused unless an enclosing recorded decision proves it unreached.
 fn derive_consequent_source_events(
     graph: &CheckedGraph,
-    package_id: PackageId,
     clause: &CheckedStateClause,
     evaluation: &qsl_eval::value::ClauseEvaluation,
 ) -> ConsequentSourceEvents {
@@ -1058,7 +1013,6 @@ fn derive_consequent_source_events(
             };
             events.push(ConsequentSourceEvent {
                 index: events.len(),
-                package_id,
                 implication,
                 consequent,
                 state,
@@ -1153,7 +1107,7 @@ pub(crate) fn check_clause_admitted(
     {
         Ok(evaluation) => {
             consequent_source_events =
-                derive_consequent_source_events(graph, run.package_id, clause, &evaluation);
+                derive_consequent_source_events(graph, clause, &evaluation);
             match derive_separating_witness(clause, &evaluation) {
                 Err(fault) => ClauseDisposition::EvaluateFault(fault),
                 Ok(witness) => {
@@ -1393,12 +1347,10 @@ fn run_function(
     let observation_limits = run.observation_limits;
     let accounting = run.accounting;
     let package = run.package;
-    let package_id = run.package_id;
     let sources = run.sources;
     let report = |disposition: ClauseDisposition| ClauseRunReport {
         basis: undecided_basis(&disposition),
         witness: None,
-        package_id: Some(package_id),
         disposition,
         usage: ClauseRunUsage::default(),
         consequent_source_events: ConsequentSourceEvents::Unavailable,

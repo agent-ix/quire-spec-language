@@ -523,7 +523,6 @@ fn classify_disposition(disposition: &ClauseDisposition) -> Classification {
     match disposition {
         ClauseDisposition::Compile(refusal) => classify_refusal(refusal),
         ClauseDisposition::UnknownLanguage { .. } => one(ToolFailure, Code::UnknownLanguage, None),
-        ClauseDisposition::StalePackage { .. } => one(ToolFailure, Code::StaleDependency, None),
         ClauseDisposition::MissingName { .. } => {
             one(Absent, Code::MissingDeclaration, Some("missing-name"))
         }
