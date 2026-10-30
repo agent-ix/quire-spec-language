@@ -29,11 +29,7 @@ use quire_semantic_value::model_transition::ModelTransition;
 use crate::refinement::{MappingRowRef, ObjectKey, RefinementFailure};
 use crate::witness::FamilyPayload;
 
-/// The node and occurrence key of the derived item `role` of `package`: the
-/// item has no authored clause node, so its node is the package's own, named
-/// by the package and the role, and its occurrence key is that node with the
-/// role and ordinal 0.
-// BLOCKED-BY QSL-1282 (owner: planner titan:QSL:plan): the node identity of a package-level derived item
+/// The node and occurrence key of the derived item `role` of `package`.
 fn derived_item(
     role: &str,
     package: &LibraryName,

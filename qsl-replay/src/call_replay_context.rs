@@ -148,6 +148,7 @@ impl RunWithReplayContext {
 )]
 pub fn run_with_replay_context(
     source: SourceIdentity,
+    package_name: String,
     path: &str,
     bytes: &[u8],
     packages: &qsl_semantics::model::intake::PackageInput,
@@ -157,9 +158,10 @@ pub fn run_with_replay_context(
     objects: &ObjectEnvironment,
     cancel: &Cancel,
 ) -> Result<RunWithReplayContext, Box<RunRefusal>> {
-    let package_name = package_name_of(&source)?;
+    let library_name = package_name_of(&package_name)?;
     let (outcome, (members, context)) = run_reading(
         source,
+        package_name,
         path,
         bytes,
         packages,
@@ -177,11 +179,11 @@ pub fn run_with_replay_context(
         },
     )?;
     Ok(RunWithReplayContext {
-        package_name: package_name.clone(),
+        package_name: library_name.clone(),
         outcome,
         requirements: CallRequirements::new(call, members.clone()),
         context: CallReplayContext {
-            package_name,
+            package_name: library_name,
             context,
             members,
         },

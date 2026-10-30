@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! TC-1173 (FR-404): the context names an item by the pairing key the run's
-//! `package_id` and a member's request index, which is also the index of the
+//! TC-1173 (FR-404): the context names an item by a member's request index, which
+//! is also the index of the
 //! item `items_from_requirements` writes for that member (FR-075). These
 //! need `qsl-route`, which only the root crate's tests hold.
 
@@ -93,7 +93,6 @@ fn a_members_item_bounds_build_a_request_that_replays() {
     let wire = result
         .context()
         .request(
-            result.package_id(),
             member.request_index(),
             item.proof_bounds(),
             &plugin,
