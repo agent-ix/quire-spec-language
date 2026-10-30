@@ -113,7 +113,6 @@ fn link_roots(
         &roots(&definitions[..root_count]),
         &DefinitionCatalog::new(definitions.to_vec()).unwrap(),
         limits,
-        qsl_foundation::IdentityLimits::default(),
     )
 }
 
@@ -187,7 +186,6 @@ fn roots_resolve_by_identity_and_an_unknown_identity_refuses_naming_its_index() 
         &roots(&definitions),
         &DefinitionCatalog::new(definitions[1..].to_vec()).unwrap(),
         PackageLimits::default(),
-        qsl_foundation::IdentityLimits::default(),
     )
     .unwrap_err();
     assert_eq!(unknown.code, Code::UnknownProfile);
@@ -204,7 +202,6 @@ fn roots_resolve_by_identity_and_an_unknown_identity_refuses_naming_its_index() 
         &foreign,
         &DefinitionCatalog::new(definitions.clone()).unwrap(),
         PackageLimits::default(),
-        qsl_foundation::IdentityLimits::default(),
     )
     .unwrap_err();
     assert_eq!(other_authority.code, Code::UnknownProfile);
@@ -233,7 +230,6 @@ fn roots_resolve_by_identity_and_an_unknown_identity_refuses_naming_its_index() 
         &roots(&definitions),
         &DefinitionCatalog::new(rebytes).unwrap(),
         PackageLimits::default(),
-        qsl_foundation::IdentityLimits::default(),
     )
     .expect("a root resolves by identity alone");
     assert_eq!(
@@ -286,7 +282,6 @@ fn a_dependency_edge_to_an_absent_definition_refuses_missing_selection() {
         &roots_without_runtime,
         &DefinitionCatalog::new(definitions).unwrap(),
         PackageLimits::default(),
-        qsl_foundation::IdentityLimits::default(),
     )
     .unwrap_err();
     assert_eq!(missing.code, Code::MissingImport);
@@ -342,7 +337,6 @@ fn one_identity_selected_under_two_authorities_refuses_naming_both() {
         &[left.clone(), right.clone()],
         &DefinitionCatalog::new(definitions).unwrap(),
         PackageLimits::default(),
-        qsl_foundation::IdentityLimits::default(),
     )
     .unwrap_err();
     assert_eq!(both.code, Code::AmbiguousDeclaration);
@@ -378,7 +372,7 @@ fn a_dependency_cycle_refuses_naming_the_cycle_in_path_order() {
     )
     .exact()
     .clone();
-    // A definition's reference digests its bytes only, so the two can name
+    // A definition's reference does not depend on its bytes, so the two can name
     // each other.
     let a = definition(
         "acme.cycle.a",
@@ -398,7 +392,6 @@ fn a_dependency_cycle_refuses_naming_the_cycle_in_path_order() {
         std::slice::from_ref(&a_ref),
         &DefinitionCatalog::new(vec![a, b]).unwrap(),
         PackageLimits::default(),
-        qsl_foundation::IdentityLimits::default(),
     )
     .unwrap_err();
     assert_eq!(refusal.code, Code::InvalidPackage);
@@ -566,7 +559,6 @@ fn a_root_naming_a_compiled_models_identity_is_not_a_definition_root() {
         &selected,
         &DefinitionCatalog::new(definitions).unwrap(),
         PackageLimits::default(),
-        qsl_foundation::IdentityLimits::default(),
     )
     .unwrap_err();
     assert_eq!(refusal.code, Code::UnknownProfile);
@@ -627,13 +619,7 @@ fn catalog_and_link_resource_limits_have_exact_boundaries() {
         artifact_bytes,
         ..PackageLimits::default()
     };
-    assert!(link_bundle(
-        &selected,
-        &catalog,
-        link_exact,
-        qsl_foundation::IdentityLimits::default()
-    )
-    .is_ok());
+    assert!(link_bundle(&selected, &catalog, link_exact,).is_ok());
     let artifact_refusal = link_bundle(
         &selected,
         &catalog,
@@ -641,7 +627,6 @@ fn catalog_and_link_resource_limits_have_exact_boundaries() {
             artifact_bytes: artifact_bytes - 1,
             ..link_exact
         },
-        qsl_foundation::IdentityLimits::default(),
     )
     .unwrap_err();
     assert_eq!(artifact_refusal.code, Code::ResourceExhausted);
@@ -666,7 +651,6 @@ fn catalog_and_link_resource_limits_have_exact_boundaries() {
             definitions: 1,
             ..PackageLimits::default()
         },
-        qsl_foundation::IdentityLimits::default(),
     )
     .unwrap_err();
     assert_eq!(refusal.code, Code::ResourceExhausted);
@@ -1171,13 +1155,7 @@ fn a_link_enforces_its_own_single_artifact_bytes() {
     let catalog = DefinitionCatalog::with_limits(definitions.clone(), raised).unwrap();
     let selected = roots(&definitions);
 
-    let refusal = link_bundle(
-        &selected,
-        &catalog,
-        default,
-        qsl_foundation::IdentityLimits::default(),
-    )
-    .unwrap_err();
+    let refusal = link_bundle(&selected, &catalog, default).unwrap_err();
     assert_eq!(refusal.code, Code::ResourceExhausted);
     assert_eq!(
         refusal.cause,
@@ -1189,14 +1167,7 @@ fn a_link_enforces_its_own_single_artifact_bytes() {
     );
     assert_catalogued(&refusal);
     assert_eq!(
-        link_bundle(
-            &selected,
-            &catalog,
-            raised,
-            qsl_foundation::IdentityLimits::default()
-        )
-        .unwrap()
-        .limits(),
+        link_bundle(&selected, &catalog, raised,).unwrap().limits(),
         raised
     );
 }
