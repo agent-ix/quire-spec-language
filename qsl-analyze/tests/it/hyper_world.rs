@@ -44,7 +44,6 @@ use qsl_semantics::check::{
 };
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
 use qsl_semantics::value::{CatalogRole, DefinitionLock};
 use quire_checked::key::DeclarationKey;
@@ -286,17 +285,16 @@ fn document(busy: bool, reset: bool) -> Vec<u8> {
 /// The unit text: the header selecting the domain package as `V`, the `step`
 /// contract of `vault`, and `body`.
 fn unit_text(
-    document: &[u8],
     other: Option<&[u8]>,
     vault: Vault,
     reset: bool,
     body: &str,
 ) -> String {
-    let second = other.map_or_else(String::new, |other| {
-        format!(
-            "model {OTHER_ALIAS} = \"{OTHER}\";\n"
-        )
-    });
+    let second = if other.is_some() {
+        format!("model {OTHER_ALIAS} = \"{OTHER}\";\n")
+    } else {
+        String::new()
+    };
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
@@ -362,7 +360,6 @@ fn declarations(documents: &[&[u8]], text: &str) -> PackageDeclarations {
 /// One snapshot of the vaults `(key, (h, l))`, provisioned in `snapshots`;
 /// each vault of a busy world has `busy` as its flag.
 fn snapshot(
-    document: &[u8],
     snapshots: &mut qsl_semantics::model::observation::DocumentProvision,
     name: &str,
     vaults: &[(&str, (i64, i64))],
@@ -394,7 +391,6 @@ fn snapshot(
         "populations": populations,
     });
     let bytes = body.to_string().into_bytes();
-    let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
     snapshots.insert(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes);
     DocumentRef {
         authority: "test".to_owned(),
@@ -608,12 +604,12 @@ impl World {
             } else {
                 String::new()
             };
-        let base = unit_text(&document, other, vault, reset, &ieee_package_clause);
+        let base = unit_text(other, vault, reset, &ieee_package_clause);
         let graph = declarations(&documents, &base)
             .check(CheckingLimits::default())
             .unwrap_or_else(|refusals| panic!("{base}: the unit checks: {refusals:?}"));
         let package = CheckedPackage::link(graph);
-        let text = unit_text(&document, other, vault, reset, &format!("{declaration}\n"));
+        let text = unit_text(other, vault, reset, &format!("{declaration}\n"));
         let mut checked = check_hyper_clauses(&declarations(&documents, &text));
         let clause = match checked.pop() {
             Some(Ok(CheckedHyper::Behaviours(clause))) if checked.is_empty() => *clause,
@@ -626,7 +622,6 @@ impl World {
             .map(|(index, start)| {
                 let busy = vault.busy().then(|| flags.get(index).copied().unwrap_or(0));
                 snapshot(
-                    &document,
                     &mut snapshots,
                     &format!("s{index}"),
                     start,

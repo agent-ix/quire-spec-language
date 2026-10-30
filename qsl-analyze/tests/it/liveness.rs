@@ -65,7 +65,6 @@ pub(crate) fn fixture(
 ) -> Fixture {
     let (package, clauses) = package_with_clauses(&document, body, &[("C", fairness, formula)]);
     let unit = unit_text(
-        &document,
         &(body.to_owned() + &clause_text("C", fairness, formula)),
     )
     .into_bytes();

@@ -53,7 +53,6 @@ fn document_ref(reference: &DocumentRef) -> serde_json::Value {
 
 fn provision(reference: &DocumentRef, value: serde_json::Value) -> (DocumentRef, Vec<u8>) {
     let bytes = value.to_string().into_bytes();
-    let document = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
     (
         DocumentRef {
             ..reference.clone()

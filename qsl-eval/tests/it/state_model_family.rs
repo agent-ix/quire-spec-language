@@ -704,7 +704,6 @@ fn observations(graph: &CheckedGraph, view: &EffectiveView) -> AdmittedObservati
         }]
     }))
     .unwrap();
-    let document = quire_canonical::read(&bytes, u64::MAX).unwrap();
     let snapshot = DocumentRef {
         authority: "test".to_owned(),
         identity: "sm1-snapshot".to_owned(),

@@ -2995,7 +2995,6 @@ fn other_document() -> Vec<u8> {
 /// The `model Other` selection of [`other_document`]: a second model of
 /// the package.
 fn other_model() -> String {
-    let packages = package_input([other_document().as_slice()]).unwrap();
     format!(
         "model Other = {OTHER:?};"
     )

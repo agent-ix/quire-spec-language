@@ -15,18 +15,6 @@ use quire_semantic_value::checking::CheckingLimits;
 const MODEL: &[u8] = include_bytes!("../../../tests/fixtures/spine-model.semantic-ir.json");
 
 fn unit() -> String {
-    // The domain package's `sha256-jcs` digest, computed from the fixture:
-    // the SHA-256 of its RFC 8785 encoding.
-    let document = quire_canonical::read(MODEL, u64::MAX).expect("the fixture is JSON");
-    let canonical = quire_canonical::to_vec(&document, quire_canonical::Limits::new(u64::MAX))
-        .expect("the fixture has a JCS encoding");
-    let digest: String = {
-        use sha2::{Digest, Sha256};
-        Sha256::digest(&canonical)
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect()
-    };
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
     profile v = \"quire.value.complete/v1\";\n\

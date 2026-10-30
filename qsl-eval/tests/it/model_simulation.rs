@@ -342,7 +342,6 @@ impl World {
             document["anchor"] = anchor;
         }
         let bytes = document.to_string().into_bytes();
-        let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
         self.snapshots.insert(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes);
         DocumentRef {
             authority: "test".to_owned(),
@@ -1120,7 +1119,6 @@ fn a_universe_population_the_snapshot_omits_is_incomplete() {
         "populations": [],
     });
     let bytes = document.to_string().into_bytes();
-    let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
     world.snapshots.insert(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes);
     let omitted = DocumentRef {
         authority: "test".to_owned(),
@@ -1478,7 +1476,6 @@ impl OrdersWorld {
                             "key": "t1"}}}}]}],
         });
         let bytes = document.to_string().into_bytes();
-        let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
         let snapshots = BTreeMap::from([(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes)]);
         let reference = DocumentRef {
             authority: "test".to_owned(),

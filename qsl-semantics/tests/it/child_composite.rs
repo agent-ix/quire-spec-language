@@ -636,7 +636,6 @@ fn admit_order_usage(
     }))
     .expect("the snapshot serializes");
     let bytes = edit(text).into_bytes();
-    let parsed = quire_canonical::read(&bytes, u64::MAX).expect("the snapshot is JSON");
     let selected = label;
     let snapshots = BTreeMap::from([(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes)]);
     admit_current_snapshot(

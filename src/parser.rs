@@ -210,17 +210,6 @@ impl Parser {
             _ => Err(self.unexpected("identifier")),
         }
     }
-    /// The identifier `text`, which a profile import spells between its
-    /// labels.
-    fn word(&mut self, text: &str) -> Result<(), Box<Diagnostic>> {
-        match &self.peek().kind {
-            Kind::Identifier(word) if word == text => {
-                self.take();
-                Ok(())
-            }
-            _ => Err(self.unexpected(text)),
-        }
-    }
     fn string(&mut self) -> Result<Spanned<String>, Box<Diagnostic>> {
         if let Kind::Text(value) = &self.peek().kind {
             let result = Spanned {

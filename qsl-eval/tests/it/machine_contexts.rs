@@ -50,7 +50,7 @@ impl Docs {
             .unwrap()
             .to_owned();
         let bytes = serde_json::to_vec(document).unwrap();
-        let reference = lifecycle_document_ref(&label, &bytes);
+        let reference = lifecycle_document_ref(&label);
         self.snapshots.insert(reference.clone(), bytes);
         reference
     }
@@ -61,7 +61,7 @@ impl Docs {
             .unwrap()
             .to_owned();
         let bytes = serde_json::to_vec(document).unwrap();
-        let reference = lifecycle_document_ref(&label, &bytes);
+        let reference = lifecycle_document_ref(&label);
         self.invocations.insert(reference.clone(), bytes);
         reference
     }
@@ -319,7 +319,6 @@ impl Orders {
              post PumpServiced using v on M::Pump::service { true }",
         )
         .expect("the Orders fixture checks");
-        let digest = packages.keys().next().expect("the package");
         let model = json!({
             "identity": crate::tc235_k2::PACKAGE,
             "version": "1",
@@ -648,10 +647,6 @@ fn side_pre_ignores_the_post_side_and_the_parameters() {
         .unwrap();
     assert!(orders.verdict("Consistent", &pre));
 
-    let q1 = docs.invocations.values().next().cloned().map(|bytes| {
-        let document: Json = serde_json::from_slice(&bytes).unwrap();
-        document["post"].clone()
-    });
     let q1_digest = docs
         .snapshots
         .keys()
@@ -733,7 +728,7 @@ fn a_snapshot_must_hold_exactly_one_context_of_the_machine() {
                 .values()
                 .find_map(|bytes| {
                     let document: Json = serde_json::from_slice(bytes).unwrap();
-                    (document["observation"] == "pre").then(|| lifecycle_document_ref("p1", bytes))
+                    (document["observation"] == "pre").then(|| lifecycle_document_ref("p1"))
                 })
                 .unwrap();
             ClauseSelectionInput::PreCall {
@@ -1290,12 +1285,6 @@ fn self_and_the_selection_must_agree_with_the_receiver() {
     // Selections the clause does not take.
     let p1 = lifecycle_document_ref(
         "p1",
-        docs.snapshots
-            .values()
-            .find(|bytes| {
-                serde_json::from_slice::<Json>(bytes).unwrap()["identity"]["identity"] == "p1"
-            })
-            .unwrap(),
     );
     let wrong = |outcome| {
         assert_refusal(

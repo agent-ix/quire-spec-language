@@ -9,7 +9,7 @@ use ix_trace_rs::trace;
 use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord, WireNodeId};
 use qsl_foundation::{Code, SourceIdentity};
 use qsl_semantics::library::PackageId;
-use qsl_semantics::model::intake::{package_input, PackageDocument};
+use qsl_semantics::model::intake::package_input;
 use quire_exact::{Identifier, Integer, ScalarLimits};
 
 use super::*;

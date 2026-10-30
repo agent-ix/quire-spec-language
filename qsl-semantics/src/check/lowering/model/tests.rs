@@ -176,7 +176,7 @@ fn query_over(
 /// queries `size`, `count` and `scaled(n)`), `Invoice` and `Sub` (supertype
 /// `Order`, redefining `size`, and `scaled` as `scaled(m)`), and the
 /// relationship `billedTo`.
-fn acme(version: &str) -> DomainPackage {
+fn acme() -> DomainPackage {
     DomainPackage::new(
         DomainPackageRef {
             identity: PACKAGE.to_owned(),
@@ -229,7 +229,7 @@ struct Acme {
 }
 
 fn admitted(version: &str) -> Acme {
-    let package = acme(version);
+    let package = acme();
     let NormalizeOutcome::Completed(view) =
         normalize(&package, ModelNormalizationLimits::UNLIMITED)
     else {

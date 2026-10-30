@@ -18,7 +18,6 @@ use quire_semantic_value::checking::CheckingLimits;
 pub(crate) fn graph_of(body: &str) -> qsl_semantics::check::CheckedGraph {
     let document = crate::support::config_version_spine::spine::DOMAIN_PACKAGE.as_bytes();
     let packages = qsl_semantics::model::intake::package_input([document]).unwrap();
-    let digest = packages.keys().next().expect("one package");
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\

@@ -15,7 +15,7 @@ use quire_spec_language::linking::composed::binding::{self, Disposition as Bindi
 use quire_spec_language::linking::composed::binding_work::Limits as BindingLimits;
 use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
 use quire_spec_language::linking::composed::definitions::{Artifact, Inventory, RuleInput};
-use quire_spec_language::linking::composed::models::{ImportRefusal, ModelInput};
+use quire_spec_language::linking::composed::models::ModelInput;
 use quire_spec_language::linking::composed::requests::{
     self, Aggregate, Assessment, Disposition, Family, InventoryGap, Request,
 };

@@ -112,7 +112,6 @@ fn members_pair_with_the_items_at_their_request_index() {
 fn only_value_validity_records_have_an_owner() {
     let document = crate::support::config_version_spine::spine::DOMAIN_PACKAGE.as_bytes();
     let packages = qsl_semantics::model::intake::package_input([document]).unwrap();
-    let digest = packages.keys().next().expect("one package");
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\

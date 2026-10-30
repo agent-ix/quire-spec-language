@@ -1666,7 +1666,7 @@ mod tests {
     #[trace("TC-1263", "FR-485-AC-7")]
     #[test]
     fn unrecorded_population_refuses_before_application() {
-        use qsl_semantics::model::intake::package_input;
+        
         use quire_exact::PopulationId;
 
         let document = include_bytes!(concat!(

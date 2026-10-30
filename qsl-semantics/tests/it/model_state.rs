@@ -11,7 +11,6 @@ use qsl_foundation::diagnostic::Code;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::domain_package::OperationEffect;
 use qsl_semantics::model::intake::package_input;
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::normalize::ModelRefusalCause;
 use qsl_semantics::model::observation::{
     admit_current_snapshot, declared_type_universe_for, AdmissionFailure, AdmissionRecord,
@@ -139,7 +138,6 @@ fn snapshot(
         document["anchor"] = anchor;
     }
     let bytes = document.to_string().into_bytes();
-    let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
     (
         DocumentRef {
             ..reference
@@ -630,7 +628,6 @@ fn a_states_observation_navigates_the_relationships_its_snapshot_listed() {
             }],
         });
         let bytes = document.to_string().into_bytes();
-        let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
         (
             DocumentRef {
                 ..reference

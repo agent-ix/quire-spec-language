@@ -670,9 +670,7 @@ fn an_unknown_variant_type_name_in_a_type_position_refuses_at_the_assembler() {
         let document = fixture::document();
         let bytes = serde_json::to_vec(&document).unwrap();
         let packages = package_input([bytes.as_slice()]).unwrap();
-        let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-            panic!("one model package");
-        };
+        assert_eq!(packages.len(), 1, "one model package");
         let source = format!(
             "language \"ix:native\" edition \"1-draft\";\n\
              profile v = \"quire.model.complete/v1\";\n\
@@ -723,8 +721,7 @@ use quire_semantic_value::declaration::FieldRef;
 use serde_json::json;
 use std::collections::BTreeMap;
 
-fn document_ref(label: &str, bytes: &[u8]) -> DocumentRef {
-    let document = quire_canonical::read(bytes, u64::MAX).expect("the document is JSON");
+fn document_ref(label: &str) -> DocumentRef {
     DocumentRef {
         authority: "test".to_owned(),
         identity: label.to_owned(),
@@ -801,7 +798,7 @@ impl Replay {
             }],
         }))
         .expect("the snapshot serializes");
-        let reference = document_ref("current", &bytes);
+        let reference = document_ref("current");
         let provision = BTreeMap::from([(reference.clone(), bytes)]);
         admit_current_snapshot(
             self.graph.model_selections(),
@@ -1269,7 +1266,7 @@ impl Replay {
             }],
         }))
         .expect("the snapshot serializes");
-        (document_ref(label, &bytes), bytes)
+        (document_ref(label), bytes)
     }
 
     /// `promote` admitted over an invocation whose parameter `t` and result
@@ -1307,7 +1304,7 @@ impl Replay {
             "deleted": [],
         }))
         .expect("the invocation serializes");
-        let invocation = document_ref("call", &invocation_bytes);
+        let invocation = document_ref("call");
         let snapshots = BTreeMap::from([(pre.clone(), pre_bytes), (post.clone(), post_bytes)]);
         let invocations = BTreeMap::from([(invocation.clone(), invocation_bytes)]);
         admit_observations(
@@ -1380,8 +1377,6 @@ fn a_malformed_variant_form_as_a_parameter_or_result_refuses() {
 /// A unit selecting the FR-360 package as `Config` whose function `f` has the
 /// body `body`, parsed by S1.
 fn parsed_with_body(body: &str) -> (String, qsl_cst::ParsedSource) {
-    let bytes = serde_json::to_vec(&fixture::document()).expect("the fixture serializes");
-    let packages = package_input([bytes.as_slice()]).unwrap();
     let source = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\

@@ -337,9 +337,7 @@ fn tc213_retains_exact_key_origin_map_across_order_selection_and_origin_controls
 fn assemble_k2_unit(document: &Value, declarations: &str) -> PackageDeclarations {
     let bytes = serde_json::to_vec(document).expect("K2-derived fixture serializes");
     let packages = package_input([bytes.as_slice()]).unwrap();
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one K2-derived model package");
-    };
+    assert_eq!(packages.len(), 1, "one K2-derived model package");
     let source = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\

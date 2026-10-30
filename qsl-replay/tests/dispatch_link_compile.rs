@@ -125,7 +125,6 @@ fn package(operations: Vec<Value>, subtypes: &[(&str, &str, Vec<Value>)]) -> Vec
 /// its package input.
 fn unit(document: &[u8], declarations: &str) -> (String, qsl_semantics::model::intake::PackageInput) {
     let packages = package_input([document]).unwrap();
-    let digest = packages.keys().next().expect("one package");
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\

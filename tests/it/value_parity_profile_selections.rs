@@ -37,8 +37,7 @@ fn source_identity() -> SourceIdentity {
 }
 
 /// TC-1252's unit `UC`.
-fn uc(document: &[u8]) -> String {
-    let packages = qsl_semantics::model::intake::package_input([document]).unwrap();
+fn uc() -> String {
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
@@ -70,7 +69,7 @@ fn integer(value: i64) -> ScalarOutcome {
 #[test]
 fn a_unit_whose_lock_selects_profiles_replays_with_an_empty_selection_list() {
     let document = crate::support::config_version_spine::spine::DOMAIN_PACKAGE.as_bytes();
-    let source = uc(document);
+    let source = uc();
     let located = call_site(
         source_identity(),
         "uc.native",

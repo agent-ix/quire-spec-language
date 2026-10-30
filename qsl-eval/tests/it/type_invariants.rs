@@ -525,7 +525,7 @@ fn snapshot_doc(
         document["anchor"] = json!({"kind": "handler", "name": "validate"});
     }
     let bytes = serde_json::to_vec(&document).expect("snapshot serializes");
-    (lifecycle_document_ref(label, &bytes), bytes)
+    (lifecycle_document_ref(label), bytes)
 }
 
 fn unsigned_ref(label: &str) -> DocumentRef {
@@ -573,7 +573,7 @@ fn invocation_doc(
         "deleted": [],
     }))
     .expect("invocation serializes");
-    (lifecycle_document_ref(label, &bytes), bytes)
+    (lifecycle_document_ref(label), bytes)
 }
 
 fn clause_facts(package: &CheckedPackage, name: &str) -> ClauseFacts {

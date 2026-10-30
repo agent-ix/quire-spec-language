@@ -180,7 +180,6 @@ pub struct Report<'a> {
 }
 
 struct Catalog<'a> {
-    input: &'a Inventory<'a>,
     definitions: BTreeMap<&'a str, Vec<usize>>,
     rules: BTreeMap<&'a str, Vec<usize>>,
     registered: Vec<Option<RegisteredDefinition>>,
@@ -405,7 +404,6 @@ impl<'a> Catalog<'a> {
     fn new(input: &'a Inventory<'a>, work: &mut Work) -> Result<Self, Exhaustion> {
         work.charge(Dimension::Bytes, input.edition.identity.len())?;
         let mut catalog = Self {
-            input,
             definitions: BTreeMap::new(),
             rules: BTreeMap::new(),
             registered: Vec::new(),
@@ -474,17 +472,17 @@ impl<'a> Catalog<'a> {
     ) -> Result<Result<RegisteredDefinition, Cause>, Exhaustion> {
         work.charge(Dimension::References, 1)?;
         let entries = self.definitions.get(required.identity());
-        let index = match entries.map(Vec::as_slice) {
+        match entries.map(Vec::as_slice) {
             None | Some([]) => return Ok(Err(Cause::MissingDependency(required))),
-            Some([index]) => *index,
+            Some([_]) => {}
             Some(entries) => {
                 return Ok(Err(Cause::AmbiguousDependency {
                     required,
                     entries: entries.to_vec(),
                 }))
             }
-        };
-        // `self.registered[index]` was recognized by this same identity in
+        }
+        // The one entry was recognized by this same identity in
         // `Catalog::new`, so it is exactly `required` here.
         Ok(Ok(required))
     }

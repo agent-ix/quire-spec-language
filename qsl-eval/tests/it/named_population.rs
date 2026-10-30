@@ -62,8 +62,7 @@ struct Listing<'c> {
 }
 
 /// A document's reference, by its canonical digest.
-fn document_ref(label: &str, bytes: &[u8]) -> DocumentRef {
-    let read = quire_canonical::read(bytes, u64::MAX).expect("JSON");
+fn document_ref(label: &str) -> DocumentRef {
     DocumentRef {
         authority: "test".to_owned(),
         identity: label.to_owned(),
@@ -114,7 +113,7 @@ impl Unit {
             "deleted": [],
         }))
         .expect("the invocation serializes");
-        let document = document_ref(label, &bytes);
+        let document = document_ref(label);
         self.invocations.insert(document.clone(), bytes);
         document
     }
@@ -197,7 +196,7 @@ impl Unit {
             document["anchor"] = json!({"kind": "handler", "name": "validate"});
         }
         let bytes = serde_json::to_vec(&document).expect("the snapshot serializes");
-        let document = document_ref(label, &bytes);
+        let document = document_ref(label);
         self.snapshots.insert(document.clone(), bytes);
         document
     }

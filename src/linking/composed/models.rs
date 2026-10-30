@@ -4,7 +4,6 @@
 //! correspondence is inferred.
 
 use std::collections::BTreeMap;
-use std::str::FromStr;
 
 use quire_contract_model as ir;
 
@@ -14,7 +13,7 @@ use crate::checking::{Catalog, DomainType, NativeType};
 use crate::linking::{location, DeclarationKey, DeclarationLocation};
 use crate::native_model::{NativeModel, OperationRole, ScalarRole, ScalarSite};
 use crate::syntax::composed::{self as c, Operation, ParameterType, QualifiedName};
-use qsl_foundation::{ByteDigest, Span, Spanned};
+use qsl_foundation::{Span, Spanned};
 use qsl_semantics::model::admitted::{AdmittedPackage, Declaration, DeclarationKind};
 use qsl_semantics::model::domain_package::DomainPackageRecord;
 use qsl_semantics::model::domain_package::DomainPackageRef;

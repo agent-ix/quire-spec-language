@@ -296,7 +296,6 @@ fn try_world_of(
         "populations": [{"population": ident("calls"), "complete": true, "objects": objects}],
     });
     let bytes = document.to_string().into_bytes();
-    let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
     Ok(World {
         package: CheckedPackage::link(graph),
         packages,

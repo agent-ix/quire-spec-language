@@ -91,7 +91,7 @@ fn minimal<'a>(
     path: &str,
 ) -> CheckedPackage<'a> {
     checked(
-        &vectors::source(&models[0]),
+        &vectors::source(),
         identity,
         revision,
         formal_revision,

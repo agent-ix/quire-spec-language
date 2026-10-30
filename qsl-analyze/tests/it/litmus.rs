@@ -25,7 +25,6 @@ use qsl_package::CheckedPackage;
 use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
 use quire_checked::key::DeclarationKey;
 use quire_exact::Value;
@@ -452,7 +451,6 @@ impl Documents {
             ],
         });
         let bytes = snapshot.to_string().into_bytes();
-        let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
         Self {
             cells: cells.to_vec(),
             packages: package_input([document().as_slice()]).unwrap(),

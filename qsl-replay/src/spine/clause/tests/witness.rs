@@ -92,8 +92,6 @@ const CLAUSES: &[(&str, &str)] = &[
 
 /// The `witness` unit's text, selecting the `Config` domain package.
 fn witness_unit_text() -> String {
-    let document = config_version_domain_document();
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let mut unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\

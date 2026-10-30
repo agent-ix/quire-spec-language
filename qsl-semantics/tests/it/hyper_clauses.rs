@@ -93,9 +93,7 @@ fn assemble_under(
     for alias in aliases {
         let (identity, document) = model(alias);
         let input = package_input([document.as_slice()]).unwrap();
-        let [(digest, _)] = input.iter().collect::<Vec<_>>()[..] else {
-            panic!("one document");
-        };
+        assert_eq!(input.len(), 1, "one document");
         selections.push_str(&format!(
             "model {alias} = {identity:?};\n"
         ));

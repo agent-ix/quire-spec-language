@@ -248,7 +248,7 @@ fn model_package_with(
     Ok((CheckedPackage::link(graph), view, packages))
 }
 
-pub(crate) fn lifecycle_document_ref(label: &str, bytes: &[u8]) -> DocumentRef {
+pub(crate) fn lifecycle_document_ref(label: &str) -> DocumentRef {
     DocumentRef {
         authority: "test".to_owned(),
         identity: label.to_owned(),
@@ -302,7 +302,7 @@ pub(crate) fn lifecycle_observation(
         "contexts": contexts,
     }))
     .expect("lifecycle snapshot serializes");
-    (lifecycle_document_ref(label, &bytes), bytes)
+    (lifecycle_document_ref(label), bytes)
 }
 
 fn lifecycle_invocation(
@@ -346,7 +346,7 @@ pub(crate) fn lifecycle_invocation_with(
         "deleted": [],
     }))
     .expect("lifecycle invocation serializes");
-    (lifecycle_document_ref("i1", &bytes), bytes)
+    (lifecycle_document_ref("i1"), bytes)
 }
 
 pub(crate) fn lifecycle_observations(
@@ -2028,7 +2028,7 @@ fn items_fixture() -> OrdersFixture {
         document["contexts"][0]["fields"]["items"] =
             serde_json::json!({"sequence": [item(true), item(false)]});
         let bytes = serde_json::to_vec(&document).unwrap();
-        (lifecycle_document_ref(label, &bytes), bytes)
+        (lifecycle_document_ref(label), bytes)
     };
     let (pre_ref, pre_bytes) = with_items("p1", "pre", &[(false, false)]);
     let (post_ref, post_bytes) = with_items("q1", "post", &[(true, true)]);
@@ -2093,10 +2093,7 @@ fn a_context_collection_read_under_pre_call_has_no_path() {
         .find(|(_, bytes)| {
             serde_json::from_slice::<serde_json::Value>(bytes).unwrap()["observation"] == "pre"
         })
-        .map(|(digest, bytes)| {
-            let reference = lifecycle_document_ref("p1", bytes);
-            reference
-        })
+        .map(|_| lifecycle_document_ref("p1"))
         .expect("the pre snapshot");
     let by_pre_call = lifecycle_pre_call(
         &package,

@@ -2090,7 +2090,7 @@ fn run_tc464_pre_call(
     )
 }
 
-fn tc464_chain(document: &[u8], observation: &str, complete: bool) -> Vec<u8> {
+fn tc464_chain(observation: &str, complete: bool) -> Vec<u8> {
     tc464_chain_snapshot(
         &frame_label("pre-call-snap"),
         observation,
@@ -2112,7 +2112,7 @@ fn tc464_step5_a_pre_call_admits_one_pre_observation() {
     let observations = run_tc464_pre_call(
         &document,
         "ReachesTarget",
-        tc464_chain(&document, "pre", true),
+        tc464_chain("pre", true),
         vec![("target", tc464_reference(TC464_CONFIG_HISTORY, "a"))],
     )
     .expect("the pre-call observation admits");
@@ -2140,7 +2140,7 @@ fn tc464_step5_a_pre_call_for_a_postcondition_refuses_wrong_observation() {
     let result = run_tc464_pre_call(
         &document,
         "VersionUnchanged",
-        tc464_chain(&document, "pre", true),
+        tc464_chain("pre", true),
         vec![("target", tc464_reference(TC464_CONFIG_HISTORY, "a"))],
     );
     assert_tc465_refused(result, "wrong_snapshot", "wrong-observation");
@@ -2155,7 +2155,7 @@ fn tc464_step5_a_pre_call_snapshot_saying_post_refuses_wrong_observation() {
     let result = run_tc464_pre_call(
         &document,
         "ReachesTarget",
-        tc464_chain(&document, "post", true),
+        tc464_chain("post", true),
         vec![("target", tc464_reference(TC464_CONFIG_HISTORY, "a"))],
     );
     assert_tc465_refused(result, "wrong_snapshot", "wrong-observation");
@@ -2170,7 +2170,7 @@ fn tc464_step5_a_pre_call_without_target_refuses_missing_member() {
     let result = run_tc464_pre_call(
         &document,
         "ReachesTarget",
-        tc464_chain(&document, "pre", true),
+        tc464_chain("pre", true),
         Vec::new(),
     );
     let record = assert_tc465_refused(result, "invalid_runtime_input", "missing-member");
@@ -2191,7 +2191,7 @@ fn tc464_step5_a_pre_call_target_naming_ghost_refuses_dangling_reference() {
     let result = run_tc464_pre_call(
         &document,
         "ReachesTarget",
-        tc464_chain(&document, "pre", true),
+        tc464_chain("pre", true),
         vec![("target", tc464_reference(TC464_CONFIG_HISTORY, "ghost"))],
     );
     let record = assert_tc465_refused(
@@ -2408,7 +2408,7 @@ fn an_unrelated_type_object_refuses_a_parameter_with_wrong_value_kind() {
 #[test]
 fn a_supertype_object_refuses_a_subtype_parameter_with_wrong_value_kind() {
     let (document, clauses) = tc464_sub_target_source();
-    let snapshot_bytes = tc464_chain(&document, "pre", true);
+    let snapshot_bytes = tc464_chain("pre", true);
     let snapshot = qsl_semantics::model::observation::DocumentRef {
         ..frame_label("pre-call-snap")
     };
@@ -2479,7 +2479,7 @@ fn tc464_step5_an_incomplete_pre_call_snapshot_is_incomplete() {
     let result = run_tc464_pre_call(
         &document,
         "ReachesTarget",
-        tc464_chain(&document, "pre", false),
+        tc464_chain("pre", false),
         vec![("target", tc464_reference(TC464_CONFIG_HISTORY, "a"))],
     );
     let record = assert_tc465_incomplete(result, "incomplete_population", "incomplete-scope");
@@ -2965,7 +2965,6 @@ struct Tc465Documents {
 /// `mutate_post`/`mutate_invocation` applied to each document's JSON before
 /// it is digested.
 fn tc465_invocation_documents(
-    document: &[u8],
     mutate_pre: impl FnOnce(&mut serde_json::Value),
     mutate_post: impl FnOnce(&mut serde_json::Value),
     mutate_invocation: impl FnOnce(&mut serde_json::Value),
@@ -3040,7 +3039,7 @@ fn run_tc465_invocation_under(
     qsl_semantics::model::observation::AdmissionFailure,
 > {
     let documents =
-        tc465_invocation_documents(document, mutate_pre, mutate_post, mutate_invocation);
+        tc465_invocation_documents(mutate_pre, mutate_post, mutate_invocation);
     run_tc465_with_clauses_under(
         document,
         TC465_CLAUSES,
@@ -3397,7 +3396,6 @@ fn an_invocation_result_past_the_values_bound_refuses_stage_limit_exceeded() {
 fn run_tc465_current_text(
     document: &[u8],
     build: impl FnOnce(&str) -> String,
-    selected: Option<[u8; 32]>,
     limits: qsl_semantics::model::observation::ObservationLimits,
 ) -> Result<
     qsl_semantics::model::observation::AdmittedObservations,
@@ -3455,14 +3453,13 @@ fn a_snapshot_nested_100_000_deep_is_digested_on_content() {
     let limits = qsl_semantics::model::observation::ObservationLimits::default()
         .with_document_bytes(4_000_000)
         .with_values_per_document(1_000_000);
-    let own = run_tc465_current_text(&document, |text| nest_present(text, 100_000), None, limits);
+    let own = run_tc465_current_text(&document, |text| nest_present(text, 100_000), limits);
     // The digest matched: admission went on to the field's own content
     // check, which refuses the nested value against the declared type.
     assert_tc465_refused(own, "invalid_runtime_input", "wrong-value-kind");
     let other = run_tc465_current_text(
         &document,
         |text| nest_present(text, 100_000),
-        Some([7; 32]),
         limits,
     );
     assert_tc465_refused(other, "stale_dependency", "content-mismatch");
@@ -3483,7 +3480,7 @@ fn a_value_nested_100_000_deep_is_counted_as_observation_values() {
         .with_document_bytes(4_000_000)
         .with_values_per_document(1_000_000);
     let counted = |limits| {
-        run_tc465_current_text(&document, |text| nest_present(text, 100_000), None, limits)
+        run_tc465_current_text(&document, |text| nest_present(text, 100_000), limits)
     };
     // A bound of 50,000 is crossed by the nested value alone, at count 50,001.
     let refused = counted(raised.with_values_per_document(50_000));
@@ -5187,7 +5184,7 @@ fn an_out_of_range_pre_state_value_refuses_under_witnessing() {
 #[test]
 fn an_out_of_range_argument_refuses_whatever_the_limits() {
     let (document, clauses) = tc464_integer_argument_source();
-    let snapshot_bytes = tc464_chain(&document, "pre", true);
+    let snapshot_bytes = tc464_chain("pre", true);
     let snapshot = qsl_semantics::model::observation::DocumentRef {
         ..frame_label("pre-call-snap")
     };
@@ -5273,7 +5270,6 @@ fn tc465_check_frame(
     };
     let identifier = |text: &str| quire_exact::Identifier::new(text).expect("an identifier");
     let documents = tc465_invocation_documents(
-        document,
         mutate_pre,
         mutate_post,
         |value: &mut serde_json::Value| {

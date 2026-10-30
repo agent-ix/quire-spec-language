@@ -39,7 +39,6 @@
 //! `check_connection`/`check_allocation` -- asserting a wholly successful
 //! outcome.
 
-use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;

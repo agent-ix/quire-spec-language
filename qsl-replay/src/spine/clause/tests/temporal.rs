@@ -108,7 +108,7 @@ fn request(
         .enumerate()
         .map(|(position, value)| {
             document_ref_and_bytes(&format!("counter-{position}"), |label| {
-                snapshot(OPERATIONS, label, "current", &[counter("c1", *value)])
+                snapshot(label, "current", &[counter("c1", *value)])
             })
         })
         .collect();
@@ -696,7 +696,7 @@ fn observed_replay_request(
         .enumerate()
         .map(|(index, value)| {
             document_ref_and_bytes(&format!("replay-counter-{index}"), |label| {
-                snapshot(OPERATIONS, label, "current", &[counter("c1", *value)])
+                snapshot(label, "current", &[counter("c1", *value)])
             })
         })
         .collect();

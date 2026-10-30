@@ -89,7 +89,7 @@ fn bump_invocation(
     edit: impl FnOnce(&mut serde_json::Value),
 ) -> BumpInvocation {
     let model_snapshot = |label: &DocumentRef, observation: &str, child_version: i64| {
-        let mut document: serde_json::Value = serde_json::from_slice(&snapshot(
+        let document: serde_json::Value = serde_json::from_slice(&snapshot(
             label,
             observation,
             &[
@@ -203,7 +203,7 @@ fn an_invocation_carrying_a_replacement_frame_is_refused_not_obeyed() {
         let mut input = bump_invocation(1, edit);
         // Re-point `post` at a snapshot whose `child.parent` is absent.
         let (post, post_bytes) = document_ref_and_bytes("bump-post-parent", |label| {
-            let mut document: serde_json::Value = serde_json::from_slice(&snapshot(
+            let document: serde_json::Value = serde_json::from_slice(&snapshot(
                 label,
                 "post",
                 &[object("root", 1, None), object("child", 1, None)],
@@ -213,12 +213,6 @@ fn an_invocation_carrying_a_replacement_frame_is_refused_not_obeyed() {
         });
         input.snapshots.insert(post.clone(), post_bytes);
         let (invocation, invocation_bytes) = document_ref_and_bytes("bump-invocation", |label| {
-            let pre = input
-                .snapshots
-                .keys()
-                .find(|reference| **reference != post)
-                .cloned()
-                .expect("the pre snapshot");
             let pre_ref = DocumentRef {
                 ..config_version_document_ref("bump-pre")
             };

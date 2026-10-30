@@ -12,12 +12,10 @@
     reason = "each including test module uses a different part of the fixture"
 )]
 
-use std::collections::BTreeMap;
 
 use qsl_semantics::check::{CheckRefusal, CheckedGraph, PackageDeclarations};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
-use qsl_semantics::model::key::hex;
 use quire_checked::key::DeclarationKey;
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};

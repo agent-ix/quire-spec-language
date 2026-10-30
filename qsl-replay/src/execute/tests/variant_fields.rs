@@ -26,9 +26,7 @@ fn package_as(alias: &str) -> CheckedPackage {
 fn package_over(document: &serde_json::Value, alias: &str) -> CheckedPackage {
     let bytes = serde_json::to_vec(document).expect("the fixture serializes");
     let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()]).unwrap();
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one model package");
-    };
+    assert_eq!(packages.len(), 1, "one model package");
     let source = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\

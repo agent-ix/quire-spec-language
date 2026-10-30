@@ -129,7 +129,6 @@ fn orders_document(modifies: &[String]) -> Vec<u8> {
 /// postcondition that gives `rehome` its frame node.
 fn orders_unit(modifies: &[String]) -> Unit {
     let document = orders_document(modifies);
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\

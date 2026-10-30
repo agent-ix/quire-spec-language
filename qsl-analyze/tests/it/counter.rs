@@ -18,7 +18,6 @@ use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId, PackageDeclarations};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::observation::{
     declared_type_universe_for, DocumentRef, ObservationLimits,
 };
@@ -176,13 +175,13 @@ fn document_with(parameter_type: Option<String>) -> Vec<u8> {
 
 /// The native unit selecting `document` as `M`, with `body` after the
 /// header.
-pub(crate) fn unit_text(document: &[u8], body: &str) -> String {
-    unit_text_in(PACKAGE, document, body)
+pub(crate) fn unit_text(body: &str) -> String {
+    unit_text_in(PACKAGE, body)
 }
 
 /// The native unit selecting `document`, the domain package `identity`, as
 /// `M`, with `body` after the header.
-pub(crate) fn unit_text_in(identity: &str, document: &[u8], body: &str) -> String {
+pub(crate) fn unit_text_in(identity: &str, body: &str) -> String {
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
@@ -198,7 +197,7 @@ fn declarations(document: &[u8], body: &str) -> PackageDeclarations {
 
 /// The S3 declarations of [`unit_text_in`]'s unit.
 pub(crate) fn declarations_in(identity: &str, document: &[u8], body: &str) -> PackageDeclarations {
-    declarations_from_text(document, unit_text_in(identity, document, body))
+    declarations_from_text(document, unit_text_in(identity, body))
 }
 
 /// The native unit of [`unit_text_in`] with an explicit model profile in its
@@ -208,7 +207,7 @@ pub(crate) fn declarations_with_model_profile(
     document: &[u8],
     body: &str,
 ) -> PackageDeclarations {
-    let text = unit_text_in(identity, document, body).replace(
+    let text = unit_text_in(identity, body).replace(
         "profile v = \"quire.value.complete/v1\";",
         "profile v = \"quire.value.complete/v1\";\nprofile m = \"quire.model.complete/v1\";",
     );
@@ -256,7 +255,7 @@ pub(crate) fn package(document: &[u8], body: &str) -> CheckedPackage {
 /// [`package`] with the temporal profile `quire.temporal.complete/v1`, which
 /// admits a `time` member (FR-230).
 pub(crate) fn timed_package(document: &[u8], body: &str) -> CheckedPackage {
-    let text = unit_text(document, body).replace(
+    let text = unit_text(body).replace(
         "profile t0 = \"quire.temporal.infinite-trace/v1\";",
         "profile t0 = \"quire.temporal.complete/v1\";",
     );
@@ -336,7 +335,6 @@ impl Documents {
                 "objects": objects}],
         });
         let bytes = document.to_string().into_bytes();
-        let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
         self.snapshots.insert(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes);
         DocumentRef {
             authority: "test".to_owned(),

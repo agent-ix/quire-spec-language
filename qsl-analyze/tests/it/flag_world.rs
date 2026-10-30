@@ -355,7 +355,6 @@ impl World {
                 ],
             });
             let bytes = document.to_string().into_bytes();
-            let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
             snapshots.insert(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes);
             initial.push(DocumentRef {
                 authority: "test".to_owned(),

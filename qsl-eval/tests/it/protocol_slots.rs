@@ -86,10 +86,6 @@ fn compensation_package() -> CheckedPackage {
     let model = serde_json::to_vec(&compensation_model::document())
         .expect("the compensation model fixture serializes");
     let package_input = qsl_semantics::model::intake::package_input([model.as_slice()]).unwrap();
-    let digest = package_input
-        .keys()
-        .next()
-        .expect("the model fixture has one package");
     let source = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\

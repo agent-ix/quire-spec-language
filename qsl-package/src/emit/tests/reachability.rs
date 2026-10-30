@@ -144,7 +144,7 @@ pub(super) fn lower_with(document: Vec<u8>, profiles: &str, clauses: &str) -> Lo
 /// `version`.
 pub(super) fn lower_package(
     document: Vec<u8>,
-    (package, version): (&str, &str),
+    (package, _version): (&str, &str),
     profiles: &str,
     clauses: &str,
 ) -> Lowered {

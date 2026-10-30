@@ -22,7 +22,6 @@ use qsl_semantics::check::{
 };
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, package_input, SelectedModels};
-use qsl_semantics::model::key::hex;
 use quire_exact::{ChargePoint, LimitKind, Meter, ScalarLimits, Undefined};
 use quire_semantic_value::catalog::CatalogCode;
 use quire_semantic_value::catalog::Category;

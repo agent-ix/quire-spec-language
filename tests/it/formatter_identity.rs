@@ -2139,7 +2139,7 @@ fn generated_config_version_unit_keeps_checked_identity() {
         crate::support::config_version_spine::spine::unit_identity(),
         "config-version.native",
         source.as_bytes(),
-        &crate::support::config_version_spine::spine::domain_packages(),
+        &qsl_semantics::model::intake::package_input([crate::support::config_version_spine::spine::DOMAIN_PACKAGE.as_bytes()]).unwrap(),
         &DependencyInput::default(),
     )
     .expect("ConfigVersion fixture checks before and after formatting");

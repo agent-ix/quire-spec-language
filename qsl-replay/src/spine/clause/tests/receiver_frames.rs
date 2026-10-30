@@ -48,7 +48,6 @@ pub(super) fn counter(key: &str, value: i64) -> serde_json::Value {
 }
 
 pub(super) fn snapshot(
-    operations: &[&str],
     label: &DocumentRef,
     observation: &str,
     objects: &[serde_json::Value],
@@ -96,14 +95,13 @@ fn run_selected(
     let (unit, packages) = unit_and_packages(operations);
     let (pre, pre_bytes) = document_ref_and_bytes("counters-pre", |label| {
         snapshot(
-            operations,
             label,
             "pre",
             &[counter("c1", 0), counter("c2", 0)],
         )
     });
     let (post, post_bytes) = document_ref_and_bytes("counters-post", |label| {
-        snapshot(operations, label, "post", post_objects)
+        snapshot(label, "post", post_objects)
     });
     let (invocation, invocation_bytes) = document_ref_and_bytes("counters-invocation", |label| {
         json!({

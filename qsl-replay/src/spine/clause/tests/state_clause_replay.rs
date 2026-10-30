@@ -17,7 +17,7 @@ use crate::{
     ReplayResult, ReplaySource, ReplayTarget, SnapshotValue, StateClauseCounterexample,
     StateClauseKind, StateClauseReplayResult, Verdict, WitnessEnvelope, WitnessSettlement,
 };
-use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
+use qsl_foundation::digest::{DigestDomain, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_exact::Identifier;

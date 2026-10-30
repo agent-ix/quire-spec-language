@@ -12,7 +12,7 @@
 //! here yet.
 
 use crate::composed_domain_models::{
-    admitted_with, admitted_with_bytes, admitted_with_populations, architecture_bundle, hex,
+    admitted_with, admitted_with_bytes, admitted_with_populations, architecture_bundle,
     pump_operations, record_value_type,
 };
 use crate::support::native_protocol::{Inputs, Unit};
@@ -629,13 +629,6 @@ fn domain_object_populations_and_operations_emit_and_read_back() {
 fn substituted_domain_population_and_operation_keys_refuse() {
     let run = emitted_run_export();
     let inputs = pump_inputs(run);
-    let selection = inputs
-        .domain
-        .as_ref()
-        .expect("domain input")
-        .package
-        .selection()
-        .clone();
     inputs.with_proofs(
         TypeLimits::default(),
         proofs::ProofLimits::default(),

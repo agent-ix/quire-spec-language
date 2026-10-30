@@ -305,7 +305,6 @@ fn labels(reference: &DocumentRef) -> Value {
 /// bytes.
 fn provision(reference: &DocumentRef, value: &Value) -> (DocumentRef, Vec<u8>) {
     let bytes = value.to_string().into_bytes();
-    let document = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
     (
         DocumentRef {
             ..reference.clone()
@@ -463,7 +462,7 @@ impl Admission {
     /// `{Q, s1}`.
     fn admit(
         &self,
-        mut document: Value,
+        document: Value,
         limits: ObservationLimits,
     ) -> (Result<AdmittedObservations, AdmissionFailure>, DocumentRef) {
         let (snapshot, bytes) = provision(&label("current"), &document);

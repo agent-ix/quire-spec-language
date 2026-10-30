@@ -1374,23 +1374,6 @@ fn population_universe_for_agrees_with_normalize_s_own_universe_assignment() {
 // an empty string.
 // ---------------------------------------------------------------------------
 
-/// A snapshot document naming `label`, with `model` set to the raw JSON
-/// `model_json` verbatim -- for exercising `read_model`'s own defect
-/// reporting, never a well-formed `model` header.
-fn snapshot_bytes_with_model(label: &DocumentRef, model_json: &str) -> Vec<u8> {
-    format!(
-        r#"{{
-            "format": "quire.state.snapshot/v1",
-            "identity": {{"authority": "{}", "identity": "{}", "revision_namespace": "{}", "revision": "{}"}},
-            "observation": "current",
-            "model": {model_json},
-            "populations": []
-        }}"#,
-        label.authority, label.identity, label.revision_namespace, label.revision
-    )
-    .into_bytes()
-}
-
 // ---------------------------------------------------------------------------
 // TC-466 (FR-107-AC-1, AC-2, AC-3; SR-751 FND-003): S6a evaluates state
 // clauses over their observations, `pre` reads and `reaches`, run through

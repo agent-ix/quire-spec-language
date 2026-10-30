@@ -544,9 +544,7 @@ fn a_deletes_self_frame_grants_the_receiver_only_and_differs_from_deletes_type()
     );
 
     let parts = unit_of(&operations, &overrides);
-    let [(digest, _)] = parts.packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
+    assert_eq!(parts.packages.len(), 1, "one supplied document");
     let selection = DomainPackageRef {
         identity: fixture::PACKAGE.to_owned(),
     };

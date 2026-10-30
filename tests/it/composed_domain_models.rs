@@ -50,7 +50,6 @@ use quire_spec_language::linking::composed::{
     admit_namespace, ExpectedSource, SourceInventory, SyntaxNamespace, WorkLimits,
 };
 use quire_spec_language::Limits;
-use sha2::{Digest, Sha256};
 
 const PACKAGE: &str = "agent-ix/architecture";
 
@@ -294,10 +293,6 @@ fn key(artifact: &str) -> DeclarationKey {
         package: PACKAGE.to_owned(),
         node: format!("ix://{PACKAGE}/{artifact}"),
     }
-}
-
-pub(crate) fn hex(digest: &[u8; 32]) -> String {
-    digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 const DECLARATIONS: &str =

@@ -21,7 +21,6 @@ use qsl_semantics::check::{
 };
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, package_input};
-use qsl_semantics::model::key::hex;
 use qsl_semantics::value::{CatalogRole, DefinitionLock};
 use quire_exact::{Cancel, CancelCause, LimitKind, Meter, ScalarLimits, Undefined};
 use std::sync::atomic::{AtomicU64, Ordering};

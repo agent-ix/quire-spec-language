@@ -620,7 +620,7 @@ pub(super) fn checked(
 /// `version`.
 pub(super) fn checked_package(
     document: Vec<u8>,
-    (package, version): (&str, &str),
+    (package, _version): (&str, &str),
     text: &str,
     open: bool,
 ) -> Result<qsl_semantics::check::CheckedGraph, Vec<CheckRefusal>> {

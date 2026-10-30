@@ -77,7 +77,6 @@ pub(super) fn verdict(lowered: &Lowered, envelope: &Value) -> String {
         evidence.support_feature(feature.as_str().unwrap());
     }
     let document = document();
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     evidence
         .insert_domain_package_document(package_identity(&document[..],), &document[..],)
         .expect("a fresh evidence key");

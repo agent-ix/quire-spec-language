@@ -2587,8 +2587,6 @@ pub fn lookup(
 mod tests {
     use ix_trace_rs::trace;
 
-    use sha2::{Digest, Sha256};
-
     use super::*;
     use crate::model::accounting::ModelNormalizationLimits;
     use crate::model::domain_package::{ObjectTypeRecord, PopulationRecord};

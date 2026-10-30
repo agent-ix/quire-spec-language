@@ -33,7 +33,7 @@ fn formal() -> ir::SourceIdentity {
     )
 }
 
-fn text(model: &NativeModel, expression: &str) -> String {
+fn text(_model: &NativeModel, expression: &str) -> String {
     format!(
         "language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"example/rule-tests\";\n// Ω preserves Unicode coordinates\ninvariant Rule on M::Node at current {{ {expression} }}\n"
     )

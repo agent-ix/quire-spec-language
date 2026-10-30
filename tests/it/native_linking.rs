@@ -5,7 +5,7 @@ use crate::support::native_rule_model;
 
 use ix_trace_rs::trace;
 use native_rule_model::{parts, symbol, Parts};
-use qsl_foundation::{ByteDigest, Code, Phase, Source, SourceIdentity};
+use qsl_foundation::{Code, Phase, Source, SourceIdentity};
 use quire_contract_model as ir;
 use quire_spec_language::formal_source::FormalSource;
 use quire_spec_language::linking::{DeclarationKey, ResolutionTarget};
