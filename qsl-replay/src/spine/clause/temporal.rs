@@ -199,7 +199,7 @@ pub(super) fn run_temporal(
         graph.model_selections(),
         run.packages,
         run.model_limits,
-        *type_identity,
+        type_identity.clone(),
     ) {
         Ok(universe) => universe,
         Err(failure) => return late(ClauseDisposition::Admit(failure)),

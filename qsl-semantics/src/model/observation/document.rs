@@ -4353,7 +4353,7 @@ mod tests {
             quire_exact::IeeeWidth::Binary64,
             quire_exact::RoundingMode::Exact,
         ));
-        let quantity = quire_exact::ValueType::Quantity(quire_exact::UnitId::compound([1; 32]));
+        let quantity = quire_exact::ValueType::Quantity(quire_exact::UnitId::compound(Vec::new()));
         let decimal = r#"{"kind":"decimal","coefficient":"5","scale":"1"}"#;
         let in_quantity = r#"{"kind":"quantity","unit":"s","magnitude":{"kind":"rational","numerator":"1","denominator":"2"}}"#;
         let rational = rational_object("1", "2");

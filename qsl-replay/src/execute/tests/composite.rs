@@ -141,7 +141,10 @@ impl Fixture {
     fn witness(&self, function: &str, value: &WitnessValue) -> ReplayRequestWire {
         let parameter = self.parameter(function);
         let text = value.to_value_text().unwrap();
-        let transcript = format!("<<<assertion|{function}|c|{}={text}>>>", crate::pn(&parameter));
+        let transcript = format!(
+            "<<<assertion|{function}|c|{}={text}>>>",
+            crate::pn(&parameter)
+        );
         self.request(
             function,
             ReplaySource::Witness(Witness::parse(transcript).unwrap()),
@@ -256,7 +259,7 @@ fn tc_906_a_value_the_declared_type_does_not_admit_refuses_by_kind() {
     let (inner, outer_id) = (fixture.record_id("Inner"), fixture.record_id("Outer"));
     let good = |a: WitnessValue| vec![present("a", a), present("b", WitnessValue::Boolean(true))];
     let with_inner = |inner_value: WitnessValue| WitnessValue::Record {
-        declaration: outer_id,
+        declaration: outer_id.clone(),
         fields: vec![
             present("i", inner_value),
             present("o", WitnessValue::Option(None)),
@@ -271,7 +274,7 @@ fn tc_906_a_value_the_declared_type_does_not_admit_refuses_by_kind() {
         (
             "a sequence given for the option",
             WitnessValue::Record {
-                declaration: outer_id,
+                declaration: outer_id.clone(),
                 fields: vec![
                     present("i", inner_record(good(int(7)))),
                     present("o", WitnessValue::Sequence(vec![])),
@@ -538,7 +541,7 @@ fn tc_906_leaf_families_replay_and_refuse_by_kind_and_domain() {
     };
     let color_id = fixture.enum_id("Color");
     let shade_id = fixture.enum_id("Shade");
-    assert_reproduced(witness("ec", color(color_id, "RED")));
+    assert_reproduced(witness("ec", color(color_id.clone(), "RED")));
     assert_reproduced(witness("tx", text("a;b>c")));
     assert_reproduced(witness("ra", rational(3, 2)));
     assert_reproduced(witness("dc", decimal(1050, 2)));
@@ -596,7 +599,7 @@ fn convert_one(
 #[test]
 fn tc_906_a_quantity_converts_in_its_declared_unit_only() {
     let declared_unit = quire_exact::UnitId::declared(crate::fixture_node(7));
-    let declared = ValueType::Quantity(declared_unit);
+    let declared = ValueType::Quantity(declared_unit.clone());
     let quantity = |unit: quire_exact::UnitId| WitnessValue::Quantity {
         magnitude: QuantityMagnitude::Decimal {
             coefficient: Integer::from(15_i64),
@@ -604,7 +607,8 @@ fn tc_906_a_quantity_converts_in_its_declared_unit_only() {
         },
         unit,
     };
-    let converted = convert_one(&declared, &quantity(declared_unit.clone()), &UNLIMITED).expect("converts");
+    let converted =
+        convert_one(&declared, &quantity(declared_unit.clone()), &UNLIMITED).expect("converts");
     let quire_exact::Value::Quantity(converted) = converted else {
         panic!("a quantity");
     };
@@ -614,7 +618,11 @@ fn tc_906_a_quantity_converts_in_its_declared_unit_only() {
         "1.5 converts exactly"
     );
     assert_eq!(converted.unit(), &declared_unit);
-    let refused = convert_one(&declared, &quantity(quire_exact::UnitId::declared(crate::fixture_node(8))), &UNLIMITED);
+    let refused = convert_one(
+        &declared,
+        &quantity(quire_exact::UnitId::declared(crate::fixture_node(8))),
+        &UNLIMITED,
+    );
     assert_eq!(
         refused.as_ref().err().and_then(refused_parameter),
         Some(0),
@@ -677,7 +685,7 @@ fn on_small_stack(body: impl FnOnce() + Send + 'static) {
 /// `record List { head: Int[0, 9]; tail: List?; }` nested `depth` deep.
 fn list(declaration: NodeKey, depth: usize) -> WitnessValue {
     let mut value = WitnessValue::Record {
-        declaration,
+        declaration: declaration.clone(),
         fields: vec![present("head", int(1)), field("tail", WitnessSlot::Absent)],
     };
     for _ in 1..depth {
@@ -880,7 +888,7 @@ fn convert_via_witness(
 ) -> Result<quire_exact::Value, argument::Stopped> {
     let parameter = crate::fixture_node(1);
     let binding = WitnessBinding {
-        parameter,
+        parameter: parameter.clone(),
         value_type: witness_type(0, declared).expect("a UUID or Timestamp has a witness form"),
     };
     let transcript = format!(
@@ -1098,7 +1106,7 @@ fn admitted_composite_keys_are_the_keys_replay_converts_against() {
     };
     let (pair, holder) = (find("Pair"), find("Holder"));
     let id = |key: quire_exact::NodeKey| key.clone();
-    assert_eq!(id(holder.key()), fixture.record_id("Holder"));
+    assert_eq!(id(holder.key().clone()), fixture.record_id("Holder"));
     let value = |pair: NodeKey, holder: NodeKey| WitnessValue::Record {
         declaration: holder,
         fields: vec![
@@ -1112,10 +1120,10 @@ fn admitted_composite_keys_are_the_keys_replay_converts_against() {
             ),
         ],
     };
-    for result in fixture.both("p", value(id(pair.key()), id(holder.key()))) {
+    for result in fixture.both("p", value(id(pair.key().clone()), id(holder.key().clone()))) {
         assert_reproduced(result);
     }
-    for result in fixture.both("p", value(id(pair.node()), id(holder.node()))) {
+    for result in fixture.both("p", value(id(pair.node().clone()), id(holder.node().clone()))) {
         assert!(
             result.is_err(),
             "node ids are not the kernel keys: {result:?}"
@@ -1162,10 +1170,10 @@ fn admitted_union_node_is_what_replay_converts_a_union_witness_against() {
         member: member.clone(),
         components: vec![int(2)],
     };
-    for result in fixture.both("p", value(id(shape.node()))) {
+    for result in fixture.both("p", value(id(shape.node().clone()))) {
         assert_reproduced(result);
     }
-    for result in fixture.both("p", value(id(shape.key()))) {
+    for result in fixture.both("p", value(id(shape.key().clone()))) {
         assert!(
             result.is_err(),
             "the kernel key is not the settled union id: {result:?}"

@@ -23,8 +23,8 @@ use quire_semantic_value::supplied_stop::{SuppliedFailure, SuppliedRun, Supplied
 use super::argument::{self, Stopped};
 use super::{
     arguments, call_failure_to_replay_refusal, consumed, declaration_occurrence, function_target,
-    recompile, request_limits, select, value_parity_obligation, value_parity_preimage,
-    Claim, ReplayRefusal, ScalarIdentityMismatch, Selected,
+    recompile, request_limits, select, value_parity_obligation, value_parity_preimage, Claim,
+    ReplayRefusal, ScalarIdentityMismatch, Selected,
 };
 use crate::bounds::ReplayLimits;
 use crate::identity::QualifiedName;
@@ -197,7 +197,7 @@ fn check_identity(
         });
     }
     let mismatch = |cause| ReplayRefusal::ScalarIdentity(Box::new(cause));
-    let preimage = value_parity_preimage(package, call.identity, &call.parameters)
+    let preimage = value_parity_preimage(package, call.identity.clone(), &call.parameters)
         .map_err(ReplayRefusal::Fault)?;
     let recomputed = value_parity_obligation(&preimage)
         .map_err(|error| mismatch(ScalarIdentityMismatch::Encoding(error)))?;

@@ -236,12 +236,13 @@ mod tests {
     /// though `conforms` is reflexive.
     #[test]
     fn an_operation_of_an_unadmitted_type_resolves_missing() {
-        let unadmitted = EffectiveId::from_digest([7; 32]);
+        let unadmitted =
+            EffectiveId::new(None, quire_exact::OriginalDeclarationKey::new("test", "n7"));
         let mut table = OperationTable::default();
-        table.declare(unadmitted, vec![ship()]);
+        table.declare(unadmitted.clone(), vec![ship()]);
         let types = TypeEnvironment::new([], []).expect("an empty environment admits");
         assert_eq!(
-            table.resolve(&types, unadmitted, "ship"),
+            table.resolve(&types, unadmitted.clone(), "ship"),
             OperationLookup::Missing
         );
     }
@@ -250,14 +251,17 @@ mod tests {
     /// it, declared by that type.
     #[test]
     fn an_operation_of_an_admitted_type_resolves_declared() {
-        let admitted = EffectiveId::from_digest([8; 32]);
+        let admitted =
+            EffectiveId::new(None, quire_exact::OriginalDeclarationKey::new("test", "n8"));
         let mut table = OperationTable::default();
-        table.declare(admitted, vec![ship()]);
-        let types =
-            TypeEnvironment::new([], [ObjectTypeDeclaration::new(admitted, "M::A", vec![])])
-                .expect("one object type admits");
+        table.declare(admitted.clone(), vec![ship()]);
+        let types = TypeEnvironment::new(
+            [],
+            [ObjectTypeDeclaration::new(admitted.clone(), "M::A", vec![])],
+        )
+        .expect("one object type admits");
         assert_eq!(
-            table.resolve(&types, admitted, "ship"),
+            table.resolve(&types, admitted.clone(), "ship"),
             OperationLookup::Declared {
                 declaring: admitted,
                 operation: &ship(),

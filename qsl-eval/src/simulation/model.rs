@@ -716,14 +716,17 @@ impl<'a> ModelSystem<'a> {
         let mut applications = BTreeMap::new();
         for declaration in types.object_types() {
             let identity = declaration.key();
-            let Some(type_key) = model.type_key(identity).cloned() else {
+            let Some(type_key) = model.type_key(identity.clone()).cloned() else {
                 continue;
             };
             let declared = model
                 .fields(&type_key)?
                 .ok_or_else(|| fault("type-fields"))?;
             fields.insert(type_key, declared);
-            applications.insert(identity, Self::applications_of(graph, &model, identity)?);
+            applications.insert(
+                identity.clone(),
+                Self::applications_of(graph, &model, identity)?,
+            );
         }
 
         // FR-120-AC-26, FR-230 "Initial element count": a collection of bare
@@ -970,7 +973,7 @@ impl<'a> ModelSystem<'a> {
             .flatten()
             .find(|application| {
                 application.name == key.operation.as_str()
-                    && self.model.type_key(application.declaring) == Some(&key.declaring)
+                    && self.model.type_key(application.declaring.clone()) == Some(&key.declaring)
             })
             .map(|application| application.text.as_str())
     }
@@ -988,15 +991,16 @@ impl<'a> ModelSystem<'a> {
             .flatten()
             .map(|application| {
                 (
-                    application.declaring,
+                    application.declaring.clone(),
                     application.name.as_str(),
                     application.text.as_str(),
                 )
             })
             .collect();
-        operations
-            .sort_by(|left, right| (left.0, left.1.as_bytes()).cmp(&(right.0, right.1.as_bytes())));
-        operations.dedup_by(|next, kept| (next.0, next.1) == (kept.0, kept.1));
+        operations.sort_by(|left, right| {
+            (left.0.clone(), left.1.as_bytes()).cmp(&(right.0.clone(), right.1.as_bytes()))
+        });
+        operations.dedup_by(|next, kept| (next.0.clone(), next.1) == (kept.0.clone(), kept.1));
         operations
     }
 
@@ -1010,7 +1014,7 @@ impl<'a> ModelSystem<'a> {
         let types = graph.scope().types();
         let mut names = BTreeSet::new();
         for declaring in types.object_types() {
-            if types.conforms(identity, declaring.key()) {
+            if types.conforms(identity.clone(), declaring.key()) {
                 for operation in operations.declared_by(declaring.key()) {
                     names.insert(operation.name().to_owned());
                 }
@@ -1021,12 +1025,12 @@ impl<'a> ModelSystem<'a> {
             let qsl_semantics::model::operation::OperationLookup::Declared {
                 declaring,
                 operation,
-            } = operations.resolve(types, identity, &name)
+            } = operations.resolve(types, identity.clone(), &name)
             else {
                 continue;
             };
             let owner = model
-                .type_key(declaring)
+                .type_key(declaring.clone())
                 .ok_or_else(|| fault("operation-owner"))?;
             let key = DeclarationKey {
                 package: owner.package.clone(),
@@ -1055,7 +1059,10 @@ impl<'a> ModelSystem<'a> {
                 identity: clause.identity(),
                 context: clause.context(),
                 operation: clause.operation().map(|operation| {
-                    (operation.declaring, operation.declaration.name().to_owned())
+                    (
+                        operation.declaring.clone(),
+                        operation.declaration.name().to_owned(),
+                    )
                 }),
             };
             match clause.observation() {
@@ -1187,7 +1194,7 @@ impl<'a> ModelSystem<'a> {
         };
         let mut admitting = Vec::new();
         for population in &self.populations {
-            if self.overlaps(population, *parameter) {
+            if self.overlaps(population, parameter.clone()) {
                 let text = declaration_text(&population.key, CanonicalLimits::new(u64::MAX))
                     .map_err(|_| {
                         NotSimulated::Extent(ClassifyFailure::Fault(InternalFault::new(
@@ -1242,7 +1249,8 @@ impl<'a> ModelSystem<'a> {
     ) -> bool {
         population.member_types.iter().any(|member| {
             self.model.type_identity(member).is_some_and(|member| {
-                self.types.conforms(member, parameter) || self.types.conforms(parameter, member)
+                self.types.conforms(member.clone(), parameter.clone())
+                    || self.types.conforms(parameter.clone(), member)
             })
         })
     }
@@ -1299,8 +1307,11 @@ impl<'a> ModelSystem<'a> {
                 continue;
             }
             let identity = self.model.type_identity(type_key)?;
-            for instance in self.instances(&ValueType::Reference(identity)).ok()? {
-                objects.push(self.bound_reference(identity, &instance).ok()?);
+            for instance in self
+                .instances(&ValueType::Reference(identity.clone()))
+                .ok()?
+            {
+                objects.push(self.bound_reference(identity.clone(), &instance).ok()?);
             }
         }
         objects.sort();

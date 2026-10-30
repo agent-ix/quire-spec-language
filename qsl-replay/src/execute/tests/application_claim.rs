@@ -75,12 +75,7 @@ fn at(
     key: &OccurrenceKey,
     source: ReplaySource,
 ) -> ReplayRequestWire {
-    let mut wire = request(
-        source_text.as_bytes(),
-        &compiled,
-        name(&[function]),
-        source,
-    );
+    let mut wire = request(source_text.as_bytes(), &compiled, name(&[function]), source);
     wire.replay_target = crate::RequestTargetWire::function(name(&[function]), key.clone());
     wire
 }
@@ -201,7 +196,11 @@ fn tc_444_the_occurrence_key_selects_the_predicate_or_the_application_claim() {
     );
     let witness = |value: &str| {
         ReplaySource::Witness(
-            Witness::parse(format!("<<<assertion|h|c|{}={value}>>>", crate::pn(&x("r")))).unwrap(),
+            Witness::parse(format!(
+                "<<<assertion|h|c|{}={value}>>>",
+                crate::pn(&x("r"))
+            ))
+            .unwrap(),
         )
     };
     assert_eq!(
@@ -280,11 +279,11 @@ fn tc_444_each_occurrence_of_one_node_is_a_claim_of_its_own() {
     let then_branch = record(&compiled, &source, "s", "10 mod x", 0);
     let right_operand = record(&compiled, &source, "s", "10 mod x", 1);
     assert_eq!(
-        settled(run(&source, &compiled, "s", &then_branch, &[(x, int(0))])),
+        settled(run(&source, &compiled, "s", &then_branch, &[(x.clone(), int(0))])),
         Settled::NoValue
     );
     assert_eq!(
-        settled(run(&source, &compiled, "s", &right_operand, &[(x, int(0))])),
+        settled(run(&source, &compiled, "s", &right_operand, &[(x.clone(), int(0))])),
         Settled::Reproduced(boolean(false))
     );
     assert_eq!(
@@ -312,7 +311,7 @@ fn tc_444_binder_bodies_are_observed_and_unread_parameters_are_filled() {
             &compiled,
             "b",
             &b_application,
-            &[(t, sequence(&[3, 0]))]
+            &[(t.clone(), sequence(&[3, 0]))]
         )),
         Settled::Reproduced(boolean(false))
     );
@@ -322,7 +321,7 @@ fn tc_444_binder_bodies_are_observed_and_unread_parameters_are_filled() {
             &compiled,
             "b",
             &b_application,
-            &[(t, sequence(&[3]))]
+            &[(t.clone(), sequence(&[3]))]
         )),
         Settled::Verdicts(boolean(true))
     );
@@ -333,7 +332,7 @@ fn tc_444_binder_bodies_are_observed_and_unread_parameters_are_filled() {
         &compiled,
         "b",
         &b_application,
-        &[(t, sequence(&[3])), (binder, int(0))],
+        &[(t, sequence(&[3])), (binder.clone(), int(0))],
     )
     .unwrap_err();
     assert!(matches!(refused, ReplayRefusal::UnknownParameter(node) if node == binder));
@@ -342,18 +341,19 @@ fn tc_444_binder_bodies_are_observed_and_unread_parameters_are_filled() {
     let y = parameter(&compiled, "u", 1);
     let u_application = record(&compiled, &source, "u", "10 mod x", 0);
     assert_eq!(
-        settled(run(&source, &compiled, "u", &u_application, &[(x, int(0))])),
+        settled(run(&source, &compiled, "u", &u_application, &[(x.clone(), int(0))])),
         Settled::Reproduced(boolean(false))
     );
     let refused = run(&source, &compiled, "u", &u_application, &[(y, int(1))]).unwrap_err();
     assert!(matches!(refused, ReplayRefusal::UnboundParameter(node) if node == x));
     // The predicate claim binds every parameter.
     let u_declaration = declaration(&compiled, "u");
-    let refused = run(&source, &compiled, "u", &u_declaration, &[(x, int(0))]).unwrap_err();
+    let refused = run(&source, &compiled, "u", &u_declaration, &[(x.clone(), int(0))]).unwrap_err();
     assert!(matches!(refused, ReplayRefusal::NotAPredicate { .. }));
     // A witness transcript may likewise leave the unread parameter out.
-    let transcript =
-        ReplaySource::Witness(Witness::parse(format!("<<<assertion|h|c|{}=0>>>", crate::pn(&x))).unwrap());
+    let transcript = ReplaySource::Witness(
+        Witness::parse(format!("<<<assertion|h|c|{}=0>>>", crate::pn(&x))).unwrap(),
+    );
     assert_eq!(
         settled(replay(
             at(&source, &compiled, "u", &u_application, transcript),
@@ -490,7 +490,7 @@ fn tc_444_claim_selection_comes_after_the_function_and_before_the_join() {
             "p",
             &r_application,
             ReplaySource::Input(vec![CanonicalAssignment {
-                parameter: x,
+                parameter: x.clone(),
                 value: int(0),
             }]),
         )

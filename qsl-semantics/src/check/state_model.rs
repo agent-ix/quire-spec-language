@@ -639,7 +639,7 @@ mod tests {
         use quire_semantic_value::declaration::{
             CompositeDeclaration, CompositeShape, FieldDeclaration, TypeEnvironment,
         };
-        let [money, taxed, fee] = [1, 2, 3].map(|byte| NodeKey::from_digest([byte; 32]));
+        let [money, taxed, fee] = [1, 2, 3].map(|byte| quire_exact::NodeKey::new("fixture".to_owned(), vec![quire_exact::PathSegment::Text(format!("n{byte}"))], 0).expect("a fixture key"));
         let record = |key, name: &str, supertypes: Vec<NodeKey>| {
             CompositeDeclaration::new(
                 key,
@@ -654,9 +654,9 @@ mod tests {
         };
         let types = TypeEnvironment::new(
             [
-                record(money, "Money", vec![]),
-                record(taxed, "TaxedMoney", vec![money]),
-                record(fee, "Fee", vec![]),
+                record(money.clone(), "Money", vec![]),
+                record(taxed.clone(), "TaxedMoney", vec![money.clone()]),
+                record(fee.clone(), "Fee", vec![]),
             ],
             [],
         )
@@ -691,8 +691,8 @@ mod tests {
             ValueType::collection(CollectionType::new(CollectionKind::Sequence, element, None))
         };
         for (actual, required) in [
-            (composite(taxed), composite(money)),
-            (composite(money), composite(money)),
+            (composite(taxed.clone()), composite(money.clone())),
+            (composite(money.clone()), composite(money.clone())),
         ] {
             match argument(actual, required.clone()) {
                 Ok(Checked::Type(declared)) => assert_eq!(declared, required),
@@ -700,9 +700,9 @@ mod tests {
             }
         }
         for (actual, required) in [
-            (composite(money), composite(taxed)),
-            (composite(fee), composite(money)),
-            (sequence_of(composite(taxed)), sequence_of(composite(money))),
+            (composite(money.clone()), composite(taxed.clone())),
+            (composite(fee.clone()), composite(money.clone())),
+            (sequence_of(composite(taxed.clone())), sequence_of(composite(money.clone()))),
         ] {
             assert!(argument(actual, required).is_err());
         }

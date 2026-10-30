@@ -1877,8 +1877,10 @@ fn value_type_source(value_type: &quire_exact::ValueType) -> String {
                 mode => format!("{bare}[{}]", mode.as_str()),
             }
         }
-        ValueType::Quantity(unit) => format!("Quantity[{unit}]"),
-        ValueType::BoundedQuantity(bounded) => format!("BoundedQuantity[{}]", bounded.unit()),
+        ValueType::Quantity(unit) => format!("Quantity[{}]", unit_spelling(unit)),
+        ValueType::BoundedQuantity(bounded) => {
+            format!("BoundedQuantity[{}]", unit_spelling(bounded.unit()))
+        }
         ValueType::Map(map) => {
             let values = value_type_source(map.values());
             match map.bound() {
@@ -1919,7 +1921,7 @@ fn value_type_source(value_type: &quire_exact::ValueType) -> String {
                 None => format!("{kind}<{element}>"),
             }
         }
-        ValueType::Reference(id) => format!("Reference[{id}]"),
+        ValueType::Reference(id) => format!("Reference[{}]", effective_spelling(id)),
         ValueType::Population(Some(maximum)) => format!("Population<_>[{maximum}]"),
         ValueType::Population(None) => "Population<_>".to_owned(),
     }
@@ -1974,14 +1976,16 @@ mod tests {
             super::value_type_source(&map(Some(bound))),
             "Map<Text, Boolean>[1, 4]"
         );
-        let unit = quire_exact::UnitId::compound([5; 32]);
+        let unit = quire_exact::UnitId::declared(
+            quire_exact::NodeKey::new("fixture", Vec::new(), 5).expect("a key"),
+        );
         let bounded = ValueType::BoundedQuantity(std::sync::Arc::new(
-            quire_exact::BoundedQuantityType::new(unit, None, None)
+            quire_exact::BoundedQuantityType::new(unit.clone(), None, None)
                 .expect("an unbounded bounded quantity type"),
         ));
         assert_eq!(
             super::value_type_source(&bounded),
-            format!("BoundedQuantity[{unit}]")
+            format!("BoundedQuantity[{}]", super::unit_spelling(&unit))
         );
     }
 
@@ -2522,7 +2526,14 @@ mod tests {
                 "Option<Sequence<Integer>[1, 4]>",
             ),
             (
-                ValueType::Composite(NodeKey::new("fixture", vec![quire_exact::PathSegment::Text("node".into())], 0xab).expect("a fixture key")),
+                ValueType::Composite(
+                    NodeKey::new(
+                        "fixture",
+                        vec![quire_exact::PathSegment::Text("node".into())],
+                        0xab,
+                    )
+                    .expect("a fixture key"),
+                ),
                 &format!("Composite[{}]", "ab".repeat(32)),
             ),
         ];
@@ -2534,4 +2545,24 @@ mod tests {
             "(Boolean, String)"
         );
     }
+}
+
+/// A structural spelling of a unit: the declared node's key, or the
+/// compound terms as `key^exponent` factors.
+fn unit_spelling(unit: &quire_exact::UnitId) -> String {
+    if let Some(key) = unit.declared_key() {
+        return key.to_string();
+    }
+    unit.compound_terms()
+        .unwrap_or_default()
+        .iter()
+        .map(|(key, exponent)| format!("{key}^{exponent}"))
+        .collect::<Vec<_>>()
+        .join("*")
+}
+
+/// A structural spelling of an effective identity: its original declaration.
+pub(crate) fn effective_spelling(id: &quire_exact::EffectiveId) -> String {
+    let original = id.original();
+    format!("{}/{}", original.package(), original.node())
 }

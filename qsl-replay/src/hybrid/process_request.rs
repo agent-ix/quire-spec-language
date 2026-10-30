@@ -264,11 +264,8 @@ impl HybridProcessRequest {
             {
                 return Err(HybridProcessRequestRefusal::ClaimMismatch);
             }
-            let claim_node = item.claim["node"]
-                .as_object()
-                .and_then(|node| node.get("digest"))
-                .and_then(Value::as_str)
-                .ok_or(HybridProcessRequestRefusal::MalformedRequest)?;
+            let claim_node = qsl_foundation::node_wire::node_key_from_json(&item.claim["node"])
+                .map_err(|_| HybridProcessRequestRefusal::MalformedRequest)?;
             let claim_wire = item
                 .claim
                 .as_object()
@@ -290,7 +287,7 @@ impl HybridProcessRequest {
                 .and_then(|nodes| {
                     nodes
                         .iter()
-                        .find(|node| node["node_id"]["digest"].as_str() == Some(claim_node))
+                        .find(|node| node["node_id"] == item.claim["node"])
                 })
                 .ok_or(HybridProcessRequestRefusal::ClaimMismatch)?;
             if package_node["semantic_form"] != "temporal_clause"
@@ -304,7 +301,7 @@ impl HybridProcessRequest {
             let claim = hybrids
                 .claims
                 .iter()
-                .find(|claim| claim_node == wire_node_digest(&claim.node))
+                .find(|claim| claim_node == claim.node)
                 .ok_or(HybridProcessRequestRefusal::ClaimMismatch)?;
             let budget = match &item.hybrid {
                 Some(hybrid) => SolverBudget::read_hybrid(hybrid)
@@ -430,10 +427,6 @@ fn admit_package(
             Err(HybridProcessRequestRefusal::PackageRefused)
         }
     }
-}
-
-fn wire_node_digest(node: &NodeKey) -> String {
-    node.to_string()
 }
 
 const MAX_SAFE_COUNT: u64 = (1_u64 << 53) - 1;

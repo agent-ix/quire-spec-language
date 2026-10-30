@@ -28,7 +28,6 @@ impl CompiledPackage {
     pub fn bytes(&self) -> &[u8] {
         self.emitted.package().bytes()
     }
-
 }
 
 /// Compile `bytes`, displayed as `path` and labelled `source`, with

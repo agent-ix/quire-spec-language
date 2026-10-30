@@ -116,7 +116,10 @@ impl ModelSystem<'_> {
             .rows
             .iter()
             .map(|row| row.reference.clone())
-            .filter(|reference| self.types.conforms(reference.object_type(), *context))
+            .filter(|reference| {
+                self.types
+                    .conforms(reference.object_type().clone(), context.clone())
+            })
             .collect();
         objects.sort();
         let mut holds = true;

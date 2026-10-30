@@ -80,8 +80,8 @@
 mod divergence;
 mod product;
 
-use std::cell::{Cell, RefCell};
 use quire_exact::NodeKey;
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
@@ -96,7 +96,7 @@ use qsl_eval::simulation::model::{
 };
 use qsl_eval::temporal::AtomReading;
 use qsl_foundation::diagnostic::Code;
-use qsl_foundation::digest::{DigestRecord};
+use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{

@@ -254,14 +254,14 @@ fn replay_rehome(modifies: &[String], change: ClaimedChange) -> FrameReplayResul
         .operation_frame(&selection)
         .expect("RehomePost names the operation");
     let (anchor, frame_node) = (wire(frame.anchor()), wire(frame.frame()));
-    let occurrence = OccurrenceKey::new(frame_node, frame.frame_origin().clone());
+    let occurrence = OccurrenceKey::new(frame_node.clone(), frame.frame_origin().clone());
     let target = crate::ReplayTarget::FrameOperation(FrameOperation {
         object: crate::QualifiedName::new(vec![identifier("Orders"), identifier("Pump")]).unwrap(),
         operation: identifier("rehome"),
     });
     let payload = FrameCounterexample {
         anchor,
-        frame: frame_node,
+        frame: frame_node.clone(),
         occurrence: occurrence.clone(),
         invocation,
         change,

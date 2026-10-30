@@ -135,7 +135,7 @@ impl Unit {
         let found = semantic
             .nodes()
             .find(|node| {
-                equality_operator(node).is_some() && in_body(semantic, identity, node.key())
+                equality_operator(node).is_some() && in_body(semantic, &identity, node.key())
             })
             .expect("the function applies an equality");
         found.key().clone()
@@ -150,7 +150,7 @@ impl Unit {
         let key = semantic
             .nodes()
             .find(|node| {
-                equality_operator(node).is_some() && in_body(semantic, identity, node.key())
+                equality_operator(node).is_some() && in_body(semantic, &identity, node.key())
             })
             .expect("the function applies an equality")
             .key();
@@ -195,8 +195,8 @@ impl Unit {
         let mut bounds = Vec::new();
         for index in 0..2 {
             let parameter = self.parameter("f", index);
-            bounds.push(bound(parameter, &[0], range(0, 9)));
-            bounds.push(bound(parameter, &[1], FiniteBound::cardinality(3)));
+            bounds.push(bound(parameter.clone(), &[0], range(0, 9)));
+            bounds.push(bound(parameter.clone(), &[1], FiniteBound::cardinality(3)));
             bounds.push(bound(parameter, &[1, 0], range(0, 9)));
         }
         bounds
@@ -256,7 +256,7 @@ impl Unit {
         let site = locate(
             &compiled,
             crate::execute::function_target(&decoded, crate::ReplayEntry::Replay).unwrap(),
-            claim.node,
+            &claim.node,
             &claim.occurrence,
             claim.operator,
         )
@@ -861,7 +861,7 @@ fn tc_907_anything_short_of_covering_is_tested() {
     let mut bounds = Vec::new();
     for index in 0..2 {
         let parameter = unit.parameter("h", index);
-        bounds.push(bound(parameter, &[], FiniteBound::depth(3).unwrap()));
+        bounds.push(bound(parameter.clone(), &[], FiniteBound::depth(3).unwrap()));
         bounds.push(bound(parameter, &[0], range(0, 9)));
     }
     tested(
@@ -940,7 +940,7 @@ fn text_leaf_is_tested(
     let site = locate(
         &unit.compiled,
         &name(&["t"]),
-        claim.node,
+        &claim.node,
         &claim.occurrence,
         claim.operator,
     )
@@ -1074,32 +1074,32 @@ fn tc_907_a_defective_bound_refuses_before_any_row() {
             refused(settle(
                 &unit,
                 "f",
-                with(bound(first, &[7], range(0, 9))),
+                with(bound(first.clone(), &[7], range(0, 9))),
                 vec![],
                 exhausted
             )),
             ParityBoundRefusal::HarnessUnknownKey {
-                key: key(first, &[7])
+                key: key(first.clone(), &[7])
             }
         );
         assert_eq!(
             refused(settle(
                 &unit,
                 "f",
-                with(bound(first, &[0], range(0, 9))),
+                with(bound(first.clone(), &[0], range(0, 9))),
                 vec![],
                 exhausted
             )),
             ParityBoundRefusal::HarnessDuplicate {
-                key: key(first, &[0])
+                key: key(first.clone(), &[0])
             }
         );
         let mut wrong_kind = unit.covering();
-        wrong_kind[1] = bound(first, &[1], range(0, 9));
+        wrong_kind[1] = bound(first.clone(), &[1], range(0, 9));
         assert_eq!(
             refused(settle(&unit, "f", wrong_kind, vec![], exhausted)),
             ParityBoundRefusal::HarnessKind {
-                key: key(first, &[1]),
+                key: key(first.clone(), &[1]),
                 expected: Some(FiniteBoundKind::Cardinality),
                 supplied: FiniteBoundKind::IntegerRange,
             }
@@ -1109,21 +1109,21 @@ fn tc_907_a_defective_bound_refuses_before_any_row() {
                 &unit,
                 "f",
                 unit.covering(),
-                vec![declared(first, &[0], range(0, 9))],
+                vec![declared(first.clone(), &[0], range(0, 9))],
                 exhausted
             )),
             ParityBoundRefusal::DeclaredOverAuthored {
-                key: key(first, &[0])
+                key: key(first.clone(), &[0])
             }
         );
 
         // At `c`.
         let color = unit.parameter("c", 0);
-        let purple = vec![bound(color, &[], variants(&["Purple"]))];
+        let purple = vec![bound(color.clone(), &[], variants(&["Purple"]))];
         assert_eq!(
             refused(settle(&unit, "c", purple, vec![], exhausted)),
             ParityBoundRefusal::HarnessUnknownVariant {
-                key: key(color, &[]),
+                key: key(color.clone(), &[]),
                 variant: "Purple".to_owned(),
             }
         );
@@ -1132,7 +1132,7 @@ fn tc_907_a_defective_bound_refuses_before_any_row() {
                 &unit,
                 "c",
                 vec![],
-                vec![declared(color, &[], FiniteBound::cardinality(2))],
+                vec![declared(color.clone(), &[], FiniteBound::cardinality(2))],
                 exhausted
             )),
             ParityBoundRefusal::DeclaredOverAuthored {
@@ -1211,10 +1211,10 @@ fn tc_907_an_unbounded_collection_is_covered_only_by_a_declared_cardinality() {
         let unbounded = ValueType::collection(CollectionType::new(kind, element.clone(), None));
         let parameter = crate::fixture_node(5);
         let package = unit.compiled.checked.package();
-        let positions = || derive(&[(parameter, &unbounded)], package, 1_000).unwrap();
+        let positions = || derive(&[(parameter.clone(), &unbounded)], package, 1_000).unwrap();
         let harness = vec![
-            bound(parameter, &[], FiniteBound::cardinality(5)),
-            bound(parameter, &[0], range(0, 9)),
+            bound(parameter.clone(), &[], FiniteBound::cardinality(5)),
+            bound(parameter.clone(), &[0], range(0, 9)),
         ];
 
         // No declared domain: any finite harness bound is tighter than unbounded.
@@ -1226,13 +1226,13 @@ fn tc_907_an_unbounded_collection_is_covered_only_by_a_declared_cardinality() {
         // reaches it; a harness of 4 does not.
         let mut declared_positions = positions();
         declared_positions
-            .declare(&[declared(parameter, &[], FiniteBound::cardinality(5))])
+            .declare(&[declared(parameter.clone(), &[], FiniteBound::cardinality(5))])
             .unwrap();
         let drawn = declared_positions.harness(&harness).unwrap();
         assert!(declared_positions.covered(&drawn));
         let short = vec![
-            bound(parameter, &[], FiniteBound::cardinality(4)),
-            bound(parameter, &[0], range(0, 9)),
+            bound(parameter.clone(), &[], FiniteBound::cardinality(4)),
+            bound(parameter.clone(), &[0], range(0, 9)),
         ];
         let drawn = declared_positions.harness(&short).unwrap();
         assert!(!declared_positions.covered(&drawn));
@@ -1267,7 +1267,7 @@ fn prepared(
     let site = locate(
         &compiled,
         crate::execute::function_target(&request, crate::ReplayEntry::Replay).unwrap(),
-        claim.node,
+        &claim.node,
         &claim.occurrence,
         claim.operator,
     )
@@ -1391,7 +1391,7 @@ fn tc_907_the_composite_arm_builds_the_adr_worked_argument() {
         entry(r#"{"maximum":"3","tag":"cardinality"}"#, "[1]"),
     );
     let digest =
-        argument_digest(&preimage.arguments[0], claim.node, &preimage.occurrence, 0).unwrap();
+        argument_digest(&preimage.arguments[0], &claim.node, &preimage.occurrence, 0).unwrap();
     assert_eq!(
         digest,
         qsl_foundation::ByteDigest::of(text.as_bytes()).as_bytes()
@@ -1410,8 +1410,8 @@ fn tc_907_each_occurrence_of_a_shared_node_settles_under_its_own_identity() {
         let mut bounds = Vec::new();
         for index in 0..2 {
             let parameter = unit.parameter("d", index);
-            bounds.push(bound(parameter, &[0], range(0, 9)));
-            bounds.push(bound(parameter, &[1], FiniteBound::cardinality(3)));
+            bounds.push(bound(parameter.clone(), &[0], range(0, 9)));
+            bounds.push(bound(parameter.clone(), &[1], FiniteBound::cardinality(3)));
             bounds.push(bound(parameter, &[1, 0], range(0, 9)));
         }
         bounds
@@ -1617,7 +1617,7 @@ fn tc_907_a_composite_literal_operand_is_its_own_node_with_empty_bounds() {
         r#"{{"domain":{{"entries":[],"tag":"bounds"}},"operand":{{"node_id":"{literal}","tag":"graph_child"}},"position":1}}"#
     );
     let digest =
-        argument_digest(&preimage.arguments[1], claim.node, &preimage.occurrence, 1).unwrap();
+        argument_digest(&preimage.arguments[1], &claim.node, &preimage.occurrence, 1).unwrap();
     assert_eq!(
         digest,
         qsl_foundation::ByteDigest::of(text.as_bytes()).as_bytes()
@@ -1644,7 +1644,7 @@ fn tc_907_an_unbounded_operand_is_identified_by_the_bounds_the_harness_drew() {
         let claim = unit.claim("h", EqualityOperator::Equal, drawn(depth));
         let (_, compiled, site) = prepared(&unit, "h", &claim);
         let preimage = parity_preimage(&compiled, &site, &claim).unwrap();
-        argument_digest(&preimage.arguments[0], claim.node, &preimage.occurrence, 0).unwrap()
+        argument_digest(&preimage.arguments[0], &claim.node, &preimage.occurrence, 0).unwrap()
     };
     let text = |depth: u64| {
         format!(
@@ -1719,8 +1719,8 @@ fn tc_907_the_identity_equals_a_hand_written_canonical_text() {
     let (a, b) = (unit.parameter("f", 0), unit.parameter("f", 1));
     let text = format!(
         r#"{{"arguments":[{},{}],{}}}"#,
-        argument(a, 0, &entries(a)),
-        argument(b, 1, &entries(b)),
+        argument(a.clone(), 0, &entries(a)),
+        argument(b.clone(), 1, &entries(b)),
         tail(&claim),
     );
     assert_eq!(wire.obligation_identity, hashed(&text));

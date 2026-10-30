@@ -8,8 +8,8 @@
 //! wire shape (each member optional, so a packet can omit or double one),
 //! and [`ReplayTarget`] is the one typed target a reader builds from it.
 
-use std::fmt;
 use quire_exact::NodeKey;
+use std::fmt;
 
 use crate::identity::QualifiedName;
 use crate::witness::FrameOperation;

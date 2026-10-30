@@ -1474,7 +1474,7 @@ mod tests {
         assert_ne!(nested, CheckedLiteral(option(0x7ff8_0000_0000_0002)));
         // A population has no canonical key and is compared by identity.
         let population =
-            |byte: u8| Value::Population(quire_exact::PopulationId::from_digest([byte; 32]));
+            |byte: u8| Value::Population(quire_exact::PopulationId::new(quire_exact::NodeKey::new("fixture".to_owned(), vec![quire_exact::PathSegment::Text(format!("p{byte}"))], 0).expect("a fixture key")));
         let one = CheckedLiteral(population(1));
         assert!(quire_exact::compare_keys(&one.0, &one.0).is_none());
         assert_eq!(one, one.clone());

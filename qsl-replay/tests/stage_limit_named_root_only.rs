@@ -48,7 +48,8 @@ fn admit(
     replay: ReplayLimits,
 ) -> Result<AdmittedCompilation, AdmittedRefusal> {
     compile_admitted(
-        SourceIdentity::new("a", "u", "git", "1"), "fixture".to_owned(),
+        SourceIdentity::new("a", "u", "git", "1"),
+        "fixture".to_owned(),
         "unit.native",
         text.as_bytes(),
         [],

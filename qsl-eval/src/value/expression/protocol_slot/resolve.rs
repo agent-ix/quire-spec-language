@@ -114,7 +114,7 @@ fn identify<'a>(
     index: Option<usize>,
 ) -> Result<(&'a CheckedProtocol, Node<'a>), CallFailure> {
     let graph = package.graph();
-    let Some(wire) = graph.semantic_graph().node(key) else {
+    let Some(wire) = graph.semantic_graph().node(key.clone()) else {
         return Err(missing_node(key));
     };
     if wire.node_tag() != qsl_semantics::check::NodeTag::Protocol {
@@ -124,7 +124,7 @@ fn identify<'a>(
         let Some(keys) = graph.protocol_node_keys(&protocol.name) else {
             continue;
         };
-        if keys.clause == Some(key) {
+        if keys.clause == Some(key.clone()) {
             return Ok((protocol, Node::Clause));
         }
         if let Some((name, _)) = keys.roles.iter().find(|(_, candidate)| **candidate == key) {
@@ -144,7 +144,7 @@ fn identify<'a>(
         {
             return Ok((protocol, Node::Compensation(index)));
         }
-        if keys.terminal == Some(key) {
+        if keys.terminal == Some(key.clone()) {
             return Ok((protocol, Node::Terminal));
         }
         if let Some((node, _)) = keys.nodes.iter().find(|(_, candidate)| **candidate == key) {
@@ -381,7 +381,7 @@ pub(crate) fn select<'a>(
     package: &'a CheckedPackage,
     slot: &ProtocolSlot,
 ) -> Result<Selected<'a>, CallFailure> {
-    let (protocol, node) = identify(package, slot.node, &slot.member, slot.index)?;
+    let (protocol, node) = identify(package, slot.node.clone(), &slot.member, slot.index)?;
     let absent = || missing_member(&slot.member, slot.index);
     let indexed = match node {
         Node::Clause => slot.member == "captures",
@@ -482,7 +482,9 @@ pub(crate) fn select<'a>(
             frame.push(FrameSlot {
                 name: role.name.clone(),
                 level: frame.len(),
-                value_type: quire_exact::ValueType::Reference(role.context.ok_or_else(absent)?),
+                value_type: quire_exact::ValueType::Reference(
+                    role.context.clone().ok_or_else(absent)?,
+                ),
                 node: None,
             });
             for (level, source) in frame.iter_mut().enumerate() {
@@ -700,7 +702,7 @@ pub(crate) fn select<'a>(
             source.node = expression
                 .and_then(|expression| expression.binders.get(source.level))
                 .filter(|binder| binder.name == source.name)
-                .map(|binder| binder.node);
+                .map(|binder| binder.node.clone());
         }
     }
     Ok(Selected { body, frame })

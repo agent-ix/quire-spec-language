@@ -296,7 +296,7 @@ pub fn map_state(
 
 /// The model-node digest order FR-140 uses for the population rows it reads.
 fn ordered_populations(mut populations: Vec<&PopulationRow>) -> Vec<&PopulationRow> {
-    populations.sort_by_key(|row| row.order_key);
+    populations.sort_by_key(|row| row.order_key.clone());
     populations
 }
 

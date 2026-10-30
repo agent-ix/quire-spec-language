@@ -21,8 +21,8 @@
 //! [`QualifiedName`] moves to its ADR-013-assigned home once that ticket
 //! lands; until then it exists here, once, so the four envelope types have a
 //! typed (never string-keyed, never bare-`&str`) vocabulary to carry.
-use std::fmt;
 use quire_exact::NodeKey;
+use std::fmt;
 
 use qsl_foundation::bound::{DomainKey, FiniteBound, ProofBound};
 use quire_exact::Identifier;

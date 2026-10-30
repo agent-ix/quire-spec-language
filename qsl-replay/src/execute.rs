@@ -174,7 +174,9 @@ pub enum ReplayRefusal {
     #[error("the package reference's dependencies are no dependency input: {0}")]
     DependencyInput(DependencyInputRefusal),
     /// The selection names no function node of the recompiled package.
-    #[error("missing_declaration/missing-name: package {package} declares no function {selection}")]
+    #[error(
+        "missing_declaration/missing-name: package {package} declares no function {selection}"
+    )]
     UnknownFunction {
         /// The request's selection.
         selection: QualifiedName,
@@ -342,7 +344,9 @@ pub enum ReplayRefusal {
     },
     /// FR-116: the request's `frame_operation` names no operation frame of
     /// the recompiled package.
-    #[error("missing_declaration/missing-name: package {package} holds no operation frame {operation}")]
+    #[error(
+        "missing_declaration/missing-name: package {package} holds no operation frame {operation}"
+    )]
     UnknownOperation {
         /// The request's operation.
         operation: FrameOperation,
@@ -379,7 +383,9 @@ pub enum ReplayRefusal {
     FrameIdentity(Box<FrameIdentityMismatch>),
     /// FR-122: the request's `state_clause` names no state clause of the
     /// recompiled package (a function's name included).
-    #[error("missing_declaration/missing-name: package {package} declares no state clause {clause}")]
+    #[error(
+        "missing_declaration/missing-name: package {package} declares no state clause {clause}"
+    )]
     UnknownClause {
         /// The request's `state_clause`.
         clause: QualifiedName,
@@ -862,11 +868,12 @@ fn replay_observed_temporal(
         });
     };
     let expected_node = clause_node.identity().clone();
-    let expected_occurrence = OccurrenceKey::new(expected_node, clause_node.claim().clone());
-    if envelope.clause_node() != expected_node || envelope.occurrence_key() != &expected_occurrence
+    let expected_occurrence =
+        OccurrenceKey::new(expected_node.clone(), clause_node.claim().clone());
+    if envelope.clause_node() != &expected_node || envelope.occurrence_key() != &expected_occurrence
     {
         return Err(ReplayRefusal::ObservedTemporalMismatch {
-            member: if envelope.clause_node() != expected_node {
+            member: if envelope.clause_node() != &expected_node {
                 "clause_node"
             } else {
                 "occurrence_key"
@@ -981,7 +988,7 @@ fn replay_observed_temporal(
         graph.model_selections(),
         &compiled.packages,
         compiled.model_limits,
-        *type_identity,
+        type_identity.clone(),
     )
     .map_err(ReplayRefusal::Admission)?;
     let reference = environments
@@ -1519,8 +1526,8 @@ pub(crate) fn recompile(
     let bytes = provided(source)?;
     let packages = domain_packages(request)?;
     // Rule 4: the recompile.
-    let package_name = LibraryName::new(request.package_name())
-        .map_err(ReplayRefusal::InvalidPackageName)?;
+    let package_name =
+        LibraryName::new(request.package_name()).map_err(ReplayRefusal::InvalidPackageName)?;
     let compiled = run_spine(
         &labels(source),
         &package_name,
@@ -1661,7 +1668,7 @@ fn function_claim(
         .ok_or_else(refused)?;
     let semantic = graph.semantic_graph();
     let node = semantic
-        .node(key.node())
+        .node(key.node().clone())
         .map(|node| node.key().clone())
         .ok_or_else(refused)?;
     let site = graph
@@ -1673,13 +1680,13 @@ fn function_claim(
         .iter()
         .map(|root| {
             semantic
-                .node(root)
+                .node(root.clone())
                 .map(|node| node.key().clone())
                 .ok_or_else(|| fault("extent-root-is-a-node"))
         })
         .collect::<Result<_, _>>()?;
     let recursive = semantic
-        .node(&callable.identity)
+        .node(callable.identity.clone())
         .is_some_and(|node| node.recursion().is_some());
     Ok(FunctionClaim::Application(ApplicationClaim {
         site,
@@ -1717,7 +1724,7 @@ pub(crate) fn callable_parameter_keys(
     let parameters = package
         .graph()
         .semantic_graph()
-        .node(&callable.identity)
+        .node(callable.identity.clone())
         .and_then(|node| node.function_parameters())
         .ok_or_else(|| InternalFault::new("replay", "callable-identity-is-a-function-node"))?;
     if parameters.len() != callable.parameters.len() {
@@ -1745,7 +1752,7 @@ pub(crate) fn value_parity_preimage(
         .enumerate()
         .map(|(position, parameter)| {
             let semantic_type = graph
-                .node(parameter)
+                .node(parameter.clone())
                 .and_then(|node| node.semantic_type())
                 .ok_or_else(|| {
                     InternalFault::new("replay", "parameter-node-has-a-semantic-type")
@@ -1936,7 +1943,9 @@ fn arguments(
                     .get_mut(position)
                     .ok_or_else(|| ReplayRefusal::UnknownParameter(assignment.parameter.clone()))?;
                 if slot.replace(assignment.value.clone()).is_some() {
-                    return Err(ReplayRefusal::DuplicateArgument(assignment.parameter.clone()));
+                    return Err(ReplayRefusal::DuplicateArgument(
+                        assignment.parameter.clone(),
+                    ));
                 }
             }
             values

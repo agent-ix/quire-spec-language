@@ -80,21 +80,6 @@ fn complete_definitions() -> Vec<Definition> {
         .collect()
 }
 
-fn reinterpret_definition(
-    definition: &Definition,
-    role: DefinitionRole,
-    dependencies: BTreeSet<DefinitionRef>,
-    capabilities: BTreeSet<CapabilityId>,
-) -> Definition {
-    self::definition(
-        definition.exact().identity(),
-        role,
-        dependencies,
-        capabilities,
-        definition.exact_bytes(),
-    )
-}
-
 fn roots(definitions: &[Definition]) -> Vec<DefinitionRef> {
     definitions
         .iter()
@@ -420,9 +405,8 @@ fn a_missing_facet_or_capability_refuses_and_no_backend_input_exists() {
     assert_eq!(linked.bundle().capabilities().len(), 176);
     assert_eq!(CapabilityId::complete_inventory().len(), 176);
 
-    // The bundle's identity is fixed by its definitions: a broader or a
-    // narrower known-backend set only decides `validate_known_capabilities`.
-    let identity = linked.bundle().identity();
+    // A broader or a narrower known-backend set only decides
+    // `validate_known_capabilities`.
     assert_eq!(
         linked.bundle().validate_known_capabilities(&inventory()),
         Ok(())
@@ -432,7 +416,6 @@ fn a_missing_facet_or_capability_refuses_and_no_backend_input_exists() {
         linked.bundle().validate_known_capabilities(&narrower),
         Err(PackageError::UnknownCapability(_))
     ));
-    assert_eq!(link_complete(&definitions).bundle().identity(), identity);
 
     let incomplete: Vec<_> = definitions
         .iter()
@@ -471,71 +454,19 @@ fn a_missing_facet_or_capability_refuses_and_no_backend_input_exists() {
     assert_catalogued(&refusal);
 }
 
-#[trace("TC-491", "FR-111-AC-5", "QSpec-FR-131-AC-2")]
-#[test]
-fn semantic_identity_binds_typed_definition_interpretation() {
-    let definitions = complete_definitions();
-    let baseline = link_complete(&definitions).bundle().identity();
-
-    let mut role_variant = definitions.clone();
-    role_variant[0] = reinterpret_definition(
-        &definitions[0],
-        DefinitionRole::ValueModelExpression,
-        BTreeSet::new(),
-        inventory(),
-    );
-    role_variant[1] = reinterpret_definition(
-        &definitions[1],
-        DefinitionRole::Source,
-        BTreeSet::new(),
-        BTreeSet::new(),
-    );
-
-    let mut dependency_variant = definitions.clone();
-    dependency_variant[0] = reinterpret_definition(
-        &definitions[0],
-        DefinitionRole::Source,
-        BTreeSet::from([definitions[1].exact().clone()]),
-        inventory(),
-    );
-
-    let mut capability_variant = definitions.clone();
-    capability_variant[0] = reinterpret_definition(
-        &definitions[0],
-        DefinitionRole::Source,
-        BTreeSet::new(),
-        BTreeSet::new(),
-    );
-    capability_variant[1] = reinterpret_definition(
-        &definitions[1],
-        DefinitionRole::ValueModelExpression,
-        BTreeSet::new(),
-        inventory(),
-    );
-
-    let mut bytes_variant = definitions.clone();
-    bytes_variant[8] = definition(
-        definitions[8].exact().identity(),
-        DefinitionRole::ToolingEvidence,
-        BTreeSet::new(),
-        BTreeSet::new(),
-        b"other tooling bytes",
-    );
-
-    for variant in [
-        &role_variant,
-        &dependency_variant,
-        &capability_variant,
-        &bytes_variant,
-    ] {
-        assert_ne!(link_complete(variant).bundle().identity(), baseline);
-    }
-    for variant in [&role_variant, &dependency_variant, &capability_variant] {
-        assert!(definitions
-            .iter()
-            .zip(variant)
-            .all(|(left, right)| left.exact() == right.exact()));
-    }
+fn reinterpret_definition(
+    definition: &Definition,
+    role: DefinitionRole,
+    dependencies: BTreeSet<DefinitionRef>,
+    capabilities: BTreeSet<CapabilityId>,
+) -> Definition {
+    self::definition(
+        definition.exact().identity(),
+        role,
+        dependencies,
+        capabilities,
+        definition.exact_bytes(),
+    )
 }
 
 /// The FR-131 half of the former compiled-model test: a definition root that

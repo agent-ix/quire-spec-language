@@ -28,7 +28,8 @@ pub(crate) fn record_orders(
     declared
         .iter()
         .filter_map(|(declaration, names)| {
-            let CompositeShape::Record(fields) = types.composite(*declaration)?.shape() else {
+            let CompositeShape::Record(fields) = types.composite(declaration.clone())?.shape()
+            else {
                 return None;
             };
             let mut order: Vec<usize> = names
@@ -39,7 +40,7 @@ pub(crate) fn record_orders(
                 .filter(|slot| !order.contains(slot))
                 .collect();
             order.extend(rest);
-            Some((*declaration, order))
+            Some((declaration.clone(), order))
         })
         .collect()
 }
@@ -109,7 +110,7 @@ impl Space {
                     .map(|(rank, variant)| {
                         u32::try_from(rank)
                             .ok()
-                            .map(|rank| Value::Enum(EnumMember::new(variant, rank)))
+                            .map(|rank| Value::Enum(EnumMember::new(variant.clone(), rank)))
                     })
                     .collect::<Option<Vec<Value>>>()?,
             )),
@@ -118,7 +119,7 @@ impl Space {
                     return None;
                 }
                 let members: Vec<(bool, &ValueType)> = match types
-                    .composite(*declaration)
+                    .composite(declaration.clone())
                     .map(CompositeDeclaration::shape)?
                 {
                     CompositeShape::Record(fields) => fields
@@ -129,15 +130,14 @@ impl Space {
                         positions.iter().map(|position| (false, position)).collect()
                     }
                     CompositeShape::Union(declared) => {
-                        visiting.push(*declaration);
+                        visiting.push(declaration.clone());
                         // FR-120: cases in ascending UTF-8 bytes of their
                         // names.
                         let mut declared: Vec<_> = declared.iter().collect();
                         declared.sort_by(|left, right| {
                             left.identifier()
-                                .as_str()
                                 .as_bytes()
-                                .cmp(right.identifier().as_str().as_bytes())
+                                .cmp(right.identifier().as_bytes())
                         });
                         let spaces = declared
                             .into_iter()
@@ -157,7 +157,7 @@ impl Space {
                         return spaces.map(Self::Union);
                     }
                 };
-                visiting.push(*declaration);
+                visiting.push(declaration.clone());
                 let fields = members
                     .into_iter()
                     .map(|(optional, member)| {
@@ -172,7 +172,7 @@ impl Space {
                     .cloned()
                     .unwrap_or_else(|| (0..fields.len()).collect());
                 Some(Self::Composite {
-                    declaration: *declaration,
+                    declaration: declaration.clone(),
                     fields,
                     order,
                 })
@@ -249,7 +249,10 @@ impl Space {
                     });
                 }
                 let slots = slots.into_iter().collect::<Option<Vec<_>>>()?;
-                Some(from_admitted_slots(*declaration, slots.into_boxed_slice()))
+                Some(from_admitted_slots(
+                    declaration.clone(),
+                    slots.into_boxed_slice(),
+                ))
             }
         }
     }
@@ -295,7 +298,7 @@ pub(crate) fn unenumerable_paths(value_type: &ValueType, types: &TypeEnvironment
                 if visiting.contains(declaration) {
                     return;
                 }
-                let Some(declared) = types.composite(*declaration) else {
+                let Some(declared) = types.composite(declaration.clone()) else {
                     found.push(path.clone());
                     return;
                 };
@@ -309,7 +312,7 @@ pub(crate) fn unenumerable_paths(value_type: &ValueType, types: &TypeEnvironment
                         .flat_map(UnionMemberDeclaration::positions)
                         .collect(),
                 };
-                visiting.push(*declaration);
+                visiting.push(declaration.clone());
                 for (index, member) in members.into_iter().enumerate() {
                     let Ok(index) = u32::try_from(index) else {
                         break;
@@ -437,7 +440,7 @@ impl Domain {
             ValueType::Reference(target) => Some(Self::Reference(
                 objects
                     .iter()
-                    .filter(|object| types.conforms(object.object_type(), *target))
+                    .filter(|object| types.conforms(object.object_type().clone(), target.clone()))
                     .cloned()
                     .collect(),
             )),

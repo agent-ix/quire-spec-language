@@ -1442,9 +1442,7 @@ mod tests {
     use crate::model::domain_package::OperationEffect;
 
     fn node_key(fill: u8) -> NodeKey {
-        let mut bytes = [0_u8; 32];
-        bytes[31] = fill;
-        NodeKey::from_digest(bytes)
+        quire_exact::NodeKey::new("fixture".to_owned(), vec![quire_exact::PathSegment::Text(format!("n{fill}"))], 0).expect("a fixture key")
     }
 
     fn declaration_key(node: &str) -> DeclarationKey {
@@ -1486,7 +1484,7 @@ mod tests {
             ..Default::default()
         };
         let operation = ClauseOperation {
-            declaring: EffectiveId::from_digest([9_u8; 32]),
+            declaring: quire_exact::EffectiveId::new(None, quire_exact::OriginalDeclarationKey::new("fixture", "o9")),
             declaration: OperationDeclaration::new("ship", Vec::new(), None, effect),
         };
         let frame = CheckedOperationFrame {

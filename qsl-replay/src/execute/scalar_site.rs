@@ -33,7 +33,7 @@ pub(crate) fn in_body(
         if &key == target {
             return true;
         }
-        let Some(node) = graph.node(&key) else {
+        let Some(node) = graph.node(key.clone()) else {
             continue;
         };
         if &key != function && node.node_tag() == NodeTag::Function {

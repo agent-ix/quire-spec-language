@@ -962,7 +962,7 @@ fn a_quantity_reward_checks_and_reward_names_are_per_operation() {
     let ValueType::Quantity(unit) = latency.value_type() else {
         panic!("a quantity: {:?}", latency.value_type());
     };
-    assert_eq!(rewards[3].value_type(), &ValueType::Quantity(*unit));
+    assert_eq!(rewards[3].value_type(), &ValueType::Quantity(unit.clone()));
 }
 
 /// FR-185-AC-8 (TC-620): a `Quantity<ms>` random parameter admits same-unit

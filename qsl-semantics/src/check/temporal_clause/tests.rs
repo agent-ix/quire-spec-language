@@ -6,8 +6,8 @@
 use ix_trace_rs::trace;
 use qsl_foundation::bound::{DomainKey, DomainKind, TemporalInterval, TemporalUpper};
 use qsl_foundation::diagnostic::{Code, Locus, StageFailure};
-use quire_exact::NodeKey;
 use qsl_foundation::{SourceIdentity, Span};
+use quire_exact::NodeKey;
 use quire_semantic_value::checking::CheckingLimits;
 
 use super::*;

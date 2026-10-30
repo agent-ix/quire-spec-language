@@ -501,14 +501,14 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                 clock: name.to_owned(),
             };
             let instances = system
-                .instances(&ValueType::Reference(owner))
+                .instances(&ValueType::Reference(owner.clone()))
                 .map_err(|_| unbounded())?;
             let references = instances
                 .iter()
-                .map(|instance| system.bound_reference(owner, instance))
+                .map(|instance| system.bound_reference(owner.clone(), instance))
                 .collect::<Result<Vec<_>, _>>()
                 .map_err(|_| unbounded())?;
-            objects.insert(owner, references.clone());
+            objects.insert(owner.clone(), references.clone());
             let pairs: Vec<_> = instances.into_iter().zip(references).collect();
             held.insert(owner, pairs.clone());
             Ok(pairs)
@@ -585,7 +585,7 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
         }
         for urgency in timed.urgency() {
             if let Urgency::When { name, context, .. } = urgency {
-                instances_of(*context, name)?;
+                instances_of(context.clone(), name)?;
             }
         }
         let urgent_operations = timed
@@ -1329,7 +1329,9 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
     ) -> Result<Vec<ObjectReference>, TimedStop> {
         let mut holding: Vec<ObjectReference> = Vec::new();
         for alternative in alternatives {
-            for (object, holds) in self.about(state, alternative.predicate(), context, site)? {
+            for (object, holds) in
+                self.about(state, alternative.predicate(), context.clone(), site)?
+            {
                 if holds
                     && !holding.contains(&object)
                     && self.presences_hold(state, &object, alternative.presences().iter().copied())
@@ -1397,7 +1399,7 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                 ..
             } = urgency
             {
-                let holding = self.holding(state, alternatives, *context, &|| {
+                let holding = self.holding(state, alternatives, context.clone(), &|| {
                     TimedSite::Urgency { name: name.clone() }
                 })?;
                 if !holding.is_empty() {
@@ -1677,7 +1679,7 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
         let Some(declaration) = self
             .system
             .operations
-            .declared_by(vector.declaring)
+            .declared_by(vector.declaring.clone())
             .iter()
             .find(|declared| declared.name() == vector.name)
         else {
@@ -2811,7 +2813,7 @@ impl<L: crate::model_subject::ModelLetters> crate::temporal::TemporalLetters
 
 /// Whether `value` is a union value of the case named `case`.
 fn is_case(value: &quire_exact::Value, case: &str) -> bool {
-    matches!(value, quire_exact::Value::Union(union) if union.member().identifier().as_str() == case)
+    matches!(value, quire_exact::Value::Union(union) if union.member().identifier() == case)
 }
 
 /// One step of a clock place's path in the state digest's byte form: a

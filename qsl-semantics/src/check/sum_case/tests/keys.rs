@@ -225,7 +225,11 @@ fn renaming_adding_or_retyping_a_member_changes_the_union_and_every_node_naming_
 fn a_checked_member_variant_id_is_its_member_over_the_union_node() {
     let graph = graph(&format!("{SHAPE_DECL}{AREA}{RECT}"));
     let ids = ids(&graph);
-    let names: Vec<&str> = ids.variants.iter().map(|(member, _)| member.as_str()).collect();
+    let names: Vec<&str> = ids
+        .variants
+        .iter()
+        .map(|(member, _)| member.as_str())
+        .collect();
     assert_eq!(names, ["Empty", "Circle", "Rect"]);
     // Each checked `VariantId` is the member's id over the union's node id,
     // and the index the check built resolves it to its position.

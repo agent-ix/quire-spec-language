@@ -184,7 +184,7 @@ fn collect<'a>(
             pending.push(Pending {
                 path: binding(side, InvocationBinding::Receiver),
                 value: Value::Reference(reference.clone()),
-                slot: TypeSlot::Object(reference.object_type()),
+                slot: TypeSlot::Object(reference.object_type().clone()),
                 environment: Some(&side.environment),
             });
         }
@@ -204,11 +204,11 @@ fn push_object<'a>(
     pending.push(Pending {
         path: root.clone(),
         value: Value::Reference(reference.clone()),
-        slot: TypeSlot::Object(reference.object_type()),
+        slot: TypeSlot::Object(reference.object_type().clone()),
         environment: Some(environment),
     });
     let attributes = types
-        .attributes(reference.object_type())
+        .attributes(reference.object_type().clone())
         .ok_or_else(|| fault("admitted-object-type-not-declared"))?;
     let mut walks = Vec::new();
     for attribute in attributes {
@@ -255,11 +255,11 @@ fn walk(
                 pending.push(Pending {
                     path: path.clone(),
                     value: value.clone(),
-                    slot: TypeSlot::Composite(composite.declaration()),
+                    slot: TypeSlot::Composite(composite.declaration().clone()),
                     environment: None,
                 });
                 let Some(CompositeShape::Record(fields)) = types
-                    .composite(composite.declaration())
+                    .composite(composite.declaration().clone())
                     .map(quire_semantic_value::declaration::CompositeDeclaration::shape)
                 else {
                     continue;
@@ -331,14 +331,14 @@ pub(super) fn evaluate(
     for value in collect(graph.scope().types(), observations)? {
         for invariant in invariants
             .iter()
-            .filter(|candidate| candidate.applies_to(value.slot))
+            .filter(|candidate| candidate.applies_to(value.slot.clone()))
         {
             tasks.push((
                 invariant,
                 Pending {
                     path: value.path.clone(),
                     value: value.value.clone(),
-                    slot: value.slot,
+                    slot: value.slot.clone(),
                     environment: value.environment,
                 },
             ));

@@ -2303,7 +2303,9 @@ mod tests {
         assert_eq!(build_calls(), before_binding, "admit_binding never builds");
         assert_eq!(
             *binding.universe(),
-            view.object_universe().identity(),
+            view.object_universe()
+                .identity()
+                .expect("a populated universe"),
             "the binding's universe is the view's own"
         );
 

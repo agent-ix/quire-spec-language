@@ -139,7 +139,7 @@ pub enum ModelCheckRefusal {
     #[error("the subject's model system did not admit: {0:?}")]
     Admission(Box<AdmissionFailure>),
     /// FR-336: a root of the subject is unbounded under its universes. The
-    /// refusal names each unbounded root's `WireNodeId` (as the key of
+    /// refusal names each unbounded root's `NodeKey` (as the key of
     /// [`RequiresBound::domains`]) and is returned before any state is
     /// explored. A `ProofBound` never makes a root finite here.
     #[error("the subject has an unbounded root and requires a bound")]

@@ -10,8 +10,8 @@
 //! payload members each spelling defines, and the spellings refused for a
 //! plugin. Those are the [`BASIS`] and [`CAUSE`] tables below.
 
-use std::cmp::Ordering;
 use quire_exact::NodeKey;
+use std::cmp::Ordering;
 use std::collections::BTreeSet;
 
 use serde_json::{Map, Value};
@@ -769,8 +769,7 @@ fn read_node(value: &Value, pointer: String) -> Result<NodeKey, PluginResultRefu
     let Value::Object(_) = value else {
         return Err(wrong_kind(pointer));
     };
-    qsl_foundation::node_wire::node_key_from_json(value)
-        .map_err(|_| malformed(true, pointer))
+    qsl_foundation::node_wire::node_key_from_json(value).map_err(|_| malformed(true, pointer))
 }
 
 /// An FR-331 `ResultValue`.

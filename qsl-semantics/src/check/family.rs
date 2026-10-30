@@ -1999,6 +1999,7 @@ mod tests {
 /// production build.
 #[cfg(any(test, feature = "test-support"))]
 pub mod fixtures {
+    #[cfg(test)]
     pub fn fill_key(fill: u8) -> quire_exact::NodeKey {
         quire_exact::NodeKey::new(
             "fixture".to_owned(),
@@ -2006,10 +2007,6 @@ pub mod fixtures {
             0,
         )
         .expect("a nonempty structural fixture key")
-    }
-
-    pub fn compound_unit(fill: u8) -> quire_exact::UnitId {
-        quire_exact::UnitId::compound(vec![(fill_key(fill), quire_exact::Integer::from(1_i64))])
     }
 
     /// Every released kernel invariant cause, including distinct nested payloads.
@@ -3500,9 +3497,7 @@ pub(crate) mod checking_tests {
     #[trace("TC-160", "FR-062-AC-2")]
     #[test]
     fn keyed_ordinals_match_counting_earlier_records() {
-        let keys: Vec<NodeKey> = (1..=5)
-            .map(|byte| fill_key(byte))
-            .collect();
+        let keys: Vec<NodeKey> = (1..=5).map(|byte| fill_key(byte)).collect();
         let roles = [
             OccurrenceRole::Declaration,
             OccurrenceRole::Expression,
@@ -3617,7 +3612,7 @@ pub(crate) mod checking_tests {
 #[cfg(test)]
 mod locus_tests {
     use super::fixtures::{
-        compound_unit, declaration, declaration_signature, declarations_for, empty_scope, limits,
+        declaration, declaration_signature, declarations_for, empty_scope, limits,
         measure_resolved, root_location,
     };
     use super::*;

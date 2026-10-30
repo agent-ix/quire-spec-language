@@ -318,9 +318,9 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
     /// function takes it: the declaring type is the receiver type.
     fn compensation_operation<'t>(template: &'t Template<'_>) -> OperationRef<'t> {
         OperationRef {
-            declaring: template.declaring,
+            declaring: template.declaring.clone(),
             name: &template.operation,
-            receiver: template.declaring,
+            receiver: template.declaring.clone(),
         }
     }
 

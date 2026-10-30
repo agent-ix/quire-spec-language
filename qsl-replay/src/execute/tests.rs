@@ -8,8 +8,8 @@ use std::collections::BTreeMap;
 use ix_trace_rs::trace;
 use qsl_foundation::digest::{DigestDomain, DigestRecord};
 use qsl_foundation::{Code, SourceIdentity};
-use qsl_semantics::model::intake::package_input;
 use qsl_semantics::library::LibraryName;
+use qsl_semantics::model::intake::package_input;
 use quire_exact::{Identifier, Integer, ScalarLimits};
 
 use super::*;
@@ -119,7 +119,7 @@ fn spine(source: &str, packages: &qsl_semantics::model::intake::PackageInput) ->
 fn parameter(compiled: &ComposedUnit, function: &str, index: usize) -> NodeKey {
     let graph = compiled.package.graph();
     let identity = graph.callable(function).expect("declared").identity;
-    let key = graph
+    let key = &graph
         .semantic_graph()
         .node(identity)
         .and_then(|node| node.function_parameters())
@@ -345,7 +345,8 @@ fn tc_759_the_emitted_provision_replays_to_the_same_package() {
         .expect("the unit selects")
         .into_value();
     let checked = crate::spine::check(
-        &parsed, "fixture".to_owned(),
+        &parsed,
+        "fixture".to_owned(),
         &models,
         &crate::spine::DependencyInput::default(),
         limits,
@@ -412,9 +413,11 @@ fn tc_444_a_witness_decodes_by_parameter_node_id() {
             ReplaySource::Witness(Witness::parse(format!("<<<assertion|h|c|{values}>>>")).unwrap()),
         )
     };
-    let ReplayResult::Witness(result) =
-        replay(witness(format!("{}=8", crate::pn(&x))), ReplayLimits::default()).unwrap()
-    else {
+    let ReplayResult::Witness(result) = replay(
+        witness(format!("{}=8", crate::pn(&x))),
+        ReplayLimits::default(),
+    )
+    .unwrap() else {
         panic!("a Witness-sourced request settles on the Witness arm");
     };
     assert_eq!(
@@ -682,11 +685,11 @@ fn tc_444_an_arity_mismatch_refuses() {
     );
     let unknown = with(vec![
         CanonicalAssignment {
-            parameter: x,
+            parameter: x.clone(),
             value: WitnessValue::Integer(7),
         },
         CanonicalAssignment {
-            parameter: b,
+            parameter: b.clone(),
             value: WitnessValue::Integer(1),
         },
     ]);
@@ -696,11 +699,11 @@ fn tc_444_an_arity_mismatch_refuses() {
     );
     let twice = with(vec![
         CanonicalAssignment {
-            parameter: x,
+            parameter: x.clone(),
             value: WitnessValue::Integer(7),
         },
         CanonicalAssignment {
-            parameter: x,
+            parameter: x.clone(),
             value: WitnessValue::Integer(8),
         },
     ]);
@@ -758,18 +761,15 @@ fn tc_444_a_boolean_parameter_replays() {
     let b = parameter(&compiled, "flag", 0);
     let flag = |source_of: ReplaySource| {
         replay(
-            request(
-                source.as_bytes(),
-                &compiled,
-                name(&["flag"]),
-                source_of,
-            ),
+            request(source.as_bytes(), &compiled, name(&["flag"]), source_of),
             ReplayLimits::default(),
         )
         .unwrap()
     };
     let witness = |bit: u8| {
-        ReplaySource::Witness(Witness::parse(format!("<<<assertion|h|c|{}={bit}>>>", crate::pn(&b))).unwrap())
+        ReplaySource::Witness(
+            Witness::parse(format!("<<<assertion|h|c|{}={bit}>>>", crate::pn(&b))).unwrap(),
+        )
     };
 
     let ReplayResult::Witness(off) = flag(witness(0)) else {
@@ -784,7 +784,7 @@ fn tc_444_a_boolean_parameter_replays() {
     };
     assert_eq!(on.settlement(), WitnessSettlement::Inconclusive);
 
-    let ReplayResult::Input(off) = flag(typed_input(b, WitnessValue::Boolean(false))) else {
+    let ReplayResult::Input(off) = flag(typed_input(b.clone(), WitnessValue::Boolean(false))) else {
         panic!("Input arm");
     };
     assert_eq!(off.settlement(), InputSettlement::ReproducedWithoutWitness);
@@ -1070,10 +1070,7 @@ impl Importing {
 
     /// The `test/units` entry, from the unit's own source.
     fn units_entry(&self) -> crate::request::DependencyEntryWire {
-        entry(
-            "test/units",
-            vec![source_ref(UNITS_IDENTITY, REVISION)],
-        )
+        entry("test/units", vec![source_ref(UNITS_IDENTITY, REVISION)])
     }
 }
 
@@ -1462,10 +1459,7 @@ fn tc_444_dependency_entries_refuse_by_the_d4_rules() {
     let units = importing.units_entry();
     let units_bytes = importing.units.as_bytes();
     let extra_bytes = units_source("function spare using v(): Boolean pure { true }\n");
-    let extra = entry(
-        "test/zzz",
-        vec![source_ref("test:zzz", REVISION)],
-    );
+    let extra = entry("test/zzz", vec![source_ref("test:zzz", REVISION)]);
     let provision: &[&[u8]] = &[units_bytes, extra_bytes.as_bytes()];
 
     // An extra entry no import reaches: refused after the recompile.
@@ -2060,10 +2054,7 @@ fn parity_unit() -> String {
 
 /// A request replaying `function` of [`parity_unit`] with `source`, built
 /// from its parameter 0's node id.
-fn parity_request(
-    function: &str,
-    bind: impl FnOnce(NodeKey) -> ReplaySource,
-) -> ReplayRequestWire {
+fn parity_request(function: &str, bind: impl FnOnce(NodeKey) -> ReplaySource) -> ReplayRequestWire {
     let source = parity_unit();
     let compiled = spine(&source, &BTreeMap::new());
     let mut wire = request(
@@ -2366,7 +2357,7 @@ fn tc_904_only_the_declared_parameters_are_bound() {
     let compiled = spine(&source, &BTreeMap::new());
     let other = parameter(&compiled, "inv", 0);
     let stray = replay_generated(
-        parity_request("inc", |_| input(other, 3)),
+        parity_request("inc", |_| input(other.clone(), 3)),
         integer(4),
         ReplayLimits::default(),
     );
@@ -2624,7 +2615,7 @@ mod operator_arm {
         let (identity, _) = site(&operation);
         let node = node_of(identity);
         OperatorClaim {
-            operation: with_real_children(operation, node),
+            operation: with_real_children(operation, node.clone()),
             ..claim_raw(node, add(0, 0), generated)
         }
     }
@@ -3246,13 +3237,9 @@ mod operator_arm {
         let child = "11".repeat(32);
 
         let graph = at(
-            node,
+            node.clone(),
             ScalarOperation::Add {
-                left: ScalarOperand::graph_child(
-                    1,
-                    range(-5, 100),
-                    crate::fixture_node(0x11),
-                ),
+                left: ScalarOperand::graph_child(1, range(-5, 100), crate::fixture_node(0x11)),
                 right: operand(2),
             },
         );
@@ -3265,7 +3252,7 @@ mod operator_arm {
         assert_eq!(minted(&graph), digest_of(&expected));
 
         let literals = at(
-            node,
+            node.clone(),
             ScalarOperation::Add {
                 left: ScalarOperand::literal(7),
                 right: ScalarOperand::literal(7),
@@ -3287,18 +3274,18 @@ mod operator_arm {
         // differ only in position, and a literal and a graph child with the
         // same position and range differ in operand identity.
         let swapped = at(
-            node,
+            node.clone(),
             ScalarOperation::Add {
                 left: ScalarOperand::literal(7),
                 right: ScalarOperand {
-                    identity: crate::OperandIdentity::GraphChild(node),
+                    identity: crate::OperandIdentity::GraphChild(node.clone()),
                     ..ScalarOperand::literal(7)
                 },
             },
         );
         assert_ne!(minted(&literals), minted(&swapped));
         let only_second = at(
-            node,
+            node.clone(),
             ScalarOperation::Add {
                 left: operand(7),
                 right: ScalarOperand::literal(7),
@@ -3433,7 +3420,7 @@ mod operator_arm {
         let invented = crate::fixture_node(7);
         let mut wrong_child = claim(add(2, 1), completed(3));
         if let ScalarOperation::Add { left, .. } = &mut wrong_child.operation {
-            left.identity = crate::OperandIdentity::GraphChild(invented);
+            left.identity = crate::OperandIdentity::GraphChild(invented.clone());
         }
         let report = refused_claim(wrong_child);
         assert!(
@@ -3503,7 +3490,7 @@ mod operator_arm {
             {"term": "literal", "value_kind": "integer", "value": "7"},
         ]}});
         let check = |operation: ScalarOperation| {
-            super::super::scalar_site::check_operands(&body, application, &operation)
+            super::super::scalar_site::check_operands(&body, &application, &operation)
         };
         let mixed = |value: i64| ScalarOperation::Add {
             left: ScalarOperand::graph_child(5, range(0, 100), child),

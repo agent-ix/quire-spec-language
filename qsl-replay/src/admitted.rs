@@ -108,7 +108,7 @@ pub struct AdmittedUnionMember {
 
 impl AdmittedUnionMember {
     /// The member identifier.
-    pub fn identifier(&self) -> &Identifier {
+    pub fn identifier(&self) -> &str {
         self.binding.identifier()
     }
 
@@ -116,7 +116,7 @@ impl AdmittedUnionMember {
     /// (QSpec FR-441), which a `UnionMember` of a replayed union value of it
     /// carries and a QSV union declaration names the member by.
     pub fn variant(&self) -> VariantId {
-        self.binding.variant()
+        self.binding.variant().clone()
     }
 
     /// The sealed binding the check minted for the member: its declaration
@@ -277,7 +277,7 @@ impl AdmittedUnit {
     /// `Quantity` take for it, equal to the one QSL's checked type
     /// environment and replay use.
     pub fn id(&self) -> UnitId {
-        self.id
+        self.id.clone()
     }
 
     /// The declaration's qualified name.
@@ -696,7 +696,7 @@ pub fn compile_admitted<'a>(
         replay_limits,
     )?;
     let context = context_of(compiled.checked.package(), &compiled.package)
-    .map_err(AdmittedRefusal::Fault)?;
+        .map_err(AdmittedRefusal::Fault)?;
     Ok(AdmittedCompilation {
         package: CompiledPackage::new(compiled.emitted),
         context,
@@ -857,7 +857,7 @@ fn unit_tables(graph: &CheckedGraph) -> Result<UnitTables, InternalFault> {
     let (declared, named_dimensions) = declared_nodes(&table)?;
     let mut units = BTreeMap::new();
     for unit in declared {
-        let nominal = table.nominal_node(unit.key()).ok_or_else(|| {
+        let nominal = table.nominal_node(&unit.key()).ok_or_else(|| {
             InternalFault::new("replay", "every-admitted-unit-has-a-nominal-node")
         })?;
         units.insert(
@@ -922,7 +922,7 @@ fn composite_table(
         };
         let qualified_name = graph
             .semantic_graph()
-            .node(&node)
+            .node(node.clone())
             .and_then(|declared| declared.declaration())
             .ok_or_else(|| {
                 InternalFault::new("replay", "every-admitted-composite-has-a-declared-node")

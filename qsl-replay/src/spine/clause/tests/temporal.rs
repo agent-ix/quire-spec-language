@@ -657,8 +657,8 @@ fn observed_replay_request(
         ReplayOverBinding, ReplaySource, ReplayTarget, TracePosition, Witness, WitnessEnvelope,
         WitnessPacket,
     };
-use quire_exact::NodeKey;
     use qsl_foundation::source::provenance::OccurrenceKey;
+    use quire_exact::NodeKey;
 
     let (base, packages) = unit_and_packages(OPERATIONS);
     let header = "profile v = \"quire.value.complete/v1\";\n";
@@ -670,6 +670,7 @@ use quire_exact::NodeKey;
     let path = "counter-temporal.native";
     let compiled = run_spine(
         &source_identity,
+        &qsl_semantics::library::LibraryName::new("fixture").expect("a library name"),
         path,
         &source_bytes,
         &packages,
@@ -685,7 +686,7 @@ use quire_exact::NodeKey;
         .find(|node| node.clause().name() == name)
         .expect("the fixture temporal clause exists");
     let node = clause_node.identity().clone();
-    let occurrence = OccurrenceKey::new(node, clause_node.claim().clone());
+    let occurrence = OccurrenceKey::new(node.clone(), clause_node.claim().clone());
     let domain_document = packages.values().next().expect("one model package");
     let documents: Vec<(DocumentRef, Vec<u8>)> = values
         .iter()
@@ -706,12 +707,8 @@ use quire_exact::NodeKey;
         crate::QualifiedName::new(vec![Identifier::new(name).expect("fixture name")])
             .expect("qualified name"),
     );
-    let mut wire = super::frame_replay::request(
-        &source_bytes,
-        domain_document,
-        &documents,
-        target.clone(),
-    );
+    let mut wire =
+        super::frame_replay::request(&source_bytes, domain_document, &documents, target.clone());
     wire.replay_target.over = Some(ReplayOverBinding {
         population: fixture::id("counters"),
         key: "c1".to_owned(),

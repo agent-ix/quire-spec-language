@@ -297,9 +297,7 @@ impl ClauseDisposition {
     /// The FR-109 stage this disposition reports at.
     pub fn stage(&self) -> ClauseRunStage {
         match self {
-            Self::Compile(_) | Self::UnknownLanguage { .. } => {
-                ClauseRunStage::Compile
-            }
+            Self::Compile(_) | Self::UnknownLanguage { .. } => ClauseRunStage::Compile,
             Self::MissingName { .. } | Self::NotAPredicate { .. } => ClauseRunStage::Select,
             Self::Admit(_) | Self::ArgumentRefusal(_) => ClauseRunStage::Admit,
             Self::Evaluate(_)
@@ -784,7 +782,7 @@ pub(crate) fn admit_clause_observations(
         kind: clause.kind(),
         context: clause.context(),
         operation: clause.operation().map(|operation| OperationFacts {
-            declaring: operation.declaring,
+            declaring: operation.declaring.clone(),
             declaration: operation.declaration.clone(),
         }),
         operations: graph.scope().operations().clone(),
@@ -1109,8 +1107,7 @@ pub(crate) fn check_clause_admitted(
         .evaluate_clause(&qualified, &observations, &mut meter)
     {
         Ok(evaluation) => {
-            consequent_source_events =
-                derive_consequent_source_events(graph, clause, &evaluation);
+            consequent_source_events = derive_consequent_source_events(graph, clause, &evaluation);
             match derive_separating_witness(clause, &evaluation) {
                 Err(fault) => ClauseDisposition::EvaluateFault(fault),
                 Ok(witness) => {
@@ -1236,9 +1233,9 @@ pub(crate) fn check_frame(
     let frame = operation_frame.frame();
     let facts = FrameFacts {
         context,
-        frame,
+        frame: frame.clone(),
         operation: OperationFacts {
-            declaring: operation_frame.operation().declaring,
+            declaring: operation_frame.operation().declaring.clone(),
             declaration: operation_frame.operation().declaration.clone(),
         },
     };
@@ -1445,7 +1442,7 @@ fn run_function(
                     package.graph().model_selections(),
                     packages,
                     model_limits,
-                    *type_identity,
+                    type_identity.clone(),
                 ) {
                     Ok(universe) => universe,
                     Err(failure) => {
