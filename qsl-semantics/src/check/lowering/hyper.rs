@@ -74,7 +74,7 @@ pub(crate) struct LoweredStepRelation {
     body: BodyTerm,
     /// The source declaration identifier.
     declaration: Identifier,
-    /// The source owner included in its identity.
+    /// The source owner retained by the claim node.
     owner: super::SourceOwner,
     /// The relation's claim location.
     location: Location,
@@ -555,15 +555,15 @@ impl Lowering<'_> {
 }
 
 /// Finish the step-relation node after the checked abstraction relation is
-/// available. The relation key is late-bound because QSL computes it from
-/// the assembled graph's exact model declaration nodes.
+/// available. Its declared structural key uses the checked package name and
+/// the relation's declared path.
 #[string_edge]
 pub(crate) fn finish_step_relation(
     mut lowered: LoweredStepRelation,
     relation: &CheckedModelRelation,
     abstraction: Option<&CheckedAbstractionRelation>,
     abstraction_node: Option<NodeKey>,
-    identity: qsl_foundation::IdentityLimits,
+    package_name: &str,
 ) -> Result<(super::SemanticNode, Vec<NodeKey>), CheckRefusal> {
     let code_roots = lowered.code_roots.clone();
     lowered.bound_implementations = relation
@@ -658,8 +658,20 @@ pub(crate) fn finish_step_relation(
         owner: Some(super::Owner::Source(lowered.owner)),
         body: lowered.body,
     };
-    // BLOCKED-BY QSL-1282 (owner: planner titan:QSL:plan): the step_relation node's admitted NodeKey comes from C's node_key API
-    let key = super::admitted_step_relation_key(&content, &lowered.location)?;
+    let key = crate::check::declared_node_key(
+        package_name.to_owned(),
+        vec![lowered.declaration.as_str().to_owned()],
+        0,
+    )
+    .map_err(|cause| match cause {
+        quire_exact::InvalidNodeKey::Allocation { requested } => super::refuse(
+            &lowered.location,
+            crate::check::refusal::CheckCause::Identity(
+                quire_semantic_value::semantic_node::IdentityRefusal::Allocation { requested },
+            ),
+        ),
+        _ => stage_fault(&lowered.location, "step-relation-declaration-key-valid"),
+    })?;
     Ok((
         super::SemanticNode {
             key,

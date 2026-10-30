@@ -5916,7 +5916,7 @@ fn finish_step_relations(
             &relation,
             abstraction,
             abstraction_node,
-            graph.identity,
+            graph.package_name(),
         )
         .map_err(|refusal| vec![refusal])?;
         let key = node.key();
