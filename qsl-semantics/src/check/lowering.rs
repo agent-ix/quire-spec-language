@@ -1863,8 +1863,10 @@ impl<'a> Lowering<'a> {
 
     /// The structural key of an unpended `content`: equal content is one
     /// node; a declared node is keyed by its declaration's path, any other
-    /// by its closed tag, semantic form and ordered semantic operands.
-    /// Repeats of one path take the next unused ordinal.
+    /// by its closed tag and semantic form alone. Repeats of one path take
+    /// the next unused ordinal, so a key's size never depends on how deep
+    /// its operands nest (QSL-381: no depth cap, and a key that nested its
+    /// operands' keys would cost memory quadratic in a chain's depth).
     fn admitted_node_key(
         &mut self,
         location: &Location,
@@ -1873,20 +1875,6 @@ impl<'a> Lowering<'a> {
         if let Some(key) = self.node_index.get(content) {
             return Ok(key.clone());
         }
-        let mut operands: Vec<PathSegment> = Vec::new();
-        if let Some(semantic_type) = &content.semantic_type {
-            let admitted = semantic_type
-                .admitted()
-                .ok_or_else(|| fault(location, KeyFault::UnresolvedDraft))?;
-            operands.push(PathSegment::Node(admitted.clone()));
-        }
-        if let Some(owner_model) = &content.owner_model {
-            operands.push(PathSegment::Node(owner_model.clone()));
-        }
-        content
-            .body
-            .for_each_key(&mut |named| operands.push(PathSegment::Node(named)))
-            .map_err(|refusal| preimage_refusal(location, refusal))?;
         let package = self.package_name.clone();
         let key = self.mint_key(location, |ordinal| match &content.declaration {
             Some(names) => super::declared_node_key(
@@ -1898,7 +1886,7 @@ impl<'a> Lowering<'a> {
                 &package,
                 content.node_tag,
                 content.semantic_form,
-                operands.clone(),
+                Vec::new(),
                 ordinal,
             ),
         })?;
