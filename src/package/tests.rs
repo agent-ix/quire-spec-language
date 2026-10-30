@@ -22,7 +22,7 @@ fn canonical_pass_bytes_match_each_independent_fixed_vector_before_hashing() {
         let features = features::derive(&checked).unwrap();
         let mut usage = PackageUsage::default();
         let bytes = run(
-            &view::Manifest::new(&checked, &features, false, None),
+            &view::Manifest::new(&checked, &features, false),
             PackageLimits::default(),
             Pass::Canonical,
             &mut usage,
@@ -36,7 +36,6 @@ fn canonical_pass_bytes_match_each_independent_fixed_vector_before_hashing() {
         assert!(usage.encode.is_none());
         let package = NativePackage::new(checked, PackageLimits::default()).unwrap();
         assert_eq!(package.bytes(), vector.artifact);
-        assert_eq!(package.canonical_identity().to_string(), vector.digest);
     }
 }
 
@@ -56,7 +55,7 @@ fn runtime_populations_and_evaluator_budgets_do_not_enter_static_passes() {
     let canonical = |package: &NativePackage<'_>| {
         let features = features::derive(package.checked()).unwrap();
         run(
-            &view::Manifest::new(package.checked(), &features, false, None),
+            &view::Manifest::new(package.checked(), &features, false),
             PackageLimits::default(),
             Pass::Canonical,
             &mut PackageUsage::default(),
@@ -100,7 +99,6 @@ fn runtime_populations_and_evaluator_budgets_do_not_enter_static_passes() {
             assert_eq!(canonical(&package), original_canonical);
             assert_eq!(canonical(&rebuilt), original_canonical);
             assert_eq!(rebuilt.bytes(), package.bytes());
-            assert_eq!(rebuilt.canonical_identity(), package.canonical_identity());
             assert_eq!(rebuilt.usage(), package.usage());
         }
     }

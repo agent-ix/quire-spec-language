@@ -18,15 +18,14 @@ const HEADER: &str = include_str!("../fixtures/native-package/header.native");
 use super::native_rule_model;
 
 /// One positive package vector: its native source, the expected canonical
-/// and package bytes and the expected identity, each composed at test time
+/// and package bytes, each composed at test time
 /// by the independent recipe in `vectors` from the offered `model`, so no
-/// digest of the model, the source or the package is frozen in a file.
+/// digest of the model or the source is frozen in a file.
 pub(crate) struct Vector {
     pub name: &'static str,
     pub source: String,
     pub canonical: Vec<u8>,
     pub artifact: Vec<u8>,
-    pub digest: String,
     pub identity: &'static str,
     pub revision: &'static str,
     pub formal_revision: u64,
@@ -46,7 +45,6 @@ pub(crate) fn cases(model: &NativeModel) -> [Vector; 3] {
         source,
         canonical: expected.canonical.into_bytes(),
         artifact: expected.artifact.into_bytes(),
-        digest: expected.digest,
         identity,
         revision,
         formal_revision,

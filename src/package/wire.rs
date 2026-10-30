@@ -27,7 +27,7 @@ macro_rules! record {
 
 record!(Manifest {
     format: String, semantics: Semantics, required_features: Vec<String>, source: Source,
-    models: Inventory<Model, 64>, clauses: Inventory<Clause, 256>, canonical_identity: CanonicalIdentity,
+    models: Inventory<Model, 64>, clauses: Inventory<Clause, 256>,
 });
 record!(Semantics {
     language: String,
@@ -45,12 +45,6 @@ record!(Source {
     revision: Text,
     digest: Digest,
     formal: Formal
-});
-record!(CanonicalIdentity {
-    domain: String,
-    version: String,
-    algorithm: String,
-    digest: CanonicalDigest
 });
 record!(Model {
     alias: Text,
@@ -287,23 +281,6 @@ impl<'de> Deserialize<'de> for Digest {
 impl Serialize for Digest {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.collect_str(&self.0)
-    }
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(try_from = "String")]
-pub(super) struct CanonicalDigest(String);
-impl TryFrom<String> for CanonicalDigest {
-    type Error = &'static str;
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        if value.len() != 64
-            || !value
-                .bytes()
-                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-        {
-            return Err("invalid native canonical digest spelling");
-        }
-        Ok(Self(value))
     }
 }
 

@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-340 "Where it runs": the real spec-versioning corpus, generated at run
-//! time. FR-056 selects a model by digest, so a corpus that committed the
-//! digest of `examples/config-version/model.semantic-ir.json` would churn on
-//! every model edit. The corpus therefore is not committed: `make
-//! refinement-versioning` calls [`generate`], which reads the model file and
-//! computes its digest then, and writes the one revision pair (units, pair
-//! description and snapshots) into a temporary directory the gate reads.
+//! time. A unit selects a model by its package identity, so the corpus is
+//! derived from `examples/config-version/model.semantic-ir.json`. It is not
+//! committed: `make refinement-versioning` calls [`generate`], which reads the
+//! model file and writes the one revision pair (units, pair description and
+//! snapshots) into a temporary directory the gate reads.
 
 use std::fs;
 use std::path::Path;
@@ -118,8 +117,7 @@ fn clause_case(model: &Model, observation: &str) -> Value {
     })
 }
 
-/// Write the real corpus into `out`, with the model digest computed from
-/// `root`'s model file. Nothing it writes is committed.
+/// Write the real corpus into `out`, derived from `root`'s model file. Nothing it writes is committed.
 ///
 /// # Errors
 /// [`Error::RefinementCorpus`] when the model cannot be read or a corpus file

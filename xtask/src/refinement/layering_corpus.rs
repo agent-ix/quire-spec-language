@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-345 "Where it runs": the real profile-layering corpus, generated at run
-//! time. Every unit selects a model by its digest (FR-056), so a committed
-//! corpus would carry a frozen digest and churn on every model edit. The
-//! corpus therefore is not committed: `make refinement-layering` calls
-//! [`generate`], which reads `examples/config-version/model.semantic-ir.json`,
-//! builds the timed model the temporal entries select, computes both
-//! digests then, and writes every entry into a directory the gate reads.
+//! time. Every unit selects a model by its package identity, so the corpus is
+//! derived from the model files. It is not committed: `make
+//! refinement-layering` calls [`generate`], which reads
+//! `examples/config-version/model.semantic-ir.json`, builds the timed model
+//! the temporal entries select, and writes every entry into a directory the
+//! gate reads.
 //!
 //! The corpus holds, for each of QSpec FR-453's edges E1 to E6, a `case`
 //! both layers refuse with a typed refusal, a `case` over the edge's
@@ -31,6 +31,11 @@ const TIMED_VERSION: &str = "1.0.0";
 /// The model file's name inside each entry directory.
 const MODEL_FILE: &str = "model.semantic-ir.json";
 const AUTHORITY: &str = "agent-ix";
+/// A well-formed value for the digest members the FCD semantic-ir schema
+/// still requires (`source.digest`, `package.manifestDigest`,
+/// `package.lockDigest`, `construct.manifestDigest`). Nothing reads them.
+/// BLOCKED-BY PLAT-1205 (owner: planner titan:QSL:plan): the FCD schema's
+/// required digest members.
 const PLACEHOLDER: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 
 /// One model an entry selects: its bytes and the identity a `model`
@@ -333,8 +338,7 @@ fn entries(untimed: &Model, timed: &Model) -> Result<Vec<Entry>> {
     Ok(entries)
 }
 
-/// Write the real layering corpus into `out`, with both model digests
-/// computed from the model bytes. Nothing it writes is committed.
+/// Write the real layering corpus into `out`, from the model bytes. Nothing it writes is committed.
 ///
 /// # Errors
 /// [`Error::RefinementCorpus`] when the untimed model cannot be read or a

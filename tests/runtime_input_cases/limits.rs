@@ -32,8 +32,8 @@ fn independent_text_totals_include_all_metadata_and_value_strings() {
     snapshot.arena = vec![ValueNode::Text { value: "x".into() }];
     let artifact = Snapshot::new(identity(), snapshot.clone(), ArtifactLimits::default()).unwrap();
     // Labels 28 (agent-ix, snapshot:current, git, 1); three owners 27 each;
-    // record/universe 9; key/field 2; State name 5; payload 1. Digests and
-    // fixed encoding tokens are output work.
+    // record/universe 9; key/field 2; State name 5; payload 1. Fixed encoding
+    // tokens are output work.
     assert_eq!(artifact.usage().text_bytes, 126);
     let error = Snapshot::new(
         identity(),

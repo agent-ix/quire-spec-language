@@ -66,7 +66,6 @@ pub(crate) fn source_multiple() -> String {
 pub(crate) struct Expected {
     pub canonical: String,
     pub artifact: String,
-    pub digest: String,
 }
 
 pub(crate) fn expected(
@@ -189,22 +188,9 @@ fn expected_inner(
         model_string = model_string,
     );
     let canonical = format!("{prefix}{}]}}", canonical_clauses.join(","));
-    let mut hash = Sha256::new();
-    hash.update(b"quire-spec-language\0quire.native.bound-package/v1\0linked-package\0");
-    hash.update(canonical.as_bytes());
-    let digest = format!("{:x}", hash.finalize());
-    let artifact = format!(
-        concat!(
-            "{prefix}{clauses}],",
-            "\"canonical_identity\":{{\"domain\":\"quire.native.bound-package\",\"version\":\"v1\",\"algorithm\":\"sha256\",\"digest\":\"{digest}\"}}}}"
-        ),
-        prefix = prefix,
-        clauses = full_clauses.join(","),
-        digest = digest,
-    );
+    let artifact = format!("{prefix}{}]}}", full_clauses.join(","));
     Expected {
         canonical,
         artifact,
-        digest,
     }
 }

@@ -193,27 +193,6 @@ fn select(
             ));
         }
     }
-    for (field, actual, expected) in [
-        (
-            "domain",
-            wire.canonical_identity.domain.as_str(),
-            "quire.native.bound-package",
-        ),
-        ("version", wire.canonical_identity.version.as_str(), "v1"),
-        (
-            "algorithm",
-            wire.canonical_identity.algorithm.as_str(),
-            "sha256",
-        ),
-    ] {
-        if actual != expected {
-            return Err(request.error(
-                Code::UnknownProfile,
-                path(&["canonical_identity", field]),
-                "unsupported canonical identity selection",
-            ));
-        }
-    }
     let mut seen = BTreeSet::new();
     for (index, feature) in wire.required_features.iter().enumerate() {
         let location = vec![

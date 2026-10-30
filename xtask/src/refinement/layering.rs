@@ -1129,7 +1129,6 @@ mod tests {
     use ix_trace_rs::trace;
 
     use qsl_foundation::bound::DomainKind;
-    use qsl_foundation::digest::ByteDigest;
     use qsl_foundation::BackendId;
     use qsl_route::EvidenceKind;
     use qsl_route::{BackendDescriptor, Candidate, Mode, ProviderOrigin};
@@ -1346,18 +1345,7 @@ mod tests {
                 .join("examples/config-version/model.semantic-ir.json"),
         )
         .unwrap();
-        // The model's `sha256-jcs` digest, computed from the document: the
-        // SHA-256 of its RFC 8785 encoding.
-        let digest = {
-            let parsed: serde_json::Value = serde_json::from_slice(&package).unwrap();
-            let canonical = serde_json_canonicalizer::to_vec(&parsed).unwrap();
-            format!("{:x}", ByteDigest::of(&canonical))
-        };
-        fs::write(
-            root.join("witness.native"),
-            source.replace("@DIGEST@", &digest),
-        )
-        .unwrap();
+        fs::write(root.join("witness.native"), source).unwrap();
         fs::write(root.join("model.semantic-ir.json"), &package).unwrap();
         let entry = json!({
             "kind": "witness",

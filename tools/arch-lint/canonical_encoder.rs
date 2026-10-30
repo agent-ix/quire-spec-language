@@ -113,11 +113,6 @@ pub(crate) enum ExemptionKind {
     /// Not a canonical encoding at all: the digest is over exact emitted
     /// or supplied bytes, never over a canonical form of a value.
     NotAnIdentity,
-    /// An identity the specification itself carves out of RFC 8785: ADR-013
-    /// §2 (ADR-013:124-127) names FR-021's `NativePackageIdentity` a
-    /// typed-record encoding, retiring with `NativePackage` at ADR-011 §7.3
-    /// M-6c. It leaves this list in that change.
-    SpecCarvedIdentity,
 }
 
 /// One exemption: the file (its crate's source root and module path), the
@@ -169,16 +164,6 @@ pub(crate) const EXEMPT: &[Exemption] = &[
         reason: "the FR-001 `ByteDigest` of the emitted package bytes, and of supplied \
                  package bytes checked against their expected reference; not an identity \
                  over a canonical form",
-    },
-    Exemption {
-        crate_src: "src",
-        module: "package",
-        functions: &["NativePackageIdentity::of"],
-        calls: &[],
-        kind: ExemptionKind::SpecCarvedIdentity,
-        reason: "FR-021's `NativePackageIdentity`: ADR-013 §2 (ADR-013:124-127) names it a \
-                 typed-record encoding, not RFC 8785; retires with `NativePackage` at \
-                 ADR-011 §7.3 M-6c",
     },
     Exemption {
         crate_src: "src",
@@ -1145,10 +1130,7 @@ pub(crate) fn report(outcome: &Outcome) -> String {
             }
         }
     }
-    for (label, kind) in [
-        ("spec-carved identity", ExemptionKind::SpecCarvedIdentity),
-        ("exempt", ExemptionKind::NotAnIdentity),
-    ] {
+    for (label, kind) in [("exempt", ExemptionKind::NotAnIdentity)] {
         for (allowed, exemption) in outcome.allowed_of(kind) {
             summary.push_str(&format!(
                 "    {label}: {} [{}] -- {}\n",
@@ -1478,10 +1460,7 @@ pub(super) fn digest_of(value: &serde_json::Value) -> [u8; 32] {
         );
         let outcome = evaluate(dir.path()).unwrap();
         assert!(outcome.passed(), "{}", report(&outcome));
-        for kind in [
-            ExemptionKind::SpecCarvedIdentity,
-            ExemptionKind::NotAnIdentity,
-        ] {
+        for kind in [ExemptionKind::NotAnIdentity] {
             let listed = EXEMPT.iter().filter(|e| e.kind == kind).count();
             assert_eq!(outcome.allowed_of(kind).len(), listed, "{kind:?}");
         }
@@ -1676,10 +1655,7 @@ pub(super) fn digest_of(value: &serde_json::Value) -> [u8; 32] {
             .collect();
         assert_eq!(
             stale,
-            vec![
-                ("package", Some("NativePackageIdentity::of")),
-                ("runtime::construction", None),
-            ]
+            vec![("runtime::construction", None)]
         );
     }
 }

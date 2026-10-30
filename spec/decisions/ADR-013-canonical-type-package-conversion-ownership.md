@@ -117,10 +117,10 @@ O-27) encodes through it, in every repository that produces or reads one. It
 orders object members by UTF-16 code unit itself, so its bytes do not depend
 on how a JSON map type is backed or on any Cargo feature. Two RFC 8785
 preimage schemas differ by their closed member lists, never by their
-encoder. The FR-021 `NativePackageIdentity` (`quire.native.bound-package/v1`)
-is not an RFC 8785 encoding: it is an identity over a typed-record encoding of a
-lane-private type (O-02, §6, R-09) and retires with `NativePackage` in
-ADR-011 §7.3 M-6c.
+encoder. The FR-021 `NativePackageIdentity` (`quire.native.bound-package/v1`),
+an identity over a typed-record encoding that was not RFC 8785, is removed
+with its hash and its `canonical_identity` member (QSL-1260); the native
+package's canonical content is compared by equality only.
 
 ### 3. Canonical owners
 

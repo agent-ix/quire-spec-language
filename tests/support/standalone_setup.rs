@@ -173,12 +173,6 @@ pub fn write(directory: &Path, case: Case) -> io::Result<(Value, Vec<u8>)> {
     )?;
     let package = NativePackage::new(checked, PackageLimits::default()).unwrap();
     std::fs::write(directory.join("package.json"), package.bytes())?;
-    let mut selected = job.clone();
-    selected["request"]["package"] = json!({"file":"package.json","digest":qsl_foundation::ByteDigest::of(package.bytes()).to_string()});
-    std::fs::write(
-        directory.join("package-run.json"),
-        serde_json::to_vec_pretty(&selected)?,
-    )?;
     let compilation = json!({"format":"native-compile/1","request":{
         "models":job["request"]["models"],"program":job["request"]["program"]}});
     std::fs::write(

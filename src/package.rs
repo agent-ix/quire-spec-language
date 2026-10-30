@@ -25,7 +25,6 @@ pub use reading::{PackageReadLimits, PackageSupport};
 use std::fmt;
 
 use serde::Serialize;
-use sha2::{Digest, Sha256};
 
 use qsl_foundation::{Code, Diagnostic};
 
@@ -185,42 +184,11 @@ impl PackageError {
     }
 }
 
-/// Source-bound static identity in quire.native.bound-package/v1, using SHA-256.
-///
-/// It cannot substitute for the independent Contract IR canonical role:
-/// ```compile_fail,E0308
-/// use quire_spec_language::package::NativePackageIdentity;
-/// fn substitute(identity: NativePackageIdentity) {
-///     let _: quire_contract_model::CanonicalDigest = identity;
-/// }
-/// ```
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct NativePackageIdentity([u8; 32]);
-
-impl NativePackageIdentity {
-    fn of(canonical: &[u8]) -> Self {
-        let mut hash = Sha256::new();
-        hash.update(b"quire-spec-language\0quire.native.bound-package/v1\0linked-package\0");
-        hash.update(canonical);
-        Self(hash.finalize().into())
-    }
-}
-
-impl fmt::Display for NativePackageIdentity {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for byte in self.0 {
-            write!(f, "{byte:02x}")?;
-        }
-        Ok(())
-    }
-}
-
 /// Immutable checked source, complete artifact bytes and separately typed identities.
 #[derive(Debug)]
 pub struct NativePackage<'model> {
     checked: crate::checking::CheckedPackage<'model>,
     bytes: Vec<u8>,
-    canonical_identity: NativePackageIdentity,
     usage: PackageUsage,
 }
 
@@ -250,18 +218,17 @@ impl<'model> NativePackage<'model> {
         let limits = limits.bounded();
         let mut usage = PackageUsage::default();
         let features = features::derive(&checked)?;
-        let manifest = view::Manifest::new(&checked, &features, true, None);
+        let manifest = view::Manifest::new(&checked, &features, true);
         run(&manifest, limits, Pass::Derive, &mut usage)?;
         let canonical = run(
-            &view::Manifest::new(&checked, &features, false, None),
+            &view::Manifest::new(&checked, &features, false),
             limits,
             Pass::Canonical,
             &mut usage,
         )?;
-        let canonical_identity = NativePackageIdentity::of(&canonical);
         drop(canonical);
         let bytes = run(
-            &view::Manifest::new(&checked, &features, true, Some(canonical_identity)),
+            &view::Manifest::new(&checked, &features, true),
             limits,
             Pass::Encode,
             &mut usage,
@@ -269,7 +236,6 @@ impl<'model> NativePackage<'model> {
         Ok(Self {
             checked,
             bytes,
-            canonical_identity,
             usage,
         })
     }
@@ -280,10 +246,6 @@ impl<'model> NativePackage<'model> {
     /// Complete immutable accepted artifact bytes.
     pub fn bytes(&self) -> &[u8] {
         &self.bytes
-    }
-    /// Native static identity derived under the named domain and byte profile.
-    pub fn canonical_identity(&self) -> NativePackageIdentity {
-        self.canonical_identity
     }
     /// Actual request-local measurements.
     pub fn usage(&self) -> &PackageUsage {

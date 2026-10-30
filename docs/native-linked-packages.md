@@ -25,8 +25,8 @@ their declaration/type/role inventories, but those strings cannot manufacture
 admitted models. Resolved expressions remain the original source AST; a second
 expression wire/interpreter is not introduced.
 
-The exact package bytes are the complete artifact. The separate native
-static identity follows the complete named derivation below, defined
+The exact package bytes are the complete artifact. The native canonical
+content follows the complete named derivation below, defined
 independently of any FS05 consumer's own adoption decision. Existing IR
 canonical and bound identities,
 shared-reference versions and JCS remain unchanged. Runtime
@@ -49,7 +49,6 @@ NativePackage::read_verified(
 ) -> Result<NativePackage<'model>, Box<PackageError>>
 NativePackage::checked(&self) -> &CheckedPackage<'model>
 NativePackage::bytes(&self) -> &[u8]
-NativePackage::canonical_identity(&self) -> NativePackageIdentity
 NativePackage::usage(&self) -> &PackageUsage
 ```
 
@@ -90,7 +89,6 @@ this package contract does not change the native source grammar.
 | source | `{authority, identity, revision_namespace, revision, formal}`; the four labels are the caller-named source labels of FR-001 and exact non-empty strings, and formal is `{document, revision}` under existing IR constructors |
 | models | One import record per native source import, in original import order |
 | clauses | One checked clause record per native source clause, in original clause order |
-| canonical_identity | Closed `{domain, version}` selecting the native static identity contract below |
 
 Source/formal labels and all emitted strings retain exact Unicode scalar
 spelling without normalization. The source's local display path is excluded;
@@ -247,8 +245,8 @@ set is accepted; that does not make import/clause/occurrence arrays set-like.
    version 1. Only for native-linked-package/1, decode the original bytes into
    closed typed records under a separately metered pass, rejecting extra,
    missing, incorrectly typed or constructor-invalid members as invalid_package.
-   Select language, edition, syntax/model/checking profiles, canonical
-   domain/version, then required features, in that order.
+   Select language, edition, syntax/model/checking profiles, then required
+   features, in that order.
    Existing unknown_language/unknown_edition/unknown_profile distinctions apply.
    No decoder fallback or
    interpretation of an unsupported version's fields occurs.
@@ -309,23 +307,20 @@ upstream counters are absent rather than invented. Rebind is a PackageStage, not
 pass. Canonical work belongs to stage encode during construction and compare
 during reconstruction. Comparison does not skip excluded projection metadata.
 
-## Native static identity
+## Native canonical content
 
-FR-021 selects domain quire.native.bound-package, version v1. The native
-static identity is the canonical content defined below, compared by equality;
-no hash is computed. NativePackageIdentity is a distinct immutable Rust type
-holding that canonical content; it is not an IR identity type.
-Its constructor is internal to checked derivation.
+The native canonical content is defined below and compared by equality; no
+hash is computed and no identity value is carried in the artifact.
 
-Canonical content is the complete manifest in this contract, excluding the
-top-level canonical_identity member and each clause's projections member.
+Canonical content is the complete manifest in this contract, excluding each
+clause's projections member.
 Every other member participates, including exact source identities,
 semantic selection, complete selected model artifact strings, authored
 clause identities, source locations, resolved targets and runtime obligations.
 Import/clause/occurrence arrays remain ordered. Required features and runtime
 universe/observation sets use their expressly defined producer order. Object
 members use the fixed field orders specified here; no global key or array sort
-is applied. Changing source spelling can change this source-bound identity.
+is applied. Changing source spelling changes this source-bound content.
 
 Canonical content is encoded as compact UTF-8 JSON with exact decimal integers,
 no newline, no normalization and no BOM. String escaping uses double quotes,
@@ -336,20 +331,15 @@ escaped. This fixed typed-record encoding is not RFC 8785 and never converts
 u64 revisions through binary64. The already qualified model artifact strings
 retain their complete bytes inside this outer escaping.
 
-The canonical_identity member is added only after this derivation, avoiding a
-self-referential member. Its closed selection is domain
-quire.native.bound-package, version v1.
-
 Canonical encoding is a separately bounded/reported pass under NFR-007 before
 the final artifact encoding pass. Both successful and refused work retain their
-own actual counters. The reader selects the canonical domain/version with
-unknown_profile for an unsupported selection, then compares the canonical content of
+own actual counters. The reader compares the canonical content of
 its reconstructed checked package with the wire content. Mismatching or
 substituted content is invalid_package.
 Native canonical equality never skips full manifest
 comparison: forged excluded projections still refuse.
 
-Projection availability is deliberately outside static identity because it is
+Projection availability is deliberately outside the canonical content because it is
 a capability/derivation claim, not native clause meaning. It remains inside
 raw artifact bytes and is verified against the actual producer's dispositions.
 This separation does not qualify an unavailable backend or grant evidence reuse.

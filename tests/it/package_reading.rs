@@ -35,10 +35,6 @@ fn independent_reader_fixtures_have_successful_real_compiler_setup() {
         let package = NativePackage::new(checked, PackageLimits::default()).unwrap();
         assert_eq!(package.bytes(), vector.artifact, "{}", vector.name);
         assert_eq!(
-            package.canonical_identity().to_string(),
-            vector.digest.as_str()
-        );
-        assert_eq!(
             package.usage().canonical.unwrap().output_bytes,
             vector.canonical.len()
         );
@@ -64,10 +60,6 @@ fn independently_frozen_packages_reconstruct_after_original_checker_is_dropped()
         .unwrap();
         assert_eq!(package.bytes(), vector.artifact);
         assert_eq!(package.checked().clauses().len(), vector.clauses.len());
-        assert_eq!(
-            package.canonical_identity().to_string(),
-            vector.digest.as_str()
-        );
         assert_eq!(package.usage().admitted_input_bytes, vector.artifact.len());
         assert!(package.usage().recognition.is_some());
         assert!(package.usage().decode.is_some());

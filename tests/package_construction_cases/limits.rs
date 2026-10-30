@@ -39,10 +39,9 @@ fn add(total: &mut PackagePassUsage, part: PackagePassUsage) {
 }
 
 fn expected_usage(expected: &vectors::Expected) -> [PackagePassUsage; 3] {
-    let mut full: Value = serde_json::from_str(&expected.artifact).unwrap();
+    let full: Value = serde_json::from_str(&expected.artifact).unwrap();
     let mut encode = workload(&full, 0);
     encode.output_bytes = expected.artifact.len();
-    full.as_object_mut().unwrap().remove("canonical_identity");
     let derive = workload(&full, 0);
     let mut canonical = workload(&serde_json::from_str(&expected.canonical).unwrap(), 0);
     canonical.output_bytes = expected.canonical.len();

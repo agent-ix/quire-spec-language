@@ -211,7 +211,7 @@ fn conflicting_population_order_preserves_defects_and_actual_byte_provenance() {
                 quire_spec_language::runtime::RuntimeReference::Snapshot(expected.clone())
             );
             // Compare logical defects under each permutation's exact artifact
-            // correspondence; the byte-significant reordered payload has a new digest.
+            // correspondence; the byte-significant reordered payload is a new artifact.
             runtime.artifact =
                 quire_spec_language::runtime::RuntimeReference::Snapshot(baseline.clone());
         }

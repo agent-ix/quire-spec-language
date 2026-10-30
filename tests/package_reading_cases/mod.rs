@@ -209,9 +209,6 @@ fn selection_order_and_feature_sets_do_not_depend_on_object_order() {
         ("/semantics/syntax_profile", Code::UnknownProfile),
         ("/semantics/model_profile", Code::UnknownProfile),
         ("/semantics/checking_contract", Code::UnknownProfile),
-        ("/canonical_identity/domain", Code::UnknownProfile),
-        ("/canonical_identity/version", Code::UnknownProfile),
-        ("/canonical_identity/algorithm", Code::UnknownProfile),
     ];
     // Leave every later selector wrong too: the first selected mismatch must
     // win even though serde_json emits these object members in a different order.
@@ -247,10 +244,6 @@ fn selection_order_and_feature_sets_do_not_depend_on_object_order() {
     .unwrap();
     assert_eq!(package.bytes(), raw);
     assert_ne!(package.bytes(), vector.artifact);
-    assert_eq!(
-        package.canonical_identity().to_string(),
-        vector.digest.as_str()
-    );
     for (feature, expected) in [
         ("boolean", Code::InvalidPackage),
         ("future-feature", Code::UnknownRequiredFeature),
@@ -298,7 +291,6 @@ fn validly_shaped_forged_claims_fail_actual_reconstruction_comparison() {
         ("/clauses/0/projections/1/status", json!("available")),
         ("/clauses/0/projections/1/span/end", json!(999)),
         ("/models/0/artifact", json!("forged model")),
-        ("/canonical_identity/digest", json!("0".repeat(64))),
     ] {
         assert_ne!(
             original.pointer(pointer).unwrap(),

@@ -116,7 +116,6 @@ fn minimum_admitted_unit_has_exact_independent_static_bytes() {
         std::str::from_utf8(package.bytes()).unwrap(),
         expected.artifact
     );
-    assert_eq!(package.canonical_identity().to_string(), expected.digest);
     assert_eq!(package.checked().clauses().len(), 1);
     assert_eq!(package.checked().linked().models().len(), 1);
     let again = NativePackage::new(
@@ -131,7 +130,6 @@ fn minimum_admitted_unit_has_exact_independent_static_bytes() {
     )
     .unwrap();
     assert_eq!(package.bytes(), again.bytes());
-    assert_eq!(package.canonical_identity(), again.canonical_identity());
     assert_eq!(
         package.checked().linked().unit().source().path(),
         "first.native"
@@ -167,7 +165,6 @@ fn canonical_unicode_controls_and_large_revision_are_exact() {
         std::str::from_utf8(package.bytes()).unwrap(),
         expected.artifact
     );
-    assert_eq!(package.canonical_identity().to_string(), expected.digest);
     let wire: serde_json::Value = serde_json::from_slice(package.bytes()).unwrap();
     assert_eq!(
         wire["source"]["formal"]["revision"].as_u64(),

@@ -38,33 +38,6 @@ fn wire_inventory_cardinality_is_closed_before_rebinding() {
     }
 }
 
-#[test]
-#[trace("TC-091", "FR-021-AC-5")]
-fn raw_ir_and_jcs_digests_cannot_replace_native_static_identity() {
-    let models = [model()];
-    let [vector, _, _] = package_vector_setup::cases(&models[0]);
-    let bindings = package_vector_setup::checked(&vector, &models)
-        .bindings()
-        .clone();
-    let original: Value = serde_json::from_slice(&vector.artifact).unwrap();
-    // This independent JCS document contains only one integer and one ASCII key,
-    // so its canonical bytes are fixed without another canonicalizer.
-    for digest in [
-        format!("{:x}", Sha256::digest(&vector.artifact)),
-        format!("{:x}", Sha256::digest(br#"{"a":1}"#)),
-    ] {
-        assert_ne!(digest, vector.digest.as_str());
-        let mut changed = original.clone();
-        changed["canonical_identity"]["digest"] = json!(digest);
-        let error = read(&changed, bindings.clone(), &models).unwrap_err();
-        assert_eq!(
-            (error.code, error.stage),
-            (Code::InvalidPackage, PackageStage::Compare)
-        );
-        assert!(error.usage.checking.is_some());
-    }
-}
-
 struct Duplicate<'a> {
     value: &'a Value,
     target: &'a str,

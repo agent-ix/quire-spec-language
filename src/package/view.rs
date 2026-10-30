@@ -9,7 +9,6 @@ use serde::{
     Serialize, Serializer,
 };
 
-use super::NativePackageIdentity;
 use crate::checking::{CheckedPackage, RuntimeRequirements, UniverseRequirement};
 use crate::linking::{DeclarationKey, DeclarationLocation, ResolutionTarget, ResolvedOccurrence};
 use qsl_foundation::{ByteDigest, Span};
@@ -56,14 +55,6 @@ struct Source<'a> {
 }
 
 #[derive(Serialize)]
-struct CanonicalIdentity {
-    domain: &'static str,
-    version: &'static str,
-    algorithm: &'static str,
-    digest: DisplayValue<NativePackageIdentity>,
-}
-
-#[derive(Serialize)]
 pub(super) struct Manifest<'a, 'model> {
     format: &'static str,
     semantics: Semantics,
@@ -71,8 +62,6 @@ pub(super) struct Manifest<'a, 'model> {
     source: Source<'a>,
     models: Models<'a, 'model>,
     clauses: Clauses<'a, 'model>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    canonical_identity: Option<CanonicalIdentity>,
 }
 
 impl<'a, 'model> Manifest<'a, 'model> {
@@ -80,7 +69,6 @@ impl<'a, 'model> Manifest<'a, 'model> {
         checked: &'a CheckedPackage<'model>,
         features: &'a BTreeSet<&'static str>,
         projections: bool,
-        identity: Option<NativePackageIdentity>,
     ) -> Self {
         let original = checked.bindings().source.source();
         Self {
@@ -100,12 +88,6 @@ impl<'a, 'model> Manifest<'a, 'model> {
                 checked,
                 projections,
             },
-            canonical_identity: identity.map(|digest| CanonicalIdentity {
-                domain: "quire.native.bound-package",
-                version: "v1",
-                algorithm: "sha256",
-                digest: DisplayValue(digest),
-            }),
         }
     }
 }

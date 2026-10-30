@@ -189,10 +189,7 @@ fn unused_selected_types_and_nested_wrappers_contribute_without_spurious_carrier
         })];
         let package = rule(&models, "true", ClauseKind::Invariant);
         assert_features(&package, &added, "unused selected declaration");
-        assert_ne!(
-            package.canonical_identity(),
-            original_package.canonical_identity()
-        );
+        assert_ne!(package.bytes(), original_package.bytes());
         let wire: Value = serde_json::from_slice(package.bytes()).unwrap();
         assert_eq!(
             wire["models"][0]["artifact"],

@@ -887,12 +887,6 @@ fn historical_package_identities_and_atomic_refusals_are_unchanged() {
         let bindings = checked.bindings().clone();
         let package = NativePackage::new(checked, PackageLimits::default()).unwrap();
         assert_eq!(package.bytes(), vector.artifact, "{}", vector.name);
-        assert_eq!(
-            package.canonical_identity().to_string(),
-            vector.digest.as_str(),
-            "{}",
-            vector.name
-        );
         let reread = NativePackage::read_verified(
             package.bytes(),
             bindings,
@@ -902,7 +896,6 @@ fn historical_package_identities_and_atomic_refusals_are_unchanged() {
         )
         .expect("frozen historical bytes still read through the unchanged reader");
         assert_eq!(reread.bytes(), vector.artifact, "{}", vector.name);
-        assert_eq!(reread.canonical_identity(), package.canonical_identity());
     }
 }
 
@@ -978,12 +971,8 @@ fn a_changed_profile_label_cannot_admit_composed_input_into_the_historical_reade
     assert_eq!(error.code, Code::UnknownProfile);
     assert_eq!(error.stage, PackageStage::Decode);
 
-    // The accepted fixture bytes and identities are untouched by every attempt.
+    // The accepted fixture bytes are untouched by every attempt.
     assert_eq!(package.bytes(), vector.artifact);
-    assert_eq!(
-        package.canonical_identity().to_string(),
-        vector.digest.as_str()
-    );
 }
 
 #[test]
