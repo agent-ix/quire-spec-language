@@ -39,6 +39,7 @@ use qsl_semantics::check::{
 };
 
 use qsl_semantics::model::object_environment::PlacePresences;
+use qsl_semantics::model::state::ModelState;
 use quire_checked::key::DeclarationKey;
 
 use super::encode::declaration_text;
@@ -80,8 +81,15 @@ impl ClockPlace {
         &self,
         state: &'s ModelSimState,
     ) -> Option<&'s qsl_semantics::model::state::StateObject> {
+        self.stored_in(state.state())
+    }
+
+    /// The stored object of the place in the model state `state`.
+    fn stored_in<'s>(
+        &self,
+        state: &'s ModelState,
+    ) -> Option<&'s qsl_semantics::model::state::StateObject> {
         state
-            .state()
             .populations
             .get(&self.instance.population)?
             .get(&self.instance.key)
@@ -900,7 +908,7 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
     /// a predicate names `r.f` or `r.f.c`, by object, field and union case:
     /// what `present(r.f)` of another object reads (FR-230 "Presence is
     /// derived").
-    fn place_presences(&self, state: &ModelSimState) -> PlacePresences {
+    fn place_presences(&self, state: &ModelState) -> PlacePresences {
         // FR-415-AC-20: each `Sequence<Option<Clock>>`'s element bits, which
         // `forall(e in r.q: present(e))` reads.
         let mut slots = std::collections::BTreeMap::new();
@@ -916,7 +924,7 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                 continue;
             };
             let Some(quire_exact::Value::Collection(bits)) = holder
-                .stored(state)
+                .stored_in(state)
                 .and_then(|stored| stored.fields.get(field.field()))
             else {
                 continue;
@@ -942,7 +950,7 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                 };
                 Some((
                     (place.object.clone(), name.clone(), case),
-                    self.live(place, state),
+                    self.live_in(place, state),
                 ))
             })
             .collect();
@@ -1042,7 +1050,12 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
     /// and every collection on its path holds its slot (FR-230 "Clock
     /// collections": a slot is live exactly while the collection holds it).
     pub fn live(&self, place: &ClockPlace, state: &ModelSimState) -> bool {
-        let Some(stored) = place.stored(state) else {
+        self.live_in(place, state.state())
+    }
+
+    /// [`Self::live`] in the model state `state`.
+    fn live_in(&self, place: &ClockPlace, state: &ModelState) -> bool {
+        let Some(stored) = place.stored_in(state) else {
             return false;
         };
         let Some(field) = self.model.clock(place.clock) else {
@@ -1222,9 +1235,11 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
             .into_iter()
             .map(|(predicate, over)| (predicate, over, Vec::new()))
             .collect();
-        let readings =
-            self.system
-                .state_predicates_with(state, &bound, self.place_presences(state))?;
+        let readings = self.system.state_predicates_with(
+            state,
+            &bound,
+            self.place_presences(state.state()),
+        )?;
         objects
             .iter()
             .zip(readings)
@@ -1422,7 +1437,10 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
     /// predicate has no truth value.
     pub fn guarded_steps(&self, state: &ModelSimState) -> Result<Vec<GuardedStep>, TimedStop> {
         self.within_max_clocks(state)?;
-        let (expansion, enabled) = expand_enabled(self.system, state)?;
+        // A postcondition's `present(self.v)` reads the candidate's presence
+        // bits (QSpec FR-322 `CW-05`).
+        let post_presence = |candidate: &ModelState| self.place_presences(candidate);
+        let (expansion, enabled) = expand_enabled(self.system, state, Some(&post_presence))?;
         let mut steps = Vec::new();
         for vector in enabled {
             // Each binding of the operation's `Clock` parameters to places
@@ -2321,7 +2339,7 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
         let [reading] = &self.system.state_predicates_with(
             state,
             &[(predicate, Some(object), elements)],
-            self.place_presences(state),
+            self.place_presences(state.state()),
         )?[..] else {
             return Err(TimedStop::undecided(site(), object.clone(), None));
         };

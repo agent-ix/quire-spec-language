@@ -1245,9 +1245,11 @@ pub enum UnwrittenTimedMember {
     /// present(e))`), whose quantifier over the collection's slots has no
     /// checked form until STD-554.
     ElementPresence,
-    /// A postcondition's requirement on a clock place's presence, which no
-    /// FR-322 clause form carries.
-    PresenceRequirement,
+    /// A postcondition requiring a clock presence by a comparison with
+    /// `absent` (`self.v != absent`, `not (self.v = absent)`), whose
+    /// `presence_read` S3 does not write yet; `present(self.v)` is written
+    /// (QSpec FR-322 `CW-05`).
+    ComparedPresence,
     /// A reset of an element clock that no single binder selects: a clock
     /// below two collections, or an element named by position.
     ElementReset,
@@ -1266,7 +1268,9 @@ impl UnwrittenTimedMember {
             Self::ElementPresence => {
                 "a predicate reading a clock collection's element presences waits on STD-554"
             }
-            Self::PresenceRequirement => "a postcondition requiring a clock presence",
+            Self::ComparedPresence => {
+                "a postcondition requiring a clock presence by comparison with `absent`"
+            }
             Self::ElementReset => "a reset of an element clock no single binder selects",
         }
     }

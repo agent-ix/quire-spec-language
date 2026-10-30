@@ -4203,6 +4203,27 @@ impl PackageDeclarations {
                 Err(refusal) => refusals.push(refusal),
             }
         }
+        // QSpec FR-322 "Timed-model nodes": the `clock_place` template of
+        // each clock of each dense model, located at its time declaration,
+        // which a `presence_read` and a clause name, before any clause whose
+        // body reads a presence (QSpec FR-322 `CW-05`).
+        for model in &mut timed_models {
+            let Some((index, source)) = self
+                .time_sources
+                .iter()
+                .enumerate()
+                .find(|(_, source)| source.model == model.model())
+            else {
+                continue;
+            };
+            let declaration = root(Origin::TypeDeclaration {
+                name: time_source_origin(index),
+            });
+            match lowering.clock_places(model.clocks(), source.model_node, &declaration) {
+                Ok(places) => model.set_place_nodes(places),
+                Err(refusal) => refusals.push(refusal),
+            }
+        }
         // FR-488: the `operation_anchor` of each `align skip` operation.
         let mut hyper_align: Vec<Vec<quire_exact::NodeKey>> = vec![Vec::new(); checked_hyper.len()];
         for (clause_index, _, declaring, operation, location) in &hyper_skipped {
@@ -4678,26 +4699,6 @@ impl PackageDeclarations {
                 declaration: &checked.declaration,
             }) {
                 Ok(key) => lowered_terminals.push((index, declaration.model.clone(), key)),
-                Err(refusal) => refusals.push(refusal),
-            }
-        }
-        // QSpec FR-322 "Timed-model nodes": the `clock_place` template of
-        // each clock of each dense model, located at its time declaration,
-        // which a `presence_read` and a clause name.
-        for model in &mut timed_models {
-            let Some((index, source)) = self
-                .time_sources
-                .iter()
-                .enumerate()
-                .find(|(_, source)| source.model == model.model())
-            else {
-                continue;
-            };
-            let declaration = root(Origin::TypeDeclaration {
-                name: time_source_origin(index),
-            });
-            match lowering.clock_places(model.clocks(), source.model_node, &declaration) {
-                Ok(places) => model.set_place_nodes(places),
                 Err(refusal) => refusals.push(refusal),
             }
         }

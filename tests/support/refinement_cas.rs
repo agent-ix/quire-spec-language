@@ -421,7 +421,7 @@ pub fn mutated(body: &str, from: &str, to: &str) -> String {
 }
 
 /// The unit text: both models, their contracts and `refinement`.
-fn unit_text(
+pub fn unit_text(
     documents: &qsl_semantics::model::intake::PackageInput,
     refinement: &str,
     variant: Variant,
@@ -608,6 +608,26 @@ impl World {
             cas_initial,
             third_initial,
         }
+    }
+
+    /// The domain package provision.
+    pub fn package_provision(&self) -> &BTreeMap<[u8; 32], Vec<u8>> {
+        &self.packages
+    }
+
+    /// The snapshot provision.
+    pub fn snapshot_provision(&self) -> &BTreeMap<[u8; 32], Vec<u8>> {
+        &self.snapshots
+    }
+
+    /// The concrete subject's initial snapshot.
+    pub fn concrete_initial(&self) -> DocumentRef {
+        self.cas_initial.clone()
+    }
+
+    /// The object keys each population holds.
+    pub fn object_keys(&self) -> &[String] {
+        &self.keys
     }
 
     /// The unit's checked package.

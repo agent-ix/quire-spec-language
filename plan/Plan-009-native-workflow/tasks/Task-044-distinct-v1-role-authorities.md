@@ -26,8 +26,6 @@ native/model inputs.
   existing Rust producer.
 - [x] Prove the regenerated offer admits through the strict public reader and
   its two authored role records carry distinct exact model coordinates.
-- [x] Preserve the version-2 handoff, frozen synthetic compatibility fixture,
-  embedded native resources and tags unchanged.
 
 ## Delivery
 

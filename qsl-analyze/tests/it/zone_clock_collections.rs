@@ -7,6 +7,7 @@
 
 use ix_trace_rs::trace;
 use qsl_analyze::zone_check::{ZoneCheckLimits, ZoneCheckOutcome};
+use qsl_replay::CounterexampleKind;
 use quire_exact::Cancel;
 
 use crate::timed_world::{
@@ -352,10 +353,12 @@ fn a_presence_requirement_disables_the_step_in_the_zone_search() {
         "post Need using v on M::Call::arm { present(self.v) }\n",
         "post Need using v on M::Call::arm { not present(self.v) }\n",
     ] {
-        let outcome = outcome(post);
-        assert!(
-            !matches!(outcome, ZoneCheckOutcome::Holds { .. }),
-            "{post}: a deadlock is reached: {outcome:?}"
+        // A deadlock counterexample, not a refusal or an evaluation fault.
+        let counterexample = violated(outcome(post));
+        assert_eq!(
+            counterexample.kind,
+            CounterexampleKind::Deadlock,
+            "{post}: a deadlock is reached"
         );
     }
     let outcome = outcome("");

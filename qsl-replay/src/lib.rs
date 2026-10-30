@@ -50,6 +50,7 @@ mod call_replay_context;
 mod call_requirements;
 mod call_site;
 mod certificate;
+mod clause_evaluation;
 mod compile;
 mod composite;
 pub mod contract_check;
@@ -64,6 +65,7 @@ mod object_environment;
 mod outcome;
 mod proof_result;
 mod refinement;
+mod refinement_query;
 mod request;
 mod result;
 mod scalar;
@@ -132,6 +134,12 @@ pub use certificate::zone_certificate::{
     ZoneCertificateVerdict,
 };
 pub use certificate::{CertificateLocus, CertificateMember, CertificateRule, QueryPart};
+// FR-491: the state-clause evaluation entry and its typed result, at the root
+// so CG names them without naming `spine` (ADR-011 FB-05, T-12 rule (a)).
+pub use clause_evaluation::{
+    evaluate_clause, ClauseEvaluation, ClauseEvaluationRequest, ClauseIncomplete,
+    ClauseObservation, ClauseRefusal,
+};
 pub use compile::{compile_package, compile_package_with_execution_points, CompiledPackage};
 pub use composite::{
     CompositeEvidence, CompositeIdentity, CompositeParityClaim, CompositeParityReport,
@@ -247,6 +255,14 @@ pub use monitor_plan::{
     TimingObligation, TimingObligationSettings,
 };
 
+// FR-492: the refinement simulation query, its request and kind, as
+// replay-owned wrappers (FR-100-AC-8), so CG names neither `spine` nor
+// `qsl_eval` (ADR-011 FB-05, T-12).
+pub use refinement_query::{
+    encode_refinement_query, refinement_step_sources, RefinementKeyRefusal, RefinementQueryKind,
+    RefinementQueryRequest, RefinementQuerySubject, RefinementUniverse,
+};
+
 pub use refinement::{
     abstract_classes, check_initial, check_step, initial_history, map_state, open_systems,
     step_history, AbstractClass, ConcreteStep, EvalFailure, HiddenSlot, HistoryValues,
@@ -320,7 +336,7 @@ pub use qsl_semantics::model::object_environment::ObjectEnvironment;
 pub use quire_exact::{Cancel, CancelCause};
 pub use spine::{
     Call, CallArgument, CallIncomplete, CallLocus, CallOutcome, CallRefusal, CallValue,
-    CompileRefusal, RunRefusal, SpineLimits,
+    ClauseRunStage, CompileRefusal, RunRefusal, SpineLimits,
 };
 // The input refusal a `ReplayRefusal::Input` and a value-parity
 // `ValueParityResult::RefusedInput` carry.
@@ -400,7 +416,8 @@ pub use quire_checked::key::DeclarationKey;
 pub use execute::{replay_state_clause, ClauseIdentityMismatch, StateClauseReplayResult};
 pub use qsl_forms::StateClauseKind;
 pub use qsl_semantics::model::observation::{
-    AnchorKind, ClauseSelectionInput, ObservationForm, SelectedAnchor, SnapshotValue,
+    AnchorKind, ClauseSelectionInput, ObservationForm, ObservationLimits, SelectedAnchor,
+    SnapshotValue,
 };
 pub use witness::StateClauseCounterexample;
 
