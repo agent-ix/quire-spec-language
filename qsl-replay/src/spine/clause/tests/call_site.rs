@@ -281,7 +281,10 @@ fn call_site_returns_only_the_selected_operations_clauses_in_declaration_order()
         .collect();
     assert_eq!(names, ["ProbeUnchanged"]);
     assert_ne!(attempt.site.frame, probe.site.frame);
-    assert_ne!(attempt.site.obligation_identity, probe.site.obligation_identity);
+    assert_ne!(
+        attempt.site.obligation_identity,
+        probe.site.obligation_identity
+    );
 }
 
 /// FR-121-AC-7: `probe` is declared in the supplied domain package, but no
