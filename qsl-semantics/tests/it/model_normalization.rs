@@ -735,7 +735,7 @@ fn n01_normalizes_f1_to_stable_deterministic_identities() {
                 DeclarationKey::fixture("ix://test/orders/A"),
                 DeclarationKey::fixture("ix://test/orders/A/x"),
             ],
-            parent: Some(member_a_x.effective_id),
+            parent: Some(member_a_x.effective_id.clone()),
         }],
         "an inherited member carries the inherit fact alone"
     );
@@ -753,7 +753,7 @@ fn n01_normalizes_f1_to_stable_deterministic_identities() {
     let universe = completed(&fixture_f1(), ModelNormalizationLimits::UNLIMITED)
         .object_universe()
         .clone();
-    assert_eq!(universe.root_types, vec![type_a.effective_id]);
+    assert_eq!(universe.root_types, vec![type_a.effective_id.clone()]);
     let universe_rerun = completed(&fixture_f1(), ModelNormalizationLimits::UNLIMITED)
         .object_universe()
         .clone();
@@ -814,19 +814,15 @@ fn n02_normalizes_f2_diamond_inheritance_to_stable_deterministic_identities() {
     assert_eq!(member_d_x.preimage.derivation[1].inputs, path(["C", "A/x"]));
     assert_eq!(
         member_d_x.preimage.derivation[0].parent,
-        Some(members[1].effective_id)
+        Some(members[1].effective_id.clone())
     );
     assert_eq!(
         member_d_x.preimage.derivation[1].parent,
-        Some(members[2].effective_id)
+        Some(members[2].effective_id.clone())
     );
 
     let rerun = completed(&fixture_f2(), ModelNormalizationLimits::UNLIMITED);
     assert_eq!(view.declarations(), rerun.declarations());
-
-    let universe = completed(&fixture_f2(), ModelNormalizationLimits::UNLIMITED)
-        .object_universe()
-        .clone();
 }
 
 /// TC-195 N03, normalization half: F2 plus fields `B/y` and `C/y`, both of
@@ -934,8 +930,8 @@ fn oqe_a_disconnected_model_produces_two_universes_each_type_maps_to_its_own() {
         "one universe per connected component: {{A, B}} and {{E}}"
     );
 
-    let type_a = find_type(&view, "ix://test/orders/A").effective_id;
-    let type_e = find_type(&view, "ix://test/orders/E").effective_id;
+    let type_a = find_type(&view, "ix://test/orders/A").effective_id.clone();
+    let type_e = find_type(&view, "ix://test/orders/E").effective_id.clone();
 
     let ab_universe = view
         .object_universe_of(&DeclarationKey::fixture("ix://test/orders/A"))
@@ -961,10 +957,10 @@ fn oqe_a_disconnected_model_produces_two_universes_each_type_maps_to_its_own() {
     // `object_universes` and `object_universe_of` agree.
     let identities: std::collections::BTreeSet<_> = universes
         .iter()
-        .map(|universe| universe.identity())
+        .map(|universe| universe.identity().unwrap())
         .collect();
-    assert!(identities.contains(&ab_universe.identity()));
-    assert!(identities.contains(&e_universe.identity()));
+    assert!(identities.contains(&ab_universe.identity().unwrap()));
+    assert!(identities.contains(&e_universe.identity().unwrap()));
 }
 
 #[trace("QSpec-TC-195")]
@@ -1428,7 +1424,7 @@ fn n06_a_strictly_more_derived_redefiner_resolves_the_conflict_and_hides_every_c
     // Type-level identities are unaffected by phase-4 member facts: D's
     // identity is exactly N02's fixture_f2() type D.
     let type_d = find_type(&view, "ix://test/orders/D");
-    let owner_d = type_d.effective_id;
+    let owner_d = type_d.effective_id.clone();
 
     let winner = find_member(&view, &owner_d, "model.D.x4");
     assert!(
@@ -2178,10 +2174,10 @@ fn derivation_duplicate_comparison_includes_the_rule() {
 #[test]
 fn n01_charges_the_exact_ground_truth_sequence_in_order() {
     let (outcome, meter) = normalize_with_meter(&fixture_f1(), ModelNormalizationLimits::UNLIMITED);
-    let view = match outcome {
-        NormalizeOutcome::Completed(view) => view,
+    match outcome {
+        NormalizeOutcome::Completed(_) => {}
         other => panic!("expected Completed, got {other:?}"),
-    };
+    }
 
     use ChargePoint::{NormalizeCycleCheck, NormalizeDeclaration, NormalizeFact, NormalizeRecord};
     let expected = vec![
@@ -2788,7 +2784,8 @@ fn n06_wide_ancestry_with_two_contesting_redefiners_completes() {
                     && entry.preimage.original.node == "model.O"
             })
             .unwrap_or_else(|| panic!("no type declaration for model.O in {n_parents}-parent view"))
-            .effective_id;
+            .effective_id
+            .clone();
 
         let winner = find_member(&view, &owner_o, "model.O.z");
         assert!(
@@ -3217,7 +3214,7 @@ fn operation_redefinition_group_resolved_by_a_dominating_owner_completes() {
              refusal: {outcome:?}"
         );
     };
-    let owner_d = view.type_identities()[&DeclarationKey::fixture("model.D")];
+    let owner_d = view.type_identities()[&DeclarationKey::fixture("model.D")].clone();
     let winner = find_member(&view, &owner_d, "model.D.op4");
     assert!(winner.visible, "the most-specific D.op4 operation wins");
     assert_eq!(
@@ -3544,8 +3541,8 @@ fn n06_conflict_refusal_order_matches_effective_identity_not_producer_key() {
             let type_view = completed(&type_only, ModelNormalizationLimits::UNLIMITED);
             let first_node = format!("ix://{first}/O9");
             let second_node = format!("ix://{second}/O9");
-            let first_id = find_type(&type_view, &first_node).effective_id.to_string();
-            let second_id = find_type(&type_view, &second_node).effective_id.to_string();
+            let first_id = find_type(&type_view, &first_node).effective_id.clone();
+            let second_id = find_type(&type_view, &second_node).effective_id.clone();
             let effective_order = if first_id < second_id {
                 vec![first_node, second_node]
             } else {
@@ -4845,10 +4842,11 @@ fn keys(nodes: &[&str]) -> Vec<DeclarationKey> {
 }
 
 fn type_owner(view: &qsl_semantics::model::normalize::EffectiveView, node: &str) -> EffectiveId {
-    *view
+    view
         .type_identities()
         .get(&DeclarationKey::fixture(node))
         .unwrap_or_else(|| panic!("{node} has an effective type identity"))
+        .clone()
 }
 
 /// `B` specializes `A`; `B.y` subsets `A.x`.

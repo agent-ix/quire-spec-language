@@ -120,7 +120,7 @@ fn view(domain_package: &DomainPackage, ancestor_steps: u64) -> EffectiveView {
 fn type_id(view: &EffectiveView, identity: &str) -> EffectiveId {
     view.type_identities()
         .get(&DeclarationKey::fixture(identity))
-        .copied()
+        .cloned()
         .unwrap_or_else(|| panic!("{identity} has no effective type identity"))
 }
 
@@ -132,7 +132,7 @@ fn environment_of(view: &EffectiveView, ancestor_steps: u64) -> Admission<TypeEn
     TypeEnvironment::bounded(
         [],
         supertypes.into_iter().map(|(key, generals)| {
-            ObjectTypeDeclaration::new(key, key.to_string(), vec![]).with_supertypes(generals)
+            ObjectTypeDeclaration::new(key.clone(), format!("{key:?}"), vec![]).with_supertypes(generals)
         }),
         TypeEnvironmentLimits {
             ancestor_steps,
@@ -245,12 +245,12 @@ fn divergence_unknown_supertype_refuses_at_check_and_at_evaluation() {
     let missing = effective("model.Missing");
     let refusal = TypeEnvironment::new(
         [],
-        [ObjectTypeDeclaration::new(b, "M::B", vec![]).with_supertypes(vec![missing])],
+        [ObjectTypeDeclaration::new(b, "M::B", vec![]).with_supertypes(vec![missing.clone()])],
     )
     .unwrap_err()
     .into_refused()
     .unwrap();
-    assert_eq!(refusal.cause, DeclarationCause::UnknownObjectType(missing));
+    assert_eq!(refusal.cause, DeclarationCause::UnknownObjectType(missing.clone()));
     assert_eq!(refusal.code(), "invalid_semantic_graph");
 }
 
@@ -270,8 +270,8 @@ fn divergence_known_supertype_admits_at_check_and_at_evaluation() {
     let view = view(&domain_package, 10);
     let environment = environment_of(&view, 10).unwrap();
     let (a, b) = (type_id(&view, "model.A"), type_id(&view, "model.B"));
-    assert!(environment.conforms(b, a));
-    assert!(!environment.conforms(a, b));
+    assert!(environment.conforms(b.clone(), a.clone()));
+    assert!(!environment.conforms(a.clone(), b.clone()));
     let binding = binding(&view, 10);
     assert_eq!(
         evaluate_lookup(&binding, &view, "model.B", "model.A"),
@@ -313,7 +313,7 @@ fn divergence_generalization_cycle_refuses_at_check_and_at_evaluation() {
     let refusal = TypeEnvironment::new(
         [],
         [
-            ObjectTypeDeclaration::new(m, "M::M", vec![]).with_supertypes(vec![n]),
+            ObjectTypeDeclaration::new(m.clone(), "M::M", vec![]).with_supertypes(vec![n.clone()]),
             ObjectTypeDeclaration::new(n, "M::N", vec![]).with_supertypes(vec![m]),
         ],
     )
@@ -1107,7 +1107,7 @@ fn record_and_tuple_admit_a_subtype_reference_by_conformance() {
     let environment = TypeEnvironment::new(
         [
             CompositeDeclaration::new(
-                record_key,
+                record_key.clone(),
                 "R",
                 CompositeShape::Record(vec![FieldDeclaration::new(
                     "r",
@@ -1115,7 +1115,7 @@ fn record_and_tuple_admit_a_subtype_reference_by_conformance() {
                     Presence::Required,
                 )]),
             ),
-            CompositeDeclaration::new(tuple_key, "T", CompositeShape::Tuple(vec![target])),
+            CompositeDeclaration::new(tuple_key.clone(), "T", CompositeShape::Tuple(vec![target])),
         ],
         [
             object("M::CV", vec![], &[]),
@@ -1128,14 +1128,14 @@ fn record_and_tuple_admit_a_subtype_reference_by_conformance() {
     let sub = Value::Reference(reference("M::Sub", "k"));
     let other = Value::Reference(reference("M::Other", "o"));
     environment
-        .record(record_key, vec![("r", FieldValue::Present(sub.clone()))])
+        .record(record_key.clone(), vec![("r", FieldValue::Present(sub.clone()))])
         .expect("a Sub reference fits a Reference<M::CV> field");
     environment
-        .tuple(tuple_key, vec![sub])
+        .tuple(tuple_key.clone(), vec![sub])
         .expect("a Sub reference fits a Reference<M::CV> position");
     assert_eq!(
         environment
-            .record(record_key, vec![("r", FieldValue::Present(other.clone()))])
+            .record(record_key.clone(), vec![("r", FieldValue::Present(other.clone()))])
             .unwrap_err(),
         ConstructionRefusal {
             component: Component::Field("r".to_owned()),
@@ -1143,7 +1143,7 @@ fn record_and_tuple_admit_a_subtype_reference_by_conformance() {
         }
     );
     assert_eq!(
-        environment.tuple(tuple_key, vec![other]).unwrap_err(),
+        environment.tuple(tuple_key.clone(), vec![other]).unwrap_err(),
         ConstructionRefusal {
             component: Component::Position(0),
             cause: ConstructionCause::TypeMismatch,
@@ -1297,7 +1297,7 @@ fn object_type_supertypes_rekeys_a_view_and_normalization_refuses_a_shared_key()
     let view = view(&domain_package, 10);
     let supertypes = object_type_supertypes(&view).unwrap();
     let (a, b) = (type_id(&view, "model.A"), type_id(&view, "model.B"));
-    assert_eq!(supertypes.get(&b), Some(&vec![a]));
+    assert_eq!(supertypes.get(&b), Some(&vec![a.clone()]));
     assert_eq!(supertypes.get(&a), Some(&vec![]));
 
     let shared = package(
