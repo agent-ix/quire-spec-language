@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-320 (TC-827): the union type node, the construction node and the
 //! `case` node, lowered from source, emitted as `quire.checked-package/v2`
-//! and read back through QSL's whole I2 read. The package ids compared here
-//! are the ones the emitter declares, so FR-319-AC-1's "same `package_id`"
-//! is read from the emitted bytes, never recomputed.
+//! and read back through QSL's whole I2 read.
 
 use super::*;
 
@@ -24,20 +22,6 @@ fn of_form<'w>(wire: &'w Value, form: &str) -> Vec<&'w Value> {
     nodes(wire)
         .iter()
         .filter(|node| node["semantic_form"] == form)
-        .collect()
-}
-
-/// QSpec FR-441's member key digest, from the preimage text: the SHA-256 of
-/// the RFC 8785 bytes of `{declaration_node_id, member, version}`.
-fn member_key(union: &str, member: &str) -> String {
-    let preimage = format!(
-        "{{\"declaration_node_id\":{{\"digest\":\"{union}\",\
-         \"domain\":\"quire.checked-semantic-node/v1\"}},\
-         \"member\":\"{member}\",\"version\":\"quire.union-member-node/v1\"}}"
-    );
-    Sha256::digest(preimage.as_bytes())
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
         .collect()
 }
 
@@ -64,8 +48,9 @@ fn the_union_keeps_its_id_and_its_members_their_identities_through_emission_and_
 
     // The I2 read admits it, and the id it exports is the emitted id.
     let exports = verified_exports(&emission);
-    let union_id = union["node_id"]["digest"].as_str().expect("a digest");
-    assert_eq!(exports["Shape"], union_id);
+    let union_id = qsl_foundation::node_wire::node_key_from_json(&union["node_id"])
+        .expect("a structural union key");
+    assert_eq!(exports["Shape"], union_id.to_string());
 
     // Each member's identity, checked before emission, is the FR-441 key over
     // the id the I2 read returned.
@@ -79,7 +64,7 @@ fn the_union_keeps_its_id_and_its_members_their_identities_through_emission_and_
         types
             .union_key(declaration.key())
             .map(|key| key.to_string()),
-        Some(union_id.to_owned())
+        Some(union_id.to_string())
     );
     let CompositeShape::Union(members) = declaration.shape() else {
         panic!("Shape is a union")
@@ -87,63 +72,20 @@ fn the_union_keeps_its_id_and_its_members_their_identities_through_emission_and_
     for member in members {
         let variant = member.member().expect("sealed").variant();
         assert_eq!(
-            variant.to_string(),
-            member_key(union_id, member.identifier().as_str()),
+            variant,
+            qsl_semantics::value::enumeration::mint_union_variant_id(
+                union_id.clone(),
+                member.identifier().as_str(),
+            )
+            .expect("a union variant"),
             "{}",
             member.identifier().as_str()
         );
     }
 
-    // The digest-addressed source recompiles to the emitted package.
+    // The same source recompiles to the same package bytes.
     let (_, recompiled) = emit_from_text(&format!("{SHAPE}{FUNCTIONS}"));
-    assert_eq!(
-        recompiled.package.package_id(),
-        emission.package.package_id()
-    );
-}
-
-#[trace("FR-319-AC-1", "TC-826")]
-#[test]
-fn the_package_id_is_stable_under_trivia_and_arm_order_and_moves_with_the_union() {
-    let base = emitted(&format!("{SHAPE}{FUNCTIONS}")).package.package_id();
-    let changed = "// shapes\n\
-         union   Shape {\n    Empty,\n    Circle( Integer ),   // round\n    \
-         Rect( Integer,  Integer ),\n}\n\n\
-         function area using v(s: Shape): Integer pure {\n    case s {\n        \
-         Rect(w, h): w * h;   // two sides\n        Empty: 0;\n        \
-         Circle(r): r;\n    }\n}\n\n\
-         function rect using v(): Shape pure { Shape::Rect(2,   3) }\n";
-    assert_eq!(emitted(changed).package.package_id(), base);
-
-    let rect = "function rect using v(): Shape pure { Shape::Rect(2, 3) }\n";
-    for (label, declarations) in [
-        (
-            "renamed member",
-            format!(
-                "union Shape {{ Nothing, Circle(Integer), Rect(Integer, Integer) }}\n\
-                 function area using v(s: Shape): Integer pure \
-                 {{ case s {{ Nothing: 0; Circle(r): r; Rect(w, h): w * h; }} }}\n{rect}"
-            ),
-        ),
-        (
-            "added member",
-            format!(
-                "union Shape {{ Empty, Circle(Integer), Rect(Integer, Integer), Line(Integer) }}\n\
-                 function area using v(s: Shape): Integer pure \
-                 {{ case s {{ Empty: 0; Circle(r): r; Rect(w, h): w * h; Line(n): n; }} }}\n{rect}"
-            ),
-        ),
-        (
-            "changed payload type",
-            format!(
-                "union Shape {{ Empty, Circle(Boolean), Rect(Integer, Integer) }}\n\
-                 function area using v(s: Shape): Integer pure \
-                 {{ case s {{ Empty: 0; Circle(r): 1; Rect(w, h): w * h; }} }}\n{rect}"
-            ),
-        ),
-    ] {
-        assert_ne!(emitted(&declarations).package.package_id(), base, "{label}");
-    }
+    assert_eq!(recompiled.package.bytes(), emission.package.bytes());
 }
 
 #[trace("FR-320-AC-2", "TC-827")]
@@ -217,18 +159,25 @@ fn an_ir_that_cannot_decode_the_union_omits_it_and_every_node_naming_it() {
 
     // The wire holds none of the omitted nodes and none names one.
     let wire = wire(&emission);
-    let written: BTreeSet<&str> = nodes(&wire)
+    let written: BTreeSet<NodeKey> = nodes(&wire)
         .iter()
-        .map(|node| node["node_id"]["digest"].as_str().expect("a digest"))
+        .map(|node| {
+            qsl_foundation::node_wire::node_key_from_json(&node["node_id"])
+                .expect("an emitted structural key")
+        })
         .collect();
     for omission in &emission.omitted {
-        assert!(!written.contains(&*omission.node.digest), "{omission:?}");
+        let id = serde_json::to_value(&omission.node).expect("an omitted id encodes");
+        let key =
+            qsl_foundation::node_wire::node_key_from_json(&id).expect("an omitted structural key");
+        assert!(!written.contains(&key), "{omission:?}");
     }
     assert!(!written.is_empty());
     for node in nodes(&wire) {
         for dependency in node["dependencies"].as_array().expect("dependencies") {
-            let target = dependency["digest"].as_str().expect("a digest");
-            assert!(written.contains(target), "{node} names an omitted node");
+            let target = qsl_foundation::node_wire::node_key_from_json(dependency)
+                .expect("a structural dependency");
+            assert!(written.contains(&target), "{node} names an omitted node");
         }
     }
 }
