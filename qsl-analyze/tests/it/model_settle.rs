@@ -46,7 +46,7 @@ const AUTHORITY: &str = "agent-ix";
 const IDENTITY: &str = "counter";
 
 /// The fixture package manifest's top-level name.
-pub(crate) const PACKAGE_NAME: &str = "counter";
+pub(crate) const PACKAGE_NAME: &str = "package";
 
 /// A compiled Counter unit with its documents, initial snapshots and the
 /// engine's deadlock-freedom outcome over universe `{c}`.
@@ -200,13 +200,45 @@ pub(crate) fn request<'a>(
     }
 }
 
-/// The identity of the derived deadlock-freedom item. QSL-1309 gives
-/// package-level freedom-clause items their node; until then the node is a
-/// fixture.
-pub(crate) fn deadlock_freedom_clause() -> (NodeKey, OccurrenceKey) {
-    let node = crate::fixture_ids::node_key("deadlock-freedom");
-    let occurrence = OccurrenceKey::new(node.clone(), Origin::new(Role::new("temporal"), 0));
+/// The identity of a package-level freedom item over a model subject: the
+/// selected model's `model_root` node of the domain package `identity`, with
+/// the `generated` occurrence 0.
+pub(crate) fn model_anchor(identity: &str) -> (NodeKey, OccurrenceKey) {
+    let node = NodeKey::new(
+        identity,
+        vec![
+            quire_exact::PathSegment::Text("model".to_owned()),
+            quire_exact::PathSegment::Text("model_root".to_owned()),
+        ],
+        0,
+    )
+    .expect("a model root is admissible");
+    let occurrence = OccurrenceKey::new(node.clone(), Origin::new(Role::new("generated"), 0));
     (node, occurrence)
+}
+
+/// The identity of a package-level freedom item over the protocol `protocol`
+/// of `package`: its `protocol_clause` node with the `declaration`
+/// occurrence 0.
+pub(crate) fn protocol_anchor(
+    package: &qsl_package::CheckedPackage,
+    protocol: &str,
+) -> (NodeKey, OccurrenceKey) {
+    // A package that selects no protocol profile has no clause node: the
+    // fixture node is then unknown to the replay, which refuses it.
+    let node = package
+        .graph()
+        .protocol_node_keys(protocol)
+        .and_then(|keys| keys.clause.clone())
+        .unwrap_or_else(|| crate::fixture_ids::node_key("protocol-clause"));
+    let occurrence = OccurrenceKey::new(node.clone(), Origin::new(Role::new("declaration"), 0));
+    (node, occurrence)
+}
+
+/// The identity of the derived deadlock-freedom item over the counter unit's
+/// model.
+pub(crate) fn deadlock_freedom_clause() -> (NodeKey, OccurrenceKey) {
+    model_anchor(crate::counter::PACKAGE)
 }
 
 /// The envelope carrying `payload` under the derived deadlock-freedom item's
@@ -422,11 +454,8 @@ fn a_counterexample_resolves_its_item_by_clause_node_and_occurrence_key() {
     ));
     assert_eq!(
         cause,
-        ModelTraceRefusal::ItemIdentity {
-            clause_node: authored.clone(),
-            occurrence_key: Box::new(authored_key.clone()),
-            expected_node: node.clone(),
-            expected_key: Box::new(occurrence.clone()),
+        ModelTraceRefusal::UnknownTemporalClause {
+            clause_node: authored.clone()
         }
     );
     assert_eq!((code, tag), (Code::StaleDependency, "content-mismatch"));
@@ -442,7 +471,7 @@ fn a_counterexample_resolves_its_item_by_clause_node_and_occurrence_key() {
     formula.kind = CounterexampleKind::Formula;
     let (cause, code, tag) = refusal(replay_at(formula.clone(), node.clone(), occurrence));
     assert!(
-        matches!(cause, ModelTraceRefusal::ItemIdentity { .. }),
+        matches!(cause, ModelTraceRefusal::UnknownTemporalClause { .. }),
         "{cause:?}"
     );
     assert_eq!((code, tag), (Code::StaleDependency, "content-mismatch"));

@@ -1051,10 +1051,9 @@ fn tso_keys_after(case: &Case, path: &[Hop]) -> Vec<Json> {
     keys
 }
 
-/// The identity of the object a location of the unit names: its key's
-/// characters in hexadecimal.
+/// The identity of the object a location of the unit names: its key.
 fn identity(name: &str) -> String {
-    name.bytes().map(|byte| format!("{byte:02x}")).collect()
+    name.to_owned()
 }
 
 /// The value of the entry of the map member `member` whose key has `kind`

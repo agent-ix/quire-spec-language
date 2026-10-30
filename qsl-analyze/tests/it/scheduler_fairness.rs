@@ -491,7 +491,7 @@ pub(crate) fn check_refusal(body: &str) -> CheckRefusal {
     .expect("the operation clauses parse");
     let mut refusals = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
-        "fixture".to_owned(),
+        "package".to_owned(),
         built,
         models,
         Vec::new(),

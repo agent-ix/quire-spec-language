@@ -315,7 +315,7 @@ fn package_with(profiles: &str, body: &str) -> CheckedPackage {
     .expect("the operation clauses parse");
     let graph = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
-        "fixture".to_owned(),
+        "package".to_owned(),
         built,
         models,
         Vec::new(),

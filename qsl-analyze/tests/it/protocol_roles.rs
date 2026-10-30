@@ -245,12 +245,10 @@ fn identity(system: &System<'_>, step: &ProtocolTransition) -> Json {
 
 /// The cell a reference names, by its key.
 fn named(reference: &Json) -> String {
-    let text = reference["identity"].as_str().expect("an identity");
-    let bytes: Vec<u8> = (0..text.len())
-        .step_by(2)
-        .map(|at| u8::from_str_radix(&text[at..at + 2], 16).expect("hex"))
-        .collect();
-    String::from_utf8(bytes).expect("a key")
+    reference["identity"]
+        .as_str()
+        .expect("an identity")
+        .to_owned()
 }
 
 /// The cells the `kind` steps of `reached[at]` name as their `object`.

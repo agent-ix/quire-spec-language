@@ -280,6 +280,10 @@ pub(crate) fn package(body: &str) -> CheckedPackage {
     package_with("", body)
 }
 
+/// The header line selecting the protocol profile, so each protocol clause
+/// the package writes has its node.
+pub(crate) const PROTOCOL_PROFILE: &str = "profile pp = \"quire.protocol.finite-global/v1\";\n";
+
 /// [`package`] with the further header `profiles` lines.
 pub(crate) fn package_with(profiles: &str, body: &str) -> CheckedPackage {
     let document = document();
@@ -310,7 +314,7 @@ pub(crate) fn package_with(profiles: &str, body: &str) -> CheckedPackage {
     .expect("the operation clauses parse");
     let graph = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
-        "fixture".to_owned(),
+        "package".to_owned(),
         built,
         models,
         Vec::new(),
@@ -536,7 +540,7 @@ fn compiled_with(
     qsl_replay::compile_package(
         qsl_replay::CompileUnit {
             source: SourceIdentity::new("agent-ix", "counter", "git", "1"),
-            package_name: "counter".to_owned(),
+            package_name: "package".to_owned(),
             path: "counter.native",
             bytes: unit_text_with(profiles, body).as_bytes(),
         },

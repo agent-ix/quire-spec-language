@@ -118,17 +118,17 @@ fn stored(outcome: &ZoneCheckOutcome<&'static str>) -> u64 {
 }
 
 /// The receiver key of each step of `counterexample`, read from the
-/// receiver reference's hex-encoded identity.
+/// receiver reference's identity.
 fn receivers(counterexample: &qsl_replay::TemporalCounterexample) -> Vec<&'static str> {
     counterexample
         .prefix
         .iter()
         .map(|step| {
             let receiver = step.transition.receiver().expect("a receiver");
-            [("t1", "7431"), ("t2", "7432"), ("t3", "7433")]
+            ["t1", "t2", "t3"]
                 .into_iter()
-                .find(|(_, hex)| receiver.contains(&format!("\"identity\":\"{hex}\"")))
-                .map_or("?", |(key, _)| key)
+                .find(|key| receiver.contains(&format!("\"identity\":\"{key}\"")))
+                .unwrap_or("?")
         })
         .collect()
 }

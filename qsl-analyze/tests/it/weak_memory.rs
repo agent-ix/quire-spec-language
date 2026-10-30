@@ -326,7 +326,7 @@ impl Case {
         payload: TemporalCounterexample<ProtocolTransition>,
     ) -> Result<ModelTraceReplayResult, ReplayRefusal> {
         let unit = unit_text_with(self.profiles, &self.body).into_bytes();
-        let (node, occurrence) = race_freedom_clause();
+        let (node, occurrence) = crate::model_settle::protocol_anchor(&self.checked, "SB");
         replay_protocol_trace(
             request(&document(), self.documents.snapshots.iter(), &unit),
             &self.trace_subject(selection),
@@ -376,17 +376,6 @@ impl Case {
             ReplayLimits::default(),
         )
     }
-}
-
-/// The identity of the derived race-freedom item. Package-level freedom
-/// items carry no node of their own (QSL-1309), so the node is a fixture.
-pub(crate) fn race_freedom_clause() -> (quire_exact::NodeKey, OccurrenceKey) {
-    let node = crate::fixture_ids::node_key("race-freedom");
-    let occurrence = OccurrenceKey::new(
-        node.clone(),
-        quire_exact::Origin::new(quire_exact::Role::new("temporal"), 0),
-    );
-    (node, occurrence)
 }
 
 /// The claim's one atom, `not (k.r1 = 0 and k.r2 = 0)`, read from the

@@ -111,7 +111,7 @@ fn a_weak_refutation_names_the_strong_each_that_would_exclude_it() {
     let identity = hint.identity.as_ref().expect("an identity");
     assert!(identity.operation().contains("attemptUpdate"));
     assert!(
-        identity.receiver().expect("a receiver").contains("\"61\""),
+        identity.receiver().expect("a receiver").contains("\"a\""),
         "the identity is the update of `a`, which the loop never takes"
     );
     assert_eq!(StrongFairnessHint::CODE, "fairness.strong-would-exclude");

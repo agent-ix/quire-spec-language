@@ -270,7 +270,7 @@ impl World {
         .expect("the operation clauses parse");
         let mut declarations = PackageDeclarations::assemble(
             parsed.source().reference().clone(),
-            "fixture".to_owned(),
+            "package".to_owned(),
             built,
             models,
             Vec::new(),
@@ -406,7 +406,7 @@ impl World {
             },
         );
         let wire = ReplayRequestWire {
-            package_name: "graph".to_owned(),
+            package_name: "package".to_owned(),
             profile_selections: Vec::new(),
             sources: vec![source_wire],
             dependencies: Vec::new(),

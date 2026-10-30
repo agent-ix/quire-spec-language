@@ -44,10 +44,11 @@ use serde_json::{json, Value as Json};
 use crate::counter::Letters;
 use crate::derived_request::{derived_subjects, protocol_request};
 use crate::fill::{
-    attempt, compiled, contracts, document, fill_unit, instance, json_of, package, projections,
-    protocol, reachable, sc_system, subject, unit_text, universe, v, Documents, Reached, PACKAGE,
+    attempt, compiled, contracts, document, fill_unit, instance, json_of, package, package_with,
+    projections, protocol, reachable, sc_system, subject, unit_text_with, universe, v, Documents,
+    Reached, PACKAGE, PROTOCOL_PROFILE,
 };
-use crate::model_settle::{deadlock_freedom_clause, envelope_at, request};
+use crate::model_settle::{envelope_at, protocol_anchor, request};
 
 /// A replay that reads no atom: the deadlock-freedom item has none.
 const NO_ATOMS: Letters = Letters { atom: |_| None };
@@ -84,7 +85,7 @@ impl Case {
             body: body.to_owned(),
             documents,
             initial,
-            checked: package(body),
+            checked: package_with(PROTOCOL_PROFILE, body),
         }
     }
 
@@ -123,8 +124,8 @@ impl Case {
         protocol: &str,
         payload: TemporalCounterexample<ProtocolTransition>,
     ) -> Result<ModelTraceReplayResult, ReplayRefusal> {
-        let unit = unit_text(&self.body).into_bytes();
-        let (node, occurrence) = deadlock_freedom_clause();
+        let unit = unit_text_with(PROTOCOL_PROFILE, &self.body).into_bytes();
+        let (node, occurrence) = protocol_anchor(&self.checked, protocol);
         replay_protocol_trace(
             request(&document(), self.documents.snapshots.iter(), &unit),
             &ProtocolTraceSubject {
@@ -1049,7 +1050,7 @@ fn a_protocol_deadlock_names_its_blocked_threads_and_settles_refuted() {
 
     let any = Case::new(&fill_unit("self.v = 0", "terminal any;"), &[0]);
     let protocol = any.checked.graph().protocol("Fill").expect("Fill");
-    let occurrence = deadlock_freedom_clause().1;
+    let occurrence = protocol_anchor(&any.checked, "Fill").1;
     let items = [ProtocolTemporalItem {
         occurrence: &occurrence,
         subject: &"Fill",
@@ -1247,7 +1248,7 @@ fn the_repaired_fill_is_deadlock_free_over_ten_states() {
         "{record:?}"
     );
     let protocol = case.checked.graph().protocol("Fill").expect("Fill");
-    let occurrence = deadlock_freedom_clause().1;
+    let occurrence = protocol_anchor(&case.checked, "Fill").1;
     let other = OccurrenceKey::generated(crate::fixture_ids::node_key([9]));
     let item = |occurrence| ProtocolTemporalItem {
         occurrence,

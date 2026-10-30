@@ -418,7 +418,11 @@ fn population_root(population: &str) -> DomainKey {
     DomainKey::Node {
         node: quire_exact::NodeKey::new(
             PACKAGE,
-            vec![quire_exact::PathSegment::Text(ident(population))],
+            vec![
+                quire_exact::PathSegment::Text("relation".to_owned()),
+                quire_exact::PathSegment::Text("population".to_owned()),
+                quire_exact::PathSegment::Text(ident(population)),
+            ],
             0,
         )
         .expect("a population node is admissible"),

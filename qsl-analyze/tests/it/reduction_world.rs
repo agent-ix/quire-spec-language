@@ -271,7 +271,7 @@ impl World {
         .expect("the operation clauses parse");
         let graph = PackageDeclarations::assemble(
             parsed.source().reference().clone(),
-            "fixture".to_owned(),
+            "package".to_owned(),
             built,
             models,
             Vec::new(),
@@ -432,7 +432,7 @@ impl World {
 const AUTHORITY: &str = "agent-ix";
 
 /// The fixture package manifest's top-level name.
-const PACKAGE_NAME: &str = "reduction";
+const PACKAGE_NAME: &str = "package";
 
 type SourceWire = (String, String, String, String);
 
@@ -535,7 +535,7 @@ pub(crate) fn replay_unit_result(
         byte_provision,
         documents,
     };
-    let (node, occurrence) = clause.unwrap_or_else(crate::model_settle::deadlock_freedom_clause);
+    let (node, occurrence) = clause.unwrap_or_else(|| crate::model_settle::model_anchor(PACKAGE));
     let envelope = WitnessEnvelope::reconstruct(
         WitnessPacket {
             obligation_identity: Some(crate::fixture_ids::obligation_identity()),
