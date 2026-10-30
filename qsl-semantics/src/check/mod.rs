@@ -7365,14 +7365,14 @@ mod tests {
         assert_ne!(node, key, "the caller's handle is not a node id");
         let declared = graph
             .semantic_graph()
-            .node(node)
+            .node(node.clone())
             .expect("the checked type node's id is a graph node's key");
         assert_eq!(
             declared.declaration().map(|name| name[0].as_str()),
             Some("Flagged")
         );
         assert_eq!(graph.checked_type_node(node), Some(nodes[0]));
-        assert!(graph.checked_type_node(key).is_none());
+        assert!(graph.checked_type_node(key.clone()).is_none());
         assert_eq!(
             to_kernel_value_type(nodes[0]),
             quire_exact::ValueType::Composite(key)
@@ -7458,13 +7458,14 @@ mod tests {
         use quire_exact::{NodeKey, PathSegment};
         use serde_json::json;
 
-        let owners = OwnerSelection::new([NodeOwner::Definition(OwnerSubject {
-            authority: "agent-ix".to_owned(),
-            identity: "example-model".to_owned(),
-        })]);
+        let owners = OwnerSelection::new([NodeOwner::Definition(OwnerSubject::new(
+            "agent-ix",
+            "example-model",
+            "example-model",
+        ))]);
         let declaration_json = json!({
             "version": "quire.enum-declaration-node/v1",
-            "owner": {"kind": "definition", "authority": "agent-ix", "identity": "example-model"},
+            "owner": {"kind": "definition", "authority": "agent-ix", "identity": "example-model", "package_name": "example-model"},
             "qualified_declaration": ["Example", "Status"],
             "ordered": false,
             "members": ["Active", "Closed"],
@@ -7536,7 +7537,7 @@ mod tests {
         };
         for case in ["Active", "Closed"] {
             assert!(shape.contains(
-                crate::value::enumeration::mint_variant_id(declaration_key.clone(), case).unwrap()
+                &crate::value::enumeration::mint_variant_id(declaration_key.clone(), case).unwrap()
             ));
         }
     }
@@ -7602,11 +7603,11 @@ mod tests {
         let first = Origin::new(Role::new("expression"), 0);
         let second = Origin::new(Role::new("expression"), 1);
         let first_location = graph
-            .occurrence(call_identity, &first)
+            .occurrence(call_identity.clone(), &first)
             .expect("the first call site was recorded")
             .clone();
         let second_location = graph
-            .occurrence(call_identity, &second)
+            .occurrence(call_identity.clone(), &second)
             .expect("the second call site was recorded")
             .clone();
 
@@ -7618,7 +7619,7 @@ mod tests {
             "two distinct source occurrences must not collapse to one location"
         );
         let third = Origin::new(Role::new("expression"), 2);
-        assert_eq!(graph.occurrence(call_identity, &third), None);
+        assert_eq!(graph.occurrence(call_identity.clone(), &third), None);
 
         // Step 5 (adverse, R-05): renaming both callers changes their
         // *diagnostic* location text (each `Location` names its own
@@ -7635,11 +7636,11 @@ mod tests {
         .check(CheckingLimits::default())
         .expect("renaming the callers changes no checking outcome");
         assert!(
-            renamed.occurrence(call_identity, &first).is_some(),
+            renamed.occurrence(call_identity.clone(), &first).is_some(),
             "the same call identity and first occurrence key still resolve after renaming"
         );
         assert!(
-            renamed.occurrence(call_identity, &second).is_some(),
+            renamed.occurrence(call_identity.clone(), &second).is_some(),
             "the same call identity and second occurrence key still resolve after renaming"
         );
         assert_ne!(
