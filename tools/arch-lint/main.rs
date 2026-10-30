@@ -124,8 +124,8 @@ fn run_direction(mut args: Vec<String>) -> Result<(String, bool)> {
     Ok((summary, report.is_clean() && construct.is_empty()))
 }
 
-/// `--qsl-only` runs every rule whose scan root is QSL's own tree (T12-B
-/// to T12-E and FR-100-AC-8) and skips the rules that scan the CG tree
+/// `--qsl-only` runs every rule whose scan root is QSL's own tree (T12-G
+/// and FR-100-AC-8) and skips the rules that scan the CG tree
 /// (T12-A), reporting each as skipped, so `make ci` can gate the QSL rules
 /// without a CG checkout. Without it, a missing `--cg` is a usage error.
 fn run_api_surface(mut args: Vec<String>) -> Result<(String, bool)> {
@@ -139,9 +139,9 @@ fn run_api_surface(mut args: Vec<String>) -> Result<(String, bool)> {
     let mut summary = String::new();
     summary.push_str("FR-060 API-surface check (ADR-011 T-12)\n");
     summary.push_str(
-        "  Note: T12-B, T12-C and T12-D match source tokens in shipped code: comments, \
-         string literals and `#[cfg(test)]` items are excluded, and each mint's enclosing \
-         function is resolved against a named, shrinking debt list. T12-A's call patterns \
+        "  Note: T12-G matches source tokens and parsed paths in shipped code: comments, \
+         string literals and `#[cfg(test)]` items are excluded, and each site's enclosing \
+         function is named. T12-A's call patterns \
          are a textual scan of the CG tree, so a match inside a comment or string literal \
          is reported; its forbidden module `qsl_replay::spine` is found by parsing `use` \
          trees and paths, through crate aliases and glob imports. No rule resolves a `use ... as` rename of the constructor's type -- a stated \
@@ -209,22 +209,7 @@ fn run_api_surface(mut args: Vec<String>) -> Result<(String, bool)> {
                         }
                     ));
                 }
-                for entry in &outcome.stale_debt_entries {
-                    summary.push_str(&format!(
-                        "    stale debt entry, no remaining mint: {} {}, fn {}\n",
-                        entry.crate_src, entry.module, entry.function
-                    ));
-                }
             }
-        }
-        for site in &outcome.debt {
-            summary.push_str(&format!(
-                "    debt: {}:{} (module {}, fn {})\n",
-                site.file.display(),
-                site.line,
-                site.module,
-                site.function
-            ));
         }
         if let Some(note) = rule.scope_note {
             summary.push_str(&format!("    (not evaluated for every role: {note})\n"));
@@ -339,7 +324,7 @@ mod tests {
     }
 
     /// tc_arch_lint_api_surface_021 (negative control): with no `--cg`,
-    /// T12-A reports that it needs `--cg` and T12-B, T12-C and T12-D are
+    /// T12-A reports that it needs `--cg` and T12-G is
     /// still evaluated -- one rule's missing input does not hide the others'
     /// results. The run fails as a usage error carrying the full report.
     #[trace("TC-157", "FR-060-AC-4")]
@@ -369,23 +354,8 @@ mod tests {
         write(root, "qsl-replay/src/lib.rs", "pub fn run() {}\n");
         write(
             root,
-            "qsl-semantics/src/check/mod.rs",
-            "pub struct NodeKey;\n",
-        );
-        write(
-            root,
-            "qsl-semantics/src/model/key.rs",
-            "pub struct EffectiveId;\n",
-        );
-        write(
-            root,
-            "qsl-semantics/src/model/population.rs",
-            "pub struct PopulationId;\n",
-        );
-        write(
-            root,
             "qsl-semantics/src/value/model_query.rs",
-            "fn f() {\n    NodeKey::from_digest(k);\n    EffectiveId::from_digest(d);\n}\n",
+            "fn f() {\n    quire_checked::construct::term(k);\n    quire_checked::construct::term(d);\n}\n",
         );
 
         let arguments: Vec<OsString> = ["api-surface", "--qsl"]
@@ -403,9 +373,7 @@ mod tests {
                 .unwrap_or_else(|| panic!("no {id} line in report:\n{report}"))
         };
         assert!(line_of("T12-A").ends_with("pass --cg to give it a tree to scan"));
-        assert!(line_of("T12-B").ends_with(": FAIL"), "{report}");
-        assert!(line_of("T12-C").ends_with(": FAIL"), "{report}");
-        assert!(line_of("T12-D").ends_with(": PASS"), "{report}");
+        assert!(line_of("T12-G").ends_with(": FAIL"), "{report}");
         assert!(report.contains("model_query.rs:2 (module value::model_query, fn f)"));
         assert!(report.contains("model_query.rs:3 (module value::model_query, fn f)"));
         assert!(report.ends_with("missing input: pass --cg to evaluate every rule"));
@@ -427,9 +395,7 @@ mod tests {
                 .to_owned()
         };
         assert!(line_of("T12-A").contains(": SKIPPED"), "{report}");
-        assert!(line_of("T12-B").ends_with(": FAIL"), "{report}");
-        assert!(line_of("T12-C").ends_with(": FAIL"), "{report}");
-        assert!(line_of("T12-D").ends_with(": PASS"), "{report}");
+        assert!(line_of("T12-G").ends_with(": FAIL"), "{report}");
 
         // `--qsl-only` with `--cg` is a usage error.
         let arguments: Vec<OsString> = ["api-surface", "--qsl-only", "--cg", "x", "--qsl"]
