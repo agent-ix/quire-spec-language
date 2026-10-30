@@ -72,7 +72,6 @@ use super::refusal::{CheckCause, CheckRefusal, KeyFault};
 use super::AdmittedImport;
 use super::{DeclarationRegions, DispatchTable, Scope};
 use crate::family::ClassifyFailure;
-use crate::library::PackageNodeKey;
 use quire_exact::IeeeWidth;
 use quire_exact::IllTypedCause;
 use quire_exact::RoundingMode;
@@ -922,7 +921,7 @@ pub(crate) enum Application<'a> {
     /// the library's checked graph.
     Imported {
         /// The function, as the import view names it.
-        callee: PackageNodeKey,
+        callee: NodeKey,
         /// The function's index in the library's checked graph.
         function: usize,
         /// The function's checked signature in the library's graph; every
@@ -1097,7 +1096,7 @@ impl<'a> Application<'a> {
         let ineligible = || CheckRefusal::ill_typed(location, IllTypedCause::OperatorIneligible);
         let (function, signature) = import
             .graph
-            .imported_function(&callee.node)
+            .imported_function(&callee)
             .ok_or_else(ineligible)?;
         let independent = signature
             .parameters

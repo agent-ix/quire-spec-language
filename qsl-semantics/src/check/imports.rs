@@ -3,7 +3,7 @@
 //! Behavior "`ImportView` never resolves a name"; ADR-013 R-06).
 //!
 //! `library` exposes a verified dependency's exports only as
-//! `(name, PackageNodeKey)` entries keyed by `WireNodeId`. The checker owns
+//! `(name, NodeKey)` entries. The checker owns
 //! name resolution (scoping, visibility, ambiguity), so it builds its own
 //! index from those entries here and resolves a name against it. `library`
 //! has no function that takes a name and returns a node id
@@ -11,7 +11,9 @@
 
 use std::collections::BTreeMap;
 
-use crate::library::{ImportView, PackageNodeKey};
+use quire_exact::NodeKey;
+
+use crate::library::ImportView;
 
 use super::refusal::CheckCause;
 
@@ -22,7 +24,7 @@ use super::refusal::CheckCause;
 /// `ambiguous-name` as a malformed preimage), so a view never carries two
 /// entries with one name.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ImportedNames<'a>(BTreeMap<&'a str, PackageNodeKey>);
+pub struct ImportedNames<'a>(BTreeMap<&'a str, &'a NodeKey>);
 
 impl<'a> ImportedNames<'a> {
     /// The name index of `view`'s entries.
@@ -33,10 +35,10 @@ impl<'a> ImportedNames<'a> {
     /// The node `name` resolves to among the imported package's exports,
     /// or `missing_declaration` / `missing-name` when it exports no
     /// declaration of that name.
-    pub fn resolve(&self, name: &str) -> Result<PackageNodeKey, CheckCause> {
+    pub fn resolve(&self, name: &str) -> Result<NodeKey, CheckCause> {
         self.0
             .get(name)
-            .copied()
+            .map(|node| (*node).clone())
             .ok_or_else(|| CheckCause::MissingName(name.to_owned()))
     }
 }

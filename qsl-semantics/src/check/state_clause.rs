@@ -322,15 +322,15 @@ enum FunctionGraph<'a> {
     },
     Imported {
         graph: &'a super::CheckedGraph,
-        package: crate::library::PackageId,
+        package: &'a str,
     },
 }
 
 impl<'a> FunctionGraph<'a> {
-    fn imported(self, package: crate::library::PackageId) -> Option<&'a super::CheckedGraph> {
+    fn imported(self, callee: &NodeKey) -> Option<&'a super::CheckedGraph> {
         match self {
-            Self::Local { scope, .. } => scope.imported_graph(package),
-            Self::Imported { graph, .. } => graph.scope.imported_graph(package),
+            Self::Local { scope, .. } => scope.imported_graph(callee),
+            Self::Imported { graph, .. } => graph.scope.imported_graph(callee),
         }
     }
 }
@@ -343,7 +343,7 @@ enum FunctionTarget<'a> {
     },
     Imported {
         graph: &'a super::CheckedGraph,
-        package: crate::library::PackageId,
+        package: &'a str,
         index: usize,
     },
 }
@@ -374,16 +374,16 @@ fn enqueue_calls<'a>(
             NodeKind::ImportedCall {
                 callee, function, ..
             } => {
-                if let Some(imported) = graph.imported(callee.package) {
+                if let Some(imported) = graph.imported(callee) {
                     let imported_graph = FunctionGraph::Imported {
                         graph: imported,
-                        package: callee.package,
+                        package: callee.package(),
                     };
                     pending.push((
                         imported_graph,
                         FunctionTarget::Imported {
                             graph: imported,
-                            package: callee.package,
+                            package: callee.package(),
                             index: *function,
                         },
                     ));
