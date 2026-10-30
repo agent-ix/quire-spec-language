@@ -450,7 +450,7 @@ pub fn run_with_limits(
 }
 
 /// FR-312's request reader, returning the exact typed input the spine runs.
-/// A refusal retains the request digest and its located command cause.
+/// A refusal retains its located command cause.
 pub type ClauseRunRequestRefusal = Box<RunError>;
 
 /// Read a closed clause-run request and every selected file exactly once.
