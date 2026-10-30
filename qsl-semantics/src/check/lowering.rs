@@ -147,6 +147,26 @@ pub struct SemanticNode {
 }
 
 impl SemanticNode {
+    /// The `correspondence`/`abstraction_relation` node of `term` under its
+    /// admitted structural `key` (QSpec FR-451).
+    pub(super) fn abstraction_relation(
+        key: NodeKey,
+        term: super::node_key::AbstractionTerm,
+    ) -> Self {
+        Self::declared(
+            key,
+            NodeContent {
+                owner_model: None,
+                node_tag: NodeTag::Correspondence,
+                semantic_form: "abstraction_relation",
+                semantic_type: None,
+                declaration: None,
+                owner: None,
+                body: BodyTerm::Abstraction(term),
+            },
+        )
+    }
+
     /// A declared node under its admitted structural `key`, outside every
     /// recursion group.
     pub(super) fn declared(key: NodeKey, content: NodeContent) -> Self {

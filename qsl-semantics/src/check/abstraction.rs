@@ -30,8 +30,7 @@ use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::location::{Location, Origin};
 
 use super::lowering::{
-    generated_location, model_node_content, population_node_content, relation_node, AdmittedModel,
-    SemanticNode,
+    generated_location, model_node_content, population_node_content, AdmittedModel, SemanticNode,
 };
 use super::node_key::{AbstractionTerm, FrameEntry, NodeKeyRefusal, ObjectEntry, PopulationEntry};
 use super::node_key::{ModelOwner, NodeTag};
@@ -974,6 +973,9 @@ pub enum AbstractionNodeRefusal {
     /// A node has no key.
     #[error(transparent)]
     Key(#[from] NodeKeyRefusal),
+    /// The relation node's structural key cannot be formed.
+    #[error("the abstraction relation node has no structural key")]
+    UnkeyedRelation,
     /// A binding's kind disagrees with its key's: a broken check invariant.
     #[error("a check invariant is broken: {0:?}")]
     Internal(Box<InternalFault>),
@@ -1074,10 +1076,21 @@ impl CheckedGraph {
                 }
             }
         }
-        let node = relation_node(
-            AbstractionTerm::new(objects, populations, frames),
-            self.identity,
-        )?;
+        let term = AbstractionTerm::new(objects, populations, frames);
+        let operands = term
+            .targets()?
+            .into_iter()
+            .map(quire_exact::PathSegment::Node)
+            .collect();
+        let key = super::derived_node_key(
+            self.package_name(),
+            NodeTag::Correspondence,
+            "abstraction_relation",
+            operands,
+            0,
+        )
+        .map_err(|_| AbstractionNodeRefusal::UnkeyedRelation)?;
+        let node = SemanticNode::abstraction_relation(key, term);
         Ok(AbstractionNodes {
             relation: node,
             support: support.nodes.into_values().collect(),
