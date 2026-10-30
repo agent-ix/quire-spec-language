@@ -974,7 +974,6 @@ impl DefinitionInputs {
             .values()
             .map(|rule| definitions::RuleInput {
                 path: rule.path,
-                digest: ByteDigest::of(rule.path.as_bytes()),
                 bytes: rule.path.as_bytes(),
             })
             .collect::<Vec<_>>();

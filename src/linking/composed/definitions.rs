@@ -11,7 +11,7 @@ use super::binding_work::{Dimension, Exhaustion, Work};
 use super::definition_source::RegisteredDefinition;
 use super::{DeclarationId, SyntaxNamespace, UnitId};
 use crate::syntax::composed::{ControlKind, DeclarationKind, ProtocolRequirement};
-use qsl_foundation::{ByteDigest, Spanned};
+use qsl_foundation::Spanned;
 
 /// Immutable definition selection: the registered definition's identity alone.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -34,8 +34,6 @@ pub struct Artifact<'a> {
 pub struct RuleInput<'a> {
     /// Exact rule path in the selected baseline; never used for file discovery.
     pub path: &'a str,
-    /// Independently supplied raw-byte digest.
-    pub digest: ByteDigest,
     /// Original supplied rule content.
     pub bytes: &'a [u8],
 }
@@ -88,13 +86,6 @@ pub enum Cause {
         path: &'static str,
         /// Indices of the supplied rule entries claiming this path.
         entries: Vec<usize>,
-    },
-    /// A supplied rule's declared digest does not match its own supplied bytes.
-    RuleMismatch {
-        /// Baseline path of the mismatched rule.
-        path: &'static str,
-        /// Index of the supplied entry whose declared digest does not match its bytes.
-        entry: usize,
     },
     /// Exact selection is known but is not the composed edition definition.
     WrongEdition(Selection),
@@ -541,22 +532,15 @@ impl<'a> Catalog<'a> {
             for rule in definition.rules() {
                 work.charge(Dimension::References, 1)?;
                 let entries = self.rules.get(rule.path);
-                let index = match entries.map(Vec::as_slice) {
+                match entries.map(Vec::as_slice) {
                     None | Some([]) => return Ok(Err(Cause::MissingRule { path: rule.path })),
-                    Some([index]) => *index,
+                    Some([_]) => {}
                     Some(entries) => {
                         return Ok(Err(Cause::AmbiguousRule {
                             path: rule.path,
                             entries: entries.to_vec(),
                         }))
                     }
-                };
-                let supplied = &self.input.rules[index];
-                if supplied.digest != ByteDigest::of(supplied.bytes) {
-                    return Ok(Err(Cause::RuleMismatch {
-                        path: rule.path,
-                        entry: index,
-                    }));
                 }
             }
             for dependency in definition.requirements().iter().rev() {

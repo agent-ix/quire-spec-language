@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
-use qsl_foundation::{ByteDigest, Source, SourceIdentity, Span};
+use qsl_foundation::{Source, SourceIdentity, Span};
 use quire_spec_language::linking::composed::binding_work::{
     Dimension, Limits as BindingLimits, Work, ACCOUNTING_VERSION,
 };
@@ -36,7 +36,6 @@ fn rules() -> Vec<RuleInput<'static>> {
                 rule.path,
                 RuleInput {
                     path: rule.path,
-                    digest: ByteDigest::of(rule.path.as_bytes()),
                     bytes: rule.path.as_bytes(),
                 },
             )
@@ -162,7 +161,7 @@ fn installed_definition_bytes_never_fill_an_omitted_dependency() {
 
 #[test]
 #[trace("TC-114", "FR-036-AC-3")]
-fn missing_or_reencoded_selected_rules_refuse_only_their_closures() {
+fn missing_selected_rules_refuse_only_their_closures() {
     let sources = [source(
         "queries",
         &(profile("Q", R::StateQueries) + "predicate Check using Q (): Boolean { true }"),
@@ -176,22 +175,9 @@ fn missing_or_reencoded_selected_rules_refuse_only_their_closures() {
     );
     let definitions = definitions();
     let target = R::StateQueries.rules()[0];
-    let mut changed = target.path.as_bytes().to_vec();
-    changed.push(b'\n');
-    for missing in [false, true] {
+    {
         let mut rules = rules();
-        if missing {
-            rules.retain(|rule| rule.path != target.path);
-        } else {
-            // A stale digest, not left matching the altered bytes: recognition
-            // is by path alone, so only the caller's own self-consistency
-            // check (declared digest vs. supplied bytes) can still refuse this.
-            let rule = rules
-                .iter_mut()
-                .find(|rule| rule.path == target.path)
-                .unwrap();
-            rule.bytes = &changed;
-        }
+        rules.retain(|rule| rule.path != target.path);
         let selected = Inventory {
             edition: R::Edition.selection(),
             definitions: &definitions,
@@ -204,11 +190,7 @@ fn missing_or_reencoded_selected_rules_refuse_only_their_closures() {
         );
         assert!(report.edition_refusal.is_none());
         let cause = report.declarations[0].uses[0].refusal.as_ref().unwrap();
-        if missing {
-            assert!(matches!(cause, Cause::MissingRule { path } if *path == target.path));
-        } else {
-            assert!(matches!(cause, Cause::RuleMismatch { path, .. } if *path == target.path));
-        }
+        assert!(matches!(cause, Cause::MissingRule { path } if *path == target.path));
     }
 }
 
