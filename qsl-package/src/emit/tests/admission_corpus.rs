@@ -1661,6 +1661,14 @@ fn every_emitted_body_of_the_corpus_is_in_the_stratified_grammar() {
                     assert_eq!(members[3]["value"]["term"], "reference");
                     continue;
                 }
+                if matches!(
+                    node["body"]["term"].as_str(),
+                    Some("enum" | "dimension" | "unit" | "dimension_equivalence")
+                ) {
+                    // FR-322: a source nominal declaration's closed body,
+                    // outside the ordinary five-stratum term grammar.
+                    continue;
+                }
                 assert!(
                     qsl_semantics::check::stratum::is_stratified_body(&node["body"]),
                     "{fixture:?}: a written body is outside the stratified grammar: {}",

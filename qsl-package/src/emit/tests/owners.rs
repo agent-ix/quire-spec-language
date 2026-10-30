@@ -128,7 +128,10 @@ fn p_and_tree_types() -> TypeEnvironment {
 #[trace("FR-093-AC-21", "TC-416")]
 #[test]
 fn source_declared_nodes_carry_their_source_owner() {
-    let status = status_enum(owner_json("a", "u"), "Status");
+    let status = status_enum(
+        json!({"kind": "source", "authority": "a", "identity": "u", "package_name": "pkg"}),
+        "Status",
+    );
     let status_type = || TypeForm::name("Status", SPAN);
     let keep = FunctionDeclaration::new(
         "keep",
