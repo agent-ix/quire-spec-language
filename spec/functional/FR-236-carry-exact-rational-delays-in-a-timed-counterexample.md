@@ -49,7 +49,7 @@ FR-181's `delay` and FR-417's `final_delay`:
 ```rust
 pub struct ModelStep {
     pub transition: ModelTransition,
-    pub post_state: DigestRecord,          // discrete state and exact clock valuation
+    pub post_state: StateKey,              // discrete state and exact clock valuation
         pub delay: Option<ExactRational>,      // QSpec FR-181 `delay`
 }
 // TemporalCounterexample gains `final_delay: Option<ExactRational>` (QSpec FR-417).
@@ -60,8 +60,8 @@ pub struct ModelStep {
 - Each engine SHALL fill `delay` as QSpec FR-181 defines it over a timed
   subject, 0 under a `Tick` source, and leave it `None` over an untimed
   subject.
-- The post-state digest SHALL be the canonical identity digest of the
-  discrete state together with the exact clock valuation.
+- The post-state key SHALL be the canonical key of the discrete state
+  together with the exact clock valuation.
 - Each engine SHALL report a time-lock as QSpec FR-417's `time-lock`
   counterexample with its `final_delay`, and SHALL leave `final_delay`
   `None` on every other kind.
@@ -81,7 +81,7 @@ pub struct ModelStep {
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-236-AC-1 | `NoLateReply` over `Rpc` with `T = 3 ms` yields steps `send`, `timeout`, `reply` with delays `0`, `3`, `0` and `trace_position` 3, length 3; each post-state digest changes when the step's resulting clock value changes and nothing else does. | Test (TC-691) |
+| FR-236-AC-1 | `NoLateReply` over `Rpc` with `T = 3 ms` yields steps `send`, `timeout`, `reply` with delays `0`, `3`, `0` and `trace_position` 3, length 3; each post-state key changes when the step's resulting clock value changes and nothing else does. | Test (TC-691) |
 | FR-236-AC-2 | The strict-guard variant's time-lock counterexample has one step, `send` with delay 0, `final_delay` `3` and `kind: TimeLock`; a `Formula` counterexample has `final_delay: None`. | Test (TC-691) |
 | FR-236-AC-3 | A liveness refutation of `always eventually holds(c.phase = Replied)` over `Rpc` with `T = 3 ms` yields a lasso whose loop has positive total delay, ends in the entry's discrete state, and in which every clock the loop does not reset is above 3 at entry. | Test (TC-691) |
 | FR-236-AC-4 | A counterexample over the untimed `Counter` subject carries `delay: None` on every step, and its bytes equal FR-126's counterexample for the same item. | Test (TC-691) |

@@ -14,7 +14,7 @@ relationships:
 
 Verify that spine `compile` resolves each `import` against the supplied
 libraries, compiles each library from source, binds the import to the
-recomputed `package_id`, types an imported function call from the
+library's identity and version, types an imported function call from the
 library's checked graph and emits it as a `dependency_reference`, and
 refuses each ADR-015 D-1 and D-2 case with no package.
 
@@ -25,7 +25,7 @@ Scope: FR-099-AC-1 to FR-099-AC-7, FR-099-AC-9, FR-027-AC-10, FR-027-AC-12.
 Library `test/geometry` is a complete-V1 unit, admitted as
 authority `a`, identity `geometry`, revision (`git`, `1`), declaring
 `function f using v(x: Int[0, 9]): Boolean pure { x < 5 }`. Let `d` be the
-`package_id` of its spine compile. The importing unit, admitted as `a`,
+package reference (QSpec FR-322 `package_id` wire member) its spine compile emits for the library. The importing unit, admitted as `a`,
 `u`, (`git`, `1`), declares
 `import "test/geometry" as g;`.
 
@@ -34,8 +34,7 @@ authority `a`, identity `geometry`, revision (`git`, `1`), declaring
    and an unimported `test/other` supplied. Read the first package back
    through QSL's I2 read.
 2. Compile `import "test/geometry" as g;` and `import "test/geometry";`.
-   Then follow the identity string with `version "1"`, with `digest "<d>"`
-   and with both. Then supply `test/geometry` from a source whose `f` is
+   Then follow the identity string with `version "1"`. Then supply `test/geometry` from a source whose `f` is
    `x < 6`.
 3. Supply no library; supply two
    libraries as `test/geometry`; supply a library whose source has the
@@ -57,7 +56,7 @@ authority `a`, identity `geometry`, revision (`git`, `1`), declaring
    again.
 7. Call `command`'s `compile` over a native-compile/1 request whose `1-draft`
    program is step 5's unit and whose `libraries` names `test/geometry`
-   by file, source digest and the labels above; then the same request with
+   by file and the labels above; then the same request with
    a `0-draft` program, with a library of an empty identity, and with a
    library object carrying a `version` member.
 
@@ -73,7 +72,7 @@ authority `a`, identity `geometry`, revision (`git`, `1`), declaring
    and `7`; then a malformed value on a supplied library the unit imports and
    on one it does not; then a well-formed value naming a refinement the
    library does not declare, on a library the unit imports and on one it
-   does not. Read the lock of the first compile, and of a compile with the
+   does not. Read the emitted package of the first compile, and of a compile with the
    value absent and with `[]`. Request
    the `1-draft` export with the member at the top level and on a library
    object, and a `0-draft` request with the member.
@@ -82,13 +81,13 @@ Tag the tests `#[trace("FR-099-AC-n", "TC-446")]` with the AC each backs.
 
 ## Expected Results
 
-- Step 1: the lock and the identity preimage each hold the one
+- Step 1: the emitted package holds the one
   `DependencySelection` `{test/geometry, d}`; the I2 read admits it;
   both compiles emit identical bytes.
-- Step 2: both identity-only imports admit and name `test/geometry`; each
-  of the three imports with a `version` or `digest` token refuses at S1 as a
+- Step 2: both identity-only imports admit and name `test/geometry`; the
+  import with a `version` token refuses at S1 as a
   syntax error and records no selection; the changed source compiles and the
-  lock's selection holds its recompiled `package_id`.
+  package's selection holds the recompiled library's identity.
 - Step 3: `missing_import`/`missing-selection` at the import's identity
   string, stage `intake`;
   `invalid_package`/`conflicting-definition` from the dependency input
@@ -108,8 +107,7 @@ Tag the tests `#[trace("FR-099-AC-n", "TC-446")]` with the AC each backs.
   `ill_typed`/`operator-ineligible` at the use. The `g::f(3)` unit's
   package holds the `Int[0, 9]` type node typing the conversion of `3` to
   `f`'s parameter, as a local call's does.
-- Step 6: `p`'s call node id and the package's `package_id` both differ
-  from step 5's.
+- Step 6: `p`'s call node id differs from step 5's.
 - Step 7: the outcome's package bytes are exactly the bytes spine `compile` returns for step 5's
   unit and library, exit 0; the `0-draft` request refuses with
   `unknown_edition` at stage `profile`, and a `libraries` entry with an
@@ -128,7 +126,7 @@ Tag the tests `#[trace("FR-099-AC-n", "TC-446")]` with the AC each backs.
   located at (that library's value, pointer) whether or not the unit imports
   it; the value naming an undeclared refinement refuses the compilation in
   both cases, the unimported library's refusal wrapped as
-  `CompileRefusal::Dependency`; the lock holds `refinement_internals` for the
+  `CompileRefusal::Dependency`; the emitted package holds `refinement_internals` for the
   first compile and no member for the absent and `[]` values; the
   `1-draft` request carries both members and the `0-draft` request refuses
   with `unknown_edition` at stage `profile`.

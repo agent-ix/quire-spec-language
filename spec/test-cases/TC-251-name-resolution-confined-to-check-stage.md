@@ -40,7 +40,7 @@ resolution function. Scope: FR-088-AC-5.
 5. Confirm `QualifiedName` itself is used only as a declared component of
    an identity preimage (for example inside a `DeclarationKey`'s preimage),
    never compared or hashed as if it were an identity in its own right,
-   where a node id or digest is available instead.
+   where a node id is available instead.
 
 ## Expected Results
 

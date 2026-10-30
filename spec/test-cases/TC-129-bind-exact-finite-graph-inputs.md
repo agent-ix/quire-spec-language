@@ -21,8 +21,8 @@ model/universe/type/object identity once under each of the distinct pre and post
 observation occurrences, and twice at one semantic anchor under distinct record
 identities. Mutate one axis at a time: anchor, snapshot, optional window, record,
 model, universe, object type, object identifier and edge owner. Substitute a
-compiled-artifact reference or raw-byte digest for one producer/observation
-identity or canonical digest. Then duplicate one complete `(observation
+compiled-artifact reference or raw-byte reference for one producer/observation
+identity. Then duplicate one complete `(observation
 occurrence, model, universe, object type, object identifier)` storage key.
 
 Under declared-complete membership and closure, remove an exact reference target.
@@ -35,7 +35,7 @@ completeness so structural invalidity is not hidden by missing authority.
 The positive case returns the exact selected object and observation occurrence.
 Distinct anchored or recorded copies do not collide, and dereference never
 retags one as another. A duplicate full key, a target missing from a
-declared-complete domain, a digest-domain substitution, or a known identity/
+declared-complete domain, a reference-kind substitution, or a known identity/
 type/authority mutation refuses with a distinct typed cause. Missing membership
 or closure is incomplete and does not classify the offered subset as empty,
 closed or dangling. No string identifier or ambient lookup repairs a mutation.

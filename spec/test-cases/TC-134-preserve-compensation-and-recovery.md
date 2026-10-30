@@ -23,7 +23,7 @@ refund attempts/effects R1/R2, a forbidding commit and full/partial recovery
 predicates. Inspect exact operation, subject, target/capture, anchor, temporal,
 relationship, population, progress and closure requirements. For the timed
 family inspect its `/2` selection: each temporal definition retains identity,
-revision, raw-byte digest and artifact, with exactly one profile-tagged clock
+revision and artifact, with exactly one profile-tagged clock
 configuration. Refuse a missing, duplicate, untagged or profile-incompatible
 clock configuration; verify the strict `/1` reader rejects `/2` and remains
 unchanged. Swap or omit each prerequisite independently and include an

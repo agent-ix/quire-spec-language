@@ -7,7 +7,7 @@ use qsl_cst::{
 use qsl_foundation::diagnostic::LimitKind;
 use qsl_foundation::selection::ProfileCatalog;
 use qsl_foundation::{SourceIdentity, Span};
-use qsl_semantics::value::{CatalogRole, DefinitionLock, HeaderLayer};
+use qsl_semantics::value::{DefinitionRole, HeaderLayer};
 use quire_spec_language::complete::{
     self, analyze_document, format_document, DocumentBinding, SourceEdit,
 };
@@ -49,11 +49,7 @@ fn the_header_profile_catalog_admits_the_temporal_layer() {
         assert!(catalog.contains(layer.identity()), "missing {layer:?}");
     }
     assert!(!catalog.contains("test:unknown-profile"));
-    assert!(!catalog.contains(
-        DefinitionLock::pinned()
-            .entry(CatalogRole::IeeeProfile)
-            .identity
-    ));
+    assert!(!catalog.contains(DefinitionRole::IeeeProfile.identity()));
 
     let source = concat!(
         "language \"ix:native\" edition \"1-draft\";\n",

@@ -15,7 +15,9 @@ use std::num::NonZeroU64;
 use ix_trace_rs::trace;
 use num_bigint::BigInt;
 use num_traits::{One, Signed, Zero};
-use qsl_semantics::value::{CatalogRole, DefinitionLock, DefinitionReference};
+use qsl_semantics::value::{
+    admit_ieee_profile, admit_selection, always_roles, DefinitionReference, DefinitionRole,
+};
 use quire_exact::RationalDomain;
 use quire_exact::{
     compare_ieee, convert_ieee_width, evaluate_ieee, exact_to_ieee, ieee_intrinsic_identities,
@@ -132,8 +134,8 @@ fn ratio(numerator: i64, denominator: i64) -> Rational {
 
 /// The [`DefinitionReference`] for the IEEE profile role: the catalog
 /// entry's `{authority, identity}`.
-fn ieee_reference(lock: &DefinitionLock) -> DefinitionReference {
-    lock.entry(CatalogRole::IeeeProfile).reference()
+fn ieee_reference() -> DefinitionReference {
+    DefinitionRole::IeeeProfile.reference()
 }
 
 fn f32v(bits: u32) -> IeeeValue {
@@ -717,20 +719,13 @@ fn f10_binary64_limit_tuple_succeeds_and_its_final_charge_denial_is_incomplete()
 #[trace("QSpec-TC-193", "QSpec-FR-148-AC-10")]
 #[test]
 fn semantic_admission_refuses_missing_repeated_mismatched_or_reserved_bindings() {
-    let lock = DefinitionLock::pinned();
-    let mut roles: Vec<&str> = lock
-        .always_roles()
-        .iter()
-        .map(|role| role.as_str())
-        .collect();
+    let mut roles: Vec<&str> = always_roles().iter().map(|role| role.as_str()).collect();
     roles.push("ieee_profile");
-    assert!(lock.admit_selection(&["ieee_operation"], &roles).is_ok());
+    assert!(admit_selection(&["ieee_operation"], &roles).is_ok());
 
-    let reference = ieee_reference(&lock);
+    let reference = ieee_reference();
     assert_eq!(reference.identity, IEEE_DEFINITION);
-    let admitted = lock
-        .admit_ieee_profile(std::slice::from_ref(&reference), &["acme::fma"])
-        .unwrap();
+    let admitted = admit_ieee_profile(std::slice::from_ref(&reference), &["acme::fma"]).unwrap();
     assert_eq!(admitted.definition(), &reference);
 
     let mut foreign = reference.clone();
@@ -738,20 +733,17 @@ fn semantic_admission_refuses_missing_repeated_mismatched_or_reserved_bindings()
     let mut version = reference.clone();
     version.identity = "quire.value.ieee754-2019-default/v2".to_owned();
     let cases = [
+        (admit_ieee_profile(&[], &[]), PackageCause::MissingMember),
         (
-            lock.admit_ieee_profile(&[], &[]),
-            PackageCause::MissingMember,
-        ),
-        (
-            lock.admit_ieee_profile(&[reference.clone(), reference.clone()], &[]),
+            admit_ieee_profile(&[reference.clone(), reference.clone()], &[]),
             PackageCause::ConflictingDefinition,
         ),
         (
-            lock.admit_ieee_profile(&[foreign], &[]),
+            admit_ieee_profile(&[foreign], &[]),
             PackageCause::IncompatibleDefinition,
         ),
         (
-            lock.admit_ieee_profile(&[version], &[]),
+            admit_ieee_profile(&[version], &[]),
             PackageCause::IncompatibleDefinition,
         ),
     ];
@@ -772,9 +764,8 @@ fn semantic_admission_refuses_missing_repeated_mismatched_or_reserved_bindings()
         ]
     );
     for identity in reserved {
-        let refusal = lock
-            .admit_ieee_profile(std::slice::from_ref(&reference), &[identity])
-            .unwrap_err();
+        let refusal =
+            admit_ieee_profile(std::slice::from_ref(&reference), &[identity]).unwrap_err();
         assert_eq!(
             (refusal.code, refusal.cause),
             (

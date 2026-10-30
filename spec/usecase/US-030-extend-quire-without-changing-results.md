@@ -1,6 +1,6 @@
 ---
 id: US-030
-title: "Add providers, plugins, a cache and faster execution backends without changing results"
+title: "Add providers, plugins and faster execution backends without changing results"
 type: US
 relationships:
   - target: ix://agent-ix/quire-spec-language/StR-001
@@ -13,10 +13,6 @@ relationships:
     type: exercises
   - target: ix://agent-ix/quire-spec-language/FR-291
     type: exercises
-  - target: ix://agent-ix/quire-spec-language/FR-292
-    type: exercises
-  - target: ix://agent-ix/quire-spec-language/FR-293
-    type: exercises
   - target: ix://agent-ix/quire-spec-language/FR-294
     type: exercises
   - target: ix://agent-ix/quire-spec-language/FR-295
@@ -24,26 +20,23 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-296
     type: exercises
 ---
-# US-030: Add providers, plugins, a cache and faster execution backends without changing results
+# US-030: Add providers, plugins and faster execution backends without changing results
 
 ## Story
 
 **As a** user who installs a proof backend, a third party who ships one as a
-plugin, or an author who wants repeated proof runs and function calls to be
-fast
-**I want** to add a provider, run a plugin, reuse cached proof results and
-pick a compiled execution backend
-**So that** I get the same verdicts I would get without them, a plugin's
-unreplayable proof is labelled as trusted, and a cached result is never
-stale.
+plugin, or an author who wants function calls to be fast
+**I want** to add a provider, run a plugin and pick a compiled execution
+backend
+**So that** I get the same verdicts I would get without them, and a plugin's
+unreplayable proof is labelled as trusted.
 
 ## Context
 
 ADR-029 decides that the registry is built from provider manifests and that
 negotiation changes a result only through an item's candidate set (PV-1,
 PV-2). First-party providers are compile-time Rust traits, and third-party
-providers are executables that speak one wire (PL-1 to PL-7). The cache is
-keyed by content identity (CA-1 to CA-5). Interpreter, AOT and JIT sit behind
+providers are executables that speak one wire (PL-1 to PL-7). Interpreter, AOT and JIT sit behind
 one execution-backend seam and return the interpreter's outcomes (EB-1 to
 EB-8).
 
@@ -71,12 +64,10 @@ EB-8).
 - **Then** the plugin's item settles `failed` with a tool-failure cause and
   the other item keeps its own result.
 
-### US-030-EX-4: A second identical proof run reads the cache
+### US-030-EX-4: RETIRED (QSpec #513 removes the result cache)
 
-- **Given** a completed `prove` run whose records were stored.
-- **When** the author runs the same request again.
-- **Then** the records are read from the cache and equal the first run's,
-  and changing one claim bound makes the next run compute afresh.
+**RETIRED (QSpec #513 removes the result cache).** This example described a
+second identical proof run reading a result cache. There is no result cache.
 
 ### US-030-EX-5: The JIT returns what the interpreter returns
 
@@ -88,9 +79,9 @@ EB-8).
 
 ## Priority and Risk (Informative)
 
-Priority: High. Third-party backends, caching and compiled execution are
+Priority: High. Third-party backends and compiled execution are
 only useful if they never change a verdict.
 
 ## Traceability (Informative)
 
-FR-288 to FR-296.
+FR-288 to FR-291 and FR-294 to FR-296.

@@ -13,7 +13,7 @@ relationships:
 Verify that a construct → serialize → read round trip of the witness
 envelope preserves the admitted transcript byte-for-byte and every ADR-013
 O-25 member exactly: obligation identity, clause occurrence key,
-`package_id` and every `RawSourceRef` digest, semantic profile selections,
+`package_id` and every `RawSourceRef` identity, semantic profile selections,
 proof bounds and declared domains, the `backend` member, trace position,
 and the `ReplaySource` variant with its payload. This also verifies that no
 decoding step interprets the transcript's rendered/display text (FR-070
@@ -30,7 +30,7 @@ Scope: FR-070-AC-3, FR-070-CON-1.
    name the same node id but a different role/ordinal (the envelope carries
    one occurrence key each, per FR-070's Behavior; the two envelopes stand
    in for two source occurrences of one structurally identical node). Give
-   both the same `RawSourceRef` digest, semantic profile selections, proof
+   both the same `RawSourceRef` identity, semantic profile selections, proof
    bound, `backend` member, trace position, and a `ReplaySource::Witness`
    payload — identical in every member except the occurrence key.
 2. Serialize and read both envelopes back.

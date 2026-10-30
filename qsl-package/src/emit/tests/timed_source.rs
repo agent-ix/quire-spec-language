@@ -159,7 +159,7 @@ fn a_checked_time_source_emits_and_reads_back_its_resolved_nodes() {
     assert!(timed.guards.is_empty());
     assert!(timed.invariants.is_empty());
     assert!(timed.urgencies.is_empty());
-    assert!(timed.normalized_constraints.is_empty());
+    assert!(timed.constraints.is_empty());
 }
 
 #[trace("FR-230-AC-5", "FR-230-AC-32", "FR-230-AC-38")]

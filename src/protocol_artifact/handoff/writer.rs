@@ -43,8 +43,7 @@ use crate::{
             MutationCase, MutationInput, MutationManifest, SelectedArtifactLimits,
             SelectedClockInput, SelectedDeclaration, SelectedDependency, SelectedModel,
             SelectedSource, SelectedTemporal, Selection, SelectionV2, MUTATION_MANIFEST_FORMAT,
-            PUBLISHED_ARTIFACT_REFERENCE_FILE, PUBLISHED_MUTATION_MANIFEST_FILE,
-            PUBLISHED_OFFER_FILE, PUBLISHED_SELECTION_FILE, PUBLISHED_V1_ARTIFACT_REFERENCE_FILE,
+            PUBLISHED_MUTATION_MANIFEST_FILE, PUBLISHED_OFFER_FILE, PUBLISHED_SELECTION_FILE,
             PUBLISHED_V1_OFFER_FILE, PUBLISHED_V1_SELECTION_FILE,
         },
         native, v2, wire as w,
@@ -60,16 +59,6 @@ const REQUIREMENT_NAMESPACE: &str = "quire-contract-ir/requirement-revision";
 const DEFINITION_NAMESPACE: &str = "quire/native-definition-revision";
 const CONTRACT: &[u8] = include_bytes!("../../../docs/compiled-protocol-v1.md");
 const CONTRACT_V2: &[u8] = include_bytes!("../../../docs/compiled-protocol-v2.md");
-/// The producer's own source text. `Producer.binary` identifies this file by
-/// a digest over these bytes (see `producer_source_digest`), so its identity
-/// is exactly what anyone with this repository can independently recompute
-/// (`sha256sum src/protocol_artifact/handoff/writer.rs`) -- unlike a compiled
-/// executable, which nobody retains and which moves with the toolchain. The
-/// digest covers `writer.rs` alone -- not the embedded recipe inputs, and not
-/// the rest of the library that actually performs compilation -- so
-/// "producer identity" means exactly this file, not a binary or its
-/// dependency closure.
-const PRODUCER_SOURCE: &[u8] = include_bytes!("writer.rs");
 const EVENT_CLOCK: &[u8] =
     b"{ \"kind\": \"event_position\", \"sequence_authority\": \"workflow-events\" }\n";
 const SAMPLE_CLOCK: &[u8] = b"{ \"kind\": \"fixed_sample\", \"epoch\": { \"kind\": \"integer\", \"decimal\": \"0\" }, \"period\": { \"kind\": \"rational\", \"numerator\": \"1\", \"denominator\": \"2\" }, \"unit\": \"second\" }\n";
@@ -222,8 +211,8 @@ const UNITS: &[UnitRecipe] = &[
     },
 ];
 
-// The committed `/2` handoff predates the distinct-authority `/1` correction.
-// Keep its exact authored source/model inputs frozen rather than silently
+// The `/2` handoff predates the distinct-authority `/1` correction. Keep its
+// exact authored source/model inputs frozen rather than silently
 // regenerating another contract version as a side effect of `/1` maintenance.
 const UNITS_V2: &[UnitRecipe] = &[
     UnitRecipe {
@@ -571,67 +560,19 @@ fn reference(
     authority: &str,
     kind: w::ArtifactKind,
     identity: &str,
-    revision: w::Revision,
     wire: &str,
     version: &str,
-    bytes: &[u8],
-) -> w::ArtifactRef {
-    digest_reference(
-        authority,
-        kind,
-        identity,
-        revision,
-        wire,
-        version,
-        ByteDigest::of(bytes),
-    )
-}
-
-/// Build an artifact reference from an already-computed digest, for the one
-/// case (the producer's own source) whose bytes are already tracked at a
-/// known repository path and are never re-materialized as a dependency (see
-/// `producer_source_digest`).
-fn digest_reference(
-    authority: &str,
-    kind: w::ArtifactKind,
-    identity: &str,
-    revision: w::Revision,
-    wire: &str,
-    version: &str,
-    digest: ByteDigest,
 ) -> w::ArtifactRef {
     w::ArtifactRef {
         ref_version: "ix.artifact-ref/3-draft".into(),
         kind,
         authority: authority.into(),
         identity: identity.into(),
-        revision,
-        digest,
         wire: w::Wire {
             identity: wire.into(),
             version: version.into(),
         },
     }
-}
-
-/// FR-042-AC-10: identify the producer by a digest over its own source text,
-/// checkable by anyone with this repository (`sha256sum
-/// src/protocol_artifact/handoff/writer.rs`) rather than by hashing a compiled
-/// executable that nobody retains and that moves with the toolchain. This is
-/// `Producer.binary` -- not a dependency whose original bytes an independent
-/// reader must recover -- so `PRODUCER_SOURCE` is read only to compute the
-/// digest and is never written to a fixture file or supplied as a
-/// dependency's exact-byte content.
-fn producer_source_digest() -> ByteDigest {
-    ByteDigest::of(PRODUCER_SOURCE)
-}
-
-/// The FR-001 `ByteDigest` of a clock input's exact embedded bytes, as
-/// recorded on its `SelectedClockInput.digest`. Its own tiny function so the
-/// arch-lint canonical-encoder exemption stays pinned to this one hash site
-/// rather than the whole (JSON-producing) `emit_and_read_v2`.
-fn clock_input_digest(clock_bytes: &[u8]) -> String {
-    ByteDigest::of(clock_bytes).to_string()
 }
 
 fn formal(source: Source, document: &str) -> Result<FormalSource, Error> {
@@ -948,13 +889,8 @@ impl UnitInput {
                 AUTHORITY,
                 w::ArtifactKind::Source,
                 recipe.identity,
-                revision(
-                    "native-source-revision",
-                    &source.source().identity().revision,
-                ),
                 "ix:native",
                 "1-draft",
-                source.source().text().as_bytes(),
             ),
             mapping: CheckBindings { source, clauses },
         })
@@ -1049,48 +985,26 @@ impl SelectedInputs {
             AUTHORITY,
             w::ArtifactKind::Source,
             "quire.compiled-protocol/1",
-            revision("compiled-protocol-contract", "1"),
             "text/markdown",
             "1",
-            CONTRACT,
-        );
-        let binary_ref = digest_reference(
-            AUTHORITY,
-            w::ArtifactKind::GeneratedArtifact,
-            "native_protocol_handoff",
-            revision("crate-version", env!("CARGO_PKG_VERSION")),
-            "text/rust",
-            "1",
-            producer_source_digest(),
         );
         let producer = w::Producer {
             implementation: "quire-spec-language/native_protocol_handoff".into(),
             revision: revision("crate-version", env!("CARGO_PKG_VERSION")),
-            binary: binary_ref,
         };
         let model_ref = reference(
             AUTHORITY,
             w::ArtifactKind::ModelPackage,
             model.environment().owner().package().as_str(),
-            revision(
-                REQUIREMENT_NAMESPACE,
-                &model.environment().owner().revision().get().to_string(),
-            ),
             "native-state-model",
             "2",
-            model.artifact_bytes(),
         );
         let foreign_ref = reference(
             AUTHORITY,
             w::ArtifactKind::Source,
             &model.source().source().identity().identity,
-            revision(
-                "native-source-revision",
-                &model.source().source().identity().revision,
-            ),
             "native-rule-model",
             "2",
-            model.source().source().text().as_bytes(),
         );
 
         let dependencies = selected_dependencies(inputs, &contract, &model_ref)?;
@@ -1119,10 +1033,8 @@ impl SelectedInputs {
             AUTHORITY,
             w::ArtifactKind::Source,
             "quire.compiled-protocol/2",
-            revision("compiled-protocol-contract", "2"),
             "text/markdown",
             "1",
-            CONTRACT_V2,
         );
         let contract_dependency = selected
             .dependencies
@@ -1136,10 +1048,6 @@ impl SelectedInputs {
         contract_dependency.bytes = Cow::Borrowed(CONTRACT_V2);
         selected.contract = contract;
 
-        // The producer's binary is Producer identity, not a byte-sealed
-        // dependency (see `producer_source_digest`), so there is no
-        // `dependencies` entry to find here -- only the reference itself.
-        selected.producer.binary.identity = "native_protocol_v2_handoff".into();
         selected.producer.implementation = "quire-spec-language/native_protocol_v2_handoff".into();
 
         selected
@@ -1192,10 +1100,8 @@ fn selected_dependencies(
                 STANDARD,
                 w::ArtifactKind::Source,
                 definition.identity(),
-                revision(DEFINITION_NAMESPACE, definition.revision()),
                 "text/markdown",
                 "1",
-                definition.bytes(),
             ),
             bytes: Cow::Borrowed(definition.bytes()),
             requires: Vec::new(),
@@ -1208,19 +1114,14 @@ fn selected_dependencies(
                 STANDARD,
                 w::ArtifactKind::Source,
                 rule.path,
-                revision("selected-rule-source", "1"),
                 "text/markdown",
                 "1",
-                rule.bytes,
             ),
             bytes: Cow::Borrowed(rule.bytes),
             requires: Vec::new(),
             file: String::new(),
         });
     }
-    // The producer's own binary is not one of these exact-byte dependencies
-    // (see `producer_source_digest`): its identity is Producer.binary, an
-    // artifact reference recording only a digest.
     dependencies.extend([
         Dependency {
             artifact: contract.clone(),
@@ -1554,16 +1455,14 @@ fn emit_and_read(
         "native encoding",
         native::emit(&admitted, artifact::Limits::default()),
     )?;
-    // The producing side selects the exact output seal once emission finishes;
-    // a later consumer must accept it independently of an offered payload.
+    // The producer assigns the output's external identity independently of the
+    // offered payload bytes.
     let output = reference(
         AUTHORITY,
         w::ArtifactKind::LinkedPackage,
         "examples/protocol-handoff/workflow",
-        revision("example-output", "1"),
         "quire.compiled-protocol",
         "1",
-        emitted.bytes(),
     );
     let expected_units = selected_sources
         .iter()
@@ -1711,10 +1610,8 @@ fn emit_and_read_v2(
         AUTHORITY,
         w::ArtifactKind::LinkedPackage,
         "examples/protocol-handoff/workflow-v2",
-        revision("example-output", "2"),
         "quire.compiled-protocol",
         "2",
-        emitted.bytes(),
     );
 
     let expected_units = selected_sources
@@ -1783,7 +1680,6 @@ fn emit_and_read_v2(
                         "{AUTHORITY}/examples/protocol-handoff/{}",
                         recipe.clock_identity
                     ),
-                    digest: clock_input_digest(recipe.clock_bytes),
                     file: recipe.clock_file.into(),
                     configuration: clocks[index].clone(),
                 },
@@ -1796,8 +1692,7 @@ fn emit_and_read_v2(
         limits: SelectedArtifactLimits::try_new(limits)?,
     };
     let package = emitted.admitted().package().clone();
-    let (mutation_manifest, mutation_files) =
-        mutation_fixtures(&package, &selection, &selected.dependencies)?;
+    let (mutation_manifest, mutation_files) = mutation_fixtures(&package)?;
     verify_mutation_fixtures(
         &mutation_manifest,
         &mutation_files,
@@ -1865,8 +1760,8 @@ impl<'a> ExpectedUnit<'a> {
 /// Compile the authored `/1` recipe and write its complete handoff to
 /// `directory`, which must not exist yet.
 ///
-/// The directory receives `compiled-protocol.json`, its
-/// `compiled-protocol.ref.json` seal, the `expected.json` [`Selection`], every
+/// The directory receives `compiled-protocol.json`, the `expected.json`
+/// [`Selection`], every
 /// original source and `model-source.json`, each selected dependency's exact
 /// bytes under `dependencies/`.
 /// The emitted bytes are read back through [`crate::protocol_artifact::read`]
@@ -1946,13 +1841,11 @@ fn artifact_result<T>(stage: &'static str, report: artifact::Report<T>) -> Resul
     })
 }
 
-fn dependency_key(reference: &w::ArtifactRef) -> (&str, &str, &str, &str, &str, &str, &str) {
+fn dependency_key(reference: &w::ArtifactRef) -> (&str, &str, &str, &str, &str) {
     (
         reference.kind.as_str(),
         &reference.authority,
         &reference.identity,
-        &reference.revision.namespace,
-        &reference.revision.value,
         &reference.wire.identity,
         &reference.wire.version,
     )
@@ -1965,7 +1858,6 @@ fn write_files(
     bytes: &[u8],
 ) -> Result<(), Error> {
     let selected_bytes = serde_json::to_vec_pretty(selection)?;
-    let reference_bytes = serde_json::to_vec_pretty(&selection.artifact)?;
     // Create a fresh directory only after every compiler/reader stage succeeds.
     fs::create_dir(directory).map_err(|error| io_at(directory, error))?;
     let dependency_directory = directory.join("dependencies");
@@ -1987,10 +1879,6 @@ fn write_files(
         &directory.join(PUBLISHED_V1_SELECTION_FILE),
         &selected_bytes,
     )?;
-    write_file(
-        &directory.join(PUBLISHED_V1_ARTIFACT_REFERENCE_FILE),
-        &reference_bytes,
-    )?;
     write_file(&directory.join(PUBLISHED_V1_OFFER_FILE), bytes)
 }
 
@@ -2003,7 +1891,6 @@ fn write_files_v2(
     mutation_files: &MutationFiles,
 ) -> Result<(), Error> {
     let selected_bytes = serde_json::to_vec_pretty(selection)?;
-    let reference_bytes = serde_json::to_vec_pretty(&selection.inherited.artifact)?;
     let mutation_manifest = serde_json::to_vec_pretty(&mutation_manifest)?;
     fs::create_dir(directory).map_err(|error| io_at(directory, error))?;
     let dependency_directory = directory.join("dependencies");
@@ -2034,17 +1921,11 @@ fn write_files_v2(
         &mutation_manifest,
     )?;
     write_file(&directory.join(PUBLISHED_SELECTION_FILE), &selected_bytes)?;
-    write_file(
-        &directory.join(PUBLISHED_ARTIFACT_REFERENCE_FILE),
-        &reference_bytes,
-    )?;
     write_file(&directory.join(PUBLISHED_OFFER_FILE), bytes)
 }
 
 fn mutation_fixtures(
     package: &v2::wire::Package,
-    selection: &SelectionV2,
-    dependencies: &[Dependency],
 ) -> Result<(MutationManifest, MutationFiles), Error> {
     let mut cases = Vec::new();
     let mut files = Vec::new();
@@ -2059,10 +1940,8 @@ fn mutation_fixtures(
             AUTHORITY,
             w::ArtifactKind::LinkedPackage,
             "examples/protocol-handoff/workflow-v2",
-            revision("example-output", "2"),
             "quire.compiled-protocol",
             "2",
-            &bytes,
         );
         files.push((file.clone(), bytes));
         cases.push(MutationCase {
@@ -2277,24 +2156,13 @@ fn mutation_fixtures(
         definition_revision,
     )?;
 
-    let mut artifact_digest = package.clone();
-    artifact_digest.inherited.dependencies[dependency_at]
-        .artifact
-        .digest = selection.inherited.artifact.digest;
-    offer(
-        "definition-artifact-digest",
-        "definition.artifact.digest",
-        v2::Refusal::Definition(v2::DefinitionField::Artifact(v2::ArtifactField::Digest)).code(),
-        artifact_digest,
-    )?;
-
     let mut digest_domain = package.clone();
     digest_domain.inherited.dependencies[dependency_at]
         .artifact
         .wire
         .identity = "filament-canonical-json-1".into();
     offer(
-        "definition-artifact-digest-domain",
+        "definition-artifact-wire-identity",
         "definition.artifact.wire_identity",
         v2::Refusal::Definition(v2::DefinitionField::Artifact(
             v2::ArtifactField::WireIdentity,
@@ -2478,10 +2346,8 @@ fn mutation_fixtures(
             AUTHORITY,
             w::ArtifactKind::LinkedPackage,
             "examples/protocol-handoff/workflow-v2",
-            revision("example-output", "2"),
             "quire.compiled-protocol",
             "2",
-            &bytes,
         );
         files.push((file.clone(), bytes));
         cases.push(MutationCase {
@@ -2492,28 +2358,10 @@ fn mutation_fixtures(
         });
     }
 
-    let selected_dependency = dependencies
-        .get(dependency_at)
-        .ok_or(Error::MutationFixture("definition-original-bytes"))?;
-    let mut changed_definition_bytes = selected_dependency.bytes.to_vec();
-    changed_definition_bytes.push(b'\n');
-    let changed_file = "mutations/definition-original-bytes.bin".to_owned();
-    files.push((changed_file.clone(), changed_definition_bytes));
-    cases.push(MutationCase {
-        identity: "definition-original-bytes".into(),
-        axis: "definition.original_bytes".into(),
-        input: MutationInput::ReplaceOriginal {
-            target: selected_dependency.file.clone(),
-            file: changed_file,
-        },
-        expected_refusal_code: "invalid.seal".into(),
-    });
-
     Ok((
         MutationManifest {
             format: MUTATION_MANIFEST_FORMAT.into(),
             base_offer: PUBLISHED_OFFER_FILE.into(),
-            base_artifact: PUBLISHED_ARTIFACT_REFERENCE_FILE.into(),
             independent_selection: PUBLISHED_SELECTION_FILE.into(),
             cases,
         },

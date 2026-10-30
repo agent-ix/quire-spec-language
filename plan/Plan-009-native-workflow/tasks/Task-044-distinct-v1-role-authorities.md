@@ -22,14 +22,14 @@ native/model inputs.
 - [x] Give the Provider role its own admitted object/model authority while
   retaining Service as the authority for `Workflow::apply`.
 - [x] Regenerate the published version-1 offer, selection, original inputs,
-  dependency bytes, external reference and complete checksum inventory with the
+  dependency bytes and external reference with the
   existing Rust producer.
 - [x] Prove the regenerated offer admits through the strict public reader and
   its two authored role records carry distinct exact model coordinates.
 
 ## Delivery
 
-`PUBLISHED_V1_HANDOFF` continues to expose the same versioned handoff contract.
+The `/1` handoff `write_v1` generates keeps the same versioned handoff contract.
 Its regenerated `Flow` declaration retains `Service` and `Provider` as distinct
 model authorities, allowing Protocol to enforce FR-050 without weakening its
 duplicate-authority refusal.

@@ -103,9 +103,9 @@ Snapshots hold `"populations": []` unless a step says otherwise. Tag the tests
   `Consistent` is `Completed(true)`. Side `post` over `Q1` admits the post
   context and gives `Completed(true)`; over `Q2` it admits and gives
   `Completed(false)`, a logical violation and no refusal. Reordering the
-  `fields` members of a context gives the same typed observation, digest and
+  `fields` members of a context gives the same typed observation and
   results; reordering the `contexts` entries gives the same typed observation
-  and results, and the digest (of the document) may differ.
+  and results.
 - Step 2: side `pre` gives `Completed(true)` for every variant with no
   refusal; side `post` with `Q1` absent returns `Incomplete` with
   `unavailable_observation`/`missing-required-artifact`.

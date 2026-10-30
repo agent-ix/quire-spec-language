@@ -39,7 +39,7 @@ pub struct Selections<'a> {
     pub contract: &'a wire::ArtifactRef,
     /// Exact accepted semantic baseline dependency.
     pub baseline: &'a wire::ArtifactRef,
-    /// Explicit implementation, revision and immutable binary selection.
+    /// Explicit implementation and revision selection.
     pub producer: &'a wire::Producer,
     /// Complete original source inventory; authored owners must match discharge.
     pub sources: &'a [SourceSelection<'a>],
@@ -74,10 +74,6 @@ impl EmittedPackage {
     /// Complete canonical native-emitted bytes.
     pub fn bytes(&self) -> &[u8] {
         self.candidate.bytes()
-    }
-    /// Raw-byte digest of the complete native-emitted payload.
-    pub fn digest(&self) -> qsl_foundation::ByteDigest {
-        self.candidate.digest()
     }
 }
 /// Check actual source/type/proof owners and lower only supported complete families.

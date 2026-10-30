@@ -34,8 +34,8 @@ Five criteria FR-014-AC-1..5 have respective cases TC-035..39. The integration
 cases establish explicit revision assignment, independent coordinate examples,
 foreign native inputs and structurally valid false IR loci. The property case
 generates all 156 short strings over its declared alphabet, with independent
-coordinate scanning and valid/invalid span enumeration. Setup uses real IR
-constructors; assertions cover values, identity, error phase and provenance.
+coordinate scanning and valid/invalid span enumeration. Setup uses real
+IR constructors; assertions cover values, identity, error phase and provenance.
 
 Write tests first and record their missing-API failure. Implement the bridge,
 then run the focused suite and repository checks sequentially. Use imported

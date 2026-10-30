@@ -235,8 +235,7 @@ pub(crate) fn is_complete_value(selection: &ProfileSelection) -> bool {
     let Some(layer) = crate::value::layer::HeaderLayer::from_identity(&selection.identity) else {
         return false;
     };
-    crate::value::definition::DefinitionLock::pinned()
-        .closure(&[layer])
+    crate::value::layer::HeaderLayer::closure(&[layer])
         .contains(&crate::value::layer::HeaderLayer::ValueComplete)
 }
 

@@ -220,12 +220,7 @@ pub(crate) const EXEMPT: &[Exemption] = &[
     Exemption {
         crate_src: "src",
         module: "protocol_artifact::handoff::writer",
-        functions: &[
-            "reference",
-            "producer_source_digest",
-            "clock_input_digest",
-            "DefinitionInputs::new",
-        ],
+        functions: &["reference", "DefinitionInputs::new"],
         calls: &[],
         kind: ExemptionKind::NotAnIdentity,
         reason: "the handoff writer's FR-001 `ByteDigest`s of exact bytes it has \

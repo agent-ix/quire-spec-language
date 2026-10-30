@@ -31,9 +31,9 @@ When linking an explicitly inventoried composed package, the compiler SHALL reso
 `linking::composed::subject::StaticSubject` retains the package contract's six
 declared static components — Sources, Language, Profiles, Models, Native
 dependencies and Binding requirements — and compares two subjects component by
-component. No canonical digest, structural hash or JSON fingerprint is derived;
-canonical identity remains unavailable until its exact domain, version and
-algorithm are selected and qualified. `subject::BuildProvenance` retains the full
+component. Nothing is derived from a subject beyond that comparison;
+canonical identity remains unavailable until its exact form and version
+are selected and qualified. `subject::BuildProvenance` retains the full
 compile configuration separately, so a resource-only change is visible there and
 in no static component.
 
@@ -72,7 +72,7 @@ not silently define new whole-package capacities.
 
 The [standard package contract](https://github.com/agent-ix/quire-specification/blob/main/proposals/quire-v1/package-contract.md),
 landed in [standard PR #15](https://github.com/agent-ix/quire-specification/pull/15),
-owns the static/assessment split and digest domains. Model declarations come
+owns the static/assessment split. Model declarations come
 only from domain packages admitted under FR-056; the linker introduces no
 parallel model schema, canonicalizer, predicate semantics or observation store.
 
@@ -165,13 +165,13 @@ a new wire format as an incidental implementation choice.
 | --- | --- | --- |
 | FR-036-AC-1 | A multi-unit state/temporal/protocol package binds exact definition/model selections and typed cross-family references without runtime observations; unit-local aliases may reuse a spelling without merging owners. All headers agree with the inventory's single language/edition; mixed editions or a header/inventory conflict refuse package namespace admission with the conflicting selections located. | Test (TC-114) |
 | FR-036-AC-2 | Omitted inventory units, duplicate native names/authorities, wrong-kind targets, illegal binder/capture scope and self or mutual semantic dependencies produce located typed refusals; bounded protocol repetition is not falsely diagnosed as a dependency cycle. | Test (TC-114) |
-| FR-036-AC-3 | Missing or conflicting definition closure, a declaration from a foreign domain package and `sha256-jcs`-versus-raw-byte digest substitutions refuse every dependent declaration while preserving unrelated bound declarations and their identities. | Test (TC-114) |
+| FR-036-AC-3 | Missing or conflicting definition closure, a declaration from a foreign domain package and an artifact-identity substitution refuse every dependent declaration while preserving unrelated bound declarations and their identities. | Test (TC-114) |
 | FR-036-AC-4 | Binding roles with equal local spelling in two declarations retain different declaration-owned identities; nominally different types and current/activation/invocation anchors remain distinct across families. | Test (TC-114) |
 | FR-036-AC-5 | Changing runtime population/window/trace or backend leaves static meaning unchanged; changing a required semantic selection changes it. Resource-only configuration changes remain visible without becoming semantic changes. | Test (TC-115) |
 | FR-036-AC-6 | Two required requested pairs over different FR-057 capability kinds both remain in the request report in caller order; when either is not settled `supported`, complete aggregate success joined from the FR-331 accounting records on request index is unavailable, and a family body refused by its checker is never represented as checked. | Test (TC-115) |
 | FR-036-AC-7 | A dependency chain, diamond and cycle terminate under declared versioned work accounting and lowered traversal budgets. The accounting contract supplies exact-limit expectations, including shared dependencies and revisits; zero never disables a limit. An unaffordable next charge or counter overflow retains unfinished dispositions and yields no complete or executable package. A retry with sufficient budget preserves the original inputs and prior report. | Test (TC-114) |
 | FR-036-AC-8 | Historical linked/package artifacts retain their identities and atomic refusals; a composed partial report cannot enter an old reader or runner by changing a profile label. | Test (TC-115) |
-| FR-036-AC-9 | Native model references to a field, a Port and a Connection of a domain package admitted under FR-056 bind to their exact declaration keys and kinds, and a declaration of a kind the site does not bind refuses at the linker; a same-shaped declaration from another domain package or a changed selected digest refuses each dependent declaration while unrelated declarations stay bound. | Test (TC-148) |
+| FR-036-AC-9 | Native model references to a field, a Port and a Connection of a domain package admitted under FR-056 bind to their exact declaration keys and kinds, and a declaration of a kind the site does not bind refuses at the linker; a same-shaped declaration from another domain package or a changed selected identity or version refuses each dependent declaration while unrelated declarations stay bound. | Test (TC-148) |
 
 ## Dependencies
 

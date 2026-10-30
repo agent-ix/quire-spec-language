@@ -13,7 +13,7 @@ use qsl_semantics::check::{
 };
 use qsl_semantics::family::FamilyKind;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
-use qsl_semantics::value::{CatalogRole, DefinitionLock, DefinitionReference};
+use qsl_semantics::value::{admit_ieee_profile, DefinitionReference, DefinitionRole};
 use quire_eval::Evaluation;
 use quire_eval::FamilyOutcome;
 use quire_exact::EffectiveId;
@@ -216,10 +216,7 @@ fn check_quotient(functions: Vec<FunctionDeclaration>) -> Result<CheckedGraph, V
         index,
         ProfileSelection {
             alias: "v".to_owned(),
-            identity: DefinitionLock::pinned()
-                .entry(CatalogRole::Root)
-                .identity
-                .to_owned(),
+            identity: DefinitionRole::Root.identity().to_owned(),
             span: qsl_foundation::Span { start: 0, end: 0 },
             identity_span: qsl_foundation::Span { start: 0, end: 0 },
         },
@@ -871,18 +868,11 @@ fn p09_intervals_come_only_from_declared_types_and_literal_guards() {
 }
 
 fn ieee_profile() -> qsl_semantics::value::AdmittedIeeeProfile {
-    DefinitionLock::pinned()
-        .admit_ieee_profile(&[ieee_reference()], &[])
-        .unwrap()
+    admit_ieee_profile(&[ieee_reference()], &[]).unwrap()
 }
 
 fn ieee_reference() -> DefinitionReference {
-    let lock = DefinitionLock::pinned();
-    let entry = lock.entry(CatalogRole::IeeeProfile);
-    DefinitionReference {
-        authority: entry.authority.to_owned(),
-        identity: entry.identity.to_owned(),
-    }
+    DefinitionRole::IeeeProfile.reference()
 }
 
 fn object() -> ObjectReference {

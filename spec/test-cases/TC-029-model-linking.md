@@ -17,7 +17,7 @@ specified by IT-005; a setup refusal is not an observed application outcome.
 
 ## Test Procedure
 
-Under the qualified rule model, check a current invariant whose entire expression is self.n. Compare a current Boolean comparison self.n = self.n and the pinned Boolean operation-result postcondition under its proper operation context.
+Under the qualified rule model, check a current invariant whose entire expression is self.n. Compare a current Boolean comparison self.n = self.n and the Boolean operation-result postcondition under its proper operation context.
 
 ## Expected Results
 

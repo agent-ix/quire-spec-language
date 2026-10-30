@@ -23,7 +23,7 @@ relationships:
 When a declaration's `using` alias selects a value profile that admits
 records and tuples (`quire.value.complete/v1`), the compiler SHALL admit
 union declarations, union constructions and `case` in that declaration on
-the same basis, under exactly the profile and definition selections it
+the same basis, under exactly the profile it
 uses for records and tuples, as QSpec FR-143 "Value profile" defines (QSpec
 AD-015; ADR-012 §16.9 "Profiles").
 
@@ -34,22 +34,21 @@ AD-015; ADR-012 §16.9 "Profiles").
 
 ## Outputs
 
-- Checked declarations that use unions, and the unit's definition lock.
+- Checked declarations that use unions.
 
 ## Behavior
 
 - The compiler SHALL admit a union, a union construction or a `case` in any
   declaration where it admits a record or tuple under the same profile
   selection.
-- A unit that uses unions SHALL resolve and record exactly the profile and
-  definition selections it would record with each union replaced by a record
-  (FR-110).
+- A unit that uses unions SHALL resolve exactly the profile it would resolve
+  with each union replaced by a record (FR-110).
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-324-AC-1 | A unit whose one header profile selects `quire.value.complete/v1` and that declares `Shape` and `area` compiles through spine `compile`, and its emitted lock holds exactly the `profile_selections` and `definition_selections` of the same unit with `Shape` replaced by `record Shape { tag: Integer; }` and `area` returning `0`. | Test (TC-834) |
+| FR-324-AC-1 | **RETIRED (the comparison of two units' emitted selection rows is withdrawn).** No replacement. | Test (TC-834), retired |
 
 ## Dependencies
 

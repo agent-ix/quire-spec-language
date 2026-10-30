@@ -170,24 +170,6 @@ impl<'de> Deserialize<'de> for JcsDigest {
     }
 }
 
-// Exact shared raw-byte digest spelling; no new digest identity or algorithm.
-mod digest {
-    use super::*;
-    pub(super) fn serialize<S: Serializer>(
-        value: &ByteDigest,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error> {
-        serializer.collect_str(value)
-    }
-    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
-        decoder: D,
-    ) -> Result<ByteDigest, D::Error> {
-        String::deserialize(decoder)?
-            .parse()
-            .map_err(de::Error::custom)
-    }
-}
-
 labels! {
     /// Shared ArtifactRef/3 kinds used by compiled and assessment boundaries.
     ArtifactKind {
@@ -285,7 +267,7 @@ record! { /// Wire identity/version, separate from semantic definition revision.
 }
 record! { /// Narrow representation of the exact shared ArtifactRef/3 object.
     ArtifactRef {
-        /// The ArtifactRef schema's own version, distinct from `revision` below.
+        /// The ArtifactRef schema's own version.
         #[serde(rename = "refVersion")] ref_version: String,
         /// The referenced artifact's closed kind (`ArtifactKind`).
         kind: ArtifactKind,
@@ -293,10 +275,6 @@ record! { /// Narrow representation of the exact shared ArtifactRef/3 object.
         authority: String,
         /// The artifact's own identity string, unique within `authority`.
         identity: String,
-        /// The artifact's selected revision.
-        revision: Revision,
-        /// The artifact's content digest, in its exact selected domain.
-        #[serde(with = "digest")] digest: ByteDigest,
         /// The wire schema this artifact reference itself conforms to.
         wire: Wire
     }
@@ -343,14 +321,12 @@ record! { /// A declaration-owned table index; its expected table follows the fi
         index: u32
     }
 }
-record! { /// Selected implementation and binary artifact, not an authenticity claim.
+record! { /// Selected implementation, not an authenticity claim.
     Producer {
         /// The producer implementation's identity.
         implementation: String,
         /// The producer implementation's selected revision.
-        revision: Revision,
-        /// The producer's binary artifact.
-        binary: ArtifactRef
+        revision: Revision
     }
 }
 record! { /// One immutable dependency and its own dependency-table prerequisites.

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // FR-100/TC-451: spine run argument binding and outcome mapping fixture.
-// The profile is the `root` row of the DefinitionLock catalog (FR-110).
+// The profile selects the closed `root` role (FR-110).
 language "ix:native" edition "1-draft";
 profile v = "quire.value.complete/v1";
 type Digit = Int[0, 9];

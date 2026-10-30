@@ -14,14 +14,14 @@ Verify FR-084-AC-7. An object universe is one connected component of the
 supertype graph restricted to object types (quire-specification
 `model-complete.md`, "Object universe"; ADR-013 O-05, OQ-C and OQ-E
 rulings). A model with two disconnected components has two universes, each
-the `quire.model.object-universe/v2` digest over the model selection and
+the structural universe key over the model selection and
 that component's root effective type identities. A reference key's object
-component is the authored object identity, not a digest. Scope:
+component is the authored object identity. Scope:
 FR-084-AC-7.
 
 This catches three faults: one universe per model over every root type
 (`qsl-semantics/src/model/normalize.rs:1819-1832`), one universe per root type, and a
-digested object component.
+rewritten object component.
 
 ## Test Procedure
 
@@ -35,8 +35,7 @@ digested object component.
 3. Call `allInstances<A>(p1)`, `allInstances<C>(p2)` and
    `allInstances<X>(p3)`, and read the reference keys of `b1`, `e1` and
    `x1`.
-4. Compute the expected universes independently: SHA-256 over the RFC 8785
-   JCS bytes of
+4. Compute the expected universes independently: the structural universe key
    `{version: quire.model.object-universe/v2, model_selection, root_types}`
    with `root_types` equal to `[A]`, to `[C, D]` in ascending effective
    identity order, and to `[X]`, each as effective identities.
@@ -45,7 +44,7 @@ Tag the test `#[trace("FR-084-AC-7", "TC-410")]`.
 
 ## Expected Results
 
-- `b1`'s, `e1`'s and `x1`'s universes equal the three digests from step 4
+- `b1`'s, `e1`'s and `x1`'s universes equal the three keys from step 4
   in that order, and the three differ.
 - Each object component is the member's authored identity bytes (`b1`,
   `e1`, `x1`).

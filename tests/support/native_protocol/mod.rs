@@ -5,7 +5,7 @@ use crate::support::composed_types as composed_inputs;
 
 use std::collections::BTreeMap;
 
-use qsl_foundation::{ByteDigest, Source};
+use qsl_foundation::Source;
 use qsl_semantics::model::admitted::AdmittedPackage;
 use quire_contract_model as ir;
 use quire_spec_language::checking::composed::{self, proofs, TypeLimits};
@@ -84,20 +84,12 @@ fn revision(namespace: &str, value: &str) -> w::Revision {
     }
 }
 
-fn reference(
-    kind: w::ArtifactKind,
-    identity: &str,
-    wire: &str,
-    version: &str,
-    bytes: &[u8],
-) -> w::ArtifactRef {
+fn reference(kind: w::ArtifactKind, identity: &str, wire: &str, version: &str) -> w::ArtifactRef {
     w::ArtifactRef {
         ref_version: "ix.artifact-ref/3-draft".into(),
         kind,
         authority: "test:native-emission".into(),
         identity: identity.into(),
-        revision: revision("test:fixture-revision", "1"),
-        digest: ByteDigest::of(bytes),
         wire: w::Wire {
             identity: wire.into(),
             version: version.into(),
@@ -235,7 +227,6 @@ impl Inputs {
             "fixture-domain-package",
             "semantic-ir",
             "2.0.0",
-            &bytes,
         );
         Self::with_models(
             units,
@@ -302,28 +293,23 @@ impl Inputs {
         let source_references = sources
             .iter()
             .map(|source| {
-                let mut selected = reference(
+                let selected = reference(
                     w::ArtifactKind::Source,
                     &source.identity().identity,
                     "ix:native",
                     "1-draft",
-                    source.text().as_bytes(),
                 );
-                selected.revision =
-                    revision("test:native-source-revision", &source.identity().revision);
                 selected
             })
             .collect();
         let mut dependencies = Vec::new();
         for definition in R::all() {
-            let mut selected = reference(
+            let selected = reference(
                 w::ArtifactKind::Source,
                 definition.identity(),
                 "text/markdown",
                 "1",
-                definition.bytes(),
             );
-            selected.revision = revision("test:definition-revision", definition.revision());
             dependencies.push((selected, definition.bytes().to_vec()));
         }
         let rules: BTreeMap<_, _> = R::all()
@@ -333,7 +319,7 @@ impl Inputs {
             .collect();
         for (path, bytes) in rules {
             dependencies.push((
-                reference(w::ArtifactKind::Source, path, "text/markdown", "1", bytes),
+                reference(w::ArtifactKind::Source, path, "text/markdown", "1"),
                 bytes.to_vec(),
             ));
         }
@@ -343,7 +329,6 @@ impl Inputs {
             "fixture-contract",
             "text/markdown",
             "1",
-            contract_bytes,
         );
         let baseline_bytes = b"test-only accepted baseline; no ecosystem adoption claim";
         let baseline = reference(
@@ -351,32 +336,20 @@ impl Inputs {
             "fixture-baseline",
             "test:baseline",
             "1",
-            baseline_bytes,
-        );
-        let binary_bytes = b"test-only selected producer implementation";
-        let binary = reference(
-            w::ArtifactKind::GeneratedArtifact,
-            "fixture-producer",
-            "test:binary",
-            "1",
-            binary_bytes,
         );
         let producer = w::Producer {
             implementation: "test:native-emission-producer".into(),
             revision: revision("test:producer-revision", "1"),
-            binary: binary.clone(),
         };
         let model_reference = reference(
             w::ArtifactKind::ModelPackage,
             "fixture-model",
             "native-state-model",
             "2",
-            model.artifact_bytes(),
         );
         dependencies.extend([
             (contract.clone(), contract_bytes.to_vec()),
             (baseline.clone(), baseline_bytes.to_vec()),
-            (binary, binary_bytes.to_vec()),
             (model_reference.clone(), model.artifact_bytes().to_vec()),
         ]);
         if let Some(domain) = &domain {
@@ -390,7 +363,6 @@ impl Inputs {
             "fixture-model-source",
             "native-rule-model",
             "2",
-            model.source().source().text().as_bytes(),
         );
         let foreign_formal = w::Formal {
             document: model.source().identity().document().as_str().into(),
@@ -568,18 +540,17 @@ impl Inputs {
         proofs: &proofs::ProofReport<'_, '_, '_>,
         emitted: &native::EmittedPackage,
     ) -> artifact::Report<artifact::AdmittedPackage> {
-        self.read_bytes(proofs, emitted.bytes(), emitted.digest())
+        self.read_bytes(proofs, emitted.bytes())
     }
 
     /// Check transport against the original selections and an independently
-    /// selected seal. Adverse bytes never acquire native emission authority.
+    /// selected artifact identity. Adverse bytes never acquire native emission authority.
     pub fn read_bytes(
         &self,
         proofs: &proofs::ProofReport<'_, '_, '_>,
         bytes: &[u8],
-        digest: ByteDigest,
     ) -> artifact::Report<artifact::AdmittedPackage> {
-        self.with_expected(proofs, bytes, digest, "1", |expected, _| {
+        self.with_expected(proofs, "1", |expected, _| {
             artifact::read(bytes, &expected, artifact::Limits::default())
         })
     }
@@ -595,7 +566,6 @@ impl Inputs {
         self.read_v2_bytes(
             proofs,
             emitted.bytes(),
-            emitted.digest(),
             temporal,
             artifact::Limits::default(),
         )
@@ -607,11 +577,10 @@ impl Inputs {
         &self,
         proofs: &proofs::ProofReport<'_, '_, '_>,
         bytes: &[u8],
-        digest: ByteDigest,
         temporal: &[TemporalExpectation],
         limits: artifact::Limits,
     ) -> artifact::Report<v2::AdmittedPackage> {
-        self.with_expected(proofs, bytes, digest, "2", |inherited, _| {
+        self.with_expected(proofs, "2", |inherited, _| {
             let declarations: Vec<_> = temporal
                 .iter()
                 .map(|selection| artifact::ExpectedDeclaration {
@@ -653,12 +622,11 @@ impl Inputs {
         &self,
         proofs: &proofs::ProofReport<'_, '_, '_>,
         bytes: &[u8],
-        digest: ByteDigest,
         temporal: &[TemporalExpectation],
         activations: &[v3::ExpectedActivation],
         limits: artifact::Limits,
     ) -> artifact::Report<v3::AdmittedPackage> {
-        self.with_expected(proofs, bytes, digest, "3", |inherited, _| {
+        self.with_expected(proofs, "3", |inherited, _| {
             let declarations: Vec<_> = temporal
                 .iter()
                 .map(|selection| artifact::ExpectedDeclaration {
@@ -700,8 +668,6 @@ impl Inputs {
     fn with_expected<T>(
         &self,
         proofs: &proofs::ProofReport<'_, '_, '_>,
-        bytes: &[u8],
-        digest: ByteDigest,
         version: &str,
         test: impl FnOnce(artifact::Expected<'_>, &[artifact::ExpectedSource<'_>]) -> T,
     ) -> T {
@@ -801,14 +767,12 @@ impl Inputs {
                 declarations: &declarations[index],
             })
             .collect();
-        let mut artifact = reference(
+        let artifact = reference(
             w::ArtifactKind::LinkedPackage,
             "fixture-native-output",
             "quire.compiled-protocol",
             version,
-            bytes,
         );
-        artifact.digest = digest;
         let language = w::Language {
             identity: "ix:native".into(),
             edition: "1-draft".into(),

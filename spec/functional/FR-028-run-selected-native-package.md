@@ -17,7 +17,7 @@ When a native-run/1 request selects a compiled package, the command shall verify
 ## Inputs
 
 An optional package member on the existing run request: a closed object with
-file and canonical sha256-prefixed digest strings. Omission preserves source
+file and identity and revision label strings. Omission preserves source
 compilation; a supplied null, positional array or malformed object refuses.
 The original program source, complete clause bindings and model sources remain
 required external authority. Native-compile/1 requests still reject this field.
@@ -27,9 +27,9 @@ This local command does not confine selected files to a request-directory sandbo
 
 ## Outputs
 
-The existing native-run-result/1 outcome using the accepted package's exact raw
-byte digest and reconstructed static identity. Equivalent JSON layouts retain
-their own selected byte digest. Reader failures retain the original PackageError
+The existing native-run-result/1 outcome using the accepted package's selected
+identity and reconstructed static identity. Equivalent JSON layouts retain
+their own selected identity. Reader failures retain the original PackageError
 and selected file/reference in the library error; command JSON exposes their
 code, reader stage, path and nested cause under the distinct command stage
 selected_package. Source-compilation package failures retain stage package.
@@ -41,7 +41,7 @@ execution and emits no predicate truth.
 
 The command shall count the selected package's size toward FR-026's
 `dependent_bytes` limit.
-The command shall call NativePackage::read_verified with the expected byte
+The command shall call NativePackage::read_verified with the expected package
 reference, externally derived CheckBindings, admitted models and existing
 default support/stage limits.
 The command shall execute only the package accepted by that reader.
@@ -53,8 +53,8 @@ The command shall preserve fresh budgets for subsequent requests.
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-028-AC-1 | Selected exported state/operation packages produce the expected true, false and frame-refused outcomes through `command` called as a library function, each returning a typed outcome with its FR-285 exit code and writing nothing to stdout or stderr. | Test (TC-106) |
-| FR-028-AC-2 | An equivalent alternate package layout retains its selected byte digest while its static identity and runtime observations agree with source compilation. | Test (TC-106) |
-| FR-028-AC-3 | Stale bytes, forged claims with recomputed digest, incompatible source/bindings and malformed package selections refuse without fallback, preserving actual reader details where reached. | Test (TC-106) |
+| FR-028-AC-2 | An equivalent alternate package layout retains its selected identity while its static identity and runtime observations agree with source compilation. | Test (TC-106) |
+| FR-028-AC-3 | Stale bytes, forged claims with edited labels, incompatible source/bindings and malformed package selections refuse without fallback, preserving actual reader details where reached. | Test (TC-106) |
 | FR-028-AC-4 | `dependent_bytes` reached by the selected package, and runtime limits, retain incomplete outcomes with fresh successful retry; omitted selection preserves run and compile behavior. | Test (TC-106) |
 
 ## Dependencies

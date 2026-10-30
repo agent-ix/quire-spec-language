@@ -52,8 +52,8 @@ conformance and redefinition, and unique most-specific dispatch.
 
 ## Deliverables
 
-- Replayable model declarations keyed by domain package identity, IR node
-  identity and `sha256-jcs`, with no ambient registry, kind-name dispatch or
+- Replayable model declarations keyed by domain package identity and IR node
+  identity, with no ambient registry, kind-name dispatch or
   `displayName` identity.
 - Typed intake, closure, cycle, weakening and dispatch-ambiguity failures with
   no substitute.

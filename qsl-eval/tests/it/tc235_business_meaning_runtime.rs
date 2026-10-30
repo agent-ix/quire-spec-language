@@ -28,7 +28,7 @@ use qsl_semantics::model::observation::{
     ClauseSelectionInput, ContextSide, DocumentRef, ObservationLimits, OperationFacts, Provisions,
 };
 use qsl_semantics::model::refusal::{MemberPath, MemberRoot};
-use qsl_semantics::value::{CatalogRole, DefinitionLock};
+use qsl_semantics::value::DefinitionRole;
 use quire_exact::{admit_text, TextPayload, TextProfile, TextType};
 use quire_exact::{
     CardinalityBound, CollectionKind, CollectionType, EffectiveId, FieldValue, Integer, Meter,
@@ -562,10 +562,7 @@ fn package_with_types(
                 index,
                 ProfileSelection {
                     alias: "text".to_owned(),
-                    identity: DefinitionLock::pinned()
-                        .entry(CatalogRole::TextProfile)
-                        .identity
-                        .to_owned(),
+                    identity: DefinitionRole::TextProfile.identity().to_owned(),
                     span: qsl_foundation::Span { start: 0, end: 0 },
                     identity_span: qsl_foundation::Span { start: 0, end: 0 },
                 },
@@ -577,11 +574,8 @@ fn package_with_types(
             types,
             functions,
             function_selections,
-            lock_evidence: LockEvidence::default().with_text_profile(
-                DefinitionLock::pinned()
-                    .entry(CatalogRole::TextProfile)
-                    .reference(),
-            ),
+            lock_evidence: LockEvidence::default()
+                .with_text_profile(DefinitionRole::TextProfile.reference()),
             ..PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
                 qsl_foundation::IdentityLimits::default(),

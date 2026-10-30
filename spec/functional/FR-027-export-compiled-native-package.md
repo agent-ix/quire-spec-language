@@ -38,7 +38,7 @@ A closed format/request JSON envelope. The request contains only models,
 program and, for a `1-draft` program, `libraries`, using the same source selections and complete authored clause bindings
 as native-run/1. It contains no runtime artifacts or execution selection.
 The command shares FR-026's `request_bytes` and `dependent_bytes` intake
-limits, relative-path resolution, source digest checks and existing
+limits, relative-path resolution, source selection checks and existing
 model/compiler stage defaults. A refusal at an intake limit names the
 limit's setting (`request_bytes` or `dependent_bytes`) and its configured
 value.
@@ -57,9 +57,8 @@ build (FR-031). Each model a `1-draft` request
 selects is a domain package
 document in format `semantic-ir/2.0.0`, read and handed
 to spine `compile` as FR-056's package input; the program's `model`
-declarations select from it by `sha256-jcs` digest, and the v2 lock's
-`model_selections` names each selected package by identity and that
-digest, with no version. A `1-draft` request may carry `libraries`: one
+declarations select it by identity, and the package records each selected
+package by its `model_root` node, which carries the identity (QSpec FR-322). A `1-draft` request may carry `libraries`: one
 `{identity, source}` object per supplied library, where `source` is
 the same source selection a model or the program uses (file and the FR-001
 labels), and each library object may carry `refinement_internals`, a JSON
@@ -80,8 +79,7 @@ command-error envelope, with the refusing spine stage (`source`, `forms`,
 code.
 Intake and static failures carry no package bytes, and their outcome carries
 the artifact-command refusal envelope: `format` is `native-run-result/2`, `status` is
-`refused` or `incomplete`, and `request_digest` retains the original request
-digest when available, alongside the stage and code. This artifact envelope
+`refused` or `incomplete`, alongside the stage and code. This artifact envelope
 is outside FR-267's closed `run` command-error reader. On FR-301's six-code
 contract, the outcome's exit code is 20 for refusal, malformed
 requests and I/O failures; a selected model
@@ -94,7 +92,7 @@ are the driver's (FR-287, Overlap).
 ## Behavior
 
 The compiler command shall select native-compile/1 before decoding request fields.
-The compiler command shall read each program unit's declared edition once, in request order, after its digest check and before any model source is read. Only a non-empty program list whose units all declare `1-draft` reaches the compiler; the first other edition refuses with `unknown_edition` at that unit's edition literal, before header agreement is checked. An empty list refuses with `invalid-request`. If the header declares
+The compiler command shall read each program unit's declared edition once, in request order, after its source selection check and before any model source is read. Only a non-empty program list whose units all declare `1-draft` reaches the compiler; the first other edition refuses with `unknown_edition` at that unit's edition literal, before header agreement is checked. An empty list refuses with `invalid-request`. If the header declares
 an edition other than `1-draft`, `0-draft` included, then the compiler command shall
 refuse with `unknown_edition` at stage `profile` at the edition literal, naming the file and the
 edition, whatever members the request carries. If the source does not open
@@ -123,8 +121,8 @@ as a program source. No limit counts library files.
 | FR-027-AC-5 | A native-compile/1 request whose program source declares `edition "1-draft"` and holds a record, an Integer function and a function with parameters writes exactly the bytes the FR-278 composition returns for that source, and QSL's I2 reader reads those bytes back Verified with no node omitted. Two such requests that differ only in the program's `document` and `formal_revision` write identical bytes. | Test (TC-435) |
 | FR-027-AC-7 | A program source declaring `edition "0-draft"`, the same source in a request carrying a library and `refinement_internals`, and a source declaring `edition "7-draft"` each refuse with `unknown_edition` at stage `profile`, exit code 20, no package bytes, and a message naming the file and the edition. A source with no header refuses `invalid_syntax` and one declaring `language "ix:other"` refuses `unknown_language`, each at stage `source`, exit code 20, no package bytes. A `1-draft` request selecting native rule models or clause bindings refuses with `invalid-request`, exit code 20, whatever state the model files are in. | Test (TC-435) |
 | FR-027-AC-8 | A `1-draft` source each spine stage refuses (`source`, `forms`, `assembly`, `check`, `emit`) returns that stage's cause code and reports the stage, with no package bytes. | Test (TC-435) |
-| FR-027-AC-9 | A `1-draft` request selecting a `semantic-ir/2.0.0` domain package document whose program declares `model M` by that document's `sha256-jcs` digest writes exactly the bytes the FR-278 composition returns over the same source and package input. Their lock and identity preimage `model_selections` hold that package's identity, `digest_domain` (`sha256-jcs`) and digest, and no version, and QSL's I2 reader, given that digest as domain package evidence, reads them back Verified. `M::Nope` refuses at stage `assembly` (`missing_declaration`) at `M::Nope`; a missing or different document and a `sha256:` digest refuse at stage `intake` at the `model` declaration. | Test (TC-442) |
-| FR-027-AC-10 | A `1-draft` request whose program imports `test/geometry` and whose `libraries` supplies it by file, source digest and labels writes exactly the bytes the FR-278 composition returns over the same source and dependency input, exit code 0. A `1-draft` request with a library of an empty identity refuses with `invalid-request`, exit code 20, no package bytes; so does one with a library object that has any member besides `identity`, `source` and `refinement_internals`, a `version` for one. | Test (TC-446) |
+| FR-027-AC-9 | A `1-draft` request selecting a `semantic-ir/2.0.0` domain package document whose program declares `model M` by that document's identity writes exactly the bytes the FR-278 composition returns over the same source and package input. Their `model_root` node holds that package's identity, and QSL's I2 reader, given that package as domain package evidence, reads them back Verified. `M::Nope` refuses at stage `assembly` (`missing_declaration`) at `M::Nope`; a missing document or an identity that names no supplied document refuses at stage `intake` at the `model` declaration. | Test |
+| FR-027-AC-10 | A `1-draft` request whose program imports `test/geometry` and whose `libraries` supplies it by file and labels writes exactly the bytes the FR-278 composition returns over the same source and dependency input, exit code 0. A `1-draft` request with a library of an empty identity refuses with `invalid-request`, exit code 20, no package bytes; so does one with a library object that has any member besides `identity`, `source` and `refinement_internals`, a `version` for one. | Test (TC-446) |
 | FR-027-AC-12 | A `1-draft` request carrying `refinement_internals` at its top level and on a library object hands those values to spine `compile` unchanged, and writes exactly the bytes the FR-278 composition returns over the same source, dependency input and refinement internals input, exit code 0; a request with the member absent supplies the empty list. | Test (TC-446) |
 | FR-027-AC-11 | For FR-027-AC-5's, AC-9's and AC-10's requests, the bytes the command writes equal the `package` output of `parse`, `select`, `check` and `package` composed over the same source, domain packages and libraries; for FR-027-AC-8's sources, the refusing operation's stage and cause code equal the command's, and its FR-285 exit code equals the command's exit status. | Test (TC-785) |
 | FR-027-AC-13 | A `1-draft` request whose program source and selected models total less than `dependent_bytes`, and whose one `libraries` source makes the total of all dependent files one byte over it, refuses at intake naming `dependent_bytes` and its configured value, with no package bytes; the same request with `dependent_bytes` raised to that total returns the package bytes FR-027-AC-10 states, exit 0. A `1-draft` request whose program imports 65 libraries, each supplied as its own small `libraries` source file, with every dependent file totalling less than `dependent_bytes`, compiles at the default limits, exit 0: no intake limit counts its files. | Test (TC-105) |

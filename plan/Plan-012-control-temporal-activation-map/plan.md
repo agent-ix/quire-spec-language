@@ -21,7 +21,7 @@ relationships:
   the accepted system clauses.
 - `FR-050 -> FR-054`
   Reason: `/3` carries an unchanged admitted `/2` package plus a new mapping
-  table; it leaves the existing `/2` representation unchanged.
+  table; it cannot alter the frozen `/2` representation.
 
 ## Test Plan
 
@@ -39,7 +39,7 @@ relationships:
 ## Parallel Execution Summary
 
 ```text
-Task-045: specification fixtures -> `/3` wire/producer/reader -> TC-143 -> QProtocol consumer
+Task-045: specification fixtures -> `/3` wire/producer/reader -> TC-143
 ```
 
 ## Task File Mapping
@@ -50,7 +50,7 @@ Task-045: specification fixtures -> `/3` wire/producer/reader -> TC-143 -> QProt
 
 ## Coordination Rules
 
-Keep the existing `/1` and `/2` code, schemas, fixtures and public signatures unchanged. The
+Keep `/1` and `/2` code, schemas, fixtures and public signatures frozen. The
 new mapping comes only from an explicit authored selection and is published in
 the new `/3` artifact; QProtocol must not begin consumption until this task has
 an admitted owner view.

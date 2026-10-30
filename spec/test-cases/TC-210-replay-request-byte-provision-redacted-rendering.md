@@ -30,13 +30,13 @@ dependency source file's full bytes into the log. Scope: FR-073-AC-2.
    entry's bytes longer than a short bounded excerpt, and compare each
    output's total length against the entry's raw byte length.
 5. Look up the same byte-provision entry directly through the request's
-   typed accessor (by its digest) and confirm it returns the full,
+   typed accessor (by its identity) and confirm it returns the full,
    unredacted 4 KiB of bytes constructed in step 1.
 
 ## Expected Results
 
 - Neither captured output (steps 2, 3) contains a long contiguous run of
-  the entry's raw bytes; each shows at most the entry's digest or a short
+  the entry's raw bytes; each shows at most the entry's identity or a short
   bounded excerpt.
 - Neither captured output's length scales with the entry's raw byte
   length.

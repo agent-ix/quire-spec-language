@@ -154,7 +154,7 @@ pub enum CompileRefusal {
         failure: ClauseTextRefusal,
     },
     /// E3 (FR-110): a header profile selection does not resolve against the
-    /// `DefinitionLock` catalog.
+    /// closed `DefinitionRole` set.
     #[error("header profile `{}` does not resolve: {}/{}", .refusals[0].alias, .refusals[0].code().as_str(), .refusals[0].cause())]
     Profile {
         /// Every refusing profile in source order, never empty.
@@ -1445,9 +1445,15 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 TemporalCause::TimedPredicate { .. } => {
                     format!("{message}: a timed model's predicate does not check")
                 }
-                TemporalCause::TimedModelNotEmitted { model, .. } => format!(
-                    "{message}: the clocks of timed model `{model}` are not written to the \
-                     checked package yet"
+                TemporalCause::TimedModelNotEmitted { model, member, .. } => format!(
+                    "{message}: timed model `{model}` is not written to the checked package \
+                     yet: {}",
+                    member.description()
+                ),
+                TemporalCause::ExcludedClauseForm { model, form, .. } => format!(
+                    "{message}: timed model `{model}` has a clause form the checked package \
+                     excludes: {}",
+                    form.description()
                 ),
                 TemporalCause::MalformedTimeUnit { name, .. } => {
                     format!("{message}: the time unit `{name}` has a zero scale")
@@ -1931,7 +1937,7 @@ mod tests {
     use ix_trace_rs::trace;
     use qsl_foundation::{Code, SourceIdentity, Span};
     use qsl_semantics::check::{CheckCause, CheckRefusal, HybridCause, ProtocolAnchorCause};
-    use qsl_semantics::value::{CatalogRole, DefinitionLock};
+    use qsl_semantics::value::DefinitionRole;
     use quire_exact::{Integer, IntegerInterval, ValueType};
     use quire_semantic_value::checking::CheckingLimits;
     use quire_semantic_value::location::{Location, Origin};
@@ -2319,8 +2325,8 @@ mod tests {
     }
 
     /// FR-110 (TC-490): E3 resolves a header profile by identity alone. It
-    /// admits the `DefinitionLock` catalog's `root` row and refuses every
-    /// other identity with its catalogued code and cause, all of them in
+    /// admits the `root` role and refuses every other identity with its
+    /// typed code and cause, all of them in
     /// source order.
     #[trace(
         "TC-490",
@@ -2332,12 +2338,11 @@ mod tests {
     )]
     #[test]
     fn a_header_profile_resolves_by_identity_against_the_root_row() {
-        let lock = DefinitionLock::pinned();
-        let root = lock.entry(CatalogRole::Root);
+        let root = DefinitionRole::Root.reference();
 
         // Step 1 (AC-1): compiles; the lock selects the root row once.
         let compiled =
-            compile_header(&profile_line("v", root.identity)).expect("the root identity resolves");
+            compile_header(&profile_line("v", &root.identity)).expect("the root identity resolves");
         let wire: serde_json::Value = serde_json::from_slice(compiled.emitted.bytes()).unwrap();
         assert_eq!(wire["lock"]["profile_selections"], serde_json::json!([]));
         let selected: Vec<_> = wire["lock"]["definition_selections"]
@@ -2346,7 +2351,7 @@ mod tests {
             .iter()
             .filter(|row| row["identity"] == root.identity)
             .collect();
-        assert_eq!(selected, [&serde_json::to_value(root.reference()).unwrap()]);
+        assert_eq!(selected, [&serde_json::to_value(&root).unwrap()]);
 
         // Step 2 (AC-2): an identity in no catalog.
         let header = profile_line("v", "test:unknown-profile");
@@ -2359,33 +2364,33 @@ mod tests {
         assert_eq!(first.cause(), "unsupported-selection");
         assert_eq!(first.alias, "v");
         assert_eq!(first.selected, "test:unknown-profile");
-        assert_eq!(first.required_role, CatalogRole::Root);
+        assert_eq!(first.required_role, DefinitionRole::Root);
         let unit = format!("language \"ix:native\" edition \"1-draft\";\n{header}");
         let region = refusal.region().expect("the refusal is located");
         let start = usize::try_from(region.start()).unwrap();
         let end = usize::try_from(region.end()).unwrap();
         assert_eq!(&unit[start..end], "\"test:unknown-profile\"");
 
-        // Step 3 (AC-3): another catalog row's identity.
-        for role in [CatalogRole::IeeeProfile, CatalogRole::Edition] {
-            let row = lock.entry(role);
-            let refusal = compile_header(&profile_line("v", row.identity))
+        // Step 3 (AC-3): another closed role's identity.
+        for role in [DefinitionRole::IeeeProfile, DefinitionRole::Edition] {
+            let reference = role.reference();
+            let refusal = compile_header(&profile_line("v", &reference.identity))
                 .expect_err("another row's identity refuses");
             assert_eq!(refusal.code(), Code::UnknownProfile);
             let [first] = profile_refusals(&refusal) else {
                 panic!("expected one refusal");
             };
             assert_eq!(first.cause(), "wrong-selection-role");
-            assert_eq!(first.selected, row.identity);
-            assert_eq!(first.required_role, CatalogRole::Root);
+            assert_eq!(first.selected, reference.identity);
+            assert_eq!(first.required_role, DefinitionRole::Root);
         }
 
         // Step 4 (AC-6): every refusing profile, in source order.
-        let ieee = lock.entry(CatalogRole::IeeeProfile);
+        let ieee = DefinitionRole::IeeeProfile.reference();
         let header = format!(
             "{}{}{}",
-            profile_line("v", root.identity),
-            profile_line("w", ieee.identity),
+            profile_line("v", &root.identity),
+            profile_line("w", &ieee.identity),
             profile_line("x", "test:unknown-profile"),
         );
         let refusal = compile_header(&header).expect_err("w and x refuse");
@@ -2401,8 +2406,8 @@ mod tests {
         );
         compile_header(&format!(
             "{}{}",
-            profile_line("v", root.identity),
-            profile_line("u", root.identity)
+            profile_line("v", &root.identity),
+            profile_line("u", &root.identity)
         ))
         .expect("two root selections resolve");
     }

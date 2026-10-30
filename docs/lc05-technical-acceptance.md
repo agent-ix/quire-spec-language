@@ -48,11 +48,11 @@ nice -n 10 cargo run --locked --offline --target-dir target -j 1 --features quir
 | Native source path | generated `program.native` → model/link/check/package pipeline |
 | Quire source path | generated `rules.md` → Rust extractor → mapped compiler intake |
 | Runtime inputs | generated snapshot/invocation files with case-specific identities |
-| Compiled artifact | `native-linked-package/1`, selected and verified by exact digest |
+| Compiled artifact | `native-linked-package/1`, selected by artifact identity |
 | Result | native runtime report with completed/refused/incomplete stage and provenance |
 | Qualification | FR-032, TC-110 and `tests/config_version.rs` |
 
-All selected digests are derived from actual emitted bytes. Native and extracted
+Selected artifacts are named by identity. Native and extracted
 source identities remain distinct. Generated example inputs are not independent
 execution evidence; the Rust integration tests and actual command results own
 the outcome assertions.

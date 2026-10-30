@@ -27,7 +27,7 @@ units, and the edited envelopes FR-170-AC-3 and AC-4 name.
 3. Replay the truncated witness, the trap whose stem ends at `Mid`, the path
    pair with equal sequences, and the `CanStillWin` trap in an envelope for
    its `from` variant.
-4. Replay a witness with an altered digest, one with a step that is not
+4. Replay a witness with a step that is not
    enabled, one missing a path for an initial state, and one with an
    `initial` index of 1 over a one-snapshot subject; replay `ReachesThree`'s
    trap with `max_states` 2; replay one envelope twice.
@@ -44,11 +44,11 @@ Tag the tests `#[trace("TC-595", "FR-170-AC-n")]`.
 - Step 2: the first explores 9 nodes and reproduces; the second re-executes
   `play, lose`, explores `{Lost}` and reproduces; the third reproduces.
 - Step 3: each settles `inconclusive`, `Verdicts`.
-- Step 4: four refusals with no result; a stopped replay result naming
+- Step 4: three refusals with no result; a stopped replay result naming
   `max_states` and 2; equal results.
 - Step 5: the lasso replays its loop; the moved loop entry refuses; the
   product trap goes to FR-181's replay.
 - Step 6: the first explores `{Lost}`, reports node count 1, reproduces and
   settles `refuted`, `closed-scope` with no certificate checked; the second
-  settles `inconclusive`, `Verdicts` naming `Won`'s state-key digest as the
+  settles `inconclusive`, `Verdicts` naming `Won`'s state key as the
   first target node.

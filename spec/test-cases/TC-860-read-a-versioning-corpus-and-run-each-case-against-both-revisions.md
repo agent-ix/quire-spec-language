@@ -11,7 +11,7 @@ relationships:
 ## Description
 
 Verify FR-340's corpus reading and case running: a well-formed pair runs
-every case against both revisions with no expected `package_id`; each
+every case against both revisions; each
 malformed pair is one tool-failure result and the rest still run; the
 direction is the pair's `prior`/`superseding` naming; limits default or
 are taken from the case; and the report does not depend on where the corpus
@@ -49,7 +49,7 @@ Tag the tests `#[trace("TC-860", "FR-340-AC-n")]`.
 ## Expected Results
 
 - Step 1: two case results, each naming both `RawSourceRef`s and its
-  selection; neither run was given an expected `package_id`.
+  selection.
 - Step 2: exactly eight pair-level tool-failure results, each naming its
   `pair.json` path and its defect (not JSON; missing `superseding`; unknown
   member `expected`; path outside the pair directory; absolute path;

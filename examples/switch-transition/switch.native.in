@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Boolean Switch transition source (FR-105-AC-13); template: the model digest is derived at emit time.
+// Boolean Switch transition source (FR-105-AC-13).
 language "ix:native" edition "1-draft";
 profile v = "quire.value.complete/v1";
 profile p = "quire.protocol.finite-global/v1";
-model M = "test/orders" version "1" digest "sha256-jcs:{model_digest}";
+model M = "test/orders";
 post Q1 using v on M::Switch::set { self.on }
 
