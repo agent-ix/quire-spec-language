@@ -9,13 +9,13 @@ use ix_trace_rs::trace;
 use qsl_forms::build_unit;
 use qsl_foundation::{SourceIdentity, Span};
 use qsl_semantics::check::{
-    AssemblyCause, CheckCause, CheckRefusal, CheckedGraph, PackageDeclarations,
+    ApplicationTerm, AssemblyCause, BodyTerm, CheckCause, CheckRefusal, CheckedGraph,
+    PackageDeclarations, SemanticNode,
 };
 use qsl_semantics::model::intake::SelectedModels;
 use quire_exact::IllTypedCause;
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::location::Origin;
-use serde_json::Value;
 
 use crate::model_operations::{admit_and_assemble_with_body, tc465_document};
 
@@ -46,7 +46,13 @@ fn assemble(
     declarations: &str,
 ) -> Result<PackageDeclarations, qsl_semantics::check::AssemblyRefusal> {
     let (_, unit, source) = parse(declarations);
-    PackageDeclarations::assemble(source, unit, SelectedModels::default(), Vec::new())
+    PackageDeclarations::assemble(
+        source,
+        "fixture".to_string(),
+        unit,
+        SelectedModels::default(),
+        Vec::new(),
+    )
 }
 
 fn check(declarations: &str) -> Result<CheckedGraph, Vec<CheckRefusal>> {
@@ -55,11 +61,17 @@ fn check(declarations: &str) -> Result<CheckedGraph, Vec<CheckRefusal>> {
         .check(CheckingLimits::default())
 }
 
-fn preimages(graph: &CheckedGraph) -> Vec<Value> {
-    graph
-        .semantic_graph()
-        .nodes()
-        .map(|node| serde_json::from_slice(node.preimage()).expect("a JSON preimage"))
+fn nodes(graph: &CheckedGraph) -> Vec<&SemanticNode> {
+    graph.semantic_graph().nodes().collect()
+}
+
+/// The application of every node whose body is one.
+fn applications<'a>(all: &[&'a SemanticNode]) -> Vec<&'a ApplicationTerm> {
+    all.iter()
+        .filter_map(|node| match node.body() {
+            BodyTerm::Application(term) => Some(term),
+            _ => None,
+        })
         .collect()
 }
 
@@ -135,7 +147,7 @@ fn each_native_comparison_lowers_to_its_native_equality_identity() {
          function net using v(a: Timestamp, b: Timestamp): Boolean pure { a != b }",
     )
     .expect("every native comparison checks");
-    let all = preimages(&graph);
+    let all = applications(&nodes(&graph));
     for identity in [
         "quire.op.string.eq",
         "quire.op.string.ne",
@@ -144,31 +156,21 @@ fn each_native_comparison_lowers_to_its_native_equality_identity() {
         "quire.op.timestamp.eq",
         "quire.op.timestamp.ne",
     ] {
-        let found: Vec<&Value> = all
+        let found: Vec<&&ApplicationTerm> = all
             .iter()
-            .filter(|preimage| preimage["body"]["operation"]["identity"] == identity)
+            .filter(|term| term.operation.identity() == identity)
             .collect();
         assert_eq!(found.len(), 1, "{identity} is one node");
-        let operation = &found[0]["body"]["operation"];
-        assert_eq!(operation["laws"], serde_json::json!([]), "{identity} laws");
-        assert_eq!(
-            operation["leaves"],
-            serde_json::json!([]),
-            "{identity} leaves"
-        );
-        assert_eq!(operation["member"], Value::Null, "{identity} member");
-        assert_eq!(operation["mode"], Value::Null, "{identity} mode");
-        assert_eq!(
-            found[0]["body"]["arguments"].as_array().map(Vec::len),
-            Some(2),
-            "{identity} is binary"
-        );
+        let operation = &found[0].operation;
+        assert!(operation.laws().is_empty(), "{identity} laws");
+        assert!(operation.leaves().is_empty(), "{identity} leaves");
+        assert!(operation.member().is_none(), "{identity} member");
+        assert!(operation.mode().is_none(), "{identity} mode");
+        assert_eq!(found[0].arguments.len(), 2, "{identity} is binary");
     }
     assert!(
         all.iter()
-            .all(|preimage| !preimage["body"]["operation"]["identity"]
-                .as_str()
-                .is_some_and(|identity| identity.starts_with("quire.op.text."))),
+            .all(|term| !term.operation.identity().starts_with("quire.op.text.")),
         "no text-profile equality is selected"
     );
 }

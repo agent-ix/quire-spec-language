@@ -4,11 +4,14 @@
 
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
-use qsl_semantics::check::{AssemblyCause, CheckCause, CheckedGraph};
+use qsl_semantics::check::{
+    AggregateTerm, AssemblyCause, BindingValue, BodyTerm, CheckCause, CheckedGraph, GroupMember,
+    LeafTerm, MemberTerm, SemanticNode, TupleMember,
+};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::admit_unit;
 use quire_checked::key::DeclarationKey;
-use quire_exact::{IllTypedCause, ValueType};
+use quire_exact::{IllTypedCause, NodeKey, ValueType};
 use serde_json::{json, Value};
 
 use crate::model_operations::{
@@ -41,39 +44,65 @@ fn document() -> Vec<u8> {
     )])
 }
 
-/// Every semantic node's preimage, by its key's hex digest.
-fn preimages(graph: &CheckedGraph) -> Vec<(String, Value)> {
-    graph
-        .semantic_graph()
-        .nodes()
-        .map(|node| {
-            (
-                node.key().to_string(),
-                serde_json::from_slice(node.preimage()).expect("a JSON preimage"),
-            )
-        })
-        .collect()
+/// The node a leaf references, when it references one.
+fn leaf_target(leaf: &LeafTerm, found: &mut Vec<NodeKey>) {
+    if let LeafTerm::Reference { target } = leaf {
+        found.extend(target.admitted().cloned());
+    }
 }
 
-/// The digest of each reference target under `term`, in order.
-fn targets(term: &Value) -> Vec<String> {
+/// The referenced node of each reference leaf under `term`, in order.
+fn targets(term: &MemberTerm) -> Vec<NodeKey> {
     let mut found = Vec::new();
-    let mut pending = vec![term];
-    while let Some(term) = pending.pop() {
-        match term {
-            Value::Object(members) => {
-                if let Some(Value::String(digest)) =
-                    term.get("target").and_then(|t| t.get("digest"))
-                {
-                    found.push(digest.clone());
-                }
-                pending.extend(members.values().rev());
+    let group = |group: &qsl_semantics::check::GroupTerm, found: &mut Vec<NodeKey>| {
+        for member in &group.members {
+            match member {
+                GroupMember::Leaf(leaf) => leaf_target(leaf, found),
+                GroupMember::Binding(binding) => leaf_target(&binding.value, found),
             }
-            Value::Array(items) => pending.extend(items.iter().rev()),
-            _ => {}
         }
+    };
+    match term {
+        MemberTerm::Leaf(leaf) => leaf_target(leaf, &mut found),
+        MemberTerm::Group(inner) => group(inner, &mut found),
+        MemberTerm::Binding(binding) => match &binding.value {
+            BindingValue::Leaf(leaf) => leaf_target(leaf, &mut found),
+            BindingValue::Group(inner) => group(inner, &mut found),
+            BindingValue::Tuple(tuple) => {
+                for member in &tuple.members {
+                    match member {
+                        TupleMember::Leaf(leaf) => leaf_target(leaf, &mut found),
+                        TupleMember::Group(inner) => group(inner, &mut found),
+                    }
+                }
+            }
+            _ => {}
+        },
     }
     found
+}
+
+/// The members of a node whose body is an aggregate.
+fn members(node: &SemanticNode) -> &[MemberTerm] {
+    let BodyTerm::Aggregate(AggregateTerm { members }) = node.body() else {
+        panic!("an aggregate body: {:?}", node.body());
+    };
+    members
+}
+
+/// The referenced nodes of an `Option` or `Set` node's body.
+fn body_targets(node: &SemanticNode) -> Vec<NodeKey> {
+    match node.body() {
+        BodyTerm::Leaf(leaf) => {
+            let mut found = Vec::new();
+            leaf_target(leaf, &mut found);
+            found
+        }
+        BodyTerm::Aggregate(AggregateTerm { members }) => {
+            members.iter().flat_map(targets).collect()
+        }
+        other => panic!("a leaf or aggregate body: {other:?}"),
+    }
 }
 
 /// Part of FR-230-AC-15 (TC-685 step 17): with dimension `Time`, root `s` and `ms`
@@ -104,66 +133,53 @@ fn quantity_types_check_in_every_position_over_the_one_unit_node() {
         .expect("every position assembles")
         .check(quire_semantic_value::checking::CheckingLimits::default())
         .expect("every position checks");
-    let nodes = preimages(&graph);
-    let unit = nodes
-        .iter()
-        .find(|(_, preimage)| {
-            preimage["version"] == "quire.unit-node/v1"
-                && preimage["qualified_declaration"] == json!(["ms"])
+    let semantic = graph.semantic_graph();
+    let named = |name: &str| {
+        semantic.nodes().find(|node| {
+            node.declaration()
+                .is_some_and(|path| path.len() == 1 && path[0].as_str() == name)
         })
-        .map(|(key, _)| key.clone())
-        .expect("the nominal unit node of ms");
-    let declared = |name: &str| {
-        nodes
-            .iter()
-            .find(|(_, preimage)| preimage["declaration"]["qualified_name"] == json!([name]))
-            .map(|(_, preimage)| preimage.clone())
     };
-    assert!(declared("Span").is_none(), "an alias has no node");
-    let window = declared("Window").expect("the Window record");
-    let members = window["body"]["members"]
-        .as_array()
-        .expect("record members");
+    let unit = named("ms").expect("the nominal unit node of ms").key();
+    assert!(named("Span").is_none(), "an alias has no node");
+    let window = named("Window").expect("the Window record");
+    let fields = members(window);
     assert_eq!(
-        targets(&members[0]),
+        targets(&fields[0]),
         std::slice::from_ref(&unit),
         "d is typed by ms"
     );
-    let option = targets(&members[2]);
+    let option = targets(&fields[2]);
     let [option] = option.as_slice() else {
         panic!("o is typed by one composite: {option:?}");
     };
-    let (_, option) = nodes
-        .iter()
-        .find(|(key, _)| key == option)
-        .expect("the Option node");
-    assert_eq!(option["semantic_form"], "option");
-    assert_eq!(targets(&option["body"]), std::slice::from_ref(&unit));
-    let set = targets(&members[3]);
+    let option = semantic.node(option.clone()).expect("the Option node");
+    assert_eq!(option.semantic_form(), "option");
+    assert_eq!(body_targets(option), std::slice::from_ref(&unit));
+    let set = targets(&fields[3]);
     let [set] = set.as_slice() else {
         panic!("marks is typed by one composite: {set:?}");
     };
-    let (_, set) = nodes
-        .iter()
-        .find(|(key, _)| key == set)
-        .expect("the Set node");
-    assert_eq!(targets(&set["body"]), std::slice::from_ref(&unit), "{set}");
+    let set = semantic.node(set.clone()).expect("the Set node");
+    assert_eq!(body_targets(set), std::slice::from_ref(&unit));
     for (name, position) in [("Pair", 0), ("Bound", 0)] {
-        let node = declared(name).expect("the composite");
-        let member = &node["body"]["members"][position];
-        assert_eq!(targets(member), std::slice::from_ref(&unit), "{name}");
+        let node = named(name).expect("the composite");
+        assert_eq!(
+            targets(&members(node)[position]),
+            std::slice::from_ref(&unit),
+            "{name}"
+        );
     }
     for function in ["f", "p"] {
-        let node = declared(function).expect("the function");
-        let parameter = targets(&node["body"]["members"][0]);
-        let (_, parameter) = nodes
-            .iter()
-            .find(|(key, _)| Some(key) == parameter.first())
+        let node = named(function).expect("the function");
+        let parameters = node.function_parameters().expect("a function node");
+        let parameter = semantic
+            .node(parameters[0].clone())
             .expect("the parameter node");
         assert_eq!(
-            parameter["semantic_type"]["digest"],
-            json!(unit),
-            "{function}'s parameter is typed by ms: {parameter}"
+            parameter.semantic_type(),
+            Some(unit.clone()),
+            "{function}'s parameter is typed by ms"
         );
     }
 

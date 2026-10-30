@@ -549,8 +549,13 @@ pub(crate) fn assemble(
         ModelNormalizationLimits::default(),
     )
     .unwrap_or_else(|refusal| panic!("I1 refused: {refusal:?}"));
-    let declarations =
-        PackageDeclarations::assemble(parsed.source().reference().clone(), built, selected, vec![]);
+    let declarations = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        "fixture".to_string(),
+        built,
+        selected,
+        vec![],
+    );
     (text, declarations)
 }
 
