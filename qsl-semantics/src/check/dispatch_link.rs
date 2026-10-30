@@ -172,6 +172,7 @@ impl PackageDeclarations {
                         &root,
                         clauses,
                         self.source.clone(),
+                        self.package_name.clone(),
                         &mut meter,
                         self.identity,
                     )

@@ -2857,7 +2857,7 @@ pub enum ExecutionPointRefusal {
 
 /// The invariant [`CheckCause::InternalFault`] names, with the value that
 /// broke it.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum KeyFault {
     /// An accepted execution point its clause cannot carry (QSpec FR-341,
     /// FR-342): the variant is inapplicable to the clause kind, or its
@@ -2911,7 +2911,8 @@ pub enum KeyFault {
     /// one version of each (FR-094, ADR-013 O-01).
     DuplicateModelSelection(String),
     /// A selected model package's `model_root` node has no key.
-    ModelRootKey(quire_exact::InvalidNodeKey),
+    /// The text of the key formation refusal.
+    ModelRootKey(String),
     /// An admitted enum declaration or member whose nominal preimage has no
     /// RFC 8785 encoding.
     NonCanonicalNominal(quire_exact::NodeKey),

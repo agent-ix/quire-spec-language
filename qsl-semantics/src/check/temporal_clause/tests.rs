@@ -60,6 +60,7 @@ fn assemble(text: &str) -> PackageDeclarations {
     let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
     PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         unit,
         crate::model::intake::SelectedModels::default(),
         Vec::new(),

@@ -1892,6 +1892,7 @@ mod tests {
     ) -> NodeKey {
         let mut package = crate::check::PackageDeclarations::new(
             fixture_source(),
+            "fixture",
             qsl_foundation::IdentityLimits::default(),
         );
         package.types = types.clone();
@@ -3446,6 +3447,7 @@ pub(crate) mod checking_tests {
                 functions: vec![declaration(name, Expression::boolean(true))],
                 ..crate::check::PackageDeclarations::new(
                     super::fixtures::fixture_source(),
+                    "fixture",
                     qsl_foundation::IdentityLimits::default(),
                 )
             }
@@ -3565,6 +3567,7 @@ pub(crate) mod checking_tests {
                 .collect(),
             ..crate::check::PackageDeclarations::new(
                 super::fixtures::fixture_source(),
+                "fixture",
                 qsl_foundation::IdentityLimits::default(),
             )
         }
@@ -3634,6 +3637,7 @@ mod locus_tests {
         let forms = build_unit(&parsed).expect("S2 builds the unit");
         PackageDeclarations::assemble(
             parsed.source().reference().clone(),
+            "fixture".to_owned(),
             forms,
             Vec::new(),
             Vec::new(),
@@ -3768,6 +3772,7 @@ mod locus_tests {
         let forms = build_unit(&parsed).expect("S2 builds the unit");
         let unit = PackageDeclarations::assemble(
             parsed.source().reference().clone(),
+            "fixture".to_owned(),
             forms,
             Vec::new(),
             Vec::new(),

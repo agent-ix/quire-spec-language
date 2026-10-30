@@ -896,7 +896,8 @@ fn substitute_names(expression: &Expression, rename: &BTreeMap<String, String>) 
 /// FR-151 dispatch-eligible operation, and assembles the checked-layer
 /// [`DispatchTable`] the evaluator needs. See the module docs for this
 /// bridge's exact scope. `source` is the checked package's
-/// [`PackageDeclarations::source`], the source unit's `RawSourceRef`. Each synthesized
+/// [`PackageDeclarations::source`], the source unit's `RawSourceRef`, and
+/// `package_name` its manifest's top-level name. Each synthesized
 /// clause function is keyed with its own `ModelOwner` instead (FR-094): the
 /// authoring operation member for an authored precondition, the candidate
 /// for an effective precondition and a body. The returned package admits
@@ -908,6 +909,7 @@ pub fn checked_dispatch_operation(
     root: &DispatchRoot,
     clauses: &OperationClauses,
     source: qsl_foundation::source::provenance::RawSourceRef,
+    package_name: String,
     meter: &mut Meter,
     identity: qsl_foundation::IdentityLimits,
 ) -> Result<PackageDeclarations, DispatchBridgeRefusal> {
@@ -1212,7 +1214,7 @@ pub fn checked_dispatch_operation(
         resolved_signatures,
         models: vec![model],
         model_clauses,
-        ..PackageDeclarations::new(source, identity)
+        ..PackageDeclarations::new(source, package_name, identity)
     })
 }
 
@@ -1238,6 +1240,7 @@ pub fn checked_dispatch_selected_operation(
         root,
         clauses,
         source,
+        "fixture".to_owned(),
         &mut meter,
         identity,
     )?;
