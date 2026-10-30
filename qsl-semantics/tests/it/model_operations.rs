@@ -2680,7 +2680,7 @@ fn admission_is_deterministic_regardless_of_document_order() {
             package: PACKAGE_IDENTITY.to_owned(),
             node: audit_log.clone(),
         }].clone();
-        let declared = |id| {
+        let declared = |id: quire_exact::EffectiveId| {
             (
                 declarations
                     .types

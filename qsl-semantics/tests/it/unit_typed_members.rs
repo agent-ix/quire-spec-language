@@ -5,7 +5,7 @@
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
 use qsl_semantics::check::{
-    AggregateTerm, AssemblyCause, BindingValue, BodyTerm, CheckCause, CheckedGraph, GroupMember,
+    AggregateTerm, AssemblyCause, BindingValue, BodyTerm, CheckCause, GroupMember,
     LeafTerm, MemberTerm, SemanticNode, TupleMember,
 };
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -625,12 +625,12 @@ fn unit_bounds_reach_records_aliases_of_aliases_and_every_node() {
                 quire_exact::Integer::from(1_i64),
             )
             .expect("a rational"),
-            ms,
+            ms.clone(),
         ))
     };
     let held = |magnitude: i64| {
         quire_exact::from_admitted_slots(
-            span,
+            span.clone(),
             vec![quire_exact::FieldValue::Present(quantity(magnitude))].into_boxed_slice(),
         )
     };
