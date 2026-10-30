@@ -87,14 +87,13 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use quire_contract_model::{
     derive_structural_candidates, encode_checked_package_v2, CheckedArtifactRef, CheckedCapability,
     CheckedCapabilityDisposition, CheckedDeclaration, CheckedDependencySelection,
-    CheckedDiagnosticsV2, CheckedNodeId, CheckedNodeKind, CheckedNodeOwner, CheckedNodeTag,
-    CheckedOccurrence, CheckedOccurrenceRole, CheckedOperationAnchorBody, CheckedPackageEvidence,
-    CheckedNodePathSegment, CheckedPackageLockV2,
-    CheckedPackageSourceCorrespondenceRef, CheckedPackageV2, CheckedRational,
-    CheckedRefinementStepRowRegion, CheckedSelection, CheckedSelectionRole, CheckedSemanticGraphV2,
-    CheckedSemanticNodeV2, CheckedSourceMapEntry, CheckedSourceRef,
-    CheckedSourceRegion, CheckedTerm, ExecutionPoint, NominalIdentityPreimage, NominalOwner,
-    ProtocolForm, StateForm, ValueForm,
+    CheckedDiagnosticsV2, CheckedNodeId, CheckedNodeKind, CheckedNodeOwner, CheckedNodePathSegment,
+    CheckedNodeTag, CheckedOccurrence, CheckedOccurrenceRole, CheckedOperationAnchorBody,
+    CheckedPackageEvidence, CheckedPackageLockV2, CheckedPackageSourceCorrespondenceRef,
+    CheckedPackageV2, CheckedRational, CheckedRefinementStepRowRegion, CheckedSelection,
+    CheckedSelectionRole, CheckedSemanticGraphV2, CheckedSemanticNodeV2, CheckedSourceMapEntry,
+    CheckedSourceRef, CheckedSourceRegion, CheckedTerm, ExecutionPoint, NominalIdentityPreimage,
+    NominalOwner, ProtocolForm, StateForm, ValueForm,
 };
 use serde::Deserialize;
 
@@ -111,7 +110,9 @@ use qsl_semantics::value::{
     native_diagnostics_catalog, DefinitionReference, DefinitionRole, HeaderLayer, Member,
     ModelRole, NodeOwner, TemporalRole,
 };
-use quire_exact::{Cancel, Integer, NodeKey, NodeKeyView, NodePathIter, Origin, PathSegment, PathSegmentView, Role};
+use quire_exact::{
+    Cancel, Integer, NodeKey, NodeKeyView, NodePathIter, Origin, PathSegment, PathSegmentView, Role,
+};
 use quire_semantic_value::location::Location;
 
 use super::{CheckedPackage, EmittedPackage};
@@ -499,8 +500,12 @@ pub(crate) fn admitted_key(id: &CheckedNodeId) -> Result<NodeKey, EmitRefusal> {
                 parents.push(std::mem::replace(&mut current, frame(nested)));
             }
             None => {
-                let key = NodeKey::new(current.package, std::mem::take(&mut current.path), current.ordinal)
-                    .map_err(|_| EmitRefusal::SourceMapInvariant)?;
+                let key = NodeKey::new(
+                    current.package,
+                    std::mem::take(&mut current.path),
+                    current.ordinal,
+                )
+                .map_err(|_| EmitRefusal::SourceMapInvariant)?;
                 let Some(mut parent) = parents.pop() else {
                     return Ok(key);
                 };
@@ -538,7 +543,9 @@ impl BodyNames {
         match body {
             BodyTerm::Application(application) => {
                 let operation = &application.operation;
-                names.annotations.insert(admitted_id(&application.result_type)?);
+                names
+                    .annotations
+                    .insert(admitted_id(&application.result_type)?);
                 if let Some(declaration) = operation.member().and_then(Member::declaration) {
                     names.dependencies.insert(node_id(declaration));
                 }
@@ -557,7 +564,9 @@ impl BodyNames {
             // names among the frame's own `dependencies`.
             BodyTerm::Frame(frame) => {
                 for entry in &frame.modifies {
-                    names.dependencies.insert(admitted_id(&entry.declaration())?);
+                    names
+                        .dependencies
+                        .insert(admitted_id(&entry.declaration())?);
                 }
                 for node in frame.creates.iter().chain(&frame.deletes) {
                     names.dependencies.insert(admitted_id(node)?);
@@ -2044,11 +2053,12 @@ fn candidates_of<'g>(
     // declaration it was read from; the nodes it names that the graph does not
     // hold are `generated`, at the first.
     if let Some(nodes) = abstraction {
-        let mut add = |node: &'g SemanticNode, occurrences: Recorded<'g>| -> Result<_, EmitRefusal> {
-            let candidate = Candidate::of(node, occurrences)?;
-            candidates.entry(candidate.id.clone()).or_insert(candidate);
-            Ok(())
-        };
+        let mut add =
+            |node: &'g SemanticNode, occurrences: Recorded<'g>| -> Result<_, EmitRefusal> {
+                let candidate = Candidate::of(node, occurrences)?;
+                candidates.entry(candidate.id.clone()).or_insert(candidate);
+                Ok(())
+            };
         let declared = (0_u64..)
             .zip(nodes.sites())
             .map(|(ordinal, site)| {

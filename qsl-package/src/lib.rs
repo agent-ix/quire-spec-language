@@ -45,8 +45,8 @@ pub use checked_v2::{
 };
 #[cfg(feature = "std")]
 pub use emit::{
-    checked_occurrence, emit_checked, emit_checked_with_cancel, emit_package,
-    emit_timed_models, Emission, EmitRefusal, OmissionCause, OmittedNode, TimedOrderFault,
+    checked_occurrence, emit_checked, emit_checked_with_cancel, emit_package, emit_timed_models,
+    Emission, EmitRefusal, OmissionCause, OmittedNode, TimedOrderFault,
 };
 pub use export::{export_bindings, BoundItem, ExportRefusal, UnboundElement};
 

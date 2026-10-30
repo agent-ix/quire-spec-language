@@ -558,9 +558,7 @@ impl CheckedPackage {
     /// none.
     #[cfg(feature = "std")]
     pub fn emitted_package_name(&self) -> Option<&str> {
-        self.emission
-            .get()
-            .map(|emission| emission.package.name())
+        self.emission.get().map(|emission| emission.package.name())
     }
 
     /// This package's own checked declarations (S3's stage output) -- the

@@ -71,10 +71,9 @@ use std::sync::Arc;
 
 use quire_contract_model::{
     read_checked_package, CheckedOccurrenceRole, CheckedPackageDispatchResult,
-    CheckedPackageEvidence, CheckedPackageIncomplete,
-    CheckedPackageLimit, CheckedPackageReadLimits, CheckedPackageRefusal,
-    CheckedPackageRefusalCode, CheckedPackageV2, CheckedSourceMapEntry, CheckedSourceRef,
-    CheckedSourceRegion, CHECKED_PACKAGE_V2,
+    CheckedPackageEvidence, CheckedPackageIncomplete, CheckedPackageLimit,
+    CheckedPackageReadLimits, CheckedPackageRefusal, CheckedPackageRefusalCode, CheckedPackageV2,
+    CheckedSourceMapEntry, CheckedSourceRef, CheckedSourceRegion, CHECKED_PACKAGE_V2,
 };
 
 use qsl_foundation::diagnostic::{
@@ -418,8 +417,7 @@ fn source_region(region: &CheckedSourceRegion) -> Result<SourceRegion, SourceMap
 fn occurrence(
     entry: &CheckedSourceMapEntry,
 ) -> Result<(OccurrenceKey, Vec<SourceRegion>), SourceMapDefect> {
-    let node = crate::emit::admitted_key(&entry.node_id)
-        .map_err(|_| SourceMapDefect::NodeId)?;
+    let node = crate::emit::admitted_key(&entry.node_id).map_err(|_| SourceMapDefect::NodeId)?;
     let origin = Origin::new(Role::new(role_spelling(&entry.role)), entry.ordinal);
     let regions = entry
         .regions
@@ -462,7 +460,10 @@ impl V2ReadRefusal {
         match self {
             Self::UnsupportedVersion { locus, .. } => Some(locus),
             Self::Envelope { locus, .. } => locus.as_deref(),
-            Self::Structural(_) | Self::IdentityMismatch { .. } | Self::SourceMap(_) | Self::Fault(_) => None,
+            Self::Structural(_)
+            | Self::IdentityMismatch { .. }
+            | Self::SourceMap(_)
+            | Self::Fault(_) => None,
         }
     }
 
@@ -690,11 +691,19 @@ pub(crate) fn read_checked_package_v2(
                 };
                 let key = match crate::emit::admitted_key(&node.node_id) {
                     Ok(key) => key,
-                    Err(_) => return refused(V2ReadRefusal::Fault(InternalFault::new(
-                        "I2", "admitted-declaration-node-id-is-structural",
-                    ))),
+                    Err(_) => {
+                        return refused(V2ReadRefusal::Fault(InternalFault::new(
+                            "I2",
+                            "admitted-declaration-node-id-is-structural",
+                        )))
+                    }
                 };
-                let name = declaration.qualified_name.iter().map(AsRef::as_ref).collect::<Vec<&str>>().join("::");
+                let name = declaration
+                    .qualified_name
+                    .iter()
+                    .map(AsRef::as_ref)
+                    .collect::<Vec<&str>>()
+                    .join("::");
                 exports.push((name, key));
             }
             let source_map = match package_source_map(package.source_map()) {
@@ -873,9 +882,7 @@ pub fn read_import_view(
     let read = reader.read_emitted(package, emission, identity.clone());
     admitted.0 = reader.admitted;
     let read = read?;
-    admitted
-        .0
-        .insert(identity, Arc::clone(&read.admitted));
+    admitted.0.insert(identity, Arc::clone(&read.admitted));
     Ok(read.package)
 }
 
@@ -1029,12 +1036,13 @@ impl ClosureReader<'_> {
             if self.admitted.contains_key(&identity) {
                 continue;
             }
-            let held = *self
-                .held
-                .get(&identity)
-                .ok_or_else(|| ImportViewRefusal::UnheldDependency {
-                    identity: identity.clone(),
-                })?;
+            let held =
+                *self
+                    .held
+                    .get(&identity)
+                    .ok_or_else(|| ImportViewRefusal::UnheldDependency {
+                        identity: identity.clone(),
+                    })?;
             if !expanded {
                 pending.push((identity, true));
                 for (dependency, _) in held.direct_dependency_selections().rev() {

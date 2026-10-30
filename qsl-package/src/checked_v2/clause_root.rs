@@ -159,5 +159,9 @@ pub fn resolve_clause_root(
                 && occurrence.ordinal == triple.origin().ordinal()
         })
         .ok_or_else(unresolved)?;
-    Ok(root(triple.node().clone(), occurrence, over_of(node).map_err(|_| unresolved())?))
+    Ok(root(
+        triple.node().clone(),
+        occurrence,
+        over_of(node).map_err(|_| unresolved())?,
+    ))
 }
