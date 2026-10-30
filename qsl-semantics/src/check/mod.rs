@@ -737,9 +737,6 @@ pub struct CheckedGraph {
     /// index-aligned with `protocols`, so an `Origin::ProtocolAttempt`
     /// resolves.
     attempt_spans: Vec<Vec<Option<qsl_foundation::Span>>>,
-    /// The byte limit every node identity of this package encodes under,
-    /// kept for the nodes built from it after `check` (FR-306).
-    identity: qsl_foundation::IdentityLimits,
 }
 
 /// One emitted temporal clause (FR-337 "Outputs"): the checked clause, its
@@ -5836,7 +5833,6 @@ impl PackageDeclarations {
             declaration_keys,
             attempt_spans: regions.attempt_spans,
             abstraction: None,
-            identity: self.identity,
         };
         // FR-304: the unit's `abstraction` declarations check to the one
         // relation the package carries.
