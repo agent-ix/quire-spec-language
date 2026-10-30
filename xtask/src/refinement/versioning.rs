@@ -404,7 +404,6 @@ fn case_requests(
                 .selection
                 .into_parts()
                 .map_err(|error| at(&error.member, error.reason))?,
-            expected_package_id_claim: None,
             limits: limits.spine,
             observation_limits: limits.observation,
             accounting: limits.accounting(),

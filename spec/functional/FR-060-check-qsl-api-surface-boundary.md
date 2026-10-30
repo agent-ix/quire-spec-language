@@ -51,9 +51,7 @@ kernel, rather than a check that is retired and rewritten.
 - Per rule, one of: **live and passing** (the rule's target exists and every
   call site outside the allowed caller modules is absent), **live and
   failing** (the rule's target exists and at least one call site outside the
-  allowed caller modules exists; each is reported with file and line; for
-  T12-B and T12-C, a site in a debt-list function is reported as debt rather
-  than as a failure, and a stale debt-list entry is a failure), or
+  allowed caller modules exists; each is reported with file and line), or
   **pending** (the rule's target -- a file the rule requires -- does not
   exist yet, so the rule reports this explicitly rather than passing
   vacuously).
@@ -75,8 +73,7 @@ is *consumed* by CG, and a violation of "CG calls into QSL only through
 `replay`" is only visible by scanning CG's own source, never QSL's (#249
 review, HIGH-2/MEDIUM-4 -- evaluating a CG-side rule against the QSL tree
 made it impossible for T12-A to ever fail, since QSL's own tree contains no
-CG call sites to find). T12-B, T12-C and T12-D are QSL-role: each protects a
-constructor QSL itself calls.
+CG call sites to find). T12-G is QSL-role: it protects constructors QSL itself calls.
 
 At the time of this requirement, the rule set SHALL contain exactly these
 seven rules:
@@ -84,76 +81,17 @@ seven rules:
 | Rule | Role | Protects | Allowed callers (today) | Requires |
 | --- | --- | --- | --- | --- |
 | T12-A | Cg | The layer-6 `qsl-replay` facade crate | CG's `replay` adapter module; a call spelled `quire_spec_language::replay::` is a violation from any module, because the root crate has no `replay` module, and so is any reference to `qsl_replay::spine`, the spine compile `command` shares with the executor, which is not part of the facade: found by parsing, as a `use` tree leaf or a path through the crate or an alias of it, a glob import of the crate, or a `qsl_replay::spine` token run inside a macro | `qsl-replay/src/lib.rs` |
-| T12-B | Qsl | The kernel `NodeKey` constructor (ADR-013 O-04) | `check` and every descendant module; plus the named debt list below, which only shrinks | the constructor's current source file |
-| T12-C | Qsl | The kernel `EffectiveId` constructor (ADR-013 O-05) | `model` and every descendant module; plus the named debt list below, which only shrinks | the constructor's current source file |
-| T12-D | Qsl | The kernel `PopulationId` constructor (ADR-013 O-13 Population row, QC-21; ADR-011 T-12(d)) | `model` | `qsl-semantics/src/model/population.rs` |
+| T12-B | Qsl | **RETIRED (the `NodeKey` constructors it guarded no longer exist).** | none | none |
+| T12-C | Qsl | **RETIRED (the `EffectiveId` constructors it guarded no longer exist).** | none | none |
+| T12-D | Qsl | **RETIRED (the `PopulationId` constructors it guarded no longer exist).** | none | none |
 | T12-E | Qsl | **RETIRED (the witness minter and `verify_binding` are deleted; a package is identified by `LibraryName`).** | none | none |
-| T12-F | Qsl | The kernel `NodeKey::decode_admitted` decoder (ADR-011 T-12, "Decoding an admitted key"): it re-reads a key `check` minted from an admitted package's bytes, after the admitted-package identity check | none in QSL: QSL has no decode site, so any QSL call fails the rule (FR-087-AC-6, AC-11); a backend has no allowed caller, and generated or emitted code is never a reader (a key literal there is a `WireNodeId` resolved by lookup without holding a key); no debt list | none |
-| T12-G | Qsl | The checked-term constructors: every function of the `quire_checked::construct` module (ADR-011 FB-14, [FR-400](FR-400-separate-checked-terms-from-the-checker.md)), compiled only under the `construct` feature that only `qsl-semantics` enables | `qsl-semantics`' `check` and every descendant module; `value::definition` for the `AdmittedIntegerDivision` constructor; no debt list | the `construct` module's source in the resolved `quire-checked` checkout |
+| T12-F | Qsl | **RETIRED (the `NodeKey::decode_admitted` decoder it guarded no longer exists).** | none | none |
+| T12-G | Qsl | The checked-term constructors: every function of the `quire_checked::construct` module (ADR-011 FB-14, [FR-400](FR-400-separate-checked-terms-from-the-checker.md)), compiled only under the `construct` feature that only `qsl-semantics` enables | `qsl-semantics`' `check` and every descendant module; `value::definition` for the `AdmittedIntegerDivision` constructor | the `construct` module's source in the resolved `quire-checked` checkout |
 
-A rule's call patterns SHALL include every textual spelling that constructs
-the protected value, not only its primary constructor name. In a pattern,
-`<mint>` stands for each public constructor of the protected kernel type that
-mints a value from a node's structural key, read from the resolved `quire-exact`
-source.
-T12-C's pattern matches `EffectiveId::<mint>`, called or passed as a
-function value. T12-D's pattern matches `PopulationId::<mint>`, the kernel
-`PopulationId`'s one public constructor, called or passed as a function
-value. T12-F's pattern matches `NodeKey::decode_admitted`, called or
-passed as a function value; it is not a T12-B mint, and T12-B's pattern stays
-`NodeKey::<mint>`. T12-G's pattern is any path through `quire_checked::construct`, as a `use`
+A rule's call patterns SHALL include every textual spelling that references
+the protected item. T12-G's pattern is any path through `quire_checked::construct`, as a `use`
 tree leaf, a call or a function value; a crate alias or glob import of the
-module counts as a reference. T12-F runs on the repository's own tree in `cargo
-test --workspace`
-(`tc_arch_lint_api_surface_028`), since the `arch-lint`
-binary is not yet part of `make ci`.
-
-### T12-B: only `check` mints `NodeKey`
-
-**Amended by the layer-rule ruling (2026-09-22).** T12-B's allowed callers
-are `check` and every module under it, because ADR-013 O-04 says only
-`check` calls the `NodeKey` constructor. `check::family`'s
-`mint_declaration_identity` and `mint_call_identity`, and
-`check::checked_dispatch`, are allowed under that prefix. `value::enumeration`
-and `value::unit` compute node-identity preimages in
-`value::semantic_node` and never construct a `NodeKey`; a preimage node id
-they read stays a `WireNodeId` until a lookup resolves it.
-
-T12-B's patterns SHALL match every reference to a `NodeKey` constructor in
-shipped code, whether it is called or passed as a function value:
-`NodeKey::<mint>` (the kernel constructor). T12-B also matches calls
-of `node_key_of`, the name of the crate-internal helper that wrapped the
-constructor until it was deleted (#249 review R1), so a reintroduced
-helper of that name is caught; a `fn node_key_of(` definition line is not a
-mint. A reference passed as a function value, such as
-`.map(NodeKey::<mint>)`, is a mint.
-
-### T12-B and T12-C: shipped code and debt lists
-
-T12-B and T12-C scan shipped code only: items under `#[cfg(test)]` are
-excluded, including a file declared out of line as `#[cfg(test)] mod name;`
-and every module under it, and so is a pattern match inside a comment or a
-doc comment. A test
-fixture that builds a `NodeKey` or `EffectiveId` from literal bytes, or a doc
-comment that names the constructor, is not an identity the crate mints.
-
-Each of the two rules has a debt list. Every shipped mint outside the rule's
-allowed callers SHALL be in a function on that rule's list. A list is keyed
-by crate, enclosing module and function, not by line number, and it only shrinks:
-an entry leaves in the change that removes its last mint, and no entry is
-added. A mint outside the allowed callers in a function not on the list
-fails the rule. An entry with no remaining mint also fails the rule until it
-is removed, so a fixed site cannot later hide a new mint. Each debt-list mint
-is reported as debt, with file, line, module and function. The lists name
-functions rather than counting sites, because a count is met by a broken
-state (one new mint and one fixed mint cancel out) and changes whenever the
-patterns become more accurate.
-
-T12-B's debt list is empty.
-
-T12-C's debt list is empty: a reference's type component is typed as
-`EffectiveId` (ADR-013 O-05), which removed the OBS-018 transfers in
-`value::model_query`.
+module counts as a reference.
 
 ### Pending vs. live vs. failing
 
@@ -184,23 +122,21 @@ A rule with no call site outside its allowed callers SHALL report **passing**.
 
 ### Scanning method and its stated limitations
 
-T12-B, T12-C and T12-D SHALL match each call pattern against the source
-file's tokens, not its text: `NodeKey::<mint>` is the token sequence
-`NodeKey`, `::`, `<mint>`. A comment or doc comment is not a token and a
+T12-G SHALL match its pattern against the source
+file's tokens, not its text. A comment or doc comment is not a token and a
 string literal is a single token, so a pattern named inside either never
 matches. A call split across lines, a constructor passed as a function
 value, a qualified-path spelling (`<NodeKey>::<mint>`) and a call
-inside a macro invocation's arguments all match. The three rules scan
-shipped code only: items under `#[cfg(test)]` are excluded (Behavior,
-"T12-B and T12-C: shipped code and debt lists"). T12-D has no debt list, so
-any shipped mint outside `model` fails it.
+inside a macro invocation's arguments all match. The rule scans
+shipped code only: items under `#[cfg(test)]` are excluded, including a file
+declared out of line as `#[cfg(test)] mod name;`, and so is a pattern match
+inside a comment or a doc comment.
 
 T12-A scans CG's source text for its literal patterns, so a match inside a
 comment or string literal is reported (a possible false positive), not
 excluded.
 
-No rule resolves an import alias of the protected type (`use
-quire_exact::NodeKey as K;` followed by `K::<mint>`); a call reached
+No rule resolves an import alias of the protected item; a call reached
 only through a renamed import is a known limitation of this check, not a
 silent pass. The check's own report SHALL state these limitations (#249
 review, MEDIUM-5).
@@ -208,13 +144,12 @@ review, MEDIUM-5).
 ### The facade's compile entry
 
 The layer-6 `qsl-replay` facade that T12-A protects SHALL carry a compile
-entry beside `replay`: `qsl_replay::compile_package(source, path, bytes,
-packages, dependencies, limits, replay_limits)`, with `source` a `SourceIdentity`, `path` the
+entry beside `replay`: `qsl_replay::compile_package(source, package_name, path, bytes,
+packages, dependencies, limits, replay_limits)`, with `source` a `SourceIdentity`, `package_name` the package manifest's top-level name, `path` the
 display path, `bytes` the source, `packages` the domain package documents
 (the same input, in the same position, as `call_site` takes), `dependencies` a
 `DependencyInput` and `limits` the `StageLimits` a replay request carries and `replay_limits` the `ReplayLimits` (`replay.input_bytes`) as `replay` takes it. It returns a `CompiledPackage` whose
-`bytes()` are the emitted `quire.checked-package/v2` bytes and whose
-`package_id()` is the `package_id` they declare, or a `ReplayRefusal`. It
+`bytes()` are the emitted `quire.checked-package/v2` bytes, or a `ReplayRefusal`. It
 runs the one S1-to-E4 spine run that `replay`'s recompile runs, under the
 stage limits `replay` reads from a request (S1 `text_input_bytes`, S3
 `work_units`), and it refuses as that recompile does. A consumer that builds
@@ -235,18 +170,16 @@ governs them.
 CG's evaluator corpus producer
 ([FR-402](FR-402-differentially-test-the-no-std-evaluator-against-the-std-reference.md))
 needs no T12-A change: it writes cases with `quire-eval-corpus`, and it
-takes each case's `package_id` from `qsl_replay::compile_package` inside
+takes each case's package bytes from `qsl_replay::compile_package` inside
 CG's `replay` module, T12-A's existing allowed caller.
 
 ### Honest reporting of real findings
 
 Running the check against QSL's real source tree at any commit SHALL report
-whatever it finds, including every named debt-list mint and any real call
+whatever it finds, including any real call
 site the check finds that ADR-011 §1's text does not enumerate. The check SHALL NOT
 be tuned to exclude a known finding, or widened to admit an unwanted one, to
-make a run pass (#249 review R1). T12-B's and T12-C's debt lists are not
-such an exclusion: each entry is reported as debt in the check's output, and
-each list can only shrink.
+make a run pass (#249 review R1).
 
 ## Acceptance Criteria
 
@@ -255,10 +188,10 @@ each list can only shrink.
 | FR-060-AC-1 | A rule whose required path does not exist reports `pending` with the missing path named, and contributes no call-site scan. | Test (TC-157) |
 | FR-060-AC-2 | A rule whose required path exists and has no call site outside its allowed callers reports `passing`. | Test (TC-157) |
 | FR-060-AC-3 | A rule whose required path exists and has a call site outside its allowed callers reports `failing`, naming the call site's file, line and module; a caller module that is a textual prefix but not a `::`-segment descendant (for example `model_query` under an `model` allow-list) is not treated as allowed. | Test (TC-157) |
-| FR-060-AC-4 | Run against real QSL source at head with no CG checkout, rule T12-A reports not evaluated, naming `--cg` (its target `qsl-replay/src/lib.rs` exists), the run exits as a usage error, and rules T12-B, T12-C and T12-D are still evaluated and reported; rules T12-B and T12-C each report every shipped mint outside their allowed callers (`check` and its descendants for T12-B, `model` and its descendants for T12-C), and each fails if such a mint lies in a function not on that rule's debt list (Behavior, "T12-B and T12-C: shipped code and debt lists") or if a debt-list entry has no remaining mint; each debt-list mint is reported as debt, with file, line, module and function. Mints under the allowed callers (including `check::family`'s `mint_declaration_identity` and `mint_call_identity`), mints in `#[cfg(test)]` items, and matches inside comments are not reported. A reference to the constructor passed as a function value (`.map(NodeKey::<mint>)`) is a mint. **Amended by the layer-rule ruling (2026-09-22)**: the fixed site counts for T12-B and T12-C are replaced by the named debt lists. Rule T12-D reports passing with zero call sites (no module outside `model` calls `PopulationId::<mint>(`). | Test (TC-157) |
-| FR-060-AC-5 | `qsl_replay::compile_package` compiles FR-092's recursive `List` (`record List { next: List?; }`) and `Tree` (`record Tree { kids: Sequence<Tree>[0, 3]; }`) from source through the facade alone, and for each the package bytes and `package_id` equal those of the spine's parse, select, check and package run over the same source. | Test (TC-908) |
+| FR-060-AC-4 | Run against real QSL source at head with no CG checkout, rule T12-A reports not evaluated, naming `--cg` (its target `qsl-replay/src/lib.rs` exists), the run exits as a usage error, and the remaining live rules are still evaluated and reported. **RETIRED for T12-B, T12-C and T12-D (the constructors they guarded no longer exist).** | Test (TC-157) |
+| FR-060-AC-5 | `qsl_replay::compile_package` compiles FR-092's recursive `List` (`record List { next: List?; }`) and `Tree` (`record Tree { kids: Sequence<Tree>[0, 3]; }`) from source through the facade alone, and for each the package bytes equal those of the spine's parse, select, check and package run over the same source. | Test (TC-908) |
 | FR-060-AC-6 | `qsl_replay::compile_package` refuses as the spine does: a malformed source refuses `ReplayRefusal::Recompile` with the spine refusal's catalog code and stage; a library whose source has the unit's owner refuses `ReplayRefusal::DependencyInput`; an S1 `text_input_bytes` limit below the source's size refuses `stage_limit_exceeded`; and an S1 limit above the reader limit refuses `LimitAboveReader`. | Test (TC-908) |
-| FR-060-AC-7 | `qsl_replay::compile_package` takes the domain packages a unit's `model` selection names as I1's package input: a unit selecting a package compiles, with the package supplied, to the package bytes and `package_id` of the spine's run over the same source and packages, and without the package refuses `missing_import` at the intake stage as the spine does. | Test (TC-908) |
+| FR-060-AC-7 | `qsl_replay::compile_package` takes the domain packages a unit's `model` selection names as I1's package input: a unit selecting a package compiles, with the package supplied, to the package bytes of the spine's run over the same source and packages, and without the package refuses `missing_import` at the intake stage as the spine does. | Test (TC-908) |
 | FR-060-AC-8 | Over a CG fixture tree with a QSL tree whose `qsl-replay/src/lib.rs` exists, a `qsl_replay::compile_package(..)` call in `src/replay/evaluator_corpus.rs` leaves T12-A passing; the same `qsl_replay::compile_package(..)` call moved to `src/oracle/mod.rs` fails T12-A, named with file, line and module. | Test (TC-1113) |
 
 ## Dependencies
