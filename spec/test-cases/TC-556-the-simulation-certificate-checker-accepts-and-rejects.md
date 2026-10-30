@@ -33,8 +33,8 @@ whose state constraint has a refused family, for an unnamed expansion stop.
 1. Run the refinement without the `ensure` row and check its certificate.
 2. Check the tampered certificates of FR-149-AC-2.
 3. Build FR-149-AC-3's certificate for the lost-update model and check it.
-4. Check the AC-1 certificate with `max_transitions` 1, a certificate naming
-   another refinement node, and the AC-1 certificate twice.
+4. Check the AC-1 certificate with `max_transitions` 1 and the AC-1
+   certificate twice.
 5. Settle `CasRefinesCounter` without and with its `ensure` row, and with
    step 2's first tampered certificate.
 6. Check the unmetered `RingIsQueue` certificate under a meter that runs out in
@@ -48,8 +48,7 @@ whose state constraint has a refused family, for an unnamed expansion stop.
    FR-149-AC-7.
 9. Serialize the rejections of AC-3 and AC-2, and one verdict of each other
    kind (FR-149-AC-8).
-10. Settle items whose certificate names another `concrete_package` and another
-    `obligation` (FR-149-AC-9).
+10. Retired (staleness check withdrawn; FR-149-AC-9).
 11. Cancel a check between positions, and force an expansion stop that names no
     limit (FR-149-AC-10).
 12. Check the `RegisterHistory` certificate whose positions differ only in
@@ -65,14 +64,13 @@ Tag the tests `#[trace("TC-556", "<AC id>")]`.
   each FR-338's `CertificateRejection` with a `SimulationStep` locus.
 - Step 3: rule `StepFails` with verdict `AbstractStepRejected{transition:
   inc(c), cause: Postcondition}`.
-- Step 4: `Stopped(LimitReached{MaxTransitions, 1})`;
-  `stale_dependency`/`content-mismatch`; equal results.
+- Step 4: `Stopped(LimitReached{MaxTransitions, 1})`; equal results.
 - Step 5: `proved`, `Certified`; `proved`, `Uncertified`; `inconclusive`,
   `CertificateRejected`.
 - Step 6: `Stopped(LimitReached{EvaluationMeter, B})` for each of the four, never `Rejected`.
 - Step 7: `Accepted`; rule `SuccessorsDiffer`.
 - Step 8: rule `Malformed` at the positions AC-7 names, three times; rule `BadState`.
 - Step 9: the locus of FR-149-AC-8; `null` verdict for `PostDiffers`; each kind's members.
-- Step 10: `stale_dependency`/`content-mismatch` twice; the checker is not called.
+- Step 10: retired.
 - Step 11: `Stopped(Cancelled{source})`; `Stopped(ResourceExhausted)`; each settles V-7.
 - Step 12: `Accepted`; then `Rejected`.

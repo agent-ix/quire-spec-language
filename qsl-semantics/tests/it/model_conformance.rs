@@ -515,7 +515,7 @@ fn r01_a_compatible_field_redefinition_yields_one_effective_member_with_complete
         NormalizeOutcome::Completed(view) => view,
         other => panic!("expected a completed view, got {other:?}"),
     };
-    let owner_b = find_type(&view, "model.B").effective_id;
+    let owner_b = find_type(&view, "model.B").effective_id.clone();
 
     let winner = find_member(&view, &owner_b, "model.B.n");
     assert!(
@@ -1139,11 +1139,10 @@ fn a_wide_domain_and_a_literal_above_i64_max_are_decided_exactly() {
                 ),
             ],
         );
-        let digest = qsl_semantics::model::key::hex(&package.model_selection.digest);
         let unit = format!(
             "language \"ix:native\" edition \"1-draft\";\n\
             profile v = \"quire.value.complete/v1\";\n\
-            model M = \"test/orders\" version \"1\" digest \"sha256-jcs:{digest}\";\n\
+            model M = \"test/orders\";\n\
             post Q using v on M::B::set {{ self.fn <= {literal} }}\n"
         );
         let selected = SelectedModels::fixture(
@@ -1163,6 +1162,7 @@ fn a_wide_domain_and_a_literal_above_i64_max_are_decided_exactly() {
         .expect("source admits");
         let declarations = PackageDeclarations::assemble(
             raw.source().reference().clone(),
+            crate::TEST_PACKAGE_NAME.to_owned(),
             built,
             selected,
             vec![],

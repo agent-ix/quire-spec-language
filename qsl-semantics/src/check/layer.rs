@@ -2,7 +2,7 @@
 //! FR-110 "Layer selection": S3 admits a declaration whose `using` alias
 //! names a header profile resolved to a layer under exactly the
 //! admitted-form set of that layer's `requires` closure
-//! ([`DefinitionLock::admitted_forms`]), and refuses a form outside it with
+//! ([`HeaderLayer::admitted_forms`]), and refuses a form outside it with
 //! `unsupported_construct` at the form's span, naming the layer.
 //!
 //! A model construct (FR-361 item 5) is admitted by the model layer and its
@@ -26,7 +26,6 @@ use qsl_forms::{
 use qsl_foundation::Span;
 
 use super::assemble::{AssemblyCause, AssemblyError};
-use crate::value::definition::DefinitionLock;
 use crate::value::layer::{HeaderLayer, LayerForm};
 
 /// The admitted-form set one `using` alias selects, with the names of the
@@ -44,14 +43,13 @@ impl<'a> LayerAdmission<'a> {
     /// The admission under `layer`'s `requires` closure, in a unit that
     /// selects the model profile when `unit_selects_model`.
     pub(crate) fn new(
-        lock: &DefinitionLock,
         layer: HeaderLayer,
         predicates: &'a BTreeSet<&'a str>,
         unit_selects_model: bool,
     ) -> Self {
         Self {
             layer,
-            admitted: lock.admitted_forms(layer),
+            admitted: layer.admitted_forms(),
             predicates,
             unit_selects_model,
         }

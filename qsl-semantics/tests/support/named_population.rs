@@ -12,19 +12,15 @@
     reason = "each including test module uses a different part of the fixture"
 )]
 
-use std::collections::BTreeMap;
-
 use qsl_semantics::check::{CheckRefusal, CheckedGraph, PackageDeclarations};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
-use qsl_semantics::model::key::hex;
 use quire_checked::key::DeclarationKey;
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
 
 /// The package's identity.
 pub const PACKAGE: &str = "test/counter";
-const PLACEHOLDER: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 
 /// `ix://test/counter/<suffix>`.
 pub fn ident(suffix: &str) -> String {
@@ -150,18 +146,16 @@ pub fn document(archive: bool) -> Vec<u8> {
     .into_iter()
     .map(|(name, meaning)| {
         json!({"kind": {"module": PACKAGE, "name": name}, "moduleVersion": "1.0.0",
-            "manifestDigest": PLACEHOLDER,
             "construct": {"identity": "none", "shape": "record", "members": {},
                 "meaning": meaning}})
     })
     .collect();
     json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
-        "source": {"identity": ident("spec"), "version": "1.0.0", "dialect": "spec-bundle",
-            "digest": PLACEHOLDER},
-        "package": {"identity": PACKAGE, "version": "1.0.0", "manifestDigest": PLACEHOLDER,
-            "mappingVersions": [], "profileVersions": [], "lockDigest": PLACEHOLDER},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
+        "source": {"identity": ident("spec"), "version": "1.0.0", "dialect": "spec-bundle"},
+        "package": {"identity": PACKAGE, "version": "1.0.0",
+            "mappingVersions": [], "profileVersions": []},
         "occurrences": [], "extensions": [],
         "constructs": constructs, "types": types, "populations": populations,
     })
@@ -188,23 +182,21 @@ pub struct Checked {
     /// The checked graph.
     pub graph: CheckedGraph,
     /// The domain package, by digest.
-    pub packages: BTreeMap<[u8; 32], Vec<u8>>,
+    pub packages: qsl_semantics::model::intake::PackageInput,
 }
 
 /// The unit over the package (with `archive` when asked) holding
 /// `declarations`, checked, or its refusals each with its text.
 pub fn check(archive: bool, declarations: &str) -> Result<Checked, Vec<Refused>> {
     let document = document(archive);
-    let packages = package_input([document.as_slice()]);
-    let digest = *packages.keys().next().expect("one model");
+    let packages = package_input([document.as_slice()]).unwrap();
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
          profile t = \"quire.temporal.infinite-trace/v1\";\n\
          profile m = \"quire.model.complete/v1\";\n\
-         model M = \"{PACKAGE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         model M = \"{PACKAGE}\";\n\
          {declarations}\n",
-        hex(&digest),
     );
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("test", "tc-1076", "fixture", "1"),
@@ -221,8 +213,13 @@ pub fn check(archive: bool, declarations: &str) -> Result<Checked, Vec<Refused>>
         ModelNormalizationLimits::default(),
     )
     .expect("the model selection admits");
-    let assembled =
-        PackageDeclarations::assemble(parsed.source().reference().clone(), built, models, vec![]);
+    let assembled = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        crate::TEST_PACKAGE_NAME.to_owned(),
+        built,
+        models,
+        vec![],
+    );
     let declarations = match assembled {
         Ok(declarations) => declarations,
         Err(refusal) => {

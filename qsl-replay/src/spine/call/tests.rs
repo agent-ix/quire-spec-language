@@ -3,12 +3,9 @@ use super::*;
 use crate::spine::{compose, DependencyInput};
 use ix_trace_rs::trace;
 use qsl_foundation::SourceIdentity;
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::refusal::ModelRefusalCause;
 use quire_checked::key::DeclarationKey;
-use quire_exact::{
-    BoundViolation, CardinalityBound, CollectionKind, Incomplete, Integer, UniverseId, Value,
-};
+use quire_exact::{BoundViolation, CardinalityBound, CollectionKind, Incomplete, Integer, Value};
 use quire_semantic_value::catalog::{
     CatalogCoded, UndefinedCoded, UndefinedReason, UndefinedRecord,
 };
@@ -43,6 +40,7 @@ fn call(function: &str, arguments: Vec<CallArgument>) -> Call {
 fn run_fixture(bytes: &str, call: &Call) -> Result<CallOutcome, Box<RunRefusal>> {
     run(
         source(),
+        "fixture".to_owned(),
         "spine-run.native",
         bytes.as_bytes(),
         &BTreeMap::new(),
@@ -52,12 +50,11 @@ fn run_fixture(bytes: &str, call: &Call) -> Result<CallOutcome, Box<RunRefusal>>
         &qsl_semantics::model::object_environment::ObjectEnvironment::default(),
         &Cancel::new(),
     )
-    .map(|(_, outcome)| outcome)
 }
 
 pub(in crate::spine) struct LookupDriverFixture {
     pub(in crate::spine) source: String,
-    pub(in crate::spine) packages: BTreeMap<[u8; 32], Vec<u8>>,
+    pub(in crate::spine) packages: qsl_semantics::model::intake::PackageInput,
 }
 
 pub(in crate::spine) fn lookup_driver_fixture(functions: &str) -> LookupDriverFixture {
@@ -71,7 +68,6 @@ pub(in crate::spine) fn lookup_driver_fixture(functions: &str) -> LookupDriverFi
         .push(serde_json::json!({
             "kind": {"module": "acme/orders", "name": "population"},
             "moduleVersion": "1.0.0",
-            "manifestDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
             "construct": {
                 "identity": "none",
                 "shape": "record",
@@ -92,21 +88,12 @@ pub(in crate::spine) fn lookup_driver_fixture(functions: &str) -> LookupDriverFi
         }}
     }]);
     let bytes = serde_json::to_vec(&document).expect("the lookup driver model serializes");
-    let digest = qsl_semantics::model::intake::PackageDocument::parse(
-        &bytes,
-        qsl_foundation::IntakeLimits::default(),
-    )
-    .expect("the lookup driver model admits")
-    .jcs_digest();
     let source = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
-         model M = \"acme/orders\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
-         {}\n",
-        hex(&digest),
-        functions
+         model M = \"acme/orders\";\n{functions}\n"
     );
-    let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()]);
+    let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()]).unwrap();
     LookupDriverFixture { source, packages }
 }
 
@@ -148,9 +135,9 @@ pub(in crate::spine) fn lookup_driver_context(
     .into_value();
     let checked = crate::spine::check(
         &parsed,
+        "fixture".to_owned(),
         &models,
         &DependencyInput::default(),
-        &crate::spine::LockEvidence::default(),
         SpineLimits::default(),
         &cancel,
     )
@@ -161,7 +148,7 @@ pub(in crate::spine) fn lookup_driver_context(
         .type_identities()
         .iter()
         .find(|(key, _)| key.node.rsplit('/').next() == Some("Gadget"))
-        .map(|(key, identity)| (key.clone(), *identity))
+        .map(|(key, identity)| (key.clone(), identity.clone()))
         .expect("Gadget is declared");
     let population_key = view
         .domain_package()
@@ -198,10 +185,11 @@ pub(in crate::spine) fn lookup_driver_context(
     let universe = view
         .object_universe_of(&type_key)
         .expect("Gadget has a universe")
-        .identity();
+        .identity()
+        .expect("a universe identity");
     let present = quire_exact::ObjectReference::new(
-        universe,
-        type_identity,
+        universe.clone(),
+        type_identity.clone(),
         quire_exact::ObjectId::new("g1").unwrap(),
     );
     let absent = quire_exact::ObjectReference::new(
@@ -240,13 +228,12 @@ pub(in crate::spine) fn lookup_driver_context(
 #[test]
 #[trace("TC-792", "FR-100-AC-14", "FR-100-AC-16", "FR-100-AC-17")]
 fn tc_792_source_compiled_lookup_driver_preserves_present_and_absent_paths() {
-    let fixture = lookup_driver_fixture(
-        "function query using v(p: Population<M::Gadget>[1], r: M::Gadget): M::Gadget pure { lookup<M::Gadget>(p, r) absent refused }",
-    );
+    let fixture = lookup_driver_fixture("function query using v(p: Population<M::Gadget>[1], r: M::Gadget): M::Gadget pure { lookup<M::Gadget>(p, r) absent refused }");
     let (objects, population, present, absent) = lookup_driver_context(&fixture);
     let invoke = |reference| {
         run(
             source(),
+            "fixture".to_owned(),
             "tc-792-lookup.native",
             fixture.source.as_bytes(),
             &fixture.packages,
@@ -257,7 +244,7 @@ fn tc_792_source_compiled_lookup_driver_preserves_present_and_absent_paths() {
                 arguments: vec![
                     CallArgument {
                         parameter: "p".to_owned(),
-                        value: Value::Population(population),
+                        value: Value::Population(population.clone()),
                     },
                     CallArgument {
                         parameter: "r".to_owned(),
@@ -270,7 +257,6 @@ fn tc_792_source_compiled_lookup_driver_preserves_present_and_absent_paths() {
             &objects,
             &Cancel::new(),
         )
-        .map(|(_, outcome)| outcome)
     };
     let present_outcome = invoke(present.clone()).expect("present lookup runs");
     assert!(matches!(
@@ -293,12 +279,13 @@ fn tc_792_source_driver_admits_unused_parameters_before_body_evaluation() {
     );
     let (objects, population, _, present) = lookup_driver_context(&fixture);
     let foreign_universe = quire_exact::ObjectReference::new(
-        UniverseId::from_digest([0xa5; 32]),
-        present.object_type(),
+        crate::spine::fixture_ids::universe(0xa5),
+        present.object_type().clone(),
         present.object().clone(),
     );
     let refusal = run(
         source(),
+        "fixture".to_owned(),
         "tc-792-lookup.native",
         fixture.source.as_bytes(),
         &fixture.packages,
@@ -333,12 +320,11 @@ fn tc_792_source_driver_admits_unused_parameters_before_body_evaluation() {
 #[test]
 #[trace("TC-792", "FR-100-AC-14", "FR-100-AC-16")]
 fn tc_792_source_driver_binding_precedence_precedes_value_admission() {
-    let fixture = lookup_driver_fixture(
-        "function query using v(p: Population<M::Gadget>[1], r: M::Gadget): M::Gadget pure { lookup<M::Gadget>(p, r) absent refused }",
-    );
+    let fixture = lookup_driver_fixture("function query using v(p: Population<M::Gadget>[1], r: M::Gadget): M::Gadget pure { lookup<M::Gadget>(p, r) absent refused }");
     let (objects, _, _, _) = lookup_driver_context(&fixture);
     let refusal = run(
         source(),
+        "fixture".to_owned(),
         "tc-792-lookup.native",
         fixture.source.as_bytes(),
         &fixture.packages,
@@ -366,14 +352,13 @@ fn tc_792_source_driver_binding_precedence_precedes_value_admission() {
 #[test]
 #[trace("TC-792", "FR-100-AC-14", "FR-100-AC-16")]
 fn tc_792_source_driver_cancellation_returns_no_lookup_result() {
-    let fixture = lookup_driver_fixture(
-        "function query using v(p: Population<M::Gadget>[1], r: M::Gadget): M::Gadget pure { lookup<M::Gadget>(p, r) absent refused }",
-    );
+    let fixture = lookup_driver_fixture("function query using v(p: Population<M::Gadget>[1], r: M::Gadget): M::Gadget pure { lookup<M::Gadget>(p, r) absent refused }");
     let (objects, population, _, _) = lookup_driver_context(&fixture);
     let cancel = Cancel::new();
     cancel.cancel(quire_exact::CancelCause::Requested);
     let refusal = run(
         source(),
+        "fixture".to_owned(),
         "tc-792-lookup.native",
         fixture.source.as_bytes(),
         &fixture.packages,
@@ -425,9 +410,11 @@ fn tc_792_typed_call_contract_is_not_an_integer_only_facade() {
     };
     let result = run(
         source(),
+        "fixture".to_owned(),
         "spine-model.native",
         crate::spine::spine_model::unit().as_bytes(),
-        &qsl_semantics::model::intake::package_input([crate::spine::spine_model::DOCUMENT]),
+        &qsl_semantics::model::intake::package_input([crate::spine::spine_model::DOCUMENT])
+            .unwrap(),
         &DependencyInput::default(),
         SpineLimits::default(),
         &call,
@@ -443,23 +430,23 @@ fn tc_792_typed_call_contract_is_not_an_integer_only_facade() {
 #[test]
 fn typed_model_values_bind_without_integer_coercion() {
     let reference = quire_exact::ObjectReference::new(
-        UniverseId::from_digest([1; 32]),
-        quire_exact::EffectiveId::from_digest([2; 32]),
+        crate::spine::fixture_ids::universe(1),
+        crate::spine::fixture_ids::effective(2),
         quire_exact::ObjectId::new("g1").unwrap(),
     );
-    let population = quire_exact::PopulationId::from_digest([3; 32]);
+    let population = crate::spine::fixture_ids::population(3);
     let bound = bind_arguments(
         &[
             (
                 "reference".to_owned(),
-                ValueType::Reference(reference.object_type()),
+                ValueType::Reference(reference.object_type().clone()),
             ),
             ("population".to_owned(), ValueType::Population(Some(1))),
         ],
         &[
             CallArgument {
                 parameter: "population".to_owned(),
-                value: Value::Population(population),
+                value: Value::Population(population.clone()),
             },
             CallArgument {
                 parameter: "reference".to_owned(),
@@ -479,7 +466,7 @@ fn tc_792_driver_returns_the_admitted_reference_identity() {
     let unit = crate::spine::spine_model::unit();
     let bytes = unit.as_bytes();
     let packages =
-        qsl_semantics::model::intake::package_input([crate::spine::spine_model::DOCUMENT]);
+        qsl_semantics::model::intake::package_input([crate::spine::spine_model::DOCUMENT]).unwrap();
     let cancel = Cancel::new();
     let identity = source();
     let parsed = crate::spine::parse(
@@ -498,9 +485,9 @@ fn tc_792_driver_returns_the_admitted_reference_identity() {
         .into_value();
     let checked = crate::spine::check(
         &parsed,
+        "fixture".to_owned(),
         &models,
         &DependencyInput::default(),
-        &crate::spine::LockEvidence::default(),
         SpineLimits::default(),
         &cancel,
     )
@@ -515,11 +502,15 @@ fn tc_792_driver_returns_the_admitted_reference_identity() {
                 .rsplit('/')
                 .next()
                 .is_some_and(|name| name == "Gadget")
-                .then_some((key, *identity))
+                .then_some((key, identity.clone()))
         })
         .expect("Gadget is in the model fixture");
     let reference = quire_exact::ObjectReference::new(
-        model.object_universe_of(type_key).unwrap().identity(),
+        model
+            .object_universe_of(type_key)
+            .unwrap()
+            .identity()
+            .expect("a universe identity"),
         object_type,
         quire_exact::ObjectId::new("g1").unwrap(),
     );
@@ -538,6 +529,7 @@ fn tc_792_driver_returns_the_admitted_reference_identity() {
     let objects = qsl_semantics::model::object_environment::ObjectEnvironment::new(world);
     let outcome = run(
         source(),
+        "fixture".to_owned(),
         "spine-model.native",
         bytes,
         &packages,
@@ -553,8 +545,7 @@ fn tc_792_driver_returns_the_admitted_reference_identity() {
         &objects,
         &Cancel::new(),
     )
-    .unwrap()
-    .1;
+    .unwrap();
     assert!(matches!(
         outcome,
         CallOutcome::Completed(CallValue::Reference(value)) if value == reference
@@ -578,7 +569,11 @@ fn synthetic_model(
     let object = DeclarationKey::fixture(format!("{placeholder}/A"));
     let population = DeclarationKey::fixture(format!("{placeholder}/P"));
     let domain = DomainPackage::new(
-        DomainPackageRef::fixture(placeholder),
+        // Selection is by identity alone, so two synthetic models are foreign
+        // to each other only under distinct identities.
+        DomainPackageRef {
+            identity: format!("test/{placeholder}"),
+        },
         vec![
             DomainPackageRecord::ObjectType(ObjectTypeRecord {
                 key: object.clone(),
@@ -621,7 +616,11 @@ fn synthetic_reference_hierarchy(
     let subtype = DeclarationKey::fixture(format!("{placeholder}/S"));
     let unrelated = DeclarationKey::fixture(format!("{placeholder}/U"));
     let domain = DomainPackage::new(
-        DomainPackageRef::fixture(placeholder),
+        // Selection is by identity alone, so two synthetic models are foreign
+        // to each other only under distinct identities.
+        DomainPackageRef {
+            identity: format!("test/{placeholder}"),
+        },
         vec![
             DomainPackageRecord::ObjectType(ObjectTypeRecord {
                 key: root.clone(),
@@ -669,7 +668,7 @@ fn tc_792_population_and_foreign_model_admission_keep_typed_causes() {
     use quire_semantic_value::declaration::TypeEnvironment;
 
     let types = TypeEnvironment::new([], []).unwrap();
-    let unknown = Value::Population(quire_exact::PopulationId::from_digest([9; 32]));
+    let unknown = Value::Population(crate::spine::fixture_ids::population(9));
     let unregistered = admit_model_arguments(
         &[],
         &types,
@@ -763,13 +762,14 @@ fn tc_792_reference_foreign_model_precedes_universe_and_type_checks() {
         operation_clauses: Vec::new(),
         type_invariants: Vec::new(),
     };
-    let declared = selected_view.type_identities()[&selected_type];
-    let supplied = foreign_view.type_identities()[&foreign_type];
+    let declared = selected_view.type_identities()[&selected_type].clone();
+    let supplied = foreign_view.type_identities()[&foreign_type].clone();
     let reference = Value::Reference(quire_exact::ObjectReference::new(
         foreign_view
             .object_universe_of(&foreign_type)
             .unwrap()
-            .identity(),
+            .identity()
+            .expect("a universe identity"),
         supplied,
         quire_exact::ObjectId::new("f1").unwrap(),
     ));
@@ -817,11 +817,12 @@ fn tc_792_foreign_type_maximum_and_dangling_controls_keep_admission_causes() {
         foreign_view
             .object_universe_of(&foreign_type)
             .unwrap()
-            .identity(),
-        foreign_view.type_identities()[&foreign_type],
+            .identity()
+            .expect("a universe identity"),
+        foreign_view.type_identities()[&foreign_type].clone(),
         quire_exact::ObjectId::new("foreign").unwrap(),
     ));
-    let unknown_type = quire_exact::EffectiveId::from_digest([7; 32]);
+    let unknown_type = crate::spine::fixture_ids::effective(7);
     let foreign_type_refusal = admit_model_arguments(
         &models,
         &TypeEnvironment::new([], []).unwrap(),
@@ -836,19 +837,20 @@ fn tc_792_foreign_type_maximum_and_dangling_controls_keep_admission_causes() {
             if matches!(refusal.cause, ModelRefusalCause::ForeignType { .. })
     ));
 
-    let selected_identity = selected_view.type_identities()[&selected_type];
+    let selected_identity = selected_view.type_identities()[&selected_type].clone();
     let selected_reference = Value::Reference(quire_exact::ObjectReference::new(
         selected_view
             .object_universe_of(&selected_type)
             .unwrap()
-            .identity(),
-        selected_identity,
+            .identity()
+            .expect("a universe identity"),
+        selected_identity.clone(),
         quire_exact::ObjectId::new("dangling").unwrap(),
     ));
     let types = TypeEnvironment::new(
         [],
         [ObjectTypeDeclaration::new(
-            selected_identity,
+            selected_identity.clone(),
             "A",
             Vec::new(),
         )],
@@ -886,30 +888,35 @@ fn tc_792_reference_exact_subtype_and_unrelated_vectors_use_model_conformance() 
     use quire_semantic_value::object_closure::ObjectClosure;
 
     let (view, target, subtype, unrelated, root) = synthetic_reference_hierarchy("tc-792-vectors");
-    let target_id = view.type_identities()[&target];
-    let subtype_id = view.type_identities()[&subtype];
-    let unrelated_id = view.type_identities()[&unrelated];
-    let root_id = view.type_identities()[&root];
+    let target_id = view.type_identities()[&target].clone();
+    let subtype_id = view.type_identities()[&subtype].clone();
+    let unrelated_id = view.type_identities()[&unrelated].clone();
+    let root_id = view.type_identities()[&root].clone();
     let types = TypeEnvironment::new(
         [],
         [
-            ObjectTypeDeclaration::new(root_id, "Root", Vec::new()),
-            ObjectTypeDeclaration::new(target_id, "T", Vec::new()).with_supertypes(vec![root_id]),
-            ObjectTypeDeclaration::new(subtype_id, "S", Vec::new())
-                .with_supertypes(vec![target_id]),
-            ObjectTypeDeclaration::new(unrelated_id, "U", Vec::new())
+            ObjectTypeDeclaration::new(root_id.clone(), "Root", Vec::new()),
+            ObjectTypeDeclaration::new(target_id.clone(), "T", Vec::new())
+                .with_supertypes(vec![root_id.clone()]),
+            ObjectTypeDeclaration::new(subtype_id.clone(), "S", Vec::new())
+                .with_supertypes(vec![target_id.clone()]),
+            ObjectTypeDeclaration::new(unrelated_id.clone(), "U", Vec::new())
                 .with_supertypes(vec![root_id]),
         ],
     )
     .unwrap();
-    let universe = view.object_universe_of(&target).unwrap().identity();
+    let universe = view
+        .object_universe_of(&target)
+        .unwrap()
+        .identity()
+        .expect("a universe identity");
     let target_ref = quire_exact::ObjectReference::new(
-        universe,
-        target_id,
+        universe.clone(),
+        target_id.clone(),
         quire_exact::ObjectId::new("t").unwrap(),
     );
     let subtype_ref = quire_exact::ObjectReference::new(
-        universe,
+        universe.clone(),
         subtype_id,
         quire_exact::ObjectId::new("s").unwrap(),
     );
@@ -993,12 +1000,12 @@ fn tc_792_lookup_present_absent_malformed_and_accounting_vectors_preserve_owners
     ) else {
         panic!("the lookup population admits");
     };
-    let universe = *binding.universe();
-    let type_identity = view.type_identities()[&object_type];
+    let universe = binding.universe().clone();
+    let type_identity = view.type_identities()[&object_type].clone();
     let key = |object: &[u8]| LookupKey {
         static_type: object_type.clone(),
-        universe: universe.as_bytes().to_vec(),
-        type_identity,
+        universe: universe.clone(),
+        type_identity: type_identity.clone(),
         object: object.to_vec(),
     };
     let mut present_meter = Meter::new(default_accounting(1_000_000));
@@ -1054,21 +1061,13 @@ fn tc_792_lookup_present_absent_malformed_and_accounting_vectors_preserve_owners
 }
 
 /// FR-100-AC-1/AC-7 (TC-450 step 1, TC-452 step 1): `seven()` completes
-/// integer `7`, and the returned `package_id` equals the composed operations'.
+/// integer `7`.
 #[trace("TC-452", "FR-100-AC-7")]
 #[test]
 fn tc_452_seven_completes_and_agrees_with_compile() {
-    let compiled = compose(
+    let outcome = run(
         source(),
-        "spine-run.native",
-        FIXTURE.as_bytes(),
-        &BTreeMap::new(),
-        &DependencyInput::default(),
-        SpineLimits::default(),
-    )
-    .unwrap();
-    let (package_id, outcome) = run(
-        source(),
+        "fixture".to_owned(),
         "spine-run.native",
         FIXTURE.as_bytes(),
         &BTreeMap::new(),
@@ -1079,7 +1078,6 @@ fn tc_452_seven_completes_and_agrees_with_compile() {
         &Cancel::new(),
     )
     .unwrap();
-    assert_eq!(package_id, compiled.emitted.package_id());
     match outcome {
         CallOutcome::Completed(CallValue::Integer(value)) => {
             assert_eq!(value.to_string(), "7");
@@ -1099,6 +1097,7 @@ fn tc_452_seven_completes_and_agrees_with_compile() {
 fn tc_450_step_6_libraries_and_models_both_present_runs() {
     let outcome = run(
         source(),
+        "fixture".to_owned(),
         "spine-run.native",
         FIXTURE.as_bytes(),
         &BTreeMap::new(),
@@ -1108,8 +1107,7 @@ fn tc_450_step_6_libraries_and_models_both_present_runs() {
         &qsl_semantics::model::object_environment::ObjectEnvironment::default(),
         &Cancel::new(),
     )
-    .unwrap()
-    .1;
+    .unwrap();
     assert!(matches!(outcome, CallOutcome::Completed(_)));
 }
 
@@ -1262,6 +1260,7 @@ fn tc_451_step_7_zero_work_units_is_incomplete() {
 fn run_limited(limits: SpineLimits, call: &Call) -> Result<CallOutcome, Box<RunRefusal>> {
     run(
         source(),
+        "fixture".to_owned(),
         "spine-run.native",
         FIXTURE.as_bytes(),
         &BTreeMap::new(),
@@ -1271,7 +1270,6 @@ fn run_limited(limits: SpineLimits, call: &Call) -> Result<CallOutcome, Box<RunR
         &qsl_semantics::model::object_environment::ObjectEnvironment::default(),
         &Cancel::new(),
     )
-    .map(|(_, outcome)| outcome)
 }
 
 fn run_fixture_call(call: &Call) -> CallOutcome {
@@ -1470,8 +1468,8 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
         other => panic!("{other:?}"),
     }
     let reference = quire_exact::ObjectReference::new(
-        UniverseId::from_digest([4; 32]),
-        quire_exact::EffectiveId::from_digest([5; 32]),
+        crate::spine::fixture_ids::universe(4),
+        crate::spine::fixture_ids::effective(5),
         quire_exact::ObjectId::new("g1").unwrap(),
     );
     match convert(FamilyOutcome::Evaluated(Outcome::Completed(
@@ -1516,10 +1514,6 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
                     ])
                 );
                 let locus = locus.expect("a record locus");
-                assert_eq!(
-                    locus.source_digest,
-                    qsl_foundation::ByteDigest::of(FIXTURE_F.as_bytes()).to_string()
-                );
                 assert_eq!(locus.span.start.byte, 132);
                 assert_eq!(locus.span.start.line, 3);
                 assert_eq!(locus.span.start.column, 54);
@@ -1675,10 +1669,6 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
                     assert_eq!(got_code, CatalogCode::new(code, cause), "{refusal:?}");
                     assert_eq!(fields, expected_fields, "{refusal:?}");
                     let locus = locus.expect("a record locus");
-                    assert_eq!(
-                        locus.source_digest,
-                        qsl_foundation::ByteDigest::of(FIXTURE_F.as_bytes()).to_string()
-                    );
                     assert_eq!(locus.span.start.byte, 132);
                     assert_eq!(locus.span.end.byte, 133);
                     assert_location(&got_location);
@@ -1692,8 +1682,8 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
     // and a locus -- no longer bare, now that the kernel variant carries both
     // universes.
     {
-        let required = UniverseId::from_digest([0x01; 32]);
-        let supplied = UniverseId::from_digest([0x02; 32]);
+        let required = crate::spine::fixture_ids::universe(0x01);
+        let supplied = crate::spine::fixture_ids::universe(0x02);
         let refusal = Refusal::ForeignReference { required, supplied };
         match convert(FamilyOutcome::Evaluated(Outcome::Refused(refusal))).unwrap() {
             CallOutcome::Refused(CallRefusal::Record {
@@ -1711,10 +1701,6 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
                     BTreeMap::from([("required", "01".repeat(32)), ("supplied", "02".repeat(32)),])
                 );
                 let locus = locus.expect("a record locus");
-                assert_eq!(
-                    locus.source_digest,
-                    qsl_foundation::ByteDigest::of(FIXTURE_F.as_bytes()).to_string()
-                );
                 assert_eq!(locus.span.start.byte, 132);
                 assert_eq!(locus.span.end.byte, 133);
                 assert_location(&got_location);
@@ -1801,8 +1787,8 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
 
     // `FamilyResult::Refused` with a row: `ForeignUniverse`.
     let foreign_universe = ModelCause(ModelRefusalCause::ForeignUniverse {
-        actual: vec![0x01; 32],
-        expected: UniverseId::from_digest([0x02; 32]),
+        actual: crate::fixture_node(0x01),
+        expected: crate::spine::fixture_ids::universe(0x02),
     });
     match convert(FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(
         Box::new(foreign_universe),
@@ -1972,6 +1958,7 @@ fn tc_786_sum_over_pos_is_sum_out_of_domain_exit_10_or_completes_exit_0() {
         aliases: vec![("Pos".to_owned(), pos.clone())],
         ..PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture",
             qsl_foundation::IdentityLimits::default(),
         )
     }
@@ -2250,6 +2237,7 @@ fn run_cancellation_keeps_its_original_cause() {
         cancel.cancel(cause);
         let refusal = run(
             source(),
+            "fixture".to_owned(),
             "spine-run.native",
             SUPPLIED_UNIT.as_bytes(),
             &BTreeMap::new(),
@@ -2305,8 +2293,15 @@ fn argument_value_refuses_map_and_bounded_quantity_parameters() {
         None,
     )));
     let bounded = ValueType::BoundedQuantity(std::sync::Arc::new(
-        quire_exact::BoundedQuantityType::new(quire_exact::UnitId::compound([5; 32]), None, None)
-            .expect("an unbounded bounded quantity type"),
+        quire_exact::BoundedQuantityType::new(
+            quire_exact::UnitId::compound(vec![(
+                crate::fixture_node(5),
+                quire_exact::Integer::from(1_i64),
+            )]),
+            None,
+            None,
+        )
+        .expect("an unbounded bounded quantity type"),
     ));
     for value_type in [map, bounded] {
         assert!(matches!(

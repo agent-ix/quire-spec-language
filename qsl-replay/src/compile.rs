@@ -4,16 +4,32 @@
 //! compiles through [`compile_package`] and never names [`crate::spine`].
 
 use qsl_foundation::SourceIdentity;
+use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::intake::package_input;
 
 use crate::bounds::ReplayLimits;
-use crate::execute::{request_limits, run_spine_with_execution_points, Recompiled, ReplayRefusal};
+use crate::execute::{
+    request_limits, run_spine_with_execution_points, Recompiled, ReplayRefusal, SpineUnit,
+};
 use crate::request::StageLimits;
 use crate::spine::{self, DependencyInput};
-use crate::DigestRecord;
+
+/// The one source unit a compile reads: its source identity, the package
+/// manifest's top-level name its nodes are keyed under (it has no default),
+/// the path it is displayed as, and its bytes.
+pub struct CompileUnit<'a> {
+    /// The unit's source identity.
+    pub source: SourceIdentity,
+    /// The package manifest's top-level name.
+    pub package_name: String,
+    /// The path the unit is displayed as.
+    pub path: &'a str,
+    /// The unit's bytes.
+    pub bytes: &'a [u8],
+}
 
 /// One source unit compiled and emitted: its `quire.checked-package/v2`
-/// bytes and the `package_id` they declare.
+/// bytes.
 #[derive(Clone, Debug)]
 pub struct CompiledPackage {
     emitted: spine::EmittedUnit,
@@ -28,19 +44,17 @@ impl CompiledPackage {
     pub fn bytes(&self) -> &[u8] {
         self.emitted.package().bytes()
     }
-
-    /// The `quire.package.semantic/v2` `package_id` the bytes declare.
-    pub fn package_id(&self) -> DigestRecord {
-        self.emitted.package().package_id().record()
-    }
 }
 
 /// Compile `bytes`, displayed as `path` and labelled `source`, with
 /// `packages` -- each a domain package document, keyed by its own
-/// `sha256-jcs` digest as [`crate::call_site`] and `replay` key theirs -- as
+/// package identity as [`crate::call_site`] and `replay` key theirs -- as
 /// I1's package input and `dependencies` as the dependency input, through the spine's parse, select, check and emit
 /// stages that [`crate::replay`] recompiles through, and return the emitted
 /// package.
+///
+/// `package_name` is the package manifest's top-level name, the library
+/// name the unit's nodes are keyed under; it has no default.
 ///
 /// `limits` are read as a replay request's stage limits are: each setting
 /// at its entry or its published default, with the default reader limit
@@ -52,18 +66,17 @@ impl CompiledPackage {
 /// owner, and [`ReplayRefusal::LimitAboveReader`] for an S1 limit above the
 /// reader limit.
 pub fn compile_package<'a>(
-    source: SourceIdentity,
-    path: &str,
-    bytes: &[u8],
+    unit: CompileUnit<'_>,
     packages: impl IntoIterator<Item = &'a [u8]>,
     dependencies: &DependencyInput,
     limits: StageLimits,
     replay_limits: ReplayLimits,
 ) -> Result<CompiledPackage, ReplayRefusal> {
     compile_package_with_execution_points(
-        source,
-        path,
-        bytes,
+        unit.source,
+        unit.package_name,
+        unit.path,
+        unit.bytes,
         packages,
         dependencies,
         &spine::StateClauseExecutionPoints::new(),
@@ -83,6 +96,7 @@ pub fn compile_package<'a>(
 )]
 pub fn compile_package_with_execution_points<'a>(
     source: SourceIdentity,
+    package_name: String,
     path: &str,
     bytes: &[u8],
     packages: impl IntoIterator<Item = &'a [u8]>,
@@ -93,6 +107,7 @@ pub fn compile_package_with_execution_points<'a>(
 ) -> Result<CompiledPackage, ReplayRefusal> {
     let compiled = recompile_unit_with_execution_points(
         source,
+        package_name,
         path,
         bytes,
         packages,
@@ -107,18 +122,17 @@ pub fn compile_package_with_execution_points<'a>(
 /// The one compile [`compile_package`] and [`crate::compile_admitted`] both
 /// run: the spine over `bytes`, keeping the checked unit.
 pub(crate) fn recompile_unit<'a>(
-    source: SourceIdentity,
-    path: &str,
-    bytes: &[u8],
+    unit: CompileUnit<'_>,
     packages: impl IntoIterator<Item = &'a [u8]>,
     dependencies: &DependencyInput,
     limits: StageLimits,
     replay_limits: ReplayLimits,
 ) -> Result<Recompiled, ReplayRefusal> {
     recompile_unit_with_execution_points(
-        source,
-        path,
-        bytes,
+        unit.source,
+        unit.package_name,
+        unit.path,
+        unit.bytes,
         packages,
         dependencies,
         &spine::StateClauseExecutionPoints::new(),
@@ -133,6 +147,7 @@ pub(crate) fn recompile_unit<'a>(
 )]
 fn recompile_unit_with_execution_points<'a>(
     source: SourceIdentity,
+    package_name: String,
     path: &str,
     bytes: &[u8],
     packages: impl IntoIterator<Item = &'a [u8]>,
@@ -149,11 +164,16 @@ fn recompile_unit_with_execution_points<'a>(
     dependencies
         .check_unit_owner(&source)
         .map_err(ReplayRefusal::DependencyInput)?;
+    let package = LibraryName::new(package_name).map_err(ReplayRefusal::InvalidPackageName)?;
     run_spine_with_execution_points(
-        &source,
-        path,
-        bytes,
-        &package_input(packages),
+        SpineUnit {
+            identity: &source,
+            package: &package,
+            path,
+            bytes,
+        },
+        &package_input(packages)
+            .map_err(|refusal| ReplayRefusal::DomainPackages(Box::new(refusal)))?,
         dependencies,
         execution_points,
         limits.spine,

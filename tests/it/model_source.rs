@@ -54,7 +54,7 @@ fn public_frontend_matches_the_preexisting_frozen_model_artifact() {
         model.artifact_bytes(),
         crate::support::historical_model_artifact()
     );
-    assert_eq!(model.source().source().digest(), source.source().digest());
+    assert_eq!(model.source().source().text(), source.source().text());
 }
 
 #[test]
@@ -87,12 +87,12 @@ fn source_sequence_maxima_are_checked_at_native_admission() {
             if maximum == 10_000 {
                 let model = result.unwrap();
                 assert_eq!(model.source().source().text(), text);
-                assert_eq!(model.source().source().digest(), binding.source().digest());
+                assert_eq!(model.source().source().text(), binding.source().text());
             } else {
                 let error = result.unwrap_err();
                 assert_eq!(error.code(), Code::UnrepresentableConstraint);
                 assert!(!error.is_incomplete());
-                assert_eq!(error.source().source().digest(), binding.source().digest());
+                assert_eq!(error.source().source().text(), binding.source().text());
                 let ModelSourceCause::Admission(cause) = error.cause else {
                     panic!("native admission must own the sequence refusal");
                 };
@@ -296,10 +296,7 @@ fn lowered_limits_remain_incomplete_and_fresh_requests_succeed() {
             }
             cause => panic!("expected the selected resource cause, got {cause:?}"),
         }
-        assert_eq!(
-            failure.source().source().digest(),
-            binding.source().digest()
-        );
+        assert_eq!(failure.source().source().text(), binding.source().text());
         assert!(read(binding.clone(), FORMAT, ModelSourceLimits::default())
             .unwrap()
             .admit(ModelLimits::default())
@@ -314,10 +311,7 @@ fn lowered_limits_remain_incomplete_and_fresh_requests_succeed() {
         .unwrap_err();
     assert!(failure.is_incomplete());
     assert!(matches!(failure.cause, ModelSourceCause::Admission(_)));
-    assert_eq!(
-        failure.source().source().digest(),
-        binding.source().digest()
-    );
+    assert_eq!(failure.source().source().text(), binding.source().text());
     let retry = read(binding, FORMAT, ModelSourceLimits::default())
         .unwrap()
         .admit(ModelLimits::default())

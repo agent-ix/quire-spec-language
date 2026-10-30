@@ -63,7 +63,10 @@ impl<'a> ClauseSet<'a> {
     {
         let mut by_node: BTreeMap<NodeKey, Vec<&'a TransitionClause<'a>>> = BTreeMap::new();
         for clause in clauses {
-            by_node.entry(clause.lowered.key).or_default().push(clause);
+            by_node
+                .entry(clause.lowered.key.clone())
+                .or_default()
+                .push(clause);
         }
         let mut nodes: Vec<_> = by_node.into_iter().collect();
         nodes.sort_by(|(left_key, left), (right_key, right)| {
@@ -82,7 +85,7 @@ impl<'a> ClauseSet<'a> {
     }
 
     fn keys(&self) -> Vec<NodeKey> {
-        self.nodes.iter().map(|(key, _)| *key).collect()
+        self.nodes.iter().map(|(key, _)| key.clone()).collect()
     }
 
     /// Every contributing declaration, in source order.
@@ -126,14 +129,14 @@ impl Lowering<'_> {
         clauses: &[TransitionClause<'_>],
     ) -> Result<(), CheckRefusal> {
         // The lock must select the protocol profile (QSpec FR-341 `laws`).
-        if self.lock.protocol_profile().is_none() {
+        if self.protocol_profile.is_none() {
             return Ok(());
         }
         let mut operations: BTreeMap<(EffectiveId, &str), Vec<&TransitionClause<'_>>> =
             BTreeMap::new();
         for clause in clauses {
             operations
-                .entry((clause.declaring, clause.operation.name()))
+                .entry((clause.declaring.clone(), clause.operation.name()))
                 .or_default()
                 .push(clause);
         }
@@ -152,7 +155,7 @@ impl Lowering<'_> {
         let Some(first) = group.first() else {
             return Ok(());
         };
-        let declaring = first.declaring;
+        let declaring = first.declaring.clone();
         let operation = first.operation;
         // No clause of the operation carries an execution point, and none
         // names the operation through a proper subtype of its declaring type.
@@ -208,7 +211,7 @@ impl Lowering<'_> {
         }
         for name in fields.into_keys() {
             let clauses = OperationClauses {
-                object,
+                object: object.clone(),
                 binding,
                 operation,
                 posts: &posts,
@@ -248,19 +251,19 @@ impl Lowering<'_> {
             operation,
             posts,
             pres,
-        } = *clauses;
+        } = clauses;
         // Q: the postconditions whose condition holds the subject node.
         let mut subject = None;
         let mut constraining = Vec::new();
-        for clause in posts {
-            let Some(&self_parameter) = clause.lowered.parameters.first() else {
+        for clause in *posts {
+            let Some(self_parameter) = clause.lowered.parameters.first() else {
                 continue;
             };
             let mut visited = BTreeSet::new();
             if let Some(found) = self.subject_read(
-                clause.lowered.condition,
-                self_parameter,
-                object,
+                clause.lowered.condition.clone(),
+                self_parameter.clone(),
+                object.clone(),
                 field,
                 &mut visited,
             ) {
@@ -292,7 +295,7 @@ impl Lowering<'_> {
             &post_set,
             StateClauseKind::Postcondition,
             binding,
-            boolean,
+            boolean.clone(),
             location,
             built,
         )?;
@@ -303,7 +306,7 @@ impl Lowering<'_> {
                 &pre_set,
                 StateClauseKind::Precondition,
                 binding,
-                boolean,
+                boolean.clone(),
                 location,
                 built,
             )?]
@@ -318,7 +321,7 @@ impl Lowering<'_> {
                     .len()
                     .saturating_sub(operation.parameters().len()),
             )
-            .copied()
+            .cloned()
             .collect();
 
         let law = self.law(LawRole::ProtocolProfile, location)?;
@@ -334,7 +337,7 @@ impl Lowering<'_> {
             location,
             NodeTag::State,
             "transition",
-            Some(boolean),
+            Some(boolean.clone()),
             None,
             BodyTerm::application(
                 Operator::StateTransition,
@@ -345,7 +348,7 @@ impl Lowering<'_> {
                 },
                 boolean,
                 vec![
-                    MemberTerm::bound("anchor", LeafTerm::reference(binding.anchor)),
+                    MemberTerm::bound("anchor", LeafTerm::reference(binding.anchor.clone())),
                     MemberTerm::bound("subject", LeafTerm::reference(subject)),
                     MemberTerm::binding(
                         "inputs",
@@ -357,7 +360,7 @@ impl Lowering<'_> {
             ),
         )?;
         for clause in post_set.declarations() {
-            self.record(key, OccurrenceRole::Claim, clause.location.clone());
+            self.record(key.clone(), OccurrenceRole::Claim, clause.location.clone());
         }
         Ok(())
     }
@@ -377,10 +380,10 @@ impl Lowering<'_> {
     ) -> Result<NodeKey, CheckRefusal> {
         let keys = set.keys();
         if let [only] = keys.as_slice() {
-            return Ok(*only);
+            return Ok(only.clone());
         }
         if let Some(existing) = built.clauses.get(&(kind, keys.clone())) {
-            return Ok(*existing);
+            return Ok(existing.clone());
         }
         let mut members = set.nodes.iter();
         let Some((_, first)) = members.next() else {
@@ -393,21 +396,21 @@ impl Lowering<'_> {
             ));
         };
         let lead = first[0];
-        let mut condition = lead.lowered.condition;
+        let mut condition = lead.lowered.condition.clone();
         for (_, clauses) in members {
             let next = clauses[0];
-            let right = next.lowered.condition;
-            condition = match built.conjunctions.get(&(condition, right)) {
-                Some(existing) => *existing,
+            let right = next.lowered.condition.clone();
+            condition = match built.conjunctions.get(&(condition.clone(), right.clone())) {
+                Some(existing) => existing.clone(),
                 None => {
                     let leaf = self.typed_application(
                         next.location,
-                        boolean,
+                        boolean.clone(),
                         Operator::Binary,
                         Operation::plain("quire.op.boolean.and"),
                         vec![
-                            MemberTerm::reference(condition),
-                            MemberTerm::reference(right),
+                            MemberTerm::reference(condition.clone()),
+                            MemberTerm::reference(right.clone()),
                         ],
                     )?;
                     let LeafTerm::Reference { target } = leaf else {
@@ -421,8 +424,14 @@ impl Lowering<'_> {
                             ),
                         ));
                     };
-                    built.conjunctions.insert((condition, right), target.0);
-                    target.0
+                    let target = target
+                        .admitted()
+                        .cloned()
+                        .ok_or_else(|| fault(next.location, KeyFault::UnresolvedDraft))?;
+                    built
+                        .conjunctions
+                        .insert((condition, right), target.clone());
+                    target
                 }
             };
         }
@@ -431,7 +440,7 @@ impl Lowering<'_> {
             location,
             NodeTag::State,
             "state_clause",
-            Some(boolean),
+            Some(boolean.clone()),
             None,
             BodyTerm::application(
                 Operator::StateClause,
@@ -445,17 +454,17 @@ impl Lowering<'_> {
                 boolean,
                 vec![
                     MemberTerm::Group(GroupTerm::references(
-                        lead.lowered.parameters.iter().copied(),
+                        lead.lowered.parameters.iter().cloned(),
                     )),
-                    MemberTerm::reference(binding.anchor),
+                    MemberTerm::reference(binding.anchor.clone()),
                     MemberTerm::Leaf(LeafTerm::reference(condition)),
                 ],
             ),
         )?;
         for clause in set.declarations() {
-            self.record(key, OccurrenceRole::Claim, clause.location.clone());
+            self.record(key.clone(), OccurrenceRole::Claim, clause.location.clone());
         }
-        built.clauses.insert((kind, keys), key);
+        built.clauses.insert((kind, keys), key.clone());
         Ok(key)
     }
 
@@ -472,10 +481,10 @@ impl Lowering<'_> {
         field: &str,
         visited: &mut BTreeSet<NodeKey>,
     ) -> Option<NodeKey> {
-        if !visited.insert(node) {
+        if !visited.insert(node.clone()) {
             return None;
         }
-        let semantic = self.graph.node(node)?;
+        let semantic = self.graph.node(node.clone())?;
         let application = semantic.content.body.application_term()?;
         if semantic.content.node_tag != NodeTag::Expression {
             return None;
@@ -489,7 +498,7 @@ impl Lowering<'_> {
                 Some(Member::Field { declaration, name })
                     if *declaration == object && name.as_str() == field
             )
-            && self.is_deref_of(application.arguments.first(), self_parameter)
+            && self.is_deref_of(application.arguments.first(), self_parameter.clone())
         {
             return Some(node);
         }
@@ -498,9 +507,15 @@ impl Lowering<'_> {
             .iter()
             .flat_map(MemberTerm::leaves)
             .find_map(|leaf| match leaf {
-                LeafTerm::Reference { target } => {
-                    self.subject_read(target.0, self_parameter, object, field, visited)
-                }
+                LeafTerm::Reference { target } => target.admitted().and_then(|target| {
+                    self.subject_read(
+                        target.clone(),
+                        self_parameter.clone(),
+                        object.clone(),
+                        field,
+                        visited,
+                    )
+                }),
                 LeafTerm::Literal { .. } | LeafTerm::DependencyReference { .. } => None,
             })
     }
@@ -511,9 +526,9 @@ impl Lowering<'_> {
         let Some(MemberTerm::Leaf(LeafTerm::Reference { target })) = argument else {
             return false;
         };
-        let Some(application) = self
-            .graph
-            .node(target.0)
+        let Some(application) = target
+            .admitted()
+            .and_then(|target| self.graph.node(target.clone()))
             .and_then(|node| node.content.body.application_term())
         else {
             return false;
@@ -521,7 +536,7 @@ impl Lowering<'_> {
         application.operator == Operator::Deref
             && matches!(
                 application.arguments.first(),
-                Some(MemberTerm::Leaf(LeafTerm::Reference { target })) if target.0 == self_parameter
+                Some(MemberTerm::Leaf(LeafTerm::Reference { target })) if target.admitted() == Some(&self_parameter)
             )
     }
 }

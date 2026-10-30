@@ -7,7 +7,7 @@ use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
-use qsl_semantics::value::{CatalogRole, DefinitionLock, DefinitionReference};
+use qsl_semantics::value::{admit_ieee_profile, DefinitionRole};
 use quire_eval::FamilyOutcome;
 use quire_exact::{IeeeFlag, IeeeValue, Meter, Outcome, Refusal, ScalarLimits, Value};
 use quire_semantic_value::checking::CheckingLimits;
@@ -52,6 +52,7 @@ fn add(float: &str, left: u64, right: u64) -> Outcome<Value> {
     let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
     let mut declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         unit,
         Vec::new(),
         Vec::new(),
@@ -100,6 +101,7 @@ fn sqrt(float: &str, operand: u64) -> Outcome<Value> {
     let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
     let mut declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         unit,
         Vec::new(),
         Vec::new(),
@@ -144,6 +146,7 @@ fn equal(left: u64, right: u64, operator: &str) -> Outcome<Value> {
     let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
     let mut declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         unit,
         Vec::new(),
         Vec::new(),
@@ -274,6 +277,7 @@ fn operands_of_different_rounding_modes_are_a_type_mismatch() {
     let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
     let mut declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         unit,
         Vec::new(),
         Vec::new(),
@@ -290,14 +294,5 @@ fn operands_of_different_rounding_modes_are_a_type_mismatch() {
 }
 
 fn ieee_profile() -> qsl_semantics::value::AdmittedIeeeProfile {
-    let lock = DefinitionLock::pinned();
-    let entry = lock.entry(CatalogRole::IeeeProfile);
-    lock.admit_ieee_profile(
-        &[DefinitionReference {
-            authority: entry.authority.to_owned(),
-            identity: entry.identity.to_owned(),
-        }],
-        &[],
-    )
-    .unwrap()
+    admit_ieee_profile(&[DefinitionRole::IeeeProfile.reference()], &[]).unwrap()
 }

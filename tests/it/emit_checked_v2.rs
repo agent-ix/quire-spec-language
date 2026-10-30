@@ -14,10 +14,10 @@ use qsl_foundation::SourceIdentity;
 use qsl_replay::spine::DependencyInput;
 use quire_contract_model::{
     ApplicationOperator, CheckedNodeId, CheckedOccurrenceRole, CheckedPackageEvidence,
-    CheckedPackageIdentityPreimageRefV2, CheckedPackageReadLimits, CheckedPackageV2,
-    CheckedPackageV2ReadResult, CheckedSemanticNodeV2, CheckedTerm,
+    CheckedPackageReadLimits, CheckedPackageV2, CheckedPackageV2ReadResult, CheckedSemanticNodeV2,
+    CheckedTerm,
 };
-use quire_spec_language::emit_checked_v2::{emit, run, Error, Request, MODEL_DIGEST_TOKEN};
+use quire_spec_language::emit_checked_v2::{emit, run, Error, Request};
 use serde_json::{json, Value};
 
 fn args(items: &[&Path]) -> Vec<OsString> {
@@ -27,11 +27,21 @@ fn args(items: &[&Path]) -> Vec<OsString> {
         .collect()
 }
 
+/// The explicit package name every emission here passes.
+const PACKAGE_NAME: &str = "fixture";
+
+/// `items` after the required `--package-name` flag.
+fn with_name(items: &[&Path]) -> Vec<OsString> {
+    let mut command = strings(&["--package-name", PACKAGE_NAME]);
+    command.extend(args(items));
+    command
+}
+
 fn strings(items: &[&str]) -> Vec<OsString> {
     items.iter().map(OsString::from).collect()
 }
 
-/// `tests/fixtures/spine-model.native` with its model digest filled in
+/// `tests/fixtures/spine-model.native`
 /// (`crate::support::spine_model::unit`), written to `directory` for the
 /// runnable output to read.
 fn spine_model_source(directory: &Path) -> PathBuf {
@@ -48,10 +58,11 @@ fn read_back(bytes: &[u8], documents: &[&[u8]]) -> CheckedPackageV2 {
     for feature in wire["lock"]["required_features"].as_array().unwrap() {
         evidence.support_feature(feature.as_str().unwrap());
     }
-    for (digest, document) in qsl_semantics::model::intake::package_input(documents.iter().copied())
+    for (identity, document) in
+        qsl_semantics::model::intake::package_input(documents.iter().copied()).unwrap()
     {
         evidence
-            .insert_domain_package_document(qsl_semantics::model::key::hex(&digest), document)
+            .insert_domain_package_document(identity.as_str(), document)
             .expect("a fresh evidence key");
     }
     match CheckedPackageV2::read(bytes, CheckedPackageReadLimits::bounded(), &evidence) {
@@ -70,7 +81,7 @@ fn producer_bytes(path: &Path, source: &str, documents: &[&[u8]]) -> Vec<u8> {
         SourceIdentity::new("local", format!("source:{}", path.display()), "file", "1"),
         &path.display().to_string(),
         source.as_bytes(),
-        &qsl_semantics::model::intake::package_input(documents.iter().copied()),
+        &qsl_semantics::model::intake::package_input(documents.iter().copied()).unwrap(),
         &DependencyInput::default(),
     )
     .expect("the producer emits")
@@ -93,7 +104,7 @@ fn the_output_is_the_producers_bytes_and_reads_back() {
     let program = program.as_path();
 
     let mut stdout = Vec::new();
-    let mut command = strings(&["--model"]);
+    let mut command = strings(&["--package-name", PACKAGE_NAME, "--model"]);
     command.extend(args(&[model, program]));
     run(&command, &mut stdout).expect("the fixture emits");
     assert!(!stdout.is_empty());
@@ -101,7 +112,7 @@ fn the_output_is_the_producers_bytes_and_reads_back() {
     read_back(&stdout, &[document]);
 
     let mut elsewhere = Vec::new();
-    let mut command = strings(&["--out"]);
+    let mut command = strings(&["--package-name", PACKAGE_NAME, "--out"]);
     command.extend(args(&[&out]));
     command.extend(strings(&["--model"]));
     command.extend(args(&[model, program]));
@@ -110,66 +121,26 @@ fn the_output_is_the_producers_bytes_and_reads_back() {
     assert_eq!(std::fs::read(&out).unwrap(), stdout);
 }
 
-/// The digest `emit_checked_v2` derives for a domain package document.
-fn model_digest(document: &[u8]) -> String {
-    let packages = qsl_semantics::model::intake::package_input([document]);
-    qsl_semantics::model::key::hex(packages.keys().next().unwrap())
-}
+const SWITCH_MODEL: &str = "examples/switch-transition/switch.semantic-ir.json";
+const SWITCH_SOURCE: &str = "examples/switch-transition/switch.native";
 
-/// The switch template with its digest filled from the model file, as the
-/// producer renders it; the test derives it, nothing is frozen.
-fn rendered_switch_source() -> String {
-    let document = std::fs::read("examples/switch-transition/switch.semantic-ir.json").unwrap();
-    std::fs::read_to_string("examples/switch-transition/switch.native.in")
-        .unwrap()
-        .replace(MODEL_DIGEST_TOKEN, &model_digest(&document))
-}
-
-/// No file under `examples/switch-transition/` carries a digest literal: FR-056
-/// selects models by digest, so a committed one would silently stale on a
-/// model edit.
-#[test]
-fn the_switch_example_directory_carries_no_digest_literal() {
-    for entry in std::fs::read_dir("examples/switch-transition").unwrap() {
-        let path = entry.unwrap().path();
-        let text = std::fs::read_to_string(&path).unwrap();
-        for (at, _) in text.match_indices("sha256-jcs:") {
-            let tail = &text[at + "sha256-jcs:".len()..];
-            let run = tail.bytes().take_while(u8::is_ascii_hexdigit).count();
-            assert!(run < 64, "{} carries a digest literal", path.display());
-        }
-    }
+/// The switch source.
+fn switch_source() -> String {
+    std::fs::read_to_string("examples/switch-transition/switch.native").unwrap()
 }
 
 /// The QSL-owned Boolean Switch pair (`examples/switch-transition/`): the
 /// derived Boolean model-field transition (FR-105-AC-13) is emitted from the
 /// checked-in source and domain model, and the package reads back admitted
 /// through IR's strict reader. The producer's `state_transition` node is found
-/// by shape and not by a frozen id, and the source's `digest` is checked
-/// against the model file rather than frozen in this test.
+/// by shape and not by a frozen id.
 #[test]
 fn the_switch_example_pair_emits_a_transition_and_is_admitted() {
     let model = Path::new("examples/switch-transition/switch.semantic-ir.json");
-    let program = Path::new("examples/switch-transition/switch.native.in");
+    let program = Path::new("examples/switch-transition/switch.native");
     let document = std::fs::read(model).unwrap();
-    let template = std::fs::read_to_string(program).unwrap();
-    assert!(
-        template.contains(MODEL_DIGEST_TOKEN),
-        "the committed source is a template, not a digest-carrying source"
-    );
-    let source = rendered_switch_source();
-    assert!(
-        source.contains(&format!("sha256-jcs:{}", model_digest(&document))),
-        "the rendered source selects the model file by its derived digest"
-    );
-    let directory = tempfile::tempdir().unwrap();
-    let rendered = directory.path().join("switch.native");
-    let mut with_source_out = strings(&["--source-out"]);
-    with_source_out.extend(args(&[&rendered, Path::new("--model"), model, program]));
-    emit(&Request::parse(&with_source_out).unwrap()).expect("renders and emits");
-    assert_eq!(std::fs::read_to_string(&rendered).unwrap(), source);
-
-    let mut command = strings(&["--model"]);
+    let source = switch_source();
+    let mut command = strings(&["--package-name", PACKAGE_NAME, "--model"]);
     command.extend(args(&[model, program]));
     let bytes = emit(&Request::parse(&command).unwrap()).expect("the transition form emits");
     assert_eq!(bytes, producer_bytes(program, &source, &[&document]));
@@ -231,10 +202,10 @@ fn parameter_name(node: &CheckedSemanticNodeV2) -> String {
 #[test]
 fn the_switch_transition_reads_back_typed_subject_input_post_claim_and_source() {
     let model = Path::new(SWITCH_MODEL);
-    let program = Path::new(SWITCH_TEMPLATE);
+    let program = Path::new(SWITCH_SOURCE);
     let document = std::fs::read(model).unwrap();
-    let source = rendered_switch_source();
-    let mut command = strings(&["--model"]);
+    let source = switch_source();
+    let mut command = strings(&["--package-name", PACKAGE_NAME, "--model"]);
     command.extend(args(&[model, program]));
     let bytes = emit(&Request::parse(&command).unwrap()).expect("the transition form emits");
     let package = read_back(&bytes, &[&document]);
@@ -430,32 +401,20 @@ fn the_switch_transition_reads_back_typed_subject_input_post_claim_and_source() 
     // Read -> typed re-encode -> read: the public typed writer's output
     // admits again and the re-read carries the same typed graph (so the same
     // transition, subject, inputs, post and occurrences), the same source
-    // rows and the same package identity. Only what the writer guarantees is
+    // rows and the same package name. Only what the writer guarantees is
     // asserted: that its bytes are a fixed point of read then write.
     let written = encode(&package);
     let again = read_back(&written, &[&document]);
     assert_eq!(again.graph(), package.graph());
     assert_eq!(again.source_map(), package.source_map());
-    assert_eq!(again.package_id(), package.package_id());
+    assert_eq!(again.name(), package.name());
     assert_eq!(encode(&again), written, "write/read/write is stable");
 }
 
 /// The package re-encoded by IR's public typed writer.
 fn encode(read: &CheckedPackageV2) -> Vec<u8> {
-    let selection = read.identity_preimage();
-    let preimage = CheckedPackageIdentityPreimageRefV2 {
-        version: &selection.version,
-        edition: &selection.edition,
-        profile_selections: &selection.profile_selections,
-        definition_selections: &selection.definition_selections,
-        model_selections: &selection.model_selections,
-        required_features: &selection.required_features,
-        dependency_selections: &selection.dependency_selections,
-        identity_projection: &read.graph().nodes,
-    };
     quire_contract_model::encode_checked_package_v2(
-        &preimage,
-        read.package_id(),
+        read.name(),
         read.lock(),
         read.graph(),
         quire_contract_model::CheckedPackageSourceCorrespondenceRef {
@@ -470,8 +429,7 @@ fn encode(read: &CheckedPackageV2) -> Vec<u8> {
 }
 
 /// Input order: a test-local copy of the Switch model whose `set` takes two
-/// Boolean parameters, `flag` then `other`, is emitted (its digest derived by
-/// `model_digest`, no file or digest committed) and the typed transition's
+/// Boolean parameters, `flag` then `other`, is emitted (no file or digest committed) and the typed transition's
 /// `inputs` aggregate names them in the declared order.
 #[test]
 fn the_typed_inputs_keep_the_declared_order_of_two_parameters() {
@@ -496,8 +454,8 @@ fn the_typed_inputs_keep_the_declared_order_of_two_parameters() {
     let path = directory.path().join("switch2.semantic-ir.json");
     let document = serde_json::to_vec(&model).unwrap();
     std::fs::write(&path, &document).unwrap();
-    let mut command = strings(&["--model"]);
-    command.extend(args(&[&path, Path::new(SWITCH_TEMPLATE)]));
+    let mut command = strings(&["--package-name", PACKAGE_NAME, "--model"]);
+    command.extend(args(&[&path, Path::new(SWITCH_SOURCE)]));
     let bytes = emit(&Request::parse(&command).unwrap()).expect("the two-input form emits");
     let package = read_back(&bytes, &[&document]);
     let transition = package
@@ -531,8 +489,8 @@ fn the_typed_inputs_keep_the_declared_order_of_two_parameters() {
 fn a_malformed_switch_transition_is_refused_not_read_as_a_generic_term() {
     let model = Path::new(SWITCH_MODEL);
     let document = std::fs::read(model).unwrap();
-    let mut command = strings(&["--model"]);
-    command.extend(args(&[model, Path::new(SWITCH_TEMPLATE)]));
+    let mut command = strings(&["--package-name", PACKAGE_NAME, "--model"]);
+    command.extend(args(&[model, Path::new(SWITCH_SOURCE)]));
     let bytes = emit(&Request::parse(&command).unwrap()).unwrap();
     let wire: Value = serde_json::from_slice(&bytes).unwrap();
     let position = wire["semantic_graph"]["nodes"]
@@ -550,10 +508,11 @@ fn a_malformed_switch_transition_is_refused_not_read_as_a_generic_term() {
         for feature in wire["lock"]["required_features"].as_array().unwrap() {
             evidence.support_feature(feature.as_str().unwrap());
         }
-        for (digest, document) in qsl_semantics::model::intake::package_input([document.as_slice()])
+        for (identity, document) in
+            qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap()
         {
             evidence
-                .insert_domain_package_document(qsl_semantics::model::key::hex(&digest), document)
+                .insert_domain_package_document(identity.as_str(), document)
                 .unwrap();
         }
         CheckedPackageV2::read(&bytes, CheckedPackageReadLimits::bounded(), &evidence)
@@ -590,7 +549,7 @@ fn a_refused_source_writes_nothing_and_exits_nonzero() {
     let directory = tempfile::tempdir().unwrap();
     let program = spine_model_source(directory.path());
     let mut stdout = Vec::new();
-    let refusal = run(&args(&[&program]), &mut stdout).expect_err("the model is not supplied");
+    let refusal = run(&with_name(&[&program]), &mut stdout).expect_err("the model is not supplied");
     assert!(matches!(refusal, Error::Producer(_)), "{refusal:?}");
     assert_ne!(refusal.exit_code(), 0);
     assert!(!refusal.to_string().is_empty());
@@ -598,17 +557,28 @@ fn a_refused_source_writes_nothing_and_exits_nonzero() {
 
     for bad in [
         strings(&[]),
-        strings(&["--model"]),
-        strings(&["--bogus", "x"]),
-        strings(&["--library", "no-equals", "x"]),
-        strings(&["a.native", "b.native"]),
+        strings(&["--package-name", PACKAGE_NAME, "--model"]),
+        strings(&["--package-name", PACKAGE_NAME, "--bogus", "x"]),
+        strings(&[
+            "--package-name",
+            PACKAGE_NAME,
+            "--library",
+            "no-equals",
+            "x",
+        ]),
+        strings(&["--package-name", PACKAGE_NAME, "a.native", "b.native"]),
+        strings(&["a.native"]),
     ] {
         let refusal = run(&bad, &mut stdout).expect_err("a malformed command line");
         assert!(matches!(refusal, Error::Usage), "{bad:?}: {refusal:?}");
         assert_ne!(refusal.exit_code(), 0);
     }
     let missing = run(
-        &strings(&["/nonexistent/emit-checked-v2.native"]),
+        &strings(&[
+            "--package-name",
+            PACKAGE_NAME,
+            "/nonexistent/emit-checked-v2.native",
+        ]),
         &mut stdout,
     )
     .expect_err("an unreadable file");
@@ -634,13 +604,13 @@ fn the_size_ceiling_is_exact_and_over_cap_inputs_refuse_explicitly() {
     let program = directory.path().join("at-cap.native");
     std::fs::write(&program, &text).unwrap();
     let mut stdout = Vec::new();
-    run(&args(&[&program]), &mut stdout).expect("a source at the ceiling emits");
+    run(&with_name(&[&program]), &mut stdout).expect("a source at the ceiling emits");
     assert!(!stdout.is_empty());
 
     let over = directory.path().join("over-cap.native");
     std::fs::write(&over, format!("{text} ")).unwrap();
     let mut refused = Vec::new();
-    let refusal = run(&args(&[&over]), &mut refused).expect_err("one byte over the ceiling");
+    let refusal = run(&with_name(&[&over]), &mut refused).expect_err("one byte over the ceiling");
     assert!(matches!(refusal, Error::Producer(_)), "{refusal:?}");
     assert_eq!(refusal.exit_code(), 22, "{refusal}");
     assert!(!refusal.to_string().contains("--limit"), "{refusal}");
@@ -648,7 +618,7 @@ fn the_size_ceiling_is_exact_and_over_cap_inputs_refuse_explicitly() {
 
     let model = directory.path().join("big.semantic-ir.json");
     std::fs::write(&model, vec![b' '; MAX_SOURCE_BYTES + 1]).unwrap();
-    let mut command = strings(&["--model"]);
+    let mut command = strings(&["--package-name", PACKAGE_NAME, "--model"]);
     command.extend(args(&[&model, &program]));
     let refusal = run(&command, &mut refused).expect_err("an over-cap model file");
     assert!(matches!(refusal, Error::TooLarge { .. }), "{refusal:?}");
@@ -657,7 +627,7 @@ fn the_size_ceiling_is_exact_and_over_cap_inputs_refuse_explicitly() {
         refusal.to_string().contains("big.semantic-ir.json"),
         "{refusal}"
     );
-    let mut command = strings(&["--library"]);
+    let mut command = strings(&["--package-name", PACKAGE_NAME, "--library"]);
     command.push(OsString::from(format!("lib={}", model.display())));
     command.extend(args(&[&program]));
     let refusal = run(&command, &mut refused).expect_err("an over-cap library file");
@@ -673,7 +643,7 @@ fn the_size_ceiling_is_exact_and_over_cap_inputs_refuse_explicitly() {
 #[test]
 fn accepted_execution_points_are_emitted_and_bad_points_refuse() {
     let model = Path::new("examples/switch-transition/switch.semantic-ir.json");
-    let program = Path::new("examples/switch-transition/switch.native.in");
+    let program = Path::new("examples/switch-transition/switch.native");
     let document = std::fs::read(model).unwrap();
     let directory = tempfile::tempdir().unwrap();
     let points = |text: &str| {
@@ -687,7 +657,7 @@ fn accepted_execution_points_are_emitted_and_bad_points_refuse() {
         file
     };
     let command = |extra: &[&Path]| {
-        let mut command = strings(&["--model"]);
+        let mut command = strings(&["--package-name", PACKAGE_NAME, "--model"]);
         command.extend(args(&[model]));
         for file in extra {
             command.extend(strings(&["--execution-points"]));
@@ -767,7 +737,7 @@ fn accepted_execution_points_are_emitted_and_bad_points_refuse() {
 fn several_accepted_execution_points_each_reach_their_clause() {
     let model = Path::new("examples/switch-transition/switch.semantic-ir.json");
     let document = std::fs::read(model).unwrap();
-    let source = rendered_switch_source() + "pre Q0 using v on M::Switch::set { true }\n";
+    let source = switch_source() + "pre Q0 using v on M::Switch::set { true }\n";
     let directory = tempfile::tempdir().unwrap();
     let program = directory.path().join("two-clauses.native");
     std::fs::write(&program, source).unwrap();
@@ -777,7 +747,7 @@ fn several_accepted_execution_points_each_reach_their_clause() {
         r#"{"Q0": {"kind": "pre", "operation": "set"}, "Q1": {"kind": "post", "operation": "set"}}"#,
     )
     .unwrap();
-    let mut command = strings(&["--model"]);
+    let mut command = strings(&["--package-name", PACKAGE_NAME, "--model"]);
     command.extend(args(&[model]));
     command.extend(strings(&["--execution-points"]));
     command.extend(args(&[&file, &program]));
@@ -809,14 +779,14 @@ fn an_over_cap_points_file_is_refused_explicitly() {
     let directory = tempfile::tempdir().unwrap();
     let points = directory.path().join("big-points.json");
     std::fs::write(&points, vec![b' '; MAX_SOURCE_BYTES + 1]).unwrap();
-    let mut command = strings(&["--model"]);
+    let mut command = strings(&["--package-name", PACKAGE_NAME, "--model"]);
     command.extend(args(&[Path::new(
         "examples/switch-transition/switch.semantic-ir.json",
     )]));
     command.extend(strings(&["--execution-points"]));
     command.extend(args(&[&points]));
     command.extend(args(&[Path::new(
-        "examples/switch-transition/switch.native.in",
+        "examples/switch-transition/switch.native",
     )]));
     let mut stdout = Vec::new();
     let refusal = run(&command, &mut stdout).expect_err("an over-cap points file");
@@ -826,119 +796,45 @@ fn an_over_cap_points_file_is_refused_explicitly() {
     assert!(stdout.is_empty());
 }
 
-const SWITCH_MODEL: &str = "examples/switch-transition/switch.semantic-ir.json";
-const SWITCH_TEMPLATE: &str = "examples/switch-transition/switch.native.in";
-
-/// `--source-out` is written only after the producer accepted the template
-/// and carries exactly the template with every `{model_digest}` replaced:
-/// `{other}` text is untouched, and `{{model_digest}}` becomes the digest in
-/// single braces (a plain replace of the inner token). A producer refusal, a
-/// template refusal (no model, several models, a model that is not a domain
-/// package) and an unreadable source each leave no `--source-out` file and no
-/// bytes; a source that is not a template is not copied.
+/// FR-058-AC-1: the QSL-owned `adjust` operation of the switch example
+/// carries a precondition `P1` and a postcondition `Q2`; accepted execution
+/// points bind each to `adjust`, the emitted package reads back, and the
+/// state clause nodes carry exactly those two points.
 #[test]
-fn source_out_is_written_only_for_an_accepted_template() {
-    let directory = tempfile::tempdir().unwrap();
+fn the_adjust_operation_emits_distinct_pre_and_post_clauses_with_their_points() {
     let model = Path::new(SWITCH_MODEL);
+    let program = Path::new("examples/switch-transition/adjust.native");
     let document = std::fs::read(model).unwrap();
-    let digest = model_digest(&document);
-    let out = directory.path().join("rendered.native");
-    let run_with = |program: &Path, models: &[&Path]| {
-        let mut command = strings(&["--source-out"]);
-        command.extend(args(&[&out]));
-        for model in models {
-            command.extend(strings(&["--model"]));
-            command.extend(args(&[model]));
-        }
-        command.extend(args(&[program]));
-        let mut stdout = Vec::new();
-        let result = run(&command, &mut stdout);
-        (result, stdout)
-    };
-
-    // Success: present and correct; `{other}` untouched, `{{model_digest}}`
-    // is the digest inside single braces, every placeholder is filled.
-    let template = std::fs::read_to_string(SWITCH_TEMPLATE).unwrap()
-        + "// {other} {{model_digest}} {model_digest}\n";
-    let accepted = directory.path().join("accepted.native.in");
-    std::fs::write(&accepted, &template).unwrap();
-    let (result, stdout) = run_with(&accepted, &[model]);
-    result.expect("the template emits");
-    assert!(!stdout.is_empty());
-    let rendered = std::fs::read_to_string(&out).unwrap();
-    assert_eq!(rendered, template.replace(MODEL_DIGEST_TOKEN, &digest));
-    assert!(rendered.contains(&format!("// {{other}} {{{digest}}} {digest}\n")));
-    assert!(!rendered.contains(MODEL_DIGEST_TOKEN));
-    assert!(std::fs::read_dir(directory.path())
-        .unwrap()
-        .all(|entry| !entry
-            .unwrap()
-            .file_name()
-            .to_string_lossy()
-            .contains(".tmp")));
-    std::fs::remove_file(&out).unwrap();
-
-    // Producer refusal: an invalid clause after a valid template.
-    let refused = directory.path().join("refused.native.in");
+    let directory = tempfile::tempdir().unwrap();
+    let file = directory.path().join("points.json");
     std::fs::write(
-        &refused,
-        template.clone() + "post Q9 using v on M::Nope::x { true }\n",
+        &file,
+        r#"{"P1": {"kind": "pre", "operation": "adjust"}, "Q2": {"kind": "post", "operation": "adjust"}}"#,
     )
     .unwrap();
-    let (result, stdout) = run_with(&refused, &[model]);
-    assert!(matches!(result, Err(Error::Producer(_))), "{result:?}");
-    assert!(
-        stdout.is_empty() && !out.exists(),
-        "a producer refusal leaves no file"
+    let mut command = strings(&["--package-name", PACKAGE_NAME, "--model"]);
+    command.extend(args(&[model]));
+    command.extend(strings(&["--execution-points"]));
+    command.extend(args(&[&file, program]));
+    let mut stdout = Vec::new();
+    run(&command, &mut stdout).expect("the adjust clauses emit");
+    read_back(&stdout, &[&document]);
+    let wire: Value = serde_json::from_slice(&stdout).unwrap();
+    let mut points: Vec<String> = wire["semantic_graph"]["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|node| node["semantic_form"] == "state_clause")
+        .map(|node| node["body"]["operation"]["member"]["execution_point"].to_string())
+        .collect();
+    points.sort();
+    let mut expected = vec![
+        json!({"kind": "pre", "operation": "adjust"}).to_string(),
+        json!({"kind": "post", "operation": "adjust"}).to_string(),
+    ];
+    expected.sort();
+    assert_eq!(
+        points, expected,
+        "P1 is the pre point and Q2 the post point"
     );
-
-    // Template refusals: no model, several models, an empty model, a model
-    // that is not a domain package.
-    let (result, stdout) = run_with(&accepted, &[]);
-    assert!(
-        matches!(result, Err(Error::TemplateModels { supplied: 0 })),
-        "{result:?}"
-    );
-    assert!(stdout.is_empty() && !out.exists());
-    let (result, stdout) = run_with(&accepted, &[model, model]);
-    let refusal = result.expect_err("several models");
-    assert!(
-        matches!(refusal, Error::TemplateModels { supplied: 2 }),
-        "{refusal:?}"
-    );
-    assert_eq!(refusal.exit_code(), 20);
-    assert!(stdout.is_empty() && !out.exists());
-    for (name, content) in [
-        ("empty.json", ""),
-        ("junk.json", "{\"not\": \"a package\"}"),
-    ] {
-        let bad = directory.path().join(name);
-        std::fs::write(&bad, content).unwrap();
-        let (result, stdout) = run_with(&accepted, &[&bad]);
-        let refusal = result.expect_err("an unusable model");
-        assert!(
-            matches!(refusal, Error::TemplateModel),
-            "{name}: {refusal:?}"
-        );
-        assert!(!refusal.to_string().contains("exactly one"), "{refusal}");
-        assert_eq!(refusal.exit_code(), 20);
-        assert!(stdout.is_empty() && !out.exists(), "{name}");
-    }
-
-    // A non-UTF-8 template is filled byte-wise and the producer refuses it;
-    // substitution is never silently skipped, and nothing is written.
-    let mut bytes = template.into_bytes();
-    bytes.extend_from_slice(b"// \xff\xfe\n");
-    let binary = directory.path().join("binary.native.in");
-    std::fs::write(&binary, bytes).unwrap();
-    let (result, _) = run_with(&binary, &[model]);
-    assert!(matches!(result, Err(Error::Producer(_))), "{result:?}");
-    assert!(!out.exists());
-
-    // A source that is not a template is not copied.
-    let plain = directory.path().join("plain.native");
-    std::fs::write(&plain, rendered_switch_source()).unwrap();
-    let (result, _) = run_with(&plain, &[model]);
-    result.expect("a plain source emits");
-    assert!(!out.exists(), "a non-template source is not copied");
 }

@@ -10,7 +10,7 @@ mod values;
 
 use ix_trace_rs::trace;
 use qsl_foundation::source::SourceReadCause;
-use qsl_foundation::{ByteDigest, Code, SourceIdentity, SourceLabel};
+use qsl_foundation::{Code, SourceIdentity, SourceLabel};
 use quire_contract_model as ir;
 use quire_spec_language::runtime::{
     ArtifactLimits, DraftPathSegment, FieldBinding, Invocation, InvocationDraft, InvocationRef,
@@ -56,14 +56,8 @@ fn binding(name: &str, value: u32) -> ValueBinding {
     }
 }
 
-fn zero_digest() -> ByteDigest {
-    "sha256:0000000000000000000000000000000000000000000000000000000000000000"
-        .parse()
-        .unwrap()
-}
-
 fn invocation() -> InvocationDraft {
-    let selected = SnapshotRef::new(identity(), zero_digest()).unwrap();
+    let selected = SnapshotRef::new(identity()).unwrap();
     InvocationDraft {
         models: Vec::new(),
         context: qualified("Node"),
@@ -100,9 +94,7 @@ fn empty_snapshot_has_exact_independently_authored_envelope() {
     let snapshot = Snapshot::new(identity(), empty(), ArtifactLimits::default()).unwrap();
     let expected = br#"{"version":"native-state-input/1","kind":"snapshot","identity":{"authority":"agent-ix","identity":"snapshot:current","revision_namespace":"git","revision":"1"},"body":{"observation":"current","models":[],"populations":[],"values":[],"arena":[]}}"#;
     assert_eq!(snapshot.bytes(), expected);
-    assert_eq!(snapshot.digest(), ByteDigest::of(expected));
     assert_eq!(snapshot.reference().identity(), &identity());
-    assert_eq!(snapshot.reference().digest(), snapshot.digest());
     assert_eq!(snapshot.usage().artifact_bytes, expected.len());
     assert_eq!(snapshot.draft(), &empty());
 }
@@ -158,7 +150,7 @@ fn output_limit_admits_exact_bytes_and_refuses_one_below() {
 /// TC-431 steps 1-2 (FR-018-AC-8): a snapshot names all four labels in its
 /// bytes and reference; an empty or blank authority or revision namespace
 /// refuses as `invalid_source_identity`; the revision namespace alone
-/// changes the bytes and digest.
+/// changes the bytes.
 #[test]
 #[trace("TC-431", "FR-018-AC-8")]
 fn snapshots_carry_the_four_labels() {
@@ -181,7 +173,6 @@ fn snapshots_carry_the_four_labels() {
     );
     let semver = snapshot(SourceIdentity::new("agent-ix", "s", "semver", "1")).unwrap();
     assert_ne!(git.bytes(), semver.bytes());
-    assert_ne!(git.digest(), semver.digest());
 
     for (labels, label) in [
         (

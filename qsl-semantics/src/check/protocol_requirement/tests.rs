@@ -79,6 +79,7 @@ fn assemble(declarations: &str) -> (String, PackageDeclarations) {
     let unit = build_unit(&parsed).expect("S2 builds the unit");
     let assembled = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         unit,
         vec![obligation_model()],
         Vec::new(),

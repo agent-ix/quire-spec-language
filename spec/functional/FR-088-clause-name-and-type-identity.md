@@ -24,7 +24,7 @@ O-10 (clause kind), O-11 (qualified names), O-14 (type descriptors) and
 C-26 (checked type node → kernel `ValueType`). S-3b does not gate ADR-011 M-4
 (#242), so it can overlap that work; it depends on the S-3a
 types this requirement's cited types are checked-graph members of
-(`CheckedGraph`, FR-087), but does not depend on `PackageNodeKey` or
+(`CheckedGraph`, FR-087), but does not depend on `ImportView` or
 `library`.
 
 This requirement's gate is ADR-013 §7's "S-2, QC-10" for S-3 as a whole
@@ -63,14 +63,13 @@ ADR's summary sentence as if it were itself testable.
   (canonical owner O-14).
 - ADR-013 §8 QC-15 (the kernel `Value`/`ValueType` component types
   this requirement's sum shape depends on, already added to the kernel row
-  by S-1/S-2: `VariantId`, an opaque digest newtype with one public
-  constructor from a digest, no dependency on `check` or `model`).
+  by S-1/S-2: `VariantId`, an opaque node-key newtype with one public
+  constructor from a node key, no dependency on `check` or `model`).
 - ADR-013 O-14, T-6, C-30, QC-22 and the OQ-B, OQ-D and OQ-F rulings: an
   enum variant's `VariantId` is its QSpec FR-141 enum member node key, an
   enum value carries its `VariantId` and its rank in the FR-141 canonical
   member list, and the rank is its QSpec FR-144 canonical key; a quantity
-  type's `UnitId` is a two-domain digest record over the QSpec FR-142 unit
-  identities.
+  type's `UnitId` is a two-arm record: a declared unit's QSpec FR-142 node key, or a compound unit's ordered (unit node key, exponent) factors.
 - The layer-3 `check` core module ADR-011 §6.1 places the clause-kind enum
   in (`CheckContext`, family checker trait, shared checked types,
   `FamilyOutcome`, `FamilyResult`, `EvalOutcome`).
@@ -134,7 +133,7 @@ triple (pair, operation identity, kind member), and a decoder reads the kind
 member after the operation identity. `StateTransition` spells
 (`state`, `transition`), its QSpec form as STD-111 item 5 defines it (a
 `quire.op.state.transition` body root), not (`state`, `frame`). The TC-250
-fixed table (`qsl-semantics/src/check/identity.rs:619-631`), which pins
+fixed table (`qsl-semantics/src/check/identity.rs:619-631`), which asserts
 (`state`, `frame`) today, is updated with this change. The pair
 (`state`, `frame`) decodes to no clause kind: a frame node's body is QSpec
 FR-340's frame term, which holds no clause application, so a frame is never
@@ -165,7 +164,7 @@ ADR-013 O-04), QSL SHALL distinguish them only by their O-07 occurrence key
 (node id, role, ordinal), and SHALL NOT distinguish them by display text,
 source order, or collection iteration order (R-05). This requirement
 exposes the occurrence key as an input to the identity, not as a field
-CG's `KaniObligationIdentity` digest computes independently a second time.
+CG's `KaniObligationIdentity` computes independently a second time.
 
 ### Names resolve to node ids only inside the checker; no later lookup exists
 
@@ -211,12 +210,12 @@ index in the shape. Identity and equality of an enum value SHALL use its
 `VariantId` only, and its canonical key SHALL be its rank. C-30 SHALL admit
 only an enum member node key as a `VariantId`.
 
-### A quantity type carries a two-domain UnitId
+### A quantity type carries a two-arm UnitId
 
 For a quantity type, C-26 SHALL produce a `UnitId` that is the declared
 unit's QSpec FR-142 node key under the `quire.checked-semantic-node/v1`
-label, and `semantic_value` SHALL produce the `quire.value.compound-unit/v1`
-digest under its own label for a compound unit (ADR-013 T-6, OQ-B). A
+label, and `semantic_value` SHALL produce the ordered (unit node key, exponent) factor record
+for a compound unit (ADR-013 T-6, OQ-B). A
 declared unit and a compound unit SHALL never be equal. C-30 SHALL admit
 only a unit node key as a declared-arm `UnitId`.
 
@@ -239,13 +238,13 @@ only a unit node key as a declared-arm `UnitId`.
 | FR-088-AC-3 | Given two occurrences of a structurally identical clause (same checked node id) at two distinct source positions, the two clauses' occurrence keys (node id, role, ordinal) differ, and a consumer keying on (node id, occurrence key) together, not on node id alone, distinguishes them; an adverse test that changes display text, diagnostic text, or the collection order the clauses are iterated in leaves both clauses' identities (node id, occurrence key) unchanged (R-05). | Test (TC-249) |
 | FR-088-AC-4 | Every checked clause-kind variant maps to exactly one v2 `node_tag`/`semantic_form`/clause-operation-identity spelling (for `Invariant`, `Precondition` and `Postcondition`, that spelling plus the `quire.op.state.clause` kind member, FR-105), every v2 spelling this enum's wire vocabulary defines maps back to exactly one variant, and (`state`, `frame`) maps back to none: a wire-string totality test iterates every variant forward and every wire string backward and finds no gap and no ambiguity. A mutation test on the forward mapping function (each mutant flips one variant's target wire string, or deletes one match arm) fails the totality test for every mutant, with no mutant allow-listed (ADR-013 §4 preamble; ADR-012 §5.3 evidence convention). | Test (TC-250) |
 | FR-088-AC-5 | No function exists whose signature accepts a `QualifiedName` or a bare string and returns a node id or a declaration, callable from outside the check stage; a source and call-graph scan over every crate module confirms every call site of the checker's name-resolution function lies inside the check stage, with the sole documented exception being the `replay` facade's own E9 lookup (a separate module, not built by this requirement) never called from `check` itself. | Test (TC-251) |
-| FR-088-AC-6 | `QualifiedName` is used only as a declared component of an identity preimage (for example inside `DeclarationKey`'s or a checked node's own preimage where a name participates); no equality or hashing implementation on any identity type treats a `QualifiedName` as the sole identity-bearing field where a node id or digest is available instead. | Inspection (TC-258) |
-| FR-088-AC-7 | A package type's identity is its checked node id: node keys are content keys scoped only by owner (ADR-013 O-04, OQ-G). Two type declarations with the same structure under the same qualified name in two packages of the same owner share one node id. Two with the same structure and qualified name in packages with different source owners get distinct node ids, and two with different qualified names get distinct node ids. A builtin or anonymous type node, such as `Int[0, 9]`, has no owner and shares one id across packages and owners. A reference into another package is distinguished by its `PackageNodeKey` (ADR-013 T-3). Within one package, two source *occurrences* of a reference to the same declared type (ADR-013 O-07's own term: "each source occurrence of a node is keyed by (node id, role, ordinal)" — for example the same type named as the field type of two different fields) resolve to the one node id the single declaration was minted with; this is not a claim about declaring a type twice; declaring a structurally identical type a second time under a colliding name is a name-binding refusal (a duplicate declaration), a different criterion, not a second occurrence of the first node id, and is out of this criterion's scope. This repository's own precedent for a duplicate name/binding — `checking::composed::proofs::CorrespondenceError::DuplicateDeclaration`, `src/checking/composed/proofs/correspondence.rs:96` — refuses rather than admits with a shared id. | Test (TC-259) |
+| FR-088-AC-6 | `QualifiedName` is used only as a declared component of an identity preimage (for example inside `DeclarationKey`'s or a checked node's own preimage where a name participates); no equality or hashing implementation on any identity type treats a `QualifiedName` as the sole identity-bearing field where a node id is available instead. | Inspection (TC-258) |
+| FR-088-AC-7 | A package type's identity is its checked node id: node keys are content keys scoped only by owner (ADR-013 O-04, OQ-G). Two type declarations with the same structure under the same qualified name in two packages of the same owner share one node id. Two with the same structure and qualified name in packages with different source owners get distinct node ids, and two with different qualified names get distinct node ids. A builtin or anonymous type node, such as `Int[0, 9]`, has no owner and shares one id across packages and owners. A reference into another package is distinguished by the `package` component of its structural `NodeKey` (ADR-013 T-3). Within one package, two source *occurrences* of a reference to the same declared type (ADR-013 O-07's own term: "each source occurrence of a node is keyed by (node id, role, ordinal)" — for example the same type named as the field type of two different fields) resolve to the one node id the single declaration was minted with; this is not a claim about declaring a type twice; declaring a structurally identical type a second time under a colliding name is a name-binding refusal (a duplicate declaration), a different criterion, not a second occurrence of the first node id, and is out of this criterion's scope. This repository's own precedent for a duplicate name/binding — `checking::composed::proofs::CorrespondenceError::DuplicateDeclaration`, `src/checking/composed/proofs/correspondence.rs:96` — refuses rather than admits with a shared id. | Test (TC-259) |
 | FR-088-AC-8 | `ValueTypeRef` is exactly the four-member union `{Clock, Native(NativeValueType), Package(DeclarationKey), Unit(String)}`; no fifth variant exists, and no model field type is represented by a bare `NodeKey` or a raw string type name. `Clock` carries no fields (a place in a timed model, FR-230), and the `String` of `Unit` is a unit name the assembler resolves (FR-056-AC-42), not a type name. | Inspection (TC-260) |
 | FR-088-AC-9 | C-26's conversion function is total: for every checked type-node form (`scalar_type`, `composite_type`, `bounded_domain`, and the sum form), a test constructs a checked node of that form and confirms the function returns a kernel `ValueType` with no panic, no `_`-arm fallback, and no lossy substitution; a checked type-node form added without a corresponding match arm fails to compile (`clippy::wildcard_enum_match_arm`, following ADR-011 §5's convention for other exhaustive maps). | Test (TC-252) |
 | FR-088-AC-10 | For the sum form specifically, the source checked node's own id is not re-minted by C-26's conversion (it is the same content-addressed id the node carried before conversion, read from `CheckedGraph`/`CheckedPackage`, not a value the kernel shape carries); C-26's output kernel `ValueType` carries, per variant, a `VariantId` computed from the declaring sum and that member, and the kernel shape carries no `NodeKey` anywhere in its variant representation. A sum value built from this conversion carries its `VariantId`, and an adverse test confirms no code path reads or stores a bare variant index in place of the `VariantId`. | Test (TC-252) |
 | FR-088-AC-11 | For an enum `E` declared with cases `b`, `a`, `c` in that order, each variant's `VariantId` equals the node key over `{version: quire.enum-member-node/v1, declaration_node_id: E's node key, case}`. When `E` is ordered, the variants' ranks are `b` 0, `a` 1, `c` 2, and a set of all three values visits `b`, `a`, `c`. When `E` is unordered, its canonical member list is `a`, `b`, `c`, the ranks are `a` 0, `b` 1, `c` 2, and the set visits `a`, `b`, `c`. A value that pairs `E::a`'s `VariantId` with rank 2 is refused at admission. Renaming the declaration `E` to `F` changes every `VariantId` and changes no rank and no visiting order. C-30 refuses `E`'s own declaration node key as a `VariantId`. | Test (TC-409) |
-| FR-088-AC-12 | For declared units `m` and `km` (a scaled unit of `m`) and the compound unit `m^1`, the three `UnitId`s are pairwise unequal. `m`'s `UnitId` carries `m`'s node key under the `quire.checked-semantic-node/v1` label. For every vector defined by QSpec FR-142-AC-8, the compound `UnitId` equals its published digest under the `quire.value.compound-unit/v1` label. C-30 refuses a dimension node key as a declared-arm `UnitId`. | Test (TC-411) |
+| FR-088-AC-12 | For declared units `m` and `km` (a scaled unit of `m`) and the compound unit `m^1`, the three `UnitId`s are pairwise unequal. `m`'s `UnitId` carries `m`'s node key under the `quire.checked-semantic-node/v1` label. For every compound unit, the compound `UnitId` equals its ordered (unit node key, exponent) factor record by structural equality. C-30 refuses a dimension node key as a declared-arm `UnitId`. | Test (TC-411) |
 
 For AC-6, a hand-written `PartialEq` or `Hash`, a name beside a filler field,
 a local map, and the root crate's lane-private `QualifiedName` types are
@@ -275,7 +274,7 @@ enforced (see `tests/it/name_resolution_confinement.rs`'s own module doc).
   of, and is where the S3 checker records the model correspondence this
   requirement's frame-identity resolution (FR-088-AC-2) reads, through the
   `CheckedPackage` the S4 link step carries it into (ADR-013 O-04); this
-  requirement does not depend on FR-087's `PackageNodeKey` or `library`
+  requirement does not depend on FR-087's `ImportView` or `library`
   module.
 - [US-005](../usecase/US-005-trust-checked-identity-across-packaging.md).
 - ADR-013 §8 OQ-B, OQ-D and OQ-F; QSpec FR-141, FR-142 and FR-144

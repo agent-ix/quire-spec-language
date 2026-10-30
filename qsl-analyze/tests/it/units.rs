@@ -18,7 +18,6 @@ use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId, PackageDeclarations};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
 use quire_checked::key::DeclarationKey;
 use quire_exact::{Meter, ScalarLimits, Value};
@@ -79,16 +78,6 @@ impl Domain {
             node: self.ident(suffix),
         }
     }
-
-    /// The `sha256-jcs` digest hex of the domain package, as a unit's
-    /// `model` statement names it.
-    pub(crate) fn digest_hex(&self) -> String {
-        let digest = *package_input([self.document.as_slice()])
-            .keys()
-            .next()
-            .expect("one model");
-        hex(&digest)
-    }
 }
 
 /// The unit text of a model header over `domain`, aliased `alias`, and
@@ -98,10 +87,9 @@ pub(crate) fn unit(domain: &Domain, alias: &str, body: &str) -> String {
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
          profile t0 = \"quire.temporal.infinite-trace/v1\";\n\
-         model {alias} = \"{}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         model {alias} = \"{}\";\n\
          function Noop using v(): Boolean pure {{ true }}\n{body}",
-        domain.package,
-        domain.digest_hex()
+        domain.package
     )
 }
 
@@ -115,7 +103,7 @@ pub(crate) fn clause(over: &str, fairness: &str, formula: &str) -> String {
 
 /// The checked package of `text` over `domain`, and its declared clauses.
 pub(crate) fn checked(domain: &Domain, text: &str) -> (CheckedPackage, Vec<CheckedTemporalClause>) {
-    let packages = package_input([domain.document.as_slice()]);
+    let packages = package_input([domain.document.as_slice()]).unwrap();
     let parsed = qsl_cst::parse(
         SourceIdentity::new("agent-ix", "units", "git", "1"),
         "units.native",
@@ -137,6 +125,7 @@ pub(crate) fn checked(domain: &Domain, text: &str) -> (CheckedPackage, Vec<Check
     .expect("the operation clauses parse");
     let declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "package".to_owned(),
         built,
         models,
         Vec::new(),
@@ -160,8 +149,8 @@ pub(crate) struct World {
     pub(crate) domain: Domain,
     pub(crate) package: CheckedPackage,
     pub(crate) clauses: Vec<CheckedTemporalClause>,
-    pub(crate) packages: BTreeMap<[u8; 32], Vec<u8>>,
-    pub(crate) snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    pub(crate) packages: qsl_semantics::model::intake::PackageInput,
+    pub(crate) snapshots: qsl_semantics::model::observation::DocumentProvision,
     pub(crate) initial: Vec<DocumentRef>,
     pub(crate) keys: Vec<&'static str>,
 }
@@ -171,7 +160,7 @@ impl World {
     /// each `(key, fields)`, the fields as snapshot values.
     pub(crate) fn new(domain: Domain, text: &str, starts: &[(&'static str, Json)]) -> Self {
         let (package, clauses) = checked(&domain, text);
-        let packages = package_input([domain.document.as_slice()]);
+        let packages = package_input([domain.document.as_slice()]).unwrap();
         let mut world = Self {
             unit: text.as_bytes().to_vec(),
             package,
@@ -195,8 +184,7 @@ impl World {
                     "fields": fields})
             })
             .collect();
-        let header = json!({"identity": self.domain.package, "version": "1.0.0",
-            "digest": format!("sha256-jcs:{}", self.domain.digest_hex())});
+        let header = json!({"identity": self.domain.package});
         let document = json!({
             "format": "quire.state.snapshot/v1",
             "identity": {"authority": "test", "identity": name, "revision_namespace": "fixture",
@@ -207,17 +195,16 @@ impl World {
                 "complete": true, "objects": objects}],
         });
         let bytes = document.to_string().into_bytes();
-        let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-        let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-            .expect("canonical fixture")
-            .as_bytes();
-        self.snapshots.insert(digest, bytes);
+        self.snapshots.insert(
+            qsl_semantics::model::observation::document_reference(&bytes)
+                .expect("a document names itself"),
+            bytes,
+        );
         DocumentRef {
             authority: "test".to_owned(),
             identity: name.to_owned(),
             revision_namespace: "fixture".to_owned(),
             revision: "fixture:1".to_owned(),
-            digest,
         }
     }
 
@@ -420,18 +407,16 @@ pub(crate) fn health() -> Domain {
     .into_iter()
     .map(|(name, meaning)| {
         json!({"kind": {"module": PACKAGE, "name": name}, "moduleVersion": "1.0.0",
-            "manifestDigest": PLACEHOLDER,
             "construct": {"identity": "none", "shape": "record", "members": {},
                 "meaning": meaning}})
     })
     .collect();
     let document = json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
-        "source": {"identity": ident("spec"), "version": "1.0.0", "dialect": "spec-bundle",
-            "digest": PLACEHOLDER},
-        "package": {"identity": PACKAGE, "version": "1.0.0", "manifestDigest": PLACEHOLDER,
-            "mappingVersions": [], "profileVersions": [], "lockDigest": PLACEHOLDER},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
+        "source": {"identity": ident("spec"), "version": "1.0.0", "dialect": "spec-bundle"},
+        "package": {"identity": PACKAGE, "version": "1.0.0",
+            "mappingVersions": [], "profileVersions": []},
         "occurrences": [], "extensions": [],
         "constructs": constructs,
         "types": [
@@ -465,5 +450,3 @@ pub(crate) fn health() -> Domain {
         document: document.to_string().into_bytes(),
     }
 }
-
-const PLACEHOLDER: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";

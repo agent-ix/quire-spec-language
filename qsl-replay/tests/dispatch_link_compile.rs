@@ -123,15 +123,16 @@ fn package(operations: Vec<Value>, subtypes: &[(&str, &str, Vec<Value>)]) -> Vec
 
 /// The unit selecting `document` as model `Config`, then `declarations`, and
 /// its package input.
-fn unit(document: &[u8], declarations: &str) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
-    let packages = package_input([document]);
-    let digest = packages.keys().next().expect("one package");
+fn unit(
+    document: &[u8],
+    declarations: &str,
+) -> (String, qsl_semantics::model::intake::PackageInput) {
+    let packages = package_input([document]).unwrap();
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
-         model Config = {PACKAGE:?} version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
-         {declarations}\n",
-        qsl_semantics::model::key::hex(digest)
+         model Config = {PACKAGE:?};\n\
+         {declarations}\n"
     );
     (text, packages)
 }
@@ -164,9 +165,9 @@ fn compile(
         .into_value();
     Ok(spine::check(
         &parsed,
+        "fixture".to_owned(),
         &models,
         &DependencyInput::default(),
-        &spine::LockEvidence::default(),
         limits,
         &cancel,
     )
@@ -186,7 +187,7 @@ fn compile_with_execution_points(
 
 fn compile_text_with_execution_points(
     text: &str,
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &qsl_semantics::model::intake::PackageInput,
     execution_points: &spine::StateClauseExecutionPoints,
     limits: SpineLimits,
 ) -> Result<CheckedUnit, Box<CompileRefusal>> {
@@ -211,10 +212,10 @@ fn compile_text_with_execution_points(
         .into_value();
     Ok(spine::check_with_execution_points(
         &parsed,
+        "fixture".to_owned(),
         execution_points,
         &models,
         &DependencyInput::default(),
-        &spine::LockEvidence::default(),
         limits,
         &cancel,
     )
@@ -528,7 +529,11 @@ fn unit_compile_carries_one_linked_table_per_called_operation() {
         .iter()
         .map(|table| {
             let linked = |subtype| named(table.linked_for(&subtype).expect("linked").body);
-            (linked(a), linked(b), table.candidate_count() as usize)
+            (
+                linked(a.clone()),
+                linked(b.clone()),
+                table.candidate_count() as usize,
+            )
         })
         .collect();
     tables.sort();
@@ -554,7 +559,7 @@ fn unit_compile_carries_one_linked_table_per_called_operation() {
     let linked_pair = |table: usize| {
         let table = &graph.dispatch_tables()[table];
         let linked = |subtype| named(table.linked_for(&subtype).expect("linked").body);
-        (linked(a), linked(b))
+        (linked(a.clone()), linked(b.clone()))
     };
     let mut found = Vec::new();
     for clause in ["c1", "c2", "c3"] {
@@ -885,9 +890,12 @@ fn a_unit_with_linked_dispatch_emits_a_package() {
     );
     let emit = || {
         qsl_replay::compile_package(
-            SourceIdentity::new("a", "u", "git", "1"),
-            "unit.native",
-            text.as_bytes(),
+            qsl_replay::CompileUnit {
+                source: SourceIdentity::new("a", "u", "git", "1"),
+                package_name: "fixture".to_owned(),
+                path: "unit.native",
+                bytes: text.as_bytes(),
+            },
             [document.as_slice()],
             &DependencyInput::default(),
             qsl_replay::StageLimits::default(),
@@ -898,7 +906,6 @@ fn a_unit_with_linked_dispatch_emits_a_package() {
     let (first, second) = (emit(), emit());
     assert!(!first.bytes().is_empty());
     assert_eq!(first.bytes(), second.bytes());
-    assert_eq!(first.package_id(), second.package_id());
 }
 
 /// `document` with the object type `name` declared abstract.
@@ -1324,7 +1331,14 @@ fn a_unit_with_several_ambiguous_families_is_refused_once_naming_each() {
 
 fn object_reference(effective: EffectiveId, key: &str) -> ObjectReference {
     ObjectReference::new(
-        UniverseId::from_digest([7; 32]),
+        UniverseId::new(
+            quire_exact::NodeKey::new(
+                "fixture",
+                vec![quire_exact::PathSegment::Text("7".to_owned())],
+                0,
+            )
+            .expect("a fixture node"),
+        ),
         effective,
         ObjectId::new(key.to_owned()).expect("a key"),
     )
@@ -1369,7 +1383,6 @@ fn run_pre(
                 identity: "pre".to_owned(),
                 revision_namespace: "ns".to_owned(),
                 revision: "1".to_owned(),
-                digest: [0; 32],
             },
             environment,
             populations: BTreeMap::new(),
@@ -1476,6 +1489,7 @@ fn a_clause_function_is_a_known_owner_and_no_fault() {
     };
     let result = qsl_replay::run_with_requirements(
         SourceIdentity::new("a", "u", "git", "1"),
+        "fixture".to_owned(),
         "unit.native",
         text.as_bytes(),
         &packages,
@@ -1523,9 +1537,9 @@ fn a_synthesized_owners_application_item_is_not_replayable() {
         .into_value();
     let checked = spine::check(
         &parsed,
+        "fixture".to_owned(),
         &models,
         &DependencyInput::default(),
-        &spine::LockEvidence::default(),
         limits,
         &cancel,
     )

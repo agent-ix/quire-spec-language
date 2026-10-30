@@ -335,7 +335,7 @@ impl SampledWitness {
 mod tests {
     use qsl_eval::simulation::model::{NotMarkov, ScheduledIdentity};
     use qsl_foundation::selection::DefinitionRef;
-    use quire_exact::{CancelCause, EffectiveId, ObjectId, ObjectReference, UniverseId};
+    use quire_exact::{CancelCause, ObjectId, ObjectReference};
 
     use super::*;
 
@@ -361,8 +361,8 @@ mod tests {
             transition: ScheduledIdentity {
                 operation: "tick".to_owned(),
                 receiver: ObjectReference::new(
-                    UniverseId::from_digest([1; 32]),
-                    EffectiveId::from_digest([2; 32]),
+                    crate::fixture_universe(1),
+                    crate::fixture_effective(2),
                     ObjectId::new("n").expect("a key"),
                 ),
                 arguments: Vec::new(),

@@ -8,7 +8,6 @@ use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
 use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBoundKind};
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::Code;
 use qsl_semantics::check::{
@@ -26,11 +25,12 @@ use super::refinement_declarations::{
 };
 
 /// The refinement's V2 node, which keys its records.
-fn refinement_node(refinement: &CheckedRefinement) -> WireNodeId {
+fn refinement_node(refinement: &CheckedRefinement) -> quire_exact::NodeKey {
     refinement
         .requirement_occurrence()
         .expect("the refinement record is written")
         .node()
+        .clone()
 }
 
 fn entries(graph: &CheckedGraph) -> Vec<StepSimulationEntry> {
@@ -145,7 +145,7 @@ fn the_counter_refinement_writes_an_initial_and_a_step_record_per_row() {
         expected
     );
     for record in &found {
-        assert_eq!(WireNodeId::from_digest(*record.refinement.as_bytes()), node);
+        assert_eq!(record.refinement, node);
         assert!(record.hypotheses.is_empty());
     }
 
@@ -160,7 +160,7 @@ fn the_counter_refinement_writes_an_initial_and_a_step_record_per_row() {
     assert!(any
         .requirements()
         .keys()
-        .all(|key| key.node() != node || key.origin().role().as_str() != "generated"));
+        .all(|key| *key.node() != node || key.origin().role().as_str() != "generated"));
 }
 
 /// FR-146-AC-2, the hidden-field case: a refinement with a hidden field
@@ -198,10 +198,7 @@ fn a_concrete_invariant_is_a_hypothesis_of_every_record() {
     for record in &found {
         assert_eq!(record.hypotheses, [invariant.identity()]);
     }
-    let key = OccurrenceKey::new(
-        WireNodeId::from_digest(*invariant.identity().as_bytes()),
-        invariant.claim().clone(),
-    );
+    let key = OccurrenceKey::new(invariant.identity(), invariant.claim().clone());
     let record = graph
         .requirements()
         .get(&key)
@@ -210,7 +207,7 @@ fn a_concrete_invariant_is_a_hypothesis_of_every_record() {
 }
 
 /// FR-146-AC-5, model subject: the seven `Step` records name positions 0
-/// to 6 once each, the rows at those positions ascend by the node-key digest
+/// to 6 once each, the rows at those positions ascend by the node key
 /// of their concrete operation, and writing the rows in exact reverse gives
 /// each the same `StepRowRef`.
 #[trace("TC-551", "FR-146-AC-5")]
@@ -240,17 +237,21 @@ fn step_row_refs_follow_fr375_order_whatever_the_source_order() {
         .v2_emission()
         .expect("the refinement emits");
     let body = serde_json::to_value(&emission.body).expect("the body serializes");
-    let digests: Vec<&str> = body["steps"]
+    let keys: Vec<(String, String, u64)> = body["steps"]
         .as_array()
         .expect("steps")
         .iter()
-        .map(|step| step["source_node"]["digest"].as_str().expect("a node"))
+        .map(|step| {
+            let node = &step["source_node"];
+            (
+                node["package"].as_str().expect("a node").to_owned(),
+                node["path"].to_string(),
+                node["ordinal"].as_u64().expect("a node"),
+            )
+        })
         .collect();
-    assert_eq!(digests.len(), 7);
-    assert!(
-        digests.windows(2).all(|pair| pair[0] <= pair[1]),
-        "{digests:?}"
-    );
+    assert_eq!(keys.len(), 7);
+    assert!(keys.windows(2).all(|pair| pair[0] <= pair[1]), "{keys:?}");
 }
 
 /// FR-146-AC-6: with `AbsInv` on `Spec::Counter` beside `CasInv` on
@@ -269,7 +270,7 @@ fn an_abstract_model_invariant_is_not_a_hypothesis_in_either_order() {
         .expect("CasInv")
         .identity();
     for record in records(&forward) {
-        assert_eq!(record.hypotheses, [concrete]);
+        assert_eq!(record.hypotheses, std::slice::from_ref(&concrete));
     }
     assert_eq!(records(&forward), records(&backward));
 }
@@ -287,7 +288,7 @@ fn each_record_has_its_generated_occurrence_key() {
     assert_eq!(found.len(), 8);
     for (ordinal, entry) in found.iter().enumerate() {
         let origin = entry.occurrence().origin();
-        assert_eq!(entry.occurrence().node(), node);
+        assert_eq!(entry.occurrence().node(), &node);
         assert_eq!(origin.role().as_str(), "generated");
         assert_eq!(origin.ordinal(), ordinal as u64);
         let expected = match ordinal {

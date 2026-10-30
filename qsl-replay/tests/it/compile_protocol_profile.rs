@@ -27,7 +27,7 @@ fn unit(profile: Option<&str>, declarations: &str) -> String {
     let header = profile.map_or_else(String::new, |identity| {
         format!("profile p = \"{identity}\";\n")
     });
-    let fixture = crate::spine_model::unit().replace(
+    let fixture = include_str!("../../../tests/fixtures/spine-model.native").replace(
         "profile v = \"quire.model.complete/v1\";\n",
         &format!("profile v = \"quire.model.complete/v1\";\n{header}"),
     );
@@ -38,9 +38,12 @@ fn unit(profile: Option<&str>, declarations: &str) -> String {
 fn compile(text: &str) -> Result<Value, ReplayRefusal> {
     let stages: StageLimits = [(Setting::S1InputBytes, 1 << 20)].into_iter().collect();
     let compiled = compile_package(
-        SourceIdentity::new("a", "u", "git", "1"),
-        "unit.native",
-        text.as_bytes(),
+        qsl_replay::CompileUnit {
+            source: SourceIdentity::new("a", "u", "git", "1"),
+            package_name: "fixture".to_owned(),
+            path: "unit.native",
+            bytes: text.as_bytes(),
+        },
         [MODEL],
         &DependencyInput::default(),
         stages,

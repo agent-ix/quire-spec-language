@@ -51,7 +51,6 @@ pub(super) fn snapshot(
         "observation": observation,
         "model": {
             "identity": CONFIG_VERSION_PACKAGE_IDENTITY, "version": "1.0.0",
-            "digest": format!("sha256-jcs:{}", config_version_model_digest_hex()),
         },
         "populations": [{
             "population": config_version_population_identity(), "complete": true,
@@ -81,13 +80,12 @@ pub(super) fn frame_input(
     post_objects: &[serde_json::Value],
     edit: impl FnOnce(&mut serde_json::Value),
 ) -> FrameInput {
-    let model_digest_hex = config_version_model_digest_hex();
     let (pre, pre_bytes) =
         document_ref_and_bytes("frame-pre", |label| snapshot(label, "pre", pre_objects));
     let (post, post_bytes) =
         document_ref_and_bytes("frame-post", |label| snapshot(label, "post", post_objects));
     let (invocation, invocation_bytes) = document_ref_and_bytes("frame-invocation", |label| {
-        let bytes = config_version_invocation_bytes(label, &model_digest_hex, &pre, &post, "child");
+        let bytes = config_version_invocation_bytes(label, &pre, &post, "child");
         let mut document: serde_json::Value =
             serde_json::from_slice(&bytes).expect("the fixture is JSON");
         edit(&mut document);
@@ -97,11 +95,11 @@ pub(super) fn frame_input(
         operation: operation(operation_name),
         invocation: invocation.clone(),
     });
-    request.snapshots.insert(pre.digest, pre_bytes);
-    request.snapshots.insert(post.digest, post_bytes);
+    request.snapshots.insert(pre.clone(), pre_bytes);
+    request.snapshots.insert(post.clone(), post_bytes);
     request
         .invocations
-        .insert(invocation.digest, invocation_bytes);
+        .insert(invocation.clone(), invocation_bytes);
     FrameInput {
         invocation,
         pre,
@@ -143,22 +141,7 @@ fn admit_record(report: &super::super::ClauseRunReport) -> &AdmissionRecord {
 #[test]
 fn a_frame_respecting_invocation_succeeds() {
     let input = changed_version();
-    // The package `compose` emits for the request's unit on its own,
-    // independent of the run.
-    let (unit, packages) = config_version_unit_and_packages();
-    let expected_package_id = compose(
-        source(),
-        "clause-run-config-version.native",
-        unit.as_bytes(),
-        &packages,
-        &DependencyInput::default(),
-        SpineLimits::default(),
-    )
-    .expect("the ConfigVersion unit compiles")
-    .emitted
-    .package_id();
     let report = run(input);
-    assert_eq!(report.package_id, Some(expected_package_id));
     assert!(
         matches!(
             report.disposition,
@@ -446,7 +429,6 @@ fn link_witness(difference: qsl_semantics::model::observation::LinkDifference) -
         identity: name.to_owned(),
         revision_namespace: "ns".to_owned(),
         revision: "1".to_owned(),
-        digest: [7; 32],
     });
     let end = |key: &str| SelectedObject {
         population: "Q".to_owned(),
@@ -764,47 +746,19 @@ fn a_disagreeing_declared_delta_refuses_at_evaluate() {
     assert_eq!(report.disposition.category().exit_code(), 20);
 }
 
-/// TC-514 step 3 (FR-115-AC-3): an expected `package_id` from another unit
-/// refuses `compile`, `stale_dependency`, naming both.
-#[trace("TC-514", "FR-115-AC-3")]
-#[test]
-fn a_stale_package_refuses_before_evaluation() {
-    let other = compiled().emitted.package_id();
-    let mut input = changed_version();
-    input.request.expected_package_id = Some(other);
-    let report = run(input);
-    let ClauseDisposition::StalePackage { expected, actual } = &report.disposition else {
-        panic!("expected StalePackage, got {:?}", report.disposition);
-    };
-    assert_eq!(expected, &other.hex());
-    assert_ne!(*actual, other);
-    assert_eq!(report.disposition.stage(), ClauseRunStage::Compile);
-}
-
-/// TC-514 step 3 (FR-115-AC-3): stale invocation bytes, labels, model and
+/// TC-514 step 3 (FR-115-AC-3): labels, model and
 /// operation each refuse at `admit`, and none reaches `evaluate`.
 #[trace("TC-514", "FR-115-AC-3")]
 #[test]
 fn stale_or_mismatched_documents_refuse_at_admit() {
-    // Invocation bytes edited after the digest was taken.
-    let mut edited = changed_version();
-    let bytes = edited
-        .request
-        .invocations
-        .get_mut(&edited.invocation.digest)
-        .expect("the invocation is provided");
-    *bytes = String::from_utf8(bytes.clone())
-        .expect("UTF-8")
-        .replace("\"boolean\":true", "\"boolean\":false")
-        .into_bytes();
-    // Another `model` digest in the invocation document.
+    // Another `model` identity in the invocation document.
     let other_model = frame_input(
         config_version_request,
         "attemptUpdate",
         &[object("root", 1, None), object("child", 2, Some("root"))],
         &[object("root", 1, None), object("child", 3, Some("root"))],
         |document| {
-            document["model"]["digest"] = json!(format!("sha256-jcs:{}", "0".repeat(64)));
+            document["model"]["identity"] = json!("test/other-model");
         },
     );
     // An invocation of `probe`, not `attemptUpdate`.
@@ -817,7 +771,6 @@ fn stale_or_mismatched_documents_refuse_at_admit() {
     );
 
     for (input, code, cause) in [
-        (edited, "stale_dependency", "content-mismatch"),
         (
             other_model,
             "invalid_model_binding",
@@ -888,7 +841,7 @@ fn an_unknown_or_unnamed_operation_refuses_at_select() {
 #[test]
 fn an_absent_pre_snapshot_is_incomplete_not_a_violation() {
     let mut input = changed_version();
-    input.request.snapshots.remove(&input.pre.digest);
+    input.request.snapshots.remove(&input.pre);
     let report = run(input);
     assert!(
         matches!(
@@ -1020,19 +973,16 @@ fn each_model_alias_resolves_its_own_packages_object_type() {
         .replace(CONFIG_VERSION_PACKAGE_IDENTITY, COPY_PACKAGE_IDENTITY)
         .into_bytes();
     let (unit, mut packages) = config_version_unit_and_packages_for(original);
-    let copy_packages = qsl_semantics::model::intake::package_input([copy.as_slice()]);
-    let [(copy_digest, _)] = copy_packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
+    let copy_packages = qsl_semantics::model::intake::package_input([copy.as_slice()]).unwrap();
+    assert_eq!(copy_packages.len(), 1, "one supplied document");
     let (header, declarations) = unit
         .split_once("invariant ParentOrder")
         .expect("the unit declares ParentOrder after its selections");
     let unit = format!(
-        "{header}model Copy = {COPY_PACKAGE_IDENTITY:?} version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+        "{header}model Copy = {COPY_PACKAGE_IDENTITY:?};\n\
          invariant ParentOrder{declarations}\
          post CopyUnchanged using v on Copy::ConfigVersion::attemptUpdate {{ \
-         self.versionNumber = pre(self.versionNumber) }}\n",
-        hex(copy_digest)
+         self.versionNumber = pre(self.versionNumber) }}\n"
     );
     packages.extend(copy_packages);
     let compiled = compile_config_version_unit(&unit, &packages);

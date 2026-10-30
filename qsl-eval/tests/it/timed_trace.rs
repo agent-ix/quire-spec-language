@@ -25,7 +25,6 @@ use qsl_semantics::check::{
 };
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, package_input};
-use qsl_semantics::model::key::hex;
 use quire_exact::{ChargePoint, Integer, Meter, Rational, ScalarLimits, Undefined};
 
 use crate::model_simulation::{counters_document, increment, PACKAGE};
@@ -48,18 +47,16 @@ pub(crate) fn timed(body: &str) -> Fixture {
 /// [`timed`] under `activation`.
 pub(crate) fn timed_on(activation: &str, body: &str) -> Fixture {
     let document = counters_document(vec![increment()], false);
-    let packages = package_input([document.as_slice()]);
-    let digest = *packages.keys().next().expect("one model");
+    let packages = package_input([document.as_slice()]).unwrap();
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"{VALUE}\";\n\
          profile t0 = \"{TIMED}\";\n\
-         model M = \"{PACKAGE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         model M = \"{PACKAGE}\";\n\
          dimension Time;\n\
          unit s : Time = rational(1, 1);\n\
          unit ms : Time = rational(1, 1000) * s;\n\
          temporal C using t0 over (c: M::Counter) clock \"model-time\" {activation} {{ {body} }}\n",
-        hex(&digest)
     );
     let parsed = qsl_cst::parse(
         SourceIdentity::new("a", "u", "git", "1"),
@@ -78,6 +75,7 @@ pub(crate) fn timed_on(activation: &str, body: &str) -> Fixture {
     .expect("the model selection admits");
     let mut package = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         built,
         models,
         Vec::new(),
@@ -86,12 +84,12 @@ pub(crate) fn timed_on(activation: &str, body: &str) -> Fixture {
     package.time_sources = vec![ModelTimeSource {
         model: "M".to_owned(),
         span: qsl_foundation::Span { start: 0, end: 1 },
-        model_node: quire_exact::NodeKey::from_digest([0; 32]),
+        model_node: crate::support::ids::node_key([0]),
         tick_operation_key: None,
         source: TimeSourceKind::Dense,
         unit: "ms".to_owned(),
-        unit_node: quire_exact::NodeKey::from_digest([0; 32]),
-        time_dimension: quire_exact::NodeKey::from_digest([0; 32]),
+        unit_node: crate::support::ids::node_key([0]),
+        time_dimension: crate::support::ids::node_key([0]),
         nominal_nodes: Vec::new(),
         tick_operation_span: None,
         tick_operation_anchor: None,

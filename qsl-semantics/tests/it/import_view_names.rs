@@ -4,14 +4,12 @@
 //!
 //! It fails on:
 //!
-//! - any `NodeKey` path anywhere in `library` code, since `library` never
-//!   builds or names a checked node key;
 //! - any function, method, trait method (required or default), foreign fn
 //!   or annotated closure that takes a name and returns a node id: a type
-//!   naming `WireNodeId`, `NodeKey`, `PackageNodeKey` or `ImportView`, or
+//!   naming `NodeKey` or `ImportView`, or
 //!   any `library` type that carries one, including `Self` inside such a
 //!   type's `impl`, `Self::X` where an `impl` binds `type X` to one, a
-//!   generic parameter bounded by one (`T: From<WireNodeId>`), and a
+//!   generic parameter bounded by one (`T: From<NodeKey>`), and a
 //!   `&mut` out-parameter of such a type;
 //! - any name index anywhere in `library`, whether or not a name is taken
 //!   to build it: a return type, a struct or enum field, or a type alias
@@ -21,7 +19,7 @@
 //!   inherent `impl`, a trait `impl`, or a trait implemented for
 //!   `ImportView` (including a blanket `impl<T> Trait for T`), since an
 //!   importing package's own checker reads the view's
-//!   `(name, PackageNodeKey)` entries itself (step 5; `check::imports`).
+//!   `(name, NodeKey)` entries itself (step 5; `check::imports`).
 //!
 //! A parameter "takes a name" when its type names `str`, `String` or
 //! `QualifiedName`, a `library` type alias or `use ... as` rename of one, a
@@ -34,11 +32,11 @@
 //! This is a `syn` signature scan, not a call graph or a type checker. It
 //! does not see:
 //!
-//! - a node id returned in another representation: raw `[u8; 32]` digest
-//!   bytes, a hex `String`, or a `usize` position into a list of ids;
+//! - a node id returned in another representation: a rendered `String` or a
+//!   `usize` position into a list of ids;
 //! - a name passed as bytes (`&[u8]`) rather than as a string type;
 //! - a closure without type annotations, including one stored in a
-//!   `fn(&str) -> Option<WireNodeId>` variable or constant;
+//!   `fn(&str) -> Option<NodeKey>` variable or constant;
 //! - a local variable's type inside a function body (a `let` map from
 //!   names to ids that never leaves the function).
 //!
@@ -56,7 +54,10 @@ const NAME_TYPES: [&str; 3] = ["str", "String", "QualifiedName"];
 /// Bounds that make a generic parameter a name without naming `str` or
 /// `String` themselves (`AsRef<str>`, `Borrow<str>` and `Into<String>` do).
 const NAME_BOUNDS: [&str; 2] = ["ToString", "Display"];
-const KEY_TYPES: [&str; 4] = ["NodeKey", "WireNodeId", "PackageNodeKey", "ImportView"];
+const KEY_TYPES: [&str; 2] = ["NodeKey", "ImportView"];
+/// Names a package, not a declaration: a map from one to a package is not a
+/// name -> node id index even though a package carries its exported keys.
+const PACKAGE_NAME_TYPES: [&str; 1] = ["LibraryName"];
 const VIEW: &str = "ImportView";
 /// Maps, and iterators over one, whose first type argument is the key.
 const MAP_TYPES: [&str; 7] = [
@@ -167,7 +168,7 @@ struct Vocabulary {
     keys: BTreeSet<String>,
     view_traits: BTreeSet<String>,
     /// Associated types some `impl` binds to a node-id-carrying type
-    /// (`type Out = WireNodeId;`), so `Self::Out` carries one.
+    /// (`type Out = NodeKey;`), so `Self::Out` carries one.
     associated_keys: BTreeSet<String>,
 }
 
@@ -279,7 +280,7 @@ impl Vocabulary {
                         (is_name, is_key)
                     }
                 };
-                if is_name {
+                if is_name && !PACKAGE_NAME_TYPES.contains(&ident.as_str()) {
                     changed |= names.insert(ident.clone());
                 }
                 if is_key {
@@ -305,7 +306,7 @@ impl Vocabulary {
     }
 
     /// The generic parameters of `generics` that are names
-    /// (`N: AsRef<str>`), and those that are node ids (`T: From<WireNodeId>`).
+    /// (`N: AsRef<str>`), and those that are node ids (`T: From<NodeKey>`).
     fn generics(&self, generics: &syn::Generics) -> Generics {
         let mut naming = self.names.clone();
         naming.extend(set(&NAME_BOUNDS));
@@ -352,8 +353,8 @@ fn bounded_by(generics: &syn::Generics, idents: &BTreeSet<String>) -> BTreeSet<S
 }
 
 /// Whether `ty` is a map, or an iterator over one, from a name to a node
-/// id: `BTreeMap<&str, PackageNodeKey>`, `&HashMap<String, WireNodeId>`,
-/// `btree_map::Iter<'_, String, WireNodeId>`. That is a name index, which
+/// id: `BTreeMap<&str, NodeKey>`, `&HashMap<String, NodeKey>`,
+/// `btree_map::Iter<'_, String, NodeKey>`. That is a name index, which
 /// only the checker builds.
 fn is_name_index(ty: &syn::Type, names: &BTreeSet<String>, keys: &BTreeSet<String>) -> bool {
     struct Maps<'a> {
@@ -539,10 +540,6 @@ impl Scanner<'_> {
     fn macro_text(&mut self, text: &str, line: usize) {
         let text = blank_string_literals(text);
         let words = words(&text);
-        if words.iter().any(|(_, word)| *word == "NodeKey") {
-            self.violations
-                .push(format!("{line}: names NodeKey inside a macro"));
-        }
         let mut naming = self.names();
         naming.extend(set(&NAME_BOUNDS));
         let keys = self.keys();
@@ -649,14 +646,6 @@ impl<'ast> Visit<'ast> for Scanner<'_> {
         let line = node.ident.span().start().line;
         self.check_type(&node.ty, &format!("type {}", node.ident), line);
         syn::visit::visit_item_type(self, node);
-    }
-
-    fn visit_path_segment(&mut self, segment: &'ast syn::PathSegment) {
-        if segment.ident == "NodeKey" {
-            let line = segment.ident.span().start().line;
-            self.violations.push(format!("{line}: names NodeKey"));
-        }
-        syn::visit::visit_path_segment(self, segment);
     }
 
     fn visit_macro(&mut self, node: &'ast syn::Macro) {
@@ -796,7 +785,7 @@ fn violations_in(source: &str) -> Vec<String> {
 /// type defined in one file and used in another is still seen.
 #[trace("TC-254", "FR-087-AC-4")]
 #[test]
-fn library_never_resolves_a_name_to_a_node_id_nor_names_node_key() {
+fn library_never_resolves_a_name_to_a_node_id() {
     let files = library_files();
     assert!(
         files.iter().any(|file| file.ends_with("library/mod.rs")),
@@ -813,7 +802,7 @@ fn library_never_resolves_a_name_to_a_node_id_nor_names_node_key() {
         .collect();
     let vocabulary = Vocabulary::of(&parsed);
     assert!(
-        vocabulary.keys.contains("ProjectedDeclarations"),
+        vocabulary.keys.contains("ImportView"),
         "the vocabulary must see library's own id-carrying types"
     );
     let report: Vec<String> = files
@@ -834,13 +823,13 @@ fn library_never_resolves_a_name_to_a_node_id_nor_names_node_key() {
 #[test]
 fn each_rule_flags_a_synthetic_violation() {
     let cases = [
-        // A name-taking `ImportView` method that returns a key: both rules.
+        // A name-taking `ImportView` method that returns a key.
         (
-            "impl ImportView { pub fn get(&self, name: &str) -> Option<PackageNodeKey> { None } }",
+            "impl ImportView { pub fn get(&self, name: &str) -> Option<NodeKey> { None } }",
             2,
         ),
         (
-            "impl ImportView { pub fn node(&self, name: &str) -> Option<WireNodeId> { None } }",
+            "impl ImportView { pub fn node(&self, name: &str) -> Option<NodeKey> { None } }",
             2,
         ),
         // A name-taking `ImportView` method returning no key.
@@ -850,19 +839,15 @@ fn each_rule_flags_a_synthetic_violation() {
         ),
         (
             "fn lookup(view: &ImportView, name: String) -> Option<NodeKey> { None }",
-            2,
-        ),
-        (
-            "fn key(bytes: [u8; 32]) -> u8 { NodeKey::from_digest(bytes); 0 }",
             1,
         ),
         (
             "fn resolve(name: &QualifiedName) -> ImportView { todo!() }",
             1,
         ),
-        // A free function mapping a name to a `WireNodeId`.
+        // A free function mapping a name to a `NodeKey`.
         (
-            "fn node(names: &BTreeMap<String, WireNodeId>, name: &str) -> Option<WireNodeId> { None }",
+            "fn node(names: &BTreeMap<String, NodeKey>, name: &str) -> Option<NodeKey> { None }",
             1,
         ),
     ];
@@ -884,9 +869,9 @@ fn each_rule_flags_a_synthetic_violation() {
 #[test]
 fn the_scan_flags_a_name_keyed_declaration_map() {
     let violations = violations_in(
-        "pub(crate) struct ProjectedDeclarations(BTreeMap<String, WireNodeId>);
+        "pub(crate) struct ProjectedDeclarations(BTreeMap<String, NodeKey>);
          impl ProjectedDeclarations {
-             pub(crate) fn node(&self, name: &str) -> Option<WireNodeId> { None }
+             pub(crate) fn node(&self, name: &str) -> Option<NodeKey> { None }
              pub(crate) fn select<'a>(&self, exports: &'a [String]) -> Result<Self, &'a str> { todo!() }
          }",
     );
@@ -894,7 +879,7 @@ fn the_scan_flags_a_name_keyed_declaration_map() {
     // Node ids returned through a wrapper type are still node ids.
     assert_eq!(
         violations_in(
-            "struct Decls { ids: Vec<WireNodeId> }
+            "struct Decls { ids: Vec<NodeKey> }
              fn select(exports: &[String]) -> Decls { todo!() }"
         )
         .len(),
@@ -912,49 +897,47 @@ fn the_scan_flags_name_indexes_associated_keys_and_key_generics() {
 
     // A name -> node id map returned by a method that takes no name.
     assert!(flagged(
-        "impl ImportView { pub fn index(&self) -> BTreeMap<&str, PackageNodeKey> { todo!() } }"
+        "impl ImportView { pub fn index(&self) -> BTreeMap<&str, NodeKey> { todo!() } }"
     ));
     assert!(flagged(
-        "fn index(view: &View) -> &HashMap<String, WireNodeId> { todo!() }"
+        "fn index(view: &View) -> &HashMap<String, NodeKey> { todo!() }"
     ));
     assert!(flagged(
-        "fn index(view: &View) -> IndexMap<Box<str>, WireNodeId> { todo!() }"
+        "fn index(view: &View) -> IndexMap<Box<str>, NodeKey> { todo!() }"
     ));
     // An iterator over one.
     assert!(flagged(
-        "fn index(view: &View) -> std::collections::btree_map::Iter<'_, String, WireNodeId> { todo!() }"
+        "fn index(view: &View) -> std::collections::btree_map::Iter<'_, String, NodeKey> { todo!() }"
     ));
     // A field, in a struct or an enum variant, and a type alias.
+    assert!(flagged("struct Index { names: HashMap<String, NodeKey> }"));
     assert!(flagged(
-        "struct Index { names: HashMap<String, WireNodeId> }"
+        "enum Index { Names(BTreeMap<QualifiedName, NodeKey>) }"
     ));
-    assert!(flagged(
-        "enum Index { Names(BTreeMap<QualifiedName, PackageNodeKey>) }"
-    ));
-    assert!(flagged("type Index = BTreeMap<String, WireNodeId>;"));
+    assert!(flagged("type Index = BTreeMap<String, NodeKey>;"));
     // Through a name alias and a key alias.
     assert!(flagged(
-        "type Name = str; type Id = WireNodeId; struct Index(BTreeMap<Box<Name>, Id>);"
+        "type Name = str; type Id = NodeKey; struct Index(BTreeMap<Box<Name>, Id>);"
     ));
 
     // `Self::X` bound to a node id on a type that carries none.
     assert!(flagged(
         "trait Lookup { type Out; fn get(&self, name: &str) -> Option<Self::Out>; }
          struct Plain;
-         impl Lookup for Plain { type Out = WireNodeId; fn get(&self, name: &str) -> Option<Self::Out> { None } }"
+         impl Lookup for Plain { type Out = NodeKey; fn get(&self, name: &str) -> Option<Self::Out> { None } }"
     ));
     assert!(flagged(
         "trait Lookup { type Out; fn get(&self, name: &str) -> Option<<Self as Lookup>::Out>; }
          struct Plain;
-         impl Lookup for Plain { type Out = PackageNodeKey; }"
+         impl Lookup for Plain { type Out = NodeKey; }"
     ));
 
     // A generic built from a node id: inline and in a `where` clause.
     assert!(flagged(
-        "fn get<T: From<WireNodeId>>(name: &str) -> Option<T> { None }"
+        "fn get<T: From<NodeKey>>(name: &str) -> Option<T> { None }"
     ));
     assert!(flagged(
-        "fn get<T>(name: &str) -> Option<T> where T: TryFrom<PackageNodeKey> { None }"
+        "fn get<T>(name: &str) -> Option<T> where T: TryFrom<NodeKey> { None }"
     ));
 }
 
@@ -966,7 +949,7 @@ fn the_scan_flags_each_evasion() {
 
     // Trait default method, and a trait implemented for `ImportView`.
     assert!(flagged(
-        "trait Lookup { fn get(&self, name: &str) -> Option<PackageNodeKey> { None } }
+        "trait Lookup { fn get(&self, name: &str) -> Option<NodeKey> { None } }
          impl Lookup for ImportView {}"
     ));
     assert!(flagged(
@@ -985,60 +968,57 @@ fn the_scan_flags_each_evasion() {
     ));
     // A required trait method with no implementor in view.
     assert!(flagged(
-        "trait Lookup { fn get(&self, name: &str) -> Option<WireNodeId>; }"
+        "trait Lookup { fn get(&self, name: &str) -> Option<NodeKey>; }"
     ));
 
     // `N: AsRef<str>` generics: inline, `where`, impl-level, `impl Trait`.
     assert!(flagged(
-        "fn get<N: AsRef<str>>(map: &Decls, name: N) -> Option<WireNodeId> { None }"
+        "fn get<N: AsRef<str>>(map: &Decls, name: N) -> Option<NodeKey> { None }"
     ));
     assert!(flagged(
-        "fn get<N>(name: N) -> Option<WireNodeId> where N: Borrow<str> { None }"
+        "fn get<N>(name: N) -> Option<NodeKey> where N: Borrow<str> { None }"
     ));
     assert!(flagged(
-        "struct Decls; impl<N: Into<String>> Lookup<N> for Decls { fn get(&self, name: N) -> Option<WireNodeId> { None } }"
+        "struct Decls; impl<N: Into<String>> Lookup<N> for Decls { fn get(&self, name: N) -> Option<NodeKey> { None } }"
     ));
     assert!(flagged(
-        "fn get(name: impl AsRef<str>) -> Option<WireNodeId> { None }"
+        "fn get(name: impl AsRef<str>) -> Option<NodeKey> { None }"
     ));
     assert!(flagged(
-        "fn get<N: std::fmt::Display>(name: N) -> Option<WireNodeId> { None }"
+        "fn get<N: std::fmt::Display>(name: N) -> Option<NodeKey> { None }"
     ));
 
     // `str` type aliases, `use ... as` renames and newtypes.
     assert!(flagged(
-        "type Name = str; fn get(name: &Name) -> Option<WireNodeId> { None }"
+        "type Name = str; fn get(name: &Name) -> Option<NodeKey> { None }"
     ));
     assert!(flagged(
-        "type Name = str; type Label = Name; fn get(name: &Label) -> Option<WireNodeId> { None }"
+        "type Name = str; type Label = Name; fn get(name: &Label) -> Option<NodeKey> { None }"
     ));
     assert!(flagged(
-        "use std::string::String as Text; fn get(name: Text) -> Option<WireNodeId> { None }"
+        "use std::string::String as Text; fn get(name: Text) -> Option<NodeKey> { None }"
     ));
     assert!(flagged(
-        "struct Label(Box<str>); fn get(name: &Label) -> Option<WireNodeId> { None }"
+        "struct Label(Box<str>); fn get(name: &Label) -> Option<NodeKey> { None }"
     ));
     // Key aliases and renames too.
     assert!(flagged(
-        "type Id = WireNodeId; fn get(name: &str) -> Option<Id> { None }"
+        "type Id = NodeKey; fn get(name: &str) -> Option<Id> { None }"
     ));
     assert!(flagged(
-        "use qsl_foundation::digest::WireNodeId as Id; fn get(name: &str) -> Option<Id> { None }"
+        "use quire_exact::NodeKey as Id; fn get(name: &str) -> Option<Id> { None }"
     ));
 
     // Macros: a `macro_rules!` body, an item-position invocation, a
-    // metavariable-named fn, and `NodeKey` inside a macro.
+    // Metavariable-named function signatures inside macros.
     assert!(flagged(
-        "macro_rules! lookup { ($name:ident) => { fn $name(&self, name: &str) -> Option<WireNodeId> { None } }; }"
+        "macro_rules! lookup { ($name:ident) => { fn $name(&self, name: &str) -> Option<NodeKey> { None } }; }"
     ));
     assert!(flagged(
-        "define! { fn get(name: &str) -> Option<PackageNodeKey> { None } }"
+        "define! { fn get(name: &str) -> Option<NodeKey> { None } }"
     ));
     assert!(flagged(
-        "define! { fn get<N>(name: N) -> Option<WireNodeId> where N: AsRef<str> { None } }"
-    ));
-    assert!(flagged(
-        "fn f() { let _ = vec![NodeKey::from_digest([0; 32])]; }"
+        "define! { fn get<N>(name: N) -> Option<NodeKey> where N: AsRef<str> { None } }"
     ));
     assert!(flagged(
         "impl ImportView { define! { fn has(&self, name: &str) -> bool { false } } }"
@@ -1046,10 +1026,10 @@ fn the_scan_flags_each_evasion() {
 
     // A `&mut` out-parameter and an annotated closure.
     assert!(flagged(
-        "fn get(name: &str, out: &mut WireNodeId) -> bool { false }"
+        "fn get(name: &str, out: &mut NodeKey) -> bool { false }"
     ));
     assert!(flagged(
-        "fn f() { let get = |name: &str| -> Option<WireNodeId> { None }; }"
+        "fn f() { let get = |name: &str| -> Option<NodeKey> { None }; }"
     ));
 }
 
@@ -1059,21 +1039,21 @@ fn the_scan_flags_each_evasion() {
 #[test]
 fn the_scan_admits_name_free_entries_and_membership() {
     for source in [
-        "impl ImportView { pub fn exports(&self) -> impl Iterator<Item = (&str, PackageNodeKey)> { todo!() } }",
-        "struct Decls(BTreeMap<WireNodeId, String>);
+        "impl ImportView { pub fn exports(&self) -> impl Iterator<Item = (&str, NodeKey)> { todo!() } }",
+        "struct Decls(BTreeMap<NodeKey, String>);
          impl Decls {
              fn undeclared<'a>(&self, exports: &'a [String]) -> Option<&'a str> { None }
-             fn entries(&self) -> impl Iterator<Item = (WireNodeId, &str)> { todo!() }
+             fn entries(&self) -> impl Iterator<Item = (NodeKey, &str)> { todo!() }
          }",
         "fn names(bytes: &[u8]) -> Result<Vec<String>, Defect> { todo!() }",
         // A newtype over a container of names is not itself a name.
-        "struct Pins(BTreeMap<String, Selection>); fn bind(pins: &Pins) -> Option<WireNodeId> { None }",
+        "struct Pins(BTreeMap<String, Selection>); fn bind(pins: &Pins) -> Option<NodeKey> { None }",
         // A map keyed by node id, carrying names as data, is not an index.
-        "struct Entries(BTreeMap<WireNodeId, String>); fn entries(view: &View) -> &BTreeMap<WireNodeId, String> { todo!() }",
+        "struct Entries(BTreeMap<NodeKey, String>); fn entries(view: &View) -> &BTreeMap<NodeKey, String> { todo!() }",
         // An associated type bound to a name, not a node id.
-        "trait Named { type Out; fn get(&self, id: WireNodeId) -> Option<Self::Out>; }
+        "trait Named { type Out; fn get(&self, id: NodeKey) -> Option<Self::Out>; }
          impl Named for Plain { type Out = String; }",
-        "fn f() { assert!(x, \"fn get(name: &str) -> WireNodeId NodeKey\"); }",
+        "fn f() { assert!(x, \"fn get(name: &str) -> NodeKey NodeKey\"); }",
     ] {
         assert_eq!(violations_in(source), Vec::<String>::new(), "{source}");
     }

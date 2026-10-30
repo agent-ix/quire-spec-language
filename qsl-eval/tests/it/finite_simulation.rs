@@ -18,11 +18,12 @@ use qsl_eval::simulation::{
 };
 use qsl_foundation::bound::DomainKind;
 use qsl_foundation::diagnostic::{LimitExceeded, LimitKind};
-use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
+use qsl_foundation::digest::{DigestDomain, DigestRecord};
 use qsl_foundation::selection::DefinitionRef;
 use qsl_foundation::IdentityLimits;
 use qsl_semantics::family::ClassifyFailure;
 use quire_canonical::{Document, FixedShape};
+use quire_exact::NodeKey;
 use quire_exact::{Integer, IntegerInterval, ValueType};
 use quire_semantic_value::catalog::{CatalogCode, CatalogCoded, InternalFault};
 use quire_semantic_value::declaration::TypeEnvironment;
@@ -304,7 +305,7 @@ fn generous_limits() -> Limits {
 /// `explore_request` with no horizon, keeping only the outcome.
 fn explore_outcome<S: TransitionSystem>(
     system: &S,
-    domains: &[(WireNodeId, &ValueType)],
+    domains: &[(NodeKey, &ValueType)],
     types: &TypeEnvironment,
     position_limit: u64,
     limits: Limits,
@@ -348,7 +349,7 @@ fn never_cancels() -> bool {
     false
 }
 
-const NO_DOMAINS: &[(WireNodeId, &ValueType)] = &[];
+const NO_DOMAINS: &[(NodeKey, &ValueType)] = &[];
 
 /// The `quire.simulation.sampler/v1` `DefinitionRef` TC-454's vectors run
 /// under.
@@ -1013,9 +1014,9 @@ fn state_limit_mid_successors_places_the_blocked_key_after_the_queue() {
 #[trace("TC-455", "FR-101-AC-8")]
 #[test]
 fn requires_bound_refuses_before_any_transition_system_call() {
-    let node = WireNodeId::from_digest([7; 32]);
+    let node = crate::support::ids::node_key([7]);
     let unbounded = ValueType::Integer;
-    let domains = [(node, &unbounded)];
+    let domains = [(node.clone(), &unbounded)];
     let types = empty_types();
 
     // A tight `Limits` first, then a generous one: AC-8's "raising
@@ -1043,7 +1044,7 @@ fn requires_bound_refuses_before_any_transition_system_call() {
         assert_eq!(
             domain_key,
             &qsl_foundation::bound::DomainKey::Node {
-                node,
+                node: node.clone(),
                 path: Vec::new()
             }
         );
@@ -1127,7 +1128,7 @@ fn exhaustive_small_graph_reports_exact_state_and_transition_counts() {
 #[trace("TC-455", "FR-101-AC-8")]
 #[test]
 fn bounded_domain_request_explores() {
-    let node = WireNodeId::from_digest([9; 32]);
+    let node = crate::support::ids::node_key([9]);
     let bounded = ValueType::Int(
         IntegerInterval::new(Integer::from(0_i64), Integer::from(9_i64))
             .expect("0..=9 is a valid interval"),
@@ -1646,7 +1647,7 @@ fn sample_request_refuses_a_generator_mismatch_before_any_call() {
 /// a negotiation disposition, not a refusal (FR-101 Behavior).
 #[test]
 fn not_simulated_catalog_code_and_fields_cover_every_variant() {
-    let node = WireNodeId::from_digest([9; 32]);
+    let node = crate::support::ids::node_key([9]);
     let unbounded = ValueType::Integer;
     let requires_bound_domains = [(node, &unbounded)];
     let system = RecordingSystem::new();

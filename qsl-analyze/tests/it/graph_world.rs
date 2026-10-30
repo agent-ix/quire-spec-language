@@ -12,30 +12,30 @@
 use std::collections::BTreeMap;
 
 use qsl_analyze::model_check::{StateGraphItem, StateGraphRequest};
-use qsl_eval::model_subject::ModelSubject;
+use qsl_eval::model_subject::{ModelInstance, ModelSubject};
 use qsl_eval::simulation::model::{
     ExpansionLimits, ModelSimState, ModelSimulationRequest, PopulationUniverse,
 };
-use qsl_foundation::SourceIdentity;
+use qsl_foundation::{BackendId, SourceIdentity};
 use qsl_package::CheckedPackage;
-use qsl_replay::ModelCheckLimits;
+use qsl_replay::{
+    GraphEvidence, GraphEvidenceEnvelope, GraphReplayResult, ModelCheckLimits, ModelPath,
+    ModelTraceSubject, ReplayLimits, ReplayRequestWire, ReplayResult, ReplaySource,
+    RequestTargetWire, StateEnvironment, WitnessPath, WitnessSource,
+};
 use qsl_semantics::check::{CheckedStateGraphClaim, PackageDeclarations};
-use qsl_semantics::library::PackageId;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::observation::{
     declared_type_universe_for, DocumentRef, ObservationLimits,
 };
-use qsl_semantics::value::{CatalogRole, DefinitionLock};
+use qsl_semantics::value::{admit_integer_division, DefinitionRole};
 use quire_checked::key::DeclarationKey;
 use quire_exact::{ObjectId, ObjectReference, ScalarLimits, Value};
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
 
 use crate::counter::UNLIMITED;
-
-const PLACEHOLDER: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 
 /// An integer field `name`: `Int[low, high]`, or the unbounded native
 /// `Integer` for `None`.
@@ -61,6 +61,8 @@ pub(crate) struct Model {
     pub(crate) object: &'static str,
     /// The population of the type.
     pub(crate) population: &'static str,
+    /// Whether the population is declared symmetric.
+    pub(crate) symmetric: bool,
     pub(crate) fields: Vec<Field>,
     pub(crate) operations: Vec<Operation>,
 }
@@ -143,7 +145,6 @@ impl Model {
         .filter(|(name, _)| ranged || *name != "value_type")
         .map(|(name, meaning)| {
             json!({"kind": {"module": self.package, "name": name}, "moduleVersion": "1.0.0",
-                "manifestDigest": PLACEHOLDER,
                 "construct": {"identity": "none", "shape": "record", "members": {},
                     "meaning": meaning}})
         })
@@ -185,12 +186,11 @@ impl Model {
         let population = self.ident(self.population);
         json!({
             "contractVersion": "2.0.0",
-            "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
+            "canonicalization": {"algorithm": "rfc8785-v1"},
             "source": {"identity": self.ident("spec"), "version": "1.0.0",
-                "dialect": "spec-bundle", "digest": PLACEHOLDER},
+                "dialect": "spec-bundle"},
             "package": {"identity": self.package, "version": "1.0.0",
-                "manifestDigest": PLACEHOLDER, "mappingVersions": [], "profileVersions": [],
-                "lockDigest": PLACEHOLDER},
+                "mappingVersions": [], "profileVersions": []},
             "occurrences": [], "extensions": [],
             "constructs": constructs,
             "types": types,
@@ -198,6 +198,7 @@ impl Model {
                 "identity": population, "displayName": population,
                 "kind": {"module": self.package, "name": "population"},
                 "members": [object], "extent": "closed", "origin": Self::origin(&population),
+            "symmetric": self.symmetric,
             }],
         })
         .to_string()
@@ -214,13 +215,10 @@ pub(crate) struct World {
     pub(crate) model: Model,
     pub(crate) package: CheckedPackage,
     document: Vec<u8>,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    source: Vec<u8>,
+    packages: qsl_semantics::model::intake::PackageInput,
+    snapshots: qsl_semantics::model::observation::DocumentProvision,
     pub(crate) initial: Vec<DocumentRef>,
-}
-
-fn digest_of(document: &[u8]) -> [u8; 32] {
-    *package_input([document]).keys().next().expect("one model")
 }
 
 impl World {
@@ -228,15 +226,24 @@ impl World {
     /// initial snapshot per entry of `starts`, each `(key, [(field,
     /// value)])` per object.
     pub(crate) fn new(model: Model, body: &str, starts: &[&[Object<'_>]]) -> Self {
+        Self::with_profiles(model, "", body, starts)
+    }
+
+    /// As [`Self::new`], with `profiles` (header `profile` lines) after the
+    /// value profile.
+    pub(crate) fn with_profiles(
+        model: Model,
+        profiles: &str,
+        body: &str,
+        starts: &[&[Object<'_>]],
+    ) -> Self {
         let document = model.document();
-        let packages = package_input([document.as_slice()]);
+        let packages = package_input([document.as_slice()]).unwrap();
         let text = format!(
             "language \"ix:native\" edition \"1-draft\";\n\
-             profile v = \"quire.value.complete/v1\";\n\
-             model {} = \"{}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n{body}",
-            model.alias,
-            model.package,
-            hex(&digest_of(&document))
+             profile v = \"quire.value.complete/v1\";\n{profiles}\
+             model {} = \"{}\";\n{body}",
+            model.alias, model.package
         );
         let parsed = qsl_cst::parse(
             SourceIdentity::new("agent-ix", "graph", "git", "1"),
@@ -259,18 +266,16 @@ impl World {
         .expect("the operation clauses parse");
         let mut declarations = PackageDeclarations::assemble(
             parsed.source().reference().clone(),
+            "package".to_owned(),
             built,
             models,
             Vec::new(),
         )
         .expect("the unit assembles");
         // `div` reads truncating integer division.
-        let lock = DefinitionLock::pinned();
         declarations.integer_division = Some(
-            lock.admit_integer_division(
-                &[lock
-                    .entry(CatalogRole::IntegerDivisionTruncating)
-                    .reference()],
+            admit_integer_division(
+                &[DefinitionRole::IntegerDivisionTruncating.reference()],
                 None,
             )
             .expect("the division profile admits"),
@@ -283,6 +288,7 @@ impl World {
             model,
             package,
             document,
+            source: text.into_bytes(),
             packages,
             snapshots: BTreeMap::new(),
             initial: Vec::new(),
@@ -309,8 +315,7 @@ impl World {
                 json!({"key": key, "type": object_type, "fields": fields})
             })
             .collect();
-        let header = json!({"identity": self.model.package, "version": "1.0.0",
-            "digest": format!("sha256-jcs:{}", hex(&digest_of(&self.document)))});
+        let header = json!({"identity": self.model.package});
         let document = json!({
             "format": "quire.state.snapshot/v1",
             "identity": {"authority": "test", "identity": name, "revision_namespace": "fixture",
@@ -321,17 +326,16 @@ impl World {
                 "complete": true, "objects": objects}],
         });
         let bytes = document.to_string().into_bytes();
-        let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-        let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-            .expect("canonical fixture")
-            .as_bytes();
-        self.snapshots.insert(digest, bytes);
+        self.snapshots.insert(
+            qsl_semantics::model::observation::document_reference(&bytes)
+                .expect("a document names itself"),
+            bytes,
+        );
         DocumentRef {
             authority: "test".to_owned(),
             identity: name.to_owned(),
             revision_namespace: "fixture".to_owned(),
             revision: "fixture:1".to_owned(),
-            digest,
         }
     }
 
@@ -358,12 +362,81 @@ impl World {
         }
     }
 
-    /// The `package_id` of the world's checked package, as FR-322 emits it.
-    pub(crate) fn package_id(&self) -> PackageId {
-        qsl_package::emit_checked(&self.package)
-            .expect("the package emits")
-            .package()
-            .package_id()
+    /// Recompile and replay one state-graph witness through FR-170.
+    pub(crate) fn replay_witness(
+        &self,
+        claim: &CheckedStateGraphClaim,
+        over: Option<ModelInstance>,
+        path: ModelPath,
+        source: WitnessSource,
+        keys: &[&str],
+    ) -> GraphReplayResult {
+        let source_wire: (String, String, String, String) = (
+            "agent-ix".to_owned(),
+            "graph".to_owned(),
+            "git".to_owned(),
+            "1".to_owned(),
+        );
+        let byte_provision = vec![(
+            "agent-ix".to_owned(),
+            "graph".to_owned(),
+            self.source.clone(),
+        )];
+        let mut documents = vec![self.document.clone()];
+        documents.extend(self.snapshots.values().cloned());
+        let obligation = crate::fixture_ids::obligation_identity();
+        let occurrence = claim
+            .occurrence()
+            .expect("a checked claim has an occurrence");
+        let envelope = GraphEvidenceEnvelope::new(
+            obligation.clone(),
+            occurrence.clone(),
+            occurrence.node().clone(),
+            Vec::new(),
+            UNLIMITED,
+            Vec::new(),
+            BackendId::new("qsl-en-1"),
+            GraphEvidence::Witness {
+                paths: vec![(WitnessPath::Path(path), source)],
+                over,
+            },
+        );
+        let wire = ReplayRequestWire {
+            package_name: "package".to_owned(),
+            profile_selections: Vec::new(),
+            sources: vec![source_wire],
+            dependencies: Vec::new(),
+            replay_target: RequestTargetWire::default(),
+            source: ReplaySource::ModelGraph(Box::new(envelope)),
+            obligation_identity: obligation,
+            backend: "qsl-en-1".to_owned(),
+            state_environment: StateEnvironment::new(Vec::new()),
+            accounting_limits: UNLIMITED,
+            stage_limits: BTreeMap::new(),
+            supplied_limits: None,
+            object_environment: None,
+            declared_domains: Vec::new(),
+            byte_provision,
+            documents,
+        };
+        let subject = ModelTraceSubject {
+            timed: None,
+            initial: self.initial.clone(),
+            universes: vec![PopulationUniverse {
+                population: self.model.key(self.model.population),
+                keys: keys.iter().map(|key| (*key).to_owned()).collect(),
+            }],
+            expansion: ExpansionLimits {
+                max_candidates: 1_000_000,
+            },
+        };
+        let ReplayResult::ModelGraph(replayed) =
+            qsl_replay::replay_model_graph(wire, &subject, ReplayLimits::default())
+                .expect("the state-graph witness replays")
+        else {
+            panic!("state-graph replay returns its typed result arm")
+        };
+        replayed
     }
 
     /// The reference of the object `key` of the world's type.
@@ -391,9 +464,7 @@ impl World {
 
     /// The item `name`; its instances are the subject's universe keys.
     pub(crate) fn item(&self, name: &str) -> StateGraphItem<'_> {
-        StateGraphItem {
-            claim: self.claim(name),
-        }
+        StateGraphItem::new(self.claim(name))
     }
 
     /// A request over universe `keys` for `items`, with no deadlock item, no
@@ -436,6 +507,7 @@ pub(crate) fn config_version() -> Model {
         alias: "Config",
         object: "ConfigVersion",
         population: "config_history",
+        symmetric: false,
         fields: vec![Field {
             name: "versionNumber",
             range: Some((0, 3)),
@@ -444,6 +516,13 @@ pub(crate) fn config_version() -> Model {
             name: "attemptUpdate",
             modifies: &["versionNumber"],
         }],
+    }
+}
+
+pub(crate) fn symmetric_config_version() -> Model {
+    Model {
+        symmetric: true,
+        ..config_version()
     }
 }
 
@@ -470,9 +549,55 @@ pub(crate) fn config_world(claims: &str, starts: &[(i64, i64)]) -> World {
     config_world_over("", claims, &["a", "b"], &starts)
 }
 
+/// ADR-021 §7.2's three-counter POR instance, with `ReachesTwo` bound to
+/// `x = a` and all three counters initially zero.
+pub(crate) fn por_reachestwo_world() -> World {
+    let model = Model {
+        package: "test/por",
+        alias: "M",
+        object: "Counter",
+        population: "counters",
+        symmetric: false,
+        fields: vec![Field {
+            name: "v",
+            range: Some((0, 2)),
+        }],
+        operations: vec![Operation {
+            name: "bump",
+            modifies: &["v"],
+        }],
+    };
+    let source = concat!(
+        "pre CanBump using v on M::Counter::bump { self.v < 2 }\n",
+        "post Bumped using v on M::Counter::bump { (pre(self.v) = 0 and self.v = 1) or (pre(self.v) = 1 and self.v = 2) }\n",
+        "possible ReachesTwo using v over (x: M::Counter) { x.v = 2 }\n",
+    );
+    let counters: [Object<'_>; 3] = [("a", &[("v", 0)]), ("b", &[("v", 0)]), ("c", &[("v", 0)])];
+    World::new(model, source, &[&counters])
+}
+
 /// §7.1's world with `extra` added to its contract, universe `keys`, and one
 /// snapshot per entry of `starts`, each the version of every key in order.
 pub(crate) fn config_world_over(
+    extra: &str,
+    claims: &str,
+    keys: &[&str],
+    starts: &[Vec<i64>],
+) -> World {
+    config_world_over_model(config_version(), extra, claims, keys, starts)
+}
+
+pub(crate) fn symmetric_config_world_over(
+    extra: &str,
+    claims: &str,
+    keys: &[&str],
+    starts: &[Vec<i64>],
+) -> World {
+    config_world_over_model(symmetric_config_version(), extra, claims, keys, starts)
+}
+
+fn config_world_over_model(
+    model: Model,
     extra: &str,
     claims: &str,
     keys: &[&str],
@@ -497,11 +622,7 @@ pub(crate) fn config_world_over(
         })
         .collect();
     let starts: Vec<&[Object<'_>]> = objects.iter().map(Vec::as_slice).collect();
-    World::new(
-        config_version(),
-        &format!("{CONFIG_CONTRACT}{extra}{claims}"),
-        &starts,
-    )
+    World::new(model, &format!("{CONFIG_CONTRACT}{extra}{claims}"), &starts)
 }
 
 /// §7.2's game: `phase` is `Start` 0, `Mid` 1, `Lost` 2 or `Won` 3, so
@@ -548,6 +669,7 @@ pub(crate) fn game(count: bool, restart: bool) -> Model {
         alias: "G",
         object: "Game",
         population: "games",
+        symmetric: false,
         fields,
         operations,
     }
@@ -629,6 +751,7 @@ pub(crate) fn job(reset: bool) -> Model {
         alias: "M",
         object: "Job",
         population: "jobs",
+        symmetric: false,
         fields: vec![flag("a"), flag("b"), flag("done")],
         operations,
     }
@@ -744,6 +867,7 @@ fn moves_world(
         alias,
         object,
         population,
+        symmetric: false,
         fields: vec![Field {
             name: "pos",
             range: Some((0, high)),

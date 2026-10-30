@@ -45,7 +45,7 @@ adoption and assurance remain explicit acceptance work.
   exact forward-effect inputs required by registration-capture initializers.
 - [Task-043](tasks/Task-043-published-v1-handoff.md): publish the existing
   four-source `/1` producer output at a version-explicit owner address for the
-  pinned Protocol consumer.
+  Protocol consumer.
 - [Task-044](tasks/Task-044-distinct-v1-role-authorities.md): correct the
   published `/1` producer corpus so its two authored roles retain distinct
   model authorities through the consumer linker.

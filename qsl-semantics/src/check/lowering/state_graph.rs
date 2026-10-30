@@ -32,7 +32,7 @@ pub(crate) struct StateGraphClaimInput<'a> {
 }
 
 /// A lowered state-graph claim's keys.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct LoweredStateGraphClaim {
     /// The `claim`/`state_graph` node: the claim's identity.
     pub(crate) key: NodeKey,
@@ -58,13 +58,13 @@ impl Lowering<'_> {
             Some(over) => {
                 let over_at = at(Site::Over);
                 let semantic_type =
-                    self.binder_type(&ValueType::Reference(over.object), None, &over_at)?;
-                let parameter = self.parameter(&over.name, 0, semantic_type, &over_at)?;
-                self.record(semantic_type, OccurrenceRole::Type, over_at);
+                    self.binder_type(&ValueType::Reference(over.object.clone()), None, &over_at)?;
+                let parameter = self.parameter(&over.name, 0, semantic_type.clone(), &over_at)?;
+                self.record(semantic_type.clone(), OccurrenceRole::Type, over_at);
                 scope.push(Binder {
                     slot: 0,
-                    parameter,
-                    semantic_type,
+                    parameter: parameter.clone().into(),
+                    semantic_type: semantic_type.into(),
                 });
                 Some(parameter)
             }
@@ -73,10 +73,11 @@ impl Lowering<'_> {
         let (from, target) = claim.node_predicates();
         let from = from
             .map(|predicate| {
-                self.state_predicate(predicate, Site::From, input.index, boolean, &scope)
+                self.state_predicate(predicate, Site::From, input.index, boolean.clone(), &scope)
             })
             .transpose()?;
-        let target = self.state_predicate(target, Site::Target, input.index, boolean, &scope)?;
+        let target =
+            self.state_predicate(target, Site::Target, input.index, boolean.clone(), &scope)?;
 
         let kind = self.text_literal(
             match claim.form() {
@@ -91,7 +92,7 @@ impl Lowering<'_> {
             &claim_at,
             NodeTag::Claim,
             "state_graph",
-            Some(boolean),
+            Some(boolean.clone()),
             None,
             BodyTerm::aggregate(vec![
                 MemberTerm::bound("kind", kind),
@@ -106,7 +107,7 @@ impl Lowering<'_> {
                 MemberTerm::bound("target", target),
             ]),
         )?;
-        self.record(key, OccurrenceRole::Claim, claim_at);
+        self.record(key.clone(), OccurrenceRole::Claim, claim_at);
         Ok(LoweredStateGraphClaim { key, boolean })
     }
 
@@ -134,11 +135,11 @@ impl Lowering<'_> {
                     &at,
                     NodeTag::Value,
                     "literal",
-                    Some(boolean),
+                    Some(boolean.clone()),
                     None,
                     BodyTerm::literal(boolean, LiteralValue::Boolean(true)),
                 )?;
-                self.record(key, OccurrenceRole::Expression, at);
+                self.record(key.clone(), OccurrenceRole::Expression, at);
                 Ok(LeafTerm::reference(key))
             }
         }

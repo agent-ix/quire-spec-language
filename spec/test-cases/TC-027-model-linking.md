@@ -17,7 +17,7 @@ specified by IT-005; a setup refusal is not an observed application outcome.
 
 ## Test Procedure
 
-Use a qualified Version declaration with exact inclusive bounds 0..1000 and dimensionless unit, matching guarded-addition in the pinned rule cases. Check self.n < 1000 implies self.n + 1 <= 1000. Compare the unproved-overflow expression and guards at the finite boundary, including <= 1000 which still permits overflow.
+Use a qualified Version declaration with exact inclusive bounds 0..1000 and dimensionless unit, matching guarded-addition in the rule cases. Check self.n < 1000 implies self.n + 1 <= 1000. Compare the unproved-overflow expression and guards at the finite boundary, including <= 1000 which still permits overflow.
 
 ## Expected Results
 

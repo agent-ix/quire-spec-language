@@ -46,9 +46,9 @@ const UNLIMITED: ScalarLimits = ScalarLimits {
 /// A checked unit, its packages and the snapshots its tests add.
 struct Unit {
     package: CheckedPackage,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
-    invocations: BTreeMap<[u8; 32], Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
+    snapshots: qsl_semantics::model::observation::DocumentProvision,
+    invocations: qsl_semantics::model::observation::DocumentProvision,
 }
 
 /// What a snapshot of the fixture lists: the counters (key and `v`), and
@@ -62,17 +62,12 @@ struct Listing<'c> {
 }
 
 /// A document's reference, by its canonical digest.
-fn document_ref(label: &str, bytes: &[u8]) -> DocumentRef {
-    let read = quire_canonical::read(bytes, u64::MAX).expect("JSON");
-    let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-        .expect("canonical")
-        .as_bytes();
+fn document_ref(label: &str) -> DocumentRef {
     DocumentRef {
         authority: "test".to_owned(),
         identity: label.to_owned(),
         revision_namespace: "fixture".to_owned(),
         revision: "1".to_owned(),
-        digest,
     }
 }
 
@@ -93,18 +88,13 @@ impl Unit {
     }
 
     fn model(&self) -> Json {
-        let digest = *self.packages.keys().next().expect("one package");
-        json!({"identity": PACKAGE, "version": "1.0.0",
-            "digest": format!("sha256-jcs:{}", qsl_semantics::model::key::hex(&digest))})
+        json!({"identity": PACKAGE})
     }
 
     /// The invocation `label` of `Counter::bump` on the counter `a`, between
     /// `pre` and `post`.
     fn invocation(&mut self, label: &str, pre: &DocumentRef, post: &DocumentRef) -> DocumentRef {
-        let reference = |reference: &DocumentRef| {
-            json!({"identity": identity(reference),
-                "digest": format!("sha256-jcs:{}", qsl_semantics::model::key::hex(&reference.digest))})
-        };
+        let reference = |reference: &DocumentRef| json!({"identity": identity(reference)});
         let bytes = serde_json::to_vec(&json!({
             "format": "quire.state.invocation/v1",
             "identity": {"authority": "test", "identity": label,
@@ -121,8 +111,8 @@ impl Unit {
             "deleted": [],
         }))
         .expect("the invocation serializes");
-        let document = document_ref(label, &bytes);
-        self.invocations.insert(document.digest, bytes);
+        let document = document_ref(label);
+        self.invocations.insert(document.clone(), bytes);
         document
     }
 
@@ -204,8 +194,8 @@ impl Unit {
             document["anchor"] = json!({"kind": "handler", "name": "validate"});
         }
         let bytes = serde_json::to_vec(&document).expect("the snapshot serializes");
-        let document = document_ref(label, &bytes);
-        self.snapshots.insert(document.digest, bytes);
+        let document = document_ref(label);
+        self.snapshots.insert(document.clone(), bytes);
         document
     }
 
@@ -221,7 +211,7 @@ impl Unit {
             kind: clause.kind(),
             context: clause.context(),
             operation: clause.operation().map(|operation| OperationFacts {
-                declaring: operation.declaring,
+                declaring: operation.declaring.clone(),
                 declaration: operation.declaration.clone(),
             }),
             operations: self.graph().scope().operations().clone(),
@@ -399,7 +389,7 @@ fn footprint(
     } = graph
         .scope()
         .operations()
-        .resolve(graph.scope().types(), identity, operation)
+        .resolve(graph.scope().types(), identity.clone(), operation)
     else {
         panic!("{object_type} declares {operation}");
     };

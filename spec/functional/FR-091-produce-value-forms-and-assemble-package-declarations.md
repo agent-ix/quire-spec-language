@@ -83,19 +83,19 @@ The requirement carries testable criteria for decisions already taken:
   causes, a limit refusal (`LimitExceeded`: limit kind, configured bound,
   locus) or an internal fault. S0 to S2 name a location with
   `Locus::Region`.
-- ADR-013 O-04: a source-owned node's identity preimage names its owner as
-  `SourceOwner{authority, identity}`.
+- ADR-013 O-04: a source-owned node retains
+  `SourceOwner{authority, identity}` as provenance; QSpec FR-322 defines
+  its structural identity from the checked-package name and path.
 - QSpec (`ix://agent-ix/quire-specification`, cited by reference, never
   copied). `proposals/quire-v1/shared-grammar.md`: `using` selects a
   declared profile alias for every native declaration, with no default, and
   a floating type's `[rounding-mode]` is optional. FR-322 makes a floating
   type's rounding mode part of the type. FR-148 has the evaluator use the
   declared mode, and reads an omitted rounding spelling as `exact`. FR-145: `map` and `collect` are one
-  operation. `proposals/checked-package-v2/README.md` and
-  `node-identity-preimage.schema.json`: a nominal enum, dimension or unit
-  node's preimage names its owner, and a source owner is
-  `SourceOwner{kind: "source", authority, identity}`. The
-  `quire.application-node/v1` preimage has no owner member. Aliases within
+  operation. QSpec FR-322: declared and derived nodes carry structural
+  `{package, path, ordinal}` identities; source ownership is retained as
+  `SourceOwner{kind: "source", authority, identity}` on the node, and an
+  application node has no owner. Aliases within
   one source unit are unique
   (`shared-grammar.md`).
   `proposals/quire-v1/definitions/native-diagnostics.md`: the catalog codes and causes this requirement names.
@@ -441,39 +441,29 @@ For each enum form, the assembler:
 1. Refuses a form that names one case more than once with a
    duplicate-enum-member error, naming the enum, the case and the span of
    each member that declares it. It admits nothing for that form.
-2. Builds the `quire.enum-declaration-node/v1` preimage:
-   - `owner`: the unit's owner as a source owner,
-     `{kind: "source", authority, identity}`, the same `SourceOwner` that
-     keys the unit's records, tuples and functions;
-   - `qualified_declaration`: the declared name's `::`-separated segments,
-     which for a declaration in source is the one segment of its name, the
-     same segments the lowered node's `declaration.qualified_name` carries
-     ([FR-092](FR-092-key-type-parameter-and-declared-nodes.md));
-   - `ordered`: whether the form is `ordered`;
-   - `members`: the case names in source order when `ordered`, and sorted
-     by case name (byte order) otherwise.
-3. Mints the declaration key with `check::node_key::nominal_key(&impl
-   NodeIdentityPreimage) -> Result<NodeKey, InvalidSemanticGraph>`, the one function that mints a nominal
-   node's key: the SHA-256 of the preimage's RFC 8785 bytes, the digest
-   `value::enumeration` computes. It is separate from
-   `check::node_key::node_key`, which keys structural and application
-   nodes and never a nominal preimage.
+2. Builds the declaration's normalized semantic content: its source owner
+   `{kind: "source", authority, identity}`, qualified declaration segments,
+   `ordered` flag, and members in source order when ordered or sorted by
+   case-name bytes otherwise. The lowered node carries the same
+   `declaration.qualified_name` ([FR-092](FR-092-key-type-parameter-and-declared-nodes.md)).
+3. Mints the declaration key as QSpec FR-322's structural node id: the
+   required checked-package name, the qualified declaration path, and
+   ordinal zero. The source owner and member content do not enter the key.
 4. Admits the declaration with `EnumDeclaration::admit(preimage, key,
    owners)`, where `owners` holds exactly the unit's source owner.
-5. For each case in the preimage's `members` order, builds the
-   `quire.enum-member-node/v1` preimage over the declaration key and the
-   case, mints its key with `nominal_key`, and
+5. For each case in the normalized `members` order, builds its semantic
+   content and mints the member's structural key from the declaration's
+   package and qualified path extended by the case name, then
    admits it with `EnumDeclaration::admit_member`.
 
-`value::enumeration` gives each preimage a constructor from its parts,
-beside `from_json`. The constructor applies the schema checks `from_json`
-applies and refuses with `NonCanonicalPreimage`. A member's display string
-enters no preimage and no `PackageDeclarations` field (QSpec FR-141).
+`value::enumeration` constructs the normalized declaration and member
+content and validates it before admission. A member's display string
+enters neither its structural key nor `PackageDeclarations` (QSpec FR-141).
 
 Steps 2 to 5 cannot refuse a form that step 1 admits: the grammar gives
 every enum at least one member and every case an identifier, step 1 makes
 the cases distinct, step 2 sorts an unordered enum, and step 3 mints the
-key that step 4 recomputes. A refusal from a constructor, `admit` or
+structural key that step 4 checks. A refusal from a constructor, `admit` or
 `admit_member` is therefore a nominal-admission fault, a broken invariant of
 `check`, which the refusal carries with the declaration's span.
 
@@ -566,7 +556,7 @@ rules, order and causes and none of its own:
   that mentions it gives it its turn when it is first reached, before the
   declaration that reached it and before the nodes reached through its
   terms. Every package dimension not yet reached takes its turn after the
-  last source declaration's turn, in the lock order of its selection and
+  last source declaration's turn, in the order of its selection in the unit and
   then in its authored order within the package.
 - An imported node's definition, terms and units count as admitted and are
   not re-checked. At its turn, rows 1 to 6 apply to the local units typed by
@@ -577,8 +567,8 @@ rules, order and causes and none of its own:
   package unit of its own node adds no cycle and no targetless unit. Row 5
   applies only to a local root of a node with no package root. The
   base-dimension rule applies to a package base dimension at its turn as to
-  a local one. A refusal of a package node is located at its selection row
-  `/lock/model_selections/<i>` and names the node's FCD identity.
+  a local one. A refusal of a package node is located at the `model_root` node of its
+  selected package and names the node's FCD identity.
 - At each node's turn it runs FR-142's step (-1) over a local dimension's
   own terms (a term that names no dimension; a dimension in a dimension
   cycle or with a self-term, its edges from the cycle's dimension declared
@@ -597,7 +587,7 @@ rules, order and causes and none of its own:
   admits it. Its units form `N`'s own graph under rows 1 to 6, and its empty
   map creates no base-dimension obligation.
 
-With no error, the assembler builds each preimage, owner and
+With no error, the assembler builds each normalized declaration, owner and
 `qualified_declaration` as for an enum:
 
 1. **Exact numbers.** `rational(n, d)` is the reduced rational `n / d`,
@@ -613,71 +603,74 @@ With no error, the assembler builds each preimage, owner and
    thus names base dimensions only, each once, as QSpec FR-142 and
    `UnitGraph::admit` require.
 3. **Dimension keys.** It mints each base dimension's key, then each
-   derived dimension's, over its `quire.dimension-node/v1` preimage,
-   with `nominal_key`, the function that mints an enum's key. It then mints
-   each dimension equivalence's key over its
-   `quire.dimension-equivalence-node/v1` preimage `{version, owner,
-   dimension_node_ids, root_scale}`, `owner` the unit's `SourceOwner`,
-   `dimension_node_ids` the keys of the two related dimension nodes, distinct
-   and in ascending digest order, and `root_scale` the reduced root ratio of step 6 as
-   `{numerator, denominator}` decimal strings, stated for the node listed first (the
-   reciprocal when the declaration names the dimensions in descending order), so a pair
-   written in either order, with either unit spelling of one ratio, has one key. An equivalence rewrites no dimension: every `terms` list and every
-   dimension key is the one the dimensions alone give.
-4. **Unit preimages.** A unit's `quire.unit-node/v1` preimage has its
+   derived dimension's, from the required package name and qualified
+   declaration path under QSpec FR-322. It mints each dimension
+   equivalence's derived key with path `["scalar_type",
+   "dimension_equivalence", first id, second id]`, where the two distinct
+   dimension ids are in ascending structural-key order. The equivalence's
+   body carries the unit's `SourceOwner`, the ordered dimension ids and
+   the reduced `root_scale` as `{numerator, denominator}` decimal strings,
+   stated for the first id (reciprocal when source order descends). A pair
+   written in either order or with another unit spelling of the same ratio
+   has one key and one normalized body. An equivalence rewrites no
+   dimension: its terms and declaration key remain unchanged.
+4. **Unit content.** A unit's normalized content has its
    dimension's key as `dimension_node_id`, its target's key as
    `target_unit_node_id` (`null` when no target is written), the reduced
    scale as `scale`, and the reduced offset, zero when no `+` is written,
    as `offset`. The unit's edge is `target_value = scale × source_value +
    offset` (FR-142).
-5. **Unit keys.** It mints each unit's key after its target's, roots first,
-   with `nominal_key`.
+5. **Unit keys.** It mints each unit's QSpec FR-322 declared structural key
+   from the required package name and qualified declaration path after
+   its target's key, roots first.
 6. **Admission.** It calls `UnitGraph::admit` with every dimension,
-   dimension-equivalence and unit preimage and its key, and `owners` holding
+   dimension-equivalence and unit's normalized content and structural key, and `owners` holding
    exactly the unit's source owner. The result is `units`, which holds the
    equivalence nodes beside the dimension nodes and derives the equivalence
    classes, base classes and class roots from them (QSpec FR-142 "Dimension
    equivalence", "Effect"), so the checker and the replay facade read a class
    from the graph and never from the source.
 
-`value::unit` gives `DimensionPreimage` and `UnitPreimage` a constructor
-from their parts, with node keys for the nodes they reference, beside
-`from_json`. The checks above leave `UnitGraph::admit` nothing to refuse,
+`value::unit` gives `DimensionPreimage` and `UnitPreimage` constructors
+from their normalized parts, with structural node keys for referenced nodes.
+The checks above leave `UnitGraph::admit` nothing to refuse,
 so a refusal from a constructor or from `admit` is a nominal-admission
 fault, carried with the span of the first dimension or unit form.
 
 The assembler stops at the admitted `UnitGraph`, which keeps each
-dimension's and unit's preimage bytes; `UnitTable::declared` carries them
+dimension's and unit's normalized semantic content; `UnitTable::declared` carries them
 to lowering, which builds the `quire.dimension-node/v1` and
 `quire.unit-node/v1` nodes a quantity type names (FR-094).
 
-**Dimension and unit key vectors.** Owner
-`{kind: "source", authority: "a", identity: "u"}`, each
-`qualified_declaration` the declared name. `dimension_node_id` and
-`target_unit_node_id` are `{domain: "quire.checked-semantic-node/v1",
-digest}`, and a rational is `{numerator, denominator}` in decimal strings.
-The method reproduces QSpec's `dimension-velocity` and
-`unit-degree-celsius` vectors.
+**Dimension and unit source cases.** The required `package_name` is held
+constant; the source owner is `{kind: "source", authority: "a", identity: "u"}`.
+Each declared dimension or unit key has the QSpec FR-322 structural
+`{package, path, ordinal}` form, with `package` equal to that package name,
+`path` equal to its qualified declaration path, and ordinal zero. Referenced
+dimension and unit ids use those same keys. A rational is
+`{numerator, denominator}` in decimal strings. The cases retain the
+normalized semantics of QSpec's `dimension-velocity` and
+`unit-degree-celsius` sources without freezing digest values.
 
-| Vector | Source | Preimage content | Key |
+| Case | Source | Normalized content | Structural identity |
 |---|---|---|---|
-| Q1 | `dimension Length;` | `terms: []` | the SHA-256 of its preimage |
-| Q2 | `dimension Time;` | `terms: []` | the SHA-256 of its preimage |
-| Q3 | `dimension Speed = Length / Time;` | `terms: [{Q2, "-1"}, {Q1, "1"}]` | the SHA-256 of its preimage |
-| Q4 | `dimension Accel = Speed / Time;` | `terms: [{Q2, "-2"}, {Q1, "1"}]` | the SHA-256 of its preimage |
-| Q5 | `dimension Temperature;` | `terms: []` | the SHA-256 of its preimage |
-| Q6 | `unit m : Length = rational(1, 1);` | dimension Q1, target `null`, scale 1/1, offset 0/1 | the SHA-256 of its preimage |
-| Q7 | `unit km : Length = rational(2000, 2) * m;` | dimension Q1, target Q6, scale 1000/1, offset 0/1 | the SHA-256 of its preimage |
-| Q8 | `unit cm : Length = decimal(1, 2) * m;` | dimension Q1, target Q6, scale 1/100, offset 0/1 | the SHA-256 of its preimage |
-| Q9 | `unit K : Temperature = rational(1, 1);` | dimension Q5, target `null`, scale 1/1, offset 0/1 | the SHA-256 of its preimage |
-| Q10 | `unit C : Temperature = rational(1, 1) * K + decimal(27315, 2);` | dimension Q5, target Q9, scale 1/1, offset 5463/20 | the SHA-256 of its preimage |
-| Q11 | `dimension Distance;` | `terms: []` | the SHA-256 of its preimage |
-| Q12 | `unit dist : Distance = rational(1, 1);` and `dimension Distance ~ Length by 1 dist = 1 km;` | `dimension_node_ids: [Q11, Q1]` (ascending digest), `root_scale` 1000/1 (`km` is 1000 roots of `Length`, `dist` 1 root of `Distance`) | the SHA-256 of its preimage |
-| Q13 | `dimension Length ~ Distance by 1 cm = 2 dist;` | `dimension_node_ids: [Q11, Q1]`, `root_scale` 1/200 (`cm` is 1/100 of a root of `Length`, so one root of `Length` is 200 roots of `Distance` and one root of `Distance`, listed first, is 1/200 root of `Length`) | the SHA-256 of its preimage |
+| Q1 | `dimension Length;` | `terms: []` | declared `Length` path |
+| Q2 | `dimension Time;` | `terms: []` | declared `Time` path |
+| Q3 | `dimension Speed = Length / Time;` | `terms: [{Q2, "-1"}, {Q1, "1"}]` | declared `Speed` path |
+| Q4 | `dimension Accel = Speed / Time;` | `terms: [{Q2, "-2"}, {Q1, "1"}]` | declared `Accel` path |
+| Q5 | `dimension Temperature;` | `terms: []` | declared `Temperature` path |
+| Q6 | `unit m : Length = rational(1, 1);` | dimension Q1, target `null`, scale 1/1, offset 0/1 | declared `m` path |
+| Q7 | `unit km : Length = rational(2000, 2) * m;` | dimension Q1, target Q6, scale 1000/1, offset 0/1 | declared `km` path |
+| Q8 | `unit cm : Length = decimal(1, 2) * m;` | dimension Q1, target Q6, scale 1/100, offset 0/1 | declared `cm` path |
+| Q9 | `unit K : Temperature = rational(1, 1);` | dimension Q5, target `null`, scale 1/1, offset 0/1 | declared `K` path |
+| Q10 | `unit C : Temperature = rational(1, 1) * K + decimal(27315, 2);` | dimension Q5, target Q9, scale 1/1, offset 5463/20 | declared `C` path |
+| Q11 | `dimension Distance;` | `terms: []` | declared `Distance` path |
+| Q12 | `unit dist : Distance = rational(1, 1);` and `dimension Distance ~ Length by 1 dist = 1 km;` | `dimension_node_ids: [Q11, Q1]` (ascending key order), `root_scale` 1000/1 (`km` is 1000 roots of `Length`, `dist` 1 root of `Distance`) | derived path `["scalar_type", "dimension_equivalence", first id, second id]` |
+| Q13 | `dimension Length ~ Distance by 1 cm = 2 dist;` | `dimension_node_ids: [Q11, Q1]`, `root_scale` 1/200 (`cm` is 1/100 of a root of `Length`, so one root of `Length` is 200 roots of `Distance` and one root of `Distance`, listed first, is 1/200 root of `Length`) | same derived path as Q12; distinct body, not a second node in the same graph |
 
-Q12's preimage is `{version: "quire.dimension-equivalence-node/v1", owner,
-dimension_node_ids, root_scale}` with `owner` the source owner above. The same method
-reproduces QSpec's `dimension-equivalence-rpc-flow-time`
+Q12's admitted node carries the source owner, ordered `dimension_node_ids`
+and normalized `root_scale` in its body. The same method reproduces the
+semantic content of QSpec's `dimension-equivalence-rpc-flow-time`
 (`root_scale` 1/1), `dimension-equivalence-rpc-clock-time`
 (1000/1) and `dimension-equivalence-flow-clock-time`
 (1000/1) from owner `{kind: "source", authority: "agent-ix",
@@ -709,36 +702,28 @@ default profile. Profile, import and model aliases are unique within a
 unit (QSpec `shared-grammar.md`): a unit that declares one alias twice
 refuses with a duplicate-alias error naming the alias and both selection
 spans.
-Resolving a selection's definition reference against the library lock is an E3
-step outside this requirement; the `ieee_profile` selection and its build are
+The `ieee_profile` law and its build are
 [FR-397](FR-397-select-the-ieee-profile-of-a-package-that-declares-or-evaluates-a-float.md)'s.
 
-**Node key owner.** `check` mints the node keys of record, tuple and
-function declarations over the unit's `SourceOwner{authority, identity}`
-(ADR-013 O-04). The source revision and digest are package lock evidence
-and are not part of the preimage, so an unchanged declaration keeps its key
-across revisions of its source. The owner is a required E3 input, and
-`check` has no constant package identity:
-`DEFAULT_PACKAGE_IDENTITY` does not exist. The record, tuple and function
-nodes are keyed by the `quire.structural-node/v1` preimage, which carries the
-owner ([FR-092](FR-092-key-type-parameter-and-declared-nodes.md)). An enum
-declaration is keyed by QSpec's owner-bearing
-`quire.enum-declaration-node/v1` preimage over the same owner, and its
-members by `quire.enum-member-node/v1` over the declaration key. QSpec
-publishes owner scope for nominal enum, dimension and unit nodes; the
-structural-node preimage is a QSL proposal to QSpec (Dependencies).
+**Node identity.** `check` mints record, tuple, function, enum and member
+node ids as QSpec FR-322 structural `{package, path, ordinal}` values.
+The required checked-package `package_name` supplies `package`; a declared
+node's `path` is its qualified declaration path. Source revision and the
+unit's `SourceOwner{authority, identity}` are not identity components, so
+the same declared path under the same package name retains its key when
+the owner unit label changes. The owner remains a required E3 input for
+provenance, and `DEFAULT_PACKAGE_IDENTITY` does not exist. See
+[FR-092](FR-092-key-type-parameter-and-declared-nodes.md) for derived nodes.
 
-**Enum key vectors.** Each key is the SHA-256 of the RFC 8785 bytes of the
-preimage shown, owner `{kind: "source", authority: "a", identity: "u"}`
-unless stated. The method reproduces QSpec's `enum-status` vector in
-`node-identity-vectors.json`.
+**Enum source cases.** The owner is `{kind: "source", authority: "a", identity: "u"}`
+unless stated, and every case uses the same required `package_name`.
 
-| Vector | Source | Preimage (other members as above) | Key |
+| Case | Source | Normalized content | Structural identity |
 |---|---|---|---|
-| N1 | `ordered enum Status { READY, DONE }` | `qualified_declaration: ["Status"]`, `ordered: true`, `members: ["READY", "DONE"]` | the SHA-256 of its preimage |
-| N2 | member `READY` of N1 | `{version: "quire.enum-member-node/v1", declaration_node_id: {domain: "quire.checked-semantic-node/v1", digest: N1}, case: "READY"}` | the SHA-256 of its preimage |
-| N3 | `enum Color { RED, BLUE = "Blue" }` | `qualified_declaration: ["Color"]`, `ordered: false`, `members: ["BLUE", "RED"]` | the SHA-256 of its preimage |
-| N4 | N1's source under owner identity `w` | N1's, with `identity: "w"` | the SHA-256 of its preimage |
+| N1 | `ordered enum Status { READY, DONE }` | `ordered: true`, members `READY`, `DONE` | declared `Status` path |
+| N2 | member `READY` of N1 | case `READY` of `Status` | declared `Status` path extended by `READY` |
+| N3 | `enum Color { RED, BLUE = "Blue" }` | `ordered: false`, members `BLUE`, `RED` | declared `Color` path; display string does not enter it |
+| N4 | N1's source under owner identity `w` | N1's content with a different source-owner unit label | the same key as N1 |
 
 Type resolution is the E3 name-binding phase (ADR-011 §1; ADR-013 O-11).
 The resolution `match` has one explicit arm per type-form head:
@@ -1089,7 +1074,7 @@ every checker of the language.
 
 | ID | Constraint | Type | Validation |
 | --- | --- | --- | --- |
-| FR-091-CON-1 | The `Value` family form builder and the assembler are the only producers of a `PackageDeclarations` value from complete-V1 source. The assembler's parsed-form input is S2 output. Its other E3 inputs are those ADR-011 §2.1's E3 row admits (admitted domain packages, library lock) and the unit's `SourceOwner`. | Design | Inspection |
+| FR-091-CON-1 | The `Value` family form builder and the assembler are the only producers of a `PackageDeclarations` value from complete-V1 source. The assembler's parsed-form input is S2 output. Its other E3 inputs are those ADR-011 §2.1's E3 row admits (admitted domain packages) and the unit's `SourceOwner`. | Design | Inspection |
 | FR-091-CON-2 | The dispatch table, the `Value` production's expression match and the assembler's type-form resolution match have no `_` or catch-all arm (ADR-012 §5.1). | Design | Test (TC-398) |
 
 ## Acceptance Criteria
@@ -1113,7 +1098,7 @@ every checker of the language.
 | FR-091-AC-15 | The assembler refuses with an ambiguous-type-name error for a unit with `type A = Int[0, 1];`, `type A = Int[0, 2];` and `function f using v(x: A): Boolean pure { true }`. The error names `A`, the span of `x`'s type form and the spans of both `type A` declarations. | Test (TC-400) |
 | FR-091-AC-16 | The assembler returns one refusal with three errors for parameters typed `Int[9, 0]`, `Rational[0, 1; 0, 5]` and `Text[5, 1; nfc]`, one per function. Each error carries the owning value type's own rejection cause and its type form's span. It returns no `PackageDeclarations`. | Test (TC-400) |
 | FR-091-AC-17 | The assembler refuses with an alias-cycle error, code `invalid_package`/`definition-cycle`, naming both `A` and `B` for `type A = B;` and `type B = A;`, and returns no `PackageDeclarations`. It refuses `type C = Option<C>;` with the same code, naming `C`. | Test (TC-400) |
-| FR-091-AC-18 | For `record Point { x: Int[0, 9]; y: Int[0, 9]; }`, `tuple Pair(Int[0, 9], Int[0, 9]);` and `function px using v(p: Point): Int[0, 9] pure { p.x }`, assembled under source owner authority `a`, identity `u`, the assembler's `types` holds one record declaration `Point` and one tuple declaration `Pair`, each with a key that `check` minted over that owner. `px`'s resolved parameter type is `ValueType::Composite` of `Point`'s key, and `PackageDeclarations::check` admits the package. Assembling and checking the same source again under (`a`, `u`) gives the same `Point` and `Pair` keys and the same checked node id for `px`. Under (`a`, `w`) it gives a different key for each of the three. No item named `DEFAULT_PACKAGE_IDENTITY` exists under `src/`. | Test (TC-401) |
+| FR-091-AC-18 | For `record Point { x: Int[0, 9]; y: Int[0, 9]; }`, `tuple Pair(Int[0, 9], Int[0, 9]);` and `function px using v(p: Point): Int[0, 9] pure { p.x }`, assembled with the same required checked-package `package_name` under source owner authority `a`, identity `u`, the assembler's `types` holds one record declaration `Point` and one tuple declaration `Pair`, each with a structural key minted from that package name and its declared path under QSpec FR-322 and FR-480-AC-5. `px`'s resolved parameter type is `ValueType::Composite` of `Point`'s key, and `PackageDeclarations::check` admits the package. Assembling and checking the same source again under (`a`, `u`) gives the same `Point` and `Pair` keys and the same checked node id for `px`. Under (`a`, `w`) with that same package name and declared paths, all three keys remain the same: the source-owner unit label is not a component of structural node identity. No item named `DEFAULT_PACKAGE_IDENTITY` exists under `src/`. | Test (TC-401) |
 | FR-091-AC-19 | The assembler admits a parameter typed `Float64[nearest-even]`, `Float32[toward-zero]` or `Float64`. Resolving each gives a `ValueType::Float` of the written width and rounding mode `nearest-even`, `toward-zero` and `exact` (the bare spelling). The evaluator rounds a `Float64[mode]` `+` by that mode. It refuses a parameter typed `Reference<M::T>`, in a unit with no admitted domain package, with an unresolved-type-name error naming `M::T`, and returns no `PackageDeclarations`. | Test (TC-405) |
 | FR-091-AC-20 | The assembler module is under the layer-3 `check` core. Its non-test code has no `use` edge or inline path to `qsl_cst`. Its `#[cfg(test)]` code may reach `qsl_cst` only to run S1 and S2. | Test (TC-402) |
 | FR-091-AC-21 | `catalog_code()` on each S2 and assembler cause returns the code in the Catalog codes table, and matches every cause with no `_` arm. The diagnosed-source cause returns its diagnostic's own code. The undeclared-alias cause `missing_declaration`, the duplicate-alias cause `ambiguous_declaration`, the alias-cycle cause `invalid_package`, the duplicate-enum-member cause `ambiguous_declaration`/`ambiguous-name`, the nominal-admission-fault cause `runtime_invariant`/`established-invariant-broken`, the duplicate dimension or unit name cause `ambiguous_declaration`/`ambiguous-name`, the unresolved unit dimension name cause `missing_declaration`/`missing-name`, the zero-denominator cause `undefined_expression`/`unproved-nonzero`, and the decimal-scale limit `stage_limit_exceeded`/`work-budget-exceeded`. Each unit-graph topology cause returns the code and cause of its QSpec FR-142 step, rule or row. | Test (TC-406) |
@@ -1122,12 +1107,12 @@ every checker of the language.
 | FR-091-AC-24 | Spine `compile` of a unit that declares `import "test/units" as u;`, with no library supplied as `test/units`, refuses at stage `intake`, before assembly, with `missing_import`/`missing-selection` naming `test/units` at the import's identity string (FR-099, ADR-015 D-1), and emits no package. | Test (TC-405) |
 | FR-091-AC-25 | S2 builds, for `ordered enum Level { LOW, HIGH = "High", }`, an enum form with name `Level` and the span of `Level`, ordered, and the members `LOW` with no display string and then `HIGH` with display string `"High"` and the span of that literal, each member with the span of its case name. For `enum Color { RED, BLUE }` it builds an enum form that is not ordered, with members `RED` and then `BLUE`, in source order. | Test (TC-480) |
 | FR-091-AC-26 | The `FunctionDeclaration` that S2 builds from `predicate Positive using v(x: Int[0, 9]): Boolean { x > 0 }` reads: kind `Predicate`; name `Positive`; `using` field alias `v`, with the span of that `v`; parameter `x`, a type form with head `Int` and bounds spelled `0` and `9`; result, a type form with head `Boolean` and the span of the `Boolean` token; no measure; body `Binary{Greater, Name("x"), Integer(0)}`. The `FunctionDeclaration` that S2 builds from a `function` declaration has kind `Function`. | Test (TC-480) |
-| FR-091-AC-27 | The assembler returns, for `ordered enum Status { READY, DONE }` and then `enum Color { RED, BLUE = "Blue" }` under source owner authority `a`, identity `u`, `enums` holding `Status` and then `Color`. `Status`'s declaration key is vector N1 and its members are `READY` then `DONE`, with `READY`'s member key N2. `Color`'s declaration key is N3 and its members are `BLUE` then `RED`. Assembling `enum Color { RED, BLUE }` under (`a`, `u`) also gives N3. Assembling the `Status` source under (`a`, `w`) gives N4. `declared_type_spans` holds the span of each of `Status` and `Color`. | Test (TC-481) |
+| FR-091-AC-27 | **Withdrawn.** The N1–N4 fixed digest-key vector oracle was superseded by QSpec FR-322 structural node identity; the enum order and span behavior is retained in FR-091-AC-66. | Withdrawn |
 | FR-091-AC-28 | On the package that `PackageDeclarations::check` admits and links from the assembler output for a unit with one profile selection `v`, `ordered enum Status { READY, DONE }`, `function isReady using v(s: Status): Boolean pure { s = Status::READY }`, `function ok using v(): Boolean pure { isReady(Status::READY) }` and `function later using v(): Boolean pure { Status::READY < Status::DONE }`, `isReady`'s resolved parameter type is `ValueType::Enum` of `Status`'s shape, and calling `ok` and `later` through `CheckedPackage::call` each return a completed outcome with value `true`. With `enum Color { RED, BLUE }` and `function bad using v(): Boolean pure { Color::RED < Color::BLUE }`, check refuses with `ill_typed`. With `function gone using v(): Boolean pure { Status::GONE = Status::READY }`, check refuses with `missing_declaration`/`missing-name` naming `Status::GONE`. | Test (TC-481) |
 | FR-091-AC-29 | The assembler returns one refusal, and no `PackageDeclarations`, for a unit with `enum E { A, B, A }`, `enum F { X }`, `record F { y: Boolean; }`, `function f using v(p: F): Boolean pure { true }` and `function g using v(p: Shade): Boolean pure { true }`. It holds a duplicate-enum-member error, code `ambiguous_declaration`/`ambiguous-name`, naming `E`, `A` and the spans of both `A` members; an ambiguous-type-name error naming `F`, the span of `p`'s type form in `f` and the spans of both `F` declarations; and an unresolved-type-name error naming `Shade`. | Test (TC-481) |
 | FR-091-AC-30 | The assembler returns, for `predicate Positive using v(x: Int[0, 9]): Boolean { x > 0 }` and then `function three using v(): Boolean pure { Positive(3) }`, `functions` holding `Positive`, kind `Predicate`, and then `three`, kind `Function`. `Positive`'s resolved signature has parameter type `Int[0..9]` and result type `Boolean`, and its `using` alias resolves to the selection `v`. Calling `three` through `CheckedPackage::call` on the checked package returns a completed outcome with value `true`. `predicate Q using w(x: Boolean): Boolean { x }`, in a unit with no selection `w`, refuses with an undeclared-alias error naming `w`. `predicate R using v(x: Boolean): Boolean { R(x) }` refuses at check with the FR-146 `missing-measure` obligation, as a recursive function written without `decreases` does. | Test (TC-481) |
 | FR-091-AC-31 | S2 builds, for `dimension Length;`, a dimension form named `Length` with no terms. For `dimension Accel = Length * Time^-2 / Mass;` it builds terms `Length` (no operator, no exponent), `Time` (`*`, exponent `-2`) and `Mass` (`/`, no exponent), each with the span of its name and of its exponent when written. For `unit C : Temperature = rational(1, 1) * K + decimal(27315, 2);` it builds a unit form named `C` with dimension name `Temperature`, scale `rational` with parts `1` and `1`, target `K` and offset `decimal` with parts `27315` and `2`, each with its span. For `unit m : Length = rational(1, 1);` the unit form has no target and no offset. | Test (TC-482) |
-| FR-091-AC-32 | The assembler returns, for vectors Q1 to Q10's sources in one unit under source owner (`a`, `u`), `units` holding dimensions keyed Q1 to Q5 and units keyed Q6 to Q10. Q3's and Q4's terms are the base terms the vectors list, so `Accel = Speed / Time` normalizes to `Length^1 Time^-2`. `km`'s edge has scale `1000` (from `rational(2000, 2)`), `cm`'s scale `1/100` (from `decimal(1, 2)`), and `C`'s offset `5463/20`; `C` is affine and `km` is not. `nominal_spans` holds the span of each declared name by its key. A unit with no dimension or unit form has the empty `units`. With the decimal-scale bound set to `4`, `unit c : Length = decimal(1, 5) * m;` gives a limit refusal, `stage_limit_exceeded`/`work-budget-exceeded`, naming bound `4`, actual `5` and the span of `decimal(1, 5)`, and `decimal(1, 4)` assembles. | Test (TC-483) |
+| FR-091-AC-32 | **Withdrawn.** The Q1–Q10 fixed digest-key vector oracle was superseded by QSpec FR-322 structural node identity; unit graph, normalization, scale, offset, span and limit behavior is retained in FR-091-AC-67. | Withdrawn |
 | FR-091-AC-33 | A parameter typed `m`, in a unit that declares `dimension Length;` and `unit m : Length = rational(1, 1);`, refuses with an unresolved-type-name error naming `m`. | Test (TC-483) |
 | FR-091-AC-34 | The assembler returns one refusal, and no `PackageDeclarations`, for a unit with `dimension Length;`, `dimension Mass;`, `dimension Mass;`, `dimension Area = Width^2;`, `dimension P = Q; dimension Q = P;`, `unit a : Length = rational(1, 0);`, `unit b : Length = rational(2, 1) * c;`, `unit c : Length = rational(1, 2) * b;` and `unit d : Ghost = rational(1, 1);`. It holds exactly these errors: a duplicate-name error naming `Mass` and both spans (`ambiguous_declaration`/`ambiguous-name`); an unresolved-name error naming `Ghost` (`missing_declaration`/`missing-name`); and a zero-denominator error at `rational(1, 0)` (`undefined_expression`/`unproved-nonzero`). The topology check does not run, so `Width`, the `P`/`Q` cycle and the `b`/`c` cycle are not reported. With the second `dimension Mass;`, `unit a` and `unit d` removed, the unit refuses with exactly one topology error, the first defect: at `Length`'s turn, row 6, `invalid_package`/`definition-cycle` with edges `b -> c` and `c -> b`; `Width` and the `P`/`Q` cycle, at later turns, are not reported. | Test (TC-483) |
 | FR-091-AC-35 | Each of these units refuses with exactly one topology error carrying its QSpec FR-142 row's code and cause and naming what the row retains, and returns no `PackageDeclarations`: `dimension L; unit r : L = rational(1, 1); unit z : L = rational(0, 1) * r;` (row 1, `invalid_package`/`invalid-value`, `z` and its scale 0); `dimension L; unit r : L = rational(1, 1); unit u : L = rational(1, 1) * ghost;` (row 2, `missing_declaration`/`missing-name`, `u` and `ghost`); `dimension L; dimension T; unit r : L = rational(1, 1); unit s : T = rational(1, 1) * r;` (row 3, `invalid_package`/`incompatible-definition`, `s`, `r`, `L` and `T`); `dimension L; unit r : L = rational(1, 1); unit q : L = rational(1, 1);` (row 4, `invalid_package`/`conflicting-definition`, `L`, then `r` and `q` in source order); and `dimension L; unit r : L = rational(2, 1);` (row 5, `invalid_package`/`invalid-value`, `r`, scale 2 and offset 0). `dimension L; dimension N = L / L;` assembles, `N` being the dimensionless dimension with empty terms, and so does `dimension L; unit m : L = rational(1, 1); dimension N = L / L; unit one : N = rational(1, 1);`. | Test (TC-483) |
@@ -1146,16 +1131,19 @@ every checker of the language.
 | FR-091-AC-48 | S2 builds, for the bodies `float64(bits: 0x3ff0000000000000)`, `float64(bits: 0x8000000000000000)`, `float64(bits: 0x7ff0000000000001)` and `float32(bits: 0x7fc00001)`, one `FloatBits` each holding the width `64`, `64`, `64` and `32` and the bit patterns `0x3ff0000000000000`, `0x8000000000000000`, `0x7ff0000000000001` and `0x7fc00001`, each with the constructor's span, and refuses no unit with `UnrepresentedConstruct`. | Test (TC-1091) |
 | FR-091-AC-49 | `float64(bits: 0x3ff0)`, `float64(bits: 0x3FF0000000000000)`, `float32(bits: 3f800000)`, `float32(bits: 0x3f80000g)`, `float32(bits: 0x3f800000000)` and `float64(0x3ff0000000000000)` refuse `invalid_syntax`/`invalid-token` at the constructor before S2. | Test (TC-1091) |
 | FR-091-AC-50 | In a unit declaring `model R = "acme/rpc" …`, `dimension Time;`, `unit s : Time = rational(1, 1);`, `unit tenth : R::Time = rational(1, 10) * R::s;` and `dimension Speed = R::Time ^ -1;`, where `acme/rpc` declares a base dimension `Time` and a root unit `s`, the assembler admits every form with no unresolved-name and no duplicate error: the source `Time` and `R::Time` are two dimensions and the source `s` and `R::s` two units, and the forms keep the qualified names as written for S3. `unit u : Time2 = rational(1, 1);` with no `Time2` declared in the source refuses with an unresolved-name error naming `Time2`, and a second `dimension Time;` refuses `ambiguous_declaration`/`ambiguous-name` at the two declarations, each named. | Test (TC-483) |
-| FR-091-AC-55 | Package dimensions and units (QSpec FR-142-AC-16, AC-18, AC-19). With admitted domain packages `P` and `Q` selected by the unit in that lock order, `P` at `/lock/model_selections/0` and `Q` at `/lock/model_selections/1`, `P` declaring the TC-187 `P` dimensions and units and `Q` declaring U11z2's `T` with its unit `s`, each of QSpec TC-187's U11r, U11s, U11t, U11u, U11y, U11z1 and U11z2, its `P` declarations supplied by `P` and its local declarations in the unit, gives TC-187's result through the assembler. U11r admits a local `cm` that targets `P`'s root `m`. U11s refuses row 6 at `P`'s `L`, retaining `a -> b` and `b -> a`, and `P`'s `m` is not re-checked. U11t refuses row 4 with `P`'s root `m` and the local `m2`. U11u refuses row 1 at `z`. U11y and U11z1 refuse the base-dimension rule at `P`'s `L`, `missing_declaration`/`missing-name`, retaining `L` and `m2`, located at `/lock/model_selections/0` and naming `L`'s FCD identity. U11z2 refuses the base-dimension rule at `P`'s `L` before the later zero scale. FR-142-AC-19's `unit tick : M::Rate = 1/2 * M::us`, typed by the package dimension `Rate`, is admitted, and `unit tick : Rate = 1/2 * M::us` refuses `missing_declaration`/`missing-name` at `Rate`. Dimension-name sharing (QSpec FR-142-AC-19): a unit declaring `dimension Time;` beside `acme/rpc` also declaring a dimension `Time` assembles with no error, the two being distinct dimensions; two admitted packages that each declare a dimension `Rate`, with no source `Rate`, assemble with no error; a source unit `ms` and `acme/rpc`'s unit `ms` both check, as `Quantity<ms>` and `Quantity<M::ms>`. | Test (TC-483) |
+| FR-091-AC-55 | Package dimensions and units (QSpec FR-142-AC-16, AC-18, AC-19). With admitted domain packages `P` and `Q` selected by the unit in that order, `P` first and `Q` second, `P` declaring the TC-187 `P` dimensions and units and `Q` declaring U11z2's `T` with its unit `s`, each of QSpec TC-187's U11r, U11s, U11t, U11u, U11y, U11z1 and U11z2, its `P` declarations supplied by `P` and its local declarations in the unit, gives TC-187's result through the assembler. U11r admits a local `cm` that targets `P`'s root `m`. U11s refuses row 6 at `P`'s `L`, retaining `a -> b` and `b -> a`, and `P`'s `m` is not re-checked. U11t refuses row 4 with `P`'s root `m` and the local `m2`. U11u refuses row 1 at `z`. U11y and U11z1 refuse the base-dimension rule at `P`'s `L`, `missing_declaration`/`missing-name`, retaining `L` and `m2`, located at `P`'s `model_root` node and naming `L`'s FCD identity. U11z2 refuses the base-dimension rule at `P`'s `L` before the later zero scale. FR-142-AC-19's `unit tick : M::Rate = 1/2 * M::us`, typed by the package dimension `Rate`, is admitted, and `unit tick : Rate = 1/2 * M::us` refuses `missing_declaration`/`missing-name` at `Rate`. Dimension-name sharing (QSpec FR-142-AC-19): a unit declaring `dimension Time;` beside `acme/rpc` also declaring a dimension `Time` assembles with no error, the two being distinct dimensions; two admitted packages that each declare a dimension `Rate`, with no source `Rate`, assemble with no error; a source unit `ms` and `acme/rpc`'s unit `ms` both check, as `Quantity<ms>` and `Quantity<M::ms>`. | Test (TC-483) |
 | FR-091-AC-56 | `Bytes("")`, `Bytes("00ff")` and `Bytes("deadbeef")`, and `JsonObject("{}")`, `JsonObject("[]")`, `JsonObject("3")`, `JsonObject("null")` and `JsonObject("{\"a\":1,\"b\":[true,null]}")`, are admitted with the types `Bytes` and `JsonObject`; `Bytes("00FF")`, `Bytes("0")`, `Bytes("0x00")` and `Bytes("00 ff")` refuse `ill_typed`/`type-mismatch` with the cause `MalformedBytesLiteral` naming the text as written and the span of the call, and `JsonObject("{\"b\":1,\"a\":1}")`, `JsonObject("{\"a\": 1}")`, `JsonObject("1.0")`, `JsonObject("{\"a\":1,\"a\":2}")`, `JsonObject("")` and `JsonObject("{")` the same with `MalformedJsonObjectLiteral`. `Bytes(x)` over `x: String`, `Bytes(5)`, `JsonObject(x)` and `Bytes("00", "11")` refuse `ill_typed`/`type-mismatch`; `"00ff"` at a `Bytes` slot refuses the same; a unit declaring `function Bytes using v(x: Integer): Integer pure { x }` makes `Bytes("00")` an `ambiguous_declaration`/`ambiguous-name` naming the declaration and the native constructor; `3 s` and `rational(3, 2) s` are `Duration` values where the unit `s` is typed by a base dimension `Time`. | Test (TC-1231) |
 | FR-091-AC-57 | S2 builds, for the bodies `decimal(125, 2)`, `decimal(-5, 0)`, `decimal(0, 3)` and `decimal(1, 4294967295)`, one `DecimalValue` each holding the coefficient `125`, `-5`, `0` and `1` and the scale `2`, `0`, `3` and `4294967295` exactly as written, each with the constructor's span, reduces none of them, and refuses no unit with `UnrepresentedConstruct`; the exact numbers of `unit cm : Length = decimal(1, 2) * m;` and of a quantity literal magnitude still build their unit and quantity forms, not `DecimalValue`. | Test (TC-1232) |
 | FR-091-AC-58 | `decimal(1)`, `decimal(1, 2, 3)`, `decimal 5`, `decimal(1 2)`, `decimal(1, x)` and `decimal(1, 2` refuse `invalid_syntax`/`unexpected-token` (a missing or extra argument, comma or parenthesis, or a non-numeric argument); `decimal(+1, 2)`, `decimal(01, 2)`, `decimal(-0, 2)`, `decimal(1.5, 2)`, `decimal(1, 02)`, `decimal(1, -2)` and `decimal(1, 2.0)` refuse `invalid_syntax`/`invalid-token` (a numeric token whose spelling is not `signed-int` for the coefficient or `uint` for the scale), each at the constructor before S2. `function decimal using v(): Boolean pure { true }` refuses `invalid_syntax` at the declaration name, because `decimal` is reserved. | Test (TC-1232) |
 | FR-091-AC-59 | S2 builds, for `dimension Distance ~ Length by 1 dist = 1 km;`, one dimension-equivalence form with the dimension names `Distance` and `Length` in that order, each with its span, two ratio terms (the integer `1` with the unit name `dist`, the integer `1` with the unit name `km`) each with its spans, and the declaration's span, and no dimension form; for `dimension R::Time ~ F::Time by 1 R::s = rational(1, 1000) F::ms;` a form whose names are the qualified names `R::Time` and `F::Time` and whose unit names are `R::s` and `F::ms` as written, each with the span of both segments, the second number a `rational` with parts `1` and `1000`; for `decimal(5, 1)` in a ratio term a `decimal` number with coefficient `5` and scale `1`; and for `dimension R::Time ~ F::Time by 1 R::s = 1 F::s;` followed by `dimension F::Time ~ R::Time by 1 F::s = 1 R::s;` two forms in source order. `dimension Length;` and `dimension Accel = Length * Time^-2 / Mass;` still build dimension forms. `dimension R::Time;`, `dimension A ~ B ~ C;`, `dimension A ~;`, `dimension A ~ B = C;`, `dimension A ~ B;` (no `by` clause), `dimension A ~ B by 1 u;`, `dimension A ~ B by u = 1 v;`, `dimension A ~ B by 1 u = 1;` and `dimension A ~ B by 1 u = 1 v w;` each refuse `invalid_syntax` at the offending token and build no form. | Test (TC-482) |
 | FR-091-AC-60 | Dimension equivalence decisions (QSpec FR-142-AC-22). With `model R = "acme/rpc" …` and `model F = "acme/flow" …`, each package declaring base dimension `Time` with root unit `s`, and a unit declaring `dimension Time; unit s : Time = rational(1, 1);`, the assembler admits `dimension R::Time ~ F::Time by 1 R::s = 1 F::s;`, `dimension R::Time ~ Time by 1 R::s = 1 s;`, and, with `dimension Dur = R::Time; unit dsec : Dur = rational(1, 1);` after `dimension R::Time ~ F::Time by 1 R::s = 1 F::s;`, `dimension Dur ~ F::Time by 1 dsec = 1 F::s;`; `dimension A ~ B by 1 ua = 1 ub;`, `dimension B ~ C by 1 ub = 1000 uc;` and `dimension C ~ A by 1000 uc = 1 ua;` over three source base dimensions with root units `ua`, `ub`, `uc` are admitted together. It refuses each of these with exactly one error at the equivalence form: `dimension R::Time ~ Z::Time by 1 R::s = 1 Z::s;` with no model alias `Z`, `dimension R::Time ~ R::Speed by 1 R::s = 1 R::mps;` where `acme/rpc` declares no `Speed`, `dimension R::Time ~ Nothing by 1 R::s = 1 s;` and `dimension R::Time ~ F::Time by 1 R::s = 1 F::second;` where `acme/flow` declares no `second`, `missing_declaration`/`missing-name` at the unresolved name; `dimension R::Time ~ R::Time by 1 R::s = 1 R::s;` and `dimension Time ~ Time by 1 s = 1 s;`, `invalid_package`/`definition-cycle` retaining the edge `node -> node`; `dimension F::Time ~ R::Time by 1 F::s = 1 R::s;` and `dimension F::Time ~ R::Time by 1 F::s = 2 R::s;` after `dimension R::Time ~ F::Time by 1 R::s = 1 F::s;`, `invalid_package`/`conflicting-definition` at the later form retaining both; and, with `acme/rpc` declaring `Area = Length ^ 2` and its root `m2`, `dimension R::Time ~ R::Area by 1 R::s = 1 R::m2;`, and `dimension Dur ~ F::Time by 1 dsec = 1 F::s;` with no `dimension R::Time ~ F::Time by 1 R::s = 1 F::s;`, `invalid_package`/`incompatible-definition` retaining both nodes. `dimension R::Speed ~ F::Speed by 1 R::mps = 1 F::mps;` over speeds that are `Length / Time` of their package, each `mps` the root of its speed, is admitted after `dimension R::Length ~ F::Length by 1 R::m = 1 F::m;` and `dimension R::Time ~ F::Time by 1 R::s = 1 F::s;` and refused `incompatible-definition` without them. A source declaring `dimension L; unit r : L = rational(1, 1); unit z : L = rational(0, 1);` and `dimension L ~ L by 1 r = 1 r;` refuses `definition-cycle` for the equivalence and not row 1 at `z`, because base pairs are decided before the first turn; the same source with `dimension Dur = L; unit rd : Dur = rational(1, 1); dimension L2; unit r2 : L2 = rational(1, 1); dimension Dur ~ L2 by 1 rd = 1 r2;` in place of `dimension L ~ L …;` refuses row 1 at `z` and not the equivalence's `incompatible-definition`, because every other pair is decided after the last turn. The decisions are the same in any source order of the equivalence forms within a phase. | Test (TC-483) |
-| FR-091-AC-61 | The assembler mints keys for Q11, Q12 and Q13's sources under source owner (`a`, `u`) as the vector table gives: Q12 (`root_scale` 1000/1) and Q13 (1/200, the reciprocal of the ratio written for the descending order); `dimension Length ~ Distance by 1 km = 1 dist;` and `dimension Distance ~ Length by 1 dist = 1 km;` give Q12's one key, the `dimension_node_ids` in ascending digest order and the ratio stated for the node listed first, and `by 1 dist = 1000 m` gives it too (one ratio, two unit spellings); Q1's and Q11's keys are the same with and without the equivalence; a dimension `Speed = Length / Time` keeps its `terms` and key (Q3's) beside `dimension Length ~ Distance by 1 km = 1 dist;`. Over the package dimensions of QSpec's `model-dimension-acme-rpc-time`, `model-dimension-acme-flow-time` and `model-dimension-acme-clock-time` and owner `{kind: "source", authority: "agent-ix", identity: "example"}`, `dimension R::Time ~ F::Time by 1 R::s = 1000 F::ms;` (flow's `ms` is `1/1000` of its root `s`) mints the key of its QSpec vector, `dimension R::Time ~ G::Time by 1 R::s = 1000 G::ms;` (clock's root is `ms`) mints the key of its QSpec vector and `dimension F::Time ~ G::Time by 1 F::s = 1000 G::ms;` mints the key of its QSpec vector, all in QSpec's `node-identity-vectors.json`. `nominal_spans` holds the declaration span of each equivalence under its key. | Test (TC-483) |
+| FR-091-AC-61 | **Withdrawn.** The Q11–Q13 and package-pair fixed digest-key vector oracles were superseded by QSpec FR-322 structural node identity; equivalence normalization, identity stability, ratio and span behavior is retained in FR-091-AC-68. | Withdrawn |
 | FR-091-AC-62 | Effect on the admitted graph and the base-dimension rule (QSpec FR-142-AC-24). With `acme/rpc` declaring base dimension `Mass` with root unit `kg` and `acme/flow` declaring base dimension `Mass` with no unit, `dimension R::Mass ~ F::Mass by 1 R::kg = 1 F::kg;` refuses `missing_declaration`/`missing-name` at `F::kg`, and `dimension Force = F::Mass; unit n : Force = rational(1, 1);` refuses `missing_declaration`/`missing-name` by the base-dimension rule at `F::Mass`'s turn, naming `ix://acme/flow/dimension/Mass` and `n`, with or without any equivalence. The admitted `UnitGraph` over `dimension R::Time ~ F::Time by 1 R::s = 1 F::s;` holds the equivalence node beside the three `Time` nodes, derives one class of `R::Time` and `F::Time` whose class root is the canonical root of the member holding the least dimension node key, and derives one class of `Distance` and `Length` for Q12; a graph with no equivalence derives no class. | Test (TC-483) |
 | FR-091-AC-63 | Ratio checks (QSpec FR-142-AC-22 steps 4, 5, 6 and 7). With the packages of FR-091-AC-60 and `acme/rpc` declaring `unit m : Length = rational(1, 1)`, the assembler refuses `invalid_package`/`incompatible-definition` at the form, retaining the unit and the dimension node it was named for, for `dimension R::Time ~ F::Time by 1 R::m = 1 F::s;` and `dimension R::Time ~ F::Time by 1 F::s = 1 R::s;` (each unit named for the other dimension); `invalid_package`/`invalid-value`, retaining the unit and its composed offset `5` or the number, for `dimension R::Time ~ F::Time by 1 R::s = 1 F::local;` where `acme/flow` declares `unit local : Time = rational(1, 1) * s + rational(5, 1);`, for `by 0 R::s = 1 F::s` and for `by rational(-1, 1) R::s = 1 F::s`; `invalid_package`/`incompatible-definition` retaining both nodes for the speeds of FR-091-AC-60 declared `by 1 R::mps = 2 F::mps` after the base pairs (the base roots fix the ratio 1), and the same speeds `by 1 R::mps = 1 F::mps` admitted; and, over three source base dimensions with roots `ua`, `ub`, `uc`, `invalid_package`/`conflicting-definition` at the third form, retaining all three in source order, for `A ~ B by 1 ua = 1 ub;`, `B ~ C by 1 ub = 1000 uc;`, `C ~ A by 1 uc = 1 ua;`. A ratio written through a larger unit is the same ratio: `by 1 R::s = 1 F::s` and `by 1 R::s = 1000 F::ms` (flow's `ms` is `1/1000` of its root) are both admitted and mint one key, and a source unit `unit tenth : A = rational(1, 10) * ua;` gives `dimension A ~ B by 1 tenth = 1 ub` the ratio 10 (one root of `A` is ten roots of `B`). | Test (TC-483) |
 | FR-091-AC-65 | For a source name represented by a `NameForm`, S2 preserves its exact spelling, its whole-name span, and its ordered identifier segments as separately available values: `T` has `["T"]`, `M::T` has `["M", "T"]`, and `A::M::T` has `["A", "M", "T"]`. One segment denotes an unqualified name; two or more denote a qualified name. Expression-name forms and other source references represented by `NameForm` expose the same segment structure. Every S3 branch that depends on whether one of these source names is qualified reads that structure; it does not inspect the spelling for `::`. Existing name-resolution and refusal outcomes remain unchanged. | Inspection |
+| FR-091-AC-66 | Under one required `package_name`, assembling `ordered enum Status { READY, DONE }` followed by `enum Color { RED, BLUE = "Blue" }` returns `enums` holding `Status` then `Color`. `Status` has members `READY` then `DONE`; `Color` has members `BLUE` then `RED`. Each declaration key is the QSpec FR-322 structural node id with that package and the declaration's qualified path; each member key has the declaration's package and qualified path extended by its case name. Removing `BLUE`'s display string leaves `Color`'s key and member keys unchanged. Reassembling `Status` under owner (`a`, `w`) instead of (`a`, `u`) with the same `package_name` leaves its keys unchanged. `declared_type_spans` holds the span of each declaration. | Test (TC-481) |
+| FR-091-AC-67 | Assembling the Q1–Q10 source forms under one required `package_name` returns five dimensions and five units keyed by their QSpec FR-322 structural declared paths; every admitted key equals its declaration's structural key and is stable under a source-owner unit-label change with the package name fixed. `Speed` has exactly the ordered base terms `[(Length, 1), (Time, -1)]` and `Accel = Speed / Time` has exactly `[(Length, 1), (Time, -2)]`, both in ascending structural-key order. `km`'s edge has scale `1000` from `rational(2000, 2)`, `cm`'s scale `1/100` from `decimal(1, 2)`, and `C`'s offset `5463/20`; `C` is affine and `km` is not. `nominal_spans` holds each declared name's span under its key. A unit without a dimension or unit form has empty `units`. At decimal-scale bound `4`, `unit c : Length = decimal(1, 5) * m;` refuses `stage_limit_exceeded`/`work-budget-exceeded`, naming bound `4`, actual `5` and the number's span, while `decimal(1, 4)` assembles. | Test (TC-483) |
+| FR-091-AC-68 | For the Q11–Q13 dimension-equivalence sources, each admitted equivalence key is a QSpec FR-322 structural node id for the required `package_name`; it is stable under equivalent ratio spelling and source-owner unit-label changes with the package name fixed. `dimension Length ~ Distance by 1 km = 1 dist;`, its reversed form, and `by 1 dist = 1000 m` represent one normalized pair with `dimension_node_ids` in ascending structural-key order and the ratio stated for the first node; the ratios of the former Q12 and Q13 sources are respectively `1000/1` and `1/200`. Adding an equivalence leaves the `Length`, `Distance` and `Speed = Length / Time` declaration keys and `Speed`'s terms unchanged. For the three package pairs over `acme/rpc`, `acme/flow` and `acme/clock` `Time`, each equivalence retains the two package dimension node ids in ascending structural-key order and the normalized `root_scale` for the first node: `1/1` for rpc/flow, `1000/1` for rpc/clock and `1000/1` for flow/clock; each admitted equivalence has its declaration span in `nominal_spans`. | Test (TC-483) |
 
 ## Dependencies
 
@@ -1183,27 +1171,24 @@ every checker of the language.
 - The unit's `SourceOwner` is the `authority` and `identity` of the unit's
   `RawSourceRef`, which the caller names and S0 mints
   ([FR-001](FR-001-read-exact-source.md), ADR-013 §7 slice S-4b).
-- Record, tuple and function keys over `SourceOwner` use QSL's
-  `quire.structural-node/v1` preimage
-  ([FR-092](FR-092-key-type-parameter-and-declared-nodes.md)). QSpec
-  publishes an owner-bearing preimage for nominal enum, dimension and unit
-  nodes only; the structural-node preimage is proposed to
-  `ix://agent-ix/quire-specification` under ADR-013 QC-18 and QC-24.
-- The enum entries rely on `value::enumeration` computing preimage digests
+- Record, tuple and function keys follow QSpec FR-322 structural node
+  identity ([FR-092](FR-092-key-type-parameter-and-declared-nodes.md)),
+  as do nominal enum, dimension and unit keys and derived dimension
+  equivalences.
+- The enum entries rely on `value::enumeration` computing normalized content
   and never minting a key (ADR-011 FB-13), and on lowering
   building an admitted `EnumBinding`'s declaration and member nodes from
-  its preimage (FR-092 rule 1, QSL-238's enum half).
+  its admitted content and FR-322 structural id (FR-092, QSL-238's enum half).
 - The dimension and unit hand-off: the assembler ends at an admitted
   `UnitGraph` in `PackageDeclarations::units`, which keeps each unit's,
-  dimension's and dimension equivalence's preimage bytes; FR-094's lowering
+  dimension's and dimension equivalence's normalized content and FR-322 structural
+  ids; FR-094's lowering
   builds their nodes.
 - QSpec FR-142 "Dimension and conversion algebra" (the unit-graph topology
   rules, order and causes), "Dimension equivalence" (the declaration, its
   four decision steps and its effect) and "Quantity type reference" (the
   complete-V1 source form `Quantity<u>`), and the shared grammar's
   `dimension-equivalence` production.
-- Resolving a selection's definition reference against the library lock is
-  the M-4 lock evidence.
 - FR-091-AC-17's code needs the QSpec catalog to name an alias cycle under
   `definition-cycle`. The catalog scopes that cause to definition
   dependencies and to FR-151 dispatch cycles, and has no row for a type
@@ -1227,8 +1212,8 @@ decided; the last column names the fact that reopens it.
 | --- | --- | --- | --- |
 | FR-091-OQ-1, nested constructs | S2 builds the `Deref`, `Pre` and `AllInstances` variants that the `forms` core defines. The check stage refuses each with the owning family's catalogued cause, never `unsupported_construct`. `pre(e)` in a function body is `wrong_snapshot`/`forbidden-pre-read`, a `ProtocolClause` cause. | The catalog forbids a producer from choosing a broader listed code to discard a distinction it knows. FR-090 makes `forbidden-pre-read` a `ProtocolClause` cause. | ADR-012 §3's rule that a family owns its grammar productions is ruled to cover nested sub-expressions. |
 | FR-091-OQ-1, declarations | `Value` owns the `enum`, `dimension`, `unit` and `predicate` declaration productions. The `enum`, `dimension` and `unit` entries need their key minting inside `check` (FB-13). | QSpec FR-322 classes enum, dimension and unit as `scalar_type` nodes. `predicate` is a function form with a `Boolean` result. | QSpec makes an enum a `union-decl` case rather than a `scalar_type`. |
-| FR-091-OQ-2 | S2 carries each unit's profile, import and model selections, and each form keeps its `using` alias. E3 resolves every alias to a declared profile selection, or refuses with `missing_declaration`/`missing-selection`. ADR-011 §2.2's E2 Version cell reads "Edition and the unit's profile, import and model selections carried". Resolution against the library lock is the M-4 lock evidence. The forms `FunctionDeclaration` has a `using` field. | ADR-011 OBS-007 makes S2 the only source of check-stage input from source. QSpec requires `using` to name a declared alias, with no default. | QSpec makes the compile request's input inventory, not each unit, the source of selections. S2 still carries each unit's selections for the driver to compare, and only the lock assembly moves. |
-| FR-091-OQ-3 | Record, tuple and function node keys are minted over `SourceOwner{authority, identity}`. ADR-013 O-04 and ADR-012 §2 state the owner reading of QC-18. `check` has no `DEFAULT_PACKAGE_IDENTITY`. | Neither the source grammar nor the v2 wire carries a package name, so replay could not rebuild a `name@version` key. QSpec's `proposals/checked-package-v2/README.md` publishes the owner reading for nominal enum, dimension and unit nodes; for `composite_type` and `function` nodes QSL keys by its proposed `quire.structural-node/v1` preimage, which carries the owner (FR-092). | QSpec adds a package name to source or to the v2 wire, or a declaration must keep its key when it moves between the units of one package. |
+| FR-091-OQ-2 | S2 carries each unit's profile, import and model selections, and each form keeps its `using` alias. E3 resolves every alias to a declared profile selection, or refuses with `missing_declaration`/`missing-selection`. ADR-011 §2.2's E2 Version cell reads "Edition and the unit's profile, import and model selections carried". The forms `FunctionDeclaration` has a `using` field. | ADR-011 OBS-007 makes S2 the only source of check-stage input from source. QSpec requires `using` to name a declared alias, with no default. | QSpec makes the compile request's input inventory, not each unit, the source of selections. S2 still carries each unit's selections for the driver to compare, and only the package assembly moves. |
+| FR-091-OQ-3 | Resolved: the compile/check request requires `package_name` from the package manifest's top-level `name`; every source-owned declared or derived node uses that name as its structural `node_id.package`. `SourceOwner{authority, identity}` remains unit provenance, never a package name. No default, fallback or source-text derivation is admitted. | QSpec FR-322 defines `name` as the checked package identity and `node_id.package` as that name; FR-480-AC-5 keeps it stable when a declaration moves between units. | QSpec changes the package-name or structural node-identity contract. |
 | FR-091-OQ-4 | `ValueType::Float` carries the rounding mode, in `quire-exact` (`FloatType`) and in QSL, and the evaluator applies it (done). A bare `Float32` or `Float64` is strict `exact`, and `qsl-cst` accepts it. | QSpec FR-322 makes the rounding mode part of the type, and FR-148 requires the evaluator to use it. | QSpec FR-322 moves float rounding off `type_pinned_modes`. |
 | FR-091-OQ-5, integer operators | Resolved: S2 maps `div`, `rem` and `mod` to distinct forms regardless of reachability. Check uses the declaration's resolved `using` selection: absent `quire.value.complete/v1` refuses each at its operator locus; selected complete value admits well-typed forms. The checked package's exactly-one integer-division law governs `div`/`rem`; `mod` stays Euclidean. Their checker and evaluator arms are required by FR-091-AC-39 and QSpec FR-147. `/` has no integer-division meaning; QSpec FR-149 owns exact integer-to-rational promotion only under complete value. | QSpec FR-147 and its shared grammar admit these operators only under the complete-value facet, while QSpec FR-039 preserves the state-only refusal. S2 must not discard the distinction before profile admission. | QSpec changes the facet, operator law or slash rule. |
 | FR-091-OQ-5, other constructs | `collect` maps to `Query{Map}`. `reaches` is a `StateModel` construct with no variant; it and the other listed unrepresented constructs are refused with `UnrepresentedConstruct`. A variant for one of them comes with its checker and evaluator arms. `e[i]` depends on QSpec semantics. | QSpec FR-145 makes `map` and `collect` one operation. QSL FR-008-AC-20's duplicate-output `collect` refusal belongs to the native lane, not to complete-V1; QSpec FR-008-AC-5 refuses `collect` only where `quire.state.queries/v1` is selected without `quire.value.complete/v1`. | M-6a must compile existing native programs that use the refused constructs. |

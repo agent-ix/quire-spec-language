@@ -198,12 +198,10 @@ fn build(directory: &Path, case: Case) -> ClauseRunRequest {
     spine::request(directory, case).expect("the written spine files reconstruct a request")
 }
 
-fn current_clause_request(path: &Path) -> Value {
-    let unit = std::fs::read(path.join("spine-unit.native")).unwrap();
-    let model = std::fs::read(path.join("spine-model.semantic-ir.json")).unwrap();
-    let source = |file: &str, bytes: &[u8], document: &str| {
+fn current_clause_request() -> Value {
+    let source = |file: &str, document: &str| {
         json!({
-            "file": file, "digest": qsl_foundation::ByteDigest::of(bytes).to_string(),
+            "file": file,
             "authority": "agent-ix", "identity": format!("test:fr-312:{file}"),
             "revision_namespace": "fixture", "revision": "1",
             "document": document, "formal_revision": 1
@@ -211,8 +209,8 @@ fn current_clause_request(path: &Path) -> Value {
     };
     let request = json!({"format":"native-run/1", "request": {
         "models": [{"format":"semantic-ir/2.0.0", "source":
-            source("spine-model.semantic-ir.json", &model, "SpineModel")}],
-        "program": {"source": source("spine-unit.native", &unit, "SpineUnit")},
+            source("spine-model.semantic-ir.json", "SpineModel")}],
+        "program": {"source": source("spine-unit.native", "SpineUnit")},
         "clause": {
             "selection": {"clause": {"name":"ParentOrder", "observation":"current",
                 "self": {"population":format!("ix://{}/config_history", spine::PACKAGE_IDENTITY),
@@ -249,7 +247,7 @@ fn clause_run_command_uses_explicit_current_self_and_anchor() {
             run_clause(in_process).unwrap().disposition.truth(),
             Some(truth)
         );
-        let request = current_clause_request(&path);
+        let request = current_clause_request();
         let output = run_clause_file(&path, &request);
         assert_eq!(output.status.code(), Some(exit), "{output:?}");
         assert!(output.stderr.is_empty(), "{output:?}");
@@ -287,7 +285,7 @@ fn clause_run_command_refuses_ambiguous_and_missing_selection_members() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("healthy-parent");
     build(&path, Case::Healthy);
-    let valid = current_clause_request(&path);
+    let valid = current_clause_request();
     type Edit = (&'static str, fn(&mut Value));
     let edits: &[Edit] = &[
         ("call", |value| {
@@ -341,7 +339,7 @@ fn clause_run_command_refuses_a_missing_self_of_an_object_receiver_at_admission(
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("healthy-parent");
     build(&path, Case::Healthy);
-    let mut request = current_clause_request(&path);
+    let mut request = current_clause_request();
     request["request"]["clause"]["selection"]["clause"]
         .as_object_mut()
         .unwrap()
@@ -374,7 +372,7 @@ fn clause_run_reader_checks_observation_role_and_anchor() {
             serde_json::from_slice(&std::fs::read(&snapshot_path).unwrap()).unwrap();
         snapshot[member] = replacement;
         std::fs::write(&snapshot_path, serde_json::to_vec(&snapshot).unwrap()).unwrap();
-        let output = run_clause_file(&path, &current_clause_request(&path));
+        let output = run_clause_file(&path, &current_clause_request());
         assert_eq!(output.status.code(), Some(20), "{label}: {output:?}");
         assert!(output.stdout.is_empty(), "{label}");
         let error: Value = serde_json::from_slice(&output.stderr).unwrap();
@@ -387,7 +385,7 @@ fn clause_run_reader_checks_observation_role_and_anchor() {
 
     let path = directory.path().join("wrong-anchor");
     build(&path, Case::Healthy);
-    let mut request = current_clause_request(&path);
+    let mut request = current_clause_request();
     request["request"]["clause"]["selection"]["clause"]["anchor"]["name"] = json!("other");
     let output = run_clause_file(&path, &request);
     assert_eq!(output.status.code(), Some(20), "{output:?}");
@@ -413,7 +411,7 @@ fn clause_run_reader_accepts_observation_deeper_than_128() {
         &format!(",\"padding\":{}0{}", "[".repeat(160), "]".repeat(160)),
     );
     std::fs::write(&snapshot_path, document).unwrap();
-    let request = current_clause_request(&path);
+    let request = current_clause_request();
     std::fs::write(
         path.join("request.json"),
         serde_json::to_vec(&request).unwrap(),
@@ -439,7 +437,7 @@ fn clause_run_reader_honors_raised_observation_byte_limit() {
         &format!(",\"padding\":\"{}\"", "x".repeat(1_100_000)),
     );
     std::fs::write(&snapshot_path, document).unwrap();
-    let mut request = current_clause_request(&path);
+    let mut request = current_clause_request();
     request["request"]["clause"]["observation_limits"] = json!({"document_bytes":2_000_000});
     std::fs::write(
         path.join("request.json"),
@@ -466,7 +464,7 @@ fn clause_run_observation_limit_reports_its_own_bound() {
         &format!(",\"padding\":\"{}\"", "x".repeat(1_100_000)),
     );
     std::fs::write(&snapshot_path, document).unwrap();
-    let mut request = current_clause_request(&path);
+    let mut request = current_clause_request();
     request["request"]["clause"]["observation_limits"] = json!({"document_bytes":1_000_000});
     std::fs::write(
         path.join("request.json"),
@@ -494,7 +492,7 @@ fn clause_run_reader_keeps_parameter_beyond_128_levels() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("deep-parameter");
     build(&path, Case::Unchanged);
-    let mut request = current_clause_request(&path);
+    let mut request = current_clause_request();
     request["request"]["clause"]["selection"] = json!({"clause": {
         "name":"ParentPresent", "observation":"pre",
         "self":{"population":format!("ix://{}/config_history", spine::PACKAGE_IDENTITY),
@@ -535,7 +533,7 @@ fn clause_run_accounting_object_sets_all_counters_and_rejects_legacy_member() {
     let path = directory.path().join("accounting-object");
     build(&path, Case::Healthy);
 
-    let defaults = current_clause_request(&path);
+    let defaults = current_clause_request();
     std::fs::write(
         path.join("request.json"),
         serde_json::to_vec(&defaults).unwrap(),
@@ -549,7 +547,7 @@ fn clause_run_accounting_object_sets_all_counters_and_rejects_legacy_member() {
         qsl_replay::spine::default_accounting(qsl_replay::spine::DEFAULT_WORK_UNITS)
     );
 
-    let mut request = current_clause_request(&path);
+    let mut request = current_clause_request();
     request["request"]["clause"]["accounting"] = json!({
         "integer_bits":1,
         "decimal_digits":2,
@@ -585,7 +583,7 @@ fn clause_run_accounting_object_sets_all_counters_and_rejects_legacy_member() {
         }
     );
 
-    let mut legacy = current_clause_request(&path);
+    let mut legacy = current_clause_request();
     legacy["request"]["clause"]["work_units"] = json!(0);
     let output = run_clause_file(&path, &legacy);
     assert_eq!(output.status.code(), Some(20), "{output:?}");
@@ -607,7 +605,7 @@ fn clause_run_reader_diagnoses_deep_function_argument() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("deep-function-argument");
     build(&path, Case::Healthy);
-    let mut request = current_clause_request(&path);
+    let mut request = current_clause_request();
     request["request"]["clause"]["selection"] = json!({"function": {
         "name":"sameIdentity", "snapshot":"current", "arguments":[
             {"parameter":"a", "value":"__DEEP_ARGUMENT__"}
@@ -634,12 +632,12 @@ fn clause_run_reader_diagnoses_deep_function_argument() {
 /// in-process report's stage, category and truth through the CLI route.
 #[trace("TC-891", "FR-312-AC-4")]
 #[test]
-fn clause_run_command_routes_function_frame_and_stale_package() {
+fn clause_run_command_routes_function_and_frame() {
     let directory = tempfile::tempdir().unwrap();
     let population = format!("ix://{}/config_history", spine::PACKAGE_IDENTITY);
     let path = directory.path().join(Case::Distinct.id());
     let in_process = run_clause(build(&path, Case::Distinct)).unwrap();
-    let mut request = current_clause_request(&path);
+    let mut request = current_clause_request();
     request["request"]["clause"]["selection"] = json!({"function": {
         "name": "sameIdentity", "snapshot": "current", "arguments": [
             {"parameter":"a", "value":{"reference":{"population":population,"key":"child"}}},
@@ -679,7 +677,7 @@ fn clause_run_command_routes_function_frame_and_stale_package() {
         invocation,
     };
     let expected = run_clause(in_process).unwrap();
-    let mut request = current_clause_request(&path);
+    let mut request = current_clause_request();
     request["request"]["clause"]["selection"] = json!({"frame": {
         "operation": "Config::ConfigVersion::attemptUpdate", "invocation": "invocation"
     }});
@@ -699,25 +697,6 @@ fn clause_run_command_routes_function_frame_and_stale_package() {
         value["disposition"]["truth"],
         expected.disposition.truth().unwrap()
     );
-
-    let path = directory.path().join(Case::Healthy.id());
-    let mut in_process = build(&path, Case::Healthy);
-    let claim = "0".repeat(64);
-    in_process.expected_package_id_claim = Some(claim.clone());
-    let expected = run_clause(in_process).unwrap();
-    assert!(matches!(
-        expected.disposition,
-        ClauseDisposition::StalePackage { .. }
-    ));
-    let mut request = current_clause_request(&path);
-    request["request"]["clause"]["package_id"] = json!(claim);
-    let output = run_clause_file(&path, &request);
-    assert_eq!(output.status.code(), Some(20), "{output:?}");
-    assert!(output.stderr.is_empty(), "{output:?}");
-    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["disposition"]["stage"], "compile");
-    assert_eq!(value["disposition"]["refusal"]["code"], "stale_dependency");
-    assert_eq!(value["disposition"]["refusal"]["cause"], "stale-package");
 }
 
 /// FR-312-AC-5: the named document role chooses the FR-106 input variant;
@@ -728,7 +707,7 @@ fn clause_run_reader_distinguishes_pre_and_invocation_roles() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join(Case::Unchanged.id());
     let expected = run_clause(build(&path, Case::Unchanged)).unwrap();
-    let mut request = current_clause_request(&path);
+    let mut request = current_clause_request();
     request["request"]["clause"]["selection"] = json!({"clause": {
         "name":"VersionUnchanged", "observation":"invocation"
     }});
@@ -836,7 +815,7 @@ fn clause_run_command_reports_select_admit_and_incomplete_classes() {
     for &(case, edit, stage, code, exit, incomplete_limit) in cases {
         let path = directory.path().join(format!("{}-{stage}", case.id()));
         build(&path, case);
-        let mut request = current_clause_request(&path);
+        let mut request = current_clause_request();
         edit(&mut request);
         let output = run_clause_file(&path, &request);
         assert_eq!(output.status.code(), Some(exit), "{output:?}");
@@ -867,7 +846,7 @@ fn clause_run_command_honors_caller_byte_ceilings() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join(Case::Healthy.id());
     build(&path, Case::Healthy);
-    let request = current_clause_request(&path);
+    let request = current_clause_request();
     std::fs::write(
         path.join("request.json"),
         serde_json::to_vec(&request).unwrap(),
@@ -1056,7 +1035,7 @@ fn tc_469_step_4_generation_and_reports_are_deterministic() {
         let report_b = run_clause(request_b).unwrap();
 
         // The full report: exit code, disposition (stage/category/truth/
-        // code via the same summary step 2 uses), source digest, package_id
+        // code via the same summary step 2 uses), source digest
         // and usage all agree between the two runs.
         assert_eq!(
             report_a.disposition.category().exit_code(),
@@ -1084,7 +1063,6 @@ fn tc_469_step_4_generation_and_reports_are_deterministic() {
             "{}",
             case.id()
         );
-        assert_eq!(report_a.package_id, report_b.package_id, "{}", case.id());
         assert_eq!(
             report_a.usage.admission_consumed,
             report_b.usage.admission_consumed,
@@ -1105,30 +1083,12 @@ fn tc_469_step_4_generation_and_reports_are_deterministic() {
         );
 
         assert_eq!(limits_a, limits_b, "{}", case.id());
-
-        // A request carrying spine `compile`'s own emitted `package_id`
-        // gives the same report (FR-032-AC-4's package half). Only cases
-        // that reach compile have one to pin.
-        if let Some(package_id) = report_a.package_id {
-            let mut pinned_request = spine::request(&path, case).unwrap();
-            pinned_request.expected_package_id = Some(package_id);
-            let pinned_report = run_clause(pinned_request).unwrap();
-            assert_eq!(
-                pinned_report.disposition.category().exit_code(),
-                report_a.disposition.category().exit_code(),
-                "{}",
-                case.id()
-            );
-            assert_eq!(pinned_report.package_id, Some(package_id), "{}", case.id());
-        }
     }
 }
 
 /// FR-108-AC-5 (TC-469 step 5): with `quire-extraction`, each case's unit
 /// embedded in a Markdown fence and run through the I3 adapter gives the
-/// direct run's stage, category, truth and exit code, plus the extracted
-/// body's own `package_id` (the id of an independent compile under the body
-/// identity).
+/// direct run's stage, category, truth and exit code.
 #[cfg(feature = "quire-extraction")]
 mod extraction {
     use super::{build, run_clause, Case, ClauseRunRequest, CASES};
@@ -1204,19 +1164,6 @@ mod extraction {
             let path = directory.path().join(case.id());
             let direct_request = build(&path, case);
             let extracted = extracted(case, &direct_request);
-            // The extracted body's own package_id: what a direct compile of
-            // its bytes under its body identity emits, independent of the
-            // run (`None` where compile refuses).
-            let body = extracted.map().body();
-            let body_package_id = crate::support::front_end::emitted(
-                body.identity().clone(),
-                body.path(),
-                body.text().as_bytes(),
-                &direct_request.packages,
-                &direct_request.dependencies,
-            )
-            .ok()
-            .map(|emitted| emitted.package().package_id());
             let direct_report = run_clause(build(&path, case)).unwrap();
 
             let mut extracted_request = build(&path, case);
@@ -1247,63 +1194,11 @@ mod extraction {
                 "{}",
                 case.id()
             );
-            assert_eq!(
-                extracted_report.package_id,
-                body_package_id,
-                "{}",
-                case.id()
-            );
         }
     }
 }
 
-/// FR-108-AC-6 (TC-469 step 6), its package_id half: the expected table
-/// pins the FR-108 unit's `package_id` (the one spine `compile` emits for
-/// it), and every case's report carries exactly that value. The I04 `read`
-/// half is the separate test below.
-#[trace("TC-469", "FR-108-AC-6")]
-#[test]
-fn tc_469_step_6_package_id_is_pinned_across_every_case() {
-    let directory = tempfile::tempdir().unwrap();
-    let mut pinned = None;
-    for &case in CASES {
-        // `missing-model` never reaches compile with a package to pin.
-        if matches!(case, Case::MissingModel) {
-            continue;
-        }
-        let path = directory.path().join(case.id());
-        let request = build(&path, case);
-        let report = run_clause(request).unwrap();
-        let package_id = report
-            .package_id
-            .unwrap_or_else(|| panic!("{}: compile reached E4", case.id()));
-        match pinned {
-            None => pinned = Some(package_id),
-            Some(pinned) => assert_eq!(
-                package_id,
-                pinned,
-                "{}: every case shares the same unit and package",
-                case.id()
-            ),
-        }
-    }
-    let pinned = pinned.expect("at least one case compiles");
-
-    // The bytes spine's operations emit for the FR-108 unit, independent of
-    // any one case's request, share the same pinned `package_id`.
-    let unit = spine::unit_text();
-    let compiled = crate::support::front_end::emitted(
-        spine::unit_identity(),
-        "spine-unit.native",
-        unit.as_bytes(),
-        &spine::domain_packages(),
-        &qsl_replay::spine::DependencyInput::default(),
-    )
-    .expect("the FR-108 unit compiles");
-    assert_eq!(compiled.package().package_id(), pinned);
-}
-
-/// FR-108-AC-6's other half: the emitted package bytes admit through QSpec
+/// FR-108-AC-6: the emitted package bytes admit through QSpec
 /// I04 `read`, including the frame step and node 8's
 /// `quire.op.model.reaches_field` application, whose reference edge the
 /// reader checks.
@@ -1315,11 +1210,10 @@ fn tc_469_step_6_the_emitted_package_admits_via_i04() {
         spine::unit_identity(),
         "spine-unit.native",
         unit.as_bytes(),
-        &spine::domain_packages(),
+        &qsl_semantics::model::intake::package_input([spine::DOMAIN_PACKAGE.as_bytes()]).unwrap(),
         &qsl_replay::spine::DependencyInput::default(),
     )
     .expect("the FR-108 unit compiles");
-    let pinned = compiled.package().package_id();
 
     let bytes = compiled.package().bytes();
     // I04 `read` needs the lock's required features as supported; they are
@@ -1332,12 +1226,11 @@ fn tc_469_step_6_the_emitted_package_admits_via_i04() {
             evidence.support_feature(feature.as_str().expect("feature name is a string"));
         }
     }
-    // The lock's `model_selections` names the domain package by its own
-    // `sha256-jcs` digest (FR-154/FR-322); I04 recomputes that digest from
-    // the document bytes supplied here rather than trusting the lock.
+    // The `model_root` node names the domain package by its identity; the
+    // document supplied here is the one that identity selects.
     evidence
         .insert_domain_package_document(
-            spine::model_digest_hex(),
+            spine::PACKAGE_IDENTITY,
             spine::DOMAIN_PACKAGE.as_bytes().to_vec(),
         )
         .expect("a fresh evidence key");
@@ -1347,13 +1240,7 @@ fn tc_469_step_6_the_emitted_package_admits_via_i04() {
         &evidence,
     );
     match result {
-        quire_contract_model::CheckedPackageDispatchResult::AdmittedV2(package) => {
-            assert_eq!(
-                package.package_id().digest.as_ref(),
-                pinned.hex(),
-                "I04 read recomputes the same package_id spine compile emitted"
-            );
-        }
+        quire_contract_model::CheckedPackageDispatchResult::AdmittedV2(_) => {}
         other => panic!("QSpec I04 read did not admit the emitted package: {other:?}"),
     }
 }

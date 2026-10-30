@@ -78,7 +78,6 @@ use qsl_eval::simulation::{
 };
 use qsl_eval::temporal::{AtomReading, CaptureReading};
 use qsl_foundation::digest::{DigestDomain, DigestRecord};
-use qsl_semantics::library::PackageId;
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_exact::{Cancel, Meter, ScalarLimits};
 use quire_semantic_value::catalog::InternalFault;
@@ -142,8 +141,6 @@ impl DigestWire {
 /// FR-338's closure certificate: the product states EN-1 explored.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClosureCertificate {
-    /// The package EN-1 explored (FR-282).
-    pub package_id: PackageId,
     /// The product states, in any order.
     pub states: Vec<ProductStateRef>,
 }
@@ -165,13 +162,6 @@ pub enum TemporalCertificateCheck {
     Accepted,
     /// A certificate rule failed.
     Rejected(CertificateRejection),
-    /// The certificate belongs to a different checked package (FR-282).
-    PackageMismatch {
-        /// The package identity carried by the certificate.
-        certificate: PackageId,
-        /// The package identity recompiled from the request.
-        recompiled: PackageId,
-    },
     /// A budget or a cancellation stopped the check before it completed:
     /// `LimitReached{limit, value}` or `Cancelled{source}`.
     Stopped(IncompleteCause),
@@ -267,17 +257,6 @@ impl From<EncodingRefusal> for ClosureRefusal {
     }
 }
 
-fn checked_package_id(package: &qsl_package::CheckedPackage) -> Result<PackageId, ClosureRefusal> {
-    package
-        .emitted_package_id()
-        .or_else(|| {
-            qsl_package::emit_checked(package)
-                .ok()
-                .map(|emission| emission.package().package_id())
-        })
-        .ok_or_else(|| fault("the-certificate-package-has-an-emitted-identity"))
-}
-
 /// What a check reads of a certificate: the closure of every proof and, for
 /// a liveness proof, the components that partition it (FR-339).
 #[derive(Clone, Copy)]
@@ -345,13 +324,6 @@ fn check_model(
     limits: &ModelCheckLimits,
     cancel: &Cancel,
 ) -> Result<TemporalCertificateCheck, ClosureRefusal> {
-    let recompiled = checked_package_id(request.subject.simulation.package)?;
-    if proof.closure.package_id != recompiled {
-        return Ok(TemporalCertificateCheck::PackageMismatch {
-            certificate: proof.closure.package_id,
-            recompiled,
-        });
-    }
     let simulation = request.subject.simulation.clone();
     let system = admit(simulation)?;
     check_system(
@@ -427,27 +399,14 @@ fn check_protocol(
     limits: &ModelCheckLimits,
     cancel: &Cancel,
 ) -> Result<TemporalCertificateCheck, ClosureRefusal> {
-    let recompiled = checked_package_id(request.subject.model.simulation.package)?;
-    if proof.closure.package_id != recompiled {
-        return Ok(TemporalCertificateCheck::PackageMismatch {
-            certificate: proof.closure.package_id,
-            recompiled,
-        });
-    }
     let model = admit(request.subject.model.simulation.clone())?;
-    let protocol = request
-        .subject
-        .model
-        .simulation
-        .package
-        .graph()
-        .protocol(&request.subject.protocol)
-        .ok_or_else(|| {
-            ClosureRefusal::Protocol(ProtocolRefusal::UnknownProtocol {
-                protocol: request.subject.protocol.clone(),
-            })
-        })?;
-    check_protocol_bounds(&model, protocol, BOUND_POSITIONS)
+    let graph = request.subject.model.simulation.package.graph();
+    let protocol = graph.protocol(&request.subject.protocol).ok_or_else(|| {
+        ClosureRefusal::Protocol(ProtocolRefusal::UnknownProtocol {
+            protocol: request.subject.protocol.clone(),
+        })
+    })?;
+    check_protocol_bounds(&model, protocol, graph, BOUND_POSITIONS)
         .map_err(|refusal| ClosureRefusal::NotSimulated(Box::new(refusal)))?;
     let subject = &request.subject;
     let item = &request.item;

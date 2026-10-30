@@ -25,7 +25,7 @@ use qsl_replay::{
 use quire_exact::{Cancel, Value};
 
 use crate::counter::{reference, subject, value, Letters, UNLIMITED};
-use crate::lasso_replay::{bounded_fixture, package_id};
+use crate::lasso_replay::bounded_fixture;
 use crate::liveness::Fixture;
 
 /// A bounded clause over the one counter `c`, with its letters.
@@ -134,13 +134,7 @@ impl Bounded {
             .map(|(v, state)| self.at(*v, *state))
             .collect();
         states.sort();
-        ClosureCertificate {
-            package_id: qsl_package::emit_checked(&self.fixture.package)
-                .expect("the package emits")
-                .package()
-                .package_id(),
-            states,
-        }
+        ClosureCertificate { states }
     }
 }
 
@@ -207,7 +201,6 @@ fn a_bounded_eventually_that_is_met_carries_a_certificate_the_core_accepts() {
     let record = settle_model_check(
         &outcome,
         &ModelCheckLimits::default(),
-        &package_id(&clause.fixture),
         &request,
         &Cancel::new(),
         |_| panic!("a proof replays nothing"),

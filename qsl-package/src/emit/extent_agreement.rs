@@ -40,12 +40,11 @@ use serde_json::{json, Value};
 
 use ix_trace_rs::trace;
 use qsl_foundation::bound::DomainKind;
-use qsl_foundation::digest::WireNodeId;
 use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::family::{classify_extent, ClaimExtent};
 use quire_exact::{
-    CardinalityBound, CollectionKind, CollectionType, Integer, IntegerInterval, NodeKey, Presence,
-    ValueType,
+    CardinalityBound, CollectionKind, CollectionType, Integer, IntegerInterval, NodeKey,
+    PathSegment, Presence, ValueType,
 };
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::{
@@ -71,7 +70,12 @@ fn sequence(element: ValueType, bound: Option<(u64, u64)>) -> ValueType {
 }
 
 fn key(fill: u8) -> NodeKey {
-    NodeKey::from_digest([fill; 32])
+    NodeKey::new(
+        "pkg".to_owned(),
+        vec![PathSegment::Text(format!("R{fill}"))],
+        0,
+    )
+    .expect("a fixture key is a valid structural identity")
 }
 
 fn record(fill: u8, name: &str, fields: Vec<(&str, ValueType)>) -> CompositeDeclaration {
@@ -161,7 +165,7 @@ pub(super) fn package_declaring(types: TypeEnvironment) -> CheckedPackage {
     CheckedPackage::link(
         PackageDeclarations {
             types,
-            ..PackageDeclarations::new(source(), qsl_foundation::IdentityLimits::default())
+            ..PackageDeclarations::new(source(), "pkg", qsl_foundation::IdentityLimits::default())
         }
         .check(CheckingLimits::default())
         .expect("the fixture records check"),
@@ -185,28 +189,29 @@ fn read_emission(emission: &Emission) -> (Value, Box<CheckedPackageV2>) {
     (wire, admitted)
 }
 
-/// The written node declaring `name`, as IR's node id and QSL's wire id.
-fn declared(wire: &Value, name: &str) -> (CheckedNodeId, WireNodeId) {
+/// The written node declaring `name`, as IR's node id and QSL's node key.
+fn declared(wire: &Value, name: &str) -> (CheckedNodeId, NodeKey) {
     let node = nodes(wire)
         .iter()
         .find(|node| node["declaration"]["qualified_name"] == json!([name]))
         .unwrap_or_else(|| panic!("{name} is written"));
-    let digest = node["node_id"]["digest"].as_str().unwrap();
-    (
-        CheckedNodeId {
-            domain: node["node_id"]["domain"].as_str().unwrap().into(),
-            digest: digest.into(),
-        },
-        WireNodeId::from_hex(digest).expect("a wire node id"),
-    )
+    let key = qsl_foundation::node_wire::node_key_from_json(&node["node_id"])
+        .expect("a structural node id");
+    (super::checked_node_id_of(&key), key)
 }
 
 /// The written node with id `id`.
 fn node_by_id<'w>(wire: &'w Value, id: &CheckedNodeId) -> &'w Value {
+    let wanted = serde_json::to_value(id).expect("a node id serialises");
     nodes(wire)
         .iter()
-        .find(|node| node["node_id"]["digest"] == json!(id.digest.as_ref()))
-        .unwrap_or_else(|| panic!("{} is written", id.digest))
+        .find(|node| node["node_id"] == wanted)
+        .unwrap_or_else(|| panic!("{id:?} is written"))
+}
+
+/// The structural wire form of `key`.
+fn node_ref(key: &NodeKey) -> Value {
+    qsl_foundation::node_wire::node_key_to_json(key).expect("a structural node id")
 }
 
 /// IR's lowering of `id` with every family supported and bounds required.
@@ -219,6 +224,7 @@ fn ir_lowering(package: &CheckedPackageV2, id: &CheckedNodeId) -> CompleteLoweri
         required_source_selections: Vec::new(),
         supported_tags: CheckedNodeTag::ALL.iter().copied().collect(),
         require_bounds: true,
+        required_source_selections: Vec::new(),
         work_limit: u64::MAX,
     };
     package
@@ -275,7 +281,7 @@ fn tc_440_qsl_extent_agrees_with_ir_requires_bound() {
                     .iter()
                     .find(|(_, domain)| *domain == kind)
                     .map(|(key, _)| match key {
-                        qsl_foundation::bound::DomainKey::Node { node, .. } => *node,
+                        qsl_foundation::bound::DomainKey::Node { node, .. } => node.clone(),
                         other => panic!("{name}: a {kind:?} domain is a node key: {other:?}"),
                     })
                     .unwrap_or_else(|| panic!("{name}: QSL names a {kind:?} domain: {domains:?}"));
@@ -286,7 +292,7 @@ fn tc_440_qsl_extent_agrees_with_ir_requires_bound() {
                         "{name}: IR's first unbounded node is the {form} QSL named"
                     ),
                     InRecursionGroup => {
-                        let group = &wire_node(&wire, named)["recursion_group"];
+                        let group = &wire_node(&wire, &named)["recursion_group"];
                         assert!(
                             group.is_string(),
                             "{name}: QSL's Recursive root is in a recursion group"
@@ -304,12 +310,12 @@ fn tc_440_qsl_extent_agrees_with_ir_requires_bound() {
 }
 
 /// The written node whose wire id is `node`.
-fn wire_node(wire: &Value, node: WireNodeId) -> &Value {
-    let digest = node.to_string();
+fn wire_node<'w>(wire: &'w Value, node: &NodeKey) -> &'w Value {
+    let wanted = node_ref(node);
     nodes(wire)
         .iter()
-        .find(|written| written["node_id"]["digest"] == json!(digest))
-        .unwrap_or_else(|| panic!("{digest} is written"))
+        .find(|written| written["node_id"] == wanted)
+        .unwrap_or_else(|| panic!("{node} is written"))
 }
 
 /// QSL's extent of the record declared `name`, and IR's lowering of it.
@@ -336,7 +342,11 @@ fn emitted_measure() -> (
     quire_exact::UnitId,
 ) {
     let (units, metre) = source_metre_units();
-    let measure = record(10, "Measure", vec![("len", ValueType::Quantity(metre))]);
+    let measure = record(
+        10,
+        "Measure",
+        vec![("len", ValueType::Quantity(metre.clone()))],
+    );
     let types = TypeEnvironment::new([measure.clone()], [])
         .expect("FR-143 admits Measure")
         .with_units(units);
@@ -355,35 +365,19 @@ fn emitted_measure() -> (
 #[test]
 fn tc_440_a_quantity_record_is_emitted_and_reaches_ir() {
     let (_, _, wire, package, metre) = emitted_measure();
-    let metre_id = metre
-        .as_bytes()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
-    let unit = nodes(&wire)
-        .iter()
-        .find(|node| node["node_id"]["digest"] == json!(metre_id))
-        .expect("the metre unit node is written");
+    let quire_exact::UnitId::Declared(metre_key) = metre else {
+        panic!("the fixture unit is declared");
+    };
+    let unit = wire_node(&wire, &metre_key);
     assert_eq!(unit["node_tag"], json!("scalar_type"));
     assert_eq!(unit["semantic_form"], json!("unit"));
-    let preimage = &unit["nominal_identity_preimage"];
-    assert_eq!(preimage["version"], json!("quire.unit-node/v1"));
-    assert_eq!(
-        preimage["qualified_declaration"],
-        json!(["Example", "metre"])
-    );
-    let dimension = &preimage["dimension_node_id"];
-    assert_eq!(&unit["semantic_type"], dimension);
+    let dimension = &unit["semantic_type"];
     assert_eq!(unit["dependencies"], json!([dimension]));
     let length = nodes(&wire)
         .iter()
         .find(|node| node["node_id"] == *dimension)
         .expect("the Length dimension node is written");
     assert_eq!(length["semantic_form"], json!("dimension"));
-    assert_eq!(
-        length["nominal_identity_preimage"]["version"],
-        json!("quire.dimension-node/v1")
-    );
     let (ir_id, _) = declared(&wire, "Measure");
     let lowering = ir_lowering(&package, &ir_id);
     assert!(
@@ -406,12 +400,9 @@ fn velocity_units() -> (
     std::collections::BTreeMap<&'static str, NodeKey>,
 ) {
     use qsl_semantics::value::{
-        admit_unit_graph, DimensionPreimage, NodeIdentityPreimage, NodeOwner, OwnerSelection,
-        UnitPreimage,
+        admit_unit_graph, DimensionPreimage, NodeOwner, OwnerSelection, UnitPreimage,
     };
-    let owner = json!({"kind": "source", "authority": "a", "identity": "u"});
-    let id =
-        |key: NodeKey| json!({"domain": quire_exact::NODE_KEY_DOMAIN, "digest": key.to_string()});
+    let owner = json!({"kind": "source", "authority": "a", "identity": "u", "package_name": "pkg"});
     let mut keys = std::collections::BTreeMap::new();
     let dimension = |name: &str, terms: Value| {
         let preimage = DimensionPreimage::from_json(json!({
@@ -421,51 +412,50 @@ fn velocity_units() -> (
             "terms": terms,
         }))
         .expect("a dimension");
-        let key = NodeKey::from_digest(
-            preimage
-                .digest(qsl_foundation::IdentityLimits::default())
-                .expect("the dimension digests"),
-        );
+        let key = preimage.key().expect("a dimension declaration key");
         (preimage, key)
     };
     let length = dimension("Length", json!([]));
     let time = dimension("Time", json!([]));
-    let mut velocity_terms = vec![
-        json!({"dimension_node_id": id(length.1), "exponent": "1"}),
-        json!({"dimension_node_id": id(time.1), "exponent": "-1"}),
-    ];
-    velocity_terms.sort_by_key(|term| term["dimension_node_id"]["digest"].to_string());
-    let velocity = dimension("Velocity", Value::Array(velocity_terms));
+    let mut velocity_terms = vec![(length.1.clone(), "1"), (time.1.clone(), "-1")];
+    velocity_terms.sort();
+    let velocity = dimension(
+        "Velocity",
+        Value::Array(
+            velocity_terms
+                .into_iter()
+                .map(|(key, exponent)| {
+                    json!({"dimension_node_id": node_ref(&key), "exponent": exponent})
+                })
+                .collect(),
+        ),
+    );
     let unit = |name: &str, dimension: NodeKey, target: Option<NodeKey>, scale: &str| {
         let preimage = UnitPreimage::from_json(json!({
             "version": "quire.unit-node/v1",
             "owner": owner,
             "qualified_declaration": [name],
-            "dimension_node_id": id(dimension),
-            "target_unit_node_id": target.map(id),
+            "dimension_node_id": node_ref(&dimension),
+            "target_unit_node_id": target.as_ref().map(node_ref),
             "scale": {"numerator": scale, "denominator": "1"},
             "offset": {"numerator": "0", "denominator": "1"},
         }))
         .expect("a unit");
-        let key = NodeKey::from_digest(
-            preimage
-                .digest(qsl_foundation::IdentityLimits::default())
-                .expect("the unit digests"),
-        );
+        let key = preimage.key().expect("a unit declaration key");
         (preimage, key)
     };
-    let metre = unit("metre", length.1, None, "1");
-    let km = unit("km", length.1, Some(metre.1), "1000");
-    let second = unit("second", time.1, None, "1");
-    let mps = unit("mps", velocity.1, None, "1");
+    let metre = unit("metre", length.1.clone(), None, "1");
+    let km = unit("km", length.1.clone(), Some(metre.1.clone()), "1000");
+    let second = unit("second", time.1.clone(), None, "1");
+    let mps = unit("mps", velocity.1.clone(), None, "1");
     for (name, key) in [
-        ("Length", length.1),
-        ("Time", time.1),
-        ("Velocity", velocity.1),
-        ("metre", metre.1),
-        ("km", km.1),
-        ("second", second.1),
-        ("mps", mps.1),
+        ("Length", length.1.clone()),
+        ("Time", time.1.clone()),
+        ("Velocity", velocity.1.clone()),
+        ("metre", metre.1.clone()),
+        ("km", km.1.clone()),
+        ("second", second.1.clone()),
+        ("mps", mps.1.clone()),
     ] {
         keys.insert(name, key);
     }
@@ -474,7 +464,6 @@ fn velocity_units() -> (
         [length, time, velocity],
         [metre, km, second, mps],
         &OwnerSelection::new([selection]),
-        qsl_foundation::IdentityLimits::default(),
     )
     .expect("the unit graph admits");
     (
@@ -493,7 +482,8 @@ fn velocity_units() -> (
 #[test]
 fn a_non_root_unit_and_a_derived_dimension_are_emitted_and_read_by_ir() {
     let (units, keys) = velocity_units();
-    let quantity = |name: &str| ValueType::Quantity(quire_exact::UnitId::declared(keys[name]));
+    let quantity =
+        |name: &str| ValueType::Quantity(quire_exact::UnitId::declared(keys[name].clone()));
     let trip = record(
         12,
         "Trip",
@@ -504,46 +494,20 @@ fn a_non_root_unit_and_a_derived_dimension_are_emitted_and_read_by_ir() {
         .with_units(units);
     let (wire, package, omitted) = emit_and_read(types);
     assert!(omitted.is_empty(), "{omitted:?}");
-    let node = |name: &str| {
-        let digest = keys[name].to_string();
-        nodes(&wire)
-            .iter()
-            .find(|node| node["node_id"]["digest"] == json!(digest))
-            .unwrap_or_else(|| panic!("the {name} node is written"))
-            .clone()
-    };
+    let node = |name: &str| wire_node(&wire, &keys[name]).clone();
     let ids = |names: &[&str]| {
-        let mut ids: Vec<Value> = names
-            .iter()
-            .map(|name| json!({"domain": quire_exact::NODE_KEY_DOMAIN, "digest": keys[name].to_string()}))
-            .collect();
-        ids.sort_by_key(|id| id["digest"].to_string());
-        Value::Array(ids)
+        let mut ids: Vec<NodeKey> = names.iter().map(|name| keys[name].clone()).collect();
+        ids.sort();
+        Value::Array(ids.iter().map(node_ref).collect())
     };
     let km = node("km");
     assert_eq!(km["semantic_form"], json!("unit"));
     assert_eq!(km["dependencies"], ids(&["Length", "metre"]));
-    let km_preimage = &km["nominal_identity_preimage"];
-    assert_eq!(
-        km_preimage["target_unit_node_id"]["digest"],
-        json!(keys["metre"].to_string())
-    );
-    assert_eq!(
-        km_preimage["scale"],
-        json!({"numerator": "1000", "denominator": "1"})
-    );
     assert_eq!(node("metre")["dependencies"], ids(&["Length"]));
     let velocity = node("Velocity");
     assert_eq!(velocity["semantic_form"], json!("dimension"));
     assert_eq!(velocity["dependencies"], ids(&["Length", "Time"]));
-    let terms = velocity["nominal_identity_preimage"]["terms"]
-        .as_array()
-        .expect("Velocity's terms");
-    assert_eq!(terms.len(), 2);
-    assert_eq!(
-        node("mps")["semantic_type"]["digest"],
-        json!(keys["Velocity"].to_string())
-    );
+    assert_eq!(node("mps")["semantic_type"], node_ref(&keys["Velocity"]));
     for base in ["Length", "Time"] {
         assert_eq!(node(base)["dependencies"], json!([]));
     }
@@ -615,6 +579,7 @@ fn emit_text(declarations: &str) -> (CheckedPackage, Value, Box<CheckedPackageV2
     let package = CheckedPackage::link(
         PackageDeclarations::assemble(
             parsed.source().reference().clone(),
+            "pkg".to_owned(),
             unit,
             Vec::new(),
             Vec::new(),
@@ -629,20 +594,14 @@ fn emit_text(declarations: &str) -> (CheckedPackage, Value, Box<CheckedPackageV2
 }
 
 /// The written node whose id is `node`, as IR's node id.
-fn written(wire: &Value, node: WireNodeId) -> CheckedNodeId {
-    let written = wire_node(wire, node);
-    CheckedNodeId {
-        domain: written["node_id"]["domain"].as_str().unwrap().into(),
-        digest: node.to_string().into(),
-    }
+fn written(wire: &Value, node: &NodeKey) -> CheckedNodeId {
+    let _ = wire_node(wire, node);
+    super::checked_node_id_of(node)
 }
 
 /// Each requirement record of `package` whose application applies
 /// `operation`, in key order: its node and its extent.
-fn requirement_records(
-    package: &CheckedPackage,
-    operation: &str,
-) -> Vec<(WireNodeId, ClaimExtent)> {
+fn requirement_records(package: &CheckedPackage, operation: &str) -> Vec<(NodeKey, ClaimExtent)> {
     let graph = package.graph();
     graph
         .requirements()
@@ -650,7 +609,7 @@ fn requirement_records(
         .filter(|(key, _)| {
             let node = graph
                 .semantic_graph()
-                .node(NodeKey::from_digest(*key.node().as_bytes()))
+                .node(key.node().clone())
                 .expect("the record's node is lowered");
             matches!(
                 node.body(),
@@ -659,7 +618,7 @@ fn requirement_records(
                 ) if applied.identity() == operation
             )
         })
-        .map(|(key, record)| (key.node(), record.requirements().extent().clone()))
+        .map(|(key, record)| (key.node().clone(), record.requirements().extent().clone()))
         .collect()
 }
 
@@ -671,10 +630,11 @@ fn integer_at(package: &CheckedPackage, function: &str, index: usize) -> ClaimEx
         .semantic_graph()
         .node(graph.function_identity(function).expect("declared"))
         .and_then(|node| node.function_parameters())
-        .expect("a function node")[index];
+        .expect("a function node")[index]
+        .clone();
     ClaimExtent::from_domains(std::collections::BTreeMap::from([(
         qsl_foundation::bound::DomainKey::Node {
-            node: WireNodeId::from_digest(*parameter.as_bytes()),
+            node: parameter,
             path: Vec::new(),
         },
         DomainKind::Integer,
@@ -691,7 +651,7 @@ fn inner_and_outer() -> [(ClaimExtent, CompleteLoweringRecordV2); 2] {
         requirement_records(&package, "quire.op.integer.add")
             .into_iter()
             .map(|(node, extent)| {
-                let lowering = ir_lowering(&admitted, &written(&wire, node));
+                let lowering = ir_lowering(&admitted, &written(&wire, &node));
                 (extent, lowering)
             })
             .collect();

@@ -10,16 +10,12 @@ use super::*;
 #[test]
 fn a_package_without_a_refinement_writes_no_step_row_member() {
     let document = config_version_unit::DOMAIN_PACKAGE.as_bytes();
-    let packages = qsl_semantics::model::intake::package_input([document]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    let text = format!(
+    let packages = qsl_semantics::model::intake::package_input([document]).unwrap();
+    let text = String::from(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
-         model Config = \"example/config-version\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
-         function noop using v(): Boolean pure {{ true }}\n",
-        qsl_semantics::model::key::hex(digest)
+         model Config = \"example/config-version\";\n\
+         function noop using v(): Boolean pure { true }\n",
     );
     let graph = assemble_with_models(text.as_bytes(), &packages)
         .expect("the unit assembles")

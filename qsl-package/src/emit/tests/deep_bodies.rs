@@ -104,6 +104,7 @@ fn deep_declarations(source: &str) -> PackageDeclarations {
     let forms = qsl_forms::build_unit(&parsed).expect("the deep source has forms");
     PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "pkg".to_owned(),
         forms,
         Vec::new(),
         Vec::new(),
@@ -140,11 +141,6 @@ fn a_100000_deep_body_checks_lowers_and_emits_on_a_small_stack() {
                     assert!(
                         qsl_semantics::check::stratum::is_stratified_body(&node["body"]),
                         "{label}: a written body is in the five-stratum grammar"
-                    );
-                    assert_eq!(
-                        json!(rebuilt_key(node, &[])),
-                        node["node_id"]["digest"],
-                        "{label}: a written node keys to its node_id"
                     );
                 }
                 // The checked package: every checked function body (the
@@ -209,16 +205,11 @@ fn a_100000_term_sum_reads_back_verifies_clones_compares_and_drops_on_a_small_st
                 diagnostics: u64::MAX,
                 work: u64::MAX,
             };
-            let pinned: PinnedRequest = qsl_semantics::library::fixtures::single_pin(
-                library(),
-                emission.package.package_id(),
-            );
             let read = crate::checked_v2::read_checked_package_v2(
                 bytes,
                 library(),
                 limits,
                 &read_evidence(&emission),
-                &pinned,
             )
             .unwrap_or_else(|failure| panic!("verifies at its package_id: {failure:?}"))
             .into_value();
@@ -297,6 +288,7 @@ fn and_chain(levels: usize) -> Option<PackageDeclarations> {
     let forms = qsl_forms::build_unit(&parsed).ok()?;
     PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "pkg".to_owned(),
         forms,
         Vec::new(),
         Vec::new(),

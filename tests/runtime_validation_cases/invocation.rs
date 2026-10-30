@@ -375,7 +375,6 @@ fn field_and_population_permissions_do_not_extend_to_other_supplied_models() {
     let mut before = draft(&models[0]);
     before.models.push(ModelBinding {
         model: models[1].environment().owner().clone(),
-        digest: models[1].digest(),
     });
     let mut foreign = draft(&models[1]).populations.remove(0);
     before.arena.push(ValueNode::Reference {

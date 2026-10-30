@@ -29,8 +29,8 @@ use quire_semantic_value::supplied_stop::SuppliedLimits;
 
 use super::{
     check, execute, failure_of, package, parse, refusal_or_fault, select, AdmittedModels,
-    CheckedUnit, EmittedUnit, ExecuteRequest, FrontEndFailure, LockEvidence, PackageLimits,
-    ParseRequest, ParsedSource,
+    CheckedUnit, EmittedUnit, ExecuteRequest, FrontEndFailure, PackageLimits, ParseRequest,
+    ParsedSource,
 };
 use crate::bounds::ReplayLimits;
 use crate::limits::CallerLimits;
@@ -83,7 +83,7 @@ struct Chain {
 
 fn chain_of(
     bytes: &[u8],
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &qsl_semantics::model::intake::PackageInput,
     dependencies: &DependencyInput,
     limits: SpineLimits,
 ) -> Result<Chain, FrontEndFailure> {
@@ -92,9 +92,9 @@ fn chain_of(
     let models = select(&parsed, packages, limits.model, &cancel)?.into_value();
     let checked = check(
         &parsed,
+        "fixture".to_owned(),
         &models,
         dependencies,
-        &LockEvidence::default(),
         limits,
         &cancel,
     )?
@@ -188,9 +188,9 @@ fn each_operation_takes_exactly_its_predecessors_output() {
     // `package` the `CheckedUnit` of that check, and `execute` the same.
     let rechecked = check(
         &chain.parsed,
+        "fixture".to_owned(),
         &chain.models,
         &DependencyInput::default(),
-        &LockEvidence::default(),
         SpineLimits::default(),
         &cancel,
     )
@@ -439,9 +439,9 @@ fn a_handle_cancelled_before_the_call_stops_every_operation() {
     ));
     assert_requested(check(
         &chain.parsed,
+        "fixture".to_owned(),
         &chain.models,
         &DependencyInput::default(),
-        &LockEvidence::default(),
         limits,
         &cancelled,
     ));
@@ -470,12 +470,12 @@ fn assert_requested<T>(outcome: Result<Staged<T>, FrontEndFailure>) {
     }
 }
 
-/// The digest of each source `emitted` carries, in order.
-fn references(emitted: &EmittedUnit) -> Vec<qsl_foundation::digest::DigestRecord> {
+/// The text of each source `emitted` carries, in order.
+fn references(emitted: &EmittedUnit) -> Vec<Vec<u8>> {
     emitted
         .sources()
         .iter()
-        .map(|source| source.reference().digest())
+        .map(|source| source.text().as_bytes().to_vec())
         .collect()
 }
 
@@ -531,9 +531,9 @@ fn assert_check_cancelled_at(
     let outcome = gate.run(cause, |cancel| {
         check(
             parsed,
+            "fixture".to_owned(),
             models,
             &DependencyInput::default(),
-            &LockEvidence::default(),
             *limits,
             cancel,
         )
@@ -568,9 +568,9 @@ fn a_check_cancelled_from_another_thread_stops_within_one_charge() {
     let total = charges_of(|cancel| {
         check(
             &unit.0,
+            "fixture".to_owned(),
             &unit.1,
             &DependencyInput::default(),
-            &LockEvidence::default(),
             unit.2,
             cancel,
         )
@@ -611,9 +611,9 @@ fn a_cancel_inside_one_large_body_stops_within_one_charge() {
     let total = charges_of(|cancel| {
         check(
             &unit.0,
+            "fixture".to_owned(),
             &unit.1,
             &DependencyInput::default(),
-            &LockEvidence::default(),
             unit.2,
             cancel,
         )
@@ -633,7 +633,7 @@ fn a_cancel_inside_one_large_body_stops_within_one_charge() {
 #[trace("TC-757", "FR-276-AC-2")]
 #[test]
 fn a_cancel_inside_select_stops_within_one_charge() {
-    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]);
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]).unwrap();
     let limits = SpineLimits::default();
     let live = Cancel::new();
     let parsed = parse(
@@ -664,7 +664,7 @@ fn a_cancel_inside_select_stops_within_one_charge() {
 #[trace("TC-732", "FR-260-AC-4", "FR-255-AC-1")]
 #[test]
 fn select_names_the_intake_limit_for_an_oversize_document() {
-    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]);
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]).unwrap();
     let mut limits = SpineLimits::default();
     let size = u64::try_from(MODEL_DOCUMENT.len()).expect("a small document");
     limits.model.intake = qsl_foundation::IntakeLimits::default().with_input_bytes(size - 1);
@@ -790,6 +790,7 @@ fn a_cancel_tripped_mid_run_is_cancelled_with_its_cause_never_a_fault() {
     let run_under = |cancel: &Cancel| {
         crate::spine::run(
             identity(),
+            "fixture".to_owned(),
             "unit.native",
             FIXTURE.as_bytes(),
             &BTreeMap::new(),
@@ -811,9 +812,9 @@ fn a_cancel_tripped_mid_run_is_cancelled_with_its_cause_never_a_fault() {
         let models = select(&parsed, &BTreeMap::new(), limits.model, cancel)?.into_value();
         let checked = check(
             &parsed,
+            "fixture".to_owned(),
             &models,
             &DependencyInput::default(),
-            &LockEvidence::default(),
             limits,
             cancel,
         )?
@@ -869,7 +870,7 @@ fn the_composition_emits_packages_the_i2_reader_reads_back() {
 
     // A domain-package request: the unit's `model` names the document by
     // its `sha256-jcs` digest.
-    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]);
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]).unwrap();
     let model = chain_of(
         spine_model::unit().as_bytes(),
         &packages,
@@ -907,7 +908,7 @@ fn the_composition_emits_packages_the_i2_reader_reads_back() {
 }
 
 /// `chain`'s emitted bytes through the I2 reader, as `identity`.
-fn read_back(chain: &Chain, packages: &BTreeMap<[u8; 32], Vec<u8>>, identity: &str) {
+fn read_back(chain: &Chain, packages: &qsl_semantics::model::intake::PackageInput, identity: &str) {
     let emission = emit_checked(chain.checked.package()).expect("the package emits");
     assert_eq!(emission.package(), chain.emitted.package());
     read_import_view(
@@ -977,9 +978,9 @@ fn each_operation_refuses_at_the_stage_that_owns_the_defect() {
     let refused = refusal(
         check(
             &parsed,
+            "fixture".to_owned(),
             &models,
             &DependencyInput::default(),
-            &LockEvidence::default(),
             limits,
             &live,
         )
@@ -1013,7 +1014,7 @@ fn the_producer_refuses_profile_version_and_digest_tails_as_invalid_syntax() {
 }
 
 /// FR-278-AC-3 (TC-759 step 3): the `EmittedUnit` carries a source
-/// provision whose digests name every source the package was compiled from.
+/// provision that carries every source the package was compiled from.
 /// (Replaying through that provision is checked beside the replay executor.)
 #[trace("TC-759", "FR-278-AC-3")]
 #[test]
@@ -1031,16 +1032,10 @@ fn the_provision_names_every_source_the_package_was_compiled_from() {
     )
     .unwrap_or_else(|failure| panic!("the importing unit compiles: {failure:?}"));
 
-    let digests = references(&chain.emitted);
-    let unit_digest = qsl_foundation::digest::DigestRecord::mint(
-        qsl_foundation::digest::DigestDomain::SourceBytesV1,
-        qsl_foundation::digest::ByteDigest::of(unit.as_bytes()).as_bytes(),
+    assert_eq!(
+        references(&chain.emitted),
+        vec![unit.as_bytes().to_vec(), geometry.bytes.clone()]
     );
-    let library_digest = qsl_foundation::digest::DigestRecord::mint(
-        qsl_foundation::digest::DigestDomain::SourceBytesV1,
-        qsl_foundation::digest::ByteDigest::of(&geometry.bytes).as_bytes(),
-    );
-    assert_eq!(digests, vec![unit_digest, library_digest]);
 }
 
 /// FR-275-AC-5 (TC-755 step 7): each operation reports the work of its own
@@ -1067,9 +1062,9 @@ fn each_operation_reports_the_work_of_its_own_stages() {
 
     let checked = check(
         &parsed,
+        "fixture".to_owned(),
         &models,
         &DependencyInput::default(),
-        &LockEvidence::default(),
         limits,
         &cancel,
     )
@@ -1283,7 +1278,7 @@ fn parse_names_the_source_limit_field_it_reached() {
 #[trace("TC-758", "FR-277-AC-1", "FR-255-AC-1")]
 #[test]
 fn select_names_the_model_limit_field_it_reached() {
-    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]);
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]).unwrap();
     let live = Cancel::new();
     let parsed = parse(
         &request(spine_model::unit().as_bytes()),
@@ -1325,12 +1320,6 @@ fn select_names_the_model_limit_field_it_reached() {
         run(|limits, value| limits.ancestor_steps = value),
     );
     assert_budget_field(
-        Setting::ModelHashedBytes,
-        "insufficient-next-charge",
-        100_000,
-        run(|limits, value| limits.hashed_bytes = value),
-    );
-    assert_budget_field(
         Setting::ModelWorkUnits,
         "insufficient-next-charge",
         100_000,
@@ -1348,7 +1337,7 @@ fn select_names_the_model_limit_field_it_reached() {
 #[trace("TC-758", "FR-255-AC-1")]
 #[test]
 fn select_retains_the_denied_charge_of_a_normalization_ceiling() {
-    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]);
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]).unwrap();
     let parsed = parse(
         &request(spine_model::unit().as_bytes()),
         SpineLimits::default().source,
@@ -1405,9 +1394,9 @@ fn check_names_the_checking_limit_field_it_reached() {
             let limits = edit(SpineLimits::default(), value);
             reached(check(
                 &chain.parsed,
+                "fixture".to_owned(),
                 &chain.models,
                 &DependencyInput::default(),
-                &LockEvidence::default(),
                 limits,
                 &Cancel::new(),
             ))
@@ -1459,58 +1448,6 @@ fn long_body_chain() -> Chain {
     .unwrap_or_else(|failure| panic!("the unit compiles: {failure:?}"))
 }
 
-/// FR-255-AC-1 for `identity.input_bytes` through the compile. The unit has
-/// no record, enum or unit, so no declared type handle or nominal preimage is
-/// encoded at assembly: every identity encoding is a node preimage lowering
-/// keys under the limit `AssemblyLimits.identity` carries into the checked
-/// package. The smallest `identity.input_bytes` at which `check` admits it is
-/// then the largest node preimage the checked package holds (well past a
-/// declared type handle's size); one below it `check` stops with
-/// `LimitExceeded` naming `identity.input_bytes` and that bound. It fails if
-/// assembly stops carrying the caller's limit into lowering (the search
-/// finds no refusal at all), or if the spine stops mapping the refusal.
-#[trace("TC-720", "FR-255-AC-1")]
-#[test]
-fn check_names_the_identity_limit_it_reached() {
-    let chain = long_body_chain();
-    let largest = chain
-        .checked
-        .package
-        .graph()
-        .semantic_graph()
-        .nodes()
-        .map(|node| u64::try_from(node.preimage().len()).expect("a small preimage"))
-        .max()
-        .expect("the checked package holds nodes");
-    // A declared type handle encodes to about 123 bytes.
-    assert!(
-        largest > 200,
-        "the fixture's largest node preimage ({largest}) must exceed a handle's size"
-    );
-    let run = |value: u64| {
-        let mut limits = SpineLimits::default();
-        limits.assembly.identity.input_bytes = value;
-        reached(check(
-            &chain.parsed,
-            &chain.models,
-            &DependencyInput::default(),
-            &LockEvidence::default(),
-            limits,
-            &Cancel::new(),
-        ))
-    };
-    let counter = assert_field(
-        Setting::IdentityInputBytes,
-        FoundationKind::InputBytes,
-        1_000_000,
-        run,
-    );
-    assert_eq!(
-        counter, largest,
-        "the identity limit the check reaches is the largest node preimage"
-    );
-}
-
 /// FR-255-AC-4 at both entry points, stage-driven: an input that reaches a
 /// limit stops with that limit's setting, and the same input passes once the
 /// setting is raised, through the settings operation's operand and through a
@@ -1540,9 +1477,9 @@ fn a_reached_limit_is_raised_by_the_settings_operation_and_by_a_request() {
     let check_under = |limits: SpineLimits| {
         reached(check(
             &chain.parsed,
+            "fixture".to_owned(),
             &chain.models,
             &DependencyInput::default(),
-            &LockEvidence::default(),
             limits,
             &Cancel::new(),
         ))
@@ -1584,9 +1521,9 @@ fn a_reached_limit_is_raised_by_the_settings_operation_and_by_a_request() {
             |value| {
                 reached(check(
                     &long.parsed,
+                    "fixture".to_owned(),
                     &long.models,
                     &DependencyInput::default(),
-                    &LockEvidence::default(),
                     identity(value)[entry],
                     &Cancel::new(),
                 ))
@@ -1615,9 +1552,9 @@ fn the_effective_limits_a_checked_package_records_are_the_defaults() {
     );
     let checked = check(
         &chain.parsed,
+        "fixture".to_owned(),
         &chain.models,
         &DependencyInput::default(),
-        &LockEvidence::default(),
         limits,
         &Cancel::new(),
     )
@@ -1634,7 +1571,7 @@ fn the_effective_limits_a_checked_package_records_are_the_defaults() {
 #[trace("TC-758", "FR-277-AC-1")]
 #[test]
 fn check_names_the_type_environment_limit_field_it_reached() {
-    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]);
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]).unwrap();
     let model = chain_of(
         spine_model::unit().as_bytes(),
         &packages,
@@ -1649,9 +1586,9 @@ fn check_names_the_type_environment_limit_field_it_reached() {
             edit(&mut limits, value);
             reached(check(
                 &model.parsed,
+                "fixture".to_owned(),
                 &model.models,
                 &DependencyInput::default(),
-                &LockEvidence::default(),
                 limits,
                 &Cancel::new(),
             ))
@@ -1710,9 +1647,9 @@ fn check_names_the_dependency_limit_field_it_reached() {
             );
             reached(check(
                 parsed,
+                "fixture".to_owned(),
                 models,
                 dependencies,
-                &LockEvidence::default(),
                 limits,
                 &Cancel::new(),
             ))
@@ -1784,7 +1721,12 @@ fn an_internal_invariant_failure_is_a_fault() {
 fn a_rebound_model_node_leaves_the_front_end_as_an_internal_failure_with_no_package() {
     use qsl_semantics::check::{CheckCause, CheckRefusal, CorrespondenceConflict, KeyFault};
     use quire_checked::key::DeclarationKey;
-    let node = quire_exact::NodeKey::from_digest([7_u8; 32]);
+    let node = quire_exact::NodeKey::new(
+        "fixture",
+        vec![quire_exact::PathSegment::Text("node".into())],
+        7,
+    )
+    .expect("a fixture key");
     let (d1, d2) = (
         DeclarationKey::fixture("ix://test/orders/Invoice"),
         DeclarationKey::fixture("ix://test/orders/Order"),
@@ -1796,7 +1738,7 @@ fn a_rebound_model_node_leaves_the_front_end_as_an_internal_failure_with_no_pack
             ),
             cause: CheckCause::InternalFault(Box::new(KeyFault::CorrespondenceConflict(Box::new(
                 CorrespondenceConflict::NodeRebound {
-                    node,
+                    node: node.clone(),
                     recorded: d1.clone(),
                     offered: d2.clone(),
                 },
@@ -1830,110 +1772,11 @@ fn a_rebound_model_node_leaves_the_front_end_as_an_internal_failure_with_no_pack
     );
 }
 
-/// FR-278: a library is compiled independently of whoever imports it. One
-/// library imported by two units that pass different lock evidence is the
-/// same package, whose `package_id` the import digest names; and a library
-/// that needs a lock the default evidence lacks is refused even when its
-/// importer's evidence supplies it.
-#[trace("TC-759", "FR-278-AC-1")]
-#[test]
-fn a_library_is_checked_under_its_own_lock_evidence_not_its_importers() {
-    use qsl_semantics::value::{CatalogRole, DefinitionLock};
-    let text_profile = || {
-        LockEvidence::default().with_text_profile(
-            DefinitionLock::pinned()
-                .entry(CatalogRole::TextProfile)
-                .reference(),
-        )
-    };
-    let limits = SpineLimits::default();
-    let importer = |library: &SuppliedLibrary, lock: &LockEvidence| {
-        let unit = format!(
-            "{HEADER}import \"test/geometry\" as g;\n\
-             function h using v(): Boolean pure {{ true }}\n"
-        );
-        let dependencies = DependencyInput::new(vec![library.clone()]).expect("admissible");
-        let live = Cancel::new();
-        let parsed = parse(&request(unit.as_bytes()), limits.source, &live)
-            .expect("the importing unit parses")
-            .into_value();
-        check(
-            &parsed,
-            &AdmittedModels::default(),
-            &dependencies,
-            lock,
-            limits,
-            &live,
-        )
-        .map(|checked| checked.into_value())
-    };
-
-    let geometry = geometry();
-    for lock in [LockEvidence::default(), text_profile()] {
-        importer(&geometry, &lock)
-            .unwrap_or_else(|failure| panic!("the import resolves under {lock:?}: {failure:?}"));
-    }
-
-    // A library comparing text needs the text law. Its importer supplies it,
-    // but the library is checked under the default evidence and refuses.
-    let texty = SuppliedLibrary {
-        bytes: format!(
-            "{HEADER}function f using v(a: Text[0, 8; nfc], b: Text[0, 8; nfc]): Boolean pure \
-             {{ a = b }}\n"
-        )
-        .into_bytes(),
-        ..geometry
-    };
-    let refusal = refusal(
-        importer(&texty, &text_profile())
-            .expect_err("the library lacks the text law under its own evidence"),
-    );
-    assert_eq!(refusal.code().as_str(), "missing_declaration");
-}
-
-/// FR-278 (TC-759 step 1): `check` takes the package's lock evidence. A unit
-/// that compares two text values has a text law to select, so without lock
-/// evidence naming the text profile the check refuses, and with it the unit
-/// checks.
-#[trace("TC-759", "FR-278-AC-1")]
-#[test]
-fn check_takes_the_lock_evidence_the_text_law_comes_from() {
-    use qsl_semantics::value::{CatalogRole, DefinitionLock};
-    let unit = format!(
-        "{HEADER}function same using v(a: Text[0, 8; nfc], b: Text[0, 8; nfc]): Boolean pure \
-         {{ a = b }}\n"
-    );
-    let limits = SpineLimits::default();
-    let live = Cancel::new();
-    let parsed = parse(&request(unit.as_bytes()), limits.source, &live)
-        .expect("the unit parses")
-        .into_value();
-    let models = select(&parsed, &BTreeMap::new(), limits.model, &live)
-        .expect("a unit with no model selects nothing")
-        .into_value();
-    let run = |lock: &LockEvidence| {
-        check(
-            &parsed,
-            &models,
-            &DependencyInput::default(),
-            lock,
-            limits,
-            &live,
-        )
-    };
-    let without = run(&LockEvidence::default()).expect_err("no text law is selected");
-    let refusal = refusal(without);
-    assert_eq!(refusal.code().as_str(), "missing_declaration");
-    let text_profile = DefinitionLock::pinned()
-        .entry(CatalogRole::TextProfile)
-        .reference();
-    run(&LockEvidence::default().with_text_profile(text_profile))
-        .expect("the lock evidence selects the text law");
-}
-
 /// The model fixture with an operation `touch` on `Widget` whose `pre`
 /// holds `clauses` (`language`, `text`), and the unit selecting it.
-fn widget_with_touch(clauses: &[(&str, &str)]) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
+fn widget_with_touch(
+    clauses: &[(&str, &str)],
+) -> (String, qsl_semantics::model::intake::PackageInput) {
     let mut document: serde_json::Value =
         serde_json::from_slice(MODEL_DOCUMENT).expect("the model fixture is JSON");
     let generated = |identity: &str| {
@@ -1970,18 +1813,19 @@ fn widget_with_touch(clauses: &[(&str, &str)]) -> (String, BTreeMap<[u8; 32], Ve
 }
 
 /// The unit selecting `document`, the model fixture with its digest.
-fn offered_model(document: &serde_json::Value) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
+fn offered_model(
+    document: &serde_json::Value,
+) -> (String, qsl_semantics::model::intake::PackageInput) {
     let bytes = serde_json::to_vec(document).expect("the document serializes");
-    let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()]);
-    let digest = packages.keys().next().expect("one package");
-    (spine_model::unit_selecting(digest), packages)
+    let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()]).unwrap();
+    (spine_model::unit(), packages)
 }
 
 /// The model fixture with the clauses `clauses` (`name`, `language`, `text`)
 /// on the type `Widget`, and the unit selecting it.
 fn widget_with_type_clauses(
     clauses: &[(&str, &str, &str)],
-) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
+) -> (String, qsl_semantics::model::intake::PackageInput) {
     let mut document: serde_json::Value =
         serde_json::from_slice(MODEL_DOCUMENT).expect("the model fixture is JSON");
     let widget = document["types"]

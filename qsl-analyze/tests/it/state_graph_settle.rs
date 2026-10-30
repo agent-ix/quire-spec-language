@@ -16,7 +16,7 @@ use ix_trace_rs::trace;
 use qsl_analyze::model_check::{check_and_settle_state_graph, StateGraphItem, StateGraphRequest};
 use qsl_eval::simulation::model::ModelSimState;
 use qsl_eval::temporal::UndefinedCause;
-use qsl_foundation::digest::{DigestDomain, DigestRecord};
+use qsl_foundation::digest::DigestRecord;
 use qsl_replay::{
     settle_state_graph, AppliedReduction, CertificateLocus, CertificateRule, Certification,
     DisagreementCause, Execution, GraphReplayResult, GraphReplaySettlement, GraphWitness,
@@ -25,7 +25,6 @@ use qsl_replay::{
     StateGraphInstanceOutcome, StateGraphMethod, StateGraphOutcome, StateGraphRecord,
     TerminalValue, Truth, Verdict, WitnessSource, DEFAULT_WITNESS_SEED, EXPLICIT_STATE,
 };
-use qsl_semantics::library::PackageId;
 use quire_exact::{Cancel, CancelCause};
 use quire_semantic_value::catalog::Category;
 
@@ -46,26 +45,22 @@ fn method(limits: ModelCheckLimits) -> StateGraphMethod {
     }
 }
 
-/// How a test settles: the run's method and package, the cancellation
+/// How a test settles: the run's method, the cancellation
 /// handle, and the replay result the caller hands the map.
 struct Settling {
     method: StateGraphMethod,
-    package_id: DigestRecord,
     cancel: Cancel,
     replay: GraphReplaySettlement,
-    replayed: PackageId,
 }
 
 impl Settling {
-    /// A run of `world`'s own package under `limits`, whose evidence
+    /// A run under `limits`, whose evidence
     /// replays as reproduced against that package.
-    fn of(world: &World, limits: ModelCheckLimits) -> Self {
+    fn of(limits: ModelCheckLimits) -> Self {
         Self {
             method: method(limits),
-            package_id: world.package_id().record(),
             cancel: Cancel::new(),
             replay: GraphReplaySettlement::Reproduced,
-            replayed: world.package_id(),
         }
     }
 }
@@ -84,7 +79,6 @@ fn settle_with(
     settle_state_graph(
         instance,
         &settling.method,
-        &settling.package_id,
         &subject,
         world.claim(claim),
         &settling.cancel,
@@ -92,7 +86,6 @@ fn settle_with(
             *replays += 1;
             Ok(GraphReplayResult {
                 settlement: settling.replay.clone(),
-                package_id: settling.replayed,
                 evaluated_predicates: Vec::new(),
                 closure_nodes: None,
                 first_target: None,
@@ -112,14 +105,7 @@ fn settle(
     limits: ModelCheckLimits,
     replays: &mut u32,
 ) -> StateGraphRecord {
-    settle_with(
-        world,
-        keys,
-        claim,
-        instance,
-        &Settling::of(world, limits),
-        replays,
-    )
+    settle_with(world, keys, claim, instance, &Settling::of(limits), replays)
 }
 
 /// One stand-in witness per initial state, for a hand-built outcome whose
@@ -186,26 +172,22 @@ fn the_state_graph_pipeline_runs_and_settles_each_instance() {
     let world = config_world(REACHES_TWO, &[(0, 0)]);
     let request = StateGraphRequest {
         subject: world.subject(AB, UNLIMITED),
-        items: vec![StateGraphItem {
-            claim: world.claim("ReachesTwo"),
-        }],
+        items: vec![StateGraphItem::new(world.claim("ReachesTwo"))],
         reductions: Default::default(),
         deadlock_freedom: false,
         max_depth: None,
         limits: no_samples(),
         seed: None,
     };
-    let settled =
-        check_and_settle_state_graph(request, world.package_id().record(), &Cancel::new(), |_| {
-            Ok(GraphReplayResult {
-                settlement: GraphReplaySettlement::Reproduced,
-                package_id: world.package_id(),
-                evaluated_predicates: Vec::new(),
-                closure_nodes: None,
-                first_target: None,
-            })
+    let settled = check_and_settle_state_graph(request, &Cancel::new(), |_| {
+        Ok(GraphReplayResult {
+            settlement: GraphReplaySettlement::Reproduced,
+            evaluated_predicates: Vec::new(),
+            closure_nodes: None,
+            first_target: None,
         })
-        .expect("the state-graph engine and settlement map both complete");
+    })
+    .expect("the state-graph engine and settlement map both complete");
 
     assert_eq!(settled.records.len(), 1);
     assert_eq!(settled.records[0].len(), AB.len());
@@ -230,11 +212,10 @@ fn the_pipeline_settles_non_preserving_reduction_before_expansion() {
     let mut request = world.request(&["j"], vec![world.item("InOneWay")], no_samples());
     request.reductions.partial_order = true;
 
-    let settled =
-        check_and_settle_state_graph(request, world.package_id().record(), &Cancel::new(), |_| {
-            panic!("a refusal before exploration has no evidence to replay")
-        })
-        .expect("the request is settled");
+    let settled = check_and_settle_state_graph(request, &Cancel::new(), |_| {
+        panic!("a refusal before exploration has no evidence to replay")
+    })
+    .expect("the request is settled");
     assert!(settled.run.graph.nodes.is_empty());
     assert!(matches!(
         settled.records[0][0].value,
@@ -377,6 +358,7 @@ fn a_reduced_holds_outcome_settles_uncertified_with_its_reductions() {
     let reduced = StateGraphInstanceOutcome {
         outcome: StateGraphOutcome::HoldsReduced {
             reductions: reductions.clone(),
+            witnesses: None,
         },
         ..instance.clone()
     };
@@ -731,112 +713,6 @@ fn a_bad_state_certificate_settles_certificate_rejected() {
     assert_eq!(replays, 0);
 }
 
-/// FR-282's package binding of a state-graph certificate and its evidence:
-/// a `Witnessed` or `Holds` outcome of a run that checked another package
-/// settles `inconclusive`, `StaleDependency{requested, recompiled}` with nothing
-/// checked or replayed; evidence of a `Witnessed`, `WitnessedUnchecked`,
-/// `Trapped` or `PathPair` outcome replayed against another package settles
-/// the same, never `proved` or `refuted`; and a check whose package
-/// emission a cancelled handle stops settles `Incomplete(Cancelled)`.
-#[trace("TC-644")]
-#[test]
-fn a_certificate_or_evidence_of_another_package_never_settles() {
-    let elsewhere = DigestRecord::mint(DigestDomain::PackageSemanticV2, [9; 32]);
-    let other = job_world(true, false).package_id();
-
-    let world = config_world(&format!("{REACHES_TWO}{REACHES_THREE}"), &[(0, 0)]);
-    let witnessed = run(world.request(AB, vec![world.item("ReachesTwo")], no_samples()));
-    let witnessed = &witnessed.items[0][0];
-    let trapped = run(world.request(AB, vec![world.item("ReachesThree")], no_samples()));
-    let trapped = &trapped.items[0][0];
-    assert!(matches!(trapped.outcome, StateGraphOutcome::Trapped { .. }));
-    let mut limits = ModelCheckLimits::default();
-    limits.limits.max_states = 2;
-    let unchecked = run(world.request(AB, vec![world.item("ReachesTwo")], limits));
-    let unchecked = &unchecked.items[0][0];
-    assert!(matches!(
-        unchecked.outcome,
-        StateGraphOutcome::WitnessedUnchecked { .. }
-    ));
-    let game = game_world(false, false, GUARDED);
-    let holds = run(game.request(&["g"], vec![game.item("Guarded")], no_samples()));
-    let holds = &holds.items[0][0];
-    let job = job_world(false, false);
-    let pair = run(job.request(&["j"], vec![job.item("InOneWay")], no_samples()));
-    let pair = &pair.items[0][0];
-    assert!(matches!(pair.outcome, StateGraphOutcome::PathPair { .. }));
-
-    let mut replays = 0;
-    let run_elsewhere = |world: &World, limits| Settling {
-        package_id: elsewhere,
-        ..Settling::of(world, limits)
-    };
-    for (world, keys, claim, instance) in [
-        (&world, AB, "ReachesTwo", witnessed),
-        (&game, &["g"][..], "Guarded", holds),
-    ] {
-        let record = settle_with(
-            world,
-            keys,
-            claim,
-            instance,
-            &run_elsewhere(world, no_samples()),
-            &mut replays,
-        );
-        assert_eq!(
-            record.value,
-            TerminalValue::Inconclusive(InconclusiveCause::StaleDependency {
-                requested: qsl_replay::StaleIdentity::Package(elsewhere),
-                recompiled: qsl_replay::StaleIdentity::Package(world.package_id().record()),
-            }),
-            "{claim}"
-        );
-    }
-    assert_eq!(replays, 0, "a stale certificate is not checked or replayed");
-
-    let replayed_elsewhere = |world: &World, limits| Settling {
-        replayed: other,
-        ..Settling::of(world, limits)
-    };
-    for (world, keys, claim, instance, limits) in [
-        (&world, AB, "ReachesTwo", witnessed, no_samples()),
-        (&world, AB, "ReachesTwo", unchecked, limits),
-        (&world, AB, "ReachesThree", trapped, no_samples()),
-        (&job, &["j"][..], "InOneWay", pair, no_samples()),
-    ] {
-        let record = settle_with(
-            world,
-            keys,
-            claim,
-            instance,
-            &replayed_elsewhere(world, limits),
-            &mut replays,
-        );
-        assert_eq!(
-            record.value,
-            TerminalValue::Inconclusive(InconclusiveCause::StaleDependency {
-                requested: qsl_replay::StaleIdentity::Package(world.package_id().record()),
-                recompiled: qsl_replay::StaleIdentity::Package(other.record()),
-            }),
-            "{claim}: {:?}",
-            instance.outcome
-        );
-        assert_eq!((record.end, record.limit_reached), (None, None));
-    }
-    assert_eq!(replays, 4);
-
-    let cancelled = Settling::of(&game, no_samples());
-    cancelled.cancel.cancel(CancelCause::Requested);
-    let record = settle_with(&game, &["g"], "Guarded", holds, &cancelled, &mut replays);
-    assert_eq!(
-        record.value,
-        TerminalValue::Incomplete(IncompleteCause::Cancelled {
-            source: CancelCause::Requested,
-        })
-    );
-    assert_eq!(record.execution, Execution::ResourceIncomplete);
-}
-
 /// FR-169-AC-8: FR-168-AC-8's `WitnessedUnchecked` outcome (`ReachesTwo`,
 /// default `witness_samples`, `max_states` 2) settles `inconclusive`,
 /// `unsettled`, `Inconclusive(WellDefinednessUnchecked{sources})` with its
@@ -1029,7 +905,7 @@ fn horizon_limit_undecided_and_empty_runs_settle_their_rows() {
             max_depth: Some(3),
             ..method(no_samples())
         },
-        ..Settling::of(&game, no_samples())
+        ..Settling::of(no_samples())
     };
     let mut replays = 0;
     let trap = settle_with(
@@ -1153,7 +1029,7 @@ fn a_disagreeing_or_stopped_replay_never_settles_decisively() {
         &result.items[0][0],
         &Settling {
             replay: GraphReplaySettlement::Inconclusive(disagrees.clone()),
-            ..Settling::of(&world, no_samples())
+            ..Settling::of(no_samples())
         },
         &mut replays,
     );
@@ -1175,7 +1051,7 @@ fn a_disagreeing_or_stopped_replay_never_settles_decisively() {
         &result.items[0][0],
         &Settling {
             replay: GraphReplaySettlement::Stopped(reached),
-            ..Settling::of(&world, no_samples())
+            ..Settling::of(no_samples())
         },
         &mut replays,
     );
@@ -1352,7 +1228,6 @@ fn a_claim_the_request_package_does_not_hold_settles_failed() {
     let record = settle_state_graph(
         instance,
         &method(ModelCheckLimits::default()),
-        &foreign.package_id().record(),
         &foreign_subject,
         world.claim("ReachesTwo"),
         &Cancel::new(),
@@ -1360,7 +1235,6 @@ fn a_claim_the_request_package_does_not_hold_settles_failed() {
             replays += 1;
             Ok(GraphReplayResult {
                 settlement: GraphReplaySettlement::Reproduced,
-                package_id: foreign.package_id(),
                 evaluated_predicates: Vec::new(),
                 closure_nodes: None,
                 first_target: None,
@@ -1386,7 +1260,7 @@ fn a_cancelled_request_settles_incomplete_before_any_replay() {
     ));
     let instance = &result.items[0][0];
     let mut replays = 0;
-    let live = Settling::of(&world, no_samples());
+    let live = Settling::of(no_samples());
     let proved = settle_with(&world, AB, "ReachesTwo", instance, &live, &mut replays);
     assert!(
         matches!(proved.value, TerminalValue::Proved { .. }),
@@ -1395,7 +1269,7 @@ fn a_cancelled_request_settles_incomplete_before_any_replay() {
     );
     assert_eq!(replays, 1);
 
-    let cancelled = Settling::of(&world, no_samples());
+    let cancelled = Settling::of(no_samples());
     cancelled.cancel.cancel(CancelCause::Requested);
     let mut replays = 0;
     let record = settle_with(&world, AB, "ReachesTwo", instance, &cancelled, &mut replays);

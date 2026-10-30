@@ -2,46 +2,30 @@
 //! FR-141 declaration-qualified enumerations and their I04 nominal node
 //! identities.
 //!
-//! A declaration node key is the SHA-256 of the RFC 8785 JCS encoding of its
-//! `quire.enum-declaration-node/v1` preimage; a member node key hashes
-//! `quire.enum-member-node/v1`. The strict reader recomputes both from the
-//! admitted content and refuses a retained key that no longer matches with
-//! `invalid_semantic_graph`. Display text and source loci are not part of
-//! either preimage.
-//!
-//! This module computes both preimage digests ([`NodeIdentityPreimage`]) and
-//! compares a retained key's bytes with them at admission. It never
-//! constructs a `NodeKey`: only `check` mints one (ADR-011 §6.1, ADR-013
-//! O-04). A member preimage's `declaration_node_id` stays a
-//! [`WireNodeId`] until `admit_member` resolves it against the admitted
-//! declaration's key.
+//! A declaration's node key and a member's node key are the structural
+//! [`NodeKey`]s the check stage carries; nothing here hashes or recomputes
+//! one. Admission checks semantic well-formedness and the owner join, and a
+//! member preimage's `declaration_node_id` must be the admitted
+//! declaration's own key.
 //!
 //! The runtime half -- the structural [`EnumDeclaration`], [`EnumValue`],
 //! the member index and the FR-141 comparison -- is
 //! `quire_semantic_value::enumeration` (ADR-011 §6.1 layer SV).
-//! [`AdmittedEnumDeclaration`] pairs that declaration with the preimage its
-//! key was verified against.
+//! [`AdmittedEnumDeclaration`] pairs that declaration with the owner and
+//! qualified name it was admitted with.
 
-use quire_canonical::FixedShape;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 use super::semantic_node::{
-    is_qualified_name, preimage_bytes, preimage_digest, refuse, retains, CanonicalOwner,
-    NodeIdDocument, NodeIdentityPreimage, NodeOwner, NominalRefusal, OwnerSelection,
+    is_qualified_name, refuse, NodeIdDocument, NodeOwner, NominalRefusal, OwnerSelection,
 };
-use qsl_foundation::digest::WireNodeId;
-use qsl_foundation::IdentityLimits;
 use quire_exact::is_identifier;
-use quire_exact::NodeKey;
-use quire_exact::VariantId;
+use quire_exact::{EmptyVariantName, InvalidNodeKey, NodeKey, PathSegment, VariantId};
 use quire_semantic_value::enumeration::{is_member_list, EnumDeclaration, EnumValue};
-use quire_semantic_value::semantic_node::{
-    CanonicalNodeId, InvalidSemanticGraph, SemanticGraphCause,
-};
+use quire_semantic_value::semantic_node::{InvalidSemanticGraph, SemanticGraphCause};
 
 const DECLARATION_VERSION: &str = "quire.enum-declaration-node/v1";
 const MEMBER_VERSION: &str = "quire.enum-member-node/v1";
-const UNION_MEMBER_VERSION: &str = "quire.union-member-node/v1";
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -59,30 +43,6 @@ struct MemberDocument {
     version: String,
     declaration_node_id: NodeIdDocument,
     case: String,
-}
-
-// JCS preimages: fields are declared in ascending key order (see `semantic_node`).
-#[derive(Serialize, FixedShape)]
-struct CanonicalDeclaration<'a> {
-    members: &'a [String],
-    ordered: bool,
-    owner: CanonicalOwner<'a>,
-    qualified_declaration: &'a [String],
-    version: &'static str,
-}
-
-#[derive(Serialize, FixedShape)]
-struct CanonicalMember<'a> {
-    case: &'a str,
-    declaration_node_id: CanonicalNodeId,
-    version: &'static str,
-}
-
-#[derive(Serialize, FixedShape)]
-struct CanonicalUnionMember<'a> {
-    declaration_node_id: CanonicalNodeId,
-    member: &'a str,
-    version: &'static str,
 }
 
 /// A `quire.enum-declaration-node/v1` preimage that satisfies the preimage
@@ -141,6 +101,15 @@ impl EnumDeclarationPreimage {
         })
     }
 
+    /// The declaration's structural node key: its owner and qualified name.
+    ///
+    /// # Errors
+    ///
+    /// [`InvalidNodeKey`] when the key cannot be built.
+    pub fn key(&self) -> Result<NodeKey, InvalidNodeKey> {
+        self.owner.declaration_key(&self.qualified_declaration)
+    }
+
     /// The owner projection.
     pub fn owner(&self) -> &NodeOwner {
         &self.owner
@@ -162,44 +131,10 @@ impl EnumDeclarationPreimage {
     }
 }
 
-impl EnumDeclarationPreimage {
-    fn canonical(&self) -> CanonicalDeclaration<'_> {
-        canonical_declaration(
-            &self.owner,
-            &self.qualified_declaration,
-            self.ordered,
-            &self.members,
-        )
-    }
-}
-
-/// The JCS form of a `quire.enum-declaration-node/v1` preimage, from its
-/// parts: one statement for the preimage and the admitted declaration.
-fn canonical_declaration<'a>(
-    owner: &'a NodeOwner,
-    qualified_declaration: &'a [String],
-    ordered: bool,
-    members: &'a [String],
-) -> CanonicalDeclaration<'a> {
-    CanonicalDeclaration {
-        members,
-        ordered,
-        owner: owner.canonical(),
-        qualified_declaration,
-        version: DECLARATION_VERSION,
-    }
-}
-
-impl NodeIdentityPreimage for EnumDeclarationPreimage {
-    fn digest(&self, identity: IdentityLimits) -> Result<[u8; 32], NominalRefusal> {
-        preimage_digest(&self.canonical(), identity)
-    }
-}
-
 /// A `quire.enum-member-node/v1` preimage that satisfies the preimage schema.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EnumMemberPreimage {
-    declaration: WireNodeId,
+    declaration: NodeKey,
     case: String,
 }
 
@@ -211,7 +146,7 @@ impl EnumMemberPreimage {
             .map_err(|_| refuse(SemanticGraphCause::NonCanonicalPreimage))?;
         let declaration = document
             .declaration_node_id
-            .wire_id()
+            .key()
             .filter(|_| document.version == MEMBER_VERSION && is_identifier(&document.case))
             .ok_or(refuse(SemanticGraphCause::NonCanonicalPreimage))?;
         Ok(Self {
@@ -232,15 +167,23 @@ impl EnumMemberPreimage {
         if !is_identifier(&case) {
             return Err(refuse(SemanticGraphCause::NonCanonicalPreimage));
         }
-        Ok(Self {
-            declaration: WireNodeId::from_digest(*declaration.as_bytes()),
-            case,
-        })
+        Ok(Self { declaration, case })
+    }
+
+    /// The member's structural node key (FR-322, a derived node): the
+    /// declaration's package, the path `["value", "enum_value", <declaration
+    /// node>, <case>]` and ordinal 0.
+    ///
+    /// # Errors
+    ///
+    /// [`InvalidNodeKey`] when the key cannot be built.
+    pub fn key(&self) -> Result<NodeKey, InvalidNodeKey> {
+        enum_value_key(&self.declaration, &self.case)
     }
 
     /// The referenced declaration node id, as read.
-    pub fn declaration(&self) -> WireNodeId {
-        self.declaration
+    pub fn declaration(&self) -> &NodeKey {
+        &self.declaration
     }
 
     /// The member case name.
@@ -249,22 +192,9 @@ impl EnumMemberPreimage {
     }
 }
 
-impl NodeIdentityPreimage for EnumMemberPreimage {
-    fn digest(&self, identity: IdentityLimits) -> Result<[u8; 32], NominalRefusal> {
-        preimage_digest(
-            &CanonicalMember {
-                case: &self.case,
-                declaration_node_id: CanonicalNodeId::from(*self.declaration.as_bytes()),
-                version: MEMBER_VERSION,
-            },
-            identity,
-        )
-    }
-}
-
 /// An admitted enum declaration node: the runtime [`EnumDeclaration`]
-/// (key, ordering, members) together with the rest of the preimage its key
-/// was verified against (owner and qualified name). The members are held
+/// (key, ordering, members) together with the rest of its declaration
+/// (owner and qualified name). The members are held
 /// once, by the runtime declaration.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AdmittedEnumDeclaration {
@@ -276,12 +206,11 @@ pub struct AdmittedEnumDeclaration {
 impl AdmittedEnumDeclaration {
     /// Admit a declaration node whose graph retains `key`.
     ///
-    /// Order: semantic well-formedness, owner join, then key recomputation.
+    /// Order: semantic well-formedness, then the owner join.
     pub fn admit(
         preimage: EnumDeclarationPreimage,
         key: NodeKey,
         owners: &OwnerSelection,
-        identity: IdentityLimits,
     ) -> Result<Self, NominalRefusal> {
         let EnumDeclarationPreimage {
             owner,
@@ -293,24 +222,11 @@ impl AdmittedEnumDeclaration {
         if !owners.contains(&owner) {
             return Err(refuse(SemanticGraphCause::OwnerNotSelected).into());
         }
-        let admitted = Self {
+        Ok(Self {
             declaration,
             owner,
             qualified_declaration,
-        };
-        if preimage_digest(&admitted.canonical(), identity)? != *key.as_bytes() {
-            return Err(refuse(SemanticGraphCause::StaleKey).into());
-        }
-        Ok(admitted)
-    }
-
-    fn canonical(&self) -> CanonicalDeclaration<'_> {
-        canonical_declaration(
-            &self.owner,
-            &self.qualified_declaration,
-            self.declaration.is_ordered(),
-            self.declaration.members(),
-        )
+        })
     }
 
     /// The declaration node key.
@@ -343,109 +259,78 @@ impl AdmittedEnumDeclaration {
         }
     }
 
-    /// The RFC 8785 bytes whose SHA-256 is the declaration's node key: the
-    /// checked graph node's preimage (FR-092 rule 1).
-    pub(crate) fn preimage_bytes(
-        &self,
-        identity: IdentityLimits,
-    ) -> Result<Vec<u8>, NominalRefusal> {
-        preimage_bytes(&self.canonical(), identity)
-    }
-
     /// Admit a member node of this declaration whose graph retains `key`.
     pub fn admit_member(
         &self,
         preimage: &EnumMemberPreimage,
         key: NodeKey,
-        identity: IdentityLimits,
     ) -> Result<EnumValue, NominalRefusal> {
-        // Resolve the member's wire declaration id by lookup against this
-        // declaration's own key (ADR-013 O-04).
-        if preimage.declaration.as_bytes() != self.key().as_bytes() {
+        // The member's declaration id must be this declaration's own key.
+        if preimage.declaration != self.key() {
             return Err(refuse(SemanticGraphCause::ForeignDeclaration).into());
         }
-        let member = self.declaration.member(&preimage.case, key)?;
-        if !retains(key, preimage, identity)? {
-            return Err(refuse(SemanticGraphCause::StaleKey).into());
-        }
-        Ok(member)
+        Ok(self.declaration.member(&preimage.case, key)?)
     }
 }
 
-/// The byte limit a variant id's preimage encodes under: none. The preimage
-/// is one case name (an identifier for a source enum, any non-empty name for a
-/// model variant type) and a 32-byte digest, so it is bounded by the case name
-/// admission already bounded, and no setting could raise a bound here.
-const VARIANT_ID_LIMITS: IdentityLimits = IdentityLimits {
-    input_bytes: u64::MAX,
-};
+/// The key of the `enum_value` node of `case` of the declaration keyed by
+/// `declaration` (FR-322, a derived node): the declaration's package, the
+/// path `["value", "enum_value", <declaration node>, <case>]`, ordinal 0.
+/// Any non-empty case name is kept as written (a model variant type's).
+///
+/// # Errors
+///
+/// [`InvalidNodeKey`] when the key cannot be built.
+pub fn enum_value_key(declaration: &NodeKey, case: &str) -> Result<NodeKey, InvalidNodeKey> {
+    enum_value_key_in(declaration.view().package(), declaration, case)
+}
+
+/// [`enum_value_key`] under `package`, the importing package: a model
+/// variant type's declaration sits in the model's package, its cases in the
+/// package that imports it.
+///
+/// # Errors
+///
+/// [`InvalidNodeKey`] when the key cannot be built.
+pub fn enum_value_key_in(
+    package: &str,
+    declaration: &NodeKey,
+    case: &str,
+) -> Result<NodeKey, InvalidNodeKey> {
+    NodeKey::new(
+        package.to_owned(),
+        vec![
+            PathSegment::Text("value".to_owned()),
+            PathSegment::Text("enum_value".to_owned()),
+            PathSegment::Node(declaration.clone()),
+            PathSegment::Text(case.to_owned()),
+        ],
+        0,
+    )
+}
 
 /// Mint the FR-141/OQ-F enum-member `VariantId` of a member `case` of the
-/// enum declaration keyed by `declaration`: the node-key digest over
-/// `{version: quire.enum-member-node/v1, declaration_node_id, case}`
-/// (ADR-013 O-14 "Sum types", OQ-F ruling). This is the exact preimage
-/// [`EnumMemberPreimage::digest`] recomputes at admission over a retained
-/// key; this function mints one directly for a caller with no already-
-/// admitted member node to retain a key from, such as `check::identity`'s
-/// checked-type-node conversion (ADR-013 C-26). Replaces the private
-/// `"sum-variant-member"` preimage `check/identity.rs:570` carried before
-/// this change, which did not conform to FR-141's member identity.
-pub fn mint_variant_id(declaration: NodeKey, case: &str) -> VariantId {
-    let digest = preimage_digest(
-        &CanonicalMember {
-            case,
-            declaration_node_id: declaration.into(),
-            version: MEMBER_VERSION,
-        },
-        VARIANT_ID_LIMITS,
-    )
-    .expect(
-        "a declaration NodeKey and a case name are always representable as \
-         canonical JSON under an unbounded input limit",
-    );
-    VariantId::from_digest(digest)
+/// enum declaration keyed by `declaration`: the declaration node and the exact
+/// case name. The member's own node key ([`EnumMemberPreimage::key`]) is that
+/// declaration's path plus the same case name (ADR-013 O-14 "Sum types").
+///
+/// # Errors
+///
+/// [`EmptyVariantName`] for an empty case name.
+pub fn mint_variant_id(declaration: NodeKey, case: &str) -> Result<VariantId, EmptyVariantName> {
+    VariantId::new(declaration, case)
 }
 
-/// The digest of QSpec FR-441's union-member preimage
-/// `{version: quire.union-member-node/v1, declaration_node_id, member}` of
-/// `member` of the union whose declaration node id is `declaration`.
-pub(crate) fn union_member_digest(declaration: NodeKey, member: &str) -> [u8; 32] {
-    preimage_digest(
-        &CanonicalUnionMember {
-            declaration_node_id: declaration.into(),
-            member,
-            version: UNION_MEMBER_VERSION,
-        },
-        VARIANT_ID_LIMITS,
-    )
-    .expect(
-        "a declaration NodeKey and a member name are always representable as \
-         canonical JSON under an unbounded input limit",
-    )
-}
-
-/// The `VariantId` of a union member: its member `key`'s bytes retyped with
-/// no fresh computation, as [`mint_variant_id`] retypes an enum member's key.
-/// `key` is minted by `check` (`mint_union_member_key`).
-pub fn mint_union_variant_id(key: NodeKey) -> VariantId {
-    VariantId::from_digest(*key.as_bytes())
-}
-
-/// The RFC 8785 bytes of the `quire.enum-member-node/v1` preimage of member
-/// `case` of the enum declaration keyed by `declaration`: the checked graph
-/// node's preimage (FR-092 rule 1), whose SHA-256 is [`mint_variant_id`]'s
-/// digest.
-pub(crate) fn member_preimage_bytes(
+/// The `VariantId` of member `member` of the union whose declaration node is
+/// `declaration` (QSpec FR-441): the union declaration and the exact member
+/// name.
+///
+/// # Errors
+///
+/// [`EmptyVariantName`] for an empty member name.
+pub fn mint_union_variant_id(
     declaration: NodeKey,
-    case: &str,
-    identity: IdentityLimits,
-) -> Result<Vec<u8>, NominalRefusal> {
-    preimage_bytes(
-        &CanonicalMember {
-            case,
-            declaration_node_id: declaration.into(),
-            version: MEMBER_VERSION,
-        },
-        identity,
-    )
+    member: &str,
+) -> Result<VariantId, EmptyVariantName> {
+    VariantId::new(declaration, member)
 }

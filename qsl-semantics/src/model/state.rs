@@ -19,6 +19,7 @@ use quire_semantic_value::relationship_extent::RelationshipExtent;
 use crate::model::accounting::ModelNormalizationLimits;
 use crate::model::domain_package::{DomainPackageRecord, DomainPackageRef};
 use crate::model::index::ModelIndex;
+use crate::model::intake::PackageInput;
 use crate::model::normalize::EffectiveView;
 use crate::model::observation::{
     admit_initial_state, model_views, observe_state, state_fields, state_reference,
@@ -159,7 +160,7 @@ fn violation_at(
         Value::Composite(composite) => {
             let (name, rest) = rest.split_first()?;
             let quire_semantic_value::declaration::CompositeShape::Record(fields) =
-                types.composite(composite.declaration())?.shape()
+                types.composite(composite.declaration().clone())?.shape()
             else {
                 return None;
             };
@@ -334,7 +335,7 @@ impl StateModel {
     pub fn new(
         model_selections: &[DomainPackageRef],
         types: &TypeEnvironment,
-        packages: &BTreeMap<[u8; 32], Vec<u8>>,
+        packages: &PackageInput,
         limits: ModelNormalizationLimits,
     ) -> Result<Self, AdmissionFailure> {
         Ok(Self {
@@ -370,7 +371,7 @@ impl StateModel {
     /// The first [`AdmissionFailure`] in check order.
     pub fn admit_initial(
         &self,
-        provision: &BTreeMap<[u8; 32], Vec<u8>>,
+        provision: &BTreeMap<DocumentRef, Vec<u8>>,
         selected: &DocumentRef,
         limits: ObservationLimits,
     ) -> Result<(ModelState, SelectedAnchor), AdmissionFailure> {
@@ -395,9 +396,6 @@ impl StateModel {
     /// components in an enumerated value domain (FR-120, FR-215). The
     /// record's slots stay name-sorted.
     pub fn record_orders(&self) -> BTreeMap<quire_exact::NodeKey, Vec<String>> {
-        let unbounded = qsl_foundation::IdentityLimits {
-            input_bytes: u64::MAX,
-        };
         let mut orders = BTreeMap::new();
         for view in &self.views {
             let records = &view.view.domain_package().records;
@@ -405,7 +403,7 @@ impl StateModel {
                 let DomainPackageRecord::RecordValueType(declared) = record else {
                     continue;
                 };
-                let Ok(Some(node)) = crate::check::record_node_key(record, unbounded) else {
+                let Ok(Some(node)) = crate::check::record_node_key(record) else {
                     continue;
                 };
                 let mut fields: Vec<(usize, &str)> = records
@@ -488,7 +486,7 @@ impl StateModel {
     pub fn type_identity(&self, key: &DeclarationKey) -> Option<EffectiveId> {
         self.views
             .iter()
-            .find_map(|view| view.view.type_identities().get(key).copied())
+            .find_map(|view| view.view.type_identities().get(key).cloned())
     }
 
     /// The declaration key of the type whose effective identity is
@@ -496,7 +494,7 @@ impl StateModel {
     pub fn type_key(&self, identity: EffectiveId) -> Option<&DeclarationKey> {
         self.views
             .iter()
-            .find_map(|view| view.declaration_key(identity))
+            .find_map(|view| view.declaration_key(identity.clone()))
     }
 
     /// Whether the object type `key` is declared abstract.

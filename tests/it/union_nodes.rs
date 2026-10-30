@@ -8,12 +8,11 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use ix_trace_rs::trace;
 use qsl_foundation::bound::DomainKind;
-use qsl_foundation::digest::ByteDigest;
 use qsl_foundation::{BackendId, Setting, SourceIdentity};
 use qsl_replay::spine::DependencyInput;
 use qsl_replay::{compile_package, ReplayLimits, StageLimits};
 use qsl_route::request::items_from_requirements;
-use qsl_route::{BackendDescriptor, Candidate, ManifestDigest, Mode, ProviderOrigin, Registry};
+use qsl_route::{BackendDescriptor, Candidate, Mode, ProviderOrigin, Registry};
 use qsl_semantics::check::Capability;
 use serde_json::Value;
 
@@ -38,10 +37,10 @@ fn nodes(wire: &Value) -> &[Value] {
 }
 
 /// TC-827 step 2: the retained source recompiles, through the facade replay
-/// recompiles with, to the emitted `package_id`.
+/// recompiles with, to the emitted package bytes.
 #[trace("FR-320-AC-1", "TC-827")]
 #[test]
-fn a_union_unit_recompiles_to_its_emitted_package_id() {
+fn a_union_unit_recompiles_to_its_emitted_package() {
     let original = emitted(
         identity("1"),
         "unit.native",
@@ -61,20 +60,19 @@ fn a_union_unit_recompiles_to_its_emitted_package_id() {
 
     let stages: StageLimits = [(Setting::S1InputBytes, 1 << 20)].into_iter().collect();
     let recompiled = compile_package(
-        identity("2"),
-        "unit.native",
-        original.sources()[0].text().as_bytes(),
-        [],
+        qsl_replay::CompileUnit {
+            source: identity("2"),
+            package_name: crate::TEST_PACKAGE_NAME.to_owned(),
+            path: "unit.native",
+            bytes: original.sources()[0].text().as_bytes(),
+        },
+        std::iter::empty::<&[u8]>(),
         &DependencyInput::default(),
         stages,
         ReplayLimits::default(),
     )
     .expect("the retained source recompiles");
     assert_eq!(recompiled.bytes(), original.package().bytes());
-    assert_eq!(
-        recompiled.package_id(),
-        original.package().package_id().record()
-    );
 }
 
 /// TC-828 step 1: `area`'s one claim, the multiplication in the `Rect` arm,
@@ -98,7 +96,6 @@ fn a_claim_inside_a_case_arm_is_requested_as_a_value_validity_item() {
     let descriptor = BackendDescriptor::new(
         Candidate::new(BackendId::new("kani")),
         ProviderOrigin::Linked,
-        ManifestDigest::from_digest(ByteDigest::of(b"kani").as_bytes()),
         [(Capability::ValueValidity, Mode::Bounded)],
         Some(BTreeSet::from([DomainKind::Collection])),
         None,
@@ -118,6 +115,7 @@ fn a_claim_inside_a_case_arm_is_requested_as_a_value_validity_item() {
     let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
     let graph = qsl_semantics::check::PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        crate::TEST_PACKAGE_NAME.to_string(),
         unit,
         Vec::new(),
         Vec::new(),
@@ -131,10 +129,11 @@ fn a_claim_inside_a_case_arm_is_requested_as_a_value_validity_item() {
     };
     assert_eq!(item.kind(), Capability::ValueValidity);
 
-    let node = item.node().to_string();
+    let node =
+        qsl_foundation::node_wire::node_key_to_json(item.node()).expect("a node id serializes");
     let written = nodes(&wire)
         .iter()
-        .find(|candidate| candidate["node_id"]["digest"] == node.as_str())
+        .find(|candidate| candidate["node_id"] == node)
         .expect("the item's node is written to the package");
     assert_eq!(written["semantic_form"], "binary");
     let case = nodes(&wire)
@@ -144,7 +143,6 @@ fn a_claim_inside_a_case_arm_is_requested_as_a_value_validity_item() {
     let names_it = case["dependencies"]
         .as_array()
         .expect("dependencies")
-        .iter()
-        .any(|dependency| dependency["digest"] == node.as_str());
+        .contains(&node);
     assert!(names_it, "the case names its arm's multiplication");
 }

@@ -56,7 +56,7 @@ pub(crate) struct StepRelationInput<'a> {
 }
 
 /// A lowered hyper clause's keys.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct LoweredHyperClause {
     /// The `claim`/`hyperproperty` node: the clause's identity.
     pub(crate) key: NodeKey,
@@ -74,7 +74,7 @@ pub(crate) struct LoweredStepRelation {
     body: BodyTerm,
     /// The source declaration identifier.
     declaration: Identifier,
-    /// The source owner included in its identity.
+    /// The source owner retained by the claim node.
     owner: super::SourceOwner,
     /// The relation's claim location.
     location: Location,
@@ -103,7 +103,7 @@ impl Lowering<'_> {
         for (alias, model) in input.subjects {
             subjects.push(GroupMember::Binding(Binding::new(
                 alias.clone(),
-                LeafTerm::reference(*model),
+                LeafTerm::reference(model.clone()),
             )));
         }
 
@@ -125,9 +125,9 @@ impl Lowering<'_> {
                 return Err(stage_fault(&at, "execution-anchor-names-operation"));
             }
             let binding = self.operation_anchor(anchor, None, &at)?;
-            self.record(binding.anchor, OccurrenceRole::Anchor, at.clone());
+            self.record(binding.anchor.clone(), OccurrenceRole::Anchor, at.clone());
             let mut parameters = Vec::new();
-            let receiver_type = ValueType::Reference(anchor.declaring);
+            let receiver_type = ValueType::Reference(anchor.declaring.clone());
             let mut parameter_specs = vec![("self".to_owned(), receiver_type)];
             if let Some(value_type) = anchor.operation.result() {
                 parameter_specs.push(("result".to_owned(), value_type.clone()));
@@ -137,17 +137,18 @@ impl Lowering<'_> {
             for (parameter_index, (name, value_type)) in parameter_specs.into_iter().enumerate() {
                 let parameter_at = claim.clone();
                 let semantic_type = self.binder_type(&value_type, None, &parameter_at)?;
-                let key = self.parameter(&name, next_level, semantic_type, &parameter_at)?;
+                let key =
+                    self.parameter(&name, next_level, semantic_type.clone(), &parameter_at)?;
                 self.record(semantic_type, OccurrenceRole::Type, parameter_at.clone());
                 self.record_binder(
                     super::BinderSite {
                         binder: parameter_at.clone(),
                         slot: next_level,
                     },
-                    key,
+                    key.clone(),
                 );
-                parameters.push(LeafTerm::reference(key));
-                all_parameters.push(key);
+                parameters.push(LeafTerm::reference(key.clone()));
+                all_parameters.push(key.clone());
                 if parameter_index == 0 || (parameter_index > 1 || !has_result) {
                     code_roots.push(key);
                 }
@@ -167,8 +168,12 @@ impl Lowering<'_> {
                     continue;
                 }
                 match form.kind {
-                    qsl_forms::StateClauseKind::Precondition => preconditions.push(node.key),
-                    qsl_forms::StateClauseKind::Postcondition => postconditions.push(node.key),
+                    qsl_forms::StateClauseKind::Precondition => {
+                        preconditions.push(node.key.clone())
+                    }
+                    qsl_forms::StateClauseKind::Postcondition => {
+                        postconditions.push(node.key.clone())
+                    }
                     qsl_forms::StateClauseKind::Invariant
                     | qsl_forms::StateClauseKind::Constraint => {}
                 }
@@ -213,7 +218,7 @@ impl Lowering<'_> {
                 if form.kind == qsl_forms::StateClauseKind::Invariant
                     && form.selection.alias == *alias
                 {
-                    invariants.push(node.key);
+                    invariants.push(node.key.clone());
                 }
             }
             invariants.sort();
@@ -224,15 +229,15 @@ impl Lowering<'_> {
         }
 
         let mut binders_scope = Vec::with_capacity(all_parameters.len());
-        for (slot, parameter) in all_parameters.iter().copied().enumerate() {
+        for (slot, parameter) in all_parameters.iter().cloned().enumerate() {
             let semantic_type = self
                 .graph
-                .node(parameter)
-                .and_then(|node| node.content.semantic_type)
+                .node(parameter.clone())
+                .and_then(|node| node.content.semantic_type.clone())
                 .ok_or_else(|| stage_fault(&claim, "step-relation-parameter-has-type"))?;
             binders_scope.push(Binder {
                 slot,
-                parameter,
+                parameter: parameter.into(),
                 semantic_type,
             });
         }
@@ -298,18 +303,19 @@ impl Lowering<'_> {
                 .get(slot.trace)
                 .ok_or_else(|| stage_fault(&site, "slot-has-a-trace"))?;
             let name = format!("slot_s{}_s{}", esc(&parameter.name), esc(&trace.variable));
-            let semantic_type = self.binder_type(&ValueType::Reference(*object), None, &site)?;
-            let node = self.parameter(&name, level, semantic_type, &site)?;
-            self.record(semantic_type, OccurrenceRole::Type, site);
+            let semantic_type =
+                self.binder_type(&ValueType::Reference(object.clone()), None, &site)?;
+            let node = self.parameter(&name, level, semantic_type.clone(), &site)?;
+            self.record(semantic_type.clone(), OccurrenceRole::Type, site);
             scope.push(Binder {
                 slot: level,
-                parameter: node,
-                semantic_type,
+                parameter: node.into(),
+                semantic_type: semantic_type.into(),
             });
         }
         let over = scope
             .first()
-            .map(|binder| binder.parameter)
+            .map(|binder| binder.parameter.clone())
             .ok_or_else(|| stage_fault(&claim, "clause-has-an-atom-slot"))?;
 
         // The body wrapper over the clause's formula.
@@ -334,7 +340,7 @@ impl Lowering<'_> {
                 conditions: &conditions,
                 root_site: &wrapper_at,
             },
-            boolean,
+            boolean.clone(),
             &scope,
         )?;
         let law = OperationLaw {
@@ -347,7 +353,7 @@ impl Lowering<'_> {
             &wrapper_at,
             NodeTag::Temporal,
             "temporal_clause",
-            Some(boolean),
+            Some(boolean.clone()),
             None,
             BodyTerm::application(
                 Operator::Temporal,
@@ -355,9 +361,9 @@ impl Lowering<'_> {
                     laws: vec![law],
                     ..Operation::plain("quire.op.temporal.clause")
                 },
-                boolean,
+                boolean.clone(),
                 vec![
-                    MemberTerm::reference(over),
+                    MemberTerm::reference(super::require_admitted(over, &wrapper_at)?),
                     MemberTerm::Leaf(clock),
                     MemberTerm::Group(GroupTerm::new(vec![GroupMember::Binding(Binding::new(
                         "kind", kind,
@@ -368,14 +374,14 @@ impl Lowering<'_> {
                 ],
             ),
         )?;
-        self.record(wrapper, OccurrenceRole::Claim, wrapper_at);
+        self.record(wrapper.clone(), OccurrenceRole::Claim, wrapper_at);
 
         // The seven bindings of QSpec FR-402, in order.
         let domain = self.text_literal("behaviours", &claim)?;
         let subjects = self.subjects(clause, &claim)?;
         let mut parameters = Vec::with_capacity(clause.parameters().len());
         for (parameter, object) in clause.parameters().iter().zip(clause.parameter_objects()) {
-            let node = self.object_node(*object, &claim)?;
+            let node = self.object_node(object.clone(), &claim)?;
             parameters.push(GroupMember::Binding(Binding::new(
                 parameter.name.clone(),
                 LeafTerm::reference(node),
@@ -383,7 +389,7 @@ impl Lowering<'_> {
         }
         let quantifiers = self.quantifiers(clause, &claim)?;
         let conjuncts = self.conjuncts(input)?;
-        let align_skip = GroupTerm::references(input.align_skip.iter().copied());
+        let align_skip = GroupTerm::references(input.align_skip.iter().cloned());
         let key = self.insert(
             &claim,
             NodeTag::Claim,
@@ -403,7 +409,7 @@ impl Lowering<'_> {
                 MemberTerm::bound("body", LeafTerm::reference(wrapper)),
             ]),
         )?;
-        self.record(key, OccurrenceRole::Claim, claim);
+        self.record(key.clone(), OccurrenceRole::Claim, claim);
         Ok(LoweredHyperClause { key })
     }
 
@@ -422,7 +428,7 @@ impl Lowering<'_> {
                 .iter()
                 .zip(clause.parameter_objects())
                 .find(|(parameter, _)| &parameter.alias == alias)
-                .map(|(_, object)| *object)
+                .map(|(_, object)| object.clone())
                 .ok_or_else(|| stage_fault(claim, "alias-binds-a-parameter"))?;
             let node = self.object_node(object, claim)?;
             members.push(GroupMember::Binding(Binding::new(
@@ -532,12 +538,12 @@ impl Lowering<'_> {
                     .slot_type()
                     .ok_or_else(|| stage_fault(&slot_at, "slot-has-a-type"))?;
                 let semantic_type = self.binder_type(&slot_type, None, &slot_at)?;
-                let parameter = self.parameter(&name, level, semantic_type, &slot_at)?;
-                self.record(semantic_type, OccurrenceRole::Type, slot_at);
+                let parameter = self.parameter(&name, level, semantic_type.clone(), &slot_at)?;
+                self.record(semantic_type.clone(), OccurrenceRole::Type, slot_at);
                 scope.push(Binder {
                     slot: level,
-                    parameter,
-                    semantic_type,
+                    parameter: parameter.into(),
+                    semantic_type: semantic_type.into(),
                 });
             }
             let mut binders = Binders::new(&lowered.slot_names, &scope);
@@ -549,15 +555,15 @@ impl Lowering<'_> {
 }
 
 /// Finish the step-relation node after the checked abstraction relation is
-/// available. The relation key is late-bound because QSL computes it from
-/// the assembled graph's exact model declaration nodes.
+/// available. Its declared structural key uses the checked package name and
+/// the relation's declared path.
 #[string_edge]
 pub(crate) fn finish_step_relation(
     mut lowered: LoweredStepRelation,
     relation: &CheckedModelRelation,
     abstraction: Option<&CheckedAbstractionRelation>,
     abstraction_node: Option<NodeKey>,
-    identity: qsl_foundation::IdentityLimits,
+    package_name: &str,
 ) -> Result<(super::SemanticNode, Vec<NodeKey>), CheckRefusal> {
     let code_roots = lowered.code_roots.clone();
     lowered.bound_implementations = relation
@@ -634,32 +640,31 @@ pub(crate) fn finish_step_relation(
                 "step-relation-implementation-is-last",
             ));
         }
-        implementation.value =
-            BindingValue::Leaf(LeafTerm::reference(abstraction_node.ok_or_else(|| {
+        implementation.value = BindingValue::Leaf(LeafTerm::reference(
+            abstraction_node.clone().ok_or_else(|| {
                 stage_fault(
                     &lowered.location,
                     "bound-step-relation-has-abstraction-node",
                 )
-            })?));
+            })?,
+        ));
     }
     let content = super::NodeContent {
         owner_model: None,
         node_tag: NodeTag::Claim,
         semantic_form: "step_relation",
-        semantic_type: Some(lowered.boolean),
+        semantic_type: Some(lowered.boolean.into()),
         declaration: Some(vec![lowered.declaration]),
         owner: Some(super::Owner::Source(lowered.owner)),
         body: lowered.body,
     };
-    let keyed = super::node_key(&content.input(), identity)
-        .map_err(|refusal| super::preimage_refusal(&lowered.location, refusal))?;
+    let key = super::admitted_step_relation_key(package_name, &content, &lowered.location)?;
     Ok((
         super::SemanticNode {
-            key: keyed.key,
-            preimage: keyed.preimage,
+            key,
             recursion: None,
-            content,
             nominal: None,
+            content,
         },
         code_roots,
     ))

@@ -45,13 +45,13 @@
 use std::collections::BTreeMap;
 
 use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound, FiniteBoundKind, ProofBound};
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::{ReductionKind, RequestIndex};
 use qsl_semantics::check::{Capability, PathGuard, RequirementRecord};
 use qsl_semantics::family::{ClaimExtent, Requirements, UnsupportedItem};
-use qsl_semantics::library::PackageId;
+use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::observation::DocumentRef;
+use quire_exact::NodeKey;
 use quire_semantic_value::catalog::{CatalogCode, CatalogCoded};
 
 use crate::reductions::Reductions;
@@ -138,8 +138,8 @@ impl ItemKind {
 /// neither.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AbstractSubject {
-    /// The abstract subject's package id.
-    pub package_id: PackageId,
+    /// The abstract subject's library.
+    pub library: LibraryName,
     /// The abstract subject's initial-state snapshots, in order.
     pub initial_states: Vec<DocumentRef>,
 }
@@ -356,7 +356,7 @@ impl RequestItem {
 
     /// The checked node the item requests a claim over: its occurrence's
     /// node.
-    pub fn node(&self) -> WireNodeId {
+    pub fn node(&self) -> &NodeKey {
         self.occurrence.node()
     }
 
@@ -714,7 +714,7 @@ pub struct RequirementItem {
     proof_bounds: Vec<ProofBound>,
     subject_proof_bounds: Vec<ProofBound>,
     model_subject: bool,
-    result_bound: WireNodeId,
+    result_bound: NodeKey,
     conversion_context: Option<OccurrenceKey>,
     path_condition: Vec<PathGuard>,
     candidates: CandidateOutcome,
@@ -755,7 +755,7 @@ impl RequirementItem {
     }
 
     /// The occurrence key's node: the application the claim is over.
-    pub fn node(&self) -> WireNodeId {
+    pub fn node(&self) -> &NodeKey {
         self.occurrence.node()
     }
 
@@ -878,8 +878,8 @@ impl RequirementItem {
     }
 
     /// The record's result bound, as its type node.
-    pub fn result_bound(&self) -> WireNodeId {
-        self.result_bound
+    pub fn result_bound(&self) -> &NodeKey {
+        &self.result_bound
     }
 
     /// The occurrence of the direct narrow that supplies this item's result
@@ -1130,13 +1130,11 @@ mod tests {
     #[trace("TC-583", "FR-159-AC-3")]
     #[test]
     fn a_refinement_item_is_restricted_by_its_requests_reductions() {
-        use crate::ManifestDigest;
         use crate::{BackendDescriptor, Mode, ProviderOrigin};
-        let backend = |id: &str, byte: u8, reductions: &[ReductionKind]| {
+        let backend = |id: &str, reductions: &[ReductionKind]| {
             BackendDescriptor::new(
                 crate::Candidate::new(BackendId::new(id)),
                 ProviderOrigin::Linked,
-                ManifestDigest::from_digest([byte; 32]),
                 [
                     (Capability::Refinement, Mode::Bounded),
                     (Capability::TemporalSatisfaction, Mode::Bounded),
@@ -1164,7 +1162,7 @@ mod tests {
         };
         let mut registry = Registry::new();
         registry
-            .register(backend("plain", 1, &[]))
+            .register(backend("plain", &[]))
             .expect("registered");
         for kind in [Capability::Refinement, Capability::TemporalSatisfaction] {
             assert_eq!(
@@ -1178,7 +1176,7 @@ mod tests {
             (vec!["plain".to_owned()], None)
         );
         registry
-            .register(backend("reducing", 2, &[ReductionKind::Symmetry]))
+            .register(backend("reducing", &[ReductionKind::Symmetry]))
             .expect("registered");
         assert_eq!(
             routed(&registry, Capability::Refinement),
@@ -1186,8 +1184,13 @@ mod tests {
         );
     }
 
-    fn node(fill: u8) -> WireNodeId {
-        WireNodeId::from_digest([fill; 32])
+    fn node(fill: u8) -> NodeKey {
+        NodeKey::new(
+            "fixture",
+            vec![quire_exact::PathSegment::Text(format!("n{fill}"))],
+            0,
+        )
+        .expect("a fixture node key is well formed")
     }
 
     /// The first `expression` occurrence of node 9.
@@ -1535,28 +1538,26 @@ mod tests {
     /// both.
     #[test]
     fn candidates_of_filters_by_the_requirements_fairness() {
-        use crate::{BackendDescriptor, Candidate, ManifestDigest, Mode, ProviderOrigin};
+        use crate::{BackendDescriptor, Candidate, Mode, ProviderOrigin};
         use quire_semantic_value::fairness::FairnessKind::{Strong, Weak};
 
-        let temporal =
-            |id: &str, seed: u8, kinds: &[quire_semantic_value::fairness::FairnessKind]| {
-                BackendDescriptor::new(
-                    Candidate::new(BackendId::new(id)),
-                    ProviderOrigin::Linked,
-                    ManifestDigest::from_digest([seed; 32]),
-                    [(Capability::TemporalSatisfaction, Mode::Unbounded)],
-                    None,
-                    None,
-                )
-                .expect("a well-formed descriptor")
-                .with_fairness_kinds(kinds.iter().copied())
-            };
+        let temporal = |id: &str, kinds: &[quire_semantic_value::fairness::FairnessKind]| {
+            BackendDescriptor::new(
+                Candidate::new(BackendId::new(id)),
+                ProviderOrigin::Linked,
+                [(Capability::TemporalSatisfaction, Mode::Unbounded)],
+                None,
+                None,
+            )
+            .expect("a well-formed descriptor")
+            .with_fairness_kinds(kinds.iter().copied())
+        };
         let mut registry = Registry::new();
         registry
-            .register(temporal("both", 1, &[Weak, Strong]))
+            .register(temporal("both", &[Weak, Strong]))
             .expect("admitted");
         registry
-            .register(temporal("weak-only", 2, &[Weak]))
+            .register(temporal("weak-only", &[Weak]))
             .expect("admitted");
         let item = Requirements::new(Capability::TemporalSatisfaction, ClaimExtent::Bounded);
 
@@ -1583,7 +1584,7 @@ mod tests {
     #[trace("TC-689", "FR-234-AC-3")]
     #[test]
     fn a_punctual_item_is_disposed_unsupported_and_routed_to_no_engine() {
-        use crate::{BackendDescriptor, Candidate, ManifestDigest, Mode, ProviderOrigin};
+        use crate::{BackendDescriptor, Candidate, Mode, ProviderOrigin};
         use qsl_semantics::family::UnsupportedItem;
 
         let mut registry = Registry::new();
@@ -1592,7 +1593,6 @@ mod tests {
                 BackendDescriptor::new(
                     Candidate::new(BackendId::new("zones")),
                     ProviderOrigin::Linked,
-                    ManifestDigest::from_digest([3; 32]),
                     [(Capability::TemporalSatisfaction, Mode::Unbounded)],
                     None,
                     None,
@@ -1639,7 +1639,7 @@ mod tests {
     #[trace("QSpec-TC-342", "QSpec-FR-396-AC-2")]
     #[test]
     fn an_hp4_hyper_form_is_unsupported_and_has_no_route_candidate() {
-        use crate::{BackendDescriptor, Candidate, ManifestDigest, Mode, ProviderOrigin};
+        use crate::{BackendDescriptor, Candidate, Mode, ProviderOrigin};
         use qsl_semantics::check::{HyperForm, HyperUnsupported};
 
         let mut registry = Registry::new();
@@ -1648,7 +1648,6 @@ mod tests {
                 BackendDescriptor::new(
                     Candidate::new(BackendId::new("en1")),
                     ProviderOrigin::Linked,
-                    ManifestDigest::from_digest([4; 32]),
                     [(Capability::TemporalSatisfaction, Mode::Unbounded)],
                     None,
                     None,

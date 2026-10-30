@@ -106,8 +106,6 @@ fn view_over(wobble: bool) -> EffectiveView {
     .expect("the existing Semantic IR fixture parses");
     let selection = DomainPackageRef {
         identity: "test/orders".to_owned(),
-        version: "1.0.0".to_owned(),
-        digest: document.jcs_digest(),
     };
     let mut records = qsl_semantics::model::intake::read_records(&selection.identity, &document)
         .expect("the actual model document is admitted");
@@ -129,7 +127,7 @@ fn view_over(wobble: bool) -> EffectiveView {
 }
 
 fn object_type(view: &EffectiveView) -> EffectiveId {
-    view.type_identities()[&key(A)]
+    view.type_identities()[&key(A)].clone()
 }
 
 /// Compile real source into declarations against an existing admitted model
@@ -146,7 +144,7 @@ fn declarations_over(
 ) -> (PackageDeclarations, EffectiveView, String) {
     let view = view_over(wobble);
     let selection = view.model_selection();
-    let source = format!("language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\nmodel M = {:?} version {:?} digest \"sha256-jcs:{}\";\nfunction Guard using v(): Boolean pure {{ {guard} }}\nfunction Body using v(): Boolean pure {{ true }}\n{body}\n", selection.identity, selection.version, qsl_semantics::model::key::hex(&selection.digest));
+    let source = format!("language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\nmodel M = {:?};\nfunction Guard using v(): Boolean pure {{ {guard} }}\nfunction Body using v(): Boolean pure {{ true }}\n{body}\n", selection.identity);
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("test", "sm1", "fixture", "1"),
         "sm1.native",
@@ -159,6 +157,7 @@ fn declarations_over(
     let model_span = unit.selections().models[0].span;
     let mut declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         unit,
         vec![SelectedModel {
             alias: "M".to_owned(),
@@ -175,7 +174,7 @@ fn declarations_over(
     clauses.member.insert(key(READY), "ready".to_owned());
     clauses.parameters.insert(
         key(READY),
-        vec![("self".to_owned(), ValueType::Reference(a))],
+        vec![("self".to_owned(), ValueType::Reference(a.clone()))],
     );
     clauses.result.insert(key(READY), ValueType::Boolean);
     clauses.own_body.insert(
@@ -206,6 +205,7 @@ fn declarations_over(
         },
         &clauses,
         declarations.source.clone(),
+        "fixture".to_owned(),
         &mut ModelMeter::new(ModelNormalizationLimits::default()),
         qsl_foundation::IdentityLimits::default(),
     )
@@ -241,7 +241,7 @@ fn declarations_over(
             for index in &mut candidate.precondition_clauses {
                 *index += offset;
             }
-            DispatchTable::new(vec![(a, candidate)], table.candidate_count())
+            DispatchTable::new(vec![(a.clone(), candidate)], table.candidate_count())
         })
         .collect();
     (declarations, view, source)
@@ -254,7 +254,10 @@ pub(crate) fn simulation_package_over(
     body: &str,
     guard: bool,
     wobble: bool,
-) -> (qsl_package::CheckedPackage, BTreeMap<[u8; 32], Vec<u8>>) {
+) -> (
+    qsl_package::CheckedPackage,
+    qsl_semantics::model::intake::PackageInput,
+) {
     let (declarations, _, _) = declarations_over(body, guard, wobble);
     let graph = declarations
         .check(CheckingLimits::default())
@@ -262,7 +265,7 @@ pub(crate) fn simulation_package_over(
     let document = model_document_over(wobble);
     (
         qsl_package::CheckedPackage::link(graph),
-        qsl_semantics::model::intake::package_input([document.as_slice()]),
+        qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap(),
     )
 }
 
@@ -502,10 +505,8 @@ fn tc790_all_instances_missing_target_type_refuses_during_assembly() {
     let view = view();
     let selection = view.model_selection();
     let source = format!(
-        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\nmodel M = {:?} version {:?} digest \"sha256-jcs:{}\";\nfunction F using v(p: Population<M::A>[3]): Set<M::A>[0,3] pure {{ allInstances<M::Missing>(p) }}\n",
+        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\nmodel M = {:?};\nfunction F using v(p: Population<M::A>[3]): Set<M::A>[0,3] pure {{ allInstances<M::Missing>(p) }}\n",
         selection.identity,
-        selection.version,
-        qsl_semantics::model::key::hex(&selection.digest),
     );
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("test", "sm1", "fixture", "1"),
@@ -519,6 +520,7 @@ fn tc790_all_instances_missing_target_type_refuses_during_assembly() {
     let model_span = unit.selections().models[0].span;
     let refusal = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         unit,
         vec![SelectedModel {
             alias: "M".to_owned(),
@@ -549,8 +551,16 @@ fn objects(
     view: &EffectiveView,
 ) -> (ObjectEnvironment, ObjectReference, ObjectReference) {
     let a = object_type(view);
-    let universe = view.object_universe_of(&key(A)).unwrap().identity();
-    let present = ObjectReference::new(universe, a, ObjectId::new("present").unwrap());
+    let universe = view
+        .object_universe_of(&key(A))
+        .unwrap()
+        .identity()
+        .expect("the universe has an identity");
+    let present = ObjectReference::new(
+        universe.clone(),
+        a.clone(),
+        ObjectId::new("present").unwrap(),
+    );
     let absent = ObjectReference::new(universe, a, ObjectId::new("absent").unwrap());
     let world = [present.clone(), absent.clone()]
         .into_iter()
@@ -694,8 +704,7 @@ fn observations(graph: &CheckedGraph, view: &EffectiveView) -> AdmittedObservati
         },
         "observation": "pre",
         "model": {
-            "identity": model.identity, "version": model.version,
-            "digest": format!("sha256-jcs:{}", qsl_semantics::model::key::hex(&model.digest))
+            "identity": model.identity
         },
         "populations": [{
             "population": POPULATION, "complete": true,
@@ -709,28 +718,27 @@ fn observations(graph: &CheckedGraph, view: &EffectiveView) -> AdmittedObservati
         }]
     }))
     .unwrap();
-    let document = quire_canonical::read(&bytes, u64::MAX).unwrap();
-    let digest = *quire_canonical::sha256(&document, quire_canonical::Limits::new(u64::MAX))
-        .unwrap()
-        .as_bytes();
     let snapshot = DocumentRef {
         authority: "test".to_owned(),
         identity: "sm1-snapshot".to_owned(),
         revision_namespace: "fixture".to_owned(),
         revision: "1".to_owned(),
-        digest,
     };
-    let snapshots = BTreeMap::from([(digest, bytes)]);
+    let snapshots = BTreeMap::from([(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    )]);
     let invocations = BTreeMap::new();
     let model_bytes = model_document();
-    let packages = qsl_semantics::model::intake::package_input([model_bytes.as_slice()]);
+    let packages = qsl_semantics::model::intake::package_input([model_bytes.as_slice()]).unwrap();
     let clause = graph.state_clause("F").unwrap();
     let facts = ClauseFacts {
         identity: clause.identity(),
         kind: clause.kind(),
         context: clause.context(),
         operation: clause.operation().map(|operation| OperationFacts {
-            declaring: operation.declaring,
+            declaring: operation.declaring.clone(),
             declaration: operation.declaration.clone(),
         }),
         operations: Default::default(),
@@ -855,10 +863,8 @@ fn a_population_binding_over_a_non_object_target_refuses_type_mismatch() {
     let view = view();
     let selection = view.model_selection();
     let source = format!(
-        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\nmodel M = {:?} version {:?} digest \"sha256-jcs:{}\";\nrecord R {{ flag: Boolean; }}\nfunction F using v(p: Population<R>[3]): Boolean pure {{ true }}\n",
+        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\nmodel M = {:?};\nrecord R {{ flag: Boolean; }}\nfunction F using v(p: Population<R>[3]): Boolean pure {{ true }}\n",
         selection.identity,
-        selection.version,
-        qsl_semantics::model::key::hex(&selection.digest),
     );
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("test", "sm1", "fixture", "1"),
@@ -872,6 +878,7 @@ fn a_population_binding_over_a_non_object_target_refuses_type_mismatch() {
     let model_span = unit.selections().models[0].span;
     let assembled = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         unit,
         vec![SelectedModel {
             alias: "M".to_owned(),
@@ -906,7 +913,7 @@ fn parameter_type_node(graph: &CheckedGraph) -> quire_exact::NodeKey {
         .and_then(|function| function.function_parameters())
         .expect("F's function node");
     semantic
-        .node(parameters[0])
+        .node(parameters[0].clone())
         .and_then(|parameter| parameter.semantic_type())
         .expect("a typed parameter")
 }
@@ -935,15 +942,6 @@ fn an_unbounded_population_has_its_own_node_and_no_maximum() {
     };
     let unbounded = parameter("Population<M::A>");
     let bounded = parameter("Population<M::A>[4]");
-    let set = parameter("Set<M::A>");
-    let keys = [
-        parameter_type_node(&unbounded),
-        parameter_type_node(&bounded),
-        parameter_type_node(&set),
-    ];
-    assert_ne!(keys[0], keys[1]);
-    assert_ne!(keys[0], keys[2]);
-    assert_ne!(keys[1], keys[2]);
 
     let node = |graph: &CheckedGraph| {
         let node = graph

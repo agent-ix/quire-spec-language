@@ -17,9 +17,9 @@ clock configuration. It embeds the version-1 package, including its shared
 | Native numbers | `quire.protocol.numeric/1` |
 
 The external `ix.artifact-ref/3-draft` has `kind:"linked-package"` and
-`wire:{identity:"quire.compiled-protocol",version:"2"}`. Its digest is SHA-256
-over the complete canonical version-2 payload. Version-1 references and payloads
-retain version `1` and their original bytes.
+`wire:{identity:"quire.compiled-protocol",version:"2"}`. The reference carries
+no content digest. Version-1 references and payloads retain version `1` and their
+original bytes.
 
 All encoding, number, name, canonical ordering, selection, model, producer,
 source, dependency, declaration and limit rules from
@@ -63,9 +63,8 @@ There is exactly one binding for every temporal declaration and none for other
 declaration families. Bindings sort by `declaration` and cannot repeat.
 `definition` equals that declaration's `profile` index. The selected definition
 identity/revision is the indexed `Definition`; its `artifact` selects the exact
-dependency `ArtifactRef`, and admission recomputes that reference's digest from
-the independently supplied original bytes. The clock tag is determined by the
-selected exact profile identity:
+dependency `ArtifactRef`. The clock tag is determined by the selected exact
+profile identity:
 
 | Definition identity | Required clock tag and fields |
 | --- | --- |
@@ -105,15 +104,14 @@ Version-2 selection failures use `Error::V2(v2::Refusal)`. `Refusal` carries
 public typed `HeaderField`, `BindingCause`/`InventorySide`, `BindingIndex`,
 `SelectionSide`, `DeclarationField`, `DefinitionField`/`ArtifactField`, and `ClockField`
 discriminants. `Refusal::code()` returns the stable machine code (for example
-`v2.definition.artifact.digest` or `v2.clock.sequence-authority`); consumers do
+`v2.definition.artifact.identity` or `v2.clock.sequence-authority`); consumers do
 not parse diagnostics to distinguish axes. Closed-JSON shape errors such as a
 missing or renamed required clock member remain `Error::Json`, while valid
 objects with a wrong alternative or value receive the exact v2 selection code.
 
 `Error::code()` extends that guarantee to every other axis, so a consumer never
 matches on a variant to tell two refusals apart. It returns `json` for a
-closed-JSON shape error and `invalid.seal` for a failed external seal — the two
-identities the version-2 refusal codes cannot express — and dotted codes under
+closed-JSON shape error and dotted codes under
 `allocation`, `numeric.`, `producer.`, `invalid.`, `unsupported.` and
 `incomplete.` for the remaining variants; a version-2 refusal delegates to
 `Refusal::code()` and keeps its established `v2.` spelling. Codes are
@@ -131,7 +129,7 @@ keyed by exact source artifact and declaration byte span. Each record includes
 the expected definition identity/revision/artifact and one typed clock
 configuration. The producer matches those selections to the proof report rather
 than accepting a same-named declaration or shape. `AdmissionV2` exposes
-canonical bytes, their digest and a strict admitted view, never a freely
+canonical bytes and a strict admitted view, never a freely
 constructible external artifact authority token. Its enclosing `Report` owns
 usage and effective limits. L3/L4 add no native `state` evaluator: the artifact-graph `state::evaluate_v2`
 path and its `state::Refusal::UnpublishedArtifact` were retired under FR-049
@@ -152,12 +150,12 @@ progress during artifact admission.
 `mapping_support_v2(package, declaration, closure)` has no trace input; it
 checks the declaration's authenticated definition/profile binding before using
 the existing surrounding-execution-closure classifier and makes no parameter-map
-claim. Its `Classification::authenticated()` accessor returns the sealed
-`AuthenticatedSelection` containing package digest, declaration, definition
-identity/revision and definition artifact digest. Version-1 classification
+claim. Its `Classification::authenticated()` accessor returns the
+`AuthenticatedSelection` containing the selected package reference, declaration,
+definition identity/revision and definition artifact reference. Version-1 classification
 returns `None`; neither path authenticates clock parameters without a trace.
 `evaluate_with_progress_v2` keys retained progress by the admitted package
-digest, declaration, definition identity/revision and exact clock configuration,
+reference, declaration, definition identity/revision and exact clock configuration,
 so another artifact, `/1` evaluation or changed clock selection cannot lend it
 progress.
 
@@ -166,8 +164,8 @@ progress.
 A consumer handoff names the final published compiler implementation
 that retains this contract and names the exact public surface it consumes:
 
-- `protocol_artifact::handoff::{SOURCE_ROOT, PUBLISHED_OFFER_FILE,
-  PUBLISHED_ARTIFACT_REFERENCE_FILE, PUBLISHED_SELECTION_FILE,
+- `protocol_artifact::handoff::{PUBLISHED_OFFER_FILE,
+  PUBLISHED_SELECTION_FILE,
   PUBLISHED_MUTATION_MANIFEST_FILE,
   MUTATION_MANIFEST_FORMAT}`;
 - `protocol_artifact::v2::{Expected, ExpectedDefinition, ExpectedTemporal,
@@ -182,16 +180,16 @@ that retains this contract and names the exact public surface it consumes:
 
 The producing caller supplies the actual parser/linker/proof report plus the
 complete `native::Selections`: original native source and model artifacts,
-unreconstructed dependency bytes, their exact artifact identities and raw-byte
-digests, and a complete temporal selection table. `admit_v2` returns a
+unreconstructed dependency bytes and their exact artifact identities, and a
+complete temporal selection table. `admit_v2` returns a
 `Report<AdmissionV2>`. The report, not `AdmissionV2`, owns the effective limits,
-usage and typed refusal. On success `AdmissionV2::bytes()` and `digest()` expose
-the raw canonical `/2` payload and its SHA-256 digest, while `admitted()` exposes
+usage and typed refusal. On success `AdmissionV2::bytes()` exposes the raw
+canonical `/2` payload, while `admitted()` exposes
 only the constructor-private local view.
 
 The external linked-package `ArtifactRef` is a separate consumer-authorized
-selection. Its version is `2` and its digest is computed from the returned raw
-bytes; A does not mint consumer authority by returning that reference. Before
+identity selection. Its version is `2`; A does not mint consumer authority by
+returning that reference. Before
 reading, the caller independently constructs `v2::Expected` from its selected
 artifact, contract, baseline, producer, source, dependency and model inventories
 plus its own complete `ExpectedTemporal` table. It then calls `v2::read` with
@@ -204,7 +202,7 @@ The executable recipe is
 [`tests/support/native_protocol/mod.rs`](../tests/support/native_protocol/mod.rs).
 It starts with real native compilation, reconstructs reader expectations from
 the original inputs rather than emitted wire, and covers cross-version offers,
-selection/configuration substitutions, raw digest-domain crossings,
+selection/configuration substitutions,
 same-meaning recanonicalized producer input, exact limits, and the L5 adapters.
 These fixtures demonstrate A's producer and reader boundary only; they do not
 claim that B admitted the artifact or completed an ecosystem acceptance run.
@@ -243,13 +241,12 @@ than discovering them through an environment variable or shadow vocabulary.
 
 The directory contains:
 
-- `compiled-protocol-v2.json` and `compiled-protocol-v2.ref.json`: the raw
-  canonical bytes and separately authorized external seal;
+- `compiled-protocol-v2.json`: the raw canonical bytes;
 - `expected-v2.json`: inherited independent reader selectors, exact temporal
   source/declaration/definition/configuration selectors and selected limits;
 - `event-clock.json`, `sample-clock.json` and `timestamp-clock.json`: the
-  original deliberately noncanonical configuration bytes and sidecar
-  identities/raw-byte digests that select them; their parsed typed values emit
+  original deliberately noncanonical configuration bytes and their selected
+  identities; their parsed typed values emit
   canonical package members, so an input recanonicalization changes the input
   artifact instead of becoming a vacuous byte comparison;
 - `mutations/manifest.json`: `quire.protocol.v2-mutations/1`, naming the base
@@ -257,16 +254,14 @@ The directory contains:
   input operation and expected stable refusal code. The release producer replays
   every generated case through `v2::read` and refuses to publish the directory
   if any actual code differs;
-- `mutations/*.json` and `mutations/*.bin`: independently re-sealed header,
-  binding-index/inventory, declaration, definition identity/revision/artifact/digest-domain,
+- `mutations/*.json` and `mutations/*.bin`: header,
+  binding-index/inventory, declaration, definition identity/revision/artifact reference,
   every clock-alternative/member, malformed-member and original-definition-byte
   substitutions;
 - the four original `.native` files and `model-source.json`; and
 - `dependencies/*.bin`: every exact original definition, rule, model package
   and contract selected by the invocation, with paths, identities, direct
-  prerequisites and raw-byte digests in `expected-v2.json`. The producer's own
-  executable is not among them: it is Producer identity, recorded as a digest
-  on `producer.binary` rather than as one of these exact-byte dependencies.
+  prerequisites in `expected-v2.json`.
 
 `expected-v2.json` and `mutations/manifest.json` are the two interchange files a
 consumer decodes, so their record shapes are published as
@@ -282,6 +277,6 @@ The focused release-recipe control is the test
 [`examples/native_protocol_v2_handoff.rs`](../examples/native_protocol_v2_handoff.rs).
 The non-release mutation controls remain in
 [`tests/compiled_protocol_v2.rs`](../tests/compiled_protocol_v2.rs), including
-cross-version, every temporal selection family, artifact/digest-domain and
+cross-version, every temporal selection family, artifact-reference and
 same-meaning recanonicalized-input substitutions. These controls qualify A's
 handoff only and do not assert B or campaign acceptance.

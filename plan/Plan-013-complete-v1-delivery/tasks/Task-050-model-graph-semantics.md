@@ -40,8 +40,8 @@ conformance and redefinition, and unique most-specific dispatch.
 
 ## Subtasks
 
-- [ ] Select the merged agent-ix/filament-core-data#172 and #173 revisions in
-      `Cargo.lock`, confirm agent-ix/quire-specification#85 is merged, and write
+- [ ] Confirm agent-ix/filament-core-data#172/#173 and
+      agent-ix/quire-specification#85 are merged, and write
       TC-145–148 and IT-012 first.
 - [ ] Implement domain-package intake under QSpec FR-154: the lifted-bytes seam,
       admission checks, meaning-id binding, artifact-id identity, relationship
@@ -52,8 +52,8 @@ conformance and redefinition, and unique most-specific dispatch.
 
 ## Deliverables
 
-- Replayable model declarations keyed by domain package identity, IR node
-  identity and `sha256-jcs`, with no ambient registry, kind-name dispatch or
+- Replayable model declarations keyed by domain package identity and IR node
+  identity, with no ambient registry, kind-name dispatch or
   `displayName` identity.
 - Typed intake, closure, cycle, weakening and dispatch-ambiguity failures with
   no substitute.
@@ -61,6 +61,6 @@ conformance and redefinition, and unique most-specific dispatch.
 ## Notes
 
 filament-core-data owns the Semantic IR lowering and reader, and quire-rs owns
-artifact extraction; this task consumes both crates by exact git revision and
-edits neither. Component, endpoint, participant and configuration constructs
+artifact extraction; this task consumes both crates and edits neither.
+Component, endpoint, participant and configuration constructs
 are outside this task until their Quire meanings are decided.

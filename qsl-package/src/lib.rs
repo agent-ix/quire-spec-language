@@ -31,21 +31,22 @@ pub use checked::{CheckedPackage, ResolvedDependency};
 pub use checked::{EmittedPackage, Import, LinkRefusal};
 #[cfg(feature = "std")]
 pub use checked_v2::{
-    clause_roots, hyper_roots, read_hybrids, read_import_view, read_terminal, read_terminals,
-    resolve_clause_root, resolve_hyper_root, resolve_state_graph_root, resolve_terminals,
-    state_graph_roots, supply_closure, AdmittedPackages, CheckedClockConstraint, CheckedClockPlace,
-    CheckedClockReset, CheckedTimeSource, CheckedTimeSourceKind, CheckedTimedModel,
-    CheckedTimedPredicate, CheckedUrgency, ClauseRoot, ClauseRootUnresolved, ClockPathStep,
-    HybridRead, HybridReadError, HyperRoot, HyperRootUnresolved, ImportViewRefusal,
-    PackageTerminal, PackageTerminalDeclaration, ReadHybridClaim, ReadHybridModel, ReadTerminal,
-    ReadTerminalDeclaration, ResolvedClockPathStep, SourceMapDefect, StateGraphKind,
-    StateGraphRoot, TerminalResolveRefusal, TimedLiteralTypes, TimedNodeMetadata, UnsupportedWire,
-    V2ReadLimits, V2ReadRefusal,
+    clause_roots, hyper_roots, occurrence_role, read_hybrids, read_import_view, read_terminal,
+    read_terminals, resolve_clause_root, resolve_hyper_root, resolve_state_graph_root,
+    resolve_terminals, state_graph_roots, supply_closure, AdmittedPackages, CheckedClockConstraint,
+    CheckedClockGuard, CheckedClockPlace, CheckedClockReset, CheckedConstraintTarget,
+    CheckedGuardPart, CheckedResetTarget, CheckedTimeInvariant, CheckedTimeSource,
+    CheckedTimeSourceKind, CheckedTimedModel, CheckedUrgency, ClauseRoot, ClauseRootUnresolved,
+    ClockComparison, ClockPathStep, HybridRead, HybridReadError, HyperRoot, HyperRootUnresolved,
+    ImportViewRefusal, PackageTerminal, PackageTerminalDeclaration, ReadHybridClaim,
+    ReadHybridModel, ReadTerminal, ReadTerminalDeclaration, ResolvedClockPathStep, SourceMapDefect,
+    StateGraphKind, StateGraphRoot, TerminalResolveRefusal, TimedLiteralTypes, TimedNodeMetadata,
+    UnsupportedWire, V2ReadLimits, V2ReadRefusal,
 };
 #[cfg(feature = "std")]
 pub use emit::{
-    checked_node_id, checked_occurrence, emit_checked, emit_checked_with_cancel, emit_package,
-    emit_timed_models, Emission, EmitRefusal, OmissionCause, OmittedNode,
+    checked_occurrence, emit_checked, emit_checked_with_cancel, emit_package, emit_timed_models,
+    Emission, EmitRefusal, OmissionCause, OmittedNode, TimedOrderFault,
 };
 pub use export::{export_bindings, BoundItem, ExportRefusal, UnboundElement};
 
@@ -56,12 +57,9 @@ pub use export::{export_bindings, BoundItem, ExportRefusal, UnboundElement};
 #[cfg(all(feature = "std", feature = "test-support"))]
 pub use emit::{checked_node_id_of, emit_checked_with_fault};
 
-// ADR-011 §4 I2: `read_checked_package_v2`, its outcome type
-// (`V2ReadOutcome`) and its refusal/incomplete types (`V2ReadRefusal`,
-// `V2ReadIncomplete`) are all `pub(crate)` on `checked_v2` itself and not re-exported here: `checked_v2` returns a real
-// `qsl_semantics::library::VerifiedPackage` (FR-087-AC-1, AC-3), but it
-// still has no caller of its own (S3, ADR-011 §4's round trip, has not
-// landed) beyond `checked_v2`'s own tests.
+// ADR-011 §4 I2: `read_checked_package_v2` and its staged outcome remain
+// crate-local. The public `read_import_view` returns a structural import
+// view after Contract IR admits the package bytes.
 
 /// NFR-015-AC-5, TC-1111: with `std` disabled, the exports of the `quire.checked-package/v2`
 /// wire do not resolve. One case per export.
@@ -74,7 +72,7 @@ pub use emit::{checked_node_id_of, emit_checked_with_fault};
 ///
 /// ```compile_fail,E0599
 /// fn named(package: &qsl_package::CheckedPackage) {
-///     let _ = package.emitted_package_id();
+///     let _ = package.emitted_package_name();
 /// }
 /// ```
 ///
@@ -208,3 +206,6 @@ pub use emit::{checked_node_id_of, emit_checked_with_fault};
 ///
 #[cfg(not(feature = "std"))]
 mod behind_std {}
+
+#[cfg(test)]
+const TEST_PACKAGE_NAME: &str = "pkg";

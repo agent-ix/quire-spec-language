@@ -25,12 +25,11 @@ use std::collections::{BTreeMap, VecDeque};
 
 use qsl_eval::automaton::{SafetyState, SafetyTranslation};
 use qsl_eval::simulation::model::{ModelFinding, ModelSimState, ModelSystem, TerminalClass};
-use qsl_eval::simulation::TransitionSystem;
+use qsl_eval::simulation::{SymmetryGroup, TransitionSystem};
 use qsl_replay::{
-    AppliedReduction, ClosureCertificate, CounterexampleKind, ItemRefusal, ModelCheckLimit,
-    ModelCheckLimits, ModelCheckOutcome, ModelStep, OpenCause, ProductStateRef, Proviso, RunEnd,
-    RunStats, TemporalCounterexample, UndecidedCause, UndefinedEvaluation, UndefinedLocus,
-    UndefinedSite,
+    ClosureCertificate, CounterexampleKind, ItemRefusal, ModelCheckLimit, ModelCheckLimits,
+    ModelCheckOutcome, ModelStep, OpenCause, ProductStateRef, RunEnd, RunStats,
+    TemporalCounterexample, UndecidedCause, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
 use quire_exact::Cancel;
 use quire_semantic_value::model_transition::ModelTransition;
@@ -75,7 +74,6 @@ pub(super) struct Explored {
 /// Phase 1 of one run.
 pub(super) struct Exploration<'r, 'a, 'v> {
     pub(super) system: &'r ModelSystem<'a>,
-    pub(super) package: &'a qsl_package::CheckedPackage,
     pub(super) limits: &'r ModelCheckLimits,
     pub(super) horizon: Option<usize>,
     pub(super) cancel: &'r Cancel,
@@ -83,6 +81,8 @@ pub(super) struct Exploration<'r, 'a, 'v> {
     pub(super) views: &'r [Vec<InstanceView<'v>>],
     pub(super) deadlock_freedom: bool,
     pub(super) por: Option<&'r Por<'r, 'a>>,
+    pub(super) declared_symmetry: &'r SymmetryGroup,
+    pub(super) symmetry: &'r SymmetryGroup,
 }
 
 /// The run's working state.
@@ -138,11 +138,18 @@ impl Exploration<'_, '_, '_> {
             queue: VecDeque::new(),
             deadlock: None,
             horizon_cut: false,
-            reduced: false,
+            reduced: !self.symmetry.is_trivial(),
             partial_order_reduced: false,
         };
         let mut initial = Vec::new();
         for (index, state) in self.system.initial().into_iter().enumerate() {
+            let (state, _) = match self.system.canonicalise(&state, self.symmetry) {
+                Ok(canonical) => canonical,
+                Err(stop) => {
+                    walk.graph.end = expansion_stop(&stop, self.budgets)?.end();
+                    return self.finish(walk);
+                }
+            };
             let (key, digest) = self.system.state_key(&state)?;
             initial.push((key, index, digest, state));
         }
@@ -272,22 +279,26 @@ impl Exploration<'_, '_, '_> {
         let mut successors = Vec::with_capacity(expansion.successors.len());
         for (transition, state) in expansion.successors {
             let order = self.system.transition_key(&transition)?;
+            let (state, permutation) = match self.system.canonicalise(&state, self.symmetry) {
+                Ok(canonical) => canonical,
+                Err(stop) => return expansion_stop(&stop, self.budgets).map(Err),
+            };
             let (key, digest) = self.system.state_key(&state)?;
-            successors.push((order, key, digest, transition, state));
+            successors.push((order, key, digest, transition, state, permutation));
         }
         successors.sort_by(|left, right| left.0.cmp(&right.0).then(left.1.cmp(&right.1)));
         let root = walk.graph.root[at];
         let selected = if let Some(por) = self.por {
             let mut enabled: Vec<_> = successors
                 .iter()
-                .map(|(_, _, _, transition, _)| transition.clone())
+                .map(|(_, _, _, transition, _, _)| transition.clone())
                 .collect();
             enabled.sort();
             let fresh = |transition: &ModelTransition| {
                 successors
                     .iter()
-                    .find(|(_, _, _, candidate, _)| candidate == transition)
-                    .is_some_and(|(_, key, _, _, _)| !known.contains_key(key))
+                    .find(|(_, _, _, candidate, _, _)| candidate == transition)
+                    .is_some_and(|(_, key, _, _, _, _)| !known.contains_key(key))
             };
             match por.ample(&walk.states[at], &enabled, &fresh) {
                 Ok(selected) => Some(selected),
@@ -303,7 +314,7 @@ impl Exploration<'_, '_, '_> {
             walk.reduced = true;
             walk.partial_order_reduced = true;
         }
-        for (_, key, digest, transition, state) in successors {
+        for (_, key, digest, transition, state, permutation) in successors {
             if selected
                 .as_ref()
                 .is_some_and(|chosen| !chosen.contains(&transition))
@@ -336,6 +347,7 @@ impl Exploration<'_, '_, '_> {
                 source: NodeIndex(at),
                 transition,
                 target: NodeIndex(target),
+                permutation,
             });
             walk.graph.outgoing[at].push(edge);
         }
@@ -463,19 +475,17 @@ impl Exploration<'_, '_, '_> {
                     stats,
                 },
                 RunEnd::Completed if walk.reduced => ModelCheckOutcome::HoldsReduced {
-                    reductions: if walk.partial_order_reduced {
-                        vec![AppliedReduction::PartialOrder {
-                            proviso: Proviso::BreadthFirstRevisit,
-                        }]
-                    } else {
-                        Vec::new()
-                    },
+                    reductions: super::applied_reductions(
+                        walk.partial_order_reduced,
+                        self.declared_symmetry,
+                        self.symmetry,
+                        &[],
+                    ),
                     stats,
                 },
                 RunEnd::Completed => ModelCheckOutcome::Holds {
                     certificate: qsl_replay::ProofCertificate::Closure(deadlock_certificate(
                         graph,
-                        self.package,
                     )?),
                     stats,
                 },
@@ -488,7 +498,6 @@ impl Exploration<'_, '_, '_> {
 /// model state under the item's carried root, sorted.
 fn deadlock_certificate(
     graph: &ExploredStateGraph,
-    package: &qsl_package::CheckedPackage,
 ) -> Result<ClosureCertificate, ModelCheckRefusal> {
     let key = SafetyTranslation::deadlock_freedom()
         .map_err(|_| ModelCheckRefusal::Item(ItemRefusal::DeadlockContext))?
@@ -503,20 +512,7 @@ fn deadlock_certificate(
         .collect();
     states.sort();
     states.dedup();
-    let package_id = package
-        .emitted_package_id()
-        .or_else(|| {
-            qsl_package::emit_checked(package)
-                .ok()
-                .map(|emission| emission.package().package_id())
-        })
-        .ok_or_else(|| {
-            ModelCheckRefusal::Fault(quire_semantic_value::catalog::InternalFault::new(
-                "state-graph",
-                "a-deadlock-certificate-has-an-emitted-package-id",
-            ))
-        })?;
-    Ok(ClosureCertificate { package_id, states })
+    Ok(ClosureCertificate { states })
 }
 
 impl ExploredStateGraph {

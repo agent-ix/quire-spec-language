@@ -8,7 +8,7 @@ mod types;
 use super::{LimitKind, RunCause, RunError, RunResult};
 use crate::formal_source::FormalSource;
 use qsl_foundation::source::SourceReadCause;
-use qsl_foundation::{ByteDigest, Diagnostic};
+use qsl_foundation::Diagnostic;
 use quire_contract_model as ir;
 use serde_json::Value;
 
@@ -34,7 +34,6 @@ impl std::fmt::Display for NativeResult {
 fn source(value: &FormalSource) -> types::Source<'_> {
     types::Source {
         identity: value.source().identity(),
-        digest: value.source().digest().to_string(),
         path: value.source().path(),
         formal: value.identity(),
     }
@@ -65,32 +64,6 @@ fn diagnostic_with_upstream<'a>(
     types::Diagnostic {
         upstream,
         ..diagnostic(value)
-    }
-}
-
-fn package_path(value: &crate::package::PackagePathSegment) -> types::PackagePath<'_> {
-    match value {
-        crate::package::PackagePathSegment::Field(name) => types::PackagePath::Field(name),
-        crate::package::PackagePathSegment::Index(index) => types::PackagePath::Index(*index),
-    }
-}
-
-fn package_cause(value: &crate::package::PackageCause) -> types::PackageCause<'_> {
-    match value {
-        crate::package::PackageCause::Native(value) => {
-            types::PackageCause::Native(diagnostic(value))
-        }
-        crate::package::PackageCause::Linking(value) => types::PackageCause::Native(
-            diagnostic_with_upstream(&value.diagnostic, value.upstream.as_deref()),
-        ),
-        crate::package::PackageCause::Checking(value) => types::PackageCause::Native(
-            diagnostic_with_upstream(&value.diagnostic, value.upstream.as_deref()),
-        ),
-        crate::package::PackageCause::Json(value) => types::PackageCause::Json {
-            line: value.line(),
-            column: value.column(),
-            message: value.to_string(),
-        },
     }
 }
 
@@ -154,9 +127,7 @@ pub(super) fn error(error: &RunError, artifact: bool) -> Result<Value, serde_jso
                 },
             },
         ),
-        RunCause::Digest(_) | RunCause::ClauseRequest { .. } => {
-            (types::Stage::Request, types::Details::None)
-        }
+        RunCause::ClauseRequest { .. } => (types::Stage::Request, types::Details::None),
         RunCause::ClauseOutput(_) => (types::Stage::Output, types::Details::None),
         RunCause::Identifier(error) => (types::Stage::Request, types::Details::Identifier(error)),
         RunCause::Native(error) => (
@@ -187,23 +158,6 @@ pub(super) fn error(error: &RunError, artifact: bool) -> Result<Value, serde_jso
             types::Stage::Package,
             types::Details::Package {
                 stage: error.stage.to_string(),
-            },
-        ),
-        RunCause::SelectedPackage {
-            file,
-            expected,
-            error,
-        } => (
-            types::Stage::SelectedPackage,
-            types::Details::SelectedPackage {
-                file,
-                expected: types::PackageReference {
-                    format: expected.format(),
-                    digest: expected.digest().to_string(),
-                },
-                stage: error.stage.to_string(),
-                path: error.path.iter().map(package_path).collect(),
-                cause: error.cause.as_ref().map(package_cause),
             },
         ),
         RunCause::CompleteSelection(_)
@@ -246,8 +200,8 @@ pub(super) fn error(error: &RunError, artifact: bool) -> Result<Value, serde_jso
                             expected,
                         } => types::Details::AdmissionForeignUniverse {
                             position: *position,
-                            required: qsl_semantics::model::key::hex(expected.as_bytes()),
-                            supplied: qsl_semantics::model::key::hex(actual),
+                            required: expected.root_type().to_string(),
+                            supplied: actual.to_string(),
                         },
                         qsl_semantics::model::normalize::ModelRefusalCause::ForeignModelSelection {
                             actual,
@@ -255,9 +209,6 @@ pub(super) fn error(error: &RunError, artifact: bool) -> Result<Value, serde_jso
                         } => {
                             let expected = types::AdmissionModelSelection {
                                 identity: expected.identity.clone(),
-                                version: expected.version.clone(),
-                                digest_domain: "sha256-jcs",
-                                digest: qsl_semantics::model::key::hex(&expected.digest),
                             };
                             match actual {
                                 qsl_semantics::model::refusal::OfferedSelection::Document(
@@ -348,7 +299,6 @@ pub(super) fn error(error: &RunError, artifact: bool) -> Result<Value, serde_jso
     if artifact {
         serde_json::to_value(types::ArtifactFailure {
             failure,
-            request_digest: error.request_digest.map(|digest| digest.to_string()),
             status: if error.cause.is_incomplete() {
                 types::ArtifactFailureStatus::Incomplete
             } else {
@@ -428,10 +378,10 @@ fn spine_location(location: &quire_semantic_value::location::Location) -> types:
 }
 
 /// FR-096/FR-100: a record's resolved locus, rendered as
-/// `{source_digest, span}`.
+/// `{file, span}`.
 fn spine_locus(locus: qsl_replay::spine::CallLocus) -> types::SpineLocus {
     types::SpineLocus {
-        source_digest: locus.source_digest,
+        file: locus.file,
         span: locus.span,
     }
 }
@@ -439,8 +389,6 @@ fn spine_locus(locus: qsl_replay::spine::CallLocus) -> types::SpineLocus {
 /// FR-100: render `spine-run-result/1`, the outcome mapping's stdout
 /// document and FR-301 exit status, from `qsl_replay::spine::run`'s result.
 pub(super) fn spine_run_result(
-    digest: ByteDigest,
-    package_id: qsl_semantics::library::PackageId,
     source: &FormalSource,
     function: &str,
     outcome: qsl_replay::spine::CallOutcome,
@@ -458,8 +406,8 @@ pub(super) fn spine_run_result(
         },
         CallOutcome::Completed(CallValue::Reference(reference)) => types::SpineOutcome::Completed {
             value: types::SpineValue::Reference {
-                universe: qsl_semantics::model::key::hex(reference.universe().as_bytes()),
-                object_type: qsl_semantics::model::key::hex(reference.object_type().as_bytes()),
+                universe: reference.universe().root_type().to_string(),
+                object_type: effective_type_text(reference.object_type()),
                 object_identity: reference.object().as_str().to_owned(),
             },
         },
@@ -491,11 +439,8 @@ pub(super) fn spine_run_result(
     };
     let document = types::SpineRunReport {
         format: types::Format::SpineRunResult,
-        request_digest: digest.to_string(),
-        package_id: package_id.hex(),
         source: types::RunSource {
             identity: source.source().identity(),
-            digest: source.source().digest().to_string(),
             path: source.source().path(),
         },
         function,
@@ -507,6 +452,17 @@ pub(super) fn spine_run_result(
     })
 }
 
+/// An effective type identity as its owning declarations, root first, each
+/// `package:node`, joined by `/`.
+fn effective_type_text(identity: &quire_exact::EffectiveId) -> String {
+    identity
+        .owner_chain()
+        .iter()
+        .map(|original| format!("{}:{}", original.package(), original.node()))
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -514,7 +470,6 @@ mod tests {
     use ix_trace_rs::trace;
     use qsl_foundation::SourceIdentity;
     use qsl_replay::spine::CallOutcome;
-    use qsl_semantics::library::PackageId;
     use quire_semantic_value::catalog::Category;
 
     fn formal_source() -> FormalSource {
@@ -545,29 +500,17 @@ mod tests {
     /// tests cover that distinction.
     fn assert_undefined_renders(reason: &'static str) {
         let source = formal_source();
-        let digest = ByteDigest::of(b"request");
-        let package_id = PackageId::of_preimage(b"package");
-        let result = spine_run_result(
-            digest,
-            package_id,
-            &source,
-            "seven",
-            CallOutcome::Undefined { reason },
-        )
-        .unwrap();
+        let result = spine_run_result(&source, "seven", CallOutcome::Undefined { reason }).unwrap();
         assert_eq!(result.exit_code, 10, "{reason}");
         assert_eq!(
             result.value.as_value(),
             &serde_json::json!({
                 "format": "spine-run-result/1",
-                "request_digest": digest.to_string(),
-                "package_id": package_id.hex(),
                 "source": {
                     "authority": "agent-ix",
                     "identity": "test:spine-run",
                     "revision_namespace": "fixture",
                     "revision": "fixture:1",
-                    "digest": source.source().digest().to_string(),
                     "path": "program.native",
                 },
                 "function": "seven",
@@ -618,14 +561,7 @@ mod tests {
     }
 
     fn render(outcome: CallOutcome) -> RunResult {
-        spine_run_result(
-            ByteDigest::of(b"request"),
-            PackageId::of_preimage(b"package"),
-            &formal_source(),
-            "seven",
-            outcome,
-        )
-        .unwrap()
+        spine_run_result(&formal_source(), "seven", outcome).unwrap()
     }
 
     /// FR-100-AC-9 (TC-452 step 4, FND-013): a record refusal renders every
@@ -667,18 +603,24 @@ mod tests {
     /// `required`/`supplied` universes and exits 20, no longer the bare
     /// `{"kind":"refused"}` a kernel-no-record row renders. Goes through the
     /// real conversion (`kernel_refusal_record`) rather than a hand-built
-    /// `CallRefusal::Record`, so a `UniverseId::Display` change (uppercase, a
-    /// `0x` prefix, `Debug` spelling) that kept a hand-built record's
-    /// literals green would still be caught here against TC-452's literal
-    /// lowercase hex (SR-680 FND-003).
+    /// `CallRefusal::Record`. Each universe renders as its root type node.
     #[test]
     #[trace("TC-452", "FR-100-AC-9")]
     fn refused_foreign_reference_renders_record_and_exits_20() {
         use qsl_replay::spine::CallRefusal;
+        let root = |name: &str| {
+            quire_exact::NodeKey::new(
+                "pkg",
+                vec![quire_exact::PathSegment::Text(name.to_owned())],
+                0,
+            )
+            .expect("a fixture root type key is well formed")
+        };
+        let (required, supplied) = (root("first"), root("second"));
         let record = qsl_foundation::diagnostic::kernel_refusal_record(
             &quire_exact::Refusal::ForeignReference {
-                required: quire_exact::UniverseId::from_digest([0x01; 32]),
-                supplied: quire_exact::UniverseId::from_digest([0x02; 32]),
+                required: quire_exact::UniverseId::new(required.clone()),
+                supplied: quire_exact::UniverseId::new(supplied.clone()),
             },
             None,
         )
@@ -697,8 +639,8 @@ mod tests {
                 "code": "foreign_reference",
                 "cause": "foreign-universe",
                 "fields": {
-                    "required": "01".repeat(32),
-                    "supplied": "02".repeat(32),
+                    "required": required.to_string(),
+                    "supplied": supplied.to_string(),
                 },
             })
         );
@@ -713,7 +655,6 @@ mod tests {
 
         let expected = qsl_semantics::model::domain_package::DomainPackageRef::fixture("expected");
         let model = RunError {
-            request_digest: None,
             cause: RunCause::SpineRun(Box::new(RunRefusal::Admission {
                 position: 2,
                 refusal: ModelRefusal {
@@ -734,16 +675,12 @@ mod tests {
                 "model_identity": "foreign-model",
                 "expected": {
                     "identity": expected.identity,
-                    "version": expected.version,
-                    "digest_domain": "sha256-jcs",
-                    "digest": qsl_semantics::model::key::hex(&expected.digest),
                 },
             })
         );
 
         let type_name = DeclarationKey::fixture("foreign/W");
         let type_refusal = RunError {
-            request_digest: None,
             cause: RunCause::SpineRun(Box::new(RunRefusal::Admission {
                 position: 3,
                 refusal: ModelRefusal {
@@ -838,7 +775,7 @@ mod tests {
     }
 
     /// FR-100-AC-9 (TC-452 step 4, FND-019): a record refusal's `locus`
-    /// renders `{source_digest, span}` exactly -- the TC-452 fixture-F
+    /// renders `{file, span}` exactly -- the TC-452 fixture-F
     /// values -- and `location` renders on both a record refusal and a
     /// family refusal.
     #[test]
@@ -858,20 +795,8 @@ mod tests {
                 column: 55,
             },
         };
-        // The digest is opaque to rendering: the refusal's `locus` carries
-        // whatever the call recorded. It is the SHA-256 of the fixture's
-        // own source text, so input and expectation share one value.
-        let source_digest = {
-            use sha2::{Digest, Sha256};
-            let hex: String = Sha256::digest(b"fixture.native source")
-                .iter()
-                .map(|byte| format!("{byte:02x}"))
-                .collect();
-            format!("sha256:{hex}")
-        };
         let locus = CallLocus {
             file: "fixture.native".to_owned(),
-            source_digest: source_digest.clone(),
             span,
         };
         let location = Location::at(
@@ -901,7 +826,7 @@ mod tests {
                 "cause": "absent-key",
                 "fields": fields,
                 "locus": {
-                    "source_digest": source_digest,
+                    "file": "fixture.native",
                     "span": {
                         "start": {"byte": 225, "line": 3, "column": 54},
                         "end": {"byte": 226, "line": 3, "column": 55},

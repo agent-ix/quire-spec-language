@@ -69,6 +69,7 @@ fn fixture() -> Fixture {
     let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
     let declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         unit,
         SelectedModels::default(),
         Vec::new(),
@@ -147,7 +148,7 @@ fn a_literal_compares_in_a_call_a_binding_and_a_field_read() {
     let fixture = fixture();
     assert!(truth(&fixture, "viaCall", vec![]));
     assert!(truth(&fixture, "viaLet", vec![]));
-    let ValueType::Composite(key) = fixture
+    let ValueType::Composite(ref key) = fixture
         .package
         .graph()
         .callable("viaField")
@@ -161,7 +162,10 @@ fn a_literal_compares_in_a_call_a_binding_and_a_field_read() {
     for (label, equal) in [("a", true), ("b", false)] {
         let record = fixture
             .types
-            .record(key, vec![("label", FieldValue::Present(string(label)))])
+            .record(
+                key.clone(),
+                vec![("label", FieldValue::Present(string(label)))],
+            )
             .expect("an R");
         assert_eq!(truth(&fixture, "viaField", vec![record]), equal, "{label}");
     }

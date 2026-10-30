@@ -57,14 +57,6 @@ fn argument<'n>(node: &'n Value, name: &str) -> &'n Value {
         .unwrap_or_else(|| panic!("an argument {name}: {node}"))
 }
 
-/// The clause key.
-fn key(lowered: &Lowered) -> String {
-    clause(&lowered.wire)["node_id"]["digest"]
-        .as_str()
-        .unwrap()
-        .to_owned()
-}
-
 /// FR-465 "Terminal": `terminal any` is a node declared at `P`, `terminal`
 /// with `mode` the text `any` and `condition` an empty optional, named by the
 /// clause's `terminal` argument; the reader admits it.
@@ -173,8 +165,7 @@ fn an_each_terminal_condition_reads_nothing_and_over_is_an_ir_gap() {
 }
 
 /// FR-465 "Terminal", TC-947 TM9: a protocol without a `terminal` member
-/// names none, and the three spellings (none, `any`, `when`) are three
-/// different clause keys.
+/// names none, while `any` and `when` each name their own terminal node.
 #[trace("FR-465-AC-7", "FR-383-AC-5", "TC-947")]
 #[test]
 fn the_absent_any_and_when_terminals_are_three_clauses() {
@@ -183,8 +174,8 @@ fn the_absent_any_and_when_terminals_are_three_clauses() {
     let when = admitted(&flow("on origin", "terminal when { true };"));
     assert!(terminal(&none.wire).is_none());
     assert!(terminal(&any.wire).is_some() && terminal(&when.wire).is_some());
-    let keys = [key(&none), key(&any), key(&when)];
-    assert_ne!(keys[0], keys[1]);
-    assert_ne!(keys[1], keys[2]);
-    assert_ne!(keys[0], keys[2]);
+    assert_ne!(
+        terminal(&any.wire).unwrap()["body"],
+        terminal(&when.wire).unwrap()["body"]
+    );
 }

@@ -1022,7 +1022,7 @@ fn zero_instances_report_no_instance_after_the_requires_bound_pre_check() {
     assert_eq!(
         roots[0].0,
         DomainKey::Node {
-            node: *population,
+            node: population.clone(),
             path: Vec::new()
         }
     );
@@ -1186,7 +1186,7 @@ fn a_population_with_no_universe_is_refused_before_exploring() {
     assert_eq!(
         roots[0].0,
         DomainKey::Node {
-            node: *population,
+            node: population.clone(),
             path: Vec::new()
         }
     );

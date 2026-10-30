@@ -62,7 +62,7 @@ use super::refusal::{
     IdentityObserving, KeyFault, Obligation, StageLimitCause,
 };
 use crate::model::operation::OperationTable;
-use crate::value::definition::{AdmittedIeeeProfile, CatalogRole, DefinitionLock};
+use crate::value::definition::{admit_ieee_profile, AdmittedIeeeProfile, DefinitionRole};
 use crate::value::enumeration::{mint_variant_id, AdmittedEnumDeclaration};
 use qsl_forms::{
     Accumulation, BinaryOperator, BinderQuery, ClauseKind, ExprId, ExprNode, ExprRef,
@@ -162,14 +162,24 @@ impl ResolvedSignatures {
 /// repeats a name or has an empty name, which the model's intake refuses
 /// before a variant type is declared.
 fn variant_type_members(declaration: NodeKey, cases: &[String]) -> Option<Vec<EnumValue>> {
-    let runtime = EnumDeclaration::model_owned(declaration, cases.to_vec()).ok()?;
+    let runtime = EnumDeclaration::model_owned(declaration.clone(), cases.to_vec()).ok()?;
     cases
         .iter()
         .map(|case| {
-            let member = NodeKey::from_digest(*mint_variant_id(declaration, case).as_bytes());
+            let member = declared_member_key(&declaration, case).ok()?;
             runtime.member(case, member).ok()
         })
         .collect()
+}
+
+/// The member's key (FR-322, a derived node): `["value", "enum_value",
+/// <declaration node>, <case>]` under the declaration's package, which is
+/// `EnumMemberPreimage::key`.
+fn declared_member_key(
+    declaration: &NodeKey,
+    case: &str,
+) -> Result<NodeKey, quire_exact::InvalidNodeKey> {
+    crate::value::enumeration::enum_value_key(declaration, case)
 }
 
 /// A model variant type in the type environment (FR-056 "Variant types",
@@ -205,18 +215,18 @@ impl VariantTypeDeclaration {
     ) -> Option<Self> {
         cases.sort_by(|left, right| left.1.cmp(&right.1));
         let names: Vec<String> = cases.iter().map(|(_, case)| case.clone()).collect();
-        let members = variant_type_members(node, &names)?;
+        let members = variant_type_members(node.clone(), &names)?;
         let cases = cases
             .into_iter()
             .map(|(key, case)| {
-                let variant = mint_variant_id(node, &case);
-                VariantCaseDeclaration {
+                let variant = mint_variant_id(node.clone(), &case).ok()?;
+                Some(VariantCaseDeclaration {
                     key,
                     name: case,
                     variant,
-                }
+                })
             })
-            .collect();
+            .collect::<Option<Vec<_>>>()?;
         Some(Self {
             key,
             name,
@@ -229,7 +239,7 @@ impl VariantTypeDeclaration {
 
     /// The variant type's effective identity.
     pub fn key(&self) -> EffectiveId {
-        self.key
+        self.key.clone()
     }
 
     /// The qualified name `M::<artifact id>`.
@@ -246,7 +256,7 @@ impl VariantTypeDeclaration {
     /// members" step 2), a function of the selected document's identity and
     /// the type node alone.
     pub fn node(&self) -> NodeKey {
-        self.node
+        self.node.clone()
     }
 
     /// The cases, ascending by the UTF-8 bytes of their names.
@@ -282,7 +292,7 @@ pub struct VariantCaseDeclaration {
 impl VariantCaseDeclaration {
     /// The case's effective identity.
     pub fn key(&self) -> EffectiveId {
-        self.key
+        self.key.clone()
     }
 
     /// The case name, compared as exact UTF-8 bytes.
@@ -293,7 +303,7 @@ impl VariantCaseDeclaration {
     /// The case's checked key: the FR-141 member identity over the variant
     /// type's checked node and the case name.
     pub fn variant(&self) -> VariantId {
-        self.variant
+        self.variant.clone()
     }
 }
 
@@ -326,9 +336,16 @@ pub struct PackageDeclarations {
     /// enter no key. The checked graph carries it on for the lock's
     /// `sources` entry. `check` holds no constant owner.
     pub source: qsl_foundation::source::provenance::RawSourceRef,
-    /// The package's lock evidence (ADR-011 §2.4): the law `DefinitionRef`s
-    /// a lowered operation may name (FR-093).
-    pub lock_evidence: super::lowering::LockEvidence,
+    /// The package's name: the package manifest's top-level `name`, required
+    /// on every compile or check request (FR-091-OQ-3). It is the `package`
+    /// of every source-owned declared or derived node key. A unit label
+    /// (`SourceOwner::identity`) is never a package, and nothing here
+    /// defaults, falls back or derives it from source text.
+    pub package_name: String,
+    /// The `protocol_profile` the unit's header selected (FR-110), the law
+    /// `DefinitionRef` a protocol node names (FR-093). The assembler sets it
+    /// from the header's catalog resolution.
+    pub protocol_profile: Option<crate::value::definition::DefinitionReference>,
     /// FR-110: the header-selectable layers the unit's header profiles
     /// resolve to, ascending; the lock's `definition_selections` hold their
     /// `requires` closure.
@@ -607,11 +624,12 @@ impl PackageDeclarations {
     #[cfg(any(test, feature = "test-support"))]
     pub fn fixture_with_selected_models(
         source: qsl_foundation::source::provenance::RawSourceRef,
+        package_name: impl Into<String>,
         identity: qsl_foundation::IdentityLimits,
         selected: crate::model::intake::SelectedModels,
     ) -> Self {
         let (entries, meter) = selected.into_parts();
-        let mut declarations = Self::new(source, identity);
+        let mut declarations = Self::new(source, package_name, identity);
         declarations.models = entries
             .iter()
             .map(|entry| super::AdmittedModel::from_view(&entry.view))
@@ -621,17 +639,19 @@ impl PackageDeclarations {
     }
 
     /// A package declared by the source unit `source` names, with no
-    /// declaration yet and no lock evidence, whose node identities encode
+    /// declaration yet and no protocol profile, whose node identities encode
     /// under `identity`.
     pub fn new(
         source: qsl_foundation::source::provenance::RawSourceRef,
+        package_name: impl Into<String>,
         identity: qsl_foundation::IdentityLimits,
     ) -> Self {
         Self {
             model_inputs: None,
             pending_types: None,
             source,
-            lock_evidence: super::lowering::LockEvidence::default(),
+            package_name: package_name.into(),
+            protocol_profile: None,
             header_layers: Vec::new(),
             types: TypeEnvironment::default(),
             model_records: ModelRecords::default(),
@@ -928,7 +948,7 @@ fn unit_ids_by_name(
         .units()
         .filter_map(|unit| {
             let name = declared
-                .nominal_node(unit.key().as_bytes())
+                .nominal_node(&unit.key())
                 .map(|node| node.declaration.qualified_declaration.as_slice());
             match name {
                 Some([name]) => Some((name.clone(), unit.id())),
@@ -988,7 +1008,7 @@ impl ScopeIndex {
         for (position, binding) in enums.iter().enumerate() {
             let shape = binding.shape();
             if !index.enum_shapes.contains_key(&shape) {
-                let members = index.enum_member_index.filtered(shape.variants());
+                let members = index.enum_member_index.filtered(shape.variants().cloned());
                 index.enum_shapes.insert(shape, (position, members));
             }
         }
@@ -1103,10 +1123,10 @@ impl Scope {
                 ValueType::Option(payload) => pending.push(payload),
                 ValueType::Collection(collection) => pending.push(collection.element()),
                 ValueType::Map(map) => pending.push(map.values()),
-                ValueType::Composite(key) if seen.insert(*key) => {
+                ValueType::Composite(key) if seen.insert(key.clone()) => {
                     match self
                         .types
-                        .composite(*key)
+                        .composite(key.clone())
                         .map(|declaration| declaration.shape())
                     {
                         Some(CompositeShape::Record(fields)) => {
@@ -1234,7 +1254,7 @@ impl Scope {
 
     /// The unit the unit declares under `name`, as a quantity's unit id.
     pub(crate) fn unit_named(&self, name: &str) -> Option<quire_exact::UnitId> {
-        self.index.units.get(name).copied()
+        self.index.units.get(name).cloned()
     }
 
     /// This scope with the unit's protocol declarations named `names`, in
@@ -1265,16 +1285,12 @@ impl Scope {
         self.index.types.contains_key(name)
     }
 
-    /// The checked graph of the admitted import whose library has
-    /// `package_id` `package` (ADR-015 D-5): where an imported call's callee
-    /// is evaluated.
-    pub fn imported_graph(
-        &self,
-        package: crate::library::PackageId,
-    ) -> Option<&super::CheckedGraph> {
+    /// The checked graph of the admitted import exporting `callee`, where an
+    /// imported call to that structural function identity is evaluated.
+    pub fn imported_graph(&self, callee: &quire_exact::NodeKey) -> Option<&super::CheckedGraph> {
         self.imports
             .values()
-            .find(|import| import.view.package() == package)
+            .find(|import| import.view.exports().any(|(_, node)| node == callee))
             .map(|import| import.graph.as_ref())
     }
 
@@ -1324,7 +1340,7 @@ impl Scope {
     }
 
     /// The package's admitted enum declarations, in declaration order.
-    pub(crate) fn enums(&self) -> &[EnumBinding] {
+    pub fn enums(&self) -> &[EnumBinding] {
         &self.enums
     }
 
@@ -1369,13 +1385,16 @@ impl Scope {
     pub(crate) fn enum_members_of(&self, shape: &EnumShape) -> EnumMemberIndex {
         match self.index.enum_shapes.get(shape) {
             Some((_, members)) => members.clone(),
-            None => self.index.enum_member_index.filtered(shape.variants()),
+            None => self
+                .index
+                .enum_member_index
+                .filtered(shape.variants().cloned()),
         }
     }
 
     /// The first object type named `name`, by its effective identity.
     pub(crate) fn object_type_named(&self, name: &str) -> Option<EffectiveId> {
-        self.index.object_types.get(name).copied()
+        self.index.object_types.get(name).cloned()
     }
 
     /// ADR-013 T-6 (last sentence): the checked `VariantId -> EnumValue`
@@ -1415,7 +1434,7 @@ impl Scope {
                 quire_semantic_value::catalog::InternalFault::new("S3", invariant),
             ))),
         };
-        let unions: Vec<(quire_exact::NodeKey, Vec<quire_exact::Identifier>)> = self
+        let unions: Vec<(quire_exact::NodeKey, Vec<String>)> = self
             .types
             .composites()
             .filter_map(|declaration| match declaration.shape() {
@@ -1423,25 +1442,23 @@ impl Scope {
                     declaration.key(),
                     members
                         .iter()
-                        .map(|member| member.identifier().clone())
+                        .map(|member| member.identifier().to_owned())
                         .collect(),
                 )),
                 CompositeShape::Record(_) | CompositeShape::Tuple(_) => None,
             })
             .collect();
         for (handle, members) in unions {
-            let node = *nodes
+            let node = nodes
                 .get(&handle)
                 .ok_or_else(|| fault("union-node-missing"))?;
             let bindings = members
                 .into_iter()
-                .map(|member| {
-                    let key = super::sum_case::mint_union_member_key(node, member.as_str());
-                    quire_exact::UnionMember::from_admitted(node, key, member)
-                })
-                .collect();
+                .map(|member| quire_exact::UnionMember::from_admitted(node.clone(), member))
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|_| fault("union-empty-member"))?;
             self.types
-                .seal_union_verified(handle, node, bindings)
+                .seal_union_verified(handle, node.clone(), bindings)
                 .map_err(|_| fault("union-seal"))?;
         }
         Ok(())
@@ -1464,10 +1481,10 @@ impl Scope {
                     if self.model_records.events.contains(declaration) {
                         return true;
                     }
-                    if !seen.insert(*declaration) {
+                    if !seen.insert(declaration.clone()) {
                         continue;
                     }
-                    match self.types.composite(*declaration).map(|c| c.shape()) {
+                    match self.types.composite(declaration.clone()).map(|c| c.shape()) {
                         Some(CompositeShape::Record(fields)) => {
                             pending.extend(fields.iter().map(FieldDeclaration::value_type));
                         }
@@ -1494,7 +1511,8 @@ impl Scope {
         declaration: quire_exact::NodeKey,
         field: &RecordField,
     ) -> Option<usize> {
-        let CompositeShape::Record(fields) = self.types.composite(declaration)?.shape() else {
+        let CompositeShape::Record(fields) = self.types.composite(declaration.clone())?.shape()
+        else {
             return None;
         };
         let name = self.model_records.own_name(declaration, field);
@@ -1549,16 +1567,16 @@ impl Scope {
         let has_float = has_ieee_literal || declared.into_iter().any(holds_float);
         self.ieee_operation = has_float;
         if has_float && self.ieee_profile.is_none() {
-            let lock = DefinitionLock::pinned();
-            let definition = lock.entry(CatalogRole::IeeeProfile).reference();
-            self.ieee_profile = Some(lock.admit_ieee_profile(&[definition], &[]).map_err(
-                |cause| CheckRefusal {
-                    location: Location::root(Origin::Expression),
-                    cause: CheckCause::InternalFault(Box::new(KeyFault::IeeeProfileAdmission(
-                        cause,
-                    ))),
-                },
-            )?);
+            let definition = DefinitionRole::IeeeProfile.reference();
+            self.ieee_profile =
+                Some(
+                    admit_ieee_profile(&[definition], &[]).map_err(|cause| CheckRefusal {
+                        location: Location::root(Origin::Expression),
+                        cause: CheckCause::InternalFault(Box::new(KeyFault::IeeeProfileAdmission(
+                            cause,
+                        ))),
+                    })?,
+                );
         }
         Ok(())
     }
@@ -1760,7 +1778,8 @@ pub(crate) fn enum_value(binding: &EnumBinding, member: &EnumValue) -> Value {
     let rank = u32::try_from(member.position())
         .expect("an admitted enum has far fewer than u32::MAX members");
     Value::Enum(EnumMember::new(
-        mint_variant_id(binding.declaration.key(), member.case()),
+        mint_variant_id(binding.declaration.key(), member.case())
+            .expect("an admitted enum member has a nonempty case"),
         rank,
     ))
 }
@@ -2063,7 +2082,10 @@ impl Typer<'_> {
             // constructor over a record is not covariant, so only the slot's
             // own record type reaches this arm.
             (ValueType::Composite(sub), ValueType::Composite(sup))
-                if self.scope.types.composite_conforms(*sub, *sup) =>
+                if self
+                    .scope
+                    .types
+                    .composite_conforms(sub.clone(), sup.clone()) =>
             {
                 Ok(node)
             }
@@ -2899,7 +2921,7 @@ impl<'a> Typer<'a> {
                 OrderedKind::Texts
             }
             (ValueType::Quantity(l), ValueType::Quantity(r)) => {
-                let (Some(l), Some(r)) = (self.units.get(*l), self.units.get(*r)) else {
+                let (Some(l), Some(r)) = (self.units.get(l.clone()), self.units.get(r.clone())) else {
                     return Err(mismatch(location));
                 };
                 check_comparable(l, r)
@@ -3038,7 +3060,8 @@ impl<'a> Typer<'a> {
                     ArithmeticOperator::Multiply => UnitOperation::Multiply,
                     ArithmeticOperator::Divide => UnitOperation::Divide,
                 };
-                let (Some(l), Some(r)) = (self.units.get(*l), self.units.get(*r)) else {
+                let (Some(l), Some(r)) = (self.units.get(l.clone()), self.units.get(r.clone()))
+                else {
                     return Err(mismatch(location));
                 };
                 let unit = result_unit(operation, l, r)
@@ -3190,14 +3213,19 @@ impl<'a> Typer<'a> {
         all: bool,
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
-        let ValueType::Reference(object) = owner.value_type else {
+        let ValueType::Reference(object) = &owner.value_type else {
             return Err(mismatch(location));
         };
         let place = self
             .presence_places
             .iter()
             .find(|place| {
-                place.slot && place.field == field && self.scope.types.conforms(object, place.owner)
+                place.slot
+                    && place.field == field
+                    && self
+                        .scope
+                        .types
+                        .conforms(object.clone(), place.owner.clone())
             })
             .cloned()
             .ok_or_else(|| mismatch(location))?;
@@ -3231,7 +3259,10 @@ impl<'a> Typer<'a> {
                     !place.slot
                         && place.field == field
                         && place.case.as_deref() == case
-                        && self.scope.types.conforms(*object, place.owner)
+                        && self
+                            .scope
+                            .types
+                            .conforms(object.clone(), place.owner.clone())
                 })
                 .cloned(),
             _ => None,
@@ -3282,7 +3313,7 @@ impl<'a> Typer<'a> {
                     || self
                         .scope
                         .relationships()
-                        .navigable(&self.scope.types, *object, name)
+                        .navigable(&self.scope.types, object.clone(), name)
                         .next()
                         .is_some()
             }
@@ -3345,12 +3376,17 @@ impl<'a> Typer<'a> {
         location: &Location,
         derefed: bool,
     ) -> Result<Node, CheckRefusal> {
-        if let ValueType::Reference(object) = reference.value_type {
+        if let ValueType::Reference(object) = &reference.value_type {
             let history = self.history.iter().find(|history| {
-                history.name == field && self.scope.types.conforms(object, history.object_type)
+                history.name == field
+                    && self
+                        .scope
+                        .types
+                        .conforms(object.clone(), history.object_type.clone())
             });
             if let Some(history) = history {
-                let (object_type, value_type) = (history.object_type, history.value_type.clone());
+                let (object_type, value_type) =
+                    (history.object_type.clone(), history.value_type.clone());
                 return Ok(node(
                     NodeKind::History {
                         reference: self.push(reference),
@@ -3549,13 +3585,13 @@ impl<'a> Typer<'a> {
         field: &str,
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
-        let ValueType::Composite(key) = operand.value_type else {
+        let ValueType::Composite(key) = &operand.value_type else {
             return Err(mismatch(location));
         };
         let Some(CompositeShape::Record(fields)) = self
             .scope
             .types
-            .composite(key)
+            .composite(key.clone())
             .map(|declaration| declaration.shape())
         else {
             return Err(mismatch(location));
@@ -3570,6 +3606,7 @@ impl<'a> Typer<'a> {
         } else {
             declared.value_type().clone()
         };
+        let key = key.clone();
         Ok(node(
             NodeKind::Field {
                 operand: self.push(operand),
@@ -3661,12 +3698,14 @@ impl<'a> Typer<'a> {
         location: &Location,
     ) -> Result<(quire_exact::NodeKey, &'a [FieldDeclaration]), CheckRefusal> {
         let scope: &'a Scope = self.scope;
-        let ValueType::Composite(key) = self.type_named(name, location)? else {
+        let value_type = self.type_named(name, location)?;
+        let ValueType::Composite(key) = &value_type else {
             return Err(mismatch(location));
         };
+        let key = key.clone();
         let Some(CompositeShape::Record(declared)) = scope
             .types
-            .composite(key)
+            .composite(key.clone())
             .map(|declaration| declaration.shape())
         else {
             return Err(mismatch(location));
@@ -3726,7 +3765,7 @@ impl<'a> Typer<'a> {
         }
         Ok(node(
             NodeKind::Record {
-                declaration: key,
+                declaration: key.clone(),
                 slots,
             },
             ValueType::Composite(key),
@@ -4306,7 +4345,7 @@ mod holds_float_tests {
         assert!(!holds_float(&map(ValueType::Boolean)));
         let bounded = ValueType::BoundedQuantity(std::sync::Arc::new(
             quire_exact::BoundedQuantityType::new(
-                quire_exact::UnitId::compound([5; 32]),
+                quire_exact::UnitId::compound(Vec::new()),
                 None,
                 None,
             )

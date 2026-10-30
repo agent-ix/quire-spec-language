@@ -22,7 +22,7 @@ use quire_semantic_value::relationship_extent::{
 };
 
 use super::document::ObservationRole;
-use super::{fault, refuse, AdmissionFailure, AdmissionRecord};
+use super::{fault, refuse, AdmissionFailure, AdmissionRecord, DocumentRef};
 use crate::model::object_environment::ObjectEnvironment;
 use quire_checked::key::DeclarationKey;
 
@@ -212,7 +212,7 @@ pub(super) fn end_name(end: EndSide) -> &'static str {
 /// when the model declares no object type of it.
 fn type_name(types: &TypeEnvironment, id: quire_exact::EffectiveId) -> String {
     types
-        .object_type(id)
+        .object_type(id.clone())
         .map_or_else(|| format!("{id:?}"), |declared| declared.name().to_owned())
 }
 
@@ -263,12 +263,12 @@ fn extent_refusal(
 // The bundle
 // ---------------------------------------------------------------------------
 
-/// Where an observation's identity comes from: the digest of the snapshot
+/// Where an observation's identity comes from: the labels of the snapshot
 /// document it was built from, or the label the model-layer producer issued.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ObservationOrigin {
-    /// A snapshot-built observation: its own document's `sha256-jcs` digest.
-    Document([u8; 32]),
+    /// A snapshot-built observation: its own document's labels.
+    Document(DocumentRef),
     /// A model-layer observation: the producer's label.
     Label(String),
 }
@@ -283,8 +283,8 @@ pub struct BundleKey {
     pub source: RawSourceRef,
     /// The selected clause.
     pub clause: NodeKey,
-    /// The digest of each selected document, for a snapshot-built selection.
-    pub documents: Vec<[u8; 32]>,
+    /// The labels of each selected document, for a snapshot-built selection.
+    pub documents: Vec<DocumentRef>,
     /// The observation's role.
     pub role: ObservationRole,
     /// The observation's own identity.
@@ -444,14 +444,14 @@ impl super::AdmittedObservations {
         .ok_or_else(|| fault("bundle-observation-missing"))?;
         let key = BundleKey {
             source: source.clone(),
-            clause: self.clause,
+            clause: self.clause.clone(),
             documents: [&self.current, &self.pre, &self.post]
                 .into_iter()
                 .flatten()
-                .map(|held| held.identity.digest)
+                .map(|held| held.identity.clone())
                 .collect(),
             role,
-            origin: ObservationOrigin::Document(observation.identity.digest),
+            origin: ObservationOrigin::Document(observation.identity.clone()),
         };
         ResolveBundle::over(&observation.environment, &key, types)
     }

@@ -6,7 +6,6 @@
 //! package under different aliases assign equal keys of both kinds.
 
 use ix_trace_rs::trace;
-use qsl_foundation::digest::WireNodeId;
 use qsl_package::CheckedPackage;
 use quire_exact::{EnumMember, Value, ValueType};
 use quire_semantic_value::checking::CheckingLimits;
@@ -25,15 +24,12 @@ fn package_as(alias: &str) -> CheckedPackage {
 /// `document` linked as model `alias`.
 fn package_over(document: &serde_json::Value, alias: &str) -> CheckedPackage {
     let bytes = serde_json::to_vec(document).expect("the fixture serializes");
-    let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one model package");
-    };
-    let digest = qsl_semantics::model::key::hex(digest);
+    let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()]).unwrap();
+    assert_eq!(packages.len(), 1, "one model package");
     let source = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
-         model {alias} = {package:?} version \"1\" digest \"sha256-jcs:{digest}\";\n\
+         model {alias} = {package:?};\n\
          function keep using v(): Boolean pure {{ true }}\n",
         package = fixture::PACKAGE,
     );
@@ -54,6 +50,7 @@ fn package_over(document: &serde_json::Value, alias: &str) -> CheckedPackage {
     .expect("I1 admits the fixture package");
     let declarations = qsl_semantics::check::PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         unit,
         selected,
         Vec::new(),
@@ -83,7 +80,7 @@ fn declared<'a>(
 
 fn witness(declaration: &qsl_semantics::check::VariantTypeDeclaration, case: &str) -> WitnessValue {
     WitnessValue::Enum {
-        declaration: WireNodeId::from_digest(*declaration.node().as_bytes()),
+        declaration: declaration.node().clone(),
         member: case.to_owned(),
     }
 }

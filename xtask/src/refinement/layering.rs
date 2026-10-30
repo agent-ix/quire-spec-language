@@ -9,7 +9,6 @@ use std::path::{Component, Path, PathBuf};
 use logos::Logos;
 use qsl_analyze::analyze::Engines;
 use qsl_cst::token::Kind;
-use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord};
 use qsl_foundation::source::provenance::RawSourceRef;
 use qsl_foundation::{Code, Setting, SettingLimits, SourceIdentity};
 use qsl_replay::spine::{
@@ -23,7 +22,7 @@ use qsl_route::{
 };
 use qsl_semantics::check::Capability;
 use qsl_semantics::check::CheckedStateClause;
-use qsl_semantics::value::{DefinitionLock, HeaderLayer, WitnessKind, WitnessRequest};
+use qsl_semantics::value::{HeaderLayer, WitnessKind, WitnessRequest};
 use serde::{Deserialize, Serialize};
 
 use super::compare::CaseResult;
@@ -75,7 +74,7 @@ impl RegistrySnapshot {
         mut register: impl FnMut(
             &mut RegistrySnapshotBuilder,
             BackendDescriptor,
-        ) -> Result<(), Vec<RegistrationRefusal>>,
+        ) -> Result<(), RegistrationRefusal>,
     ) -> Result<Self, RegistryBuildError> {
         let mut builder = RegistrySnapshotBuilder::new();
         for descriptor in registrations {
@@ -90,7 +89,7 @@ impl RegistrySnapshot {
         register: impl FnMut(
             &mut RegistrySnapshotBuilder,
             BackendDescriptor,
-        ) -> Result<(), Vec<RegistrationRefusal>>,
+        ) -> Result<(), RegistrationRefusal>,
     ) -> Result<Self, RegistryBuildError> {
         Self::build_registrations(source()?, register)
     }
@@ -104,8 +103,8 @@ pub enum RegistryBuildError {
     #[error("linked engine descriptor source refused: {0}")]
     DescriptorSource(#[source] RegistrationRefusal),
     /// The registry refused one of the linked engine descriptors.
-    #[error("linked engine registration refused: {0:?}")]
-    Registration(Vec<RegistrationRefusal>),
+    #[error("linked engine registration refused: {0}")]
+    Registration(#[source] RegistrationRefusal),
 }
 
 /// Build one registry snapshot from registrations supplied by the caller.
@@ -126,10 +125,7 @@ impl RegistrySnapshotBuilder {
     }
 
     /// Add one already-admitted backend registration (FR-075/FR-290).
-    pub fn register(
-        &mut self,
-        descriptor: BackendDescriptor,
-    ) -> Result<(), Vec<RegistrationRefusal>> {
+    pub fn register(&mut self, descriptor: BackendDescriptor) -> Result<(), RegistrationRefusal> {
         self.registry.register(descriptor)
     }
 
@@ -480,11 +476,22 @@ impl Compilation {
     }
 }
 
+/// The package name a unit compiles under: its source identity's `identity`
+/// label.
+pub fn package_name_of(identity: &SourceIdentity) -> String {
+    identity
+        .label(qsl_foundation::source::SourceLabel::Identity)
+        .to_owned()
+}
+
 /// Run one source through FR-278's parse, select, check and package stages.
 pub fn compile_unit(input: &UnitInput) -> Compilation {
     let cancellation = Cancel::new();
-    let packages =
-        qsl_semantics::model::intake::package_input(input.packages.iter().map(Vec::as_slice));
+    let Ok(packages) =
+        qsl_semantics::model::intake::package_input(input.packages.iter().map(Vec::as_slice))
+    else {
+        return Compilation::classified(RefinementClass::ToolFailure, Vec::new());
+    };
     let parsed = match spine::parse(
         &ParseRequest {
             source: &input.identity,
@@ -503,9 +510,9 @@ pub fn compile_unit(input: &UnitInput) -> Compilation {
     };
     let checked = match spine::check(
         &parsed,
+        package_name_of(&input.identity),
         &models,
         &input.dependencies,
-        &qsl_semantics::check::LockEvidence::default(),
         input.limits,
         &cancellation,
     ) {
@@ -600,12 +607,8 @@ fn read_entry_file(root: &Path, name: &str) -> Result<Vec<u8>, String> {
     fs::read(canonical).map_err(|error| format!("cannot read {name}: {error}"))
 }
 
-fn source_reference(source: &SourceFile, bytes: &[u8]) -> Result<RawSourceRef, String> {
-    let digest = DigestRecord::mint(
-        DigestDomain::SourceBytesV1,
-        ByteDigest::of(bytes).as_bytes(),
-    );
-    RawSourceRef::new(source.authority.clone(), source.identity.clone(), digest)
+fn source_reference(source: &SourceFile) -> Result<RawSourceRef, String> {
+    RawSourceRef::new(source.authority.clone(), source.identity.clone())
         .map_err(|error| format!("invalid source labels: {error}"))
 }
 
@@ -620,7 +623,7 @@ fn load_unit(
     let (identity, _, _) = profile_identity_span(&bytes)?;
     let layer = HeaderLayer::from_identity(&identity)
         .ok_or_else(|| format!("profile identity {identity:?} is not a header-selectable layer"))?;
-    let reference = source_reference(&source, &bytes)?;
+    let reference = source_reference(&source)?;
     let input = UnitInput {
         identity: SourceIdentity::new(
             source.authority,
@@ -1001,7 +1004,7 @@ fn witness_result(
             result: CaseResult::ToolFailure,
         };
     };
-    let witness_request = DefinitionLock::pinned().layer_row(layer).witness_request;
+    let witness_request = layer.witness_request();
     let capability = match witness_request.kind {
         WitnessKind::OperationContract => Capability::OperationContract,
         WitnessKind::ValueValidity => Capability::ValueValidity,
@@ -1135,10 +1138,9 @@ mod tests {
     use ix_trace_rs::trace;
 
     use qsl_foundation::bound::DomainKind;
-    use qsl_foundation::digest::ByteDigest;
     use qsl_foundation::BackendId;
     use qsl_route::EvidenceKind;
-    use qsl_route::{BackendDescriptor, Candidate, ManifestDigest, Mode, ProviderOrigin};
+    use qsl_route::{BackendDescriptor, Candidate, Mode, ProviderOrigin};
     use qsl_semantics::check::Capability;
     use serde_json::json;
     use std::collections::BTreeSet;
@@ -1194,7 +1196,6 @@ mod tests {
         let descriptor = BackendDescriptor::new(
             Candidate::new(BackendId::new("backend-a")),
             ProviderOrigin::Linked,
-            ManifestDigest::from_digest(ByteDigest::of(b"manifest").as_bytes()),
             [(Capability::OperationContract, Mode::Bounded)],
             Some(BTreeSet::from([DomainKind::Collection])),
             None,
@@ -1216,7 +1217,6 @@ mod tests {
         qsl_route::descriptor_from_manifest(
             Candidate::new(BackendId::new("injected-invalid")),
             ProviderOrigin::Linked,
-            ManifestDigest::from_digest([0; 32]),
             [(Some("unknown-kind"), Some("bounded"))],
             qsl_route::ManifestMembers::default(),
         )
@@ -1224,7 +1224,7 @@ mod tests {
     }
 
     /// FR-489-AC-1/2/4/5: the production snapshot contains exactly the real
-    /// EN-1, EN-4 and EN-6 registrations and leaves the missing witness kinds empty.
+    /// EN-1, EN-4 and EN-6 registrations and the two witness arms.
     #[trace("TC-1272", "FR-489-AC-1", "FR-489-AC-2", "FR-489-AC-4", "FR-489-AC-5")]
     #[test]
     fn production_snapshot_contains_only_linked_engine_registrations() {
@@ -1282,11 +1282,22 @@ mod tests {
         let CandidateOutcome::Candidates(contract) =
             first.candidates(Capability::OperationContract)
         else {
-            panic!("an unregistered kind returns its empty candidate set");
+            panic!("the operation-contract arm gives a candidate set");
         };
-        assert!(
-            contract.is_empty(),
-            "unexpected provider for OperationContract"
+        assert_eq!(
+            contract
+                .candidates()
+                .iter()
+                .map(|candidate| candidate.id().as_str())
+                .collect::<Vec<_>>(),
+            ["contract-checker"]
+        );
+        assert_eq!(
+            registrations
+                .iter()
+                .map(|descriptor| descriptor.id().as_str())
+                .collect::<Vec<_>>(),
+            ["en-1", "en-4", "en-6", "value-checker", "contract-checker"]
         );
     }
 
@@ -1315,7 +1326,7 @@ mod tests {
             || Ok(descriptors),
             |builder, descriptor| {
                 if descriptor.id().as_str() == "en-4" {
-                    Err(vec![registration_refusal.clone()])
+                    Err(registration_refusal.clone())
                 } else {
                     builder.register(descriptor)
                 }
@@ -1323,7 +1334,7 @@ mod tests {
         );
         assert!(matches!(
             registration_result,
-            Err(RegistryBuildError::Registration(found)) if found == vec![registration_refusal]
+            Err(RegistryBuildError::Registration(found)) if found == registration_refusal
         ));
     }
 
@@ -1335,7 +1346,7 @@ mod tests {
         let temp = crate::test_support::tempdir();
         let root = temp.path().join("state-core-witness");
         fs::create_dir_all(&root).unwrap();
-        let source = "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.state.core/v1\";\nmodel Config = \"example/config-version\" version \"1.0.0\" digest \"sha256-jcs:@DIGEST@\";\ninvariant One using v on Config::ConfigVersion at current { true }\n";
+        let source = "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.state.core/v1\";\nmodel Config = \"example/config-version\";\ninvariant One using v on Config::ConfigVersion at current { true }\n";
         let package = fs::read(
             Path::new(env!("CARGO_MANIFEST_DIR"))
                 .parent()
@@ -1343,18 +1354,7 @@ mod tests {
                 .join("examples/config-version/model.semantic-ir.json"),
         )
         .unwrap();
-        // The model's `sha256-jcs` digest, computed from the document: the
-        // SHA-256 of its RFC 8785 encoding.
-        let digest = {
-            let parsed: serde_json::Value = serde_json::from_slice(&package).unwrap();
-            let canonical = serde_json_canonicalizer::to_vec(&parsed).unwrap();
-            format!("{:x}", ByteDigest::of(&canonical))
-        };
-        fs::write(
-            root.join("witness.native"),
-            source.replace("@DIGEST@", &digest),
-        )
-        .unwrap();
+        fs::write(root.join("witness.native"), source).unwrap();
         fs::write(root.join("model.semantic-ir.json"), &package).unwrap();
         let entry = json!({
             "kind": "witness",
@@ -1372,7 +1372,6 @@ mod tests {
         let descriptor = BackendDescriptor::new(
             Candidate::new(BackendId::new("backend-a")),
             ProviderOrigin::Linked,
-            ManifestDigest::from_digest(ByteDigest::of(b"manifest").as_bytes()),
             [
                 (Capability::OperationContract, Mode::Bounded),
                 (Capability::ValueValidity, Mode::Bounded),
@@ -1408,12 +1407,11 @@ mod tests {
     #[trace("TC-868", "FR-345-AC-4", "FR-345-AC-7")]
     #[test]
     fn the_edge_table_has_the_six_fr453_pairs() {
-        let lock = DefinitionLock::pinned();
         let expected: Vec<(HeaderLayer, HeaderLayer)> = HeaderLayer::ALL
             .into_iter()
             .flat_map(|child| {
-                lock.layer_row(child)
-                    .requires
+                child
+                    .requires()
                     .iter()
                     .copied()
                     .map(move |parent| (parent, child))

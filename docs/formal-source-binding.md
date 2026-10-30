@@ -18,12 +18,12 @@ FormalSource::to_native(&self, span: &quire_contract_model::SourceSpan)
 validated constructors. The caller owns choosing the appropriate formal document
 and positive revision; native opaque labels are never parsed, hashed into a
 revision, normalized or replaced. The binding retains an inexpensive immutable
-Source clone, including its native labels, original path and byte digest.
+Source clone, including its native labels, original path and bytes.
 There is no global registry, conflict resolution across bindings or wire format.
 Later package assembly must retain these bindings and enforce its own inventory
 uniqueness. Constructing a binding supplies no semantic or provenance verdict.
 
-Forward mapping requires exact equality of native labels, path and byte digest
+Forward mapping requires exact equality of native labels and path
 with the stored Source. Path is a local request guard, not a portable identity.
 Offsets are checked through the existing Source coordinate API before conversion
 to the actual IR SourceLocation and SourceSpan constructors. No duplicated UTF-8
@@ -50,9 +50,8 @@ work. It uses the source's existing indexed coordinate lookup. The API adds no
 separate resource budget because each request maps exactly two endpoints.
 
 The binding is immutable and reusable after refusals. Independently loaded
-sources with identical labels, path and digest are equivalent forward requests;
-Arc pointer identity is not the correspondence rule. Source::read_verified
-remains responsible for checking an independently selected digest during intake.
+sources with identical labels and path are equivalent forward requests;
+Arc pointer identity is not the correspondence rule.
 SourceMap still owns extraction layout and discontiguous original regions.
 Composing these APIs requires callers to retain each exact original segment;
 this API neither combines those regions nor replaces the extraction contract.

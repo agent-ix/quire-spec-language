@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-908 (FR-060-AC-5, FR-060-AC-6, FR-060-AC-7): `compile_package` emits the bytes and
-//! `package_id` the spine emits, and refuses as the spine does. As an
+//! package bytes the spine emits, and refuses as the spine does. As an
 //! integration test it reaches only the crate's public API.
 
 use std::collections::BTreeMap;
@@ -30,12 +30,11 @@ fn limits(source_bytes: u64) -> StageLimits {
         .collect()
 }
 
-/// The spine's own run over `text`: its package bytes and `package_id`, or
-/// its refusal.
+/// The spine's own run over `text`: its package bytes, or its refusal.
 fn spine_run(
     text: &str,
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
-) -> Result<(Vec<u8>, String), Box<CompileRefusal>> {
+    packages: &qsl_semantics::model::intake::PackageInput,
+) -> Result<Vec<u8>, Box<CompileRefusal>> {
     let source = identity();
     let limits = SpineLimits::default();
     let cancel = Cancel::new();
@@ -58,9 +57,9 @@ fn spine_run(
         .into_value();
     let checked = spine::check(
         &parsed,
+        "fixture".to_owned(),
         &models,
         &DependencyInput::default(),
-        &spine::LockEvidence::default(),
         limits,
         &cancel,
     )
@@ -69,17 +68,17 @@ fn spine_run(
     let emitted = spine::package(&checked, spine::PackageLimits::default(), &cancel)
         .map_err(refusal)?
         .into_value();
-    Ok((
-        emitted.package().bytes().to_vec(),
-        emitted.package().package_id().hex(),
-    ))
+    Ok(emitted.package().bytes().to_vec())
 }
 
 fn compile(text: &str, stages: StageLimits) -> Result<qsl_replay::CompiledPackage, ReplayRefusal> {
     compile_package(
-        identity(),
-        "unit.native",
-        text.as_bytes(),
+        qsl_replay::CompileUnit {
+            source: identity(),
+            package_name: "fixture".to_owned(),
+            path: "unit.native",
+            bytes: text.as_bytes(),
+        },
         [],
         &DependencyInput::default(),
         stages,
@@ -88,22 +87,20 @@ fn compile(text: &str, stages: StageLimits) -> Result<qsl_replay::CompiledPackag
 }
 
 /// FR-092's recursive `List` and `Tree` compile through the facade to the
-/// spine's bytes and `package_id`.
+/// spine's bytes.
 #[trace("TC-908", "FR-060-AC-5")]
 #[test]
-fn recursive_records_compile_to_the_spine_bytes_and_package_id() {
+fn recursive_records_compile_to_the_spine_bytes() {
     for record in [LIST, TREE] {
         let text = format!("{HEADER}{record}");
-        let (bytes, package_id) =
-            spine_run(&text, &BTreeMap::new()).expect("the spine compiles the record");
+        let bytes = spine_run(&text, &BTreeMap::new()).expect("the spine compiles the record");
         let compiled = compile(&text, limits(1 << 20)).expect("the facade compiles the record");
         assert!(!bytes.is_empty());
         assert_eq!(compiled.bytes(), bytes.as_slice());
-        assert_eq!(compiled.package_id().hex(), package_id);
     }
     let list = compile(&format!("{HEADER}{LIST}"), limits(1 << 20)).unwrap();
     let tree = compile(&format!("{HEADER}{TREE}"), limits(1 << 20)).unwrap();
-    assert_ne!(list.package_id(), tree.package_id());
+    assert_ne!(list.bytes(), tree.bytes());
 }
 
 /// A malformed source refuses with the spine refusal's code and stage.
@@ -132,9 +129,12 @@ fn a_library_with_the_units_owner_refuses() {
     };
     let dependencies = DependencyInput::new([library]).unwrap();
     let refusal = compile_package(
-        identity(),
-        "unit.native",
-        format!("{HEADER}{LIST}").as_bytes(),
+        qsl_replay::CompileUnit {
+            source: identity(),
+            package_name: "fixture".to_owned(),
+            path: "unit.native",
+            bytes: format!("{HEADER}{LIST}").as_bytes(),
+        },
         [],
         &dependencies,
         limits(1 << 20),
@@ -169,9 +169,12 @@ fn a_raised_replay_input_bound_admits_an_s1_limit_the_default_refuses() {
     let above = qsl_replay::DEFAULT_REPLAY_INPUT_BYTES * 2;
     let compile_with = |replay: ReplayLimits| {
         compile_package(
-            identity(),
-            "unit.native",
-            text.as_bytes(),
+            qsl_replay::CompileUnit {
+                source: identity(),
+                package_name: "fixture".to_owned(),
+                path: "unit.native",
+                bytes: text.as_bytes(),
+            },
             [],
             &DependencyInput::default(),
             limits(above),
@@ -186,7 +189,7 @@ fn a_raised_replay_input_bound_admits_an_s1_limit_the_default_refuses() {
 }
 
 /// A unit selecting a domain package compiles through the facade to the
-/// spine's bytes and `package_id` when the package is supplied, and refuses
+/// spine's bytes when the package is supplied, and refuses
 /// at I1 as the spine does when it is not.
 #[trace("TC-908", "FR-060-AC-7")]
 #[test]
@@ -196,20 +199,19 @@ fn a_domain_package_is_the_i1_input_as_in_the_spine() {
         "/../tests/fixtures/spine-model.semantic-ir.json"
     ))
     .unwrap();
-    let packages = package_input([document.as_slice()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    let hex: String = digest.iter().map(|byte| format!("{byte:02x}")).collect();
+    let packages = package_input([document.as_slice()]).unwrap();
     let text = format!(
-        "{HEADER}model M = \"acme/orders\" version \"1.0.0\" digest \"sha256-jcs:{hex}\";\n\
+        "{HEADER}model M = \"acme/orders\";\n\
          function small using v(x: Int[0, 9]): Boolean pure {{ x < 5 }}\n"
     );
-    let (bytes, package_id) = spine_run(&text, &packages).expect("the spine compiles the unit");
+    let bytes = spine_run(&text, &packages).expect("the spine compiles the unit");
     let compiled = compile_package(
-        identity(),
-        "unit.native",
-        text.as_bytes(),
+        qsl_replay::CompileUnit {
+            source: identity(),
+            package_name: "fixture".to_owned(),
+            path: "unit.native",
+            bytes: text.as_bytes(),
+        },
         [document.as_slice()],
         &DependencyInput::default(),
         limits(1 << 20),
@@ -217,7 +219,6 @@ fn a_domain_package_is_the_i1_input_as_in_the_spine() {
     )
     .expect("the facade compiles the unit");
     assert_eq!(compiled.bytes(), bytes.as_slice());
-    assert_eq!(compiled.package_id().hex(), package_id);
 
     let expected = spine_run(&text, &BTreeMap::new()).expect_err("the spine refuses at I1");
     let Err(ReplayRefusal::Recompile(refusal)) = compile(&text, limits(1 << 20)) else {

@@ -19,7 +19,6 @@ use std::collections::BTreeMap;
 use qsl_semantics::check::{CheckRefusal, CheckedGraph, PackageDeclarations};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
-use qsl_semantics::model::key::hex;
 use quire_checked::key::DeclarationKey;
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value};
@@ -31,7 +30,6 @@ pub const RING: &str = "example/ring-queue-impl";
 
 const INTEGER: &str = "ix://quire/native/Integer";
 const BOOLEAN: &str = "ix://quire/native/Boolean";
-const DIGEST: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 
 /// The identity text of `path` in `package`.
 pub fn node(package: &str, path: &str) -> String {
@@ -59,7 +57,6 @@ pub fn construct(package: &str, name: &str, semantic_meaning: &str) -> Value {
     json!({
         "kind": {"module": package, "name": name},
         "moduleVersion": "1.0.0",
-        "manifestDigest": DIGEST,
         "construct": {
             "identity": "none", "shape": "record", "members": {},
             "meaning": semantic_meaning,
@@ -206,14 +203,14 @@ pub fn population(package: &str, name: &str, member: &str) -> Value {
 pub fn document(package: &str, types: Vec<Value>, populations: Vec<Value>) -> Vec<u8> {
     json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
         "source": {
             "identity": node(package, "spec"), "version": "1.0.0",
-            "dialect": "spec-bundle", "digest": DIGEST,
+            "dialect": "spec-bundle",
         },
         "package": {
-            "identity": package, "version": "1.0.0", "manifestDigest": DIGEST,
-            "mappingVersions": [], "profileVersions": [], "lockDigest": DIGEST,
+            "identity": package, "version": "1.0.0",
+            "mappingVersions": [], "profileVersions": [],
         },
         "occurrences": [], "extensions": [],
         "constructs": [
@@ -367,7 +364,7 @@ pub struct Checked {
     /// The checked graph.
     pub graph: CheckedGraph,
     /// The domain packages, by digest.
-    pub packages: BTreeMap<[u8; 32], Vec<u8>>,
+    pub packages: qsl_semantics::model::intake::PackageInput,
 }
 
 /// The unit holding `body` over both models, checked, or its refusals.
@@ -381,14 +378,8 @@ pub fn check_over(queue: &[u8], body: &str) -> Result<Checked, Vec<Refused>> {
     let mut packages = BTreeMap::new();
     let mut selections = String::new();
     for (alias, identity, bytes) in [("Q", QUEUE, &queue), ("R", RING, &ring)] {
-        let single = package_input([bytes.as_slice()]);
-        let [(digest, _)] = single.iter().collect::<Vec<_>>()[..] else {
-            panic!("one supplied document");
-        };
-        selections.push_str(&format!(
-            "model {alias} = {identity:?} version \"1.0.0\" digest \"sha256-jcs:{}\";\n",
-            hex(digest)
-        ));
+        let single = package_input([bytes.as_slice()]).unwrap();
+        selections.push_str(&format!("model {alias} = {identity:?};\n"));
         packages.extend(single);
     }
     let text = format!(
@@ -412,10 +403,15 @@ pub fn check_over(queue: &[u8], body: &str) -> Result<Checked, Vec<Refused>> {
         ModelNormalizationLimits::default(),
     )
     .unwrap_or_else(|refusal| panic!("I1 refused: {refusal:?}"));
-    let declarations =
-        PackageDeclarations::assemble(parsed.source().reference().clone(), built, selected, vec![])
-            .unwrap_or_else(|refusal| panic!("{body}: the unit assembles: {refusal:?}"))
-            .with_unwritten_refinements();
+    let declarations = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        "fixture".to_string(),
+        built,
+        selected,
+        vec![],
+    )
+    .unwrap_or_else(|refusal| panic!("{body}: the unit assembles: {refusal:?}"))
+    .with_unwritten_refinements();
     let regions = declarations.regions();
     match declarations.check(CheckingLimits::default()) {
         Ok(graph) => Ok(Checked { graph, packages }),

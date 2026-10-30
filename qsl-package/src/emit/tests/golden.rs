@@ -128,7 +128,7 @@ fn record_types() -> TypeEnvironment {
         ValueType::Text(quire_exact::TextType::new(0, 8, quire_exact::TextProfile::Nfc).unwrap());
     TypeEnvironment::new(
         [CompositeDeclaration::new(
-            NodeKey::from_digest([7; 32]),
+            fixture_type_key("R"),
             "R",
             CompositeShape::Record(vec![FieldDeclaration::new(
                 "name",
@@ -141,30 +141,11 @@ fn record_types() -> TypeEnvironment {
     .expect("FR-143 admits R")
 }
 
-/// The lock evidence of these packages: the catalog's text-profile
-/// definition, which the emitted lock selects.
-fn lock_evidence() -> qsl_semantics::check::LockEvidence {
-    let entry = *DefinitionLock::pinned().entry(CatalogRole::TextProfile);
-    qsl_semantics::check::LockEvidence::default().with_text_profile(
-        qsl_semantics::value::DefinitionReference {
-            authority: entry.authority.to_owned(),
-            identity: entry.identity.to_owned(),
-        },
-    )
-}
-
 /// The package's one admitted IEEE profile: the catalog's own definition.
 fn ieee_profile() -> qsl_semantics::value::AdmittedIeeeProfile {
-    let lock = DefinitionLock::pinned();
-    let entry = lock.entry(CatalogRole::IeeeProfile);
-    lock.admit_ieee_profile(
-        &[qsl_semantics::value::DefinitionReference {
-            authority: entry.authority.to_owned(),
-            identity: entry.identity.to_owned(),
-        }],
-        &[],
-    )
-    .expect("the catalog's IEEE profile is admitted")
+    let entry = DefinitionRole::IeeeProfile.reference();
+    qsl_semantics::value::admit_ieee_profile(&[entry], &[])
+        .expect("the typed IEEE profile role is admitted")
 }
 
 fn linked(types: TypeEnvironment, functions: Vec<FunctionDeclaration>) -> CheckedPackage {
@@ -172,9 +153,8 @@ fn linked(types: TypeEnvironment, functions: Vec<FunctionDeclaration>) -> Checke
         PackageDeclarations {
             types,
             functions,
-            lock_evidence: lock_evidence(),
             ieee_profile: Some(ieee_profile()),
-            ..PackageDeclarations::new(source(), qsl_foundation::IdentityLimits::default())
+            ..PackageDeclarations::new(source(), "pkg", qsl_foundation::IdentityLimits::default())
         }
         .check(CheckingLimits::default())
         .expect("the fixture functions check"),

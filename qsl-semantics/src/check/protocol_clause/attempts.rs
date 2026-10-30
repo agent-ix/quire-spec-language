@@ -44,7 +44,7 @@ pub(super) fn bind_attempts(
     for (index, attempt_decl) in attempts.iter().enumerate() {
         let form = &protocol.attempts[index];
         let attempt_anchor = anchor_label(
-            attempt_decl.operation.declaring,
+            attempt_decl.operation.declaring.clone(),
             attempt_decl.operation.declaration.name(),
         );
         let mut contracts = Vec::with_capacity(form.contracts.len());
@@ -91,11 +91,11 @@ pub(super) fn bind_attempts(
             }
             let clause_anchor = match &clause.operation {
                 Some(clause_operation) => anchor_label(
-                    clause_operation.declaring,
+                    clause_operation.declaring.clone(),
                     clause_operation.declaration.name(),
                 ),
                 None => types
-                    .object_type(clause.context)
+                    .object_type(clause.context.clone())
                     .map(ObjectTypeDeclaration::name)
                     .unwrap_or("?")
                     .to_owned(),
@@ -113,8 +113,8 @@ pub(super) fn bind_attempts(
         bound.push(BoundAttempt {
             declaration: attempt_decl.declaration,
             operation: attempt_decl.operation.clone(),
-            receiver: attempt_decl.receiver,
-            frame_population: attempt_decl.frame_population,
+            receiver: attempt_decl.receiver.clone(),
+            frame_population: attempt_decl.frame_population.clone(),
             contracts,
         });
     }

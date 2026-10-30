@@ -14,6 +14,7 @@ use super::{
     RawNativeKind, RawNode, SnapshotValue,
 };
 use crate::model::domain_package::DomainPackageRef;
+use crate::model::intake::PackageInput;
 
 /// Writes kernel values as snapshot value forms, naming each variant value by
 /// the IR node identity of its variant type and its exact case name.
@@ -35,13 +36,10 @@ impl ValueEncoder {
     pub fn over(
         model_selections: &[DomainPackageRef],
         types: &TypeEnvironment,
-        packages: &BTreeMap<[u8; 32], Vec<u8>>,
+        packages: &PackageInput,
         limits: ModelNormalizationLimits,
     ) -> Result<Self, AdmissionFailure> {
         let views = model_views(model_selections, packages, limits)?;
-        let unbounded = qsl_foundation::IdentityLimits {
-            input_bytes: u64::MAX,
-        };
         let mut variants = BTreeMap::new();
         let mut records = BTreeMap::new();
         for view in &views {
@@ -50,12 +48,12 @@ impl ValueEncoder {
                     declared,
                 ) = record
                 {
-                    if let Ok(Some(key)) = crate::check::record_node_key(record, unbounded) {
+                    if let Ok(Some(key)) = crate::check::record_node_key(record) {
                         records.insert(key, declared.key.node.clone());
                     }
                 }
             }
-            let declared = crate::check::variant_type_declarations(&view.view, "", unbounded)
+            let declared = crate::check::variant_type_declarations(&view.view, "")
                 .map_err(|_| fault("variant-type-declaration"))?;
             for (key, declaration) in declared {
                 for case in declaration.cases() {
@@ -135,7 +133,7 @@ impl ValueEncoder {
                 }
                 Work::Read(Value::Enum(member), _) => done.push(self.variant(member)?),
                 Work::Read(Value::Quantity(quantity), _) => done.push(SnapshotValue::quantity(
-                    super::document::unit_name(&self.types, quantity.unit())?,
+                    super::document::unit_name(&self.types, quantity.unit().clone())?,
                     quantity.magnitude(),
                 )),
                 Work::Read(Value::Option(option), canonical) => match option.payload() {
@@ -160,9 +158,11 @@ impl ValueEncoder {
                     );
                 }
                 Work::Read(Value::Composite(composite), canonical) => {
-                    let type_identity = self.records.get(&composite.declaration())?;
-                    let CompositeShape::Record(declared) =
-                        self.types.composite(composite.declaration())?.shape()
+                    let type_identity = self.records.get(composite.declaration())?;
+                    let CompositeShape::Record(declared) = self
+                        .types
+                        .composite(composite.declaration().clone())?
+                        .shape()
                     else {
                         return None;
                     };
@@ -187,7 +187,7 @@ impl ValueEncoder {
     }
 
     fn variant(&self, member: &EnumMember) -> Option<SnapshotValue> {
-        let (type_identity, case) = self.variants.get(&member.variant())?;
+        let (type_identity, case) = self.variants.get(member.variant())?;
         Some(SnapshotValue::variant(type_identity.clone(), case.clone()))
     }
 }

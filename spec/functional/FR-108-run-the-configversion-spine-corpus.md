@@ -44,17 +44,14 @@ independent `expected()` oracle.
   `AGPL-3.0-only`; one example keeps one licence.
 - One `1-draft` unit, generated with the fixtures. Its header selects the
   `root` profile FR-110 resolves, `quire.value.complete/v1`, by identity,
-  and the domain package by its identifier and the canonical content digest
-  the supplied document is checked against (refusing
-  `stale_dependency`/`content-mismatch`, QSpec FR-272 as amended by
-  quire-specification#174). The `model` line is QSpec's shared-grammar
-  `model` production, with no `version`:
+  and the domain package by its identity (QSpec FR-272). The `model` line is
+  QSpec's shared-grammar `model` production, with no `version`:
 
 ```text
 // SPDX-License-Identifier: AGPL-3.0-only
 language "ix:native" edition "1-draft";
 profile v = "quire.value.complete/v1";
-model Config = "example/config-version" digest "sha256-jcs:<the package's digest>";
+model Config = "example/config-version";
 invariant ParentOrder using v on Config::ConfigVersion at current { present(self.parent) implies deref(value(self.parent)).versionNumber < self.versionNumber }
 invariant NoCycle using v on Config::ConfigVersion at current { not reaches(self, self, parent) }
 post VersionUnchanged using v on Config::ConfigVersion::attemptUpdate { self.versionNumber = pre(self.versionNumber) }
@@ -119,11 +116,10 @@ snapshot data (ADR-012 §15.1).
   runs in `qsl-replay`'s tests built with that feature; the root crate has no
   `quire-extraction` feature (ADR-011 §7.3 X-4). Its disposition (stage,
   category, truth and exit code) SHALL equal the direct run's, and its
-  `package_id` SHALL be the extracted body's own: the one the body compiles
-  to under its body identity (FR-109-AC-6), since a source's identity gives
-  its declarations their owner and so the `package_id` (FR-001). The two
-  runs agree on outcome and keep their distinct source and package
-  identities (FR-032-AC-4).
+  package SHALL be the extracted body's own, compiled under its body
+  identity (FR-109-AC-6): a package is identified by its `LibraryName`
+  and the replay request carries no package id. The two runs agree on
+  outcome and keep their distinct source identities (FR-032-AC-4).
 
 ## Acceptance Criteria
 
@@ -132,9 +128,9 @@ snapshot data (ADR-012 §15.1).
 | FR-108-AC-1 | Every one of the 17 cases gives the disposition and exit code in the Corpus table through `run_clause`, checked against the independent expected table. | Test (TC-469) |
 | FR-108-AC-2 | For each of the 17 cases, the FR-267 native-run-result/2 writer and strict reader retain the report's stage, category, truth and code. | Test (TC-469) |
 | FR-108-AC-3 | Below-range and above-range refuse at admission with `invalid_runtime_input`; their native-run-result/2 records name the object (`root`, `child`) and field `versionNumber`. Boundary-zero and boundary-max complete with `true` (QSpec FR-180-AC-4, QSL's share). | Test (TC-469) |
-| FR-108-AC-4 | Generating the corpus twice gives identical files, and running it twice gives identical reports, each holding the disposition, the `package_id` and the usage FR-109 states, so the case is fixed by its inputs (QSpec FR-180-AC-5). A run whose request carries the `package_id` that spine `compile` emits for the unit gives the same report (FR-032-AC-4's package half). | Test (TC-469) |
-| FR-108-AC-5 | In `qsl-replay`'s tests built with `qsl-replay`'s `quire-extraction` feature, the Markdown run of each case, its unit extracted through I3 under its own body identity, gives the direct run's stage, category, truth and exit code, and the `package_id` that a direct `spine::compile` of the extracted body's bytes under that body identity emits. | Test (TC-469) |
-| FR-108-AC-6 | Every case's direct-run report agrees on the unit's `package_id` (the one spine `compile` emits for the FR-108 unit and package, independently re-derived and compared against every case's report); the emitted package bytes admit through QSpec I04 `read` (QSpec FR-180's reference verdict contract). | Test (TC-469) |
+| FR-108-AC-4 | Generating the corpus twice gives identical files, and running it twice gives identical reports, each holding the disposition and the usage FR-109 states, so the case is fixed by its inputs (QSpec FR-180-AC-5). | Test (TC-469) |
+| FR-108-AC-5 | In `qsl-replay`'s tests built with `qsl-replay`'s `quire-extraction` feature, the Markdown run of each case, its unit extracted through I3 under its own body identity, gives the direct run's stage, category, truth and exit code. | Test (TC-469) |
+| FR-108-AC-6 | The emitted package bytes of the FR-108 unit admit through QSpec I04 `read` (QSpec FR-180's reference verdict contract). | Test (TC-469) |
 
 ## Dependencies
 
@@ -144,7 +140,5 @@ snapshot data (ADR-012 §15.1).
   generated-oracle, property and proof consumers of FR-180-AC-1 are CG's and
   IR's (ADR-012 §15.7).
 - STD-111 (QSpec), which FR-105 names, for the emitted package's `state`
-  bodies, frame entries and `reaches_field` member; AC-1 to AC-6's
-  `package_id` half run over the in-process `CheckedPackage` and need none of
-  it. AC-6's I04 `read` half needs `quire-contract-model`'s
+  bodies, frame entries and `reaches_field` member; AC-6's I04 `read` half needs `quire-contract-model`'s
   `reaches_field` reference-edge check.

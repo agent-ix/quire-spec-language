@@ -36,7 +36,6 @@
 //!   it into a proof.
 
 use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{Capability, NodeTag};
@@ -117,12 +116,12 @@ pub struct TargetParameter {
 impl TargetParameter {
     /// The parameter's node.
     pub fn node(&self) -> NodeKey {
-        self.node
+        self.node.clone()
     }
 
     /// The parameter's wire node id.
-    pub fn wire(&self) -> WireNodeId {
-        wire_id(self.node)
+    pub fn wire(&self) -> NodeKey {
+        self.node.clone()
     }
 
     /// The values the parameter ranges over.
@@ -234,7 +233,7 @@ impl<'p> ValueTarget<'p> {
             .map_err(|_| fault("function-name-is-an-identifier"))?;
         let semantic = graph.semantic_graph();
         let parameters = semantic
-            .node(callable.identity)
+            .node(callable.identity.clone())
             .and_then(|node| node.function_parameters())
             .ok_or_else(|| fault("callable-identity-is-a-function-node"))?;
         if parameters.len() != callable.parameters.len() {
@@ -247,7 +246,7 @@ impl<'p> ValueTarget<'p> {
         let is_clause_key = [Role::new("declaration"), Role::new("claim")]
             .into_iter()
             .any(|role| {
-                *claim == OccurrenceKey::new(wire_id(callable.identity), Origin::new(role, 0))
+                *claim == OccurrenceKey::new(callable.identity.clone(), Origin::new(role, 0))
             });
         let form = if is_clause_key {
             if *callable.result != ValueType::Boolean {
@@ -262,11 +261,11 @@ impl<'p> ValueTarget<'p> {
             if !owned {
                 return Err(Selection::NoForm);
             }
-            let node = semantic
-                .resolve_wire(claim.node())
+            semantic
+                .node(claim.node().clone())
                 .ok_or(Selection::MissingNode)?;
             graph
-                .occurrence(node, claim.origin())
+                .occurrence(claim.node().clone(), claim.origin())
                 .ok_or(Selection::MissingNode)?;
             ClaimForm::ScalarOperation
         };
@@ -344,6 +343,7 @@ impl<'p> ValueTarget<'p> {
     ///
     /// An [`InternalFault`] when the evaluator breaks one of its invariants
     /// or `assignment` does not fit the target's parameters.
+    #[deny(clippy::wildcard_enum_match_arm)]
     pub fn evaluate(
         &self,
         assignment: &[Value],
@@ -489,10 +489,10 @@ impl<'p> ValueTarget<'p> {
                     && *origin.role() == expression
                     && graph
                         .semantic_graph()
-                        .node(*node)
+                        .node(node.clone())
                         .is_some_and(|n| n.node_tag() != NodeTag::Value)
             })
-            .map(|(node, origin, _)| OccurrenceKey::new(wire_id(node), origin));
+            .map(|(node, origin, _)| OccurrenceKey::new(node.clone(), origin));
         let only = found.next()?;
         found.next().is_none().then_some(only)
     }
@@ -500,10 +500,6 @@ impl<'p> ValueTarget<'p> {
 
 fn undefined_reason(reason: Undefined) -> &'static str {
     kernel_undefined_reason(reason)
-}
-
-fn wire_id(key: NodeKey) -> WireNodeId {
-    WireNodeId::from_digest(*key.as_bytes())
 }
 
 /// `a` restricted to `b`, or `None` when they share no value.

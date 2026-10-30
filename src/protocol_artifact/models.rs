@@ -18,15 +18,7 @@ use crate::native_model::{
 };
 use qsl_semantics::model::domain_package::DOMAIN_PACKAGE_PROFILE;
 
-type RefKey<'a> = (
-    &'a str,
-    &'a str,
-    &'a str,
-    &'a str,
-    &'a str,
-    &'a str,
-    &'a str,
-);
+type RefKey<'a> = (&'a str, &'a str, &'a str, &'a str, &'a str);
 type ExportKey = (String, Vec<String>);
 
 #[derive(Clone, Copy)]
@@ -113,8 +105,8 @@ pub(super) fn validate(
         work.bytes(owner.package().as_str().len())?;
         work.bytes(owner.requirement().as_str().len())?;
         if owners
-            .insert(owner, model.model.digest())
-            .is_some_and(|digest| digest != model.model.digest())
+            .insert(owner, model.model.artifact_bytes())
+            .is_some_and(|bytes| bytes != model.model.artifact_bytes())
         {
             return Err(Error::Invalid(Invalid::Model));
         }
@@ -128,7 +120,7 @@ pub(super) fn validate(
         ] {
             work.bytes(text.len())?;
         }
-        let correspondence = (source.identity(), source.path(), source.digest());
+        let correspondence = (source.identity(), source.path());
         if sources
             .insert(formal.identity(), correspondence)
             .is_some_and(|prior| prior != correspondence)
@@ -196,7 +188,6 @@ pub(super) fn validate(
         same_ref(artifact, selected.artifact, work)?;
         work.bytes(model.profile.len())?;
         if artifact.kind != w::ArtifactKind::ModelPackage
-            || artifact.digest != selected.model.digest()
             || model.profile != selected.model.profile().as_str()
         {
             return Err(Error::Invalid(Invalid::Model));
@@ -384,12 +375,10 @@ fn domain_model<'a>(
     let Some(naming) = &model.domain_package.0 else {
         return Err(Error::Invalid(Invalid::Model));
     };
-    work.bytes(naming.identity.len().saturating_add(naming.version.len()))?;
+    work.bytes(naming.identity.len())?;
     if artifact.kind != w::ArtifactKind::ModelPackage
         || model.profile != DOMAIN_PACKAGE_PROFILE
         || naming.identity != selection.identity
-        || naming.version != selection.version
-        || naming.digest.0 != selection.digest
     {
         return Err(Error::Invalid(Invalid::Model));
     }
@@ -489,8 +478,6 @@ fn ref_key(value: &w::ArtifactRef) -> RefKey<'_> {
         value.kind.as_str(),
         &value.authority,
         &value.identity,
-        &value.revision.namespace,
-        &value.revision.value,
         &value.wire.identity,
         &value.wire.version,
     )
@@ -502,14 +489,12 @@ fn charge_ref(value: &w::ArtifactRef, work: &mut Work) -> Result<(), Error> {
         &value.ref_version,
         &value.authority,
         &value.identity,
-        &value.revision.namespace,
-        &value.revision.value,
         &value.wire.identity,
         &value.wire.version,
     ] {
         work.bytes(text.len())?;
     }
-    work.bytes(32)
+    Ok(())
 }
 
 fn same_ref(left: &w::ArtifactRef, right: &w::ArtifactRef, work: &mut Work) -> Result<(), Error> {
@@ -543,7 +528,6 @@ fn validate_source(selected: &AdmittedModel<'_>, work: &mut Work) -> Result<(), 
     work.bytes(source.formal.revision.value.len())?;
     let revision = &source.formal.revision.value;
     if source.artifact.kind != w::ArtifactKind::Source
-        || source.artifact.digest != original.source().digest()
         || source.formal.document != original.identity().document().as_str()
         || revision.starts_with('0')
         || !revision.bytes().all(|byte| byte.is_ascii_digit())
@@ -1077,7 +1061,8 @@ fn domain_field<'a>(
 }
 
 fn same_model(left: &NativeModel, right: &NativeModel) -> bool {
-    left.environment().owner() == right.environment().owner() && left.digest() == right.digest()
+    left.environment().owner() == right.environment().owner()
+        && left.artifact_bytes() == right.artifact_bytes()
 }
 
 fn matches_native(

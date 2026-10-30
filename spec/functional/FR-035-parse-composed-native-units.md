@@ -72,7 +72,7 @@ opaque strings or inferring kinds from diagnostic messages.
 | FR-035-AC-3 | A model member spelled `result` or `retry` parses in its qualified position; the same reserved spelling as a native binder refuses in the composed edition. An identifier newly reserved there retains its historical `0-draft` treatment. | Test (TC-113) |
 | FR-035-AC-4 | CRLF, comments and escaped multibyte text retain exact original bytes and correct byte spans; an escaped string's decoded offset cannot replace its source location. | Test (TC-113) |
 | FR-035-AC-5 | Exact syntax limits admit the otherwise valid unit; the next required token/node/source-byte step above a lowered limit returns `stage_limit_exceeded`/`<kind>-exceeded` (a token is `token-count-exceeded`), with no recovery path bypass. | Test (TC-113) |
-| FR-035-AC-6 | Historical source, formatted output, refusal codes and package identities retain their frozen expectations; a composed selector is never silently replaced with the historical profile. | Test (TC-113) |
+| FR-035-AC-6 | Historical source, formatted output, refusal codes and package identities retain their unchanged historical expectations; a composed selector is never silently replaced with the historical profile. | Test (TC-113) |
 
 ## Dependencies
 

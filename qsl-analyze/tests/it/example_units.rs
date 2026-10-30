@@ -62,7 +62,7 @@ pub(crate) fn config_over(
     let clause = clause(OVER, fairness, formula);
     let text = if shipped {
         let header = "profile v = \"quire.model.complete/v1\";\n";
-        let shipped = shipped_unit_text(&domain.digest_hex());
+        let shipped = shipped_unit_text();
         assert!(shipped.contains(header), "the shipped unit's profile line");
         let shipped = shipped.replace(
             header,
@@ -156,12 +156,12 @@ fn positions(world: &World, counterexample: &TemporalCounterexample) -> Vec<Mode
 }
 
 /// Which object a step's receiver is: the receiver text carries the object
-/// id as hex (`a` is 61, `b` is 62).
+/// key.
 pub(crate) fn receiver(step: &qsl_replay::ModelStep) -> char {
     let text = step.transition.receiver().expect("a receiver");
-    if text.contains("\"identity\":\"61\"") {
+    if text.contains("\"identity\":\"a\"") {
         'a'
-    } else if text.contains("\"identity\":\"62\"") {
+    } else if text.contains("\"identity\":\"b\"") {
         'b'
     } else {
         panic!("an unknown receiver: {text}")

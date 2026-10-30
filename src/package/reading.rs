@@ -2,13 +2,13 @@
 //! FR-020: ordered selection, explicit authority, real reconstruction and comparison.
 
 use super::{
-    encoding, intake, view, wire, NativePackage, NativePackageRef, PackageCause, PackageError,
-    PackageLimits, PackagePathSegment, PackageStage, PackageUsage,
+    encoding, intake, view, wire, NativePackage, PackageCause, PackageError, PackageLimits,
+    PackagePathSegment, PackageStage, PackageUsage,
 };
 use crate::checking::{check, CheckBindings, CheckLimits};
 use crate::native_model::NativeModel;
 use crate::{link_native, parse, Limits, LinkLimits};
-use qsl_foundation::{ByteDigest, Code, Diagnostic};
+use qsl_foundation::{Code, Diagnostic};
 use std::collections::{BTreeMap, BTreeSet};
 
 const KNOWN_FEATURES: [&str; 19] = [
@@ -193,27 +193,6 @@ fn select(
             ));
         }
     }
-    for (field, actual, expected) in [
-        (
-            "domain",
-            wire.canonical_identity.domain.as_str(),
-            "quire.native.bound-package",
-        ),
-        ("version", wire.canonical_identity.version.as_str(), "v1"),
-        (
-            "algorithm",
-            wire.canonical_identity.algorithm.as_str(),
-            "sha256",
-        ),
-    ] {
-        if actual != expected {
-            return Err(request.error(
-                Code::UnknownProfile,
-                path(&["canonical_identity", field]),
-                "unsupported canonical identity selection",
-            ));
-        }
-    }
     let mut seen = BTreeSet::new();
     for (index, feature) in wire.required_features.iter().enumerate() {
         let location = vec![
@@ -266,11 +245,6 @@ fn authority(
             "revision",
             wire.source.revision.0 == source.identity().revision,
             Code::InvalidModelBinding,
-        ),
-        (
-            "digest",
-            wire.source.digest.0 == source.digest(),
-            Code::StaleDependency,
         ),
         (
             "formal",
@@ -356,7 +330,6 @@ fn authority(
 #[ix_trace_rs::string_edge]
 pub(super) fn read<'model>(
     bytes: &[u8],
-    expected: NativePackageRef,
     bindings: CheckBindings,
     models: &'model [NativeModel],
     support: &PackageSupport,
@@ -375,13 +348,6 @@ pub(super) fn read<'model>(
         ));
     }
     request.usage.admitted_input_bytes = bytes.len();
-    if ByteDigest::of(bytes) != expected.digest() {
-        return Err(request.error(
-            Code::StaleDependency,
-            Vec::new(),
-            "package bytes do not match selected digest",
-        ));
-    }
     if std::str::from_utf8(bytes).is_err() {
         return Err(request.error(Code::InvalidUtf8, Vec::new(), "package bytes are not UTF-8"));
     }
@@ -444,7 +410,6 @@ pub(super) fn read<'model>(
         error
     })?;
     reconstructed.bytes = bytes.to_vec();
-    reconstructed.digest = expected.digest();
     reconstructed.usage = request.usage;
     Ok(reconstructed)
 }

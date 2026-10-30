@@ -39,8 +39,7 @@ source in the byte provision and universe `{c}` in the request.
 8. Run FR-128-AC-8's constrained claim over ADR-021 §7.3's subject with
    `constraint Odd`, and replay its counterexample through a request that
    selects no reduction; then with its last step removed; then with `cause`
-   changed; then in an envelope over the unit declaring `Odd` as an
-   `invariant`, with that unit's `package_id`.
+   changed.
 
 Tag the tests `#[trace("TC-539", "FR-128-AC-n")]`.
 
@@ -61,5 +60,4 @@ Tag the tests `#[trace("TC-539", "FR-128-AC-n")]`.
   locus.
 - Step 8: `reproduced-with-evaluated-witness` with the
   `UndefinedEvaluation{where, cause: division-by-zero}` value and
-  `where.locus` naming `Odd`; `inconclusive`, `ReplayParity`, twice; refused
-  `stale_dependency`/`content-mismatch` naming the locus.
+  `where.locus` naming `Odd`; `inconclusive`, `ReplayParity`, twice.

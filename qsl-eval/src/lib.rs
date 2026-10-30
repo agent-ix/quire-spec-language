@@ -91,3 +91,6 @@ pub mod simulation;
 pub mod smt;
 pub mod temporal;
 pub mod value;
+
+#[cfg(test)]
+pub(crate) mod test_ids;

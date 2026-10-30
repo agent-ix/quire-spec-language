@@ -1,7 +1,7 @@
 # Run and compile requests
 
 `quire-spec run` and `quire-spec compile` each read one JSON request file. The
-request selects every input by file name and digest. Each result names the
+request selects every input by file name and source identity. Each result names the
 source, model and data it was computed from.
 
 This page covers requests for `1-draft` units. The ConfigVersion example
@@ -24,7 +24,6 @@ Every source file is selected with the same object:
 | Member | Meaning |
 | --- | --- |
 | `file` | Path relative to the request file. |
-| `digest` | `sha256:` and the file's lowercase hex SHA-256. A mismatch refuses the request. |
 | `authority`, `identity`, `revision_namespace`, `revision` | The source identity carried by every diagnostic. |
 | `document`, `formal_revision` | The document name and revision recorded in the result. |
 
@@ -86,7 +85,7 @@ A run prints one JSON result on stdout and ends with the outcome's exit code:
 | --- | --- |
 | 0 | completed, and the rule holds (or the function returned) |
 | 10 | completed, and the rule is broken; or undefined |
-| 20 | refused: a malformed request, a digest mismatch, a dangling reference, a value outside its type |
+| 20 | refused: a malformed request, a dangling reference, a value outside its type |
 | 21 | unsupported by this profile or backend |
 | 22 | incomplete: the data does not claim to be complete, or a work counter ran out |
 | 30 | internal failure |

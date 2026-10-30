@@ -47,7 +47,7 @@ Tag the tests `#[trace("TC-471", "FR-120-AC-n")]`.
 ## Expected Results
 
 - Step 1: three successors `v0`, `v1`, `v2`, each with transition identity
-  `{"arguments":[],"operation":"{\"digest_domain\":\"sha256-jcs\",\"node\":\"test/counters/Counter/increment\",\"package\":\"test/counters\"}","receiver":<c1>,"type":"transition"}` as JCS bytes,
+  `{"arguments":[],"operation":"{\"node\":\"test/counters/Counter/increment\",\"package\":\"test/counters\"}","receiver":<c1>,"type":"transition"}` as JCS bytes,
   `label` 0 and `next` absent. With `Inc`: one successor, `v1`. With
   `CanInc` alone: three successors from `v0` and from `v1`, none from `v2`.
 - Step 2: three successors from `s0`, with receiver `<c1>` and arguments `[{"type":"integer","value":"0"}]`,
@@ -67,7 +67,7 @@ Tag the tests `#[trace("TC-471", "FR-120-AC-n")]`.
   of the `ObjectReference` that FR-106 admission (`StateModel::
   admit_initial`) gives `c1` in `s0`'s admitted `Observation`: the test
   reads them from admission, not from the simulator's key; its population key is
-  `{"type":"text","value":"{\"digest_domain\":\"sha256-jcs\",\"node\":\"test/counters/counters\",\"package\":\"test/counters\"}"}`
+  `{"type":"text","value":"{\"node\":\"test/counters/counters\",\"package\":\"test/counters\"}"}`
   and `c1`'s `identity` is `6331`. `control`, `queues`, `roles`,
   `observations` and `bounds` are `{"type":"map","entries":[]}`. The two
   keys differ.

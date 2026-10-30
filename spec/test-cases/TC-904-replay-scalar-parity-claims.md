@@ -14,7 +14,7 @@ Verify `qsl_replay::replay_operator_parity` and
 `qsl_replay::replay_value_parity` settle each outcome of FR-357, and that the
 predicate arm of `replay` still refuses a non-`Boolean` function.
 
-Scope: FR-357-AC-1 to FR-357-AC-11, FR-357-AC-13 to FR-357-AC-20.
+Scope: FR-357-AC-1 to FR-357-AC-11, FR-357-AC-13 to FR-357-AC-15, FR-357-AC-19, FR-357-AC-20.
 
 ## Test Procedure
 
@@ -23,7 +23,7 @@ Function level, over `inc(x: Int[0, 9]): Integer { x + 1 }`,
 predicate `small`, each request built from the `call_site` `FunctionSite`
 of the function it selects, so it carries that function's `declaration`
 occurrence and its `value_parity.obligation_identity` (FR-484) and passes
-the occurrence and identity checks before the argument join (step 4's
+the occurrence check before the argument join (step 4's
 assignment naming `inv`'s parameter node therefore reaches the join and
 refuses `UnknownParameter`; step 5's `small` has no `value_parity` and its
 request carries `inc`'s identity, refusing `NotAValueFunction` first):
@@ -46,10 +46,10 @@ over operands drawn from `[0, 100]` with result range `[-200, 200]`:
    exact limits starved with a matching native value.
 9. An operand of 101; a literal operand with its singleton range.
 10. The terminal value of an agreement and of a divergence.
-11. An `add` claim with a stale `package_id`, a node the package does not
-    hold, a `mul` node under `inc`, a `mul` claim on the `+` node, and an
-    undeclared enclosing function; each checked for the request's obligation
-    identity.
+11. An `add` claim with a node the package does not
+    hold, a `mul` node under `inc`, a `mul` claim on the `+` node, an
+    occurrence key the node does not have, and an undeclared enclosing
+    function.
 
 Claim identity, at both levels:
 
@@ -57,26 +57,15 @@ Claim identity, at both levels:
     an undecodable request, and at the operator level a generated fault and an
     unknown node; compare `claim()` with the claim sent. Compare claims that
     differ in one member.
-13. Replay claims that differ only in the observation digest, on every kind of
-    outcome.
-14. Recompute the obligation identity of an operator claim over graph-child
+13. (Retired with FR-357-AC-14.)
+14. Build the obligation identity of an operator claim over graph-child
     operands (one with a negative range bound), over inline literals, and
     over two inline literals at different positions of one application, and
-    compare with a digest of the preimage's canonical text written out by
-    hand.
-15. Replay a claim whose request identity was minted over another range,
-    operand identity, occurrence key or obligation kind. A differing native
-    outcome alone leaves the identity unchanged (it shows as `claim()`).
-16. Replay claims with a node or operator the package lacks, an occurrence
-    key the node does not have, a graph child that is not the node's argument,
-    and an inline literal the node does not have; check an application with
-    a graph child and an inline literal by hand, with a wrong literal value,
-    a wide literal range and a wrong operand count.
-17. Verify a zero identity against a preimage with an occurrence ordinal
-    beyond 2^53, and against one that encodes.
-18. Digest ADR-013 O-09's worked example (the argument entry and the whole
-    preimage) through `parity_obligation`, and order and refuse harness
-    bounds.
+    compare by equality with the preimage tuple written out by hand.
+15. (Retired with FR-357-AC-16.)
+16. (Retired with FR-357-AC-17.)
+17. (Retired with FR-357-AC-18.)
+18. Order and refuse harness bounds.
 19. Replay a function request and an operator request with the replay
     target replaced by `frame_operation` (`Config::ConfigVersion`,
     `attemptUpdate`), and by `state_clause` (`VersionUnchanged`).
@@ -99,16 +88,16 @@ the encoded-size bound.
 - Step 10: `Inconclusive(ScalarAgrees)` and `Failed`; no result settles
   `Refuted`. The envelope round-trips the agreement and refuses the oversized
   one.
-- Step 11: `PackageIdMismatch` (`content-mismatch`); `ScalarIdentity`
-  (`content-mismatch`) with cause `Node`, `Function` and `Operator`;
+- Step 11: `ScalarIdentity`
+  (`invalid-request`) with cause `Node`, `Function`, `Operator` and `Occurrence`;
   `UnknownFunction` (`missing-name`); each carries the obligation identity.
 
 - Step 12: `claim()` equals the claim sent on every outcome; a claim differing
   in any member is not equal; an agreement's claim is the report's.
-- Step 13: each report carries the digest it was sent; the claims differ.
-- Step 14: the recomputed digests equal the hand-computed ones; the two literals differ.
-- Step 15: `ScalarIdentity` (`content-mismatch`) cause `Obligation`, naming both digests.
-- Step 16: `Node`, `Operator`, `Occurrence`, `OperandChild`, `NotInlineLiteral`, `LiteralValue` and `OperandCount`; the mixed claim passes.
-- Step 17: cause `Encoding` for the first, `Obligation` for the second.
-- Step 18: the digest of the entry, the SHA-256 of its canonical text; the whole preimage equals its text's digest; bounds ordered `[0, 0]` before `[0]`, `[10]` before `[2]`; a repeat refuses.
+- Step 13: none; retired.
+- Step 14: the built identities equal the hand-written tuples; the two literals differ.
+- Step 15: none; retired.
+- Step 16: none; retired.
+- Step 17: none; retired.
+- Step 18: bounds ordered `[0, 0]` before `[0]`, `[10]` before `[2]`; a repeat refuses.
 - Step 19: `invalid_runtime_input`/`unknown-member` at `/replay/frame_operation` and `/replay/state_clause`, naming the entry and `function`, before the recompile; the function claim holds no `function` (FR-357-AC-20).

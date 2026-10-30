@@ -9,14 +9,11 @@ use super::*;
 /// The ConfigVersion unit with a workload and a reward on `attemptUpdate`.
 fn probabilistic_package() -> CheckedPackage {
     let document = config_version_unit::DOMAIN_PACKAGE.as_bytes();
-    let packages = qsl_semantics::model::intake::package_input([document]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
+    let packages = qsl_semantics::model::intake::package_input([document]).unwrap();
     let unit = format!(
         "{}workload Steady on Config {{ weight ConfigVersion::attemptUpdate = 1; }}\n\
          reward cost on ConfigVersion::attemptUpdate = 1;\n",
-        config_version_unit::unit_text(&qsl_semantics::model::key::hex(digest))
+        config_version_unit::unit_text()
     );
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
@@ -56,11 +53,8 @@ fn a_checked_probabilistic_model_refuses_emission() {
 #[test]
 fn a_checked_claim_refuses_emission() {
     let document = config_version_unit::DOMAIN_PACKAGE.as_bytes();
-    let packages = qsl_semantics::model::intake::package_input([document]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    let unit = config_version_unit::unit_text(&qsl_semantics::model::key::hex(digest)).replace(
+    let packages = qsl_semantics::model::intake::package_input([document]).unwrap();
+    let unit = config_version_unit::unit_text().replace(
         "profile v = \"quire.model.complete/v1\";\n",
         "profile v = \"quire.model.complete/v1\";\n\
          profile ev = \"quire.temporal.event-position.false-extension/v1\";\n",

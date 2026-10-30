@@ -34,12 +34,13 @@ classification to construct and validate the TL correspondence.
 
 ## Semantic authority and boundary
 
-QSpec FR-095 owns the correspondence meaning and support table. This QSL
-requirement owns `mapping_support_v2` and the authenticated native classification
-that Contract IR FR-350 consumes. A supported classification names outstanding
-premises; it does not claim that a formula, valuation request or correspondence
-record has been emitted. Contract IR owns that construction and the result join.
-Neither QSL nor Contract IR owns the TL or native evaluator.
+QSpec FR-095 owns the correspondence contract and directs QSL FR-045 to
+classify its support table. This QSL requirement owns the table's classification
+and target mapping, `mapping_support_v2`, and the authenticated native
+classification that Contract IR FR-350 consumes. A supported classification
+names outstanding premises; it does not claim that a formula, valuation request
+or correspondence record has been emitted. Contract IR owns that construction
+and the result join. Neither QSL nor Contract IR owns the TL or native evaluator.
 
 The disposition SHALL be a total function of three inputs and nothing else:
 the declaration's selected profile, the operator kinds reachable from its root,
@@ -72,8 +73,8 @@ selection, so a classification made through it retains none. Through a strict
 SHALL resolve the selection through the declaration's admitted temporal binding,
 SHALL refuse a declaration with no binding or whose binding selects a definition
 other than the declaration's own, and SHALL retain the selection it resolved: the
-admitted package digest, the declaration, the definition identity and namespaced
-revision, and the digest of the exact definition artifact the package selects.
+admitted package identity, the declaration, the definition identity and namespaced
+revision, and the identity of the exact definition artifact the package selects.
 The strict reader already refuses a temporal declaration with no binding and a
 binding that selects another definition, so both refusals are inspected
 re-checks rather than reachable test paths. The
@@ -99,15 +100,15 @@ A `Supported` classification with the required bridge premises and exact TL
 target identity, or an `Unsupported` classification carrying every unmatched
 semantic dimension, the retained native declaration subject, its selected
 profile identity and its activation record. A strict `/2` classification also
-retains the authenticated package digest, declaration, definition identity and
-revision, and exact definition artifact digest. The classification makes no
+retains the authenticated package identity, declaration, definition identity and
+revision, and exact definition artifact identity. The classification makes no
 claim that the Contract IR bridge has emitted or joined an artifact.
 
 ## Behavior
 
-The classifier SHALL use exactly this table, which restates the reviewed
-correspondence disposition in
-`ix://agent-ix/quire-specification/FR-095`. The admitted temporal profiles are
+The classifier SHALL use exactly this QSL-owned table to map each admitted
+request to its target and disposition under the correspondence contract in
+QSpec FR-095. The admitted temporal profiles are
 `quire.temporal.event-position.false-extension/v1`,
 `quire.temporal.fixed-sample.false-extension/v1`,
 `quire.temporal.timestamped-event.finite-window/v1` and
@@ -165,7 +166,7 @@ encode. Naming them is not discharging them.
 | FR-045-AC-3 | An unsupported result retains the native declaration subject, selected profile identity and activation record; a source-valid declaration is unchanged by classification. | Test (TC-125) |
 | FR-045-AC-4 | An unsupported result names every unmatched dimension rather than one summary cause, including a declaration unmatched on two dimensions. | Test (TC-125) |
 | FR-045-AC-5 | A supported classification names its exact TL target and every outstanding bridge premise, and does not claim correspondence; equal formula bytes under different selected profiles do not receive the same classification. | Test (TC-125) |
-| FR-045-AC-6 | A strict `/2` classification equals the `/1` disposition and retained native subject under both surrounding-execution closures, and additionally retains the authenticated package digest, declaration, definition identity, namespaced revision and exact definition-artifact digest; a `/1` classification retains no authenticated selection; a `/2` request for an out-of-package or non-temporal declaration, a temporal declaration without a binding, or a binding that selects another definition is refused (the latter strict-reader defects are inspected as unreachable re-checks). | Test (TC-125); Inspection |
+| FR-045-AC-6 | A strict `/2` classification equals the `/1` disposition and retained native subject under both surrounding-execution closures, and additionally retains the authenticated package identity, declaration, definition identity, namespaced revision and exact definition-artifact identity; a `/1` classification retains no authenticated selection; a `/2` request for an out-of-package or non-temporal declaration, a temporal declaration without a binding, or a binding that selects another definition is refused (the latter strict-reader defects are inspected as unreachable re-checks). | Test (TC-125); Inspection |
 
 ## Dependencies
 

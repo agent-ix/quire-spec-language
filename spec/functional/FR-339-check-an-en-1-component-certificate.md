@@ -42,9 +42,7 @@ topological order, each with a witness that no fair accepting cycle stays
 inside it (ADR-018 PC-4, PC-5, LA-3). Every cycle lies inside one
 component, so an accepted certificate proves that no fair accepting cycle
 exists. A proof whose certificate it accepts settles `proved`, `Certified`
-(FR-127); one it rejects settles `inconclusive`, `CertificateRejected`; one
-whose certificate names a `package_id` other than the recompiled package's
-settles `inconclusive`, `StaleDependency` (FR-282).
+(FR-127); one it rejects settles `inconclusive`, `CertificateRejected`.
 
 ## Use case
 
@@ -63,7 +61,7 @@ it starves.
 
 ```rust
 pub struct ComponentCertificate {
-    pub closure: ClosureCertificate,          // FR-338; its package_id is the certificate's
+    pub closure: ClosureCertificate,          // FR-338
     pub components: Vec<Component>,           // topological order
 }
 pub struct Component { pub states: Vec<ProductStateRef>, pub witness: ComponentWitness }
@@ -96,9 +94,6 @@ pub fn check_protocol_components(
 
 Both entry points return FR-338's `ClosureRefusal` exactly when their
 closure check returns one, and component work adds no refusal.
-
-A `ComponentCertificate` names its `package_id` once, as its closure's
-`package_id` (FR-338); its components carry none.
 
 `MissingAcceptance`'s `set` indexes the generalized Büchi acceptance sets
 of the item's automaton in FR-338's order, by the canonical bytes of their
@@ -150,8 +145,6 @@ certificate check cannot use that selection to omit any memory constraint.
 
 - `Accepted` when closure and component checks complete successfully.
 - `Rejected(CertificateRejection{rule, at})` on a certificate defect.
-- `PackageMismatch{certificate, recompiled}` when the closure's `package_id`
-  differs from the recompiled package's (FR-338), with no rule evaluated.
 - `Stopped(IncompleteCause)` with the exact existing limit/value/setting or
   cancellation source when checker work cannot complete (FR-338, FR-127).
 
@@ -167,14 +160,6 @@ certificate check cannot use that selection to omit any memory constraint.
   check; FR-127 settles the refusal `failed`, never `proved`.
 - The component checks SHALL refuse an item that is not a TP-4 clause with
   the typed refusal `NotLiveness`.
-- The checker SHALL compare the recompiled package's `package_id` with the
-  closure's `package_id` first, before the closure check and any component
-  rule.
-- When the two `package_id`s differ, the checker SHALL return
-  `PackageMismatch{certificate, recompiled}` naming both, evaluating no
-  closure, partition, edge or witness rule (FR-282); FR-127 settles it
-  `Inconclusive(StaleDependency{requested, recompiled})` with `requested`
-  the closure's `package_id`.
 - The checker SHALL run FR-338's check on the certificate's closure,
   without the monitor-rejection part of `BadState`; a deadlocked state is
   not bad for a TP-4 item, whose terminal state reads by its stutter edge
@@ -242,10 +227,10 @@ certificate check cannot use that selection to omit any memory constraint.
 | FR-339-AC-2 | Rejected vectors: AC-1's certificate with the witness of `{(*, 0, q1)}` changed to `UnfairWeak` naming `upd(a)`, which edges inside the component take, is rejected `WitnessFails` at that component's first state; with those two components listed before the components that reach them, `BackwardEdge`; with one state listed in two components, `NotPartition`; with a component's witness `Trivial` over a state with a self-edge, `WitnessFails`. | Test (TC-526) |
 | FR-339-AC-3 | Accepted vector: FR-228-AC-5's synthesized SCC with `r` the only accepting state yields a component certificate whose component `{p, q, r}` carries `UnfairVisibility` naming the pair (`b`, `ℓ`), with `sub` `{r}` (`Trivial`) then `{p, q}` (`MissingAcceptance`), and `check_components` accepts it although the removed edge `q → r` goes from `{p, q}` to the earlier `{r}`; the same certificate with the witness `UnfairWeak` over that pair, or with `q → r` not removed (so `BackwardEdge` fires), is rejected. | Test (TC-526) |
 | FR-339-AC-5 | Fixture: ADR-018 §6's example unit with universe `{a, b}`, both versions 0, and a checked package that carries the clause's `temporal_clause` node in the shape S4 emits for a guarded `on each` activation (FR-337-AC-6), built by the test as in FR-338-AC-10, the condition read by the test's own letters. `eventually holds(c.versionNumber = 2)` under infinite-trace `on each` with the condition `c.versionNumber = 1` and a weak `each` constraint on `attemptUpdate` returns a `ComponentCertificate` in which, for binding `a`, the component of the active states at `(1,0)`, `(1,1)`, `(1,2)` carries `UnfairWeak` naming `upd(a)` and the component of the waiting states carries `MissingAcceptance{set: 0}` (symmetrically for `b`); `check_components` accepts it and FR-127 settles `proved`. The same clause with the condition `c.versionNumber = 7` and no fairness constraint gives a certificate whose every non-trivial component carries `MissingAcceptance{set: 0}`, accepted. Rejected vectors on the first certificate: the waiting component's witness changed to `UnfairWeak` naming `upd(a)` is `WitnessFails` (edges inside it take `upd(a)`); the active component's witness changed to `MissingAcceptance{set: 0}` is `WitnessFails` at its first state; the closure with binding `a`'s active state at `(1,0)` removed is `SuccessorMissing` at it; with the condition undefined at version 1, `BadState` at binding `a`'s waiting state at `(0,0)`, whose expansion reads it. | Test (TC-1215) |
-| FR-339-AC-4 | Package identity. AC-1's certificate carries in its closure the `package_id` of the package EN-1 explored, equal to the recompiled one, and is accepted. The same certificate with its closure's `package_id` replaced by that of the same unit with the claim's target edited to `c.versionNumber = 1` returns `PackageMismatch{certificate, recompiled}` naming both identities, and settles `inconclusive`, `unsettled`, `Inconclusive(StaleDependency{requested, recompiled})` with `requested` the closure's `package_id`, never `CertificateRejected` and never `proved`. That stale certificate with AC-2's `upd(a)` witness (a `WitnessFails` defect) still returns `PackageMismatch`, because no rule is evaluated. | Test (TC-1141) |
+| FR-339-AC-4 | **RETIRED (staleness check withdrawn).** The certificate carries no `package_id` and the checker compares no package identity. | Test (TC-1141), retired |
 | FR-339-AC-6 | Charges. AC-1's certificate checked with `max_states`, `max_transitions` and `max_automaton_states` equal to the product states, edges and automaton states its closure holds is `Accepted`; with `max_states` one below that count the closure check returns `Stopped(LimitReached{MaxStates, value, setting})` with the consumed value and the request's setting, never `Rejected` or `Accepted`. Component work charges nothing: the `Ring` unit (population `rings`, field `v: Int[0, 2]`, universe `{r}`, initial `v` 0, operations `a` from 0 to 1, `x` from 0 to 0, `b` from 1 to 2 and `c` from 2 to 0, no `terminal` declaration) with `always eventually holds(r.v = 1)` under a weak constraint on `a` (no granularity) returns `Holds{Exhaustive}` over five product states `(0,q0)`, `(0,q1)`, `(1,q0)`, `(2,q0)`, `(2,q1)` (canonical breadth-first indices 0 to 4) and nine edges, with two automaton states, and a certificate whose components are listed `{(0,q0), (1,q0), (2,q0)}` (`MissingAcceptance`), `{(2,q1)}` (`Trivial`), `{(0,q1)}` (`UnfairWeak` naming `a`, enabled at `v` 0 by the closure's enabled set and taken by no edge inside, whose one edge is `x`). Checked with `max_states` 5, `max_transitions` 9 and `max_automaton_states` 2 it is `Accepted`: the closure check charges all five product states, nine edges and two automaton states and the three components charge none of them. Under the default meter budget the certificate is `Accepted`, as FR-338's closure check of its closure alone is. Under a meter budget whose `work_units` is 0, the closure check's first clause or atom evaluation at the initial state is denied, and `check_components` returns `Stopped(LimitReached{EvaluationMeter, value, setting})` equal in limit, value and setting to the stop FR-338's closure check of the same closure returns under that budget, before any component rule runs; for every meter budget the certificate is accepted exactly when its closure check alone completes. AC-1's certificate checked with a Cancel handle cancelled at its first check after the closure check completes returns `Stopped(Cancelled{source: Requested})`. Each stop settles `incomplete` (FR-127), never `CertificateRejected` or `proved`. | Test (TC-526) |
 | FR-339-AC-7 | Protocol subject. FR-228-AC-2's `tso` proof of `eventually holds(c.r = 1)`, checked by `check_protocol_components` under its `ProtocolCertificateRequest` with `max_store_buffer` and `max_messages` `None`, returns a `ComponentCertificate` whose resolved constraints are its fairness set's members in JCS order, the `flush` members of `w` and `r` each resolving to exactly one constraint (QSpec FR-436), `r`'s although `r` never stores. In it, the component of the product states at which `w` is done with buffer `[x := 1]` and `r` polls carries `UnfairWeak` naming `w`'s `flush` class, the only weak constraint enabled at every state of it and taken by no edge inside it (the scheduler constraint of branch `w` is not enabled there, since `flush` is in no thread class); the component at which `w` has not stored and `r` polls carries `UnfairWeak` naming the scheduler constraint of branch `w`; and `check_protocol_components` accepts it. Rejected vectors, each `WitnessFails`: the first component's witness changed to name the scheduler constraint of branch `w`, or `r`'s `flush` class (`r`'s buffer is empty at every state); the second component's witness changed to name `w`'s `flush` class (`w`'s buffer is empty before its store). | Test (TC-526) |
-| FR-339-AC-8 | A closure is not a liveness proof. The weak `each` claim over the ADR-018 §6 subject with letters that never hold returns `Violated`; a `ClosureCertificate` grown from the checker's own `InitialMissing` and `SuccessorMissing` rejections of that claim, until it holds every reached product state, is refused by `check_closure` with `LivenessNeedsComponents` and, as the certificate of a `Holds`, settles `failed` (FR-127), never `proved`; the component certificate of AC-1's claim settles `proved`, `certified`. `check_components` for the `always holds(c.value <= 3)` item over the `Counter` subject returns `NotLiveness`. Over `Spin` (FR-228-AC-2's unit), `check_protocol_components` accepts the proof's certificate, rejects its components reversed `BackwardEdge` and emptied `NotPartition`, returns `PackageMismatch` for a foreign `package_id`, and `check_protocol_closure` and `check_protocol_components` return `LivenessNeedsComponents` and `NotLiveness` for a closure of the liveness proof and components for the deadlock-freedom item. | Test (TC-526) |
+| FR-339-AC-8 | A closure is not a liveness proof. The weak `each` claim over the ADR-018 §6 subject with letters that never hold returns `Violated`; a `ClosureCertificate` grown from the checker's own `InitialMissing` and `SuccessorMissing` rejections of that claim, until it holds every reached product state, is refused by `check_closure` with `LivenessNeedsComponents` and, as the certificate of a `Holds`, settles `failed` (FR-127), never `proved`; the component certificate of AC-1's claim settles `proved`, `certified`. `check_components` for the `always holds(c.value <= 3)` item over the `Counter` subject returns `NotLiveness`. Over `Spin` (FR-228-AC-2's unit), `check_protocol_components` accepts the proof's certificate, rejects its components reversed `BackwardEdge` and emptied `NotPartition`, and `check_protocol_closure` and `check_protocol_components` return `LivenessNeedsComponents` and `NotLiveness` for a closure of the liveness proof and components for the deadlock-freedom item. | Test (TC-526) |
 | FR-339-AC-9 | FR-228-AC-10's `RefutedIgnoringConstraints` diagnostic carries no component certificate and is never passed to `check_protocol_components`; checking any supplied component certificate continues to resolve and validate every member of the original fairness set, including `memory` members, independent of the diagnostic liveness selection. | Test (TC-526) |
 
 ## Dependencies

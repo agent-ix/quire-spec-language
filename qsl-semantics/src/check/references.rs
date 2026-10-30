@@ -108,7 +108,7 @@ pub(crate) fn read_object(node: CheckedNode<'_>) -> Option<EffectiveId> {
         NodeKind::__SeamProbe => unreachable!("never constructed outside the probe build"),
     };
     match node.at(through).value_type() {
-        ValueType::Reference(object) => Some(*object),
+        ValueType::Reference(object) => Some(object.clone()),
         ValueType::Boolean
         | ValueType::Integer
         | ValueType::Int(_)

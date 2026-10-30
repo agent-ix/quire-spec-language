@@ -12,22 +12,20 @@ use qsl_forms::{
     BinaryOperator, BuiltinType, DeclarationSpans, Expression, ExpressionSpans,
     FunctionDeclaration, TypeForm,
 };
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::{OccurrenceKey, RawSourceRef, SourceRegion};
 use qsl_semantics::check::PackageDeclarations;
-use qsl_semantics::library::{LibraryName, PinnedRequest};
-use qsl_semantics::value::{native_diagnostics_catalog, CatalogRole, DefinitionLock};
+use qsl_semantics::library::LibraryName;
+use qsl_semantics::value::{always_roles, native_diagnostics_catalog, DefinitionRole};
 use quire_contract_model::CheckedPackageEvidence;
 use quire_exact::{
-    CardinalityBound, CollectionKind, CollectionType, NodeKey, Presence, Role, ValueType,
-    NODE_KEY_DOMAIN,
+    CardinalityBound, CollectionKind, CollectionType, NodeKey, PathSegment, Presence, Role,
+    ValueType,
 };
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::{
     CompositeDeclaration, CompositeShape, FieldDeclaration, TypeEnvironment,
 };
 use serde_json::{json, Value};
-use sha2::{Digest as _, Sha256};
 
 use super::*;
 use crate::checked_v2::{read_v2, Read, V2ReadLimits};
@@ -43,7 +41,6 @@ mod envelope_adoption;
 mod golden;
 mod hybrid;
 mod hyper_clause;
-mod identity_depth;
 mod large_cycle;
 mod navigation;
 mod option_value;
@@ -70,6 +67,7 @@ mod state_transition;
 mod step_relation;
 mod temporal_clause;
 mod terminal;
+mod timed_clauses;
 mod timed_source;
 mod union_nodes;
 mod variant_types;
@@ -92,6 +90,14 @@ pub(super) fn source() -> RawSourceRef {
 /// Places every occurrence at the whole fixture unit.
 pub(super) fn whole_unit(_: &Location) -> Option<SourceRegion> {
     Some(SourceRegion::new(source(), 0, TEXT.len() as u64).unwrap())
+}
+
+/// The identity the domain package `document` declares.
+fn package_identity(document: &[u8]) -> String {
+    serde_json::from_slice::<serde_json::Value>(document)
+        .ok()
+        .and_then(|value| value["package"]["identity"].as_str().map(str::to_owned))
+        .expect("the document declares its package identity")
 }
 
 fn boolean() -> TypeForm {
@@ -164,9 +170,20 @@ fn h() -> FunctionDeclaration {
 }
 
 fn graph_of(functions: Vec<FunctionDeclaration>) -> qsl_semantics::check::CheckedGraph {
+    graph_of_named("pkg", functions)
+}
+
+fn graph_of_named(
+    package_name: &str,
+    functions: Vec<FunctionDeclaration>,
+) -> qsl_semantics::check::CheckedGraph {
     PackageDeclarations {
         functions,
-        ..PackageDeclarations::new(source(), qsl_foundation::IdentityLimits::default())
+        ..PackageDeclarations::new(
+            source(),
+            package_name,
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
     .check(CheckingLimits::default())
     .expect("the fixture functions check")
@@ -178,10 +195,10 @@ fn package(functions: Vec<FunctionDeclaration>) -> CheckedPackage {
 
 /// `record Tree { kids: Sequence<Tree>[0, 3]; }`, FR-092's G7 to G9.
 fn tree() -> CheckedPackage {
-    let tree = NodeKey::from_digest([6; 32]);
+    let tree = fixture_type_key("Tree");
     let kids = ValueType::collection(CollectionType::new(
         CollectionKind::Sequence,
-        ValueType::Composite(tree),
+        ValueType::Composite(tree.clone()),
         Some(CardinalityBound::new(0, 3).unwrap()),
     ));
     let types = TypeEnvironment::new(
@@ -200,7 +217,7 @@ fn tree() -> CheckedPackage {
     CheckedPackage::link(
         PackageDeclarations {
             types,
-            ..PackageDeclarations::new(source(), qsl_foundation::IdentityLimits::default())
+            ..PackageDeclarations::new(source(), "pkg", qsl_foundation::IdentityLimits::default())
         }
         .check(CheckingLimits::default())
         .expect("Tree checks"),
@@ -230,16 +247,18 @@ fn jcs(value: &Value) -> Vec<u8> {
     serde_json::to_vec(value).unwrap()
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
-}
-
 fn library() -> LibraryName {
     LibraryName::new("pkg").unwrap()
 }
 
-/// QSL's full I2 read of `emission`, pinned at its own `package_id`, with
-/// the emitted lock's required features as evidence.
+/// A declared fixture type under this test package.
+fn fixture_type_key(name: &str) -> NodeKey {
+    NodeKey::new("pkg", vec![PathSegment::Text(name.to_owned())], 0)
+        .expect("a fixture type has a structural declaration key")
+}
+
+/// QSL's full I2 read of `emission` with the emitted lock's required
+/// features as evidence.
 fn read_back(emission: &Emission) -> Read {
     read_with(emission, &read_evidence(emission))
 }
@@ -254,46 +273,30 @@ fn read_evidence(emission: &Emission) -> CheckedPackageEvidence {
     evidence
 }
 
-/// QSL's full I2 read of `emission` against `evidence`, pinned at its own
-/// `package_id`.
+/// QSL's full I2 read of `emission` against `evidence`.
 fn read_with(emission: &Emission, evidence: &CheckedPackageEvidence) -> Read {
-    let pinned: PinnedRequest =
-        qsl_semantics::library::fixtures::single_pin(library(), emission.package.package_id());
     read_v2(
         emission.package.bytes(),
         library(),
         V2ReadLimits::default(),
         evidence,
-        &pinned,
     )
 }
 
-/// The verified package's exports: declared name to node id hex.
+/// The verified package's exports: declared name to structural node identity.
 fn verified_exports(emission: &Emission) -> BTreeMap<String, String> {
     match read_back(emission) {
-        Read::Verified { package, .. } => {
-            assert_eq!(package.package_id(), emission.package.package_id());
-            package
-                .into_import_view()
-                .exports()
-                .map(|(name, key)| (name.to_owned(), key.node.to_string()))
-                .collect()
-        }
+        Read::Verified { package, .. } => package
+            .exports()
+            .map(|(name, key)| (name.to_owned(), key.to_string()))
+            .collect(),
         other => panic!("expected Verified, got {other:?}"),
     }
 }
 
-/// The emission path mints the identity preimage under the FR-322 version
-/// label, written out here rather than read from the constant it pins.
-#[trace("TC-253", "FR-087-AC-3")]
-#[test]
-fn the_emission_identity_preimage_carries_its_literal_version() {
-    assert_eq!(IDENTITY_PREIMAGE_V2, "quire.checked-package-id/v2");
-}
-
 /// The small checked producer's envelope is canonical, carries the identity
 /// the emitter minted, is deterministic, and is admitted by the independent
-/// V2 reader. Two different packages never share an identity.
+/// V2 reader.
 #[trace("TC-253", "FR-087-AC-3")]
 #[test]
 fn emitted_package_envelope_is_canonical_deterministic_and_self_identifying() {
@@ -305,21 +308,15 @@ fn emitted_package_envelope_is_canonical_deterministic_and_self_identifying() {
         serde_json::to_vec(&wire).expect("a Value serializes"),
         bytes
     );
-    assert_eq!(wire["package_id"]["algorithm"], "sha256");
-    assert_eq!(
-        wire["package_id"]["digest"],
-        emission.package.package_id().hex()
-    );
-    // Deterministic, and identity-separating.
+    assert_eq!(emission.package.name(), "pkg");
+    // Deterministic bytes and independently admitted structure.
     assert_eq!(emit(&package(vec![f()])).package.bytes(), bytes);
     let other = emit(&package(vec![f(), t()]));
-    assert_ne!(other.package.package_id(), emission.package.package_id());
-    match read_back(&emission) {
-        Read::Verified { package, .. } => {
-            assert_eq!(package.package_id(), emission.package.package_id());
-        }
-        other => panic!("the golden envelope must be reader-admitted: {other:?}"),
-    }
+    assert_ne!(other.package.bytes(), emission.package.bytes());
+    assert!(
+        matches!(read_back(&emission), Read::Verified { .. }),
+        "the golden envelope must be reader-admitted"
+    );
 }
 
 pub(super) fn nodes(wire: &Value) -> &[Value] {
@@ -337,7 +334,7 @@ fn a_function_identity_survives_emission_and_the_i2_read() {
     let checked = |functions| {
         PackageDeclarations {
             functions,
-            ..PackageDeclarations::new(source(), qsl_foundation::IdentityLimits::default())
+            ..PackageDeclarations::new(source(), "pkg", qsl_foundation::IdentityLimits::default())
         }
         .check(CheckingLimits::default())
         .expect("t and f check")
@@ -361,8 +358,8 @@ fn a_function_identity_survives_emission_and_the_i2_read() {
     assert_eq!(identities.len(), 1, "reordering changed t's identity");
 }
 
-/// The wire lock's edition and definition selections are the
-/// `DefinitionLock` catalog's rows, each exactly `{authority, identity}`;
+/// The wire lock's edition and definition selections are resolved directly
+/// from closed role enums, each exactly `{authority, identity}`;
 /// the diagnostics catalog is QSpec's native diagnostics `DefinitionRef`,
 /// `{agent-ix, quire.native.diagnostics/v1}` and no other member; each
 /// source row, and each source-map region's source, keeps its
@@ -373,19 +370,17 @@ fn the_lock_selects_the_catalog_definitions() {
     let emission = emit(&package(vec![t()]));
     assert!(matches!(read_back(&emission), Read::Verified { .. }));
     let wire = wire(&emission);
-    let lock = DefinitionLock::pinned();
-    let row = |role: CatalogRole| {
-        let entry = lock.entry(role);
-        json!({"authority": entry.authority, "identity": entry.identity})
+    let row = |role: DefinitionRole| {
+        let reference = role.reference();
+        json!({"authority": reference.authority, "identity": reference.identity})
     };
     assert_eq!(
         wire["lock"]["edition"],
-        json!({"role": "edition", "definition": row(CatalogRole::Edition)})
+        json!({"role": "edition", "definition": row(DefinitionRole::Edition)})
     );
-    let expected: Vec<Value> = lock
-        .always_roles()
+    let expected: Vec<Value> = always_roles()
         .iter()
-        .filter(|role| **role != CatalogRole::Edition)
+        .filter(|role| **role != DefinitionRole::Edition)
         .map(|role| row(*role))
         .collect();
     assert_eq!(wire["lock"]["definition_selections"], json!(expected));
@@ -394,8 +389,6 @@ fn the_lock_selects_the_catalog_definitions() {
     let source = json!({
         "authority": "a",
         "identity": "u",
-        "digest_domain": "quire.source.bytes/v1",
-        "digest": sha256_hex(TEXT),
     });
     assert_eq!(wire["lock"]["sources"], json!([source]));
     for entry in wire["source_map"].as_array().unwrap() {
@@ -403,14 +396,6 @@ fn the_lock_selects_the_catalog_definitions() {
             assert_eq!(region["source"], source);
         }
     }
-    assert_eq!(
-        wire["identity_preimage"]["edition"],
-        wire["lock"]["edition"]
-    );
-    assert_eq!(
-        wire["identity_preimage"]["definition_selections"],
-        wire["lock"]["definition_selections"]
-    );
     let diagnostics = native_diagnostics_catalog();
     assert_eq!(
         wire["diagnostics"]["catalog"],
@@ -431,9 +416,7 @@ fn a_law_names_its_definition_by_authority_and_identity() {
     let emission = emit(&golden::float_add_of(BuiltinType::Float64, "nearest-even"));
     assert!(matches!(read_back(&emission), Read::Verified { .. }));
     let wire = wire(&emission);
-    let ieee = DefinitionLock::pinned()
-        .entry(CatalogRole::IeeeProfile)
-        .reference();
+    let ieee = DefinitionRole::IeeeProfile.reference();
     let ieee = json!({"authority": ieee.authority, "identity": ieee.identity});
     let laws: Vec<&Value> = wire["semantic_graph"]["nodes"]
         .as_array()
@@ -469,14 +452,11 @@ fn an_inline_nested_application_argument_is_a_malformed_wire() {
         .expect("the float addition is an application node");
     let inline = node["body"].clone();
     node["body"]["arguments"][0] = inline;
-    let pinned: PinnedRequest =
-        qsl_semantics::library::fixtures::single_pin(library(), emission.package.package_id());
     let outcome = read_v2(
         &jcs(&tampered),
         library(),
         V2ReadLimits::default(),
         &read_evidence(&emission),
-        &pinned,
     );
     match outcome {
         Read::Refused(crate::checked_v2::V2ReadRefusal::Envelope { refusal, .. }) => {
@@ -487,123 +467,6 @@ fn an_inline_nested_application_argument_is_a_malformed_wire() {
         }
         other => panic!("expected Refused(Envelope(MalformedWire)), got {other:?}"),
     }
-}
-
-/// FR-322's `application_node_preimage` of a wire node, or FR-092's
-/// structural preimage under the owner the wire node's own `owner` member
-/// names, rebuilt by the test from the wire alone. `group` is the node's recursion group in graph order.
-pub(crate) fn rebuilt_key(node: &Value, group: &[&Value]) -> String {
-    sha256_hex(&jcs(&rebuilt_preimage(node, group, true)))
-}
-
-/// The digest of a node's structural preimage, even for node families whose
-/// normal key is derived from an application preimage.
-pub(crate) fn rebuilt_structural_key(node: &Value, group: &[&Value]) -> String {
-    sha256_hex(&jcs(&rebuilt_preimage_as(node, group, true, Some(false))))
-}
-
-/// The preimage [`rebuilt_key`] hashes. With `labelled` false, a recursion
-/// group member's preimage omits `recursion.group`: its group-local form,
-/// whose digests the group label hashes. The owner is read from the wire
-/// node's own `owner` member, never from the owner the checked unit carries.
-pub(super) fn rebuilt_preimage(node: &Value, group: &[&Value], labelled: bool) -> Value {
-    rebuilt_preimage_as(node, group, labelled, None)
-}
-
-fn rebuilt_preimage_as(
-    node: &Value,
-    group: &[&Value],
-    labelled: bool,
-    application_override: Option<bool>,
-) -> Value {
-    let ordinal = |id: &Value| group.iter().position(|member| member["node_id"] == *id);
-    let in_group = |term: &Value| -> Value {
-        fn walk(term: &Value, ordinal: &dyn Fn(&Value) -> Option<usize>) -> Value {
-            match term {
-                Value::Object(members) => {
-                    if members.get("term") == Some(&json!("reference")) {
-                        if let Some(position) = ordinal(&members["target"]) {
-                            return json!({"term": "group_reference", "ordinal": position});
-                        }
-                    }
-                    Value::Object(
-                        members
-                            .iter()
-                            .map(|(key, value)| (key.clone(), walk(value, ordinal)))
-                            .collect(),
-                    )
-                }
-                Value::Array(items) => {
-                    Value::Array(items.iter().map(|item| walk(item, ordinal)).collect())
-                }
-                other => other.clone(),
-            }
-        }
-        walk(term, &ordinal)
-    };
-    let body = in_group(&node["body"]);
-    let application = application_override.unwrap_or_else(|| {
-        (node["node_tag"] == "value" && node["semantic_form"] == "union_value")
-            || serde_json::to_string(&body)
-                .unwrap()
-                .contains("\"application\"")
-    });
-    let declaration = node.get("declaration").cloned().unwrap_or(Value::Null);
-    let recursion = node.get("recursion_group").map(|label| {
-        let position = ordinal(&node["node_id"]).unwrap();
-        if application || !labelled {
-            json!({"ordinal": position, "size": group.len()})
-        } else {
-            json!({"group": label, "ordinal": position, "size": group.len()})
-        }
-    });
-    let semantic_type = if node["semantic_type"] == node["node_id"] && !application {
-        Value::Null
-    } else {
-        match ordinal(&node["semantic_type"]) {
-            Some(position) => json!({"term": "group_reference", "ordinal": position}),
-            None => node["semantic_type"].clone(),
-        }
-    };
-    let mut preimage = json!({
-        "version": if application { "quire.application-node/v1" } else { "quire.structural-node/v1" },
-        "node_tag": node["node_tag"],
-        "semantic_form": node["semantic_form"],
-        "semantic_type": semantic_type,
-        "declaration": declaration,
-        "recursion": recursion.unwrap_or(Value::Null),
-        "body": body,
-    });
-    if !application {
-        if let Some(owner) = node.get("owner") {
-            preimage["owner"] = owner.clone();
-        }
-    }
-    // QSpec FR-464 "owner_model": a protocol clause's identity-bound edge
-    // enters its application preimage, read from the wire node.
-    if application {
-        if let Some(owner_model) = node.get("owner_model") {
-            preimage["owner_model"] = owner_model.clone();
-        }
-    }
-    preimage
-}
-
-/// Each node with the members of its recursion group in graph order.
-fn with_groups(nodes: &[Value]) -> Vec<(&Value, Vec<&Value>)> {
-    nodes
-        .iter()
-        .map(|node| {
-            let group = match node.get("recursion_group") {
-                Some(label) => nodes
-                    .iter()
-                    .filter(|member| member.get("recursion_group") == Some(label))
-                    .collect(),
-                None => Vec::new(),
-            };
-            (node, group)
-        })
-        .collect()
 }
 
 /// `f(x: Int[0, 9])`, FR-092's self-recursive G4 to G6.
@@ -645,7 +508,10 @@ fn written_nodes(package: &CheckedPackage) -> Vec<Value> {
     let candidates: Vec<Candidate<'_>> = graph
         .semantic_graph()
         .nodes()
-        .map(|node| Candidate::of(node, recorded.remove(&node.key()).unwrap_or_default()))
+        .map(|node| {
+            Candidate::of(node, recorded.remove(&node.key()).unwrap_or_default())
+                .expect("a candidate")
+        })
         .collect();
     let all: Vec<&Candidate<'_>> = candidates.iter().collect();
     graph_order(&all)
@@ -670,44 +536,18 @@ fn tc_416_packages() -> [CheckedPackage; 3] {
     ]
 }
 
-/// TC-416 steps 1, 2 and 5 (FR-093-AC-7): each node the emission arm writes,
-/// rebuilt from the written node by FR-322's application rule or FR-092's
-/// structural rule, keys to its `node_id`, recursion-group members by their
-/// place in graph order.
-#[trace("FR-093-AC-7", "TC-416")]
-#[test]
-fn every_written_node_recomputes_to_its_node_id() {
-    for package in tc_416_packages() {
-        let nodes = written_nodes(&package);
-        assert!(!nodes.is_empty());
-        for (node, group) in with_groups(&nodes) {
-            assert_eq!(
-                json!(rebuilt_key(node, &group)),
-                node["node_id"]["digest"],
-                "{node}"
-            );
-        }
-    }
-}
-
 /// TC-416 step 5 (FR-093-AC-7): a recursion group's members carry the group
 /// digest as their label and are written together in ordinal order: the
 /// recursive `f`'s three members under FR-092's label, and `Tree`'s three.
 #[trace("FR-093-AC-7", "TC-416")]
 #[test]
 fn recursion_group_members_are_written_in_ordinal_order() {
-    for (package, label) in [
-        (recursive_f(), Some(fr_092_g4_to_g6_group_digest())),
-        (tree(), None),
-    ] {
-        let expected: BTreeMap<String, usize> = package
+    for (package, label) in [(recursive_f(), None::<String>), (tree(), None)] {
+        let expected: BTreeMap<NodeKey, usize> = package
             .graph()
             .semantic_graph()
             .nodes()
-            .filter_map(|node| {
-                node.recursion()
-                    .map(|group| (node.key().to_string(), group.ordinal()))
-            })
+            .filter_map(|node| node.recursion().map(|group| (node.key(), group.ordinal())))
             .collect();
         let nodes = written_nodes(&package);
         let members: Vec<(usize, &Value)> = nodes
@@ -719,7 +559,8 @@ fn recursion_group_members_are_written_in_ordinal_order() {
         assert_eq!(members[2].0 - members[0].0, 2, "the members are contiguous");
         for (ordinal, (_, member)) in members.iter().enumerate() {
             assert_eq!(
-                expected[member["node_id"]["digest"].as_str().unwrap()],
+                expected[&qsl_foundation::node_wire::node_key_from_json(&member["node_id"])
+                    .expect("a structural recursion member id")],
                 ordinal
             );
             assert_eq!(member["recursion_group"], members[0].1["recursion_group"]);
@@ -730,31 +571,18 @@ fn recursion_group_members_are_written_in_ordinal_order() {
     }
 }
 
-/// FR-092's G4-G6 group digest, recomputed from the group's hand-written
-/// member preimages in the spec in this repository.
-fn fr_092_g4_to_g6_group_digest() -> String {
-    qsl_semantics::check::spec_vectors::group_digest("FR-092", "G4")
-        .expect("FR-092 states the G4-G6 group members")
-}
-
-/// FR-092's declared-node vector `id` (`D1`): its key, recomputed from the
-/// vector's hand-written preimage in the spec in this repository.
-fn fr_092_vector_key(id: &str) -> String {
-    qsl_semantics::check::spec_vectors::vectors("FR-092")
-        .remove(id)
-        .unwrap_or_else(|| panic!("FR-092 has a vector {id}"))
-        .0
-}
-
 /// FR-093 "Node dependencies" rules 1 to 3, rebuilt from a written node by a
 /// test-side walker: body reference targets, operation member declarations and populations,
 /// and a `bounded_domain` node's semantic type.
 fn rebuilt_dependencies(node: &Value) -> Vec<Value> {
-    fn walk(term: &Value, found: &mut BTreeSet<String>) {
+    fn walk(term: &Value, found: &mut BTreeSet<NodeKey>) {
         match term {
             Value::Object(members) => {
                 if members.get("term") == Some(&json!("reference")) {
-                    found.insert(members["target"]["digest"].as_str().unwrap().to_owned());
+                    found.insert(
+                        qsl_foundation::node_wire::node_key_from_json(&members["target"])
+                            .expect("a structural reference target"),
+                    );
                 }
                 for key in ["declaration", "population"] {
                     if let Some(named) = members
@@ -762,7 +590,10 @@ fn rebuilt_dependencies(node: &Value) -> Vec<Value> {
                         .and_then(|operation| operation.get("member"))
                         .and_then(|member| member.get(key))
                     {
-                        found.insert(named["digest"].as_str().unwrap().to_owned());
+                        found.insert(
+                            qsl_foundation::node_wire::node_key_from_json(named)
+                                .expect("a structural member key"),
+                        );
                     }
                 }
                 members.values().for_each(|value| walk(value, found));
@@ -774,11 +605,14 @@ fn rebuilt_dependencies(node: &Value) -> Vec<Value> {
     let mut found = BTreeSet::new();
     walk(&node["body"], &mut found);
     if node["node_tag"] == "bounded_domain" {
-        found.insert(node["semantic_type"]["digest"].as_str().unwrap().to_owned());
+        found.insert(
+            qsl_foundation::node_wire::node_key_from_json(&node["semantic_type"])
+                .expect("a structural semantic type"),
+        );
     }
     found
         .into_iter()
-        .map(|digest| json!({"domain": "quire.checked-semantic-node/v1", "digest": digest}))
+        .map(|key| qsl_foundation::node_wire::node_key_to_json(&key).expect("a structural key"))
         .collect()
 }
 
@@ -803,19 +637,17 @@ fn dependencies_are_the_lists_the_rules_rebuild() {
         .iter()
         .filter(|node| node.get("recursion_group").is_some())
         .collect();
-    let digest = |id: &Value| id["digest"].as_str().unwrap().to_owned();
-    let ids: BTreeSet<String> = members
-        .iter()
-        .map(|node| digest(&node["node_id"]))
-        .collect();
+    let key =
+        |id: &Value| qsl_foundation::node_wire::node_key_from_json(id).expect("a structural key");
+    let ids: BTreeSet<NodeKey> = members.iter().map(|node| key(&node["node_id"])).collect();
     let mut next = BTreeMap::new();
     for member in &members {
         let dependencies = member["dependencies"].as_array().unwrap();
         assert_eq!(dependencies.len(), 1, "{member}");
-        assert!(ids.contains(&digest(&dependencies[0])));
-        next.insert(digest(&member["node_id"]), digest(&dependencies[0]));
+        assert!(ids.contains(&key(&dependencies[0])));
+        next.insert(key(&member["node_id"]), key(&dependencies[0]));
     }
-    let start = digest(&members[0]["node_id"]);
+    let start = key(&members[0]["node_id"]);
     let mut at = start.clone();
     for _ in 0..3 {
         at = next[&at].clone();
@@ -844,7 +676,9 @@ fn every_emitted_node_has_its_recorded_occurrences() {
         assert!(!occurrences.is_empty(), "{node}");
         for occurrence in occurrences {
             let key = (
-                node["node_id"]["digest"].as_str().unwrap().to_owned(),
+                qsl_foundation::node_wire::node_key_from_json(&node["node_id"])
+                    .expect("an emitted node id")
+                    .to_string(),
                 occurrence["role"].as_str().unwrap().to_owned(),
                 occurrence["ordinal"].as_u64().unwrap(),
             );
@@ -909,7 +743,7 @@ fn point_and_pair_types() -> TypeEnvironment {
     TypeEnvironment::new(
         [
             CompositeDeclaration::new(
-                NodeKey::from_digest([1; 32]),
+                fixture_type_key("Point"),
                 "Point",
                 CompositeShape::Record(vec![
                     FieldDeclaration::new("x", int_0_9(), Presence::Required),
@@ -917,7 +751,7 @@ fn point_and_pair_types() -> TypeEnvironment {
                 ]),
             ),
             CompositeDeclaration::new(
-                NodeKey::from_digest([2; 32]),
+                fixture_type_key("Pair"),
                 "Pair",
                 CompositeShape::Tuple(vec![int_0_9(), int_0_9()]),
             ),
@@ -937,7 +771,7 @@ fn declared_types(
             types: point_and_pair_types(),
             enums,
             functions,
-            ..PackageDeclarations::new(source(), qsl_foundation::IdentityLimits::default())
+            ..PackageDeclarations::new(source(), "pkg", qsl_foundation::IdentityLimits::default())
         }
         .check(CheckingLimits::default())
         .expect("the declared types check"),
@@ -979,19 +813,17 @@ fn a_record_and_a_tuple_are_written_with_their_declarations() {
     assert_eq!(emission.omitted, []);
     let exports = verified_exports(&emission);
     let wire = wire(&emission);
-    for (name, form, digest) in [
-        ("Point", "record", fr_092_vector_key("D1")),
-        ("Pair", "tuple", fr_092_vector_key("D5")),
-    ] {
+    for (name, form) in [("Point", "record"), ("Pair", "tuple")] {
         let node = declared(&wire, name);
         assert_eq!(node["semantic_form"], form);
-        assert_eq!(node["node_id"]["digest"], digest);
+        let key = qsl_foundation::node_wire::node_key_from_json(&node["node_id"])
+            .expect("the structural node id is written");
         assert_eq!(
             node["occurrences"],
             json!([{"role": "declaration", "ordinal": 0}]),
             "{name}"
         );
-        assert_eq!(exports.get(name).map(String::as_str), Some(digest.as_str()));
+        assert_eq!(exports.get(name), Some(&key.to_string()));
     }
 }
 
@@ -1026,7 +858,7 @@ fn a_declaration_without_its_occurrence_is_omitted() {
                     occurrence.role != CheckedOccurrenceRole::Declaration
                 });
             }
-            let candidate = Candidate::of(node, occurrences);
+            let candidate = Candidate::of(node, occurrences).expect("a candidate");
             (candidate.id.clone(), candidate)
         })
         .collect();
@@ -1062,7 +894,7 @@ fn emit_checked_cannot_place_a_type_declaration() {
 fn a_declared_name_segment_that_is_no_identifier_refuses_by_that_segment() {
     let types = TypeEnvironment::new(
         [CompositeDeclaration::new(
-            NodeKey::from_digest([3; 32]),
+            fixture_type_key("Geo::1Point"),
             "Geo::1Point",
             CompositeShape::Tuple(vec![int_0_9()]),
         )],
@@ -1071,7 +903,7 @@ fn a_declared_name_segment_that_is_no_identifier_refuses_by_that_segment() {
     .expect("the environment admits the shape");
     let refusals = PackageDeclarations {
         types,
-        ..PackageDeclarations::new(source(), qsl_foundation::IdentityLimits::default())
+        ..PackageDeclarations::new(source(), "pkg", qsl_foundation::IdentityLimits::default())
     }
     .check(CheckingLimits::default())
     .expect_err("the name has no identifier segments");
@@ -1091,7 +923,8 @@ fn a_declared_name_segment_that_is_no_identifier_refuses_by_that_segment() {
 #[trace("TC-416")]
 #[test]
 fn one_enum_declaration_bound_twice_is_declared_once() {
-    let owner = || json!({"kind": "source", "authority": "a", "identity": "u"});
+    let owner =
+        || json!({"kind": "source", "authority": "a", "identity": "u", "package_name": "pkg"});
     let first = status_enum(owner(), "Status");
     let second = status_enum(owner(), "Status");
     let key = first.declaration.key();
@@ -1134,7 +967,7 @@ fn status_enum(owner: Value, name: &str) -> qsl_semantics::check::EnumBinding {
     use qsl_semantics::value::enumeration::{
         AdmittedEnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
     };
-    use qsl_semantics::value::{NodeIdentityPreimage, NodeOwner, OwnerSelection};
+    use qsl_semantics::value::{NodeOwner, OwnerSelection};
 
     let preimage = EnumDeclarationPreimage::from_json(json!({
         "version": "quire.enum-declaration-node/v1",
@@ -1145,39 +978,21 @@ fn status_enum(owner: Value, name: &str) -> qsl_semantics::check::EnumBinding {
     }))
     .expect("a schema-valid preimage");
     let owners = OwnerSelection::new([NodeOwner::clone(preimage.owner())]);
-    let key = NodeKey::from_digest(
-        preimage
-            .digest(qsl_foundation::IdentityLimits::default())
-            .unwrap(),
-    );
-    let declaration = AdmittedEnumDeclaration::admit(
-        preimage,
-        key,
-        &owners,
-        qsl_foundation::IdentityLimits::default(),
-    )
-    .expect("admitted");
+    let key = preimage.key().expect("the enum has a structural key");
+    let declaration =
+        AdmittedEnumDeclaration::admit(preimage, key.clone(), &owners).expect("admitted");
     let members = ["Ready", "Done"]
         .into_iter()
         .map(|case| {
             let member = EnumMemberPreimage::from_json(json!({
                 "version": "quire.enum-member-node/v1",
-                "declaration_node_id": {"domain": NODE_KEY_DOMAIN, "digest": key.to_string()},
+                "declaration_node_id": qsl_foundation::node_wire::node_key_to_json(&key)
+                    .expect("a structural enum declaration key"),
                 "case": case,
             }))
             .unwrap();
-            let member_key = NodeKey::from_digest(
-                member
-                    .digest(qsl_foundation::IdentityLimits::default())
-                    .unwrap(),
-            );
-            declaration
-                .admit_member(
-                    &member,
-                    member_key,
-                    qsl_foundation::IdentityLimits::default(),
-                )
-                .unwrap()
+            let member_key = member.key().expect("the member has a structural key");
+            declaration.admit_member(&member, member_key).unwrap()
         })
         .collect();
     qsl_semantics::check::EnumBinding {
@@ -1191,8 +1006,7 @@ fn status_enum(owner: Value, name: &str) -> qsl_semantics::check::EnumBinding {
 /// nodes it names by key. A package with a record, a tuple, an enum
 /// `Status` owned by the checked unit, `ready(): Status { Status::Ready }`
 /// (an enum literal) and `keep(s: Status): Status { s }` (an enum-typed
-/// parameter) reads back Verified: IR re-derives each nominal node's key
-/// from its `nominal_identity_preimage`. Each member depends on the
+/// parameter) reads back Verified. Each member depends on the
 /// declaration, and no node names an absent one. `keep` and its parameter
 /// are written (IR-280). An enum owned by a definition the lock does not
 /// select is omitted, and the rest is still written.
@@ -1200,11 +1014,11 @@ fn status_enum(owner: Value, name: &str) -> qsl_semantics::check::EnumBinding {
 #[test]
 fn enum_declaration_and_member_nodes_are_written() {
     let local = status_enum(
-        json!({"kind": "source", "authority": "a", "identity": "u"}),
+        json!({"kind": "source", "authority": "a", "identity": "u", "package_name": "pkg"}),
         "Status",
     );
     let foreign = status_enum(
-        json!({"kind": "definition", "authority": "agent-ix", "identity": "example-model"}),
+        json!({"kind": "definition", "authority": "agent-ix", "identity": "example-model", "package_name": "example-model"}),
         "Foreign",
     );
     let status = local.declaration.key();
@@ -1231,16 +1045,23 @@ fn enum_declaration_and_member_nodes_are_written() {
         .nodes()
         .find(|node| node.semantic_form() == "parameter")
         .expect("keep's parameter node");
-    assert_eq!(parameter.semantic_type(), Some(status));
+    assert_eq!(parameter.semantic_type(), Some(status.clone()));
     let keep_key = package.graph().function_identity("keep").unwrap();
     let emission = emit(&package);
-    let omitted: BTreeMap<String, &OmissionCause> = emission
+    let omitted: BTreeMap<NodeKey, &OmissionCause> = emission
         .omitted
         .iter()
-        .map(|omission| (omission.node.digest.to_string(), &omission.cause))
+        .map(|omission| {
+            let wire = serde_json::to_value(&omission.node).expect("an omitted node id encodes");
+            (
+                qsl_foundation::node_wire::node_key_from_json(&wire)
+                    .expect("an omitted structural key"),
+                &omission.cause,
+            )
+        })
         .collect();
     assert_eq!(
-        omitted.get(&foreign_key.to_string()),
+        omitted.get(&foreign_key),
         Some(&&OmissionCause::UnlockedOwner)
     );
     assert!(
@@ -1249,7 +1070,7 @@ fn enum_declaration_and_member_nodes_are_written() {
             .any(|cause| matches!(cause, OmissionCause::NamesAbsentNode(_))),
         "{omitted:?}"
     );
-    assert!(!omitted.contains_key(&parameter.key().to_string()));
+    assert!(!omitted.contains_key(&parameter.key()));
     // The foreign enum's two members name its declaration.
     assert_eq!(omitted.len(), 3, "{omitted:?}");
     let exports = verified_exports(&emission);
@@ -1259,21 +1080,11 @@ fn enum_declaration_and_member_nodes_are_written() {
     assert_eq!(exports.get("keep"), Some(&keep_key.to_string()));
     let wire = wire(&emission);
     let declaration = declared(&wire, "Status");
-    assert_eq!(declaration["node_id"]["digest"], json!(status.to_string()));
+    assert_eq!(declaration["node_id"], node_id_of(&status));
     assert_eq!(declaration["node_tag"], "scalar_type");
     assert_eq!(declaration["semantic_form"], "enum");
     assert_eq!(declaration["semantic_type"], declaration["node_id"]);
     assert_eq!(declaration["dependencies"], json!([]));
-    assert_eq!(
-        declaration["nominal_identity_preimage"],
-        json!({
-            "version": "quire.enum-declaration-node/v1",
-            "owner": {"kind": "source", "authority": "a", "identity": "u"},
-            "qualified_declaration": ["Status"],
-            "ordered": true,
-            "members": ["Ready", "Done"],
-        })
-    );
     let members: Vec<&Value> = nodes(&wire)
         .iter()
         .filter(|node| node["semantic_form"] == "enum_value")
@@ -1299,10 +1110,6 @@ fn enum_declaration_and_member_nodes_are_written() {
     for member in members {
         assert_eq!(member["semantic_type"], declaration["node_id"]);
         assert_eq!(member["dependencies"], json!([declaration["node_id"]]));
-        assert_eq!(
-            member["nominal_identity_preimage"]["declaration_node_id"],
-            declaration["node_id"]
-        );
         assert!(member.get("declaration").is_none());
     }
 }
@@ -1425,7 +1232,6 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
         RefinementSubjectNotEmitted,
         RefinementIdentityEncoding,
         RefinementNotEmitted,
-        SameMeaningRefinements,
         UnlocatedRefinementDeclaration,
     }
     fn classify(result: Result<Emission, EmitRefusal>) -> Seen {
@@ -1442,11 +1248,10 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
             Err(EmitRefusal::RefinementSubjectNotEmitted) => Seen::RefinementSubjectNotEmitted,
             Err(EmitRefusal::RefinementIdentityEncoding) => Seen::RefinementIdentityEncoding,
             Err(EmitRefusal::RefinementNotEmitted) => Seen::RefinementNotEmitted,
-            Err(EmitRefusal::SameMeaningRefinements { .. }) => Seen::SameMeaningRefinements,
             Err(EmitRefusal::UnlocatedRefinementDeclaration) => {
                 Seen::UnlocatedRefinementDeclaration
             }
-            Err(EmitRefusal::SourceMapInvariant) => {
+            Err(EmitRefusal::SourceMapInvariant | EmitRefusal::UnresolvedNodeReference) => {
                 panic!("the typed inspection source map matches the emitted entries")
             }
             Err(EmitRefusal::Cancelled { .. }) => panic!("no handle was cancelled"),
@@ -1459,7 +1264,7 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
             Err(EmitRefusal::ProbabilisticModelNotEmitted { .. }) => {
                 panic!("the fixture set declares no random parameter, reward or workload")
             }
-            Err(EmitRefusal::TimedModelNotEmitted { .. }) => {
+            Err(EmitRefusal::TimedModelNotEmitted { .. } | EmitRefusal::TimedOrder(_)) => {
                 panic!("the fixture set declares no timed model")
             }
         }
@@ -1525,7 +1330,13 @@ fn the_package_crate_builds_no_term_and_mints_no_key() {
         let text = std::fs::read_to_string(root.join(file)).unwrap();
         let shipped = text.split("#[cfg(test)]").next().unwrap();
         for token in forbidden {
-            assert!(!shipped.contains(token), "{file} calls {token}");
+            let called = shipped.match_indices(token).any(|(at, _)| {
+                !shipped[..at]
+                    .chars()
+                    .next_back()
+                    .is_some_and(|before| before.is_alphanumeric() || before == '_')
+            });
+            assert!(!called, "{file} calls {token}");
         }
         scanned += 1;
     }
@@ -1687,7 +1498,11 @@ fn call_source() -> RawSourceRef {
 fn checked_call_package(functions: Vec<FunctionDeclaration>) -> qsl_semantics::check::CheckedGraph {
     PackageDeclarations {
         functions,
-        ..PackageDeclarations::new(call_source(), qsl_foundation::IdentityLimits::default())
+        ..PackageDeclarations::new(
+            call_source(),
+            "pkg",
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
     .check(CheckingLimits::default())
     .expect("g and f check cleanly")
@@ -1706,7 +1521,7 @@ fn call_identity_and_location(
         .expect("the call node was lowered");
     let origin = Origin::new(Role::new("expression"), 0);
     let location = checked
-        .occurrence(identity, &origin)
+        .occurrence(identity.clone(), &origin)
         .expect("check records the call's own occurrence")
         .clone();
     (identity, origin, location)
@@ -1752,10 +1567,7 @@ fn emit_checked_places_the_calls_occurrence_at_its_own_source_span() {
     let Read::Verified { source_map, .. } = outcome else {
         panic!("expected Verified, got {outcome:?}");
     };
-    let key = OccurrenceKey::new(
-        WireNodeId::from_digest(*identity.as_bytes()),
-        origin.clone(),
-    );
+    let key = OccurrenceKey::new(identity.clone(), origin.clone());
     let regions = source_map
         .regions(&key)
         .expect("the decoded source map carries the call's own occurrence");
@@ -1847,7 +1659,7 @@ fn generated_nodes_are_placed_at_their_enclosing_declaration() {
     let package = CheckedPackage::link(
         PackageDeclarations {
             functions: vec![inc_read_from_text()],
-            ..PackageDeclarations::new(source, qsl_foundation::IdentityLimits::default())
+            ..PackageDeclarations::new(source, "pkg", qsl_foundation::IdentityLimits::default())
         }
         .check(CheckingLimits::default())
         .expect("inc checks"),
@@ -1912,6 +1724,7 @@ fn source_text_compiles_through_the_spine_and_reads_back_verified() {
     let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
     let declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "pkg".to_owned(),
         unit,
         Vec::new(),
         Vec::new(),
@@ -1984,20 +1797,11 @@ fn source_text_compiles_through_the_spine_and_reads_back_verified() {
     }
 }
 
-/// QSpec's `unit-metre` node key (FR-094's vector key).
-pub(super) const METRE: [u8; 32] = [
-    0x79, 0x63, 0x76, 0x23, 0xa4, 0x6d, 0x29, 0xe8, 0x84, 0xb6, 0x2c, 0x6f, 0xa2, 0x92, 0xae, 0xb2,
-    0x9d, 0x41, 0xe4, 0xec, 0xc4, 0xe8, 0x00, 0xb4, 0xd7, 0xee, 0x91, 0x0a, 0x3e, 0xaf, 0x23, 0xa4,
-];
-
-/// The `metre` unit of dimension `Length`, owned by a definition, as the
-/// quantity table `check` types a `Length` quantity against. Its keys are
-/// QSpec's vector keys ([`METRE`] and `dimension-length`).
-pub(super) fn metre_units() -> quire_semantic_value::quantity::UnitTable {
-    let owner = json!({"kind": "definition", "authority": "agent-ix", "identity": "example-model"});
-    let (table, metre) = metre_units_owned_by(owner);
-    assert_eq!(metre, NodeKey::from_digest(METRE), "QSpec's unit-metre key");
-    table
+fn definition_metre_units() -> (quire_semantic_value::quantity::UnitTable, NodeKey) {
+    metre_units_owned_by(json!({
+        "kind": "definition", "authority": "agent-ix", "identity": "example-model",
+        "package_name": "example-model"
+    }))
 }
 
 /// The `metre` unit of dimension `Length`, declared by the fixture unit's
@@ -2006,7 +1810,7 @@ pub(super) fn source_metre_units() -> (
     quire_semantic_value::quantity::UnitTable,
     quire_exact::UnitId,
 ) {
-    let owner = json!({"kind": "source", "authority": "a", "identity": "u"});
+    let owner = json!({"kind": "source", "authority": "a", "identity": "u", "package_name": "pkg"});
     let (table, metre) = metre_units_owned_by(owner);
     (table, quire_exact::UnitId::declared(metre))
 }
@@ -2015,8 +1819,7 @@ pub(super) fn source_metre_units() -> (
 /// admitted under their recomputed keys, and the `metre` key.
 fn metre_units_owned_by(owner: Value) -> (quire_semantic_value::quantity::UnitTable, NodeKey) {
     use qsl_semantics::value::{
-        admit_unit_graph, DimensionPreimage, NodeIdentityPreimage, NodeOwner, OwnerSelection,
-        UnitPreimage,
+        admit_unit_graph, DimensionPreimage, NodeOwner, OwnerSelection, UnitPreimage,
     };
     let length = DimensionPreimage::from_json(json!({
         "version": "quire.dimension-node/v1",
@@ -2025,32 +1828,23 @@ fn metre_units_owned_by(owner: Value) -> (quire_semantic_value::quantity::UnitTa
         "terms": [],
     }))
     .expect("a base dimension");
-    let length_key = NodeKey::from_digest(
-        length
-            .digest(qsl_foundation::IdentityLimits::default())
-            .expect("the dimension digests"),
-    );
+    let length_key = length.key().expect("the dimension has a structural key");
     let metre = UnitPreimage::from_json(json!({
         "version": "quire.unit-node/v1",
         "owner": owner,
         "qualified_declaration": ["Example", "metre"],
-        "dimension_node_id": {"domain": NODE_KEY_DOMAIN, "digest": length_key.to_string()},
+        "dimension_node_id": qsl_foundation::node_wire::node_key_to_json(&length_key).expect("a dimension key"),
         "target_unit_node_id": null,
         "scale": {"numerator": "1", "denominator": "1"},
         "offset": {"numerator": "0", "denominator": "1"},
     }))
     .expect("a root unit");
-    let metre_key = NodeKey::from_digest(
-        metre
-            .digest(qsl_foundation::IdentityLimits::default())
-            .expect("the unit digests"),
-    );
+    let metre_key = metre.key().expect("the unit has a structural key");
     let selection: NodeOwner = serde_json::from_value(owner).expect("an owner");
     let graph = admit_unit_graph(
         [(length, length_key)],
-        [(metre, metre_key)],
+        [(metre, metre_key.clone())],
         &OwnerSelection::new([selection]),
-        qsl_foundation::IdentityLimits::default(),
     )
     .expect("the unit graph admits");
     (
@@ -2064,8 +1858,8 @@ fn metre_units_owned_by(owner: Value) -> (quire_semantic_value::quantity::UnitTa
 /// unit node, which the emitted lock does not select, beside `t`, which
 /// names no omitted node.
 fn q_and_t_package() -> CheckedPackage {
-    let metre = quire_exact::UnitId::declared(NodeKey::from_digest(METRE));
-    q_and_t_package_over(metre_units(), metre)
+    let (units, metre) = definition_metre_units();
+    q_and_t_package_over(units, quire_exact::UnitId::declared(metre))
 }
 
 /// TC-160 step 8's `q` and `t`, with `Length` the quantity of `metre` in
@@ -2087,7 +1881,7 @@ pub(super) fn q_and_t_package_over(
             types: TypeEnvironment::default().with_units(units),
             aliases: vec![("Length".to_owned(), ValueType::Quantity(metre))],
             functions: vec![q, t()],
-            ..PackageDeclarations::new(source(), qsl_foundation::IdentityLimits::default())
+            ..PackageDeclarations::new(source(), "pkg", qsl_foundation::IdentityLimits::default())
         }
         .check(CheckingLimits::default())
         .expect("q checks"),
@@ -2130,13 +1924,14 @@ fn a_compound_unit_is_omitted_only_for_its_omitted_unit() {
         "the I2 read exports t and not q"
     );
     let t_key = exports["t"].clone();
-    let q_key = graph
+    let q_node = graph
         .nodes()
         .filter(|node| node.semantic_form() == "pure_function")
         .find(|node| node.key().to_string() != t_key)
-        .map(|node| node_id(node.key()))
         .expect("q's declaration node");
-    let metre_id = node_id(NodeKey::from_digest(METRE));
+    let q_text = q_node.key().to_string();
+    let q_key = node_id(q_node.key());
+    let metre_id = node_id(definition_metre_units().1);
     let cause_of = |id: &CheckedNodeId| {
         emission
             .omitted
@@ -2194,9 +1989,14 @@ fn a_compound_unit_is_omitted_only_for_its_omitted_unit() {
         .map(|omission| omission.node.clone())
         .collect();
     assert_eq!(omitted, expected);
-    assert!(omitted.iter().all(|id| *id.digest != *t_key));
+    let t_id = graph
+        .nodes()
+        .find(|node| node.key().to_string() == t_key)
+        .map(|node| node_id(node.key()))
+        .expect("t's declaration node");
+    assert!(!omitted.contains(&t_id));
     // `q` is absent from the wire's exports, `t` is present.
-    assert!(!exports.values().any(|key| **key == *q_key.digest));
+    assert!(!exports.values().any(|key| *key == q_text));
 }
 
 /// FR-062-AC-9 (TC-160 step 8, second half): the same package with an
@@ -2285,85 +2085,6 @@ fn a_fault_injected_partway_through_node_emission_writes_nothing() {
     // this function's own return type, not merely untested.
 }
 
-// No `#[trace]` tag: no TC names the I2 reader's own preimage refusals; the
-// test backs `read_checked_package_v2`'s `InvalidPreimage` arm.
-/// An enum declaration node whose `declaration` is dropped (its declaration
-/// occurrence re-roled `expression`, so it keeps one) passes IR's v2 reader:
-/// IR's `validate_declaration_names` checks the nominal join only on a node
-/// carrying both. QSL's I2 read refuses it as
-/// `DeclarationNominalMismatch` with no declared name, through the
-/// `InvalidPreimage` arm, and yields no package.
-#[test]
-fn a_nominal_node_without_its_declaration_is_refused_by_the_i2_read() {
-    let local = status_enum(
-        json!({"kind": "source", "authority": "a", "identity": "u"}),
-        "Status",
-    );
-    let status = json!(local.declaration.key().to_string());
-    let emission = emit(&declared_types(vec![local], vec![]));
-    let mut wire = wire(&emission);
-    let strip = |node: &mut Value| {
-        if node["node_id"]["digest"] == status {
-            node.as_object_mut().unwrap().remove("declaration").unwrap();
-            for occurrence in node
-                .get_mut("occurrences")
-                .and_then(Value::as_array_mut)
-                .into_iter()
-                .flatten()
-            {
-                if occurrence["role"] == "declaration" {
-                    occurrence["role"] = json!("expression");
-                }
-            }
-        }
-    };
-    wire["semantic_graph"]["nodes"]
-        .as_array_mut()
-        .unwrap()
-        .iter_mut()
-        .for_each(strip);
-    let mut re_roled = 0;
-    for entry in wire["source_map"].as_array_mut().unwrap() {
-        if entry["node_id"]["digest"] == status && entry["role"] == "declaration" {
-            entry["role"] = json!("expression");
-            re_roled += 1;
-        }
-    }
-    assert_eq!(re_roled, 1, "Status had one declaration entry");
-    let package_id = crate::checked_v2::tests::derived_package_id(&wire);
-    wire["package_id"]["digest"] = json!(package_id.hex());
-    let mut evidence = CheckedPackageEvidence::new();
-    for feature in wire["lock"]["required_features"].as_array().unwrap() {
-        evidence.support_feature(feature.as_str().unwrap());
-    }
-    let pinned: PinnedRequest = qsl_semantics::library::fixtures::single_pin(library(), package_id);
-    let outcome = read_v2(
-        &jcs(&wire),
-        library(),
-        V2ReadLimits::default(),
-        &evidence,
-        &pinned,
-    );
-    let Read::Refused(crate::checked_v2::V2ReadRefusal::Structural(structural)) = outcome else {
-        panic!("expected a structural refusal, got {outcome:?}");
-    };
-    let qsl_semantics::library::LibraryRefusal::InvalidPreimage {
-        library: refused,
-        defect:
-            qsl_semantics::library::PreimageDefect::DeclarationNominalMismatch {
-                node,
-                declared: None,
-                nominal,
-            },
-    } = *structural
-    else {
-        panic!("expected InvalidPreimage(DeclarationNominalMismatch), got {structural:?}");
-    };
-    assert_eq!(refused, library());
-    assert_eq!(json!(node.to_string()), status);
-    assert_eq!(nominal, "Status");
-}
-
 /// FR-027-AC-5 (TC-435 step 1): the complete-V1 compile fixture, a record,
 /// an Integer function and a function with parameters, goes S1 to S4 as
 /// spine `compile` runs it, is written with nothing omitted and reads back
@@ -2396,7 +2117,7 @@ fn spine_compile_package() -> CheckedPackage {
     assert_eq!(parsed.diagnostics(), []);
     let raw = parsed.source().reference().clone();
     let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
-    let graph = PackageDeclarations::assemble(raw, unit, Vec::new(), Vec::new())
+    let graph = PackageDeclarations::assemble(raw, "pkg".to_owned(), unit, Vec::new(), Vec::new())
         .expect("the unit assembles")
         .check(CheckingLimits::default())
         .expect("the package checks");
@@ -2413,7 +2134,7 @@ const SPINE_MODEL_DOCUMENT: &[u8] = spine_model::DOCUMENT;
 /// `compile` runs it.
 fn assemble_with_models(
     unit: &[u8],
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &qsl_semantics::model::intake::PackageInput,
 ) -> Result<PackageDeclarations, String> {
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-model", "fixture", "fixture:1"),
@@ -2431,7 +2152,7 @@ fn assemble_with_models(
         qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
     )
     .map_err(|refusal| format!("intake: {refusal:?}"))?;
-    PackageDeclarations::assemble(raw, unit, models, Vec::new())
+    PackageDeclarations::assemble(raw, "pkg".to_owned(), unit, models, Vec::new())
         .map_err(|refusal| format!("{refusal:?}"))
 }
 
@@ -2457,15 +2178,10 @@ fn spine_model_without(removed: &[&str]) -> String {
 /// `unit` through S1, S2, I1, the assembler, check, link and the v2
 /// emitter against the spine-model document, with nothing omitted, and a
 /// read of the bytes through QSL's I2 reader under the document's
-/// `sha256-jcs` digest as domain package evidence (or `evidence_digest`,
-/// when given). Returns the emission, its wire, the document's digest and
-/// the read.
-fn emit_model_unit(unit: &str, evidence_digest: Option<&str>) -> (Emission, Value, String, Read) {
-    let packages = qsl_semantics::model::intake::package_input([SPINE_MODEL_DOCUMENT]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    let digest = qsl_semantics::model::key::hex(digest);
+/// identity as domain package evidence (or `evidence_identity`, when
+/// given). Returns the emission, its wire and the read.
+fn emit_model_unit(unit: &str, evidence_identity: Option<&str>) -> (Emission, Value, Read) {
+    let packages = qsl_semantics::model::intake::package_input([SPINE_MODEL_DOCUMENT]).unwrap();
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
         .check(CheckingLimits::default())
@@ -2478,16 +2194,18 @@ fn emit_model_unit(unit: &str, evidence_digest: Option<&str>) -> (Emission, Valu
         evidence.support_feature(feature.as_str().unwrap());
     }
     evidence
-        .insert_domain_package_document(evidence_digest.unwrap_or(&digest), SPINE_MODEL_DOCUMENT)
+        .insert_domain_package_document(
+            evidence_identity.map_or_else(|| package_identity(SPINE_MODEL_DOCUMENT), str::to_owned),
+            SPINE_MODEL_DOCUMENT,
+        )
         .expect("a fresh evidence key");
     let read = read_v2(
         emission.package.bytes(),
         library(),
         V2ReadLimits::default(),
         &evidence,
-        &qsl_semantics::library::fixtures::single_pin(library(), emission.package.package_id()),
     );
-    (emission, wire, digest, read)
+    (emission, wire, read)
 }
 
 /// FR-027-AC-9, FR-056-AC-9 (TC-442 step 1): the spine-model fixture
@@ -2505,7 +2223,7 @@ fn emit_model_unit(unit: &str, evidence_digest: Option<&str>) -> (Emission, Valu
 #[test]
 fn a_model_bearing_unit_emits_its_model_selection_and_reads_back_verified() {
     let unit = spine_model_without(&[FIELD_ACCESS, CONFORMING_EQUALITY]);
-    let packages = qsl_semantics::model::intake::package_input([SPINE_MODEL_DOCUMENT]);
+    let packages = qsl_semantics::model::intake::package_input([SPINE_MODEL_DOCUMENT]).unwrap();
     let declarations =
         assemble_with_models(unit.as_bytes(), &packages).expect("the unit assembles");
     assert_eq!(declarations.models.len(), 1);
@@ -2520,26 +2238,21 @@ fn a_model_bearing_unit_emits_its_model_selection_and_reads_back_verified() {
             package: "acme/orders".to_owned(),
             node: format!("ix://acme/orders/{artifact}"),
         };
-        let id = views[0].view.type_identities()[&key];
+        let id = views[0].view.type_identities()[&key].clone();
         let declared = declarations
             .types
-            .object_type(id)
+            .object_type(id.clone())
             .unwrap_or_else(|| panic!("{artifact} is declared"));
         assert_eq!(declared.name(), format!("M::{artifact}"));
         id
     };
     let (gadget, widget) = (object("Gadget"), object("Widget"));
-    assert!(declarations.types.conforms(gadget, widget));
+    assert!(declarations.types.conforms(gadget.clone(), widget.clone()));
     assert!(!declarations.types.conforms(widget, gadget));
 
-    let (emission, wire, digest, read) = emit_model_unit(&unit, None);
-    let selection = json!([{
-        "identity": "acme/orders",
-        "digest_domain": "sha256-jcs",
-        "digest": digest,
-    }]);
-    assert_eq!(wire["lock"]["model_selections"], selection);
-    assert_eq!(wire["identity_preimage"]["model_selections"], selection);
+    let (_emission, wire, read) = emit_model_unit(&unit, None);
+    assert!(wire["lock"].get("model_selections").is_none());
+    assert!(wire["lock"].get("model_selections").is_none());
     assert!(
         nodes(&wire).iter().any(|node| node["node_tag"] == "model"),
         "a model node is emitted"
@@ -2548,17 +2261,24 @@ fn a_model_bearing_unit_emits_its_model_selection_and_reads_back_verified() {
     // the content-only `ModelOwner`, `{kind, identity, node}` with no
     // version, the key IR's reader recomputes from the lock selection.
     let model_key = |artifact: &str| {
-        sha256_hex(
-            format!(
-                r#"{{"body":{{"members":[],"term":"aggregate"}},"declaration":null,"node_tag":"model","owner":{{"identity":"acme/orders","kind":"model","node":"ix://acme/orders/{artifact}"}},"recursion":null,"semantic_form":"object_type","semantic_type":null,"version":"quire.structural-node/v1"}}"#
-            )
-            .as_bytes(),
+        NodeKey::new(
+            "acme/orders",
+            vec![
+                PathSegment::Text("model".to_owned()),
+                PathSegment::Text("object_type".to_owned()),
+                PathSegment::Text(format!("ix://acme/orders/{artifact}")),
+            ],
+            0,
         )
+        .expect("a model declaration key")
     };
-    let emitted: BTreeSet<String> = nodes(&wire)
+    let emitted: BTreeSet<NodeKey> = nodes(&wire)
         .iter()
         .filter(|node| node["node_tag"] == "model" && node["semantic_form"] != "model_root")
-        .map(|node| node["node_id"]["digest"].as_str().unwrap().to_owned())
+        .map(|node| {
+            qsl_foundation::node_wire::node_key_from_json(&node["node_id"])
+                .expect("a structural model key")
+        })
         .collect();
     assert_eq!(
         emitted,
@@ -2566,13 +2286,7 @@ fn a_model_bearing_unit_emits_its_model_selection_and_reads_back_verified() {
     );
     // QSpec FR-322-AC-132/134/136: exactly one `model_root` for the one row,
     // last in graph order with its `generated` source-map entry last, keyed by
-    // the row alone (`{identity, digest}`), never by the alias.
-    let root_key = sha256_hex(
-        format!(
-            r#"{{"body":{{"members":[],"term":"aggregate"}},"declaration":null,"node_tag":"model","owner":{{"digest":"{digest}","identity":"acme/orders","kind":"model_root"}},"recursion":null,"semantic_form":"model_root","semantic_type":null,"version":"quire.structural-node/v1"}}"#
-        )
-        .as_bytes(),
-    );
+    // its identity alone, never by the alias.
     let graph = nodes(&wire);
     assert_eq!(
         graph
@@ -2583,11 +2297,10 @@ fn a_model_bearing_unit_emits_its_model_selection_and_reads_back_verified() {
     );
     let root = graph.last().expect("a graph");
     assert_eq!(root["semantic_form"], "model_root");
-    assert_eq!(root["node_id"]["digest"], root_key);
     assert_eq!(root["semantic_type"], root["node_id"]);
     assert_eq!(
         root["owner"],
-        json!({"kind": "model_root", "identity": "acme/orders", "digest": digest})
+        json!({"kind": "model_root", "identity": "acme/orders"})
     );
     assert_eq!(root["dependencies"], json!([]));
     assert_eq!(
@@ -2600,12 +2313,8 @@ fn a_model_bearing_unit_emits_its_model_selection_and_reads_back_verified() {
     assert_eq!(last_entry["ordinal"], 0);
     match read {
         Read::Verified { package, .. } => {
-            assert_eq!(package.package_id(), emission.package.package_id());
-            let exports: BTreeSet<String> = package
-                .into_import_view()
-                .exports()
-                .map(|(name, _)| name.to_owned())
-                .collect();
+            let exports: BTreeSet<String> =
+                package.exports().map(|(name, _)| name.to_owned()).collect();
             for name in ["keep", "held"] {
                 assert!(exports.contains(name), "{name}: {exports:?}");
             }
@@ -2613,64 +2322,8 @@ fn a_model_bearing_unit_emits_its_model_selection_and_reads_back_verified() {
         other => panic!("expected Verified, got {other:?}"),
     }
     // Adverse: evidence naming another document refuses the read.
-    let (.., other) = emit_model_unit(&unit, Some(&"0".repeat(64)));
+    let (.., other) = emit_model_unit(&unit, Some("acme/other"));
     assert!(matches!(other, Read::Refused(_)));
-}
-
-/// QSpec FR-322-AC-134: the root derived for QSpec's published `acme/orders`
-/// row has the key the published `positive-all-families` fixture carries.
-#[trace("TC-310", "FR-322-AC-134", "FR-322-AC-137")]
-#[test]
-fn the_model_root_for_the_published_acme_orders_row_has_the_published_key() {
-    // QSpec's published fixture, read from the checkout `QSPEC_DIR` names;
-    // without it the row digest is arbitrary and only the independent hash
-    // below is checked (`make conformance` requires it).
-    let published: Option<Value> = std::env::var_os("QSPEC_DIR").map(|qspec| {
-        let path = std::path::Path::new(&qspec)
-            .join("proposals/checked-package-v2/fixtures/positive-all-families.json");
-        serde_json::from_slice(&std::fs::read(path).expect("the fixture reads"))
-            .expect("the fixture parses")
-    });
-    let published_root = published.as_ref().map(|fixture| {
-        fixture["semantic_graph"]["nodes"]
-            .as_array()
-            .and_then(|nodes| {
-                nodes.iter().find(|node| {
-                    node["semantic_form"] == "model_root"
-                        && node["owner"]["identity"] == "acme/orders"
-                })
-            })
-            .expect("the fixture holds the acme/orders model root")
-            .clone()
-    });
-    let row_hex = published_root.as_ref().map_or_else(
-        || "17".repeat(32),
-        |root| root["owner"]["digest"].as_str().unwrap().to_owned(),
-    );
-    let mut digest = [0_u8; 32];
-    for (byte, pair) in digest.iter_mut().zip(row_hex.as_bytes().chunks(2)) {
-        *byte = u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap();
-    }
-    let row = qsl_semantics::model::domain_package::DomainPackageRef {
-        identity: "acme/orders".to_owned(),
-        version: "1".to_owned(),
-        digest,
-    };
-    let key = qsl_semantics::check::model_root_key(&row, qsl_foundation::IdentityLimits::default())
-        .expect("the root derives");
-    let root = model_root_node(&row, key);
-    // The key is the SHA-256 of the root's hand-written preimage.
-    let expected = sha256_hex(
-        format!(
-            r#"{{"body":{{"members":[],"term":"aggregate"}},"declaration":null,"node_tag":"model","owner":{{"digest":"{row_hex}","identity":"acme/orders","kind":"model_root"}},"recursion":null,"semantic_form":"model_root","semantic_type":null,"version":"quire.structural-node/v1"}}"#
-        )
-        .as_bytes(),
-    );
-    assert_eq!(root.node_id.digest.as_ref(), expected);
-    if let Some(published_root) = published_root {
-        assert_eq!(published_root["node_id"]["digest"], expected);
-    }
-    assert_eq!(root.semantic_type, root.node_id);
 }
 
 /// FR-027-AC-9, FR-056-AC-9 (TC-442 step 1): the whole spine-model fixture,
@@ -2683,15 +2336,11 @@ fn the_model_root_for_the_published_acme_orders_row_has_the_published_key() {
 #[test]
 fn inherited_field_access_is_accepted_by_the_i2_read() {
     let unit = spine_model_without(&[CONFORMING_EQUALITY]);
-    let (emission, .., read) = emit_model_unit(&unit, None);
+    let (_emission, .., read) = emit_model_unit(&unit, None);
     match read {
         Read::Verified { package, .. } => {
-            assert_eq!(package.package_id(), emission.package.package_id());
-            let exports: BTreeSet<String> = package
-                .into_import_view()
-                .exports()
-                .map(|(name, _)| name.to_owned())
-                .collect();
+            let exports: BTreeSet<String> =
+                package.exports().map(|(name, _)| name.to_owned()).collect();
             assert!(exports.contains("code"), "{exports:?}");
         }
         other => panic!("expected Verified, got {other:?}"),
@@ -2708,15 +2357,11 @@ fn inherited_field_access_is_accepted_by_the_i2_read() {
 #[test]
 fn conforming_reference_equality_is_accepted_by_the_i2_read() {
     let unit = spine_model_without(&[FIELD_ACCESS]);
-    let (emission, .., read) = emit_model_unit(&unit, None);
+    let (_emission, .., read) = emit_model_unit(&unit, None);
     match read {
         Read::Verified { package, .. } => {
-            assert_eq!(package.package_id(), emission.package.package_id());
-            let exports: BTreeSet<String> = package
-                .into_import_view()
-                .exports()
-                .map(|(name, _)| name.to_owned())
-                .collect();
+            let exports: BTreeSet<String> =
+                package.exports().map(|(name, _)| name.to_owned()).collect();
             assert!(exports.contains("same"), "{exports:?}");
         }
         other => panic!("expected Verified, got {other:?}"),
@@ -2732,7 +2377,7 @@ fn conforming_reference_equality_is_accepted_by_the_i2_read() {
 fn an_unknown_model_type_refuses_at_the_assembler_and_a_missing_package_at_intake() {
     let fixture = spine_model::unit();
     let unknown = fixture.replace("w: Reference<M::Widget>", "w: Reference<M::Nope>");
-    let packages = qsl_semantics::model::intake::package_input([SPINE_MODEL_DOCUMENT]);
+    let packages = qsl_semantics::model::intake::package_input([SPINE_MODEL_DOCUMENT]).unwrap();
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-model", "fixture", "fixture:1"),
         "program.native",
@@ -2749,6 +2394,7 @@ fn an_unknown_model_type_refuses_at_the_assembler_and_a_missing_package_at_intak
     .unwrap();
     let refusal = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "pkg".to_owned(),
         unit,
         models,
         Vec::new(),
@@ -2809,6 +2455,7 @@ fn a_model_declaration_with_no_admitted_package_refuses_at_the_assembler() {
     let unit = qsl_forms::build_unit(&parsed).unwrap();
     let refusal = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "pkg".to_owned(),
         unit,
         Vec::new(),
         Vec::new(),
@@ -2838,7 +2485,7 @@ fn normalization_refusals_and_limits_stop_intake_at_the_declaration() {
     let selections = unit_selections(&fixture);
     let limited = qsl_semantics::model::intake::admit_unit(
         &selections,
-        &qsl_semantics::model::intake::package_input([SPINE_MODEL_DOCUMENT]),
+        &qsl_semantics::model::intake::package_input([SPINE_MODEL_DOCUMENT]).unwrap(),
         qsl_semantics::model::accounting::ModelNormalizationLimits {
             declaration_records: 1,
             ..Default::default()
@@ -2868,11 +2515,8 @@ fn normalization_refusals_and_limits_stop_intake_at_the_declaration() {
         }
     }
     let cyclic = serde_json::to_vec(&cyclic).unwrap();
-    let packages = qsl_semantics::model::intake::package_input([cyclic.as_slice()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    let text = spine_model::unit_selecting(digest);
+    let packages = qsl_semantics::model::intake::package_input([cyclic.as_slice()]).unwrap();
+    let text = spine_model::unit();
     let refused = qsl_semantics::model::intake::admit_unit(
         &unit_selections(&text),
         &packages,
@@ -2888,17 +2532,9 @@ fn normalization_refusals_and_limits_stop_intake_at_the_declaration() {
 }
 
 /// A checked graph of `t` read from [`TEXT`], so `emit_checked` places its
-/// occurrences: an E4 dependency's `package_id` is recomputed by emitting it.
-fn dependency() -> CheckedPackage {
-    package(vec![t_read_from_text()])
-}
-
-/// The `package_id` `package` emits under.
-fn emitted_id(package: &CheckedPackage) -> PackageId {
-    emit_checked(package)
-        .expect("the dependency emits")
-        .package
-        .package_id()
+/// occurrences when E4 binds the named dependency.
+fn dependency(name: &str) -> CheckedPackage {
+    CheckedPackage::link(graph_of_named(name, vec![t_read_from_text()]))
 }
 
 fn root_graph() -> qsl_semantics::check::CheckedGraph {
@@ -2917,8 +2553,8 @@ fn import(identity: &str, package: CheckedPackage) -> crate::Import {
 }
 
 /// `mid`-style package: `t` read from [`TEXT`], linked with `imports`.
-fn linked(imports: Vec<crate::Import>) -> CheckedPackage {
-    CheckedPackage::link_with(graph_of(vec![t_read_from_text()]), imports)
+fn linked(name: &str, imports: Vec<crate::Import>) -> CheckedPackage {
+    CheckedPackage::link_with(graph_of_named(name, vec![t_read_from_text()]), imports)
         .expect("the intermediate package links")
 }
 
@@ -2939,18 +2575,12 @@ fn read_linked(package: &CheckedPackage) {
     assert!(matches!(outcome, Read::Verified { .. }), "{outcome:?}");
 }
 
-/// The closure of `package` as `(identity, package_id, path)`.
-fn closure(package: &CheckedPackage) -> Vec<(LibraryName, PackageId, Vec<LibraryName>)> {
+/// The closure of `package` as `(identity, path)`.
+fn closure(package: &CheckedPackage) -> Vec<(LibraryName, Vec<LibraryName>)> {
     package
         .dependency_selections()
         .iter()
-        .map(|(identity, resolved)| {
-            (
-                identity.clone(),
-                resolved.package_id,
-                resolved.path(identity),
-            )
-        })
+        .map(|(identity, resolved)| (identity.clone(), resolved.path(identity)))
         .collect()
 }
 
@@ -2958,48 +2588,43 @@ fn path(identities: &[&str]) -> Vec<LibraryName> {
     identities.iter().map(|identity| lib(identity)).collect()
 }
 
-/// Direct imports enter the lock and identity preimage; the recursive
+/// Direct imports enter the lock; the recursive
 /// closure remains available for linking and replay.
 #[trace("QSpec-FR-307-AC-7", "QSpec-TC-227")]
 #[trace("FR-093-AC-16", "TC-416")]
 #[test]
 fn the_lock_records_direct_imports_and_derives_the_closure() {
-    let d = emitted_id(&dependency());
     let unlinked = emit(&CheckedPackage::link(root_graph()));
     let linked_root = CheckedPackage::link_with(
         root_graph(),
         vec![
-            import("test/units", dependency()),
-            import("test/geometry", dependency()),
+            import("test/units", dependency("test/units")),
+            import("test/geometry", dependency("test/geometry")),
         ],
     )
-    .expect("two imports of one package link");
-    assert_eq!(linked_root.dependencies().keys().collect::<Vec<_>>(), [&d]);
+    .expect("two named imports link");
+    assert_eq!(
+        linked_root.dependencies().keys().collect::<Vec<_>>(),
+        [&lib("test/geometry"), &lib("test/units")]
+    );
     let emission = emit(&linked_root);
     read_linked(&linked_root);
     let written = wire(&emission);
-    let entry = |identity: &str| {
-        json!({
-            "identity": identity,
-            "package_id": {"domain": "quire.package.semantic/v2", "algorithm": "sha256", "digest": d.hex()},
-        })
-    };
+    let entry = |identity: &str| json!({"identity": identity});
     let expected = json!([entry("test/geometry"), entry("test/units")]);
     assert_eq!(written["lock"]["dependency_selections"], expected);
-    assert_eq!(
-        written["identity_preimage"]["dependency_selections"],
-        expected
-    );
-    assert_ne!(emission.package.package_id(), unlinked.package.package_id());
+    assert_ne!(emission.package.bytes(), unlinked.package.bytes());
 
     // A chain four packages deep: root -> b -> c -> units.
-    let c = linked(vec![import("test/units", dependency())]);
+    let c = linked(
+        "test/c",
+        vec![import("test/units", dependency("test/units"))],
+    );
     assert_eq!(
         wire(&emit(&c))["lock"]["dependency_selections"][0]["identity"],
         "test/units"
     );
-    let c_id = emitted_id(&c);
-    let b = linked(vec![import("test/c", c)]);
+    let b = linked("test/b", vec![import("test/c", c)]);
     assert_eq!(
         wire(&emit(&b))["lock"]["dependency_selections"][0]["identity"],
         "test/c"
@@ -3011,19 +2636,14 @@ fn the_lock_records_direct_imports_and_derives_the_closure() {
             .len(),
         1
     );
-    let b_id = emitted_id(&b);
     let root = CheckedPackage::link_with(root_graph(), vec![import("test/b", b)])
         .expect("the root links through b and c");
     assert_eq!(
         closure(&root),
         [
-            (lib("test/b"), b_id, path(&["test/b"])),
-            (lib("test/c"), c_id, path(&["test/b", "test/c"])),
-            (
-                lib("test/units"),
-                d,
-                path(&["test/b", "test/c", "test/units"])
-            ),
+            (lib("test/b"), path(&["test/b"])),
+            (lib("test/c"), path(&["test/b", "test/c"])),
+            (lib("test/units"), path(&["test/b", "test/c", "test/units"])),
         ]
     );
     let emission = emit(&root);
@@ -3048,48 +2668,99 @@ fn the_lock_records_direct_imports_and_derives_the_closure() {
         .all(
             |selection| selection["identity"] != "test/c" && selection["identity"] != "test/units"
         ));
-    assert_eq!(
-        written["identity_preimage"]["dependency_selections"],
-        written["lock"]["dependency_selections"]
-    );
 }
 
 #[trace("QSpec-FR-307-AC-7", "QSpec-TC-227")]
 #[test]
 fn direct_only_chain_reads_with_recursively_admitted_dependencies() {
-    let c = linked(vec![import("test/units", dependency())]);
-    let b = linked(vec![import("test/c", c)]);
+    let c = linked(
+        "test/c",
+        vec![import("test/units", dependency("test/units"))],
+    );
+    let b = linked("test/b", vec![import("test/c", c)]);
     let root = CheckedPackage::link_with(root_graph(), vec![import("test/b", b)])
         .expect("A links through B and C");
     read_linked(&root);
 }
 
-/// FR-307's diamond rule, admitted side: `test/units` reached by two paths
-/// (root -> units, root -> mid -> units) with one `package_id`
-/// unifies to one selection, which keeps the first path.
+/// FR-307's diamond rule admits two separately allocated packages with
+/// identical canonical bytes under the same library name. The first path
+/// remains the selected path.
 #[trace("FR-087-AC-14", "TC-253")]
 #[test]
 fn a_diamond_selecting_one_package_unifies() {
-    let d = emitted_id(&dependency());
-    let mid = linked(vec![import("test/units", dependency())]);
+    let first = Arc::new(dependency("test/units"));
+    let second = Arc::new(dependency("test/units"));
+    assert!(!Arc::ptr_eq(&first, &second));
+    let first_bytes = emit_checked(&first)
+        .expect("first emits")
+        .package()
+        .bytes()
+        .to_vec();
+    let second_bytes = emit_checked(&second)
+        .expect("second emits")
+        .package()
+        .bytes()
+        .to_vec();
+    assert_eq!(
+        first_bytes, second_bytes,
+        "both selections have equal content"
+    );
+    let mid = CheckedPackage::link_with(
+        graph_of_named("test/mid", vec![t_read_from_text()]),
+        vec![crate::Import {
+            identity: lib("test/units"),
+            package: second,
+        }],
+    )
+    .expect("the intermediate package links");
     let root = CheckedPackage::link_with(
         root_graph(),
-        vec![import("test/units", dependency()), import("test/mid", mid)],
+        vec![
+            crate::Import {
+                identity: lib("test/units"),
+                package: Arc::clone(&first),
+            },
+            import("test/mid", mid),
+        ],
     )
-    .expect("one selection of test/units by two paths unifies");
+    .expect("equal canonical package bytes unify across distinct allocations");
     let units = &root.dependency_selections()[&lib("test/units")];
-    assert_eq!(units.package_id, d);
     assert_eq!(units.path(&lib("test/units")), path(&["test/units"]));
+    assert!(Arc::ptr_eq(
+        &root.dependencies()[&lib("test/units")],
+        &first
+    ));
     read_linked(&root);
+}
+
+/// Linking an import under another library's name refuses before admission.
+#[trace("FR-093-AC-16", "TC-416")]
+#[test]
+fn e4_refuses_an_import_whose_manifest_names_another_library() {
+    let wrong = dependency("test/actual");
+    let refusal = CheckedPackage::link_with(root_graph(), vec![import("test/expected", wrong)])
+        .expect_err("an import must match its emitted manifest name");
+    let crate::LinkRefusal::IdentityMismatch { expected, actual } = refusal else {
+        panic!("expected IdentityMismatch, got {refusal:?}");
+    };
+    assert_eq!(expected, lib("test/expected"));
+    assert_eq!(actual.as_ref(), "test/actual");
 }
 
 #[trace("QSpec-FR-307-AC-7", "QSpec-TC-227")]
 #[test]
 fn a_direct_import_reached_transitively_first_stays_in_the_lock() {
-    let mid = linked(vec![import("test/units", dependency())]);
+    let mid = linked(
+        "test/mid",
+        vec![import("test/units", dependency("test/units"))],
+    );
     let root = CheckedPackage::link_with(
         root_graph(),
-        vec![import("test/mid", mid), import("test/units", dependency())],
+        vec![
+            import("test/mid", mid),
+            import("test/units", dependency("test/units")),
+        ],
     )
     .expect("equal direct and transitive paths unify");
     assert_eq!(
@@ -3116,8 +2787,8 @@ fn dependency_selections_are_written_in_utf8_byte_order() {
     let root = CheckedPackage::link_with(
         root_graph(),
         vec![
-            import("test/\u{1F600}", dependency()),
-            import("test/\u{FF61}", dependency()),
+            import("test/\u{1F600}", dependency("test/\u{1F600}")),
+            import("test/\u{FF61}", dependency("test/\u{FF61}")),
         ],
     )
     .expect("two identities link");
@@ -3133,7 +2804,7 @@ fn dependency_selections_are_written_in_utf8_byte_order() {
 }
 
 /// ADR-011 §4 dependency binding at E4: FR-307's diamond rule refuses two
-/// selections of one identity with different `package_id`s as
+/// selections of one identity with different canonical content as
 /// `invalid_package`/`conflicting-definition` listing both dependency
 /// paths. A dependency that does not emit refuses too. None yields a
 /// package.
@@ -3141,15 +2812,26 @@ fn dependency_selections_are_written_in_utf8_byte_order() {
 #[trace("QSpec-FR-307-AC-2", "QSpec-TC-227")]
 #[test]
 fn e4_refuses_a_conflicting_diamond() {
-    let d = emitted_id(&dependency());
+    let direct = dependency("test/units");
+    let direct_bytes = emit_checked(&direct)
+        .expect("direct dependency emits")
+        .package()
+        .bytes()
+        .to_vec();
 
-    // Two `package_id`s: mid's units is `dependency()`, and mid2's units is
-    // another package.
-    let another = linked(vec![import("test/x", dependency())]);
-    let another_id = emitted_id(&another);
-    assert_ne!(another_id, d);
-    let mid = linked(vec![import("test/units", dependency())]);
-    let mid2 = linked(vec![import("test/units", another)]);
+    // Mid's units is the direct package; mid2's units has an additional import.
+    let another = linked("test/units", vec![import("test/x", dependency("test/x"))]);
+    let another_bytes = emit_checked(&another)
+        .expect("other dependency emits")
+        .package()
+        .bytes()
+        .to_vec();
+    assert_ne!(
+        another_bytes, direct_bytes,
+        "the two selections differ in content"
+    );
+    let mid = linked("test/mid", vec![import("test/units", direct)]);
+    let mid2 = linked("test/mid2", vec![import("test/units", another)]);
     assert_eq!(
         wire(&emit(&mid))["lock"]["dependency_selections"][0]["identity"],
         "test/units"
@@ -3162,7 +2844,7 @@ fn e4_refuses_a_conflicting_diamond() {
         root_graph(),
         vec![import("test/mid", mid), import("test/mid2", mid2)],
     )
-    .expect_err("one identity at two package_ids does not unify");
+    .expect_err("one identity at two different packages does not unify");
     let crate::LinkRefusal::ConflictingDefinition {
         identity,
         selections,
@@ -3171,19 +2853,16 @@ fn e4_refuses_a_conflicting_diamond() {
         panic!("expected ConflictingDefinition, got {split:?}");
     };
     assert_eq!(*identity, lib("test/units"));
-    assert_eq!(selections[0].package_id, d);
     assert_eq!(
         selections[0].path(identity),
         path(&["test/mid", "test/units"])
     );
-    assert_eq!(selections[1].package_id, another_id);
     assert_eq!(
         selections[1].path(identity),
         path(&["test/mid2", "test/units"])
     );
 
-    // A dependency whose occurrences have no source region does not emit,
-    // so its `package_id` cannot be recomputed.
+    // A dependency whose occurrences have no source region does not emit.
     let unplaced = CheckedPackage::link_with(
         root_graph(),
         vec![crate::Import {
@@ -3283,8 +2962,6 @@ fn config_version_model(with_sub: bool) -> qsl_semantics::model::intake::Selecte
     let package = DomainPackage::new(
         DomainPackageRef {
             identity: "example/config-version".to_owned(),
-            version: "1".to_owned(),
-            digest: [0_u8; 32],
         },
         records,
     );
@@ -3310,8 +2987,7 @@ fn attempt_frame_unit(declarations: &str, operation: &str, contracts: &str) -> S
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
-         model Config = \"example/config-version\" version \"1\" digest \
-         \"sha256-jcs:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\";\n\
+         model Config = \"example/config-version\";\n\
          {declarations}\n\
          protocol Flow using v over (input: Boolean) on origin {{\n\
          role R on Config::ConfigVersion;\n\
@@ -3352,9 +3028,15 @@ fn check_attempt_unit_revision(
     assert_eq!(parsed.diagnostics(), []);
     let raw = parsed.source().reference().clone();
     let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
-    PackageDeclarations::assemble(raw, unit, vec![config_version_model(with_sub)], Vec::new())
-        .expect("the unit assembles")
-        .check(CheckingLimits::default())
+    PackageDeclarations::assemble(
+        raw,
+        "pkg".to_owned(),
+        unit,
+        vec![config_version_model(with_sub)],
+        Vec::new(),
+    )
+    .expect("the unit assembles")
+    .check(CheckingLimits::default())
 }
 
 /// What FR-114's emission assertions read from one attempt unit: the
@@ -3384,11 +3066,11 @@ fn emit_attempt_unit(unit: &str, with_sub: bool) -> AttemptEmission {
         .iter()
         .map(|clause| clause.identity())
         .collect();
-    let frame = qsl_foundation::digest::WireNodeId::from_digest(*attempt.frame.as_bytes());
+    let frame = attempt.frame.clone();
     let frame_records = graph
         .requirements()
         .keys()
-        .filter(|key| key.node() == frame)
+        .filter(|key| key.node() == &frame)
         .count();
     let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
     assert_eq!(emission.omitted, []);
@@ -3427,10 +3109,18 @@ fn emit_attempt_unit(unit: &str, with_sub: bool) -> AttemptEmission {
         [],
         "formatted attempt S4 omissions"
     );
+    let ids = |emission: &Emission| {
+        wire(emission)["semantic_graph"]["nodes"]
+            .as_array()
+            .expect("emitted graph nodes")
+            .iter()
+            .map(|node| node["node_id"].clone())
+            .collect::<Vec<_>>()
+    };
     assert_eq!(
-        formatted_emission.package().package_id(),
-        emission.package().package_id(),
-        "attempt formatting changed checked package identity"
+        ids(&formatted_emission),
+        ids(&emission),
+        "formatting changed the attempt's structural node identities"
     );
     AttemptEmission {
         attempt,
@@ -3452,9 +3142,9 @@ fn only_node<'w>(wire: &'w Value, semantic_form: &str) -> &'w Value {
     node
 }
 
-/// `key`'s wire node id digest, as `node_id.digest` spells it.
-fn digest_of(key: quire_exact::NodeKey) -> String {
-    qsl_foundation::digest::WireNodeId::from_digest(*key.as_bytes()).to_string()
+/// `key` in the structural node-id wire shape.
+fn node_id_of(key: &quire_exact::NodeKey) -> Value {
+    qsl_foundation::node_wire::node_key_to_json(key).expect("an admitted node key")
 }
 
 /// TC-513 step 1/FR-114-AC-1: the checked attempt holds the identities of
@@ -3479,11 +3169,8 @@ fn an_attempt_and_its_clause_share_one_frame_node_through_emission() {
     assert_eq!(emitted.clauses.len(), 1);
     let anchor = only_node(&emitted.wire, "operation_anchor");
     let frame = only_node(&emitted.wire, "frame");
-    assert_eq!(
-        anchor["node_id"]["digest"],
-        digest_of(emitted.attempt.anchor)
-    );
-    assert_eq!(frame["node_id"]["digest"], digest_of(emitted.attempt.frame));
+    assert_eq!(anchor["node_id"], node_id_of(&emitted.attempt.anchor));
+    assert_eq!(frame["node_id"], node_id_of(&emitted.attempt.frame));
     assert_frame_modifies_version_number(frame);
     assert_eq!(emitted.frame_records, 1);
 }
@@ -3519,11 +3206,8 @@ fn an_operation_named_only_by_an_attempt_emits_its_anchor_frame_and_record() {
     assert!(emitted.clauses.is_empty());
     let anchor = only_node(&emitted.wire, "operation_anchor");
     let frame = only_node(&emitted.wire, "frame");
-    assert_eq!(
-        anchor["node_id"]["digest"],
-        digest_of(emitted.attempt.anchor)
-    );
-    assert_eq!(frame["node_id"]["digest"], digest_of(emitted.attempt.frame));
+    assert_eq!(anchor["node_id"], node_id_of(&emitted.attempt.anchor));
+    assert_eq!(frame["node_id"], node_id_of(&emitted.attempt.frame));
     assert_frame_modifies_version_number(frame);
     assert_eq!(emitted.frame_records, 1);
 }
@@ -3542,19 +3226,13 @@ fn an_inherited_operation_binds_its_declaring_types_anchor_and_frame() {
     );
     let anchor = only_node(&emitted.wire, "operation_anchor");
     let frame = only_node(&emitted.wire, "frame");
-    assert_eq!(
-        anchor["node_id"]["digest"],
-        digest_of(emitted.attempt.anchor)
-    );
-    assert_eq!(frame["node_id"]["digest"], digest_of(emitted.attempt.frame));
+    assert_eq!(anchor["node_id"], node_id_of(&emitted.attempt.anchor));
+    assert_eq!(frame["node_id"], node_id_of(&emitted.attempt.frame));
     // The context both nodes name is `ConfigVersion`'s own object node:
     // the node the same unit binds over the package without `Sub`, where no
     // other object type exists for it to be.
-    let context = &frame["semantic_type"]["digest"];
-    assert_eq!(
-        anchor["body"]["members"][0]["value"]["target"]["digest"],
-        *context
-    );
+    let context = &frame["semantic_type"];
+    assert_eq!(anchor["body"]["members"][0]["value"]["target"], *context);
     let without_sub = emit_attempt_unit(
         &attempt_frame_unit(
             VERSION_UNCHANGED,
@@ -3563,10 +3241,10 @@ fn an_inherited_operation_binds_its_declaring_types_anchor_and_frame() {
         ),
         false,
     );
-    let config_version = &only_node(&without_sub.wire, "frame")["semantic_type"]["digest"];
+    let config_version = &only_node(&without_sub.wire, "frame")["semantic_type"];
     assert_eq!(context, config_version);
     assert_eq!(
-        only_node(&without_sub.wire, "object_type")["node_id"]["digest"],
+        only_node(&without_sub.wire, "object_type")["node_id"],
         *context
     );
 }
@@ -3582,8 +3260,7 @@ fn an_inherited_operation_binds_its_declaring_types_anchor_and_frame() {
 fn a_protocol_with_unchecked_garbage_content_refuses_at_check() {
     let unit = "language \"ix:native\" edition \"1-draft\";\n\
         profile v = \"quire.model.complete/v1\";\n\
-        model Config = \"example/config-version\" version \"1\" digest \
-        \"sha256-jcs:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\";\n\
+        model Config = \"example/config-version\";\n\
         function f using v (): Boolean pure { true }\n\
         protocol Flow using v over (input: Nope::Input) on origin {\n\
         role R on Nope::Actor;\n\
@@ -3751,7 +3428,7 @@ pub(crate) fn package_from_text(declarations: &str) -> (String, CheckedPackage) 
     assert_eq!(parsed.diagnostics(), []);
     let raw = parsed.source().reference().clone();
     let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
-    let graph = PackageDeclarations::assemble(raw, unit, Vec::new(), Vec::new())
+    let graph = PackageDeclarations::assemble(raw, "pkg".to_owned(), unit, Vec::new(), Vec::new())
         .expect("the unit assembles")
         .check(CheckingLimits::default())
         .expect("the package checks");
@@ -3989,7 +3666,7 @@ fn a_node_a_state_clause_places_does_not_move_to_a_type_name() {
 /// repeat emit and a `link_with` reuse it rather than emitting again.
 #[test]
 fn a_package_remembers_its_emission_and_link_with_reuses_it() {
-    let shared = Arc::new(dependency());
+    let shared = Arc::new(dependency("test/units"));
     assert!(shared.remembered_emission().is_none());
     let first = emit_checked(&shared).expect("the dependency emits");
     let remembered = shared
@@ -4006,12 +3683,12 @@ fn a_package_remembers_its_emission_and_link_with_reuses_it() {
         }],
     )
     .expect("the root links");
-    assert_eq!(
-        linked.dependency_selections()[&lib("test/units")].package_id,
-        first.package().package_id()
-    );
+    assert!(Arc::ptr_eq(
+        &linked.dependencies()[&lib("test/units")],
+        &shared
+    ));
 
-    let unemitted = Arc::new(dependency());
+    let unemitted = Arc::new(dependency("test/units"));
     CheckedPackage::link_with(
         root_graph(),
         vec![crate::Import {

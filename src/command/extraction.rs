@@ -111,7 +111,7 @@ pub struct JoinFailure {
 }
 
 impl JoinFailure {
-    /// Original immutable document, including exact byte digest.
+    /// Original immutable document, including its exact bytes.
     pub fn original(&self) -> &Source {
         &self.original
     }
@@ -313,11 +313,10 @@ mod tests {
         .unwrap()
     }
 
-    fn document(model: &NativeModel, expression: &str, crlf: bool) -> Source {
+    fn document(expression: &str, crlf: bool) -> Source {
         // Authored input fixture. Only the production Quire extractor selects its body.
         let text = format!(
-            "# Ω authored document\n\n## Invariants\n\n### population_rule\n  ```ix:native\n  language \"ix:native\" edition \"0-draft\";\n  profile \"state-finite/0-draft\";\n  model M = \"example/rule-tests\" version \"1\" digest \"{}\";\n  invariant Rule on M::Node at current {{ {expression} }}\n  ```\n\n### unselected\n```ix:native\nopaque body remains unparsed by Quire\n```\n\n## Notes\nλ unselected prose.\n",
-            model.digest(),
+            "# Ω authored document\n\n## Invariants\n\n### population_rule\n  ```ix:native\n  language \"ix:native\" edition \"0-draft\";\n  profile \"state-finite/0-draft\";\n  model M = \"example/rule-tests\";\n  invariant Rule on M::Node at current {{ {expression} }}\n  ```\n\n### unselected\n```ix:native\nopaque body remains unparsed by Quire\n```\n\n## Notes\nλ unselected prose.\n",
         );
         source(&if crlf {
             text.replace('\n', "\r\n")
@@ -333,7 +332,6 @@ mod tests {
         let models = [setup::native_rule_model::parts().model()];
         let model = &models[0];
         let original = document(
-            model,
             "true implies forall(item in self.items: item < self.n)",
             true,
         );
@@ -361,10 +359,6 @@ mod tests {
             .diagnostics
             .iter()
             .any(|value| value.code == "semantic.clause-language-unchecked"));
-        assert_eq!(
-            program.mapped().mapping().original().digest(),
-            original.digest()
-        );
         assert_eq!(
             program.mapped().native().checked().clauses()[0].binding(),
             &binding()
@@ -454,7 +448,7 @@ mod tests {
             ("^", Code::InvalidSyntax),
             ("collect(self.items)", Code::UnsupportedConstruct),
         ] {
-            let original = document(&models[0], expression, true);
+            let original = document(expression, true);
             let upstream = extracted(&original, &ctx);
             let expected = upstream.extraction();
             assert_eq!(expected.availability.state, AvailabilityState::Available);
@@ -469,7 +463,6 @@ mod tests {
             .unwrap_err();
             assert_eq!(error.code(), code);
             assert_eq!(error.extraction(), Some(expected));
-            assert_eq!(error.original().digest(), original.digest());
             assert_eq!(error.binding(), &binding());
             let JoinCause::Compile(native) = &error.cause else {
                 panic!("actual native parser refusal required");
@@ -488,7 +481,7 @@ mod tests {
                 .is_some()));
             assert!(native.mapping().original().text().contains('Ω'));
         }
-        let original = document(&models[0], "true", false);
+        let original = document("true", false);
         let wrong_language = source(&original.text().replacen("```ix:native", "```ocl", 1));
         let upstream = extracted(&wrong_language, &ctx);
         let error = extract_and_compile(
@@ -510,7 +503,7 @@ mod tests {
         let models = [setup::native_rule_model::parts().model()];
         let ctx = context();
         for crlf in [false, true] {
-            let original = document(&models[0], "true", crlf);
+            let original = document("true", crlf);
             // Quire's byte column and native scalar columns differ for this valid
             // closing fence. Its trailing Unicode whitespace must remain accepted.
             let (closing, spaced) = if crlf {

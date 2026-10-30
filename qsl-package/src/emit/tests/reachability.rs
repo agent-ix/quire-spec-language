@@ -87,8 +87,6 @@ pub(super) fn reachability_document() -> Vec<u8> {
     document["constructs"].as_array_mut().unwrap().push(json!({
         "kind": {"module": "acme/orders", "name": "population"},
         "moduleVersion": "1.0.0",
-        "manifestDigest":
-            "sha256:0000000000000000000000000000000000000000000000000000000000000000",
         "construct": {
             "identity": "none",
             "shape": "record",
@@ -144,19 +142,15 @@ pub(super) fn lower_with(document: Vec<u8>, profiles: &str, clauses: &str) -> Lo
 /// `version`.
 pub(super) fn lower_package(
     document: Vec<u8>,
-    (package, version): (&str, &str),
+    (package, _version): (&str, &str),
     profiles: &str,
     clauses: &str,
 ) -> Lowered {
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    let digest = qsl_semantics::model::key::hex(digest);
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n{profiles}\
-         model M = {package:?} version {version:?} digest \"sha256-jcs:{digest}\";\n\
+         model M = {package:?};\n\
          {clauses}\n"
     );
     let graph = assemble_with_models(unit.as_bytes(), &packages)
@@ -176,7 +170,7 @@ pub(super) fn lower_package(
     assert_eq!(emission.omitted, []);
     let mut evidence = read_evidence(&emission);
     evidence
-        .insert_domain_package_document(digest.as_str(), &document[..])
+        .insert_domain_package_document(package_identity(&document[..]), &document[..])
         .expect("a fresh evidence key");
     let wire = wire(&emission);
     let ir = match quire_contract_model::read_checked_package(

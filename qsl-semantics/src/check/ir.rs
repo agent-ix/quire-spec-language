@@ -47,7 +47,7 @@ impl RecordField {
 
     /// The record the read is typed at.
     pub fn declaration(&self) -> NodeKey {
-        self.declaration
+        self.declaration.clone()
     }
 
     /// The field's name in that record.
@@ -228,16 +228,14 @@ impl CheckedBody {
         self.nodes.is_empty()
     }
 
-    /// Whether a node of the body reads a clock place's presence
-    /// (`present(r.f)` of another object, a quantified element presence),
-    /// which no lowering writes yet.
-    pub(crate) fn reads_presence_place(&self) -> bool {
-        self.nodes.iter().any(|node| {
-            matches!(
-                node.kind,
-                NodeKind::PlacePresence { .. } | NodeKind::SlotPresence { .. }
-            )
-        })
+    /// Whether a node of the body reads the presences of a clock
+    /// collection's elements (`forall(e in r.q: present(e))`), whose
+    /// quantifier over the collection's slots has no checked form until
+    /// STD-554.
+    pub(crate) fn reads_slot_presence(&self) -> bool {
+        self.nodes
+            .iter()
+            .any(|node| matches!(node.kind, NodeKind::SlotPresence { .. }))
     }
 
     /// Whether a node of the body reads the local slot `slot`: for a slot
@@ -962,10 +960,10 @@ pub enum NodeKind {
     /// A call of an imported library's function (ADR-015 D-5). Its
     /// callee lowers to a `dependency_reference` term.
     ImportedCall {
-        /// The function, by the library's `package_id` and its node id.
-        callee: crate::library::PackageNodeKey,
+        /// The function's structural node identity.
+        callee: NodeKey,
         /// The callee's function index in the library's checked graph,
-        /// resolved from `callee.node` once, at check time.
+        /// resolved from `callee` once, at check time.
         function: usize,
         /// The arguments, in parameter order.
         arguments: Vec<NodeId>,
@@ -1475,8 +1473,16 @@ mod tests {
         assert_eq!(nested, nested.clone());
         assert_ne!(nested, CheckedLiteral(option(0x7ff8_0000_0000_0002)));
         // A population has no canonical key and is compared by identity.
-        let population =
-            |byte: u8| Value::Population(quire_exact::PopulationId::from_digest([byte; 32]));
+        let population = |byte: u8| {
+            Value::Population(quire_exact::PopulationId::new(
+                quire_exact::NodeKey::new(
+                    "fixture".to_owned(),
+                    vec![quire_exact::PathSegment::Text(format!("p{byte}"))],
+                    0,
+                )
+                .expect("a fixture key"),
+            ))
+        };
         let one = CheckedLiteral(population(1));
         assert!(quire_exact::compare_keys(&one.0, &one.0).is_none());
         assert_eq!(one, one.clone());

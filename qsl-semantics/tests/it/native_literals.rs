@@ -9,14 +9,14 @@ use ix_trace_rs::trace;
 use qsl_forms::build_unit;
 use qsl_foundation::SourceIdentity;
 use qsl_semantics::check::{
-    CheckCause, CheckRefusal, CheckedGraph, I128Limit, IntegerOutsideI128, IntegerSite,
-    PackageDeclarations,
+    ApplicationTerm, BodyTerm, CheckCause, CheckRefusal, CheckedGraph, I128Limit,
+    IntegerOutsideI128, IntegerSite, LeafTerm, LiteralValue, MemberTerm, NodeTag,
+    PackageDeclarations, SemanticNode,
 };
 use qsl_semantics::model::intake::SelectedModels;
 use quire_exact::IllTypedCause;
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::location::Origin;
-use serde_json::{json, Value};
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
                       profile v = \"quire.value.complete/v1\";\n";
@@ -39,6 +39,7 @@ fn check(declarations: &str) -> Result<CheckedGraph, Vec<CheckRefusal>> {
     let unit = build_unit(&parsed).expect("S2 builds the unit");
     PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        crate::TEST_PACKAGE_NAME.to_owned(),
         unit,
         SelectedModels::default(),
         Vec::new(),
@@ -47,12 +48,21 @@ fn check(declarations: &str) -> Result<CheckedGraph, Vec<CheckRefusal>> {
     .check(CheckingLimits::default())
 }
 
-fn preimages(graph: &CheckedGraph) -> Vec<Value> {
-    graph
-        .semantic_graph()
-        .nodes()
-        .map(|node| serde_json::from_slice(node.preimage()).expect("a JSON preimage"))
-        .collect()
+fn nodes(graph: &CheckedGraph) -> Vec<&SemanticNode> {
+    graph.semantic_graph().nodes().collect()
+}
+
+/// The kind name and printed value of a literal node, or `None` for any other node.
+fn literal_of(node: &SemanticNode) -> Option<(&'static str, String)> {
+    let BodyTerm::Leaf(LeafTerm::Literal { value, .. }) = node.body() else {
+        return None;
+    };
+    match value {
+        LiteralValue::String(text) => Some(("string", text.clone())),
+        LiteralValue::Uuid(uuid) => Some(("uuid", uuid.to_string())),
+        LiteralValue::Timestamp(stamp) => Some(("timestamp", stamp.to_string())),
+        _ => None,
+    }
 }
 
 /// The one refusal of `declarations`.
@@ -66,10 +76,13 @@ fn mismatch() -> CheckCause {
     CheckCause::IllTyped(IllTypedCause::TypeMismatch)
 }
 
-/// The literal nodes of `graph` with `value_kind`, as `(value, node)`.
-fn literals<'a>(all: &'a [Value], kind: &str) -> Vec<&'a Value> {
+/// The literal nodes of `all` with `kind`, as `(node, printed value)`.
+fn literals<'a>(all: &[&'a SemanticNode], kind: &str) -> Vec<(&'a SemanticNode, String)> {
     all.iter()
-        .filter(|node| node["body"]["term"] == "literal" && node["body"]["value_kind"] == kind)
+        .filter_map(|node| {
+            let (found, value) = literal_of(node)?;
+            (found == kind).then_some((*node, value))
+        })
         .collect()
 }
 
@@ -91,30 +104,30 @@ fn each_literal_lowers_to_one_literal_node_of_its_kind() {
          function t5 using v(): Timestamp pure {{ Timestamp({MAX}) }}"
     ))
     .expect("every literal checks");
-    let all = preimages(&graph);
-    let values = |kind: &str| -> Vec<Value> {
-        let mut found: Vec<Value> = literals(&all, kind)
+    let all = nodes(&graph);
+    let values = |kind: &str| -> Vec<String> {
+        let mut found: Vec<String> = literals(&all, kind)
             .into_iter()
-            .map(|node| node["body"]["value"].clone())
+            .map(|(_, value)| value)
             .collect();
-        found.sort_by_key(ToString::to_string);
+        found.sort();
         found
     };
-    assert_eq!(values("string"), [json!("abc"), json!("a\u{e9}")]);
-    assert_eq!(values("uuid"), [json!(U1)]);
+    assert_eq!(values("string"), ["abc", "a\u{e9}"]);
+    assert_eq!(values("uuid"), [U1]);
     assert_eq!(
         values("timestamp"),
         [
-            json!(format!("-{MIN}")),
-            json!("-5"),
-            json!("0"),
-            json!(MAX)
+            format!("-{MIN}"),
+            "-5".to_owned(),
+            "0".to_owned(),
+            MAX.to_owned()
         ]
     );
     for kind in ["string", "uuid", "timestamp"] {
-        for node in literals(&all, kind) {
-            assert_eq!(node["node_tag"], "value", "{kind}");
-            assert_eq!(node["semantic_form"], "literal", "{kind}");
+        for (node, _) in literals(&all, kind) {
+            assert_eq!(node.node_tag(), NodeTag::Value, "{kind}");
+            assert_eq!(node.semantic_form(), "literal", "{kind}");
         }
     }
 }
@@ -130,25 +143,32 @@ fn a_literal_comparison_lowers_to_the_native_equality_with_the_literal_node() {
          function e4 using v(a: Timestamp): Boolean pure {{ a = Timestamp(5) }}"
     ))
     .expect("the comparisons check");
-    let all = preimages(&graph);
+    let all = nodes(&graph);
     for (identity, kind) in [
         ("quire.op.string.eq", "string"),
         ("quire.op.uuid.ne", "uuid"),
         ("quire.op.timestamp.eq", "timestamp"),
     ] {
-        let found: Vec<&Value> = all
+        let found: Vec<&ApplicationTerm> = all
             .iter()
-            .filter(|node| node["body"]["operation"]["identity"] == identity)
+            .filter_map(|node| match node.body() {
+                BodyTerm::Application(term) if term.operation.identity() == identity => Some(term),
+                _ => None,
+            })
             .collect();
         assert_eq!(found.len(), 1, "{identity}");
-        let operation = &found[0]["body"]["operation"];
-        assert_eq!(operation["laws"], json!([]), "{identity}");
-        assert_eq!(operation["leaves"], json!([]), "{identity}");
-        let arguments = found[0]["body"]["arguments"].as_array().expect("arguments");
+        let operation = &found[0].operation;
+        assert!(operation.laws().is_empty(), "{identity}");
+        assert!(operation.leaves().is_empty(), "{identity}");
+        let arguments = &found[0].arguments;
         assert_eq!(arguments.len(), 2, "{identity}");
-        let literal = literals(&all, kind)[0];
+        let literal = literals(&all, kind)[0].0.key();
+        let MemberTerm::Leaf(LeafTerm::Reference { target }) = &arguments[1] else {
+            panic!("{identity}: the second argument is a reference");
+        };
         assert_eq!(
-            arguments[1]["node_id"], literal["node_id"],
+            target.admitted(),
+            Some(&literal),
             "{identity}: the literal's node is the second argument"
         );
     }

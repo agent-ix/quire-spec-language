@@ -7,7 +7,6 @@ use super::{
 };
 use crate::protocol_artifact::{self as artifact, v2, work::Work};
 use crate::protocol_artifact::{Candidate, Dimension, Error, Invalid, Limits, Report};
-use qsl_foundation::ByteDigest;
 
 #[ix_trace_rs::string_edge]
 fn headers(
@@ -35,12 +34,6 @@ fn headers(
     artifact::intake::reference(expected.artifact)?;
     artifact::intake::same_reference(&inherited.contract, expected.contract, work)?;
     artifact::intake::same_reference(&inherited.baseline, expected.baseline, work)?;
-    // The producer's binary is Producer identity, checked here as a
-    // structurally valid reference equal to the caller's own expectation --
-    // it is never one of the byte-sealed `dependencies`, so it is not
-    // looked up there.
-    artifact::intake::reference(&expected.producer.binary)?;
-    artifact::intake::same_reference(&inherited.producer.binary, &expected.producer.binary, work)?;
     artifact::intake::name(&inherited.producer.implementation)?;
     artifact::intake::revision(&inherited.producer.revision)?;
     artifact::intake::name(&inherited.language.edition)?;
@@ -215,10 +208,6 @@ pub fn read(bytes: &[u8], expected: &Expected<'_>, limits: Limits) -> Report<Adm
     let result = (|| {
         work.charge(Dimension::PayloadBytes, bytes.len())?;
         work.bytes(bytes.len())?;
-        let digest = ByteDigest::of(bytes);
-        if digest != expected.inherited.inherited.artifact.digest {
-            return Err(Error::Invalid(Invalid::Seal));
-        }
         let package: wire::Package = artifact::decode::bounded(bytes, &mut work)?;
         headers(&package, &expected.inherited.inherited, &mut work)?;
         v2::intake::validate(
@@ -250,7 +239,6 @@ pub fn read(bytes: &[u8], expected: &Expected<'_>, limits: Limits) -> Report<Adm
         }
         Ok(AdmittedPackage {
             package,
-            digest,
             artifact: Some(artifact::intake::retained_reference(
                 expected.inherited.inherited.artifact,
             )?),

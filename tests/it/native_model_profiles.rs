@@ -3,7 +3,7 @@
 
 use crate::support::native_rule_model;
 use ix_trace_rs::trace;
-use qsl_foundation::{ByteDigest, Code, Source, SourceIdentity, Span, Spanned};
+use qsl_foundation::{Code, Source, SourceIdentity, Span, Spanned};
 use quire_contract_model as ir;
 use quire_spec_language::checking::NativeType;
 use quire_spec_language::formal_source::FormalSource;
@@ -143,7 +143,7 @@ fn explicit_profiles_preserve_the_frozen_historical_artifact() {
         serde_json::from_slice::<Value>(v2.artifact_bytes()).unwrap(),
         expected
     );
-    assert_ne!(v1.digest(), v2.digest());
+    assert_ne!(v1.artifact_bytes(), v2.artifact_bytes());
     assert_eq!(v1.environment(), v2.environment());
     for (name, expected) in [
         ("native-state-model/1", NativeModelProfile::V1),
@@ -201,10 +201,6 @@ fn integer_and_text_source_meanings_agree_across_explicit_profiles() {
     let selected = selected.admit(ModelLimits::default()).unwrap();
     assert_eq!(old.environment(), selected.environment());
     assert_eq!(old.roles(), selected.roles());
-    assert_eq!(
-        old.source().source().digest(),
-        selected.source().source().digest()
-    );
     let mut expected: Value = serde_json::from_slice(old.artifact_bytes()).unwrap();
     expected["profile"] = json!("native-state-model/2");
     assert_eq!(
@@ -212,7 +208,7 @@ fn integer_and_text_source_meanings_agree_across_explicit_profiles() {
         expected
     );
     assert_ne!(old.artifact_bytes(), selected.artifact_bytes());
-    assert_ne!(old.digest(), selected.digest());
+    assert_ne!(old.artifact_bytes(), selected.artifact_bytes());
 }
 
 #[test]
@@ -403,10 +399,6 @@ fn rational_wire_variant_is_closed_and_never_rounds_numbers() {
         );
         assert_eq!(error.code(), Code::InvalidModelBinding);
         assert_eq!(error.source().source().text(), text);
-        assert_eq!(
-            error.source().source().digest(),
-            ByteDigest::of(text.as_bytes())
-        );
         assert!(!error.is_incomplete());
     }
 }
@@ -697,9 +689,8 @@ fn mixed_existing_roles_and_rational_artifact_identity_are_preserved() {
             "\"maximum_denominator\":2",
             "\"maximum_denominator\":2,\"unit\":\"metre\"",
         ),
-        format!("{simple}\n"),
     ] {
-        assert_ne!(baseline.digest(), model(&changed).digest());
+        assert_ne!(baseline.artifact_bytes(), model(&changed).artifact_bytes());
     }
 }
 
@@ -708,7 +699,7 @@ fn document_source() -> String {
 }
 
 fn historical(model: &NativeModel) -> quire_spec_language::ParsedUnit {
-    let text = format!("language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"{}\" version \"1\" digest \"{}\";\ninvariant Rule on M::Node at current {{ true }}", model.environment().owner().package().as_str(), model.digest());
+    let text = format!("language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"{}\";\ninvariant Rule on M::Node at current {{ true }}", model.environment().owner().package().as_str());
     parse(
         SourceIdentity {
             authority: "test".into(),
@@ -794,7 +785,6 @@ fn with_namespace(text: &str, inspect: impl FnOnce(&SyntaxNamespace)) {
         units: vec![ExpectedSource {
             authority: "native:composed".into(),
             identity: sources[0].identity().clone(),
-            digest: sources[0].digest(),
         }],
     };
     let report = admit_namespace(
@@ -823,7 +813,7 @@ fn parameter(namespace: &SyntaxNamespace, index: usize) -> (UnitId, &QualifiedNa
 fn composed_exports_retain_rational_roles_and_require_exact_native_artifacts() {
     let record = r#"{"name":"Measure","fields":[{"name":"amount","type":{"kind":"scalar","name":"Ratio"}}]}"#;
     let admitted = model(&document(RATIONAL, record, AMOUNT));
-    let program = format!("language \"ix:native\" edition \"1-draft\";\nprofile S = \"test:unresolved\" version \"1\" digest \"unresolved\";\nmodel M = \"test/rational\" version \"1\" digest \"{}\";\npredicate Rule using S (amount: M::Ratio, item: M::Measure): Boolean {{ true }}", admitted.digest());
+    let program = String::from("language \"ix:native\" edition \"1-draft\";\nprofile S = \"test:unresolved\";\nmodel M = \"test/rational\";\npredicate Rule using S (amount: M::Ratio, item: M::Measure): Boolean { true }");
     let inputs = [ModelInput::Native(&admitted)];
     with_namespace(&program, |namespace| {
         let mut work = Work::new(BindingLimits::default());
@@ -878,28 +868,6 @@ fn composed_exports_retain_rational_roles_and_require_exact_native_artifacts() {
             }
         );
     });
-    let canonical = admitted
-        .environment()
-        .canonical_declaration(ir::CanonicalProfile::V1)
-        .unwrap();
-    for digest in [
-        ByteDigest::of(b"stale artifact"),
-        admitted.source().source().digest(),
-        ByteDigest::of(canonical.bytes().as_slice()),
-    ] {
-        assert_ne!(digest, admitted.digest());
-        with_namespace(
-            &program.replace(&admitted.digest().to_string(), &digest.to_string()),
-            |namespace| {
-                let bindings =
-                    bind_models(namespace, &inputs, &mut Work::new(BindingLimits::default()));
-                assert_eq!(
-                    bindings.imports()[0].selection,
-                    Err(ImportRefusal::StaleSelection)
-                );
-            },
-        );
-    }
     with_namespace(
         &program.replace("test/rational", "test/foreign"),
         |namespace| {
@@ -1006,9 +974,7 @@ fn equal_rational_representations_preserve_distinct_names_and_owners() {
     .unwrap()
     .admit(ModelLimits::default())
     .unwrap();
-    let program = format!(
-        "language \"ix:native\" edition \"1-draft\";\nprofile S = \"test:unresolved\" version \"1\" digest \"unresolved\";\nmodel M = \"test/rational\" version \"1\" digest \"{}\";\nmodel N = \"test/second\" version \"1\" digest \"{}\";\npredicate Rule using S (firstValue: M::Ratio, other: M::OtherRatio, secondValue: N::Ratio): Boolean {{ true }}", first.digest(), second.digest()
-    );
+    let program = String::from("language \"ix:native\" edition \"1-draft\";\nprofile S = \"test:unresolved\";\nmodel M = \"test/rational\";\nmodel N = \"test/second\";\npredicate Rule using S (firstValue: M::Ratio, other: M::OtherRatio, secondValue: N::Ratio): Boolean { true }");
     let inputs = [ModelInput::Native(&first), ModelInput::Native(&second)];
     with_namespace(&program, |namespace| {
         let mut work = Work::new(BindingLimits::default());
@@ -1110,7 +1076,7 @@ fn rational_output_limits_use_independently_assembled_artifact_content() {
     // for its output length or serializes NativeRoles through the producer.
     let expected = json!({
         "profile":"native-state-model/2", "declarations": declarations,
-        "source": {"identity":"test:rule-model", "revision":"1", "digest":ByteDigest::of(text.as_bytes()).to_string(), "formal":input.source.identity()},
+        "source": {"identity":"test:rule-model", "revision":"1", "formal":input.source.identity()},
         "loci":[{"key":{"kind":"value","name":"amount"},"source":input.environment.values()[0].source()}],
         "roles":{"scalars":[{"name":"Ratio","source":input.roles.scalars[0].source,"kind":{"kind":"rational","unit":"dimensionless"},"sites":[{"kind":"value","name":"amount"}]}],"objects":[],"operations":[]}
     });

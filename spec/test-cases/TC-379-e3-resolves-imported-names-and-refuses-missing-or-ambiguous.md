@@ -1,12 +1,12 @@
 ---
 id: TC-379
-title: "E3 resolves an imported name to its PackageNodeKey and refuses a missing or ambiguous one"
+title: "E3 resolves an imported name to its structural NodeKey and refuses a missing or ambiguous one"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-087
     type: verifies
 ---
-# TC-379: E3 resolves an imported name to its PackageNodeKey and refuses a missing or ambiguous one
+# TC-379: E3 resolves an imported name to its structural NodeKey and refuses a missing or ambiguous one
 
 ## Description
 
@@ -35,8 +35,8 @@ FR-087-AC-13.
 - Step 2: the assembler refuses the second alias `a` with
   `ambiguous_declaration` / `ambiguous-name`, naming the alias and both
   import spans. E3 does not run, so neither use of `a::R` is refused.
-- Step 3: `l::R` resolves to `PackageNodeKey{package: <L@1's package_id>,
-  node: <R's WireNodeId>}`; `l::Q` is refused `missing_declaration` /
+- Step 3: `l::R` resolves to R's exported structural `NodeKey` in `L@1`'s
+  package; `l::Q` is refused `missing_declaration` /
   `missing-name`.
 - Step 4: the import is refused `missing_import` / `missing-selection` at
   stage `intake`, at the import's identity string. E3 does not run, so

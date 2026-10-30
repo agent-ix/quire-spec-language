@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-340 "Where it runs": the real spec-versioning corpus, generated at run
-//! time. FR-056 selects a model by digest, so a corpus that committed the
-//! digest of `examples/config-version/model.semantic-ir.json` would churn on
-//! every model edit. The corpus therefore is not committed: `make
-//! refinement-versioning` calls [`generate`], which reads the model file and
-//! computes its digest then, and writes the one revision pair (units, pair
-//! description and snapshots) into a temporary directory the gate reads.
+//! time. A unit selects a model by its package identity, so the corpus is
+//! derived from `examples/config-version/model.semantic-ir.json`. It is not
+//! committed: `make refinement-versioning` calls [`generate`], which reads the
+//! model file and writes the one revision pair (units, pair description and
+//! snapshots) into a temporary directory the gate reads.
 
 use std::fs;
 use std::path::Path;
@@ -22,13 +21,10 @@ const CLAUSE: &str = "present(self.parent) implies";
 /// A meaning-preserving revision of [`CLAUSE`] (the superseding unit).
 const CLAUSE_REVISED: &str = "not not present(self.parent) implies";
 
-/// What the model file says about itself: the three values a `model`
-/// statement and a snapshot's `model` member must repeat. All three are read
-/// from the file, none is a constant.
+/// What the model file says about itself: the identity a `model` statement
+/// and a snapshot's `model` member must repeat, read from the file.
 struct Model {
     identity: String,
-    version: String,
-    digest: String,
 }
 
 fn read_model(root: &Path) -> Result<Model> {
@@ -51,12 +47,8 @@ fn read_model(root: &Path) -> Result<Model> {
                 ))
             })
     };
-    let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()]);
-    let digest = packages.keys().next().expect("one supplied package");
     Ok(Model {
         identity: member("identity")?,
-        version: member("version")?,
-        digest: qsl_semantics::model::key::hex(digest),
     })
 }
 
@@ -66,7 +58,7 @@ fn unit_text(model: &Model) -> String {
         "// SPDX-License-Identifier: AGPL-3.0-only\n\
          language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
-         model Config = {:?} version {:?} digest \"sha256-jcs:{}\";\n\
+         model Config = {:?};\n\
          invariant ParentOrder using v on Config::ConfigVersion at current {{ \
          present(self.parent) implies deref(value(self.parent)).versionNumber < self.versionNumber }}\n\
          invariant NoCycle using v on Config::ConfigVersion at current {{ \
@@ -75,7 +67,7 @@ fn unit_text(model: &Model) -> String {
          self.versionNumber = pre(self.versionNumber) }}\n\
          function sameIdentity using v(a: Config::ConfigVersion, b: Config::ConfigVersion): \
          Boolean pure {{ a = b }}\n",
-        model.identity, model.version, model.digest
+        model.identity
     )
 }
 
@@ -108,8 +100,6 @@ fn snapshot(model: &Model, name: &str, rows: &[(&str, i64, Option<&str>)]) -> Va
         "anchor": {"kind": "handler", "name": "validate"},
         "model": {
             "identity": model.identity,
-            "version": model.version,
-            "digest": format!("sha256-jcs:{}", model.digest),
         },
         "populations": [{"population": population(model), "complete": true, "objects": objects}],
     })
@@ -127,8 +117,7 @@ fn clause_case(model: &Model, observation: &str) -> Value {
     })
 }
 
-/// Write the real corpus into `out`, with the model digest computed from
-/// `root`'s model file. Nothing it writes is committed.
+/// Write the real corpus into `out`, derived from `root`'s model file. Nothing it writes is committed.
 ///
 /// # Errors
 /// [`Error::RefinementCorpus`] when the model cannot be read or a corpus file

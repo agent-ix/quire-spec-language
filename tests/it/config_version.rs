@@ -5,7 +5,6 @@ use crate::support::config_version as fixtures;
 
 use fixtures::Case;
 use ix_trace_rs::trace;
-use qsl_foundation::ByteDigest;
 use quire_contract_model as ir;
 use serde_json::Value;
 
@@ -16,10 +15,6 @@ fn concrete_model_retains_exact_bounds_roles_and_original_source() {
     assert_eq!(
         model.environment().owner().package().as_str(),
         "example/config-version"
-    );
-    assert_eq!(
-        model.source().source().digest(),
-        ByteDigest::of(fixtures::MODEL.as_bytes())
     );
     let record = model
         .environment()

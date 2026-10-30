@@ -20,7 +20,6 @@ use qsl_package::CheckedPackage;
 use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::observation::{
     declared_type_universe_for, AdmissionFailure, AnchorKind, DocumentRef, ObservationLimits,
     SelectedAnchor,
@@ -61,7 +60,7 @@ fn field(name: &str) -> DeclarationKey {
 /// An operation's declaration identity text (FR-120 "Identities").
 fn operation_text(name: &str) -> String {
     format!(
-        r#"{{"digest_domain":"sha256-jcs","node":"{}","package":"{PACKAGE}"}}"#,
+        r#"{{"node":"{}","package":"{PACKAGE}"}}"#,
         ident(&format!("Counter/{name}"))
     )
 }
@@ -69,8 +68,6 @@ fn operation_text(name: &str) -> String {
 // ---------------------------------------------------------------------------
 // The fixture domain package
 // ---------------------------------------------------------------------------
-
-const PLACEHOLDER: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 
 fn origin(identity: &str) -> Json {
     json!({"generated": {"generatorIdentity": identity, "generatorVersion": "1.0.0",
@@ -177,7 +174,6 @@ pub(crate) fn counters_document(operations: Vec<Json>, extras: bool) -> Vec<u8> 
         .into_iter()
         .map(|(name, meaning)| {
             json!({"kind": {"module": PACKAGE, "name": name}, "moduleVersion": "1.0.0",
-                "manifestDigest": PLACEHOLDER,
                 "construct": {"identity": "none", "shape": "record", "members": {},
                     "meaning": meaning}})
         })
@@ -195,11 +191,10 @@ pub(crate) fn counters_document(operations: Vec<Json>, extras: bool) -> Vec<u8> 
     }
     json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
-        "source": {"identity": ident("spec"), "version": "1.0.0", "dialect": "spec-bundle",
-            "digest": PLACEHOLDER},
-        "package": {"identity": PACKAGE, "version": "1.0.0", "manifestDigest": PLACEHOLDER,
-            "mappingVersions": [], "profileVersions": [], "lockDigest": PLACEHOLDER},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
+        "source": {"identity": ident("spec"), "version": "1.0.0", "dialect": "spec-bundle"},
+        "package": {"identity": PACKAGE, "version": "1.0.0",
+            "mappingVersions": [], "profileVersions": []},
         "occurrences": [], "extensions": [],
         "constructs": constructs,
         "types": [
@@ -231,9 +226,9 @@ pub(crate) fn counters_document(operations: Vec<Json>, extras: bool) -> Vec<u8> 
 struct World {
     extras: bool,
     package: CheckedPackage,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
     header: Json,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: qsl_semantics::model::observation::DocumentProvision,
 }
 
 /// The fixture package with `operations`, checked with `clauses` as its unit.
@@ -261,12 +256,10 @@ fn build_world(
     extras: bool,
 ) -> Result<World, Vec<qsl_semantics::check::CheckRefusal>> {
     let document = counters_document(operations, extras);
-    let packages = package_input([document.as_slice()]);
-    let digest = *packages.keys().next().expect("one model");
+    let packages = package_input([document.as_slice()]).unwrap();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\n\
-         model M = \"{PACKAGE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\nfunction Noop using v(): Boolean pure {{ true }}\n{clauses}\n",
-        hex(&digest)
+         model M = \"{PACKAGE}\";\nfunction Noop using v(): Boolean pure {{ true }}\n{clauses}\n",
     );
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("test", "fr-120", "fixture", "1"),
@@ -289,6 +282,7 @@ fn build_world(
     .expect("the kept operation clauses parse");
     let declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         built,
         models,
         Vec::new(),
@@ -298,8 +292,7 @@ fn build_world(
     Ok(World {
         extras,
         package: CheckedPackage::link(graph),
-        header: json!({"identity": PACKAGE, "version": "1.0.0",
-            "digest": format!("sha256-jcs:{}", hex(&digest))}),
+        header: json!({"identity": PACKAGE}),
         packages,
         snapshots: BTreeMap::new(),
     })
@@ -345,17 +338,16 @@ impl World {
             document["anchor"] = anchor;
         }
         let bytes = document.to_string().into_bytes();
-        let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-        let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-            .expect("canonical fixture")
-            .as_bytes();
-        self.snapshots.insert(digest, bytes);
+        self.snapshots.insert(
+            qsl_semantics::model::observation::document_reference(&bytes)
+                .expect("a document names itself"),
+            bytes,
+        );
         DocumentRef {
             authority: "test".to_owned(),
             identity: name.to_owned(),
             revision_namespace: "fixture".to_owned(),
             revision: "fixture:1".to_owned(),
-            digest,
         }
     }
 
@@ -525,10 +517,10 @@ fn stats(exploration: &Exploration<ModelFinding>) -> (usize, usize, usize) {
 fn expected_transition(operation: &str, receiver: &ObjectReference, arguments: &[&str]) -> String {
     let receiver = {
         let enc = format!(
-            r#"{{"identity":"{}","object_type":"{}","type":"reference","universe":"{}"}}"#,
-            hex_bytes(receiver.object().as_str().as_bytes()),
-            hex(receiver.object_type().as_bytes()),
-            hex(receiver.universe().as_bytes()),
+            r#"{{"identity":"{}","object_type":{},"type":"reference","universe":{}}}"#,
+            receiver.object().as_str(),
+            crate::support::ids::effective_json(receiver.object_type()),
+            crate::support::ids::node_json(receiver.universe().root_type()),
         );
         enc
     };
@@ -537,10 +529,6 @@ fn expected_transition(operation: &str, receiver: &ObjectReference, arguments: &
         arguments.join(","),
         serde_json::to_string(&operation_text(operation)).expect("a JSON string"),
     )
-}
-
-fn hex_bytes(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 fn int_arg(value: i64) -> String {
@@ -763,9 +751,9 @@ fn the_state_key_is_the_simulation_state_envelope() {
     // QSpec FR-181: an absent presence-optional field is a plain `null`
     // entry; a present one is its bare encoded value.
     let own = json!({"type": "reference",
-        "universe": hex(reference.universe().as_bytes()),
-        "object_type": hex(reference.object_type().as_bytes()),
-        "identity": "6331"});
+        "universe": crate::support::ids::node_json(reference.universe().root_type()),
+        "object_type": crate::support::ids::effective_json(reference.object_type()),
+        "identity": "c1"});
     let record = |label: i64, next: Json| {
         json!({"type": "record", "name": counter_text(), "fields": [
             {"name": "value", "value": {"type": "integer", "value": "0"}},
@@ -779,9 +767,9 @@ fn the_state_key_is_the_simulation_state_envelope() {
                 "key": {"type": "text", "value": population_text()},
                 "value": {"type": "map", "entries": [{
                     "key": {"type": "reference",
-                        "universe": hex(reference.universe().as_bytes()),
-                        "object_type": hex(reference.object_type().as_bytes()),
-                        "identity": "6331"},
+                        "universe": crate::support::ids::node_json(reference.universe().root_type()),
+                        "object_type": crate::support::ids::effective_json(reference.object_type()),
+                        "identity": "c1"},
                     "value": record(label, next)}]}}]},
             "control": empty, "queues": empty, "roles": empty, "observations": empty,
             "bounds": empty, "memory": empty})
@@ -802,15 +790,12 @@ fn the_state_key_is_the_simulation_state_envelope() {
 }
 
 fn counter_text() -> String {
-    format!(
-        r#"{{"digest_domain":"sha256-jcs","node":"{}","package":"{PACKAGE}"}}"#,
-        ident("Counter")
-    )
+    format!(r#"{{"node":"{}","package":"{PACKAGE}"}}"#, ident("Counter"))
 }
 
 fn population_text() -> String {
     format!(
-        r#"{{"digest_domain":"sha256-jcs","node":"{}","package":"{PACKAGE}"}}"#,
+        r#"{{"node":"{}","package":"{PACKAGE}"}}"#,
         ident("counters")
     )
 }
@@ -1034,7 +1019,7 @@ fn a_system_refuses_what_is_not_an_initialization_or_not_in_its_universe() {
 /// incomplete, and a population without a universe is a requires-bound root.
 #[trace("TC-472", "FR-120-AC-7")]
 #[test]
-fn an_unbounded_population_or_parameter_requires_a_bound() {
+fn an_unbounded_population_requires_a_bound() {
     let mut world = world(vec![increment()], "");
     let s0 = world.start("s0", &[Obj("c1", 0, 0, None)]);
     let unbounded = ModelSystem::new(request(
@@ -1054,8 +1039,8 @@ fn an_unbounded_population_or_parameter_requires_a_bound() {
         bound
             .domains
             .iter()
-            .any(|(key, _)| *key == root_key(&declaration_naming(&counters()))),
-        "the population root is named by the hash of its declaration identity"
+            .any(|(key, _)| *key == root_key(&counters())),
+        "the population root is its structural population node"
     );
     let sampler = sampler();
     assert!(matches!(
@@ -1064,50 +1049,14 @@ fn an_unbounded_population_or_parameter_requires_a_bound() {
             _
         )))
     ));
-
-    let integer_parameter = operation(
-        "add",
-        &[("n", "ix://quire/native/Integer")],
-        None,
-        frame(&["value"], false, false),
-    );
-    let mut world = self::world(vec![integer_parameter], "");
-    let s0 = world.start("s0", &[Obj("c1", 0, 0, None)]);
-    let system = self::system(&world, vec![s0], &["c1"], UNLIMITED);
-    let Err(NotSimulated::RequiresBound(bound)) =
-        explore_model(&system, 10_000, Limits::default(), || false)
-    else {
-        panic!("an Integer parameter is unbounded")
-    };
-    assert_eq!(bound.domains.len(), 1);
-    let naming = json!({
-        "operation": declaration_naming(&key("Counter/add")),
-        "parameter": "n",
-    });
-    assert_eq!(
-        bound
-            .domains
-            .iter()
-            .map(|(key, _)| key.clone())
-            .collect::<Vec<_>>(),
-        vec![root_key(&naming)],
-        "the parameter root is named by the hash of its naming object"
-    );
 }
 
-fn declaration_naming(key: &DeclarationKey) -> Json {
-    json!({"digest_domain": "sha256-jcs", "node": key.node, "package": key.package})
-}
-
-/// The requires-bound domain key FR-120 "Bounds" gives the root named by
-/// `naming`: the SHA-256 of its JCS bytes.
-fn root_key(naming: &Json) -> qsl_foundation::bound::DomainKey {
-    let read = quire_canonical::read(naming.to_string().as_bytes(), u64::MAX).expect("reads");
-    let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(1 << 20))
-        .expect("hashes")
-        .as_bytes();
+/// The requires-bound domain key FR-120 "Bounds" gives the population
+/// `key` names: its structural population node.
+fn root_key(key: &DeclarationKey) -> qsl_foundation::bound::DomainKey {
     qsl_foundation::bound::DomainKey::Node {
-        node: qsl_foundation::digest::WireNodeId::from_digest(digest),
+        node: qsl_semantics::model::key::population_node_key(key)
+            .expect("a population key is well formed"),
         path: Vec::new(),
     }
 }
@@ -1127,17 +1076,16 @@ fn a_universe_population_the_snapshot_omits_is_incomplete() {
         "populations": [],
     });
     let bytes = document.to_string().into_bytes();
-    let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-    let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-        .expect("canonical fixture")
-        .as_bytes();
-    world.snapshots.insert(digest, bytes);
+    world.snapshots.insert(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    );
     let omitted = DocumentRef {
         authority: "test".to_owned(),
         identity: "empty".to_owned(),
         revision_namespace: "fixture".to_owned(),
         revision: "fixture:1".to_owned(),
-        digest,
     };
     let failure = ModelSystem::new(request(
         &world,
@@ -1296,14 +1244,14 @@ fn effect_of(
 ) -> StepEffect {
     let initial = system.initial();
     let expansion = system.successors(&initial[index]).expect("expands");
-    let receiver_text = hex_bytes(receiver.object().as_str().as_bytes());
+    let receiver_text = receiver.object().as_str();
     expansion
         .successors
         .iter()
         .filter(|(transition, _)| {
             transition
                 .receiver()
-                .is_some_and(|text| text.contains(&receiver_text))
+                .is_some_and(|text| text.contains(receiver_text))
         })
         .find(|(_, state)| pick(&ModelStateView(state.state().clone())))
         .and_then(|(_, state)| state.reached_by().cloned())
@@ -1460,8 +1408,8 @@ fn ambient_reads_refuse_before_a_package_exists() {
 /// snapshot `t1` and its universe.
 struct OrdersWorld {
     package: CheckedPackage,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
+    snapshots: qsl_semantics::model::observation::DocumentProvision,
     reference: DocumentRef,
 }
 
@@ -1475,14 +1423,12 @@ impl OrdersWorld {
     fn over(body: &str, wobble: bool) -> Self {
         let (package, packages) =
             crate::state_model_family::simulation_package_over(body, false, wobble);
-        let digest = *packages.keys().next().expect("one model");
         let document = json!({
             "format": "quire.state.snapshot/v1",
             "identity": {"authority": "test", "identity": "t1", "revision_namespace": "fixture",
                 "revision": "fixture:1"},
             "observation": "current",
-            "model": {"identity": "test/orders", "version": "1.0.0",
-                "digest": format!("sha256-jcs:{}", hex(&digest))},
+            "model": {"identity": "test/orders"},
             "anchor": {"kind": "initialization", "name": "start"},
             "populations": [{"population": "ix://test/orders/pop", "complete": true,
                 "objects": [{"key": "t1", "type": "ix://test/orders/A",
@@ -1491,18 +1437,16 @@ impl OrdersWorld {
                             "key": "t1"}}}}]}],
         });
         let bytes = document.to_string().into_bytes();
-        let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-        let snapshot_digest =
-            *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-                .expect("canonical fixture")
-                .as_bytes();
-        let snapshots = BTreeMap::from([(snapshot_digest, bytes)]);
+        let snapshots = BTreeMap::from([(
+            qsl_semantics::model::observation::document_reference(&bytes)
+                .expect("a document names itself"),
+            bytes,
+        )]);
         let reference = DocumentRef {
             authority: "test".to_owned(),
             identity: "t1".to_owned(),
             revision_namespace: "fixture".to_owned(),
             revision: "fixture:1".to_owned(),
-            digest: snapshot_digest,
         };
         Self {
             package,

@@ -17,28 +17,20 @@
 /// list).
 pub const DOMAIN_PACKAGE: &str = include_str!("model.semantic-ir.json");
 
-/// The package identity FR-108's own unit text selects: `model Config =
-/// "example/config-version" version "1" digest ...`. The version a `model`
-/// statement names must equal the domain package's own declared
-/// `package.version` (I1 admission, `WrongModelSelection`) -- confirmed by
-/// running this fixture: FR-108's prose "`1`" is illustrative, not the
-/// package's real semver, so [`unit_text`] below spells the version this
-/// package actually declares, `1.0.0`.
+/// The package identity FR-108's own unit text selects:
+/// `model Config = "example/config-version";`.
 pub const PACKAGE_IDENTITY: &str = "example/config-version";
 
-/// The domain package's own declared `package.version`.
-pub const PACKAGE_VERSION: &str = "1.0.0";
-
-/// FR-108's own `1-draft` unit text, selecting [`DOMAIN_PACKAGE`] by
-/// `model_digest_hex`, its `sha256-jcs` digest: one fixed unit, shared by
+/// FR-108's own `1-draft` unit text, selecting [`DOMAIN_PACKAGE`] by its
+/// identity: one fixed unit, shared by
 /// every case (the corpus table selects different clauses and functions
 /// *within* it, never a different unit).
-pub fn unit_text(model_digest_hex: &str) -> String {
+pub fn unit_text() -> String {
     format!(
         "// SPDX-License-Identifier: AGPL-3.0-only\n\
          language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
-         model Config = {PACKAGE_IDENTITY:?} version {PACKAGE_VERSION:?} digest \"sha256-jcs:{model_digest_hex}\";\n\
+         model Config = {PACKAGE_IDENTITY:?};\n\
          invariant ParentOrder using v on Config::ConfigVersion at current {{ \
          present(self.parent) implies deref(value(self.parent)).versionNumber < self.versionNumber }}\n\
          invariant NoCycle using v on Config::ConfigVersion at current {{ \

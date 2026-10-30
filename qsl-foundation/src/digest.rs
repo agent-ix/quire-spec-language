@@ -89,12 +89,6 @@ impl FromStr for ByteDigest {
 // that carries its own `algorithm` field (this type fixes SHA-256), and not
 // a domain outside FR-201's 21-member vocabulary.
 //
-// One real caller landed in this slice: `value::member::Member::to_wire`'s
-// `declaration_json` mints a `NodeKey`'s digest through
-// `DigestRecord::mint(DigestDomain::CheckedSemanticNodeV1, ...)` (#260
-// review item 5), in place of the bare `NODE_KEY_DOMAIN` constant plus raw
-// hex it used before.
-//
 // A hand-built enumeration of every other site meeting the criterion above
 // was attempted across three rounds of review on this one comment and was
 // wrong every time (3 candidates named, then corrected to 4, then corrected
@@ -152,8 +146,6 @@ pub enum DigestDomain {
     DiagnosticCatalogBytesV1,
     /// `quire.generated-artifact.bytes/v1`.
     GeneratedArtifactBytesV1,
-    /// `quire.tool-manifest.jcs/v1`.
-    ToolManifestJcsV1,
     /// `quire.simulation.state-key/v1`.
     SimulationStateKeyV1,
     /// `typed-expression-identity`.
@@ -171,7 +163,7 @@ pub enum DigestDomain {
 impl DigestDomain {
     /// Every closed variant, in FR-201's own table order, for exhaustive
     /// round-trip tests.
-    pub const ALL: [Self; 21] = [
+    pub const ALL: [Self; 20] = [
         Self::IrCanonical,
         Self::IrBound,
         Self::IrSemantic,
@@ -186,7 +178,6 @@ impl DigestDomain {
         Self::ContractIrSemanticV1,
         Self::DiagnosticCatalogBytesV1,
         Self::GeneratedArtifactBytesV1,
-        Self::ToolManifestJcsV1,
         Self::SimulationStateKeyV1,
         Self::TypedExpressionIdentity,
         Self::VerificationJcs,
@@ -214,7 +205,6 @@ impl DigestDomain {
             Self::ContractIrSemanticV1 => "quire.contract-ir.semantic/v1",
             Self::DiagnosticCatalogBytesV1 => "quire.diagnostic-catalog.bytes/v1",
             Self::GeneratedArtifactBytesV1 => "quire.generated-artifact.bytes/v1",
-            Self::ToolManifestJcsV1 => "quire.tool-manifest.jcs/v1",
             Self::SimulationStateKeyV1 => "quire.simulation.state-key/v1",
             Self::TypedExpressionIdentity => "typed-expression-identity",
             Self::VerificationJcs => "quire.verification.jcs",
@@ -418,7 +408,7 @@ fn lower_hex_nibble(digit: u8) -> Option<u8> {
 
 /// Parse exactly 64 lowercase-hex ASCII digits into 32 bytes (FR-201's
 /// exact-match rule: no case folding, no separators, no other length).
-/// Shared by [`DigestRecord::from_wire`], [`WireNodeId::from_hex`] and this
+/// Shared by [`DigestRecord::from_wire`] and this
 /// crate's downstream wire-digest parsers that need this exact encoding.
 pub fn parse_lower_hex32(hex: &str) -> Option<[u8; 32]> {
     let (pairs, []) = hex.as_bytes().as_chunks::<2>() else {
@@ -498,112 +488,6 @@ impl InvalidDigestRecord {
     }
 }
 
-/// A backend's own FR-331 provider-manifest digest (ADR-013 O-19), always in
-/// FR-201 domain `quire.tool-manifest.jcs/v1`. Relocated here from
-/// `qsl_route` and `qsl_replay` both depend on this F crate, so the one
-/// domain-checked type lives here and both readers share it -- exactly the
-/// reasoning that already relocated [`WireNodeId`] from `replay` to this
-/// module.
-///
-/// The domain is fixed by construction: [`ManifestDigest::from_digest`]
-/// mints in that domain, and [`ManifestDigest::from_wire`] refuses any
-/// other (ADR-013 C-27, checked before the digest bytes).
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct ManifestDigest(DigestRecord);
-
-impl ManifestDigest {
-    /// The one FR-201 domain a manifest digest is in.
-    pub const DOMAIN: DigestDomain = DigestDomain::ToolManifestJcsV1;
-
-    /// Wrap an already-computed `quire.tool-manifest.jcs/v1` digest.
-    pub fn from_digest(bytes: [u8; 32]) -> Self {
-        Self(DigestRecord::mint(Self::DOMAIN, bytes))
-    }
-
-    /// Read a manifest digest from its wire parts: a domain label and a
-    /// 64-lowercase-hex digest (the `DigestRecord` wire convention, C-16).
-    /// The domain is checked before the digest bytes (ADR-013 C-27), via
-    /// [`DigestRecord::from_wire_expecting`].
-    pub fn from_wire(domain: Option<&str>, digest_hex: &str) -> Result<Self, InvalidDigestRecord> {
-        DigestRecord::from_wire_expecting(Self::DOMAIN, domain, digest_hex).map(Self)
-    }
-
-    /// The domain-labelled digest record. Its domain is always
-    /// [`ManifestDigest::DOMAIN`]; its `hex()` is the wire digest string.
-    pub fn record(&self) -> DigestRecord {
-        self.0
-    }
-
-    /// This digest's domain: always [`ManifestDigest::DOMAIN`]. A shortcut
-    /// for `self.record().domain()`, for callers that only want the domain
-    /// label (e.g. re-encoding the wire `{identity, domain, digest}` triple)
-    /// without naming [`Self::record`].
-    pub fn domain(&self) -> DigestDomain {
-        Self::DOMAIN
-    }
-
-    /// The unprefixed 64-lowercase-hex digest string (C-16). A shortcut for
-    /// `self.record().hex()`.
-    pub fn hex(&self) -> String {
-        self.0.hex()
-    }
-}
-
-/// A node id exactly as it travels on the wire (a v2 node key's 64
-/// lowercase-hex digest), before a checked-package lookup resolves it to a
-/// `quire_exact::NodeKey` (ADR-013 O-04). Relocated here from
-/// `replay::identity`, whose own module doc named this as a provisional,
-/// not-yet-canonical home: ADR-011 `:588` places the wire node id in the `F`
-/// foundation layer, alongside `digest` and before `wire_format`, not in the
-/// layer-6 `replay` facade -- `replay` (layer 6) importing `digest` (layer
-/// F) is the permitted direction; `package` (layer 4) or `library`
-/// (layer 3) importing `replay` would not be, which is exactly why
-/// `library::PackageNodeKey` (ADR-013 T-3) needs this type here rather than
-/// in `replay`. A wire-read node id stays a `WireNodeId`, never a
-/// `NodeKey`, until a lookup in an already-checked package resolves it, at
-/// E4 (the dependency's own checked package) or E9 (`replay`'s recompiled
-/// package) -- never by a conversion function, and none is defined here.
-///
-/// quire:canonical
-#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct WireNodeId([u8; 32]);
-
-impl WireNodeId {
-    /// Wrap an already-known wire node-id digest. Unlike the kernel
-    /// `NodeKey` constructor, this carries no "only `check` calls this"
-    /// restriction: a `WireNodeId` is exactly the unchecked wire spelling,
-    /// never a claim that the id resolves to a real node.
-    pub fn from_digest(digest: [u8; 32]) -> Self {
-        Self(digest)
-    }
-
-    /// Parse 64 lowercase hexadecimal digits, exactly as a wire node id
-    /// travels (a v2 node reference's `{domain, digest}` object's `digest`
-    /// member). Needed by `library::package_identity` to read
-    /// a wire node id out of an identity preimage without ever constructing
-    /// a `NodeKey` from it (R-10).
-    pub fn from_hex(digest: &str) -> Option<Self> {
-        parse_lower_hex32(digest).map(Self)
-    }
-
-    /// The raw digest bytes.
-    pub fn as_bytes(&self) -> &[u8; 32] {
-        &self.0
-    }
-}
-
-impl fmt::Display for WireNodeId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.iter().try_for_each(|byte| write!(f, "{byte:02x}"))
-    }
-}
-
-impl fmt::Debug for WireNodeId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "WireNodeId({self})")
-    }
-}
-
 #[cfg(test)]
 mod digest_record_tests {
     use super::*;
@@ -619,14 +503,14 @@ mod digest_record_tests {
     /// `DigestDomain::as_str()`'s own match arms: a wrong label there (e.g.
     /// `ModelEffectiveDeclarationV2` silently becoming `.../v3`) fails the
     /// first assertion in the loop rather than round-tripping only against
-    /// itself (#260 review item 4). Both `[(...); 21]` and `DigestDomain::
-    /// ALL: [Self; 21]` are fixed-length arrays, so a 21st-to-22nd-entry
+    /// itself (#260 review item 4). Both `[(...); 20]` and `DigestDomain::
+    /// ALL: [Self; 20]` are fixed-length arrays, so a 20th-to-21st-entry
     /// mismatch between them is a compile error, not something this test
     /// could observe at runtime -- the per-entry label and round-trip
     /// assertions below are this test's real teeth (#260 review round 2).
     #[test]
     fn every_fr201_domain_round_trips_through_the_wire() {
-        let labels: [(DigestDomain, &str); 21] = [
+        let labels: [(DigestDomain, &str); 20] = [
             (DigestDomain::IrCanonical, "ir-canonical"),
             (DigestDomain::IrBound, "ir-bound"),
             (DigestDomain::IrSemantic, "ir-semantic"),
@@ -654,10 +538,6 @@ mod digest_record_tests {
                 "quire.generated-artifact.bytes/v1",
             ),
             (
-                DigestDomain::ToolManifestJcsV1,
-                "quire.tool-manifest.jcs/v1",
-            ),
-            (
                 DigestDomain::SimulationStateKeyV1,
                 "quire.simulation.state-key/v1",
             ),
@@ -679,8 +559,8 @@ mod digest_record_tests {
                 "quire.model.object-universe/v2",
             ),
         ];
-        assert_eq!(DigestDomain::ALL.len(), 21);
-        assert_eq!(labels.len(), 21);
+        assert_eq!(DigestDomain::ALL.len(), 20);
+        assert_eq!(labels.len(), 20);
         for (domain, expected_label) in labels {
             assert_eq!(domain.as_str(), expected_label, "{domain:?}'s FR-201 label");
             let record = DigestRecord::mint(domain, bytes(0xab));
@@ -784,10 +664,10 @@ mod digest_record_tests {
     /// back a digest whose domain matches the one the reader requires.
     #[test]
     fn from_wire_expecting_admits_the_required_domain() {
-        let record = DigestRecord::mint(DigestDomain::ToolManifestJcsV1, bytes(0xcd));
+        let record = DigestRecord::mint(DigestDomain::Sha256Jcs, bytes(0xcd));
         let read = DigestRecord::from_wire_expecting(
-            DigestDomain::ToolManifestJcsV1,
-            Some(DigestDomain::ToolManifestJcsV1.as_str()),
+            DigestDomain::Sha256Jcs,
+            Some(DigestDomain::Sha256Jcs.as_str()),
             &record.hex(),
         )
         .expect("the required domain reads back");
@@ -805,38 +685,34 @@ mod digest_record_tests {
         let wrong = DigestDomain::SourceBytesV1;
         assert_eq!(
             DigestRecord::from_wire_expecting(
-                DigestDomain::ToolManifestJcsV1,
+                DigestDomain::Sha256Jcs,
                 Some(wrong.as_str()),
                 &"ab".repeat(32),
             ),
             Err(InvalidDigestRecord::WrongDomain {
-                expected: DigestDomain::ToolManifestJcsV1,
+                expected: DigestDomain::Sha256Jcs,
                 found: wrong,
             })
         );
         assert_eq!(
             DigestRecord::from_wire_expecting(
-                DigestDomain::ToolManifestJcsV1,
+                DigestDomain::Sha256Jcs,
                 Some(wrong.as_str()),
                 "not-hex",
             ),
             Err(InvalidDigestRecord::WrongDomain {
-                expected: DigestDomain::ToolManifestJcsV1,
+                expected: DigestDomain::Sha256Jcs,
                 found: wrong,
             }),
             "the domain is checked before the hex bytes"
         );
         assert_eq!(
-            DigestRecord::from_wire_expecting(
-                DigestDomain::ToolManifestJcsV1,
-                None,
-                &"ab".repeat(32)
-            ),
+            DigestRecord::from_wire_expecting(DigestDomain::Sha256Jcs, None, &"ab".repeat(32)),
             Err(InvalidDigestRecord::AbsentDomain)
         );
         assert!(
             InvalidDigestRecord::WrongDomain {
-                expected: DigestDomain::ToolManifestJcsV1,
+                expected: DigestDomain::Sha256Jcs,
                 found: wrong,
             }
             .is_domain_mismatch(),

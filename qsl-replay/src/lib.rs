@@ -50,11 +50,14 @@ mod call_replay_context;
 mod call_requirements;
 mod call_site;
 mod certificate;
+mod clause_evaluation;
 mod compile;
 mod composite;
+pub mod contract_check;
 mod execute;
 mod hybrid;
 mod hybrid_replay;
+mod id_text;
 mod identity;
 mod limits;
 mod model_check;
@@ -63,6 +66,7 @@ mod object_environment;
 mod outcome;
 mod proof_result;
 mod refinement;
+mod refinement_query;
 mod request;
 mod result;
 mod scalar;
@@ -131,7 +135,15 @@ pub use certificate::zone_certificate::{
     ZoneCertificateVerdict,
 };
 pub use certificate::{CertificateLocus, CertificateMember, CertificateRule, QueryPart};
-pub use compile::{compile_package, compile_package_with_execution_points, CompiledPackage};
+// FR-491: the state-clause evaluation entry and its typed result, at the root
+// so CG names them without naming `spine` (ADR-011 FB-05, T-12 rule (a)).
+pub use clause_evaluation::{
+    evaluate_clause, ClauseEvaluation, ClauseEvaluationRequest, ClauseIncomplete,
+    ClauseObservation, ClauseRefusal,
+};
+pub use compile::{
+    compile_package, compile_package_with_execution_points, CompileUnit, CompiledPackage,
+};
 pub use composite::{
     CompositeEvidence, CompositeIdentity, CompositeParityClaim, CompositeParityReport,
     CompositeParityResult, EqualityOutcome, FalsifiedParity, IncompleteStage, NativeCause,
@@ -161,13 +173,12 @@ pub use hybrid_replay::{
     TraceBefore, TraceFault, TraceJump, TraceRefusal, TraceState, UndefinedCause, UndefinedInstant,
 };
 pub use identity::{
-    DeclaredDomain, EmptyQualifiedName, ObligationIdentity, ProfileSelection, QualifiedName,
-    RawSourceRef, TracePosition,
+    DeclaredDomain, EmptyQualifiedName, ModelIdentity, ObligationIdentity, ProfileSelection,
+    QualifiedName, RawSourceRef, TracePosition,
 };
 pub use limits::{AccountingLimits, CallerLimits, EngineLimits, PrepareLimits, RenderLimits};
 pub use model_check::counterexample::{
-    deadlock_freedom_clause, race_freedom_clause, time_lock_freedom_clause, undefined_finding,
-    ClaimPredicate, CounterexampleKind, Lasso, MappingSite, ModelStep,
+    undefined_finding, ClaimPredicate, CounterexampleKind, Lasso, MappingSite, ModelStep,
     ObservedTemporalCounterexample, ObservedTemporalKind, ObservedTemporalStep, Race,
     TemporalCounterexample, TimedPoint, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
@@ -239,11 +250,19 @@ pub use model_check::step_settle::{
     settle_step_simulation, BackendCertificate, OtherBackendResult, StepBackendOutcome,
     StepSimulationSettlement, STEP_INDUCTION_DEPTH,
 };
-pub use model_check::subject_identity::{SubjectIdentity, SubjectIdentityRefusal};
+pub use model_check::subject_identity::SubjectIdentity;
 pub use monitor_plan::{
     plan_obligations, AtomId, ClockBindingKey, MonitorAtom, MonitorPlanRefusal, MonitorProgram,
     MonitorSubject, MonitorTarget, PlanId, SubformulaId, TickInterval, TimedMonitorPlan,
     TimingObligation, TimingObligationSettings,
+};
+
+// FR-492: the refinement simulation query, its request and kind, as
+// replay-owned wrappers (FR-100-AC-8), so CG names neither `spine` nor
+// `qsl_eval` (ADR-011 FB-05, T-12).
+pub use refinement_query::{
+    encode_refinement_query, refinement_step_sources, RefinementKeyRefusal, RefinementQueryKind,
+    RefinementQueryRequest, RefinementQuerySubject, RefinementUniverse,
 };
 
 pub use refinement::{
@@ -297,29 +316,29 @@ pub use qsl_foundation::source::provenance::{OccurrenceKey, SourceRegion};
 // The kernel identity and digest types a `ReplayRequestWire`'s or a frame
 // counterexample's members are built from -- `quire_exact`'s identifier,
 // occurrence origin and role, and value-accounting limits, and
-// `qsl_foundation`'s node id and digest-record vocabulary -- re-exported so
+// `qsl_foundation`'s digest-record vocabulary -- re-exported so
 // CG, which reaches QSL only through this crate (ADR-011 FB-05), builds one
 // without its own direct dependency on `quire-exact` or `qsl-foundation`.
 // These re-exports add constructors CG can call directly:
-// `DigestRecord::mint`, `WireNodeId::from_digest`/`from_hex`,
+// `DigestRecord::mint`, `NodeKey::new`,
 // `SourceIdentity::new`, `Identifier::new` and `Origin::new`/`Role::new`
 // among them, and with `Origin` the occurrence key's own
-// `OccurrenceKey::new(WireNodeId, Origin)` becomes callable. None is a
+// `OccurrenceKey::new(NodeKey, Origin)` becomes callable. None is a
 // T-12-governed constructor (ADR-011 §3 FB-05), so no rule is broken; CG
 // needs exactly these to build the requests `call_site` and `replay`
 // (FR-098) and `replay_frame` (FR-116) read.
-pub use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord, WireNodeId};
+pub use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord};
 pub use qsl_foundation::SourceIdentity;
 pub use quire_exact::{Identifier, NodeKey, Origin, Role, ScalarLimits, Value};
 // FR-395: the types of `run`'s signature and result that the root did not
 // export, so a consumer calls `run_with_requirements` and reads its result
 // without naming `qsl_replay::spine` or `qsl_semantics`.
-pub use qsl_semantics::library::PackageId;
+pub use qsl_semantics::library::LibraryName;
 pub use qsl_semantics::model::object_environment::ObjectEnvironment;
 pub use quire_exact::{Cancel, CancelCause};
 pub use spine::{
     Call, CallArgument, CallIncomplete, CallLocus, CallOutcome, CallRefusal, CallValue,
-    CompileRefusal, RunRefusal, SpineLimits,
+    ClauseRunStage, CompileRefusal, RunRefusal, SpineLimits,
 };
 // The input refusal a `ReplayRefusal::Input` and a value-parity
 // `ValueParityResult::RefusedInput` carry.
@@ -384,7 +403,7 @@ pub use witness::{
 // FR-116: the FR-106 document, object and FR-115 frame witness types a
 // frame counterexample and its replay result carry, re-exported so CG can
 // name and build them through this crate (ADR-011 FB-05). The node and
-// occurrence identities are built from the `WireNodeId`, `Origin` and
+// occurrence identities are built from the `NodeKey`, `Origin` and
 // `Identifier` re-exported above.
 pub use qsl_semantics::model::observation::{
     AdmissionFailure, AdmissionRecord, DocumentRef, FrameChange, FrameWitness, LinkDifference,
@@ -399,16 +418,57 @@ pub use quire_checked::key::DeclarationKey;
 pub use execute::{replay_state_clause, ClauseIdentityMismatch, StateClauseReplayResult};
 pub use qsl_forms::StateClauseKind;
 pub use qsl_semantics::model::observation::{
-    AnchorKind, ClauseSelectionInput, ObservationForm, SelectedAnchor, SnapshotValue,
+    AnchorKind, ClauseSelectionInput, ObservationForm, ObservationLimits, SelectedAnchor,
+    SnapshotValue,
 };
 pub use witness::StateClauseCounterexample;
+
+/// A structural node identity for a test fixture, distinct per `fill`.
+#[cfg(test)]
+pub(crate) fn fixture_node(fill: u8) -> NodeKey {
+    NodeKey::new(
+        "fixture",
+        vec![quire_exact::PathSegment::Text(fill.to_string())],
+        0,
+    )
+    .expect("a fixture node is admissible")
+}
+
+/// A parameter node's transcript name.
+#[cfg(test)]
+pub(crate) fn pn(node: &NodeKey) -> String {
+    crate::witness::parameter_name(node).expect("a node spells")
+}
+
+/// The admitted node identity of a checked node reference.
+#[cfg(test)]
+pub(crate) fn adm(reference: &qsl_semantics::check::NodeRef) -> NodeKey {
+    reference
+        .admitted()
+        .expect("a checked reference is admitted")
+        .clone()
+}
+
+/// A universe identity for a test fixture, distinct per `fill`.
+#[cfg(test)]
+pub(crate) fn fixture_universe(fill: u8) -> quire_exact::UniverseId {
+    quire_exact::UniverseId::new(fixture_node(fill))
+}
+
+/// An effective declaration identity for a test fixture, distinct per `fill`.
+#[cfg(test)]
+pub(crate) fn fixture_effective(fill: u8) -> quire_exact::EffectiveId {
+    quire_exact::EffectiveId::new(
+        None,
+        quire_exact::OriginalDeclarationKey::new("fixture", format!("node{fill}")),
+    )
+}
 
 #[cfg(test)]
 mod redaction_tests {
     use ix_trace_rs::trace;
 
     use super::*;
-    use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord, WireNodeId};
     use quire_exact::Identifier;
 
     fn scalar_limits(seed: u64) -> quire_exact::ScalarLimits {
@@ -426,79 +486,25 @@ mod redaction_tests {
         }
     }
 
-    /// FR-073-AC-3 (TC-211): a `stale_dependency`/`byte-digest-mismatch`
-    /// refusal from the replay request, and a malformed-transcript refusal
-    /// from the witness envelope, each render with no unredacted content --
-    /// and a separately, validly constructed value carrying the same
-    /// content stays fully readable through its typed accessor.
+    /// FR-073-AC-3 (TC-211): a malformed-transcript refusal from the witness
+    /// envelope renders with no unredacted content, and a separately,
+    /// validly constructed value carrying the same content stays fully
+    /// readable through its typed accessor.
     #[trace("TC-211", "FR-073-AC-3")]
     #[test]
     fn tc_211_refusal_causes_redact_while_typed_accessors_stay_readable() {
-        // Half 1: replay request byte-digest mismatch.
+        // Half 1: a validly constructed request whose byte provision
+        // carries entry X's exact bytes.
         let entry_x: Vec<u8> = (0..4096u32).map(|i| (i % 241) as u8).collect();
-        let correct_digest = ByteDigest::of(&entry_x).as_bytes();
-        let mut mismatched_bytes = entry_x.clone();
-        mismatched_bytes[0] ^= 0xFF;
-
-        let source_digest_record = DigestRecord::mint(DigestDomain::SourceBytesV1, correct_digest);
-        let wire = ReplayRequestWire {
-            profile_selections: vec![],
-            package_id: (
-                Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
-                DigestRecord::mint(DigestDomain::PackageSemanticV2, [1; 32]).hex(),
-            ),
-            source_digests: vec![(
-                "registry".to_owned(),
-                "pkg-a".to_owned(),
-                "git".to_owned(),
-                "rev-1".to_owned(),
-                Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-                source_digest_record.hex(),
-            )],
-            dependencies: Vec::new(),
-            replay_target: crate::RequestTargetWire::function(
-                QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap(),
-                crate::target::test_key(),
-            ),
-            source: ReplaySource::Input(vec![CanonicalAssignment {
-                parameter: WireNodeId::from_digest([9; 32]),
-                value: WitnessValue::Integer(1),
-            }]),
-            obligation_identity: [2; 32],
-            backend: "kani-backend-1".to_owned(),
-            state_environment: StateEnvironment::new(vec![]),
-            accounting_limits: scalar_limits(1),
-            stage_limits: std::collections::BTreeMap::new(),
-            supplied_limits: None,
-            object_environment: None,
-            declared_domains: Vec::new(),
-            byte_provision: vec![(
-                Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-                source_digest_record.hex(),
-                mismatched_bytes,
-            )],
-        };
-        let refusal = ReplayRequest::decode(wire, crate::ReplayLimits::default()).unwrap_err();
-        let rendered = format!("{refusal:?} {refusal}");
-        assert!(!contains_bytes(&rendered, &entry_x));
-
-        // A separately, validly constructed request whose byte provision
-        // carries entry X's exact bytes under their own correct digest (no
-        // mismatch) still returns the full content through the typed
-        // accessor.
+        // It returns the full content through the typed accessor.
         let valid_wire = ReplayRequestWire {
             profile_selections: vec![],
-            package_id: (
-                Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
-                DigestRecord::mint(DigestDomain::PackageSemanticV2, [1; 32]).hex(),
-            ),
-            source_digests: vec![(
+            package_name: "fixture".to_owned(),
+            sources: vec![(
                 "registry".to_owned(),
                 "pkg-a".to_owned(),
                 "git".to_owned(),
                 "rev-1".to_owned(),
-                Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-                source_digest_record.hex(),
             )],
             dependencies: Vec::new(),
             replay_target: crate::RequestTargetWire::function(
@@ -506,10 +512,10 @@ mod redaction_tests {
                 crate::target::test_key(),
             ),
             source: ReplaySource::Input(vec![CanonicalAssignment {
-                parameter: WireNodeId::from_digest([9; 32]),
+                parameter: crate::fixture_node(9),
                 value: WitnessValue::Integer(1),
             }]),
-            obligation_identity: [2; 32],
+            obligation_identity: crate::ObligationIdentity::new(crate::fixture_node(2), None, 0),
             backend: "kani-backend-1".to_owned(),
             state_environment: StateEnvironment::new(vec![]),
             accounting_limits: scalar_limits(1),
@@ -517,17 +523,19 @@ mod redaction_tests {
             supplied_limits: None,
             object_environment: None,
             declared_domains: Vec::new(),
-            byte_provision: vec![(
-                Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-                source_digest_record.hex(),
-                entry_x.clone(),
-            )],
+            byte_provision: vec![("registry".to_owned(), "pkg-a".to_owned(), entry_x.clone())],
+            documents: vec![],
         };
         let valid_request =
             ReplayRequest::decode(valid_wire, crate::ReplayLimits::default()).unwrap();
         let looked_up = valid_request
             .byte_provision()
-            .get(source_digest_record)
+            .get(&crate::RawSourceRef::new(
+                "registry".to_owned(),
+                "pkg-a".to_owned(),
+                "git".to_owned(),
+                "rev-1".to_owned(),
+            ))
             .unwrap();
         assert_eq!(looked_up, entry_x.as_slice());
 
@@ -545,13 +553,5 @@ mod redaction_tests {
             .concrete_values()
             .iter()
             .any(|(name, _)| name == marker));
-    }
-
-    /// Whether `haystack` contains `needle`'s bytes reinterpreted as a
-    /// lossy UTF-8 string (the shape a `{:?}`/`{}` rendering of a `Vec<u8>`
-    /// field would produce if it leaked raw bytes through `derive(Debug)`).
-    fn contains_bytes(haystack: &str, needle: &[u8]) -> bool {
-        let needle_text = String::from_utf8_lossy(needle);
-        haystack.contains(needle_text.as_ref())
     }
 }

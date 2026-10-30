@@ -87,19 +87,15 @@ fn three_bindings(version_field: &str) -> Vec<AuthoredBinding> {
     ]
 }
 
-/// The fixture package: the document the unit is checked against, its digest
+/// The fixture package: the document the unit is checked against
 /// and the linked package.
-fn linked() -> (Vec<u8>, String, CheckedPackage) {
+fn linked() -> (Vec<u8>, CheckedPackage) {
     let document = serde_json::to_vec(&fixture::document()).expect("the fixture serializes");
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    let digest = qsl_semantics::model::key::hex(digest);
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
-         model M = {package:?} version \"1\" digest \"sha256-jcs:{digest}\";\n\
+         model M = {package:?};\n\
          {CLAUSES}",
         package = fixture::PACKAGE,
     );
@@ -107,7 +103,7 @@ fn linked() -> (Vec<u8>, String, CheckedPackage) {
         .expect("the unit assembles")
         .check(CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"));
-    (document, digest, CheckedPackage::link(graph))
+    (document, CheckedPackage::link(graph))
 }
 
 struct Emitted {
@@ -118,7 +114,7 @@ struct Emitted {
 
 /// The fixture package with `bindings` bound (none when `None`), emitted.
 fn emit_with(bindings: Option<&[AuthoredBinding]>) -> Emitted {
-    let (document, digest, mut package) = linked();
+    let (document, mut package) = linked();
     if let Some(bindings) = bindings {
         package
             .bind_abstraction(bindings)
@@ -139,7 +135,7 @@ fn emit_with(bindings: Option<&[AuthoredBinding]>) -> Emitted {
         evidence.support_feature(feature.as_str().unwrap());
     }
     evidence
-        .insert_domain_package_document(digest.as_str(), document.as_slice())
+        .insert_domain_package_document(package_identity(&document), document.as_slice())
         .expect("a fresh evidence key");
     Emitted {
         emission,
@@ -149,10 +145,6 @@ fn emit_with(bindings: Option<&[AuthoredBinding]>) -> Emitted {
 }
 
 impl Emitted {
-    fn package_id(&self) -> qsl_semantics::library::PackageId {
-        self.emission.package().package_id()
-    }
-
     fn read(&self) -> Read {
         read_with(&self.emission, &self.evidence)
     }
@@ -230,7 +222,7 @@ fn the_relation_is_written_as_one_node_holding_the_three_bindings() {
         })
     );
     let mut targets = vec![config, configs];
-    targets.sort_by(|left, right| left["digest"].as_str().cmp(&right["digest"].as_str()));
+    targets.sort_by_key(|value| qsl_foundation::node_wire::node_key_from_json(value).unwrap());
     assert_eq!(relation["dependencies"], json!(targets));
     assert_eq!(relation["semantic_type"], relation["node_id"]);
     assert_eq!(
@@ -251,7 +243,7 @@ fn the_relation_is_written_as_one_node_holding_the_three_bindings() {
 fn a_relation_read_from_two_declarations_has_an_occurrence_for_each() {
     use quire_semantic_value::location::{Location, Origin};
 
-    let (_, _, mut package) = linked();
+    let (_, mut package) = linked();
     let site = |name: &str| {
         Location::root(Origin::TypeDeclaration {
             name: name.to_owned(),
@@ -294,21 +286,17 @@ fn a_package_with_no_relation_writes_no_relation_node() {
     assert!(matches!(emitted.read(), Read::Verified { .. }));
 }
 
-/// FR-306-AC-2 (TC-804 step 2): emitting the same unit again gives the same
-/// `package_id` and relation node id; changing one `ObjectBinding` field's
-/// `RustField` gives a different `package_id` and a different relation node
-/// id.
+/// FR-306-AC-2 (TC-804 step 2): changing an `ObjectBinding` field's
+/// `RustField` changes the emitted relation and remains readable.
 #[trace("TC-804", "FR-306-AC-2")]
 #[test]
-fn a_rebinding_is_a_new_relation_node_and_a_new_package_id() {
+fn a_rebinding_changes_the_relation_body() {
     let first = emit_with(Some(&three_bindings("version")));
     let again = emit_with(Some(&three_bindings("version")));
-    assert_eq!(first.package_id(), again.package_id());
-    assert_eq!(first.relation()["node_id"], again.relation()["node_id"]);
+    assert_eq!(first.relation()["body"], again.relation()["body"]);
 
     let rebound = emit_with(Some(&three_bindings("revision")));
-    assert_ne!(first.package_id(), rebound.package_id());
-    assert_ne!(first.relation()["node_id"], rebound.relation()["node_id"]);
+    assert_ne!(first.relation()["body"], rebound.relation()["body"]);
     assert!(matches!(rebound.read(), Read::Verified { .. }));
 }
 
@@ -317,7 +305,7 @@ fn a_rebinding_is_a_new_relation_node_and_a_new_package_id() {
 /// refuses.
 #[test]
 fn a_rust_path_with_an_empty_segment_refuses_the_emission() {
-    let (_, _, mut package) = linked();
+    let (_, mut package) = linked();
     let mut bindings = three_bindings("version");
     bindings[2] = attempt_update("update::");
     package

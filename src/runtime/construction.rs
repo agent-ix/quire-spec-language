@@ -12,7 +12,7 @@ use super::input::{
     ValueId, ValueNode,
 };
 use qsl_foundation::source::SourceReadCause;
-use qsl_foundation::{ByteDigest, Code, SourceIdentity, SourceLabel};
+use qsl_foundation::{Code, SourceIdentity, SourceLabel};
 
 type Result<T> = std::result::Result<T, Failure>;
 
@@ -42,7 +42,6 @@ pub(super) struct Artifact<T> {
     pub identity: SourceIdentity,
     pub draft: T,
     pub bytes: Vec<u8>,
-    pub digest: ByteDigest,
     pub usage: ArtifactUsage,
 }
 
@@ -54,20 +53,18 @@ pub(super) trait Body: Serialize {
 }
 
 impl<T: Body> Artifact<T> {
-    /// Adopt an externally decoded body after the reader verified its byte digest.
+    /// Adopt an externally decoded body after the reader verified its selection.
     /// Usage describes the actual constructor pass; retained bytes preserve the
     /// caller's accepted layout rather than the constructor's normalized encoding.
     pub fn from_external(
         identity: SourceIdentity,
         draft: T,
         bytes: &[u8],
-        digest: ByteDigest,
         limits: ArtifactLimits,
     ) -> std::result::Result<Self, Box<InputError>> {
         let constructed = Self::new(identity, draft, limits)?;
         Ok(Self {
             bytes: bytes.to_vec(),
-            digest,
             ..constructed
         })
     }
@@ -94,7 +91,6 @@ impl<T: Body> Artifact<T> {
             Ok(bytes) => Ok(Self {
                 identity,
                 draft,
-                digest: ByteDigest::of(&bytes),
                 bytes,
                 usage: budget.usage,
             }),

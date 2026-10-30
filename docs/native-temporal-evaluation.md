@@ -69,7 +69,7 @@ A `/1` temporal body carries a clock binding name and the selected definition
 entry, but no declared sample period, epoch, timestamp unit or sequence-authority
 value. Through the `/1` entry points those participate in result identity as
 trace premises and are not checked against the artifact. A strict
-`quire.compiled-protocol/2` package carries each declaration's definition digest
+`quire.compiled-protocol/2` package carries each declaration's definition identity
 and clock configuration ([FR-050](../spec/functional/FR-050-publish-authenticated-temporal-artifacts.md)),
 and `evaluate_v2` and `evaluate_with_progress_v2` refuse a trace whose profile,
 clock name or parameter map differs from it before visiting any position
@@ -180,15 +180,13 @@ or correspondence record.
 `/2` package. It resolves the selected definition through the admitted temporal
 binding, refusing a missing binding or one that selects another definition, then
 returns the identical disposition and retained native subject together with
-`Classification::authenticated()`: the package digest, declaration, definition
-identity and namespaced revision, and definition artifact digest. A `/1`
+`Classification::authenticated()`: the package identity and version, declaration, definition
+identity and namespaced revision. A `/1`
 classification returns `None` there. Only that `AuthenticatedSelection` is
 sealed: it is not constructible outside the crate, is read through accessors and
 carries no clock parameters, because classification takes no trace. The
 `support` and `retained` fields stay public plain data, so a consumer that needs
 the disposition bound to the selection re-classifies from the named package.
 `evaluate_v2` derives its `AuthenticatedBinding` through the same binding
-resolution.
-Its table restates `quire-specification` FR-095's reviewed disposition. The
-emission half of that requirement remains blocked on `quire-contract-ir#63`,
-`quire-contract-ir#64` and actual TL capability.
+resolution. QSL's temporal-artifact emission remains blocked on
+`quire-contract-ir#63`, `quire-contract-ir#64` and actual TL capability.

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-345 "Where it runs": the real profile-layering corpus, generated at run
-//! time. Every unit selects a model by its digest (FR-056), so a committed
-//! corpus would carry a frozen digest and churn on every model edit. The
-//! corpus therefore is not committed: `make refinement-layering` calls
-//! [`generate`], which reads `examples/config-version/model.semantic-ir.json`,
-//! builds the timed model the temporal entries select, computes both
-//! digests then, and writes every entry into a directory the gate reads.
+//! time. Every unit selects a model by its package identity, so the corpus is
+//! derived from the model files. It is not committed: `make
+//! refinement-layering` calls [`generate`], which reads
+//! `examples/config-version/model.semantic-ir.json`, builds the timed model
+//! the temporal entries select, and writes every entry into a directory the
+//! gate reads.
 //!
 //! The corpus holds, for each of QSpec FR-453's edges E1 to E6, a `case`
 //! both layers refuse with a typed refusal, a `case` over the edge's
@@ -31,15 +31,12 @@ const TIMED_VERSION: &str = "1.0.0";
 /// The model file's name inside each entry directory.
 const MODEL_FILE: &str = "model.semantic-ir.json";
 const AUTHORITY: &str = "agent-ix";
-const PLACEHOLDER: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 
-/// One model an entry selects: its bytes and the three values a `model`
-/// statement repeats, each read from or computed over the bytes.
+/// One model an entry selects: its bytes and the identity a `model`
+/// statement repeats, read from the bytes.
 struct Model {
     bytes: Vec<u8>,
     identity: String,
-    version: String,
-    digest: String,
 }
 
 impl Model {
@@ -57,19 +54,7 @@ impl Model {
                 .ok_or_else(|| invalid(format!("no package.{name}")))
         };
         let identity = member("identity")?;
-        let version = member("version")?;
-        let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()]);
-        let digest = packages
-            .keys()
-            .next()
-            .map(|digest| qsl_semantics::model::key::hex(digest))
-            .ok_or_else(|| invalid("the model is no package".to_owned()))?;
-        Ok(Self {
-            bytes,
-            identity,
-            version,
-            digest,
-        })
+        Ok(Self { bytes, identity })
     }
 
     /// The unit under `layer` selecting this model as `M`, holding `body`.
@@ -77,11 +62,9 @@ impl Model {
         format!(
             "language \"ix:native\" edition \"1-draft\";\n\
              profile v = \"{}\";\n\
-             model M = {:?} version {:?} digest \"sha256-jcs:{}\";\n{body}",
+             model M = {:?};\n{body}",
             layer.identity(),
-            self.identity,
-            self.version,
-            self.digest
+            self.identity
         )
     }
 }
@@ -204,7 +187,6 @@ fn timed_document() -> Vec<u8> {
     };
     let construct = |name: &str, meaning: &str| {
         json!({"kind": {"module": TIMED_PACKAGE, "name": name}, "moduleVersion": "1.0.0",
-            "manifestDigest": PLACEHOLDER,
             "construct": {"identity": "none", "shape": "record", "members": {},
                 "meaning": meaning}})
     };
@@ -212,12 +194,10 @@ fn timed_document() -> Vec<u8> {
     let population = ident("timers");
     json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
-        "source": {"identity": ident("spec"), "version": TIMED_VERSION, "dialect": "spec-bundle",
-            "digest": PLACEHOLDER},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
+        "source": {"identity": ident("spec"), "version": TIMED_VERSION, "dialect": "spec-bundle"},
         "package": {"identity": TIMED_PACKAGE, "version": TIMED_VERSION,
-            "manifestDigest": PLACEHOLDER, "mappingVersions": [], "profileVersions": [],
-            "lockDigest": PLACEHOLDER},
+            "mappingVersions": [], "profileVersions": []},
         "occurrences": [], "extensions": [],
         "constructs": [
             construct("object_type", qsl_semantics::model::intake::meaning::OBJECT_TYPE),
@@ -349,8 +329,7 @@ fn entries(untimed: &Model, timed: &Model) -> Result<Vec<Entry>> {
     Ok(entries)
 }
 
-/// Write the real layering corpus into `out`, with both model digests
-/// computed from the model bytes. Nothing it writes is committed.
+/// Write the real layering corpus into `out`, from the model bytes. Nothing it writes is committed.
 ///
 /// # Errors
 /// [`Error::RefinementCorpus`] when the untimed model cannot be read or a

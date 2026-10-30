@@ -233,7 +233,7 @@ impl ModelCheckItem<'_> {
                         let binding = match (identity.over(), over) {
                             (Some(parameter), ValueType::Reference(object_type)) => {
                                 let reference = system
-                                    .bound_reference(*object_type, &instance)
+                                    .bound_reference(object_type.clone(), &instance)
                                     .map_err(ItemRefusal::Fault)?;
                                 vec![ContextBinding {
                                     parameter,

@@ -60,17 +60,15 @@ checked-input:
 # corpus does not admit a case its prior revision admitted, or when the gate
 # reports anything but success (exit 0).
 #
-# FR-340: the corpus is generated into a temporary directory on every run, with
-# the model digest computed from examples/config-version/model.semantic-ir.json
-# then. Nothing is committed with a frozen digest.
+# FR-340: the corpus is generated into a temporary directory on every run from
+# examples/config-version/model.semantic-ir.json. Nothing is committed.
 refinement-versioning:
 	@corpus=$$(mktemp -d "$${TMPDIR:-/tmp}/refinement-versioning.XXXXXX") && \
 	trap 'rm -rf "$$corpus"' EXIT && \
 	cargo run --package xtask -- refinement generate-versioning "$$corpus" && \
 	cargo run --package xtask -- refinement versioning "$$corpus"
 
-# FR-345: generate the real layering corpus into a temporary directory, with
-# each model digest computed then, and run the layering CLI over it with no
+# FR-345: generate the real layering corpus into a temporary directory and run the layering CLI over it with no
 # negotiation function. The target passes only the CLI's expected run: exit 21,
 # every layer `unresolved (unsupported)` for reason `not-negotiated` over a
 # non-empty candidate set, and every case and edge holding or not applicable
@@ -302,6 +300,7 @@ ci-clean-build:
 # outside `#[cfg(feature = "std")]` fails here. Own target dir, so no other
 # lane's artifacts are reused (NFR-013).
 build-no-std:
+	rustup target add thumbv7em-none-eabi
 	cargo build --locked -p qsl-foundation --no-default-features --target thumbv7em-none-eabi --target-dir "$${CARGO_TARGET_DIR:-target}/no-std"
 	cargo clippy --locked -p qsl-foundation --no-default-features --target thumbv7em-none-eabi --target-dir "$${CARGO_TARGET_DIR:-target}/no-std" -- -D warnings
 	cargo test --locked -p qsl-foundation --no-default-features --target-dir "$${CARGO_TARGET_DIR:-target}/no-std"
@@ -319,7 +318,8 @@ ci-docs:
 # the S3 checker: 10,000 generated sources nested 1 to 100,000 levels deep.
 # Depths are spread over orders of magnitude (`qsl_bench::deep_input`).
 # It resolves against the root `Cargo.lock`, copied in (fuzz/Cargo.lock is
-# gitignored), and builds on the toolchain `rust-toolchain.toml` selects, with no sanitizer:
+# gitignored), and builds on the caller's active toolchain (CI derives it from
+# `Cargo.toml`'s `rust-version`), with no sanitizer:
 # QSL's crates forbid `unsafe`, so the run checks panics, aborts
 # and stack overflows. Needs `cargo install cargo-fuzz`. Not part of `ci:`.
 FUZZ_RUNS ?= 10000
@@ -429,9 +429,10 @@ arch-lint: arch-lint-api-surface-qsl arch-lint-canonical-encoder arch-lint-quali
 # criterion bench per axis, each runnable by name. `make bench` runs all
 # six; `make bench-probe` prints the counts, refusal boundaries and one-shot
 # large-input timings (with peak RSS) the criterion benches do not record.
-# The recorded baseline, with its variance, is `qsl-bench/BASELINE.md`.
-# Pass criterion options through BENCH_ARGS, e.g.
-# `make bench-model BENCH_ARGS='--save-baseline before'`. Not part of `ci:`
+# Compare a candidate with current main in one interleaved session; see
+# `qsl-bench/BENCHMARKING.md` for the live-run method. No stored baseline is used.
+# Pass criterion options through BENCH_ARGS, e.g. `BENCH_ARGS='--noplot'`.
+# Not part of `ci:`
 # -- timing is not a pass/fail gate.
 BENCH_ARGS ?=
 BENCH_AXES := parser checker cst model evaluator text_cluster

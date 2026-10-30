@@ -43,7 +43,7 @@ pub(super) fn field_key(
 pub(crate) fn admit_initial_state(
     views: &[ModelView],
     types: &TypeEnvironment,
-    provision: &BTreeMap<[u8; 32], Vec<u8>>,
+    provision: &BTreeMap<DocumentRef, Vec<u8>>,
     selected: &DocumentRef,
     limits: ObservationLimits,
     ancestor_steps: u64,
@@ -89,12 +89,12 @@ pub(crate) fn admit_initial_state(
     for population in admitted_initial.populations {
         let mut objects = BTreeMap::new();
         for object in population.objects {
-            let type_identity = view_of(views, object.reference.object_type())
-                .and_then(|view| view.declaration_key(object.reference.object_type()))
+            let type_identity = view_of(views, object.reference.object_type().clone())
+                .and_then(|view| view.declaration_key(object.reference.object_type().clone()))
                 .ok_or_else(|| fault("state-object-type-unresolved"))?
                 .clone();
             let attributes = types
-                .attributes(object.reference.object_type())
+                .attributes(object.reference.object_type().clone())
                 .ok_or_else(|| fault("state-object-type-has-no-checked-attributes"))?;
             let mut fields = BTreeMap::new();
             for attribute in attributes {
@@ -154,10 +154,10 @@ pub(crate) fn observe_state(
             let effective = views
                 .iter()
                 .find_map(|view| view.view.type_identities().get(&object.type_identity))
-                .copied()
+                .cloned()
                 .ok_or_else(|| fault("state-object-type-unresolved"))?;
             let attributes = types
-                .attributes(effective)
+                .attributes(effective.clone())
                 .ok_or_else(|| fault("state-object-type-has-no-checked-attributes"))?;
             let mut slots: Vec<(&str, FieldValue)> = Vec::with_capacity(attributes.len());
             for attribute in attributes {
@@ -203,7 +203,7 @@ pub(crate) fn state_fields(
 ) -> Result<Option<Vec<StateField>>, AdmissionFailure> {
     let Some(identity) = views
         .iter()
-        .find_map(|view| view.view.type_identities().get(type_key).copied())
+        .find_map(|view| view.view.type_identities().get(type_key).cloned())
     else {
         return Ok(None);
     };
@@ -230,7 +230,7 @@ pub(crate) fn state_reference(
 ) -> Result<ObjectReference, AdmissionFailure> {
     let identity = views
         .iter()
-        .find_map(|view| view.view.type_identities().get(type_key).copied())
+        .find_map(|view| view.view.type_identities().get(type_key).cloned())
         .ok_or_else(|| fault("state-object-type-unresolved"))?;
     object_reference(views, identity, object)
 }

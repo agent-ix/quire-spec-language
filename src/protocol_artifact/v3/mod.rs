@@ -7,7 +7,6 @@ pub mod wire;
 
 use crate::protocol_artifact::{v2, wire::Handle};
 pub use intake::{encode_candidate, read};
-use qsl_foundation::ByteDigest;
 pub use refusal::{InventorySide, MappingCause, MappingField, Refusal};
 
 /// Exact version-3 payload selection.
@@ -39,7 +38,6 @@ pub struct Expected<'a> {
 #[derive(Clone, Debug)]
 pub struct AdmittedPackage {
     pub(crate) package: wire::Package,
-    pub(crate) digest: ByteDigest,
     pub(crate) artifact: Option<crate::protocol_artifact::wire::ArtifactRef>,
     pub(crate) model_schema: Vec<Option<crate::native_model::NativeModel>>,
 }
@@ -48,10 +46,6 @@ impl AdmittedPackage {
     /// Read-only admitted version-3 package.
     pub fn package(&self) -> &wire::Package {
         &self.package
-    }
-    /// Digest of the exact admitted bytes.
-    pub fn digest(&self) -> ByteDigest {
-        self.digest
     }
     /// Retained independently selected artifact identity, if read rather than emitted.
     pub fn artifact(&self) -> Option<&crate::protocol_artifact::wire::ArtifactRef> {

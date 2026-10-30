@@ -21,7 +21,7 @@ pub fn parse(
     parse_source(source, limits)
 }
 
-/// Parse a historical source already loaded (and optionally digest-verified).
+/// Parse a historical source already loaded.
 pub fn parse_source(source: Source, limits: Limits) -> Result<ParsedUnit, Box<Diagnostic>> {
     if source.text().len() > limits.source_bytes {
         return Err(qsl_foundation::diagnostic::resource_exhausted(
@@ -64,7 +64,7 @@ pub fn parse_native(
     parse_native_source(source, limits)
 }
 
-/// Edition-dispatched parsing of an immutable, optionally digest-verified source.
+/// Edition-dispatched parsing of an immutable source.
 pub fn parse_native_source(
     source: Source,
     limits: Limits,
@@ -274,16 +274,10 @@ impl Parser {
         let alias = self.identifier()?;
         self.expect(K::Equal)?;
         let package = self.string()?;
-        self.expect(K::Version)?;
-        let version = self.string()?;
-        self.expect(K::Digest)?;
-        let digest = self.string()?;
         let end = self.expect(K::Semicolon)?.span.end;
         Ok(ModelImport {
             alias,
             package,
-            version,
-            digest,
             span: Span { start, end },
         })
     }
@@ -392,7 +386,7 @@ mod tests {
                 let limits = Limits::default();
                 let depth = 30_000;
                 let historical = format!(
-                    "language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"test/model\" version \"1\" digest \"unresolved\";\ninvariant T on M::Thing at current {{ {}1{} }}\n",
+                    "language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"test/model\";\ninvariant T on M::Thing at current {{ {}1{} }}\n",
                     "(".repeat(depth),
                     ")".repeat(depth)
                 );
@@ -403,7 +397,7 @@ mod tests {
                 assert_eq!(unit.expressions.len(), depth + 1);
 
                 let composed = format!(
-                    "language \"ix:native\" edition \"1-draft\";\nprofile T = \"quire.temporal.timestamped-event.finite-window/v1\" version \"t\" digest \"u\";\nmodel M = \"m\" version \"1\" digest \"u\";\ntemporal W using T over (v: M::V) clock \"c\" on origin {{ {}holds({}v{}){} }}\n",
+                    "language \"ix:native\" edition \"1-draft\";\nprofile T = \"quire.temporal.timestamped-event.finite-window/v1\";\nmodel M = \"m\";\ntemporal W using T over (v: M::V) clock \"c\" on origin {{ {}holds({}v{}){} }}\n",
                     "(".repeat(depth / 2),
                     "(".repeat(depth / 4),
                     ")".repeat(depth / 4),

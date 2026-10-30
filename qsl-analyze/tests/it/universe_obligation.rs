@@ -14,9 +14,8 @@ use ix_trace_rs::trace;
 use qsl_analyze::model_check::{RequestRefusal, SubjectContext};
 use qsl_eval::model_subject::ModelSubject;
 use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound, ProofBound};
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::{BackendId, RequestIndex};
-use qsl_replay::{node_occurrence, SubjectIdentity, SubjectIdentityRefusal, TerminalRecord};
+use qsl_replay::{node_occurrence, SubjectIdentity, TerminalRecord};
 use qsl_route::deadlock::{ItemObligation, ObligationKind};
 use qsl_route::model_request::ModelRequest;
 use qsl_route::request::ExtentClassification;
@@ -62,7 +61,7 @@ fn author(
 }
 
 fn identity(subject: &ModelSubject<'_>) -> SubjectIdentity {
-    SubjectIdentity::of(subject).expect("the package emits")
+    SubjectIdentity::of(subject)
 }
 
 /// `ReachesTwo` under `fair weak each` over universe `{a, b}` and over `{a,
@@ -97,7 +96,7 @@ fn two_universes_are_two_obligations_and_each_result_joins_its_own_index() {
 
     let occurrence = node_occurrence(clause);
     let obligation = |subject: &ModelSubject<'_>| ItemObligation {
-        subject: SubjectIdentity::of(subject).expect("the package emits"),
+        subject: SubjectIdentity::of(subject),
         kind: ObligationKind::Authored(occurrence.clone()),
         reductions: qsl_route::reductions::ObligationReductions::default(),
     };
@@ -153,7 +152,7 @@ fn a_proof_bound_or_an_initial_state_changes_the_identity_and_a_foreign_clause_i
     bounded.proof_bounds.push(
         ProofBound::new(
             DomainKey::Node {
-                node: WireNodeId::from_digest([9; 32]),
+                node: crate::fixture_ids::node_key([9]),
                 path: Vec::new(),
             },
             Some(DomainKind::Population),
@@ -184,7 +183,7 @@ fn a_proof_bound_or_an_initial_state_changes_the_identity_and_a_foreign_clause_i
     // A provision carrying a package the model does not select is the same
     // subject.
     let mut provision = fixture.documents.packages.clone();
-    provision.insert([7; 32], b"unselected".to_vec());
+    provision.insert("unselected/package".to_owned(), b"unselected".to_vec());
     let mut padded = over(&fixture, &["a", "b"]);
     padded.simulation.packages = &provision;
     assert_eq!(identity(&padded), plain);
@@ -225,7 +224,7 @@ fn hash_of(identity: &SubjectIdentity) -> u64 {
 fn bound(node: u8, maximum: u64) -> ProofBound {
     ProofBound::new(
         DomainKey::Node {
-            node: WireNodeId::from_digest([node; 32]),
+            node: crate::fixture_ids::node_key([node]),
             path: Vec::new(),
         },
         Some(DomainKind::Population),
@@ -256,7 +255,7 @@ fn the_facade_identity_is_the_request_path_identity_whatever_the_listing_order()
     reverse.proof_bounds = bounds.iter().rev().cloned().collect();
 
     // The item the request path writes holds the facade's identity.
-    let identity = SubjectIdentity::of(&forward).expect("the package emits");
+    let identity = SubjectIdentity::of(&forward);
     let mut request = ModelRequest::new();
     let index = author(&mut request, &forward, clause).expect("the clause has a record");
     let item = request
@@ -272,7 +271,7 @@ fn the_facade_identity_is_the_request_path_identity_whatever_the_listing_order()
         rotated.rotate_left(rotation);
         for list in [rotated.clone(), rotated.into_iter().rev().collect()] {
             reverse.proof_bounds = list;
-            let rebuilt = SubjectIdentity::of(&reverse).expect("the package emits");
+            let rebuilt = SubjectIdentity::of(&reverse);
             assert_eq!(rebuilt, identity);
             assert_eq!(hash_of(&rebuilt), hash_of(&identity));
         }
@@ -281,39 +280,5 @@ fn the_facade_identity_is_the_request_path_identity_whatever_the_listing_order()
     // The order-independence is not an identity that ignores its members.
     let mut other = over(&fixture, &["a", "b", "c"]);
     other.proof_bounds = bounds.iter().skip(1).cloned().collect();
-    assert_ne!(SubjectIdentity::of(&other).expect("emits"), identity);
-}
-
-/// A subject whose checked package has no emission is refused
-/// `SubjectIdentityRefusal::Package`.
-#[trace("TC-1190", "FR-336-AC-6")]
-#[test]
-fn a_package_with_no_emission_is_refused_package() {
-    use qsl_package::{CheckedPackage, EmitRefusal};
-    use qsl_semantics::check::{admitted_source, PackageDeclarations};
-    use quire_semantic_value::checking::CheckingLimits;
-
-    let fixture = reaches_two();
-    let graph = PackageDeclarations::new(
-        admitted_source(
-            qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
-            b"",
-        ),
-        qsl_foundation::IdentityLimits::default(),
-    )
-    .check(CheckingLimits::default())
-    .expect("an empty package checks");
-    let empty = CheckedPackage::link(graph);
-    let subject = subject(
-        &empty,
-        &fixture.documents,
-        fixture.initial.clone(),
-        &["a"],
-        UNLIMITED,
-    );
-    let refusal = SubjectIdentity::of(&subject).expect_err("nothing to emit");
-    assert!(matches!(
-        refusal,
-        SubjectIdentityRefusal::Package(EmitRefusal::NothingToEmit { .. })
-    ));
+    assert_ne!(SubjectIdentity::of(&other), identity);
 }

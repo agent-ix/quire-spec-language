@@ -19,16 +19,16 @@ use super::binding;
 use super::binding_work;
 use super::definition_source::RegisteredDefinition;
 use super::definitions::{Cause, Selection, UseKind};
-use super::models::{ImportRefusal, ModelInput, SelectedDigest};
+use super::models::{ImportRefusal, ModelInput};
 use super::scopes::{Anchor, BinderKind, BinderType};
 use super::{DependencyKind, DependencySite, SourceInventory, WorkLimits};
 use crate::Limits;
-use qsl_foundation::{ByteDigest, SourceIdentity};
+use qsl_foundation::SourceIdentity;
 
 /// Which declared static component of two subjects differs.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum ComponentKind {
-    /// Exact authority, identity, revision and byte digest of every source unit.
+    /// Exact authority, identity and revision of every source unit.
     Sources,
     /// Exact language/edition selection and its supplied definition artifact.
     Language,
@@ -49,8 +49,6 @@ pub struct SourceComponent {
     pub authority: String,
     /// Exact selected source identity and revision.
     pub identity: SourceIdentity,
-    /// SHA-256 of the unit's original bytes.
-    pub digest: ByteDigest,
 }
 
 /// Language component: the single selection every source header must agree with.
@@ -83,18 +81,11 @@ pub struct ProfileComponent {
     pub refusal: Option<Cause>,
 }
 
-/// The exact model input an import resolved to, in its own digest domain: a
-/// native model's artifact bytes or a domain package's `sha256-jcs` document.
+/// The exact model input an import resolved to: its package identity.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ModelSelection {
     /// Package label of the admitted native model, or the domain package identity.
     pub package: String,
-    /// The revision exactly as the selected input states it. It is retained as
-    /// its original spelling so that two differing revisions can never be
-    /// coerced into one comparable number.
-    pub revision: String,
-    /// The selected digest, in the input's own digest domain.
-    pub digest: SelectedDigest,
 }
 
 /// Models component: one authored import and the selection it resolved to.
@@ -221,7 +212,6 @@ impl StaticSubject {
             sources.push(SourceComponent {
                 authority: expected.authority.clone(),
                 identity: unit.source().identity().clone(),
-                digest: unit.source().digest(),
             });
         }
 
@@ -400,16 +390,9 @@ fn model_selection(inputs: &[ModelInput<'_>], input: usize) -> Option<ModelSelec
     Some(match *inputs.get(input)? {
         ModelInput::Native(model) => ModelSelection {
             package: model.environment().owner().package().as_str().to_owned(),
-            revision: model.environment().owner().revision().get().to_string(),
-            digest: SelectedDigest::Artifact(model.digest()),
         },
-        ModelInput::Domain(package) => {
-            let selection = package.selection();
-            ModelSelection {
-                package: selection.identity.clone(),
-                revision: selection.version.clone(),
-                digest: SelectedDigest::DomainPackage(selection.digest),
-            }
-        }
+        ModelInput::Domain(package) => ModelSelection {
+            package: package.selection().identity.clone(),
+        },
     })
 }

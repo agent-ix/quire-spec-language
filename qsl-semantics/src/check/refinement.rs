@@ -83,7 +83,6 @@ use crate::model::clause_observation::Observation;
 use crate::model::domain_package::{DomainPackageRef, PopulationRecord};
 use crate::model::intake::type_identity_segment;
 use crate::model::operation::OperationLookup;
-use crate::value::definition::DefinitionLock;
 use crate::value::layer::HeaderLayer;
 use quire_checked::key::DeclarationKey;
 
@@ -520,7 +519,7 @@ impl PopulationUse {
         match &self.value {
             PopulationValue::Objects => Some(ValueType::collection(CollectionType::new(
                 CollectionKind::Set,
-                ValueType::Reference(self.member),
+                ValueType::Reference(self.member.clone()),
                 Some(CardinalityBound::new(0, size).ok()?),
             ))),
             PopulationValue::Count => Some(ValueType::Int(
@@ -588,23 +587,18 @@ impl CheckedRefinement {
         };
         let abstract_subject = self
             .abstract_subject_node
+            .as_ref()
             .ok_or(RefinementV2EncodingError::MissingSubject)?;
         let concrete_subject = self
             .concrete_subject_node
+            .as_ref()
             .ok_or(RefinementV2EncodingError::MissingSubject)?;
         let rows = self
             .row_keys
             .as_ref()
             .ok_or(RefinementV2EncodingError::MissingRows)?;
-        let local = |key: NodeKey| RefinementKey::Local(v2_node_id(key));
-        // A leaf's typed V2 term: its canonical bytes, read back as the
-        // term they spell.
-        let term = |leaf: &crate::check::node_key::LeafTerm| {
-            let bytes = quire_canonical::to_vec(leaf, quire_canonical::Limits::new(u64::MAX))
-                .map_err(RefinementV2EncodingError::Term)?;
-            serde_json::from_slice::<quire_contract_model::CheckedTerm>(&bytes)
-                .map_err(RefinementV2EncodingError::Body)
-        };
+        let local = |key: &NodeKey| RefinementKey::Local(v2_node_id(key));
+        let term = leaf_checked_term;
         let arguments = |arguments: &[Option<crate::check::node_key::LeafTerm>]| {
             arguments
                 .iter()
@@ -617,16 +611,17 @@ impl CheckedRefinement {
                 .collect::<Result<Vec<_>, RefinementV2EncodingError>>()
         };
         let mut keyed_populations: Vec<&KeyedPopulationRow> = rows.populations.iter().collect();
-        keyed_populations.sort_by_key(|row| row.abstract_population);
+        keyed_populations
+            .sort_by(|left, right| left.abstract_population.cmp(&right.abstract_population));
         let populations = keyed_populations
             .into_iter()
             .map(|row| RefinementPopulation {
-                r#abstract: local(row.abstract_population),
-                concrete: v2_node_id(row.concrete_population),
+                r#abstract: local(&row.abstract_population),
+                concrete: v2_node_id(&row.concrete_population),
             })
             .collect();
         let mut keyed_objects: Vec<&KeyedObjectRow> = rows.objects.iter().collect();
-        keyed_objects.sort_by_key(|row| row.abstract_type);
+        keyed_objects.sort_by(|left, right| left.abstract_type.cmp(&right.abstract_type));
         let objects = keyed_objects
             .into_iter()
             .map(|row| {
@@ -642,24 +637,24 @@ impl CheckedRefinement {
                     .collect::<Result<Vec<_>, RefinementV2EncodingError>>()?;
                 fields.sort_by(|left, right| left.name.as_bytes().cmp(right.name.as_bytes()));
                 Ok(RefinementObject {
-                    abstract_type: local(row.abstract_type),
-                    concrete_type: v2_node_id(row.concrete_type),
+                    abstract_type: local(&row.abstract_type),
+                    concrete_type: v2_node_id(&row.concrete_type),
                     fields,
                 })
             })
             .collect::<Result<Vec<_>, RefinementV2EncodingError>>()?;
-        // FR-375: rows naming a declaration by its node digest, then the
-        // class spelling; a row naming none (a memory row) after them.
+        // FR-375: rows naming a declaration by its structural node id, then
+        // the class spelling; a row naming none (a memory row) after them.
         let mut ordered: Vec<&KeyedStepRow> = rows.steps.iter().collect();
         ordered.sort_by(|left, right| {
             (
                 left.source_node.is_none(),
-                left.source_node,
+                left.source_node.as_ref(),
                 left.source_class.as_bytes(),
             )
                 .cmp(&(
                     right.source_node.is_none(),
-                    right.source_node,
+                    right.source_node.as_ref(),
                     right.source_class.as_bytes(),
                 ))
         });
@@ -672,7 +667,7 @@ impl CheckedRefinement {
                     receiver,
                     arguments: written,
                 } => RefinementStepTarget::Operation {
-                    operation: local(*operation),
+                    operation: local(operation),
                     receiver: Box::new(term(receiver)?),
                     arguments: arguments(written)?,
                 },
@@ -682,7 +677,7 @@ impl CheckedRefinement {
                     arguments: written,
                 } => RefinementStepTarget::ProtocolStep {
                     class: class.as_str().into(),
-                    node: node.map(local),
+                    node: node.as_ref().map(local),
                     arguments: arguments(written)?,
                 },
                 KeyedStepTarget::Stutter => RefinementStepTarget::Stutter,
@@ -690,17 +685,23 @@ impl CheckedRefinement {
             };
             steps.push(RefinementStep {
                 source_class: row.source_class.as_str().into(),
-                source_node: row.source_node.map(v2_node_id),
+                source_node: row.source_node.as_ref().map(v2_node_id),
                 target,
             });
             step_sources.push(row.source);
         }
-        let fairness = |rows: &[KeyedFairnessRow]| {
+        fn fairness(
+            rows: &[KeyedFairnessRow],
+        ) -> Vec<(
+            &NodeKey,
+            quire_contract_model::RefinementFairnessKind,
+            quire_contract_model::RefinementGranularity,
+        )> {
             let mut rows: Vec<_> = rows
                 .iter()
                 .map(|row| {
                     (
-                        row.operation,
+                        &row.operation,
                         v2_fairness_kind(row.kind),
                         v2_granularity(row.granularity),
                     )
@@ -714,7 +715,7 @@ impl CheckedRefinement {
                 ))
             });
             rows
-        };
+        }
         let assume = fairness(&rows.assume)
             .into_iter()
             .map(|(operation, kind, granularity)| RefinementAssume {
@@ -743,7 +744,10 @@ impl CheckedRefinement {
             histories: Vec::new(),
             assume,
             ensure,
-            protocol: self.abstract_protocol.map(|clause| Box::new(local(clause))),
+            protocol: self
+                .abstract_protocol
+                .as_ref()
+                .map(|clause| Box::new(local(clause))),
             abstract_internal: (!self.abstract_internal.is_empty()).then(|| {
                 self.abstract_internal
                     .iter()
@@ -752,9 +756,9 @@ impl CheckedRefinement {
             }),
             class_catalog: self.class_catalog_keys.as_ref().map(v2_class_catalog),
         };
-        let identity = Self::v2_identity(concrete_subject, &body)?;
-        let mut dependencies: Vec<NodeKey> = std::iter::once(abstract_subject)
-            .chain(self.abstract_protocol)
+        let identity = self.v2_identity(concrete_subject)?;
+        let mut dependencies: Vec<&NodeKey> = std::iter::once(abstract_subject)
+            .chain(self.abstract_protocol.as_ref())
             .chain(
                 self.class_catalog_keys
                     .iter()
@@ -767,7 +771,7 @@ impl CheckedRefinement {
         Ok(RefinementV2Emission {
             identity,
             body,
-            dependencies,
+            dependencies: dependencies.into_iter().cloned().collect(),
             step_sources,
             proof_eligible: self.proof_eligible(),
         })
@@ -811,20 +815,20 @@ impl CheckedRefinement {
         Ok(())
     }
 
-    /// QSpec FR-375's canonical relation-node identity construction: the
-    /// JCS SHA-256 of `{version, semantic_type, body}`, the body as the
-    /// typed term serializes.
+    /// The refinement node's structural id (QSpec FR-322): the declaring
+    /// package, which also owns the local concrete subject, and the
+    /// declaration path, the refinement's name. A declaration has one node,
+    /// so its ordinal is zero.
     fn v2_identity(
-        semantic_type: NodeKey,
-        body: &quire_contract_model::CheckedTerm,
+        &self,
+        concrete_subject: &NodeKey,
     ) -> Result<NodeKey, RefinementV2EncodingError> {
-        let preimage = RefinementPreimage {
-            semantic_type: v2_node_id(semantic_type),
-            body,
-        };
-        let digest = quire_canonical::sha256(&preimage, quire_canonical::Limits::new(u64::MAX))
-            .map_err(RefinementV2EncodingError::Identity)?;
-        Ok(NodeKey::from_digest(*digest.as_bytes()))
+        crate::check::declared_node_key(
+            concrete_subject.package().to_owned(),
+            vec![self.name.clone()],
+            0,
+        )
+        .map_err(RefinementV2EncodingError::Identity)
     }
 
     /// Whether this declaration is in the current V2 emission slice: its
@@ -926,41 +930,17 @@ impl CheckedRefinement {
 /// source row of each step and whether it is proof-eligible.
 #[derive(Debug)]
 pub struct RefinementV2Emission {
-    /// The FR-375 node key.
+    /// The refinement's structural node key.
     pub identity: NodeKey,
     /// The FR-375 body.
     pub body: quire_contract_model::CheckedTerm,
-    /// Every local node the body names, ascending by digest.
+    /// Every local node the body names, ascending by structural id.
     pub dependencies: Vec<NodeKey>,
     /// For each `steps` entry in body order, its source row's position among
     /// the authored step rows.
     pub step_sources: Vec<usize>,
     /// See [`CheckedRefinement::proof_eligible`].
     pub proof_eligible: bool,
-}
-
-/// QSpec FR-375's relation-node identity preimage,
-/// `{version, semantic_type, body}`, pushed straight into the canonical
-/// encoder: the body encodes itself from an explicit stack.
-struct RefinementPreimage<'a> {
-    semantic_type: quire_contract_model::CheckedNodeId,
-    body: &'a quire_contract_model::CheckedTerm,
-}
-
-impl quire_canonical::Encode for RefinementPreimage<'_> {
-    fn encode_into<S: quire_canonical::Sink + ?Sized>(
-        &self,
-        writer: &mut quire_canonical::Writer<'_, S>,
-    ) -> Result<(), quire_canonical::Error> {
-        writer.begin_object()?;
-        writer.name("version")?;
-        writer.string("quire.refinement-node/v1")?;
-        writer.name("semantic_type")?;
-        writer.serialize(&self.semantic_type)?;
-        writer.name("body")?;
-        self.body.encode_into(writer)?;
-        writer.end_object()
-    }
 }
 
 /// A refinement's checked V2 body could not be constructed.
@@ -974,8 +954,8 @@ pub enum RefinementV2EncodingError {
     Body(serde_json::Error),
     /// A row term could not be canonically encoded.
     Term(quire_canonical::Error),
-    /// The FR-375 identity preimage could not be canonically encoded.
-    Identity(quire_canonical::Error),
+    /// The refinement's structural node id is not a valid node key.
+    Identity(quire_exact::InvalidNodeKey),
 }
 
 /// QSpec FR-375's `class_catalog` member: each declared class's node and
@@ -1011,8 +991,8 @@ fn v2_class_catalog(catalog: &KeyedClassCatalog) -> quire_contract_model::Refine
                     binder_types,
                 } => RefinementConcreteClass::Declared {
                     class: class.as_str().into(),
-                    node: v2_node_id(*node),
-                    binder_types: binder_types.iter().copied().map(v2_node_id).collect(),
+                    node: v2_node_id(node),
+                    binder_types: binder_types.iter().map(v2_node_id).collect(),
                 },
                 KeyedCatalogClass::Memory(class) => RefinementConcreteClass::Memory(memory(*class)),
             })
@@ -1027,10 +1007,10 @@ fn v2_class_catalog(catalog: &KeyedClassCatalog) -> quire_contract_model::Refine
                     binder_types,
                 } => RefinementAbstractClass::Declared {
                     class: class.as_str().into(),
-                    node: RefinementKey::Local(v2_node_id(*node)),
+                    node: RefinementKey::Local(v2_node_id(node)),
                     binder_types: binder_types
                         .iter()
-                        .map(|key| RefinementKey::Local(v2_node_id(*key)))
+                        .map(|key| RefinementKey::Local(v2_node_id(key)))
                         .collect(),
                 },
                 KeyedCatalogClass::Memory(class) => RefinementAbstractClass::Memory(memory(*class)),
@@ -1069,11 +1049,120 @@ fn granularity_label(granularity: quire_contract_model::RefinementGranularity) -
     }
 }
 
-/// `key` as a V2 graph node id.
-fn v2_node_id(key: NodeKey) -> quire_contract_model::CheckedNodeId {
-    quire_contract_model::CheckedNodeId {
-        domain: quire_exact::NODE_KEY_DOMAIN.into(),
-        digest: key.to_string().into(),
+/// A leaf's typed V2 term, built from its structural node references and
+/// literal spelling (QSpec FR-322 "Scalar literal values").
+fn leaf_checked_term(
+    leaf: &crate::check::node_key::LeafTerm,
+) -> Result<quire_contract_model::CheckedTerm, RefinementV2EncodingError> {
+    use crate::check::node_key::{LeafTerm, LiteralValue, NodeRef};
+    use quire_contract_model::CheckedTerm;
+    use serde::de::Error as _;
+    use serde_json::{json, Value};
+    let admitted = |node: &NodeRef| {
+        node.admitted().map(v2_node_id).ok_or_else(|| {
+            RefinementV2EncodingError::Body(serde_json::Error::custom(
+                "a refinement row term names a pending node",
+            ))
+        })
+    };
+    let spelled = |value: &quire_exact::Rational| {
+        if value.is_integer() {
+            value.numerator().to_string()
+        } else {
+            format!("{}/{}", value.numerator(), value.denominator())
+        }
+    };
+    let term = match leaf {
+        LeafTerm::Literal { ty, value } => {
+            let (kind, value): (&str, Value) = match value {
+                LiteralValue::Boolean(value) => ("boolean", json!(value)),
+                LiteralValue::Integer(value) => ("integer", json!(value.to_string())),
+                LiteralValue::Count(value) => ("integer", json!(value)),
+                LiteralValue::Rational(value) => ("rational", json!(spelled(value))),
+                LiteralValue::Float32Bits(value) => ("float32_bits", json!(format!("{value:08x}"))),
+                LiteralValue::Float64Bits(value) => {
+                    ("float64_bits", json!(format!("{value:016x}")))
+                }
+                LiteralValue::Quantity(value) => ("quantity", json!(spelled(value))),
+                LiteralValue::Text(value) => ("text", json!(value)),
+                LiteralValue::String(value) => ("string", json!(value)),
+                LiteralValue::Uuid(value) => ("uuid", json!(value.to_string())),
+                LiteralValue::Timestamp(value) => ("timestamp", json!(value.to_string())),
+                LiteralValue::None => ("none", Value::Null),
+                LiteralValue::Enum(case) => ("enum", json!(case)),
+            };
+            let type_id = admitted(ty)?;
+            let value_kind =
+                quire_contract_model::LiteralKind::from_wire(kind).ok_or_else(|| {
+                    RefinementV2EncodingError::Body(serde_json::Error::custom(
+                        "a refinement row literal names no wire kind",
+                    ))
+                })?;
+            CheckedTerm::Literal {
+                type_id,
+                value_kind,
+                value,
+            }
+        }
+        LeafTerm::Reference { target } => CheckedTerm::Reference {
+            target: admitted(target)?,
+        },
+        LeafTerm::DependencyReference { node } => {
+            let node = admitted(node)?;
+            CheckedTerm::DependencyReference {
+                package: node.package.clone(),
+                node,
+            }
+        }
+    };
+    // The terms are built directly: `CheckedNodeId` reads its raw JSON text,
+    // which the derived `CheckedTerm` reader cannot buffer.
+    Ok(term)
+}
+
+/// `key` as a V2 graph node id: the same package, path and ordinal. A
+/// nested operand id is converted from an explicit stack, so a deep path
+/// uses no call stack proportional to its depth.
+fn v2_node_id(key: &NodeKey) -> quire_contract_model::CheckedNodeId {
+    use quire_contract_model::{CheckedNodeId, CheckedNodePathSegment};
+    use quire_exact::{NodeKeyView, NodePathIter, PathSegmentView};
+    struct Frame<'a> {
+        package: &'a str,
+        ordinal: u64,
+        segments: NodePathIter<'a>,
+        path: Vec<CheckedNodePathSegment>,
+    }
+    fn frame(view: NodeKeyView<'_>) -> Frame<'_> {
+        Frame {
+            package: view.package(),
+            ordinal: view.ordinal(),
+            segments: view.path(),
+            path: Vec::new(),
+        }
+    }
+    let mut current = frame(key.view());
+    let mut parents = Vec::new();
+    loop {
+        match current.segments.next() {
+            Some(PathSegmentView::Text(text)) => {
+                current.path.push(CheckedNodePathSegment::Name(text.into()));
+            }
+            Some(PathSegmentView::Node(nested)) => {
+                parents.push(std::mem::replace(&mut current, frame(nested)));
+            }
+            None => {
+                let id = CheckedNodeId {
+                    package: current.package.into(),
+                    path: std::mem::take(&mut current.path),
+                    ordinal: current.ordinal,
+                };
+                let Some(mut parent) = parents.pop() else {
+                    return id;
+                };
+                parent.path.push(CheckedNodePathSegment::Node(Box::new(id)));
+                current = parent;
+            }
+        }
     }
 }
 
@@ -1083,7 +1172,7 @@ pub struct PopulationRow {
     /// The abstract population.
     pub abstract_population: DeclarationKey,
     /// The population declaration's canonical model-node key. FR-140 reads
-    /// population rows in this digest order, independently of source names.
+    /// population rows in this key order, independently of source names.
     pub order_key: NodeKey,
     /// The concrete population it is the key-preserving image of.
     pub concrete_population: DeclarationKey,
@@ -1202,6 +1291,16 @@ pub struct StepRow {
     pub(crate) spelling: String,
     /// An operation row's FR-146 record roots; `None` for a protocol row.
     pub(crate) roots: Option<RowRoots>,
+}
+
+impl StepRow {
+    /// The concrete operation of an operation row, as a record references
+    /// it: its declaring type and name; `None` for a protocol row.
+    pub fn concrete_operation(&self) -> Option<(EffectiveId, &str)> {
+        self.roots
+            .as_ref()
+            .map(|roots| (roots.operation.0.clone(), roots.operation.1.as_str()))
+    }
 }
 
 /// FR-146 "Claim extent": what an operation row's `Step` record ranges over
@@ -1370,13 +1469,13 @@ pub struct CheckedRefinement {
     pub(crate) profile: ProfileSelection,
     pub(crate) abstract_model: String,
     /// The canonical selected package for the abstract side; its identity
-    /// and digest are independent of the source alias (FR-135).
+    /// is independent of the source alias (FR-135).
     pub(crate) abstract_model_selection: DomainPackageRef,
     pub(crate) abstract_side: AbstractSide,
     pub(crate) abstract_internal: Vec<AbstractStepClass>,
     pub(crate) concrete_model: String,
     /// The canonical selected package for the concrete side; its identity
-    /// and digest are independent of the source alias (FR-135).
+    /// is independent of the source alias (FR-135).
     pub(crate) concrete_model_selection: DomainPackageRef,
     pub(crate) populations: Vec<PopulationRow>,
     pub(crate) objects: Vec<ObjectRow>,
@@ -1479,10 +1578,7 @@ impl CheckedRefinement {
     /// concrete model subject, unbounded over the infinite-trace domain
     /// rooted at the node, with the fairness kinds of `F_C` and `F_A` and the
     /// TP-5 form.
-    pub(crate) fn requirements(
-        &self,
-        node: qsl_foundation::digest::WireNodeId,
-    ) -> crate::family::Requirements {
+    pub(crate) fn requirements(&self, node: NodeKey) -> crate::family::Requirements {
         let domains = std::collections::BTreeMap::from([(
             qsl_foundation::bound::DomainKey::Node {
                 node,
@@ -1519,7 +1615,7 @@ impl CheckedRefinement {
         &self.abstract_model
     }
 
-    /// The selected package identity and digest for the abstract model.
+    /// The selected package identity for the abstract model.
     pub fn abstract_model_selection(&self) -> &DomainPackageRef {
         &self.abstract_model_selection
     }
@@ -1542,7 +1638,7 @@ impl CheckedRefinement {
         &self.concrete_model
     }
 
-    /// The selected package identity and digest for the concrete model.
+    /// The selected package identity for the concrete model.
     pub fn concrete_model_selection(&self) -> &DomainPackageRef {
         &self.concrete_model_selection
     }
@@ -1569,18 +1665,18 @@ impl CheckedRefinement {
 
     /// The protocol clause the step rows select (FR-136 "Selecting the
     /// concrete protocol"); `None` for a model subject.
-    pub fn concrete_protocol(&self) -> Option<NodeKey> {
-        self.concrete_protocol
+    pub fn concrete_protocol(&self) -> Option<&NodeKey> {
+        self.concrete_protocol.as_ref()
     }
 
     /// The abstract model's `model_root` node (QSpec FR-375).
-    pub fn abstract_subject_node(&self) -> Option<NodeKey> {
-        self.abstract_subject_node
+    pub fn abstract_subject_node(&self) -> Option<&NodeKey> {
+        self.abstract_subject_node.as_ref()
     }
 
     /// The concrete model's `model_root` node (QSpec FR-375).
-    pub fn concrete_subject_node(&self) -> Option<NodeKey> {
-        self.concrete_subject_node
+    pub fn concrete_subject_node(&self) -> Option<&NodeKey> {
+        self.concrete_subject_node.as_ref()
     }
 
     /// The authored refinement declaration span.
@@ -1597,8 +1693,8 @@ impl CheckedRefinement {
 
     /// The abstract protocol clause's node of a protocol subject, once it is
     /// minted.
-    pub fn abstract_protocol(&self) -> Option<NodeKey> {
-        self.abstract_protocol
+    pub fn abstract_protocol(&self) -> Option<&NodeKey> {
+        self.abstract_protocol.as_ref()
     }
 
     /// The class catalog lowered to node keys, when every class node of it
@@ -1787,7 +1883,7 @@ impl<'a> Side<'a> {
             .map(|(key, id)| {
                 Ok(ObjectType {
                     name: types
-                        .object_type(id)
+                        .object_type(id.clone())
                         .ok_or("admitted-object-type-is-in-the-environment")?
                         .name()
                         .to_owned(),
@@ -1807,7 +1903,7 @@ impl<'a> Side<'a> {
                 .state_machine_types()
                 .map(|(key, id)| {
                     let name = types
-                        .object_type(id)
+                        .object_type(id.clone())
                         .ok_or("admitted-state-machine-is-in-the-type-environment")?
                         .name()
                         .to_owned();
@@ -1935,9 +2031,11 @@ fn conforms(types: &TypeEnvironment, actual: &ValueType, required: &ValueType) -
         (ValueType::Int(source), ValueType::Int(target)) => {
             target.lower() <= source.lower() && source.upper() <= target.upper()
         }
-        (ValueType::Reference(sub), ValueType::Reference(sup)) => types.conforms(*sub, *sup),
+        (ValueType::Reference(sub), ValueType::Reference(sup)) => {
+            types.conforms(sub.clone(), sup.clone())
+        }
         (ValueType::Composite(sub), ValueType::Composite(sup)) => {
-            types.composite_conforms(*sub, *sup)
+            types.composite_conforms(sub.clone(), sup.clone())
         }
         _ => actual == required,
     }
@@ -1982,9 +2080,9 @@ fn holds_reference(
             if seen.contains(key) {
                 return Ok(false);
             }
-            seen.push(*key);
+            seen.push(key.clone());
             let declaration = types
-                .composite(*key)
+                .composite(key.clone())
                 .ok_or("composite-type-has-a-declaration")?;
             match declaration.shape() {
                 CompositeShape::Record(fields) => {
@@ -2020,7 +2118,7 @@ fn holds_reference(
 fn lift(lifting: &BTreeMap<EffectiveId, EffectiveId>, value_type: &ValueType) -> ValueType {
     match value_type {
         ValueType::Reference(object) => {
-            ValueType::Reference(lifting.get(object).copied().unwrap_or(*object))
+            ValueType::Reference(lifting.get(object).unwrap_or(object).clone())
         }
         ValueType::Option(payload) => ValueType::option(lift(lifting, payload)),
         ValueType::Collection(collection) => {
@@ -2073,7 +2171,6 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
     declarations: &'c ClauseDeclarations<'a>,
     cx: &mut CheckContext<'a, ClauseDeclarations<'a>>,
     env: &RefinementEnv<'c>,
-    identity: qsl_foundation::IdentityLimits,
 ) -> (RefinementCheck<'f>, u64) {
     let form = &declaration.form;
     let mut findings = Findings {
@@ -2181,7 +2278,6 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
         protocols,
         abstract_side,
         concrete_side,
-        identity,
         findings,
         nodes: &mut nodes,
         lifting: BTreeMap::new(),
@@ -2312,7 +2408,6 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
         // not wait on them (FR-136 "Order of the checks").
         Some((selection, rows)) => RefinementCheck::Protocol(Box::new(ProtocolRefinement {
             checked,
-            identity,
             operations,
             written,
             selection,
@@ -2426,7 +2521,8 @@ fn resolve_protocol(
         let object_types = abstract_side.object_types(types).unwrap_or_default();
         checked.roles.iter().any(|role| {
             role.context
-                .is_some_and(|context| object_types.iter().any(|object| object.id == context))
+                .as_ref()
+                .is_some_and(|context| object_types.iter().any(|object| object.id == *context))
                 || role.model_selection.as_deref()
                     == Some(abstract_side.model.selection().identity.as_str())
         })
@@ -2522,7 +2618,6 @@ struct Checker<'c, 'a> {
     protocols: &'c [ProtocolDeclarationForm],
     abstract_side: Side<'c>,
     concrete_side: Side<'c>,
-    identity: qsl_foundation::IdentityLimits,
     findings: Findings,
     nodes: &'c mut u64,
     /// Each abstract object type an object row maps, with the concrete type
@@ -2556,11 +2651,10 @@ struct Checker<'c, 'a> {
 /// infinite-trace profile does not admit, with the token span and the layer
 /// that admits it (QSpec FR-375 "Row layers").
 fn unsupported_row_form(expression: &ExpressionForm) -> Option<(&'static str, Span)> {
-    let lock = DefinitionLock::pinned();
-    let required: std::collections::BTreeSet<_> = lock
-        .admitted_forms(HeaderLayer::ValueComplete)
+    let required: std::collections::BTreeSet<_> = HeaderLayer::ValueComplete
+        .admitted_forms()
         .into_iter()
-        .chain(lock.admitted_forms(HeaderLayer::ModelComplete))
+        .chain(HeaderLayer::ModelComplete.admitted_forms())
         .collect();
     let predicates = std::collections::BTreeSet::new();
     let mut unsupported = None;
@@ -2583,7 +2677,7 @@ fn unsupported_row_form(expression: &ExpressionForm) -> Option<(&'static str, Sp
                     } else {
                         HeaderLayer::ALL
                             .into_iter()
-                            .find(|layer| lock.admits(*layer, form))
+                            .find(|layer| layer.admits(form))
                             .map(HeaderLayer::identity)
                     }
                 }),
@@ -2629,7 +2723,7 @@ impl<'c, 'a> Checker<'c, 'a> {
                     Some(ScopedPopulation {
                         name: population.name,
                         key: population.record.key.clone(),
-                        member: member.id,
+                        member: member.id.clone(),
                     })
                 })
                 .collect(),
@@ -2718,12 +2812,12 @@ impl<'c, 'a> Checker<'c, 'a> {
                 }
             }
             if let Some(source) = source {
-                let Some(order_key) =
-                    super::lowering::population_node(&target.record.key, self.identity)
-                        .ok()
-                        .flatten()
-                        .map(|node| node.key())
-                else {
+                let Ok(order_key) = super::lowering::model_declaration_key(
+                    &target.record.key.package,
+                    super::NodeTag::Relation,
+                    "population",
+                    &target.record.key.node,
+                ) else {
                     self.fault("admitted-abstract-population-has-a-population-node-key");
                     continue;
                 };
@@ -2764,9 +2858,9 @@ impl<'c, 'a> Checker<'c, 'a> {
             .filter(|object| {
                 members
                     .iter()
-                    .any(|member| self.types().conforms(object.id, *member))
+                    .any(|member| self.types().conforms(object.id.clone(), member.clone()))
             })
-            .map(|object| object.id)
+            .map(|object| object.id.clone())
             .collect()
     }
 
@@ -2872,7 +2966,7 @@ impl<'c, 'a> Checker<'c, 'a> {
                             .member_types
                             .iter()
                             .filter_map(|key| self.concrete_side.model.effective_id(key))
-                            .any(|member| self.types().conforms(source.id, member))
+                            .any(|member| self.types().conforms(source.id.clone(), member))
                     })
                 {
                     self.findings.malformed(&row.source.name, row.source.span);
@@ -2889,14 +2983,14 @@ impl<'c, 'a> Checker<'c, 'a> {
                 );
                 continue;
             }
-            first_rows.insert(target.id, row.span);
-            self.lifting.insert(target.id, source.id);
+            first_rows.insert(target.id.clone(), row.span);
+            self.lifting.insert(target.id.clone(), source.id.clone());
             resolved.push((row, target, source));
         }
         let mut reported = std::collections::BTreeSet::new();
         for population in &named {
             for id in self.admitted(population, &abstract_types) {
-                if !first_rows.contains_key(&id) && reported.insert(id) {
+                if !first_rows.contains_key(&id) && reported.insert(id.clone()) {
                     let name = abstract_types
                         .iter()
                         .find(|object| object.id == id)
@@ -2915,7 +3009,7 @@ impl<'c, 'a> Checker<'c, 'a> {
             .iter()
             .filter(|ty| ty.kind == RefinementTypeKind::StateMachine)
         {
-            if !first_rows.contains_key(&machine.id) && reported.insert(machine.id) {
+            if !first_rows.contains_key(&machine.id) && reported.insert(machine.id.clone()) {
                 self.findings.refuse(
                     form.name.span,
                     RefinementCause::MissingRow {
@@ -2970,7 +3064,7 @@ impl<'c, 'a> Checker<'c, 'a> {
         let mut complete = true;
         for field in &row.fields {
             let written = field.field.name.as_str();
-            let Some(attribute) = types.attribute(target.id, written) else {
+            let Some(attribute) = types.attribute(target.id.clone(), written) else {
                 // The protocol's state takes no row (FR-147 "Abstract side").
                 if self
                     .protocol
@@ -3014,7 +3108,7 @@ impl<'c, 'a> Checker<'c, 'a> {
                 &field.value,
                 &required,
                 RowContext {
-                    parameters: vec![("self".to_owned(), ValueType::Reference(source.id))],
+                    parameters: vec![("self".to_owned(), ValueType::Reference(source.id.clone()))],
                     kind: qsl_forms::StateClauseKind::Invariant,
                     operation: None,
                     label: format!("{}.{written}", target.name),
@@ -3037,7 +3131,7 @@ impl<'c, 'a> Checker<'c, 'a> {
             }
         }
         let mut hidden = Vec::new();
-        let Some(attributes) = types.attributes(target.id) else {
+        let Some(attributes) = types.attributes(target.id.clone()) else {
             self.fault("abstract-object-type-has-attributes");
             return None;
         };
@@ -3108,7 +3202,7 @@ impl<'c, 'a> Checker<'c, 'a> {
                 self.concrete_side.model,
                 self.declarations.models,
                 self.clock_reading,
-                *object,
+                object,
             ) {
                 self.findings.refuse(span, RefinementCause::ClockRead);
                 return None;
@@ -3397,13 +3491,13 @@ impl<'c, 'a> Checker<'c, 'a> {
             };
             let display = format!(
                 "{}::{}",
-                types.object_type(declaring).map_or(
+                types.object_type(declaring.clone()).map_or(
                     "",
                     quire_semantic_value::declaration::ObjectTypeDeclaration::name
                 ),
                 concrete.name()
             );
-            if let Some(first) = first_rows.get(&(declaring, concrete.name().to_owned())) {
+            if let Some(first) = first_rows.get(&(declaring.clone(), concrete.name().to_owned())) {
                 self.findings.refuse(
                     row.span,
                     RefinementCause::Conflicting {
@@ -3413,9 +3507,9 @@ impl<'c, 'a> Checker<'c, 'a> {
                 );
                 continue;
             }
-            first_rows.insert((declaring, concrete.name().to_owned()), row.span);
+            first_rows.insert((declaring.clone(), concrete.name().to_owned()), row.span);
             let clause_operation = ClauseOperation {
-                declaring,
+                declaring: declaring.clone(),
                 declaration: concrete.clone(),
             };
             let Some(key) = self.concrete_side.model.operation_key(&clause_operation) else {
@@ -3449,7 +3543,7 @@ impl<'c, 'a> Checker<'c, 'a> {
             let Some(owner) = self
                 .concrete_side
                 .model
-                .declaration_key(object.id)
+                .declaration_key(object.id.clone())
                 .and_then(|owner| type_identity_segment(&owner.package, &owner.node))
             else {
                 self.fault("concrete-object-has-alias-free-identity-segment");
@@ -3459,7 +3553,7 @@ impl<'c, 'a> Checker<'c, 'a> {
                 // FR-146 "Claim extent": the receiver, result and parameter
                 // types, each `_` argument's abstract parameter domain, and
                 // the context population.
-                let mut root_types = vec![ValueType::Reference(object.id)];
+                let mut root_types = vec![ValueType::Reference(object.id.clone())];
                 root_types.extend(concrete.result().cloned());
                 root_types.extend(
                     concrete
@@ -3470,7 +3564,7 @@ impl<'c, 'a> Checker<'c, 'a> {
                 root_types.extend(open);
                 let context = super::state_clause::population_of(
                     std::slice::from_ref(self.concrete_side.model),
-                    object.id,
+                    object.id.clone(),
                     types,
                 );
                 steps.push((
@@ -3493,8 +3587,8 @@ impl<'c, 'a> Checker<'c, 'a> {
         // attempt of it has no node row, which coverage decides.
         if selection.is_none() {
             for object in &concrete_types {
-                for operation in scope.operations().declared_by(object.id) {
-                    if !first_rows.contains_key(&(object.id, operation.name().to_owned())) {
+                for operation in scope.operations().declared_by(object.id.clone()) {
+                    if !first_rows.contains_key(&(object.id.clone(), operation.name().to_owned())) {
                         self.findings.refuse(
                             form.name.span,
                             RefinementCause::MissingRow {
@@ -3530,7 +3624,9 @@ impl<'c, 'a> Checker<'c, 'a> {
             let object = types.iter().find(|object| object.name == type_name)?;
             Some((
                 object,
-                scope.operations().resolve(self.types(), object.id, member),
+                scope
+                    .operations()
+                    .resolve(self.types(), object.id.clone(), member),
             ))
         });
         match lookup {
@@ -3623,7 +3719,7 @@ impl<'c, 'a> Checker<'c, 'a> {
                 return None;
             }
         }
-        let mut parameters = vec![("self".to_owned(), ValueType::Reference(object.id))];
+        let mut parameters = vec![("self".to_owned(), ValueType::Reference(object.id.clone()))];
         parameters.extend(concrete.parameters().iter().cloned());
         let mut checked = Vec::new();
         let mut complete = true;
@@ -3708,7 +3804,8 @@ impl<'c, 'a> Checker<'c, 'a> {
             self.fault("abstract-operation-has-a-declaration-key");
             return None;
         };
-        let mut context_parameters = vec![("self".to_owned(), ValueType::Reference(object.id))];
+        let mut context_parameters =
+            vec![("self".to_owned(), ValueType::Reference(object.id.clone()))];
         context_parameters.extend(concrete.parameters().iter().cloned());
         let context = |parameters: &Vec<(String, ValueType)>| RowContext {
             parameters: parameters.clone(),
@@ -3719,7 +3816,7 @@ impl<'c, 'a> Checker<'c, 'a> {
             field_row: false,
         };
         let mut complete = true;
-        let receiver_type = lift(&self.lifting, &ValueType::Reference(target_type.id));
+        let receiver_type = lift(&self.lifting, &ValueType::Reference(target_type.id.clone()));
         let receiver = match &arguments[0] {
             ArgumentForm::Expression(expression) => {
                 self.check_row(expression, &receiver_type, context(&context_parameters), cx)
@@ -3799,7 +3896,10 @@ impl<'c, 'a> Checker<'c, 'a> {
             let resolve = |types: &[ObjectType]| {
                 let (type_name, member) = split_member(&written.operation.name)?;
                 let object = types.iter().find(|object| object.name == type_name)?;
-                match scope.operations().resolve(self.types(), object.id, member) {
+                match scope
+                    .operations()
+                    .resolve(self.types(), object.id.clone(), member)
+                {
                     OperationLookup::Declared {
                         declaring,
                         operation,
@@ -3962,7 +4062,7 @@ fn population_uses(
                 Err(Some(depends_on_size()))
             } else {
                 Err(None)
-            }
+            };
         }
     };
     let Some(population) = scope.populations.iter().find(|found| found.key == key) else {
@@ -3973,7 +4073,7 @@ fn population_uses(
         span,
         population: population.name.clone(),
         key,
-        member: population.member,
+        member: population.member.clone(),
         value,
         required: required.clone(),
     };
@@ -3982,7 +4082,7 @@ fn population_uses(
     let independent = match (&used.value, required) {
         (PopulationValue::Objects, ValueType::Collection(collection)) => {
             collection.kind() == CollectionKind::Set
-                && collection.element() == &ValueType::Reference(used.member)
+                && matches!(collection.element(), ValueType::Reference(member) if *member == used.member)
                 // `n` may be 0, so a minimum above 0 is never met.
                 && collection.bound().is_none_or(|bound| bound.minimum() == 0)
         }
@@ -4037,12 +4137,26 @@ pub(crate) fn not_emitted(name: String, span: Span) -> CheckRefusal {
 #[cfg(test)]
 mod tests {
     use ix_trace_rs::trace;
-    use quire_exact::{CollectionKind, CollectionType, NodeKey, Presence};
+    use quire_exact::{
+        CollectionKind, CollectionType, NodeKey, OriginalDeclarationKey, PathSegment, Presence,
+    };
     use quire_semantic_value::declaration::{
         CompositeDeclaration, CompositeShape, FieldDeclaration,
     };
 
     use super::*;
+
+    fn node(index: u8) -> NodeKey {
+        NodeKey::new("test", vec![PathSegment::Text(format!("Node{index}"))], 0)
+            .expect("a valid structural key")
+    }
+
+    fn effective(index: u8) -> EffectiveId {
+        EffectiveId::new(
+            None,
+            OriginalDeclarationKey::new("test", format!("Node{index}")),
+        )
+    }
 
     /// FR-359: a record conforms to the record it specializes and to no
     /// other; a parent does not conform to its child, and a collection of the
@@ -4051,7 +4165,7 @@ mod tests {
     #[trace("TC-541")]
     #[test]
     fn a_record_conforms_to_its_ancestor_only() {
-        let [money, taxed, fee] = [1, 2, 3].map(|byte| NodeKey::from_digest([byte; 32]));
+        let [money, taxed, fee] = [1, 2, 3].map(node);
         let record = |key, name: &str, supertypes: Vec<NodeKey>| {
             CompositeDeclaration::new(
                 key,
@@ -4066,39 +4180,39 @@ mod tests {
         };
         let types = TypeEnvironment::new(
             [
-                record(money, "Money", vec![]),
-                record(taxed, "TaxedMoney", vec![money]),
-                record(fee, "Fee", vec![]),
+                record(money.clone(), "Money", vec![]),
+                record(taxed.clone(), "TaxedMoney", vec![money.clone()]),
+                record(fee.clone(), "Fee", vec![]),
             ],
             [],
         )
         .expect("the records admit");
-        let record = ValueType::Composite;
-        assert!(conforms(&types, &record(taxed), &record(money)));
-        assert!(conforms(&types, &record(money), &record(money)));
-        assert!(!conforms(&types, &record(money), &record(taxed)));
-        assert!(!conforms(&types, &record(fee), &record(money)));
+        let record = |key: &NodeKey| ValueType::Composite(key.clone());
+        assert!(conforms(&types, &record(&taxed), &record(&money)));
+        assert!(conforms(&types, &record(&money), &record(&money)));
+        assert!(!conforms(&types, &record(&money), &record(&taxed)));
+        assert!(!conforms(&types, &record(&fee), &record(&money)));
         let sequence_of = |element| {
             ValueType::collection(CollectionType::new(CollectionKind::Sequence, element, None))
         };
         assert!(!conforms(
             &types,
-            &sequence_of(record(taxed)),
-            &sequence_of(record(money))
+            &sequence_of(record(&taxed)),
+            &sequence_of(record(&money))
         ));
         assert!(!conforms(
             &types,
-            &ValueType::option(record(taxed)),
-            &ValueType::option(record(money))
+            &ValueType::option(record(&taxed)),
+            &ValueType::option(record(&money))
         ));
         assert!(conforms(
             &types,
-            &ValueType::option(record(money)),
-            &ValueType::option(record(money))
+            &ValueType::option(record(&money)),
+            &ValueType::option(record(&money))
         ));
     }
     fn reference(byte: u8) -> ValueType {
-        ValueType::Reference(quire_exact::EffectiveId::from_digest([byte; 32]))
+        ValueType::Reference(effective(byte))
     }
 
     fn map_of(values: ValueType, bound: Option<quire_exact::CardinalityBound>) -> ValueType {
@@ -4129,7 +4243,7 @@ mod tests {
         );
         let bounded = ValueType::BoundedQuantity(std::sync::Arc::new(
             quire_exact::BoundedQuantityType::new(
-                quire_exact::UnitId::compound([5; 32]),
+                quire_exact::UnitId::compound(vec![(node(5), Integer::one())]),
                 None,
                 None,
             )
@@ -4142,8 +4256,8 @@ mod tests {
     /// values, and the map keeps its bound; a bounded quantity is unchanged.
     #[test]
     fn lifting_reaches_a_reference_inside_a_map_value() {
-        let abstract_type = quire_exact::EffectiveId::from_digest([1; 32]);
-        let concrete = quire_exact::EffectiveId::from_digest([2; 32]);
+        let abstract_type = effective(1);
+        let concrete = effective(2);
         let lifting = BTreeMap::from([(abstract_type, concrete)]);
         let bound = quire_exact::CardinalityBound::new(1, 3).expect("a bound");
         assert_eq!(

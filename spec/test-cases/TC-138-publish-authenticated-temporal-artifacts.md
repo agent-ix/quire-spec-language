@@ -29,11 +29,10 @@ add, omit and rename a parameter-map key independently.
 
 Remove, duplicate, reorder and append one binding; cross its declaration and
 definition indices; substitute each definition identity, revision, artifact
-reference, raw byte digest and raw bytes; cross every pair of clock alternatives;
+reference and raw bytes; cross every pair of clock alternatives;
 and use empty and over-byte-limit names. Exercise zero, negative, unreduced and
-component-overflow periods plus a changed epoch or unit. Re-seal each mutated
-candidate so the test reaches the owning validation rather than passing on an
-earlier digest mismatch.
+component-overflow periods plus a changed epoch or unit. Require each mutation
+to reach its owning selection or semantic validation for the altered values.
 
 Exercise `mapping_support_v2` without a trace and require its admitted
 definition/profile binding before formula classification. For progress, attempt
@@ -53,16 +52,16 @@ one-short and raised-above-default limits.
 Import the public `protocol_artifact::handoff` member-name and mutation format
 constants. Call `write_v2` into a temporary directory, join each member name to
 that directory, require every named file to exist, decode the named mutation
-manifest, and compare its base offer, artifact reference, independent selection
-and format fields with the published constants, and require each of those base
-files to exist, without consulting an environment variable or redeclaring a
-path, filename or format literal in the consumer harness (FR-050-AC-7).
+manifest, and compare its base offer, independent selection and format fields
+with the published constants, and require each of those base files to exist,
+without consulting an environment variable or redeclaring a path, filename or
+format literal in the consumer harness (FR-050-AC-7).
 
 Behind the `handoff-writer` feature, call `protocol_artifact::handoff::write_v2`
 twice, each time into a fresh temporary directory, from a test that calls only
 that public function -- exactly as a downstream crate would. Confirm the two
-written trees are byte-identical, that each written clock
-input's bytes match its selection entry's digest, and that the strict `/2`
+written trees are byte-identical, that each written clock input is the one named
+by the selection, and that the strict `/2`
 reader admits the written offer against the written selection with no other
 input. Decode the written mutation manifest, confirm every case's referenced
 file(s) exist, and replay one case's exact bytes through the strict `/2`
@@ -71,23 +70,12 @@ third time into an already-existing directory and require refusal, and confirm
 that directory's contents, including a sentinel file already there, are
 unchanged.
 
-Require `protocol_artifact::handoff::SOURCE_ROOT` to name the crate's manifest
-directory, with the authored sources the writers read beneath it (FR-050-AC-11).
-Require the handoff module to export none of `PUBLISHED_HANDOFF`,
-`PUBLISHED_V1_HANDOFF` and `PUBLISHED_CHECKSUMS_FILE`, asserting each name
-separately (FR-050-AC-12).
-
 Separately, `make ci`'s `ci-clean-build` target runs `cargo check -p
 quire-spec-language --lib --no-default-features --features handoff-writer`:
 the no-dev-dependency acceptance this step's test cannot demonstrate by
 itself, because a test in this crate's own `tests/` always builds inside its
 dev-dependency closure. That `cargo check` line is what actually resolves
 `write_v2`'s dependency graph with no dev-dependency in it.
-
-Tracked-files step: in a git checkout (CI only; not in a crate tarball or git
-dependency), run `git ls-files artifacts/compiled-protocol-v2` and require empty
-output (FR-050-AC-9), and require `git ls-files` to list no checksum manifest
-of `/1` or `/2` handoff files (FR-050-AC-10).
 
 ## Expected Results
 

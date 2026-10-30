@@ -15,8 +15,6 @@ use crate::{check_cancel, EntryBudget, InspectCause, InspectLimits, View};
 pub struct OutcomeView<'a> {
     /// The typed terminal document.
     pub document: &'a qsl_replay::OutcomeDocument,
-    /// The package identity associated with occurrence loci, when supplied.
-    pub package_id: Option<qsl_semantics::library::PackageId>,
     /// The document's loci and their corresponding source regions.
     pub loci: Vec<(Option<qsl_replay::OutcomeLocus>, Vec<SourceRegion>)>,
 }
@@ -25,7 +23,6 @@ pub struct OutcomeView<'a> {
 pub fn inspect_outcome<'a>(
     document: &'a qsl_replay::OutcomeDocument,
     occurrence_keys: &[Option<OccurrenceKey>],
-    package_id: Option<qsl_semantics::library::PackageId>,
     emission: Option<&'a qsl_package::Emission>,
     limits: InspectLimits,
     cancel: &Cancel,
@@ -35,11 +32,6 @@ pub fn inspect_outcome<'a>(
         return Err(StageFailure::Refused(InspectCause::IncompatibleSelection {
             selector: String::from("outcome"),
         }));
-    }
-    if let (Some(package_id), Some(emission)) = (package_id, emission) {
-        if package_id != emission.package().package_id() {
-            return Err(StageFailure::Refused(InspectCause::PackageEmissionMismatch));
-        }
     }
     let mut budget = EntryBudget::new(limits);
     let mut projected = Vec::with_capacity(occurrence_keys.len());
@@ -53,7 +45,6 @@ pub fn inspect_outcome<'a>(
                     SourceRegion::new(source.clone(), *start, *end).map_err(|_| {
                         StageFailure::Refused(InspectCause::SourceCorrespondence {
                             selector: String::from("outcome region"),
-                            package_id: package_id.map_or_else(String::new, |id| id.hex()),
                         })
                     })?,
                 ]
@@ -67,26 +58,13 @@ pub fn inspect_outcome<'a>(
                 let Some(emission) = emission else {
                     return Err(StageFailure::Refused(InspectCause::SourceCorrespondence {
                         selector: alloc::format!("{}", key),
-                        package_id: package_id.map_or_else(String::new, |id| id.hex()),
                     }));
                 };
-                if let Some(package_id) = package_id {
-                    if package_id != emission.package().package_id() {
-                        return Err(StageFailure::Refused(InspectCause::SourceCorrespondence {
-                            selector: alloc::format!("{}", key),
-                            package_id: package_id.hex(),
-                        }));
-                    }
-                }
                 match emission.source_map().regions(key) {
                     Some(regions) => regions.to_vec(),
                     None => {
                         return Err(StageFailure::Refused(InspectCause::SourceCorrespondence {
                             selector: alloc::format!("{}", key),
-                            package_id: package_id.map_or_else(
-                                || emission.package().package_id().hex(),
-                                |id| id.hex(),
-                            ),
                         }))
                     }
                 }
@@ -94,7 +72,6 @@ pub fn inspect_outcome<'a>(
             (Some(qsl_replay::OutcomeLocus::Occurrence { occurrence }), None) => {
                 return Err(StageFailure::Refused(InspectCause::SourceCorrespondence {
                     selector: occurrence.clone(),
-                    package_id: package_id.map_or_else(String::new, |id| id.hex()),
                 }));
             }
             (Some(qsl_replay::OutcomeLocus::Artifact { .. }), None)
@@ -113,7 +90,6 @@ pub fn inspect_outcome<'a>(
     }
     Ok(Staged::new(View::Outcome(OutcomeView {
         document,
-        package_id,
         loci: projected,
     })))
 }
@@ -124,7 +100,7 @@ pub struct AssignmentView<'a> {
     /// The declared parameter name.
     pub parameter: &'a str,
     /// The parameter's checked wire identity.
-    pub identity: qsl_foundation::digest::WireNodeId,
+    pub identity: &'a quire_exact::NodeKey,
     /// The typed assignment value.
     pub value: &'a qsl_replay::WitnessValue,
 }
@@ -165,7 +141,7 @@ pub fn inspect_counterexample<'a>(
         };
         named.push(AssignmentView {
             parameter: name.as_str(),
-            identity: assignment.parameter,
+            identity: &assignment.parameter,
             value: &assignment.value,
         });
     }
@@ -340,7 +316,6 @@ mod tests {
     use ix_trace_rs::trace;
     use qsl_foundation::{
         diagnostic::StageFailure,
-        digest::{DigestDomain, DigestRecord, WireNodeId},
         source::provenance::{RawSourceRef, SourceRegion},
     };
     use qsl_semantics::model::observation::DocumentRef;
@@ -354,8 +329,7 @@ mod tests {
             authority: String::from("tests"),
             identity: String::from("snapshot"),
             revision_namespace: String::from("test"),
-            revision: String::from("1"),
-            digest: [digest; 32],
+            revision: digest.to_string(),
         }
     }
 
@@ -407,6 +381,15 @@ mod tests {
         ));
     }
 
+    fn fixture_node(name: &str) -> quire_exact::NodeKey {
+        quire_exact::NodeKey::new(
+            "fixture",
+            vec![quire_exact::PathSegment::Text(name.to_owned())],
+            0,
+        )
+        .expect("a fixture node key is well formed")
+    }
+
     #[trace("TC-782", "FR-297-AC-3")]
     #[test]
     fn counterexample_assignments_join_to_parameter_names_by_identity() {
@@ -415,18 +398,18 @@ mod tests {
             Identifier::new("seven").unwrap(),
         ])
         .unwrap();
-        let parameter = WireNodeId::from_digest([9; 32]);
+        let parameter = fixture_node("parameter");
         let site = qsl_replay::FunctionSite {
-            function: WireNodeId::from_digest([8; 32]),
+            function: fixture_node("function"),
             declaration: qsl_foundation::source::provenance::OccurrenceKey::new(
-                WireNodeId::from_digest([8; 32]),
+                fixture_node("function"),
                 Origin::new(Role::new("declaration"), 0),
             ),
-            parameters: vec![(Identifier::new("x").unwrap(), parameter)],
+            parameters: vec![(Identifier::new("x").unwrap(), parameter.clone())],
             value_parity: None,
         };
         let assignments = [qsl_replay::CanonicalAssignment {
-            parameter,
+            parameter: parameter.clone(),
             value: qsl_replay::WitnessValue::Boolean(true),
         }];
         let result = inspect_counterexample(
@@ -443,19 +426,14 @@ mod tests {
         };
         assert_eq!(view.function, &function);
         assert_eq!(view.assignments[0].parameter, "x");
-        assert_eq!(view.assignments[0].identity, parameter);
+        assert_eq!(view.assignments[0].identity, &parameter);
         assert_eq!(view.certification, Some(qsl_replay::Certification::Trusted));
     }
 
     #[trace("TC-782", "FR-297-AC-6")]
     #[test]
     fn outcome_region_locus_is_retained_without_source_bytes() {
-        let source = RawSourceRef::new(
-            "tests",
-            "source",
-            DigestRecord::mint(DigestDomain::SourceBytesV1, [3; 32]),
-        )
-        .unwrap();
+        let source = RawSourceRef::new("tests", "source").unwrap();
         let region = SourceRegion::new(source.clone(), 4, 11).unwrap();
         let diagnostic = qsl_replay::OutcomeDiagnostic::new(
             None,
@@ -476,7 +454,6 @@ mod tests {
         let result = inspect_outcome(
             &document,
             &[None],
-            None,
             None,
             InspectLimits::default(),
             &Cancel::new(),

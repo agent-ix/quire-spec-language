@@ -39,13 +39,13 @@
 
 use std::collections::BTreeSet;
 
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::MemoryModelName;
 use qsl_semantics::check::{
     CheckedGraph, CheckedProtocol, CheckedRefinement, CheckedTerminalMember, TerminalDeclaration,
 };
 use qsl_semantics::model::observation::DocumentRef;
+use quire_exact::NodeKey;
 
 use crate::reductions::{ObligationReductions, Reductions};
 
@@ -207,7 +207,7 @@ impl<S> ItemObligation<S> {
 /// another model of the package has no effect on it.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct SubjectReading {
-    roots: BTreeSet<WireNodeId>,
+    roots: BTreeSet<NodeKey>,
     opted_out: bool,
     timed: bool,
     /// For a protocol subject, what its clause gives the derivation.
@@ -220,7 +220,7 @@ pub struct SubjectReading {
 struct ProtocolReading {
     /// The clause's node; `None` for a clause with no node. A subject names
     /// one protocol clause, so every reading of it has the same node.
-    node: Option<WireNodeId>,
+    node: Option<NodeKey>,
     /// The resolved model of each outermost `parallel`, by scoped path, in
     /// ascending path order. They are part of the protocol subject (QSpec
     /// FR-425), so two readings with other models are two subjects.
@@ -239,7 +239,7 @@ impl SubjectReading {
             roots: package
                 .model_roots()
                 .filter(|(selection, _)| reads(&selection.identity))
-                .map(|(_, key)| WireNodeId::from_digest(*key.as_bytes()))
+                .map(|(_, key)| key)
                 .collect(),
             opted_out: package.terminals().iter().any(|terminal| {
                 own(terminal.model()) && matches!(terminal.declaration(), TerminalDeclaration::Any)
@@ -268,13 +268,15 @@ impl SubjectReading {
     /// The reading of a subject that two caller items read: the union of
     /// their rows and marks.
     fn merge(&mut self, other: &Self) {
-        self.roots.extend(other.roots.iter().copied());
+        self.roots.extend(other.roots.iter().cloned());
         self.opted_out |= other.opted_out;
         self.timed |= other.timed;
         match (&mut self.protocol, &other.protocol) {
             (None, Some(protocol)) => self.protocol = Some(protocol.clone()),
             (Some(seen), Some(protocol)) => {
-                seen.node = seen.node.or(protocol.node);
+                if seen.node.is_none() {
+                    seen.node.clone_from(&protocol.node);
+                }
                 seen.races |= protocol.races;
             }
             (_, None) => {}
@@ -308,12 +310,13 @@ impl SubjectReading {
         if let Some(protocol) = &self.protocol {
             return protocol
                 .node
+                .clone()
                 .map(OccurrenceKey::declaration)
                 .ok_or(NoAnchor::NoProtocolProfile);
         }
         let mut roots = self.roots.iter();
         match (roots.next(), roots.next()) {
-            (Some(root), None) => Ok(OccurrenceKey::generated(*root)),
+            (Some(root), None) => Ok(OccurrenceKey::generated(root.clone())),
             (None, _) => Err(NoAnchor::NoSelection),
             (Some(_), Some(_)) => Err(NoAnchor::SeveralSelections {
                 rows: self.roots.len(),
@@ -430,10 +433,7 @@ impl<S: Clone> ProtocolTemporalItem<'_, S> {
             opted_out: matches!(self.protocol.slots.terminal, CheckedTerminalMember::Any),
             timed: false,
             protocol: Some(ProtocolReading {
-                node: self
-                    .protocol
-                    .node()
-                    .map(|key| WireNodeId::from_digest(*key.as_bytes())),
+                node: self.protocol.node(),
                 models: self.models.to_vec(),
                 races: weak && self.non_atomic_access,
             }),

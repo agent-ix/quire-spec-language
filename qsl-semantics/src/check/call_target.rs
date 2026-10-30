@@ -35,8 +35,8 @@ fn unions<'a>(typer: &Typer<'a>, qualifier: &str, member: &str) -> Vec<(NodeKey,
         .iter()
         .filter_map(|named| match named {
             ValueType::Composite(declaration) => {
-                let union = UnionRef::declared(scope.types(), *declaration)?;
-                Some((*declaration, union.position_of(member)?))
+                let union = UnionRef::declared(scope.types(), declaration.clone())?;
+                Some((declaration.clone(), union.position_of(member)?))
             }
             _ => None,
         })
@@ -49,7 +49,7 @@ fn names_a_union(typer: &Typer<'_>, qualifier: &str) -> bool {
     scope.named_types(qualifier).iter().any(|named| {
         matches!(named, ValueType::Composite(declaration)
         if matches!(
-            scope.types().composite(*declaration).map(|declared| declared.shape()),
+            scope.types().composite(declaration.clone()).map(|declared| declared.shape()),
             Some(CompositeShape::Union(_))
         ))
     })
@@ -88,7 +88,7 @@ pub(crate) fn resolve_target<'a, V>(
     if candidates > 1 && !(declared.is_empty() && import.is_none()) {
         let candidates = declared
             .iter()
-            .map(|(declaration, _)| QualifiedCandidate::Union(*declaration))
+            .map(|(declaration, _)| QualifiedCandidate::Union(declaration.clone()))
             .chain(enums.into_iter().map(QualifiedCandidate::Enum))
             .chain(import.map(QualifiedCandidate::Import))
             .collect();
@@ -102,7 +102,7 @@ pub(crate) fn resolve_target<'a, V>(
     }
     if let ([(declaration, position)], true) = (&declared[..], enums.is_empty() && import.is_none())
     {
-        let member = UnionRef::declared(scope.types(), *declaration)
+        let member = UnionRef::declared(scope.types(), declaration.clone())
             .and_then(|union| UnionMember::of(union, *position));
         if let Some(member) = member {
             return Ok(ResolvedTarget::UnionMember(member));

@@ -208,14 +208,14 @@ Each producer's locus is the position at which its charge failed:
 | S3, `Typer` and lowering, under `CheckingLimits` | the package-wide node count (NFR-011) | `Locus::Region` over the node whose entry failed the charge, resolved from its `quire_semantic_value::location::ExpressionLocation`. For the package-wide node count this is the node of whichever declaration was being checked when the running count passed the bound |
 | S3, a `choice`'s partition proof (FR-218), under `CheckingLimits` | the shared work meter, one unit per valuation, charged after the declaration's precheck and before its lowering | `Locus::Region` over the `choice`'s span |
 | S3, lowering's own work charge, under `CheckingLimits` (NFR-011) | the shared work meter lowering charges per node past a declaration's own precheck | `Locus::Region` over the node whose lowering charge crossed the bound, resolved from its `quire_semantic_value::location::ExpressionLocation` |
-| I2 reader, IR's reported limits | IR's `Bytes`, `Nodes`, `Edges`, `Occurrences`, `Diagnostics` and `Work` as input bytes, node count, edge count, occurrence count, diagnostic count and work budget | `Locus::Artifact` with the `raw-artifact-digest` digest record of the supplied bytes (FR-201, O-18) and the RFC 6901 pointer IR reports for the value at which the charge failed |
+| I2 reader, IR's reported limits | IR's `Bytes`, `Nodes`, `Edges`, `Occurrences`, `Diagnostics` and `Work` as input bytes, node count, edge count, occurrence count, diagnostic count and work budget | `Locus::Artifact` with the RFC 6901 pointer IR reports for the value at which the charge failed |
 
 `LimitExceeded`'s locus SHALL be absent in exactly these cases:
 
 1. The position resolves to no region (the four cases above).
 2. The I2 reader's own artifact byte ceiling. The reader refuses without
-   hashing the oversized bytes, which is the ceiling's purpose, and a digest
-   over them is the only name the artifact has.
+   reading the oversized bytes, which is the ceiling's purpose, and the
+   artifact has no other name to locate it by.
 3. An IR limit for which IR reports no pointer: IR's byte budget, which it
    charges against the whole input rather than at a value.
 
@@ -396,15 +396,15 @@ IR's `read_checked_package` decides the version (ADR-013 O-22 Package
 schema). When IR refuses the version, the I2 reader SHALL return
 `StageFailure::Refused` with code `unknown_wire`/`unsupported-wire`. Its
 fields are `actual`, the contract version IR read, and `expected`,
-`quire.checked-package/v2`. Its locus is `Locus::Artifact` with the supplied
-bytes' `raw-artifact-digest` record and the pointer `/contract_version`.
+`quire.checked-package/v2`. Its locus is `Locus::Artifact` with the pointer
+`/contract_version`.
 
 When IR refuses the bytes as not the RFC 8785 bytes of the document they
 hold (`noncanonical_wire`), the I2 reader SHALL refuse with the native code
 `noncanonical_wire`, not `invalid_package`.
 
 Every other IR refusal that IR reports at a value SHALL be located at
-`Locus::Artifact` with that digest and the RFC 6901 pointer IR reports. A
+`Locus::Artifact` with the RFC 6901 pointer IR reports. A
 refusal IR reports at no value, such as malformed JSON, SHALL carry no
 locus: the whole-document pointer would stand in for a position it does not
 name.
@@ -421,8 +421,8 @@ name.
 | FR-096-AC-6 | A family refusal of `lookup<T>(p, r) absent refused` with no member for `r` builds a `RefusalRecord` with code `invalid_runtime_input`/`absent-key`, category refusal, fields `binding` and `key` naming the population binding and the requested key, and `Locus::Region` over the span of the `lookup` expression. An `Evaluation` whose `location` is `None` builds a record with no locus. | Test |
 | FR-096-AC-7 | For each `CatalogCoded` cause in the key table (every row but the twelve kernel `Refusal` rows, which `kernel_refusal_record` maps and AC-8 checks), `catalog_fields()` holds exactly the keys the table lists for it. | Test |
 | FR-096-AC-8 | For each of the twelve kernel causes in the key table, a `RefusalRecord` built from an S6a `Evaluation` whose outcome is that kernel `Refused` carries the table's code and cause, category refusal, exactly the table's field keys and the evaluation's resolved locus, and `Refusal::code()` and `Refusal::cause()` return the same code and cause. The fields are spelled exactly: `IntegerOutOfDomain` for target `Int[-5, 9]` gives `expected` `Int[-5, 9]`; `DecimalOutOfDomain` for `Decimal[-100, 100; 0, 2]` gives `expected` `Decimal[-100, 100; 0, 2]`; `RationalOutOfDomain` for `Rational[-9, 9; 1, 9]` gives `expected` `Rational[-9, 9; 1, 9]`; `TextLengthOutOfDomain` for `Text[1, 8; nfc]` gives `expected` `Text[1, 8; nfc]`; `InexactDecimal` for an integer target `Int[0, 9]` gives `expected` `Int[0, 9]`; `IeeeNotExact` for a `binary32` result whose `nearest-even` flags are inexact and overflow gives `expected` `binary32` and `flags` `overflow,inexact`; `IeeeNanPayloadNotRepresentable` for a `binary64` to `binary32` conversion gives `expected` `binary32` and `actual` `binary64`. A kernel `CheckedInvariant` builds no record. | Test |
-| FR-096-AC-9 | The I2 reader, given bytes whose `contract_version` is `quire.checked-package/v3`, returns `StageFailure::Refused` with code `unknown_wire`/`unsupported-wire`, `actual` `quire.checked-package/v3`, `expected` `quire.checked-package/v2`, and `Locus::Artifact` whose digest is the `raw-artifact-digest` of those bytes and whose pointer is `/contract_version`. Given bytes that are not JSON, it refuses with no locus. A refusal IR reports at a value, such as a `package_id` digest domain, is located at `Locus::Artifact` with the bytes' `raw-artifact-digest` and the pointer of that value. | Test |
-| FR-096-AC-10 | The I2 reader, given a v2 wire whose graph has more nodes than its node bound `B`, returns `StageFailure::Limit` with kind node count, bound `B`, IR's consumed counter as actual, and `Locus::Artifact` with the bytes' `raw-artifact-digest` and the pointer IR reports. The same holds for IR's edge, occurrence, diagnostic and work limits, each with its own kind. Given bytes longer than its artifact byte ceiling, it returns kind input bytes with no locus. | Test |
+| FR-096-AC-9 | The I2 reader, given bytes whose `contract_version` is `quire.checked-package/v3`, returns `StageFailure::Refused` with code `unknown_wire`/`unsupported-wire`, `actual` `quire.checked-package/v3`, `expected` `quire.checked-package/v2`, and `Locus::Artifact` whose pointer is `/contract_version`. Given bytes that are not JSON, it refuses with no locus. A refusal IR reports at a value, such as a `package_id` of the wrong domain, is located at `Locus::Artifact` with the pointer of that value. | Test |
+| FR-096-AC-10 | The I2 reader, given a v2 wire whose graph has more nodes than its node bound `B`, returns `StageFailure::Limit` with kind node count, bound `B`, IR's consumed counter as actual, and `Locus::Artifact` with the pointer IR reports. The same holds for IR's edge, occurrence, diagnostic and work limits, each with its own kind. Given bytes longer than its artifact byte ceiling, it returns kind input bytes with no locus. | Test |
 | FR-096-AC-11 | A function whose body is the source text `not not not true` (four expression nodes), parsed under a unit reference so its forms carry spans and checked through `ValueFunctionFamily::check` with `CheckingLimits` node limit 3, returns `StageFailure::Limit` with kind node count, bound 3, actual 4, setting `s3.nodes`, and `Locus::Region` over the span of the node whose entry failed, reported as `stage_limit_exceeded`/`node-count-exceeded`. With node limit 4 and nothing else changed, it returns no limit. The same stop inside an FR-151 synthesized function carries no locus. | Test |
 | FR-096-AC-12 | `Code::RuntimeInvariant`, the code of `InternalFault` (T-4, O-16 internal-failure category), resolves to FR-301 exit status 30 (tool failure) through its category's FR-285 exit code, and every other `Code` resolves to 20, 21 or 22. A native `run` whose evaluation refuses with `runtime_invariant` exits 30. A report holding a `runtime_invariant` diagnostic beside invalid, unsupported or incomplete ones exits 30. | Test |
 | FR-096-AC-13 | A kernel `DivisionOutOfDomain` for consumer domain `Int[0, 9]` builds a record with `expected` `Int[0, 9]` and cause `quotient-outside-domain` when the exposed member is the quotient and `remainder-outside-domain` when it is the remainder. | Test |

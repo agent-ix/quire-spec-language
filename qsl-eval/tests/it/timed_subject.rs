@@ -21,7 +21,6 @@ use qsl_package::CheckedPackage;
 use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
 use quire_checked::key::DeclarationKey;
 use quire_exact::{Integer, Rational, ScalarLimits};
@@ -31,7 +30,6 @@ use quire_semantic_value::model_transition::ModelTransition;
 use serde_json::{json, Value as Json};
 
 const PACKAGE: &str = "test/rpc";
-const PLACEHOLDER: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 
 fn ident(suffix: &str) -> String {
     format!("ix://{PACKAGE}/{suffix}")
@@ -114,7 +112,6 @@ fn clocked_document(clocked: bool, extra: &[&str]) -> Vec<u8> {
     .into_iter()
     .map(|(name, meaning)| {
         json!({"kind": {"module": PACKAGE, "name": name}, "moduleVersion": "1.0.0",
-            "manifestDigest": PLACEHOLDER,
             "construct": {"identity": "none", "shape": "record", "members": {},
                 "meaning": meaning}})
     })
@@ -135,11 +132,10 @@ fn clocked_document(clocked: bool, extra: &[&str]) -> Vec<u8> {
     );
     json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
-        "source": {"identity": ident("spec"), "version": "1.0.0", "dialect": "spec-bundle",
-            "digest": PLACEHOLDER},
-        "package": {"identity": PACKAGE, "version": "1.0.0", "manifestDigest": PLACEHOLDER,
-            "mappingVersions": [], "profileVersions": [], "lockDigest": PLACEHOLDER},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
+        "source": {"identity": ident("spec"), "version": "1.0.0", "dialect": "spec-bundle"},
+        "package": {"identity": PACKAGE, "version": "1.0.0",
+            "mappingVersions": [], "profileVersions": []},
         "occurrences": [], "extensions": [],
         "constructs": constructs,
         "types": [
@@ -208,8 +204,8 @@ fn rpc_unit_guarded(t: u32, guard: &str, extra: &str) -> String {
 
 struct World {
     package: CheckedPackage,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
+    snapshots: qsl_semantics::model::observation::DocumentProvision,
     initial: DocumentRef,
 }
 
@@ -251,14 +247,12 @@ fn try_world_of(
     unit_body: &str,
     objects: Json,
 ) -> Result<World, Vec<qsl_semantics::check::CheckRefusal>> {
-    let packages = package_input([document.as_slice()]);
-    let digest = *packages.keys().next().expect("one model");
+    let packages = package_input([document.as_slice()]).unwrap();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
          profile t = \"quire.temporal.complete/v1\";\n{profiles}\
-         model M = \"{PACKAGE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n{unit_body}",
-        hex(&digest)
+         model M = \"{PACKAGE}\";\n{unit_body}",
     );
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("test", "fr-231", "fixture", "1"),
@@ -281,6 +275,7 @@ fn try_world_of(
     .expect("the kept operation clauses parse");
     let graph = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         built,
         models,
         Vec::new(),
@@ -288,8 +283,7 @@ fn try_world_of(
     .expect("the unit assembles")
     .with_unwritten_timed_members()
     .check(CheckingLimits::default())?;
-    let header = json!({"identity": PACKAGE, "version": "1.0.0",
-        "digest": format!("sha256-jcs:{}", hex(&digest))});
+    let header = json!({"identity": PACKAGE});
     let document = json!({
         "format": "quire.state.snapshot/v1",
         "identity": {"authority": "test", "identity": "s0", "revision_namespace": "fixture",
@@ -299,20 +293,19 @@ fn try_world_of(
         "populations": [{"population": ident("calls"), "complete": true, "objects": objects}],
     });
     let bytes = document.to_string().into_bytes();
-    let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-    let snapshot_digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-        .expect("canonical fixture")
-        .as_bytes();
     Ok(World {
         package: CheckedPackage::link(graph),
         packages,
-        snapshots: BTreeMap::from([(snapshot_digest, bytes)]),
+        snapshots: BTreeMap::from([(
+            qsl_semantics::model::observation::document_reference(&bytes)
+                .expect("a document names itself"),
+            bytes,
+        )]),
         initial: DocumentRef {
             authority: "test".to_owned(),
             identity: "s0".to_owned(),
             revision_namespace: "fixture".to_owned(),
             revision: "fixture:1".to_owned(),
-            digest: snapshot_digest,
         },
     })
 }
@@ -1166,7 +1159,6 @@ fn timer_document() -> Vec<u8> {
         .expect("constructs")
         .push(json!({
         "kind": {"module": PACKAGE, "name": "value_record"}, "moduleVersion": "1.0.0",
-        "manifestDigest": PLACEHOLDER,
         "construct": {"identity": "none", "shape": "record", "members": {},
             "meaning": meaning::RECORD_VALUE_TYPE}}));
     serde_json::to_vec(&document).expect("JSON")
@@ -1366,7 +1358,6 @@ fn a_record_holding_an_enum_steps_where_its_frame_does_not_grant_it() {
         .expect("constructs")
         .push(json!({
             "kind": {"module": PACKAGE, "name": "mode"}, "moduleVersion": "1.0.0",
-            "manifestDigest": PLACEHOLDER,
             "construct": {"identity": "none", "shape": "enumeration",
                 "members": {"variants": "required"}, "meaning": meaning::VARIANT_TYPE}}));
     let world = world_holding(
@@ -2705,7 +2696,6 @@ fn cells_document(
     let constructs = document["constructs"].as_array_mut().expect("constructs");
     constructs.push(json!({
         "kind": {"module": PACKAGE, "name": "mode"}, "moduleVersion": "1.0.0",
-        "manifestDigest": PLACEHOLDER,
         "construct": {"identity": "none", "shape": "enumeration",
             "members": {"variants": "required"}, "meaning": meaning::VARIANT_TYPE}}));
     serde_json::to_vec(&document).expect("JSON")
@@ -4147,10 +4137,7 @@ fn a_clock_parameter_has_one_instance_per_place() {
             .collect();
         assert_eq!(zeros.len(), 1, "{place}");
         let object = timed.places()[zeros[0]].object();
-        let named = format!(
-            "\"identity\":\"{}\"",
-            hex(object.object().as_str().as_bytes())
-        );
+        let named = format!("\"identity\":\"{}\"", object.object().as_str());
         assert!(place.contains(&named), "{place} names {object:?}");
     }
 
@@ -4301,7 +4288,7 @@ fn two_clock_parameters_bind_every_pair_of_places() {
                 };
                 let named = format!(
                     "\"identity\":\"{}\"",
-                    hex(timed.places()[zero].object().object().as_str().as_bytes())
+                    timed.places()[zero].object().object().as_str()
                 );
                 assert!(c.contains(&named), "{c} names the reset place");
             }
@@ -4369,7 +4356,7 @@ fn a_permutation_renames_a_clock_place_argument() {
                     let [place] = transition.arguments() else {
                         panic!("one place argument");
                     };
-                    place.contains(&format!("\"identity\":\"{}\"", hex(key.as_bytes())))
+                    place.contains(&format!("\"identity\":\"{}\"", key))
                 };
                 for (from, to) in [("c1", "c2"), ("c2", "c1")] {
                     if named(transition, from) {
@@ -4603,6 +4590,77 @@ fn a_dropped_element_regrows_absent() {
         .filter(|bits| bits.len() == 1)
         .collect();
     assert_eq!(regrown, [[false]]);
+}
+
+/// QSpec FR-322 `SD-02` (FR-230-AC-54, TC-685): over `q:
+/// Sequence<Option<Clock>>[0, 2]`, `forall(e in self.q: present(e) implies
+/// e = 0 ms)` resets each element present in the post-state and writes no
+/// absent one. From `[false, true]` after 3 ms, `work` keeps `[false,
+/// true]` with the absent element absent and the present one reset to 0;
+/// from `[false, false]` it keeps both absent. Every present element of
+/// every successor is at 0 ms.
+#[trace("TC-685", "FR-230-AC-54")]
+#[test]
+fn a_presence_selection_reset_leaves_an_absent_element_absent() {
+    let world = option_sequence_world(
+        &["q"],
+        "post R using v on M::Call::work { forall(e in self.q: present(e) implies e = 0 ms) }\n",
+    );
+    let held = system(&world);
+    let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+    let initial = timed.initial();
+    let from = |bits: &[bool]| {
+        let state = initial
+            .iter()
+            .find(|state| option_bits(state) == bits)
+            .unwrap_or_else(|| panic!("an initial state {bits:?}"));
+        timed
+            .delay(state, &exact(3, 1))
+            .expect("decided")
+            .expect("no invariant bounds the delay")
+    };
+    let successors = |state: &TimedState| {
+        timed
+            .steps(state)
+            .expect("the state steps")
+            .into_iter()
+            .filter(|(step, _)| step.operation().contains("Call/work"))
+            .map(|(_, post)| post)
+            .collect::<Vec<_>>()
+    };
+    let q_clocks = |state: &TimedState| -> Vec<(usize, Rational)> {
+        timed
+            .places()
+            .iter()
+            .zip(state.clocks().values())
+            .filter(|(place, _)| {
+                timed.live(place, state.discrete())
+                    && timed
+                        .model()
+                        .clock(place.clock())
+                        .is_some_and(|clock| clock.name().starts_with("q"))
+            })
+            .map(|(place, value)| (place.slots()[0], value.clone()))
+            .collect()
+    };
+    for start in [&[false, true][..], &[false, false][..]] {
+        let posts = successors(&from(start));
+        assert!(!posts.is_empty(), "{start:?} steps");
+        assert!(
+            posts.iter().any(|post| option_bits(post) == start),
+            "an absent element can stay absent from {start:?}"
+        );
+        for post in &posts {
+            for (slot, value) in q_clocks(post) {
+                assert_eq!(value, exact(0, 1), "{start:?} -> slot {slot} is reset");
+            }
+        }
+    }
+    let kept = successors(&from(&[false, true]))
+        .into_iter()
+        .find(|post| option_bits(post) == [false, true])
+        .expect("[false, true] is kept");
+    assert_eq!(q_clocks(&kept), [(1, exact(0, 1))]);
 }
 
 /// QSpec FR-415-AC-20 and STD-526 PR-03 (TC-685 step 34), the timed

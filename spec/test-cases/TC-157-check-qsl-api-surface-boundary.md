@@ -17,7 +17,8 @@ as `failing` with file, line and module named, respects `::`-segment module
 matching (a textual prefix that is not a segment boundary, such as
 `model_query` under a `model` allow-list, is not treated as allowed), and
 reproduces the real, current pending/failing/passing state of
-T12-A/T12-B/T12-C/T12-D/T12-E against QSL's own head. Scope: FR-060-AC-1 through FR-060-AC-4.
+the live rules against QSL's own head. T12-B, T12-C, T12-D and T12-F are
+RETIRED (the constructors they guarded no longer exist). Scope: FR-060-AC-1 through FR-060-AC-4.
 
 ## Test Procedure
 
@@ -30,22 +31,9 @@ T12-A/T12-B/T12-C/T12-D/T12-E against QSL's own head. Scope: FR-060-AC-1 through
    its protected constructor is outside the rule's allowed caller module(s),
    at a known file and line. Run the check.
 4. Construct a source tree with a module literally named `model_query`
-   containing a call to the T12-C-shaped constructor, under a rule whose
+   containing a call to a protected constructor, under a rule whose
    allowed caller is `model`. Run the check.
 5. Run `arch-lint api-surface` against QSL's real source tree at head.
-6. T12-B fixtures, each a small source tree:
-   - a shipped `NodeKey::from_digest(` call in a `check` submodule;
-   - a shipped `.map(NodeKey::from_digest)` in a module outside `check`, in a
-     function not on the debt list;
-   - a shipped mint in a function that is on the debt list, and the same
-     module and function in another crate (a debt-list entry names its
-     crate);
-   - a debt-list entry whose function no longer mints;
-   - a `NodeKey::from_digest(` call inside a `#[cfg(test)]` item outside
-     `check`;
-   - a doc comment naming `NodeKey::from_digest` in a module outside `check`.
-7. T12-C fixture: a shipped `EffectiveId::from_digest(` call in
-   `value::model_query`, in a function not on T12-C's debt list.
 
 ## Expected Results
 
@@ -57,35 +45,13 @@ T12-A/T12-B/T12-C/T12-D/T12-E against QSL's own head. Scope: FR-060-AC-1 through
 - Step 4: the call inside `model_query` is reported as a violation (not
   treated as inside `model`), because segment matching requires a `::`
   boundary, not a textual prefix.
-- Step 5: T12-A reports `pending` (the `replay` facade module does not exist
-  yet; no `--cg` checkout is given). T12-B and T12-C each report every
-  shipped mint outside their allowed callers as debt, each in a function on
-  that rule's FR-060 debt list, with file, line, module and function named,
-  and each fails if such a mint is in a function not on its list or if a
-  list entry has no mint left (FR-060-AC-4). **Amended by the layer-rule
-  ruling (2026-09-22)**: fixed site counts are replaced by the debt lists.
-  T12-D reports `PASS` with zero call sites: no
-  module outside `model` calls `PopulationId::from_digest(`. T12-E reports
-  `PASS`: the witness minter's only shipped caller is
-  `qsl-package`'s `checked_v2` (`tc_arch_lint_api_surface_024`, which runs
-  on the real tree in `cargo test --workspace`; a call added from another
-  module fails it, `tc_arch_lint_api_surface_023`). This output is
-  captured for the PR body as real, not synthetic, evidence -- the check is
-  not tuned to exclude any finding.
-- Step 6: the `check` submodule mint is not reported; the function-value
-  mint outside `check` fails T12-B and is named; the debt-list mint is
-  reported as debt and does not fail T12-B, while the same module and
-  function in another crate fails it; the stale debt-list entry fails
-  T12-B and names the entry; the `#[cfg(test)]` mint and the doc-comment
-  match are not reported.
-- Step 7: the call fails T12-C and is named with file, line, module and
-  function.
+- Step 5: T12-A reports `pending` or not evaluated (no `--cg` checkout is given); the live rules report their real findings. This output is captured for the PR body as real, not synthetic, evidence -- the check is not tuned to exclude any finding.
 
 ## Metadata
 
 - Priority: P1
 - Target Integration: `tools/arch-lint/api_surface.rs`
-- Automation: Automated Rust unit tests (steps 1-4, 6-8) plus one manual real-data run (step 5)
+- Automation: Automated Rust unit tests (steps 1-4) plus one manual real-data run (step 5)
 
 ## Dependencies
 

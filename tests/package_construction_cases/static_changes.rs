@@ -1,16 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-082/091: independent canonical mutations and admissible changed inputs.
 
-use sha2::{Digest, Sha256};
-
 use super::*;
-
-fn hash(bytes: &[u8]) -> String {
-    let mut digest = Sha256::new();
-    digest.update(b"quire-spec-language\0quire.native.bound-package/v1\0linked-package\0");
-    digest.update(bytes);
-    format!("{:x}", digest.finalize())
-}
 
 fn change(expected: &mut vectors::Expected, before: &str, after: &str) {
     assert_ne!(before, after);
@@ -19,17 +10,12 @@ fn change(expected: &mut vectors::Expected, before: &str, after: &str) {
         "independent precondition: {before}"
     );
     expected.canonical = expected.canonical.replace(before, after);
-    let digest = hash(expected.canonical.as_bytes());
-    expected.artifact = expected
-        .artifact
-        .replace(before, after)
-        .replace(&expected.digest, &digest);
-    expected.digest = digest;
+    expected.artifact = expected.artifact.replace(before, after);
 }
 
 #[test]
 #[trace("TC-082", "TC-091", "FR-019-AC-3", "FR-021-AC-3")]
-fn used_context_unused_declarations_and_selected_roles_change_the_expected_identity() {
+fn used_context_unused_declarations_and_selected_roles_change_the_expected_content() {
     let baseline_models = [vectors::model()];
     let baseline = NativePackage::new(
         minimal(
@@ -117,57 +103,27 @@ fn used_context_unused_declarations_and_selected_roles_change_the_expected_ident
         .unwrap();
         assert_eq!(package.bytes(), expected.artifact.as_bytes(), "{name}");
         assert_eq!(
-            package.canonical_identity().to_string(),
-            expected.digest,
+            package.usage().canonical.unwrap().output_bytes,
+            expected.canonical.len(),
             "{name}"
         );
-        assert_eq!(
-            package.digest(),
-            ByteDigest::of(expected.artifact.as_bytes())
-        );
+        assert_ne!(package.bytes(), baseline.bytes(), "{name}");
         assert_ne!(
-            package.canonical_identity(),
-            baseline.canonical_identity(),
-            "{name}"
+            models[0].artifact_bytes(),
+            baseline_models[0].artifact_bytes()
         );
-        assert_ne!(models[0].digest(), baseline_models[0].digest());
     }
 }
 
 #[test]
 #[trace("TC-082", "TC-091", "FR-019-AC-2", "FR-021-AC-3")]
-fn native_source_bytes_and_formal_document_identity_match_independent_changes() {
+fn formal_document_identity_changes_the_package_source_record() {
     let models = [vectors::model()];
-    let original = vectors::source(&models[0]);
     let baseline = NativePackage::new(
         minimal(&models, "test:package", "draft:1", 1, "original.native"),
         PackageLimits::default(),
     )
     .unwrap();
-    let changed_source = format!("{original}// different exact source bytes\n");
-    let mut expected = vectors::expected(&models[0], r#""test:package""#, r#""draft:1""#, 1);
-    change(
-        &mut expected,
-        &ByteDigest::of(original.as_bytes()).to_string(),
-        &ByteDigest::of(changed_source.as_bytes()).to_string(),
-    );
-    let changed = NativePackage::new(
-        checked(
-            &changed_source,
-            "test:package",
-            "draft:1",
-            1,
-            "bytes.native",
-            &models,
-            vec![binding()],
-        ),
-        PackageLimits::default(),
-    )
-    .unwrap();
-    assert_eq!(changed.bytes(), expected.artifact.as_bytes());
-    assert_eq!(changed.canonical_identity().to_string(), expected.digest);
-    assert_ne!(changed.canonical_identity(), baseline.canonical_identity());
-
     let mut expected = vectors::expected(&models[0], r#""test:package""#, r#""draft:1""#, 1);
     change(
         &mut expected,
@@ -191,13 +147,12 @@ fn native_source_bytes_and_formal_document_identity_match_independent_changes() 
     let rebound = check(linked, bindings, CheckLimits::default()).unwrap();
     let changed = NativePackage::new(rebound, PackageLimits::default()).unwrap();
     assert_eq!(changed.bytes(), expected.artifact.as_bytes());
-    assert_eq!(changed.canonical_identity().to_string(), expected.digest);
-    assert_ne!(changed.canonical_identity(), baseline.canonical_identity());
+    assert_ne!(changed.bytes(), baseline.bytes());
 }
 
 #[test]
 #[trace("TC-091", "FR-021-AC-3", "FR-021-AC-4")]
-fn independently_changed_static_claims_have_distinct_preimages() {
+fn the_canonical_content_excludes_projections_and_carries_no_identity_member() {
     let models = [vectors::model()];
     let expected = vectors::expected(&models[0], r#""test:package""#, r#""draft:1""#, 1);
     let package = NativePackage::new(
@@ -206,55 +161,10 @@ fn independently_changed_static_claims_have_distinct_preimages() {
     )
     .unwrap();
     assert_eq!(
-        package.canonical_identity().to_string(),
-        hash(expected.canonical.as_bytes())
+        package.usage().canonical.unwrap().output_bytes,
+        expected.canonical.len()
     );
-    for (before, after) in [
-        (r#""language":"ix:native""#, r#""language":"ix:foreign""#),
-        (r#""edition":"0-draft""#, r#""edition":"1-draft""#),
-        (
-            r#""syntax_profile":"state-finite/0-draft""#,
-            r#""syntax_profile":"state-finite/1-draft""#,
-        ),
-        (
-            r#""model_profile":"native-state-model/1""#,
-            r#""model_profile":"native-state-model/2""#,
-        ),
-        (
-            r#""checking_contract":"native-checked-clauses/1""#,
-            r#""checking_contract":"native-checked-clauses/2""#,
-        ),
-        (
-            r#""context_observations":["current"]"#,
-            r#""context_observations":["pre"]"#,
-        ),
-        (r#""validate_frame":false"#, r#""validate_frame":true"#),
-        (
-            r#""expression":null,"span":{"start":221,"end":225}"#,
-            r#""expression":null,"span":{"start":220,"end":225}"#,
-        ),
-        (
-            r#""universe":"nodes","observations":["current"]"#,
-            r#""universe":"nodes","observations":["pre"]"#,
-        ),
-        (
-            r#""line":10,"column":5,"byte_offset":212"#,
-            r#""line":10,"column":6,"byte_offset":213"#,
-        ),
-        (
-            r#""key":{"kind":"type","name":"Node"}"#,
-            r#""key":{"kind":"type","name":"Foreign"}"#,
-        ),
-    ] {
-        assert!(
-            expected.canonical.contains(before),
-            "independently located claim {before}"
-        );
-        let changed = expected.canonical.replace(before, after);
-        assert_ne!(hash(changed.as_bytes()), expected.digest, "{before}");
-    }
-    // Unsupported selectors and forged derivations stay raw reader controls.
-    // No constructor is used to fabricate a successfully checked package.
     assert!(!expected.canonical.contains("projections"));
-    assert!(!expected.canonical.contains("canonical_identity"));
+    assert!(expected.artifact.contains("projections"));
+    assert!(!expected.artifact.contains("canonical_identity"));
 }

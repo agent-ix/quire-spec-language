@@ -9,7 +9,7 @@
 //! domains are in `witness_member`.
 
 use super::frame::object;
-use super::frame_replay::{package_digest, packet, request, unit_for, witness_source, Unit};
+use super::frame_replay::{packet, request, unit_for, witness_source, Unit};
 use super::*;
 use crate::execute::{separate, settle_separation, stopped_reason, SeparationOutcome};
 use crate::proof_result::SettlementBasis;
@@ -22,7 +22,6 @@ use crate::{
     WitnessEnvelope, WitnessFailure, WitnessSettlement,
 };
 use qsl_eval::value::ClauseEvaluation;
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::check::{ApplicationTerm, BodyTerm, Operator};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -92,17 +91,10 @@ const CLAUSES: &[(&str, &str)] = &[
 
 /// The `witness` unit's text, selecting the `Config` domain package.
 fn witness_unit_text() -> String {
-    let document = config_version_domain_document();
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
     let mut unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
-         model Config = {CONFIG_VERSION_PACKAGE_IDENTITY:?} version \"1.0.0\" \
-         digest \"sha256-jcs:{}\";\n",
-        hex(digest)
+         model Config = {CONFIG_VERSION_PACKAGE_IDENTITY:?};\n"
     );
     // A collection literal takes its type from the parameter it is passed
     // to; each function returns its argument unchanged.
@@ -169,7 +161,6 @@ impl Snapshot {
                 "anchor": {"kind": "handler", "name": "validate"},
                 "model": {
                     "identity": CONFIG_VERSION_PACKAGE_IDENTITY, "version": "1.0.0",
-                    "digest": format!("sha256-jcs:{}", config_version_model_digest_hex()),
                 },
                 "populations": [{
                     "population": config_version_population_identity(),
@@ -189,9 +180,12 @@ fn selection(
     clause: &str,
     snapshot: Snapshot,
     self_key: &str,
-) -> (ClauseSelection, BTreeMap<[u8; 32], Vec<u8>>) {
+) -> (
+    ClauseSelection,
+    qsl_semantics::model::observation::DocumentProvision,
+) {
     let (label, bytes) = snapshot.document();
-    let snapshots = BTreeMap::from([(label.digest, bytes)]);
+    let snapshots = BTreeMap::from([(label.clone(), bytes)]);
     (
         config_version_current_selection(clause, label, self_key),
         snapshots,
@@ -208,7 +202,7 @@ fn clause_request(
 ) -> ClauseRunRequest {
     let (selection, snapshots) = selection(clause, snapshot, self_key);
     let document = config_version_domain_document();
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let mut request = config_version_request_for(
         witness_unit_text(),
         packages,
@@ -365,8 +359,6 @@ fn native_result_two_member_inventory_refuses_independent_edits() {
     else {
         panic!("clause result")
     };
-    let expected_id = report.package_id.as_ref().map(|id| id.hex());
-    assert_eq!(read.package_id(), expected_id.as_deref());
     assert_eq!(read.stage(), "evaluate");
     assert_eq!(read.category(), "violation");
     assert_eq!(read.truth(), Some(false));
@@ -391,7 +383,6 @@ fn native_result_two_member_inventory_refuses_independent_edits() {
 
     let members = [
         ("/format", "format"),
-        ("/package_id", "package_id"),
         ("/disposition", "disposition"),
         ("/usage", "usage"),
         ("/basis", "basis"),
@@ -590,7 +581,6 @@ fn native_result_two_retains_refused_outcome_members() {
         fields: BTreeMap::from([("expected", "Int[0, 9]".to_owned())]),
         locus: Some(crate::spine::CallLocus {
             file: "fixture.native".to_owned(),
-            source_digest: format!("sha256:{}", "0".repeat(64)),
             span: qsl_foundation::LocatedSpan {
                 start: qsl_foundation::Position {
                     byte: 0,
@@ -765,7 +755,6 @@ fn native_result_two_retains_selection_refusal_record() {
 #[test]
 fn native_result_two_retains_compile_limit_fields() {
     let mut report = run("AllBelow", Snapshot::Low, "child");
-    report.package_id = None;
     report.disposition = ClauseDisposition::Compile(Box::new(crate::spine::CompileRefusal::Limit(
         qsl_foundation::diagnostic::LimitExceeded::new(
             qsl_foundation::Setting::S3Nodes,
@@ -825,7 +814,8 @@ fn evaluate(
     work_units: u64,
 ) -> (AdmittedObservations, ClauseEvaluation, Meter) {
     let (selection, snapshots) = selection(clause, snapshot, self_key);
-    let packages = qsl_semantics::model::intake::package_input([unit.domain_document.as_slice()]);
+    let packages =
+        qsl_semantics::model::intake::package_input([unit.domain_document.as_slice()]).unwrap();
     let graph = unit.compiled.package.graph();
     let declaration = graph.state_clause(clause).expect("the clause is declared");
     let invocations = BTreeMap::new();
@@ -875,14 +865,12 @@ fn occurrence(unit: &Unit, clause: &str, path: &[usize], operator: Operator) -> 
             } if name == clause)
                 && location.path() == path
                 && matches!(
-                    semantic.node(*key).map(|node| node.body()),
+                    semantic.node(key.clone()).map(|node| node.body()),
                     Some(BodyTerm::Application(ApplicationTerm { operator: applied, .. }))
                         if *applied == operator
                 )
         })
-        .map(|(key, origin, _)| {
-            OccurrenceKey::new(WireNodeId::from_digest(*key.as_bytes()), origin)
-        })
+        .map(|(key, origin, _)| OccurrenceKey::new(key.clone(), origin))
         .unwrap_or_else(|| panic!("{clause} has a {operator:?} node at {path:?}"))
 }
 
@@ -1252,7 +1240,6 @@ fn parent_order_request(
             "anchor": {"kind": "handler", "name": "validate"},
             "model": {
                 "identity": CONFIG_VERSION_PACKAGE_IDENTITY, "version": "1.0.0",
-                "digest": format!("sha256-jcs:{}", config_version_model_digest_hex()),
             },
             "populations": [{
                 "population": config_version_population_identity(),
@@ -1265,7 +1252,7 @@ fn parent_order_request(
     });
     let selection = config_version_current_selection("ParentOrder", label.clone(), "child");
     let mut request = config_version_request(ClauseRunSelection::Clause(selection));
-    request.snapshots.insert(label.digest, bytes);
+    request.snapshots.insert(label.clone(), bytes);
     request
 }
 
@@ -1396,19 +1383,17 @@ fn replay_case(
     Result<WitnessEnvelope<StateClauseCounterexample>, crate::WitnessRefusal>,
 ) {
     let (label, bytes) = snapshot.document();
-    let package_id = package_digest(unit.compiled.emitted.package_id());
     let target = crate::ReplayTarget::state_clause(
         crate::QualifiedName::new(vec![quire_exact::Identifier::new(clause).unwrap()]).unwrap(),
     );
     let wire = request(
         &unit.bytes,
         &unit.domain_document,
-        package_id,
         &[(label.clone(), bytes)],
         target.clone(),
     );
     let declaration = unit.compiled.package.graph().state_clause(clause).unwrap();
-    let node = WireNodeId::from_digest(*declaration.identity().as_bytes());
+    let node = declaration.identity().clone();
     let payload = StateClauseCounterexample {
         observation: config_version_current_selection(clause, label, self_key).input,
         witness,
@@ -1416,9 +1401,8 @@ fn replay_case(
     let envelope = WitnessEnvelope::reconstruct(
         packet(
             &unit.bytes,
-            package_id,
             source,
-            node,
+            node.clone(),
             OccurrenceKey::new(node, declaration.claim().clone()),
             payload,
             target,
@@ -1937,12 +1921,12 @@ fn a_100000_deep_deciding_element_round_trips_on_a_small_stack() {
                 });
                 let deep_record = (0..DEEP).fold(
                     quire_exact::from_admitted_slots(
-                        chain,
+                        chain.clone(),
                         Box::new([quire_exact::FieldValue::Absent]),
                     ),
                     |next, _| {
                         quire_exact::from_admitted_slots(
-                            chain,
+                            chain.clone(),
                             Box::new([quire_exact::FieldValue::Present(next)]),
                         )
                     },
@@ -1995,7 +1979,7 @@ fn tc_744_every_deciding_element_kind_round_trips() {
     use quire_exact::{
         CardinalityBound, CollectionKind, CollectionType, Decimal, FieldValue, IeeeValue,
         IntegerInterval, ObjectId, ObjectReference, OptionValue, Quantity, Rational, UnitId,
-        UniverseId, ValueType, VariantId,
+        ValueType,
     };
     let unit = codec_unit();
     let package = &unit.compiled.package;
@@ -2026,7 +2010,7 @@ fn tc_744_every_deciding_element_kind_round_trips() {
     let set = CollectionType::new(CollectionKind::Set, ValueType::Integer, None);
     let references = CollectionType::new(
         CollectionKind::Sequence,
-        ValueType::Reference(object_type),
+        ValueType::Reference(object_type.clone()),
         None,
     );
     let elements = [
@@ -2044,13 +2028,19 @@ fn tc_744_every_deciding_element_kind_round_trips() {
         ("float32", Value::Float(IeeeValue::binary32(0x4049_0fdb))),
         (
             "compound quantity",
-            Value::Quantity(Quantity::new(rational(1, 1), UnitId::compound([5; 32]))),
+            Value::Quantity(Quantity::new(
+                rational(1, 1),
+                UnitId::compound(vec![(
+                    crate::fixture_node(5),
+                    quire_exact::Integer::from(1_i64),
+                )]),
+            )),
         ),
         ("text", text("cafe\u{301}")),
         (
             "enum",
             Value::Enum(quire_exact::EnumMember::new(
-                VariantId::from_digest([9; 32]),
+                crate::spine::fixture_ids::variant(9),
                 1,
             )),
         ),
@@ -2060,7 +2050,7 @@ fn tc_744_every_deciding_element_kind_round_trips() {
         ),
         (
             "absent option",
-            OptionValue::none(ValueType::Composite(point)),
+            OptionValue::none(ValueType::Composite(point.clone())),
         ),
         (
             "option of option payload type",
@@ -2087,7 +2077,7 @@ fn tc_744_every_deciding_element_kind_round_trips() {
         (
             "composite",
             quire_exact::from_admitted_slots(
-                point,
+                point.clone(),
                 vec![FieldValue::Present(int(1)), FieldValue::Present(int(2))].into(),
             ),
         ),
@@ -2103,7 +2093,7 @@ fn tc_744_every_deciding_element_kind_round_trips() {
         (
             "reference",
             Value::Reference(ObjectReference::new(
-                UniverseId::from_digest([2; 32]),
+                crate::spine::fixture_ids::universe(2),
                 object_type,
                 ObjectId::new("root".to_owned()).unwrap(),
             )),
@@ -2125,7 +2115,14 @@ fn tc_744_every_deciding_element_kind_round_trips() {
         &unit,
         Value::Quantity(Quantity::new(
             rational(5, 2),
-            UnitId::declared(quire_exact::NodeKey::from_digest([6; 32])),
+            UnitId::declared(
+                quire_exact::NodeKey::new(
+                    "fixture",
+                    vec![quire_exact::PathSegment::Text("node".into())],
+                    6,
+                )
+                .expect("a fixture key"),
+            ),
         )),
     )
     .to_json(None)
@@ -2143,9 +2140,12 @@ fn tc_744_every_deciding_element_kind_round_trips() {
         vec![FieldValue::Present(int(1))],
         vec![FieldValue::Present(int(1)), FieldValue::Present(int(10))],
     ] {
-        let foreign = cause_deciding(&unit, quire_exact::from_admitted_slots(point, slots.into()))
-            .to_json(None)
-            .unwrap();
+        let foreign = cause_deciding(
+            &unit,
+            quire_exact::from_admitted_slots(point.clone(), slots.into()),
+        )
+        .to_json(None)
+        .unwrap();
         assert!(matches!(
             DisagreementCause::from_json(&foreign, package, None),
             Err(crate::CauseCodecError::Value("slots"))
@@ -2174,8 +2174,7 @@ fn tc_744_every_deciding_element_kind_round_trips() {
 /// that unit's id.
 fn metre_package() -> (qsl_package::CheckedPackage, quire_exact::UnitId) {
     use qsl_semantics::value::{
-        admit_unit_graph, DimensionPreimage, NodeIdentityPreimage, NodeOwner, OwnerSelection,
-        OwnerSubject, UnitPreimage,
+        admit_unit_graph, DimensionPreimage, NodeOwner, OwnerSelection, OwnerSubject, UnitPreimage,
     };
     let owner = json!({"kind": "definition", "authority": "agent-ix", "identity": "example"});
     let length = DimensionPreimage::from_json(json!({
@@ -2185,37 +2184,36 @@ fn metre_package() -> (qsl_package::CheckedPackage, quire_exact::UnitId) {
         "terms": [],
     }))
     .expect("a base dimension");
-    let length_key = quire_exact::NodeKey::from_digest(
-        length
-            .digest(qsl_foundation::IdentityLimits::default())
-            .unwrap(),
-    );
+    let length_key = quire_exact::NodeKey::new(
+        "example",
+        vec![quire_exact::PathSegment::Text("Length".to_owned())],
+        0,
+    )
+    .expect("a base dimension key");
     let metre = UnitPreimage::from_json(json!({
         "version": "quire.unit-node/v1",
         "owner": owner,
         "qualified_declaration": ["Example", "metre"],
-        "dimension_node_id": {
-            "domain": quire_exact::NODE_KEY_DOMAIN,
-            "digest": hex(length_key.as_bytes()),
-        },
+        "dimension_node_id": {"package": "example", "path": ["Length"], "ordinal": 0},
         "target_unit_node_id": null,
         "scale": {"numerator": "1", "denominator": "1"},
         "offset": {"numerator": "0", "denominator": "1"},
     }))
     .expect("a root unit");
-    let metre_key = quire_exact::NodeKey::from_digest(
-        metre
-            .digest(qsl_foundation::IdentityLimits::default())
-            .unwrap(),
-    );
+    let metre_key = quire_exact::NodeKey::new(
+        "example",
+        vec![quire_exact::PathSegment::Text("metre".to_owned())],
+        0,
+    )
+    .expect("a root unit key");
     let graph = admit_unit_graph(
         [(length, length_key)],
-        [(metre, metre_key)],
+        [(metre, metre_key.clone())],
         &OwnerSelection::new([NodeOwner::Definition(OwnerSubject {
             authority: "agent-ix".into(),
             identity: "example".into(),
+            package_name: "example".into(),
         })]),
-        qsl_foundation::IdentityLimits::default(),
     )
     .expect("the unit graph admits");
     let units = quire_semantic_value::quantity::UnitTable::declared(&graph);
@@ -2223,6 +2221,7 @@ fn metre_package() -> (qsl_package::CheckedPackage, quire_exact::UnitId) {
         types: quire_semantic_value::declaration::TypeEnvironment::default().with_units(units),
         ..qsl_semantics::check::PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture",
             qsl_foundation::IdentityLimits::default(),
         )
     }
@@ -2388,8 +2387,8 @@ fn tc_743_long_text_or_object_identity_exceeds_the_reader_bound() {
         ..all_below_record(&unit)
     };
     let object = quire_exact::ObjectReference::new(
-        quire_exact::UniverseId::from_digest([2; 32]),
-        quire_exact::EffectiveId::from_digest([3; 32]),
+        crate::spine::fixture_ids::universe(2),
+        crate::spine::fixture_ids::effective(3),
         quire_exact::ObjectId::new(long).unwrap(),
     );
     let mut object_record = all_below_record(&unit);

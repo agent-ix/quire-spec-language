@@ -404,7 +404,7 @@ impl From<ReplayTarget> for RequestTargetWire {
 #[cfg(test)]
 pub(crate) fn test_key() -> OccurrenceKey {
     OccurrenceKey::new(
-        qsl_foundation::digest::WireNodeId::from_digest([7; 32]),
+        crate::fixture_node(7),
         quire_exact::Origin::new(quire_exact::Role::new("declaration"), 0),
     )
 }

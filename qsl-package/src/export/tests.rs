@@ -6,7 +6,6 @@
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::Code;
 use qsl_semantics::check::{
@@ -37,16 +36,12 @@ invariant ThroughSub using v on M::Sub at current { self.f >= 0 }\n";
 /// The unit with `clauses` against the fixture package, checked and linked.
 fn package(clauses: &str) -> CheckedPackage {
     let document = serde_json::to_vec(&fixture::document()).expect("the fixture serializes");
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
-         model M = {:?} version \"1\" digest \"sha256-jcs:{}\";\n{clauses}",
+         model M = {:?};\n{clauses}",
         fixture::PACKAGE,
-        qsl_semantics::model::key::hex(digest),
     );
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("agent-ix", "test:abstraction", "fixture", "fixture:1"),
@@ -64,7 +59,7 @@ fn package(clauses: &str) -> CheckedPackage {
         qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
     )
     .expect("the package admits");
-    let graph = PackageDeclarations::assemble(raw, built, models, Vec::new())
+    let graph = PackageDeclarations::assemble(raw, "pkg".to_owned(), built, models, Vec::new())
         .expect("the unit assembles")
         .check(CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"));
@@ -149,13 +144,9 @@ fn sole(refusals: Vec<AbstractionRefusal>) -> AbstractionRefusal {
     refusal
 }
 
-fn wire(key: quire_exact::NodeKey) -> WireNodeId {
-    WireNodeId::from_digest(*key.as_bytes())
-}
-
 fn clause_item(package: &CheckedPackage, clause: &str) -> OccurrenceKey {
     let clause = package.graph().state_clause(clause).expect("the clause");
-    OccurrenceKey::new(wire(clause.identity()), clause.claim().clone())
+    OccurrenceKey::new(clause.identity(), clause.claim().clone())
 }
 
 fn frame_item(package: &CheckedPackage) -> OccurrenceKey {
@@ -166,7 +157,7 @@ fn frame_item(package: &CheckedPackage) -> OccurrenceKey {
     let (_, frame) = graph
         .operation_frame(&selection)
         .expect("the unit has the frame");
-    OccurrenceKey::new(wire(frame.frame()), frame.frame_origin().clone())
+    OccurrenceKey::new(frame.frame(), frame.frame_origin().clone())
 }
 
 fn function_item(package: &CheckedPackage) -> OccurrenceKey {
@@ -438,7 +429,12 @@ fn the_export_refuses_each_item_with_an_unbound_element_and_returns_the_others()
     );
 
     let unknown = OccurrenceKey::new(
-        WireNodeId::from_digest([7; 32]),
+        quire_exact::NodeKey::new(
+            "pkg".to_owned(),
+            vec![quire_exact::PathSegment::Text("unknown".to_owned())],
+            0,
+        )
+        .expect("a fixture key is a valid structural identity"),
         package
             .graph()
             .state_clause("Versioned")
@@ -611,20 +607,20 @@ fn bind_abstraction_resets_the_remembered_emission() {
     let mut package = package(CLAUSES);
     let emitted = crate::emit_checked(&package).expect("the package emits");
     assert_eq!(
-        package.emitted_package_id(),
-        Some(emitted.package().package_id())
+        package.emitted_package_name(),
+        Some(emitted.package().name())
     );
     package
         .bind_abstraction_at(&[config_object()], Vec::new())
         .expect("the relation checks");
     assert_eq!(
-        package.emitted_package_id(),
-        Some(emitted.package().package_id())
+        package.emitted_package_name(),
+        Some(emitted.package().name())
     );
     package
         .bind_abstraction(&[config_object()])
         .expect("the relation checks");
-    assert_eq!(package.emitted_package_id(), None);
+    assert_eq!(package.emitted_package_name(), None);
 }
 
 #[test]

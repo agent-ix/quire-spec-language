@@ -20,7 +20,7 @@ fn empty_graph() -> CheckedGraph {
     .expect("an empty source reads")
     .reference()
     .clone();
-    PackageDeclarations::new(source, qsl_foundation::IdentityLimits::default())
+    PackageDeclarations::new(source, "pkg", qsl_foundation::IdentityLimits::default())
         .check(CheckingLimits::default())
         .expect("an empty package checks")
 }

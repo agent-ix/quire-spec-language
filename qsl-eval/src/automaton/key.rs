@@ -39,18 +39,17 @@
 //! acceptance membership (`key_state.rs`), which it writes sorted and admits
 //! by resolving every member in the clause's formula.
 
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::IdentityLimits;
 use qsl_semantics::check::{
     Activation, CheckedTemporalClause, FormulaNode, FormulaNodeId, TemporalProfile, UnaryTemporal,
 };
 use quire_canonical::{Limits, Node, NodeRef};
-use quire_exact::Value;
+use quire_exact::{NodeKey, Value};
 use quire_semantic_value::fairness::PropertyForm;
 
 use super::key_state::{safety_enc, Configuration, FormulaShape, Polarity, Reader};
-use crate::simulation::model::encode::{hex, untyped_value_enc, Enc};
+use crate::simulation::model::encode::{untyped_value_enc, Enc};
 
 /// The discriminator of a key's octet encoding (not a digest domain).
 pub const AUTOMATON_STATE_KEY_V1: &str = "quire.automaton-state-key/v1";
@@ -171,7 +170,7 @@ impl ContextActivation {
 #[derive(Clone, Debug)]
 pub struct ContextBinding {
     /// The parameter's checked node.
-    pub parameter: WireNodeId,
+    pub parameter: NodeKey,
     /// The value it is bound to, written in QSpec FR-181's typed canonical
     /// form.
     pub value: Value,
@@ -267,7 +266,7 @@ impl StateContext {
             .iter()
             .map(|entry| {
                 Enc::Array(vec![
-                    node_enc(entry.parameter),
+                    node_enc(&entry.parameter),
                     untyped_value_enc(&entry.value),
                 ])
             })
@@ -282,11 +281,8 @@ impl StateContext {
 }
 
 /// FR-322's NodeId object.
-fn node_enc(node: WireNodeId) -> Enc {
-    Enc::Object(vec![
-        ("domain", Enc::text("quire.checked-semantic-node/v1")),
-        ("digest", Enc::text(hex(node.as_bytes()))),
-    ])
+fn node_enc(node: &NodeKey) -> Enc {
+    Enc::Node(node.clone())
 }
 
 /// A state of a [`SafetyTranslation`].

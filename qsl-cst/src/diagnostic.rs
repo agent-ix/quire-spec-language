@@ -25,9 +25,6 @@ pub enum CompleteCause {
     /// `unknown_language`, `unknown_edition` or `unknown_profile`: the
     /// selection is not supported by this consumer.
     UnsupportedSelection,
-    /// `source_digest_mismatch`: the source bytes do not hash to their
-    /// declared digest.
-    ByteDigestMismatch,
     /// `resource_exhausted`: the next charge exceeds its limit.
     InsufficientNextCharge,
     /// `missing_import`: no known definition has the selected identity.
@@ -76,11 +73,6 @@ pub enum HostCause {
     /// `invalid_identifier`: a definition or model identity is empty or
     /// exceeds its bound.
     SelectionIdentity,
-    /// `invalid_identifier`: a definition or model version is empty or exceeds
-    /// its bound.
-    SelectionVersion,
-    /// `invalid_digest`: a selection digest is not canonical SHA-256.
-    SelectionDigest,
     /// `invalid_source_identity`, cause `blank-label`: a source label is
     /// empty or only Unicode `White_Space`; `label` is the first such label
     /// in FR-001's order.
@@ -94,11 +86,11 @@ pub enum HostCause {
     /// `invalid_source_map`: an edit names a different predecessor
     /// (FR-001-AC-12); the refusal names no region.
     EditPredecessor,
-    /// `invalid_source_map`: a CST node belongs to another parsed source
-    /// (FR-001-AC-12); the refusal names no region.
+    /// `invalid_source_map`: the node's structural identity does not resolve
+    /// in this CST; the refusal names no region.
     ForeignNode,
-    /// `invalid_source_map`: a request is bound to another revision
-    /// (FR-001-AC-12); the refusal names no region.
+    /// `invalid_source_map`: a request is bound to another revision; the
+    /// refusal names no region.
     RequestRevision,
     /// `invalid_source_map`: edits are unordered, overlapping or off a UTF-8
     /// boundary.
@@ -116,7 +108,6 @@ impl CompleteCause {
             Self::InvalidToken => "invalid-token",
             Self::InvalidEscape => "invalid-escape",
             Self::UnsupportedSelection => "unsupported-selection",
-            Self::ByteDigestMismatch => "byte-digest-mismatch",
             Self::InsufficientNextCharge => "insufficient-next-charge",
             Self::MissingSelection => "missing-selection",
             Self::AmbiguousName => "ambiguous-name",
@@ -162,7 +153,6 @@ impl CompleteCause {
                     | CompleteCode::UnknownEdition
                     | CompleteCode::UnknownProfile
             ),
-            Self::ByteDigestMismatch => code == CompleteCode::SourceDigestMismatch,
             Self::InsufficientNextCharge => code == CompleteCode::ResourceExhausted,
             Self::MissingSelection => code == CompleteCode::MissingImport,
             Self::AmbiguousName | Self::ConflictingAuthority => {
@@ -198,8 +188,6 @@ impl HostCause {
             Self::BlankLabel { .. } => BLANK_LABEL_TAG,
             Self::EmptyPath => EMPTY_PATH_TAG,
             Self::SelectionIdentity
-            | Self::SelectionVersion
-            | Self::SelectionDigest
             | Self::EditPredecessor
             | Self::ForeignNode
             | Self::RequestRevision
@@ -211,8 +199,7 @@ impl HostCause {
     /// The retained code this cause refines.
     pub fn code(self) -> CompleteCode {
         match self {
-            Self::SelectionIdentity | Self::SelectionVersion => CompleteCode::InvalidIdentifier,
-            Self::SelectionDigest => CompleteCode::InvalidDigest,
+            Self::SelectionIdentity => CompleteCode::InvalidIdentifier,
             Self::BlankLabel { .. } | Self::EmptyPath => CompleteCode::InvalidSourceIdentity,
             Self::EditPredecessor
             | Self::ForeignNode
@@ -315,10 +302,6 @@ pub fn read_source(
             SourceReadCause::Bom | SourceReadCause::Nul => {
                 (CompleteCode::InvalidSyntax, CompleteCause::InvalidToken)
             }
-            SourceReadCause::DigestMismatch => (
-                CompleteCode::SourceDigestMismatch,
-                CompleteCause::ByteDigestMismatch,
-            ),
         };
         Box::new(CompleteDiagnostic {
             phase: Phase::Source,

@@ -11,7 +11,6 @@ use qsl_foundation::digest::DigestRecord;
 use qsl_semantics::check::{
     CheckedStateGraphClaim, CheckedStatePredicate, PredicateRole, StateGraphForm,
 };
-use qsl_semantics::library::PackageId;
 use quire_exact::ObjectReference;
 use quire_semantic_value::catalog::Category;
 
@@ -27,7 +26,6 @@ use crate::model_check::state_graph::{GraphEvidence, ModelPath, TrapClosure, Wit
 use crate::request::{ReplayRequest, ReplayRequestWire};
 use crate::result::{DisagreementCause, Verdict};
 use crate::witness::ReplaySource;
-use qsl_foundation::digest::DigestDomain;
 use quire_exact::Cancel;
 
 /// Replay a model-graph evidence request through FR-120's `ModelSystem`.
@@ -63,11 +61,6 @@ pub fn replay_model_graph_with_cancel(
             member: "profile_selections",
         });
     }
-    if request.source_digests() != envelope.source_digests() {
-        return Err(ReplayRefusal::ModelGraphMismatch {
-            member: "source_digests",
-        });
-    }
     if request.declared_domains() != envelope.declared_domains() {
         return Err(ReplayRefusal::ModelGraphMismatch {
             member: "declared_domains",
@@ -81,18 +74,6 @@ pub fn replay_model_graph_with_cancel(
     )?;
     let compiled = recompile(&request, &caller)?;
     let package = compiled.checked.package();
-    let package_id = compiled.emitted.package().package_id();
-    if !package_id.matches(&request.package_id()) {
-        return Err(ReplayRefusal::PackageIdMismatch {
-            requested: request.package_id(),
-            recompiled: package_id,
-        });
-    }
-    if !package_id.matches(&envelope.package_id()) {
-        return Err(ReplayRefusal::ModelGraphMismatch {
-            member: "package_id",
-        });
-    }
     if envelope.claim_node() != envelope.occurrence_key().node() {
         return Err(ReplayRefusal::ModelGraphMismatch {
             member: "occurrence_key",
@@ -107,7 +88,7 @@ pub fn replay_model_graph_with_cancel(
         .graph()
         .hyper_clauses()
         .iter()
-        .find(|clause| clause.occurrence() == envelope.occurrence_key());
+        .find(|clause| clause.assembled_occurrence() == Some(envelope.occurrence_key()));
     if claim.is_some() == hyper_clause.is_some() {
         return Err(ReplayRefusal::ModelGraphMismatch {
             member: "claim_identity",
@@ -150,12 +131,7 @@ pub fn replay_model_graph_with_cancel(
         }
     }
 
-    let documents = request
-        .byte_provision()
-        .entries()
-        .filter(|(digest, _)| digest.domain() == DigestDomain::Sha256Jcs)
-        .map(|(digest, bytes)| (*digest.as_bytes(), bytes.to_vec()))
-        .collect::<BTreeMap<_, _>>();
+    let documents = request.byte_provision().snapshots();
     let simulation = ModelSimulationRequest {
         package,
         packages: &compiled.packages,
@@ -175,7 +151,6 @@ pub fn replay_model_graph_with_cancel(
             package,
             claim,
             envelope.family_payload(),
-            package_id,
             model_limits.limits.max_states,
             model_limits.limits.max_transitions,
         )?
@@ -185,7 +160,6 @@ pub fn replay_model_graph_with_cancel(
             package,
             clause,
             envelope.family_payload(),
-            package_id,
             model_limits.limits.max_states,
             model_limits.limits.max_transitions,
             model_limits.max_automaton_states,
@@ -210,7 +184,6 @@ pub(super) fn replay_evidence(
     package: &qsl_package::CheckedPackage,
     claim: &CheckedStateGraphClaim,
     evidence: &GraphEvidence,
-    package_id: PackageId,
     max_states: usize,
     max_transitions: usize,
 ) -> Result<GraphReplayResult, ReplayRefusal> {
@@ -218,7 +191,7 @@ pub(super) fn replay_evidence(
         (None, None) => None,
         (Some(parameter), Some(instance)) => {
             let model_instance = system
-                .instances(&quire_exact::ValueType::Reference(parameter.object))
+                .instances(&quire_exact::ValueType::Reference(parameter.object.clone()))
                 .map_err(|_| refused(ModelTraceRefusal::OverBinding))?
                 .into_iter()
                 .find(|candidate| {
@@ -227,7 +200,7 @@ pub(super) fn replay_evidence(
                 .ok_or_else(|| refused(ModelTraceRefusal::OverBinding))?;
             Some(
                 system
-                    .bound_reference(parameter.object, &model_instance)
+                    .bound_reference(parameter.object.clone(), &model_instance)
                     .map_err(|_| fault("state-graph-over-reference"))?,
             )
         }
@@ -301,7 +274,6 @@ pub(super) fn replay_evidence(
                 if !record_reading(source_role(claim), reading, &mut evaluated)? {
                     return Ok(result(
                         inconclusive(Category::Violation, Category::Success),
-                        package_id,
                         evaluated,
                         None,
                         None,
@@ -350,7 +322,6 @@ pub(super) fn replay_evidence(
                 if !record_reading(source_role(claim), reading, &mut evaluated)? {
                     return Ok(result(
                         inconclusive(Category::Violation, Category::Success),
-                        package_id,
                         evaluated,
                         None,
                         None,
@@ -399,13 +370,7 @@ pub(super) fn replay_evidence(
             )
         }
     };
-    Ok(result(
-        settlement,
-        package_id,
-        evaluated,
-        closure_nodes,
-        first_target,
-    ))
+    Ok(result(settlement, evaluated, closure_nodes, first_target))
 }
 
 fn replay_claim_undefined(
@@ -815,14 +780,12 @@ pub(super) fn inconclusive(proved: Category, replayed: Category) -> GraphReplayS
 
 pub(super) fn result(
     settlement: GraphReplaySettlement,
-    package_id: PackageId,
     evaluated_predicates: Vec<(PredicateRole, bool)>,
     closure_nodes: Option<u64>,
     first_target: Option<DigestRecord>,
 ) -> GraphReplayResult {
     GraphReplayResult {
         settlement,
-        package_id,
         evaluated_predicates,
         closure_nodes,
         first_target,

@@ -39,7 +39,6 @@ fn construct(
     json!({
         "kind": {"module": PACKAGE, "name": name},
         "moduleVersion": "1.0.0",
-        "manifestDigest": PLACEHOLDER_DIGEST,
         "construct": {
             "identity": "none",
             "shape": shape,
@@ -328,6 +327,7 @@ fn locate(
 ) -> Result<CallSite<OperationSite>, Box<CallSiteRefusal>> {
     call_site(
         source(),
+        "fixture".to_owned(),
         "call-site-owners.native",
         unit.as_bytes(),
         [document],
@@ -365,14 +365,14 @@ fn clause_names(site: &OperationSite) -> Vec<&str> {
 
 /// The `semantic_form` of the node `site.anchor` is the operation anchor of
 /// (its `context`), in the graph compiled from `unit`.
-fn anchor_context_form(unit: &str, document: &[u8], anchor: crate::WireNodeId) -> String {
-    let packages = qsl_semantics::model::intake::package_input([document]);
+fn anchor_context_form(unit: &str, document: &[u8], anchor: crate::NodeKey) -> String {
+    let packages = qsl_semantics::model::intake::package_input([document]).unwrap();
     let compiled = compile_config_version_unit(unit, &packages);
     let graph = compiled.package.graph();
     let node = graph
         .semantic_graph()
         .nodes()
-        .find(|node| crate::WireNodeId::from_digest(*node.key().as_bytes()) == anchor)
+        .find(|node| node.key() == anchor)
         .expect("the anchor is a node of the compiled graph");
     assert_eq!(node.semantic_form(), "operation_anchor");
     let context = node.semantic_type().expect("an anchor has a context");
@@ -387,13 +387,13 @@ fn anchor_context_form(unit: &str, document: &[u8], anchor: crate::WireNodeId) -
 /// The frame `site` names is the compiled graph's frame of the operation
 /// that `owner` declares, at its `generated` occurrence.
 fn assert_generated_frame(unit: &str, document: &[u8], site: &OperationSite, owner: &str) {
-    let packages = qsl_semantics::model::intake::package_input([document]);
+    let packages = qsl_semantics::model::intake::package_input([document]).unwrap();
     let compiled = compile_config_version_unit(unit, &packages);
     let graph = compiled.package.graph();
     let frame = graph
         .semantic_graph()
         .nodes()
-        .find(|node| crate::WireNodeId::from_digest(*node.key().as_bytes()) == site.frame)
+        .find(|node| node.key() == site.frame.clone())
         .expect("the frame is a node of the compiled graph");
     assert_eq!(frame.semantic_form(), "frame");
     let checked = graph
@@ -401,14 +401,14 @@ fn assert_generated_frame(unit: &str, document: &[u8], site: &OperationSite, own
         .expect("the compiled graph holds an operation frame for the node");
     assert_eq!(
         graph
-            .declaring_object(&identifier("Config"), checked.operation().declaring)
+            .declaring_object(&identifier("Config"), checked.operation().declaring.clone())
             .map(quire_exact::Identifier::as_str),
         Some(owner)
     );
     assert_eq!(
-        site.frame_occurrence,
+        site.frame_occurrence.clone(),
         crate::OccurrenceKey::new(
-            site.frame,
+            site.frame.clone(),
             crate::Origin::new(crate::Role::new("generated"), 0)
         )
     );
@@ -426,7 +426,7 @@ fn call_site_selects_a_process_operation() {
     assert_eq!(site.site.frame_operation, frame_operation("Flow", "go"));
     assert_eq!(clause_names(&site.site), ["P", "Q"]);
     assert_eq!(
-        anchor_context_form(&unit, &document, site.site.anchor),
+        anchor_context_form(&unit, &document, site.site.anchor.clone()),
         "process"
     );
     assert_generated_frame(&unit, &document, &site.site, "Flow");
@@ -461,7 +461,7 @@ fn call_site_selects_a_state_machine_operation_and_its_inherited_one() {
         ["PlaceRequires", "FlagsPlaced"]
     );
     assert_eq!(
-        anchor_context_form(&unit, &document, declared.site.anchor),
+        anchor_context_form(&unit, &document, declared.site.anchor.clone()),
         "state_machine"
     );
     assert_generated_frame(&unit, &document, &declared.site, "OrderLifecycle");
@@ -501,13 +501,7 @@ fn call_site_refuses_a_non_owner_and_an_ambiguous_operation() {
         "post TouchA using v on Config::A::touch { true }\n\
          post TouchB using v on Config::B::touch { true }",
     );
-    let package = {
-        let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
-        compile_config_version_unit(&unit, &packages)
-            .emitted
-            .package_id()
-            .record()
-    };
+    let package = qsl_semantics::library::LibraryName::new("fixture").unwrap();
     let owners = [
         ("Holder", "record value type"),
         ("Happened", "event type"),
@@ -575,20 +569,17 @@ fn a_call_site_frame_operation_resolves_as_a_replay_frame_target() {
 
     let document = owners_document(false);
     let unit = owners_unit(&document, &format!("{FLOW_CLAUSES}\n{LIFECYCLE_CLAUSES}"));
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let compiled = compile_config_version_unit(&unit, &packages);
     let graph = compiled.package.graph();
-    let package_id = compiled.emitted.package_id();
+    let package_name = qsl_semantics::library::LibraryName::new("fixture").unwrap();
 
     for (owner, name) in [("Flow", "go"), ("OrderLifecycle", "place")] {
         let site = locate(&unit, &document, &selection(owner, name))
             .unwrap_or_else(|refusal| panic!("{owner}::{name}: {refusal:?}"));
-        let (context, frame) = resolve_target(graph, &site.site.frame_operation, package_id)
+        let (context, frame) = resolve_target(graph, &site.site.frame_operation, &package_name)
             .unwrap_or_else(|refusal| panic!("{owner}::{name}: {refusal:?}"));
-        assert_eq!(
-            crate::WireNodeId::from_digest(*frame.frame().as_bytes()),
-            site.site.frame
-        );
+        assert_eq!(frame.frame().clone(), site.site.frame);
         assert_eq!(frame.operation().declaring, context);
         assert_eq!(
             graph
@@ -599,7 +590,7 @@ fn a_call_site_frame_operation_resolves_as_a_replay_frame_target() {
     }
 
     let inherited = frame_operation("ExpressLifecycle", "place");
-    let Err(refusal) = resolve_target(graph, &inherited, package_id) else {
+    let Err(refusal) = resolve_target(graph, &inherited, &package_name) else {
         panic!("ExpressLifecycle only inherits place");
     };
     assert!(
@@ -631,6 +622,7 @@ fn a_field_of_a_process_or_state_machine_is_not_selectable() {
         };
         let refusal = call_site(
             source(),
+            "fixture".to_owned(),
             "call-site-owners.native",
             unit.as_bytes(),
             [document.as_slice()],

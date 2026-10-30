@@ -190,7 +190,6 @@ fn integer_discharge_keeps_actual_ir_goals_and_authored_source_owners() {
             assert!(proof.goals().iter().any(|goal| goal.checked().obligations().iter()
                 .any(|obligation| obligation.kind() == ir::DefinednessObligationKind::CheckedRange)));
             let unit = types.binding().namespace().unit(proof.unit()).unwrap();
-            assert_eq!(bindings[0].source.source().digest(), unit.source().digest());
             assert_eq!(bindings[0].source.source().identity(), unit.source().identity());
             for goal in proof.goals() {
                 let original = unit.expression(goal.native_expression()).unwrap();
@@ -530,13 +529,12 @@ fn correspondence_refusals_preserve_types_and_an_independent_source() {
 
 #[test]
 #[trace("TC-119", "FR-040-AC-8")]
-fn source_bytes_labels_revision_and_path_are_all_part_of_exact_correspondence() {
+fn source_labels_revision_and_path_are_part_of_exact_correspondence() {
     inspect(
         "predicate Original using S (): Boolean { true }",
         &["Original"],
         |types, bindings| {
             for (changed, expected) in [
-                ("bytes", CorrespondenceError::ForeignSource),
                 ("identity", CorrespondenceError::MissingSource),
                 ("revision", CorrespondenceError::MissingSource),
                 ("path", CorrespondenceError::ForeignSource),
@@ -544,16 +542,15 @@ fn source_bytes_labels_revision_and_path_are_all_part_of_exact_correspondence() 
                 let mut offered = bindings.to_vec();
                 let original = bindings[0].source.source();
                 let mut identity = original.identity().clone();
-                let mut text = original.text().to_owned();
                 let mut path = original.path().to_owned();
                 match changed {
-                    "bytes" => text.push('\n'),
                     "identity" => identity.identity.push_str(":different"),
                     "revision" => identity.revision.push_str(":different"),
                     "path" => path.push_str(".different"),
                     _ => unreachable!(),
                 }
-                let replacement = Source::read(identity, path, text.as_bytes(), 1_048_576).unwrap();
+                let replacement =
+                    Source::read(identity, path, original.text().as_bytes(), 1_048_576).unwrap();
                 offered[0].source =
                     FormalSource::new(replacement, bindings[0].source.identity().clone());
                 let report = proofs::discharge(types, &offered, ProofLimits::default());
@@ -843,7 +840,6 @@ fn every_zero_proof_budget_refuses_before_work_and_fresh_retries_preserve_inputs
          predicate Budget using S (input: M::Node): Boolean { present(input.optionalQ) implies Leaf(value(input.optionalQ) + rational(0,1)) }")];
     with_types(&model, &sources, |types, formal| {
         let bindings = [mapping(&formal[0], &["Leaf", "Budget"], handler())];
-        let expected_digest = sources[0].digest();
         let declaration = id(types, "Budget");
         let original_nodes = types.declaration(declaration).unwrap().nodes().len();
         let baseline = proofs::discharge(types, &bindings, ProofLimits::default());
@@ -911,7 +907,10 @@ fn every_zero_proof_budget_refuses_before_work_and_fresh_retries_preserve_inputs
                 failed.disposition(declaration),
                 Some(ProofDisposition::Unfinished)
             );
-            assert_eq!(bindings[0].source.source().digest(), expected_digest);
+            assert_eq!(
+                bindings[0].source.source().identity(),
+                sources[0].identity()
+            );
             assert_eq!(
                 types.declaration(declaration).unwrap().nodes().len(),
                 original_nodes
@@ -950,8 +949,8 @@ fn composed_discharge_does_not_upgrade_the_historical_model_boundary() {
         let bindings = [mapping(&formal[0], &["Exact"], handler())];
         let report = proofs::discharge(types, &bindings, ProofLimits::default());
         discharged(&report, "Exact");
-        let text = format!("language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"{}\" version \"{}\" digest \"{}\";\ninvariant Legacy on M::Node at current {{ true }}",
-            model.environment().owner().package().as_str(), model.environment().owner().revision().get(), model.digest());
+        let text = format!("language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"{}\";\ninvariant Legacy on M::Node at current {{ true }}",
+            model.environment().owner().package().as_str());
         let unit = parse(
             SourceIdentity {
                 authority: "test".into(),

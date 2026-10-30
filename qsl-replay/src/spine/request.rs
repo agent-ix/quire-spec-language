@@ -22,7 +22,7 @@ use super::{
 /// the command path. This decoder reads no filesystem or ambient state.
 #[derive(Clone)]
 pub struct SuppliedObservation {
-    /// The document's verified identity and content digest.
+    /// The document's identity labels.
     pub reference: DocumentRef,
     /// The declared document wire identifier.
     pub format: String,
@@ -34,15 +34,12 @@ pub struct SuppliedObservation {
 
 impl SuppliedObservation {
     /// Read one FR-106 observation document from its exact bytes: its
-    /// `sha256-jcs` digest, declared format, identity labels and role. `key`
+    /// declared format, identity labels and role. `key`
     /// names the observation in a refusal's member path.
     #[ix_trace_rs::string_edge]
     pub fn from_document(key: &str, bytes: Vec<u8>) -> Result<Self, ClauseRequestReadError> {
         let parsed = quire_canonical::read(&bytes, u64::MAX)
             .map_err(|error| invalid(key, error.to_string()))?;
-        let digest = *quire_canonical::sha256(&parsed, quire_canonical::Limits::new(u64::MAX))
-            .map_err(|error| invalid(key, error.to_string()))?
-            .as_bytes();
         // Reuse the canonical reader's stack-backed tree. Observation values
         // may exceed serde_json's default 128-level recursion ceiling
         // (FR-261).
@@ -76,7 +73,6 @@ impl SuppliedObservation {
                 "identity.revision",
                 identity.and_then(|id| id.get("revision")),
             )?,
-            digest,
         };
         let role = root.get("observation").and_then(|node| match node.node() {
             Node::String(value) => Some(value.to_owned()),
@@ -421,16 +417,16 @@ pub enum TemporalTraceParts {
 pub struct ClauseRequestParts {
     /// The exact program or extracted source.
     pub source: ClauseRunSource,
+    /// The package manifest's top-level name.
+    pub package_name: String,
     /// Canonical domain package input.
-    pub packages: BTreeMap<[u8; 32], Vec<u8>>,
+    pub packages: qsl_semantics::model::intake::PackageInput,
     /// Supplied library dependencies.
     pub dependencies: DependencyInput,
     /// Named observation documents, each already read once.
     pub observations: BTreeMap<String, SuppliedObservation>,
     /// The wire selection reconstructed against the named documents.
     pub selection: ClauseSelectionPartsKind,
-    /// The caller's expected package identity claim.
-    pub expected_package_id_claim: Option<String>,
     /// Spine stage limits.
     pub limits: SpineLimits,
     /// Observation admission limits.
@@ -823,38 +819,28 @@ fn selection(
 pub fn read_clause_run_request(
     parts: ClauseRequestParts,
 ) -> Result<ClauseRunRequest, ClauseRequestReadError> {
-    if let Some(claim) = &parts.expected_package_id_claim {
-        if claim.len() != 64
-            || !claim
-                .bytes()
-                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-        {
-            return Err(invalid("package_id", "expected 64 lowercase hex digits"));
-        }
-    }
     let selection = selection(parts.selection, &parts.observations)?;
     let mut snapshots = BTreeMap::new();
     let mut invocations = BTreeMap::new();
     for observation in parts.observations.into_values() {
         match observation.format.as_str() {
             "quire.state.snapshot/v1" => {
-                snapshots.insert(observation.reference.digest, observation.bytes);
+                snapshots.insert(observation.reference, observation.bytes);
             }
             "quire.state.invocation/v1" => {
-                invocations.insert(observation.reference.digest, observation.bytes);
+                invocations.insert(observation.reference, observation.bytes);
             }
             _ => return Err(invalid("observation", "unsupported document format")),
         }
     }
     Ok(ClauseRunRequest {
         source: parts.source,
+        package_name: parts.package_name,
         packages: parts.packages,
         dependencies: parts.dependencies,
         snapshots,
         invocations,
         selection,
-        expected_package_id: None,
-        expected_package_id_claim: parts.expected_package_id_claim,
         limits: parts.limits,
         observation_limits: parts.observation_limits,
         accounting: parts.accounting,
@@ -1035,7 +1021,6 @@ mod tests {
             identity: "i".into(),
             revision_namespace: "n".into(),
             revision: "r".into(),
-            digest: [7; 32],
         };
         BTreeMap::from([(
             "pre".to_owned(),

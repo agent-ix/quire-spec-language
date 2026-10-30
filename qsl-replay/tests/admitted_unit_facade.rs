@@ -10,12 +10,22 @@ use qsl_foundation::Setting;
 use qsl_replay::spine::{self, ParseRequest, SpineLimits};
 use qsl_replay::{
     compile_admitted, AdmittedCompilation, AdmittedLookupRefusal, DependencyInput, NodeKey,
-    ReplayLimits, SourceIdentity, StageLimits, SuppliedLibrary, WireNodeId,
+    ReplayLimits, SourceIdentity, StageLimits, SuppliedLibrary,
 };
 use std::collections::BTreeSet;
 
+fn fixture_node(fill: u8) -> NodeKey {
+    NodeKey::new(
+        "fixture",
+        vec![quire_exact::PathSegment::Text(fill.to_string())],
+        0,
+    )
+    .expect("fixture node")
+}
+
 use qsl_replay::AdmittedUnit;
-use qsl_semantics::check::{CheckedGraph, NominalNode};
+use qsl_semantics::check::CheckedGraph;
+use qsl_semantics::value::nominal_payload::NominalPayload;
 use quire_exact::{
     Cancel, Integer, Meter, Outcome, Quantity, Rational, ScalarLimits, UnitDomain, UnitId,
     ValueType,
@@ -46,15 +56,18 @@ fn limits() -> StageLimits {
     [(Setting::S1InputBytes, 1 << 20)].into_iter().collect()
 }
 
-fn wire(key: NodeKey) -> WireNodeId {
-    WireNodeId::from_digest(*key.as_bytes())
+fn wire(key: NodeKey) -> NodeKey {
+    key.clone()
 }
 
 fn admit(text: &str, dependencies: &DependencyInput) -> AdmittedCompilation {
     compile_admitted(
-        unit_identity(),
-        "unit.native",
-        text.as_bytes(),
+        qsl_replay::CompileUnit {
+            source: unit_identity(),
+            package_name: "fixture".to_owned(),
+            path: "unit.native",
+            bytes: text.as_bytes(),
+        },
         [],
         dependencies,
         limits(),
@@ -93,9 +106,9 @@ fn with_spine_graph<T>(text: &str, read: impl FnOnce(&CheckedGraph) -> T) -> T {
         .into_value();
     let checked = spine::check(
         &parsed,
+        "fixture".to_owned(),
         &models,
         &DependencyInput::default(),
-        &spine::LockEvidence::default(),
         limits,
         &cancel,
     )
@@ -117,23 +130,16 @@ struct Expected {
 fn spine_expected(graph: &CheckedGraph) -> Expected {
     let (mut units, mut dimensions) = (Vec::new(), Vec::new());
     for node in graph.semantic_graph().nodes() {
-        match node.nominal() {
-            Some(NominalNode::Unit(Some(preimage))) => units.push((
-                node.key(),
-                preimage
-                    .qualified_declaration()
-                    .last()
-                    .expect("a name")
-                    .clone(),
-            )),
-            Some(NominalNode::Dimension(Some(preimage))) => dimensions.push((
-                node.key(),
-                preimage
-                    .qualified_declaration()
-                    .last()
-                    .expect("a name")
-                    .clone(),
-            )),
+        let Some(name) = node
+            .declaration()
+            .and_then(<[_]>::last)
+            .map(|last| last.as_str().to_owned())
+        else {
+            continue;
+        };
+        match node.nominal_payload() {
+            Some(NominalPayload::Unit(_)) => units.push((node.key(), name)),
+            Some(NominalPayload::Dimension(_)) => dimensions.push((node.key(), name)),
             _ => {}
         }
     }
@@ -145,7 +151,7 @@ fn spine_expected(graph: &CheckedGraph) -> Expected {
         .parameters
         .iter()
         .map(|(_, value_type)| match value_type {
-            ValueType::Quantity(unit) => *unit,
+            ValueType::Quantity(unit) => unit.clone(),
             other => panic!("a quantity parameter, got {other:?}"),
         })
         .collect();
@@ -180,7 +186,7 @@ fn unit_ids_are_the_spines_distinct_and_stable() {
         .units()
         .map(|unit| {
             (
-                unit.node(),
+                unit.node().clone(),
                 unit.qualified_name()
                     .last()
                     .expect("a name")
@@ -194,7 +200,7 @@ fn unit_ids_are_the_spines_distinct_and_stable() {
         .dimensions()
         .map(|dimension| {
             (
-                dimension.node(),
+                dimension.node().clone(),
                 dimension
                     .qualified_name()
                     .last()
@@ -214,9 +220,9 @@ fn unit_ids_are_the_spines_distinct_and_stable() {
     assert_eq!(ids.iter().collect::<BTreeSet<_>>().len(), 3);
     for name in ["m", "km", "s"] {
         let unit = unit_named(&admitted, name);
-        // The kernel id wraps the node id's bytes in the declared-unit domain.
+        // The kernel id wraps the node id in the declared-unit domain.
         assert_eq!(unit.id().domain(), UnitDomain::Declared, "{name}");
-        assert_eq!(unit.id().as_bytes(), unit.node().as_bytes(), "{name}");
+        assert_eq!(unit.id(), UnitId::declared(unit.node().clone()), "{name}");
     }
 
     // The dimension each unit names is the dimension node of that name.
@@ -225,16 +231,18 @@ fn unit_ids_are_the_spines_distinct_and_stable() {
         .iter()
         .find(|(_, n)| n == "Length")
         .unwrap()
-        .0;
+        .0
+        .clone();
     let time = expected
         .dimensions
         .iter()
         .find(|(_, n)| n == "Time")
         .unwrap()
-        .0;
-    assert_eq!(unit_named(&admitted, "m").dimension(), length);
-    assert_eq!(unit_named(&admitted, "km").dimension(), length);
-    assert_eq!(unit_named(&admitted, "s").dimension(), time);
+        .0
+        .clone();
+    assert_eq!(unit_named(&admitted, "m").dimension().clone(), length);
+    assert_eq!(unit_named(&admitted, "km").dimension().clone(), length);
+    assert_eq!(unit_named(&admitted, "s").dimension().clone(), time);
 
     // Conversion: same dimension converts, either way; another does not.
     let (m, km, s) = (
@@ -246,8 +254,15 @@ fn unit_ids_are_the_spines_distinct_and_stable() {
     assert!(!m.converts_to(s) && !s.converts_to(km));
 
     for (node, ..) in &expected.units {
-        let first = context.unit_declaration(wire(*node)).expect("found");
-        assert_eq!(first, context.unit_declaration(wire(*node)).expect("found"));
+        let first = context
+            .unit_declaration(&wire(node.clone()))
+            .expect("found");
+        assert_eq!(
+            first,
+            context
+                .unit_declaration(&wire(node.clone()))
+                .expect("found")
+        );
     }
     let recompiled = admit(&text, &DependencyInput::default());
     assert_eq!(
@@ -280,40 +295,54 @@ fn unit_lookups_refuse_unknown_and_wrong_kind_ids() {
     let admitted = admit(&format!("{HEADER}{UNIT}"), &DependencyInput::default());
     let context = admitted.context();
 
-    let nobody = WireNodeId::from_digest([7; 32]);
+    let nobody = fixture_node(7);
     let unknown = Err(AdmittedLookupRefusal::Unknown {
-        declaration: nobody,
+        declaration: nobody.clone(),
         case: None,
     });
     assert_eq!(
-        context.unit_declaration(nobody),
+        context.unit_declaration(&nobody),
         unknown.clone().map(|_: ()| unreachable!())
     );
     assert!(matches!(
-        context.dimension_declaration(nobody),
+        context.dimension_declaration(&nobody),
         Err(AdmittedLookupRefusal::Unknown { .. })
     ));
 
-    let dimension = wire(context.dimensions().next().expect("a dimension").node());
-    let color = wire(context.enums().next().expect("the enum").key());
-    let record = wire(context.composites().next().expect("the record").node());
+    let dimension = wire(
+        context
+            .dimensions()
+            .next()
+            .expect("a dimension")
+            .node()
+            .clone(),
+    );
+    let color = wire(context.enums().next().expect("the enum").key().clone());
+    let record = wire(
+        context
+            .composites()
+            .next()
+            .expect("the record")
+            .node()
+            .clone(),
+    );
     for id in [dimension, color, record] {
         assert!(
             matches!(
-                context.unit_declaration(id),
+                context.unit_declaration(&id),
                 Err(AdmittedLookupRefusal::WrongKind { declaration }) if declaration == id
             ),
             "{id:?}"
         );
     }
-    let unit = wire(unit_named(&admitted, "m").node());
+    let unit = wire(unit_named(&admitted, "m").node().clone());
     assert!(matches!(
-        context.dimension_declaration(unit),
+        context.dimension_declaration(&unit),
         Err(AdmittedLookupRefusal::WrongKind { declaration }) if declaration == unit
     ));
     // The record and enum lookups refuse a unit as the wrong kind too.
     assert!(matches!(
-        context.composite_declaration(unit),
+        context.composite_declaration(&unit),
         Err(AdmittedLookupRefusal::WrongKind { .. })
     ));
 }
@@ -325,9 +354,12 @@ fn unit_lookups_refuse_unknown_and_wrong_kind_ids() {
 fn a_dependencys_unit_is_foreign() {
     let mass = library("test/mass", "mass", LIBRARY);
     let alone = compile_admitted(
-        mass.source.clone(),
-        &mass.path,
-        &mass.bytes,
+        qsl_replay::CompileUnit {
+            source: mass.source.clone(),
+            package_name: "fixture".to_owned(),
+            path: &mass.path,
+            bytes: &mass.bytes,
+        },
         [],
         &DependencyInput::default(),
         limits(),
@@ -335,16 +367,17 @@ fn a_dependencys_unit_is_foreign() {
     )
     .expect("the library compiles");
     let kg = alone.context().units().next().expect("the unit");
-    let kg_id = wire(kg.node());
+    let kg_id = wire(kg.node().clone());
     let mass_dimension = wire(
         alone
             .context()
             .dimensions()
             .next()
             .expect("dimension")
-            .node(),
+            .node()
+            .clone(),
     );
-    let package = alone.context().package_id();
+    let package = alone.context().package_name().clone();
     let mid = library(
         "test/mid",
         "mid",
@@ -362,22 +395,22 @@ fn a_dependencys_unit_is_foreign() {
         );
         let context = admitted.context();
         assert_eq!(
-            context.unit_declaration(kg_id).map(|_| ()),
+            context.unit_declaration(&kg_id).map(|_| ()),
             Err(AdmittedLookupRefusal::Foreign {
-                declaration: kg_id,
-                package,
+                declaration: kg_id.clone(),
+                package: package.clone(),
             })
         );
         assert_eq!(
-            context.dimension_declaration(mass_dimension).map(|_| ()),
+            context.dimension_declaration(&mass_dimension).map(|_| ()),
             Err(AdmittedLookupRefusal::Foreign {
-                declaration: mass_dimension,
-                package,
+                declaration: mass_dimension.clone(),
+                package: package.clone(),
             })
         );
         assert_eq!(context.units().count(), 3);
         for own in context.units() {
-            assert_eq!(context.unit_declaration(wire(own.node())), Ok(own));
+            assert_eq!(context.unit_declaration(&wire(own.node().clone())), Ok(own));
         }
     }
 }
@@ -413,20 +446,20 @@ fn an_unused_unit_is_found_and_a_dimension_no_unit_names_is_not_listed() {
     assert!(expected
         .units
         .iter()
-        .all(|(node, _)| *node != unused.node()));
-    let id = wire(unused.node());
-    assert_eq!(context.unit_declaration(id), Ok(unused));
+        .all(|(node, _)| *node != *unused.node()));
+    let id = wire(unused.node().clone());
+    assert_eq!(context.unit_declaration(&id), Ok(unused));
     assert_eq!(context.units().count(), 2);
     assert!(matches!(
-        context.composite_declaration(id),
+        context.composite_declaration(&id),
         Err(AdmittedLookupRefusal::WrongKind { .. })
     ));
     assert!(matches!(
-        context.dimension_declaration(id),
+        context.dimension_declaration(&id),
         Err(AdmittedLookupRefusal::WrongKind { .. })
     ));
     assert!(matches!(
-        context.enum_declaration(id),
+        context.enum_declaration(&id),
         Err(AdmittedLookupRefusal::Unknown { .. })
     ));
     let names: Vec<_> = context
@@ -470,7 +503,7 @@ fn derived_dimensions_chains_and_offsets_convert() {
         .iter()
         .map(|(node, exponent)| {
             let base = context
-                .dimension_declaration(wire(*node))
+                .dimension_declaration(&wire(node.clone()))
                 .expect("a part is a listed dimension");
             (
                 base.qualified_name()

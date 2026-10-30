@@ -19,7 +19,6 @@ pub(super) enum Stage {
     Native(qsl_foundation::Phase),
     Model,
     Package,
-    SelectedPackage,
     /// The spine stage that refused a `1-draft` program.
     Spine(qsl_replay::spine::SpineStage),
     /// The stage a `1-draft` spine `run` refused at: the wrapped compile
@@ -40,7 +39,6 @@ impl Serialize for Stage {
             Self::Native(phase) => phase.as_str(),
             Self::Model => "model",
             Self::Package => "package",
-            Self::SelectedPackage => "selected_package",
             Self::Spine(stage) => stage.as_str(),
             Self::SpineRun(stage) => stage,
         })
@@ -51,7 +49,6 @@ impl Serialize for Stage {
 pub(super) struct Source<'a> {
     #[serde(flatten)]
     pub identity: &'a SourceIdentity,
-    pub digest: String,
     pub path: &'a str,
     pub formal: &'a ir::SourceIdentity,
 }
@@ -107,13 +104,6 @@ pub(super) enum Details<'a> {
     },
     Package {
         stage: String,
-    },
-    SelectedPackage {
-        file: &'a str,
-        expected: PackageReference,
-        stage: String,
-        path: Vec<PackagePath<'a>>,
-        cause: Option<PackageCause<'a>>,
     },
     Spine {
         source: &'a SourceIdentity,
@@ -171,9 +161,6 @@ pub(super) enum Details<'a> {
 #[derive(Serialize)]
 pub(super) struct AdmissionModelSelection {
     pub identity: String,
-    pub version: String,
-    pub digest_domain: &'static str,
-    pub digest: String,
 }
 
 #[derive(Serialize)]
@@ -183,13 +170,12 @@ pub(super) struct AdmissionDeclarationKey {
 }
 
 /// FR-100: the program source as `spine-run-result/1` renders one -- its
-/// four FR-001 labels, `sha256:` source digest and authored path. Narrower
+/// four FR-001 labels and authored path. Narrower
 /// than [`Source`]: no formal document/revision member.
 #[derive(Serialize)]
 pub(super) struct RunSource<'a> {
     #[serde(flatten)]
     pub identity: &'a SourceIdentity,
-    pub digest: String,
     pub path: &'a str,
 }
 
@@ -212,11 +198,11 @@ pub(super) enum SpineValue {
 }
 
 /// FR-096/FR-100: a `refused` record's or cause's resolved locus -- the
-/// `sha256:` digest of the source the region belongs to, and its span
-/// rendered over that source.
+/// path of the source the region belongs to, and its span rendered over that
+/// source.
 #[derive(Serialize)]
 pub(super) struct SpineLocus {
-    pub source_digest: String,
+    pub file: String,
     pub span: LocatedSpan,
 }
 
@@ -294,35 +280,9 @@ pub(super) enum SpineOutcome {
 #[derive(Serialize)]
 pub(super) struct SpineRunReport<'a> {
     pub format: Format,
-    pub request_digest: String,
-    pub package_id: String,
     pub source: RunSource<'a>,
     pub function: &'a str,
     pub outcome: SpineOutcome,
-}
-
-#[derive(Serialize)]
-pub(super) struct PackageReference {
-    pub format: &'static str,
-    pub digest: String,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "snake_case")]
-pub(super) enum PackagePath<'a> {
-    Field(&'a str),
-    Index(usize),
-}
-
-#[derive(Serialize)]
-#[serde(untagged)]
-pub(super) enum PackageCause<'a> {
-    Native(Diagnostic<'a>),
-    Json {
-        line: usize,
-        column: usize,
-        message: String,
-    },
 }
 
 #[derive(Serialize)]
@@ -337,13 +297,11 @@ pub(super) struct Failure<'a> {
     pub basis: &'static str,
 }
 
-/// Artifact commands retain their request identity and completion status on
-/// stderr. The `run` command uses the closed command-error shape above.
+/// Artifact commands retain their completion status on stderr. The `run` command uses the closed command-error shape above.
 #[derive(Serialize)]
 pub(super) struct ArtifactFailure<'a> {
     #[serde(flatten)]
     pub failure: Failure<'a>,
-    pub request_digest: Option<String>,
     pub status: ArtifactFailureStatus,
 }
 

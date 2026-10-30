@@ -7,7 +7,7 @@
 
 use std::collections::BTreeSet;
 
-use crate::identity::{DeclaredDomain, ObligationIdentity, ProfileSelection, RawSourceRef};
+use crate::identity::{DeclaredDomain, ObligationIdentity, ProfileSelection};
 use crate::witness::FamilyPayload;
 use qsl_eval::simulation::SampleProvenance;
 use qsl_eval::temporal::UndefinedCause;
@@ -16,7 +16,7 @@ use qsl_foundation::BackendId;
 use qsl_foundation::ReductionKind;
 use qsl_semantics::check::PredicateRole;
 use qsl_semantics::check::StateGraphForm;
-use quire_exact::{ObjectReference, ScalarLimits};
+use quire_exact::{NodeKey, ObjectReference, ScalarLimits};
 use quire_semantic_value::location::Location;
 use serde::{Serialize, Serializer};
 
@@ -251,9 +251,7 @@ impl crate::witness::FamilyPayload for GraphEvidence {
 pub struct GraphEvidenceEnvelope {
     obligation_identity: ObligationIdentity,
     occurrence_key: qsl_foundation::source::provenance::OccurrenceKey,
-    claim_node: qsl_foundation::digest::WireNodeId,
-    package_id: DigestRecord,
-    source_digests: Vec<RawSourceRef>,
+    claim_node: NodeKey,
     profile_selections: Vec<ProfileSelection>,
     run_limits: ScalarLimits,
     declared_domains: Vec<DeclaredDomain>,
@@ -267,9 +265,7 @@ impl GraphEvidenceEnvelope {
     pub fn new(
         obligation_identity: ObligationIdentity,
         occurrence_key: qsl_foundation::source::provenance::OccurrenceKey,
-        claim_node: qsl_foundation::digest::WireNodeId,
-        package_id: DigestRecord,
-        source_digests: Vec<RawSourceRef>,
+        claim_node: NodeKey,
         profile_selections: Vec<ProfileSelection>,
         run_limits: ScalarLimits,
         declared_domains: Vec<DeclaredDomain>,
@@ -280,8 +276,6 @@ impl GraphEvidenceEnvelope {
             obligation_identity,
             occurrence_key,
             claim_node,
-            package_id,
-            source_digests,
             profile_selections,
             run_limits,
             declared_domains,
@@ -292,7 +286,7 @@ impl GraphEvidenceEnvelope {
 
     /// The obligation identity of the checked subject, claim and instance.
     pub fn obligation_identity(&self) -> ObligationIdentity {
-        self.obligation_identity
+        self.obligation_identity.clone()
     }
 
     /// The claim's checked occurrence key.
@@ -301,18 +295,8 @@ impl GraphEvidenceEnvelope {
     }
 
     /// The checked package node that owns the claim.
-    pub fn claim_node(&self) -> qsl_foundation::digest::WireNodeId {
-        self.claim_node
-    }
-
-    /// The package identity the evidence was produced against.
-    pub fn package_id(&self) -> DigestRecord {
-        self.package_id
-    }
-
-    /// The package's declared source references.
-    pub fn source_digests(&self) -> &[RawSourceRef] {
-        &self.source_digests
+    pub fn claim_node(&self) -> &NodeKey {
+        &self.claim_node
     }
 
     /// The semantic profile selections of the proving run.
@@ -343,18 +327,6 @@ impl GraphEvidenceEnvelope {
     pub(crate) fn measured_bytes(&self) -> usize {
         std::mem::size_of_val(self)
             .saturating_add(self.occurrence_key.to_string().len())
-            .saturating_add(
-                self.source_digests
-                    .iter()
-                    .map(|source| {
-                        source.authority().len()
-                            + source.identity().len()
-                            + source.revision_namespace().len()
-                            + source.revision().len()
-                            + source.digest().hex().len()
-                    })
-                    .sum::<usize>(),
-            )
             .saturating_add(
                 self.profile_selections
                     .iter()
@@ -462,10 +434,14 @@ pub enum StateGraphOutcome {
     },
     /// The state-graph claim held over a reduced graph. No core certificate
     /// covers that quotient, so settlement retains the reductions and marks
-    /// the proof uncertified (FR-169, ADR-021 RV-1).
+    /// the proof uncertified (FR-169, ADR-021 RV-1). A reduced `Possible`
+    /// result also carries one concrete witness per initial state.
     HoldsReduced {
         /// The applied reductions, in symmetry then partial-order order.
         reductions: Vec<AppliedReduction>,
+        /// Concrete witnesses for a reduced `Possible` proof, one per
+        /// initial state. `None` for `AlwaysPossible`.
+        witnesses: Option<Vec<GraphWitness>>,
     },
     /// A selected reduction's preservation table rejects this form before
     /// expansion (FR-169, ADR-021 RV-2).

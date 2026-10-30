@@ -31,7 +31,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use qsl_eval::model_subject::ModelInstance;
 use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::simulation::model::{check_model_bounds, ModelSystem, PredicateReading};
-use qsl_eval::simulation::{ExpansionLimit, ExpansionStop, NotSimulated};
+use qsl_eval::simulation::{
+    ExpansionLimit, ExpansionStop, NotSimulated, Permutation, SymmetryGroup,
+};
 use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::selection::DefinitionRef;
 use qsl_replay::ReplayRefusal;
@@ -60,6 +62,30 @@ use super::ModelCheckRefusal;
 pub struct StateGraphItem<'a> {
     /// The checked claim.
     pub claim: &'a CheckedStateGraphClaim,
+    /// An optional `over` binding to decide for this request item. When
+    /// absent, FR-125 instancing supplies every compatible key in canonical
+    /// order. When present, the request runs just that binding while keeping
+    /// the subject's full state space.
+    pub binding: Option<ModelInstance>,
+}
+
+impl<'a> StateGraphItem<'a> {
+    /// Decide every instance of `claim` selected by the subject's universes.
+    pub fn new(claim: &'a CheckedStateGraphClaim) -> Self {
+        Self {
+            claim,
+            binding: None,
+        }
+    }
+
+    /// Decide only `binding` of an `over` claim, retaining the full subject
+    /// and its transitions for state-graph exploration.
+    pub fn for_binding(claim: &'a CheckedStateGraphClaim, binding: ModelInstance) -> Self {
+        Self {
+            claim,
+            binding: Some(binding),
+        }
+    }
 }
 
 /// One EN-1 run over a model subject's state-graph items (FR-166, FR-167).
@@ -127,6 +153,9 @@ pub struct GraphEdge {
     pub transition: ModelTransition,
     /// The post-state's node.
     pub target: NodeIndex,
+    /// The permutation that maps the concrete successor to its canonical
+    /// target; the identity when symmetry is not selected.
+    pub permutation: Permutation,
 }
 
 /// The counts of one exploration.
@@ -234,6 +263,8 @@ struct InstanceView<'a> {
     instance: usize,
     over: Option<ObjectReference>,
     model_instance: Option<ModelInstance>,
+    /// The instance's orbit under the declared symmetry group.
+    orbit: Vec<String>,
     predicates: Vec<(PredicateRole, Option<&'a CheckedPredicateBody>)>,
 }
 
@@ -257,21 +288,24 @@ fn instances<'a>(
                     (role, body)
                 })
                 .collect();
-            let bindings: Vec<(Option<ObjectReference>, Option<ModelInstance>)> =
+            let mut bindings: Vec<(Option<ObjectReference>, Option<ModelInstance>)> =
                 match entry.claim.over() {
                     None => vec![(None, None)],
                     Some(over) => system
-                        .instances(&ValueType::Reference(over.object))
+                        .instances(&ValueType::Reference(over.object.clone()))
                         .map_err(bounds_refusal)?
                         .iter()
                         .map(|instance| {
                             system
-                                .bound_reference(over.object, instance)
+                                .bound_reference(over.object.clone(), instance)
                                 .map(|reference| (Some(reference), Some(instance.clone())))
                                 .map_err(|_| fault("state-graph-instance-references"))
                         })
                         .collect::<Result<_, _>>()?,
                 };
+            if let Some(selected) = &entry.binding {
+                bindings.retain(|(_, binding)| binding.as_ref() == Some(selected));
+            }
             Ok(bindings
                 .into_iter()
                 .enumerate()
@@ -280,11 +314,75 @@ fn instances<'a>(
                     instance,
                     over,
                     model_instance,
+                    orbit: Vec::new(),
                     predicates: bodies.clone(),
                 })
                 .collect())
         })
         .collect()
+}
+
+/// Collapse symmetry-equivalent claim instances to their least binding.
+fn symmetry_instances<'a>(
+    views: Vec<Vec<InstanceView<'a>>>,
+    declared: &SymmetryGroup,
+) -> Result<Vec<Vec<InstanceView<'a>>>, ModelCheckRefusal> {
+    views
+        .into_iter()
+        .map(|instances| {
+            let mut result = Vec::new();
+            for view in instances {
+                let Some(binding) = view.model_instance.clone() else {
+                    let mut view = view;
+                    view.instance = result.len();
+                    result.push(view);
+                    continue;
+                };
+                let mut orbit = declared
+                    .class_of(&binding.population, &binding.key)
+                    .map_or_else(|| vec![binding.key.clone()], |class| class.keys.clone());
+                orbit.sort();
+                let representative = orbit
+                    .first()
+                    .cloned()
+                    .ok_or_else(|| fault("a-symmetry-orbit-has-a-representative"))?;
+                if binding.key != representative {
+                    continue;
+                }
+                let mut view = view;
+                view.instance = result.len();
+                view.orbit = orbit;
+                result.push(view);
+            }
+            Ok(result)
+        })
+        .collect()
+}
+
+/// The common subgroup that preserves every retained instance label.
+fn common_stabiliser(views: &[Vec<InstanceView<'_>>], declared: &SymmetryGroup) -> SymmetryGroup {
+    let fixed: BTreeSet<_> = views
+        .iter()
+        .flatten()
+        .filter_map(|view| {
+            view.model_instance
+                .as_ref()
+                .map(|binding| (binding.population.clone(), binding.key.clone()))
+        })
+        .collect();
+    SymmetryGroup {
+        classes: declared
+            .classes
+            .iter()
+            .filter_map(|class| {
+                let mut class = class.clone();
+                class
+                    .keys
+                    .retain(|key| !fixed.contains(&(class.population.clone(), key.clone())));
+                (class.keys.len() >= 2).then_some(class)
+            })
+            .collect(),
+    }
 }
 
 /// The refusal of an unbounded or unclassifiable subject.
@@ -425,7 +523,6 @@ pub fn check_state_graph(
         max_candidates: request.subject.simulation.expansion.max_candidates,
     };
     let no_initial = request.subject.simulation.initial.is_empty();
-    let package = request.subject.simulation.package;
     let system = ModelSystem::new(request.subject.simulation)
         .map_err(|failure| ModelCheckRefusal::Admission(Box::new(failure)))?;
     check_model_bounds(&system, BOUND_POSITIONS).map_err(bounds_refusal)?;
@@ -501,6 +598,26 @@ pub fn check_state_graph(
             seed,
         });
     }
+    let declared_symmetry = super::reduce::admit(&system, &request.reductions.symmetry)
+        .map_err(ModelCheckRefusal::Symmetry)?;
+    if !declared_symmetry.is_trivial() {
+        let closed =
+            super::reduce::closure(&system, &declared_symmetry).map_err(
+                |refusal| match refusal {
+                    super::reduce::ClosureRefusal::Encoding(refusal) => {
+                        ModelCheckRefusal::Encoding(refusal)
+                    }
+                    super::reduce::ClosureRefusal::Unordered => {
+                        fault("a-permuted-collection-is-ordered")
+                    }
+                },
+            )?;
+        if closed.is_some() {
+            return Err(fault("state-graph-symmetry-initial-closure"));
+        }
+    }
+    let views = symmetry_instances(views, &declared_symmetry)?;
+    let symmetry_group = common_stabiliser(&views, &declared_symmetry);
     let possible: Vec<&InstanceView<'_>> = views
         .iter()
         .zip(&request.items)
@@ -537,7 +654,7 @@ pub fn check_state_graph(
             let Some(over) = item.claim.over() else {
                 continue;
             };
-            let parameter = (over.name.clone(), ValueType::Reference(over.object));
+            let parameter = (over.name.clone(), ValueType::Reference(over.object.clone()));
             for (_, predicate) in predicates(item.claim.form()) {
                 let CheckedStatePredicate::Checked(body) = predicate else {
                     continue;
@@ -561,7 +678,6 @@ pub fn check_state_graph(
     };
     let explored = explore::Exploration {
         system: &system,
-        package,
         limits: &request.limits,
         horizon: request.max_depth,
         cancel,
@@ -569,6 +685,8 @@ pub fn check_state_graph(
         views: &views,
         deadlock_freedom: request.deadlock_freedom,
         por: por.as_ref(),
+        declared_symmetry: &declared_symmetry,
+        symmetry: &symmetry_group,
     }
     .run()?;
     let items = views
@@ -601,14 +719,29 @@ pub fn check_state_graph(
                         view,
                         sampled.witnesses(view),
                     )?;
-                    let outcome =
-                        if explored.reduced && matches!(outcome, StateGraphOutcome::Holds { .. }) {
-                            StateGraphOutcome::HoldsReduced {
-                                reductions: applied_reductions(explored.partial_order_reduced),
+                    let outcome = if explored.reduced {
+                        let reductions = applied_reductions(
+                            explored.partial_order_reduced,
+                            &declared_symmetry,
+                            &symmetry_group,
+                            &view.orbit,
+                        );
+                        match outcome {
+                            StateGraphOutcome::Holds { .. } => StateGraphOutcome::HoldsReduced {
+                                reductions,
+                                witnesses: None,
+                            },
+                            StateGraphOutcome::Witnessed { paths, .. } => {
+                                StateGraphOutcome::HoldsReduced {
+                                    reductions,
+                                    witnesses: Some(paths),
+                                }
                             }
-                        } else {
-                            outcome
-                        };
+                            other => other,
+                        }
+                    } else {
+                        outcome
+                    };
                     Ok(StateGraphInstanceOutcome {
                         over: view.over.clone(),
                         outcome,
@@ -627,14 +760,58 @@ pub fn check_state_graph(
     })
 }
 
-fn applied_reductions(partial_order: bool) -> Vec<AppliedReduction> {
-    if partial_order {
-        vec![AppliedReduction::PartialOrder {
-            proviso: Proviso::BreadthFirstRevisit,
-        }]
-    } else {
-        Vec::new()
+pub(super) fn applied_reductions(
+    partial_order: bool,
+    declared: &SymmetryGroup,
+    applied: &SymmetryGroup,
+    orbit: &[String],
+) -> Vec<AppliedReduction> {
+    let mut reductions = Vec::new();
+    if !applied.is_trivial() {
+        reductions.push(AppliedReduction::Symmetry {
+            groups: declared.classes.clone(),
+            orbit: orbit.to_vec(),
+            stabiliser: reported_stabiliser(declared, applied),
+        });
     }
+    if partial_order {
+        reductions.push(AppliedReduction::PartialOrder {
+            proviso: Proviso::BreadthFirstRevisit,
+        });
+    }
+    reductions
+}
+
+/// Preserve fixed keys as singleton blocks in the reported stabilizer
+/// partition, while the execution group contains only non-trivial blocks.
+fn reported_stabiliser(
+    declared: &SymmetryGroup,
+    applied: &SymmetryGroup,
+) -> Vec<qsl_eval::simulation::SymmetryClass> {
+    let mut result = Vec::new();
+    for group in &declared.classes {
+        let start = result.len();
+        let moving = applied
+            .classes
+            .iter()
+            .find(|class| class.population == group.population)
+            .map(|class| class.keys.as_slice())
+            .unwrap_or_default();
+        for key in group.keys.iter().filter(|key| !moving.contains(key)) {
+            result.push(qsl_eval::simulation::SymmetryClass {
+                population: group.population.clone(),
+                keys: vec![key.clone()],
+            });
+        }
+        if !moving.is_empty() {
+            result.push(qsl_eval::simulation::SymmetryClass {
+                population: group.population.clone(),
+                keys: moving.to_vec(),
+            });
+        }
+        result[start..].sort_by(|left, right| left.keys[0].cmp(&right.keys[0]));
+    }
+    result
 }
 
 /// ADR-022 GR-1: selected state-space reductions are rejected by the form's
@@ -680,12 +857,11 @@ pub enum StateGraphPipelineRefusal {
 /// Run FR-166–FR-168 and settle every state-graph item instance under FR-169.
 ///
 /// `replay` is called only for evidence rows whose verdict requires replay;
-/// package identity and certificate checks remain in the core settlement map.
+/// certificate checks remain in the core settlement map.
 /// The optional deadlock-freedom result remains on `run` for its own FR-127
 /// settlement path.
 pub fn check_and_settle_state_graph(
     request: StateGraphRequest<'_>,
-    package_id: DigestRecord,
     cancel: &Cancel,
     mut replay: impl FnMut(&StateGraphInstanceOutcome) -> Result<GraphReplayResult, ReplayRefusal>,
 ) -> Result<SettledStateGraphRun, StateGraphPipelineRefusal> {
@@ -719,15 +895,7 @@ pub fn check_and_settle_state_graph(
             instances
                 .iter()
                 .map(|instance| {
-                    settle_state_graph(
-                        instance,
-                        &method,
-                        &package_id,
-                        &subject,
-                        claim,
-                        cancel,
-                        |_| replay(instance),
-                    )
+                    settle_state_graph(instance, &method, &subject, claim, cancel, &mut replay)
                 })
                 .collect()
         })

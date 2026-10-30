@@ -9,13 +9,11 @@
 
 use ix_trace_rs::trace;
 use qsl_foundation::source::provenance::OccurrenceKey;
-use qsl_foundation::SourceIdentity;
 use qsl_replay::{
-    compile_package, replay_model_trace, settle_model_check, CertificateRequest,
-    CounterexampleKind, DependencyInput, DigestRecord, ModelCheckItem, ModelCheckLimits,
-    ModelCheckOutcome, ModelCheckRecord, ModelTraceReplayResult, ModelTraceSettlement,
-    ModelTraceSubject, ReplayLimits, ResultLabel, StrongFairnessHint, TemporalCounterexample,
-    TerminalValue, WireNodeId,
+    replay_model_trace, settle_model_check, CertificateRequest, CounterexampleKind, ModelCheckItem,
+    ModelCheckLimits, ModelCheckOutcome, ModelCheckRecord, ModelTraceReplayResult,
+    ModelTraceSettlement, ModelTraceSubject, ReplayLimits, ResultLabel, StrongFairnessHint,
+    TemporalCounterexample, TerminalValue,
 };
 use qsl_semantics::check::CheckedTemporalClause;
 use quire_exact::Cancel;
@@ -45,28 +43,12 @@ fn settled(
     outcome: &ModelCheckOutcome,
 ) -> (ModelTraceReplayResult, ModelCheckRecord) {
     let letters = Versions::new(world, vec![is_two]);
-    let id: DigestRecord = compile_package(
-        SourceIdentity::new("agent-ix", "counter", "git", "1"),
-        "counter.native",
-        &world.unit,
-        [world.domain.document.as_slice()],
-        &DependencyInput::default(),
-        qsl_replay::StageLimits::default(),
-        ReplayLimits::default(),
-    )
-    .expect("the unit compiles")
-    .package_id();
     let node = &world.package.graph().temporal_clauses()[0];
-    let clause_node = WireNodeId::from_digest(*node.identity().as_bytes());
-    let occurrence = OccurrenceKey::new(clause_node, node.claim().clone());
+    let clause_node = node.identity().clone();
+    let occurrence = OccurrenceKey::new(clause_node.clone(), node.claim().clone());
     let replay = |counterexample: &TemporalCounterexample| {
         replay_model_trace(
-            request(
-                &world.domain.document,
-                world.snapshots.iter(),
-                &world.unit,
-                id,
-            ),
+            request(&world.domain.document, world.snapshots.iter(), &world.unit),
             &ModelTraceSubject {
                 timed: None,
                 initial: world.initial.clone(),
@@ -74,10 +56,8 @@ fn settled(
                 expansion: world.unlimited().simulation.expansion,
             },
             &envelope_at(
-                &world.unit,
-                id,
                 counterexample.clone(),
-                clause_node,
+                clause_node.clone(),
                 occurrence.clone(),
             ),
             &letters,
@@ -87,7 +67,6 @@ fn settled(
     let record = settle_model_check(
         outcome,
         &ModelCheckLimits::default(),
-        &id,
         &CertificateRequest {
             subject: world.unlimited(),
             item: ModelCheckItem::Clause {
@@ -132,7 +111,7 @@ fn a_weak_refutation_names_the_strong_each_that_would_exclude_it() {
     let identity = hint.identity.as_ref().expect("an identity");
     assert!(identity.operation().contains("attemptUpdate"));
     assert!(
-        identity.receiver().expect("a receiver").contains("\"61\""),
+        identity.receiver().expect("a receiver").contains("\"a\""),
         "the identity is the update of `a`, which the loop never takes"
     );
     assert_eq!(StrongFairnessHint::CODE, "fairness.strong-would-exclude");
@@ -504,7 +483,7 @@ fn operation_names(base_name: &str, reversed: bool, admitted: &str) -> (Vec<Stri
         operations
             .iter()
             .find(|(_, name, _)| *name == wanted)
-            .map(|(id, ..)| *id)
+            .map(|(id, ..)| id.clone())
             .expect("the operation is listed")
     };
     let first = id_of("zap") < id_of("inc");

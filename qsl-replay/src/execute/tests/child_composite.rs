@@ -6,7 +6,6 @@
 //! does not conform refuses `WrongValueKind` naming the parameter.
 
 use ix_trace_rs::trace;
-use qsl_foundation::digest::WireNodeId;
 use qsl_package::CheckedPackage;
 use quire_exact::{
     CardinalityBound, CollectionKind, CollectionType, Integer, NodeKey, Presence, Value, ValueType,
@@ -21,7 +20,12 @@ use crate::execute::argument::convert_arguments;
 use crate::witness::{WitnessField, WitnessSlot};
 
 fn key(label: &str) -> NodeKey {
-    NodeKey::from_digest(qsl_foundation::digest::ByteDigest::of(label.as_bytes()).as_bytes())
+    NodeKey::new(
+        "fixture",
+        vec![quire_exact::PathSegment::Text(label.to_owned())],
+        0,
+    )
+    .expect("a fixture node")
 }
 
 fn record(label: &str, fields: &[&str], supertypes: &[&str]) -> CompositeDeclaration {
@@ -59,6 +63,7 @@ fn package() -> CheckedPackage {
             types,
             ..qsl_semantics::check::PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
+                "fixture",
                 qsl_foundation::IdentityLimits::default(),
             )
         }
@@ -69,7 +74,7 @@ fn package() -> CheckedPackage {
 
 fn witness(label: &str, fields: &[(&str, i64)]) -> WitnessValue {
     WitnessValue::Record {
-        declaration: WireNodeId::from_digest(*key(label).as_bytes()),
+        declaration: key(label).clone(),
         fields: fields
             .iter()
             .map(|(name, value)| WitnessField {
@@ -117,7 +122,7 @@ fn converted(value: WitnessValue, declared: ValueType) -> Result<Value, usize> {
 
 fn declaration_of(value: &Value) -> NodeKey {
     match value {
-        Value::Composite(composite) => composite.declaration(),
+        Value::Composite(composite) => composite.declaration().clone(),
         other => panic!("a record, not {other:?}"),
     }
 }
@@ -218,9 +223,9 @@ fn a_child_record_is_admitted_as_a_payload_and_as_an_element() {
             2,
             "{kind:?} holds both: a child is not its parent"
         );
-        keys.sort_by_key(|key| *key.as_bytes());
+        keys.sort();
         let mut expected = [key("Money"), key("TaxedMoney")];
-        expected.sort_by_key(|key| *key.as_bytes());
+        expected.sort();
         assert_eq!(keys, expected);
         let bad = converted(
             match kind {

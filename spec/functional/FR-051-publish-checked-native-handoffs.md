@@ -39,18 +39,17 @@ protocol_artifact::temporal_subject::{SCHEMA_BYTES, Limits,
     -> Report<ValidatedTemporalSubject>}
 ```
 
-`Document` exposes immutable canonical bytes, their raw `ByteDigest`, and a
-content identity. Validated views expose borrowed/owned immutable fields with no
+`Document` exposes immutable canonical bytes. Validated views expose borrowed/owned immutable fields with no
 public constructor and no evaluation callback.
 
 ## Common closed envelope (RETIRED M-6d)
 
-**RETIRED (M-6d), for the same reason as Description above.** This section specified the closed field set, field order and content-identity derivation both deleted documents shared; there is no successor for it to describe. Retained below as a historical record.
+**RETIRED (M-6d), for the same reason as Description above.** This section specified the closed field set, field order and identity label both deleted documents shared; there is no successor for it to describe. Retained below as a historical record.
 
 Both documents contain exactly, in canonical field order: `contract`,
 `identity`, `package`, `subject`, `source`, `clause`, `expression`, `bindings`,
-`type`, `profiles`, and `limits`. `package` retains the exact v2 artifact digest
-and native static identity. `subject` retains the parent and leaf subject kinds
+`type`, `profiles`, and `limits`. `package` retains the exact v2 artifact identity and
+version. `subject` retains the parent and leaf subject kinds
 and identities. Source/clause/expression retain exact artifact references,
 qualified authored identities and half-open UTF-8 byte spans. `bindings` is a
 sorted distinct bounded population of exact model, declaration, expression,
@@ -59,11 +58,8 @@ Boolean type identity. `profiles` selects the exact native evaluation and
 definedness profiles. `limits` records the effective construction/read limits
 and measured use.
 
-The content identity is the lowercase hex SHA-256 over the contract-specific
-domain label's byte length as a big-endian `u64`, the label, and the RFC 8785
-encoding (ADR-013 §2, `quire-canonical`) of the document with `identity`
-omitted and every integer written as its decimal string.
-It is not the package identity, source digest, expression identity or TL signal
+The `identity` member is a label and carries no content hash.
+It is not the package identity, source identity, expression identity or TL signal
 identity. Canonical bytes are unique: object fields use the specified order,
 sets are sorted and distinct, numbers use the existing exact-number encoding,
 and no insignificant alternative encoding is accepted by `read`.
@@ -102,8 +98,8 @@ Derivation and reading SHALL revalidate every field against the independently
 admitted package and exact selection. The reader SHALL reject unknown,
 duplicate, missing or out-of-order fields; trailing data; noncanonical bytes;
 unknown contracts; invalid UTF-8 or spans; unsorted/duplicate populations;
-non-Boolean leaves; wrong parent/leaf/profile/clock/capture bindings; identity or
-digest mismatch; and any field not derivable from the admitted package.
+non-Boolean leaves; wrong parent/leaf/profile/clock/capture bindings; identity
+mismatch; and any field not derivable from the admitted package.
 
 Limits independently bound input bytes, output bytes, string bytes, population
 entries, expression nodes and total visited fields; nesting depth is not a limit
@@ -123,7 +119,7 @@ Contract-IR vocabulary, TL proposition value or Boolean coercion participates.
 | FR-051-AC-1 | **RETIRED (M-6d), which deletes `protocol_artifact::checked_predicate` and `protocol_artifact::temporal_subject`.** Real admitted v2 predicate and temporal declarations derived deterministic canonical documents whose public readers returned constructor-private views bound to the same package and selection. This criterion was satisfied while `checked_predicate`/`temporal_subject` existed and the FR-051 tests formerly in `tests/it/compiled_protocol_v2.rs` traced it. Both modules and those tests are deleted (the file itself remains, now scoped to TC-138): the spine `ProtocolClause` path no longer needs this producer/consumer round trip, and nothing outside the deleted modules' own tests called them. The criterion's claim was true when made and is now permanently unfalsifiable rather than false; it is retired, not amended, since there is no successor module for it to describe. | Retired |
 | FR-051-AC-2 | **RETIRED (M-6d)**, for the same reason as FR-051-AC-1: every common and kind-specific semantic field was independently omitted, duplicated, reordered, cross-wired and mutated, with each mutation refusing with no partial view; the modules and the FR-051 tests formerly in `tests/it/compiled_protocol_v2.rs` that carried this behavior are deleted. | Retired |
 | FR-051-AC-3 | **RETIRED (M-6d)**, for the same reason as FR-051-AC-1: unknown fields/contracts, trailing bytes, noncanonical encodings, invalid spans, duplicate/unbounded populations and exact-limit-plus-one inputs refused before excess state was retained. | Retired |
-| FR-051-AC-4 | **RETIRED (M-6d)**, for the same reason as FR-051-AC-1: independent schema and identity digest vectors matched the producer, and same identity on unequal canonical bytes refused. | Retired |
+| FR-051-AC-4 | **RETIRED (M-6d)**, for the same reason as FR-051-AC-1: independent schema vectors matched the producer, and same identity on unequal canonical bytes refused. | Retired |
 | FR-051-AC-5 | **RETIRED (M-6d)**, for the same reason as FR-051-AC-1: a textual or externally built expression, self-asserted trust/total flag, non-Boolean leaf, evaluator callback, and copied consumer vocabulary could not construct either validated view. | Retired |
 | FR-051-AC-6 | **Amended (M-6d).** This criterion previously read: "The temporal view preserves exact activation, clock, inclusive interval, history kind and reachable formula predicate identities without asserting observation or result state; the predicate view admits the exact optional temporal activation guard separately and asserts no truth"; that text is retired for the same reason as FR-051-AC-1. The criterion now states: QSL's resolved dependency graph is cycle-free, with no dependency of QSL depending back on QSL; `arch-lint direction` (FR-059) verifies it. | Test (TC-139) |
 
@@ -139,7 +135,7 @@ artifacts/results; Contract IR owns deterministic correspondence and decisions.
 FR-040 supplies checked composed values; FR-042 and FR-050 supply the admitted
 compiled-protocol package and temporal binding. The shared semantic objects are
 owned by `quire-specification`; downstream projection and results remain owned
-by Contract IR, Quire Observation, Quire Protocol and the TL crates. QSL pins
+by Contract IR, Quire Observation, Quire Protocol and the TL crates. QSL depends on
 the cycle-free `quire-contract-model` package under its existing dependency
 key; it does not depend on the compatibility bridge package that consumes these
 handoffs.

@@ -32,7 +32,7 @@ fn a_100000_vertex_cycle_is_found_on_a_small_stack() {
 }
 
 fn handle(label: &str) -> NodeKey {
-    NodeKey::from_digest(qsl_foundation::ByteDigest::of(label.as_bytes()).as_bytes())
+    fixture_key(label)
 }
 
 /// `C0 .. C{length-1}`, each `record Ci { next: C{i+1}?; }`, the last one's
@@ -69,14 +69,6 @@ pub(super) fn chain(length: usize) -> Vec<CompositeDeclaration> {
     records
 }
 
-/// A text-profile definition for the equality's text leaf.
-fn text_definition() -> DefinitionReference {
-    DefinitionReference {
-        authority: "agent-ix".to_owned(),
-        identity: "unicode-text".to_owned(),
-    }
-}
-
 /// `function eq(a: T, b: T): Boolean { a = b }`, each `T` built by
 /// `operand`.
 fn equality_over(operand: fn() -> TypeForm) -> FunctionDeclaration {
@@ -107,9 +99,9 @@ pub(super) fn check_on_small_stack(
             PackageDeclarations {
                 types: TypeEnvironment::new(records, []).expect("FR-143 admits the chain"),
                 functions,
-                lock_evidence: LockEvidence::default().with_text_profile(text_definition()),
                 ..PackageDeclarations::new(
                     fixture_source(),
+                    "fixture",
                     qsl_foundation::IdentityLimits::default(),
                 )
             }
@@ -195,9 +187,9 @@ fn a_63_record_cycle_checks_as_one_group_on_a_small_stack() {
         .filter(|node| node.recursion().is_some())
         .collect();
     assert_eq!(members.len(), 126, "every record and option is a member");
-    let groups: BTreeSet<[u8; 32]> = members
+    let groups: BTreeSet<NodeKey> = members
         .iter()
-        .filter_map(|node| node.recursion().map(|recursion| *recursion.group()))
+        .filter_map(|node| node.recursion().map(|recursion| recursion.anchor().clone()))
         .collect();
     assert_eq!(groups.len(), 1, "one recursion group");
     assert!(members.iter().all(|node| node

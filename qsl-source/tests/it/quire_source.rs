@@ -6,22 +6,16 @@
 //! `#[cfg(test)]` module in the root crate's `src/command/extraction.rs`.
 
 use ix_trace_rs::trace;
-use qsl_foundation::{ByteDigest, Code, Source, SourceIdentity, Span};
+use qsl_foundation::{Code, Source, SourceIdentity, Span};
 use qsl_source::{
-    extract, semantic_core_version, Cause, Limits, PreflightFailure, Selection, SemanticContext,
-    CONTRACT_VERSION, MAX_LINES, MAX_SOURCE_BYTES,
+    extract, Cause, Limits, PreflightFailure, Selection, SemanticContext, CONTRACT_VERSION,
+    MAX_LINES, MAX_SOURCE_BYTES,
 };
 use quire_rs::semantic::{extract_clauses, read_semantic_block, BundleIndex};
 use serde_json::json;
 
 /// The authored requirement's owning package, which the Quire context names too.
 const PACKAGE: &str = "example/runtime-rules";
-
-/// The model digest the fenced native body imports. Extraction never compiles the
-/// body, so any well-formed digest text serves; a fixed one keeps the fixture
-/// independent of the native model crate.
-const MODEL_DIGEST: &str =
-    "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 
 fn identity() -> SourceIdentity {
     SourceIdentity {
@@ -39,7 +33,7 @@ fn source(text: &str) -> Source {
 fn context() -> SemanticContext {
     // Use Quire's real module validator, not an invented semantic context decoder.
     let module = read_semantic_block(
-        &json!({"contract_version":CONTRACT_VERSION,"semantic_core":semantic_core_version(),"package":PACKAGE,"exports":["entity"],"targets":["markdown"]}),
+        &json!({"contract_version":CONTRACT_VERSION,"package":PACKAGE,"exports":["entity"],"targets":["markdown"]}),
         &["entity".to_owned()],
     ).unwrap();
     SemanticContext::new(module, "rules.md", BundleIndex::default())
@@ -62,8 +56,7 @@ fn selection() -> Selection {
 fn document(expression: &str, crlf: bool) -> Source {
     // Authored input fixture. Only the production Quire extractor selects its body.
     let text = format!(
-        "# Ω authored document\n\n## Invariants\n\n### population_rule\n  ```ix:native\n  language \"ix:native\" edition \"0-draft\";\n  profile \"state-finite/0-draft\";\n  model M = \"example/rule-tests\" version \"1\" digest \"{}\";\n  invariant Rule on M::Node at current {{ {expression} }}\n  ```\n\n### unselected\n```ix:native\nopaque body remains unparsed by Quire\n```\n\n## Notes\nλ unselected prose.\n",
-        MODEL_DIGEST,
+        "# Ω authored document\n\n## Invariants\n\n### population_rule\n  ```ix:native\n  language \"ix:native\" edition \"0-draft\";\n  profile \"state-finite/0-draft\";\n  model M = \"example/rule-tests\";\n  invariant Rule on M::Node at current {{ {expression} }}\n  ```\n\n### unselected\n```ix:native\nopaque body remains unparsed by Quire\n```\n\n## Notes\nλ unselected prose.\n",
     );
     source(&if crlf {
         text.replace('\n', "\r\n")
@@ -77,17 +70,6 @@ fn document(expression: &str, crlf: bool) -> Source {
 fn stale_foreign_unavailable_and_inconsistent_source_selections_refuse() {
     let original = document("true", false);
     let ctx = context();
-    let changed = format!("{}Changed unselected prose.\n", original.text());
-    let error = Source::read_verified(
-        identity(),
-        "rules.md",
-        changed.as_bytes(),
-        original.digest(),
-        1_048_576,
-    )
-    .unwrap_err();
-    assert_eq!(error.code, Code::SourceDigestMismatch);
-    assert_ne!(ByteDigest::of(changed.as_bytes()), original.digest());
 
     for text in [
         original
@@ -260,7 +242,6 @@ fn each_foreign_context_refuses_with_its_own_typed_preflight_cause() {
         Path,
         Package,
         Contract,
-        Semantic,
     }
     let original = document("true", false);
     for change in [
@@ -268,7 +249,6 @@ fn each_foreign_context_refuses_with_its_own_typed_preflight_cause() {
         Foreign::Path,
         Foreign::Package,
         Foreign::Contract,
-        Foreign::Semantic,
     ] {
         let mut foreign = context();
         let expected = match change {
@@ -298,13 +278,6 @@ fn each_foreign_context_refuses_with_its_own_typed_preflight_cause() {
                 PreflightFailure::ContractVersion {
                     actual: "future".into(),
                     expected: CONTRACT_VERSION,
-                }
-            }
-            Foreign::Semantic => {
-                foreign.module.semantic_core = "future".into();
-                PreflightFailure::SemanticCore {
-                    actual: "future".into(),
-                    expected: semantic_core_version(),
                 }
             }
         };

@@ -24,7 +24,6 @@ use qsl_eval::simulation::protocol::{
 };
 use qsl_eval::simulation::{Location, SubjectSystem, TransitionSystem};
 use qsl_eval::temporal::AtomReading;
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
@@ -42,9 +41,8 @@ use quire_exact::{Cancel, Meter};
 use serde_json::Value as Json;
 
 use crate::fill::{
-    class_of, contracts, document, instance, json_of, model_subject, package_id, package_id_with,
-    package_with, reachable, sc_system, source_memory, unit_text, universe, v, Documents, Reached,
-    PACKAGE,
+    class_of, contracts, document, instance, json_of, model_subject, package_with, reachable,
+    sc_system, source_memory, unit_text, universe, v, Documents, Reached, PACKAGE,
 };
 use crate::model_settle::{envelope_at, request};
 use crate::protocol_compensation::{pay_run, refund, REFUND};
@@ -181,7 +179,6 @@ impl World {
         settle_protocol_check(
             outcome,
             &ModelCheckLimits::default(),
-            &package_id(&self.body),
             &ProtocolCertificateRequest {
                 subject: self.subject(),
                 item,
@@ -202,13 +199,12 @@ impl World {
         max_live_instances: Option<u64>,
     ) -> Result<ModelTraceReplayResult, ReplayRefusal> {
         let unit = unit_text(&self.body).into_bytes();
-        let id = package_id(&self.body);
         let node = &self.checked.graph().temporal_clauses()[0];
-        let clause_node = WireNodeId::from_digest(*node.identity().as_bytes());
-        let occurrence = OccurrenceKey::new(clause_node, node.claim().clone());
+        let clause_node = node.identity().clone();
+        let occurrence = OccurrenceKey::new(clause_node.clone(), node.claim().clone());
         let subject = self.subject();
         replay_protocol_trace(
-            request(&document(), self.documents.snapshots.iter(), &unit, id),
+            request(&document(), self.documents.snapshots.iter(), &unit),
             &ProtocolTraceSubject {
                 model: ModelTraceSubject {
                     timed: None,
@@ -226,7 +222,7 @@ impl World {
                 max_messages: None,
                 max_live_instances,
             },
-            &envelope_at(&unit, id, payload, clause_node, occurrence),
+            &envelope_at(payload, clause_node, occurrence),
             letters,
             ReplayLimits::default(),
         )
@@ -249,12 +245,10 @@ fn identity(system: &System<'_>, step: &ProtocolTransition) -> Json {
 
 /// The cell a reference names, by its key.
 fn named(reference: &Json) -> String {
-    let text = reference["identity"].as_str().expect("an identity");
-    let bytes: Vec<u8> = (0..text.len())
-        .step_by(2)
-        .map(|at| u8::from_str_radix(&text[at..at + 2], 16).expect("hex"))
-        .collect();
-    String::from_utf8(bytes).expect("a key")
+    reference["identity"]
+        .as_str()
+        .expect("an identity")
+        .to_owned()
 }
 
 /// The cells the `kind` steps of `reached[at]` name as their `object`.
@@ -1473,7 +1467,7 @@ fn requests_differing_only_in_max_live_instances_share_one_obligation_identity()
         panic!("one declared clause");
     };
     let obligation = |request: &ProtocolCheckRequest<'_>| ItemObligation {
-        subject: SubjectIdentity::of(&request.subject.model).expect("the package emits"),
+        subject: SubjectIdentity::of(&request.subject.model),
         kind: ObligationKind::Authored(node_occurrence(clause)),
         reductions: qsl_route::reductions::ObligationReductions::default(),
     };
@@ -1587,7 +1581,6 @@ fn a_protocol_derived_items_max_live_instances_reaches_the_run_and_the_check() {
                 max_messages: None,
                 max_live_instances: None,
             },
-            package_id: package_id_with(crate::litmus::PROTOCOL_PROFILE, &world.body),
             replay: Box::new(|_| panic!("the run reports no counterexample")),
         };
         analyze(

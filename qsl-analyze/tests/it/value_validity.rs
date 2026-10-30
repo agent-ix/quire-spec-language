@@ -22,7 +22,6 @@ use qsl_analyze::analyze::{
     analyze, value_item, AnalyzeItem, AnalyzeRecord, DispositionKind, Engine, Engines, Settlement,
 };
 use qsl_analyze::value_check::{manifest, ValueRequest};
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::RequestIndex;
 use qsl_package::CheckedPackage;
 use qsl_replay::value_check::{ParameterDomain, Selection, ValueTarget, Verdict, Violation};
@@ -32,7 +31,7 @@ use qsl_replay::{
 };
 use qsl_route::Mode;
 use qsl_semantics::check::{Capability, NodeTag, PackageDeclarations};
-use qsl_semantics::value::{CatalogRole, DefinitionLock};
+use qsl_semantics::value::{admit_integer_division, DefinitionRole};
 use quire_exact::{Cancel, Integer, IntegerInterval, Origin, Role, Value};
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::location::{Location, Origin as LocationOrigin};
@@ -311,17 +310,15 @@ fn package_of(declarations: &str) -> CheckedPackage {
     let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
     let mut declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "package".to_owned(),
         unit,
         Vec::new(),
         Vec::new(),
     )
     .expect("the assembler builds the package declarations");
-    let lock = DefinitionLock::pinned();
     declarations.integer_division = Some(
-        lock.admit_integer_division(
-            &[lock
-                .entry(CatalogRole::IntegerDivisionEuclidean)
-                .reference()],
+        admit_integer_division(
+            &[DefinitionRole::IntegerDivisionEuclidean.reference()],
             None,
         )
         .expect("Euclidean division is admitted"),
@@ -333,12 +330,12 @@ fn package_of(declarations: &str) -> CheckedPackage {
     )
 }
 
-fn wire_of(package: &CheckedPackage, function: &str) -> WireNodeId {
+fn wire_of(package: &CheckedPackage, function: &str) -> quire_exact::NodeKey {
     let callable = package
         .graph()
         .callable(function)
         .expect("the function exists");
-    WireNodeId::from_digest(*callable.identity.as_bytes())
+    callable.identity.clone()
 }
 
 /// The key the vector names: the function's node at the vector's role and
@@ -794,14 +791,7 @@ fn an_undefined_subexpression_is_located_at_its_own_occurrence() {
     );
     let package_location = package
         .graph()
-        .occurrence(
-            package
-                .graph()
-                .semantic_graph()
-                .resolve_wire(at.locus.node())
-                .unwrap(),
-            at.locus.origin(),
-        )
+        .occurrence(at.locus.node().clone(), at.locus.origin())
         .expect("the locus is an occurrence of the package");
     assert_eq!(package_location, &expected);
     assert_ne!(at.locus, key);
@@ -834,14 +824,7 @@ fn an_undefinedness_inside_a_callee_is_located_in_the_callees_body() {
     let at = found.reproduced.violation().undefined.as_ref().unwrap();
     let location = package
         .graph()
-        .occurrence(
-            package
-                .graph()
-                .semantic_graph()
-                .resolve_wire(at.locus.node())
-                .unwrap(),
-            at.locus.origin(),
-        )
+        .occurrence(at.locus.node().clone(), at.locus.origin())
         .unwrap();
     // The call site is not a second locus: the locus lies in the callee.
     assert!(
@@ -974,7 +957,7 @@ fn a_replay_confirms_the_violation_it_was_asked_about_and_no_other() {
 fn a_claim_that_selects_no_form_is_declined_without_a_check() {
     let package = package_of("function f using v(x: Int[0, 3]): Int[0, 4] pure { x + 1 }");
     let none = OccurrenceKey::new(
-        WireNodeId::from_digest([7; 32]),
+        crate::fixture_ids::node_key([7]),
         Origin::new(Role::new("claim"), 0),
     );
     assert!(matches!(
@@ -1238,8 +1221,8 @@ fn the_production_registry_holds_the_arm_and_an_absent_provider_is_refused() {
 #[test]
 fn a_check_arm_descriptor_needs_a_positive_max_cases_default() {
     use qsl_route::{
-        descriptor_from_manifest_with_max_cases, Candidate, ManifestDigest, ManifestMembers,
-        MaxCasesMember, ProviderOrigin,
+        descriptor_from_manifest_with_max_cases, Candidate, ManifestMembers, MaxCasesMember,
+        ProviderOrigin,
     };
     let member = |bounds: &Json| match bounds {
         Json::Null => MaxCasesMember::Absent,
@@ -1258,7 +1241,6 @@ fn a_check_arm_descriptor_needs_a_positive_max_cases_default() {
             let admitted = descriptor_from_manifest_with_max_cases(
                 Candidate::new(qsl_foundation::BackendId::new("arm")),
                 ProviderOrigin::Linked,
-                ManifestDigest::from_digest([1; 32]),
                 [(Some(kind), Some("bounded"))],
                 ManifestMembers {
                     domains: Some(&["integer"]),
@@ -1284,7 +1266,6 @@ fn a_check_arm_descriptor_needs_a_positive_max_cases_default() {
     assert!(descriptor_from_manifest_with_max_cases(
         Candidate::new(qsl_foundation::BackendId::new("other")),
         ProviderOrigin::Linked,
-        ManifestDigest::from_digest([2; 32]),
         [(Some("refinement"), Some("bounded"))],
         ManifestMembers {
             domains: Some(&["integer"]),
@@ -1354,7 +1335,13 @@ fn a_location_holds_one_candidate_expression_occurrence() {
             if origin.role().as_str() != "expression" {
                 continue;
             }
-            if graph.semantic_graph().node(node).unwrap().node_tag() == NodeTag::Value {
+            if graph
+                .semantic_graph()
+                .node(node.clone())
+                .unwrap()
+                .node_tag()
+                == NodeTag::Value
+            {
                 continue;
             }
             let at = format!("{:?}{:?}", location.origin, location.path());

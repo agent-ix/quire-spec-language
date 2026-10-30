@@ -318,7 +318,6 @@ pub fn run(workspace_root: &Path, operands: &[OsString]) -> Result<Outcome> {
     })?;
     validate_semantics(&corpus)?;
 
-    let profiles = qsl_profiles();
     let all_capabilities = corpus
         .coverage
         .primary
@@ -326,6 +325,7 @@ pub fn run(workspace_root: &Path, operands: &[OsString]) -> Result<Outcome> {
         .map(|cap| (cap.capability_id.as_str(), cap))
         .collect::<BTreeMap<_, _>>();
     let default_scope = args.capabilities.is_empty();
+    let profiles = qsl_profiles();
     let mut scope = if default_scope {
         corpus
             .coverage
@@ -611,21 +611,19 @@ fn validate_semantics(corpus: &Corpus) -> Result<()> {
 }
 
 fn qsl_profiles() -> BTreeSet<String> {
-    let lock = qsl_semantics::value::DefinitionLock::pinned();
-    let mut profiles = lock
-        .catalog()
-        .iter()
-        .map(|entry| entry.identity.to_owned())
+    let mut profiles = qsl_semantics::value::DefinitionRole::ALL
+        .into_iter()
+        .map(|role| role.identity().to_owned())
         .collect::<BTreeSet<_>>();
     profiles.extend(
-        lock.model_catalog()
-            .iter()
-            .map(|entry| entry.identity.to_owned()),
+        qsl_semantics::value::ModelRole::ALL
+            .into_iter()
+            .map(|role| role.identity().to_owned()),
     );
     profiles.extend(
-        lock.temporal_catalog()
-            .iter()
-            .map(|entry| entry.identity.to_owned()),
+        qsl_semantics::value::TemporalRole::ALL
+            .into_iter()
+            .map(|role| role.identity().to_owned()),
     );
     profiles.extend(
         qsl_semantics::value::HeaderLayer::ALL
@@ -716,21 +714,26 @@ fn execute_vector(vector: &Vector, root: &Path, limits: &qsl_replay::CallerLimit
         (ConsumerType::Language, Operation::Compile) => {
             let stage_limits = qsl_replay::StageLimits::from_iter(limits.spine.bounds());
             match qsl_replay::compile_package(
-                identity,
-                &source.path,
-                bytes,
+                qsl_replay::CompileUnit {
+                    source: identity,
+                    package_name: "qualification".to_owned(),
+                    path: &source.path,
+                    bytes,
+                },
                 std::iter::empty::<&[u8]>(),
                 &qsl_replay::DependencyInput::default(),
                 stage_limits,
                 limits.replay,
             ) {
                 Ok(compiled) => {
-                    let package_id = compiled.package_id();
-                    (
-                        json!({"domain": package_id.domain().as_str(), "hex": package_id.hex()}),
-                        None,
-                        None,
-                    )
+                    match serde_json::from_slice::<serde_json::Value>(compiled.bytes()) {
+                        Ok(package) => (package, None, None),
+                        Err(error) => (
+                            json!({"code": "invalid-package", "cause": error.to_string()}),
+                            None,
+                            None,
+                        ),
+                    }
                 }
                 Err(refusal) => (
                     json!({"code": refusal.code().as_str(), "cause": refusal.to_string()}),

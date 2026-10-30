@@ -19,7 +19,6 @@ use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::clause_observation::Observation;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::observation::{
     declared_type_universe_for, DocumentRef, ObservationLimits,
 };
@@ -36,7 +35,6 @@ use quire_semantic_value::model_transition::ModelTransition;
 use serde_json::{json, Value as Json};
 
 const PACKAGE: &str = "test/footprints";
-const PLACEHOLDER: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 
 fn ident(suffix: &str) -> String {
     format!("ix://{PACKAGE}/{suffix}")
@@ -168,7 +166,6 @@ fn document(types: Vec<Json>, populations: &[(&str, &str)]) -> Vec<u8> {
     })
     .map(|(name, meaning)| {
         json!({"kind": {"module": PACKAGE, "name": name}, "moduleVersion": "1.0.0",
-            "manifestDigest": PLACEHOLDER,
             "construct": {"identity": "none", "shape": "record", "members": {},
                 "meaning": meaning}})
     })
@@ -186,11 +183,10 @@ fn document(types: Vec<Json>, populations: &[(&str, &str)]) -> Vec<u8> {
         .collect();
     json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
-        "source": {"identity": ident("spec"), "version": "1.0.0", "dialect": "spec-bundle",
-            "digest": PLACEHOLDER},
-        "package": {"identity": PACKAGE, "version": "1.0.0", "manifestDigest": PLACEHOLDER,
-            "mappingVersions": [], "profileVersions": [], "lockDigest": PLACEHOLDER},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
+        "source": {"identity": ident("spec"), "version": "1.0.0", "dialect": "spec-bundle"},
+        "package": {"identity": PACKAGE, "version": "1.0.0",
+            "mappingVersions": [], "profileVersions": []},
         "occurrences": [], "extensions": [],
         "constructs": constructs, "types": types, "populations": populations,
     })
@@ -204,20 +200,18 @@ fn document(types: Vec<Json>, populations: &[(&str, &str)]) -> Vec<u8> {
 
 struct Subject {
     package: CheckedPackage,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
     header: Json,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: qsl_semantics::model::observation::DocumentProvision,
 }
 
 /// The fixture `document` checked with `clauses` as its unit.
 fn subject(document: Vec<u8>, clauses: &[&str]) -> Subject {
-    let packages = package_input([document.as_slice()]);
-    let digest = *packages.keys().next().expect("one model");
+    let packages = package_input([document.as_slice()]).unwrap();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\n\
-         model M = \"{PACKAGE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         model M = \"{PACKAGE}\";\n\
          function Noop using v(): Boolean pure {{ true }}\n{}\n",
-        hex(&digest),
         clauses.join("\n"),
     );
     let parsed = qsl_cst::parse(
@@ -241,6 +235,7 @@ fn subject(document: Vec<u8>, clauses: &[&str]) -> Subject {
     .expect("the kept operation clauses parse");
     let declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         built,
         models,
         Vec::new(),
@@ -251,8 +246,7 @@ fn subject(document: Vec<u8>, clauses: &[&str]) -> Subject {
         .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
     Subject {
         package: CheckedPackage::link(graph),
-        header: json!({"identity": PACKAGE, "version": "1.0.0",
-            "digest": format!("sha256-jcs:{}", hex(&digest))}),
+        header: json!({"identity": PACKAGE}),
         packages,
         snapshots: BTreeMap::new(),
     }
@@ -312,17 +306,16 @@ impl Subject {
             "populations": listed,
         });
         let bytes = document.to_string().into_bytes();
-        let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-        let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-            .expect("canonical fixture")
-            .as_bytes();
-        self.snapshots.insert(digest, bytes);
+        self.snapshots.insert(
+            qsl_semantics::model::observation::document_reference(&bytes)
+                .expect("a document names itself"),
+            bytes,
+        );
         DocumentRef {
             authority: "test".to_owned(),
             identity: name.to_owned(),
             revision_namespace: "fixture".to_owned(),
             revision: "fixture:1".to_owned(),
-            digest,
         }
     }
 
@@ -403,7 +396,7 @@ impl Subject {
         } = graph
             .scope()
             .operations()
-            .resolve(graph.scope().types(), identity, operation)
+            .resolve(graph.scope().types(), identity.clone(), operation)
         else {
             panic!("{object_type} declares no operation {operation}");
         };
@@ -412,7 +405,7 @@ impl Subject {
             .iter()
             .filter_map(|(name, value_type)| {
                 let declared = match value_type {
-                    quire_exact::ValueType::Reference(declared) => *declared,
+                    quire_exact::ValueType::Reference(declared) => declared.clone(),
                     _ => return None,
                 };
                 let actual = bound
@@ -452,15 +445,10 @@ const UNLIMITED: ScalarLimits = ScalarLimits {
 /// reference argument.
 fn reference_text(reference: &ObjectReference) -> String {
     format!(
-        r#"{{"identity":"{}","object_type":"{}","type":"reference","universe":"{}"}}"#,
-        reference
-            .object()
-            .as_str()
-            .bytes()
-            .map(|byte| format!("{byte:02x}"))
-            .collect::<String>(),
-        hex(reference.object_type().as_bytes()),
-        hex(reference.universe().as_bytes()),
+        r#"{{"identity":"{}","object_type":{},"type":"reference","universe":{}}}"#,
+        reference.object().as_str(),
+        crate::support::ids::effective_json(reference.object_type()),
+        crate::support::ids::node_json(reference.universe().root_type()),
     )
 }
 
@@ -473,7 +461,7 @@ fn transition(
     arguments: Vec<String>,
 ) -> ModelTransition {
     let operation = format!(
-        r#"{{"digest_domain":"sha256-jcs","node":"{}","package":"{PACKAGE}"}}"#,
+        r#"{{"node":"{}","package":"{PACKAGE}"}}"#,
         ident(&format!("{object_type}/{operation}"))
     );
     ModelTransition::new(
@@ -1411,23 +1399,18 @@ fn the_footprint_hook_takes_no_state_and_covers_absent_objects() {
     assert_eq!(bump_d.writes, locations([field_at(&d, "Counter/v")]));
 }
 
-/// A transition text that is not the canonical text of a reference, or whose
-/// arguments do not match the operation's parameters, names no footprint.
+/// A transition whose arguments do not match the operation's parameters
+/// names no footprint.
 #[test]
-fn a_non_canonical_or_miscounted_transition_has_no_footprint() {
+fn a_miscounted_transition_has_no_footprint() {
     let mut subject = counters_subject();
     let start = counters_start(&mut subject);
     let system = subject.system(start, &COUNTER_KEYS);
     let a = subject.reference("Counter", "a");
     let operation = transition("Counter", "bump", &a, Vec::new());
 
-    // The identity `j` is hex `6a`; the same object spelled `6A` or `+1` is
-    // not canonical text.
     let j = subject.reference("Counter", "j");
     let canonical = reference_text(&j);
-    assert!(canonical.contains("\"6a\""));
-    let shouting = canonical.replace("\"6a\"", "\"6A\"");
-    let signed = canonical.replace("\"6a\"", "\"+1\"");
     let with_receiver = |receiver: String, arguments: Vec<String>| {
         ModelTransition::new(
             operation.operation().to_owned(),
@@ -1440,14 +1423,6 @@ fn a_non_canonical_or_miscounted_transition_has_no_footprint() {
     assert!(system
         .footprint(&with_receiver(canonical, Vec::new()))
         .is_ok());
-    let upper = shouting;
-    let shouting = signed;
-    for receiver in [shouting, upper] {
-        assert_eq!(
-            system.footprint(&with_receiver(receiver, Vec::new())),
-            Err(qsl_eval::simulation::model::FootprintError::UnknownTransition)
-        );
-    }
     assert_eq!(
         system.footprint(&with_receiver(reference_text(&a), vec![reference_text(&a)])),
         Err(qsl_eval::simulation::model::FootprintError::UnknownTransition)

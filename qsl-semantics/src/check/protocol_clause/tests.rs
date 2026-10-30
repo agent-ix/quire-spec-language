@@ -23,7 +23,6 @@ mod attempts;
 mod binders;
 mod coverage;
 mod graph;
-mod node_keys;
 
 /// S1, S2 and the assembler over `declarations`, against
 /// [`m_actor_model`]'s own `M::Actor::op`: FR-113's checker
@@ -49,6 +48,7 @@ fn assemble_with(header: &str, declarations: &str) -> (String, PackageDeclaratio
     let unit = build_unit(&parsed).expect("S2 builds the unit");
     let assembled = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         unit,
         vec![m_actor_model()],
         Vec::new(),
@@ -142,6 +142,7 @@ fn assembly_errors(declarations: &str) -> Vec<crate::check::AssemblyError> {
     let unit = build_unit(&parsed).expect("S2 builds the unit");
     PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         unit,
         vec![m_actor_model()],
         Vec::new(),

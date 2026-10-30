@@ -13,7 +13,7 @@ relationships:
 ## Description
 
 Verify that `qsl_replay::replay` recompiles a complete-V1 unit from a replay
-request's byte provision, requires its `package_id`, selects and calls the
+request's byte provision, selects and calls the
 function, settles the verdict, and refuses each ADR-013 O-26 case with a
 typed variant and no partial result.
 
@@ -40,11 +40,9 @@ occurrence key unless a step names another occurrence.
    `Witness` binding `x`'s node id to 8, then with a binding named `x`.
 2. Replay `small(3)`, and `small(7)` with a zero work budget; replay
    `flag(0)` and `flag(1)`; replay `lt` with `b = 3` given before `a = 5`.
-3. Replay against the original `package_id` with `x < 6` as the source;
-   then with a blank line added, supplied under its own digest and under the
-   original digest.
+3. Retired (FR-098-AC-3 is retired).
 4. Compile a unit that selects `tests/fixtures/spine-model.semantic-ir.json`
-   by `sha256-jcs`; replay it with and without the document in the byte
+   by its package identity; replay it with and without the document in the byte
    provision.
 5. Replay with the selections `large` and
    `module.small`; no argument, an extra argument naming `flag`'s parameter,
@@ -60,15 +58,12 @@ occurrence key unless a step names another occurrence.
    request from its spine compile against `test/units`: `sources` names the
    unit's one source, `dependencies` holds `{test/units, <its
    package_id>, [its one source]}`, and the byte provision carries both.
-   Replay `q(3)`. Then replace `test/units`'s bytes with `x > 6`, with the
-   entry's digest updated to the new bytes; then restore them and change
-   only the entry's `package_id`; then add an extra entry no import
+   Replay `q(3)`. Then add an extra entry no import
    reaches; then swap two entries; then repeat the entry; then add an entry
    whose source has `test/units`'s authority and identity; then remove the
    entry; then give the entry a second source.
 8. Replay a package whose refinement has a non-empty internal list with the
-   list carried at `/package/refinement_internals`; with the member removed;
-   with the value `{}`; with the spelling `Spec::Twice::zz`; and with a list
+   list carried at `/package/refinement_internals`; with the value `{}`; with the spelling `Spec::Twice::zz`; and with a list
    on a `dependencies` entry, valid and defective.
 
 9. Replay step 1's `small` request with its replay target replaced by
@@ -92,7 +87,7 @@ Tag the tests `#[trace("TC-444", ...)]` with the ACs each step backs.
 
 ## Expected Results
 
-- Step 1: `reproduced-without-witness`, value `false`, the executor's pin and
+- Step 1: `reproduced-without-witness`, value `false`, the executor's implementation identity and
   non-zero work charges; `reproduced-with-evaluated-witness` with no QSpec FR-351
   record; a missing-binding decode refusal naming
   `x`'s node id.
@@ -100,9 +95,7 @@ Tag the tests `#[trace("TC-444", ...)]` with the ACs each step backs.
   then with cause `NoValue`, replayed verdict `incomplete` and no value;
   `flag(0)` agrees and `flag(1)` is `inconclusive` with value `true`; `lt`
   is `5 < 3`, `false`, and agrees.
-- Step 3: `PackageIdMismatch` naming both identities; the edit keeps the
-  `package_id`, and the two supplies refuse `IncompleteByteProvision` (`missing_import`/`missing-selection`) and
-  `ByteDigestMismatch`.
+- Step 3: retired.
 - Step 4: agreement with the document; stage `intake`, `missing_import`
   without it.
 - Step 5: in order, `UnknownFunction` naming the
@@ -128,9 +121,7 @@ Tag the tests `#[trace("TC-444", ...)]` with the ACs each step backs.
   `quire.checked-package/v2` emit and IR's own I2 decode.
 
 - Step 7: `q(3)` is `false` and agrees (`reproduced-without-witness`). The
-  edited bytes refuse `DependencyIdentityMismatch` (`stale_dependency`)
-  naming `test/units`, the entry's and the recompiled `package_id`; the changed entry refuses `DependencyIdentityMismatch`
-  naming `test/units`; the extra entry refuses `DependencySelections`
+  extra entry refuses `DependencySelections`
   (`invalid_package`/`invalid-value` at `/package/dependencies`); the
   swapped and the repeated entries refuse `DependencySelections` before any
   recompile; the same-owner entry refuses `DependencyInput`
@@ -138,8 +129,7 @@ Tag the tests `#[trace("TC-444", ...)]` with the ACs each step backs.
   removed entry refuses `Recompile` carrying
   `missing_import`/`missing-selection` at the import; the second source
   refuses `SourceCount(2)`. None yields a verdict.
-- Step 8: the first replay recompiles to the proved `package_id`; the second
-  refuses `PackageIdMismatch` naming both identities; the third refuses
+- Step 8: the first replay recompiles; the second refuses
   `Recompile` carrying `invalid_model_binding`/`malformed-declaration`
   located at `/package/refinement_internals`; the `zz` spelling refuses
   `missing_declaration`/`missing-name` at

@@ -103,7 +103,6 @@ use qsl_eval::simulation::{
 use qsl_eval::temporal::{AtomReading, CaptureReading, UndefinedCause};
 use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::IdentityLimits;
-use qsl_package::CheckedPackage;
 use qsl_replay::{
     undefined_finding, AppliedReduction, ClauseIdentity, ClauseRootRefusal, CounterexampleKind,
     IncompleteCause, Instance, ItemRefusal, Lasso, MemoryBound, MemoryCause, ModelCheckItem,
@@ -241,7 +240,6 @@ pub(super) fn check(
             root_cancelled,
             no_initial,
             certify: Certify {
-                package: request.subject.simulation.package,
                 instances: &|| {
                     request.item.instances_for(
                         &request.subject,
@@ -339,7 +337,6 @@ pub(super) fn check_protocol<M: MemoryModel>(
             root_cancelled,
             no_initial: simulation.initial.is_empty(),
             certify: Certify {
-                package: simulation.package,
                 instances: &|| {
                     item.instances_for(
                         &subject.model,
@@ -385,8 +382,6 @@ struct Bound<'r, S: LiveSubject> {
 /// What a proof's component certificate (FR-339) reads of the subject beside
 /// the explored products.
 struct Certify<'r> {
-    /// The package the run explored (FR-282).
-    package: &'r CheckedPackage,
     /// The item's instances with the key contexts of their automaton states,
     /// in FR-125's canonical instance order.
     instances: &'r dyn Fn() -> Result<Vec<Instance>, ItemRefusal>,

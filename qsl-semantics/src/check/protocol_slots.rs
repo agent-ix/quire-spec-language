@@ -1757,7 +1757,7 @@ fn role_population(
     let model = declarations
         .models
         .iter()
-        .find(|model| model.type_key(element).is_some())
+        .find(|model| model.type_key(element.clone()).is_some())
         .ok_or_else(missing)?;
     let found = model
         .named_populations()

@@ -344,8 +344,7 @@ item moves once.
   supplies (FR-401).
 - `quire-checked` joins FB-05's shared-leaf class, so a backend may depend on
   it. Only the `construct` feature exposes its constructors; in QSL, T12-G
-  limits their callers to `check`, plus `library` for `PackageId` and
-  `value::definition` for `AdmittedIntegerDivision`, and across repositories FR-059 refuses a
+  limits their callers to `check`, plus `value::definition` for `AdmittedIntegerDivision`, and across repositories FR-059 refuses a
   backend that enables the feature. Within one workspace, feature
   unification makes the constructors visible to any crate that builds with
   `qsl-semantics`; the caller rule, not the type system, closes that gap.
@@ -361,8 +360,8 @@ item moves once.
   before claiming that the new interface completes the old port migration.
 - IR-269 precedes S1 and reaches S6 through S1. The Linear edges decide
   readiness.
-- The `no_std` dependency verdicts, measured on QSL `origin/main`: `serde`,
-  `sha2` and `thiserror` build without `std`. `quire-contract-model` does
+- The `no_std` dependency verdicts, measured on QSL `origin/main`: `serde`
+  and `thiserror` build without `std`. `quire-contract-model` does
   not (it depends on `serde_json` with `std`, `jsonschema`,
   `serde_path_to_error`, `serde_stacker` and `stacker`), so it stays behind
   `qsl-package`'s `std` feature, and with `std` off the checked package reads

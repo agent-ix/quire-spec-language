@@ -6,7 +6,6 @@
 //! identity a request writer reads; the writer is generic over it.
 
 use ix_trace_rs::trace;
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_route::deadlock::{ItemObligation, ModelStateGraphItem, ModelTemporalItem, ObligationKind};
 use qsl_route::request::{ExtentClassification, ItemKind};
@@ -30,7 +29,7 @@ const OVER_M: &[&str] = &[PACKAGE];
 
 fn occurrence(byte: u8) -> OccurrenceKey {
     OccurrenceKey::new(
-        WireNodeId::from_digest([byte; 32]),
+        crate::fixture_ids::node_key([byte]),
         Origin::new(Role::new("temporal"), 0),
     )
 }

@@ -50,7 +50,7 @@ fn quantifier<'f>(
     located: &Located<'f>,
     id: ExprId,
     clocks: &Clocks<'_>,
-    context: EffectiveId,
+    context: &EffectiveId,
 ) -> Option<Quantifier<'f>> {
     let Some(ExprNode::Query {
         query: query @ (BinderQuery::Forall | BinderQuery::Exists),
@@ -63,7 +63,9 @@ fn quantifier<'f>(
     };
     let path = self_path(located.form, *source)?;
     let shape = clocks.fields.iter().find_map(|clock| {
-        if !clocks.model.conforms(context, clock.owner) || !clock.path.starts_with(&path) {
+        if !clocks.model.conforms(context.clone(), clock.owner.clone())
+            || !clock.path.starts_with(&path)
+        {
             return None;
         }
         match clock.path.get(path.len()) {
@@ -93,7 +95,7 @@ fn quantifier<'f>(
 pub(super) fn bodies(
     located: &Located<'_>,
     clocks: &Clocks<'_>,
-    context: EffectiveId,
+    context: &EffectiveId,
 ) -> BTreeSet<ExprId> {
     let mut found = BTreeSet::new();
     for node in located.form.expression.iter() {
@@ -125,7 +127,7 @@ pub(super) fn read(
     located: &Located<'_>,
     id: ExprId,
     clocks: &Clocks<'_>,
-    context: EffectiveId,
+    context: &EffectiveId,
     budget: &mut PartBudget,
 ) -> Result<Option<(Dnf, Dnf)>, CheckCause> {
     let Some(quantifier) = quantifier(located, id, clocks, context) else {
@@ -410,6 +412,44 @@ fn renamed(
     Ok(ExpressionForm { expression, spans })
 }
 
+/// Whether `id` is `present(binder)`: the presence of the selected
+/// element's place alone.
+fn binder_presence(located: &Located<'_>, id: ExprId, binder: &str) -> bool {
+    match located.node(id) {
+        Some(ExprNode::Present(operand)) => matches!(
+            located.node(*operand),
+            Some(ExprNode::Name(read)) if read.segments.len() == 1 && read.name == binder
+        ),
+        _ => false,
+    }
+}
+
+/// Whether `id` is `forall(e in ..: present(e) implies W)`: a reset by
+/// selection whose condition is the presence of the binder's place (QSpec
+/// FR-322 `SD-02`), whose presence read is the reset's `condition` rather
+/// than a presence read this slice does not take.
+pub(super) fn presence_selection(located: &Located<'_>, id: ExprId) -> bool {
+    let Some(ExprNode::Query {
+        query: BinderQuery::Forall,
+        binder,
+        body,
+        ..
+    }) = located.node(id)
+    else {
+        return false;
+    };
+    let Some(ExprNode::Binary {
+        operator: BinaryOperator::Implies,
+        left,
+        ..
+    }) = located.node(*body)
+    else {
+        return false;
+    };
+    // The write `W` is checked by [`reset`].
+    binder_presence(located, *left, binder)
+}
+
 /// The reset a postcondition conjunct `forall(e in self.f: P(e) implies
 /// e.x = c)` or `forall(e in self.f: e.x = c)` writes (FR-230 "Resets by
 /// selection"): the clock `x` of each held slot whose element satisfies
@@ -426,7 +466,7 @@ pub(super) fn reset(
     located: &Located<'_>,
     id: ExprId,
     clocks: &Clocks<'_>,
-    context: EffectiveId,
+    context: &EffectiveId,
     written: &BTreeSet<&DeclarationKey>,
 ) -> Result<Option<ResetDraft>, TemporalCause> {
     let Some(quantifier) = quantifier(located, id, clocks, context) else {
@@ -445,7 +485,10 @@ pub(super) fn reset(
         _ => (None, quantifier.body),
     };
     if let Some(premise) = premise {
-        if located.reads_clock(premise) {
+        // `present(e)` of the selected element reads its presence alone,
+        // the condition of a reset by presence (QSpec `SD-02`); any other
+        // clock read in the premise is refused.
+        if located.reads_clock(premise) && !binder_presence(located, premise, quantifier.binder) {
             return Err(located.outside(premise));
         }
     }
@@ -471,7 +514,7 @@ pub(super) fn reset(
     let value = match located.constant(value, clocks) {
         Ok(value) => value,
         Err(TemporalCause::ClockBoundNotConstant { .. }) => {
-            return Err(TemporalCause::ClockWrite { span })
+            return Err(TemporalCause::ClockWrite { span });
         }
         Err(cause) => return Err(cause),
     };
@@ -484,13 +527,37 @@ pub(super) fn reset(
     }
     let name = format!("{}#{}", quantifier.binder, quantifier.path.join("."));
     let predicate = premise
-        .map(|premise| renamed(located, premise, quantifier.binder, &name))
+        .map(|premise| {
+            renamed(located, premise, quantifier.binder, &name)
+                .map(|form| (form, located.span(premise)))
+        })
         .transpose()?;
     Ok(Some(ResetDraft {
         parameter: None,
         clock,
         value,
         span,
-        selection: Some((quantifier.path, name, predicate)),
+        selection: Some(super::SelectionDraft {
+            path: quantifier.path,
+            name,
+            binder: quantifier.binder.to_owned(),
+            condition: predicate,
+        }),
     }))
+}
+
+/// The span of the first quantifier over a clock collection in `located`,
+/// in node order: a guard reading one has no `clock_guard` binder form
+/// until STD-554 (QSpec FR-322-AC-263).
+pub(super) fn first(
+    located: &Located<'_>,
+    clocks: &Clocks<'_>,
+    context: &EffectiveId,
+) -> Option<qsl_foundation::Span> {
+    located
+        .form
+        .expression
+        .iter()
+        .find_map(|node| quantifier(located, node.id(), clocks, context))
+        .map(|quantifier| quantifier.span)
 }

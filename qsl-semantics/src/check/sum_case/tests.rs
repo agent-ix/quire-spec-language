@@ -59,6 +59,7 @@ fn unit(declarations: &str) -> Unit {
     let unit = build_unit(&parsed).expect("S2 builds the unit");
     let package = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         unit,
         crate::model::intake::SelectedModels::default(),
         Vec::new(),
@@ -509,7 +510,7 @@ fn union_value(body: &CheckedBody) -> (NodeKey, usize, Vec<(&NodeKind, ValueType
         .iter()
         .map(|id| (root.at(*id).kind(), root.at(*id).value_type().clone()))
         .collect();
-    (*declaration, *member, arguments)
+    (declaration.clone(), *member, arguments)
 }
 
 #[trace("FR-317-AC-1", "TC-819")]
@@ -642,10 +643,20 @@ fn a_construction_checks_the_same_under_every_clause_kind() {
     assert_eq!(refusal.location, Unit::body().child(0));
 }
 
-/// A union named `q` with the given members, under `key`'s digest byte.
+/// A structural key for a second union named `q`, distinguished by `key`.
+fn other_union_key(key: u8) -> NodeKey {
+    NodeKey::new(
+        "fixture".to_owned(),
+        vec![quire_exact::PathSegment::Text(format!("other-q-{key}"))],
+        0,
+    )
+    .expect("a nonempty structural fixture key")
+}
+
+/// A union named `q` with the given members, under `key`.
 fn union_q(key: u8, members: &[(&str, Vec<ValueType>)]) -> CompositeDeclaration {
     CompositeDeclaration::new(
-        NodeKey::from_digest([key; 32]),
+        other_union_key(key),
         "q",
         CompositeShape::Union(
             members
@@ -707,7 +718,7 @@ fn a_qualified_member_with_two_candidates_is_ambiguous_and_names_each() {
         let (name, candidates) = ambiguity(&refusal);
         assert_eq!(name, call.split('(').next().unwrap());
         assert_eq!(candidates.len(), 2, "{call}");
-        for key in [first, NodeKey::from_digest([9; 32])] {
+        for key in [first.clone(), other_union_key(9)] {
             assert!(
                 candidates.contains(&QualifiedCandidate::Union(key)),
                 "{call}: {candidates:?}"
@@ -725,7 +736,7 @@ fn a_qualified_member_with_two_candidates_is_ambiguous_and_names_each() {
         assert_eq!(
             ambiguity(&refusal).1,
             [
-                QualifiedCandidate::Union(first),
+                QualifiedCandidate::Union(first.clone()),
                 QualifiedCandidate::Enum(enum_key)
             ],
             "{call}"
@@ -779,22 +790,6 @@ fn an_enum_member_and_a_tuple_constructor_resolve_as_before_unions() {
     assert_eq!(arguments.len(), 2);
 }
 
-/// QSpec FR-441's member key, computed here from its preimage text rather
-/// than by the producer under test: the SHA-256 of the RFC 8785 bytes of
-/// `{declaration_node_id, member, version}`, member keys sorted.
-fn member_key_hex(declaration: NodeKey, member: &str) -> String {
-    use sha2::{Digest, Sha256};
-    let preimage = format!(
-        "{{\"declaration_node_id\":{{\"digest\":\"{declaration}\",\
-         \"domain\":\"quire.checked-semantic-node/v1\"}},\
-         \"member\":\"{member}\",\"version\":\"quire.union-member-node/v1\"}}"
-    );
-    Sha256::digest(preimage.as_bytes())
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
-}
-
 /// The scope of `unit` over `types`.
 fn scope_of_types(unit: &Unit, types: TypeEnvironment) -> Scope {
     let package = &unit.package;
@@ -815,27 +810,26 @@ fn scope_of_types(unit: &Unit, types: TypeEnvironment) -> Scope {
 /// id of its type node (FR-319), which lowering owns; a test chooses one.
 fn sealed_types(unit: &Unit, final_key: impl Fn(NodeKey) -> NodeKey) -> TypeEnvironment {
     let mut types = unit.package.types.clone();
-    let unions: Vec<(NodeKey, Vec<Identifier>)> = types
+    let unions: Vec<(NodeKey, Vec<String>)> = types
         .composites()
         .filter_map(|declaration| match declaration.shape() {
             CompositeShape::Union(members) => Some((
                 declaration.key(),
                 members
                     .iter()
-                    .map(|member| member.identifier().clone())
+                    .map(|member| member.identifier().to_owned())
                     .collect(),
             )),
             CompositeShape::Record(_) | CompositeShape::Tuple(_) => None,
         })
         .collect();
     for (handle, members) in unions {
-        let key = final_key(handle);
+        let key = final_key(handle.clone());
         let bindings = members
             .into_iter()
-            .map(|member| {
-                UnionMember::from_admitted(key, mint_union_member_key(key, member.as_str()), member)
-            })
-            .collect();
+            .map(|member| UnionMember::from_admitted(key.clone(), member))
+            .collect::<Result<Vec<_>, _>>()
+            .expect("nonempty member names");
         types
             .seal_union_verified(handle, key, bindings)
             .expect("the union seals under its final key");
@@ -853,49 +847,45 @@ fn a_union_member_variant_id_is_its_member_key_and_selects_only_its_union() {
     );
     // A final key distinct from the handle, so a test cannot confuse them.
     let final_of = |handle: NodeKey| {
-        let mut digest = *handle.as_bytes();
-        digest[0] ^= 0xff;
-        NodeKey::from_digest(digest)
+        let mut path = handle.path();
+        path.push(quire_exact::PathSegment::Text("final".to_owned()));
+        NodeKey::new(handle.package(), path, 0).expect("a structural final key")
     };
     let types = sealed_types(&unit, final_of);
 
-    // Each member's `VariantId` is its FR-441 member key, computed here from
-    // the preimage text.
+    // Each member's `VariantId` selects its member of the sealed union, at
+    // the declared position, and its member key sits under the union.
     let shape = final_of(unit.key("Shape"));
     for (position, member) in ["Empty", "Circle", "Rect"].into_iter().enumerate() {
-        let variant = mint_union_variant_id(mint_union_member_key(shape, member));
+        let variant = mint_union_variant_id(shape.clone(), member).expect("a member name");
+        let member_key = mint_union_member_key(&shape, member).expect("a member key");
         assert_eq!(
-            variant.to_string(),
-            member_key_hex(shape, member),
+            member_key.path().last(),
+            Some(&quire_exact::PathSegment::Text(member.to_owned())),
             "{member}"
-        );
-        assert_eq!(
-            mint_union_member_key(shape, member).to_string(),
-            variant.to_string(),
-            "the VariantId is the member key retyped"
         );
         let (found, declared) = types
             .union_member(unit.key("Shape"), variant)
             .expect("the sealed union resolves its member");
         assert_eq!(found, position);
-        assert_eq!(declared.identifier().as_str(), member);
+        assert_eq!(declared.identifier(), member);
     }
 
     // `A::X`, `B::X` and an enum `E::X` are three different identities.
     let (a, b) = (final_of(unit.key("A")), final_of(unit.key("B")));
     let enum_key = unit.package.enums[0].declaration.key();
     let ids = [
-        mint_union_variant_id(mint_union_member_key(a, "X")),
-        mint_union_variant_id(mint_union_member_key(b, "X")),
-        mint_variant_id(enum_key, "X"),
+        mint_union_variant_id(a, "X").expect("a member name"),
+        mint_union_variant_id(b, "X").expect("a member name"),
+        mint_variant_id(enum_key, "X").expect("a case name"),
     ];
     assert!(ids[0] != ids[1] && ids[0] != ids[2] && ids[1] != ids[2]);
 
     // A `VariantId` selects only its own union's member.
-    assert!(types.union_member(unit.key("A"), ids[0]).is_some());
-    assert!(types.union_member(unit.key("A"), ids[1]).is_none());
-    assert!(types.union_member(unit.key("A"), ids[2]).is_none());
-    assert!(types.union_member(unit.key("B"), ids[0]).is_none());
+    assert!(types.union_member(unit.key("A"), ids[0].clone()).is_some());
+    assert!(types.union_member(unit.key("A"), ids[1].clone()).is_none());
+    assert!(types.union_member(unit.key("A"), ids[2].clone()).is_none());
+    assert!(types.union_member(unit.key("B"), ids[0].clone()).is_none());
 }
 
 #[trace("FR-319-AC-3", "TC-826")]

@@ -11,11 +11,19 @@ use qsl_replay::spine::{self, ParseRequest, SpineLimits};
 use qsl_replay::{
     compile_admitted, AdmittedCompilation, AdmittedCompositeForm, AdmittedLookupRefusal,
     DependencyInput, NodeKey, ReplayLimits, SourceIdentity, StageLimits, SuppliedLibrary,
-    WireNodeId,
 };
 use std::collections::BTreeSet;
 
-use qsl_semantics::check::{mint_union_member_key, CheckedGraph, NodeTag};
+fn fixture_node(fill: u8) -> NodeKey {
+    NodeKey::new(
+        "fixture",
+        vec![quire_exact::PathSegment::Text(fill.to_string())],
+        0,
+    )
+    .expect("fixture node")
+}
+
+use qsl_semantics::check::{CheckedGraph, NodeTag};
 use qsl_semantics::value::enumeration::mint_union_variant_id;
 use quire_exact::Cancel;
 use quire_exact::{ValueType, VariantId};
@@ -47,15 +55,18 @@ fn limits() -> StageLimits {
     [(Setting::S1InputBytes, 1 << 20)].into_iter().collect()
 }
 
-fn wire(key: NodeKey) -> WireNodeId {
-    WireNodeId::from_digest(*key.as_bytes())
+fn wire(key: NodeKey) -> NodeKey {
+    key.clone()
 }
 
 fn admit(text: &str, dependencies: &DependencyInput) -> AdmittedCompilation {
     compile_admitted(
-        unit_identity(),
-        "unit.native",
-        text.as_bytes(),
+        qsl_replay::CompileUnit {
+            source: unit_identity(),
+            package_name: "fixture".to_owned(),
+            path: "unit.native",
+            bytes: text.as_bytes(),
+        },
         [],
         dependencies,
         limits(),
@@ -94,9 +105,9 @@ fn with_spine_graph<T>(text: &str, read: impl FnOnce(&CheckedGraph) -> T) -> T {
         .into_value();
     let checked = spine::check(
         &parsed,
+        "fixture".to_owned(),
         &models,
         &DependencyInput::default(),
-        &spine::LockEvidence::default(),
         limits,
         &cancel,
     )
@@ -143,7 +154,7 @@ fn spine_composites(graph: &CheckedGraph) -> Vec<Expected> {
             .key();
         composites.push((node, declaration.key(), name, form));
     }
-    composites.sort_by_key(|(node, ..)| *node);
+    composites.sort_by_key(|(node, ..)| node.clone());
     composites
 }
 
@@ -175,8 +186,8 @@ fn composite_keys_are_the_spines_distinct_and_stable() {
         .composites()
         .map(|composite| {
             (
-                composite.node(),
-                composite.key(),
+                composite.node().clone(),
+                composite.key().clone(),
                 composite
                     .qualified_name()
                     .last()
@@ -195,16 +206,20 @@ fn composite_keys_are_the_spines_distinct_and_stable() {
         .composites()
         .find(|composite| composite.qualified_name().last().map(|n| n.as_str()) == Some("Left"))
         .expect("Left");
-    assert_eq!(parameter, ValueType::Composite(left.key()));
+    assert_eq!(parameter, ValueType::Composite(left.key().clone()));
     assert_ne!(left.key(), left.node());
 
-    let keys: BTreeSet<_> = expected.iter().map(|(_, key, ..)| *key).collect();
+    let keys: BTreeSet<_> = expected.iter().map(|(_, key, ..)| key.clone()).collect();
     assert_eq!(keys.len(), 8, "each declaration has its own key");
 
     for (node, key, ..) in &expected {
-        let first = context.composite_declaration(wire(*node)).expect("found");
-        let again = context.composite_declaration(wire(*node)).expect("found");
-        assert_eq!(first.key(), *key);
+        let first = context
+            .composite_declaration(&wire(node.clone()))
+            .expect("found");
+        let again = context
+            .composite_declaration(&wire(node.clone()))
+            .expect("found");
+        assert_eq!(first.key().clone(), *key);
         assert_eq!(first, again);
     }
     let recompiled = admit(&text, &DependencyInput::default());
@@ -221,18 +236,18 @@ fn composite_lookups_refuse_unknown_and_wrong_kind_ids() {
     let admitted = admit(&format!("{HEADER}{UNIT}"), &DependencyInput::default());
     let context = admitted.context();
 
-    let nobody = WireNodeId::from_digest([7; 32]);
+    let nobody = fixture_node(7);
     assert_eq!(
-        context.composite_declaration(nobody),
+        context.composite_declaration(&nobody),
         Err(AdmittedLookupRefusal::Unknown {
             declaration: nobody,
             case: None
         })
     );
 
-    let color = wire(context.enums().next().expect("the enum").key());
+    let color = wire(context.enums().next().expect("the enum").key().clone());
     assert_eq!(
-        context.composite_declaration(color),
+        context.composite_declaration(&color),
         Err(AdmittedLookupRefusal::WrongKind { declaration: color })
     );
 
@@ -241,7 +256,7 @@ fn composite_lookups_refuse_unknown_and_wrong_kind_ids() {
     });
     let id = wire(function);
     assert_eq!(
-        context.composite_declaration(id),
+        context.composite_declaration(&id),
         Err(AdmittedLookupRefusal::WrongKind { declaration: id })
     );
 }
@@ -263,15 +278,15 @@ fn spine_members(graph: &CheckedGraph, name: &str) -> (NodeKey, Vec<ExpectedMemb
         .iter()
         .map(|member| {
             let minted =
-                mint_union_variant_id(mint_union_member_key(node, member.identifier().as_str()));
+                mint_union_variant_id(node.clone(), member.identifier()).expect("a variant id");
             // The sealed environment's own binding agrees with the minting.
             let sealed = types
-                .union_member_named(declaration.key(), member.identifier().as_str())
+                .union_member_named(declaration.key(), member.identifier())
                 .and_then(|(_, declared)| declared.member())
                 .expect("a sealed member");
-            assert_eq!(sealed.variant(), minted);
+            assert_eq!(sealed.variant(), &minted);
             (
-                member.identifier().as_str().to_owned(),
+                member.identifier().to_owned(),
                 minted,
                 member.positions().to_vec(),
             )
@@ -304,15 +319,15 @@ fn union_members_are_the_producers_minted_variants_in_declared_order() {
         let found = by_name(name);
         assert_eq!(found.form(), AdmittedCompositeForm::Union);
         // The witness value of a union names the settled node.
-        assert_eq!(found.node(), node);
-        assert_eq!(context.composite_declaration(wire(node)), Ok(found));
+        assert_eq!(found.node().clone(), node);
+        assert_eq!(context.composite_declaration(&wire(node)), Ok(found));
         let members: Vec<ExpectedMember> = found
             .union_members()
             .expect("a union has members")
             .iter()
             .map(|member| {
                 (
-                    member.identifier().as_str().to_owned(),
+                    member.identifier().to_owned(),
                     member.variant(),
                     member.payload().to_vec(),
                 )
@@ -321,7 +336,7 @@ fn union_members_are_the_producers_minted_variants_in_declared_order() {
         assert_eq!(members, expected);
         for (_, variant, _) in &members {
             assert!(
-                seen.insert(*variant),
+                seen.insert(variant.clone()),
                 "member ids are distinct across unions"
             );
         }
@@ -346,7 +361,7 @@ fn union_members_are_the_producers_minted_variants_in_declared_order() {
     let has = &by_name("Holder").union_members().expect("members")[1];
     assert_eq!(
         has.payload(),
-        [ValueType::Composite(left.key()), ValueType::Boolean]
+        [ValueType::Composite(left.key().clone()), ValueType::Boolean]
     );
     assert!(by_name("Left").union_members().is_none());
 
@@ -358,8 +373,8 @@ fn union_members_are_the_producers_minted_variants_in_declared_order() {
     assert_eq!(
         deep.payload(),
         [
-            ValueType::Composite(shape.key()),
-            ValueType::Composite(holder.key())
+            ValueType::Composite(shape.key().clone()),
+            ValueType::Composite(holder.key().clone())
         ]
     );
     assert_ne!(shape.key(), shape.node());
@@ -371,7 +386,7 @@ fn union_members_are_the_producers_minted_variants_in_declared_order() {
                 .clone()
         },
     );
-    assert_eq!(parameter, ValueType::Composite(shape.key()));
+    assert_eq!(parameter, ValueType::Composite(shape.key().clone()));
 
     // Recompiling returns the same union declarations.
     let again = admit(&text, &DependencyInput::default());
@@ -389,9 +404,12 @@ fn union_members_are_the_producers_minted_variants_in_declared_order() {
 fn a_dependencys_composite_is_foreign() {
     let points = library("test/points", "points", POINTS);
     let alone = compile_admitted(
-        points.source.clone(),
-        &points.path,
-        &points.bytes,
+        qsl_replay::CompileUnit {
+            source: points.source.clone(),
+            package_name: "fixture".to_owned(),
+            path: &points.path,
+            bytes: &points.bytes,
+        },
         [],
         &DependencyInput::default(),
         limits(),
@@ -407,11 +425,12 @@ fn a_dependencys_composite_is_foreign() {
                     composite.qualified_name().last().map(|n| n.as_str()) == Some(name)
                 })
                 .expect("the declaration")
-                .node(),
+                .node()
+                .clone(),
         )
     };
     let (point_id, pick_id) = (found("Point"), found("Pick"));
-    let package = alone.context().package_id();
+    let package = alone.context().package_name().clone();
     let mid = library(
         "test/mid",
         "mid",
@@ -428,18 +447,21 @@ fn a_dependencys_composite_is_foreign() {
             &DependencyInput::new(dependencies).expect("a dependency input"),
         );
         let context = admitted.context();
-        for declaration in [point_id, pick_id] {
+        for declaration in [point_id.clone(), pick_id.clone()] {
             assert_eq!(
-                context.composite_declaration(declaration),
+                context.composite_declaration(&declaration),
                 Err(AdmittedLookupRefusal::Foreign {
                     declaration,
-                    package,
+                    package: package.clone(),
                 })
             );
         }
         assert_eq!(context.composites().count(), 8);
         for own in context.composites() {
-            assert_eq!(context.composite_declaration(wire(own.node())), Ok(own));
+            assert_eq!(
+                context.composite_declaration(&wire(own.node().clone())),
+                Ok(own)
+            );
         }
     }
 }

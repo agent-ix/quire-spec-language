@@ -28,7 +28,7 @@ says so.
 QSL implements these parts of FR-181:
 
 - the exploration contract's canonical successor order;
-- the simulator state key, its typed canonical form and its digest;
+- the simulator state key and its typed canonical form;
 - seeded sampling with the `quire.simulation.sampler/v1` generator
   (QSpec `proposals/quire-v1/definitions/simulation-sampler.md`), selected
   by its identity;
@@ -144,7 +144,7 @@ pub struct Exploration<F> {
 }
 
 pub struct StateFindings<F> {
-    pub state: DigestRecord,
+    pub state: StateKey,
     pub depth: usize,
     pub findings: Vec<F>,
 }
@@ -249,17 +249,20 @@ initial state is in the frontier. Exploring a system with no initial state
 returns `Exhaustive` with zero states, transitions and depth: its reachable
 set is empty and fully visited.
 
-**State key.** QSL uses the typed canonical form and digest domain specified
-by QSpec FR-181 and FR-201. QSL coalesces states by equality of the complete
-canonical key bytes; it uses the digest only in traces and frontiers, as
-FR-181 specifies.
+**State key.** QSL uses the typed canonical form specified by QSpec FR-181.
+The state key is that form's canonical (RFC 8785) byte string, compared,
+ordered and used as a map key directly, with no hash. QSL coalesces states by
+equality of the complete canonical key bytes.
 
-**Traces and frontiers record digests.** Following FR-181, every state a
-trace or frontier names is its state-key digest, not its key bytes:
-`Trace.initial` and each `Step.key` are `DigestRecord`s, a `Frontier` is a
-`Vec<DigestRecord>`, and `ReplayError::UnknownInitial.expected` and
-`KeyMismatch.{expected, actual}` are `DigestRecord`s. Replay recomputes each
-candidate state's digest and compares it with the recorded digest.
+**Traces and frontiers record state keys.** Every state a trace or frontier
+names is its state key: `Trace.initial` and each `Step.key` are `StateKey`s, a
+`Frontier` is a `Vec<StateKey>`, and `ReplayError::UnknownInitial.expected` is
+a `StateKey`. Replay recomputes each candidate state's key to find the
+recorded initial state. It picks each step's successor by transition identity
+and then by ordinal among the successors that share it, with no recorded-key
+comparison. The ordinal of a successor is its zero-based position among the
+successors of that state that share its transition identity, in the system's
+canonical successor order. BLOCKED-BY QSL-1282 (owner: planner titan:QSL:plan): qsl-eval replay key compare in simulation/trace.rs
 
 **Sampler.** Sampling uses QSpec's `quire.simulation.sampler/v1` definition
 and the sampling contract in QSpec FR-181; that contract owns the draw
@@ -293,7 +296,7 @@ unexplored frontier in the order the run would have expanded it next.
 **Findings and stopped expansions.** The engine calls `successors` once per
 expanded state. Each expanded state whose `Expansion` has at least one
 finding contributes one `StateFindings` to `Exploration.findings`, in
-expansion order, holding its state-key digest, its depth and its findings in
+expansion order, holding its state key, its depth and its findings in
 the order the system returned them. The entries cover exactly the expanded
 states.
 
@@ -341,20 +344,22 @@ repository (this repository's TC-210 is a witness-envelope case).
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-101-AC-1 | Exploration visits each parent's successors in ascending JCS byte order of their QSpec FR-181 transition identities, whatever order the `TransitionSystem` lists them in and whatever their post-states' keys: a state listing `z` before `a` is expanded `a` first, and `step(10)` is visited before `step(9)`, because `{"arguments":[{"type":"integer","value":"10"}],…}` precedes `{"arguments":[{"type":"integer","value":"9"}],…}` bytewise. Successors with equal transition identities are visited in ascending state-key byte order. Parent states keep FIFO discovery order within a level, whatever their keys. | Test (TC-453) |
-| FR-101-AC-2 | The state key is the JCS encoding of FR-181's typed canonical form, and exploration coalesces two states exactly when their full key bytes are equal. The state whose `semantic` member is `float64` bits `0000000000000000` and every map empty has the SHA-256 of its JCS key bytes as its digest; with bits `8000000000000000` (negative zero) it has the SHA-256 of its own, different, key bytes, and the two remain two states. Two NaNs with different payloads are two states. Each digest is a `DigestRecord` under `quire.simulation.state-key/v1`. | Test (TC-453) |
-| FR-101-AC-3 | The sampler reproduces QSpec TC-210's vector, as amended with QSpec FR-181's `choice` preimage member: seed `424242`, trace `0`, choice `0`, `n = 5` draws indices `1, 3, 3, 4, 4` at steps 0 to 4, and the step-0 preimage `{"choice":"0","draw":"0","seed":"424242","step":"0","trace":"0"}` hashes to its SHA-256. Seed `424242`, trace `1`, `n = 5` draws `4, 4, 1, 3, 4`; seed `424242`, trace `0`, `n = 3` draws `1, 2, 0, 0, 1`. `n = 1` selects index 0 and computes no digest, and still advances the step: seed `424242`, trace `0`, with `n = 1` at steps 0 and 1 and `n = 5` at step 2, selects index `3` at step 2. `n = 0` ends the trace with `StopReason::NoSuccessors`. | Test (TC-454) |
+| FR-101-AC-2 | The state key is the JCS encoding of FR-181's typed canonical form, and exploration coalesces two states exactly when their full key bytes are equal. The state whose `semantic` member is `float64` bits `0000000000000000` and every map empty has its JCS key bytes as its key; with bits `8000000000000000` (negative zero) it has its own, different, key bytes, and the two remain two states. Two NaNs with different payloads are two states. Each key is a `StateKey` under `quire.simulation.state-key/v1`. BLOCKED-BY STD-583 (owner: planner titan:QSL:plan). | Test (TC-453) |
+| FR-101-AC-3 | The sampler reproduces QSpec TC-210's vector, as amended with QSpec FR-181's `choice` preimage member: seed `424242`, trace `0`, choice `0`, `n = 5` draws indices `1, 3, 3, 4, 4` at steps 0 to 4,, each draw made by QSpec FR-181's sampler contract. Seed `424242`, trace `1`, `n = 5` draws `4, 4, 1, 3, 4`; seed `424242`, trace `0`, `n = 3` draws `1, 2, 0, 0, 1`. `n = 1` selects index 0 and makes no draw, and still advances the step: seed `424242`, trace `0`, with `n = 1` at steps 0 and 1 and `n = 5` at step 2, selects index `3` at step 2. `n = 0` ends the trace with `StopReason::NoSuccessors`. | Test (TC-454) |
 | FR-101-AC-4 | Two sampled runs with equal seeds and trace indices over the same `TransitionSystem` produce identical traces, including provenance. The provenance records the seed, the trace index and the sampler identity; a different seed or trace index gives different provenance. With `m > 1` initial states after coalescing equal keys, trace `t` starts at canonical initial state `t mod m`, and no draw selects the start. | Test (TC-454) |
-| FR-101-AC-5 | A trace records its initial state and each step's state as state-key digests, and replays against the `TransitionSystem` that produced it without the simulator, by recomputed digest. When several successors share a transition identity, replay takes the one whose digest equals the recorded digest. A trace whose initial digest matches no initial state, whose step names a transition the current state does not offer, or whose recorded digest differs from every matching successor's digest refuses at that step with `UnknownInitial`, `MissingTransition` or `KeyMismatch`. | Test (TC-454) |
-| FR-101-AC-6 | A run the poll cancels returns `Outcome::Cancelled` with `cause` `CatalogCode::new("cancelled", "caller-cancelled")`, category incomplete, and the unexplored frontier as state-key digests in next-expansion order. It never returns `Exhaustive` or `Bounded`. | Test (TC-455) |
-| FR-101-AC-7 | A run that reaches `max_states` or `max_transitions` before its frontier empties returns `Outcome::Bounded` with that `Limit` and the unexplored frontier as state-key digests in next-expansion order, category incomplete. On the chain 0 → 1 → 2, `max_depth` 2 returns `Outcome::BoundReached{depth: 2}` with frontier `[<2>]`, category inconclusive, and `Limit` has no depth member. The same model returns `Exhaustive` once `max_states` is at least its reachable state count, `max_transitions` at least its transition count, and `max_depth` greater than its deepest state's depth. `Exhaustive` is returned only when the frontier is empty, and its `Stats` count distinct states, explored transitions and the deepest depth. | Test (TC-455) |
+| FR-101-AC-5 | A trace records its initial state and each step's state as state keys and replays against the `TransitionSystem` that produced it without the simulator, by recomputed key; replay picks among successors sharing a transition identity by transition identity and then by ordinal, compares no recorded key, and refuses a trace whose initial key matches no initial state with `UnknownInitial` and a step naming a transition the current state does not offer with `MissingTransition`, at that step. BLOCKED-BY QSL-1282 (owner: planner titan:QSL:plan): qsl-eval replay key compare in simulation/trace.rs | Test (TC-454) |
+| FR-101-AC-6 | A run the poll cancels returns `Outcome::Cancelled` with `cause` `CatalogCode::new("cancelled", "caller-cancelled")`, category incomplete, and the unexplored frontier as state keys in next-expansion order. It never returns `Exhaustive` or `Bounded`. | Test (TC-455) |
+| FR-101-AC-7 | A run that reaches `max_states` or `max_transitions` before its frontier empties returns `Outcome::Bounded` with that `Limit` and the unexplored frontier as state keys in next-expansion order, category incomplete. On the chain 0 → 1 → 2, `max_depth` 2 returns `Outcome::BoundReached{depth: 2}` with frontier `[<2>]`, category inconclusive, and `Limit` has no depth member. The same model returns `Exhaustive` once `max_states` is at least its reachable state count, `max_transitions` at least its transition count, and `max_depth` greater than its deepest state's depth. `Exhaustive` is returned only when the frontier is empty, and its `Stats` count distinct states, explored transitions and the deepest depth. | Test (TC-455) |
 | FR-101-AC-8 | `explore_request` or `sample_request` over `domains` that include an unbounded domain under the ADR-014 §4 extent rule returns `NotSimulated::RequiresBound` naming each unbounded domain's key and kind, calls no `TransitionSystem` method, and returns no `Outcome`. A `classify_extent` stage limit returns `NotSimulated::Extent`. The same request with every domain bounded explores. Raising exploration `Limits` does not change a `RequiresBound` result. | Test (TC-455) |
 | FR-101-AC-9 | Initial states are admitted in ascending state-key byte order, and equal keys coalesce into one state. A `max_states` cap reached during admission returns `Bounded` at `Limit::States` with frontier: admitted, then refused, then the rest, in canonical order; `max_states` 0 admits none and puts every initial state in the frontier. Exploring a system with no initial state returns `Exhaustive` with zero stats. | Test (TC-453) |
 | FR-101-AC-10 | `sample_request` refuses before any draw with `NotSimulated::GeneratorMismatch` when the supplied `DefinitionRef`'s identity is not `quire.simulation.sampler/v1`, and with `NotSimulated::EmptyInitial` when the system has no initial state. A run that reaches `max_steps` stops with `StopReason::StepLimit`, whether or not the current state has successors. `GeneratorMismatch`'s catalog code is `invalid_runtime_input`/`invalid-value`. | Test (TC-454) |
 | FR-101-AC-11 | A `TransitionSystem::Key` or `TransitionId` with no RFC 8785 encoding -- for example a `u64` above `2^53` -- refuses `NotSimulated::KeyEncoding` from `explore_request` and `sample_request`, and `ReplayError::KeyEncoding` from `replay`, instead of aborting the process. | Test (TC-453) |
 | FR-101-AC-12 | On a test system `0 → {1, 2}`, `1 → 3`, whose expansion of `1` returns `ExpansionStop` with `resource_exhausted`/`insufficient-next-charge`, exploration returns `Outcome::Stopped` with that cause, frontier `[<1>, <2>]` (the stopped state, then the queue), category incomplete; with `runtime_invariant`/`established-invariant-broken` it returns `Stopped`, category internal failure. | Test (TC-474) |
-| FR-101-AC-13 | On a test system whose expansion of state `s` returns finding `f`, `Exploration.findings` holds one `StateFindings` for `s` with its digest, its depth and `[f]`, in expansion order; a system whose `s` sits in a `Bounded` frontier has no entry for it; the stopped state of AC-12 has no entry. | Test (TC-474) |
+| FR-101-AC-13 | On a test system whose expansion of state `s` returns finding `f`, `Exploration.findings` holds one `StateFindings` for `s` with its key, its depth and `[f]`, in expansion order; a system whose `s` sits in a `Bounded` frontier has no entry for it; the stopped state of AC-12 has no entry. | Test (TC-474) |
 | FR-101-AC-14 | Sampling the chain `0 → 1`, whose expansion of `1` stops with `resource_exhausted`/`insufficient-next-charge`, ends with `StopReason::Stopped(resource_exhausted/insufficient-next-charge)` at step 1, and that trace replays successfully. The same trace replayed against a system whose expansion of `1` does not stop refuses `ReplayError::Stopped{step: 1, recorded: Some(<cause>), replayed: None}`; against one that stops with `runtime_invariant`, `recorded` and `replayed` name the two causes; a trace sampled with `max_steps` 1 from a chain whose `1` does not stop ends `StepLimit` at `1`, and replayed against the stopping chain it refuses with `recorded: None`. A trace whose recorded findings differ from the recomputed ones refuses `ReplayError::FindingMismatch` at that step. | Test (TC-474) |
 | FR-101-AC-15 | `Limits::default()` is `max_states` 10,000,000 and `max_transitions` 100,000,000, and `Limits` has no depth member; `max_depth: None` sets no horizon. A chain of 3 states explored with `Limits::default()` returns `Exhaustive`; with `max_states` set to 2 and the other members at their defaults it returns `Outcome::Bounded` at `Limit::States` with value 2. | Test (TC-536) |
+
+FR-101-AC-5 withdrawn clause: the `KeyMismatch` refusal (recorded key compared with the recomputed successor key), retired because no QSL check could fail on it.
 
 ## Dependencies
 
@@ -364,14 +369,12 @@ repository (this repository's TC-210 is a witness-envelope case).
 - QSpec `quire.simulation.sampler/v1`
   (`proposals/quire-v1/definitions/simulation-sampler.md`), which owns the
   sampler's draw contract.
-- QSpec FR-201: the `quire.simulation.state-key/v1` digest domain.
 - [ADR-014](../decisions/ADR-014-temporal-trace-and-boundedness-architecture.md)
   §1, §4, §7 and TR-1, TR-6, TR-7.
 - [ADR-013](../decisions/ADR-013-canonical-type-package-conversion-ownership.md)
   §2: `quire-canonical` is the one RFC 8785 encoder.
 - [ADR-011](../decisions/ADR-011-stage-dag-and-dependency-architecture.md)
   X-8: `qsl-eval`'s `[dependencies]` gain `quire-canonical` and `serde` for
-  the state key and the sampler preimage. SHA-256 comes through
-  `quire-canonical`; `sha2` stays a dev dependency.
+  the state key and the sampler preimage.
 - [FR-097](FR-097-classify-claim-extent-and-write-bounded-requests.md): the
   extent rule and `Outcome::category()`.
