@@ -130,10 +130,11 @@ fn a_claim_inside_a_case_arm_is_requested_as_a_value_validity_item() {
     };
     assert_eq!(item.kind(), Capability::ValueValidity);
 
-    let node = item.node().to_string();
+    let node = serde_json::to_value(qsl_package::checked_node_id_of(item.node().clone()))
+        .expect("a node id serializes");
     let written = nodes(&wire)
         .iter()
-        .find(|candidate| candidate["node_id"]["digest"] == node.as_str())
+        .find(|candidate| candidate["node_id"] == node)
         .expect("the item's node is written to the package");
     assert_eq!(written["semantic_form"], "binary");
     let case = nodes(&wire)
@@ -144,6 +145,6 @@ fn a_claim_inside_a_case_arm_is_requested_as_a_value_validity_item() {
         .as_array()
         .expect("dependencies")
         .iter()
-        .any(|dependency| dependency["digest"] == node.as_str());
+        .any(|dependency| *dependency == node);
     assert!(names_it, "the case names its arm's multiplication");
 }

@@ -8,7 +8,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use ix_trace_rs::trace;
 use qsl_forms::build_unit;
 use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound};
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::{BackendId, SourceIdentity};
 use qsl_package::CheckedPackage;
 use qsl_route::request::{
@@ -182,9 +181,10 @@ fn tc_449_an_unbounded_item_and_its_bounded_follow_up() {
         .semantic_graph()
         .node(graph.function_identity("big").expect("big is declared"))
         .and_then(|function| function.function_parameters())
-        .expect("big's function node")[0];
+        .expect("big's function node")[0]
+        .clone();
     let n = DomainKey::Node {
-        node: WireNodeId::from_digest(*n.as_bytes()),
+        node: n,
         path: Vec::new(),
     };
     assert_eq!(item.unbounded(), [(n.clone(), DomainKind::Integer)]);
@@ -279,7 +279,7 @@ fn tc_449_two_items_at_one_node_carry_their_own_result_bounds() {
         .map(|record| record.result_bound().value_type())
         .collect();
     assert_eq!(bounds, [&int(0, 10), &int(0, 20)]);
-    let nodes: Vec<WireNodeId> = records
+    let nodes: Vec<&NodeKey> = records
         .values()
         .map(|record| record.result_bound().node())
         .collect();
@@ -315,7 +315,7 @@ fn tc_449_inc_item_carries_its_enclosing_narrow_as_conversion_context() {
     assert_ne!(context.node(), item.node());
     let graph = package.graph().semantic_graph();
     let narrow = graph
-        .node(NodeKey::from_digest(*context.node().as_bytes()))
+        .node(context.node().clone())
         .expect("the context names a graph node");
     let BodyTerm::Application(ApplicationTerm {
         operation,
@@ -329,7 +329,7 @@ fn tc_449_inc_item_carries_its_enclosing_narrow_as_conversion_context() {
     let [MemberTerm::Leaf(LeafTerm::Reference { target })] = arguments.as_slice() else {
         panic!("the narrow has the add as its one operand: {arguments:#?}");
     };
-    assert_eq!(*target.0.as_bytes(), *item.node().as_bytes());
+    assert_eq!(target.admitted(), Some(item.node()));
 }
 
 /// TC-984 / FR-075-AC-9: each request item preserves its record's canonical

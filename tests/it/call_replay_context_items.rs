@@ -84,10 +84,10 @@ fn a_members_item_bounds_build_a_request_that_replays() {
         .semantic_graph()
         .node(callable.identity)
         .and_then(|node| node.function_parameters())
-        .expect("a function node")[0];
-    let node = qsl_foundation::digest::WireNodeId::from_digest(*parameter.as_bytes());
+        .expect("a function node")[0]
+        .clone();
     let assignments = vec![CanonicalAssignment {
-        parameter: node,
+        parameter,
         value: WitnessValue::Integer(9),
     }];
     let wire = result
