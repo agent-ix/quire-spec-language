@@ -13,10 +13,8 @@
 //!   home in `qsl_foundation::source::provenance` (#213 S-4);
 //!   this crate carries them from there.
 //! - [`ObligationIdentity`] (O-09) is canonical here (ADR-013 OQ-H): CG
-//!   names this type directly; IR names no QSL type. CG computes the digest
-//!   of a clause, application or function contract (AD-016 arrow 5) and QSL
-//!   carries it; QSL itself mints the digest of a parity claim, a
-//!   process-provider item and a function-value parity claim (FR-484).
+//!   names this type directly; IR names no QSL type. It is the structural
+//!   triple of FR-479 and carries no digest.
 //!
 //! [`QualifiedName`] moves to its ADR-013-assigned home once that ticket
 //! lands; until then it exists here, once, so the four envelope types have a
@@ -27,43 +25,78 @@ use std::fmt;
 use qsl_foundation::bound::{DomainKey, FiniteBound, ProofBound};
 use quire_exact::Identifier;
 
-/// ADR-013 O-09: the digest identifying one obligation. For a clause, an
-/// application or a function contract CG mints it, and QSL treats it as
-/// opaque and carries it unchanged; the preimage is the RFC 8785 encoding, through ADR-013 §2's one encoder, of
-/// the clause node id, the clause occurrence key, the obligation kind and the
-/// arguments (each a parameter node id and its declared domain); the source
-/// span is excluded (QC-14). The occurrence key is part of the preimage, so
-/// two occurrences of one clause never collide. QSL mints the identity of a
-/// parity claim, a process-provider item and a function-value parity claim
-/// (FR-484, [`crate::value_parity_obligation`], which `call_site` returns in
-/// `FunctionSite::value_parity`); this type only wraps and compares the
-/// digest. Its digest domain is not in the closed FR-201 set (QC-4), so it
-/// is not a `qsl_foundation::digest::DigestRecord`.
-#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct ObligationIdentity([u8; 32]);
+/// The identity of the model that owns an obligation: the domain package
+/// identity text of its selection (`DomainPackageRef::identity`), compared as
+/// text.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ModelIdentity(String);
 
-impl ObligationIdentity {
-    /// Wrap an already-computed obligation-identity digest (CG's, not
-    /// QSL's own hash).
-    pub fn from_digest(digest: [u8; 32]) -> Self {
-        Self(digest)
+impl ModelIdentity {
+    /// The model identity `identity`.
+    pub fn new(identity: impl Into<String>) -> Self {
+        Self(identity.into())
     }
 
-    /// The raw digest bytes.
-    pub fn as_bytes(&self) -> &[u8; 32] {
+    /// The identity text.
+    pub fn as_str(&self) -> &str {
         &self.0
+    }
+}
+
+impl From<&qsl_semantics::model::domain_package::DomainPackageRef> for ModelIdentity {
+    fn from(selection: &qsl_semantics::model::domain_package::DomainPackageRef) -> Self {
+        Self(selection.identity.clone())
+    }
+}
+
+/// FR-479 / FR-201: the structural identity of one obligation: the claim or
+/// obligation node, the identity of the model that owns it (`None` for a
+/// claim no model owns), and the occurrence ordinal. It is compared, ordered
+/// and hashed componentwise; it is not hashed into a digest and carries no
+/// domain. CG's clause, application and function-contract obligations arrive
+/// carried unchanged; QSL itself mints the identity of a parity claim, a
+/// process-provider item and a function-value parity claim
+/// ([`crate::value_parity_obligation`]).
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ObligationIdentity {
+    node: NodeKey,
+    model: Option<ModelIdentity>,
+    ordinal: u32,
+}
+
+impl ObligationIdentity {
+    /// The obligation of `node` owned by `model` at occurrence `ordinal`.
+    pub fn new(node: NodeKey, model: Option<ModelIdentity>, ordinal: u32) -> Self {
+        Self {
+            node,
+            model,
+            ordinal,
+        }
+    }
+
+    /// The claim or obligation node.
+    pub fn node(&self) -> &NodeKey {
+        &self.node
+    }
+
+    /// The owning model, if any.
+    pub fn model(&self) -> Option<&ModelIdentity> {
+        self.model.as_ref()
+    }
+
+    /// The occurrence ordinal.
+    pub fn ordinal(&self) -> u32 {
+        self.ordinal
     }
 }
 
 impl fmt::Display for ObligationIdentity {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.iter().try_for_each(|byte| write!(f, "{byte:02x}"))
-    }
-}
-
-impl fmt::Debug for ObligationIdentity {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "ObligationIdentity({self})")
+        write!(f, "{}", self.node)?;
+        if let Some(model) = &self.model {
+            write!(f, "@{}", model.as_str())?;
+        }
+        write!(f, "#{}", self.ordinal)
     }
 }
 
@@ -291,12 +324,6 @@ impl TracePosition {
 mod tests {
     use super::*;
 
-    fn digest(byte: u8) -> [u8; 32] {
-        let mut bytes = [0_u8; 32];
-        bytes[31] = byte;
-        bytes
-    }
-
     #[test]
     fn qualified_name_refuses_zero_segments() {
         assert_eq!(QualifiedName::new(Vec::new()), Err(EmptyQualifiedName));
@@ -314,11 +341,15 @@ mod tests {
     }
 
     #[test]
-    fn obligation_identity_equality_is_digest_bytes() {
-        let a = ObligationIdentity::from_digest(digest(7));
-        let b = ObligationIdentity::from_digest(digest(7));
-        let c = ObligationIdentity::from_digest(digest(8));
-        assert_eq!(a, b);
-        assert_ne!(a, c);
+    fn obligation_identity_equality_is_componentwise() {
+        let node = |n: u8| crate::fixture_node(n);
+        let a = ObligationIdentity::new(node(7), None, 0);
+        assert_eq!(a, ObligationIdentity::new(node(7), None, 0));
+        assert_ne!(a, ObligationIdentity::new(node(8), None, 0));
+        assert_ne!(a, ObligationIdentity::new(node(7), None, 1));
+        assert_ne!(
+            a,
+            ObligationIdentity::new(node(7), Some(ModelIdentity::new("m")), 0)
+        );
     }
 }

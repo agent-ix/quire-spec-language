@@ -339,7 +339,7 @@ impl CompositeParityReport {
 
     /// The obligation identity the request carried.
     pub fn obligation(&self) -> ObligationIdentity {
-        self.claim.obligation
+        self.claim.obligation.clone()
     }
 
     /// What the replay found.
@@ -426,7 +426,7 @@ impl VerifiedShadowReport {
 
     /// The obligation identity the request carried.
     pub fn obligation(&self) -> ObligationIdentity {
-        self.claim.obligation
+        self.claim.obligation.clone()
     }
 
     /// What the settlement found.

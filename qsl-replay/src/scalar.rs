@@ -427,7 +427,7 @@ impl ValueIdentity {
     /// `claim`, exactly as [`crate::replay_value_parity`] reads them.
     pub fn sent(wire: &ReplayRequestWire, claim: &ValueClaim) -> Self {
         Self {
-            obligation: ObligationIdentity::from_digest(wire.obligation_identity),
+            obligation: wire.obligation_identity.clone(),
             package_name: wire.package_name.clone(),
             function: wire.replay_target.members.function.clone(),
             occurrence_key: wire.replay_target.occurrence_key.clone(),
@@ -586,7 +586,7 @@ impl OperatorParityReport {
 
     /// The obligation identity the request carried.
     pub fn obligation(&self) -> ObligationIdentity {
-        self.claim.obligation
+        self.claim.obligation.clone()
     }
 
     /// What the replay found.

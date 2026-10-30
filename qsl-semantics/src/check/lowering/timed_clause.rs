@@ -485,7 +485,7 @@ impl Lowering<'_> {
             && target
                 .admitted()
                 .cloned()
-                .and_then(&content)
+                .and_then(content)
                 .is_some_and(|literal| {
                     matches!(
                         &literal.body,

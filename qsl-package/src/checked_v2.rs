@@ -726,7 +726,7 @@ pub enum ImportViewRefusal {
         /// The library identity of the package whose read refused.
         package: LibraryName,
         /// The read's refusal or reached ceiling.
-        refusal: StageFailure<V2ReadRefusal>,
+        refusal: Box<StageFailure<V2ReadRefusal>>,
     },
 }
 
@@ -752,22 +752,12 @@ impl ImportViewRefusal {
             } => refusal.code(),
             Self::Emission { refusal: None, .. } => Code::UnsupportedProjection,
             Self::UnheldDependency { .. } | Self::Evidence { .. } => Code::RuntimeInvariant,
-            Self::Read {
-                refusal: StageFailure::Refused(refusal),
-                ..
-            } => refusal.code(),
-            Self::Read {
-                refusal: StageFailure::Limit(_),
-                ..
-            } => Code::StageLimitExceeded,
-            Self::Read {
-                refusal: StageFailure::Cancelled(_),
-                ..
-            } => Code::Cancelled,
-            Self::Read {
-                refusal: StageFailure::Fault(_),
-                ..
-            } => Code::RuntimeInvariant,
+            Self::Read { refusal, .. } => match refusal.as_ref() {
+                StageFailure::Refused(refusal) => refusal.code(),
+                StageFailure::Limit(_) => Code::StageLimitExceeded,
+                StageFailure::Cancelled(_) => Code::Cancelled,
+                StageFailure::Fault(_) => Code::RuntimeInvariant,
+            },
         }
     }
 }
@@ -919,7 +909,7 @@ impl ClosureReader<'_> {
         .map(Staged::into_value)
         .map_err(|refusal| ImportViewRefusal::Read {
             package: identity,
-            refusal,
+            refusal: Box::new(refusal),
         })
     }
 

@@ -330,7 +330,6 @@ fn certified<O>(
         // failure (ADR-013 C-09), never a verdict.
         Err(
             ZoneCertificateRefusal::Admission(_)
-            | ZoneCertificateRefusal::Package(_)
             | ZoneCertificateRefusal::TimedSubject(_)
             | ZoneCertificateRefusal::UnsupportedItem
             | ZoneCertificateRefusal::Unbounded

@@ -15,8 +15,8 @@ use std::collections::BTreeSet;
 use qsl_eval::model_subject::ModelSubject;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::RequestIndex;
-use qsl_package::{CheckedPackage, EmitRefusal};
-use qsl_replay::{node_occurrence, SubjectIdentity, SubjectIdentityRefusal};
+use qsl_package::CheckedPackage;
+use qsl_replay::{node_occurrence, SubjectIdentity};
 use qsl_route::deadlock::{ModelRefinementItem, ModelTemporalItem};
 use qsl_route::model_request::ModelRequest;
 use qsl_route::request::AbstractSubject;
@@ -40,9 +40,6 @@ pub enum RequestRefusal {
         /// The refinement's declared name.
         name: String,
     },
-    /// The subject's checked package has no canonical identity.
-    #[error(transparent)]
-    Package(#[from] EmitRefusal),
 }
 
 /// A model subject with its identity computed once, from which the items of
@@ -61,14 +58,11 @@ impl<'s, 'a> SubjectContext<'s, 'a> {
     ///
     /// # Errors
     ///
-    /// [`RequestRefusal::Package`] when the subject's checked package has no
-    /// canonical identity.
+    /// Never today: a subject's identity is read from the subject itself.
     pub fn new(subject: &'s ModelSubject<'a>) -> Result<Self, RequestRefusal> {
         Ok(Self {
             subject,
-            identity: SubjectIdentity::of(subject).map_err(|refusal| match refusal {
-                SubjectIdentityRefusal::Package(refusal) => RequestRefusal::Package(refusal),
-            })?,
+            identity: SubjectIdentity::of(subject),
             selections: subject
                 .simulation
                 .universes

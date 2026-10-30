@@ -171,8 +171,8 @@ pub use hybrid_replay::{
     TraceBefore, TraceFault, TraceJump, TraceRefusal, TraceState, UndefinedCause, UndefinedInstant,
 };
 pub use identity::{
-    DeclaredDomain, EmptyQualifiedName, ObligationIdentity, ProfileSelection, QualifiedName,
-    RawSourceRef, TracePosition,
+    DeclaredDomain, EmptyQualifiedName, ModelIdentity, ObligationIdentity, ProfileSelection,
+    QualifiedName, RawSourceRef, TracePosition,
 };
 pub use limits::{AccountingLimits, CallerLimits, EngineLimits, PrepareLimits, RenderLimits};
 pub use model_check::counterexample::{
@@ -504,7 +504,7 @@ mod redaction_tests {
                 parameter: crate::fixture_node(9),
                 value: WitnessValue::Integer(1),
             }]),
-            obligation_identity: [2; 32],
+            obligation_identity: crate::ObligationIdentity::new(crate::fixture_node(2), None, 0),
             backend: "kani-backend-1".to_owned(),
             state_environment: StateEnvironment::new(vec![]),
             accounting_limits: scalar_limits(1),

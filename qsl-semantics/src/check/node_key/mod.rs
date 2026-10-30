@@ -591,11 +591,11 @@ impl LeafTerm {
     fn map_refs(&self, map: &mut impl FnMut(&NodeRef) -> NodeRef) -> Self {
         match self {
             Self::Literal { ty, value } => Self::Literal {
-                ty: map(&ty),
+                ty: map(ty),
                 value: value.clone(),
             },
             Self::Reference { target } => Self::Reference {
-                target: map(&target),
+                target: map(target),
             },
             Self::DependencyReference { node } => Self::DependencyReference { node: map(node) },
         }
@@ -1082,7 +1082,7 @@ impl BodyTerm {
                 Self::Application(ApplicationTerm {
                     operator: *operator,
                     operation,
-                    result_type: map(&result_type),
+                    result_type: map(result_type),
                     arguments: arguments
                         .iter()
                         .map(|argument| argument.map_refs(map))
@@ -1107,12 +1107,12 @@ impl BodyTerm {
                             scope: field.scope,
                         }),
                         FrameModifies::Relationship(declaration) => {
-                            FrameModifies::Relationship(map(&declaration))
+                            FrameModifies::Relationship(map(declaration))
                         }
                     })
                     .collect(),
-                creates: creates.iter().map(|node| map(&node)).collect(),
-                deletes: deletes.iter().map(|node| map(&node)).collect(),
+                creates: creates.iter().map(&mut *map).collect(),
+                deletes: deletes.iter().map(&mut *map).collect(),
                 deletes_scoped: deletes_scoped.clone(),
             }),
             Self::Abstraction(term) => Self::Abstraction(term.map_refs(map)),

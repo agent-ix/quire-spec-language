@@ -72,7 +72,7 @@ pub fn produce(
         .temporal_clauses()
         .iter()
         .find(|node| node.clause() == clause)
-        .ok_or(MonitorPlanRefusal::PackageIdentityUnavailable)?;
+        .ok_or(MonitorPlanRefusal::NotTimedClause)?;
     let binding = clause
         .time_binding()
         .ok_or(MonitorPlanRefusal::NotTimedClause)?;

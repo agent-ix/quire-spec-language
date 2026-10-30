@@ -331,10 +331,9 @@ pub fn derived_model_item<'a>(
     else {
         return Err(DerivedItemMismatch::NotDerived { index });
     };
-    // A subject whose package has no identity is no subject the request
-    // was written over.
+    // A subject other than the one the request was written over.
     let over = |subject: &qsl_eval::model_subject::ModelSubject<'_>| {
-        SubjectIdentity::of(subject).is_ok_and(|identity| identity == obligation.subject)
+        SubjectIdentity::of(subject) == obligation.subject
     };
     if !matches!(item.request.item, ModelCheckItem::DeadlockFreedom)
         || !matches!(item.certificate.item, ModelCheckItem::DeadlockFreedom)

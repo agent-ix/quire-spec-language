@@ -286,7 +286,7 @@ impl GraphEvidenceEnvelope {
 
     /// The obligation identity of the checked subject, claim and instance.
     pub fn obligation_identity(&self) -> ObligationIdentity {
-        self.obligation_identity
+        self.obligation_identity.clone()
     }
 
     /// The claim's checked occurrence key.

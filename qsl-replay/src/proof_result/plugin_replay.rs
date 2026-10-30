@@ -267,7 +267,7 @@ impl PluginReplayContext {
                 occurrence.clone(),
             ),
             source: ReplaySource::Input(assignments),
-            obligation_identity: *obligation.as_bytes(),
+            obligation_identity: obligation.clone(),
             backend: plugin.as_str().to_owned(),
             state_environment: StateEnvironment::new(Vec::new()),
             accounting_limits: self.accounting_limits,

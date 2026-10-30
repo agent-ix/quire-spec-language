@@ -158,7 +158,7 @@ impl ValueEncoder {
                     );
                 }
                 Work::Read(Value::Composite(composite), canonical) => {
-                    let type_identity = self.records.get(&composite.declaration())?;
+                    let type_identity = self.records.get(composite.declaration())?;
                     let CompositeShape::Record(declared) = self
                         .types
                         .composite(composite.declaration().clone())?
@@ -187,7 +187,7 @@ impl ValueEncoder {
     }
 
     fn variant(&self, member: &EnumMember) -> Option<SnapshotValue> {
-        let (type_identity, case) = self.variants.get(&member.variant())?;
+        let (type_identity, case) = self.variants.get(member.variant())?;
         Some(SnapshotValue::variant(type_identity.clone(), case.clone()))
     }
 }

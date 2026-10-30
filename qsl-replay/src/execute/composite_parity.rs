@@ -40,7 +40,6 @@ use crate::composite::{
     NativeParityObservation, Refinement, VerifiedShadow, VerifiedShadowReport,
     VerifiedShadowResult,
 };
-use crate::identity::ObligationIdentity;
 use crate::request::{ReplayRequest, ReplayRequestWire};
 use crate::scalar::{OperandIdentity, OperandRefusal, ScalarAgreement, ScalarClaim, ScalarOutcome};
 use crate::target::ReplayEntry;
@@ -238,7 +237,7 @@ pub fn replay_composite_parity(
     falsified: FalsifiedParity,
     replay_limits: ReplayLimits,
 ) -> CompositeParityReport {
-    let obligation = ObligationIdentity::from_digest(wire.obligation_identity);
+    let obligation = wire.obligation_identity.clone();
     let identity = CompositeIdentity::new(
         obligation,
         &claim,
@@ -470,7 +469,7 @@ pub fn settle_verified_shadow(
     verified: VerifiedShadow,
     replay_limits: ReplayLimits,
 ) -> VerifiedShadowReport {
-    let obligation = ObligationIdentity::from_digest(wire.obligation_identity);
+    let obligation = wire.obligation_identity.clone();
     let identity =
         CompositeIdentity::new(obligation, &claim, CompositeEvidence::Verified(verified));
     let result = match prepare(wire, &claim, replay_limits) {

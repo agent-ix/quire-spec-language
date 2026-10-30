@@ -50,7 +50,7 @@ use qsl_semantics::check::{
     CheckedActivation, CheckedGraph, CheckedProtocol, CheckedTerminalMember,
 };
 use qsl_semantics::family::ClaimExtent;
-use quire_canonical::{Encode, Error, Limits as CanonicalLimits, Sink, Writer};
+use quire_canonical::{Encode, Error, Sink, Writer};
 use quire_exact::{Meter, NodeKey, ObjectReference, Value, ValueType};
 use quire_semantic_value::catalog::{CatalogCode, InternalFault};
 

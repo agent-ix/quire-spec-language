@@ -216,7 +216,8 @@ mod tests {
                 ],
             )
             .unwrap();
-        let option = OptionValue::from_admitted(ValueType::Composite(money.clone()), Some(child.clone()));
+        let option =
+            OptionValue::from_admitted(ValueType::Composite(money.clone()), Some(child.clone()));
         let collection = quire_exact::from_admitted(
             CollectionType::new(
                 CollectionKind::Sequence,

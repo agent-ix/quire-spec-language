@@ -317,7 +317,7 @@ impl ReplayRequest {
     /// The obligation this request replays: the ADR-013 O-09 obligation
     /// digest, as on the frame and state-clause paths (ADR-013 O-26).
     pub fn obligation_identity(&self) -> ObligationIdentity {
-        self.obligation_identity
+        self.obligation_identity.clone()
     }
     /// The backend that produced the originating counterexample.
     pub fn backend(&self) -> &BackendId {
@@ -405,9 +405,8 @@ pub struct ReplayRequestWire {
     /// The replay source: a witness transcript, canonical inputs, or an
     /// observed temporal counterexample envelope (FR-331).
     pub source: ReplaySource,
-    /// The obligation this request replays: the ADR-013 O-09 obligation
-    /// digest.
-    pub obligation_identity: [u8; 32],
+    /// The obligation this request replays.
+    pub obligation_identity: ObligationIdentity,
     /// The provider identity of the backend that produced the originating
     /// counterexample (ADR-013 O-19: the identity string alone).
     pub backend: String,
@@ -828,7 +827,7 @@ impl ReplayRequest {
             over,
             source: wire.source,
             profile_selections: wire.profile_selections,
-            obligation_identity: ObligationIdentity::from_digest(wire.obligation_identity),
+            obligation_identity: wire.obligation_identity.clone(),
             backend: BackendId::new(wire.backend),
             state_environment: wire.state_environment,
             accounting_limits,
@@ -863,7 +862,7 @@ impl ReplayRequest {
                 .collect(),
             replay_target,
             source: self.source.clone(),
-            obligation_identity: *self.obligation_identity.as_bytes(),
+            obligation_identity: self.obligation_identity.clone(),
             backend: self.backend.as_str().to_owned(),
             state_environment: self.state_environment.clone(),
             accounting_limits: self.accounting_limits,
@@ -953,7 +952,7 @@ mod tests {
                 .expect("a fixture key"),
                 value: crate::witness::WitnessValue::Integer(42),
             }]),
-            obligation_identity: [1; 32],
+            obligation_identity: crate::ObligationIdentity::new(crate::fixture_node(1), None, 0),
             backend: "kani-backend-1".to_owned(),
             state_environment: StateEnvironment::new(vec![("x".to_owned(), "1".to_owned())]),
             accounting_limits: scalar_limits(128),
@@ -1251,7 +1250,7 @@ mod tests {
 
     fn model_graph_source() -> ReplaySource {
         ReplaySource::ModelGraph(Box::new(crate::GraphEvidenceEnvelope::new(
-            ObligationIdentity::from_digest([2; 32]),
+            ObligationIdentity::new(crate::fixture_node(2), None, 0),
             crate::target::test_key(),
             quire_exact::NodeKey::new(
                 "fixture",

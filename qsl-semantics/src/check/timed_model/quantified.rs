@@ -558,6 +558,6 @@ pub(super) fn first(
         .form
         .expression
         .iter()
-        .find_map(|node| quantifier(located, node.id(), clocks, &context))
+        .find_map(|node| quantifier(located, node.id(), clocks, context))
         .map(|quantifier| quantifier.span)
 }

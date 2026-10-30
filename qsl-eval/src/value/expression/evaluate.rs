@@ -2581,7 +2581,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                     .ok_or_else(|| invariant("dispatch-table-unresolved"))?;
                 charge_dispatch_select(self.meter, table_ref.candidate_count())?;
                 let candidate = table_ref
-                    .linked_for(&subtype)
+                    .linked_for(subtype)
                     .ok_or_else(|| invariant("dispatch-candidate-unresolved"))?
                     .clone();
                 let mut full_arguments = Vec::with_capacity(arguments.len() + 1);

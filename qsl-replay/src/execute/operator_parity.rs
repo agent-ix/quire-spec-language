@@ -175,7 +175,7 @@ pub fn replay_operator_parity(
     claim: OperatorClaim,
     replay_limits: ReplayLimits,
 ) -> OperatorParityReport {
-    let obligation = ObligationIdentity::from_digest(wire.obligation_identity);
+    let obligation = wire.obligation_identity.clone();
     let identity = claim.identity(obligation);
     let request = match ReplayRequest::decode(wire, replay_limits) {
         Ok(request) => request,

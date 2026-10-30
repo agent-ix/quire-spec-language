@@ -846,11 +846,10 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
             &cancel,
         )?
         .into_value();
-        let emitted = front_end::package(&checked, front_end::PackageLimits::default(), &cancel)?
-            .into_value();
-        Ok((checked, emitted))
+        front_end::package(&checked, front_end::PackageLimits::default(), &cancel)?;
+        Ok(checked)
     };
-    let (checked, emitted) = match front_end() {
+    let checked = match front_end() {
         Ok(compiled) => compiled,
         Err(failure) => {
             let disposition = match front_end::refusal_or_fault(failure) {

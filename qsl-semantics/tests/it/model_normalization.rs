@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-195: model normalization provenance (FR-150).
 //!
-//! Fixtures F1/F2 are transcribed from the TC-195 procedure. Ground-truth
-//! digest and preimage checks compare the crate's own computed output against
-//! itself (determinism, order-independence, structural shape) rather than
-//! against a pinned external hash.
+//! Fixtures F1/F2 are transcribed from the TC-195 procedure.
 
 use ix_trace_rs::trace;
 use qsl_semantics::model::accounting::{
@@ -765,7 +762,7 @@ fn n01_normalizes_f1_to_stable_deterministic_identities() {
 
 /// TC-195 N02: `A`/`B`/`C`/`D` in F2's diamond (`B`, `C` <- `A`; `D` <- `B`,
 /// `D` <- `C`), every declaration's identity checked for shape, uniqueness
-/// and rerun-stability rather than against a pinned upstream digest.
+/// and rerun-stability.
 #[trace("QSpec-TC-195", "QSpec-FR-150-AC-6")]
 #[test]
 fn n02_normalizes_f2_diamond_inheritance_to_stable_deterministic_identities() {
@@ -2168,7 +2165,7 @@ fn derivation_duplicate_comparison_includes_the_rule() {
 // integration test can no longer build a deliberately unsorted view to
 // exercise `validate_order` directly.
 
-/// TC-195 N01's exact charge sequence and per-declaration JCS lengths —
+/// TC-195 N01's exact charge sequence —
 /// three `normalize.record` (`A`, `A/x`, `B`; the `Supertype` record `B` ->
 /// `A` is a relationship between declarations, not one of its own); three
 /// phase-2 `normalize.fact` (qualify A, qualify B, qualify A.x); one

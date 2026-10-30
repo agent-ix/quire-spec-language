@@ -458,11 +458,11 @@ impl PackageDeclarations {
     fn receiver_types(&self, view: &EffectiveView, owner: EffectiveId) -> Vec<EffectiveId> {
         view.type_identities()
             .values()
-            .cloned()
-            .filter(|candidate| {
+            .filter(|&candidate| {
                 self.types.object_type(candidate.clone()).is_some()
                     && self.types.conforms(candidate.clone(), owner.clone())
             })
+            .cloned()
             .collect()
     }
 

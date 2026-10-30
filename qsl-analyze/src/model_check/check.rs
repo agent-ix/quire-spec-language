@@ -689,7 +689,7 @@ pub fn check_protocol(
     check_protocol_bounds(
         &model,
         protocol,
-        subject.simulation.package.graph(),
+        subject.model.simulation.package.graph(),
         BOUND_POSITIONS,
     )
     .map_err(not_simulated)?;
@@ -830,7 +830,7 @@ fn check_protocol_liveness(
     check_protocol_bounds(
         &model,
         protocol,
-        subject.simulation.package.graph(),
+        subject.model.simulation.package.graph(),
         BOUND_POSITIONS,
     )
     .map_err(not_simulated)?;

@@ -668,7 +668,7 @@ pub struct WitnessEnvelope<P: FamilyPayload> {
 impl<P: FamilyPayload> WitnessEnvelope<P> {
     /// The CG-computed obligation identity this counterexample belongs to.
     pub fn obligation_identity(&self) -> ObligationIdentity {
-        self.obligation_identity
+        self.obligation_identity.clone()
     }
     /// The occurrence key this counterexample was produced at.
     pub fn occurrence_key(&self) -> &OccurrenceKey {
@@ -918,7 +918,10 @@ mod witness_tests {
         };
 
         assert_eq!(
-            decode(format!("{x}=1", x = pn_(&x)), &[integer(x.clone()), boolean(b.clone())]),
+            decode(
+                format!("{x}=1", x = pn_(&x)),
+                &[integer(x.clone()), boolean(b.clone())]
+            ),
             Err(DecodeRefusal::Missing(b.clone()))
         );
         assert_eq!(
@@ -998,8 +1001,8 @@ mod witness_tests {
 /// `None`, refuses) from "this family has none" (`Some(None)`, admitted).
 #[derive(Clone, Debug)]
 pub struct WitnessPacket<P: FamilyPayload> {
-    /// The CG-computed obligation identity, as raw digest bytes.
-    pub obligation_identity: Option<[u8; 32]>,
+    /// The CG-computed obligation identity.
+    pub obligation_identity: Option<ObligationIdentity>,
     /// The occurrence key this counterexample was produced at.
     pub occurrence_key: Option<OccurrenceKey>,
     /// The clause node this counterexample witnesses against.
@@ -1154,7 +1157,6 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
 
         let obligation_identity = packet
             .obligation_identity
-            .map(ObligationIdentity::from_digest)
             .ok_or(WitnessRefusal::MissingMember("obligation_identity"))?;
         let occurrence_key = packet
             .occurrence_key
@@ -1219,7 +1221,7 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
     /// writer exists yet on `origin/main`).
     pub fn to_packet(&self) -> WitnessPacket<P> {
         WitnessPacket {
-            obligation_identity: Some(*self.obligation_identity.as_bytes()),
+            obligation_identity: Some(self.obligation_identity.clone()),
             occurrence_key: Some(self.occurrence_key.clone()),
             clause_node: Some(self.clause_node.clone()),
             replay_target: self.replay_target.clone().into(),
@@ -1254,10 +1256,6 @@ mod envelope_tests {
     use qsl_foundation::bound::{DomainKind, ProofBound};
     use quire_exact::Identifier;
 
-    fn digest(byte: u8) -> [u8; 32] {
-        [byte; 32]
-    }
-
     fn scalar_limits(seed: u64) -> ScalarLimits {
         ScalarLimits {
             integer_bits: seed,
@@ -1275,7 +1273,7 @@ mod envelope_tests {
 
     pub(in crate::witness) fn full_packet(occurrence_ordinal: u64) -> WitnessPacket<NoPayload> {
         WitnessPacket {
-            obligation_identity: Some(digest(1)),
+            obligation_identity: Some(ObligationIdentity::new(crate::fixture_node(1), None, 0)),
             occurrence_key: Some(OccurrenceKey::new(
                 crate::fixture_node(2),
                 origin("reference", occurrence_ordinal),
