@@ -8,7 +8,7 @@ mod types;
 use super::{LimitKind, RunCause, RunError, RunResult};
 use crate::formal_source::FormalSource;
 use qsl_foundation::source::SourceReadCause;
-use qsl_foundation::{ByteDigest, Diagnostic};
+use qsl_foundation::Diagnostic;
 use quire_contract_model as ir;
 use serde_json::Value;
 
@@ -299,7 +299,6 @@ pub(super) fn error(error: &RunError, artifact: bool) -> Result<Value, serde_jso
     if artifact {
         serde_json::to_value(types::ArtifactFailure {
             failure,
-            request_digest: error.request_digest.map(|digest| digest.to_string()),
             status: if error.cause.is_incomplete() {
                 types::ArtifactFailureStatus::Incomplete
             } else {
@@ -390,8 +389,6 @@ fn spine_locus(locus: qsl_replay::spine::CallLocus) -> types::SpineLocus {
 /// FR-100: render `spine-run-result/1`, the outcome mapping's stdout
 /// document and FR-301 exit status, from `qsl_replay::spine::run`'s result.
 pub(super) fn spine_run_result(
-    digest: ByteDigest,
-    package_id: qsl_semantics::library::PackageId,
     source: &FormalSource,
     function: &str,
     outcome: qsl_replay::spine::CallOutcome,
@@ -442,8 +439,6 @@ pub(super) fn spine_run_result(
     };
     let document = types::SpineRunReport {
         format: types::Format::SpineRunResult,
-        request_digest: digest.to_string(),
-        package_id: package_id.hex(),
         source: types::RunSource {
             identity: source.source().identity(),
             path: source.source().path(),
@@ -464,7 +459,6 @@ mod tests {
     use ix_trace_rs::trace;
     use qsl_foundation::SourceIdentity;
     use qsl_replay::spine::CallOutcome;
-    use qsl_semantics::library::PackageId;
     use quire_semantic_value::catalog::Category;
 
     fn formal_source() -> FormalSource {
@@ -495,23 +489,12 @@ mod tests {
     /// tests cover that distinction.
     fn assert_undefined_renders(reason: &'static str) {
         let source = formal_source();
-        let digest = ByteDigest::of(b"request");
-        let package_id = PackageId::of_preimage(b"package");
-        let result = spine_run_result(
-            digest,
-            package_id,
-            &source,
-            "seven",
-            CallOutcome::Undefined { reason },
-        )
-        .unwrap();
+        let result = spine_run_result(&source, "seven", CallOutcome::Undefined { reason }).unwrap();
         assert_eq!(result.exit_code, 10, "{reason}");
         assert_eq!(
             result.value.as_value(),
             &serde_json::json!({
                 "format": "spine-run-result/1",
-                "request_digest": digest.to_string(),
-                "package_id": package_id.hex(),
                 "source": {
                     "authority": "agent-ix",
                     "identity": "test:spine-run",
@@ -567,14 +550,7 @@ mod tests {
     }
 
     fn render(outcome: CallOutcome) -> RunResult {
-        spine_run_result(
-            ByteDigest::of(b"request"),
-            PackageId::of_preimage(b"package"),
-            &formal_source(),
-            "seven",
-            outcome,
-        )
-        .unwrap()
+        spine_run_result(&formal_source(), "seven", outcome).unwrap()
     }
 
     /// FR-100-AC-9 (TC-452 step 4, FND-013): a record refusal renders every
@@ -662,7 +638,6 @@ mod tests {
 
         let expected = qsl_semantics::model::domain_package::DomainPackageRef::fixture("expected");
         let model = RunError {
-            request_digest: None,
             cause: RunCause::SpineRun(Box::new(RunRefusal::Admission {
                 position: 2,
                 refusal: ModelRefusal {
@@ -689,7 +664,6 @@ mod tests {
 
         let type_name = DeclarationKey::fixture("foreign/W");
         let type_refusal = RunError {
-            request_digest: None,
             cause: RunCause::SpineRun(Box::new(RunRefusal::Admission {
                 position: 3,
                 refusal: ModelRefusal {

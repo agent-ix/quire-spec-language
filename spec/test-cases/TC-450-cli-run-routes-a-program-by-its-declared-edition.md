@@ -51,8 +51,7 @@ Tag the tests `#[trace("TC-450", "FR-100-AC-1")]` (step 1),
 ## Expected Results
 
 - Step 1: exit 0 and no refusal envelope; the result document is one document
-  whose `format` is `spine-run-result/1`, whose `package_id` equals the compiled
-  package's, whose `source` names the request's two labels
+  whose `format` is `spine-run-result/1`, whose `source` names the request's two labels
   and authored path, whose `function` is `seven`, and whose `outcome` is
   `{"kind": "completed", "value": {"kind": "integer", "decimal": "7"}}`.
 - Step 2: the two `0-draft` requests refuse `unknown_edition`, stage

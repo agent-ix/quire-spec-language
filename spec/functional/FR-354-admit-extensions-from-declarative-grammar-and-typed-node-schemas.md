@@ -139,8 +139,8 @@ The emitter SHALL write each admitted form as QSpec FR-469 states:
   semantic_form: "extension_form", semantic_type: null, declaration,
   recursion: null, owner, body}`, `body` holding each clause reference's
   target as its node key, so the definition identity, the node kind, the
-  declared name, the owner and every clause subnode's key enter the node id
-  and `package_id`, and the source span enters neither;
+  declared name, the owner and every clause subnode's key enter the node id,
+  and the source span enters neither;
 - the extension definition's `DefinitionRef` as the `extension` node's `definition`.
 
 ### Reading
@@ -155,7 +155,7 @@ The emitter SHALL write each admitted form as QSpec FR-469 states:
   package names by its `definition`, under that `DefinitionRef`, with exactly the definition's
   FR-467 `grammar_schema` and `typed_node_schema`.
 - The held definitions are reader input, never artifact data: inserting or
-  withholding them changes no package byte, node id or `package_id`.
+  withholding them changes no package byte or node id.
 - The reader SHALL report the first failing FR-469 reader join of the first
   failing `extension` node, in ascending node-id order, as IR reports it,
   located at `Locus::Artifact` with the RFC 6901 pointer IR reports (FR-096).
@@ -188,8 +188,8 @@ The emitter SHALL write each admitted form as QSpec FR-469 states:
 | FR-354-AC-2 | The same declaration with `days: "thirty"` refuses `ill_typed`/`type-mismatch` naming the `days` clause, `Int[1, 3650]` and `Text`. `retention Audit { subject: "audit" }` (the `days` clause absent) refuses at S1 `invalid_syntax`/`unexpected-token` naming the `}` and the expected clause `days`; `retention Audit { days: 30, subject: "audit" }` refuses the same naming `days` and the expected clause `subject`; `retention Audit { subject: "audit", }` refuses `invalid_syntax`/`unexpected-token` naming the `}` and the expected category. None of the four refusals is `invalid_package`. | Test (TC-882) |
 | FR-354-AC-3 | An extension definition with no typed-node schema refuses `invalid_package`/`missing-member` naming it. A production with leading keyword `function` refuses `invalid_package`/`conflicting-definition` naming the extension, the core grammar and `function`; two selected extensions with one leading keyword, or one node kind, refuse the same way naming both. Two extensions depending on each other refuse `invalid_package`/`definition-cycle` naming both in path order. | Test (TC-883) |
 | FR-354-AC-4 | A unit declaring the `retention` form without selecting the extension refuses `unsupported_construct`/`declaration-form` naming `retention`, its span and the unit's selections, and refuses identically over a catalog with and without the `retention` extension. A unit that selects the extension, names a parameter `retention` inside a function body and declares a record member named `retention` compiles, with `retention` an ordinary identifier in both places. | Test (TC-883) |
-| FR-354-AC-5 | A unit that selects no extension has an equal checked package identity over a catalog with and without the `retention` extension, and the AC-1 package identity is equal with two registered backends and with none. QSL's I2 reader given the AC-1 package with evidence holding the `retention` definition admits it; with evidence withholding it, it refuses `unknown_required_capability` with no cause, never `unknown_required_feature`, naming the `Audit` node's `node_id`, at `Locus::Artifact` with the pointer `/semantic_graph/nodes/{i}/body/definition`, and the package's bytes and `package_id` are those it was given. | Test (TC-884) |
-| FR-354-AC-6 | The AC-1 emission holds one `extension`/`extension_form` node with `declaration` `["Audit"]`, the unit's `SourceOwner`, the `retention` definition's `DefinitionRef`, `node_kind` `retention`, the clause bindings `subject` and `days` in that order, each a `reference` to a subnode typed `Text` and `Int[1, 3650]`, `dependencies` exactly those two subnodes in node-key order, and one `declaration` occurrence whose `source_map` region spans the whole form. The node id recomputes from its `ExtensionFormNode` preimage; recompiling with a different declared name, node kind or clause value changes the node id and `package_id`, and recompiling the unit with the form moved by inserted blank lines changes neither. | Test (TC-882) |
+| FR-354-AC-5 | A unit that selects no extension has an equal checked package identity over a catalog with and without the `retention` extension, and the AC-1 package identity is equal with two registered backends and with none. QSL's I2 reader given the AC-1 package with evidence holding the `retention` definition admits it; with evidence withholding it, it refuses `unknown_required_capability` with no cause, never `unknown_required_feature`, naming the `Audit` node's `node_id`, at `Locus::Artifact` with the pointer `/semantic_graph/nodes/{i}/body/definition`, and the package's bytes are those it was given. | Test (TC-884) |
+| FR-354-AC-6 | The AC-1 emission holds one `extension`/`extension_form` node with `declaration` `["Audit"]`, the unit's `SourceOwner`, the `retention` definition's `DefinitionRef`, `node_kind` `retention`, the clause bindings `subject` and `days` in that order, each a `reference` to a subnode typed `Text` and `Int[1, 3650]`, `dependencies` exactly those two subnodes in node-key order, and one `declaration` occurrence whose `source_map` region spans the whole form. The node id recomputes from its `ExtensionFormNode` preimage; recompiling with a different declared name, node kind or clause value changes the node id, and recompiling the unit with the form moved by inserted blank lines changes neither. | Test (TC-882) |
 
 ## Dependencies
 

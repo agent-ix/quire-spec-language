@@ -280,8 +280,6 @@ pub(super) enum SpineOutcome {
 #[derive(Serialize)]
 pub(super) struct SpineRunReport<'a> {
     pub format: Format,
-    pub request_digest: String,
-    pub package_id: String,
     pub source: RunSource<'a>,
     pub function: &'a str,
     pub outcome: SpineOutcome,
@@ -299,13 +297,11 @@ pub(super) struct Failure<'a> {
     pub basis: &'static str,
 }
 
-/// Artifact commands retain their request identity and completion status on
-/// stderr. The `run` command uses the closed command-error shape above.
+/// Artifact commands retain their completion status on stderr. The `run` command uses the closed command-error shape above.
 #[derive(Serialize)]
 pub(super) struct ArtifactFailure<'a> {
     #[serde(flatten)]
     pub failure: Failure<'a>,
-    pub request_digest: Option<String>,
     pub status: ArtifactFailureStatus,
 }
 
