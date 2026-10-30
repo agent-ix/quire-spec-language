@@ -30,7 +30,6 @@ quire-eval = { workspace = true }
 # The package document's bytes are its RFC 8785 encoding (ADR-013:113).
 quire-canonical = { workspace = true }
 serde_json = "1.0.151"
-sha2 = "0.10.9"
 # FR-064: the probe's two command-line dispatch functions carry
 # `#[string_edge]`, since `xtask string-edge` scans this crate.
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
