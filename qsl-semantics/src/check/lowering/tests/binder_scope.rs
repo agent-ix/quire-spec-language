@@ -133,7 +133,11 @@ fn check_body(result: TypeForm, body: Expression) -> Result<CheckedGraph, Vec<Ch
             body,
         )],
         aliases: vec![("Total".to_owned(), ValueType::Integer)],
-        ..PackageDeclarations::new(fixture_source(), "fixture", qsl_foundation::IdentityLimits::default())
+        ..PackageDeclarations::new(
+            fixture_source(),
+            "fixture",
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
     .check(CheckingLimits::default())
 }

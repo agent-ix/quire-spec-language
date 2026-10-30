@@ -101,7 +101,11 @@ fn package(
     PackageDeclarations {
         types: TypeEnvironment::new(records, []).expect("FR-143 admits the records"),
         functions,
-        ..PackageDeclarations::new(fixture_source(), "fixture", qsl_foundation::IdentityLimits::default())
+        ..PackageDeclarations::new(
+            fixture_source(),
+            "fixture",
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
 }
 

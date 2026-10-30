@@ -231,13 +231,17 @@ fn member_kind_json(member: &Member) -> Json {
         Member::Position {
             declaration,
             position,
-        } => json!({"kind": "position", "declaration": declared(declaration), "position": position}),
+        } => {
+            json!({"kind": "position", "declaration": declared(declaration), "position": position})
+        }
         Member::Element { declaration } => {
             json!({"kind": "element", "declaration": declared(declaration)})
         }
         Member::RelationshipEnd {
             declaration, name, ..
-        } => json!({"kind": "relationship_end", "declaration": declared(declaration), "name": name.as_str()}),
+        } => {
+            json!({"kind": "relationship_end", "declaration": declared(declaration), "name": name.as_str()})
+        }
         Member::Operation { declaration, name } => {
             json!({"kind": "operation", "declaration": declared(declaration), "name": name.as_str()})
         }

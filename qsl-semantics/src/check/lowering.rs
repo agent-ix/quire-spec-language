@@ -345,7 +345,7 @@ impl SemanticGraph {
             })
             .expect("the checked fixture contains a narrow node")
             .clone();
-        enclosing.key = key;
+        enclosing.key = key.clone();
         let super::node_key::BodyTerm::Application(application) = &mut enclosing.content.body
         else {
             unreachable!("the selected template is a narrow application")

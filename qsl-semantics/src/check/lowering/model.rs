@@ -26,11 +26,11 @@ use crate::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, PopulationRecord,
 };
 use crate::model::normalize::EffectiveView;
+use crate::value::nominal_payload::{DimensionPayload, NominalPayload, UnitPayload};
 use qsl_forms::{DeclaredClauseKind, NameForm};
 use quire_checked::key::DeclarationKey;
 use quire_semantic_value::location::Location;
 use quire_semantic_value::quantity::QuantityUnit;
-use crate::value::nominal_payload::{DimensionPayload, NominalPayload, UnitPayload};
 use quire_semantic_value::unit::{NominalDeclaration, NominalUnitForm};
 
 /// One step of a clock place's path below its object (FR-230 "Places"): a
