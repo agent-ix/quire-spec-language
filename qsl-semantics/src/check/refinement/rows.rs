@@ -89,7 +89,9 @@ impl KeyedRefinementRows {
     pub(crate) fn node_keys(&self) -> Vec<&NodeKey> {
         fn term<'a>(keys: &mut Vec<&'a NodeKey>, term: &'a LeafTerm) {
             if let LeafTerm::Reference { target } = term {
-                keys.push(&target.0);
+                if let Some(key) = target.admitted() {
+                    keys.push(key);
+                }
             }
         }
         let mut keys = Vec::new();

@@ -598,14 +598,7 @@ impl CheckedRefinement {
             .as_ref()
             .ok_or(RefinementV2EncodingError::MissingRows)?;
         let local = |key: &NodeKey| RefinementKey::Local(v2_node_id(key));
-        // A leaf's typed V2 term: its canonical bytes, read back as the
-        // term they spell.
-        let term = |leaf: &crate::check::node_key::LeafTerm| {
-            let bytes = quire_canonical::to_vec(leaf, quire_canonical::Limits::new(u64::MAX))
-                .map_err(RefinementV2EncodingError::Term)?;
-            serde_json::from_slice::<quire_contract_model::CheckedTerm>(&bytes)
-                .map_err(RefinementV2EncodingError::Body)
-        };
+        let term = leaf_checked_term;
         let arguments = |arguments: &[Option<crate::check::node_key::LeafTerm>]| {
             arguments
                 .iter()
@@ -1054,6 +1047,64 @@ fn granularity_label(granularity: quire_contract_model::RefinementGranularity) -
         quire_contract_model::RefinementGranularity::Each => "each",
         quire_contract_model::RefinementGranularity::Whole => "whole",
     }
+}
+
+/// A leaf's typed V2 term, built from its structural node references and
+/// literal spelling (QSpec FR-322 "Scalar literal values").
+fn leaf_checked_term(
+    leaf: &crate::check::node_key::LeafTerm,
+) -> Result<quire_contract_model::CheckedTerm, RefinementV2EncodingError> {
+    use crate::check::node_key::{LeafTerm, LiteralValue, NodeRef};
+    use serde::de::Error as _;
+    use serde_json::{json, Value};
+    let admitted = |node: &NodeRef| {
+        node.admitted().map(v2_node_id).ok_or_else(|| {
+            RefinementV2EncodingError::Body(serde_json::Error::custom(
+                "a refinement row term names a pending node",
+            ))
+        })
+    };
+    let spelled = |value: &quire_exact::Rational| {
+        if value.is_integer() {
+            value.numerator().to_string()
+        } else {
+            format!("{}/{}", value.numerator(), value.denominator())
+        }
+    };
+    let term = match leaf {
+        LeafTerm::Literal { ty, value } => {
+            let (kind, value): (&str, Value) = match value {
+                LiteralValue::Boolean(value) => ("boolean", json!(value)),
+                LiteralValue::Integer(value) => ("integer", json!(value.to_string())),
+                LiteralValue::Count(value) => ("integer", json!(value)),
+                LiteralValue::Rational(value) => ("rational", json!(spelled(value))),
+                LiteralValue::Float32Bits(value) => ("float32_bits", json!(format!("{value:08x}"))),
+                LiteralValue::Float64Bits(value) => {
+                    ("float64_bits", json!(format!("{value:016x}")))
+                }
+                LiteralValue::Quantity(value) => ("quantity", json!(spelled(value))),
+                LiteralValue::Text(value) => ("text", json!(value)),
+                LiteralValue::String(value) => ("string", json!(value)),
+                LiteralValue::Uuid(value) => ("uuid", json!(value.to_string())),
+                LiteralValue::Timestamp(value) => ("timestamp", json!(value.to_string())),
+                LiteralValue::None => ("none", Value::Null),
+                LiteralValue::Enum(case) => ("enum", json!(case)),
+            };
+            let type_id =
+                serde_json::to_value(admitted(ty)?).map_err(RefinementV2EncodingError::Body)?;
+            json!({"term": "literal", "type": type_id, "value_kind": kind, "value": value})
+        }
+        LeafTerm::Reference { target } => {
+            let target =
+                serde_json::to_value(admitted(target)?).map_err(RefinementV2EncodingError::Body)?;
+            json!({"term": "reference", "target": target})
+        }
+        LeafTerm::DependencyReference { node } => {
+            let node = admitted(node)?;
+            json!({"term": "dependency_reference", "package": node.package, "node": node})
+        }
+    };
+    serde_json::from_value(term).map_err(RefinementV2EncodingError::Body)
 }
 
 /// `key` as a V2 graph node id: the same package, path and ordinal. A
@@ -2752,12 +2803,12 @@ impl<'c, 'a> Checker<'c, 'a> {
                 }
             }
             if let Some(source) = source {
-                let Some(order_key) =
-                    super::lowering::population_node(&target.record.key, self.identity)
-                        .ok()
-                        .flatten()
-                        .map(|node| node.key())
-                else {
+                let Ok(order_key) = super::lowering::model_declaration_key(
+                    &target.record.key.package,
+                    super::NodeTag::Relation,
+                    "population",
+                    &target.record.key.node,
+                ) else {
                     self.fault("admitted-abstract-population-has-a-population-node-key");
                     continue;
                 };
