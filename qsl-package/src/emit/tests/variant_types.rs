@@ -76,16 +76,7 @@ fn emit_unit(unit_body: &str) -> Emitted {
 
 impl Emitted {
     fn read(&self, bytes: &[u8]) -> Read {
-        read_v2(
-            bytes,
-            library(),
-            V2ReadLimits::default(),
-            &self.evidence,
-            &qsl_semantics::library::fixtures::single_pin(
-                library(),
-                self.emission.package.package_id(),
-            ),
-        )
+        read_v2(bytes, library(), V2ReadLimits::default(), &self.evidence)
     }
 
     /// The node of the variant type `name`.
@@ -181,21 +172,19 @@ fn an_identifier_cased_variant_type_emits_and_reads_back_verified() {
 
 /// FR-360-AC-8, FR-360-AC-4: the package of a unit with a variant-typed
 /// parameter, result, field read, clause and a type whose cases are not
-/// identifiers reads back `Verified` at the emitted package id.
+/// identifiers reads back `Verified`.
 #[trace("FR-360-AC-8", "FR-360-AC-4", "TC-1009", "TC-1007")]
 #[test]
 fn a_package_naming_variant_types_reads_back_verified() {
     let emitted = emit_unit(UNIT);
     match emitted.read(emitted.emission.package.bytes()) {
-        Read::Verified { package, .. } => {
-            assert_eq!(package.package_id(), emitted.emission.package.package_id());
-        }
+        Read::Verified { .. } => {}
         other => panic!("expected Verified, got {other:?}"),
     }
 }
 
 /// The package with `edit` applied to the wire of the first `Odd` case node
-/// named `case`, read at the original package id.
+/// named `case`.
 fn tampered_read(case: &str, edit: impl FnOnce(&mut Value, &Value)) -> Read {
     let emitted = emit_unit(UNIT);
     let tier = emitted.variant_node("Tier")["node_id"].clone();
@@ -211,21 +200,19 @@ fn tampered_read(case: &str, edit: impl FnOnce(&mut Value, &Value)) -> Read {
 }
 
 /// A case of the owner's own node that the declaring variant type does not
-/// hold is refused by IR's reader, in the preimage, so is a case moved to
+/// hold is refused by IR's reader, as is a case moved to
 /// another variant type's node.
 #[trace("FR-360-AC-8", "TC-1009")]
 #[test]
 fn a_case_outside_its_variant_type_is_refused_by_the_reader() {
     let renamed = tampered_read("Gold Plus", |node, _| {
         node["body"]["value"] = json!("Silver");
-        node["nominal_identity_preimage"]["case"] = json!("Silver");
     });
     assert!(matches!(renamed, Read::Refused(_)), "{renamed:?}");
     let moved = tampered_read("Gold Plus", |node, tier| {
         node["semantic_type"] = tier.clone();
         node["dependencies"] = json!([tier]);
         node["body"]["type"] = tier.clone();
-        node["nominal_identity_preimage"]["declaration_node_id"] = tier.clone();
     });
     assert!(matches!(moved, Read::Refused(_)), "{moved:?}");
 }
@@ -236,7 +223,6 @@ fn a_case_outside_its_variant_type_is_refused_by_the_reader() {
 fn an_empty_case_name_is_refused_by_the_reader() {
     let emptied = tampered_read("2x", |node, _| {
         node["body"]["value"] = json!("");
-        node["nominal_identity_preimage"]["case"] = json!("");
     });
     assert!(matches!(emptied, Read::Refused(_)), "{emptied:?}");
 }
