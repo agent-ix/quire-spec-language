@@ -2398,10 +2398,11 @@ impl<'t> PopulationValues<'t> {
             )
         })?;
         let reference = ObjectReference::new(
-            // BLOCKED-BY QSL-1282 (owner: planner titan:QSL:plan): a state-machine
-            // context object has no declared object universe, yet
-            // `ObjectReference::new` takes a `UniverseId` (a root type node); the
-            // observation's role names the universe until that source exists.
+            // BLOCKED-BY QSL-1309 (owner: planner titan:QSL:plan): declared object
+            // universe for observation read contexts. A state-machine context
+            // object has no declared object universe, yet `ObjectReference::new`
+            // takes a `UniverseId` (a root type node); the observation's role
+            // names the universe until that contract exists.
             UniverseId::new(role_universe_key(role)?),
             context.effective,
             object,

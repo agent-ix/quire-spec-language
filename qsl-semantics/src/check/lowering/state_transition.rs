@@ -507,13 +507,15 @@ impl Lowering<'_> {
             .iter()
             .flat_map(MemberTerm::leaves)
             .find_map(|leaf| match leaf {
-                LeafTerm::Reference { target } => target.admitted().and_then(|target| self.subject_read(
-                    target.clone(),
-                    self_parameter.clone(),
-                    object.clone(),
-                    field,
-                    visited,
-                )),
+                LeafTerm::Reference { target } => target.admitted().and_then(|target| {
+                    self.subject_read(
+                        target.clone(),
+                        self_parameter.clone(),
+                        object.clone(),
+                        field,
+                        visited,
+                    )
+                }),
                 LeafTerm::Literal { .. } | LeafTerm::DependencyReference { .. } => None,
             })
     }
