@@ -1503,14 +1503,15 @@ pub mod fixtures {
     }
 
     fn effective_id() -> crate::model::key::EffectiveId {
-        // The SHA-256 of the RFC 8785 text `null`: any fixed digest serves.
-        crate::model::key::EffectiveId::from_digest(
-            qsl_foundation::ByteDigest::of(b"null").as_bytes(),
-        )
+        crate::model::key::effective_id_of(None, &key("type"))
+    }
+
+    fn type_node() -> quire_exact::NodeKey {
+        crate::model::key::object_type_node_key(&key("type")).expect("valid node key")
     }
 
     fn universe_id() -> UniverseId {
-        UniverseId::from_digest(*effective_id().as_bytes())
+        UniverseId::new(type_node())
     }
 
     fn multiplicity() -> Multiplicity {
@@ -1664,7 +1665,7 @@ pub mod fixtures {
             maximum: 0,
         },
         ForeignUniverse => ModelRefusalCause::ForeignUniverse {
-            actual: effective_id().as_bytes().to_vec(),
+            actual: type_node(),
             expected: universe_id(),
         },
         AbsentKey => ModelRefusalCause::AbsentKey {

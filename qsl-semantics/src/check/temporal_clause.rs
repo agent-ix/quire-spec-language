@@ -1896,7 +1896,7 @@ pub fn check_clauses(
     );
     let units = super::time_units::TimeUnits::new(
         &package.units,
-        package.nominal_spans.keys().copied(),
+        package.nominal_spans.keys().cloned(),
         &package.models,
         &package.dimension_equivalences,
         package.identity,
