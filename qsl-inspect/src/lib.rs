@@ -14,7 +14,8 @@ use qsl_foundation::{
 };
 use qsl_package::{CheckedPackage, Emission};
 use qsl_semantics::check::{RequirementRecord, SemanticNode};
-use quire_exact::{Cancel, NodeKey};
+use quire_contract_model::{CheckedNodeId, CheckedNodePathSegment};
+use quire_exact::{Cancel, NodeKey, NodeKeyView, PathSegmentView};
 use quire_semantic_value::catalog::{CatalogCode, CatalogCoded};
 
 extern crate alloc;
@@ -254,11 +255,10 @@ pub fn inspect_node<'a>(
             selector: node_key.to_string(),
         }));
     };
-    let checked_id = qsl_package::checked_node_id_of(node_key);
     if emission
         .omitted()
         .iter()
-        .any(|omitted| omitted.node == checked_id)
+        .any(|omitted| id_names_key(&omitted.node, node_key))
     {
         return Err(StageFailure::Refused(InspectCause::SourceCorrespondence {
             selector: node_key.to_string(),
@@ -377,6 +377,33 @@ pub fn unresolved_cause(error: UnresolvedOccurrence, selector: &str) -> InspectC
             selector: selector.into(),
         },
     }
+}
+
+/// Whether the wire id `id` names the same node as `key`. Nested path
+/// identities are compared with an explicit stack so depth cannot consume the
+/// call stack.
+fn id_names_key(id: &CheckedNodeId, key: &NodeKey) -> bool {
+    let mut pending: Vec<(&CheckedNodeId, NodeKeyView<'_>)> = vec![(id, key.view())];
+    while let Some((id, view)) = pending.pop() {
+        if *id.package != *view.package() || id.ordinal != view.ordinal() {
+            return false;
+        }
+        let mut segments = id.path.iter();
+        for segment in view.path() {
+            match (segments.next(), segment) {
+                (Some(CheckedNodePathSegment::Name(name)), PathSegmentView::Text(text))
+                    if **name == *text => {}
+                (Some(CheckedNodePathSegment::Node(nested_id)), PathSegmentView::Node(nested)) => {
+                    pending.push((nested_id, nested));
+                }
+                _ => return false,
+            }
+        }
+        if segments.next().is_some() {
+            return false;
+        }
+    }
+    true
 }
 
 #[cfg(test)]

@@ -455,7 +455,6 @@ mod tests {
             &document,
             &[None],
             None,
-            None,
             InspectLimits::default(),
             &Cancel::new(),
         )
