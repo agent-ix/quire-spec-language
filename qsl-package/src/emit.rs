@@ -1855,14 +1855,14 @@ fn write_clauses(
                 slots,
             } => CheckedConstraintTarget::Place {
                 place: place(*clock)?,
-                owner: node_id(*owner),
-                slots: slots.iter().copied().map(node_id).collect(),
+                owner: node_id(owner),
+                slots: slots.iter().map(node_id).collect(),
             },
             ConstraintTargetNodes::Parameter {
                 operation,
                 parameter,
             } => CheckedConstraintTarget::Parameter {
-                operation: node_id(*operation),
+                operation: node_id(operation),
                 parameter: parameter.clone(),
             },
         };
@@ -1950,16 +1950,16 @@ fn write_clauses(
                 condition,
             } => CheckedResetTarget::Place {
                 place: place(*clock)?,
-                owner: node_id(*owner),
-                slots: slots.iter().copied().map(node_id).collect(),
-                binders: binders.iter().copied().map(node_id).collect(),
-                condition: node_id(*condition),
+                owner: node_id(owner),
+                slots: slots.iter().map(node_id).collect(),
+                binders: binders.iter().map(node_id).collect(),
+                condition: node_id(condition),
             },
             ResetTargetNodes::Parameter { parameter } => CheckedResetTarget::Parameter {
                 parameter: parameter.clone(),
             },
         };
-        let operation = node_id(reset.operation);
+        let operation = node_id(&reset.operation);
         let value = quantity_spelling(&reset.value);
         let region = span_region(reset.span);
         if let Some(held) = model.resets.iter_mut().find(|held| {
@@ -2711,7 +2711,7 @@ fn emit_package_inner(
                 .filter(|timed| timed.model() == source.model)
                 .flat_map(|timed| timed.place_nodes())
                 .map(|key| {
-                    let id = node_id(*key);
+                    let id = node_id(key);
                     let written = nodes.iter().find(|node| node.node_id == id).ok_or(
                         EmitRefusal::TimedModelWriterInvariant("a clock place S3 wrote is emitted"),
                     )?;
@@ -2861,7 +2861,7 @@ fn emit_package_inner(
                 model.literal_types.integer = Some(integer_type);
             }
             for nominal in &source.nominal_nodes {
-                let id = node_id(nominal.key);
+                let id = node_id(&nominal.key);
                 if nodes.iter().any(|node| node.node_id == id) {
                     continue;
                 }
@@ -2883,7 +2883,7 @@ fn emit_package_inner(
                     }
                 };
                 let semantic_type = if nominal.form == "unit" {
-                    nominal.dependencies.first().copied().map(node_id).ok_or(
+                    nominal.dependencies.first().map(node_id).ok_or(
                         EmitRefusal::TimedModelWriterInvariant(
                             "a unit node must name its dimension",
                         ),
@@ -2912,7 +2912,7 @@ fn emit_package_inner(
                     node_tag: CheckedNodeTag::ScalarType.as_wire().into(),
                     semantic_form: nominal.form.as_str().into(),
                     semantic_type,
-                    dependencies: nominal.dependencies.iter().copied().map(node_id).collect(),
+                    dependencies: nominal.dependencies.iter().map(node_id).collect(),
                     occurrences: vec![occurrence],
                     recursion_group: None,
                     nominal_identity_preimage: Some(preimage),
