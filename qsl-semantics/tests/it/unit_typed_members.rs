@@ -195,7 +195,7 @@ fn quantity_types_check_in_every_position_over_the_one_unit_node() {
     let owner = views[0].view.type_identities()[&DeclarationKey {
         package: "example/config-version".to_owned(),
         node: "ix://example/config-version/ConfigVersion".to_owned(),
-    }];
+    }].clone();
     let measure = graph
         .scope()
         .operations()
@@ -401,13 +401,13 @@ fn unit_bounds_bound_the_members_of_their_unit_or_alias() {
                 quire_exact::Integer::from(1_i64),
             )
             .expect("a rational"),
-            ms,
+            ms.clone(),
         ))
     };
     let sequence = quire_exact::from_admitted(
         quire_exact::CollectionType::new(
             quire_exact::CollectionKind::Sequence,
-            ValueType::Quantity(ms),
+            ValueType::Quantity(ms.clone()),
             None,
         ),
         vec![quantity(6), quantity(2)],
@@ -595,7 +595,7 @@ fn unit_bounds_reach_records_aliases_of_aliases_and_every_node() {
         .types()
         .object_types()
         .map(|declaration| declaration.key())
-        .find(|key| graph.scope().types().attribute(*key, "sp").is_some())
+        .find(|key| graph.scope().types().attribute(key.clone(), "sp").is_some())
         .expect("ConfigVersion");
     let sp = graph
         .scope()
@@ -606,13 +606,13 @@ fn unit_bounds_reach_records_aliases_of_aliases_and_every_node() {
         .value_type()
         .clone();
     let span = match &sp {
-        ValueType::Composite(span) => *span,
+        ValueType::Composite(span) => span.clone(),
         ValueType::Option(inner) => match &**inner {
-            ValueType::Composite(span) => *span,
+            ValueType::Composite(span) => span.clone(),
             other => panic!("sp is a record: {other:?}"),
         },
         ValueType::Collection(collection) => match collection.element() {
-            ValueType::Composite(span) => *span,
+            ValueType::Composite(span) => span.clone(),
             other => panic!("sp is a record: {other:?}"),
         },
         other => panic!("sp is a record: {other:?}"),

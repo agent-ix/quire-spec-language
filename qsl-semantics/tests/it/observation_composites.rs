@@ -137,7 +137,7 @@ impl Case {
             kind: checked.kind(),
             context: checked.context(),
             operation: Some(OperationFacts {
-                declaring: base.declaring,
+                declaring: base.declaring.clone(),
                 declaration,
             }),
             operations: Default::default(),

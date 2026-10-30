@@ -63,7 +63,7 @@ fn counter(graph: &CheckedGraph, name: &str) -> ValueType {
     let NodeKind::NamedPopulation { members, .. } = operand.kind() else {
         unreachable!("a named population");
     };
-    let [member] = members[..] else {
+    let [member] = members[..].clone() else {
         panic!("one member type: {members:?}");
     };
     ValueType::Reference(member)

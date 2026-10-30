@@ -831,7 +831,7 @@ impl Replay {
             self.graph.model_selections(),
             &self.packages,
             ModelNormalizationLimits::default(),
-            account,
+            account.clone(),
         )
         .expect("the Account universe");
         let reference = closure.find(universe, "a1").expect("the admitted object");
@@ -1227,7 +1227,7 @@ impl Replay {
         let declaration = self
             .declarations
             .operations
-            .declared_by(account)
+            .declared_by(account.clone())
             .iter()
             .find(|operation| operation.name() == "promote")
             .expect("promote is declared")
@@ -1235,7 +1235,7 @@ impl Replay {
         ClauseFacts {
             identity: fixture_key(7),
             kind,
-            context: account,
+            context: account.clone(),
             operation: Some(OperationFacts {
                 declaring: account,
                 declaration,
