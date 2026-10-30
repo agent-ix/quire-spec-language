@@ -143,19 +143,13 @@ fn causes(refusals: &[CheckRefusal]) -> Vec<(Code, Option<&'static str>)> {
 }
 
 /// An annotated population read only by dereference, equality and `reaches`
-/// checks, carries `symmetric: true` into its record, and the annotation
-/// changes the package selection the unit checks against.
+/// checks, carries `symmetric: true` into its record.
 #[trace("TC-565", "FR-150-AC-1")]
 #[test]
-fn an_annotated_population_checks_and_changes_the_package_selection() {
+fn an_annotated_population_checks_and_carries_the_symmetric_flag() {
     let body = format!("{PARENT_ORDER}{NO_CYCLE}{VERSION_UNCHANGED}");
-    let plain = check(&document(), &body).expect("the unannotated unit checks");
-    let marked = check(&annotated(&document()), &body).expect("the annotated unit checks");
-    assert_ne!(
-        plain.model_selections(),
-        marked.model_selections(),
-        "a package differing only by the annotation is a different package"
-    );
+    check(&document(), &body).expect("the unannotated unit checks");
+    check(&annotated(&document()), &body).expect("the annotated unit checks");
 
     for (bytes, symmetric) in [(document(), false), (annotated(&document()), true)] {
         let package = PackageDocument::parse(&bytes, IntakeLimits::default()).expect("parses");

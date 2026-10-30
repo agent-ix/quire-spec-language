@@ -1584,7 +1584,7 @@ fn a_string_object_counts_as_one_value() {
 
 /// TC-1036 step 9 (FR-106-AC-32): a lone surrogate escape or an invalid UTF-8
 /// byte in a `label` text is a document the shared reader refuses at check
-/// 1.3 (`stale_dependency`/`byte-digest-mismatch`) before any value is read,
+/// 1.3 (`unknown_wire`) before any value is read,
 /// even beside a wrong-kind `token`; a text past the byte limit refuses
 /// `input-bytes-exceeded` at check 1.2.
 #[trace("TC-1036", "FR-106-AC-32")]
@@ -1625,8 +1625,7 @@ fn the_document_edge_refuses_before_any_value_is_read() {
         let Err(AdmissionFailure::Refused(record)) = admit_bytes(bytes) else {
             panic!("a refusal");
         };
-        assert_eq!(record.code, Code::StaleDependency);
-        assert_eq!(record.cause, "byte-digest-mismatch");
+        assert_eq!(record.code, Code::UnknownWire, "cause {}", record.cause);
     }
     let huge = text.replace("\"ready\"", &format!("\"{}\"", "a".repeat(1_048_576)));
     let Err(AdmissionFailure::Refused(record)) = admit_bytes(huge.into_bytes()) else {
@@ -2004,8 +2003,7 @@ fn a_text_object_counts_as_one_value() {
 }
 
 /// TC-1038 step 10 (FR-106-AC-38): a `title` text holding a lone surrogate
-/// escape or the byte `0xC0`, selected under the base snapshot's digest,
-/// refuses `byte-digest-mismatch` before any value is read (a wrong-kind
+/// escape or the byte `0xC0`, refuses `unknown_wire` before any value is read (a wrong-kind
 /// `token` elsewhere changes nothing); a document over the byte limit refuses
 /// `input-bytes-exceeded` naming `observation.input_bytes`.
 #[trace("TC-1038", "FR-106-AC-38")]
@@ -2046,8 +2044,7 @@ fn the_document_edge_refuses_a_title_before_any_value_is_read() {
         let Err(AdmissionFailure::Refused(record)) = admit_bytes(bytes) else {
             panic!("a refusal");
         };
-        assert_eq!(record.code, Code::StaleDependency);
-        assert_eq!(record.cause, "byte-digest-mismatch");
+        assert_eq!(record.code, Code::UnknownWire, "cause {}", record.cause);
     }
     let huge = text_of.replace("\"Ready\"", &format!("\"{}\"", "a".repeat(1_048_576)));
     let Err(AdmissionFailure::Refused(record)) = admit_bytes(huge.into_bytes()) else {

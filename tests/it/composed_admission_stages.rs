@@ -646,8 +646,9 @@ fn a_claim_inapplicable_to_a_family_is_inapplicable_while_an_applicable_one_is_a
 #[trace("TC-115", "FR-036-AC-6")]
 fn refused_and_unknown_subjects_keep_their_own_dispositions() {
     let model = setup::native_rule_model::parts().model();
+    // A model of another package: the units' import names no supplied package.
     let replacement = setup::authored_model(|document| {
-        document["requirement"] = Value::from("Replacement");
+        document["package"] = Value::from("test/replacement");
     });
     let assessment = Assessment {
         population: None,
@@ -700,10 +701,10 @@ fn refused_and_unknown_subjects_keep_their_own_dispositions() {
     );
 
     // A statically refused subject keeps its own distinct disposition.
-    let stale = [ModelInput::Native(&replacement)];
+    let missing = [ModelInput::Native(&replacement)];
     with_reports(
         &sources,
-        &stale,
+        &missing,
         WorkLimits::default(),
         Limits::default(),
         BindingLimits::default(),

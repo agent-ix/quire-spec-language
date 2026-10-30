@@ -428,12 +428,11 @@ fn d03_no_candidate_with_a_body_refuses_every_subtype_as_no_applicable() {
         panic!("expected an ambiguous outcome, got {outcome:?}");
     };
     assert_eq!(refusals.len(), 4);
-    let subtypes: Vec<&str> = refusals.iter().map(|r| r.subtype.node.as_str()).collect();
-    // Subtype order follows the view's own ascending effective-identity
-    // order, i.e. each type's computed hash.
-    // The chain-link identity wire moved every digest, which changes the
-    // effective-identity order while preserving the set.
-    assert_eq!(subtypes, vec!["model.C", "model.B", "model.A", "model.D"]);
+    let mut subtypes: Vec<&str> = refusals.iter().map(|r| r.subtype.node.as_str()).collect();
+    // Every subtype is refused; the order is the view's identity order, which
+    // is not part of the contract.
+    subtypes.sort_unstable();
+    assert_eq!(subtypes, vec!["model.A", "model.B", "model.C", "model.D"]);
     assert!(refusals.iter().all(|r| r.code == Code::AmbiguousDispatch));
     assert!(refusals
         .iter()

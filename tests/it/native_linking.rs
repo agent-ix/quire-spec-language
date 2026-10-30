@@ -43,10 +43,29 @@ fn invariant(expression: &str) -> String {
 }
 
 fn reowner(input: &mut Parts, requirement: &str) {
+    rebuild(input, None, requirement);
+}
+
+/// [`reowner`] under a package of its own: selection is by package identity
+/// alone, so inventory entries meant to be independent need distinct packages.
+fn repackage(input: &mut Parts, requirement: &str) {
+    let package = format!(
+        "{}-{}",
+        input.environment.owner().package().as_str(),
+        requirement.to_ascii_lowercase()
+    );
+    rebuild(input, Some(package), requirement);
+}
+
+fn rebuild(input: &mut Parts, package: Option<String>, requirement: &str) {
     let old = &input.environment;
+    let package = match package {
+        Some(package) => ir::PackageId::new(package).unwrap(),
+        None => old.owner().package().clone(),
+    };
     input.environment = ir::DeclarationEnvironment::new(
         ir::RequirementRef::new(
-            old.owner().package().clone(),
+            package,
             ir::RequirementId::new(requirement).unwrap(),
             old.owner().revision(),
         ),
@@ -368,7 +387,7 @@ fn tc_043_inventory_conflicts_refuse_before_import_selection() {
     assert_eq!(error.diagnostic.code, Code::AmbiguousDeclaration);
     assert!(!error.related.is_empty());
     let mut independent = parts();
-    reowner(&mut independent, "IndependentRule");
+    repackage(&mut independent, "IndependentRule");
     let inventory = [original, independent.model()];
     assert_eq!(
         link_native(
@@ -518,10 +537,10 @@ fn tc_045_native_link_hard_inventory_syntax_and_depth_limits_cannot_be_raised() 
 
 fn model_at_artifact_ceiling(requirement: &str) -> NativeModel {
     let mut input = parts();
-    reowner(&mut input, requirement);
+    repackage(&mut input, requirement);
     let base_length = input.model().artifact_bytes().len();
     let mut input = parts();
-    reowner(&mut input, requirement);
+    repackage(&mut input, requirement);
     let old = input.source.source();
     let mut identity = old.identity().clone();
     identity

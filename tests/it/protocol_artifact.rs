@@ -564,18 +564,6 @@ fn model_names_its_domain_package_directly_and_refuses_the_deleted_producer_shap
         value["models"][0]["domain_package"] = shaped;
         refused.push(value);
     }
-    // FR-056-CON-4: only the sha256-jcs spelling occupies the digest slot.
-    let hex = "ab".repeat(32);
-    for digest in [
-        format!("sha256:{hex}"),
-        hex.to_uppercase(),
-        hex[..62].to_owned(),
-    ] {
-        let mut value = base.clone();
-        value["models"][0]["domain_package"] =
-            json!({"identity": "test/orders", "version": "1.0.0", "digest": digest});
-        refused.push(value);
-    }
     for value in refused {
         assert!(matches!(
             fixture.raw(&value).result(),
@@ -583,11 +571,18 @@ fn model_names_its_domain_package_directly_and_refuses_the_deleted_producer_shap
         ));
     }
 
+    // A naming that carries members beyond the identity is not read.
+    let mut value = base.clone();
+    value["models"][0]["domain_package"] = json!({"identity": "test/orders", "version": "1.0.0"});
+    assert!(matches!(
+        fixture.raw(&value).result(),
+        Err(Error::Json { .. })
+    ));
+
     // The well-formed naming decodes, and then refuses only as a substituted
     // selection against this accepted inventory.
     let mut value = base.clone();
-    value["models"][0]["domain_package"] =
-        json!({"identity": "test/orders", "version": "1.0.0", "digest": hex});
+    value["models"][0]["domain_package"] = json!({"identity": "test/orders"});
     failure(&fixture.raw(&value), Error::Invalid(Invalid::Model));
 }
 

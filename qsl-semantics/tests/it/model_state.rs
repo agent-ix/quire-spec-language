@@ -309,7 +309,7 @@ fn an_initial_snapshot_with_a_wrong_model_a_dangling_reference_or_an_incomplete_
         (Code::IncompletePopulation, "incomplete-scope")
     );
 
-    fixture.header["version"] = json!("9.9.9");
+    fixture.header["identity"] = json!("test/another-package");
     let record = refused(admit(&fixture, "current", initial_anchor(), true, two_objects()).err());
     assert_eq!(
         (record.code, record.cause),

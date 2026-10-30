@@ -24,20 +24,14 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 use qsl_semantics::model::intake::{admit, package_input};
-use qsl_semantics::model::key::{EffectiveDeclarationPreimage, EffectiveId, Fact, RULE_QUALIFY};
 use qsl_semantics::model::normalize::{ModelRefusal, ModelRefusalCause};
 use qsl_semantics::value::enumeration::{EnumDeclarationPreimage, EnumMemberPreimage};
 use qsl_semantics::value::{
     admit_unit_graph, CompoundUnitPreimage, DimensionPreimage, NodeIdentityPreimage, NodeOwner,
     OwnerSelection, OwnerSubject, UnitPreimage,
 };
-use quire_checked::key::DeclarationKey;
 use quire_exact::NodeKey;
 use quire_semantic_value::quantity::{result_unit, QuantityUnit, UnitOperation};
-
-const EFFECTIVE_TYPE: &str = r#"{"derivation":[{"inputs":[{"digest_domain":"sha256-jcs","node":"ix://test/orders/A","package":"test/orders"}],"ordinal":"0","parent":null,"rule":{"identity":"quire.model.normalize.qualify/v1"}}],"original":{"digest_domain":"sha256-jcs","node":"ix://test/orders/A","package":"test/orders"},"owner_effective_type":null,"version":"quire.model.effective-declaration/v2"}"#;
-
-const EFFECTIVE_MEMBER_TEMPLATE: &str = r#"{"derivation":[{"inputs":[{"digest_domain":"sha256-jcs","node":"ix://test/orders/A/x","package":"test/orders"}],"ordinal":"0","parent":null,"rule":{"identity":"quire.model.normalize.qualify/v1"}}],"original":{"digest_domain":"sha256-jcs","node":"ix://test/orders/A/x","package":"test/orders"},"owner_effective_type":{"digest":"@TYPE@","domain":"quire.model.effective-declaration/v2"},"version":"quire.model.effective-declaration/v2"}"#;
 
 const ENUM_DECLARATION: &str = r#"{"members":["Active","Closed"],"ordered":false,"owner":{"authority":"agent-ix","identity":"example-model","kind":"definition"},"qualified_declaration":["Example","Status"],"version":"quire.enum-declaration-node/v1"}"#;
 
@@ -59,14 +53,6 @@ fn sha256_hex(bytes: &[u8]) -> String {
 /// The SHA-256 of a vector's hand-written text: the expected digest.
 fn digest_of(text: &str) -> String {
     sha256_hex(text.as_bytes())
-}
-
-fn effective_type_digest() -> String {
-    digest_of(EFFECTIVE_TYPE)
-}
-
-fn effective_member() -> String {
-    EFFECTIVE_MEMBER_TEMPLATE.replace("@TYPE@", &effective_type_digest())
 }
 
 fn enum_member() -> String {
@@ -106,49 +92,6 @@ fn assert_golden(text: &str, actual: &str) {
         serde_json::to_string(&parsed).expect("a Value serializes"),
         text,
         "the encoder before `quire-canonical` emitted these bytes, so the digest is unchanged"
-    );
-}
-
-fn key(node: &str) -> DeclarationKey {
-    DeclarationKey {
-        package: "test/orders".to_owned(),
-        node: node.to_owned(),
-    }
-}
-
-fn qualified(node: &str, owner: Option<EffectiveId>) -> EffectiveDeclarationPreimage {
-    EffectiveDeclarationPreimage {
-        owner_effective_type: owner,
-        original: key(node),
-        derivation: vec![Fact {
-            ordinal: 0,
-            rule: RULE_QUALIFY,
-            inputs: vec![key(node)],
-            parent: None,
-        }],
-    }
-}
-
-/// `quire.model.effective-declaration/v2`, for an effective type (`null`
-/// owner) and an effective member (an `{domain, digest}` owner), with the
-/// encoder's byte count equal to the text's length.
-#[trace("QSpec-TC-195", "QSpec-FR-150-AC-6")]
-#[test]
-fn effective_declaration_identities_match_their_golden_vectors() {
-    let effective_type = qualified("ix://test/orders/A", None);
-    let type_id = effective_type.identity();
-    assert_golden(EFFECTIVE_TYPE, &type_id.to_string());
-    assert_eq!(
-        effective_type.canonical_len(),
-        u64::try_from(EFFECTIVE_TYPE.len()).unwrap()
-    );
-
-    let member = qualified("ix://test/orders/A/x", Some(type_id));
-    let member_text = effective_member();
-    assert_golden(&member_text, &member.identity().to_string());
-    assert_eq!(
-        member.canonical_len(),
-        u64::try_from(member_text.len()).unwrap()
     );
 }
 

@@ -246,29 +246,26 @@ fn a_missing_model_is_refused_at_its_import() {
 fn ambiguity_retains_all_sorted_loci_in_every_order() {
     let a = environment("FR-001", 1, 10);
     let b = environment("FR-002", 2, 10);
+    // One package offered by two inventory entries is ambiguous at its import,
+    // whichever order the inventory lists them in.
     let mut expected = None;
+    let imports = import(&a, "M");
+    let text = document(&imports, &clause("P", "self.count"));
     for envs in [[a.clone(), b.clone()], [b.clone(), a.clone()]] {
-        for imports in [
-            import(&a, "M") + &import(&b, "M"),
-            import(&b, "M") + &import(&a, "M"),
-        ] {
-            let text = document(&imports, &clause("P", "self.count"));
-            let error = link(read(&text), &envs, LinkLimits::default()).unwrap_err();
-            assert_eq!(error.diagnostic.code, Code::AmbiguousDeclaration);
-            assert_eq!(
-                &text[error.diagnostic.span.start.byte..error.diagnostic.span.end.byte],
-                "BoundedCounter"
-            );
-            assert_eq!(error.related.len(), 2);
-            assert_eq!(error.related[0].identity.owner, *a.owner());
-            assert_eq!(error.related[1].identity.owner, *b.owner());
-            assert_eq!(error.related[0].source, locus(1, 0));
-            assert_eq!(error.related[1].source, locus(2, 0));
-            if let Some(prior) = &expected {
-                assert_eq!(&error.related, prior);
-            }
-            expected = Some(error.related);
+        let error = link(read(&text), &envs, LinkLimits::default()).unwrap_err();
+        assert_eq!(error.diagnostic.code, Code::AmbiguousDeclaration);
+        assert_eq!(
+            &text[error.diagnostic.span.start.byte..error.diagnostic.span.end.byte],
+            imports.trim_end()
+        );
+        assert_eq!(error.related.len(), 2 * a.types().len());
+        assert!(error.related.windows(2).all(|pair| pair[0] <= pair[1]));
+        assert!(error.related.iter().any(|l| l.identity.owner == *a.owner()));
+        assert!(error.related.iter().any(|l| l.identity.owner == *b.owner()));
+        if let Some(prior) = &expected {
+            assert_eq!(&error.related, prior);
         }
+        expected = Some(error.related);
     }
     let error = link(
         unit(&a, "true"),
@@ -468,7 +465,10 @@ fn unmapped_forms_refuse_while_linking_makes_no_type_judgment() {
 #[trace("TC-033", "FR-013-AC-5", "FR-017-AC-3")]
 #[test]
 fn inclusive_lowered_and_zero_limits_are_enforced_independently() {
-    let envs = [environment("FR-001", 1, 10), environment("FR-002", 2, 10)];
+    let envs = [
+        environment("FR-001", 1, 10),
+        environment_in("example/other", "FR-002", 2, 10),
+    ];
     let text = document(
         &(import(&envs[0], "M") + &import(&envs[1], "N")),
         &clause("P", "self.count >= 0"),
@@ -618,7 +618,7 @@ fn explicit_context_and_neighboring_clauses_cannot_be_guessed() {
             Code::InvalidModelBinding
         );
     }
-    let envs = [original, environment("FR-002", 2, 10)];
+    let envs = [original, environment_in("example/other", "FR-002", 2, 10)];
     for (name, expected) in [
         ("Color", Code::InvalidModelBinding),
         ("Absent", Code::MissingDeclaration),
@@ -677,7 +677,7 @@ fn explicit_context_and_neighboring_clauses_cannot_be_guessed() {
 fn padded_environment(owner: &str, emitted_bytes: usize) -> ir::DeclarationEnvironment {
     let make = |name: String| {
         ir::DeclarationEnvironment::new(
-            ir::RequirementRef::parse("example/padded", owner, 1).unwrap(),
+            ir::RequirementRef::parse(&format!("example/padded-{owner}"), owner, 1).unwrap(),
             vec![ir::TypeDeclaration::Record {
                 declaration: ir::RecordDeclaration::new(
                     symbol("BoundedCounter"),

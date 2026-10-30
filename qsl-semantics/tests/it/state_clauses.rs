@@ -3397,24 +3397,20 @@ fn nest_present(text: &str, depth: usize) -> String {
 }
 
 /// FR-261-AC-2 (TC-733 step 2): on a 512 KiB stack (the harness admits on
-/// one), digest admission over a snapshot holding a field value nested
-/// 100,000 deep, within `observation.input_bytes`, reads the document's
-/// digest and proceeds to FR-106's later checks -- here check 6's kind
-/// judgement of the field -- and under another digest refuses
-/// `stale_dependency`/`content-mismatch`.
+/// one), admission over a snapshot holding a field value nested 100,000
+/// deep, within `observation.input_bytes`, reads the document and proceeds to
+/// FR-106's later checks -- here check 6's kind judgement of the field.
 #[trace("TC-733", "FR-261-AC-2")]
 #[test]
-fn a_snapshot_nested_100_000_deep_is_digested_on_content() {
+fn a_snapshot_nested_100_000_deep_is_read_on_content() {
     let document = tc465_document();
     let limits = qsl_semantics::model::observation::ObservationLimits::default()
         .with_document_bytes(4_000_000)
         .with_values_per_document(1_000_000);
     let own = run_tc465_current_text(&document, |text| nest_present(text, 100_000), limits);
-    // The digest matched: admission went on to the field's own content
-    // check, which refuses the nested value against the declared type.
+    // Admission went on to the field's own content check, which refuses the
+    // nested value against the declared type.
     assert_tc465_refused(own, "invalid_runtime_input", "wrong-value-kind");
-    let other = run_tc465_current_text(&document, |text| nest_present(text, 100_000), limits);
-    assert_tc465_refused(other, "stale_dependency", "content-mismatch");
 }
 
 /// FR-261-AC-3 (TC-733 step 3): on a 512 KiB stack (the harness admits on
