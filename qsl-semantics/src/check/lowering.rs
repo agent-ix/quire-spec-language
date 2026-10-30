@@ -90,6 +90,7 @@ pub(crate) use hyper::{
     finish_step_relation, HyperClauseInput, LoweredStepRelation, StepRelationInput,
 };
 pub(crate) use model::ParentSlotFailure;
+pub(crate) use model::{model_node_content, population_node_content};
 pub(crate) use model::{
     bound_origin, model_declaration_key, quantity_origin, strictly_below, QuantityKind,
 };
@@ -147,6 +148,16 @@ pub struct SemanticNode {
 }
 
 impl SemanticNode {
+    /// A declared node under its admitted structural `key`, outside every
+    /// recursion group.
+    pub(super) fn declared(key: NodeKey, content: NodeContent) -> Self {
+        Self {
+            key,
+            recursion: None,
+            content,
+        }
+    }
+
     /// The node's `quire.checked-semantic-node/v1` key.
     pub fn key(&self) -> NodeKey {
         self.key.clone()

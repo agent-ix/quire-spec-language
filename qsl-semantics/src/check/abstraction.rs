@@ -30,11 +30,13 @@ use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::location::{Location, Origin};
 
 use super::lowering::{
-    generated_location, object_type_node, population_node, relation_node, AdmittedModel,
+    generated_location, model_node_content, population_node_content, relation_node, AdmittedModel,
     SemanticNode,
 };
 use super::node_key::{AbstractionTerm, FrameEntry, NodeKeyRefusal, ObjectEntry, PopulationEntry};
+use super::node_key::{ModelOwner, NodeTag};
 use super::CheckedGraph;
+use crate::model::key::{object_type_node_key, population_node_key};
 use crate::model::operation::OperationLookup;
 use quire_checked::key::DeclarationKey;
 
@@ -849,10 +851,7 @@ impl CheckedGraph {
         let Some(node) = self.object_nodes.get(declaration) else {
             return false;
         };
-        matches!(
-            object_type_node(declaration, self.identity),
-            Ok(Some(plain)) if plain.key() == *node
-        )
+        object_type_node_key(declaration).is_ok_and(|plain| plain == *node)
     }
 
     /// FR-305: the nodes of the frame of the operation `key` names, when a
@@ -1099,15 +1098,25 @@ impl CheckedGraph {
         let refused = || AbstractionNodeRefusal::NotAnObjectTypeNode {
             key: declaration.clone(),
         };
-        let key = self.object_nodes.get(declaration).ok_or_else(refused)?.clone();
+        let key = self
+            .object_nodes
+            .get(declaration)
+            .ok_or_else(refused)?
+            .clone();
         if self.semantic_graph.node(key.clone()).is_some() || support.nodes.contains_key(&key) {
             return Ok(key);
         }
         // A domain record whose node is not an `object_type` (a systems
         // interface) keys to another node than this content does.
-        let node = object_type_node(declaration, self.identity)?
-            .filter(|node| node.key() == key)
-            .ok_or_else(refused)?;
+        if object_type_node_key(declaration).map_err(|_| refused())? != key {
+            return Err(refused());
+        }
+        let owner = ModelOwner::new(declaration.package.clone(), declaration.node.clone())
+            .map_err(|_| refused())?;
+        let node = SemanticNode::declared(
+            key.clone(),
+            model_node_content(owner, NodeTag::Model, "object_type"),
+        );
         support.nodes.insert(key.clone(), node);
         Ok(key)
     }
@@ -1119,12 +1128,13 @@ impl CheckedGraph {
         declaration: &DeclarationKey,
         support: &mut Support,
     ) -> Result<NodeKey, AbstractionNodeRefusal> {
-        let node = population_node(declaration, self.identity)?.ok_or_else(|| {
-            AbstractionNodeRefusal::NotAPopulationNode {
-                key: declaration.clone(),
-            }
-        })?;
-        let key = node.key();
+        let refused = || AbstractionNodeRefusal::NotAPopulationNode {
+            key: declaration.clone(),
+        };
+        let key = population_node_key(declaration).map_err(|_| refused())?;
+        let owner = ModelOwner::new(declaration.package.clone(), declaration.node.clone())
+            .map_err(|_| refused())?;
+        let node = SemanticNode::declared(key.clone(), population_node_content(owner));
         support.nodes.insert(key.clone(), node);
         Ok(key)
     }

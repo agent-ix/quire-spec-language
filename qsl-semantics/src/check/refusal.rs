@@ -2911,7 +2911,7 @@ pub enum KeyFault {
     /// one version of each (FR-094, ADR-013 O-01).
     DuplicateModelSelection(String),
     /// A selected model package's `model_root` node has no key.
-    ModelRootKey(super::lowering::ModelRootKeyError),
+    ModelRootKey(quire_exact::InvalidNodeKey),
     /// An admitted enum declaration or member whose nominal preimage has no
     /// RFC 8785 encoding.
     NonCanonicalNominal(quire_exact::NodeKey),

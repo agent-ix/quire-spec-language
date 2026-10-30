@@ -1726,7 +1726,7 @@ fn clause_spelling(kind: DeclaredClauseKind) -> &'static str {
 /// node tag and form, no semantic type, a `null` `declaration` and an empty
 /// body. The one definition [`Lowering::model_node`] keys and adds and
 /// [`AdmittedModel::model_node_key`] only keys.
-pub(super) fn model_node_content(
+pub(crate) fn model_node_content(
     owner: ModelOwner,
     node_tag: NodeTag,
     form: &'static str,
@@ -1796,7 +1796,7 @@ pub fn model_root_key(
 /// The content of a `relation`/`population` node (QSpec FR-322 "Population
 /// references"): the one definition lowering's population reference and an
 /// abstraction relation's population target both key.
-pub(super) fn population_node_content(owner: ModelOwner) -> NodeContent {
+pub(crate) fn population_node_content(owner: ModelOwner) -> NodeContent {
     model_node_content(owner, NodeTag::Relation, "population")
 }
 
