@@ -236,7 +236,7 @@ fn evaluates_a_protocol_slot_and_refuses_an_unread_binder_before_charging() {
     assert!(matches!(
         payload.as_ref(),
         CallAdmissionFailure::Refused(record)
-            if record.code == CatalogCode::new("invalid_runtime_input", "unknown-member")
+            if record.record.catalog == CatalogCode::new("invalid_runtime_input", "unknown-member")
                 && record.locus == CallAdmissionLocus::Binder(unused.clone())
     ));
     assert_eq!(
@@ -261,7 +261,7 @@ fn evaluates_a_protocol_slot_and_refuses_an_unread_binder_before_charging() {
     assert!(matches!(
         payload.as_ref(),
         CallAdmissionFailure::Refused(record)
-            if record.code == CatalogCode::new("invalid_runtime_input", "duplicate-member")
+            if record.record.catalog == CatalogCode::new("invalid_runtime_input", "duplicate-member")
                 && record.locus == CallAdmissionLocus::Binder(unused.clone())
     ));
 
@@ -334,7 +334,7 @@ fn evaluates_a_protocol_slot_and_refuses_an_unread_binder_before_charging() {
     assert!(matches!(
         payload.as_ref(),
         CallAdmissionFailure::Refused(record)
-            if record.code == CatalogCode::new("missing_declaration", "missing-name")
+            if record.record.catalog == CatalogCode::new("missing_declaration", "missing-name")
                 && record.locus == CallAdmissionLocus::Member {
                     name: "condition".to_owned(), index: Some(0)
                 }
@@ -391,7 +391,7 @@ fn evaluates_a_protocol_slot_and_refuses_an_unread_binder_before_charging() {
     assert!(matches!(
         payload.as_ref(),
         CallAdmissionFailure::Refused(record)
-            if record.code == CatalogCode::new("invalid_runtime_input", "missing-member")
+            if record.record.catalog == CatalogCode::new("invalid_runtime_input", "missing-member")
                 && record.locus == CallAdmissionLocus::Binder(opened.clone())
     ));
 
@@ -409,7 +409,7 @@ fn evaluates_a_protocol_slot_and_refuses_an_unread_binder_before_charging() {
     assert!(matches!(
         payload.as_ref(),
         CallAdmissionFailure::Refused(record)
-            if record.code == CatalogCode::new("invalid_runtime_input", "unknown-member")
+            if record.record.catalog == CatalogCode::new("invalid_runtime_input", "unknown-member")
                 && record.locus == CallAdmissionLocus::Binder(unused)
     ));
 
@@ -430,7 +430,7 @@ fn evaluates_a_protocol_slot_and_refuses_an_unread_binder_before_charging() {
     assert!(matches!(
         payload.as_ref(),
         CallAdmissionFailure::Refused(record)
-            if record.code == CatalogCode::new("invalid_runtime_input", "wrong-value-kind")
+            if record.record.catalog == CatalogCode::new("invalid_runtime_input", "wrong-value-kind")
                 && record.locus == CallAdmissionLocus::Binder(opened.clone())
     ));
 
@@ -878,7 +878,7 @@ fn h4_a_foreign_slot_or_a_supply_for_another_slot_is_refused_before_any_charge()
     assert!(matches!(
         payload.as_ref(),
         CallAdmissionFailure::Refused(record)
-            if record.code == CatalogCode::new("invalid_runtime_input", "unknown-member")
+            if record.record.catalog == CatalogCode::new("invalid_runtime_input", "unknown-member")
                 && record.locus == CallAdmissionLocus::Binder(opened)
     ));
     assert_eq!(meter, Meter::new(UNLIMITED), "refused before any charge");
@@ -931,19 +931,51 @@ fn an_undefined_capture_is_precondition_false_and_a_true_precondition_completes(
             .expect("the protocol binds view")
             .node
             .clone();
-        let (objects, present, _) =
-            crate::state_model_family::objects(package.graph(), &crate::state_model_family::view());
-        let observation = qsl_semantics::model::observation::Observation {
-            identity: qsl_semantics::model::observation::DocumentRef {
-                authority: "test".to_owned(),
-                identity: "now".to_owned(),
-                revision_namespace: "fixture".to_owned(),
-                revision: "1".to_owned(),
-            },
-            environment: objects.with_references(vec![present.clone()]),
-            populations: std::collections::BTreeMap::new(),
-            out_of_range: Vec::new(),
+        let model_view = crate::state_model_family::view();
+        let (_, present, _) = crate::state_model_family::objects(package.graph(), &model_view);
+        let selected = qsl_semantics::model::observation::DocumentRef {
+            authority: "test".to_owned(),
+            identity: "now".to_owned(),
+            revision_namespace: "fixture".to_owned(),
+            revision: "1".to_owned(),
         };
+        let snapshot = serde_json::json!({
+            "format": "quire.state.snapshot/v1",
+            "identity": {
+                "authority": selected.authority.clone(),
+                "identity": selected.identity.clone(),
+                "revision_namespace": selected.revision_namespace.clone(),
+                "revision": selected.revision.clone(),
+            },
+            "observation": "current",
+            "model": {"identity": "test/orders", "version": "1.0.0", "digest": "set at admission"},
+            "populations": [{
+                "population": "ix://test/orders/pop",
+                "complete": true,
+                "objects": [{
+                    "key": "present",
+                    "type": "ix://test/orders/A",
+                    "fields": {
+                        "flag": {"boolean": true},
+                        "next": {"reference": {"population": "ix://test/orders/pop", "key": "present"}},
+                    },
+                }],
+            }],
+        });
+        let model_bytes = crate::state_model_family::model_document();
+        let packages = qsl_semantics::model::intake::package_input([model_bytes.as_slice()])
+            .expect("the source model remains an FR-106 package input");
+        let snapshots = [(selected.clone(), serde_json::to_vec(&snapshot).unwrap())]
+            .into_iter()
+            .collect();
+        let observation = package.evaluation_view().admit_protocol_observation(
+            &package.graph().model_selections()[0],
+            &packages,
+            qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+            &snapshots,
+            &selected,
+            qsl_semantics::model::observation::ObservationLimits::default(),
+        );
         let slot = ProtocolSlot {
             node: keys.clause.clone().expect("protocol clause key"),
             member: "captures".to_owned(),

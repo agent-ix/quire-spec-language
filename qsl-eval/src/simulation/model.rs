@@ -490,8 +490,7 @@ fn refused(code: Code, cause: &'static str, fields: &[(&'static str, String)]) -
 
 fn record(code: Code, cause: &'static str, fields: &[(&'static str, String)]) -> AdmissionRecord {
     AdmissionRecord {
-        code,
-        cause,
+        catalog: quire_semantic_value::catalog::CatalogCode::new(code.as_str(), cause),
         fields: fields.iter().cloned().collect(),
         path: Vec::new(),
         kernel: None,

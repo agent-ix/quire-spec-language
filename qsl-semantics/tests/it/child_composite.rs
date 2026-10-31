@@ -582,8 +582,7 @@ fn admit_order_usage(
 /// components.
 fn refusal_of(result: Result<(), AdmissionFailure>) -> Refusal {
     let Err(AdmissionFailure::Refused(AdmissionRecord {
-        code,
-        cause,
+        catalog,
         fields,
         path,
         ..
@@ -591,10 +590,10 @@ fn refusal_of(result: Result<(), AdmissionFailure>) -> Refusal {
     else {
         panic!("a refusal, not {result:?}");
     };
-    assert_eq!(code.as_str(), "invalid_runtime_input");
+    assert_eq!(catalog.code(), "invalid_runtime_input");
     let component = |name: &str| fields.get(name).cloned().unwrap_or_default();
     (
-        cause.to_owned(),
+        catalog.cause().to_owned(),
         component("object"),
         component("field"),
         path,
@@ -810,8 +809,8 @@ fn assert_values_limit(failure: AdmissionFailure, limit: u64) -> AdmissionRecord
     let AdmissionFailure::Refused(record) = failure else {
         panic!("a refusal, not {failure:?}");
     };
-    assert_eq!(record.code.as_str(), "stage_limit_exceeded");
-    assert_eq!(record.cause, "node-count-exceeded");
+    assert_eq!(record.catalog.code(), "stage_limit_exceeded");
+    assert_eq!(record.catalog.cause(), "node-count-exceeded");
     let field = |name: &str| record.fields.get(name).map(String::as_str);
     assert_eq!(field("setting"), Some("observation.values"));
     assert_eq!(field("kind"), Some("node-count-exceeded"));

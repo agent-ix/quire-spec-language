@@ -2,10 +2,9 @@
 //! TC-1070's E and L protocols, evaluated through their emitted identities.
 
 use super::*;
-use qsl_semantics::model::object_environment::ObjectEnvironment;
-use qsl_semantics::model::observation::{DocumentRef, Observation};
+use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
 use quire_exact::{FieldValue, LimitKind, NodeKey, ObjectId, ObjectReference};
-use quire_semantic_value::object_closure::ObjectClosure;
+use quire_semantic_value::admission::ObservationAdmission;
 
 macro_rules! assert_value_eq {
     ($actual:expr, $expected:expr $(, $message:literal)?) => {{
@@ -174,7 +173,7 @@ fn supply<'a>(
     package: &CheckedPackage,
     protocol: &str,
     values: Vec<(&str, Value)>,
-    observation: Option<&'a Observation>,
+    observation: Option<&'a ObservationAdmission<qsl_package::AdmittedProtocolObservation<'a>>>,
 ) -> ProtocolSupply<'a> {
     ProtocolSupply {
         binders: values
@@ -195,10 +194,25 @@ fn completed(result: ProtocolSlotEvaluation) -> Value {
     }
 }
 
-fn observation(
-    package: &CheckedPackage,
+fn observation<'a>(
+    package: &'a CheckedPackage,
     view: &qsl_semantics::model::normalize::EffectiveView,
-) -> (Observation, ObjectReference) {
+) -> (
+    ObservationAdmission<qsl_package::AdmittedProtocolObservation<'a>>,
+    ObjectReference,
+) {
+    observation_with_objects(package, view, &["n5"], true)
+}
+
+fn observation_with_objects<'a>(
+    package: &'a CheckedPackage,
+    view: &qsl_semantics::model::normalize::EffectiveView,
+    keys: &[&str],
+    complete: bool,
+) -> (
+    ObservationAdmission<qsl_package::AdmittedProtocolObservation<'a>>,
+    ObjectReference,
+) {
     let key = quire_checked::key::DeclarationKey {
         package: model::PACKAGE.to_owned(),
         node: model::id("Node"),
@@ -206,31 +220,51 @@ fn observation(
     let reference = ObjectReference::new(
         view.object_universe_of(&key).unwrap().identity().unwrap(),
         view.type_identities()[&key].clone(),
-        ObjectId::new("n5").unwrap(),
+        ObjectId::new(keys[0]).unwrap(),
     );
-    let objects = ObjectClosure::new(
-        package.graph().scope().types(),
-        [(
-            reference.clone(),
-            vec![("total", FieldValue::Present(int(5)))],
-        )],
-        &[],
-    )
-    .unwrap();
-    (
-        Observation {
-            identity: DocumentRef {
-                authority: "test".to_owned(),
-                identity: "current".to_owned(),
-                revision_namespace: "fixture".to_owned(),
-                revision: "1".to_owned(),
-            },
-            environment: ObjectEnvironment::new(objects).with_references(vec![reference.clone()]),
-            populations: [(model::id("nodes"), true)].into_iter().collect(),
-            out_of_range: Vec::new(),
+    let domain_bytes = serde_json::to_vec(&document()).unwrap();
+    let packages = qsl_semantics::model::intake::package_input([domain_bytes.as_slice()]).unwrap();
+    let selected = DocumentRef {
+        authority: "test".to_owned(),
+        identity: "current".to_owned(),
+        revision_namespace: "fixture".to_owned(),
+        revision: "1".to_owned(),
+    };
+    let objects: Vec<_> = keys
+        .iter()
+        .enumerate()
+        .map(|(index, object_key)| {
+            serde_json::json!({
+                "key": object_key,
+                "type": model::id("Node"),
+                "fields": {"total": {"integer": (5 + index).to_string()}},
+            })
+        })
+        .collect();
+    let snapshot = serde_json::json!({
+        "format": "quire.state.snapshot/v1",
+        "identity": {
+            "authority": selected.authority.clone(),
+            "identity": selected.identity.clone(),
+            "revision_namespace": selected.revision_namespace.clone(),
+            "revision": selected.revision.clone(),
         },
-        reference,
-    )
+        "observation": "current",
+        "model": {"identity": model::PACKAGE, "version": "1.0.0", "digest": "set at admission"},
+        "populations": [{"population": model::id("nodes"), "complete": complete, "objects": objects}],
+    });
+    let snapshots = [(selected.clone(), serde_json::to_vec(&snapshot).unwrap())]
+        .into_iter()
+        .collect();
+    let admission = package.evaluation_view().admit_protocol_observation(
+        &package.graph().model_selections()[0],
+        &packages,
+        qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+        &snapshots,
+        &selected,
+        ObservationLimits::default(),
+    );
+    (admission, reference)
 }
 
 fn assert_reader_admits(package: &CheckedPackage) {
@@ -324,24 +358,13 @@ fn related_indexes_follow_the_emitted_record_order() {
         .replace("related by Owns (view, view)", "related by Owns (view, peer) related by Owns (peer, view) related by Owns (peer, view)");
     let (package, view) = fixture_from_source(&source);
     assert_reader_admits(&package);
-    let (mut observation, n5) = observation(&package, &view);
+    let (_observation, n5) = observation(&package, &view);
     let n9 = ObjectReference::new(
         n5.universe().clone(),
         n5.object_type().clone(),
         ObjectId::new("n9").unwrap(),
     );
-    observation.environment = ObjectEnvironment::new(
-        ObjectClosure::new(
-            package.graph().scope().types(),
-            [
-                (n5.clone(), vec![("total", FieldValue::Present(int(5)))]),
-                (n9.clone(), vec![("total", FieldValue::Present(int(9)))]),
-            ],
-            &[],
-        )
-        .unwrap(),
-    )
-    .with_references(vec![n5.clone(), n9.clone()]);
+    let (observation_with_n9, _) = observation_with_objects(&package, &view, &["n5", "n9"], true);
     for (index, member, name, reference) in [
         (0, "related.from", "peer", &n9),
         (0, "related.to", "view", &n5),
@@ -356,7 +379,7 @@ fn related_indexes_follow_the_emitted_record_order() {
                         &package,
                         "Pipeline",
                         vec![(name, Value::Reference(reference.clone()))],
-                        Some(&observation),
+                        Some(&observation_with_n9),
                     ),
                     &mut Meter::new(UNLIMITED),
                 )
@@ -1079,7 +1102,7 @@ fn assert_refused(
         panic!("expected typed admission refusal: {failure:?}");
     };
     assert!(
-        matches!(payload.as_ref(), CallAdmissionFailure::Refused(record) if record.code == code && record.locus == locus),
+        matches!(payload.as_ref(), CallAdmissionFailure::Refused(record) if record.record.catalog == code && record.locus == locus),
         "expected {code:?} at {locus:?}, got {payload:?}"
     );
 }
@@ -1364,7 +1387,7 @@ fn reference_admission_refusals_leave_the_shared_meter_available() {
             CallAdmissionFailure::Refused(record) if !incomplete => record,
             other => panic!("wrong admission outcome: {other:?}"),
         };
-        assert_eq!(record.code, code);
+        assert_eq!(record.record.catalog.code(), code.code());
         assert_eq!(
             record.locus,
             CallAdmissionLocus::Binder(binder(&package, "Refunds", "view"))
@@ -1392,5 +1415,119 @@ fn reference_admission_refusals_leave_the_shared_meter_available() {
     assert_eq!(
         meter, fresh,
         "only the final valid recovery call charges the shared meter"
+    );
+}
+
+/// TC-1071 row 20: an incomplete sole population is named before checking the
+/// supplied reference's membership, with no S6a charge.
+#[test]
+#[trace("TC-1071", "FR-390-AC-6", "FR-106-AC-62")]
+fn incomplete_sole_population_is_returned_with_its_population_locus() {
+    let (package, view) = fixture_with_view();
+    let (observation, reference) = observation_with_objects(&package, &view, &["n5"], false);
+    let slot = slot(&package, "Refunds", "Refunds", "captures", Some(0));
+    let mut meter = Meter::new(UNLIMITED);
+    let before = meter.clone();
+    let result = package.evaluate_protocol_slot(
+        &slot,
+        &supply(
+            &package,
+            "Refunds",
+            vec![("view", Value::Reference(reference))],
+            Some(&observation),
+        ),
+        &mut meter,
+    );
+    assert_eq!(meter, before);
+    let Err(CallFailure::Admission(failure)) = result else {
+        panic!("expected the incomplete population admission result: {result:?}");
+    };
+    let CallAdmissionFailure::Incomplete(record) = failure.as_ref() else {
+        panic!("expected an incomplete admission: {failure:?}");
+    };
+    assert_eq!(
+        record.record.catalog,
+        CatalogCode::new("incomplete_population", "incomplete-scope")
+    );
+    assert_eq!(record.record.fields["population"], model::id("nodes"));
+    assert_eq!(
+        record.locus,
+        CallAdmissionLocus::Population(
+            NodeKey::new(
+                model::PACKAGE,
+                vec![
+                    quire_exact::PathSegment::Text("relation".to_owned()),
+                    quire_exact::PathSegment::Text("population".to_owned()),
+                    quire_exact::PathSegment::Text(model::id("nodes")),
+                ],
+                0,
+            )
+            .unwrap()
+        )
+    );
+}
+
+/// TC-1071 row 21 / FR-106 AC-63: the S4 admission arm preserves the original
+/// wrong-model record when the selected snapshot belongs to another model.
+#[test]
+#[trace("TC-1071", "FR-390-AC-6", "FR-106-AC-63")]
+fn another_model_snapshot_returns_the_original_qsv_refusal() {
+    let package = fixture();
+    let selected = DocumentRef {
+        authority: "test".to_owned(),
+        identity: "foreign".to_owned(),
+        revision_namespace: "fixture".to_owned(),
+        revision: "1".to_owned(),
+    };
+    let local_bytes = serde_json::to_vec(&document()).unwrap();
+    let foreign_bytes = String::from_utf8(local_bytes.clone())
+        .unwrap()
+        .replace("test/orders", "test/foreign")
+        .into_bytes();
+    let packages = qsl_semantics::model::intake::package_input([
+        local_bytes.as_slice(),
+        foreign_bytes.as_slice(),
+    ])
+    .unwrap();
+    let snapshot = serde_json::json!({
+        "format": "quire.state.snapshot/v1",
+        "identity": {
+            "authority": selected.authority.clone(),
+            "identity": selected.identity.clone(),
+            "revision_namespace": selected.revision_namespace.clone(),
+            "revision": selected.revision.clone(),
+        },
+        "observation": "current",
+        "model": {"identity": "test/foreign", "version": "1.0.0", "digest": "set at admission"},
+        "populations": [{
+            "population": "ix://test/foreign/nodes",
+            "complete": true,
+            "objects": [{
+                "key": "n5",
+                "type": "ix://test/foreign/Node",
+                "fields": {"total": {"integer": "5"}},
+            }],
+        }],
+    });
+    let snapshots = [(selected.clone(), serde_json::to_vec(&snapshot).unwrap())]
+        .into_iter()
+        .collect();
+    let admission = package.evaluation_view().admit_protocol_observation(
+        &package.graph().model_selections()[0],
+        &packages,
+        qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+        &snapshots,
+        &selected,
+        ObservationLimits::default(),
+    );
+    let ObservationAdmission::Refused(record) = admission else {
+        panic!("expected the original wrong-model refusal: {admission:?}");
+    };
+    assert_eq!(
+        record.catalog,
+        quire_semantic_value::catalog::CatalogCode::new(
+            "invalid_model_binding",
+            "wrong-model-selection"
+        )
     );
 }

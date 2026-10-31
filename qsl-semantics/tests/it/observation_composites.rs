@@ -234,8 +234,8 @@ fn assert_refused(case: Case, code: Code, cause: &str, field: Option<&str>) -> A
     let AdmissionFailure::Refused(record) = case.admit().expect_err("refused") else {
         panic!("expected refusal")
     };
-    assert_eq!(record.code, code);
-    assert_eq!(record.cause, cause);
+    assert_eq!(record.catalog.code(), code.as_str());
+    assert_eq!(record.catalog.cause(), cause);
     assert_eq!(record.fields.get("field").map(String::as_str), field);
     record
 }
@@ -572,8 +572,8 @@ fn nested_references_resolve_parameters_in_pre_and_results_in_post() {
     else {
         panic!("Incomplete")
     };
-    assert_eq!(record.code, Code::IncompletePopulation);
-    assert_eq!(record.cause, "incomplete-scope");
+    assert_eq!(record.catalog.code(), Code::IncompletePopulation.as_str());
+    assert_eq!(record.catalog.cause(), "incomplete-scope");
     assert_eq!(
         record.fields.get("population").map(String::as_str),
         Some(POPULATION)
@@ -639,8 +639,8 @@ fn composite_wire_values_keep_the_existing_value_limit() {
     let AdmissionFailure::Refused(record) = case.admit().expect_err("wire value limit") else {
         panic!("Refused")
     };
-    assert_eq!(record.code, Code::StageLimitExceeded);
-    assert_eq!(record.cause, "node-count-exceeded");
+    assert_eq!(record.catalog.code(), Code::StageLimitExceeded.as_str());
+    assert_eq!(record.catalog.cause(), "node-count-exceeded");
     assert_eq!(
         record.fields.get("setting").map(String::as_str),
         Some("observation.values")

@@ -516,7 +516,11 @@ fn refused(outcome: Result<AdmittedObservations, AdmissionFailure>) -> Admission
 }
 
 fn assert_refusal(record: &AdmissionRecord, code: Code, cause: &str, named: &[(&str, &str)]) {
-    assert_eq!((record.code, record.cause), (code, cause), "{record:?}");
+    assert_eq!(
+        (record.catalog.code(), record.catalog.cause()),
+        (code.as_str(), cause),
+        "{record:?}"
+    );
     for (key, value) in named {
         assert_eq!(
             record.fields.get(key).map(String::as_str),
@@ -706,8 +710,11 @@ fn side_pre_ignores_the_post_side_and_the_parameters() {
         panic!("side post without its snapshot is incomplete");
     };
     assert_eq!(
-        (record.code, record.cause),
-        (Code::UnavailableObservation, "missing-required-artifact")
+        (record.catalog.code(), record.catalog.cause()),
+        (
+            Code::UnavailableObservation.as_str(),
+            "missing-required-artifact"
+        )
     );
 }
 
@@ -1013,8 +1020,8 @@ fn each_context_defect_refuses_with_its_own_cause() {
         let record = defect(edit.as_ref());
         let named: Vec<(&str, &str)> = named.iter().map(|(k, v)| (*k, v.as_str())).collect();
         assert_eq!(
-            (record.code, record.cause),
-            (*code, *cause),
+            (record.catalog.code(), record.catalog.cause()),
+            (code.as_str(), *cause),
             "{name}: {record:?}"
         );
         for (key, value) in &named {
@@ -1392,8 +1399,8 @@ fn a_context_reference_closes_against_the_snapshot() {
         panic!("an incomplete population returns Incomplete");
     };
     assert_eq!(
-        (record.code, record.cause),
-        (Code::IncompletePopulation, "incomplete-scope")
+        (record.catalog.code(), record.catalog.cause()),
+        (Code::IncompletePopulation.as_str(), "incomplete-scope")
     );
     assert_eq!(
         record.fields.get("population").map(String::as_str),

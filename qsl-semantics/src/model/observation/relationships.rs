@@ -8,6 +8,7 @@
 //! defect (checks 6.1 to 6.5) is reported before a later entry's, as FR-106's
 //! walk order says.
 
+use super::{admission_record, AdmissionRecordExt};
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_foundation::diagnostic::Code;
@@ -141,7 +142,7 @@ impl EndMember {
 }
 
 fn defect(cause: &'static str, member: &'static str) -> AdmissionRecord {
-    AdmissionRecord::new(Code::InvalidRuntimeInput, cause).with("member", member)
+    admission_record(Code::InvalidRuntimeInput, cause).with("member", member)
 }
 
 /// Reads a snapshot's optional `relationships` member, charging one value per
@@ -159,7 +160,7 @@ pub(super) fn read_relationships(
     };
     let items = member.as_array().ok_or_else(|| {
         refuse(
-            AdmissionRecord::new(Code::InvalidRuntimeInput, "wrong-value-kind")
+            admission_record(Code::InvalidRuntimeInput, "wrong-value-kind")
                 .with("field", "relationships"),
         )
     })?;
@@ -172,7 +173,7 @@ pub(super) fn read_relationships(
 
 fn read_entry(item: Json<'_>, meter: &mut ReadMeter) -> Result<RawEntry, AdmissionFailure> {
     let Some(entry) = item.as_object() else {
-        return Ok(RawEntry(Err(AdmissionRecord::new(
+        return Ok(RawEntry(Err(admission_record(
             Code::InvalidRuntimeInput,
             "wrong-value-kind",
         )
@@ -185,7 +186,7 @@ fn read_entry(item: Json<'_>, meter: &mut ReadMeter) -> Result<RawEntry, Admissi
     }
     for (name, _) in entry.iter() {
         if EntryMember::read(name).is_none() {
-            return Ok(RawEntry(Err(AdmissionRecord::new(
+            return Ok(RawEntry(Err(admission_record(
                 Code::InvalidRuntimeInput,
                 "unknown-member",
             )
@@ -235,7 +236,7 @@ fn read_entry(item: Json<'_>, meter: &mut ReadMeter) -> Result<RawEntry, Admissi
 
 fn read_instance(value: Json<'_>) -> Result<RawInstance, AdmissionRecord> {
     let Some(instance) = value.as_object() else {
-        return Err(AdmissionRecord::new(
+        return Err(admission_record(
             Code::InvalidRuntimeInput,
             "wrong-value-kind",
         ));
@@ -248,8 +249,7 @@ fn read_instance(value: Json<'_>) -> Result<RawInstance, AdmissionRecord> {
     for (name, _) in instance.iter() {
         if InstanceMember::read(name).is_none() {
             return Err(
-                AdmissionRecord::new(Code::InvalidRuntimeInput, "unknown-member")
-                    .with("member", name),
+                admission_record(Code::InvalidRuntimeInput, "unknown-member").with("member", name),
             );
         }
     }
@@ -267,7 +267,7 @@ fn read_instance(value: Json<'_>) -> Result<RawInstance, AdmissionRecord> {
 
 fn read_end(value: Json<'_>) -> Result<RawEnd, AdmissionRecord> {
     let Some(end) = value.as_object() else {
-        return Err(AdmissionRecord::new(
+        return Err(admission_record(
             Code::InvalidRuntimeInput,
             "wrong-value-kind",
         ));
@@ -280,8 +280,7 @@ fn read_end(value: Json<'_>) -> Result<RawEnd, AdmissionRecord> {
     for (name, _) in end.iter() {
         if EndMember::read(name).is_none() {
             return Err(
-                AdmissionRecord::new(Code::InvalidRuntimeInput, "unknown-member")
-                    .with("member", name),
+                admission_record(Code::InvalidRuntimeInput, "unknown-member").with("member", name),
             );
         }
     }
@@ -440,7 +439,7 @@ pub(super) struct CheckedExtent {
 pub(super) type Listed = BTreeMap<String, BTreeMap<String, ObjectReference>>;
 
 fn record(cause: &'static str, relationship: &str, instance: usize) -> AdmissionRecord {
-    AdmissionRecord::new(Code::InvalidRuntimeInput, cause)
+    admission_record(Code::InvalidRuntimeInput, cause)
         .with("relationship", relationship)
         .with("instance", instance.to_string())
 }
@@ -469,7 +468,7 @@ pub(super) fn check_entries(
         // 6.7: a navigation relationship of the package, listed once.
         let Some(declared) = facts.relationship(&raw.relationship) else {
             return Err(refuse(
-                AdmissionRecord::new(Code::InvalidRuntimeInput, "wrong-role-mapping")
+                admission_record(Code::InvalidRuntimeInput, "wrong-role-mapping")
                     .with("relationship", raw.relationship.clone()),
             ));
         };
@@ -478,7 +477,7 @@ pub(super) fn check_entries(
             .any(|held| held.relationship == declared.key)
         {
             return Err(refuse(
-                AdmissionRecord::new(Code::InvalidRuntimeInput, "conflicting-identity")
+                admission_record(Code::InvalidRuntimeInput, "conflicting-identity")
                     .with("relationship", raw.relationship.clone()),
             ));
         }
@@ -639,7 +638,7 @@ pub(super) fn check_unlisted_ends(
             for (side, end) in ends_of(instance) {
                 if end.reference.is_none() && completeness.get(&end.population) != Some(&true) {
                     return Err(incomplete(end_record(
-                        AdmissionRecord::new(Code::IncompletePopulation, "incomplete-scope"),
+                        admission_record(Code::IncompletePopulation, "incomplete-scope"),
                         extent,
                         index,
                         side,
@@ -665,7 +664,7 @@ pub(super) fn check_dangling_ends(extents: &[CheckedExtent]) -> Result<(), Admis
             for (side, end) in ends_of(instance) {
                 if end.reference.is_none() {
                     return Err(refuse(end_record(
-                        AdmissionRecord::new(
+                        admission_record(
                             Code::DanglingReference,
                             "absent-target-in-complete-population",
                         ),

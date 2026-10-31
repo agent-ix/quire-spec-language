@@ -202,6 +202,12 @@ impl ObjectEnvironment {
             .unwrap_or(false)
     }
 
+    /// Every population's admitted completeness flag, keyed by its exact
+    /// declaration identity (`package/node` form).
+    pub fn population_completeness(&self) -> &BTreeMap<String, bool> {
+        &self.population_completeness
+    }
+
     /// Records every object the snapshot admitted, so an evaluation that
     /// ranges over the observation's objects (FR-366) can enumerate them.
     #[must_use]

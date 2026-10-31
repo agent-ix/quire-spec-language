@@ -1091,10 +1091,10 @@ fn tc235_m15_lifecycle_invariant_keeps_receiver_context() {
         panic!("run 4 refusal: {wrong_context:?}");
     };
     assert_eq!(
-        record.code,
-        qsl_foundation::diagnostic::Code::InvalidModelBinding
+        record.catalog.code(),
+        qsl_foundation::diagnostic::Code::InvalidModelBinding.as_str()
     );
-    assert_eq!(record.cause, "wrong-context");
+    assert_eq!(record.catalog.cause(), "wrong-context");
     assert_eq!(record.fields["document"], "p1");
     assert_eq!(
         record.fields["machine"],
@@ -1116,10 +1116,10 @@ fn tc235_m15_lifecycle_invariant_keeps_receiver_context() {
         panic!("run 5 refusal: {duplicate:?}");
     };
     assert_eq!(
-        record.code,
-        qsl_foundation::diagnostic::Code::InvalidRuntimeInput
+        record.catalog.code(),
+        qsl_foundation::diagnostic::Code::InvalidRuntimeInput.as_str()
     );
-    assert_eq!(record.cause, "duplicate-member");
+    assert_eq!(record.catalog.cause(), "duplicate-member");
     assert_eq!(record.fields["document"], "q1");
     assert_eq!(record.fields["entry"], "1");
 }

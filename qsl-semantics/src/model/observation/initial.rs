@@ -2,6 +2,7 @@
 //! FR-120's initial-state admission and state observation: the
 //! implementation behind [`crate::model::state::StateModel`].
 
+use super::{admission_record, AdmissionRecordExt};
 use std::collections::BTreeMap;
 
 use qsl_foundation::diagnostic::Code;
@@ -15,8 +16,8 @@ use super::document::{
 use super::helpers::object_reference;
 use super::relationships::{admit_supplied_extents, model_facts};
 use super::{
-    check_model_any, fault, refuse, view_of, AdmissionFailure, AdmissionRecord, AnchorKind,
-    DocumentRef, ModelView, Observation, ObservationLimits, SelectedAnchor,
+    check_model_any, fault, refuse, view_of, AdmissionFailure, AnchorKind, DocumentRef, ModelView,
+    Observation, ObservationLimits, SelectedAnchor,
 };
 use crate::model::object_environment::ObjectEnvironment;
 use crate::model::state::{ModelState, StateField, StateObject};
@@ -54,20 +55,18 @@ pub(crate) fn admit_initial_state(
         .ok_or_else(|| fault("expected-snapshot-document"))?;
 
     if snapshot.observation != super::document::ObservationRole::Current {
-        return Err(refuse(AdmissionRecord::new(
+        return Err(refuse(admission_record(
             Code::WrongSnapshot,
             "wrong-observation",
         )));
     }
-    let anchor = snapshot.anchor.as_ref().ok_or_else(|| {
-        refuse(AdmissionRecord::new(
-            Code::WrongSnapshot,
-            "wrong-observation",
-        ))
-    })?;
+    let anchor = snapshot
+        .anchor
+        .as_ref()
+        .ok_or_else(|| refuse(admission_record(Code::WrongSnapshot, "wrong-observation")))?;
     if anchor.kind != AnchorKind::Initialization {
         return Err(refuse(
-            AdmissionRecord::new(Code::WrongSnapshot, "wrong-anchor")
+            admission_record(Code::WrongSnapshot, "wrong-anchor")
                 .with("required", "initialization")
                 .with(
                     "supplied",

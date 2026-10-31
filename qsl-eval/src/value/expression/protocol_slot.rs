@@ -6,7 +6,8 @@ use quire_exact::{NodeKey, Value};
 use quire_semantic_value::catalog::CatalogCode;
 use quire_semantic_value::location::Location;
 
-use qsl_semantics::model::observation::Observation;
+use qsl_package::AdmittedProtocolObservation;
+use quire_semantic_value::admission::ObservationAdmission;
 
 pub(crate) mod resolve;
 
@@ -41,7 +42,7 @@ pub struct ProtocolSupply<'a> {
     pub binders: Vec<(NodeKey, SuppliedValue)>,
     /// The current admitted observation, required only when a value names an
     /// object reference.
-    pub observation: Option<&'a Observation>,
+    pub observation: Option<&'a ObservationAdmission<AdmittedProtocolObservation<'a>>>,
 }
 
 /// The result of evaluating a checked protocol slot (FR-390).
@@ -62,9 +63,9 @@ pub enum ProtocolSlotEvaluation {
 
 pub(crate) fn foreign_to_observation(
     reference: &quire_exact::ObjectReference,
-    observation: &Observation,
+    observation: &AdmittedProtocolObservation<'_>,
 ) -> bool {
-    let references = observation.environment.references();
+    let references = observation.environment().references();
     !references.is_empty()
         && references
             .iter()

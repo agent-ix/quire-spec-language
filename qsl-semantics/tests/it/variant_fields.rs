@@ -944,7 +944,10 @@ fn a_variant_form_names_a_non_identifier_case_by_its_exact_bytes() {
         );
     }
     let refused = |grade: serde_json::Value| match replay.admit(json!({"grade": grade})) {
-        Err(AdmissionFailure::Refused(record)) => (record.code, record.cause),
+        Err(AdmissionFailure::Refused(record)) => (
+            qsl_foundation::Code::from_code(record.catalog.code()).expect("known catalog code"),
+            record.catalog.cause(),
+        ),
         other => panic!("a refusal, not {other:?}"),
     };
     assert_eq!(
@@ -974,8 +977,8 @@ fn refusal_of(
 ) {
     match replay.admit(json!({"tier": tier})) {
         Err(AdmissionFailure::Refused(record)) => (
-            record.code,
-            record.cause,
+            qsl_foundation::Code::from_code(record.catalog.code()).expect("known catalog code"),
+            record.catalog.cause(),
             record.path,
             record.fields.get("member").cloned(),
         ),
@@ -1118,7 +1121,7 @@ fn a_defect_in_a_nested_variant_value_is_refused_at_its_path() {
     let Err(AdmissionFailure::Refused(record)) = outcome else {
         panic!("a refusal, not {outcome:?}");
     };
-    assert_eq!(record.cause, "invalid-value");
+    assert_eq!(record.catalog.cause(), "invalid-value");
     assert_eq!(record.path, [PathStep::OptionValue]);
 
     let outcome = replay.admit(json!({
@@ -1128,7 +1131,7 @@ fn a_defect_in_a_nested_variant_value_is_refused_at_its_path() {
     let Err(AdmissionFailure::Refused(record)) = outcome else {
         panic!("a refusal, not {outcome:?}");
     };
-    assert_eq!(record.cause, "wrong-value-kind");
+    assert_eq!(record.catalog.cause(), "wrong-value-kind");
     assert_eq!(record.path, [PathStep::Index(1)]);
 }
 
@@ -1371,8 +1374,11 @@ fn a_malformed_variant_form_as_a_parameter_or_result_refuses() {
         let Err(AdmissionFailure::Refused(record)) = replay.invoke(parameter, result) else {
             panic!("a refusal expected for {cause}");
         };
-        assert_eq!(record.code, qsl_foundation::Code::InvalidRuntimeInput);
-        assert_eq!(record.cause, cause);
+        assert_eq!(
+            record.catalog.code(),
+            qsl_foundation::Code::InvalidRuntimeInput.as_str()
+        );
+        assert_eq!(record.catalog.cause(), cause);
     }
 }
 

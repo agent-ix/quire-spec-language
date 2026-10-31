@@ -9,6 +9,7 @@ use qsl_semantics::check::{
 };
 use quire_eval::{CallAdmissionFailure, CallAdmissionLocus, CallAdmissionRecord, CallFailure};
 use quire_exact::{NodeKey, ValueType};
+use quire_semantic_value::admission::AdmissionRecord;
 use quire_semantic_value::catalog::CatalogCode;
 
 use super::ProtocolSlot;
@@ -39,7 +40,12 @@ enum Node<'a> {
 fn admission(code: &'static str, cause: &'static str, locus: CallAdmissionLocus) -> CallFailure {
     CallFailure::Admission(Box::new(CallAdmissionFailure::Refused(
         CallAdmissionRecord {
-            code: CatalogCode::new(code, cause),
+            record: AdmissionRecord {
+                catalog: CatalogCode::new(code, cause),
+                fields: Default::default(),
+                path: Vec::new(),
+                kernel: None,
+            },
             locus,
         },
     )))

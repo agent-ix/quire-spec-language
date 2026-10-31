@@ -343,8 +343,8 @@ fn expect(
 fn refusal_of<T: Debug>(outcome: Result<T, AdmissionFailure>) -> Refusal {
     match outcome {
         Err(AdmissionFailure::Refused(record)) => Refusal {
-            code: record.code,
-            cause: record.cause.to_owned(),
+            code: Code::from_code(record.catalog.code()).expect("known admission catalog code"),
+            cause: record.catalog.cause().to_owned(),
             field: record.fields.get("field").cloned(),
             path: record.path,
             member: record.fields.get("member").cloned(),
@@ -1207,8 +1207,8 @@ fn assert_values_limit<T: Debug>(outcome: Result<T, AdmissionFailure>, bound: u6
     let Err(AdmissionFailure::Refused(record)) = outcome else {
         panic!("a refusal, not {outcome:?}");
     };
-    assert_eq!(record.code, Code::StageLimitExceeded);
-    assert_eq!(record.cause, "node-count-exceeded");
+    assert_eq!(record.catalog.code(), Code::StageLimitExceeded.as_str());
+    assert_eq!(record.catalog.cause(), "node-count-exceeded");
     let field = |name: &str| record.fields.get(name).map(String::as_str);
     assert_eq!(field("setting"), Some("observation.values"));
     assert_eq!(field("bound"), Some(bound.to_string().as_str()));
@@ -1637,7 +1637,10 @@ fn the_document_edge_refuses_before_any_value_is_read() {
             panic!("a refusal");
         };
         assert_eq!(
-            (record.code, record.cause),
+            (
+                Code::from_code(record.catalog.code()).expect("known admission catalog code"),
+                record.catalog.cause()
+            ),
             (Code::InvalidRuntimeInput, "invalid-value")
         );
     }
@@ -1645,8 +1648,8 @@ fn the_document_edge_refuses_before_any_value_is_read() {
     let Err(AdmissionFailure::Refused(record)) = admit_bytes(huge.into_bytes()) else {
         panic!("a refusal");
     };
-    assert_eq!(record.code, Code::StageLimitExceeded);
-    assert_eq!(record.cause, "input-bytes-exceeded");
+    assert_eq!(record.catalog.code(), Code::StageLimitExceeded.as_str());
+    assert_eq!(record.catalog.cause(), "input-bytes-exceeded");
     assert_eq!(
         record.fields.get("setting").map(String::as_str),
         Some("observation.input_bytes")
@@ -2059,7 +2062,10 @@ fn the_document_edge_refuses_a_title_before_any_value_is_read() {
             panic!("a refusal");
         };
         assert_eq!(
-            (record.code, record.cause),
+            (
+                Code::from_code(record.catalog.code()).expect("known admission catalog code"),
+                record.catalog.cause()
+            ),
             (Code::InvalidRuntimeInput, "invalid-value")
         );
     }
@@ -2067,8 +2073,8 @@ fn the_document_edge_refuses_a_title_before_any_value_is_read() {
     let Err(AdmissionFailure::Refused(record)) = admit_bytes(huge.into_bytes()) else {
         panic!("a refusal");
     };
-    assert_eq!(record.code, Code::StageLimitExceeded);
-    assert_eq!(record.cause, "input-bytes-exceeded");
+    assert_eq!(record.catalog.code(), Code::StageLimitExceeded.as_str());
+    assert_eq!(record.catalog.cause(), "input-bytes-exceeded");
     assert_eq!(
         record.fields.get("setting").map(String::as_str),
         Some("observation.input_bytes")
@@ -2413,8 +2419,18 @@ fn defective_collections_refuse_in_a_field_and_in_a_parameter() {
     let check = |record: &qsl_semantics::model::observation::AdmissionRecord,
                  defect: &Defect,
                  place: &str| {
-        assert_eq!(record.code, defect.code, "{place} {}", defect.value);
-        assert_eq!(record.cause, defect.cause, "{place} {}", defect.value);
+        assert_eq!(
+            record.catalog.code(),
+            defect.code.as_str(),
+            "{place} {}",
+            defect.value
+        );
+        assert_eq!(
+            record.catalog.cause(),
+            defect.cause,
+            "{place} {}",
+            defect.value
+        );
         assert_eq!(record.path, defect.path, "{place} {}", defect.value);
         assert_eq!(
             record.fields.get("field").map(String::as_str),
@@ -2458,9 +2474,9 @@ fn defective_collections_refuse_in_a_field_and_in_a_parameter() {
         ObservationLimits::default(),
     ));
     assert_eq!(
-        (stamps.code, stamps.cause, stamps.path),
+        (stamps.catalog.code(), stamps.catalog.cause(), stamps.path),
         (
-            Code::InvalidRuntimeInput,
+            Code::InvalidRuntimeInput.as_str(),
             "invalid-value",
             vec![PathStep::Index(0)]
         )
@@ -2712,8 +2728,12 @@ fn a_defective_quantity_object_refuses_naming_its_member() {
         ),
     ] {
         let record = refused_quantity(&replay, "reach", object.clone());
-        assert_eq!(record.code, Code::InvalidRuntimeInput, "{object}");
-        assert_eq!(record.cause, cause, "{object}");
+        assert_eq!(
+            record.catalog.code(),
+            Code::InvalidRuntimeInput.as_str(),
+            "{object}"
+        );
+        assert_eq!(record.catalog.cause(), cause, "{object}");
         assert_eq!(
             record.fields.get("member").map(String::as_str),
             Some(member),
@@ -2743,7 +2763,7 @@ fn a_defective_magnitude_refuses_at_the_path_magnitude() {
         ),
     ] {
         let record = refused_quantity(&replay, "reach", ms(magnitude.clone()));
-        assert_eq!(record.cause, "invalid-value", "{magnitude}");
+        assert_eq!(record.catalog.cause(), "invalid-value", "{magnitude}");
         assert_eq!(
             record.fields.get("member").map(String::as_str),
             Some(member),

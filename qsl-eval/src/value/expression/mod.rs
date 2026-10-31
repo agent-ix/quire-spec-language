@@ -27,6 +27,7 @@ use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::observation::SelfKind;
 use quire_eval::Registry;
 use quire_exact::{FieldValue, Meter, NodeKey, Value, ValueType};
+use quire_semantic_value::admission::AdmissionRecord;
 use quire_semantic_value::call::InputRefusal;
 use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::declaration::TypeEnvironment;
@@ -58,6 +59,22 @@ use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckedExpression, CheckedNode};
 use quire_eval::{CallAdmissionFailure, CallAdmissionLocus, CallFailure, Evaluation};
 use quire_semantic_value::catalog::CatalogCode;
+
+fn population_node_key(
+    observation: &qsl_package::AdmittedProtocolObservation<'_>,
+    population: &str,
+) -> Result<NodeKey, InternalFault> {
+    let declaration = quire_checked::key::DeclarationKey {
+        package: observation.model_selection().identity.clone(),
+        node: population.to_owned(),
+    };
+    qsl_semantics::model::key::population_node_key(&declaration).map_err(|_| {
+        InternalFault::new(
+            "FR-390",
+            "admitted-population-declaration-has-a-structural-node-key",
+        )
+    })
+}
 
 /// FR-358: evaluate `node`, a closed subexpression of a checked function
 /// body (it reads no local), to its outcome under `meter`. `slots` is the
@@ -1294,7 +1311,9 @@ impl CheckedPackageEvaluation for CheckedPackage {
                     if let (
                         ValueType::Reference(_),
                         Value::Reference(reference),
-                        Some(observation),
+                        Some(quire_semantic_value::admission::ObservationAdmission::Admitted(
+                            observation,
+                        )),
                     ) = (&source.value_type, value, supply.observation)
                     {
                         if protocol_slot::foreign_to_observation(reference, observation) {
@@ -1330,18 +1349,66 @@ impl CheckedPackageEvaluation for CheckedPackage {
                         ));
                     }
                     for reference in protocol_slot::references(value) {
-                        let Some(observation) = supply.observation else {
+                        let Some(observation_admission) = supply.observation else {
                             return Err(CallFailure::Admission(Box::new(
                                 CallAdmissionFailure::Incomplete(quire_eval::CallAdmissionRecord {
-                                    code: CatalogCode::new(
-                                        "unavailable_observation",
-                                        "missing-required-artifact",
-                                    ),
+                                    record: AdmissionRecord {
+                                        catalog: CatalogCode::new(
+                                            "unavailable_observation",
+                                            "missing-required-artifact",
+                                        ),
+                                        fields: Default::default(),
+                                        path: Vec::new(),
+                                        kernel: None,
+                                    },
                                     locus: CallAdmissionLocus::Binder(key),
                                 }),
                             )));
                         };
-                        if !observation.environment.references().contains(&reference) {
+                        let observation = match observation_admission {
+                            quire_semantic_value::admission::ObservationAdmission::Admitted(
+                                observation,
+                            ) => observation,
+                            quire_semantic_value::admission::ObservationAdmission::Refused(
+                                record,
+                            ) => {
+                                return Err(CallFailure::Admission(Box::new(
+                                    CallAdmissionFailure::Refused(
+                                        quire_eval::CallAdmissionRecord {
+                                            record: record.clone(),
+                                            locus: CallAdmissionLocus::Binder(key),
+                                        },
+                                    ),
+                                )))
+                            }
+                            quire_semantic_value::admission::ObservationAdmission::Incomplete(
+                                record,
+                            ) => {
+                                return Err(CallFailure::Admission(Box::new(
+                                    CallAdmissionFailure::Incomplete(
+                                        quire_eval::CallAdmissionRecord {
+                                            record: record.clone(),
+                                            locus: CallAdmissionLocus::Binder(key),
+                                        },
+                                    ),
+                                )))
+                            }
+                            quire_semantic_value::admission::ObservationAdmission::Fault(fault) => {
+                                return Err(CallFailure::Fault(fault.clone()))
+                            }
+                        };
+                        if !self
+                            .graph()
+                            .model_selections()
+                            .contains(observation.model_selection())
+                        {
+                            return Err(protocol_slot::resolve::refused(
+                                "invalid_model_binding",
+                                "wrong-model-selection",
+                                CallAdmissionLocus::Binder(key),
+                            ));
+                        }
+                        if !observation.environment().references().contains(&reference) {
                             if protocol_slot::foreign_to_observation(&reference, observation) {
                                 return Err(protocol_slot::resolve::refused(
                                     "foreign_reference",
@@ -1349,14 +1416,51 @@ impl CheckedPackageEvaluation for CheckedPackage {
                                     CallAdmissionLocus::Binder(key),
                                 ));
                             }
-                            if observation.populations.values().any(|complete| !complete) {
+                        }
+                        if observation.populations().len() == 1
+                            && observation.populations().values().any(|complete| !complete)
+                        {
+                            let (population, _) =
+                                observation.populations().iter().next().ok_or_else(|| {
+                                    CallFailure::Fault(InternalFault::new(
+                                        "FR-390",
+                                        "single-population-manifest-is-present",
+                                    ))
+                                })?;
+                            return Err(CallFailure::Admission(Box::new(
+                                CallAdmissionFailure::Incomplete(quire_eval::CallAdmissionRecord {
+                                    record: AdmissionRecord {
+                                        catalog: CatalogCode::new(
+                                            "incomplete_population",
+                                            "incomplete-scope",
+                                        ),
+                                        fields: [("population", population.clone())]
+                                            .into_iter()
+                                            .collect(),
+                                        path: Vec::new(),
+                                        kernel: None,
+                                    },
+                                    locus: CallAdmissionLocus::Population(
+                                        population_node_key(observation, population)
+                                            .map_err(CallFailure::Fault)?,
+                                    ),
+                                }),
+                            )));
+                        }
+                        if !observation.environment().references().contains(&reference) {
+                            if observation.populations().values().any(|complete| !complete) {
                                 return Err(CallFailure::Admission(Box::new(
                                     CallAdmissionFailure::Incomplete(
                                         quire_eval::CallAdmissionRecord {
-                                            code: CatalogCode::new(
-                                                "incomplete_population",
-                                                "incomplete-scope",
-                                            ),
+                                            record: AdmissionRecord {
+                                                catalog: CatalogCode::new(
+                                                    "incomplete_population",
+                                                    "incomplete-scope",
+                                                ),
+                                                fields: Default::default(),
+                                                path: Vec::new(),
+                                                kernel: None,
+                                            },
                                             locus: CallAdmissionLocus::Binder(key),
                                         },
                                     ),
@@ -1379,7 +1483,8 @@ impl CheckedPackageEvaluation for CheckedPackage {
         let empty = ObjectEnvironment::default();
         let current = supply
             .observation
-            .map(|observation| &observation.environment)
+            .and_then(|admission| admission.authority().ok())
+            .map(|observation| observation.environment())
             .unwrap_or(&empty);
         frame.resize(selected.body.frame_slots(frame.len()), None);
         let result = Machine::with_pre(

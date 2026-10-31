@@ -13,6 +13,7 @@
 //! leaves the frame unevaluable (a declared delta that disagrees) is a
 //! refusal.
 
+use super::AdmissionRecordExt;
 use std::collections::BTreeMap;
 
 use quire_exact::{EffectiveId, ObjectReference, ValueType};
@@ -218,7 +219,7 @@ fn admission_record(
     population: &str,
     pre: &WireSide<'_>,
 ) -> AdmissionRecord {
-    let record = AdmissionRecord::new(refusal.code, refusal.cause.as_str())
+    let record = super::admission_record(refusal.code, refusal.cause.as_str())
         .with("population", population.to_owned());
     match &refusal.cause {
         ModelRefusalCause::FrameCreateOutsideGrant { object, .. }
@@ -418,7 +419,7 @@ pub(super) fn enforce(
         )),
         FrameStop::Denied(incomplete) => refuse(budget_record(&incomplete)),
         FrameStop::Link(link) => refuse(
-            AdmissionRecord::new(Code::FrameViolation, "unauthorized-change")
+            super::admission_record(Code::FrameViolation, "unauthorized-change")
                 .with("population", link.source.population.clone())
                 .with("relationship", link.relationship.node.clone())
                 .with("source", link.source.key.clone())
@@ -495,7 +496,7 @@ pub(super) fn enforce_contexts<'a>(
         Ok(_) => Ok(()),
         Err(DecisionStop::Denied(incomplete)) => Err(refuse(budget_record(&incomplete))),
         Err(DecisionStop::Refused(refusal)) => {
-            let record = AdmissionRecord::new(refusal.code, refusal.cause.as_str())
+            let record = super::admission_record(refusal.code, refusal.cause.as_str())
                 .with("machine", pre_raw.machine.clone());
             Err(refuse(match &refusal.cause {
                 ModelRefusalCause::FrameTypeChanged {
