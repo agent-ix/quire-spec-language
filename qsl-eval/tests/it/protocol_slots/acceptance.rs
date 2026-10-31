@@ -688,6 +688,14 @@ fn an_explicit_dereference_capture_obeys_the_observation_charge_boundaries() {
             quire_exact::ChargePoint::ModelNavigate
         ]
     );
+    for charge in measured.admitted_charges().iter().filter(|charge| {
+        matches!(
+            charge.point,
+            quire_exact::ChargePoint::ModelDeref | quire_exact::ChargePoint::ModelNavigate
+        )
+    }) {
+        assert_eq!(charge.value_occurrences, Some(1), "the normative model read vector belongs to each charge, including the explicit dereference");
+    }
 }
 
 #[test]
@@ -1041,7 +1049,11 @@ fn assert_refused(
 #[test]
 #[trace("TC-1071", "FR-390-AC-4")]
 fn absent_members_and_each_index_defect_refuse_without_evaluating_a_neighbor() {
-    let package = fixture();
+    let package = fixture_from_source(&SOURCE.replace(
+        "  run sequence Main {",
+        "  terminal any;\n  run sequence Main {",
+    ))
+    .0;
     let empty = supply(&package, "Refunds", vec![], None);
     for (owner, member, index) in [
         ("Refunds", "retry.relation", None),
@@ -1061,6 +1073,27 @@ fn absent_members_and_each_index_defect_refuse_without_evaluating_a_neighbor() {
             },
         );
     }
+    let terminal = ProtocolSlot {
+        node: package
+            .graph()
+            .protocol_node_keys("Refunds")
+            .unwrap()
+            .terminal
+            .clone()
+            .expect("terminal any emits its obligation"),
+        member: "condition".to_owned(),
+        index: None,
+    };
+    assert_refused(
+        &package,
+        &terminal,
+        &empty,
+        CatalogCode::new("missing_declaration", "missing-name"),
+        CallAdmissionLocus::Member {
+            name: "condition".to_owned(),
+            index: None,
+        },
+    );
 }
 
 #[test]
