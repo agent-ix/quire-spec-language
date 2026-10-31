@@ -168,12 +168,9 @@ identity gives every source-owned declaration a different key.
 
 ### Runtime artifacts are not sources
 
-A native runtime input artifact (a snapshot or an invocation,
-`native-state-input/1`) is not a source read under this requirement. Its
-caller names it with the same two labels
-(QSpec FR-004)
-([FR-018](FR-018-construct-native-runtime-inputs.md),
-[FR-024](FR-024-read-native-runtime-artifacts.md)).
+A snapshot or an invocation is not a source read under this requirement.
+[FR-106](FR-106-admit-snapshots-and-invocations.md) admits it; its caller
+names it with the same two labels (QSpec FR-004).
 
 ## Acceptance Criteria
 
