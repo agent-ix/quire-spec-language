@@ -385,6 +385,7 @@ pub fn check_over(queue: &[u8], body: &str) -> Result<Checked, Vec<Refused>> {
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
+         profile m = \"quire.model.complete/v1\";\n\
          profile inf = \"quire.temporal.infinite-trace/v1\";\n\
          {selections}{body}\n"
     );

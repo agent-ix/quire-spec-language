@@ -20,7 +20,8 @@
 
 use ix_trace_rs::trace;
 use qsl_analyze::analyze::{
-    analyze, model_item, AnalyzeItem, DispositionKind, Engine, Engines, Payload, Settlement,
+    analyze as analyze_request, analyze_items, model_item, AnalyzeItem, AnalyzeLimits,
+    AnalyzeRequest, DispositionKind, Engine, Engines, Payload, Settlement,
 };
 use qsl_eval::simulation::Limits;
 use qsl_eval::temporal::UndefinedCause;
@@ -75,7 +76,7 @@ fn value(record: &qsl_analyze::analyze::AnalyzeRecord) -> TerminalValue {
 #[test]
 fn a_broken_item_settles_refuted_and_its_counterexample_replays() {
     let case = case(CONTRACT, &[0]);
-    let record = only(analyze(
+    let record = only(analyze_items(
         &en1(),
         vec![model_item(index(0), case.model_item())],
         &Cancel::new(),
@@ -114,7 +115,7 @@ fn three_items_give_three_records_the_first_unsupported_naming_its_kind() {
     let world = world("", &[("c", 0)]);
     let invariant = world.invariant("always holds(c.value <= 3)", |v| Some(v <= 3));
     let broken = case(CONTRACT, &[0]);
-    let records = analyze(
+    let records = analyze_items(
         &Engines::qsl().expect("the layer-A manifests register"),
         vec![
             AnalyzeItem::unadapted(index(0), Capability::Monitorability),
@@ -166,7 +167,7 @@ fn a_rejected_certificate_is_inconclusive_and_an_accepted_one_certified() {
     let world = world(CONTRACT, &[("c", 0)]);
     let invariant = world.invariant("always holds(c.value <= 3)", |v| Some(v <= 3));
     let run = |item| {
-        only(analyze(
+        only(analyze_items(
             &en1(),
             vec![model_item(index(0), item)],
             &Cancel::new(),
@@ -221,7 +222,7 @@ fn a_proof_with_no_core_checker_settles_proved_uncertified_naming_its_engine() {
             panic!("a proved item replays nothing")
         });
         item.request.reductions.partial_order = reduced;
-        only(analyze(
+        only(analyze_items(
             &en1(),
             vec![model_item(index(0), item)],
             &Cancel::new(),
@@ -263,7 +264,7 @@ fn a_counterexample_settles_refuted_only_when_replay_reproduces_it() {
             alter(&mut payload);
             replay(&case, payload)
         });
-        value(&only(analyze(
+        value(&only(analyze_items(
             &en1(),
             vec![model_item(index(0), item)],
             &Cancel::new(),
@@ -295,7 +296,7 @@ fn a_state_budget_of_one_and_a_cancelled_handle_settle_incomplete() {
         },
         ..ModelCheckLimits::default()
     };
-    let record = only(analyze(
+    let record = only(analyze_items(
         &en1(),
         vec![model_item(
             index(0),
@@ -313,7 +314,7 @@ fn a_state_budget_of_one_and_a_cancelled_handle_settle_incomplete() {
 
     let cancel = Cancel::new();
     cancel.cancel(CancelCause::Requested);
-    let records = analyze(
+    let records = analyze_items(
         &en1(),
         vec![model_item(
             index(0),
@@ -396,7 +397,7 @@ fn an_undefined_claim_evaluation_settles_refuted_with_the_undefined_cause() {
         };
         Ok(result)
     });
-    let mut record = only(analyze(
+    let mut record = only(analyze_items(
         &en1(),
         vec![model_item(index(0), item)],
         &Cancel::new(),
@@ -475,6 +476,92 @@ fn service_request<'w>(
     }
 }
 
+fn routed_service_item(world: &crate::prob_world::World) -> qsl_analyze::provider::RoutedItem<'_> {
+    let request = service_request(world);
+    qsl_analyze::provider::RoutedItem {
+        item: qsl_analyze::provider::ClaimItem {
+            request_index: index(0),
+            claim: request.claim,
+            method: request.method,
+            seed: request.seed,
+            sampler: request.sampler,
+            limits: request.limits,
+            max_witnesses: request.max_witnesses,
+            symmetry: request.symmetry,
+        },
+        backend: BackendId::new("en-4"),
+    }
+}
+
+fn routed_service_items(
+    world: &crate::prob_world::World,
+    count: usize,
+) -> Vec<qsl_analyze::provider::RoutedItem<'_>> {
+    (0..count)
+        .map(|request_index| {
+            let mut item = routed_service_item(world);
+            item.item.request_index = index(request_index);
+            item
+        })
+        .collect()
+}
+
+fn run_provider(
+    world: &crate::prob_world::World,
+    items: &[qsl_analyze::provider::RoutedItem<'_>],
+    limits: &AnalyzeLimits,
+    cancel: &Cancel,
+) -> Vec<qsl_replay::TerminalRecord> {
+    qsl_analyze::provider::run(
+        &world.package,
+        &world.binding(),
+        items,
+        &Engines::qsl().expect("they register"),
+        limits,
+        cancel,
+    )
+}
+
+fn run_one_observed_service_item(
+    world: &crate::prob_world::World,
+    item: &qsl_analyze::provider::RoutedItem<'_>,
+    limits: &AnalyzeLimits,
+) -> (Vec<qsl_replay::TerminalRecord>, usize) {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    let charges = Arc::new(AtomicUsize::new(0));
+    let observed_charges = Arc::clone(&charges);
+    let cancel = Cancel::observing(move || {
+        observed_charges.fetch_add(1, Ordering::Relaxed);
+    });
+    let records = run_provider(world, std::slice::from_ref(item), limits, &cancel);
+    (records, charges.load(Ordering::Relaxed))
+}
+
+fn cancel_after_charges(charges_before_cancel: usize, cause: CancelCause) -> Cancel {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, OnceLock};
+
+    let handle = Arc::new(OnceLock::<Cancel>::new());
+    let handle_for_observer = Arc::clone(&handle);
+    let charges = Arc::new(AtomicUsize::new(0));
+    let observed_charges = Arc::clone(&charges);
+    let cancel = Cancel::observing(move || {
+        let charge = observed_charges.fetch_add(1, Ordering::Relaxed);
+        if charge >= charges_before_cancel {
+            handle_for_observer
+                .get()
+                .expect("the observed handle is initialized")
+                .cancel(cause);
+        }
+    });
+    handle
+        .set(cancel.clone())
+        .expect("the observed handle initializes once");
+    cancel
+}
+
 /// The `analyze` half of FR-280-AC-5 (TC-761 step 4); FR-280-AC-2 stays
 /// open for EN-1, which has no provider entry yet: over
 /// `Service`, whose checked package S4 refuses to emit, the record `analyze`
@@ -488,8 +575,6 @@ fn service_request<'w>(
 #[test]
 fn analyze_and_the_provider_entry_settle_one_record_for_one_en4_item() {
     use crate::prob_world::{self, World};
-    use qsl_analyze::analyze::statistical_item;
-    use qsl_analyze::statistical::provider::serve_items;
     use qsl_replay::statistical::Decision;
 
     let claim = "probabilistic Two using ev on M over (s: M::Server) under Steady on origin \
@@ -499,23 +584,34 @@ fn analyze_and_the_provider_entry_settle_one_record_for_one_en4_item() {
     let world = World::new(&prob_world::service(claim));
     qsl_package::emit_checked(&world.package).expect_err("S4 refuses Service");
 
-    let analyzed = only(analyze(
-        &Engines::qsl().expect("they register"),
-        vec![statistical_item(index(0), service_request(&world))],
-        &Cancel::new(),
-    ))
-    .terminal()
-    .cloned()
-    .expect("the item settles a record");
-    let served = serve_items(
-        vec![qsl_analyze::statistical::provider::RoutedItem {
-            index: index(0),
-            request: service_request(&world),
-        }],
+    let engines = Engines::qsl().expect("they register");
+    let limits = AnalyzeLimits {
+        accounting: prob_world::UNLIMITED,
+        ..AnalyzeLimits::default()
+    };
+    let analyzed = analyze_request(
+        &world.package,
+        AnalyzeRequest {
+            binding: world.binding(),
+            items: vec![routed_service_item(&world)],
+        },
+        &engines,
+        &limits,
         &Cancel::new(),
     )
-    .remove(0)
-    .expect("the item settles a record");
+    .expect("Service's binding admits")
+    .into_value()
+    .records
+    .remove(0);
+    let served = qsl_analyze::provider::run(
+        &world.package,
+        &world.binding(),
+        &[routed_service_item(&world)],
+        &engines,
+        &limits,
+        &Cancel::new(),
+    )
+    .remove(0);
 
     assert_eq!(analyzed, served);
     assert_eq!(analyzed.backend().map(BackendId::as_str), Some("en-4"));
@@ -524,5 +620,343 @@ fn analyze_and_the_provider_entry_settle_one_record_for_one_en4_item() {
     };
     assert_eq!(verdict.decision, Decision::Rejected);
     assert_eq!(verdict.witnesses.len(), 3);
+    for witness in &verdict.witnesses {
+        assert_eq!(
+            crate::statistical_witness_replay::replay(&world, "Two", &verdict.provenance, witness,)
+                .expect("provider witness replays"),
+            qsl_replay::statistical::SampledWitnessReplay::Reproduced
+        );
+    }
     qsl_package::emit_checked(&world.package).expect_err("S4 still refuses Service");
+}
+
+/// FR-280-AC-6 (TC-761 step 5): a provider binding that omits a required
+/// population returns a declined record for the routed item.
+#[trace("TC-761", "FR-280-AC-6")]
+#[test]
+fn provider_entry_settles_an_incomplete_binding_per_item() {
+    use crate::prob_world::{self, World};
+    use qsl_replay::{ProofRefusalCause, TerminalValue};
+
+    let claim = "probabilistic Two using ev on M over (s: M::Server) under Steady on origin \
+         with alpha 0.01, beta 0.01, indifference 0.01 \
+         { quantile 0.95 of (accumulate duration from holds(s.phase = 1) \
+         until holds(s.phase = 2) within 10) <= 2 }\n";
+    let world = World::new(&prob_world::service(claim));
+    let mut binding = world.binding();
+    binding.initial[0].identity.push_str("-missing");
+    let limits = AnalyzeLimits {
+        accounting: prob_world::UNLIMITED,
+        ..AnalyzeLimits::default()
+    };
+    let records = qsl_analyze::provider::run(
+        &world.package,
+        &binding,
+        &[routed_service_item(&world)],
+        &Engines::qsl().expect("they register"),
+        &limits,
+        &Cancel::new(),
+    );
+
+    assert_eq!(records.len(), 1);
+    assert!(matches!(
+        records[0].value(),
+        TerminalValue::Declined {
+            cause: ProofRefusalCause::IncompleteInput,
+            ..
+        }
+    ));
+    assert_eq!(records[0].backend(), None);
+    assert_eq!(
+        records[0].diagnostic().map(|code| code.to_string()),
+        Some("unavailable_observation/missing-required-artifact".to_owned())
+    );
+}
+
+/// FR-280-AC-6 (TC-761 step 5): a refused undeclared-population binding
+/// settles each item in input order and no engine is invoked.
+#[trace("TC-761", "FR-280-AC-6")]
+#[test]
+fn provider_entry_refuses_undeclared_population_before_running_items_in_input_order() {
+    use crate::prob_world::{self, World};
+    use qsl_replay::{ProofRefusalCause, TerminalValue};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    let claim = "probabilistic Two using ev on M over (s: M::Server) under Steady on origin \
+         with alpha 0.01, beta 0.01, indifference 0.01 \
+         { quantile 0.95 of (accumulate duration from holds(s.phase = 1) \
+         until holds(s.phase = 2) within 10) <= 2 }\n";
+    let world = World::new(&prob_world::service(claim));
+    let mut binding = world.binding();
+    binding.universes[0]
+        .population
+        .node
+        .push_str("/UndeclaredPopulation");
+
+    let first = routed_service_item(&world);
+    let mut second = first.clone();
+    second.item.request_index = index(1);
+    let first = qsl_analyze::provider::RoutedItem {
+        item: qsl_analyze::provider::ClaimItem {
+            request_index: index(0),
+            ..first.item
+        },
+        backend: first.backend,
+    };
+    let engine_charges = Arc::new(AtomicUsize::new(0));
+    let observed_charges = Arc::clone(&engine_charges);
+    let cancel = Cancel::observing(move || {
+        observed_charges.fetch_add(1, Ordering::Relaxed);
+    });
+    let records = qsl_analyze::provider::run(
+        &world.package,
+        &binding,
+        &[second, first],
+        &Engines::qsl().expect("they register"),
+        &AnalyzeLimits {
+            accounting: prob_world::UNLIMITED,
+            ..AnalyzeLimits::default()
+        },
+        &cancel,
+    );
+
+    assert_eq!(
+        records
+            .iter()
+            .map(|record| record.request_index())
+            .collect::<Vec<_>>(),
+        [index(1), index(0)]
+    );
+    for record in &records {
+        assert!(matches!(
+            record.value(),
+            TerminalValue::Declined {
+                cause: ProofRefusalCause::InvalidInput,
+                ..
+            }
+        ));
+        assert_eq!(record.backend(), None);
+        assert_eq!(
+            record.diagnostic().map(|code| code.to_string()),
+            Some("invalid_runtime_input/wrong-role-mapping".to_owned())
+        );
+    }
+    assert_eq!(engine_charges.load(Ordering::Relaxed), 0);
+}
+
+/// A zero-millisecond wall-clock deadline cancels the request before its
+/// engine runs, producing the typed incomplete deadline outcome.
+#[trace("TC-763", "FR-281-AC-12")]
+#[test]
+fn provider_entry_settles_a_zero_millisecond_deadline_as_incomplete() {
+    use crate::prob_world::{self, World};
+    use qsl_replay::{IncompleteCause, TerminalValue};
+
+    let claim = "probabilistic Two using ev on M over (s: M::Server) under Steady on origin \
+         with alpha 0.01, beta 0.01, indifference 0.01 \
+         { quantile 0.95 of (accumulate duration from holds(s.phase = 1) \
+         until holds(s.phase = 2) within 10) <= 2 }\n";
+    let world = World::new(&prob_world::service(claim));
+    let cancel = Cancel::new();
+    let records = qsl_analyze::provider::run(
+        &world.package,
+        &world.binding(),
+        &[routed_service_item(&world)],
+        &Engines::qsl().expect("they register"),
+        &AnalyzeLimits {
+            accounting: prob_world::UNLIMITED,
+            deadline_ms: Some(0),
+            ..AnalyzeLimits::default()
+        },
+        &cancel,
+    );
+
+    assert_eq!(records.len(), 1);
+    assert_eq!(cancel.cause(), Some(CancelCause::Deadline));
+    assert_eq!(
+        records[0].value(),
+        &TerminalValue::Incomplete(IncompleteCause::Cancelled {
+            source: CancelCause::Deadline,
+        })
+    );
+}
+
+/// TC-763: the finite deadline is request-wide; a prior result survives, and
+/// every later open item settles incomplete with the deadline cause.
+#[trace("TC-763", "FR-281-AC-12")]
+#[test]
+fn finite_deadline_preserves_settled_records_and_cancels_each_open_item() {
+    use crate::prob_world::{self, World};
+    use qsl_replay::{IncompleteCause, TerminalValue};
+
+    let claim = "probabilistic Two using ev on M over (s: M::Server) under Steady on origin \
+         with alpha 0.01, beta 0.01, indifference 0.01 \
+         { quantile 0.95 of (accumulate duration from holds(s.phase = 1) \
+         until holds(s.phase = 2) within 10) <= 2 }\n";
+    let world = World::new(&prob_world::service(claim));
+    let items = routed_service_items(&world, 3);
+    let limits = AnalyzeLimits {
+        accounting: prob_world::UNLIMITED,
+        deadline_ms: Some(60_000),
+        ..AnalyzeLimits::default()
+    };
+    let (completed, charges_before_next_item) = run_one_observed_service_item(
+        &world,
+        &items[0],
+        &AnalyzeLimits {
+            deadline_ms: None,
+            ..limits
+        },
+    );
+    assert!(charges_before_next_item > 0);
+    assert!(matches!(completed[0].value(), TerminalValue::Measured(_)));
+
+    let cancel = cancel_after_charges(charges_before_next_item, CancelCause::Deadline);
+    let records = run_provider(&world, &items, &limits, &cancel);
+
+    assert_eq!(records.len(), 3);
+    assert_eq!(records[0], completed[0]);
+    for record in &records[1..] {
+        assert!(matches!(
+            record.value(),
+            TerminalValue::Incomplete(IncompleteCause::Cancelled {
+                source: CancelCause::Deadline
+            })
+        ));
+    }
+}
+
+/// TC-763: caller cancellation that wins the race keeps its cause for open
+/// items and preserves the result already settled.
+#[trace("TC-763", "FR-281-AC-12")]
+#[test]
+fn caller_cancellation_preserves_settled_records_and_cause_for_open_items() {
+    use crate::prob_world::{self, World};
+    use qsl_replay::{IncompleteCause, TerminalValue};
+
+    let claim = "probabilistic Two using ev on M over (s: M::Server) under Steady on origin \
+         with alpha 0.01, beta 0.01, indifference 0.01 \
+         { quantile 0.95 of (accumulate duration from holds(s.phase = 1) \
+         until holds(s.phase = 2) within 10) <= 2 }\n";
+    let world = World::new(&prob_world::service(claim));
+    let items = routed_service_items(&world, 3);
+    let limits = AnalyzeLimits {
+        accounting: prob_world::UNLIMITED,
+        deadline_ms: Some(60_000),
+        ..AnalyzeLimits::default()
+    };
+    let (completed, charges_before_next_item) = run_one_observed_service_item(
+        &world,
+        &items[0],
+        &AnalyzeLimits {
+            deadline_ms: None,
+            ..limits
+        },
+    );
+    let cancel = cancel_after_charges(charges_before_next_item, CancelCause::Requested);
+    let records = run_provider(&world, &items, &limits, &cancel);
+
+    assert_eq!(records.len(), 3);
+    assert_eq!(records[0], completed[0]);
+    for record in &records[1..] {
+        assert!(matches!(
+            record.value(),
+            TerminalValue::Incomplete(IncompleteCause::Cancelled {
+                source: CancelCause::Requested
+            })
+        ));
+    }
+}
+
+/// TC-763: an engine limit reached before the deadline keeps its typed limit
+/// result while the deadline cancels later open items.
+#[trace("TC-763", "FR-281-AC-12")]
+#[test]
+fn engine_limit_before_deadline_keeps_its_typed_result() {
+    use crate::prob_world::{self, World};
+    use qsl_replay::statistical::StatisticalLimit;
+    use qsl_replay::{IncompleteCause, ModelCheckLimit, TerminalValue};
+
+    let claim = "probabilistic Two using ev on M over (s: M::Server) under Steady on origin \
+         with alpha 0.01, beta 0.01, indifference 0.01 \
+         { quantile 0.95 of (accumulate duration from holds(s.phase = 1) \
+         until holds(s.phase = 2) within 10) <= 2 }\n";
+    let world = World::new(&prob_world::service(claim));
+    let mut items = routed_service_items(&world, 3);
+    items[0].item.limits.max_draws = 0;
+    let limits = AnalyzeLimits {
+        accounting: prob_world::UNLIMITED,
+        deadline_ms: Some(60_000),
+        ..AnalyzeLimits::default()
+    };
+    let (limited, charges_before_next_item) = run_one_observed_service_item(
+        &world,
+        &items[0],
+        &AnalyzeLimits {
+            deadline_ms: None,
+            ..limits
+        },
+    );
+    assert!(matches!(
+        limited[0].value(),
+        TerminalValue::Incomplete(IncompleteCause::LimitReached {
+            limit: ModelCheckLimit::Statistical(StatisticalLimit::MaxDraws),
+            ..
+        })
+    ));
+
+    let cancel = cancel_after_charges(charges_before_next_item, CancelCause::Deadline);
+    let records = run_provider(&world, &items, &limits, &cancel);
+
+    assert_eq!(records.len(), 3);
+    assert_eq!(records[0], limited[0]);
+    for record in &records[1..] {
+        assert!(matches!(
+            record.value(),
+            TerminalValue::Incomplete(IncompleteCause::Cancelled {
+                source: CancelCause::Deadline
+            })
+        ));
+    }
+}
+
+/// TC-763: an accounting limit reached before the finite deadline keeps its
+/// typed limit result.
+#[trace("TC-763", "FR-281-AC-12")]
+#[test]
+fn accounting_limit_before_deadline_keeps_its_typed_result() {
+    use crate::prob_world::{self, World};
+    use qsl_replay::{IncompleteCause, ModelCheckLimit, TerminalValue};
+    use quire_exact::LimitKind;
+
+    let claim = "probabilistic Two using ev on M over (s: M::Server) under Steady on origin \
+         with alpha 0.01, beta 0.01, indifference 0.01 \
+         { quantile 0.95 of (accumulate duration from holds(s.phase = 1) \
+         until holds(s.phase = 2) within 10) <= 2 }\n";
+    let world = World::new(&prob_world::service(claim));
+    let items = routed_service_items(&world, 1);
+    let cancel = Cancel::new();
+    let limits = AnalyzeLimits {
+        accounting: quire_exact::ScalarLimits {
+            work_units: 1,
+            ..prob_world::UNLIMITED
+        },
+        deadline_ms: Some(60_000),
+        ..AnalyzeLimits::default()
+    };
+
+    let records = run_provider(&world, &items, &limits, &cancel);
+
+    assert_eq!(records.len(), 1);
+    assert!(matches!(
+        records[0].value(),
+        TerminalValue::Incomplete(IncompleteCause::LimitReached {
+            limit: ModelCheckLimit::EvaluationMeter {
+                counter: LimitKind::WorkUnits
+            },
+            value: 1,
+        })
+    ));
+    assert_eq!(cancel.cause(), None);
 }

@@ -80,8 +80,8 @@ fn refinement_queries_encode_the_initial_and_step_obligations() {
              (assert (and (<= 0 s0.c.tmpA) (<= s0.c.tmpA 2)))\n\
              (assert (and (<= 0 s0.c.tmpB) (<= s0.c.tmpB 2)))\n\
              (assert (and (<= 0 s0.c.value) (<= s0.c.value 2)))\n\
-             (assert (and (= s0.c.busyA false) (= s0.c.busyB false) (= s0.c.tmpA 0) (= s0.c.tmpB 0) (= s0.c.value 0)))\n\
-             (assert (or (not true) (not (= s0.c.value 0))))\n\
+             (assert (and (not s0.c.busyA) (not s0.c.busyB) (= s0.c.tmpA 0) (= s0.c.tmpB 0) (= s0.c.value 0)))\n\
+             (assert (not (= s0.c.value 0)))\n\
              (check-sat)\n"
         );
         assert_eq!(
@@ -96,7 +96,7 @@ fn refinement_queries_encode_the_initial_and_step_obligations() {
             Some(
                 "(and (= s1.c.busyA s0.c.busyA) (= s1.c.busyB s0.c.busyB) \
                  (= s1.c.tmpA s0.c.tmpA) (= s1.c.tmpB s0.c.tmpB) (= s1.c.value s0.c.value) \
-                 (or (not true) (not (= s1.c.value s0.c.value))))"
+                 (not (= s1.c.value s0.c.value)))"
             )
         );
         assert_eq!(
@@ -109,13 +109,13 @@ fn refinement_queries_encode_the_initial_and_step_obligations() {
         assert_eq!(
             assertions(&operation).last().copied(),
             Some(
-                "(and (and (and s0.c.busyA (= s0.c.tmpA s0.c.value)) (< s0.c.value 2)) \
-                 (and (=> (< s0.c.tmpA 2) (and (<= 0 (+ s0.c.tmpA 1)) (<= (+ s0.c.tmpA 1) 2))) \
-                 (and (and (< s0.c.tmpA 2) (= s1.c.value (+ s0.c.tmpA 1))) (not s1.c.busyA))) \
+                "(and s0.c.busyA (= s0.c.tmpA s0.c.value) (< s0.c.value 2) \
+                 (or (not (< s0.c.tmpA 2)) (and (<= (- 1) s0.c.tmpA) (<= s0.c.tmpA 1))) \
+                 (< s0.c.tmpA 2) (= s1.c.value (+ s0.c.tmpA 1)) (not s1.c.busyA) \
                  (= s1.c.busyB s0.c.busyB) (= s1.c.tmpA s0.c.tmpA) (= s1.c.tmpB s0.c.tmpB) \
-                 (or (not true) (not (and (< s0.c.value 2) (and (=> (< s0.c.value 2) \
-                 (and (<= 0 (+ s0.c.value 1)) (<= (+ s0.c.value 1) 2))) \
-                 (and (< s0.c.value 2) (= s1.c.value (+ s0.c.value 1))))))))"
+                 (not (and (< s0.c.value 2) \
+                 (or (not (< s0.c.value 2)) (and (<= (- 1) s0.c.value) (<= s0.c.value 1))) \
+                 (= s1.c.value (+ s0.c.value 1)))))"
             )
         );
     });
@@ -234,7 +234,7 @@ fn refinement_certificates_check_part_by_part() {
         hole.base.proof = with_command(
             &valid.base.proof,
             3,
-            "(step t1 (cl (not true) (not (= s0.c.value 0))) :rule hole)",
+            "(step t1 (cl) :rule hole :premises (a1 t0))",
         );
         assert_eq!(
             check(request, &hole),
@@ -371,13 +371,13 @@ fn refinement_queries_print_in_the_normative_order() {
     ];
     let asserted = assertions(&initial);
     assert_eq!(asserted[ranges + 1..ranges + 5], hypotheses);
-    assert!(asserted[ranges + 5].starts_with("(or (not true) (not "));
+    assert!(asserted[ranges + 5].starts_with("(not "));
 
     let step_asserted = assertions(&step);
     assert_eq!(step_asserted.len(), 2 * ranges + 4 + 1);
     assert_eq!(step_asserted[2 * ranges..2 * ranges + 4], hypotheses);
     assert!(
-        !step.contains("(= s0.c0.busyA false)"),
+        !step.contains("(not s0.c0.busyA) (not s0.c0.busyB)"),
         "no initial predicate"
     );
     let row = step_asserted[2 * ranges + 4];
@@ -390,7 +390,7 @@ fn refinement_queries_print_in_the_normative_order() {
         let conjuncts = operands(application);
         assert!(conjuncts
             .last()
-            .is_some_and(|last| last.starts_with("(or (not true) (not ")));
+            .is_some_and(|last| last.starts_with("(not ")));
     }
     with_request(&world, |request| {
         assert_eq!(
@@ -428,6 +428,10 @@ fn refinement_queries_print_in_the_normative_order() {
     let replace = |from: &str, to: &str| step.replacen(from, to, 1);
     let line = |term: &str| format!("(assert {term})\n");
     let initial_predicate = assertions(&initial)[ranges];
+    let without_rule = |application: &str| {
+        let conjuncts = operands(application);
+        format!("({})", conjuncts[..conjuncts.len() - 1].join(" "))
+    };
     let mutations = [
         replace(
             row,
@@ -452,10 +456,11 @@ fn refinement_queries_print_in_the_normative_order() {
             &line(row),
             &format!(
                 "{}{}",
-                line(
-                    &format!("(or {} {})", applications[1], applications[2])
-                        .replace("(or (not true) (not ", "(and true (")
-                ),
+                line(&format!(
+                    "(or {} {})",
+                    without_rule(applications[1]),
+                    without_rule(applications[2])
+                )),
                 line("(not (or R_c0 R_c1))")
             ),
         ),
@@ -1046,5 +1051,144 @@ fn the_rule_order_outranks_the_query_order() {
             &[]
         ),
         induction
+    );
+}
+
+/// Every subterm of `term` that FR-315's refinement-query normal form
+/// rewrites, as `(rule, subterm)`.
+fn unnormal(term: &str) -> Vec<(&'static str, String)> {
+    let mut found = Vec::new();
+    if !term.starts_with('(') {
+        return found;
+    }
+    let parts = operands(term);
+    let (head, args) = (parts[0], &parts[1..]);
+    let constant = |t: &str| t == "true" || t == "false";
+    let literal = |t: &str| {
+        t.parse::<i64>().is_ok()
+            || t.strip_prefix("(- ")
+                .is_some_and(|n| n.trim_end_matches(')').parse::<u64>().is_ok())
+    };
+    let mut flag = |rule| found.push((rule, term.to_owned()));
+    match head {
+        "not" if args[0].starts_with("(not ") => flag("double negation"),
+        "not" | "and" | "or" if args.iter().any(|a| constant(a)) => flag("Boolean constant"),
+        "and" if args.iter().any(|a| a.starts_with("(and ")) => flag("nested and"),
+        "or" if args.iter().any(|a| a.starts_with("(or ")) => flag("nested or"),
+        "and" | "or" if (1..args.len()).any(|i| args[..i].contains(&args[i])) => {
+            flag("repeated operand")
+        }
+        "and" | "or" if args.len() < 2 => flag("unary junction"),
+        "=>" => flag("implication"),
+        "=" if args.iter().any(|a| constant(a)) => flag("Boolean constant equality"),
+        "=" | "<" | "<=" | ">" | ">=" if args.iter().all(|a| literal(a)) || args[0] == args[1] => {
+            flag("foldable relation")
+        }
+        "+" if args.iter().filter(|a| literal(a)).count() > 1
+            || args.iter().any(|a| a.starts_with("(+ ")) =>
+        {
+            flag("foldable sum")
+        }
+        "ite"
+            if constant(args[0])
+                || args[1] == args[2]
+                || constant(args[1])
+                || constant(args[2]) =>
+        {
+            flag("foldable ite")
+        }
+        "-" if args.iter().all(|a| literal(a)) && args.len() == 2 => flag("foldable difference"),
+        "mod" if args.iter().all(|a| literal(a)) => flag("foldable remainder"),
+        _ => {}
+    }
+    let summed_literal =
+        |t: &str| t.starts_with("(+ ") && operands(t).last().is_some_and(|last| literal(last));
+    match head {
+        "=" | "<" | "<=" | ">" | ">="
+            if (literal(args[0]) && summed_literal(args[1]))
+                || (summed_literal(args[0]) && literal(args[1])) =>
+        {
+            flag("unshifted relation")
+        }
+        _ => {}
+    }
+    if head != "-" || args.len() != 1 || !literal(term) {
+        for arg in args {
+            found.extend(unnormal(arg));
+        }
+    }
+    found
+}
+
+/// FR-315-AC-56 (TC-900): every assertion of every `CasRefinesCounter` and
+/// `CasRefinesCounter2` refinement query, the `commitB` row (row 1)
+/// included, is in normal form: no double negation, Boolean constant
+/// operand, nested or repeated junction operand, implication, Boolean
+/// constant equality or foldable arithmetic.
+#[trace("TC-900", "FR-315-AC-56")]
+#[test]
+fn refinement_queries_are_in_normal_form() {
+    for world in [
+        World::new(&cas_refines_counter()),
+        counter2(&format!("{AA_INV}{CAS_INV}{ABS_INV}")),
+    ] {
+        let rows = u64::try_from(world.refinement().steps().len()).expect("small");
+        assert_eq!(row_of(&world, "commitB"), 1);
+        with_request(&world, |request| {
+            let kinds = std::iter::once(RefinementQueryKind::Initial)
+                .chain((0..rows).map(|row| RefinementQueryKind::Step { row }));
+            for kind in kinds {
+                let query = encode(request, kind).expect("encodes");
+                for assertion in assertions(&query) {
+                    assert_eq!(unnormal(assertion), [], "{kind:?}: {assertion}");
+                }
+            }
+        });
+    }
+    let world = World::new(&cas_refines_counter());
+    let commit = row_of(&world, "commitA");
+    with_request(&world, |request| {
+        let initial = encode(request, RefinementQueryKind::Initial).expect("encodes");
+        let [.., predicate, negation] = assertions(&initial)[..] else {
+            panic!("an initial query asserts its predicate and its negation");
+        };
+        assert_eq!(
+            predicate,
+            "(and (not s0.c.busyA) (not s0.c.busyB) (= s0.c.tmpA 0) (= s0.c.tmpB 0) (= s0.c.value 0))"
+        );
+        assert_eq!(negation, "(not (= s0.c.value 0))");
+        let step = encode(request, RefinementQueryKind::Step { row: commit }).expect("encodes");
+        assert_eq!(
+            assertions(&step).last().copied(),
+            Some(
+                "(and s0.c.busyA (= s0.c.tmpA s0.c.value) (< s0.c.value 2) \
+                 (or (not (< s0.c.tmpA 2)) (and (<= (- 1) s0.c.tmpA) (<= s0.c.tmpA 1))) \
+                 (< s0.c.tmpA 2) (= s1.c.value (+ s0.c.tmpA 1)) (not s1.c.busyA) \
+                 (= s1.c.busyB s0.c.busyB) (= s1.c.tmpA s0.c.tmpA) (= s1.c.tmpB s0.c.tmpB) \
+                 (not (and (< s0.c.value 2) \
+                 (or (not (< s0.c.value 2)) (and (<= (- 1) s0.c.value) (<= s0.c.value 1))) \
+                 (= s1.c.value (+ s0.c.value 1)))))"
+            )
+        );
+    });
+    let probe = "(and (not (not a)) (or b true) (and c d) (=> e f) (= g false) (<= 1 2) \
+                 (+ x 1 2) (ite h i i) (- 3 1) (<= 0 (+ x 1)) (= (+ y 2) 3) (mod 7 3))";
+    let rules: Vec<&str> = unnormal(probe).into_iter().map(|(rule, _)| rule).collect();
+    assert_eq!(
+        rules,
+        [
+            "nested and",
+            "double negation",
+            "Boolean constant",
+            "implication",
+            "Boolean constant equality",
+            "foldable relation",
+            "foldable sum",
+            "foldable ite",
+            "foldable difference",
+            "unshifted relation",
+            "unshifted relation",
+            "foldable remainder"
+        ]
     );
 }

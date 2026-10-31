@@ -25,6 +25,8 @@ mod checked_v2;
 #[cfg(feature = "std")]
 mod emit;
 mod export;
+#[cfg(feature = "std")]
+mod protocol_activation;
 
 pub use checked::{CheckedPackage, ResolvedDependency};
 #[cfg(feature = "std")]

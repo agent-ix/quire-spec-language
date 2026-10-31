@@ -13,7 +13,7 @@ relationships:
 Verify that `encode_smt_query` prints the unrolling and induction queries
 in canonical order and bytes, and refuses a construct it cannot encode.
 
-Scope: FR-315-AC-1 to FR-315-AC-6, FR-315-AC-15 to FR-315-AC-32 and FR-315-AC-53 to FR-315-AC-55.
+Scope: FR-315-AC-1 to FR-315-AC-6, FR-315-AC-15 to FR-315-AC-32 and FR-315-AC-53 to FR-315-AC-56.
 
 Steps 8, 10, 18 and 20 read scripts with a `QF_LIA` solver, steps 18 and
 20 with replay as well; every other step reads
@@ -87,6 +87,10 @@ the printed script.
     with one application and a row with none.
 27. Request the refinement queries of FR-315-AC-55's refusal cases and read
     each refusal's code, locus and FR-314 `Unencodable` part, and for the `Initial` refusal of case (6) FR-314's `QueryMismatch` at `Base`.
+28. Encode `Initial` and every `Step { row }` query of `CasRefinesCounter`
+    and `CasRefinesCounter2`, read each assertion's subterms for the shapes
+    FR-315-AC-56 excludes, and normalise one term per rule of FR-315
+    "Normal form".
 
 Tag the tests `#[trace("TC-900", "FR-315-AC-n")]`.
 
@@ -193,3 +197,6 @@ and no other application is enabled, so the script is unsatisfiable.
 - Step 26: satisfiable for the first pre-state, unsatisfiable for the second;
   `(assert false)` for the row with no application.
 - Step 27: the codes and loci of FR-315-AC-55, in its stated order.
+- Step 28: no excluded shape in any assertion, the `commitB` row (row 1)
+  included; the `Initial` and `commitA` assertions FR-315-AC-56 gives; each
+  rule's stated result.

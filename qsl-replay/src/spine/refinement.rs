@@ -313,6 +313,7 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
             IdentityRefusal::Allocation { .. } | IdentityRefusal::NonCanonical,
         )
         | CheckCause::ProfileProhibitedOperator(_)
+        | CheckCause::LayerEquality { .. }
         | CheckCause::StateModel(_)
         | CheckCause::ObjectReadInValueInvariant
         | CheckCause::PopulationFormOutsideRefinement

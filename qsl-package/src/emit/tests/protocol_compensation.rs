@@ -58,9 +58,12 @@ fn emitted_unit(
     guard: &str,
     retry: &str,
 ) -> Result<(Emission, Value, Read), Vec<CheckRefusal>> {
+    emitted_text(&unit_text(declarations, guard, retry))
+}
+
+fn emitted_text(unit: &str) -> Result<(Emission, Value, Read), Vec<CheckRefusal>> {
     let document = serde_json::to_vec(&fixture::document()).expect("fixture serializes");
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
-    let unit = unit_text(declarations, guard, retry);
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("unit assembles")
         .check(CheckingLimits::default())?;
@@ -81,6 +84,62 @@ fn emitted_unit(
         &evidence,
     );
     Ok((emission, wire, read))
+}
+
+/// TC-1063 row 8i: a compensation retains its temporal-profile requirement
+/// even when no temporal clause is present.
+#[trace("FR-383-AC-20", "TC-1063")]
+#[test]
+fn a_compensation_without_a_selected_temporal_profile_is_refused_by_i2() {
+    let unit = unit_text("", "true", "false")
+        .replace(
+            "temporal Due using t over (c: M::Ledger) clock \"steps\" on origin { always true }\n",
+            "",
+        )
+        .replace("requires temporal Due;\n", "");
+    let (emission, mut wire, read) = emitted_text(&unit).expect("unit checks");
+    assert!(
+        matches!(read, Read::Verified { .. }),
+        "positive control: {read:?}"
+    );
+    wire["lock"]["profile_selections"]
+        .as_array_mut()
+        .expect("lock selections")
+        .retain(|selection| selection["role"] != "temporal_profile");
+    let mut evidence = read_evidence(&emission);
+    let document = serde_json::to_vec(&fixture::document()).unwrap();
+    evidence
+        .insert_domain_package_document(package_identity(&document), document.as_slice())
+        .unwrap();
+    let outcome = read_v2(&jcs(&wire), library(), V2ReadLimits::default(), &evidence);
+    let Read::Refused(crate::checked_v2::V2ReadRefusal::Envelope { refusal, .. }) = outcome else {
+        panic!("missing temporal selection must refuse: {outcome:?}");
+    };
+    assert_eq!(
+        refusal.code,
+        quire_contract_model::CheckedPackageRefusalCode::MissingDeclaration
+    );
+    assert_eq!(
+        refusal.cause,
+        Some(quire_contract_model::CheckedPackageRefusalCause::MissingSelection)
+    );
+    let at = wire["semantic_graph"]["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|node| {
+            node["semantic_form"] == "compensation"
+                && node["declaration"]["qualified_name"]
+                    .as_array()
+                    .unwrap()
+                    .last()
+                    == Some(&json!("Full"))
+        })
+        .expect("the Full compensation");
+    assert_eq!(
+        refusal.loci[0].path.as_ref().map(|path| path.as_str()),
+        Some(format!("/semantic_graph/nodes/{at}").as_str())
+    );
 }
 
 #[trace("FR-383-AC-8", "TC-1061")]

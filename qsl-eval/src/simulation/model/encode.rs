@@ -232,6 +232,7 @@ fn take_json(text: &str) -> Option<(Json, &str)> {
 /// The effective identity [`write_effective`] wrote at the start of `text`,
 /// and the text after it. Reads one record level per loop iteration and
 /// refuses any other shape.
+#[ix_trace_rs::string_edge]
 fn take_effective(text: &str) -> Option<(EffectiveId, &str)> {
     let mut rest = text;
     let mut originals = Vec::new();
@@ -265,6 +266,7 @@ fn take_effective(text: &str) -> Option<(EffectiveId, &str)> {
 /// The reference [`reference_enc`] wrote at the start of `text`, and the
 /// text after it: its canonical text names the members in sorted order, so
 /// the text is matched member by member.
+#[ix_trace_rs::string_edge]
 fn take_reference(text: &str) -> Option<(ObjectReference, &str)> {
     let rest = text.strip_prefix(r#"{"identity":"#)?;
     let (identity, rest) = take_json(rest)?;
@@ -729,7 +731,11 @@ pub(crate) fn map_enc(entries: Vec<(Enc, Enc)>) -> Enc {
 /// The `semantic` member of a model state's key (FR-120 "State, state key
 /// and anchor"): each population's declaration identity text, mapped to its
 /// objects' reference triples, each mapped to a `record` of its declared
-/// fields in declaration order.
+/// fields in declaration order. A state that lists relationship extents adds
+/// one more entry, keyed by the text `relationships` (no population key is
+/// text of that form), mapping each listed relationship's identity text to
+/// its completeness and its instance pairs in ascending canonical order, so
+/// two states differing only in their extents have different keys.
 pub(crate) fn semantic_enc(model: &StateModel, state: &ModelState, typing: Typing<'_>) -> Enc {
     let mut populations = Vec::new();
     for (population, objects) in &state.populations {
@@ -746,7 +752,56 @@ pub(crate) fn semantic_enc(model: &StateModel, state: &ModelState, typing: Typin
             map_enc(entries),
         ));
     }
+    if !state.extents.is_empty() {
+        populations.push((
+            Enc::tagged("text", vec![("value", Enc::text("relationships"))]),
+            extents_enc(state),
+        ));
+    }
     map_enc(populations)
+}
+
+/// The listed relationship extents of `state`: relationship identity text to
+/// `{complete, instances}`, the instances as `{source, target}` pairs
+/// ascending by canonical bytes, repeats kept (admission keeps a repeated
+/// pair when neither end is unique).
+fn extents_enc(state: &ModelState) -> Enc {
+    let limits = Limits::new(u64::MAX);
+    let entries = state
+        .extents
+        .iter()
+        .map(|extent| {
+            let mut pairs: Vec<(Vec<u8>, Enc)> = extent
+                .instances
+                .iter()
+                .map(|(source, target)| {
+                    let pair = Enc::Object(vec![
+                        ("source", reference_enc(source)),
+                        ("target", reference_enc(target)),
+                    ]);
+                    (
+                        quire_canonical::to_vec(&pair, limits).unwrap_or_default(),
+                        pair,
+                    )
+                })
+                .collect();
+            pairs.sort_by(|left, right| left.0.cmp(&right.0));
+            (
+                Enc::tagged(
+                    "text",
+                    vec![("value", declaration_enc_text(&extent.relationship))],
+                ),
+                Enc::Object(vec![
+                    ("complete", Enc::Bool(extent.complete)),
+                    (
+                        "instances",
+                        Enc::Array(pairs.into_iter().map(|(_, pair)| pair).collect()),
+                    ),
+                ]),
+            )
+        })
+        .collect();
+    map_enc(entries)
 }
 
 /// One object's `record` in a state key (FR-120): its type name and its

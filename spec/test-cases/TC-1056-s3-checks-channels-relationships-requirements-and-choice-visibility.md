@@ -14,7 +14,8 @@ Verify that S3 checks each channel's roles, payload, ordering and premises,
 each relationship declaration and `related by` clause, each `requires temporal`
 requirement and the owner and visible facts of each `choice` and `repeat`, and
 refuses each mutation with its code, cause, span and retained members. Scope:
-FR-218-AC-2, FR-218-AC-10 to FR-218-AC-20, FR-218-AC-26 and FR-218-AC-27.
+FR-218-AC-2, FR-218-AC-10 to FR-218-AC-20, FR-218-AC-26, FR-218-AC-27 and
+FR-218-AC-34.
 
 Catches a channel with an undeclared role that checks, a send typed differently
 from its channel that checks, a relationship bound to its written name instead of
@@ -78,9 +79,9 @@ checked clause or the refusal's code, cause, span text and retained members.
 | 28 | after `Got`, `choice Decide by Buyer visible (got.ready) { case yes when { got.ready } check A using P { true }; case no when { not got.ready } check B using P { true }; }` | checks; the checked choice holds owner `Buyer` and the listed fact |
 | 29 | row 28 with owner `Seller` | `wrong_snapshot`/`wrong-observation` at each read of `got.ready`; `owner` `Seller`, `reason` `other-role` |
 | 30 | row 28 reading `sent.ready` | `wrong_snapshot`/`wrong-observation`; `reason` `ineligible-kind` (a `send` binder, which holds the payload) |
-| 31 | row 28 with `visible (true)` | `wrong_snapshot`/`wrong-observation` at each guard read; `reason` `unlisted` |
+| 31 | row 28 with `visible (true and got.ready)` | `wrong_snapshot`/`wrong-observation` at each guard read; `reason` `unlisted`, because a composite entry discloses none of its operands |
 | 32 | row 28 with two receives `gotA`, `gotB`, `visible (gotA.ready and gotB.ready)` and guards reading `gotA.ready` | `wrong_snapshot`/`wrong-observation`; `reason` `unlisted`: a composite entry discloses none of its operands |
-| 33 | row 28 with guards `let d = got.ready in true` and `false` and `visible (true)` | `wrong_snapshot`/`wrong-observation` at `got.ready`; `reason` `unlisted`; with `visible (got.ready)` it checks |
+| 33 | row 28 with guards `let d = got.ready in true` and `false` and `visible (true and got.ready)` | `wrong_snapshot`/`wrong-observation` at `got.ready`; `reason` `unlisted`; with `visible (got.ready)` it checks |
 | 34 | the choice reads the protocol input `view.n` listed in `visible` | `ill_typed`/`operator-ineligible` at each read of `view.n`, naming the guard: the `over` input is model state and the rule takes precedence over the eligibility table |
 | 35 | the receive inside `branch left` of a `parallel` and the choice in `branch right`; the receive inside one case of an earlier optional `choice`; the receive as the `match` of an `await`, with the choice after the `await` | each refuses as FR-113 refuses an unresolved name, naming `got` at its `visible` entry and at each guard read: three uses in each case |
 | 36 | a `repeat Again by Buyer visible (got.ready) max 2 while { got.ready } ...` whose `receive Got` is bound inside its own body | refuses as an out-of-scope read at the `visible` entry and at the guard, naming `got` twice |
@@ -97,8 +98,10 @@ checked clause or the refusal's code, cause, span text and retained members.
 | 47 | before the choice `commit Fixed by Seller as (fixed: M::Plain) { true };`, and the choice `by Seller visible (fixed.ready)` reading `fixed.ready` | the same refusal with `reason` `ineligible-kind` (a `commit` record) |
 | 48 | the base's activation replaced by `activation on each (x: M::Plain)` and the choice `by Buyer visible (x.ready)` reading `x.ready` | the same refusal with `reason` `ineligible-kind` (the protocol's activation binder) |
 | 49 | the base's `finish Closed` kept and a choice in the run reading `closed.ready`, listed in `visible` | `missing_declaration`/`missing-name` at each read of `closed`, as an out-of-scope read, and no `wrong-observation` refusal: no decision reaches a `finish` record (FR-218-AC-17) |
-| 50 | row 35's first case (the receive in `branch left`, the choice in `branch right`) with `visible (true)` | `missing_declaration`/`missing-name` at each read of `got` and no `wrong-observation` refusal: the read is out of scope and also unlisted, and the scope refusal precedes the decision-fact refusal (FR-218-AC-17) |
+| 50 | row 35's first case (the receive in `branch left`, the choice in `branch right`) with `visible (true and got.ready)` | `missing_declaration`/`missing-name` at each read of `got` and no `wrong-observation` refusal: the read is out of scope and also unlisted, and the scope refusal precedes the decision-fact refusal (FR-218-AC-17) |
 | 51 | a second protocol `Billing` in the unit that declares `channel Pay` with `Pipeline`'s premises | checks; two checked channels, `Pipeline`'s `Pay` and `Billing`'s `Pay`, recorded under their protocols' qualified identities with the handle `Pay`; the qualified names differ (FR-218-AC-27) |
+| 52 | In row 28, use `visible (got.ready, true)`; in row 41, use `visible (got.ready, lim)`; then use `visible (got.ready, true and lim >= 0)` | The first two refuse at S3 with `ill_typed`/`operator-ineligible` at the bare visible entry, before S4; the composite literal/capture expression checks because `got.ready` remains individually visible, and it does not make `lim` individually visible (FR-218-AC-34) |
+| 53 | In row 41's context after `Got`, use `repeat Again by Buyer visible (got.ready, true) max 1 while { got.ready } sequence Body { event Beat by Buyer as (beat: M::Plain) { true }; } exhausted check Exhausted using P { true };`; replace the visible entry `true` with bare `lim`; then use `visible (got.ready, true and lim >= 0)` with the same guard, event body and exhausted check | Each bare entry refuses at S3 with `ill_typed`/`operator-ineligible` at that visible entry before S4; the composite literal/capture entry checks with `got.ready` individually visible, the guard eligible, and the event body establishing repeat progress, while not disclosing `lim` individually (FR-218-AC-34) |
 
 ## Expected Results
 

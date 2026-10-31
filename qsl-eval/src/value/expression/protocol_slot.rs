@@ -10,7 +10,10 @@ use qsl_semantics::model::observation::Observation;
 
 pub(crate) mod resolve;
 
-/// Select one expression member of an emitted protocol node (FR-390).
+/// Caller-constructible selector for one expression member of an emitted
+/// protocol node (FR-390). The fields intentionally stay public; admission
+/// checks that the selected node, member and index identify a slot in the
+/// checked package before evaluation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProtocolSlot {
     /// The selected protocol node's identity.
@@ -55,6 +58,17 @@ pub enum ProtocolSlotEvaluation {
         /// The checked expression read that encountered the binder.
         location: Location,
     },
+}
+
+pub(crate) fn foreign_to_observation(
+    reference: &quire_exact::ObjectReference,
+    observation: &Observation,
+) -> bool {
+    let references = observation.environment.references();
+    !references.is_empty()
+        && references
+            .iter()
+            .all(|held| held.universe() != reference.universe())
 }
 
 /// Reference values nested in one supplied aggregate, in deterministic

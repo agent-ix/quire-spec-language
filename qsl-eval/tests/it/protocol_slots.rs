@@ -14,6 +14,8 @@ use quire_semantic_value::checking::CheckingLimits;
 
 const MODEL: &[u8] = include_bytes!("../../../tests/fixtures/spine-model.semantic-ir.json");
 
+mod acceptance;
+
 #[path = "../../../qsl-semantics/tests/support/child_composite.rs"]
 #[allow(
     clippy::duplicate_mod,
@@ -792,4 +794,192 @@ fn protocol_slot_calls_share_meter_usage_and_obey_work_boundaries() {
         used * 2,
         "the caller's one meter accumulates both calls"
     );
+}
+
+/// The `check` control's `condition` slot of `package`'s protocol `P`, with
+/// the binder keys of the protocol.
+fn check_condition(package: &CheckedPackage) -> (ProtocolSlot, quire_exact::NodeKey) {
+    let keys = package
+        .graph()
+        .protocol_node_keys("P")
+        .expect("the protocol's emitted identity map");
+    let check = package
+        .graph()
+        .protocol("P")
+        .expect("checked protocol")
+        .controls
+        .controls
+        .iter()
+        .find(|control| control.kind.label() == "check")
+        .expect("checked check control");
+    let node = keys
+        .nodes
+        .get(&check.node)
+        .expect("emitted check node")
+        .clone();
+    let opened = keys
+        .binders
+        .iter()
+        .find(|binder| binder.name == "opened")
+        .expect("activation binder identity")
+        .node
+        .clone();
+    (
+        ProtocolSlot {
+            node,
+            member: "condition".to_owned(),
+            index: None,
+        },
+        opened,
+    )
+}
+
+/// TC-136 H4: a `ProtocolSlot` selected from another package's protocol, and
+/// a slot whose supply is for a different slot, are refused before any
+/// charge and leave the meter unchanged.
+#[trace("TC-136", "FR-049-AC-1")]
+#[test]
+fn h4_a_foreign_slot_or_a_supply_for_another_slot_is_refused_before_any_charge() {
+    let package = package();
+    let other = package_from_source(&unit().replace("check Ready", "check Elsewhere"));
+    let (own_slot, opened) = check_condition(&package);
+    let (foreign_slot, _) = check_condition(&other);
+    assert_ne!(
+        own_slot.node, foreign_slot.node,
+        "the other package's slot names a different node"
+    );
+    let empty = ProtocolSupply {
+        binders: Vec::new(),
+        observation: None,
+    };
+    let mut meter = Meter::new(UNLIMITED);
+    let Err(CallFailure::Admission(payload)) =
+        package.evaluate_protocol_slot(&foreign_slot, &empty, &mut meter)
+    else {
+        panic!("a slot of another package's protocol must be refused");
+    };
+    assert!(matches!(
+        payload.as_ref(),
+        CallAdmissionFailure::Refused(record)
+            if record.locus == CallAdmissionLocus::Node(foreign_slot.node.clone())
+    ));
+    assert_eq!(meter, Meter::new(UNLIMITED), "refused before any charge");
+
+    // The `condition` slot reads no binder; the supply is for `activation.guard`.
+    let wrong_supply = ProtocolSupply {
+        binders: vec![(opened.clone(), SuppliedValue::Value(Value::Boolean(true)))],
+        observation: None,
+    };
+    let Err(CallFailure::Admission(payload)) =
+        package.evaluate_protocol_slot(&own_slot, &wrong_supply, &mut meter)
+    else {
+        panic!("a supply for a different slot must be refused");
+    };
+    assert!(matches!(
+        payload.as_ref(),
+        CallAdmissionFailure::Refused(record)
+            if record.code == CatalogCode::new("invalid_runtime_input", "unknown-member")
+                && record.locus == CallAdmissionLocus::Binder(opened)
+    ));
+    assert_eq!(meter, Meter::new(UNLIMITED), "refused before any charge");
+    // `ProtocolSlot` is a public selector: this test constructs the valid
+    // selection from its public fields, then confirms package admission is
+    // the boundary that validates it.
+    let admitted = package
+        .evaluate_protocol_slot(&own_slot, &empty, &mut meter)
+        .expect("a caller-constructed slot selected from this package is admitted");
+    assert!(matches!(admitted, ProtocolSlotEvaluation::Evaluated(_)));
+}
+
+/// Fixture U of TC-1072: a protocol over the dispatch model's object type `A`
+/// whose second protocol capture, `gate`, dispatches the query operation
+/// `ready()`; `precondition` is that operation's effective precondition.
+fn gated_package(precondition: bool) -> CheckedPackage {
+    let (package, _) = crate::state_model_family::simulation_package_over(
+        "protocol Refunds using p over (view: M::A) on origin {\n\
+           capture order: Boolean = view.flag;\n\
+           capture gate: Boolean = view.ready();\n\
+           role R on M::A;\n\
+           run sequence Main { check Ready using p { true }; }\n\
+           finish End as (outcome: Boolean) { true };\n\
+         }\n",
+        precondition,
+        false,
+    );
+    package
+}
+
+/// TC-1072 rows 7 and 8 / FR-390-AC-8: a capture initializer whose
+/// dispatched call has a false precondition gives the capture slot an
+/// `Undefined` result with reason `precondition-false` naming the operation
+/// and no value (the category and exit status 10 follow from the
+/// `FamilyResult::Undefined` variant and are not asserted separately); the same slot with the precondition true
+/// completes with `true` (exit status 0).
+#[trace("TC-1072", "FR-390-AC-8")]
+#[test]
+fn an_undefined_capture_is_precondition_false_and_a_true_precondition_completes() {
+    let capture_gate = |precondition: bool| {
+        let package = gated_package(precondition);
+        let keys = package
+            .graph()
+            .protocol_node_keys("Refunds")
+            .expect("the protocol's emitted identity map");
+        let view = keys
+            .binders
+            .iter()
+            .find(|binder| binder.name == "view")
+            .expect("the protocol binds view")
+            .node
+            .clone();
+        let (objects, present, _) =
+            crate::state_model_family::objects(package.graph(), &crate::state_model_family::view());
+        let observation = qsl_semantics::model::observation::Observation {
+            identity: qsl_semantics::model::observation::DocumentRef {
+                authority: "test".to_owned(),
+                identity: "now".to_owned(),
+                revision_namespace: "fixture".to_owned(),
+                revision: "1".to_owned(),
+            },
+            environment: objects.with_references(vec![present.clone()]),
+            populations: std::collections::BTreeMap::new(),
+            out_of_range: Vec::new(),
+        };
+        let slot = ProtocolSlot {
+            node: keys.clause.clone().expect("protocol clause key"),
+            member: "captures".to_owned(),
+            index: Some(1),
+        };
+        let mut meter = Meter::new(UNLIMITED);
+        let evaluated = package
+            .evaluate_protocol_slot(
+                &slot,
+                &ProtocolSupply {
+                    binders: vec![(view, SuppliedValue::Value(Value::Reference(present)))],
+                    observation: Some(&observation),
+                },
+                &mut meter,
+            )
+            .expect("the capture slot evaluates");
+        let ProtocolSlotEvaluation::Evaluated(evaluation) = evaluated else {
+            panic!("the view binder was supplied: {evaluated:?}");
+        };
+        evaluation.outcome
+    };
+
+    let FamilyOutcome::FamilyEvaluated(quire_eval::FamilyResult::Undefined(cause)) =
+        capture_gate(false)
+    else {
+        panic!("a false precondition leaves the capture undefined");
+    };
+    assert_eq!(
+        cause.undefined_record().reason.as_str(),
+        "precondition-false"
+    );
+    assert_eq!(cause.undefined_record().fields["operation"], "ready");
+
+    let FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(true))) =
+        capture_gate(true)
+    else {
+        panic!("a true precondition completes the capture");
+    };
 }

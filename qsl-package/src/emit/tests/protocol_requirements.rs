@@ -11,10 +11,34 @@ use super::protocol_reference::{clause_argument, node_by_id, node_of};
 use super::reachability::{lower_with, Lowered};
 use super::*;
 
+mod fixture_w;
+
 const PROFILES: &str = "profile p = \"quire.protocol.finite-global/v1\";\n\
                      profile t = \"quire.temporal.infinite-trace/v1\";\n";
 
-#[trace("FR-383-AC-2", "FR-383-AC-13", "TC-1061", "TC-1062")]
+/// Compare the pre-emission projection with the admitted byte-reader view.
+fn activation_rows(lowered: &Lowered) -> &[quire_contract_model::CheckedProtocolActivationRow] {
+    let read_back = lowered
+        .ir
+        .as_ref()
+        .expect("the admitted checked package")
+        .protocol_activation_relation();
+    assert_eq!(
+        lowered.activation_rows, read_back,
+        "in-process/read-back parity: {}",
+        lowered.text
+    );
+    &lowered.activation_rows
+}
+
+#[trace(
+    "FR-383-AC-2",
+    "FR-383-AC-13",
+    "TC-1061",
+    "TC-1062",
+    "TC-1194",
+    "FR-449-AC-2"
+)]
 #[test]
 fn protocol_requirements_reference_deduplicated_temporal_clause_nodes() {
     let temporal = "temporal Due using t over (c: M::Order) clock \"model-steps\" \
@@ -42,11 +66,7 @@ fn protocol_requirements_reference_deduplicated_temporal_clause_nodes() {
         .as_array()
         .unwrap()
         .contains(&target["node_id"]));
-    let rows = lowered
-        .ir
-        .as_ref()
-        .expect("the checked package")
-        .protocol_activation_relation();
+    let rows = activation_rows(&lowered);
     assert_eq!(rows.len(), 1);
     assert_eq!(
         serde_json::to_value(&rows[0].clause).unwrap(),
@@ -60,6 +80,16 @@ fn protocol_requirements_reference_deduplicated_temporal_clause_nodes() {
         rows[0].activation,
         quire_contract_model::CheckedProtocolActivation::Origin
     );
+    let single = lower_with(
+        model(),
+        PROFILES,
+        &unit.replace(
+            "requires temporal Due;\nrequires temporal Due;",
+            "requires temporal Due;",
+        ),
+    );
+    assert!(single.verified, "{}", single.text);
+    assert_eq!(rows, activation_rows(&single));
 }
 
 fn protocol_clause_index(wire: &Value) -> usize {
@@ -186,7 +216,7 @@ fn requirement_wire_mutations_refuse() {
     );
 }
 
-#[trace("FR-383-AC-13", "TC-1062")]
+#[trace("FR-383-AC-13", "TC-1062", "TC-1194", "FR-449-AC-3")]
 #[test]
 fn requirement_order_does_not_change_the_emitted_set() {
     let declarations = "temporal Due using t over (c: M::Order) clock \"model-steps\" \
@@ -247,15 +277,28 @@ fn requirement_order_does_not_change_the_emitted_set() {
             .unwrap()
             .contains(&target["node_id"]));
     }
-    let rows = first
-        .ir
-        .as_ref()
-        .expect("the checked package")
-        .protocol_activation_relation();
+    let rows = activation_rows(&first);
+    assert_eq!(rows, activation_rows(&second));
     assert_eq!(rows.len(), 2);
+    assert_eq!(
+        keys.iter().map(checked_node_id_of).collect::<Vec<_>>(),
+        rows.iter()
+            .map(|row| row.required_temporal.clone())
+            .collect::<Vec<_>>()
+    );
     assert!(rows
         .windows(2)
         .all(|pair| pair[0].required_temporal < pair[1].required_temporal));
+    for row in rows {
+        assert_eq!(
+            serde_json::to_value(&row.clause).unwrap(),
+            clause["node_id"]
+        );
+        assert_eq!(
+            row.activation,
+            quire_contract_model::CheckedProtocolActivation::Origin
+        );
+    }
 }
 
 /// FR-093: a function that reads a protocol clause is keyed after the
@@ -292,7 +335,7 @@ fn a_function_can_reference_a_protocol_with_a_temporal_requirement() {
 /// FR-218-AC-17, FR-383-AC-13: an unrequired temporal clause contributes no
 /// activation relation dependency, while adding it to the requirement set
 /// changes the protocol clause identity.
-#[trace("FR-218-AC-17", "FR-383-AC-13", "TC-1062")]
+#[trace("FR-218-AC-17", "FR-383-AC-13", "TC-1062", "TC-1194", "FR-449-AC-2")]
 #[test]
 fn a_protocol_requirement_changes_the_clause_key_and_empty_set_has_no_row() {
     let temporal = "temporal Due using t over (c: M::Order) clock \"model-steps\" \
@@ -322,12 +365,8 @@ fn a_protocol_requirement_changes_the_clause_key_and_empty_set_has_no_row() {
         clause_argument(empty_clause, "requirements")["members"],
         json!([])
     );
-    assert!(empty
-        .ir
-        .as_ref()
-        .expect("the checked package")
-        .protocol_activation_relation()
-        .is_empty());
+    assert!(activation_rows(&empty).is_empty());
+    assert_eq!(activation_rows(&required).len(), 1);
     assert!(!empty_clause["dependencies"]
         .as_array()
         .unwrap()
@@ -338,7 +377,7 @@ fn a_protocol_requirement_changes_the_clause_key_and_empty_set_has_no_row() {
 
 /// FR-464-AC-13: the activation relation binds a required temporal clause to
 /// the clause's exact `each` trigger node.
-#[trace("FR-464-AC-13", "TC-946")]
+#[trace("FR-464-AC-13", "TC-946", "TC-1194", "FR-449-AC-1")]
 #[test]
 fn a_required_clause_relation_carries_the_each_trigger() {
     let unit = format!(
@@ -362,11 +401,7 @@ fn a_required_clause_relation_carries_the_each_trigger() {
         .find(|member| member["name"] == "trigger")
         .map(|member| &member["value"]["target"])
         .unwrap();
-    let rows = lowered
-        .ir
-        .as_ref()
-        .expect("the checked package")
-        .protocol_activation_relation();
+    let rows = activation_rows(&lowered);
     assert_eq!(rows.len(), 1);
     let quire_contract_model::CheckedProtocolActivation::Each {
         trigger: row_trigger,
@@ -375,6 +410,185 @@ fn a_required_clause_relation_carries_the_each_trigger() {
         panic!("an each activation row: {:?}", rows[0]);
     };
     assert_eq!(serde_json::to_value(row_trigger).unwrap(), *trigger);
+    assert_eq!(
+        serde_json::to_value(&rows[0].clause).unwrap(),
+        clause["node_id"]
+    );
+    let temporal = node_of(&lowered.wire, "temporal", "temporal_clause");
+    assert_eq!(
+        serde_json::to_value(&rows[0].required_temporal).unwrap(),
+        temporal["node_id"]
+    );
+}
+
+/// A different clock and a shared clock both leave unrequired clauses out
+/// of the relation; source trivia and another compilation preserve its keys.
+#[trace("TC-1194", "FR-449-AC-3", "FR-449-AC-4")]
+#[test]
+fn activation_rows_ignore_unrequired_temporals_and_source_trivia() {
+    let temporal = "temporal Due using t over (c: M::Order) clock \"model-steps\" \
+                    on origin { always true }";
+    let protocol = flow_over(
+        "M::Order",
+        "on each (opened: M::Order)",
+        "role Buyer on M::Order;\nrequires temporal Due;",
+    );
+    let unit = format!("{temporal}\n{protocol}");
+    let original = lower_with(model(), PROFILES, &unit);
+    assert!(original.verified, "{}", original.text);
+    let expected = activation_rows(&original);
+    assert_eq!(expected.len(), 1);
+    for variant in [
+        unit.clone(),
+        unit.replace(
+            "requires temporal Due;",
+            "requires temporal Due;\nrequires temporal Due;",
+        ),
+        format!(
+            "// the same protocol, with source trivia\n{}",
+            unit.replace(';', ";\n\n")
+        ),
+        format!(
+            "temporal RefundBounded using t over (c: M::Order) clock \"refund-clock\" \
+                 on origin {{ eventually false }}\n{unit}"
+        ),
+        format!(
+            "temporal PaidBounded using t over (c: M::Order) clock \"model-steps\" \
+                 on origin {{ eventually false }}\n{unit}"
+        ),
+    ] {
+        let lowered = lower_with(model(), PROFILES, &variant);
+        assert!(lowered.verified, "{}", lowered.text);
+        assert_eq!(activation_rows(&lowered), expected, "{}", lowered.text);
+    }
+}
+
+/// A missing required temporal is rejected during checking, before a
+/// checked package can be linked or emitted.
+#[trace("TC-1194", "FR-449-AC-6")]
+#[test]
+fn a_missing_required_temporal_refuses_at_its_authored_name() {
+    let unit = flow_over(
+        "M::Order",
+        "on each (opened: M::Order)",
+        "role Buyer on M::Order;\nrequires temporal Missing;",
+    );
+    let refusals = refusals_of(PROFILES, &unit);
+    let [refusal] = refusals.as_slice() else {
+        panic!("one missing requirement refusal: {refusals:?}");
+    };
+    assert_eq!(
+        refusal.cause.code(),
+        qsl_foundation::Code::MissingDeclaration
+    );
+    assert_eq!(refusal.cause.cause(), Some("missing-name"));
+    let CheckCause::ProtocolAnchor(cause) = &refusal.cause else {
+        panic!("a located protocol requirement refusal: {refusal:?}");
+    };
+    let qsl_semantics::check::ProtocolAnchorCause::MissingRequirement { name, span } =
+        cause.as_ref()
+    else {
+        panic!("a missing required temporal: {cause:?}");
+    };
+    assert_eq!(name, "Missing");
+    // The checking fixture prefixes this exact header to the authored unit.
+    let text = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.model.complete/v1\";\n{PROFILES}\
+         model M = \"acme/orders\";\n{unit}\n"
+    );
+    assert_eq!(&text[span.start..span.end], "Missing");
+}
+
+/// Graph membership is checked before the activation relation is available.
+/// Missing dependency edges and missing target nodes are different defects.
+#[trace("TC-1194", "FR-449-AC-5", "FR-383-AC-2", "FR-383-AC-13")]
+#[test]
+fn activation_targets_must_exist_and_be_clause_dependencies() {
+    let unit = format!(
+        "temporal Due using t over (c: M::Order) clock \"model-steps\" \
+         on origin {{ always true }}\n{}",
+        flow_over(
+            "M::Order",
+            "on each (opened: M::Order)",
+            "role Buyer on M::Order;\nrequires temporal Due;",
+        )
+    );
+    let valid = lower_with(model(), PROFILES, &unit);
+    assert_activation_target_refusals(&valid, &model());
+}
+
+fn assert_activation_target_refusals(valid: &Lowered, document: &[u8]) {
+    use quire_contract_model::{
+        CheckedPackageDispatchResult, CheckedPackageReadLimits, CheckedPackageRefusalCause,
+        CheckedPackageRefusalCode,
+    };
+    assert!(valid.verified, "{}", valid.text);
+    assert_eq!(activation_rows(valid).len(), 1);
+    let index = protocol_clause_index(&valid.wire);
+    let base = format!("/semantic_graph/nodes/{index}");
+    for (target_path, missing_path) in [
+        ("/body/arguments/7/value/members/0/target", "requirements"),
+        ("/body/arguments/1/value/members/1/value/target", "trigger"),
+    ] {
+        let clause = &valid.wire["semantic_graph"]["nodes"][index];
+        let target = clause
+            .pointer(target_path)
+            .unwrap_or_else(|| panic!("{missing_path} target: {clause}"));
+        assert!(target.is_object(), "a structural node key: {target}");
+        for absent_node in [false, true] {
+            let mut wire = valid.wire.clone();
+            let clause = &mut wire["semantic_graph"]["nodes"][index];
+            clause["dependencies"]
+                .as_array_mut()
+                .unwrap()
+                .retain(|dependency| dependency != target);
+            if absent_node {
+                let mut absent = target.clone();
+                absent["path"] = json!(["absent"]);
+                *clause.pointer_mut(target_path).unwrap() = absent.clone();
+                clause["dependencies"].as_array_mut().unwrap().push(absent);
+                sort_dependencies(clause);
+            }
+            let mut evidence = CheckedPackageEvidence::new();
+            for feature in valid.wire["lock"]["required_features"].as_array().unwrap() {
+                evidence.support_feature(feature.as_str().unwrap());
+            }
+            evidence
+                .insert_domain_package_document(package_identity(document), document)
+                .unwrap();
+            let CheckedPackageDispatchResult::Refused(refusal) =
+                quire_contract_model::read_checked_package(
+                    &jcs(&wire),
+                    CheckedPackageReadLimits::bounded(),
+                    &evidence,
+                )
+            else {
+                panic!(
+                    "{missing_path}, absent node {absent_node}: refusal required before any map"
+                );
+            };
+            let (code, cause, path) = if absent_node {
+                (
+                    CheckedPackageRefusalCode::MissingDeclaration,
+                    Some(CheckedPackageRefusalCause::MissingName),
+                    format!("{base}{target_path}"),
+                )
+            } else {
+                (
+                    CheckedPackageRefusalCode::InvalidSemanticGraph,
+                    None,
+                    format!("{base}/dependencies"),
+                )
+            };
+            assert_eq!(
+                refusal.code, code,
+                "{missing_path}, absent node {absent_node}"
+            );
+            assert_eq!(refusal.cause, cause);
+            assert_eq!(refusal.loci[0].path.as_ref().unwrap().as_str(), path);
+        }
+    }
 }
 
 /// FR-383-AC-17: a unit that selects no protocol profile emits no protocol
