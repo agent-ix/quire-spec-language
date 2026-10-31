@@ -3274,7 +3274,12 @@ fn conformance_fr340_frame_mutations_match_qspec_vectors() {
 /// `dependency_reference` node) is refused within the patched member; an
 /// index past the graph, a self-naming node and two nodes naming each other
 /// are refused with no cause at the published `node` member.
-#[trace("TC-233", "FR-322-AC-278", "FR-322-AC-279", "FR-322-AC-280")]
+#[trace(
+    "QSpec-TC-233",
+    "QSpec-FR-322-AC-278",
+    "QSpec-FR-322-AC-279",
+    "QSpec-FR-322-AC-280"
+)]
 #[test]
 fn conformance_node_index_vectors_refuse_malformed_wire() {
     let Some((directory, _)) = qspec_v2_fixtures() else {

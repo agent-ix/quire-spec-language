@@ -390,7 +390,7 @@ fn emitted_sum_node_ids(terms: usize) -> (usize, usize, usize) {
 /// written with each `node_id` in at most 200 bytes and at the same maximum
 /// `node_id` nesting depth, each application naming its operands by index
 /// segment rather than nesting them.
-#[trace("TC-233", "FR-322-AC-281")]
+#[trace("QSpec-TC-233", "QSpec-FR-322-AC-281")]
 #[test]
 fn emitted_node_ids_stay_bounded_and_flat_as_a_sum_deepens() {
     std::thread::Builder::new()

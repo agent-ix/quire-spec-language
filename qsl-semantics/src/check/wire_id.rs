@@ -598,7 +598,7 @@ mod tests {
     /// FR-322-AC-281: a left-nested chain of 100,000 applications writes one
     /// index segment per operand, and rebuilds 100,001 distinct keys, each
     /// holding its predecessor's key as its last path element.
-    #[ix_trace_rs::trace("TC-233", "FR-322-AC-281")]
+    #[ix_trace_rs::trace("QSpec-TC-233", "QSpec-FR-322-AC-281")]
     #[test]
     fn a_100000_node_chain_round_trips_through_index_segments() {
         let keys = chain(100_000);
@@ -621,7 +621,7 @@ mod tests {
     }
 
     /// FR-322 "Order": an index segment may name a later node.
-    #[ix_trace_rs::trace("TC-233", "FR-322-AC-280")]
+    #[ix_trace_rs::trace("QSpec-TC-233", "QSpec-FR-322-AC-280")]
     #[test]
     fn an_index_segment_naming_a_later_node_resolves() {
         let keys = chain(3);
@@ -642,7 +642,7 @@ mod tests {
 
     /// FR-322-AC-279 and AC-280: an index past the graph, a self-naming node
     /// and two nodes naming each other are refused.
-    #[ix_trace_rs::trace("TC-233", "FR-322-AC-279")]
+    #[ix_trace_rs::trace("QSpec-TC-233", "QSpec-FR-322-AC-279")]
     #[test]
     fn out_of_range_and_cyclic_index_segments_are_refused() {
         let node = |index: u64| CheckedNodeId {
@@ -693,7 +693,7 @@ mod tests {
     }
 
     /// FR-322 "Dependency references": a declared id holds only strings.
-    #[ix_trace_rs::trace("TC-233", "FR-322-AC-278")]
+    #[ix_trace_rs::trace("QSpec-TC-233", "QSpec-FR-322-AC-278")]
     #[test]
     fn a_declared_id_refuses_an_operand() {
         let keys = chain(1);
