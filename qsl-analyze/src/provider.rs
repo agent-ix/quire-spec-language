@@ -92,14 +92,20 @@ fn admission_records(
             AdmissionFailure::Refused(record) => TerminalRecord::disposition_declined(
                 item.item.request_index,
                 qsl_replay::ProofRefusalCause::InvalidInput,
-                qsl_replay::DeclineCode::Qsl(record.code),
-                quire_semantic_value::catalog::CatalogCode::new(record.code.as_str(), record.cause),
+                qsl_replay::DeclineCode::Qsl(
+                    qsl_foundation::diagnostic::Code::from_code(record.catalog.code())
+                        .unwrap_or(qsl_foundation::diagnostic::Code::RuntimeInvariant),
+                ),
+                record.catalog.clone(),
             ),
             AdmissionFailure::Incomplete(record) => TerminalRecord::disposition_declined(
                 item.item.request_index,
                 qsl_replay::ProofRefusalCause::IncompleteInput,
-                qsl_replay::DeclineCode::Qsl(record.code),
-                quire_semantic_value::catalog::CatalogCode::new(record.code.as_str(), record.cause),
+                qsl_replay::DeclineCode::Qsl(
+                    qsl_foundation::diagnostic::Code::from_code(record.catalog.code())
+                        .unwrap_or(qsl_foundation::diagnostic::Code::RuntimeInvariant),
+                ),
+                record.catalog.clone(),
             ),
             AdmissionFailure::Fault(fault) => {
                 TerminalRecord::disposition_failed(item.item.request_index, fault.catalog_code())
