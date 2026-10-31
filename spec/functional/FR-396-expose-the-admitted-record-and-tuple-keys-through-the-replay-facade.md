@@ -100,6 +100,7 @@ or builds one.
 | FR-396-AC-7 | A consumer naming only the `qsl_replay` root, the kernel (`quire-exact`) and the QSV declaration API declares a union's `CompositeDeclaration` from its admitted key and payloads, seals it with `seal_union_verified` over the admitted bindings (`AdmittedUnionMember::member`), and constructs and admits a value of every member, a member holding another union included, without decoding or constructing a key. | Test (TC-1090) |
 | FR-396-AC-8 | Two same-shaped unions have distinct kernel keys, no `VariantId` is shared by two members of the unit's unions, and a repeated lookup and a recompile return the same declarations and members. | Test (TC-1090) |
 | FR-396-AC-9 | A replay witness whose union value names the union's `composite_type` node id and an admitted member replays on both arms, and the same witness naming the union's kernel key refuses. | Test (TC-1090) |
+| FR-396-AC-10 | `enum_declaration_by_wire`, `enum_case_by_wire` and `composite_declaration_by_wire` take the structural wire id (package, path, ordinal) and return what the NodeKey lookup returns for the same node, with the same refusals: `Foreign` naming the dependency's `package_id`, `Unknown` for an id no package admitted (naming the case for a missing enum case), and, for `composite_declaration_by_wire`, `WrongKind` for another node of this package (the enum lookups refuse `Unknown` for it), so a consumer never constructs or decodes a `NodeKey`; an id that is not a well-formed node identity refuses `MalformedWire`. | Test (TC-1090) |
 
 ## Dependencies
 
