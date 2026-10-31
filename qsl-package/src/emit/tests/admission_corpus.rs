@@ -2662,7 +2662,8 @@ fn a_refinement_row_or_header_key_of_the_wrong_kind_or_absent_refuses_at_its_mem
     let mut external = wire.clone();
     let node = &mut external["semantic_graph"]["nodes"][position];
     let local = node["body"]["abstract"].clone();
-    node["body"]["abstract"] = foreign("elsewhere");
+    node["body"]["abstract"] =
+        serde_json::json!({"package": "elsewhere", "node": foreign("elsewhere")});
     node["dependencies"]
         .as_array_mut()
         .expect("dependencies")
