@@ -20,8 +20,8 @@
 
 use ix_trace_rs::trace;
 use qsl_analyze::analyze::{
-    analyze as analyze_request, analyze_items, model_item, statistical_item, AnalyzeItem,
-    AnalyzeLimits, AnalyzeRequest, DispositionKind, Engine, Engines, Payload, Settlement,
+    analyze as analyze_request, analyze_items, model_item, AnalyzeItem, AnalyzeLimits,
+    AnalyzeRequest, DispositionKind, Engine, Engines, Payload, Settlement,
 };
 use qsl_eval::simulation::Limits;
 use qsl_eval::temporal::UndefinedCause;
@@ -524,7 +524,7 @@ fn analyze_and_the_provider_entry_settle_one_record_for_one_en4_item() {
         &world.package,
         AnalyzeRequest {
             binding: world.binding(),
-            items: vec![statistical_item(index(0), service_request(&world))],
+            items: vec![routed_service_item(&world)],
         },
         &engines,
         &limits,
@@ -551,6 +551,13 @@ fn analyze_and_the_provider_entry_settle_one_record_for_one_en4_item() {
     };
     assert_eq!(verdict.decision, Decision::Rejected);
     assert_eq!(verdict.witnesses.len(), 3);
+    for witness in &verdict.witnesses {
+        assert_eq!(
+            crate::statistical_witness_replay::replay(&world, "Two", &verdict.provenance, witness,)
+                .expect("provider witness replays"),
+            qsl_replay::statistical::SampledWitnessReplay::Reproduced
+        );
+    }
     qsl_package::emit_checked(&world.package).expect_err("S4 still refuses Service");
 }
 
@@ -590,4 +597,9 @@ fn provider_entry_settles_an_incomplete_binding_per_item() {
             ..
         }
     ));
+    assert_eq!(records[0].backend(), None);
+    assert_eq!(
+        records[0].diagnostic().map(|code| code.to_string()),
+        Some("unavailable_observation/missing-required-artifact".to_owned())
+    );
 }

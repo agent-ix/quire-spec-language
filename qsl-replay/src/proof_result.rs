@@ -1385,6 +1385,18 @@ impl TerminalRecord {
         }
     }
 
+    /// Build a failed record settled before an engine ran, with no producing
+    /// backend and the failure's diagnostic.
+    pub fn disposition_failed(request_index: RequestIndex, diagnostic: CatalogCode) -> Self {
+        Self {
+            request_index,
+            backend: None,
+            value: TerminalValue::Failed,
+            replay: None,
+            diagnostic: Some(diagnostic),
+        }
+    }
+
     /// Build an incomplete record with the producing backend identity.
     pub fn incomplete(
         request_index: RequestIndex,
