@@ -493,11 +493,7 @@ mod digest_record_tests {
     /// `DigestDomain::as_str()`'s own match arms: a wrong label there (e.g.
     /// `ModelEffectiveDeclarationV2` silently becoming `.../v3`) fails the
     /// first assertion in the loop rather than round-tripping only against
-    /// itself (#260 review item 4). The explicit 18-label table and
-    /// `DigestDomain::ALL` are exhaustive; their fixed-size arrays make a
-    /// length mismatch a compile-time error.
-    /// mismatch between them is a compile error, not something this test
-    /// could observe at runtime -- the per-entry label and round-trip
+    /// itself (#260 review item 4). The per-entry label and round-trip
     /// assertions below are this test's real teeth (#260 review round 2).
     #[test]
     fn every_fr201_domain_round_trips_through_the_wire() {
