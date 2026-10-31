@@ -820,7 +820,9 @@ fn an_execution_point_on_a_clause_of_the_operation_gives_no_transition() {
     }
 }
 /// The node ids of the conditions of the authored (not derived)
-/// preconditions of `compiled`, in source order.
+/// preconditions of `compiled`. The wire lists nodes by structural node key,
+/// not by source position, and carries no clause names, so this order says
+/// nothing about the source.
 fn authored_conditions(compiled: &Compiled) -> Vec<Value> {
     compiled
         .clauses("precondition")
@@ -829,6 +831,17 @@ fn authored_conditions(compiled: &Compiled) -> Vec<Value> {
         .filter(|condition| condition["body"]["operation"]["identity"] != "quire.op.boolean.and")
         .map(|condition| condition["node_id"].clone())
         .collect()
+}
+
+/// The node id the condition `body` checks to. Node identity is structural,
+/// so a unit holding only that one clause yields the id it has in any unit.
+fn condition_id(body: &str) -> Value {
+    let alone = compile(&format!(
+        "{BASE_POST}pre P1 using v on M::Switch::set {{ {body} }}\n"
+    ));
+    let [id] =
+        <[Value; 1]>::try_from(authored_conditions(&alone)).expect("one authored precondition");
+    id
 }
 
 /// The operands of a left fold of `quire.op.boolean.and` rooted at `node`,
@@ -868,10 +881,8 @@ fn the_fold_follows_ascending_clause_names_not_source_order() {
         panic!("one transition");
     };
     let derived = compiled.node(&member_targets(Compiled::bound(transition, "pre"))[0]);
-    // The authored clauses' conditions, read from this same compile in source
-    // order (P3, P1, P2), so clause-name order is positions 1, 2, 0.
-    let [p3, p1, p2] = <[Value; 3]>::try_from(authored_conditions(&compiled))
-        .expect("three authored preconditions");
+    // The authored clauses' condition nodes, in clause-name order P1, P2, P3.
+    let [p1, p2, p3] = [a, b, d].map(condition_id);
     assert_eq!(
         fold_operands(&compiled, compiled.condition(derived)),
         [p1, p2, p3]
@@ -888,14 +899,12 @@ fn the_fold_follows_ascending_clause_names_not_source_order() {
         panic!("one transition");
     };
     let derived = shared.node(&member_targets(Compiled::bound(transition, "pre"))[0]);
-    // Source order is P9, P5, P1; P9 and P1 check to the one node, whose
-    // listed position is P9's.
-    let authored = authored_conditions(&shared);
+    // P9 and P1 check to the one node, which sorts by its least name P1.
     let operands = fold_operands(&shared, shared.condition(derived));
     assert_eq!(operands.len(), 2, "two clauses, not three");
     assert_eq!(
         operands,
-        [authored[0].clone(), authored[1].clone()],
+        [condition_id(a), condition_id(b)],
         "the node declared as P1 and P9 comes first"
     );
 }
