@@ -16,11 +16,11 @@ review_set: subset
 
 ## Summary
 
-Disposition pass 2 confirms the deadline tests are traceable to FR-281-AC-12, including both DeadlineGuard unit tests. A separate AC-12 evidence gap remains: the typed engine-limit precedence case is covered, but the accounting-limit precedence clause has no focused test.
+Disposition pass 3 confirms the accounting-limit precedence case is now covered: a finite-deadline analyze request settles with the typed WorkUnits limit result and does not cancel. The prior traceability finding is also fixed; no new spec-coverage gaps were found on the current head.
 
 ## Verdict
 
-**CONDITIONAL** — FND-003 is fixed, but a new medium evidence gap remains for accounting-limit precedence in FR-281-AC-12.
+**PASS** — FND-003 and FND-004 are fixed, and no new spec-coverage gaps were found.
 
 ## Findings
 
@@ -46,7 +46,7 @@ Disposition pass 2 confirms the deadline tests are traceable to FR-281-AC-12, in
 
 Plan completion: not assessed.
 
-Rechecked fix commits `a8858796c`, `9c17d3d66`, and `255746a05` at head `255746a05f86bf63c9c80c9200111057d1b016cb`. Manual acceptance-to-test review confirms FND-001 and FND-002 are fixed. The deadline tests now name TC-763 and FR-281-AC-12, which exists on current main. The new deadline integration cases cover settled records, multiple open records, caller cancellation, and engine-limit precedence. The accounting-limit precedence clause remains without a corresponding test. The whole-repository matrix/reverse-gap/stub audit remains unavailable because `quoin gap-analysis` is absent and `quoin matrix --repo . --json` produced no output before interruption. Optional semantic review was skipped.
+Rechecked fix commits `a8858796c`, `9c17d3d66`, and `255746a05` at head `255746a05f86bf63c9c80c9200111057d1b016cb`. Manual acceptance-to-test review confirms FND-001 and FND-002 are fixed. The deadline tests now name TC-763 and FR-281-AC-12, which exists on current main. The deadline integration cases cover settled records, multiple open records, caller cancellation, engine-limit precedence, and accounting-limit precedence. The accounting-limit test asserts a typed WorkUnits result and that cancellation was not triggered. The whole-repository matrix/reverse-gap/stub audit remains unavailable because `quoin gap-analysis` is absent and `quoin matrix --repo . --json` produced no output before interruption. Optional semantic review was skipped.
 
 Disposition checks on the updated head:
 
@@ -70,3 +70,12 @@ Disposition pass 2 rechecked fix commit `c62868b76c0bc86fbdb60224ad3f2d3bc5f7265
 | FND-003 | fixed | The zero-deadline and finite-deadline integration tests and both DeadlineGuard unit tests are tagged with TC-763 and FR-281-AC-12, now present on main. |
 
 Focused evidence: `cargo fmt --all -- --check` passed; `cargo test -p qsl-analyze --lib deadline_guard` passed (2 tests); finite-deadline, caller-cancellation, and engine-limit precedence integration tests each passed (1 test each).
+
+
+Disposition pass 3 rechecked the full PR head `dc5663b4d23c624c216df3b4d505063988b60952` against current main `5ec1d91c8a31ed3e3a123a9df00f5a63e0baa060`.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-004 | fixed | The finite-deadline integration test sets accounting work_units to 1, asserts the typed `EvaluationMeter{WorkUnits}` limit result, and asserts `cancel.cause()` remains `None`. |
+
+Round-3 focused evidence: `cargo test -p qsl-analyze --test it accounting_limit_before_deadline_keeps_its_typed_result` passed (1 test); `cargo fmt --all -- --check` passed; `git diff --check origin/main...HEAD` passed. No new coverage gaps were identified.

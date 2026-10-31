@@ -14,7 +14,7 @@ review_set: subset
 
 ## Summary
 
-Disposition pass 2 confirms that FND-005 is fixed: both deadline-guard unit tests use channel synchronization and no sleeps. The review found no new code-review defects.
+Disposition pass 3 rechecked the full PR head after the accounting-limit test was added. All code-review findings remain fixed; no new code defects were found.
 
 ## Verdict
 
@@ -68,3 +68,8 @@ Disposition pass 2 rechecked the fix commit `c62868b76c0bc86fbdb60224ad3f2d3bc5f
 | FND-005 | fixed | Both DeadlineGuard unit tests synchronize with `std::sync::mpsc` channels; neither waits on `std::thread::sleep`. |
 
 Focused evidence: `cargo fmt --all -- --check` passed; `cargo test -p qsl-analyze --lib deadline_guard` passed (2 tests); deadline integration, caller-cancellation, and engine-limit precedence tests each passed (1 test each).
+
+
+Disposition pass 3 rechecked the full PR head `dc5663b4d23c624c216df3b4d505063988b60952` against current main `5ec1d91c8a31ed3e3a123a9df00f5a63e0baa060`. All previously recorded code findings' latest outcomes are fixed; this pass found no new code findings.
+
+Round-3 focused evidence: `cargo test -p qsl-analyze --test it accounting_limit_before_deadline_keeps_its_typed_result` passed (1 test); `cargo fmt --all -- --check` passed; `git diff --check origin/main...HEAD` passed.
