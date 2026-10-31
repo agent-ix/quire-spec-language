@@ -15,7 +15,7 @@ Reviewed all six changed Rust files, their callers, and TC-1074. The behavior is
 
 ## Verdict
 
-FAIL for the stated partial scope. QSL-852 remains In Progress.
+PASS after disposition pass 1 at 06b9de9fa7487cc2e5179c7166839b811010e2af. The original review failed on FND-001; that finding is now fixed. QSL-852 remains In Progress.
 
 ## Findings
 
@@ -83,3 +83,11 @@ No applicable AssuranceProfile is declared in spec/assurance: the seven artifact
 Independent focused checks passed: formatting; Clippy for the three changed libraries and qsl-eval integration target; 17 protocol tests; one actual-reader test containing both mutations; both source refusal tests; configured make cargo-deny-bans. Logs: /tmp/qsl1956-review-{fmt,clippy-libs,clippy-it,protocol,reader,source1,source2,deny-bans}.log. The first Clippy command rejected repeated --lib flags and was corrected; it is not a code failure. A generic cargo deny check is outside this repository's bans-only configuration; the prescribed bans target passed.
 
 The coder's single required aggregate run stopped at the exact unchanged-main C14 MalformedWire refusal at /semantic_graph/nodes/2/node_id; the CI baseline diff is empty. Separate string-edge/checked-input normalized baseline diffs are empty (17/3 unchanged findings). No aggregate was repeated and later aggregate lanes were not reached; whole CI success is not claimed.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Removed compensation_binding. Both reader-mutation calls use the existing protocol_terminal::argument via named_argument; the existing test helper is pub(super), with its lookup implementation unchanged. No production/public API changes or new regression found. |
+
+Disposition pass 1 inspects only the fix at 06b9de9fa7487cc2e5179c7166839b811010e2af. The original finding text is preserved. Coder confined checks pass: formatting, scoped Clippy, 17 protocol tests, one reader test covering both mutations, and two source tests. No aggregate or matrix was repeated. The partial slice is review-approved, subject to the lead's existing gate evidence and latest artifact custody; full AC-6 and AC-11 remain open.
