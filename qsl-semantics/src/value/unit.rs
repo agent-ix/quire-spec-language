@@ -352,7 +352,10 @@ impl UnitPreimage {
     ///
     /// [`InvalidNodeKey`] when the key cannot be built.
     pub fn key(&self) -> Result<NodeKey, InvalidNodeKey> {
-        self.owner.declaration_key(&self.qualified_declaration)
+        // A unit shares package and path with a same-named dimension; the
+        // ordinal keeps the two ids distinct.
+        self.owner
+            .declaration_key_at(&self.qualified_declaration, 1)
     }
 
     /// Refuse an unreduced rational, then a zero scale or a non-identity root
