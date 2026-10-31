@@ -3119,7 +3119,6 @@ fn frame_node_index(package: &Value) -> usize {
 /// part of the gate, not under a plain `cargo test`/`make ci`.
 #[trace("TC-253", "FR-087-AC-3")]
 #[test]
-#[ignore = "QSpec node-identity-vectors.json absent from main; FR-340-AC-1/4/9 vector source pending restoration"]
 fn conformance_fr340_frame_mutations_match_qspec_vectors() {
     let Some((directory, _)) = qspec_v2_fixtures() else {
         println!("skipped: QSPEC_DIR not set");
