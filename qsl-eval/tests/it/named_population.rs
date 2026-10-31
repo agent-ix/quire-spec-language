@@ -765,3 +765,81 @@ fn a_holds_atom_naming_a_population_is_emitted() {
     );
     assert_eq!(population_references(&unit), [ident("counters")]);
 }
+
+/// TC-136 H3: an existing non-holds formula node and an index valid only in
+/// a larger clause both fault before evaluation and leave the meter unchanged.
+/// The current fault identifies the invariant, but carries no node identity.
+#[trace("TC-136")]
+#[test]
+fn invalid_holds_handles_fault_without_spending_the_meter() {
+    let mut unit = Unit::new(false,
+        "temporal C using t over (w: M::Watch) clock \"model-steps\" on origin { eventually holds(true) }");
+    let larger = Unit::new(false,
+        "temporal C using t over (w: M::Watch) clock \"model-steps\" on origin { eventually always eventually holds(true) }");
+    let snapshot = unit.snapshot("holds-handles", "current", &[], true);
+    let [clause] = unit.graph().temporal_clauses() else {
+        panic!("one temporal clause")
+    };
+    let [larger_clause] = larger.graph().temporal_clauses() else {
+        panic!("one larger clause")
+    };
+    let formula = clause.clause().formula();
+    let non_holds = formula.root();
+    assert!(!matches!(
+        formula.nodes()[non_holds.index()],
+        FormulaNode::Holds { .. }
+    ));
+    let larger_formula = larger_clause.clause().formula();
+    let beyond = larger_formula
+        .node_id(larger_formula.nodes().len() - 1)
+        .expect("the larger formula has a last node");
+    assert!(beyond.index() >= formula.nodes().len());
+    let valid = formula
+        .nodes()
+        .iter()
+        .position(|node| matches!(node, FormulaNode::Holds { .. }))
+        .and_then(|index| formula.node_id(index))
+        .expect("one holds atom");
+    let (objects, _) = admit_trace_snapshot(
+        unit.graph().model_selections(),
+        unit.graph().scope().types(),
+        &unit.packages,
+        ModelNormalizationLimits::default(),
+        &unit.snapshots,
+        &snapshot,
+        ObservationLimits::default(),
+        &[],
+    )
+    .expect("the complete watcher snapshot admits");
+    let over = Value::Reference(
+        objects
+            .references()
+            .iter()
+            .find(|reference| reference.object().as_str() == "w")
+            .expect("the watcher")
+            .clone(),
+    );
+    for atom in [non_holds, beyond] {
+        let mut meter = Meter::new(UNLIMITED);
+        let result = unit
+            .package
+            .evaluate_holds(clause, atom, over.clone(), &objects, &mut meter);
+        let quire_eval::CallFailure::Fault(fault) =
+            result.expect_err("invalid atom must not yield an Evaluation")
+        else {
+            panic!("an invalid holds atom must return a typed fault");
+        };
+        assert_eq!(fault.stage(), "S6a");
+        assert_eq!(fault.invariant(), "holds-atom-resolved-by-clause");
+        assert_eq!(meter, Meter::new(UNLIMITED), "invalid atom charges nothing");
+    }
+    let mut meter = Meter::new(UNLIMITED);
+    let result = unit
+        .package
+        .evaluate_holds(clause, valid, over.clone(), &objects, &mut meter)
+        .expect("the selected valid holds atom evaluates");
+    assert!(matches!(
+        result.outcome,
+        FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
+    ));
+}
