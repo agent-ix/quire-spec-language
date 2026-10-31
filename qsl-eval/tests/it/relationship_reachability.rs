@@ -1458,3 +1458,70 @@ fn a_bounded_population_refuses_for_a_clause_that_never_evaluates_a_reaches() {
         }
     }
 }
+
+/// The chain `o1 -> o2 -> ... -> o{objects}` of `Order/next` links, and
+/// `reaches(o1, o{objects})` over it under `limits`.
+fn reach_far_end(objects: usize, limits: ScalarLimits) -> (Evaluation, Meter) {
+    let orders = Orders::base();
+    let names: Vec<String> = (1..=objects).map(|index| format!("o{index}")).collect();
+    let held: Vec<ObjectReference> = names.iter().map(|name| orders.order(name)).collect();
+    let pairs: Vec<Link> = held
+        .windows(2)
+        .map(|pair| (pair[0].clone(), pair[1].clone()))
+        .collect();
+    let environment = orders.observe(
+        &held,
+        vec![Orders::extent(next(), true, pairs)],
+        vec![orders.q()],
+    );
+    orders.reaches(&held[0], &held[objects - 1], &environment, limits)
+}
+
+/// TC-137: a 10,000-object graph chain completes on a 512 KiB stack, spends
+/// the per-link work times the links, and stops one unit below that work.
+/// The per-link work is measured on short chains of the same shape.
+#[trace("TC-137")]
+#[test]
+fn a_ten_thousand_object_chain_reaches_its_far_end_on_a_512_kib_stack() {
+    const OBJECTS: usize = 10_000;
+    let work = |objects: usize| {
+        let (evaluation, meter) = reach_far_end(objects, UNLIMITED);
+        assert!(boolean(evaluation));
+        meter.consumed(LimitKind::WorkUnits)
+    };
+    let (three, four, five) = (work(3), work(4), work(5));
+    let per_link = four - three;
+    assert_eq!(five - four, per_link, "work is linear in the links");
+    let expected = three + per_link * (OBJECTS as u64 - 3);
+
+    std::thread::Builder::new()
+        .stack_size(512 * 1024)
+        .spawn(move || {
+            let (evaluation, meter) = reach_far_end(OBJECTS, UNLIMITED);
+            assert!(boolean(evaluation));
+            assert_eq!(meter.consumed(LimitKind::WorkUnits), expected);
+            let (evaluation, _) = reach_far_end(
+                OBJECTS,
+                ScalarLimits {
+                    work_units: expected - 1,
+                    ..UNLIMITED
+                },
+            );
+            let FamilyOutcome::Evaluated(Outcome::Incomplete(record)) = evaluation.outcome else {
+                panic!("one unit below the total stops the run");
+            };
+            assert_eq!(record.limit_kind, LimitKind::WorkUnits);
+            assert_eq!(record.limit, expected - 1);
+            let (evaluation, _) = reach_far_end(
+                OBJECTS,
+                ScalarLimits {
+                    work_units: expected,
+                    ..UNLIMITED
+                },
+            );
+            assert!(boolean(evaluation));
+        })
+        .expect("spawn a 512 KiB thread")
+        .join()
+        .expect("the evaluation does not overflow a 512 KiB stack");
+}
