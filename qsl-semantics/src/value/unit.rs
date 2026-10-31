@@ -143,7 +143,8 @@ impl DimensionPreimage {
     ///
     /// [`InvalidNodeKey`] when the key cannot be built.
     pub fn key(&self) -> Result<NodeKey, InvalidNodeKey> {
-        self.owner.declaration_key(&self.qualified_declaration)
+        self.owner
+            .declaration_key_at(&self.qualified_declaration, DIMENSION_ORDINAL)
     }
 
     /// The dimension's qualified name, which lowering builds its node from
@@ -244,6 +245,11 @@ pub struct UnitPreimage {
     scale: SpelledRational,
     offset: SpelledRational,
 }
+
+/// The ordinal of a dimension's key, which a unit of the same name follows.
+pub const DIMENSION_ORDINAL: u64 = 0;
+/// The ordinal of a unit's key: the one after the same-named dimension's.
+pub const UNIT_ORDINAL: u64 = DIMENSION_ORDINAL + 1;
 
 impl UnitPreimage {
     /// Build a preimage from its parts, applying the schema checks
@@ -355,7 +361,7 @@ impl UnitPreimage {
         // A unit shares package and path with a same-named dimension; the
         // ordinal keeps the two ids distinct.
         self.owner
-            .declaration_key_at(&self.qualified_declaration, 1)
+            .declaration_key_at(&self.qualified_declaration, UNIT_ORDINAL)
     }
 
     /// Refuse an unreduced rational, then a zero scale or a non-identity root

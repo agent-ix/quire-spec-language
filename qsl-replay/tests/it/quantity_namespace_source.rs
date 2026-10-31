@@ -93,3 +93,13 @@ fn same_name_unit_dimension_and_record_pass_strict_v2() {
         assert_admitted(&format!("{HEADER}{body}\n"));
     }
 }
+
+/// A record named like a dimension is used first, so it is minted before the
+/// dimension and unit nodes; it must not take their keys.
+#[trace("TC-483", "FR-091-AC-44", "FR-142-AC-13")]
+#[test]
+fn record_used_before_same_name_dimension_keeps_dimension_node() {
+    assert_admitted(&format!(
+        "{HEADER}dimension m;\nunit u : m = rational(1, 1);\nrecord m {{ sample: Boolean; }}\nfunction f using v(r: m, a: Quantity<u>): Boolean pure {{ r.sample }}\n"
+    ));
+}
