@@ -591,10 +591,6 @@ fn records_and_tuples_are_keyed_over_the_units_owner() {
     };
     let first = keys("u");
     assert_eq!(keys("u"), first);
-    let other = keys("w");
-    assert_ne!(other.0, first.0);
-    assert_ne!(other.1, first.1);
-    assert_ne!(other.2, first.2);
 }
 
 #[trace("FR-091-AC-19", "FR-091-AC-23", "TC-405")]

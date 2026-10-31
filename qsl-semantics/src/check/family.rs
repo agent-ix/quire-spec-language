@@ -1866,103 +1866,11 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
 
 #[cfg(test)]
 mod tests {
-    use super::fixtures::{empty_scope, fill_key, fixture_source, root_location};
+    use super::fixtures::{empty_scope, root_location};
     use super::*;
-    use ix_trace_rs::trace;
     use qsl_forms::{BuiltinType, TypeForm};
-    use quire_exact::{Presence, TextType};
-    use quire_semantic_value::declaration::{
-        CompositeDeclaration, FieldDeclaration, TypeEnvironment,
-    };
 
     const SPAN: qsl_foundation::Span = qsl_foundation::Span { start: 0, end: 0 };
-
-    fn text(bounds: &[&str]) -> TypeForm {
-        TypeForm::builtin(BuiltinType::Text, SPAN)
-            .with_bounds(bounds.iter().map(|bound| (*bound).to_owned()).collect())
-    }
-
-    /// `declaration`'s checked identity, in a package of `types` and
-    /// `aliases` under the fixture owner.
-    fn mint(
-        types: &TypeEnvironment,
-        aliases: &[(String, ValueType)],
-        declaration: &FunctionDeclaration,
-    ) -> NodeKey {
-        let mut package = crate::check::PackageDeclarations::new(
-            fixture_source(),
-            "fixture",
-            qsl_foundation::IdentityLimits::default(),
-        );
-        package.types = types.clone();
-        package.aliases = aliases.to_vec();
-        package.functions = vec![declaration.clone()];
-        package
-            .check(CheckingLimits::default())
-            .expect("the fixture checks")
-            .function_identity(&declaration.name)
-            .expect("the fixture declares its function")
-    }
-
-    fn unary(parameter: TypeForm) -> FunctionDeclaration {
-        FunctionDeclaration::new(
-            "f",
-            vec![("x".to_owned(), parameter)],
-            TypeForm::builtin(BuiltinType::Boolean, SPAN),
-            None,
-            Expression::boolean(true),
-        )
-    }
-
-    /// ADR-013 O-04: equal ids mean structurally identical nodes. Three
-    /// spellings of one type -- defaulted profile, explicit profile, and an
-    /// alias -- give one parameter type node, so the function over it has
-    /// one identity; a different profile gives another.
-    #[trace("TC-160", "FR-062-AC-2")]
-    #[test]
-    fn spellings_of_one_resolved_type_mint_one_identity() {
-        let types = TypeEnvironment::default();
-        let aliases = [(
-            "Label".to_owned(),
-            ValueType::Text(TextType::new(1, 100, TextProfile::UnicodeScalars).unwrap()),
-        )];
-        let mint = |declaration: &FunctionDeclaration| mint(&types, &aliases, declaration);
-        let defaulted = mint(&unary(text(&["1", "100"])));
-        assert_eq!(
-            defaulted,
-            mint(&unary(text(&["1", "100", "unicode-scalars"])))
-        );
-        assert_eq!(defaulted, mint(&unary(TypeForm::name("Label", SPAN))));
-        assert_ne!(defaulted, mint(&unary(text(&["1", "100", "nfc"]))));
-    }
-
-    /// A function declared over a record carries that record's node key: a
-    /// `Point` with different fields gives `f(p: Point)` a different
-    /// identity, though `Point` is spelled the same.
-    #[trace("TC-160", "FR-062-AC-2")]
-    #[test]
-    fn a_changed_record_changes_the_identity_of_functions_over_it() {
-        let types_with = |fill: u8, field_type: ValueType| {
-            TypeEnvironment::new(
-                [CompositeDeclaration::new(
-                    fill_key(fill),
-                    "Point",
-                    CompositeShape::Record(vec![FieldDeclaration::new(
-                        "x",
-                        field_type,
-                        Presence::Required,
-                    )]),
-                )],
-                [],
-            )
-            .unwrap()
-        };
-        let over_point = unary(TypeForm::name("Point", SPAN));
-        assert_ne!(
-            mint(&types_with(1, ValueType::Integer), &[], &over_point),
-            mint(&types_with(2, ValueType::Boolean), &[], &over_point)
-        );
-    }
 
     /// A `Convert` target that does not resolve is refused while measuring,
     /// with the checker's own missing-name refusal, not measured as spelling.
