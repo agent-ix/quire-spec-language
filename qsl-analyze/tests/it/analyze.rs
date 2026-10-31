@@ -568,7 +568,7 @@ fn provider_entry_settles_an_incomplete_binding_per_item() {
          until holds(s.phase = 2) within 10) <= 2 }\n";
     let world = World::new(&prob_world::service(claim));
     let mut binding = world.binding();
-    binding.universes.clear();
+    binding.initial[0].identity.push_str("-missing");
     let limits = AnalyzeLimits {
         accounting: prob_world::UNLIMITED,
         ..AnalyzeLimits::default()
