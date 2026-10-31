@@ -1291,6 +1291,20 @@ impl CheckedPackageEvaluation for CheckedPackage {
             };
             match supplied {
                 SuppliedValue::Value(value) => {
+                    if let (
+                        ValueType::Reference(_),
+                        Value::Reference(reference),
+                        Some(observation),
+                    ) = (&source.value_type, value, supply.observation)
+                    {
+                        if protocol_slot::foreign_to_observation(reference, observation) {
+                            return Err(protocol_slot::resolve::refused(
+                                "foreign_reference",
+                                "foreign-universe",
+                                CallAdmissionLocus::Binder(key),
+                            ));
+                        }
+                    }
                     let admitted = self
                         .graph()
                         .scope()
@@ -1328,13 +1342,7 @@ impl CheckedPackageEvaluation for CheckedPackage {
                             )));
                         };
                         if !observation.environment.references().contains(&reference) {
-                            let foreign = !observation.environment.references().is_empty()
-                                && observation
-                                    .environment
-                                    .references()
-                                    .iter()
-                                    .all(|held| held.universe() != reference.universe());
-                            if foreign {
+                            if protocol_slot::foreign_to_observation(&reference, observation) {
                                 return Err(protocol_slot::resolve::refused(
                                     "foreign_reference",
                                     "foreign-universe",

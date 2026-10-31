@@ -6,7 +6,6 @@ use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::observation::{DocumentRef, Observation};
 use quire_exact::{FieldValue, LimitKind, NodeKey, ObjectId, ObjectReference};
 use quire_semantic_value::object_closure::ObjectClosure;
-use serde_json::{json, Value as Json};
 
 macro_rules! assert_value_eq {
     ($actual:expr, $expected:expr $(, $message:literal)?) => {{
@@ -24,141 +23,9 @@ macro_rules! assert_value_eq {
 )]
 mod model;
 
-const SOURCE: &str = r#"
-language "ix:native" edition "1-draft";
-profile P = "quire.protocol.finite-global/v1";
-profile T = "quire.temporal.infinite-trace/v1";
-model M = "test/orders";
-protocol Refunds using P over (view: M::Node)
-    on each (opened: M::Tick) when (opened.ready) {
-  capture order: M::Total = view.total;
-  role Service on M::Node;
-  compensate Refund for Main::Applied as (forward: M::Receipt)
-      by Service on M::Node::step using T clock "refund-clock" {
-    capture target: M::Total = forward.total;
-    activate first (trigger: M::Flag)
-        when { not trigger.ready and target >= 0 } {
-      capture activated: Boolean = trigger.ready;
-    }
-    within [0,30]; attempts 3 of M::Attempt;
-    retry (earlier: M::Attempt, later: M::Attempt) {
-      earlier.tally < 3 and later.tally = earlier.tally + 1
-      and target >= 0 and not activated
-    };
-    commit Main::Committed;
-    recover (recovered: M::Receipt) { recovered.total = target and not activated };
-  }
-  compensate Partial for Main::Applied as (partialForward: M::Receipt)
-      by Service on M::Node::step using T clock "partial-clock" {
-    capture partialTarget: M::Total = partialForward.total;
-    activate first (partialTrigger: M::Flag)
-        when { not partialTrigger.ready and partialTarget >= 0 } {
-      capture partialActivated: Boolean = partialTrigger.ready;
-    }
-    within [0,30]; attempts 3 of M::Attempt;
-    retry (partialEarlier: M::Attempt, partialLater: M::Attempt) {
-      partialEarlier.tally < 3 and partialLater.tally = partialEarlier.tally + 1
-      and partialTarget >= 0 and not partialActivated
-    };
-    commit never;
-    recover (partialRecovered: M::Receipt) {
-      partialRecovered.total = partialTarget and not partialActivated
-    };
-  }
-  run sequence Main {
-    attempt Tried by Service on M::Node::step contracts []
-        as (attempted: M::Flag) { attempted.ready };
-    effect Applied of Main::Tried as (applied: M::Receipt) { order >= 0 };
-    commit Committed by Service as (committed: M::Flag) { committed.ready };
-  }
-  finish Closed as (closed: M::Receipt) { true };
-}
-protocol Pipeline using P over (view: M::Node) on origin {
-  role Seller on M::Node;
-  role Buyer on M::Node;
-  relationship Owns = M::owns;
-  channel Pay from Seller to Buyer carries M::Flag
-      ordering unordered delivery at-least-once capacity 2 overflow block;
-  run sequence Main {
-    send Sent via Pay as (sent: M::Flag) { true };
-    receive Got via Pay of Main::Sent as (got: M::Flag)
-        related by Owns (view, view) { true };
-    choice Decide by Buyer visible (got.ready) {
-      case yes when { got.ready } check A using P { true };
-      case no when { not got.ready } check B using P { true };
-    }
-  }
-  finish Closed as (closed: M::Flag) { true };
-}
-"#;
-
-fn document() -> Json {
-    use qsl_semantics::model::intake::meaning;
-    let bounded = |name: &str, upper: &str| {
-        let mut ty = model::declaration(name, "bounded", json!({"scalar": "integer"}));
-        ty["constraints"] = Json::Array([("min", "0"), ("max", upper)].into_iter().map(|(keyword, value)| json!({
-            "identity": model::id(&format!("{name}/constraints/{keyword}")),
-            "keyword": keyword, "operands": {"value": value},
-            "appliesTo": "ix://quire/native/Integer", "diagnosticCode": format!("bound.{keyword}"),
-            "origin": model::origin(name)
-        })).collect());
-        ty
-    };
-    let record = |name: &str, fields: &[(&str, &str)]| {
-        model::declaration(
-            name,
-            "record",
-            json!({
-                "fields": fields.iter().map(|(field, ty)| model::field(name, field, ty)).collect::<Vec<_>>()
-            }),
-        )
-    };
-    let mut node = model::declaration(
-        "Node",
-        "thing",
-        json!({
-            "identityFields": [model::id("Node/total")],
-            "fields": [model::field("Node", "total", &model::id("Total"))],
-            "operations": [model::operation("Node", "step")],
-            "relationships": [{
-                "identity": model::id("relationship/owns"), "category": "structural", "composite": false,
-            "direction": "source-to-target", "origin": {"source": {"sourceIdentity": model::id("spec"), "path": "model.qspec", "startLine": 1, "startColumn": 1}},
-                "sourceEnd": {"type": model::id("Node"), "role": "owner", "multiplicity": {"lower": 0, "upper": 1, "ordered": false, "unique": true}},
-                "targetEnd": {"type": model::id("Node"), "role": "owned", "multiplicity": {"lower": 0, "upper": 1, "ordered": false, "unique": true}}
-            }]
-        }),
-    );
-    node["operations"][0]["returns"] = json!({"typeRef": model::id("Flag"), "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true}, "nullable": false});
-    let mut bounded_kind = model::construct("bounded", meaning::VALUE_TYPE);
-    bounded_kind["construct"]["shape"] = json!("record");
-    bounded_kind["construct"]["members"] = json!({});
-    let mut doc = model::domain_document(
-        vec![
-            bounded("Total", "1000"),
-            bounded("Tally", "3"),
-            bounded("Count", "9"),
-            node,
-            record("Receipt", &[("total", &model::id("Total"))]),
-            record("Attempt", &[("tally", &model::id("Tally"))]),
-            record("Flag", &[("ready", "ix://quire/native/Boolean")]),
-            record(
-                "Tick",
-                &[
-                    ("ready", "ix://quire/native/Boolean"),
-                    ("count", &model::id("Count")),
-                ],
-            ),
-        ],
-        vec![
-            bounded_kind,
-            model::construct("thing", meaning::OBJECT_TYPE),
-            model::construct("record", meaning::RECORD_VALUE_TYPE),
-            model::construct("population", meaning::POPULATION),
-        ],
-    );
-    doc["populations"] = json!([{"identity": model::id("nodes"), "displayName": "nodes", "kind": {"module": model::BUSINESS, "name": "population"}, "members": [model::id("Node")], "extent": "closed", "origin": model::origin("nodes")}]);
-    doc
-}
+#[path = "../../../../qsl-semantics/tests/support/tc1070.rs"]
+mod tc1070;
+use tc1070::{document, SOURCE};
 
 fn fixture_with_view() -> (
     CheckedPackage,
@@ -173,7 +40,16 @@ fn fixture_from_source(
     CheckedPackage,
     qsl_semantics::model::normalize::EffectiveView,
 ) {
-    let bytes = serde_json::to_vec(&document()).unwrap();
+    fixture_from_document(source, &serde_json::to_vec(&document()).unwrap())
+}
+
+fn fixture_from_document(
+    source: &str,
+    bytes: &[u8],
+) -> (
+    CheckedPackage,
+    qsl_semantics::model::normalize::EffectiveView,
+) {
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("protocol", "acceptance", "fixture", "1"),
         "acceptance.native",
@@ -185,7 +61,7 @@ fn fixture_from_source(
     let unit = qsl_forms::build_unit(&parsed).unwrap();
     let models = qsl_semantics::model::intake::admit_unit(
         &unit.selections().models,
-        &qsl_semantics::model::intake::package_input([bytes.as_slice()]).unwrap(),
+        &qsl_semantics::model::intake::package_input([bytes]).unwrap(),
         qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
     )
     .unwrap();
@@ -1416,4 +1292,113 @@ fn crossed_template_sources_and_admission_precedence_name_the_exact_binder() {
             invalid(name),
         );
     }
+}
+
+/// TC-1071 rows 17-19 and 22: reference admission precedes every charge;
+/// the same meter remains usable after each refused or incomplete admission.
+#[test]
+#[trace("TC-1071", "FR-390-AC-6")]
+fn reference_admission_refusals_leave_the_shared_meter_available() {
+    let (package, view) = fixture_with_view();
+    let (observation, reference) = observation(&package, &view);
+    let capture = slot(&package, "Refunds", "Refunds", "captures", Some(0));
+    let ghost = ObjectReference::new(
+        reference.universe().clone(),
+        reference.object_type().clone(),
+        ObjectId::new("ghost").unwrap(),
+    );
+    let foreign_document = serde_json::to_string(&document())
+        .unwrap()
+        .replace("test/orders", "test/foreign");
+    let (_foreign_package, foreign_view) = fixture_from_document(
+        &SOURCE.replace("test/orders", "test/foreign"),
+        foreign_document.as_bytes(),
+    );
+    let foreign_key = quire_checked::key::DeclarationKey {
+        package: "test/foreign".to_owned(),
+        node: "ix://test/foreign/Node".to_owned(),
+    };
+    let foreign = ObjectReference::new(
+        foreign_view
+            .object_universe_of(&foreign_key)
+            .unwrap()
+            .identity()
+            .unwrap(),
+        foreign_view.type_identities()[&foreign_key].clone(),
+        ObjectId::new("n5").unwrap(),
+    );
+    assert_ne!(foreign.universe(), reference.universe());
+    let mut meter = Meter::new(UNLIMITED);
+    for (value, observed, code, incomplete) in [
+        (
+            ghost,
+            Some(&observation),
+            CatalogCode::new("dangling_reference", "absent-target-in-complete-population"),
+            false,
+        ),
+        (
+            foreign,
+            Some(&observation),
+            CatalogCode::new("foreign_reference", "foreign-universe"),
+            false,
+        ),
+        (
+            reference,
+            None,
+            CatalogCode::new("unavailable_observation", "missing-required-artifact"),
+            true,
+        ),
+    ] {
+        let before = meter.clone();
+        let result = package.evaluate_protocol_slot(
+            &capture,
+            &supply(
+                &package,
+                "Refunds",
+                vec![("view", Value::Reference(value))],
+                observed,
+            ),
+            &mut meter,
+        );
+        assert_eq!(
+            meter, before,
+            "reference admission leaves every charge unchanged"
+        );
+        let Err(CallFailure::Admission(failure)) = result else {
+            panic!("expected typed reference admission failure: {result:?}");
+        };
+        let record = match failure.as_ref() {
+            CallAdmissionFailure::Incomplete(record) if incomplete => record,
+            CallAdmissionFailure::Refused(record) if !incomplete => record,
+            other => panic!("wrong admission outcome: {other:?}"),
+        };
+        assert_eq!(record.code, code);
+        assert_eq!(
+            record.locus,
+            CallAdmissionLocus::Binder(binder(&package, "Refunds", "view"))
+        );
+    }
+    let retry = slot(&package, "Refunds", "Refund", "retry.relation", None);
+    let mut fresh = Meter::new(UNLIMITED);
+    let values = retry_supply(&package, 0);
+    assert_value_eq!(
+        completed(
+            package
+                .evaluate_protocol_slot(&retry, &values, &mut fresh)
+                .unwrap()
+        ),
+        Value::Boolean(true)
+    );
+    assert_value_eq!(
+        completed(
+            package
+                .evaluate_protocol_slot(&retry, &values, &mut meter)
+                .unwrap()
+        ),
+        Value::Boolean(true)
+    );
+    assert_eq!(
+        meter, fresh,
+        "only the final valid recovery call charges the shared meter"
+    );
 }

@@ -1318,3 +1318,112 @@ fn a_decision_that_calls_a_function_reads_back() {
         )
     ));
 }
+
+#[path = "../../../../qsl-semantics/tests/support/tc1070.rs"]
+mod tc1070;
+
+fn compensation_binding<'a>(node: &'a Value, name: &str) -> &'a Value {
+    &node["body"]["arguments"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|argument| argument["name"] == name)
+        .expect("compensation binding")["value"]
+}
+
+/// Finds an existing emitted subexpression below the given expression reference.
+fn expression_with_operation<'a>(
+    wire: &'a Value,
+    term: &'a Value,
+    operation: &str,
+) -> Option<&'a Value> {
+    if term["term"] != "reference" {
+        return None;
+    }
+    let body = &target(wire, term)["body"];
+    if body["operation"]["identity"] == operation {
+        return Some(term);
+    }
+    body["arguments"]
+        .as_array()?
+        .iter()
+        .find_map(|argument| expression_with_operation(wire, argument, operation))
+}
+
+/// TC-1074 rows 4-6: actual E bytes admit before either initializer edit;
+/// the reader then reports the offending binder read, retaining structural keys.
+#[test]
+#[trace("TC-1074", "FR-390-AC-12")]
+fn activation_capture_self_and_foreign_reads_are_refused_by_the_reader() {
+    let document = serde_json::to_vec(&tc1070::document()).unwrap();
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
+    let graph = assemble_with_models(tc1070::SOURCE.as_bytes(), &packages)
+        .expect("E assembles")
+        .check(CheckingLimits::default())
+        .expect("E checks");
+    let emission = emit_checked(&CheckedPackage::link(graph)).expect("E emits");
+    assert!(emission.omitted.is_empty());
+    let wire = wire(&emission);
+    let positive = read_protocol_over(&wire, &document);
+    assert!(
+        matches!(positive, Read::Verified { .. }),
+        "unchanged E admits: {positive:?}"
+    );
+    let refund = control(&wire, &["Refunds", "compensate", "Refund"]);
+    let partial = control(&wire, &["Refunds", "compensate", "Partial"]);
+    let refund_at = position(&wire, refund);
+    let self_read = expression_with_operation(
+        &wire,
+        member(compensation_binding(refund, "retry"), "relation"),
+        "quire.op.boolean.not",
+    )
+    .expect("Refund's retry contains not activated");
+    let foreign_read = expression_with_operation(
+        &wire,
+        member(compensation_binding(partial, "trigger"), "guard"),
+        "quire.op.integer.ge",
+    )
+    .expect("Partial's guard contains partialTarget >= 0");
+    for (replacement, name, read) in [
+        (self_read, "activated", "forward"),
+        (foreign_read, "partialTarget", "foreign"),
+    ] {
+        let mut mutated = wire.clone();
+        let arguments = mutated["semantic_graph"]["nodes"][refund_at]["body"]["arguments"]
+            .as_array_mut()
+            .unwrap();
+        let captures = &mut arguments
+            .iter_mut()
+            .find(|argument| argument["name"] == "activation_captures")
+            .unwrap()["value"]["members"];
+        let initializer = captures[0]["members"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|binding| binding["name"] == "initializer")
+            .unwrap();
+        initializer["value"] = replacement.clone();
+        redepend(&mut mutated, refund_at);
+        assert_eq!(mutated["name"], wire["name"]);
+        assert_eq!(
+            nodes(&mutated)
+                .iter()
+                .map(|node| &node["node_id"])
+                .collect::<Vec<_>>(),
+            nodes(&wire)
+                .iter()
+                .map(|node| &node["node_id"])
+                .collect::<Vec<_>>()
+        );
+        let refusal = assert_refused_at(
+            read_protocol_over(&mutated, &document),
+            CheckedPackageRefusalCode::MissingDeclaration,
+            Some(CheckedPackageRefusalCause::MissingName),
+            &format!("/semantic_graph/nodes/{refund_at}"),
+        );
+        assert!(
+            matches!(refusal.protocol_detail.as_deref(), Some(quire_contract_model::CheckedProtocolRefusalDetail::BinderScope { name: actual, stage, owner, read: actual_read }) if actual.as_ref() == name && stage.as_ref() == "activation-capture" && actual_read.as_ref() == read && serde_json::to_value(owner).unwrap() == refund["node_id"]),
+            "{refusal:?}"
+        );
+    }
+}
