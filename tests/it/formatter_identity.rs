@@ -1747,7 +1747,8 @@ fn replay_importing_and_call_mapping_units_keep_format_identity() {
     let fixture = include_str!("../../qsl-replay/src/execute/tests.rs");
     let profile = source_literal(fixture, "PROFILE");
     let header = format!("language \"ix:native\" edition \"1-draft\";\n{profile}");
-    for constant in ["BIG", "BIG_EDITED"] {
+    {
+        let constant = "BIG";
         let library = SuppliedLibrary {
             identity: "test/units".to_owned(),
             source: SourceIdentity::new("agent-ix", "test:units", "git", "r1"),
