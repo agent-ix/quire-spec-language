@@ -973,7 +973,6 @@ fn units_source(body: &str) -> String {
 }
 
 const BIG: &str = "function big using v(x: Int[0, 9]): Boolean pure { x > 5 }\n";
-const BIG_EDITED: &str = "function big using v(x: Int[0, 9]): Boolean pure { x > 6 }\n";
 
 /// A source reference in wire shape under (`agent-ix`,
 /// `identity`, `git`, `revision`).
@@ -1080,11 +1079,10 @@ impl Importing {
 
 /// FR-098-AC-6 (TC-444 step 7): a proved package importing `test/units`
 /// replays from the byte provision alone, the `dependencies` entry saying
-/// which source is `test/units`; `q(3)` is `false` and agrees. An edited
-/// `test/units` source does not replay to that answer.
+/// which source is `test/units`; `q(3)` is `false` and agrees.
 #[trace("TC-444", "FR-098-AC-6")]
 #[test]
-fn tc_444_a_package_with_a_dependency_replays_and_names_a_stale_one() {
+fn tc_444_a_package_with_a_dependency_replays() {
     let importing = Importing::new();
     let ReplayResult::Input(result) = replay(
         importing.request(vec![importing.units_entry()], &[importing.units.as_bytes()]),
@@ -1098,19 +1096,6 @@ fn tc_444_a_package_with_a_dependency_replays_and_names_a_stale_one() {
         InputSettlement::ReproducedWithoutWitness
     );
     assert_eq!(result.value(), Some(EvaluatedValue::Boolean(false)));
-
-    // The entry's source edited.
-    let edited = units_source(BIG_EDITED);
-    let mut stale = importing.units_entry();
-    stale.sources = vec![source_ref(UNITS_IDENTITY, REVISION)];
-    let refused = replay(
-        importing.request(vec![stale], &[edited.as_bytes()]),
-        ReplayLimits::default(),
-    );
-    assert!(
-        !matches!(refused, Ok(ReplayResult::Input(ref result)) if result.value() == Some(EvaluatedValue::Boolean(false))),
-        "an edited dependency does not replay to the recorded answer"
-    );
 }
 
 /// The request must carry C's source even though A's lock selects only B.

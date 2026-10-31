@@ -494,7 +494,9 @@ fn tc_1053_step_3_mistyped_arguments_equal_runs() {
 #[trace("TC-1053", "FR-367-AC-4")]
 #[test]
 fn tc_1053_step_3_reference_admission_equals_runs() {
-    let fixture = lookup_driver_fixture("function query using v(p: Population<M::Gadget>[1], r: M::Gadget): M::Gadget pure { lookup<M::Gadget>(p, r) absent refused }");
+    let fixture = lookup_driver_fixture(
+        "function mk using v(r: M::Gadget, a: Int[0, 9]): Int[1, 10] pure { a + 1 }",
+    );
     let unit = compile_source(fixture.source.clone(), fixture.packages.clone());
     let (objects, _, present, _) = lookup_driver_context(&fixture);
     let occurrence = the_application(&unit, "mk", ScalarOperator::Add);

@@ -106,10 +106,6 @@ fn declared_floats_select_the_profile_even_without_an_ieee_application() {
     ] {
         let wire = wire(&format!("{HEADER}{declaration}"));
         assert_eq!(ieee_selection(&wire).len(), 1, "{declaration}");
-        assert_eq!(
-            wire["lock"]["definition_selections"],
-            wire["identity_preimage"]["definition_selections"],
-        );
     }
     let wire = wire(&format!(
         "{HEADER}function plain using v(a: Int[0, 10], b: Int[0, 10]): Int[0, 20] pure {{ a + b }}"

@@ -517,7 +517,7 @@ fn the_assembler_refuses_only_the_unadmitted_import() {
         SpineLimits::default(),
     )
     .unwrap();
-    let view = view_of(&alone.package, "test/geometry").unwrap();
+    let view = view_of(&alone.package, "fixture").unwrap();
     let source = unit(&format!(
         "{}{}{H}",
         import("test/geometry", "g"),
@@ -884,7 +884,7 @@ fn an_imported_call_over_each_independent_scalar_kind_checks_and_reads() {
         ));
         let compiled = compile_as("u", &source, &input(vec![geometry]))
             .unwrap_or_else(|refusal| panic!("{kind}: {refusal}"));
-        view_of(&compiled.package, "u")
+        view_of(&compiled.package, "fixture")
             .unwrap_or_else(|refusal| panic!("{kind}: the I2 read admits p: {refusal}"));
     }
 }
