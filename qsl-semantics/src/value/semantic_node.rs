@@ -80,6 +80,22 @@ impl NodeOwner {
     ///
     /// [`InvalidNodeKey`] when the key cannot be built.
     pub fn declaration_key(&self, path: &[String]) -> Result<NodeKey, InvalidNodeKey> {
+        self.declaration_key_at(path, 0)
+    }
+
+    /// [`Self::declaration_key`] with an explicit producer `ordinal`, which
+    /// separates declarations of different kinds that share one package and
+    /// declaration path (FR-322: the ordinal is unique among nodes sharing
+    /// both).
+    ///
+    /// # Errors
+    ///
+    /// [`InvalidNodeKey`] when the key cannot be built.
+    pub fn declaration_key_at(
+        &self,
+        path: &[String],
+        ordinal: u64,
+    ) -> Result<NodeKey, InvalidNodeKey> {
         let (package, prefix): (&String, Vec<&String>) = match self {
             Self::Source(subject) | Self::Definition(subject) => {
                 (&subject.package_name, Vec::new())
@@ -93,7 +109,7 @@ impl NodeOwner {
             .map_err(|_| InvalidNodeKey::Allocation { requested })?;
         segments.extend(prefix.into_iter().cloned().map(PathSegment::Text));
         segments.extend(path.iter().cloned().map(PathSegment::Text));
-        NodeKey::new(package.clone(), segments, 0)
+        NodeKey::new(package.clone(), segments, ordinal)
     }
 
     /// The structural key of a model-owned declaration of `form`
