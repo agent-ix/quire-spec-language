@@ -13,9 +13,11 @@ relationships:
 Verify that S4 emits a checked model `terminal` declaration as a QSpec FR-476
 `temporal`/`terminal` node, that its mode and predicate enter identity while
 its name does not, that the deadlock-freedom item and its replay read it from
-the package, and that the I2 reader refuses a malformed node.
+the package, that the I2 reader refuses a malformed node, and that QSL
+settlement refuses a deadlock-freedom verdict decided under another
+declaration.
 
-Scope: FR-411-AC-1 to FR-411-AC-4.
+Scope: FR-411-AC-1 to FR-411-AC-5.
 
 ## Test Procedure
 
@@ -24,9 +26,8 @@ Use FR-126-AC-9's `Counter` unit.
 1. Compile it with `terminal Done using v on Counter when { self.value = 3 };`,
    with `terminal Halt using v on Counter any;`, and with no declaration;
    read each package back through the I2 reader.
-2. Compare `package_id`s of the `when` and `any` units, of the `when` unit
-   with `Done` renamed `Stop`, and the deadlock-freedom item's obligation
-   identity with the `when` declaration and with none.
+2. Compare `package_id`s of the `when` and `any` units, and of the `when`
+   unit with `Done` renamed `Stop`.
 3. Compile FR-128-AC-6's unit with `terminal Done using v on Counter when {
    6 mod (3 - self.value) = 0 };` and replay its deadlock-freedom
    counterexample.
@@ -45,9 +46,14 @@ backs.
   and `condition`), each with one `claim` occurrence; no terminal node
   without a declaration; the reader returns `When`, `Any` and `None`.
 - Step 2 (FR-411-AC-2): different `package_id`s for `when` and `any`; the
-  same node id and `package_id` after the rename; different deadlock-freedom
-  obligation identities.
+  same node id and `package_id` after the rename.
 - Step 3: the package holds the terminal node and the replay
   settles as FR-128-AC-6 states (FR-411-AC-3 is retired).
 - Step 4 (FR-411-AC-4): `invalid_package`/`invalid-value` at `mode`;
   `invalid_semantic_graph` at `condition`.
+- Step 5 (FR-411-AC-5): the deadlock-freedom obligation identity 3-tuple and
+  record fields are equal for the `when` and no-declaration packages; the
+  run over the no-declaration package refuses
+  `stale_dependency`/`content-mismatch` naming `v`, the `when` terminal node
+  key and `none`, with no verdict settled; the run over the `when` package
+  settles the item.
