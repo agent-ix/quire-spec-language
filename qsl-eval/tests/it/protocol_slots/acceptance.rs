@@ -1011,8 +1011,9 @@ fn both_templates_and_the_remaining_run_slots_evaluate_their_own_expressions() {
     for ready in [true, false] {
         for (member, index, expected) in [
             ("visible", 0, ready),
-            ("cases.guard", 0, ready),
-            ("cases.guard", 1, !ready),
+            // Case indexes follow the emitted UTF-8 label order: no, yes.
+            ("cases.guard", 0, !ready),
+            ("cases.guard", 1, ready),
         ] {
             assert_value_eq!(
                 completed(

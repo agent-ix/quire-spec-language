@@ -320,17 +320,19 @@ fn run_body<'a>(
             };
             Some((body, slots))
         }
-        ("choice", "cases.guard") => Some((
-            &protocol
+        ("choice", "cases.guard") => {
+            let mut cases = protocol
                 .slots
                 .choices
                 .iter()
                 .find(|choice| choice.node == node)?
                 .cases
-                .get(index?)?
-                .guard,
-            slots,
-        )),
+                .iter()
+                .collect::<Vec<_>>();
+            cases.sort_by(|left, right| left.name.as_bytes().cmp(right.name.as_bytes()));
+            let case = *cases.get(index?)?;
+            Some((&case.guard, slots))
+        }
         ("repeat", "guard") => Some((
             &protocol
                 .slots
