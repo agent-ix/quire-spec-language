@@ -16,7 +16,7 @@ use qsl_eval::simulation::protocol::{
     visible, CarriedComponent, ClaimReads, MemoryChoice, MemorySelection, ProtocolState,
     ProtocolSystem, ProtocolTransition, Ra, RestKind, StepKind,
 };
-use qsl_eval::simulation::{independent, SubjectSystem, TransitionSystem};
+use qsl_eval::simulation::{independent, TransitionSystem};
 use qsl_foundation::MemoryModelName;
 use qsl_replay::{
     MemoryBound, MemoryBoundMember, ModelCheckOutcome, ModelTraceRefusal, ModelTraceSettlement,
