@@ -115,15 +115,23 @@ declaration give the item equal identities and equal record fields.
 - Before it settles the item, QSL settlement SHALL compare the verdict's
   obligation identity 3-tuple with the request item's, and its record fields
   (kind, arguments and domains) with the request item's, field by field.
-- QSL settlement SHALL also compare, for each model alias the subject reads,
-  the `TerminalDeclaration` the run, its certificate check and its
-  counterexample replay read with the one read from the recompiled package's
-  `temporal`/`terminal` node: its presence, its mode and its terminal node
-  key, which carries the mode, the model and the predicate.
-- If the 3-tuple or a record field differs, or the declaration differs, then
-  QSL settlement SHALL refuse `stale_dependency`/`content-mismatch` naming
-  the model alias and the two declarations (by node key, or `none`), and
-  SHALL settle no verdict for the item.
+- The request writer SHALL write, on a model subject's derived
+  deadlock-freedom request item, the record field `terminals`: the terminal
+  node key of each model alias of the package, or none for a model with no
+  declaration. The node key carries the mode, the model and the predicate.
+  Every alias counts, since the deadlock classifier reads every declaration
+  of the package.
+- QSL settlement SHALL compare `terminals` with the terminal node keys of the
+  package the run and its certificate check are over, and with those of the
+  package the counterexample replay recompiled.
+- If the 3-tuple or a record field differs, or the run's or the certificate
+  check's declaration differs, then QSL settlement SHALL refuse
+  `stale_dependency`/`content-mismatch` naming the first differing model
+  alias and the two node keys (or `none`), and SHALL settle no verdict for
+  the item.
+- If the replay's recompiled declaration differs, then the replay SHALL
+  refuse `stale_dependency`/`content-mismatch` the same way, so the item
+  settles `inconclusive` with cause `replay_refused`, never `refuted`.
 
 ## Acceptance Criteria
 
@@ -133,7 +141,7 @@ declaration give the item equal identities and equal record fields.
 | FR-411-AC-2 | AC-1's `when` and `any` terminal nodes have different node ids; renaming `Done` to `Stop` keeps the node id. | Test (TC-1142) |
 | FR-411-AC-3 | **RETIRED (staleness check withdrawn).** There is no `PackageIdMismatch` refusal for a replay over an edited terminal declaration. | Test (TC-1142), retired |
 | FR-411-AC-4 | Fed to QSL's I2 reader, with `dependencies` set to the body's targets, AC-1's `when` node with `mode` `some` refuses `invalid_package`/`invalid-value`, and with `condition` the empty aggregate refuses `invalid_semantic_graph`, each at FR-476's locus. | Test (TC-1142) |
-| FR-411-AC-5 | AC-1's `when` and no-declaration packages give the deadlock-freedom item equal obligation identity 3-tuples and equal record fields. An EN-1 run and certificate check over the no-declaration package, settled for a request item written over the `when` package, refuses `stale_dependency`/`content-mismatch` naming model alias `v`, the `when` terminal node key and `none`, and settles no verdict; the same run and check over the `when` package settles the item. | Test (TC-1142) |
+| FR-411-AC-5 | AC-1's `when` and no-declaration packages give the deadlock-freedom item equal obligation identities. An EN-1 run and certificate check over the no-declaration package, for a request item written over the `when` package, refuses `stale_dependency`/`content-mismatch` naming model alias `v`, the `when` terminal node key and `none`, and so does a certificate check alone over it, and a `when` run for an item written over the no-declaration package; the same run over the `when` package settles `proved`, and over the no-declaration package for its own item `refuted`. That refutation, replayed against a package declaring `terminal Done using v on Counter when { self.value = 2 };`, under which it reproduces, settles `inconclusive` with cause `replay_refused`. | Test (TC-1142) |
 
 ## Dependencies
 

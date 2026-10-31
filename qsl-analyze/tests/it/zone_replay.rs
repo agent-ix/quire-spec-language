@@ -515,6 +515,7 @@ fn replayed(settlement: ModelTraceSettlement) -> ModelTraceReplayResult {
     ModelTraceReplayResult {
         settlement,
         hints: Vec::new(),
+        terminals: Default::default(),
     }
 }
 

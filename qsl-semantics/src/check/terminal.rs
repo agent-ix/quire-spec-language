@@ -15,6 +15,8 @@
 //! exactly when it holds for every object of that population, as an
 //! invariant's does.
 
+use std::collections::{BTreeMap, BTreeSet};
+
 use ix_trace_rs::string_edge;
 use qsl_forms::{ExpressionForm, StateClauseKind};
 use qsl_foundation::selection::ProfileSelection;
@@ -273,7 +275,92 @@ impl TerminalNode {
     }
 }
 
+/// FR-411 "Deadlock-freedom verdict join": each selected model alias's
+/// terminal node key, or `None` for a model with no declaration.
+///
+/// The node key carries the declaration's mode, model and predicate and not
+/// its written name, so two packages that differ only in a model's
+/// declaration have different keys here although the deadlock-freedom item's
+/// obligation identity is the same (ADR-013 O-09). QSL settlement compares
+/// the keys the request was written under with those a run, a certificate
+/// check or a replay read.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct TerminalKeys(BTreeMap<String, Option<NodeKey>>);
+
+impl TerminalKeys {
+    /// The first model alias, in ascending order, whose declaration differs
+    /// between `self`, the declarations a request was written under, and
+    /// `read`, the declarations a run, check or replay read. An alias one
+    /// side does not list has no declaration there.
+    pub fn mismatch(&self, read: &Self) -> Option<TerminalMismatch> {
+        let key = |keys: &Self, model: &str| keys.0.get(model).cloned().flatten();
+        self.0
+            .keys()
+            .chain(read.0.keys())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .find_map(|model| {
+                let requested = key(self, model);
+                let recompiled = key(read, model);
+                (requested != recompiled).then(|| TerminalMismatch {
+                    model: model.clone(),
+                    requested,
+                    recompiled,
+                })
+            })
+    }
+}
+
+/// A model alias whose terminal declaration differs between a request and
+/// what a run, check or replay read (FR-411 "Deadlock-freedom verdict
+/// join"): `stale_dependency`/`content-mismatch`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TerminalMismatch {
+    /// The model alias.
+    pub model: String,
+    /// The terminal node key the request was written under; `None` for no
+    /// declaration.
+    pub requested: Option<NodeKey>,
+    /// The terminal node key that was read; `None` for no declaration.
+    pub recompiled: Option<NodeKey>,
+}
+
+impl std::fmt::Display for TerminalMismatch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let key = |key: &Option<NodeKey>| {
+            key.as_ref()
+                .map_or_else(|| "none".to_owned(), ToString::to_string)
+        };
+        write!(
+            f,
+            "model {}: requested terminal {}, read terminal {}",
+            self.model,
+            key(&self.requested),
+            key(&self.recompiled)
+        )
+    }
+}
+
 impl CheckedGraph {
+    /// FR-411 "Deadlock-freedom verdict join": each selected model's
+    /// terminal node key, the node its declaration's `claim` occurrence
+    /// names, or `None` for a model with no declaration.
+    pub fn terminal_keys(&self) -> TerminalKeys {
+        TerminalKeys(
+            self.terminals()
+                .iter()
+                .map(|terminal| {
+                    (
+                        terminal.model().to_owned(),
+                        terminal
+                            .occurrence()
+                            .map(|occurrence| occurrence.node().clone()),
+                    )
+                })
+                .collect(),
+        )
+    }
+
     /// FR-411: every `temporal`/`terminal` node of this graph, ascending by
     /// key. The node, not the S3 value, says whether a model declares a
     /// terminal and in which mode.
