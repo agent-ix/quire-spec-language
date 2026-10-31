@@ -112,10 +112,18 @@ names the counter or the value that stopped the evaluation.
     such a member.
 - A `ProtocolSupply<'a> { binders, observation }`:
   - `binders`: the supplied sources, each a binder node key paired with a
-    `SuppliedValue`, which is either a value of FR-106's closed value grammar
-    (a Boolean, an integer, a record, a reference to an object of the supplied
-    observation, an option or a sequence of those) or `Unavailable(cause)`. A
-    captured value is supplied under its capture's binder key;
+    `ProtocolSuppliedValue`. It contains the existing `SuppliedValue` (a value
+    of FR-106's closed value grammar or `Unavailable(cause)`) and a sequence of
+    `ProtocolReferenceOccurrence` entries. Each occurrence pairs a path rooted
+    at that binder, expressed with
+    `quire_semantic_value::admission::PathStep`, with the exact checked
+    population declaration `NodeKey` that the caller used to construct that
+    reference. The path identifies one reference occurrence in the supplied
+    value: the root reference has an empty relative path; a reference inside a
+    record, a present option or a sequence has the corresponding field,
+    option-value or index steps. This is provenance for the value already
+    supplied, not a second value, object identity or population-membership
+    claim. A captured value is supplied under its capture's binder key;
   - `observation`: `Option<&'a quire_semantic_value::admission::ObservationAdmission<qsl_package::observation::AdmittedProtocolObservation<'a>>>`,
     using QSV's existing generic directly as FR-106 defines. Its `Admitted`
     arm carries a current-snapshot authority for the evaluated view and the
@@ -123,6 +131,60 @@ names the counter or the value that stopped the evaluation.
     result. It is required exactly when a supplied source value contains a
     reference, including a nested reference. It carries no raw snapshot,
     provision or caller-constructed `Observation`.
+  `ProtocolSuppliedValue` and `ProtocolReferenceOccurrence` are QSL
+  layer-5 supply wrappers around the existing supplied value and shared path
+  vocabulary. They SHALL NOT change `ObjectReference` identity, create a
+  second admission result/carrier, contain raw snapshot or call inputs, or
+  infer a population from object presence or from a model/type match. The
+  checked `NodeKey` in each occurrence selects the intended population even
+  when several declarations have the same normalized universe and effective
+  member type. A caller SHALL be able to construct a supplied value with the
+  existing typed `SuppliedValue` and its occurrence entries; the wrapper
+  exposes no mutable admitted authority. Admission rechecks every supplied
+  node against the selected view, so constructing an occurrence does not
+  grant it authority.
+
+The public QSL layer-5 input types SHALL be:
+
+```rust
+pub struct ProtocolReferenceOccurrence {
+    pub path: Vec<quire_semantic_value::admission::PathStep>,
+    pub population: quire_exact::NodeKey,
+}
+
+pub struct ProtocolSuppliedValue {
+    pub value: qsl_eval::value::SuppliedValue,
+    pub references: Vec<ProtocolReferenceOccurrence>,
+}
+
+pub struct ProtocolSupply<'view> {
+    pub binders: Vec<(quire_exact::NodeKey, ProtocolSuppliedValue)>,
+    pub observation: Option<&'view quire_semantic_value::admission::ObservationAdmission<
+        qsl_package::observation::AdmittedProtocolObservation<'view>,
+    >>,
+}
+```
+
+`path` is relative to the source value root and uses the shared typed field,
+option-value and index steps; `population` is the checked declaration node
+key in the selected model. An empty path therefore describes a root
+reference. `value` is the existing QSL supplied-value type; these wrappers add
+only the occurrence-to-declaration association and do not define a new value
+grammar, result type or checker. `ProtocolSupply` remains the sole supply
+accepted by `evaluate_protocol_slot`.
+
+The public entry remains the S6a protocol-slot method, with the existing
+failure and meter types:
+
+```rust
+pub fn evaluate_protocol_slot(
+    &self,
+    slot: &qsl_eval::value::ProtocolSlot,
+    supply: &qsl_eval::value::ProtocolSupply<'_>,
+    meter: &mut quire_exact::Meter,
+) -> Result<qsl_eval::value::ProtocolSlotEvaluation, quire_eval::CallFailure>;
+```
+
 - A `Meter` (FR-107).
 
 The slots of a protocol node:
@@ -416,6 +478,24 @@ check with its one record:
    argument; a payload that is not in the type's domain refuses
    `invalid_runtime_input`/`invalid-value`. Each refusal names the binder. A
    captured value is checked against its capture's declared type.
+   Admission SHALL then match the supplied value's reference occurrences to
+   that binder's `ProtocolReferenceOccurrence` entries in FR-106 value-walk
+   order. Every occurrence SHALL have exactly one entry at its exact nested
+   path. An omitted path SHALL refuse `invalid_runtime_input`/`missing-member`;
+   a repeated path SHALL refuse `invalid_runtime_input`/`duplicate-member`;
+   an entry whose path is extra or does not end at a reference SHALL refuse
+   `invalid_runtime_input`/`unknown-member`; and an entry whose declaration
+   does not name a population in the exact selected model, whose effective
+   member type does not conform to the reference target, or whose normalized
+   universe/effective target type disagrees with the declaration SHALL refuse
+   with the existing `invalid_model_binding`/`wrong-model-selection` or
+   `invalid_runtime_input`/`wrong-value-kind` respectively. A genuinely
+   foreign reference model retains `foreign_reference`/`foreign-universe`.
+   The declaration identity is checked even for an empty population, an
+   unlisted population, or a key absent from the snapshot; object presence
+   SHALL NOT supply or repair provenance. A source that is `Unavailable` has
+   no reference occurrences and SHALL have no occurrence entries. These
+   checks introduce no catalog code or cause.
 6. If a supplied value contains a reference and `observation` is none, then admission
    SHALL return `Incomplete` with `unavailable_observation`/
    `missing-required-artifact`, naming the first such binder in the source
@@ -428,8 +508,14 @@ check with its one record:
    evaluated view and the protocol's selected model using FR-106's retained
    provenance, never infer it from the objects that happen to be present.
    A wrong model retains `invalid_model_binding`/`wrong-model-selection`.
-   Admission SHALL then reuse FR-106 check 7 for exactly the populations named
-   by supplied source references and their recursive required closure. A
+   Admission SHALL use each occurrence's exact checked population declaration
+   as the initial population provenance for that supplied reference. It SHALL
+   combine those supplied-value facts with the authority's parsed object
+   fields, relationship extents, population manifest and normalized model
+   associations, and reuse FR-106 checks 7 and 8 for exactly those initial
+   populations and their recursive required closure. It SHALL NOT derive an
+   initial population from a normalized universe/effective-type pair or a
+   matching object key. A
    required incomplete population returns `Incomplete` with
    `incomplete_population`/`incomplete-scope` naming its population node and
    retaining the full FR-106 record, even if the referenced object is present.
@@ -517,6 +603,7 @@ value; check 6 does not apply to it.
 | FR-390-AC-20 | TC-1071 row 20 uses a successful immutable observation authority in the typed result; although `n5` exists, `nodes` incomplete returns `CallFailure::Admission` with category incomplete, the population locus and the unchanged QSV FR-106 record. An unrelated incomplete population does not alter the successful call. The meter is unchanged on either admission failure. | Test |
 | FR-390-AC-21 | TC-1071 row 21 supplies the `Refused` result of FR-106 current-snapshot admission for another model and returns the original `invalid_model_binding`/`wrong-model-selection` record without a foreign-reference replacement. `Incomplete` preserves its kind/record and `Fault` preserves its `InternalFault`; none supplies successful authority or charges the meter. | Test |
 | FR-390-AC-22 | A malformed slot, duplicate source, unknown source, missing source and wrong-shaped value combined with a refused observation result return the corresponding check-1-through-5 failure before the observation result is inspected. With those defects absent, a reference-valued source and no observation returns the existing unavailable-observation record; a present failed result returns its original arm. All failures leave the caller's existing meter unchanged, and TC-1071 row 22 charges only its successful evaluation. | Test |
+| FR-390-AC-23 | The TC-1070 E supply carries one exact population declaration for every root and nested reference occurrence in a supplied source, including record, present-option and sequence paths. Its `Receipt.peer: Reference<Other>` is present in the supplied forward `Receipt` despite the selected initializer reading only `forward.total`; `Other` is not a direct protocol context, while `otherNodes` and `otherSpare` both declare `Other`. A missing, duplicate, extra or non-reference path refuses with the existing cause and typed path before observation inspection; a declaration from another model refuses `invalid_model_binding`/`wrong-model-selection`; wrong normalized identity/type refuses with its existing cause. A ghost key explicitly attributed to an empty `otherSpare` marked incomplete, or to an unlisted `otherSpare`, returns `incomplete_population`/`incomplete-scope` at that declaration node even if a matching object is present in `otherNodes`; the same ghost against a complete empty `otherSpare` returns `dangling_reference`/`absent-target-in-complete-population` for `otherSpare`. An unrelated incomplete population leaves the call admissible. Completing the seeded population then exposes any dangling reference in the recursive reference-field or relationship-end closure in FR-106 walk order. Every refusal/incomplete result retains the original shared FR-106 `AdmissionRecord`, and the meter is unchanged. | Test |
 
 ## Dependencies
 
