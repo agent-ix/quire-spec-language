@@ -232,6 +232,7 @@ fn take_json(text: &str) -> Option<(Json, &str)> {
 /// The effective identity [`write_effective`] wrote at the start of `text`,
 /// and the text after it. Reads one record level per loop iteration and
 /// refuses any other shape.
+#[ix_trace_rs::string_edge]
 fn take_effective(text: &str) -> Option<(EffectiveId, &str)> {
     let mut rest = text;
     let mut originals = Vec::new();
@@ -265,6 +266,7 @@ fn take_effective(text: &str) -> Option<(EffectiveId, &str)> {
 /// The reference [`reference_enc`] wrote at the start of `text`, and the
 /// text after it: its canonical text names the members in sorted order, so
 /// the text is matched member by member.
+#[ix_trace_rs::string_edge]
 fn take_reference(text: &str) -> Option<(ObjectReference, &str)> {
     let rest = text.strip_prefix(r#"{"identity":"#)?;
     let (identity, rest) = take_json(rest)?;

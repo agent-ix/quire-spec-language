@@ -30,7 +30,7 @@ use crate::spine::{
     ClauseRunRequest, ClauseRunSelection, ClauseRunSource, ClauseRunStage, DependencyInput,
     SpineLimits, SuppliedObservation,
 };
-use qsl_semantics::model::observation::AdmissionFailure;
+use qsl_semantics::model::observation::{AdmissionFailure, AdmissionRecord};
 
 /// The observation a clause is evaluated at, of the clause's own kind. Each
 /// variant carries the exact bytes of one `quire.state.snapshot/v1` document.
@@ -220,7 +220,7 @@ pub fn evaluate_clause(request: ClauseEvaluationRequest) -> ClauseEvaluation {
         });
     }
     let supplied = match SuppliedObservation::from_document("snapshot", snapshot_bytes) {
-        Ok(supplied) if supplied.format == "quire.state.snapshot/v1" => supplied,
+        Ok(supplied) if is_snapshot_format(&supplied.format) => supplied,
         _ => return ClauseEvaluation::Refused(ClauseRefusal::UnreadableObservation),
     };
     let reference = supplied.reference.clone();
@@ -304,6 +304,21 @@ fn coded(
     })
 }
 
+/// Whether a supplied observation document declares the snapshot format. The
+/// format member is the wire spelling of the document's identity.
+#[ix_trace_rs::string_edge]
+fn is_snapshot_format(format: &str) -> bool {
+    format == "quire.state.snapshot/v1"
+}
+
+/// Whether an admission refusal is the coded `wrong_snapshot` /
+/// `wrong-observation` refusal, whose code and cause are the catalog spellings
+/// the admission record carries.
+#[ix_trace_rs::string_edge]
+fn is_wrong_observation(record: &AdmissionRecord) -> bool {
+    record.code == Code::WrongSnapshot && record.cause == "wrong-observation"
+}
+
 /// A disposition a `Clause` selection over a program source never reaches.
 fn unreachable_disposition() -> ClauseEvaluation {
     ClauseEvaluation::Refused(ClauseRefusal::Fault {
@@ -341,7 +356,7 @@ fn settle(disposition: ClauseDisposition) -> ClauseEvaluation {
             ClauseEvaluation::Refused(ClauseRefusal::MissingClause { name })
         }
         ClauseDisposition::Admit(AdmissionFailure::Refused(record)) => {
-            if record.code == Code::WrongSnapshot && record.cause == "wrong-observation" {
+            if is_wrong_observation(&record) {
                 ClauseEvaluation::Refused(ClauseRefusal::WrongObservation)
             } else {
                 coded(stage, category, record.code.as_str(), record.cause)
