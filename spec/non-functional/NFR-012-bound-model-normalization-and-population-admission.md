@@ -98,7 +98,7 @@ per-charge record, so its memory does not grow with the work it bounds.
   an effective subtype with a candidate declaration; the same ceiling keeps
   the pairing within the fact budget's scale.
 - **Hashed bytes.** The QSpec limit `hashed_bytes` is QSpec's; QSL computes
-  no hash and meters none. BLOCKED-BY STD-583 (owner: planner titan:QSL:plan).
+  no hash and meters none.
   A chain whose every type declares one field has (n+1)(n+2)/2 effective
   members and is refused beyond 1786 edges on the effective-declaration
   ceiling; those are member counts, which identity chaining does not reduce.

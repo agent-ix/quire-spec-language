@@ -592,7 +592,7 @@ undeclared node that is not model-owned carry no `owner`. The node's
 `owner` is not carried in a separate projection; the wire carries no `identity_projection`. A reader derives no node id, and reads
 no owner from the source map. The package's `sources` holds each emitted
 `SourceOwner`'s (`authority`, `identity`), and each emitted `ModelOwner`'s
-`identity` joins to a `model_root` node, the joins FR-322 checks (BLOCKED-BY QSpec #510/STD-583 (owner: planner titan:QSL:plan)).
+`identity` joins to a `model_root` node, the joins FR-322 checks.
 
 A recursion group's members carry one `recursion_group`
 label, the group label (FR-092), and the emission
@@ -803,7 +803,7 @@ fix the leaf spelling.
   `7070…`, whose bodies reference `dddd…`, and for the `bounded_domain`
   node `cccc…`; QSL asks QSpec to correct them.
 - QSpec FR-322 `owner` (QSL-638): the node member the emission writes
-  (the reader's joins over it, FR-322-AC-51 to AC-53, are BLOCKED-BY QSpec #510/STD-583 (owner: planner titan:QSL:plan)). IR's
+  (the reader's joins over it, FR-322-AC-51 to AC-53). IR's
   v2 node type carries it once IR-646 adds `owner` to
   `CheckedSemanticNodeV2`; AC-21 and AC-22 ("IR's v2 reader admits") cannot
   pass before that lands.

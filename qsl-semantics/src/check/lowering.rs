@@ -193,7 +193,7 @@ impl SemanticNode {
         }
     }
 
-    /// The node's `quire.checked-semantic-node/v1` key.
+    /// The node's structural `NodeKey`.
     pub fn key(&self) -> NodeKey {
         self.key.clone()
     }
@@ -2318,7 +2318,6 @@ impl<'a> Lowering<'a> {
         }
         // FR-359 item 3: a model record value type or event type is a
         // model-owned node, never a `composite_type`.
-        // BLOCKED-BY QSL-1282 (owner: planner titan:QSL:plan): model record declaration lookup was keyed by a digest node key; needs the structural model-record key source
         if let Some(model_record) = self.model_record_declaration(declaration.clone(), location)? {
             let key = self.model_node(&model_record, location)?;
             // The record has no checked occurrence of its own: root it at the
