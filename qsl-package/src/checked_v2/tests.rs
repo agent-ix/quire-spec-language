@@ -2350,10 +2350,9 @@ fn conformance_timed_model_vectors_keep_their_published_refusal_loci() {
                 entry["regions"][0]["start"] = json!(9000);
                 entry["regions"][0]["end"] = json!(9001);
                 candidate["source_map"].as_array_mut().unwrap().push(entry);
-                let nodes = candidate["semantic_graph"]["nodes"].as_array_mut().unwrap();
-                let at = nodes.len() - 1;
-                nodes.insert(at, second);
-                let root = &mut nodes[52];
+                let at = candidate["semantic_graph"]["nodes"].as_array().unwrap().len() - 1;
+                insert_node(&mut candidate, at, second);
+                let root = &mut candidate["semantic_graph"]["nodes"][52];
                 root["body"]["members"][3]["value"]["members"]
                     .as_array_mut()
                     .unwrap()
@@ -2428,7 +2427,8 @@ fn conformance_timed_model_vectors_keep_their_published_refusal_loci() {
                     json!("missing")
             }
             "tick-source-with-clock-place" => {
-                let place = base["semantic_graph"]["nodes"][45].clone();
+                let mut place = base["semantic_graph"]["nodes"][45].clone();
+                rebase_index_segments(&mut place, &base, &candidate);
                 candidate["semantic_graph"]["nodes"]
                     .as_array_mut()
                     .unwrap()
@@ -2700,6 +2700,68 @@ fn replace_dependency(envelope: &mut Value, position: usize, old: &Value, replac
         .expect("body reference has a matching dependency");
     *entry = replacement.clone();
     sort_dependencies(envelope, position);
+}
+
+/// Insert `node` into the envelope's graph at index `at`, moving every operand
+/// index segment (FR-322) that names a node at or past `at` up by one so each
+/// still names the node it named before the insert.
+fn insert_node(envelope: &mut Value, at: usize, mut node: Value) {
+    shift_index_segments(envelope, at);
+    shift_index_segments(&mut node, at);
+    envelope["semantic_graph"]["nodes"]
+        .as_array_mut()
+        .expect("graph nodes")
+        .insert(at, node);
+}
+
+/// Rewrite every operand index segment (FR-322) in `value`, which names a node
+/// of `from`'s graph, to the index of the node with the same key in `to`'s.
+fn rebase_index_segments(value: &mut Value, from: &Value, to: &Value) {
+    let from = WireGraph::of_package_value(from).expect("the source graph");
+    let to = WireGraph::of_package_value(to).expect("the target graph");
+    let mut pending = vec![value];
+    while let Some(value) = pending.pop() {
+        match value {
+            Value::Object(members) => {
+                if let Some(Value::Array(path)) = members.get_mut("path") {
+                    for segment in path.iter_mut() {
+                        if let Some(index) = segment.get("node").and_then(Value::as_u64) {
+                            let key = &from.keys()[index as usize];
+                            let rebased = to.index_of(key).expect("the operand is in both graphs");
+                            segment["node"] = json!(rebased);
+                        }
+                    }
+                }
+                pending.extend(members.values_mut());
+            }
+            Value::Array(items) => pending.extend(items.iter_mut()),
+            _ => {}
+        }
+    }
+}
+
+/// Move every operand index segment in `value` that names a node at or past
+/// `at` up by one.
+fn shift_index_segments(value: &mut Value, at: usize) {
+    let mut pending = vec![value];
+    while let Some(value) = pending.pop() {
+        match value {
+            Value::Object(members) => {
+                if let Some(Value::Array(path)) = members.get_mut("path") {
+                    for segment in path.iter_mut() {
+                        if let Some(index) = segment.get("node").and_then(Value::as_u64) {
+                            if index as usize >= at {
+                                segment["node"] = json!(index + 1);
+                            }
+                        }
+                    }
+                }
+                pending.extend(members.values_mut());
+            }
+            Value::Array(items) => pending.extend(items.iter_mut()),
+            _ => {}
+        }
+    }
 }
 
 /// Sort node `position`'s dependencies by structural key, each id resolved
