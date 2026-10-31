@@ -43,3 +43,16 @@ H1/H4 and charge-before-work prefix assertions are real and field-based. The
 coder's disclosures are accurate. FND-001 and FND-006 need a tracked
 follow-up (TC-137 wording or oracle; FR-049-AC-1 compile-fail and H3) before
 the ticket is truly done.
+
+## Dispositions
+
+Round 1, fix commit `628ad0e13` (head `942a5232c`).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Per-case `usage_equals_counted`; usage == counted asserted for the five counters where it holds, usage > counted for integer_bits/decimal_digits; docstring states TC-137's equality clause is not claimed for the five divergent counters. TC-137 wording amendment still untracked (see FND-006). |
+| FND-002 | fixed | Docstring rewritten to the asserted behaviour. |
+| FND-003 | fixed | Constant exit_code asserts removed; replaced by an outcome-derived `fields["operation"] == "ready"` assertion; doc says category follows from the variant. |
+| FND-004 | fixed | Unused `profile p` removed from the QSpec-TC-198 fixture. |
+| FND-005 | fixed | `package.graph().declares_function("internal_guard")` asserted before the refusal. |
+| FND-006 | still-open | QSL-1255 still Done with PR open; no follow-up ticket for the FR-049-AC-1 compile-fail fixture, TC-136 H3 or the TC-137 wording amendment. Owned by the code lead, not the coder. |
