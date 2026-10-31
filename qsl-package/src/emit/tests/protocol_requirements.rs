@@ -528,6 +528,7 @@ fn assert_activation_target_refusals(valid: &Lowered, document: &[u8]) {
     assert_eq!(activation_rows(valid).len(), 1);
     let index = protocol_clause_index(&valid.wire);
     let base = format!("/semantic_graph/nodes/{index}");
+    let graph = qsl_semantics::check::wire_id::WireGraph::of_package_value(&valid.wire).unwrap();
     for (target_path, missing_path) in [
         ("/body/arguments/7/value/members/0/target", "requirements"),
         ("/body/arguments/1/value/members/1/value/target", "trigger"),
@@ -549,7 +550,7 @@ fn assert_activation_target_refusals(valid: &Lowered, document: &[u8]) {
                 absent["path"] = json!(["absent"]);
                 *clause.pointer_mut(target_path).unwrap() = absent.clone();
                 clause["dependencies"].as_array_mut().unwrap().push(absent);
-                sort_dependencies(clause);
+                sort_dependencies(&graph, clause);
             }
             let mut evidence = CheckedPackageEvidence::new();
             for feature in valid.wire["lock"]["required_features"].as_array().unwrap() {
