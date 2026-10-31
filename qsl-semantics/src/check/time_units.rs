@@ -19,13 +19,11 @@ use quire_semantic_value::quantity::UnitTable;
 use quire_semantic_value::unit::{NominalUnitForm, UnitGraph};
 
 use crate::check::assemble::{DimensionEquivalence, EquivalenceClasses};
-use crate::check::lowering::model_declaration_key;
 use crate::check::lowering::AdmittedModel;
-use crate::check::node_key::NodeTag;
 use crate::check::temporal_clause::TimeNominalNode;
 use crate::model::domain_package::PackageUnitRecord;
 use crate::value::nominal_payload::{DimensionPayload, NominalPayload, UnitPayload};
-use crate::value::{ModelSubject, NodeOwner, OwnerSubject};
+use crate::value::semantic_node::{ModelSubject, NodeOwner, OwnerSubject};
 
 use super::refusal::TimeUnitCause;
 
@@ -381,7 +379,10 @@ pub(crate) fn package_unit_scale(
 /// The key of a model package's dimension or unit node: package the
 /// declaring model package, path `["scalar_type", form, <FCD identity>]` (the
 /// identity opaque, never split) and ordinal 0.
-fn scalar_type_key(key: &quire_checked::key::DeclarationKey, form: &str) -> Option<NodeKey> {
+pub(crate) fn scalar_type_key(
+    key: &quire_checked::key::DeclarationKey,
+    form: &str,
+) -> Option<NodeKey> {
     crate::check::declared_node_key(
         key.package.clone(),
         vec!["scalar_type".to_owned(), form.to_owned(), key.node.clone()],
@@ -417,8 +418,9 @@ fn package_unit_nominal_nodes(
         let target = target_nodes.last().map(|node| node.key.clone());
         let factor = rational(&unit.scale)?;
         let offset = rational(&unit.offset)?;
-        let key = model_declaration_key(&unit.key.package, NodeTag::Model, "unit", &unit.key.node)
-            .ok()?;
+        // The reader pins a model-owned unit's path to its wire tag and form:
+        // `[scalar_type, unit, <declaration>]`, like the `Time` dimension.
+        let key = scalar_type_key(&unit.key, "unit")?;
         let mut nodes = target_nodes;
         nodes.push(TimeNominalNode {
             key,

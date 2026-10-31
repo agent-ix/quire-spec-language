@@ -599,7 +599,7 @@ fn source_refusal(
 
 impl crate::source_map::SourceMap {
     /// Validate a complete monotonic map against immutable exact source bytes.
-    /// Both sources can be loaded with Source::read when consuming pinned artifacts.
+    /// Both sources are loaded as text under their declared identities.
     pub fn verify(
         original: Source,
         body: Source,

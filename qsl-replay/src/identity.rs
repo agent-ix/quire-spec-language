@@ -280,9 +280,13 @@ impl DeclaredDomain {
     ///     DeclaredDomain, DomainKey, DomainKind, FiniteBound, Integer, ProofBound, NodeKey,
     /// };
     ///
-    /// let parameter = crate::fixture_node(7);
+    /// let parameter = NodeKey::new(
+    ///     "package",
+    ///     vec![quire_exact::PathSegment::Text("x".to_owned())],
+    ///     0,
+    /// )?;
     /// let bound = FiniteBound::integer_range(Integer::from(0_i64), Integer::from(9_i64))?;
-    /// let domain = DomainKey::Node { node: parameter, path: Vec::new() };
+    /// let domain = DomainKey::Node { node: parameter.clone(), path: Vec::new() };
     /// let declared = DeclaredDomain::new(ProofBound::new(domain, Some(DomainKind::Integer), bound)?);
     /// assert_eq!(declared.domain(), &DomainKey::Node { node: parameter, path: Vec::new() });
     /// # Ok::<(), Box<dyn std::error::Error>>(())

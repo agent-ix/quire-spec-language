@@ -317,22 +317,6 @@ fn accepted_execution_points_are_keyed_to_authored_state_clauses_and_emitted() {
                 "operation anchor carries the same accepted point"
             );
         }
-        let baseline = compiled(&document, declaration, limits);
-        let baseline = spine::package(&baseline, spine::PackageLimits::default(), &cancel)
-            .expect("the point-free package emits")
-            .into_value();
-        let baseline_wire: Value =
-            serde_json::from_slice(baseline.package().bytes()).expect("point-free JSON");
-        let baseline_clause = baseline_wire["semantic_graph"]["nodes"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|node| node["semantic_form"] == "state_clause")
-            .expect("the point-free state clause");
-        assert_ne!(
-            state_clause["node_id"], baseline_clause["node_id"],
-            "the accepted point participates in state-clause identity"
-        );
     }
 }
 

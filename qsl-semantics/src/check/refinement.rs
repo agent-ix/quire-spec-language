@@ -816,7 +816,7 @@ impl CheckedRefinement {
     }
 
     /// The refinement node's structural id (QSpec FR-322): the declaring
-    /// package, which also owns the local concrete subject, and the
+    /// unit's package, which need not own the concrete subject, and the
     /// declaration path, the refinement's name. A declaration has one node,
     /// so its ordinal is zero.
     fn v2_identity(
@@ -824,7 +824,9 @@ impl CheckedRefinement {
         concrete_subject: &NodeKey,
     ) -> Result<NodeKey, RefinementV2EncodingError> {
         crate::check::declared_node_key(
-            concrete_subject.package().to_owned(),
+            self.package_name
+                .clone()
+                .unwrap_or_else(|| concrete_subject.package().to_owned()),
             vec![self.name.clone()],
             0,
         )
@@ -1510,6 +1512,9 @@ pub struct CheckedRefinement {
     /// selections after protocol refinement resolution.
     pub(crate) abstract_subject_node: Option<NodeKey>,
     pub(crate) concrete_subject_node: Option<NodeKey>,
+    /// The declaring unit's package: the package of the refinement's own
+    /// node (QSpec FR-322), whatever package its subjects belong to.
+    pub(crate) package_name: Option<String>,
     /// The full authored declaration region used by the V2 relation-node
     /// occurrence and source map.
     pub(crate) declaration_span: Span,
@@ -2393,6 +2398,7 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
         abstract_protocol: None,
         abstract_subject_node: None,
         concrete_subject_node: None,
+        package_name: None,
         requirement: None,
         simulation,
         simulations: Vec::new(),

@@ -3289,6 +3289,7 @@ impl PackageDeclarations {
                 .and_then(|index| model_roots.get(index).cloned())
         };
         for checked in &mut refinements {
+            checked.package_name = Some(package_name.clone());
             let abstract_model = models
                 .iter()
                 .find(|model| model.alias() == Some(checked.abstract_model()));
@@ -6687,9 +6688,47 @@ impl CheckedGraph {
             })
     }
 
+    /// QSpec FR-331: the names of the object type `owner`'s own fields in
+    /// ascending UTF-8 byte order -- its declared data attributes and the
+    /// clock-count fields its `time` declarations stand for, one sequence
+    /// (a clock-count field is one of the declaring type's own fields).
+    /// `None` when `owner` is not an admitted object type.
+    pub fn own_field_names(&self, owner: &quire_exact::EffectiveId) -> Option<Vec<String>> {
+        let mut names: Vec<String> = self
+            .scope
+            .types()
+            .object_type(owner.clone())?
+            .attributes()
+            .iter()
+            .map(|field| field.name().to_owned())
+            .collect();
+        for timed in &self.timed_models {
+            for clock in timed.clocks() {
+                if clock.owner() != *owner {
+                    continue;
+                }
+                if let Some(PlaceStep::Field(name)) = clock.path().first() {
+                    names.push(name.clone());
+                }
+            }
+        }
+        // `str`'s `Ord` is UTF-8 byte order.
+        names.sort_unstable();
+        names.dedup();
+        Some(names)
+    }
+
+    /// QSpec FR-331: the ordinal `f` of the own field `name` of `owner` in
+    /// [`Self::own_field_names`], the `f` of the member path `[0, f]`.
+    pub fn own_field_ordinal(&self, owner: &quire_exact::EffectiveId, name: &str) -> Option<usize> {
+        self.own_field_names(owner)?
+            .binary_search_by(|own| own.as_str().cmp(name))
+            .ok()
+    }
+
     /// ADR-012 §15.4: the domain key of the state field `field` of the
     /// object type `object` of the `model` alias -- the object type node
-    /// that *declares* the field, and one path element, the field's ordinal
+    /// that *declares* the field, and path `[0, f]`, `f` the field's ordinal
     /// among that type's own field declarations in ascending field-name
     /// UTF-8 byte order. `field` resolves in `object`'s effective attribute
     /// set, so an inherited field is keyed under its declaring type, never
@@ -6727,22 +6766,13 @@ impl CheckedGraph {
             .find_map(|(declaration, id)| (id == &declaring).then_some(declaration))
             .and_then(|declaration| self.object_nodes.get(declaration))
             .ok_or_else(|| fault("declaring-type-has-a-model-node"))?;
-        let mut names: Vec<&str> = types
-            .object_type(declaring)
-            .ok_or_else(|| fault("declaring-type-is-admitted"))?
-            .attributes()
-            .iter()
-            .map(quire_semantic_value::declaration::FieldDeclaration::name)
-            .collect();
-        // `str`'s `Ord` is UTF-8 byte order.
-        names.sort_unstable();
-        let position = names
-            .binary_search(&attribute.field().name())
-            .map_err(|_| fault("field-is-declared-by-its-owner"))?;
+        let position = self
+            .own_field_ordinal(&declaring, attribute.field().name())
+            .ok_or_else(|| fault("field-is-declared-by-its-owner"))?;
         let ordinal = u32::try_from(position).map_err(|_| fault("field-ordinal-past-u32"))?;
         Ok(Some(qsl_foundation::bound::DomainKey::Node {
             node: claims::wire(node.clone()),
-            path: vec![ordinal],
+            path: vec![0, ordinal],
         }))
     }
 

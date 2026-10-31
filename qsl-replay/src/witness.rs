@@ -245,10 +245,7 @@ impl Witness {
 /// name is the node's compact JSON object.
 pub(crate) fn parameter_node(name: &str) -> Option<NodeKey> {
     let json = percent_decode(name)?;
-    let value: serde_json::Value = serde_json::from_str(&json).ok()?;
-    let node = qsl_foundation::node_wire::node_key_from_json(&value);
-    qsl_foundation::node_wire::discard_node_json(value);
-    node.ok()
+    qsl_foundation::node_wire::node_key_from_text(&json).ok()
 }
 
 /// A parameter node's transcript name: its compact JSON object with every
@@ -256,10 +253,8 @@ pub(crate) fn parameter_node(name: &str) -> Option<NodeKey> {
 /// is not printable ASCII-safe percent-escaped, so distinct nodes never
 /// share a name and the entry separators never occur inside one.
 pub(crate) fn parameter_name(node: &NodeKey) -> Option<String> {
-    let value = qsl_foundation::node_wire::node_key_to_json(node).ok()?;
-    let text = serde_json::to_string(&value).ok();
-    qsl_foundation::node_wire::discard_node_json(value);
-    text.map(|json| percent_encode(&json))
+    let json = qsl_foundation::node_wire::node_key_to_text(node).ok()?;
+    Some(percent_encode(&json))
 }
 
 fn percent_encode(text: &str) -> String {
@@ -933,7 +928,9 @@ mod witness_tests {
                 format!("{x}=1;{b}=0", x = pn_(&x), b = pn_(&b)),
                 &[integer(x.clone())]
             ),
-            Err(DecodeRefusal::Unbound(b.to_string()))
+            Err(DecodeRefusal::Unbound(
+                qsl_foundation::node_wire::node_key_to_text(&b).unwrap()
+            ))
         );
         assert_eq!(
             decode(format!("{x}=1;junk", x = pn_(&x)), &[integer(x.clone())]),
@@ -1644,5 +1641,35 @@ mod envelope_tests {
                 family_payload: None,
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod deep_parameter_tests {
+    use super::*;
+
+    fn deep_key() -> quire_exact::NodeKey {
+        let mut key = quire_exact::NodeKey::new(
+            "fixture",
+            vec![quire_exact::PathSegment::Text("leaf".into())],
+            0,
+        )
+        .expect("a fixture key");
+        for ordinal in 1..=200 {
+            key = quire_exact::NodeKey::new(
+                "fixture",
+                vec![quire_exact::PathSegment::Node(key)],
+                ordinal,
+            )
+            .expect("a nested key");
+        }
+        key
+    }
+
+    #[test]
+    fn a_deeply_nested_parameter_node_round_trips_through_its_name() {
+        let key = deep_key();
+        let name = parameter_name(&key).expect("a deep key spells");
+        assert_eq!(parameter_node(&name), Some(key));
     }
 }

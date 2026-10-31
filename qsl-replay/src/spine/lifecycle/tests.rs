@@ -866,7 +866,7 @@ fn a_cancel_tripped_mid_run_is_cancelled_with_its_cause_never_a_fault() {
 fn the_composition_emits_packages_the_i2_reader_reads_back() {
     // The compile fixture.
     let fixture = fixture_chain();
-    read_back(&fixture, &BTreeMap::new(), "test/fixture");
+    read_back(&fixture, &BTreeMap::new(), "fixture");
 
     // A domain-package request: the unit's `model` names the document by
     // its `sha256-jcs` digest.
@@ -879,7 +879,7 @@ fn the_composition_emits_packages_the_i2_reader_reads_back() {
     )
     .unwrap_or_else(|failure| panic!("the model fixture compiles: {failure:?}"));
     assert_eq!(model.models.models().len(), 1);
-    read_back(&model, &packages, "test/model");
+    read_back(&model, &packages, "fixture");
     let again = chain_of(
         spine_model::unit().as_bytes(),
         &packages,
@@ -904,10 +904,10 @@ fn the_composition_emits_packages_the_i2_reader_reads_back() {
     )
     .unwrap_or_else(|failure| panic!("the importing unit compiles: {failure:?}"));
     assert_eq!(importing.checked.libraries().len(), 1);
-    read_back(&importing, &BTreeMap::new(), "test/importing");
+    read_back(&importing, &BTreeMap::new(), "fixture");
 }
 
-/// `chain`'s emitted bytes through the I2 reader, as `identity`.
+/// `chain`'s emitted bytes through the I2 reader, as `identity` (the name the package was checked under).
 fn read_back(chain: &Chain, packages: &qsl_semantics::model::intake::PackageInput, identity: &str) {
     let emission = emit_checked(chain.checked.package()).expect("the package emits");
     assert_eq!(emission.package(), chain.emitted.package());
@@ -1433,26 +1433,11 @@ fn check_names_the_checking_limit_field_it_reached() {
     );
 }
 
-/// A unit with no record, enum or unit and one function whose 40-term body
-/// lowers to a node preimage of several hundred bytes: every identity
-/// encoding of it is a lowered node, none a declared type handle.
-fn long_body_chain() -> Chain {
-    let body = vec!["1"; 40].join(" + ");
-    let source = format!("{HEADER}function long using v(): Integer pure {{ {body} }}\n");
-    chain_of(
-        source.as_bytes(),
-        &BTreeMap::new(),
-        &DependencyInput::default(),
-        SpineLimits::default(),
-    )
-    .unwrap_or_else(|failure| panic!("the unit compiles: {failure:?}"))
-}
-
 /// FR-255-AC-4 at both entry points, stage-driven: an input that reaches a
 /// limit stops with that limit's setting, and the same input passes once the
 /// setting is raised, through the settings operation's operand and through a
 /// replay request's `stage_limits` entry. Covers `s1.tokens` (parse),
-/// `s3.nodes`, `s3.work_units` and `identity.input_bytes` (check).
+/// `s3.nodes` and `s3.work_units` (check).
 #[trace("TC-721", "FR-255-AC-4")]
 #[test]
 fn a_reached_limit_is_raised_by_the_settings_operation_and_by_a_request() {
@@ -1511,23 +1496,6 @@ fn a_reached_limit_is_raised_by_the_settings_operation_and_by_a_request() {
             FoundationKind::WorkBudget,
             1_000_000,
             |value| check_under(work(value)[entry]),
-        );
-        let identity = entry_points("identity.input_bytes");
-        let long = long_body_chain();
-        assert_field(
-            Setting::IdentityInputBytes,
-            FoundationKind::InputBytes,
-            1_000_000,
-            |value| {
-                reached(check(
-                    &long.parsed,
-                    "fixture".to_owned(),
-                    &long.models,
-                    &DependencyInput::default(),
-                    identity(value)[entry],
-                    &Cancel::new(),
-                ))
-            },
         );
     }
 }

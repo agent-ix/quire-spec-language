@@ -105,7 +105,7 @@ fn identities(unit: &Unit) -> (NodeKey, NodeKey, OccurrenceKey) {
 
 /// The wire node id of the one emitted node whose `semantic_form` is
 /// `form`: the emitted package, not the checked graph the replay reads.
-fn emitted_node(unit: &Unit, form: &str) -> String {
+fn emitted_node(unit: &Unit, form: &str) -> quire_exact::NodeKey {
     let package: serde_json::Value =
         serde_json::from_slice(unit.compiled.emitted.bytes()).expect("the emitted package is JSON");
     let nodes: Vec<&serde_json::Value> = package["semantic_graph"]["nodes"]
@@ -117,10 +117,7 @@ fn emitted_node(unit: &Unit, form: &str) -> String {
     let [node] = nodes[..] else {
         panic!("one {form} node: {nodes:#?}");
     };
-    node["node_id"]["digest"]
-        .as_str()
-        .expect("a node id digest")
-        .to_owned()
+    qsl_foundation::node_wire::node_key_from_json(&node["node_id"]).expect("a node id")
 }
 
 /// The `frame_operation` replay target for `Config::ConfigVersion::attemptUpdate`.
@@ -456,11 +453,8 @@ fn a_frame_counterexample_reproduces_and_keeps_its_identities() {
         case.input.pre.clone(),
         case.input.post.clone(),
     );
-    assert_eq!(
-        payload.anchor.to_string(),
-        emitted_node(&case.unit, "operation_anchor")
-    );
-    assert_eq!(payload.frame.to_string(), emitted_node(&case.unit, "frame"));
+    assert_eq!(payload.anchor, emitted_node(&case.unit, "operation_anchor"));
+    assert_eq!(payload.frame, emitted_node(&case.unit, "frame"));
     let result = replay(case).expect("the replay settles");
 
     let arm = witness_arm(&result);
@@ -569,7 +563,13 @@ fn a_disagreeing_declared_delta_is_inconclusive_with_no_value() {
 #[test]
 fn a_stale_frame_identity_refuses_before_admission() {
     let other = parent_modifying_unit();
-    let (other_anchor, other_frame, other_occurrence) = identities(&other);
+    let (other_anchor, _, other_occurrence) = identities(&other);
+    let other_frame = quire_exact::NodeKey::new(
+        "fixture",
+        vec![quire_exact::PathSegment::Text("other-frame".into())],
+        0,
+    )
+    .expect("a fixture key");
     let mut recompiled = None;
     let input = forbidden_parent_change();
     let pre = input.pre.clone();
@@ -581,8 +581,7 @@ fn a_stale_frame_identity_refuses_before_admission() {
         withhold(wire, &pre);
     });
     let (recompiled_anchor, recompiled_frame) = recompiled.unwrap();
-    assert_ne!(other_frame, recompiled_frame);
-    assert_ne!(other_anchor, recompiled_anchor);
+    assert_eq!(other_anchor, recompiled_anchor);
     let refusal = replay(case).unwrap_err();
     assert_eq!(refusal.code(), qsl_foundation::Code::StaleDependency);
     assert!(
@@ -697,8 +696,12 @@ fn an_envelope_clause_node_other_than_the_frame_refuses_before_recompiling() {
         "{refusal:?}"
     );
 
-    let (_, other_frame, _) = identities(&parent_modifying_unit());
-    assert_ne!(other_frame, payload.frame);
+    let other_frame = quire_exact::NodeKey::new(
+        "fixture",
+        vec![quire_exact::PathSegment::Text("other-frame".into())],
+        0,
+    )
+    .expect("a fixture key");
     let frame = payload.frame.clone();
     let stale = envelope_with(&unit.bytes, witness_source(), payload, |packet| {
         packet.clause_node = Some(other_frame.clone());

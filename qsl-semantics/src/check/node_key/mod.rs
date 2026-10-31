@@ -1008,9 +1008,13 @@ impl BodyTerm {
                 ..
             }) => {
                 if let Some(member) = operation.member.as_ref() {
-                    for key in [member.declaration(), member.population()]
-                        .into_iter()
-                        .flatten()
+                    for key in [
+                        member.declaration(),
+                        member.destination_type(),
+                        member.population(),
+                    ]
+                    .into_iter()
+                    .flatten()
                     {
                         visit(&NodeRef::Admitted(key));
                     }
@@ -1158,10 +1162,12 @@ fn map_member(
         Member::RelationshipEnd {
             declaration,
             name,
+            destination_type,
             population,
         } => Member::RelationshipEnd {
             declaration: map_key(map, pending_member, declaration),
             name,
+            destination_type: map_key(map, pending_member, destination_type),
             population: population.map(|population| map_key(map, pending_member, population)),
         },
         Member::Operation { declaration, name } => Member::Operation {

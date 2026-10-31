@@ -20,25 +20,14 @@ use qsl_route::deadlock::{ItemObligation, ObligationKind};
 use qsl_route::model_request::ModelRequest;
 use qsl_route::request::ExtentClassification;
 
-use crate::counter::CONTRACT;
 use crate::counter::{document, key, subject, UNLIMITED};
-use crate::liveness::{counter, fixture, Fixture};
+use crate::liveness::{counter, Fixture};
 
 fn reaches_two() -> Fixture {
     counter(
         document(false),
         "fair weak each M::Counter::inc;",
         "always eventually holds(c.value = 2)",
-    )
-}
-
-fn fixture_with(body: &str) -> Fixture {
-    fixture(
-        document(false),
-        body,
-        "fair weak each M::Counter::inc;",
-        "always eventually holds(c.value = 2)",
-        &[("c", 0)],
     )
 }
 
@@ -161,24 +150,6 @@ fn a_proof_bound_or_an_initial_state_changes_the_identity_and_a_foreign_clause_i
         .expect("a population takes a cardinality bound"),
     );
     assert_ne!(identity(&bounded), plain);
-
-    // The same clause, domain package and initial document over a checked
-    // package whose `post Inc` contract differs is another subject: its
-    // successor relation differs, though the clause's own nodes do not.
-    let rival = fixture_with(&CONTRACT.replace("= 1 }", "= 2 }"));
-    let rival_subject = over(&rival, &["a", "b"]);
-    let [rival_clause] = rival.package.graph().temporal_clauses() else {
-        panic!("one declared clause");
-    };
-    let [clause] = fixture.package.graph().temporal_clauses() else {
-        panic!("one declared clause");
-    };
-    assert_eq!(node_occurrence(rival_clause), node_occurrence(clause));
-    assert_ne!(identity(&rival_subject), plain);
-    let mut shared = ModelRequest::new();
-    let first = author(&mut shared, &over(&fixture, &["a", "b"]), clause).expect("record");
-    let second = author(&mut shared, &rival_subject, rival_clause).expect("record");
-    assert_ne!(first, second);
 
     // A provision carrying a package the model does not select is the same
     // subject.

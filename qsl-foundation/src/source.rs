@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-001: immutable exact source bytes, integrity, the caller-named source
-//! reference and checked scalar coordinates.
+//! FR-001: immutable source text, the caller-named source reference and
+//! checked scalar coordinates.
 //!
 //! [`provenance`] holds ADR-013 O-07/O-12's occurrence key, source region
 //! and package source map.
@@ -11,7 +11,7 @@ use provenance::{RawSourceRef, SourceRegion};
 pub mod provenance;
 
 /// FR-001: the four labels a caller names a source by, separate from the
-/// path. QSL defaults none of them and derives none
+/// path or the source text. QSL defaults none of them and derives none
 /// from the path, the bytes or another label. Ordering is lexical over the
 /// four labels in declaration order.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, serde::Serialize)]
@@ -264,7 +264,7 @@ pub struct SourceReadError {
     pub path: String,
     /// FR-001: the refusal's region, under a `RawSourceRef` minted over the
     /// offered bytes, for invalid UTF-8, a BOM and NUL; `None` for an
-    /// unnamed source and a byte-budget refusal.
+    /// unnamed source or a byte-budget refusal.
     pub region: Option<SourceRegion>,
     /// Human-readable detail.
     pub message: String,
@@ -412,8 +412,8 @@ impl Source {
         Ok(Self::admit(identity, reference, path, text))
     }
 
-    /// FR-001: the `RawSourceRef` admission minted from the caller's four
-    /// labels exactly as supplied.
+    /// FR-001: the `RawSourceRef` admission minted, the caller's four labels
+    /// exactly as supplied. Every later stage names this source by it.
     pub fn reference(&self) -> &RawSourceRef {
         &self.0.reference
     }
@@ -665,11 +665,11 @@ mod tests {
         }
     }
 
-    /// FR-001-AC-10: an empty revision namespace, five bytes under a
-    /// four-byte ceiling each refuse with no region.
+    /// FR-001-AC-10: an empty revision namespace and five bytes under a
+    /// four-byte ceiling refuse with no region.
     #[trace("TC-424", "FR-001-AC-10")]
     #[test]
-    fn unnamed_over_budget_and_mismatched_refusals_have_no_region() {
+    fn unnamed_and_over_budget_refusals_have_no_region() {
         let unnamed = refusal(labels("a", "u", "", "1"), b"b", MAX_SOURCE_BYTES);
         assert_eq!(
             unnamed.cause,

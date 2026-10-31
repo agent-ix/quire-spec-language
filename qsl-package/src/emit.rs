@@ -1017,9 +1017,10 @@ fn member_value(member: &Member) -> Result<serde_json::Value, EmitRefusal> {
         Member::RelationshipEnd {
             declaration,
             name,
+            destination_type,
             population,
         } => {
-            let mut record = json!({"kind":"relationship_end","declaration":node_id(declaration),"name":name.as_str()});
+            let mut record = json!({"kind":"relationship_end","declaration":node_id(declaration),"name":name.as_str(),"destination_type":node_id(destination_type)});
             if let Some(population) = population {
                 record["population"] = json!(node_id(population));
             }
@@ -2875,11 +2876,18 @@ fn emit_package_inner(
                 } else {
                     id.clone()
                 };
+                // A model-owned node carries no declaration, so it is
+                // `generated` (like a `model_root`); every node has at
+                // least one occurrence.
                 let occurrence = CheckedOccurrence {
-                    role: CheckedOccurrenceRole::Declaration,
+                    role: if source_owned {
+                        CheckedOccurrenceRole::Declaration
+                    } else {
+                        CheckedOccurrenceRole::Generated
+                    },
                     ordinal: 0,
                 };
-                if source_owned {
+                {
                     // FR-322 follow-up: this is the timed source's region,
                     // not yet the nominal declaration's own region. Replace
                     // it when TimeNominalNode exposes that exact span.
@@ -2902,11 +2910,7 @@ fn emit_package_inner(
                     semantic_form: nominal.form.as_str().into(),
                     semantic_type,
                     dependencies: nominal.dependencies.iter().map(node_id).collect(),
-                    occurrences: if source_owned {
-                        vec![occurrence]
-                    } else {
-                        Vec::new()
-                    },
+                    occurrences: vec![occurrence],
                     recursion_group: None,
                     declaration,
                     owner: Some(owner),

@@ -105,7 +105,7 @@ pub struct Error {
 }
 
 impl Error {
-    /// Original immutable document, including its exact UTF-8 content.
+    /// Original immutable document and its exact source text.
     pub fn original(&self) -> &Source {
         &self.original
     }

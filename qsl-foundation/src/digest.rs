@@ -136,8 +136,6 @@ pub enum DigestDomain {
     PackageSemanticV2,
     /// `quire.definition.bytes/v1`.
     DefinitionBytesV1,
-    /// `quire.checked-semantic-node/v1`.
-    CheckedSemanticNodeV1,
     /// `quire.contract-ir.semantic/v1`.
     ContractIrSemanticV1,
     /// `quire.diagnostic-catalog.bytes/v1`.
@@ -171,7 +169,6 @@ impl DigestDomain {
         Self::Sha256Jcs,
         Self::PackageSemanticV2,
         Self::DefinitionBytesV1,
-        Self::CheckedSemanticNodeV1,
         Self::ContractIrSemanticV1,
         Self::DiagnosticCatalogBytesV1,
         Self::GeneratedArtifactBytesV1,
@@ -197,7 +194,6 @@ impl DigestDomain {
             Self::Sha256Jcs => "sha256-jcs",
             Self::PackageSemanticV2 => "quire.package.semantic/v2",
             Self::DefinitionBytesV1 => "quire.definition.bytes/v1",
-            Self::CheckedSemanticNodeV1 => "quire.checked-semantic-node/v1",
             Self::ContractIrSemanticV1 => "quire.contract-ir.semantic/v1",
             Self::DiagnosticCatalogBytesV1 => "quire.diagnostic-catalog.bytes/v1",
             Self::GeneratedArtifactBytesV1 => "quire.generated-artifact.bytes/v1",
@@ -220,9 +216,8 @@ impl DigestDomain {
     /// "the entry's raw bytes hash to its own declared digest", which is
     /// only ever true for a domain defined that way. A `sha256-jcs` or
     /// `.../jcs/v1` domain digests a canonicalized form this repo has no
-    /// canonicalizer for; a `quire.package.semantic/v2` or
-    /// `quire.checked-semantic-node/v1` domain digests a structural
-    /// preimage, not arbitrary bytes. Admitting one of those here would
+    /// canonicalizer for; a `quire.package.semantic/v2` domain digests a
+    /// structural preimage, not arbitrary bytes. Admitting one of those here would
     /// make every entry under it fail the raw-bytes check with a spurious
     /// `byte-digest-mismatch`, naming a staleness that does not exist for a
     /// domain the entry was never eligible to declare in the first place.
@@ -498,8 +493,9 @@ mod digest_record_tests {
     /// `DigestDomain::as_str()`'s own match arms: a wrong label there (e.g.
     /// `ModelEffectiveDeclarationV2` silently becoming `.../v3`) fails the
     /// first assertion in the loop rather than round-tripping only against
-    /// itself (#260 review item 4). Both the explicit 19-label table and
-    /// `DigestDomain::ALL` are kept exhaustive with fixed-size arrays.
+    /// itself (#260 review item 4). The explicit label table and
+    /// `DigestDomain::ALL` are exhaustive; their fixed-size arrays make a
+    /// length mismatch a compile-time error.
     /// mismatch between them is a compile error, not something this test
     /// could observe at runtime -- the per-entry label and round-trip
     /// assertions below are this test's real teeth (#260 review round 2).
@@ -515,10 +511,6 @@ mod digest_record_tests {
             (DigestDomain::Sha256Jcs, "sha256-jcs"),
             (DigestDomain::PackageSemanticV2, "quire.package.semantic/v2"),
             (DigestDomain::DefinitionBytesV1, "quire.definition.bytes/v1"),
-            (
-                DigestDomain::CheckedSemanticNodeV1,
-                "quire.checked-semantic-node/v1",
-            ),
             (
                 DigestDomain::ContractIrSemanticV1,
                 "quire.contract-ir.semantic/v1",
@@ -624,22 +616,6 @@ mod digest_record_tests {
         let err = DigestRecord::from_wire(Some("quire.not-a-real-domain/v1"), &"ab".repeat(32))
             .expect_err("an unrecognized label never admits");
         assert!(matches!(err, InvalidDigestRecord::UnknownDomain(_)));
-    }
-
-    /// C-16 adverse case, FR-201-AC-2: equal digest bytes under two
-    /// different domains are unequal records -- domain is part of
-    /// identity, not decoration, and no conversion collapses the two.
-    #[test]
-    fn a_cross_domain_digest_is_unequal_despite_equal_bytes() {
-        let same_bytes = bytes(0x42);
-        let node = DigestRecord::mint(DigestDomain::CheckedSemanticNodeV1, same_bytes);
-        let effective = DigestRecord::mint(DigestDomain::ModelEffectiveDeclarationV2, same_bytes);
-        assert_ne!(node, effective);
-        assert_eq!(
-            node.as_bytes(),
-            effective.as_bytes(),
-            "sanity: bytes really do match"
-        );
     }
 
     /// `DigestDomain::from_str`'s exact-match rule: no case folding and no

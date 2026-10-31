@@ -103,7 +103,7 @@ engine limits and the typed inspection operation's limit have their own table
 | `model.derivation_facts` | model normalization | node count | `ModelNormalizationLimitsV1` derivation_facts | 1600000 facts |
 | `model.effective_declarations` | model normalization | node count | `ModelNormalizationLimitsV1` effective_declarations | 1600000 declarations |
 | `model.dispatch_candidates` | model normalization | node count | `ModelNormalizationLimitsV1` dispatch_candidates | 1600000 candidates |
-| `model.hashed_bytes` | model normalization | input bytes | `ModelNormalizationLimitsV1` hashed_bytes (QSpec limit name, BLOCKED-BY STD-583 (owner: planner titan:QSL:plan)) | 268435456 bytes |
+| `model.hashed_bytes` | model normalization | input bytes | `ModelNormalizationLimitsV1` hashed_bytes (QSpec limit name) | 268435456 bytes |
 | `model.work_units` | model normalization | work budget | `ModelNormalizationLimitsV1` work_units | 16777216 units |
 | `model.ancestor_steps` | model normalization | edge count | `ModelNormalizationLimitsV1` ancestor_steps | 16777216 edges |
 | `model.family_steps` | model normalization | edge count | `ModelNormalizationLimitsV1` family_steps | 16777216 edges |

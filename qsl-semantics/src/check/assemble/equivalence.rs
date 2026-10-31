@@ -18,7 +18,7 @@ use super::units::{Assembled, Provisional};
 use super::{AssemblyCause, AssemblyError, AssemblyLimits};
 use crate::check::lowering::AdmittedModel;
 use crate::check::node_key::{NodeTag, SourceOwner};
-use crate::check::time_units::package_unit_scale;
+use crate::check::time_units::{package_unit_scale, scalar_type_key};
 use crate::value::unit::DimensionEquivalencePreimage;
 use quire_checked::key::DeclarationKey;
 
@@ -197,6 +197,18 @@ struct Dimension {
 }
 
 impl Dimension {
+    /// The key the equivalence relates this dimension by: a model's base
+    /// dimension is the `scalar_type` node its time units name, keyed by its
+    /// declaration; any other dimension is keyed as resolved.
+    fn node_key(&self) -> Option<NodeKey> {
+        match &self.id {
+            DimensionRef::Package(declaration) if self.base => {
+                scalar_type_key(declaration, "dimension")
+            }
+            _ => self.key.clone(),
+        }
+    }
+
     fn retained(&self) -> EquivalenceRetained {
         EquivalenceRetained::Dimension {
             name: self.label.clone(),
@@ -369,6 +381,12 @@ impl Resolved<'_> {
             self.dimensions[0].key.clone()?,
             self.dimensions[1].key.clone()?,
         ])
+    }
+
+    /// The two dimensions' keys as the emitted node relates them.
+    fn emitted_keys(&self) -> Option<[NodeKey; 2]> {
+        let [first, second] = &self.dimensions;
+        Some([first.node_key()?, second.node_key()?])
     }
 }
 
@@ -634,7 +652,7 @@ pub(super) fn assemble(
                 .into(),
             ))
         };
-        let [first, second] = resolved.keys().ok_or_else(non_canonical)?;
+        let [first, second] = resolved.emitted_keys().ok_or_else(non_canonical)?;
         let preimage = DimensionEquivalencePreimage::new(node_owner.clone(), first, second, &ratio)
             .ok_or_else(non_canonical)?;
         let [first, second] = preimage.dimensions();

@@ -302,8 +302,8 @@ fn equal_frames_share_one_node_with_an_occurrence_per_operation() {
 }
 
 /// Edits the frame node of `operation` in a copy of the emitted package by
-/// `edit`, re-keys the node, its anchor and their dependents, and recomputes
-/// the `package_id`, then reads the copy (TC-1043 step 4).
+/// `edit`, re-keys the node, its anchor and their dependents, then reads the
+/// copy (TC-1043 step 4).
 fn read_edited(emitted: &Emitted, operation: &str, edit: impl FnOnce(&mut Value)) -> Read {
     let id = emitted.frame_id(operation);
     let mut envelope = emitted.wire.clone();

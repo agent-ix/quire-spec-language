@@ -1903,7 +1903,7 @@ fn value_type_source(value_type: &quire_exact::ValueType) -> String {
         ValueType::Timestamp => "Timestamp".to_owned(),
         ValueType::Enum(_) => "Enum".to_owned(),
         ValueType::Option(inner) => format!("Option<{}>", value_type_source(inner)),
-        ValueType::Composite(key) => format!("Composite[{key:?}]"),
+        ValueType::Composite(key) => format!("Composite[{key}]"),
         ValueType::Collection(collection) => {
             let kind = match collection.kind() {
                 CollectionKind::Sequence => "Sequence",
@@ -1997,7 +1997,12 @@ mod tests {
             "Map<Text, Boolean>[1, 4]"
         );
         let unit = quire_exact::UnitId::declared(
-            quire_exact::NodeKey::new("fixture", Vec::new(), 5).expect("a key"),
+            quire_exact::NodeKey::new(
+                "fixture",
+                vec![quire_exact::PathSegment::Text("unit".into())],
+                5,
+            )
+            .expect("a key"),
         );
         let bounded = ValueType::BoundedQuantity(std::sync::Arc::new(
             quire_exact::BoundedQuantityType::new(unit.clone(), None, None)
@@ -2524,6 +2529,12 @@ mod tests {
             ValueType::Integer,
             Some(CardinalityBound::new(1, 4).unwrap()),
         ));
+        let composite = NodeKey::new(
+            "fixture",
+            vec![quire_exact::PathSegment::Text("node".into())],
+            0xab,
+        )
+        .expect("a fixture key");
         let cases = [
             (
                 ValueType::Float(FloatType::exact(IeeeWidth::Binary64)),
@@ -2546,15 +2557,8 @@ mod tests {
                 "Option<Sequence<Integer>[1, 4]>",
             ),
             (
-                ValueType::Composite(
-                    NodeKey::new(
-                        "fixture",
-                        vec![quire_exact::PathSegment::Text("node".into())],
-                        0xab,
-                    )
-                    .expect("a fixture key"),
-                ),
-                &format!("Composite[{}]", "ab".repeat(32)),
+                ValueType::Composite(composite.clone()),
+                &format!("Composite[{composite}]"),
             ),
         ];
         for (value_type, expected) in cases {
