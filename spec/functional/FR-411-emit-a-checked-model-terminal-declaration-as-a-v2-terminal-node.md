@@ -17,8 +17,6 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/ADR-013
     type: depends_on
-  - target: ix://agent-ix/quire-spec-language/FR-127
-    type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-281
     type: depends_on
 ---
@@ -109,29 +107,49 @@ declaration is in neither, so two packages that differ only in the
 declaration give the item equal identities and equal record fields.
 
 - QSL settlement SHALL own the join of a deadlock-freedom verdict over a
-  model subject to the package it settles for: the FR-281 derived-item
-  adapters of EN-1 and EN-6 and the FR-127 settlement map. CG retains only
-  opaque QSL bytes (ADR-013) and SHALL NOT be relied on for this join.
-- Before it settles the item, QSL settlement SHALL compare the verdict's
-  obligation identity 3-tuple with the request item's, and its record fields
-  (kind, arguments and domains) with the request item's, field by field.
+  model subject to the request item it answers: the FR-281 derived-item
+  adapters of EN-1 (`derived_model_item`) and EN-6 (`derived_zone_item`),
+  and the FR-128 replay refusal those adapters wrap around the
+  counterexample replay. The FR-127 and FR-235 settlement maps take no part
+  in it: they settle what the adapter hands them. CG retains only opaque QSL
+  bytes (ADR-013) and SHALL NOT be relied on for this join.
+- FR-281's public `model_item`, `protocol_item` and `zone_item` SHALL refuse
+  a derived item's run (deadlock, race or time-lock freedom) with
+  `DerivedRun`, so a derived item settles only through its derived adapter.
+- The derived adapter SHALL compare the obligation identity the caller
+  supplies with the request item it answers: the obligation's kind with the
+  request item's `item_kind` and with the item the run and its certificate
+  check decide; for EN-1, the obligation's subject identity (FR-336) with
+  the run's and the check's subjects; and the request item's claim, the
+  `model_root` anchor that is the node of the 3-tuple (QSpec FR-368), with
+  the `model_root` nodes of the packages the run and the check are over. A
+  derived item has one item per kind and subject, so the model identity
+  and the ordinal follow from the anchor and the kind. It has no arguments
+  and no domains (QSpec FR-368: unbounded, no extent bounds), so no further
+  record field is compared.
 - The request writer SHALL write, on a model subject's derived
   deadlock-freedom request item, the record field `terminals`: the terminal
   node key of each model alias of the package, or none for a model with no
   declaration. The node key carries the mode, the model and the predicate.
   Every alias counts, since the deadlock classifier reads every declaration
   of the package.
-- QSL settlement SHALL compare `terminals` with the terminal node keys of the
-  package the run and its certificate check are over, and with those of the
-  package the counterexample replay recompiled.
-- If the 3-tuple or a record field differs, or the run's or the certificate
-  check's declaration differs, then QSL settlement SHALL refuse
-  `stale_dependency`/`content-mismatch` naming the first differing model
-  alias and the two node keys (or `none`), and SHALL settle no verdict for
-  the item.
-- If the replay's recompiled declaration differs, then the replay SHALL
-  refuse `stale_dependency`/`content-mismatch` the same way, so the item
-  settles `inconclusive` with cause `replay_refused`, never `refuted`.
+- The derived adapter SHALL compare `terminals` with the terminal node keys
+  of the package the run is over and of the package its certificate check
+  is over, on EN-1 and on EN-6 alike. EN-6's run counts on its own: a
+  symmetry-reduced deadlock-freedom run settles `Proved{Reduced,
+  Uncertified}` with no certificate check (FR-160).
+- If the kind or the subject differs, then the adapter SHALL refuse
+  `OtherItem`; if no `model_root` of the run's or the check's package is the
+  request item's anchor, it SHALL refuse
+  `stale_dependency`/`content-mismatch` (`OtherAnchor`) naming the anchor;
+  if the run's or the check's declaration differs, it SHALL refuse
+  `stale_dependency`/`content-mismatch` (`TerminalDeclaration`) naming the
+  first differing model alias and the two node keys (or `none`). Each
+  refusal builds no item, so no verdict is settled.
+- If the package the counterexample replay recompiled declares other
+  terminal states than `terminals`, then the replay SHALL refuse
+  `stale_dependency`/`content-mismatch` the same way, so the item settles
+  `inconclusive` with cause `replay_refused`, never `refuted`.
 
 ## Acceptance Criteria
 
@@ -141,7 +159,8 @@ declaration give the item equal identities and equal record fields.
 | FR-411-AC-2 | AC-1's `when` and `any` terminal nodes have different node ids; renaming `Done` to `Stop` keeps the node id. | Test (TC-1142) |
 | FR-411-AC-3 | **RETIRED (staleness check withdrawn).** There is no `PackageIdMismatch` refusal for a replay over an edited terminal declaration. | Test (TC-1142), retired |
 | FR-411-AC-4 | Fed to QSL's I2 reader, with `dependencies` set to the body's targets, AC-1's `when` node with `mode` `some` refuses `invalid_package`/`invalid-value`, and with `condition` the empty aggregate refuses `invalid_semantic_graph`, each at FR-476's locus. | Test (TC-1142) |
-| FR-411-AC-5 | AC-1's `when` and no-declaration packages give the deadlock-freedom item equal obligation identities. An EN-1 run and certificate check over the no-declaration package, for a request item written over the `when` package, refuses `stale_dependency`/`content-mismatch` naming model alias `v`, the `when` terminal node key and `none`, and so does a certificate check alone over it, and a `when` run for an item written over the no-declaration package; the same run over the `when` package settles `proved`, and over the no-declaration package for its own item `refuted`. That refutation, replayed against a package declaring `terminal Done using v on Counter when { self.value = 2 };`, under which it reproduces, settles `inconclusive` with cause `replay_refused`. | Test (TC-1142) |
+| FR-411-AC-5 | AC-1's `when` and no-declaration packages give the deadlock-freedom item equal obligation identities, and the `when` package and one declaring `terminal Done using v on Counter when { self.value = 2 };` have different terminal node keys. For a request item written over the `when` package, an EN-1 run and certificate check over the no-declaration package refuse `stale_dependency`/`content-mismatch` naming model alias `v`, the `when` terminal node key and `none`; so does a certificate check alone over it, a run alone over it, and a run and check over the `value = 2` package (naming both keys); a `when` run for an item written over the no-declaration package refuses the same way. The run over the `when` package settles `proved`, and over the no-declaration package for its own item `refuted`. That refutation, replayed against the `value = 2` package, under which it reproduces, settles `inconclusive` with cause `replay_refused`. | Test (TC-1142) |
+| FR-411-AC-6 | `model_item` given the Counter's deadlock-freedom run and `zone_item` given a timed deadlock-freedom run each refuse `DerivedRun`. `derived_model_item` given the dense `Rpc`'s derived deadlock-freedom item with the Counter's obligation and run refuses `OtherAnchor` naming the item's anchor. Over FR-430-AC-3's latching timers, for the timed deadlock-freedom item written over the package with no declaration, a symmetry-reduced EN-6 run over the package declaring `terminal Done using v on M when { true };` refuses `TerminalDeclaration` naming `none` and that package's key, though the certificate request is over the written package, and so does a certificate request alone over the `when` package; the same reduced run for the item written over the `when` package settles `Proved{Reduced}`. | Test (TC-1142) |
 
 ## Dependencies
 
@@ -154,9 +173,8 @@ declaration give the item equal identities and equal record fields.
   [FR-128](FR-128-replay-a-model-counterexample.md) (deadlock counterexample
   replay).
 - ADR-013 O-09 (the obligation identity 3-tuple and its record fields),
-  [FR-127](FR-127-settle-a-model-check-verdict-as-a-terminal-record.md) (the
-  settlement map), [FR-281](FR-281-analyze-claims-with-in-process-engines.md)
-  (the derived-item adapters).
+  [FR-281](FR-281-analyze-claims-with-in-process-engines.md) (the
+  derived-item adapters and the public item adapters).
 
 ## References
 

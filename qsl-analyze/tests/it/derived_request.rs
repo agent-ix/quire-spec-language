@@ -11,7 +11,7 @@
 use ix_trace_rs::trace;
 use qsl_analyze::analyze::{
     analyze, derived_model_item, derived_zone_item, AnalyzeItem, AnalyzeRecord,
-    DerivedItemMismatch, Engines, TimedItem,
+    DerivedItemMismatch, Engines, ModelItem, TimedItem,
 };
 use qsl_analyze::model_check::manifest as en1;
 use qsl_analyze::model_check::SubjectContext;
@@ -21,6 +21,7 @@ use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::simulation::model::{PopulationUniverse, TimedSystem, DEFAULT_MAX_CLOCKS};
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::source::provenance::OccurrenceKey;
+use qsl_foundation::RequestIndex;
 use qsl_package::CheckedPackage;
 use qsl_replay::node_occurrence;
 use qsl_replay::SubjectIdentity;
@@ -174,7 +175,10 @@ fn root_claim(package: &CheckedPackage, identity: &str) -> OccurrenceKey {
 
 /// The request over `subject` holding the item of its package's first
 /// temporal clause, finished with its derived items under `limits`.
-fn written(subject: &ModelSubject<'_>, limits: &DerivedLimits) -> WrittenRequest<SubjectIdentity> {
+pub(crate) fn written(
+    subject: &ModelSubject<'_>,
+    limits: &DerivedLimits,
+) -> WrittenRequest<SubjectIdentity> {
     let context = SubjectContext::new(subject).expect("the package emits");
     let mut request = ModelRequest::new();
     let clause = &subject.simulation.package.graph().temporal_clauses()[0];
@@ -519,11 +523,22 @@ fn a_derived_items_caller_limits_reach_en6() {
 }
 
 /// The Counter unit with `terminal Done` at 3 and one clause over it.
-fn counter_body(terminal: &str) -> String {
+pub(crate) fn counter_body(terminal: &str) -> String {
     format!(
         "{CONTRACT}{terminal}{}",
         clause_text("Bounded", "", "always holds(c.value <= 3)")
     )
+}
+
+/// `item`, a deadlock-freedom run over a [`counter_body`] package, settled
+/// through `derived_model_item` as the derived item [`written`] writes over
+/// its subject, at request index 1: the one public path for a derived item
+/// (FR-411).
+pub(crate) fn derived_deadlock(item: ModelItem<'_>) -> AnalyzeItem<'_> {
+    let written = written(&item.request.subject, &DerivedLimits::default());
+    let derived = &written.items()[1];
+    let obligation = written.obligation(derived.index()).expect("its obligation");
+    derived_model_item(derived, obligation, item).expect("the deadlock-freedom run")
 }
 
 const DONE: &str = "terminal Done using v on M when { self.value = 3 };\n";
@@ -680,6 +695,12 @@ fn a_deadlock_verdict_is_joined_on_the_terminal_declaration() {
 
     let (model, when_key) = terminal_key(when.model_item().request.subject.simulation.package);
     assert!(when_key.is_some(), "the `when` package declares a terminal");
+    let (_, at_two_key) = terminal_key(at_two.model_item().request.subject.simulation.package);
+    assert!(
+        at_two_key.is_some(),
+        "the other `when` package declares one"
+    );
+    assert_ne!(at_two_key, when_key, "two `when` predicates, two keys");
     assert_eq!(
         terminal_key(none.model_item().request.subject.simulation.package),
         (model.clone(), None)
@@ -702,7 +723,20 @@ fn a_deadlock_verdict_is_joined_on_the_terminal_declaration() {
     mixed.certificate = none.request();
     assert_eq!(
         derived_model_item(when_item, when_obligation, mixed).err(),
-        refused(&when_key, &None)
+        refused(&when_key, &None),
+        "the certificate's package alone differs"
+    );
+    let mut run_only = none.model_item();
+    run_only.certificate = when.request();
+    assert_eq!(
+        derived_model_item(when_item, when_obligation, run_only).err(),
+        refused(&when_key, &None),
+        "the run's package alone differs"
+    );
+    assert_eq!(
+        derived_model_item(when_item, when_obligation, at_two.model_item()).err(),
+        refused(&when_key, &at_two_key),
+        "another `when` predicate"
     );
     assert_eq!(
         derived_model_item(none_item, none_obligation, when.model_item()).err(),
@@ -737,6 +771,157 @@ fn a_deadlock_verdict_is_joined_on_the_terminal_declaration() {
     assert_eq!(
         run(derived_model_item(none_item, none_obligation, stale).expect("the run")),
         TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(Code::StaleDependency))
+    );
+}
+
+/// FR-411-AC-6: the public `model_item` and `zone_item` refuse a derived
+/// item's run, so a deadlock-freedom verdict settles only through the
+/// derived adapters that join it; and `derived_model_item` refuses a run
+/// whose package holds no `model_root` at the request item's anchor, the
+/// node of its obligation identity, here the dense `Rpc`'s item handed the
+/// Counter's obligation and run.
+#[trace("TC-1142", "FR-411-AC-6")]
+#[test]
+fn a_derived_run_settles_only_through_its_joined_adapter() {
+    let counter = case(&counter_body(""), &[0]);
+    let index = RequestIndex::new(1);
+    assert_eq!(
+        qsl_analyze::analyze::model_item(index, counter.model_item()).err(),
+        Some(DerivedItemMismatch::DerivedRun { index })
+    );
+    let timers = crate::zone_dense::latching_timers("");
+    let subject = ModelSubject {
+        simulation: timers.request(),
+        proof_bounds: Vec::new(),
+    };
+    let written_timers = written(&subject, &DerivedLimits::default());
+    let system = timers.system();
+    let timed = TimedSystem::new(&system, "M").expect("a timed subject");
+    let reductions = Reductions::default();
+    let derived = &written_timers.items()[1];
+    let zone = TimedItem {
+        request: ZoneCheckRequest {
+            subject: &timed,
+            item: ZoneCheckItem::DeadlockFreedom,
+            obligation: written_timers
+                .obligation(derived.index())
+                .expect("its obligation")
+                .clone(),
+            limits: ZoneCheckLimits::default(),
+            reductions: &reductions,
+        },
+        certificate: ZoneCertificateRequest {
+            simulation: timers.request(),
+            model: "M",
+            max_clocks: DEFAULT_MAX_CLOCKS,
+            item: CertifiedItem::DeadlockFreedom,
+        },
+        certificate_limits: CertificateCheckLimits::default(),
+        replay: Box::new(|_| panic!("refused before it runs")),
+    };
+    assert_eq!(
+        qsl_analyze::analyze::zone_item(index, zone).err(),
+        Some(DerivedItemMismatch::DerivedRun { index })
+    );
+
+    let item = counter.model_item();
+    let written_counter = written(&item.request.subject, &DerivedLimits::default());
+    let obligation = written_counter
+        .obligation(written_counter.items()[1].index())
+        .expect("its obligation");
+    let rpc_world = rpc(4);
+    let rpc_written = written(
+        &ModelSubject {
+            simulation: rpc_world.request(),
+            proof_bounds: Vec::new(),
+        },
+        &DerivedLimits::default(),
+    );
+    let rpc_derived = &rpc_written.items()[1];
+    assert_eq!(rpc_derived.item_kind(), Some(ItemKind::DeadlockFreedom));
+    assert_eq!(
+        derived_model_item(rpc_derived, obligation, item).err(),
+        Some(DerivedItemMismatch::OtherAnchor {
+            index: rpc_derived.index(),
+            occurrence: rpc_derived.occurrence().clone(),
+        })
+    );
+}
+
+/// FR-411-AC-6 over EN-6: the latching timers' timed deadlock-freedom item,
+/// written over the package with no declaration (which deadlocks), is
+/// refused when its symmetry-reduced run, which settles
+/// `Proved{Reduced, Uncertified}` with no certificate check, is over a
+/// package declaring `terminal Done using v on M when { true };`, though
+/// the certificate request matches; and when only the certificate request
+/// is over that package. Written over the `when` package, the same reduced
+/// run settles `Proved{Reduced}`.
+#[trace("TC-1142", "FR-411-AC-6")]
+#[test]
+fn a_timed_deadlock_verdict_is_joined_on_the_run_and_check_packages() {
+    let none = crate::zone_dense::latching_timers("");
+    let when = crate::zone_dense::latching_timers("terminal Done using v on M when { true };\n");
+    let write = |world: &World| {
+        written(
+            &ModelSubject {
+                simulation: world.request(),
+                proof_bounds: Vec::new(),
+            },
+            &DerivedLimits::default(),
+        )
+    };
+    let (written_none, written_when) = (write(&none), write(&when));
+    let none_system = none.system();
+    let when_system = when.system();
+    let none_timed = TimedSystem::new(&none_system, "M").expect("a timed subject");
+    let when_timed = TimedSystem::new(&when_system, "M").expect("a timed subject");
+    let swap = crate::zone_dense::swap();
+    let plain = Reductions::default();
+    let (alias, when_key) = terminal_key(&when.package);
+    let refused = Some(DerivedItemMismatch::TerminalDeclaration {
+        index: written_none.items()[1].index(),
+        mismatch: TerminalMismatch {
+            model: alias,
+            requested: None,
+            recompiled: when_key,
+        },
+    });
+    let deadlock = |written, check, timed, reductions| {
+        zone_run(
+            check,
+            written,
+            timed,
+            reductions,
+            DEFAULT_MAX_CLOCKS,
+            1,
+            ZoneCheckItem::DeadlockFreedom,
+            CertifiedItem::DeadlockFreedom,
+        )
+    };
+    assert_eq!(
+        deadlock(&written_none, &none, &when_timed, &swap).err(),
+        refused,
+        "the reduced run's package alone differs"
+    );
+    assert_eq!(
+        deadlock(&written_none, &when, &none_timed, &plain).err(),
+        refused,
+        "the certificate's package alone differs"
+    );
+    let records = analyzed(vec![
+        deadlock(&written_when, &when, &when_timed, &swap).expect("the reduced run")
+    ]);
+    let (backend, value) = settled(&records[0]);
+    assert_eq!(backend, en6::BACKEND_ID);
+    assert!(
+        matches!(
+            value,
+            TerminalValue::Proved {
+                basis: qsl_replay::ProofBasis::Reduced { .. },
+                ..
+            }
+        ),
+        "{value:?}"
     );
 }
 

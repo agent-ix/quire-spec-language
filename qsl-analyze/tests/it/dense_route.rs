@@ -241,7 +241,7 @@ fn analyzed(world: &World) -> qsl_analyze::analyze::AnalyzeRecord {
     };
     let mut records = analyze(
         &Engines::qsl().expect("the layer-A manifests register"),
-        vec![zone_item(qsl_foundation::RequestIndex::new(0), item)],
+        vec![zone_item(qsl_foundation::RequestIndex::new(0), item).expect("a clause run")],
         &quire_exact::Cancel::new(),
     );
     assert_eq!(records.len(), 1);

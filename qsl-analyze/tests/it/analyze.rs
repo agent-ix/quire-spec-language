@@ -38,6 +38,7 @@ use quire_semantic_value::catalog::Category;
 
 use crate::closure_certificate::world;
 use crate::counter::{CONTRACT, UNLIMITED};
+use crate::derived_request::{counter_body, derived_deadlock};
 use crate::model_settle::{case, replay};
 
 fn index(at: usize) -> RequestIndex {
@@ -74,10 +75,10 @@ fn value(record: &qsl_analyze::analyze::AnalyzeRecord) -> TerminalValue {
 #[trace("TC-762")]
 #[test]
 fn a_broken_item_settles_refuted_and_its_counterexample_replays() {
-    let case = case(CONTRACT, &[0]);
+    let case = case(&counter_body(""), &[0]);
     let record = only(analyze(
         &en1(),
-        vec![model_item(index(0), case.model_item())],
+        vec![derived_deadlock(case.model_item())],
         &Cancel::new(),
     ));
     assert_eq!(value(&record), TerminalValue::Refuted);
@@ -113,18 +114,19 @@ fn a_broken_item_settles_refuted_and_its_counterexample_replays() {
 fn three_items_give_three_records_the_first_unsupported_naming_its_kind() {
     let world = world("", &[("c", 0)]);
     let invariant = world.invariant("always holds(c.value <= 3)", |v| Some(v <= 3));
-    let broken = case(CONTRACT, &[0]);
+    let broken = case(&counter_body(""), &[0]);
     let records = analyze(
         &Engines::qsl().expect("the layer-A manifests register"),
         vec![
             AnalyzeItem::unadapted(index(0), Capability::Monitorability),
+            derived_deadlock(broken.model_item()),
             model_item(
-                index(1),
+                index(2),
                 invariant.model_item(&world, ModelCheckLimits::default(), |_| {
                     panic!("a proved item replays nothing")
                 }),
-            ),
-            model_item(index(2), broken.model_item()),
+            )
+            .expect("a clause run"),
         ],
         &Cancel::new(),
     );
@@ -146,14 +148,14 @@ fn three_items_give_three_records_the_first_unsupported_naming_its_kind() {
         diagnostic.payload,
         Payload::Kind(Capability::Monitorability)
     );
+    assert_eq!(value(&records[1]), TerminalValue::Refuted);
     assert_eq!(
-        value(&records[1]),
+        value(&records[2]),
         TerminalValue::Proved {
             basis: ProofBasis::Exhaustive,
             certification: Certification::Certified,
         }
     );
-    assert_eq!(value(&records[2]), TerminalValue::Refuted);
 }
 
 /// FR-281-AC-4 (TC-763 steps 1 and 2), over EN-1: the invariant item proves
@@ -168,7 +170,7 @@ fn a_rejected_certificate_is_inconclusive_and_an_accepted_one_certified() {
     let run = |item| {
         only(analyze(
             &en1(),
-            vec![model_item(index(0), item)],
+            vec![model_item(index(0), item).expect("a clause run")],
             &Cancel::new(),
         ))
     };
@@ -223,7 +225,7 @@ fn a_proof_with_no_core_checker_settles_proved_uncertified_naming_its_engine() {
         item.request.reductions.partial_order = reduced;
         only(analyze(
             &en1(),
-            vec![model_item(index(0), item)],
+            vec![model_item(index(0), item).expect("a clause run")],
             &Cancel::new(),
         ))
     };
@@ -255,7 +257,7 @@ fn a_proof_with_no_core_checker_settles_proved_uncertified_naming_its_engine() {
 #[trace("TC-763", "FR-281-AC-5")]
 #[test]
 fn a_counterexample_settles_refuted_only_when_replay_reproduces_it() {
-    let case = case(CONTRACT, &[0]);
+    let case = case(&counter_body(""), &[0]);
     let run = |alter: fn(&mut TemporalCounterexample)| {
         let mut item = case.model_item();
         item.replay = Box::new(|payload| {
@@ -265,7 +267,7 @@ fn a_counterexample_settles_refuted_only_when_replay_reproduces_it() {
         });
         value(&only(analyze(
             &en1(),
-            vec![model_item(index(0), item)],
+            vec![derived_deadlock(item)],
             &Cancel::new(),
         )))
     };
@@ -300,7 +302,8 @@ fn a_state_budget_of_one_and_a_cancelled_handle_settle_incomplete() {
         vec![model_item(
             index(0),
             invariant.model_item(&world, limits, |_| panic!("nothing to replay")),
-        )],
+        )
+        .expect("a clause run")],
         &Cancel::new(),
     ));
     assert_eq!(
@@ -320,7 +323,8 @@ fn a_state_budget_of_one_and_a_cancelled_handle_settle_incomplete() {
             invariant.model_item(&world, ModelCheckLimits::default(), |_| {
                 panic!("a cancelled item runs nothing")
             }),
-        )],
+        )
+        .expect("a clause run")],
         &cancel,
     );
     assert_eq!(
@@ -344,7 +348,7 @@ fn a_state_budget_of_one_and_a_cancelled_handle_settle_incomplete() {
 #[trace("TC-763", "FR-281-AC-7")]
 #[test]
 fn an_undefined_claim_evaluation_settles_refuted_with_the_undefined_cause() {
-    let case = case(CONTRACT, &[0]);
+    let case = case(&counter_body(""), &[0]);
     let mut counterexample = crate::model_settle::counterexample(&case);
     let last = counterexample.prefix.len() as u64;
     let evaluation = UndefinedEvaluation {
@@ -398,7 +402,7 @@ fn an_undefined_claim_evaluation_settles_refuted_with_the_undefined_cause() {
     });
     let mut record = only(analyze(
         &en1(),
-        vec![model_item(index(0), item)],
+        vec![derived_deadlock(item)],
         &Cancel::new(),
     ));
     assert_eq!(value(&record), TerminalValue::Refuted);
