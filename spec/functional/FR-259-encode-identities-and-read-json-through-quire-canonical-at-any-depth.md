@@ -41,18 +41,18 @@ delivers (ADR-030 D-8 O-6):
 
 ## Behavior
 
-1. **Fixed-depth identities.** QSL SHALL encode every identity preimage whose
-   depth is fixed by its schema (node keys, compound-unit identities, the
-   checked and v2 package identities, type and enum preimages) through
-   `quire-canonical`'s fixed-depth serde path.
-2. **Input-depth identities and keys.** QSL SHALL encode every identity or
-   key over data whose depth follows the input (a simulation state key, a
-   replay value, an intake document) through the event API or
-   the tree encoder, driven from an explicit heap stack.
-3. **Identity byte limit.** QSL SHALL encode each identity under the
-   caller's `identity.input_bytes` limit (FR-255), a byte limit only, used
-   as given with no ceiling. Its published default is 16777216 bytes. A site whose stage applies its own byte budget SHALL pass
-   that budget instead.
+1. **Structural identities.** QSL SHALL NOT encode a node key or any
+   other structural identity to a canonical byte string: a node key is the
+   triple `{package, path, ordinal}` and an obligation identity the triple
+   (node, model, ordinal), each compared, ordered and hashed componentwise.
+2. **Input-depth keys.** QSL SHALL encode every key over data whose depth
+   follows the input (a simulation state key, a replay value, an intake
+   document) through the event API or the tree encoder, driven from an
+   explicit heap stack.
+3. **Key byte limit.** QSL SHALL encode each such key under the caller's
+   `identity.input_bytes` limit (FR-255), a byte limit only, used as given
+   with no ceiling. Its published default is 16777216 bytes. A site whose
+   stage applies its own byte budget SHALL pass that budget instead.
 4. **Byte error mapping.** When `quire-canonical` returns its byte error for
    an encoding or a read, QSL SHALL report the calling stage's input-bytes
    limit outcome, naming its bound, the count reached and its setting
@@ -68,17 +68,17 @@ delivers (ADR-030 D-8 O-6):
    in bytes of the reservation that failed. It is not a limit: it names no
    bound and no setting. QSL SHALL NOT report it as a limit outcome, a
    malformed value or malformed input. Domain package intake (FR-056)
-   and package identity (FR-261) report this one outcome.
+   and the observation document reader (FR-261) report this one outcome.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-259-AC-1 | The checked package identity, every node key and the v2 package identity of a package holding a 100,000-term sum, minted on a thread with a 512 KiB stack under limits raised to fit it, equal those minted from the same source on a thread with an 8 MiB stack. | Test (TC-728) |
-| FR-259-AC-2 | A declaration whose preimage is longer than `s3.input_bytes` stops with `stage_limit_exceeded`/`input-bytes-exceeded` naming that bound, the preimage length and setting `s3.input_bytes`. When `quire-canonical` returns its byte error to an identity site of FR-260 or FR-261, the site reports its own input-bytes limit with its setting, and no malformed-input cause. | Test (TC-728) |
+| FR-259-AC-1 | The checked package of a package holding a 100,000-term sum, checked on a thread with a 512 KiB stack under limits raised to fit it, and its node keys, whose paths nest an operand's node key in each sum node's key, are equal to those checked from the same source on a thread with an 8 MiB stack. | Test (TC-728) |
+| FR-259-AC-2 | **RETIRED (node preimages are deleted).** A node key is the structural triple `{package, path, ordinal}`; no declaration preimage is encoded, so no identity byte limit applies to one. | Test (TC-728), retired |
 | FR-259-AC-3 | On a thread with a 512 KiB stack, the simulation state key QSL mints for a 100,000-long recursive list value, and the intake read of a 100,000-deep JSON package document, each equal the result on a thread with an 8 MiB stack, and the state key equals the RFC 8785 text of the state. | Test (TC-729) |
-| FR-259-AC-4 | The deepest JSON array or object nesting is the same at both depths of each pair below, measured over every node preimage of the checked package (node keys, type nodes and nominal preimages) and over the emitted v2 package's identity preimage: each FR-258 expression form at 4 and at 63 levels; a parameter typed with 4 and with 100 nested `Option`s; a chain of 4 and of 30 records. Compound-unit ids, enum declaration and member preimages and the checked package identity are flat term, member or selection lists whose depth is fixed by their types, so no source depth reaches them. | Test (TC-728) |
-| FR-259-AC-5 | An allocation failure of 4096 requested bytes from `quire-canonical`'s reader or encoder refuses `resource_exhausted`/`allocation-failed` carrying 4096 at domain package intake and at package identity, and none of them reports a limit, a malformed value or malformed input. | Test (TC-729) |
+| FR-259-AC-4 | **RETIRED (node preimages are deleted).** A node key is the structural triple `{package, path, ordinal}`; there is no node or package identity preimage whose nesting depth could be measured. | Test (TC-728), retired |
+| FR-259-AC-5 | An allocation failure of 4096 requested bytes from `quire-canonical`'s reader or encoder refuses `resource_exhausted`/`allocation-failed` carrying 4096 at domain package intake and at the observation document reader, and none of them reports a limit, a malformed value or malformed input. | Test (TC-729) |
 
 ## Dependencies
 
@@ -86,8 +86,8 @@ delivers (ADR-030 D-8 O-6):
   D-4.4, D-4.5 and D-8 overlap item O-6.
 - [ADR-013](../decisions/ADR-013-canonical-type-package-conversion-ownership.md)
   §2: one RFC 8785 implementation.
-- [FR-258](FR-258-check-and-lower-expressions-at-any-depth.md) makes every
-  node-key preimage fixed-depth.
+- [FR-258](FR-258-check-and-lower-expressions-at-any-depth.md) checks and
+  lowers expressions at any depth.
 - [FR-255](FR-255-name-the-setting-that-raises-a-reached-limit.md) names the
   settings a byte error reports.
 

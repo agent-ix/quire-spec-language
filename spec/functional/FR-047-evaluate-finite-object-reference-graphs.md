@@ -144,7 +144,7 @@ merely to reuse `reaches`.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-047-AC-1 | Exact anchor, snapshot, optional window, record occurrence, model, universe, object type, object identifier and edge type survive parse, binding, checking, admission, emission and independent reading as the complete storage identity; equal strings or shapes cannot substitute and domain-package/observation identities do not become compiled-artifact references. | Test (TC-129) |
+| FR-047-AC-1 | **RETIRED (the storage identity chain is deleted).** No anchor, snapshot, window or occurrence chain is carried as an object's identity; object identity is AC-2 and AC-3, and reachability over a relationship end is FR-365. | Test (TC-129), retired |
 | FR-047-AC-2 | A duplicate full storage key and a dangling target in a declared-complete domain refuse, while the same logical object at distinct pre/post anchors is admitted. Foreign models/universes, wrong object/reference types, wrong edge owners and incompatible endpoint observations refuse; missing membership or closure is incomplete and cannot turn an absent offered target into a dangling or empty-graph judgment. | Test (TC-129, TC-131) |
 | FR-047-AC-3 | Dereference reads only the exact qualified environment and retains pre/post observation identity across the returned object. | Test (TC-129) |
 | FR-047-AC-4 | Reachability is positive-length: an isolated `a` does not reach itself, while `a→a` and `a→b→a` do; a direct or longer path to another target succeeds. | Test (TC-130) |

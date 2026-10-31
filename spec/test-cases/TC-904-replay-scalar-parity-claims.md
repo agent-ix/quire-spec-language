@@ -14,7 +14,7 @@ Verify `qsl_replay::replay_operator_parity` and
 `qsl_replay::replay_value_parity` settle each outcome of FR-357, and that the
 predicate arm of `replay` still refuses a non-`Boolean` function.
 
-Scope: FR-357-AC-1 to FR-357-AC-11, FR-357-AC-13 to FR-357-AC-15, FR-357-AC-19, FR-357-AC-20.
+Scope: FR-357-AC-1 to FR-357-AC-11, FR-357-AC-13, FR-357-AC-19, FR-357-AC-20.
 
 ## Test Procedure
 
@@ -58,10 +58,9 @@ Claim identity, at both levels:
     unknown node; compare `claim()` with the claim sent. Compare claims that
     differ in one member.
 13. (Retired with FR-357-AC-14.)
-14. Build the obligation identity of an operator claim over graph-child
-    operands (one with a negative range bound), over inline literals, and
-    over two inline literals at different positions of one application, and
-    compare by equality with the preimage tuple written out by hand.
+14. Build the obligation identity of a parity claim with `parity_obligation`
+    and compare it with the structural triple of the claim's node, no model
+    and its occurrence ordinal (FR-357-AC-19).
 15. (Retired with FR-357-AC-16.)
 16. (Retired with FR-357-AC-17.)
 17. (Retired with FR-357-AC-18.)
@@ -95,7 +94,7 @@ the encoded-size bound.
 - Step 12: `claim()` equals the claim sent on every outcome; a claim differing
   in any member is not equal; an agreement's claim is the report's.
 - Step 13: none; retired.
-- Step 14: the built identities equal the hand-written tuples; the two literals differ.
+- Step 14: the built identity equals `ObligationIdentity::new(node, None, ordinal)`.
 - Step 15: none; retired.
 - Step 16: none; retired.
 - Step 17: none; retired.
