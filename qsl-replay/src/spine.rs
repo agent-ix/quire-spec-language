@@ -713,6 +713,29 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
         );
     }
     match &first.cause {
+        CheckCause::StateGraph(cause) => {
+            if let qsl_semantics::check::StateGraphCause::Predicate { cause, .. } = &**cause {
+                if let CheckCause::LayerEquality {
+                    selected, required, ..
+                } = &**cause
+                {
+                    message = format!(
+                        "{message}: equality under `{}` requires `{}`",
+                        selected.identity(),
+                        required.identity()
+                    );
+                }
+            }
+        }
+        CheckCause::LayerEquality {
+            selected, required, ..
+        } => {
+            message = format!(
+                "{message}: equality under `{}` requires `{}`",
+                selected.identity(),
+                required.identity()
+            );
+        }
         CheckCause::MissingName(name)
         | CheckCause::AmbiguousName { name, .. }
         | CheckCause::ClockReadingCall(name) => {
