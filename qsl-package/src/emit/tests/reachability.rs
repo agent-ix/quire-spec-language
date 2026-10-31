@@ -267,6 +267,7 @@ fn a_reachability_over_an_end_lowers_to_one_reaches_application() {
             "kind": "relationship_end",
             "declaration": relation["node_id"],
             "name": "next",
+            "destination_type": model_node(wire, "Order")["node_id"],
         })
     );
     let arguments = body["arguments"].as_array().unwrap();
@@ -328,6 +329,7 @@ fn the_member_names_the_role_over_the_relationship() {
                 "kind": "relationship_end",
                 "declaration": relation["node_id"],
                 "name": role,
+                "destination_type": model_node(&lowered.wire, "Order")["node_id"],
             })
         );
         assert!(lowered.verified, "{role}: the reader admits the package");
@@ -354,6 +356,7 @@ fn a_multi_valued_destination_lowers_to_the_same_node_shape() {
                 "kind": "relationship_end",
                 "declaration": relation["node_id"],
                 "name": role,
+                "destination_type": model_node(&lowered.wire, "Order")["node_id"],
             })
         );
         assert_eq!(reach["body"]["arguments"].as_array().unwrap().len(), 2);

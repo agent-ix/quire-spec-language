@@ -3759,6 +3759,7 @@ impl<'a> Lowering<'a> {
                 reference,
                 relationship,
                 role,
+                near,
                 ..
             } => {
                 // FR-093/FR-094 (FR-363): one `quire.op.model.navigate` over
@@ -3766,6 +3767,8 @@ impl<'a> Lowering<'a> {
                 // node and the role. No `deref` node: the reference is the
                 // argument.
                 let declaration = self.model_node(relationship, node.location())?;
+                let destination_type =
+                    self.destination_type_node(relationship, *near, node.location())?;
                 let name = Identifier::new(role.clone()).map_err(|_| {
                     refuse(
                         node.location(),
@@ -3779,6 +3782,7 @@ impl<'a> Lowering<'a> {
                             member: Some(Member::RelationshipEnd {
                                 declaration,
                                 name,
+                                destination_type,
                                 population: None,
                             }),
                             ..plain("quire.op.model.navigate")
@@ -4245,6 +4249,8 @@ impl<'a> Lowering<'a> {
                 // node and the role. No `deref` node: the references are
                 // the arguments.
                 let declaration = self.model_node(relationship, node.location())?;
+                let destination_type =
+                    self.destination_type_node(relationship, *near, node.location())?;
                 let name = Identifier::new(role.clone()).map_err(|_| {
                     refuse(
                         node.location(),
@@ -4276,6 +4282,7 @@ impl<'a> Lowering<'a> {
                             member: Some(Member::RelationshipEnd {
                                 declaration,
                                 name,
+                                destination_type,
                                 population,
                             }),
                             ..plain("quire.op.model.reaches")

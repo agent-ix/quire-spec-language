@@ -168,6 +168,7 @@ fn a_bounded_walked_population_is_linked_as_one_anonymous_node() {
             "kind": "relationship_end",
             "declaration": relation["node_id"],
             "name": "next",
+            "destination_type": model_node(wire, "Order")["node_id"],
             "population": population["node_id"],
         })
     );
@@ -212,6 +213,7 @@ fn an_unbounded_walked_population_keeps_its_member_and_node_identity() {
             "kind": "relationship_end",
             "declaration": relation["node_id"],
             "name": "next",
+            "destination_type": model_node(&unbounded.wire, "Order")["node_id"],
         })
     );
     assert_eq!(population_nodes(&unbounded.wire), Vec::<&Value>::new());
