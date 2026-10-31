@@ -2350,7 +2350,11 @@ fn conformance_timed_model_vectors_keep_their_published_refusal_loci() {
                 entry["regions"][0]["start"] = json!(9000);
                 entry["regions"][0]["end"] = json!(9001);
                 candidate["source_map"].as_array_mut().unwrap().push(entry);
-                let at = candidate["semantic_graph"]["nodes"].as_array().unwrap().len() - 1;
+                let at = candidate["semantic_graph"]["nodes"]
+                    .as_array()
+                    .unwrap()
+                    .len()
+                    - 1;
                 insert_node(&mut candidate, at, second);
                 let root = &mut candidate["semantic_graph"]["nodes"][52];
                 root["body"]["members"][3]["value"]["members"]
@@ -3258,6 +3262,54 @@ fn conformance_fr340_frame_mutations_match_qspec_vectors() {
         "conformance: {} frame-body mutation vectors matched",
         mutations.len()
     );
+}
+
+/// QSpec FR-322 "Operand index segments" (TC-233 NI-01..NI-12): each
+/// `node-index-vectors.json` case, its RFC 6902 patch applied to the base
+/// package, is refused `malformed_wire` by QSL's whole I2 read. A schema-invalid
+/// operand (a nested `node_id` object, a negative, string or fractional
+/// index, an extra or missing member, an index segment in a
+/// `dependency_reference` node) is refused within the patched member; an
+/// index past the graph, a self-naming node and two nodes naming each other
+/// are refused with no cause at the published `node` member.
+#[trace("TC-233", "FR-322-AC-278", "FR-322-AC-279", "FR-322-AC-280")]
+#[test]
+fn conformance_node_index_vectors_refuse_malformed_wire() {
+    let Some((directory, _)) = qspec_v2_fixtures() else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
+    let proposals = directory.parent().expect("the proposal directory");
+    let vectors = read_fixture(&proposals.join("node-index-vectors.json"));
+    let fixture = vectors["base"].as_str().expect("a base fixture");
+    let base = read_fixture(&proposals.join(fixture));
+    let cases = vectors["cases"].as_array().expect("NI cases");
+    assert!(!cases.is_empty(), "node-index-vectors.json holds no case");
+    for case in cases {
+        let id = &case["id"];
+        assert_eq!(case["expected"], "malformed_wire", "{id}: expected outcome");
+        let locus = case["locus"].as_str().expect("a locus");
+        let mut package = base.clone();
+        apply_json_patch(&mut package, &case["patch"]);
+        let (_, outcome) = read_fixture_wire(fixture, &package);
+        match case["schema"].as_str().expect("a schema outcome") {
+            "invalid" => {
+                let Read::Refused(V2ReadRefusal::Envelope { refusal, .. }) = &outcome else {
+                    panic!("{id}: expected malformed_wire, got {outcome:?}");
+                };
+                assert_eq!(
+                    refusal.code,
+                    CheckedPackageRefusalCode::MalformedWire,
+                    "{id}"
+                );
+                let pointer = locus_pointer(refusal).unwrap_or_default();
+                assert!(pointer.starts_with(locus), "{id}: {pointer} within {locus}");
+            }
+            "valid" => assert_timed_refusal(&outcome, "malformed_wire", None, locus, id),
+            other => panic!("{id}: unknown schema outcome {other}"),
+        }
+    }
+    println!("conformance: {} node-index vectors refused", cases.len());
 }
 
 /// A `model`/`object_type` node (FR-340's `creates`/`deletes`-eligible, and
