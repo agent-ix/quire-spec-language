@@ -701,7 +701,9 @@ below hold for every TP-2 item.
   in a line feed. A conjunction of one term prints as that term and of no
   term as `true`; a disjunction of one term prints as that term and of no
   term as `false`. The printer simplifies no other term: a literal read in
-  place of a constant stays in the term it stands in.
+  place of a constant stays in the term it stands in. The assertions of a
+  refinement query are the one exception: they are printed in the normal
+  form of Refinement queries.
 - Equal inputs SHALL give byte-equal scripts or equal refusals.
 
 ### Size limits
@@ -921,6 +923,56 @@ and the rule fails or is undefined. A script that negates the disjunction of
 the applications' rules, or that asserts the applications' negated rules
 conjunctively or beside a separate disjunction of the applications, is not
 this encoding.
+
+**Normal form.** Every assertion of a refinement query SHALL be printed in
+the *normal form* below, the term built above rewritten bottom up. The
+script then holds none of the shapes these rules remove: a double negation, a
+Boolean constant operand, a nested or repeated `and` or `or` operand, an
+implication, an equality with a Boolean constant, a relation of a sum ending
+in a literal with a literal, a foldable `ite`, and arithmetic over literals.
+It is not a claim that a solver's rewriter finds nothing else to simplify;
+an arithmetic atom keeps the orientation it is built in. Each rule preserves
+the term's meaning:
+
+1. `(not c)` of a Boolean constant `c` is its complement, and `(not (not t))`
+   is `t`;
+2. `(=> l r)` is `(or (not l) r)`;
+3. a conjunction or disjunction splices the operands of each nested
+   conjunction or disjunction (respectively) in its place, drops its neutral
+   constant (`true` for `and`, `false` for `or`) and every operand equal to an
+   earlier one, and is its absorbing constant when it has that constant as an
+   operand; with one operand left it is that operand, with none its neutral
+   constant;
+4. `(= t c)` and `(= c t)` for a Boolean constant `c` are `t` when `c` is
+   `true` and `(not t)` when it is `false`; an equality or ordering
+   comparison of two integer literals, or of a term with itself, is its
+   truth value;
+5. an equality or comparison of a sum whose last summand is a literal `k`
+   with a literal `d`, on either side, is the same relation of the sum
+   without `k` and the literal `d - k` on the same sides
+   (`(<= 0 (+ x 1))` is `(<= (- 1) x)`);
+6. `(ite c t e)` is `t` or `e` for a constant `c`, `t` when `t` and `e` are
+   equal, and for a Boolean constant branch the connective it stands for:
+   `(or c e)` for `t` `true`, `(and (not c) e)` for `t` `false`,
+   `(or (not c) t)` for `e` `true`, `(and c t)` for `e` `false`;
+7. a sum splices its nested sums and gathers its integer literals into one
+   last summand, dropped when it is 0, and a sum of two summands whose
+   second is `(- u)` is `(- t u)`; a difference, negation or product of literals is the
+   literal; `(- t 0)` is `t`, `(- 0 t)` is `(- t)`, `(- t t)` is 0,
+   `(- (- t))` is `t`, `(* 1 t)` is `t`, `(* 0 t)` is 0 and
+   `(* n (* m t))` is `(* nm t)`;
+8. `(mod m n)` of two literals, `n` not 0, is SMT-LIB's Euclidean remainder,
+   the `r` with `0 <= r < |n|` and `m - r` a multiple of `n`
+   (`(mod (- 7) 3)` is 2, `(mod 7 (- 3))` is 1).
+
+The shapes stated above are the terms before
+normalisation: with `D` printed `true`, `(or (not D) (not R))` is printed
+`(not R)`; an application's conjunction is flattened, its last conjunct
+`(not R_a)` when `D_a` is `true`; the initial-state predicate prints a
+`false` Boolean field as `(not s0.<object>.<field>)` and an absent optional
+field as `(not s0.<object>.<field>.present)`; and a disjunct equal
+to an earlier one is printed once, at its first place, by rule 3. FR-314's
+byte comparison is over the normalised script.
 
 **Refusals.** `encode_refinement_query` SHALL check the refusals 1 to 5 below
 first, in this order, then the table's rows 4 to 14 and 16 as they apply to the
@@ -1365,9 +1417,10 @@ impl HyperProductIdentity {
 | FR-315-AC-50 | **RETIRED (the MonitorTable equality check was a golden-comparison ceremony).** | Test (TC-1264), retired |
 | FR-315-AC-51 | Over ADR-023 §8's secure vault, `encode_hyper_query` for `NonInterference` at instance `v` over a subject that FR-120 does not admit (its `snapshots` provision lacks the document an initial state names) is refused `SmtEncodingRefusal` `subject-binding` at alias `V`, with no script, after `HyperProductIdentity::of` has returned the identity for the same request. | Test (TC-1190) |
 | FR-315-AC-52 | Inside `qsl-replay`'s tests, with the request's checked clause altered after S3 so that an object parameter names an alias the clause does not hold, `HyperProductIdentity::of` returns `Fault` and not `instance-binding`, and `encode_hyper_query` returns the same `Fault`. | Test (TC-1190) |
-| FR-315-AC-53 | Layout of the refinement queries, over `CasRefinesCounter2` (TC-900 "Fixtures"), `CasRefinesCounter` whose population `counters` holds two counters `c0` < `c1`, with `AaInv` and `CasInv` on `Impl::Counter` and `AbsInv` on `Spec::Counter`. The `Initial` query's commands are, in order and by their head: `set-logic`; the `declare-const` commands of `s0` in (object key, field name) order; the range assertions of `s0`; one assertion of the initial-state predicate; four hypothesis assertions in the order `AaInv` on `c0`, `AaInv` on `c1`, `CasInv` on `c0`, `CasInv` on `c1` (no `AbsInv`, no key-derived order: renaming `AaInv` to `ZzInv` moves its two assertions after `CasInv`'s, and writing the clauses in the opposite source order changes no byte); one assertion `(or (not D) (not R))`; `check-sat`. The `Step { row }` query of the `commitA` row has the same four hypothesis assertions on `s0` only, no initial-state predicate, `s0`'s then `s1`'s declarations and ranges, and exactly one row assertion that is a two-way disjunction, the application on `c0` first and the application on `c1` second, each `(and <precondition clauses> <postcondition part> <frame equalities> (or (not D_a) (not R_a)))` with `R_a` the abstract `inc` transition over `map(s0)`, `map(s1)` for that application's receiver. Encoding either twice gives byte-equal scripts. Each of these mutations changes the script and makes FR-314's checker reject a certificate carried over the unmutated query `QueryMismatch`: the two applications swapped, `AaInv` and `CasInv` swapped, a hypothesis asserted on `s1`, the initial-state predicate added to a `Step` query, a `Step` query with one assertion per application, and the row assertion printed as `(not (or R_c0 R_c1))` beside a separate disjunction of the applications. | Test (TC-900) |
+| FR-315-AC-53 | Layout of the refinement queries, over `CasRefinesCounter2` (TC-900 "Fixtures"), `CasRefinesCounter` whose population `counters` holds two counters `c0` < `c1`, with `AaInv` and `CasInv` on `Impl::Counter` and `AbsInv` on `Spec::Counter`. The `Initial` query's commands are, in order and by their head: `set-logic`; the `declare-const` commands of `s0` in (object key, field name) order; the range assertions of `s0`; one assertion of the initial-state predicate; four hypothesis assertions in the order `AaInv` on `c0`, `AaInv` on `c1`, `CasInv` on `c0`, `CasInv` on `c1` (no `AbsInv`, no key-derived order: renaming `AaInv` to `ZzInv` moves its two assertions after `CasInv`'s, and writing the clauses in the opposite source order changes no byte); one assertion `(not R)` (the normal form of `(or (not D) (not R))` with `D` `true`); `check-sat`. The `Step { row }` query of the `commitA` row has the same four hypothesis assertions on `s0` only, no initial-state predicate, `s0`'s then `s1`'s declarations and ranges, and exactly one row assertion that is a two-way disjunction, the application on `c0` first and the application on `c1` second, each the normal form of `(and <precondition clauses> <postcondition part> <frame equalities> (or (not D_a) (not R_a)))`, a flat conjunction ending in `(not R_a)` because `D_a` is `true`, with `R_a` the abstract `inc` transition over `map(s0)`, `map(s1)` for that application's receiver. Encoding either twice gives byte-equal scripts. Each of these mutations changes the script and makes FR-314's checker reject a certificate carried over the unmutated query `QueryMismatch`: the two applications swapped, `AaInv` and `CasInv` swapped, a hypothesis asserted on `s1`, the initial-state predicate added to a `Step` query, a `Step` query with one assertion per application, and the row assertion printed as `(not (or R_c0 R_c1))` beside a separate disjunction of the applications. | Test (TC-900) |
 | FR-315-AC-54 | Multi-application row against the negated rule, over the lost-update variant of `CasRefinesCounter2` and its `commitB` `Step` query, solved with the exact `s0` tuples of TC-900 "Fixtures" added as equalities: with `c0` at `(0, 0, f, 0, f)` (`commitB` not enabled) and `c1` at `(1, 0, f, 0, t)` (FR-146-AC-4) the script is satisfiable, because the row assertion is a disjunction over the applications and `c1`'s application is enabled and breaks the rule; with `c0` at `(0, 0, f, 0, t)` (`commitB` enabled, the rule holds) and `c1` at `(0, 0, f, 0, f)` (not enabled), the script is unsatisfiable, because an application that obeys the rule adds no model and no other application's rule is negated. A row with one application prints the row assertion as that application's conjunction alone, and a row with no application prints `(assert false)`. Two applications whose conjunctions print equal are printed once, at the first place. | Test (TC-900) |
 | FR-315-AC-55 | Refusals of the refinement queries, each case refusing as stated: (1) with the refinement's concrete model given a hidden field or a history field, a direct call of `Initial` and of every `Step` refuses `out-of-fragment` naming the field (FR-314 never reaches this case, since FR-146 writes no record); (2) an `any` row refuses `refinement-any-row` naming the row, before a `_` argument of the same row is read; (3) a protocol-subject refinement's delivery, `memory` or `activate` row refuses `out-of-fragment` naming the row; (4) `RingIsQueue`'s `put` and `take` rows (FR-136-AC-1, `binds_result: true`) refuse `out-of-fragment` naming the row; (5) a row with two `_` arguments refuses `refinement-open-argument` naming the first in written order. For cases 2 to 5 FR-314 settles that row's part `Unencodable` and every record of the refinement `Uncertified`. For case 6, a mapping row outside `QF_LIA` refuses `Initial` `out-of-fragment` naming the row, and FR-314 rejects the base part `QueryMismatch` at `Base`, never `Unencodable`. | Test (TC-900) |
+| FR-315-AC-56 | Normal form of the refinement queries, over `CasRefinesCounter` and `CasRefinesCounter2`: no assertion of the `Initial` query or of any `Step { row }` query, the `commitB` row (row 1) included, holds a double negation, a Boolean constant as an operand of `not`, `and`, `or` or `=`, an `and` (`or`) operand of an `and` (`or`), a repeated `and` or `or` operand, an implication, a comparison of two literals or of a term with itself, a sum with a nested sum or two literal summands, an `ite` with a constant condition, equal branches or a constant branch, or a difference of two literals. `CasRefinesCounter`'s `Initial` query asserts `(and (not s0.c.busyA) (not s0.c.busyB) (= s0.c.tmpA 0) (= s0.c.tmpB 0) (= s0.c.value 0))` and then `(not (= s0.c.value 0))`; its `commitA` row assertion is the flat conjunction `(and s0.c.busyA (= s0.c.tmpA s0.c.value) (< s0.c.value 2) (or (not (< s0.c.tmpA 2)) (and (<= (- 1) s0.c.tmpA) (<= s0.c.tmpA 1))) (< s0.c.tmpA 2) (= s1.c.value (+ s0.c.tmpA 1)) (not s1.c.busyA) (= s1.c.busyB s0.c.busyB) (= s1.c.tmpA s0.c.tmpA) (= s1.c.tmpB s0.c.tmpB) (not (and (< s0.c.value 2) (or (not (< s0.c.value 2)) (and (<= (- 1) s0.c.value) (<= s0.c.value 1))) (= s1.c.value (+ s0.c.value 1)))))`. Each rule of Normal form, applied to a term that it rewrites, gives the term it states. | Test (TC-900) |
 
 ## Dependencies
 
