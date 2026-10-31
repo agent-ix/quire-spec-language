@@ -832,10 +832,6 @@ pub enum ProtocolConstruct {
     /// scope" reads them at the repeat's entry only (a `repeat` is
     /// pre-test), so they have no node form (STD-539).
     RepeatDecisionReadsBody,
-    /// A `choice` or `repeat` `visible` entry that is a literal or a bare
-    /// binder read: QSpec FR-466 "A `visible` entry is an `expression` node"
-    /// settles that neither has an encoding (STD-539).
-    VisibleEntryNotAnExpression,
     /// A `repeat` whose body steps only through a nested `repeat` whose
     /// guard cannot be false (QSL FR-218-AC-32). QSpec #481 (STD-539) now
     /// supports it (FR-464 "Nested `repeat` rule"); it is withheld until
@@ -867,9 +863,7 @@ impl ProtocolConstruct {
             Self::Relationships => "QSL-1141",
             Self::ChannelKeyNotEqualityStable => "QSL-1142",
             Self::NoOwnerModel => "QSL-1147",
-            Self::PostTestRepeat
-            | Self::RepeatDecisionReadsBody
-            | Self::VisibleEntryNotAnExpression => "STD-539",
+            Self::PostTestRepeat | Self::RepeatDecisionReadsBody => "STD-539",
             Self::RepeatStepsThroughRepeat => "IR-1100",
         }
     }

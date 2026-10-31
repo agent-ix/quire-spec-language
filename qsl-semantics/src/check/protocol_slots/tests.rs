@@ -5,7 +5,7 @@
 use ix_trace_rs::trace;
 use qsl_forms::build_unit;
 use qsl_foundation::SourceIdentity;
-use quire_exact::ValueType;
+use quire_exact::{IllTypedCause, ValueType};
 use quire_semantic_value::checking::CheckingLimits;
 
 use super::{CheckedLifetime, CheckedTerminalMember};
@@ -126,6 +126,89 @@ fn terminal(graph: &CheckedGraph) -> &CheckedTerminalMember {
         .expect("the checked protocol")
         .slots
         .terminal
+}
+
+fn decision(construct: &str, visible: &str) -> String {
+    let control = match construct {
+        "choice" => format!(
+            "choice Decide by w visible ({visible}) {{ \
+             case yes when {{ got.ready }} check A using v {{ true }}; \
+             case no when {{ not got.ready }} check B using v {{ true }}; }}"
+        ),
+        "repeat" => format!(
+            "repeat Again by w visible ({visible}) max 1 while {{ got.ready }} \
+             sequence Body {{ event Tick by w as (tick: M::Flag) {{ true }}; }} \
+             exhausted sequence Exhausted {{ }}"
+        ),
+        other => panic!("unknown decision construct: {other}"),
+    };
+    format!(
+        "{HEADER}protocol Decisions using v over (k: M::Node) on origin {{\n\
+         capture lim: M::Total = k.total;\nrole w on M::Node;\n\
+         run sequence Main {{ event Got by w as (got: M::Flag) {{ true }};\
+         {control}\n}}\nfinish Done as (d: M::Receipt) {{ true }};\n}}\n"
+    )
+}
+
+/// FR-218-AC-34 (TC-1056 rows 52–53): S3 refuses a bare literal and a bare
+/// capture at the visible entry for both decision constructs, while a
+/// composite entry containing the same literal/capture remains admissible.
+#[trace("TC-1056", "FR-218-AC-34")]
+#[test]
+fn visible_entries_are_expressions_for_choices_and_repeats() {
+    for (construct, entry, expected) in [
+        ("choice", "true", "true"),
+        ("choice", "lim", "lim"),
+        ("repeat", "true", "true"),
+        ("repeat", "lim", "lim"),
+    ] {
+        let text = decision(construct, &format!("got.ready, {entry}"));
+        let (cause, pair, at) = only(&text);
+        assert_eq!(pair, ("ill_typed", Some("operator-ineligible")));
+        assert_eq!(at, expected, "{construct} visible entry {entry}");
+        let ProtocolAnchorCause::SlotClause {
+            node, slot, cause, ..
+        } = cause
+        else {
+            panic!("a visible slot refusal, got {cause:?}");
+        };
+        assert_eq!(
+            (node.as_str(), slot),
+            (
+                if construct == "choice" {
+                    "Decide"
+                } else {
+                    "Again"
+                },
+                SlotKind::Visible
+            )
+        );
+        assert_eq!(
+            *cause,
+            CheckCause::IllTyped(IllTypedCause::OperatorIneligible)
+        );
+    }
+
+    for construct in ["choice", "repeat"] {
+        let graph = checks(&decision(construct, "got.ready, true and lim >= 0"));
+        let checked = graph.protocol("Decisions").expect("checked protocol");
+        let visible = match construct {
+            "choice" => &checked.slots.choices[0].visible,
+            "repeat" => &checked.slots.repeats[0].visible,
+            _ => unreachable!(),
+        };
+        assert_eq!(visible.len(), 2, "{construct} retains two entries");
+        assert_eq!(
+            visible[0].root().value_type(),
+            &ValueType::Boolean,
+            "the individually visible decision fact remains checked"
+        );
+        assert_eq!(
+            visible[1].root().value_type(),
+            &ValueType::Boolean,
+            "the composite entry containing a literal and capture is checked"
+        );
+    }
 }
 
 /// FR-211 "The `terminal` member" (FR-211-AC-1's checking half; its
