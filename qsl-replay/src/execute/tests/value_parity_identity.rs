@@ -264,11 +264,18 @@ fn tc_1252_a_foreign_occurrence_refuses_before_any_call() {
 fn tc_1252_the_occurrence_key_binds_into_the_claim() {
     let source = unit();
     let base = retained_request(&source, "inc", 3);
+    let base_key = base
+        .replay_target
+        .occurrence_key
+        .clone()
+        .expect("the declaration occurrence is retained");
     let mut moved = base.clone();
-    moved.replay_target =
-        crate::RequestTargetWire::function(name(&["inc"]), site(&source, "add").site.declaration);
+    let moved_key = site(&source, "add").site.declaration;
+    moved.replay_target = crate::RequestTargetWire::function(name(&["inc"]), moved_key.clone());
     let one = replay_generated(base, integer(4), ReplayLimits::default());
     let other = replay_generated(moved, integer(4), ReplayLimits::default());
+    assert_eq!(one.claim().occurrence_key, Some(base_key));
+    assert_eq!(other.claim().occurrence_key, Some(moved_key));
     assert_ne!(one.claim(), other.claim());
 }
 

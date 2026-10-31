@@ -87,7 +87,7 @@ impl FromStr for ByteDigest {
 // `domain` is a `DigestDomain` variant -- not a bare domain-label string
 // with no accompanying digest field in the same object, not a wire shape
 // that carries its own `algorithm` field (this type fixes SHA-256), and not
-// a domain outside FR-201's 21-member vocabulary.
+// a domain outside FR-201's closed vocabulary.
 //
 // A hand-built enumeration of every other site meeting the criterion above
 // was attempted across three rounds of review on this one comment and was
@@ -210,8 +210,8 @@ impl DigestDomain {
 impl DigestDomain {
     /// Whether this domain digests exactly the raw bytes it addresses, with
     /// no RFC 8785/JCS canonicalization or structural preimage in between.
-    /// A byte-provision entry (ADR-013 O-26/QC-1: "every source, definition
-    /// and domain-package input") is admitted only under one of these
+    /// A byte-provision entry (ADR-013 O-26/QC-1: "every definition and
+    /// domain-package input") is admitted only under one of these
     /// domains: the byte-provision integrity check (FR-071-AC-6) is exactly
     /// "the entry's raw bytes hash to its own declared digest", which is
     /// only ever true for a domain defined that way. A `sha256-jcs` or
@@ -493,8 +493,9 @@ mod digest_record_tests {
     /// `DigestDomain::as_str()`'s own match arms: a wrong label there (e.g.
     /// `ModelEffectiveDeclarationV2` silently becoming `.../v3`) fails the
     /// first assertion in the loop rather than round-tripping only against
-    /// itself (#260 review item 4). Both `[(...); 18]` and `DigestDomain::
-    /// ALL: [Self; 18]` are fixed-length arrays, so an entry-count
+    /// itself (#260 review item 4). The explicit 18-label table and
+    /// `DigestDomain::ALL` are exhaustive; their fixed-size arrays make a
+    /// length mismatch a compile-time error.
     /// mismatch between them is a compile error, not something this test
     /// could observe at runtime -- the per-entry label and round-trip
     /// assertions below are this test's real teeth (#260 review round 2).
@@ -632,7 +633,6 @@ mod digest_record_tests {
             "sanity: bytes really do match"
         );
     }
-
     /// `DigestDomain::from_str`'s exact-match rule: no case folding and no
     /// hyphen/underscore aliasing (FR-201's own "Key" rule).
     #[test]

@@ -459,7 +459,7 @@ impl EmittedUnit {
     }
 
     /// The source provision: the unit's source and every resolved library's,
-    /// each by its own digest ([`Source::reference`]).
+    /// each by its caller-named reference ([`Source::reference`]).
     pub fn sources(&self) -> &[Source] {
         &self.sources
     }

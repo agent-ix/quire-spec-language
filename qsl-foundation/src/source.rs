@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-001: immutable source text, the caller-named source
-//! reference and checked scalar coordinates.
+//! FR-001: immutable source text, the caller-named source reference and
+//! checked scalar coordinates.
 //!
 //! [`provenance`] holds ADR-013 O-07/O-12's occurrence key, source region
 //! and package source map.

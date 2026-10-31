@@ -77,7 +77,7 @@ pub enum ClauseIdentityMismatch {
 }
 
 /// FR-122 Outputs: an FR-072 result on the envelope's arm, with the
-/// identities the replay kept: the source unit's identity and digest, the
+/// identities the replay kept: the source unit's reference, the
 /// package name, the request's `state_clause` and the payload's observation
 /// (for a pre-call observation, its self object and parameter values), the envelope's
 /// clause node and occurrence key (each equal to the recompiled one, or the
@@ -100,7 +100,7 @@ impl StateClauseReplayResult {
     pub fn result(&self) -> &ReplayResult {
         &self.result
     }
-    /// The recompiled source unit's identity and digest.
+    /// The recompiled source unit's caller-named reference.
     pub fn source(&self) -> &RawSourceRef {
         &self.source
     }

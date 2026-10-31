@@ -365,7 +365,7 @@ record! { /// The native source's four FR-001 labels; these are not formal revis
         revision: String
     }
 }
-record! { /// Original source text, retained for hashing/loci and never reparsed here.
+record! { /// Original source text, retained for source mapping/loci and never reparsed here.
     Source {
         /// The artifact this source text was retrieved from.
         artifact: ArtifactRef,

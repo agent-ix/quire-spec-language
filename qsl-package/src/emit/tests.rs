@@ -361,8 +361,8 @@ fn a_function_identity_survives_emission_and_the_i2_read() {
 /// from closed role enums, each exactly `{authority, identity}`;
 /// the diagnostics catalog is QSpec's native diagnostics `DefinitionRef`,
 /// `{agent-ix, quire.native.diagnostics/v1}` and no other member; each
-/// source row, and each source-map region's source, keeps its
-/// caller-named source reference; and IR's reader admits the package.
+/// source row and each source-map region keep the caller's source reference;
+/// and IR's reader admits the package.
 #[trace("TC-416", "FR-093-AC-7", "FR-093-AC-17", "FR-093-AC-20")]
 #[test]
 fn the_lock_selects_the_catalog_definitions() {

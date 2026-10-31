@@ -260,7 +260,7 @@ pub fn parse_with_cancel(
     parser::parse(source, limits, cancel)
 }
 
-/// Parse an already loaded (and optionally digest-verified) exact source.
+/// Parse an already admitted exact source.
 pub fn parse_source(
     source: Source,
     limits: Limits,
