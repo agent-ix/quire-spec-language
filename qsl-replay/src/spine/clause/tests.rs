@@ -2878,7 +2878,7 @@ fn config_version_probe_invocation_bytes(
 
 /// One `probe` invocation's provisioned documents: the invocation's own
 /// label (what a `ReachesTarget` selection names), and the snapshot and
-/// invocation provisions keyed by digest, ready for a `ClauseRunRequest`
+/// invocation provisions keyed by label, ready for a `ClauseRunRequest`
 /// or a hand-built `Provisions`.
 struct ProbeDocuments {
     invocation: DocumentRef,

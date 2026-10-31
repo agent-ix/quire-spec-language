@@ -175,7 +175,7 @@ impl Snapshot {
 }
 
 /// `clause` over `snapshot`, self `self_key`: the selection and the
-/// snapshot's bytes by digest.
+/// snapshot's bytes by label.
 fn selection(
     clause: &str,
     snapshot: Snapshot,

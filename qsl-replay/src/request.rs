@@ -7,7 +7,7 @@
 //! type" row) -- nothing else, and in particular no field, accessor or
 //! constructor argument typed as a filesystem path, environment-variable
 //! name or search location: every recompilation input is reachable only by
-//! digest lookup in [`ByteProvision`] (QC-1). This module performs no
+//! source lookup in [`ByteProvision`] (QC-1). This module performs no
 //! recompilation and no package recomputation -- that is #243's E9.
 
 use std::collections::BTreeMap;
@@ -251,7 +251,7 @@ pub struct DependencyEntryWire {
     pub sources: Vec<SourceRefWire>,
 }
 
-/// FR-071/ADR-013 O-26: the typed replay request. Digest-only: every
+/// FR-071/ADR-013 O-26: the typed replay request. Every
 /// recompilation input is reachable only through [`ByteProvision::get`].
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReplayRequest {
@@ -356,7 +356,7 @@ impl ReplayRequest {
     pub fn declared_domains(&self) -> &[DeclaredDomain] {
         &self.declared_domains
     }
-    /// The digest-addressed byte provision. The only way to reach a
+    /// The source-keyed byte provision. The only way to reach a
     /// recompilation input's bytes (FR-071-AC-2).
     pub fn byte_provision(&self) -> &ByteProvision {
         &self.byte_provision

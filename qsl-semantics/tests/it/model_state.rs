@@ -118,7 +118,7 @@ fn parent_of(key: &str) -> serde_json::Value {
 }
 
 /// One `config_history` snapshot with the given observation, anchor, completeness
-/// and objects, provisioned by digest.
+/// and objects, provisioned by label.
 fn snapshot(
     fixture: &Fixture,
     observation: &str,
