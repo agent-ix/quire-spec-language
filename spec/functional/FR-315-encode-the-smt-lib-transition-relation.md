@@ -925,11 +925,14 @@ conjunctively or beside a separate disjunction of the applications, is not
 this encoding.
 
 **Normal form.** Every assertion of a refinement query SHALL be printed in
-the *normal form* below, the term built above rewritten bottom up, so that
-the script holds no subterm a solver's rewriter still simplifies (a double
-negation, a constant operand, a nested or repeated operand, an implication,
-an equality with a Boolean constant or arithmetic over literals). Each rule
-preserves the term's meaning:
+the *normal form* below, the term built above rewritten bottom up. The
+script then holds none of the shapes these rules remove: a double negation, a
+Boolean constant operand, a nested or repeated `and` or `or` operand, an
+implication, an equality with a Boolean constant, a relation of a sum ending
+in a literal with a literal, a foldable `ite`, and arithmetic over literals.
+It is not a claim that a solver's rewriter finds nothing else to simplify;
+an arithmetic atom keeps the orientation it is built in. Each rule preserves
+the term's meaning:
 
 1. `(not c)` of a Boolean constant `c` is its complement, and `(not (not t))`
    is `t`;
@@ -953,16 +956,21 @@ preserves the term's meaning:
    `(or c e)` for `t` `true`, `(and (not c) e)` for `t` `false`,
    `(or (not c) t)` for `e` `true`, `(and c t)` for `e` `false`;
 7. a sum splices its nested sums and gathers its integer literals into one
-   last summand, dropped when it is 0; a difference, negation or product of
-   literals is the literal; `(- t 0)` is `t`, `(- t t)` is 0,
+   last summand, dropped when it is 0, and a sum of exactly `t` and `(- u)`
+   is `(- t u)`; a difference, negation or product of literals is the
+   literal; `(- t 0)` is `t`, `(- 0 t)` is `(- t)`, `(- t t)` is 0,
    `(- (- t))` is `t`, `(* 1 t)` is `t`, `(* 0 t)` is 0 and
-   `(* n (* m t))` is `(* nm t)`.
+   `(* n (* m t))` is `(* nm t)`;
+8. `(mod m n)` of two literals, `n` not 0, is SMT-LIB's Euclidean remainder,
+   the `r` with `0 <= r < |n|` and `m - r` a multiple of `n`
+   (`(mod (- 7) 3)` is 2, `(mod 7 (- 3))` is 1).
 
-`mod` is printed as built. The shapes stated above are the terms before
+The shapes stated above are the terms before
 normalisation: with `D` printed `true`, `(or (not D) (not R))` is printed
 `(not R)`; an application's conjunction is flattened, its last conjunct
-`(not R_a)` when `D_a` is `true`; the initial-state predicate prints an absent
-or `false` Boolean field as `(not s0.<object>.<field>)`; and a disjunct equal
+`(not R_a)` when `D_a` is `true`; the initial-state predicate prints a
+`false` Boolean field as `(not s0.<object>.<field>)` and an absent optional
+field as `(not s0.<object>.<field>.present)`; and a disjunct equal
 to an earlier one is printed once, at its first place, by rule 3. FR-314's
 byte comparison is over the normalised script.
 

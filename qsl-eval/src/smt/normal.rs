@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-315 "Refinement queries", normal form: the rewriting a refinement
-//! query's assertions pass through before they are printed, so that the
-//! script holds no subterm a solver's rewriter would still simplify.
+//! query's assertions pass through before they are printed. It removes the
+//! shapes its rules name and no others: an arithmetic atom keeps the
+//! orientation it is built in.
 //!
 //! [`Term::normal`] works bottom up and preserves the meaning of the term:
 //!
@@ -19,12 +20,12 @@
 //! - an `ite` with a constant condition, equal branches or a Boolean
 //!   constant branch is its branch or the connective it stands for;
 //! - a sum splices its nested sums and gathers its literals into one last
-//!   summand, dropped when it is 0; a difference, negation or product of
-//!   literals folds, `(* 1 t)` is `t`, `(* 0 t)` is 0 and `(- (- t))` is `t`.
-//!
-//! `mod` is printed as built.
+//!   summand, dropped when it is 0, and `t + (- u)` alone is `(- t u)`; a
+//!   difference, negation or product of literals folds, `(- 0 t)` is
+//!   `(- t)`, `(* 1 t)` is `t`, `(* 0 t)` is 0 and `(- (- t))` is `t`;
+//! - `mod` of two literals is SMT-LIB's Euclidean remainder, in `[0, |n|)`.
 
-use quire_exact::Integer;
+use quire_exact::{Integer, NonZeroInteger};
 
 use crate::smt::script::{Comparison, Term};
 
@@ -45,13 +46,9 @@ impl Term {
             Self::Compare(op, left, right) => comparison(op, left.normal(), right.normal()),
             Self::Add(terms) => sum(terms.into_iter().map(Self::normal)),
             Self::Subtract(left, right) => difference(left.normal(), right.normal()),
-            Self::Negate(inner) => match inner.normal() {
-                Self::Int(value) => Self::Int(value.neg()),
-                Self::Negate(twice) => *twice,
-                other => Self::Negate(Box::new(other)),
-            },
+            Self::Negate(inner) => opposite(inner.normal()),
             Self::Scale(factor, inner) => product(factor, inner.normal()),
-            Self::Modulo(inner, divisor) => Self::Modulo(Box::new(inner.normal()), divisor),
+            Self::Modulo(inner, divisor) => remainder(inner.normal(), divisor),
             Self::If(condition, then, otherwise) => {
                 choice(condition.normal(), then.normal(), otherwise.normal())
             }
@@ -192,7 +189,34 @@ fn sum(terms: impl IntoIterator<Item = Term>) -> Term {
     match kept.len() {
         0 => Term::Int(Integer::zero()),
         1 => kept.remove(0),
+        2 => {
+            let second = kept.remove(1);
+            let first = kept.remove(0);
+            match second {
+                Term::Negate(subtrahend) => difference(first, *subtrahend),
+                second => Term::Add(vec![first, second]),
+            }
+        }
         _ => Term::Add(kept),
+    }
+}
+
+/// `(- t)` of a normal `t`.
+fn opposite(term: Term) -> Term {
+    match term {
+        Term::Int(value) => Term::Int(value.neg()),
+        Term::Negate(twice) => *twice,
+        other => Term::Negate(Box::new(other)),
+    }
+}
+
+/// `(mod t divisor)` of a normal `t`: SMT-LIB's Euclidean remainder, in
+/// `[0, |divisor|)`, when `t` is a literal and `divisor` is not 0.
+fn remainder(term: Term, divisor: Integer) -> Term {
+    let magnitude = divisor.abs();
+    match (&term, NonZeroInteger::try_from(&magnitude)) {
+        (Term::Int(value), Ok(modulus)) => Term::Int(value.div_mod_floor(modulus).1),
+        _ => Term::Modulo(Box::new(term), divisor),
     }
 }
 
@@ -201,6 +225,7 @@ fn difference(left: Term, right: Term) -> Term {
     match (left, right) {
         (Term::Int(l), Term::Int(r)) => Term::Int(l.sub(&r)),
         (left, Term::Int(r)) if r.is_zero() => left,
+        (Term::Int(l), right) if l.is_zero() => opposite(right),
         (left, right) if left == right => Term::Int(Integer::zero()),
         (left, right) => Term::Subtract(Box::new(left), Box::new(right)),
     }
@@ -313,6 +338,24 @@ mod tests {
             "(= y (+ x 1))"
         );
         assert_eq!(normal(c("x").compare(Comparison::Less, c("x"))), "false");
+        assert_eq!(
+            normal(c("x").plus(Term::int(1)).equal(Term::int(3))),
+            "(= x 2)"
+        );
+        assert_eq!(
+            normal(Term::int(3).equal(c("x").plus(Term::int(1)))),
+            "(= 2 x)"
+        );
+        assert_eq!(
+            normal(
+                c("x")
+                    .plus(Term::int(2))
+                    .compare(Comparison::Less, Term::int(5))
+            ),
+            "(< x 3)"
+        );
+        assert_eq!(normal(Term::literal(false).equal(c("b"))), "(not b)");
+        assert_eq!(normal(Term::literal(true).equal(c("b"))), "b");
     }
 
     /// Arithmetic over literals folds.
@@ -337,10 +380,40 @@ mod tests {
             "(* 6 x)"
         );
         assert_eq!(normal(Term::Scale(Integer::zero(), Box::new(c("x")))), "0");
+        assert_eq!(normal(Term::int(0).minus(c("x"))), "(- x)");
+        assert_eq!(normal(Term::int(0).minus(c("x").negated())), "x");
+        assert_eq!(normal(c("x").plus(c("y").negated())), "(- x y)");
+        assert_eq!(
+            normal(Term::Add(vec![c("x"), c("y").negated(), Term::int(1)])),
+            "(+ x (- y) 1)"
+        );
         assert_eq!(normal(Term::Scale(Integer::one(), Box::new(c("x")))), "x");
         assert_eq!(
             normal(Term::Scale(Integer::from(2_i64), Box::new(Term::int(3)))),
             "6"
+        );
+    }
+
+    /// `mod` of two literals is the Euclidean remainder, in `[0, |n|)`, for
+    /// every sign of dividend and divisor; `mod` of a non-literal stays.
+    #[trace("TC-900", "FR-315-AC-56")]
+    #[test]
+    fn remainders_of_literals_are_euclidean() {
+        let modulo = |m: i64, n: i64| normal(Term::int(m).modulo(Integer::from(n)));
+        assert_eq!(modulo(7, 3), "1");
+        assert_eq!(modulo(-7, 3), "2");
+        assert_eq!(modulo(7, -3), "1");
+        assert_eq!(modulo(-7, -3), "2");
+        assert_eq!(modulo(-6, 3), "0");
+        assert_eq!(modulo(-1, -5), "4");
+        assert_eq!(normal(c("x").modulo(Integer::from(3_i64))), "(mod x 3)");
+        assert_eq!(
+            normal(
+                Term::int(2)
+                    .plus(Term::int(3))
+                    .modulo(Integer::from(-4_i64))
+            ),
+            "1"
         );
     }
 
@@ -351,6 +424,7 @@ mod tests {
     fn choices_fold() {
         let ite = |a: Term, b: Term, e: Term| Term::If(Box::new(a), Box::new(b), Box::new(e));
         assert_eq!(normal(ite(Term::literal(true), c("a"), c("b"))), "a");
+        assert_eq!(normal(ite(Term::literal(false), c("a"), c("b"))), "b");
         assert_eq!(normal(ite(c("p"), c("a"), c("a"))), "a");
         assert_eq!(
             normal(ite(c("p"), Term::literal(true), Term::literal(false))),

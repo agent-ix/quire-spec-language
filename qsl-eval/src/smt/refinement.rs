@@ -11,7 +11,9 @@
 //! `self` bound to that object, together with the row's definedness.
 //!
 //! Every assertion is printed in FR-315's refinement-query normal form
-//! ([`Term::normal`]), so no subterm is left that folds or rewrites. The
+//! ([`Term::normal`]), which removes the shapes its rules name (double
+//! negation, constant operands, nested junctions, implications, foldable
+//! arithmetic); arithmetic atoms keep their built orientation. The
 //! script is FR-315's normative order, which FR-314 compares byte for
 //! byte: `(set-logic QF_LIA)`; the `declare-const` commands of `s0`, then of
 //! `s1`; the range assertions of `s0`, then of `s1`; for `Initial` the

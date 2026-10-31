@@ -1098,6 +1098,18 @@ fn unnormal(term: &str) -> Vec<(&'static str, String)> {
             flag("foldable ite")
         }
         "-" if args.iter().all(|a| literal(a)) && args.len() == 2 => flag("foldable difference"),
+        "mod" if args.iter().all(|a| literal(a)) => flag("foldable remainder"),
+        _ => {}
+    }
+    let summed_literal =
+        |t: &str| t.starts_with("(+ ") && operands(t).last().is_some_and(|last| literal(last));
+    match head {
+        "=" | "<" | "<=" | ">" | ">="
+            if (literal(args[0]) && summed_literal(args[1]))
+                || (summed_literal(args[0]) && literal(args[1])) =>
+        {
+            flag("unshifted relation")
+        }
         _ => {}
     }
     if head != "-" || args.len() != 1 || !literal(term) {
@@ -1160,7 +1172,7 @@ fn refinement_queries_are_in_normal_form() {
         );
     });
     let probe = "(and (not (not a)) (or b true) (and c d) (=> e f) (= g false) (<= 1 2) \
-                 (+ x 1 2) (ite h i i) (- 3 1))";
+                 (+ x 1 2) (ite h i i) (- 3 1) (<= 0 (+ x 1)) (= (+ y 2) 3) (mod 7 3))";
     let rules: Vec<&str> = unnormal(probe).into_iter().map(|(rule, _)| rule).collect();
     assert_eq!(
         rules,
@@ -1173,7 +1185,10 @@ fn refinement_queries_are_in_normal_form() {
             "foldable relation",
             "foldable sum",
             "foldable ite",
-            "foldable difference"
+            "foldable difference",
+            "unshifted relation",
+            "unshifted relation",
+            "foldable remainder"
         ]
     );
 }
