@@ -67,6 +67,7 @@ fn assemble(declarations: &str) -> (String, PackageDeclarations) {
     let unit = build_unit(&parsed).expect("S2 builds the unit");
     let assembled = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         unit,
         vec![m_actor_model()],
         Vec::new(),
@@ -377,8 +378,6 @@ fn store_buffering_model() -> SelectedModel {
     let package = DomainPackage::new(
         DomainPackageRef {
             identity: PACKAGE.to_owned(),
-            version: "1".to_owned(),
-            digest: [0_u8; 32],
         },
         vec![
             object("Actor"),
@@ -492,6 +491,7 @@ fn assemble_model(declarations: &str, model: SelectedModel) -> (String, PackageD
     let unit = build_unit(&parsed).expect("S2 builds the unit");
     let assembled = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         unit,
         vec![model],
         Vec::new(),

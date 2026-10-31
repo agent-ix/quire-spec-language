@@ -102,16 +102,41 @@ fn out_of_fragment(clause: &str, form: &'static str) -> SmtEncodingRefusal {
 fn refinement_of<'p>(
     request: &RefinementCertificateRequest<'p>,
 ) -> Result<(&'p CheckedRefinement, Vec<usize>), SmtEncodingRefusal> {
-    request
-        .package
-        .graph()
-        .refinements()
-        .iter()
-        .find_map(|refinement| {
-            let emission = refinement.v2_emission().ok()?;
-            (emission.identity == request.refinement).then_some((refinement, emission.step_sources))
-        })
-        .ok_or_else(|| fault("the request names a refinement of its package"))
+    use qsl_semantics::check::RefinementV2EncodingError;
+    let mut failure = None;
+    for refinement in request.package.graph().refinements() {
+        match refinement.v2_emission() {
+            Ok(emission) if emission.identity == request.refinement => {
+                return Ok((refinement, emission.step_sources));
+            }
+            Ok(_) => {}
+            Err(error) => failure = failure.or(Some(error)),
+        }
+    }
+    Err(match failure {
+        Some(RefinementV2EncodingError::MissingSubject) => {
+            fault("the refinement selects its model subjects")
+        }
+        Some(RefinementV2EncodingError::MissingRows) => {
+            fault("the refinement rows are lowered to node keys")
+        }
+        Some(_) => fault("the refinement emits its V2 body"),
+        None => fault("the request names a refinement of its package"),
+    })
+}
+
+/// The source row of each entry of the `steps` array of the refinement
+/// `request` names: entry `k` is the position, among the rows as written, of
+/// the row at position `k` of the V2 `steps` array (QSpec FR-375).
+///
+/// # Errors
+///
+/// A fault [`SmtEncodingRefusal`] naming why the request's refinement has no
+/// emitted rows, or that the request names no refinement of its package.
+pub fn refinement_step_sources(
+    request: &RefinementCertificateRequest<'_>,
+) -> Result<Vec<usize>, SmtEncodingRefusal> {
+    refinement_of(request).map(|(_, sources)| sources)
 }
 
 /// Encode the refinement query `kind` of `request` as an SMT-LIB 2 script
@@ -480,7 +505,10 @@ impl Sides<'_, '_> {
         let mut hypotheses = Vec::new();
         for clause in clauses {
             for (index, object) in subject.objects.iter().enumerate() {
-                if !subject.types.conforms(object.type_id, clause.context()) {
+                if !subject
+                    .types
+                    .conforms(object.type_id.clone(), clause.context())
+                {
                     continue;
                 }
                 let (value, defined) = Reader::new(

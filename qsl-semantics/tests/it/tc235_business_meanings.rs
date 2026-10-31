@@ -13,7 +13,6 @@ use qsl_semantics::model::domain_package::{
 use qsl_semantics::model::intake::{
     admit, admit_unit, meaning, package_input, read_domain_package, read_records,
 };
-use qsl_semantics::model::key::SHA256_JCS_DIGEST_DOMAIN;
 use qsl_semantics::model::normalize::{
     normalize_with_meter, EffectiveView, MemberPath, ModelRefusal, ModelRefusalCause,
     NormalizeOutcome,
@@ -35,16 +34,12 @@ fn package_key(node: &str) -> DeclarationKey {
 
 fn read_k2(document: &Value) -> Result<DomainPackage, Vec<ModelRefusal>> {
     let bytes = serde_json::to_vec(document).expect("K2 serializes");
-    let offered = package_input([bytes.as_slice()]);
-    let digest = *offered.keys().next().expect("one offered package");
+    let offered = package_input([bytes.as_slice()]).unwrap();
     let selection = DomainPackageRef {
         identity: PACKAGE.to_owned(),
-        version: "1".to_owned(),
-        digest,
     };
     let (_selection, admitted) = admit(
-        &selection,
-        SHA256_JCS_DIGEST_DOMAIN,
+        selection.identity.as_str(),
         &offered,
         IntakeLimits::default(),
     )
@@ -64,16 +59,6 @@ fn node_named_mut<'a>(value: &'a mut Value, identity: &str) -> Option<&'a mut Va
             .values_mut()
             .find_map(|value| node_named_mut(value, identity)),
         Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => None,
-    }
-}
-
-fn refresh_manifest_digest(document: &mut Value) {
-    let digest = jcs_digest(&document["types"]);
-    document["source"]["digest"] = json!(digest);
-    document["package"]["manifestDigest"] = json!(digest);
-    document["package"]["lockDigest"] = json!(digest);
-    for construct in document["constructs"].as_array_mut().unwrap() {
-        construct["manifestDigest"] = json!(digest);
     }
 }
 
@@ -138,16 +123,13 @@ fn tc213_fixture() -> Value {
         node_named_mut(&mut document, &id(node))
             .unwrap_or_else(|| panic!("TC-213 fixture has {node}"))["origin"] = origin;
     }
-    refresh_manifest_digest(&mut document);
     document
 }
 
 fn tc213_retained_map(
     document: &Value,
 ) -> (BTreeSet<DeclarationKey>, BTreeMap<DeclarationKey, Value>) {
-    let mut document = document.clone();
-    refresh_manifest_digest(&mut document);
-    let package = read_k2(&document).expect("TC-213 fixture admits");
+    let package = read_k2(document).expect("TC-213 fixture admits");
     let admitted_keys = package
         .records
         .iter()
@@ -209,9 +191,7 @@ fn tc213_retained_map(
 fn tc213_type_identities(
     document: &Value,
 ) -> BTreeMap<DeclarationKey, qsl_semantics::model::key::EffectiveId> {
-    let mut document = document.clone();
-    refresh_manifest_digest(&mut document);
-    let package = read_k2(&document).expect("TC-213 fixture admits");
+    let package = read_k2(document).expect("TC-213 fixture admits");
     let (outcome, _) = normalize_with_meter(&package, ModelNormalizationLimits::UNLIMITED);
     let NormalizeOutcome::Completed(view) = outcome else {
         panic!("TC-213 fixture normalizes: {outcome:?}");
@@ -219,23 +199,11 @@ fn tc213_type_identities(
     view.type_identities().clone()
 }
 
-fn tc213_view_identity(document: &Value) -> qsl_semantics::model::key::EffectiveId {
-    let mut document = document.clone();
-    refresh_manifest_digest(&mut document);
-    let package = read_k2(&document).expect("TC-213 fixture admits");
-    let (outcome, _) = normalize_with_meter(&package, ModelNormalizationLimits::UNLIMITED);
-    let NormalizeOutcome::Completed(view) = outcome else {
-        panic!("TC-213 fixture normalizes: {outcome:?}");
-    };
-    view.identity()
-}
-
 #[trace("TC-213", "FR-081-AC-1", "FR-081-AC-7")]
 #[test]
 fn tc213_retains_exact_key_origin_map_across_order_selection_and_origin_controls() {
     let baseline = tc213_retained_map(&tc213_fixture());
     let baseline_ids = tc213_type_identities(&tc213_fixture());
-    let baseline_view_id = tc213_view_identity(&tc213_fixture());
 
     let mut reversed = tc213_fixture();
     reversed["types"].as_array_mut().unwrap().reverse();
@@ -248,11 +216,6 @@ fn tc213_retains_exact_key_origin_map_across_order_selection_and_origin_controls
         tc213_type_identities(&reversed),
         baseline_ids,
         "equal declaration keys and facts retain their type identities"
-    );
-    assert_ne!(
-        tc213_view_identity(&reversed),
-        baseline_view_id,
-        "a different package selection changes the effective-view identity"
     );
 
     let mut selected = tc213_fixture();
@@ -272,11 +235,6 @@ fn tc213_retains_exact_key_origin_map_across_order_selection_and_origin_controls
         tc213_type_identities(&selected),
         baseline_ids,
         "equal declaration keys and facts retain their type identities"
-    );
-    assert_ne!(
-        tc213_view_identity(&selected),
-        baseline_view_id,
-        "a digest-changing selection changes the effective-view identity"
     );
 
     for (label, mutate) in [
@@ -342,15 +300,12 @@ fn tc213_retains_exact_key_origin_map_across_order_selection_and_origin_controls
 /// intake -> normalization -> PackageDeclarations::assemble path.
 fn assemble_k2_unit(document: &Value, declarations: &str) -> PackageDeclarations {
     let bytes = serde_json::to_vec(document).expect("K2-derived fixture serializes");
-    let packages = package_input([bytes.as_slice()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one K2-derived model package");
-    };
-    let digest = qsl_semantics::model::key::hex(digest);
+    let packages = package_input([bytes.as_slice()]).unwrap();
+    assert_eq!(packages.len(), 1, "one K2-derived model package");
     let source = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
-         model M = {PACKAGE:?} version \"1\" digest \"sha256-jcs:{digest}\";\n\
+         model M = {PACKAGE:?};\n\
          {declarations}\n"
     );
     let parsed = qsl_cst::parse(
@@ -370,6 +325,7 @@ fn assemble_k2_unit(document: &Value, declarations: &str) -> PackageDeclarations
     .expect("I1 admits and normalizes the K2-derived model");
     PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        crate::TEST_PACKAGE_NAME.to_owned(),
         unit,
         selected,
         Vec::new(),
@@ -384,16 +340,12 @@ fn assemble_k2_unit(document: &Value, declarations: &str) -> PackageDeclarations
 fn admitted_original_keys_survive_normalization() {
     let document = k2();
     let bytes = serde_json::to_vec(&document).expect("K2 serializes");
-    let offered = package_input([bytes.as_slice()]);
-    let digest = *offered.keys().next().expect("one offered package");
+    let offered = package_input([bytes.as_slice()]).unwrap();
     let selection = DomainPackageRef {
         identity: PACKAGE.to_owned(),
-        version: "1".to_owned(),
-        digest,
     };
     let (_, admitted) = admit(
-        &selection,
-        SHA256_JCS_DIGEST_DOMAIN,
+        selection.identity.as_str(),
         &offered,
         IntakeLimits::default(),
     )
@@ -537,7 +489,6 @@ fn scalar_original_has_no_effective_entry_or_extra_charge() {
     for charge in [
         ChargePoint::NormalizeFact,
         ChargePoint::NormalizeDeclaration,
-        ChargePoint::NormalizeHash,
     ] {
         let count = |meter: &qsl_semantics::model::accounting::Meter| {
             meter
@@ -556,16 +507,12 @@ fn scalar_original_has_no_effective_entry_or_extra_charge() {
 
 fn read_refusals(document: &Value) -> Vec<ModelRefusal> {
     let bytes = serde_json::to_vec(document).expect("fixture serializes");
-    let offered = package_input([bytes.as_slice()]);
-    let digest = *offered.keys().next().expect("one offered package");
+    let offered = package_input([bytes.as_slice()]).unwrap();
     let selection = DomainPackageRef {
         identity: PACKAGE.to_owned(),
-        version: "1".to_owned(),
-        digest,
     };
     let (_selection, admitted) = admit(
-        &selection,
-        SHA256_JCS_DIGEST_DOMAIN,
+        selection.identity.as_str(),
         &offered,
         IntakeLimits::default(),
     )
@@ -774,16 +721,12 @@ fn record_charges(
 fn tc235_m01_literal_k2_is_admitted_as_declared() {
     let document = k2();
     let bytes = serde_json::to_vec(&document).expect("K2 serializes");
-    let offered = package_input([bytes.as_slice()]);
-    let digest = *offered.keys().next().expect("one offered package");
+    let offered = package_input([bytes.as_slice()]).unwrap();
     let selection = DomainPackageRef {
         identity: PACKAGE.to_owned(),
-        version: "1".to_owned(),
-        digest,
     };
     let (selection, admitted) = admit(
-        &selection,
-        SHA256_JCS_DIGEST_DOMAIN,
+        selection.identity.as_str(),
         &offered,
         IntakeLimits::default(),
     )
@@ -1141,11 +1084,12 @@ fn tc235_m03_record_shape_and_clause_meanings() {
     let owner = view.type_identities()[&quire_checked::key::DeclarationKey {
         package: PACKAGE.to_owned(),
         node: id("Money"),
-    }];
+    }]
+        .clone();
     assert!(view.declarations().iter().any(|declaration| {
         declaration.visible
             && declaration.preimage.original == invariant_key
-            && declaration.preimage.owner_effective_type == Some(owner)
+            && declaration.preimage.owner_effective_type == Some(owner.clone())
     }));
 
     let foreign_document = mutate_k2(|document| {
@@ -1247,11 +1191,13 @@ fn record_value_subtype_preserves_effective_fields_support() {
         package: PACKAGE.to_owned(),
         node: id("TaxedMoney"),
     };
-    let taxed_type = view.type_identities()[&taxed_key];
+    let taxed_type = view.type_identities()[&taxed_key].clone();
     let mut effective_fields: Vec<_> = view
         .declarations()
         .iter()
-        .filter(|entry| entry.visible && entry.preimage.owner_effective_type == Some(taxed_type))
+        .filter(|entry| {
+            entry.visible && entry.preimage.owner_effective_type == Some(taxed_type.clone())
+        })
         .map(|entry| entry.preimage.original.node.clone())
         .collect();
     // FR-150 sorts effective declarations by identity; these same-package
@@ -1344,11 +1290,13 @@ fn tc235_taxed_money_assembly_resolves_composite_name_and_inherited_fields() {
             other => panic!("expected a record/event subtype, got {other:?}"),
         };
         assert_eq!(supertypes, &[parent_key]);
-        let child_id = view.type_identities()[&key];
+        let child_id = view.type_identities()[&key].clone();
         let effective_fields: Vec<_> = view
             .declarations()
             .iter()
-            .filter(|entry| entry.visible && entry.preimage.owner_effective_type == Some(child_id))
+            .filter(|entry| {
+                entry.visible && entry.preimage.owner_effective_type == Some(child_id.clone())
+            })
             .map(|entry| entry.preimage.original.node.as_str())
             .collect();
         assert!(
@@ -2037,11 +1985,13 @@ fn tc235_m18_event_type_specialization_vectors() {
         package: PACKAGE.to_owned(),
         node: id("OrderPlaced"),
     };
-    let event_type = view.type_identities()[&event_key];
+    let event_type = view.type_identities()[&event_key].clone();
     let mut effective_members: Vec<_> = view
         .declarations()
         .iter()
-        .filter(|entry| entry.visible && entry.preimage.owner_effective_type == Some(event_type))
+        .filter(|entry| {
+            entry.visible && entry.preimage.owner_effective_type == Some(event_type.clone())
+        })
         .map(|entry| entry.preimage.original.node.clone())
         .collect();
     effective_members.sort();

@@ -2,9 +2,8 @@
 //! FR-020: closed representation adapters; admitted models still come from callers.
 
 use qsl_foundation::serde_object::from_object;
-use qsl_foundation::ByteDigest;
 use quire_contract_model as ir;
-use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{de, Deserialize, Deserializer, Serialize};
 use std::fmt;
 
 // These record orders match the producer contract. Serializing a decoded claim
@@ -27,7 +26,7 @@ macro_rules! record {
 
 record!(Manifest {
     format: String, semantics: Semantics, required_features: Vec<String>, source: Source,
-    models: Inventory<Model, 64>, clauses: Inventory<Clause, 256>, canonical_identity: CanonicalIdentity,
+    models: Inventory<Model, 64>, clauses: Inventory<Clause, 256>,
 });
 record!(Semantics {
     language: String,
@@ -41,19 +40,11 @@ record!(Source {
     identity: Text,
     revision_namespace: Text,
     revision: Text,
-    digest: Digest,
     formal: Formal
-});
-record!(CanonicalIdentity {
-    domain: String,
-    version: String,
-    algorithm: String,
-    digest: CanonicalDigest
 });
 record!(Model {
     alias: Text,
     owner: Owner,
-    digest: Digest,
     artifact: Text
 });
 record!(Clause {
@@ -268,39 +259,6 @@ impl TryFrom<String> for Text {
     fn try_from(value: String) -> Result<Self, Self::Error> {
         if value.is_empty() {
             return Err("package label cannot be empty");
-        }
-        Ok(Self(value))
-    }
-}
-
-#[derive(Debug)]
-pub(super) struct Digest(pub ByteDigest);
-impl<'de> Deserialize<'de> for Digest {
-    fn deserialize<D: Deserializer<'de>>(decoder: D) -> Result<Self, D::Error> {
-        String::deserialize(decoder)?
-            .parse()
-            .map(Self)
-            .map_err(de::Error::custom)
-    }
-}
-impl Serialize for Digest {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_str(&self.0)
-    }
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(try_from = "String")]
-pub(super) struct CanonicalDigest(String);
-impl TryFrom<String> for CanonicalDigest {
-    type Error = &'static str;
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        if value.len() != 64
-            || !value
-                .bytes()
-                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-        {
-            return Err("invalid native canonical digest spelling");
         }
         Ok(Self(value))
     }

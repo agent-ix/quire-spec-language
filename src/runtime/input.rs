@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize, Serializer};
 
 use qsl_foundation::serde_object::Object;
 use qsl_foundation::source::SourceReadCause;
-use qsl_foundation::{ByteDigest, Code, SourceIdentity};
+use qsl_foundation::{Code, SourceIdentity};
 
 pub(super) mod wire;
 
@@ -40,15 +40,12 @@ pub struct QualifiedName {
     pub name: ir::SymbolName,
 }
 
-/// Exact input binding to an already admitted native model artifact.
+/// Input binding to an already admitted native model, by its owner.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(from = "Object<wire::ModelBinding>")]
 pub struct ModelBinding {
     /// Model requirement owner, including its selected revision.
     pub model: ir::RequirementRef,
-    /// Complete native model artifact digest.
-    #[serde(serialize_with = "serialize_digest")]
-    pub digest: ByteDigest,
 }
 
 /// Object identity within an exact model, type and declared universe.
@@ -218,7 +215,7 @@ pub struct InvocationDraft {
     pub arena: Vec<ValueNode>,
 }
 
-/// Expected snapshot identity and complete byte digest, distinct from invocation.
+/// Expected snapshot identity, distinct from invocation.
 ///
 /// The roles cannot be substituted at a call boundary:
 /// ```compile_fail,E0308
@@ -230,14 +227,12 @@ pub struct InvocationDraft {
 pub struct SnapshotRef {
     #[serde(serialize_with = "serialize_identity")]
     identity: SourceIdentity,
-    #[serde(serialize_with = "serialize_digest")]
-    digest: ByteDigest,
 }
 
 impl SnapshotRef {
     /// Select exact expected bytes after checking the supplied native labels.
-    pub fn new(identity: SourceIdentity, digest: ByteDigest) -> Result<Self, Box<InputError>> {
-        super::construction::reference_identity(identity).map(|identity| Self { identity, digest })
+    pub fn new(identity: SourceIdentity) -> Result<Self, Box<InputError>> {
+        super::construction::reference_identity(identity).map(|identity| Self { identity })
     }
 
     /// Exact selected identity/revision labels.
@@ -245,30 +240,23 @@ impl SnapshotRef {
         &self.identity
     }
 
-    /// Expected complete artifact digest.
-    pub const fn digest(&self) -> ByteDigest {
-        self.digest
-    }
-
-    pub(super) fn from_artifact(identity: SourceIdentity, digest: ByteDigest) -> Self {
-        Self { identity, digest }
+    pub(super) fn from_artifact(identity: SourceIdentity) -> Self {
+        Self { identity }
     }
 }
 
-/// Expected invocation identity and byte digest, distinct from a snapshot.
+/// Expected invocation identity, distinct from a snapshot.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(from = "Object<wire::Reference>")]
 pub struct InvocationRef {
     #[serde(serialize_with = "serialize_identity")]
     identity: SourceIdentity,
-    #[serde(serialize_with = "serialize_digest")]
-    digest: ByteDigest,
 }
 
 impl InvocationRef {
     /// Select exact expected bytes after checking the supplied native labels.
-    pub fn new(identity: SourceIdentity, digest: ByteDigest) -> Result<Self, Box<InputError>> {
-        super::construction::reference_identity(identity).map(|identity| Self { identity, digest })
+    pub fn new(identity: SourceIdentity) -> Result<Self, Box<InputError>> {
+        super::construction::reference_identity(identity).map(|identity| Self { identity })
     }
 
     /// Exact selected identity/revision labels.
@@ -276,13 +264,8 @@ impl InvocationRef {
         &self.identity
     }
 
-    /// Expected complete artifact digest.
-    pub const fn digest(&self) -> ByteDigest {
-        self.digest
-    }
-
-    pub(super) fn from_artifact(identity: SourceIdentity, digest: ByteDigest) -> Self {
-        Self { identity, digest }
+    pub(super) fn from_artifact(identity: SourceIdentity) -> Self {
+        Self { identity }
     }
 }
 
@@ -390,8 +373,4 @@ pub(super) fn serialize_identity<S: Serializer>(
         revision: &identity.revision,
     }
     .serialize(serializer)
-}
-
-fn serialize_digest<S: Serializer>(digest: &ByteDigest, serializer: S) -> Result<S::Ok, S::Error> {
-    serializer.collect_str(&format_args!("{digest:x}"))
 }

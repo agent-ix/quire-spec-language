@@ -41,8 +41,8 @@ fn checked(
     String,
     Result<qsl_semantics::check::CheckedGraph, Vec<qsl_semantics::check::CheckRefusal>>,
 ) {
-    let packages = qsl_semantics::model::intake::package_input([document]);
-    let unit = clocked_unit(&packages, body);
+    let packages = qsl_semantics::model::intake::package_input([document]).unwrap();
+    let unit = clocked_unit(body);
     let checked = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
         .check(CheckingLimits::default());
@@ -60,10 +60,10 @@ fn emitted(document: &[u8], body: &str) -> (String, Value) {
 
 /// The node of `wire` that `reference` names.
 fn target<'w>(wire: &'w Value, reference: &Value) -> &'w Value {
-    let digest = &reference["target"]["digest"];
+    let key = &reference["target"];
     nodes(wire)
         .iter()
-        .find(|node| node["node_id"]["digest"] == *digest)
+        .find(|node| &node["node_id"] == key)
         .unwrap_or_else(|| panic!("{reference} names a node"))
 }
 
@@ -133,14 +133,23 @@ fn assert_self(wire: &Value, reference: &Value) {
 /// The emitted package's timed aggregates are in QSpec FR-322's declared
 /// order.
 fn assert_declared_order(wire: &Value) {
-    let nodes: Vec<quire_contract_model::CheckedSemanticNodeV2> =
-        serde_json::from_value(wire["semantic_graph"]["nodes"].clone()).expect("nodes");
-    let source_map: Vec<quire_contract_model::CheckedSourceMapEntry> =
-        serde_json::from_value(wire["source_map"].clone()).expect("source map");
+    let (nodes, source_map) = admitted_graph(wire);
     assert_eq!(
         crate::emit::timed_order::first_out_of_order(&nodes, &source_map),
         Ok(None)
     );
+}
+
+/// The typed nodes and source map the last emission on this thread built.
+fn admitted_graph(
+    _wire: &Value,
+) -> (
+    Vec<quire_contract_model::CheckedSemanticNodeV2>,
+    Vec<quire_contract_model::CheckedSourceMapEntry>,
+) {
+    crate::emit::TIMED_GRAPH
+        .with(|held| held.borrow().clone())
+        .expect("the emission built a timed graph")
 }
 
 /// FR-230-AC-54, QSpec FR-322-AC-261, FR-322-AC-263 and
@@ -631,8 +640,11 @@ fn a_presence_reads_the_place_template_at_its_owner() {
     let places = timed(&wire, "clock_place");
     assert_eq!(places.len(), 2);
     for place in &places {
-        let node: quire_contract_model::CheckedSemanticNodeV2 =
-            serde_json::from_value((*place).clone()).expect("a node");
+        let node = admitted_graph(&wire)
+            .0
+            .into_iter()
+            .find(|node| serde_json::to_value(&node.node_id).unwrap() == place["node_id"])
+            .expect("a node");
         assert_eq!(
             crate::emit::timed_model_node_id(&node).expect("a key"),
             node.node_id,
@@ -750,9 +762,8 @@ fn an_unwritten_guard_refuses_at_its_member() {
 fn a_point_qualified_clock_clause_refuses_at_the_clause() {
     use quire_contract_model::{AnchorName, ExecutionPoint};
     let document = document(false);
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let unit = clocked_unit(
-        &packages,
         "pre Late using v on Config::ConfigVersion::attemptUpdate { self.x >= 1 ms }\n",
     );
     let parsed = qsl_cst::parse(
@@ -775,12 +786,15 @@ fn a_point_qualified_clock_clause_refuses_at_the_clause() {
     };
     let refusals = PackageDeclarations::assemble_with_execution_points_and_cancel(
         raw,
+        "pkg".to_owned(),
         built,
         models,
         Vec::new(),
         Default::default(),
-        &quire_exact::Cancel::new(),
-        BTreeMap::from([("Late".to_owned(), point)]),
+        qsl_semantics::check::AssemblyRun {
+            cancel: &quire_exact::Cancel::new(),
+            execution_points: BTreeMap::from([("Late".to_owned(), point)]),
+        },
     )
     .expect("the unit assembles")
     .check(CheckingLimits::default())
@@ -850,8 +864,11 @@ fn a_reset_by_selection_binds_its_slot() {
     let binder = target(&wire, binder);
     assert_eq!(binder["semantic_form"], "parameter");
     assert_eq!(literal(&binder["body"], "name"), "e");
-    let integer = qsl_semantics::check::builtin_integer_type_key().to_string();
-    assert_eq!(binder["semantic_type"]["digest"], integer);
+    let integer = qsl_semantics::check::builtin_integer_type_key("pkg").unwrap();
+    assert_eq!(
+        qsl_foundation::node_wire::node_key_from_json(&binder["semantic_type"]).unwrap(),
+        integer
+    );
     assert_true(&wire, target(&wire, member(&reset["body"], "condition")));
     assert_eq!(
         located(&wire, reset, &unit),
@@ -888,10 +905,7 @@ fn excluded(document: &[u8], body: &str) -> (qsl_semantics::check::ExcludedClaus
 #[trace("TC-685", "QSpec-FR-322-AC-267")]
 #[test]
 fn an_indexed_element_write_is_refused() {
-    let document = timer_document();
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
     let unit = clocked_unit(
-        &packages,
         "post P using v on Config::ConfigVersion::attemptUpdate { \
          self.ts[0] = Config::Timer { x: 0 ms, n: 1 } }\n",
     );
@@ -974,22 +988,63 @@ fn a_reset_selected_by_presence_conditions_on_its_presence_read() {
 }
 
 /// QSpec FR-322-AC-267 `CW-05`: `post present(self.v)` is a postcondition
-/// `presence_read` with no clause node. S3 keeps the requirement out of the
-/// lowered postcondition (the evaluator reads it through the reset's
-/// `requires`), so the model is refused `not-yet-implemented` at the
-/// postcondition rather than emitted without the requirement.
+/// predicate, a `presence_read` of `v`'s place at `self`, and not a write:
+/// the package carries no clause node for it.
 #[trace("TC-685", "FR-230-AC-50", "QSpec-FR-322-AC-267")]
 #[test]
-fn a_postcondition_presence_requirement_is_not_written_yet() {
-    let (member, text) = unwritten(
+fn a_postcondition_presence_requirement_is_a_presence_read_with_no_clause_node() {
+    let (_, wire) = emitted(
         &dropping_document(),
         "post P using v on Config::ConfigVersion::attemptUpdate { present(self.v) }\n",
     );
+    for form in [
+        "clock_reset",
+        "clock_guard",
+        "clock_constraint",
+        "time_invariant",
+    ] {
+        assert!(timed(&wire, form).is_empty(), "no {form}");
+    }
+    let v = place_of(&wire, "v");
+    let (_, without) = emitted(&dropping_document(), "");
+    let reads = |wire: &Value| -> Vec<Value> {
+        nodes(wire)
+            .iter()
+            .filter(|node| node["semantic_form"] == "presence_read")
+            .cloned()
+            .collect()
+    };
+    let before = reads(&without);
+    let added: Vec<Value> = reads(&wire)
+        .into_iter()
+        .filter(|read| !before.contains(read))
+        .collect();
+    let [read] = &added[..] else {
+        panic!("one presence read: {added:?}");
+    };
+    assert_self(
+        &wire,
+        &json!({"target": assert_presence(&wire, read, v)["node_id"]}),
+    );
+    assert_declared_order(&wire);
+}
+
+/// A presence requirement spelled as a comparison with `absent`, `self.v
+/// != absent`, has no `presence_read` written yet: the model is refused
+/// `not-yet-implemented` at the comparison rather than emitted without the
+/// requirement.
+#[trace("TC-685", "FR-230-AC-50")]
+#[test]
+fn a_presence_requirement_compared_with_absent_is_not_written_yet() {
+    let (member, text) = unwritten(
+        &dropping_document(),
+        "post P using v on Config::ConfigVersion::attemptUpdate { self.v != absent }\n",
+    );
     assert_eq!(
         member,
-        qsl_semantics::check::UnwrittenTimedMember::PresenceRequirement
+        qsl_semantics::check::UnwrittenTimedMember::ComparedPresence
     );
-    assert!(text.starts_with("post P"), "{text}");
+    assert_eq!(text, "self.v != absent");
 }
 
 /// [`presence_document`] whose `attemptUpdate` frame names `v`.

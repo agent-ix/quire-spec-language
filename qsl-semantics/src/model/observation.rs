@@ -31,7 +31,6 @@ use std::collections::{BTreeMap, HashMap};
 use qsl_forms::StateClauseKind;
 use qsl_foundation::diagnostic::{BudgetDenial, Code, LimitExceeded, ALLOCATION_FAILED};
 use qsl_foundation::Setting;
-use qsl_foundation::SourceIdentity;
 use quire_exact::{
     CollectionKind, EffectiveId, Identifier, ObjectId, ObjectReference, UniverseId, Value,
 };
@@ -39,8 +38,7 @@ use quire_semantic_value::catalog::{CatalogCoded, InternalFault};
 
 use crate::model::accounting::ModelNormalizationLimits;
 use crate::model::domain_package::{DomainPackage, DomainPackageRef, OperationEffect};
-use crate::model::intake::{admit_selections, read_records, DigestMismatch};
-use crate::model::key::{hex, SHA256_JCS_DIGEST_DOMAIN};
+use crate::model::intake::{admit_selections, read_records, PackageInput};
 use crate::model::normalize::{normalize, EffectiveView, NormalizeOutcome};
 use crate::model::object_environment::ObjectEnvironment;
 use crate::model::operation::{OperationDeclaration, OperationLookup, OperationTable};
@@ -213,8 +211,8 @@ impl qsl_foundation::SettingLimits for ObservationLimits {
 // Document identity and selection
 // ---------------------------------------------------------------------------
 
-/// FR-001's four source labels, naming one admitted document, plus its
-/// `sha256-jcs` digest (FR-106's `DocumentRef`).
+/// FR-001's four source labels, naming one admitted document (FR-106's
+/// `DocumentRef`). A document is addressed by these labels alone.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct DocumentRef {
     /// The `authority` label.
@@ -225,20 +223,6 @@ pub struct DocumentRef {
     pub revision_namespace: String,
     /// The `revision` label.
     pub revision: String,
-    /// The document's `sha256-jcs` digest.
-    pub digest: [u8; 32],
-}
-
-impl DocumentRef {
-    /// The document selector formed by its four FR-001 labels.
-    pub fn source_identity(&self) -> SourceIdentity {
-        SourceIdentity::new(
-            self.authority.clone(),
-            self.identity.clone(),
-            self.revision_namespace.clone(),
-            self.revision.clone(),
-        )
-    }
 }
 
 /// The anchor an invariant's current snapshot names: `{kind, name}`.
@@ -488,7 +472,7 @@ fn fault(invariant: &'static str) -> AdmissionFailure {
 /// `complete`.
 #[derive(Clone, Debug)]
 pub struct Observation {
-    /// The document's identity and digest.
+    /// The document's identity.
     pub identity: DocumentRef,
     /// Every field value of every object this instant admitted.
     pub environment: ObjectEnvironment,
@@ -1430,7 +1414,7 @@ impl ModelView {
         let by_effective_id = view
             .type_identities()
             .iter()
-            .map(|(key, effective)| (*effective, key.clone()))
+            .map(|(key, effective)| (effective.clone(), key.clone()))
             .collect();
         Self {
             view,
@@ -1455,16 +1439,15 @@ impl ModelView {
 /// doc's design note.
 pub(crate) fn model_views(
     model_selections: &[DomainPackageRef],
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &PackageInput,
     limits: ModelNormalizationLimits,
 ) -> Result<Vec<ModelView>, AdmissionFailure> {
-    let admitted = admit_selections(
-        model_selections,
-        SHA256_JCS_DIGEST_DOMAIN,
-        packages,
-        limits.intake,
-    )
-    .map_err(|_| fault("model-reconsistent-admission"))?;
+    let identities: Vec<String> = model_selections
+        .iter()
+        .map(|selection| selection.identity.clone())
+        .collect();
+    let admitted = admit_selections(&identities, packages, limits.intake)
+        .map_err(|_| fault("model-reconsistent-admission"))?;
     let mut views = Vec::with_capacity(admitted.len());
     for (package_ref, document) in admitted {
         let records = read_records(&package_ref.identity, &document)
@@ -1507,51 +1490,28 @@ pub(crate) fn model_views(
 pub(crate) fn view_of(views: &[ModelView], effective: EffectiveId) -> Option<&ModelView> {
     views
         .iter()
-        .find(|view| view.declaration_key(effective).is_some())
+        .find(|view| view.declaration_key(effective.clone()).is_some())
 }
 
 // ---------------------------------------------------------------------------
-// sha256-jcs digest (FR-056)
+// Document validity (FR-056, FR-106 check 1)
 // ---------------------------------------------------------------------------
 
-/// FR-106's digest-first rule, checked against `expected` over `read`, the
-/// one read of `bytes` through `quire-canonical`'s shared reader: bytes the
-/// reader read are digested over their RFC 8785 canonical encoding, the
-/// reader's tree encoded by `quire-canonical` directly -- the one sanctioned
-/// encoder (ADR-013 §2); bytes the reader refuses are digested raw (FR-106
-/// check 1.3). Observation never refuses evidence as malformed. The raw
-/// fallback itself is `model::intake::check_package_digest` (widened, to
-/// serve this second caller) -- never an ad hoc `ByteDigest::of` here, and
-/// never a second call site of `model::key::raw_bytes_digest` outside that
-/// already-exempt function (ADR-013 §2 O-05: one RFC 8785 encoder, one
-/// raw-fallback call site).
-///
-/// The read ran under `limits.document_bytes`, and the encoding runs under
-/// the same bound, so a byte error from either is check 1.2's
-/// `stage_limit_exceeded`/`input-bytes-exceeded` naming
-/// `observation.input_bytes` (FR-259 B4). A read or encoding that cannot
-/// reserve memory refuses `resource_exhausted`/`allocation-failed` carrying
-/// `requested` (FR-259 B6).
-///
-/// A document the reader reads that holds a number with no exact RFC 8785
-/// spelling refuses `noncanonical_wire` (`inexact-integer` or
-/// `inexact-number`) with the `document_pointer` of the first such number,
-/// before the digest is compared (FR-056's rule, FR-106 check 1.3). A number
+/// FR-106 check 1.3, document validity: the one read of an observation
+/// document through `quire-canonical`'s shared reader. A document over the
+/// byte limit, one whose read cannot reserve memory, and one holding a number
+/// with no exact RFC 8785 spelling (`inexact-integer` or `inexact-number`,
+/// with the `document_pointer` of the first such number) refuse here. A number
 /// with no finite double is the reader's own refusal, classified from its
 /// lexeme: it is named when the reader reaches it, so ahead of an earlier
-/// inexact number, and the first reader fault decides when the bytes carry
-/// several (`{"a":1,"a":2,"n":1e400}` and `[1e400` refuse it, while
-/// `{"a":1,"a":2,"n":1e-400}` is a repeated name and digests raw). The rule
-/// reads every number of the document, including members admission reads no
-/// further, such as an invocation's `post`, `result`, `created` and
-/// `deleted` under a precondition.
-fn check_document_digest(
-    bytes: &[u8],
+/// inexact number. Any other refusal of the shared reader (malformed text, a lone
+/// surrogate escape, non-UTF-8 bytes, a repeated name) refuses
+/// `invalid_runtime_input`/`invalid-value` at the root.
+fn check_document_valid(
     read: &Result<quire_canonical::Document, quire_canonical::ReadError>,
-    expected: [u8; 32],
     limits: ObservationLimits,
 ) -> Result<(), AdmissionFailure> {
-    let parsed_digest = match read {
+    match read {
         Ok(document) => {
             if let Some((pointer, inexact, _)) =
                 crate::model::intake::first_inexact_number(document.root())
@@ -1561,40 +1521,18 @@ fn check_document_digest(
                         .with("document_pointer", pointer.as_str()),
                 ));
             }
-            Some(
-                *quire_canonical::sha256(
-                    document,
-                    quire_canonical::Limits::new(limits.document_bytes),
-                )
-                .map_err(|error| digest_encode_refusal(&error, limits))?
-                .as_bytes(),
-            )
+            Ok(())
         }
-        Err(error) => match digest_read_refusal(error, limits) {
-            Some(refusal) => return Err(refusal),
-            None => None,
+        Err(error) => match read_error_refusal(error, limits) {
+            Some(refusal) => Err(refusal),
+            None => Ok(()),
         },
-    };
-    crate::model::intake::check_package_digest(expected, bytes, parsed_digest).map_err(|mismatch| {
-        match mismatch {
-            DigestMismatch::Content { recomputed } => refuse(
-                AdmissionRecord::new(Code::StaleDependency, "content-mismatch")
-                    .with("selected", hex(&expected))
-                    .with("recomputed", hex(&recomputed)),
-            ),
-            DigestMismatch::RawBytes { digest } => refuse(
-                AdmissionRecord::new(Code::StaleDependency, "byte-digest-mismatch")
-                    .with("selected", hex(&expected))
-                    .with("actual", hex(&digest)),
-            ),
-        }
-    })
+    }
 }
 
-/// [`check_document_digest`]'s refusal for a refusal of the shared reader,
-/// or `None` when the bytes are digested raw: malformed bytes, and any
-/// other refusal of the bytes themselves.
-fn digest_read_refusal(
+/// [`check_document_valid`]'s refusal for a refusal of the shared reader,
+/// or `None` for a refusal this check does not own.
+fn read_error_refusal(
     error: &quire_canonical::ReadError,
     limits: ObservationLimits,
 ) -> Option<AdmissionFailure> {
@@ -1617,24 +1555,13 @@ fn digest_read_refusal(
                 )
             })
         }
+        // Any other refusal of the shared reader settles at the document
+        // root before any member is read (FR-106 check 1.3, FR-106-AC-3, AC-32, AC-38).
+        quire_canonical::ReadError::Malformed { .. } => Some(refuse(
+            AdmissionRecord::new(Code::InvalidRuntimeInput, "invalid-value")
+                .with("document_pointer", ""),
+        )),
         _ => None,
-    }
-}
-
-/// [`check_document_digest`]'s refusal for an error of the digest's
-/// encoding.
-fn digest_encode_refusal(
-    error: &quire_canonical::Error,
-    limits: ObservationLimits,
-) -> AdmissionFailure {
-    match error {
-        quire_canonical::Error::Limit(limit) => {
-            input_bytes_exceeded(limits.document_bytes, u128::from(limit.required))
-        }
-        quire_canonical::Error::Allocation { requested } => allocation_failed(*requested),
-        // A read tree always has an RFC 8785 encoding: every number is a
-        // finite double and every member name a string.
-        _ => fault("read-document-has-no-canonical-encoding"),
     }
 }
 
@@ -1731,201 +1658,20 @@ fn allocation_failed(requested: usize) -> AdmissionFailure {
     )
 }
 
-#[cfg(test)]
-mod digest_tests {
-    use super::*;
-    use ix_trace_rs::trace;
-    use sha2::{Digest, Sha256};
-
-    /// `check_document_digest` over one read of `bytes` under the default
-    /// limits, as admission makes it.
-    fn check(bytes: &[u8], expected: [u8; 32]) -> Result<(), AdmissionFailure> {
-        let limits = ObservationLimits::default();
-        let read = quire_canonical::read(bytes, limits.document_bytes);
-        check_document_digest(bytes, &read, expected, limits)
-    }
-
-    /// FR-106 check 1.3: bytes the shared reader refuses -- a repeated
-    /// member name, a lone surrogate escape -- are digested raw and
-    /// never refused as malformed. A repeated-name document therefore
-    /// admits under its raw digest and refuses `byte-digest-mismatch` under
-    /// the RFC 8785 digest of its last-wins value.
-    #[trace("TC-465", "FR-106-AC-3")]
-    #[test]
-    fn bytes_the_shared_reader_refuses_are_digested_raw() {
-        for text in [r#"{"a":1,"a":2}"#, r#"{"s":"\ud800"}"#] {
-            let raw: [u8; 32] = Sha256::digest(text.as_bytes()).into();
-            assert_eq!(check(text.as_bytes(), raw), Ok(()), "{text}");
-        }
-        let last_wins = quire_canonical::read(br#"{"a":2}"#, u64::MAX).unwrap();
-        let canonical =
-            *quire_canonical::sha256(&last_wins, quire_canonical::Limits::new(u64::MAX))
-                .unwrap()
-                .as_bytes();
-        let raw: [u8; 32] = Sha256::digest(br#"{"a":1,"a":2}"#).into();
-        assert_eq!(
-            check(br#"{"a":1,"a":2}"#, canonical),
-            Err(refuse(
-                AdmissionRecord::new(Code::StaleDependency, "byte-digest-mismatch")
-                    .with("selected", hex(&canonical))
-                    .with("actual", hex(&raw))
-            ))
-        );
-    }
-
-    /// FR-056: a number with no finite double refuses `noncanonical_wire`
-    /// at its pointer under any digest, raw or canonical, never
-    /// `byte-digest-mismatch`: `1e400` and `-1e400` are `inexact-integer`,
-    /// `1e-400` is `inexact-number`.
-    #[trace("TC-145", "FR-056-AC-2")]
-    #[test]
-    fn a_number_with_no_finite_double_refuses_noncanonical_wire_under_any_digest() {
-        let wide = format!("1{}.5", "0".repeat(400));
-        let wide_whole = format!("1{}e-1", "0".repeat(400));
-        for (text, cause, pointer) in [
-            (r#"{"n":1e400}"#, "inexact-integer", "/n"),
-            (r#"{"a":[0,-1e400]}"#, "inexact-integer", "/a/1"),
-            ("1e400", "inexact-integer", ""),
-            (r#"{"a":{"n":1e-400}}"#, "inexact-number", "/a/n"),
-            (r#"{"a":1,"a":2,"n":1e400}"#, "inexact-integer", "/n"),
-            ("[1e400", "inexact-integer", "/0"),
-            (r#"{"x":[1e-400,1e400]}"#, "inexact-integer", "/x/1"),
-            (wide.as_str(), "inexact-number", ""),
-            (wide_whole.as_str(), "inexact-integer", ""),
-        ] {
-            let raw: [u8; 32] = Sha256::digest(text.as_bytes()).into();
-            for digest in [raw, [0_u8; 32]] {
-                assert_eq!(
-                    check(text.as_bytes(), digest),
-                    Err(refuse(
-                        AdmissionRecord::new(Code::NoncanonicalWire, cause)
-                            .with("document_pointer", pointer)
-                    )),
-                    "{text}"
-                );
-            }
-        }
-    }
-
-    /// A repeated member name the reader detects before it reaches an
-    /// underflowing number is the reader's refusal: digested raw.
-    #[trace("TC-145", "FR-056-AC-2")]
-    #[test]
-    fn a_repeated_name_before_an_underflow_is_digested_raw() {
-        let text = r#"{"a":1,"a":2,"n":1e-400}"#;
-        let raw: [u8; 32] = Sha256::digest(text.as_bytes()).into();
-        assert_eq!(check(text.as_bytes(), raw), Ok(()));
-    }
-
-    /// FR-106 check 1.3: a document the reader reads, offered under another
-    /// digest, refuses `stale_dependency`/`content-mismatch` carrying the
-    /// selected digest and the digest recomputed from the document.
-    #[trace("TC-465", "FR-106-AC-3")]
-    #[test]
-    fn a_parsed_document_under_another_digest_refuses_content_mismatch() {
-        let text = br#"{"a":2}"#;
-        let recomputed = *quire_canonical::sha256(
-            &quire_canonical::read(text, u64::MAX).unwrap(),
-            quire_canonical::Limits::new(u64::MAX),
-        )
-        .unwrap()
-        .as_bytes();
-        let selected: [u8; 32] = Sha256::digest(b"another document").into();
-        assert_eq!(
-            check(text, selected),
-            Err(refuse(
-                AdmissionRecord::new(Code::StaleDependency, "content-mismatch")
-                    .with("selected", hex(&selected))
-                    .with("recomputed", hex(&recomputed))
-            ))
-        );
-    }
-
-    /// FR-261-AC-2 (TC-733 step 2): on a 512 KiB stack, digest admission over
-    /// a document holding a value nested 100,000 deep reads the document's
-    /// digest under its own digest, and under another digest refuses
-    /// `content-mismatch` carrying the selected and the recomputed digest.
-    #[trace("TC-733", "FR-261-AC-2")]
-    #[test]
-    fn a_document_nested_100_000_deep_is_digested_on_content() {
-        let outcome = std::thread::Builder::new()
-            .stack_size(512 * 1024)
-            .spawn(|| {
-                let depth = 100_000;
-                let text = format!("{{\"a\":{}{}}}", "[".repeat(depth), "]".repeat(depth));
-                let document = quire_canonical::read(text.as_bytes(), u64::MAX).unwrap();
-                let own =
-                    *quire_canonical::sha256(&document, quire_canonical::Limits::new(u64::MAX))
-                        .unwrap()
-                        .as_bytes();
-                let other: [u8; 32] = Sha256::digest(b"another document").into();
-                (
-                    check(text.as_bytes(), own),
-                    check(text.as_bytes(), other),
-                    own,
-                    other,
-                )
-            })
-            .expect("the test thread spawns")
-            .join()
-            .expect("the read does not overflow the stack");
-        let (admitted, refused, own, other) = outcome;
-        assert_eq!(admitted, Ok(()));
-        assert_eq!(
-            refused,
-            Err(refuse(
-                AdmissionRecord::new(Code::StaleDependency, "content-mismatch")
-                    .with("selected", hex(&other))
-                    .with("recomputed", hex(&own))
-            ))
-        );
-    }
-
-    /// The reader's and the encoder's allocation failures refuse
-    /// `resource_exhausted`/`allocation-failed` carrying `requested`, and a
-    /// byte error is check 1.2's `input-bytes-exceeded`.
-    #[trace("TC-729", "FR-259-AC-5")]
-    #[test]
-    fn an_allocation_failure_refuses_allocation_failed() {
-        let expected = refuse(
-            AdmissionRecord::new(Code::ResourceExhausted, "allocation-failed")
-                .with("requested", "4096"),
-        );
-        assert_eq!(
-            digest_read_refusal(
-                &quire_canonical::ReadError::Allocation { requested: 4096 },
-                ObservationLimits::default()
-            ),
-            Some(expected.clone())
-        );
-        assert_eq!(
-            digest_encode_refusal(
-                &quire_canonical::Error::Allocation { requested: 4096 },
-                ObservationLimits::default()
-            ),
-            expected
-        );
-        let over = quire_canonical::to_vec("over", quire_canonical::Limits::new(1)).unwrap_err();
-        let limits = ObservationLimits::default();
-        assert!(matches!(
-            digest_encode_refusal(&over, limits),
-            AdmissionFailure::Refused(record) if record.cause == "input-bytes-exceeded"
-        ));
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Provisions
 // ---------------------------------------------------------------------------
 
-/// FR-106's snapshot and invocation provisions, selected by the four FR-001
-/// identity labels. The selected document's digest remains a separate
-/// admission check.
+/// The documents a state is read from, keyed by the reference each declares.
+pub type DocumentProvision = BTreeMap<DocumentRef, Vec<u8>>;
+
+/// FR-106's snapshot and invocation provisions: maps from document reference
+/// to document bytes.
 pub struct Provisions<'a> {
     /// The snapshot provision.
-    pub snapshots: &'a BTreeMap<SourceIdentity, Vec<u8>>,
+    pub snapshots: &'a BTreeMap<DocumentRef, Vec<u8>>,
     /// The invocation provision.
-    pub invocations: &'a BTreeMap<SourceIdentity, Vec<u8>>,
+    pub invocations: &'a BTreeMap<DocumentRef, Vec<u8>>,
 }
 
 /// FR-109's `Function` selection: admit the one current snapshot's
@@ -1937,9 +1683,9 @@ pub struct Provisions<'a> {
 pub fn admit_current_snapshot(
     model_selections: &[DomainPackageRef],
     types: &TypeEnvironment,
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &PackageInput,
     model_limits: ModelNormalizationLimits,
-    provision: &BTreeMap<SourceIdentity, Vec<u8>>,
+    provision: &BTreeMap<DocumentRef, Vec<u8>>,
     selected: &DocumentRef,
     limits: ObservationLimits,
 ) -> Result<(ObjectEnvironment, AdmissionUsage), AdmissionFailure> {
@@ -1966,9 +1712,9 @@ pub fn admit_current_snapshot(
 pub fn admit_trace_snapshot(
     model_selections: &[DomainPackageRef],
     types: &TypeEnvironment,
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &PackageInput,
     model_limits: ModelNormalizationLimits,
-    provision: &BTreeMap<SourceIdentity, Vec<u8>>,
+    provision: &BTreeMap<DocumentRef, Vec<u8>>,
     selected: &DocumentRef,
     limits: ObservationLimits,
     required: &[String],
@@ -1992,9 +1738,9 @@ pub fn admit_trace_snapshot(
 pub fn admit_object_environment(
     model_selections: &[DomainPackageRef],
     types: &TypeEnvironment,
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &PackageInput,
     model_limits: ModelNormalizationLimits,
-    provision: &BTreeMap<SourceIdentity, Vec<u8>>,
+    provision: &BTreeMap<DocumentRef, Vec<u8>>,
     selected: &DocumentRef,
     limits: ObservationLimits,
     arguments: &[ObjectReference],
@@ -2014,9 +1760,9 @@ pub fn admit_object_environment(
 fn admit_current_environment(
     model_selections: &[DomainPackageRef],
     types: &TypeEnvironment,
-    (packages, model_limits): (&BTreeMap<[u8; 32], Vec<u8>>, ModelNormalizationLimits),
+    (packages, model_limits): (&PackageInput, ModelNormalizationLimits),
     (provision, selected, limits): (
-        &BTreeMap<SourceIdentity, Vec<u8>>,
+        &BTreeMap<DocumentRef, Vec<u8>>,
         &DocumentRef,
         ObservationLimits,
     ),
@@ -2047,18 +1793,11 @@ fn admit_current_environment(
     Ok((admitted.environment, read.usage))
 }
 
-/// The `sha256-jcs` digest of the document `bytes`, the one FR-106 check 1.3
-/// compares with the selected digest.
-///
-/// # Errors
-///
-/// A `Fault` when `bytes` are not a document with an RFC 8785 form.
-pub fn snapshot_document_digest(bytes: &[u8]) -> Result<[u8; 32], AdmissionFailure> {
-    let document = quire_canonical::read(bytes, u64::MAX)
-        .map_err(|_| fault("document-bytes-read-as-a-document"))?;
-    quire_canonical::sha256(&document, quire_canonical::Limits::new(u64::MAX))
-        .map(|digest| *digest.as_bytes())
-        .map_err(|_| fault("document-has-a-canonical-form"))
+/// The reference a document `bytes` names itself by: the four identity labels
+/// of its `identity` member. `None` when `bytes` are no document or carry no
+/// complete `identity`.
+pub fn document_reference(bytes: &[u8]) -> Option<DocumentRef> {
+    document::reference_of(bytes)
 }
 
 /// FR-109's `Function` selection: `type_identity`'s own [`UniverseId`],
@@ -2068,7 +1807,7 @@ pub fn snapshot_document_digest(bytes: &[u8]) -> Result<[u8; 32], AdmissionFailu
 /// would assign that object.
 pub fn population_universe_for(
     model_selections: &[DomainPackageRef],
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &PackageInput,
     model_limits: ModelNormalizationLimits,
     type_identity: EffectiveId,
 ) -> Result<UniverseId, AdmissionFailure> {
@@ -2082,18 +1821,18 @@ pub fn population_universe_for(
 /// selected model declares `declaration`.
 pub fn declared_type_universe_for(
     model_selections: &[DomainPackageRef],
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &PackageInput,
     model_limits: ModelNormalizationLimits,
     declaration: &DeclarationKey,
 ) -> Result<Option<(EffectiveId, UniverseId)>, AdmissionFailure> {
     let views = model_views(model_selections, packages, model_limits)?;
     let Some(effective) = views
         .iter()
-        .find_map(|view| view.view.type_identities().get(declaration).copied())
+        .find_map(|view| view.view.type_identities().get(declaration).cloned())
     else {
         return Ok(None);
     };
-    let universe = population_universe(&views, effective)?;
+    let universe = population_universe(&views, effective.clone())?;
     Ok(Some((effective, universe)))
 }
 
@@ -2112,7 +1851,7 @@ pub fn admit_observations(
     model_selections: &[DomainPackageRef],
     types: &TypeEnvironment,
     clause: &ClauseFacts,
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &PackageInput,
     model_limits: ModelNormalizationLimits,
     provisions: &Provisions<'_>,
     selection: &ClauseSelection,
@@ -2157,9 +1896,9 @@ pub fn admit_observations(
 
     let views = model_views(model_selections, packages, model_limits)?;
     let context_view =
-        view_of(&views, clause.context).ok_or_else(|| fault("unresolved-context-type"))?;
+        view_of(&views, clause.context.clone()).ok_or_else(|| fault("unresolved-context-type"))?;
     let context_name = context_view
-        .type_name(clause.context)
+        .type_name(clause.context.clone())
         .ok_or_else(|| fault("unresolved-context-name"))?
         .to_owned();
     let state_machine = is_state_machine_context(context_view, &context_name);
@@ -2193,9 +1932,9 @@ pub fn admit_observations(
                 types,
                 context_view,
                 context_name: &context_name,
-                clause_context: clause.context,
+                clause_context: clause.context.clone(),
                 state_machine,
-                clause: clause.identity,
+                clause: clause.identity.clone(),
                 operation: $operation,
                 as_context: $as_context,
                 ancestor_steps: model_limits.ancestor_steps,
@@ -2221,7 +1960,7 @@ pub fn admit_observations(
             types,
             context_view,
             &context_name,
-            clause.identity,
+            clause.identity.clone(),
             provisions,
             snapshot,
             anchor,
@@ -2273,8 +2012,8 @@ pub fn admit_observations(
                 types,
                 context_view,
                 &context_name,
-                clause.identity,
-                clause.context,
+                clause.identity.clone(),
+                clause.context.clone(),
                 OperationSource::Clause(
                     clause
                         .operation
@@ -2305,8 +2044,8 @@ pub fn admit_observations(
                 types,
                 context_view,
                 &context_name,
-                clause.identity,
-                clause.context,
+                clause.identity.clone(),
+                clause.context.clone(),
                 OperationSource::Any(&clause.operations),
                 true,
                 &named,
@@ -2485,9 +2224,7 @@ fn check_model(
     model: &document::ModelHeader,
 ) -> Result<(), AdmissionFailure> {
     let selection = &context_view.view.model_selection();
-    let matches = selection.identity == model.identity
-        && selection.version == model.version
-        && hex(&selection.digest) == model.digest;
+    let matches = selection.identity == model.identity;
     if matches {
         Ok(())
     } else {
@@ -2510,8 +2247,6 @@ fn check_model_any(
     let matches = views.iter().any(|view| {
         let selection = &view.view.model_selection();
         selection.identity == model.identity
-            && selection.version == model.version
-            && hex(&selection.digest) == model.digest
     });
     if matches {
         Ok(())
@@ -2701,7 +2436,7 @@ fn admit_invocation_documents(
             views,
             types,
             context_name,
-            context: clause_context,
+            context: clause_context.clone(),
             state_machine,
         },
         source,
@@ -2730,13 +2465,13 @@ fn admit_invocation_documents(
     } else {
         PostStateRange::Refuse
     };
-    let read_machine = state_machine.then_some(clause_context);
+    let read_machine = state_machine.then_some(clause_context.clone());
     let mut pre_values = document::admit_population_values(
         views,
         types,
         pre_snapshot,
         &documents.pre.identity,
-        read_machine,
+        read_machine.clone(),
         PostStateRange::Refuse,
         ancestor_steps,
     )?;
@@ -2909,7 +2644,7 @@ fn check_argument_bounds(
                         .view
                         .type_identities()
                         .get(&member.owner)
-                        .is_some_and(|owner| types.conforms(context, *owner));
+                        .is_some_and(|owner| types.conforms(context.clone(), owner.clone()));
             if !declared {
                 continue;
             }
@@ -2986,8 +2721,12 @@ fn check_operation(
         return Ok(operation.declaration.clone());
     }
     let invoked = document::find_declaration(receiver.views, &call.context)
-        .and_then(|(view, key)| view.view.type_identities().get(&key).copied())
-        .filter(|invoked| receiver.types.conforms(*invoked, receiver.context))
+        .and_then(|(view, key)| view.view.type_identities().get(&key).cloned())
+        .filter(|invoked| {
+            receiver
+                .types
+                .conforms(invoked.clone(), receiver.context.clone())
+        })
         .ok_or_else(wrong_invocation)?;
     match source {
         OperationSource::Clause(operation) if call.operation == operation.declaration.name() => {
@@ -3102,7 +2841,7 @@ fn admit_pre_call(
                 views: context.views,
                 types: context.types,
                 context_name: context.context_name,
-                context: context.clause_context,
+                context: context.clause_context.clone(),
                 state_machine: context.state_machine,
             },
             source,
@@ -3126,7 +2865,7 @@ fn admit_pre_call(
         context.types,
         snapshot,
         &input.pre.identity,
-        state_machine.then_some(context.clause_context),
+        state_machine.then_some(context.clause_context.clone()),
         PostStateRange::Refuse,
         context.ancestor_steps,
     )?;
@@ -3205,7 +2944,7 @@ fn admit_pre_call(
     };
     Ok(AdmittedObservations {
         usage,
-        clause: context.clause,
+        clause: context.clause.clone(),
         current,
         pre,
         post: None,
@@ -3245,7 +2984,7 @@ fn admit_operation(
         types,
         context_view,
         context_name,
-        clause_context,
+        clause_context.clone(),
         source,
         true,
         named,
@@ -3521,7 +3260,7 @@ impl AdmittedInvocation<'_> {
                 InternalFault::new("observation-admission", "admitted-invocation-unreadable")
             }
         };
-        let context_view = view_of(&self.views, self.context).ok_or_else(|| {
+        let context_view = view_of(&self.views, self.context.clone()).ok_or_else(|| {
             InternalFault::new("observation-admission", "unresolved-context-type")
         })?;
         let invocation = self.documents.invocation().map_err(as_fault)?;
@@ -3560,7 +3299,7 @@ pub fn admit_frame_invocation<'t>(
     model_selections: &[DomainPackageRef],
     types: &'t TypeEnvironment,
     frame: &FrameFacts,
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &PackageInput,
     model_limits: ModelNormalizationLimits,
     provisions: &Provisions<'_>,
     selected: &DocumentRef,
@@ -3568,9 +3307,9 @@ pub fn admit_frame_invocation<'t>(
 ) -> Result<AdmittedInvocation<'t>, AdmissionFailure> {
     let views = model_views(model_selections, packages, model_limits)?;
     let context_view =
-        view_of(&views, frame.context).ok_or_else(|| fault("unresolved-context-type"))?;
+        view_of(&views, frame.context.clone()).ok_or_else(|| fault("unresolved-context-type"))?;
     let context_name = context_view
-        .type_name(frame.context)
+        .type_name(frame.context.clone())
         .ok_or_else(|| fault("unresolved-context-name"))?
         .to_owned();
     let admitted = admit_invocation_documents(
@@ -3578,7 +3317,7 @@ pub fn admit_frame_invocation<'t>(
         types,
         context_view,
         &context_name,
-        frame.context,
+        frame.context.clone(),
         OperationSource::Clause(&frame.operation),
         false,
         &NamedReads::default(),
@@ -3589,13 +3328,13 @@ pub fn admit_frame_invocation<'t>(
     )?;
     Ok(AdmittedInvocation {
         usage: admitted.usage(),
-        frame: frame.frame,
+        frame: frame.frame.clone(),
         invocation: admitted.documents.invocation.identity.clone(),
         pre: admitted.documents.pre.identity.clone(),
         post: admitted.documents.post.identity.clone(),
         views,
         types,
-        context: frame.context,
+        context: frame.context.clone(),
         model_limits,
         documents: admitted.documents,
     })
@@ -3617,13 +3356,14 @@ fn population_universe(
     views: &[ModelView],
     type_identity: EffectiveId,
 ) -> Result<UniverseId, AdmissionFailure> {
-    let view = view_of(views, type_identity).ok_or_else(|| fault("object-type-unresolved"))?;
+    let view =
+        view_of(views, type_identity.clone()).ok_or_else(|| fault("object-type-unresolved"))?;
     let key = view
         .declaration_key(type_identity)
         .ok_or_else(|| fault("object-type-unresolved"))?;
     view.view
         .object_universe_of(key)
-        .map(|universe| universe.identity())
+        .and_then(|universe| universe.identity().ok())
         .ok_or_else(|| fault("object-universe-unresolved"))
 }
 
@@ -3644,11 +3384,126 @@ mod helpers {
                 admission_record(Code::InvalidRuntimeInput, "invalid-value").with("field", "key"),
             )
         })?;
-        let universe = population_universe(views, type_identity)?;
+        let universe = population_universe(views, type_identity.clone())?;
         Ok(ObjectReference::new(universe, type_identity, object))
     }
 
     pub(crate) fn admission_record(code: Code, cause: &'static str) -> AdmissionRecord {
         AdmissionRecord::new(code, cause)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ix_trace_rs::trace;
+
+    /// `check_document_valid` over one read of `bytes` under the default
+    /// limits, as admission makes it.
+    fn check(bytes: &[u8]) -> Result<(), AdmissionFailure> {
+        let limits = ObservationLimits::default();
+        let read = quire_canonical::read(bytes, limits.document_bytes);
+        check_document_valid(&read, limits)
+    }
+
+    /// FR-106 check 1.3: any text the shared reader refuses (a repeated
+    /// member name, a lone surrogate escape, a byte that is not UTF-8, text
+    /// that is not JSON) refuses `invalid_runtime_input`/`invalid-value` at
+    /// the document root.
+    #[trace("TC-465", "FR-106-AC-3")]
+    #[test]
+    fn the_shared_reader_settles_a_text_it_refuses_at_check_1_3() {
+        let invalid_value = || {
+            Err(refuse(
+                AdmissionRecord::new(Code::InvalidRuntimeInput, "invalid-value")
+                    .with("document_pointer", ""),
+            ))
+        };
+        assert_eq!(check(br#"{"a":1,"a":2}"#), invalid_value());
+        assert_eq!(check(br#"{"s":"\ud800"}"#), invalid_value());
+        assert_eq!(check(b"{\"s\":\"\xC0\"}"), invalid_value());
+        assert_eq!(check(b"{\"a\":"), invalid_value());
+        assert_eq!(check(b"{} {}"), invalid_value());
+    }
+
+    /// FR-056: a number with no finite double refuses `noncanonical_wire` at
+    /// its pointer: `1e400` and `-1e400` are `inexact-integer`, `1e-400` is
+    /// `inexact-number`.
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn a_number_with_no_finite_double_refuses_noncanonical_wire_at_its_pointer() {
+        let wide = format!("1{}.5", "0".repeat(400));
+        let wide_whole = format!("1{}e-1", "0".repeat(400));
+        for (text, cause, pointer) in [
+            (r#"{"n":1e400}"#, "inexact-integer", "/n"),
+            (r#"{"a":[0,-1e400]}"#, "inexact-integer", "/a/1"),
+            ("1e400", "inexact-integer", ""),
+            (r#"{"a":{"n":1e-400}}"#, "inexact-number", "/a/n"),
+            (r#"{"a":1,"a":2,"n":1e400}"#, "inexact-integer", "/n"),
+            ("[1e400", "inexact-integer", "/0"),
+            (r#"{"x":[1e-400,1e400]}"#, "inexact-integer", "/x/1"),
+            (wide.as_str(), "inexact-number", ""),
+            (wide_whole.as_str(), "inexact-integer", ""),
+        ] {
+            assert_eq!(
+                check(text.as_bytes()),
+                Err(refuse(
+                    AdmissionRecord::new(Code::NoncanonicalWire, cause)
+                        .with("document_pointer", pointer)
+                )),
+                "{text}"
+            );
+        }
+    }
+
+    /// A repeated member name the reader detects before it reaches an
+    /// underflowing number is the reader's refusal.
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn a_repeated_name_before_an_underflow_is_the_readers_refusal() {
+        assert_eq!(
+            check(br#"{"a":1,"a":2,"n":1e-400}"#),
+            Err(refuse(
+                AdmissionRecord::new(Code::InvalidRuntimeInput, "invalid-value")
+                    .with("document_pointer", "")
+            ))
+        );
+    }
+
+    /// FR-261-AC-2 (TC-733 step 2): on a 512 KiB stack, check 1.3 over a
+    /// document holding a value nested 100,000 deep reads the document.
+    #[trace("TC-733", "FR-261-AC-2")]
+    #[test]
+    fn a_document_nested_100_000_deep_is_read_on_content() {
+        let outcome = std::thread::Builder::new()
+            .stack_size(512 * 1024)
+            .spawn(|| {
+                let depth = 100_000;
+                let text = format!("{{\"a\":{}{}}}", "[".repeat(depth), "]".repeat(depth));
+                check(text.as_bytes())
+            })
+            .expect("the test thread spawns")
+            .join()
+            .expect("the read does not overflow the stack");
+        assert_eq!(outcome, Ok(()));
+    }
+
+    /// The reader's allocation failure refuses `resource_exhausted`/
+    /// `allocation-failed` carrying `requested`, and a byte error is check
+    /// 1.2's `input-bytes-exceeded`.
+    #[trace("TC-729", "FR-259-AC-5")]
+    #[test]
+    fn an_allocation_failure_refuses_allocation_failed() {
+        let expected = refuse(
+            AdmissionRecord::new(Code::ResourceExhausted, "allocation-failed")
+                .with("requested", "4096"),
+        );
+        assert_eq!(
+            read_error_refusal(
+                &quire_canonical::ReadError::Allocation { requested: 4096 },
+                ObservationLimits::default()
+            ),
+            Some(expected)
+        );
     }
 }

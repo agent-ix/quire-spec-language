@@ -5,10 +5,7 @@ use crate::support::standalone_setup as fixtures;
 use fixtures::runtime;
 
 use ix_trace_rs::trace;
-use qsl_foundation::ByteDigest;
-use quire_spec_language::package::{
-    NativePackage, NativePackageRef, PackageReadLimits, PackageSupport,
-};
+use quire_spec_language::package::{NativePackage, PackageReadLimits, PackageSupport};
 use serde_json::{json, Value};
 use std::{
     path::Path,
@@ -44,7 +41,7 @@ fn source_only_compilation_emits_exact_bytes_accepted_by_the_existing_reader() {
         ),
     ] {
         let generated = tempfile::tempdir().unwrap();
-        let (_, digest) = fixtures::write(generated.path(), case).unwrap();
+        let (_, package_bytes) = fixtures::write(generated.path(), case).unwrap();
         let request_bytes = std::fs::read(generated.path().join("compile.json")).unwrap();
         let job: Value = serde_json::from_slice(&request_bytes).unwrap();
         let directory = tempfile::tempdir().unwrap();
@@ -75,13 +72,12 @@ fn source_only_compilation_emits_exact_bytes_accepted_by_the_existing_reader() {
             String::from_utf8_lossy(&output.stderr)
         );
         assert!(output.stderr.is_empty());
-        assert_eq!(ByteDigest::of(&output.stdout).to_string(), digest);
+        assert_eq!(output.stdout, package_bytes);
         assert!(!output.stdout.ends_with(b"\n"));
         let models = [runtime::native_rule_model::parts().model()];
         let checked = runtime::checked_kind(&models, expression, kind);
         let read = NativePackage::read_verified(
             &output.stdout,
-            NativePackageRef::new(ByteDigest::of(&output.stdout)),
             checked.bindings().clone(),
             &models,
             &PackageSupport::default(),
@@ -90,7 +86,6 @@ fn source_only_compilation_emits_exact_bytes_accepted_by_the_existing_reader() {
         .unwrap();
         assert_eq!(read.bytes(), output.stdout);
         assert_eq!(read.checked().clauses().len(), 2);
-        assert_eq!(read.digest().to_string(), digest);
     }
 }
 
@@ -100,15 +95,9 @@ fn incompatible_request_and_static_failures_emit_no_package_bytes() {
     enum Change {
         Format,
         Runtime,
-        Stale,
         Syntax,
     }
-    for change in [
-        Change::Format,
-        Change::Runtime,
-        Change::Stale,
-        Change::Syntax,
-    ] {
+    for change in [Change::Format, Change::Runtime, Change::Syntax] {
         let directory = tempfile::tempdir().unwrap();
         fixtures::write(directory.path(), fixtures::Case::Aggregate(2)).unwrap();
         let original = std::fs::read(directory.path().join("compile.json")).unwrap();
@@ -122,16 +111,9 @@ fn incompatible_request_and_static_failures_emit_no_package_bytes() {
                 changed["request"]["snapshots"] = json!([]);
                 (20, "invalid-request")
             }
-            Change::Stale => {
-                changed["request"]["program"]["source"]["digest"] =
-                    json!(ByteDigest::of(b"foreign").to_string());
-                (20, "source_digest_mismatch")
-            }
             Change::Syntax => {
                 let broken = b"language ?";
                 std::fs::write(directory.path().join("program.native"), broken).unwrap();
-                changed["request"]["program"]["source"]["digest"] =
-                    json!(ByteDigest::of(broken).to_string());
                 (20, "invalid_syntax")
             }
         };
@@ -145,11 +127,6 @@ fn incompatible_request_and_static_failures_emit_no_package_bytes() {
         assert!(output.stdout.is_empty());
         let failure: Value = serde_json::from_slice(&output.stderr).unwrap();
         assert_eq!(failure["code"], code, "{failure}");
-        assert_eq!(
-            failure["request_digest"],
-            ByteDigest::of(&std::fs::read(directory.path().join("compile.json")).unwrap())
-                .to_string()
-        );
     }
 }
 
@@ -326,7 +303,7 @@ fn spine_request(directory: &Path, program: &[u8]) {
     let request = json!({"format":"native-compile/1","request":{"models":[],"program":{
         "source":{"file":"program.native","authority":"agent-ix","identity":"test:spine",
         "revision_namespace":"fixture","revision":"fixture:1",
-        "digest":ByteDigest::of(program).to_string(),"document":"Spine","formal_revision":1}}}});
+        "document":"Spine","formal_revision":1}}}});
     std::fs::write(
         directory.join("compile.json"),
         serde_json::to_vec(&request).unwrap(),
@@ -433,11 +410,6 @@ fn an_edition_neither_compiler_reads_refuses() {
     );
     assert!(program.contains("\"7-draft\""));
     std::fs::write(&path, &program).unwrap();
-    let request = directory.path().join("compile.json");
-    let mut job: Value = serde_json::from_slice(&std::fs::read(&request).unwrap()).unwrap();
-    job["request"]["program"]["source"]["digest"] =
-        json!(ByteDigest::of(program.as_bytes()).to_string());
-    std::fs::write(&request, serde_json::to_vec(&job).unwrap()).unwrap();
     let output = compile(directory.path());
     assert_eq!(output.status.code(), Some(20));
     assert!(output.stdout.is_empty());
@@ -467,7 +439,6 @@ fn a_complete_v1_request_selecting_native_inputs_refuses() {
     std::fs::write(directory.path().join("program.native"), &program).unwrap();
     let request = directory.path().join("compile.json");
     let mut job: Value = serde_json::from_slice(&std::fs::read(&request).unwrap()).unwrap();
-    job["request"]["program"]["source"]["digest"] = json!(ByteDigest::of(&program).to_string());
     assert!(!job["request"]["models"].as_array().unwrap().is_empty());
     // Malformed model files: the edition is decided before any model is
     // read, so the refusal names the selection, not the files.
@@ -636,7 +607,7 @@ fn spine_model_request(directory: &Path, program: &[u8], document: &[u8]) {
     job["request"]["models"] = json!([{"format":"semantic-ir/2.0.0","source":{
         "file":"orders.json","authority":"agent-ix","identity":"acme/orders",
         "revision_namespace":"fixture","revision":"fixture:1",
-        "digest":ByteDigest::of(document).to_string(),"document":"Orders","formal_revision":1}}]);
+        "document":"Orders","formal_revision":1}}]);
     std::fs::write(&path, serde_json::to_vec(&job).unwrap()).unwrap();
 }
 
@@ -665,26 +636,13 @@ fn a_complete_v1_request_with_a_domain_package_locks_its_model_selection() {
         qsl_foundation::SourceIdentity::new("agent-ix", "test:spine", "fixture", "fixture:1"),
         "program.native",
         &program,
-        &qsl_semantics::model::intake::package_input([document.as_slice()]),
+        &qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap(),
         &qsl_replay::spine::DependencyInput::default(),
     )
     .unwrap();
     assert_eq!(output.stdout, library.package().bytes());
     let wire: Value = serde_json::from_slice(&output.stdout).unwrap();
-    let selected = std::str::from_utf8(&program)
-        .unwrap()
-        .split("digest \"sha256-jcs:")
-        .nth(1)
-        .and_then(|rest| rest.split('"').next())
-        .unwrap()
-        .to_owned();
-    let selection = json!([{
-        "identity": "acme/orders",
-        "digest_domain": "sha256-jcs",
-        "digest": selected,
-    }]);
-    assert_eq!(wire["lock"]["model_selections"], selection);
-    assert_eq!(wire["identity_preimage"]["model_selections"], selection);
+    assert!(wire["lock"].get("model_selections").is_none());
 }
 
 /// FR-027-AC-9, FR-056-AC-9 (TC-442 step 4): the model fixture refuses at
@@ -692,9 +650,8 @@ fn a_complete_v1_request_with_a_domain_package_locks_its_model_selection() {
 /// admitted package does not declare, at `assembly`; `deref(g).nope`, a
 /// field neither `Gadget` nor its supertype declares, and `g = w` over a
 /// `Gadget` and an unrelated `Rock` (FR-082 compares references of one
-/// type only), at `check`; the `model` declaration, when the request
-/// supplies no domain package or a document whose digest differs, at
-/// `intake`; and a `sha256:` model digest at `intake`.
+/// type only), at `check`; and the `model` declaration, when the request
+/// supplies no domain package, at `intake`.
 #[test]
 #[trace("TC-442", "TC-136", "FR-027-AC-9", "FR-056-AC-9", "FR-049-AC-11")]
 fn a_model_bearing_request_refuses_at_the_owning_stage() {
@@ -704,12 +661,6 @@ fn a_model_bearing_request_refuses_at_the_owning_stage() {
         .lines()
         .find(|line| line.starts_with("model M = "))
         .unwrap();
-    let artifact = program.replacen("sha256-jcs:", "sha256:", 1);
-    // Another document of the same package: its `sha256-jcs` digest is not
-    // the one the declaration selects.
-    let mut changed_document: Value = serde_json::from_slice(&document).unwrap();
-    changed_document["package"]["lockDigest"] = json!(format!("sha256:{}", "1".repeat(64)));
-    let changed_document = serde_json::to_vec(&changed_document).unwrap();
     for (text, supplied, stage, code, located) in [
         (
             program.replacen("deref(g).code", "deref(g).nope", 1),
@@ -738,24 +689,6 @@ fn a_model_bearing_request_refuses_at_the_owning_stage() {
             "intake",
             "missing_import",
             declaration.to_owned(),
-        ),
-        (
-            program.clone(),
-            Some(changed_document),
-            "intake",
-            "missing_import",
-            declaration.to_owned(),
-        ),
-        (
-            artifact.clone(),
-            Some(document.clone()),
-            "intake",
-            "invalid_model_binding",
-            artifact
-                .lines()
-                .find(|line| line.starts_with("model M = "))
-                .unwrap()
-                .to_owned(),
         ),
     ] {
         let directory = tempfile::tempdir().unwrap();
@@ -802,7 +735,7 @@ fn spine_library_request(directory: &Path, library: &[u8], identity: &str) -> Ve
     job["request"]["libraries"] = json!([{"identity":identity,"source":{
         "file":"geometry.native","authority":"agent-ix","identity":"test:geometry",
         "revision_namespace":"fixture","revision":"fixture:1",
-        "digest":ByteDigest::of(library).to_string(),"document":"Geometry","formal_revision":1}}]);
+        "document":"Geometry","formal_revision":1}}]);
     std::fs::write(&path, serde_json::to_vec(&job).unwrap()).unwrap();
     program
 }
@@ -918,11 +851,11 @@ fn a_library_refusal_renders_over_the_library_source() {
 
 /// A `libraries` row selecting `file` as `identity`, under the
 /// source identity `test:<file>`.
-fn library_row(file: &str, identity: &str, bytes: &[u8]) -> Value {
+fn library_row(file: &str, identity: &str) -> Value {
     json!({"identity":identity,"source":{
         "file":file,"authority":"agent-ix","identity":format!("test:{file}"),
         "revision_namespace":"fixture","revision":"fixture:1",
-        "digest":ByteDigest::of(bytes).to_string(),"document":"Library","formal_revision":1}})
+        "document":"Library","formal_revision":1}})
 }
 
 /// FR-027-AC-10: an import cycle between two supplied libraries is a
@@ -939,7 +872,7 @@ fn a_cycle_inside_the_libraries_renders_over_the_library_source() {
     };
     let a = format!("{SPINE_HEADER}{}", import("test/b")).into_bytes();
     let b = format!("{SPINE_HEADER}{}", import("test/a")).into_bytes();
-    // The program's bytes differ from b.native's, so the two digests do.
+    // The program and library source text are distinct.
     let program = format!(
         "{SPINE_HEADER}{}function u using v(): Boolean pure {{ false }}\n",
         import("test/a")
@@ -952,8 +885,8 @@ fn a_cycle_inside_the_libraries_renders_over_the_library_source() {
     let path = directory.path().join("compile.json");
     let mut job: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
     job["request"]["libraries"] = json!([
-        library_row("a.native", "test/a", &a),
-        library_row("b.native", "test/b", &b)
+        library_row("a.native", "test/a"),
+        library_row("b.native", "test/b")
     ]);
     std::fs::write(&path, serde_json::to_vec(&job).unwrap()).unwrap();
     let output = compile(directory.path());

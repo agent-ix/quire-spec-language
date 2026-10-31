@@ -575,7 +575,7 @@ mod tests {
     use std::collections::BTreeSet;
 
     use ix_trace_rs::trace;
-    use quire_exact::{Integer, IntegerInterval, NodeKey};
+    use quire_exact::{Integer, IntegerInterval};
 
     use super::*;
     use crate::check::ir::{BodyBuilder, CheckedBody, Node};
@@ -801,14 +801,21 @@ mod tests {
                     14..=17 => {
                         let mut body = BodyBuilder::default();
                         let arguments = vec![body.push(local(0)), body.push(local(1))];
-                        Some(body.finish(Node {
-                            kind: NodeKind::Tuple {
-                                declaration: NodeKey::from_digest([3; 32]),
-                                arguments,
-                            },
-                            value_type: ValueType::Integer,
-                            location: local(0).location,
-                        }))
+                        Some(
+                            body.finish(Node {
+                                kind: NodeKind::Tuple {
+                                    declaration: quire_exact::NodeKey::new(
+                                        "fixture".to_owned(),
+                                        vec![quire_exact::PathSegment::Text("n3".to_owned())],
+                                        0,
+                                    )
+                                    .expect("a fixture key"),
+                                    arguments,
+                                },
+                                value_type: ValueType::Integer,
+                                location: local(0).location,
+                            }),
+                        )
                     }
                     _ => Some(BodyBuilder::default().finish(local(2))),
                 }

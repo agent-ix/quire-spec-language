@@ -16,19 +16,16 @@ use qsl_eval::model_subject::{ModelInstance, ModelSubject};
 use qsl_eval::simulation::model::{
     ExpansionLimits, ModelSimState, ModelSimulationRequest, PopulationUniverse,
 };
-use qsl_foundation::digest::{DigestDomain, DigestRecord};
-use qsl_foundation::{BackendId, ByteDigest, SourceIdentity};
+use qsl_foundation::{BackendId, SourceIdentity};
 use qsl_package::CheckedPackage;
 use qsl_replay::{
     GraphEvidence, GraphEvidenceEnvelope, GraphReplayResult, ModelCheckLimits, ModelPath,
-    ModelTraceSubject, ObligationIdentity, RawSourceRef, ReplayLimits, ReplayRequestWire,
-    ReplayResult, ReplaySource, RequestTargetWire, StateEnvironment, WitnessPath, WitnessSource,
+    ModelTraceSubject, ReplayLimits, ReplayRequestWire, ReplayResult, ReplaySource,
+    RequestTargetWire, StateEnvironment, WitnessPath, WitnessSource,
 };
 use qsl_semantics::check::{CheckedStateGraphClaim, PackageDeclarations};
-use qsl_semantics::library::PackageId;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::observation::{
     declared_type_universe_for, DocumentRef, ObservationLimits,
 };
@@ -39,8 +36,6 @@ use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
 
 use crate::counter::UNLIMITED;
-
-const PLACEHOLDER: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 
 /// An integer field `name`: `Int[low, high]`, or the unbounded native
 /// `Integer` for `None`.
@@ -150,7 +145,6 @@ impl Model {
         .filter(|(name, _)| ranged || *name != "value_type")
         .map(|(name, meaning)| {
             json!({"kind": {"module": self.package, "name": name}, "moduleVersion": "1.0.0",
-                "manifestDigest": PLACEHOLDER,
                 "construct": {"identity": "none", "shape": "record", "members": {},
                     "meaning": meaning}})
         })
@@ -192,12 +186,11 @@ impl Model {
         let population = self.ident(self.population);
         json!({
             "contractVersion": "2.0.0",
-            "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
+            "canonicalization": {"algorithm": "rfc8785-v1"},
             "source": {"identity": self.ident("spec"), "version": "1.0.0",
-                "dialect": "spec-bundle", "digest": PLACEHOLDER},
+                "dialect": "spec-bundle"},
             "package": {"identity": self.package, "version": "1.0.0",
-                "manifestDigest": PLACEHOLDER, "mappingVersions": [], "profileVersions": [],
-                "lockDigest": PLACEHOLDER},
+                "mappingVersions": [], "profileVersions": []},
             "occurrences": [], "extensions": [],
             "constructs": constructs,
             "types": types,
@@ -223,13 +216,9 @@ pub(crate) struct World {
     pub(crate) package: CheckedPackage,
     document: Vec<u8>,
     source: Vec<u8>,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
+    snapshots: qsl_semantics::model::observation::DocumentProvision,
     pub(crate) initial: Vec<DocumentRef>,
-}
-
-fn digest_of(document: &[u8]) -> [u8; 32] {
-    *package_input([document]).keys().next().expect("one model")
 }
 
 impl World {
@@ -237,15 +226,24 @@ impl World {
     /// initial snapshot per entry of `starts`, each `(key, [(field,
     /// value)])` per object.
     pub(crate) fn new(model: Model, body: &str, starts: &[&[Object<'_>]]) -> Self {
+        Self::with_profiles(model, "", body, starts)
+    }
+
+    /// As [`Self::new`], with `profiles` (header `profile` lines) after the
+    /// value profile.
+    pub(crate) fn with_profiles(
+        model: Model,
+        profiles: &str,
+        body: &str,
+        starts: &[&[Object<'_>]],
+    ) -> Self {
         let document = model.document();
-        let packages = package_input([document.as_slice()]);
+        let packages = package_input([document.as_slice()]).unwrap();
         let text = format!(
             "language \"ix:native\" edition \"1-draft\";\n\
-             profile v = \"quire.value.complete/v1\";\n\
-             model {} = \"{}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n{body}",
-            model.alias,
-            model.package,
-            hex(&digest_of(&document))
+             profile v = \"quire.value.complete/v1\";\n{profiles}\
+             model {} = \"{}\";\n{body}",
+            model.alias, model.package
         );
         let parsed = qsl_cst::parse(
             SourceIdentity::new("agent-ix", "graph", "git", "1"),
@@ -268,6 +266,7 @@ impl World {
         .expect("the operation clauses parse");
         let mut declarations = PackageDeclarations::assemble(
             parsed.source().reference().clone(),
+            "package".to_owned(),
             built,
             models,
             Vec::new(),
@@ -316,8 +315,7 @@ impl World {
                 json!({"key": key, "type": object_type, "fields": fields})
             })
             .collect();
-        let header = json!({"identity": self.model.package, "version": "1.0.0",
-            "digest": format!("sha256-jcs:{}", hex(&digest_of(&self.document)))});
+        let header = json!({"identity": self.model.package});
         let document = json!({
             "format": "quire.state.snapshot/v1",
             "identity": {"authority": "test", "identity": name, "revision_namespace": "fixture",
@@ -328,19 +326,17 @@ impl World {
                 "complete": true, "objects": objects}],
         });
         let bytes = document.to_string().into_bytes();
-        let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-        let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-            .expect("canonical fixture")
-            .as_bytes();
-        let reference = DocumentRef {
+        self.snapshots.insert(
+            qsl_semantics::model::observation::document_reference(&bytes)
+                .expect("a document names itself"),
+            bytes,
+        );
+        DocumentRef {
             authority: "test".to_owned(),
             identity: name.to_owned(),
             revision_namespace: "fixture".to_owned(),
             revision: "fixture:1".to_owned(),
-            digest,
-        };
-        self.snapshots.insert(reference.source_identity(), bytes);
-        reference
+        }
     }
 
     /// The subject over the world's initial snapshots with universe `keys`.
@@ -366,14 +362,6 @@ impl World {
         }
     }
 
-    /// The `package_id` of the world's checked package, as FR-322 emits it.
-    pub(crate) fn package_id(&self) -> PackageId {
-        qsl_package::emit_checked(&self.package)
-            .expect("the package emits")
-            .package()
-            .package_id()
-    }
-
     /// Recompile and replay one state-graph witness through FR-170.
     pub(crate) fn replay_witness(
         &self,
@@ -383,53 +371,27 @@ impl World {
         source: WitnessSource,
         keys: &[&str],
     ) -> GraphReplayResult {
-        let source_record = DigestRecord::mint(
-            DigestDomain::SourceBytesV1,
-            ByteDigest::of(&self.source).as_bytes(),
-        );
-        let source_wire: (String, String, String, String, Option<String>, String) = (
+        let source_wire: (String, String, String, String) = (
             "agent-ix".to_owned(),
             "graph".to_owned(),
             "git".to_owned(),
             "1".to_owned(),
-            Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-            source_record.hex(),
         );
-        let package_id = self.package_id().record();
-        let mut byte_provision = vec![
-            (
-                qsl_replay::ProvisionIdentity::Source(qsl_foundation::SourceIdentity::new(
-                    "agent-ix", "graph", "git", "1",
-                )),
-                self.source.clone(),
-            ),
-            (
-                qsl_replay::ProvisionIdentity::DomainPackage,
-                self.document.clone(),
-            ),
-        ];
-        byte_provision.extend(self.snapshots.iter().map(|(identity, bytes)| {
-            (
-                qsl_replay::ProvisionIdentity::Source(identity.clone()),
-                bytes.clone(),
-            )
-        }));
-        let obligation = [3; 32];
+        let byte_provision = vec![(
+            "agent-ix".to_owned(),
+            "graph".to_owned(),
+            self.source.clone(),
+        )];
+        let mut documents = vec![self.document.clone()];
+        documents.extend(self.snapshots.values().cloned());
+        let obligation = crate::fixture_ids::obligation_identity();
         let occurrence = claim
             .occurrence()
             .expect("a checked claim has an occurrence");
         let envelope = GraphEvidenceEnvelope::new(
-            ObligationIdentity::from_digest(obligation),
+            obligation.clone(),
             occurrence.clone(),
-            occurrence.node(),
-            package_id,
-            vec![RawSourceRef::new(
-                "agent-ix".to_owned(),
-                "graph".to_owned(),
-                "git".to_owned(),
-                "1".to_owned(),
-                source_record,
-            )],
+            occurrence.node().clone(),
             Vec::new(),
             UNLIMITED,
             Vec::new(),
@@ -440,12 +402,9 @@ impl World {
             },
         );
         let wire = ReplayRequestWire {
+            package_name: "package".to_owned(),
             profile_selections: Vec::new(),
-            package_id: (
-                Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
-                package_id.hex(),
-            ),
-            source_digests: vec![source_wire],
+            sources: vec![source_wire],
             dependencies: Vec::new(),
             replay_target: RequestTargetWire::default(),
             source: ReplaySource::ModelGraph(Box::new(envelope)),
@@ -458,6 +417,7 @@ impl World {
             object_environment: None,
             declared_domains: Vec::new(),
             byte_provision,
+            documents,
         };
         let subject = ModelTraceSubject {
             timed: None,

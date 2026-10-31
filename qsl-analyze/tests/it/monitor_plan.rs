@@ -10,7 +10,7 @@ use qsl_replay::{MonitorPlanRefusal, MonitorTarget, TimingObligation, TimingObli
 use qsl_semantics::check::{ModelTimeSource, PackageDeclarations, TemporalProfile, TimeSourceKind};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::admit_unit;
-use quire_exact::{Integer, NodeKey, Rational};
+use quire_exact::{Integer, Rational};
 
 use crate::units::Domain;
 
@@ -25,18 +25,17 @@ fn ratio(numerator: i64, denominator: i64) -> Rational {
 
 fn checked_clause(formula: &str) -> (CheckedPackage, usize) {
     let domain = Domain::config_version();
-    let packages = qsl_semantics::model::intake::package_input([domain.document.as_slice()]);
-    let digest = *packages.keys().next().expect("one model package");
+    let packages =
+        qsl_semantics::model::intake::package_input([domain.document.as_slice()]).unwrap();
     let source = SourceIdentity::new("agent-ix", "monitor-plan", "git", "1");
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
          profile t = \"quire.temporal.timed/v1\";\n\
-         model M = \"{}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         model M = \"{}\";\n\
          {TIME_UNITS}\
          temporal C using t over (c: M::ConfigVersion) clock \"model-time\" on origin {{ {formula} }}\n",
         domain.package,
-        qsl_semantics::model::key::hex(&digest),
     );
     let parsed = qsl_cst::parse(
         source.clone(),
@@ -59,6 +58,7 @@ fn checked_clause(formula: &str) -> (CheckedPackage, usize) {
     .expect("operation clauses parse");
     let mut declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "package".to_owned(),
         built,
         models,
         Vec::new(),
@@ -67,14 +67,14 @@ fn checked_clause(formula: &str) -> (CheckedPackage, usize) {
     declarations.time_sources.push(ModelTimeSource {
         model: "M".to_owned(),
         span: Span { start: 0, end: 1 },
-        model_node: NodeKey::from_digest([0; 32]),
+        model_node: crate::fixture_ids::node_key([0]),
         tick_operation_key: None,
         tick_operation_span: None,
         tick_operation_anchor: None,
         source: TimeSourceKind::Dense,
         unit: "ms".to_owned(),
-        unit_node: NodeKey::from_digest([0; 32]),
-        time_dimension: NodeKey::from_digest([0; 32]),
+        unit_node: crate::fixture_ids::node_key([0]),
+        time_dimension: crate::fixture_ids::node_key([0]),
         nominal_nodes: Vec::new(),
     });
     let graph = declarations
@@ -110,6 +110,7 @@ fn producer_keeps_checked_formula_atoms_and_converts_intervals_to_ticks() {
     };
     let (plan, obligations) = produce(
         &package,
+        qsl_semantics::library::LibraryName::new("fixture").expect("a library name"),
         clause,
         &target,
         &TimingObligationSettings::default(),
@@ -146,6 +147,7 @@ fn producer_sizes_the_ten_millisecond_past_window_as_twenty_one_events() {
     };
     let (plan, _) = produce(
         &package,
+        qsl_semantics::library::LibraryName::new("fixture").expect("a library name"),
         clause,
         &target,
         &TimingObligationSettings::default(),
@@ -170,6 +172,7 @@ fn producer_converts_the_default_one_per_microsecond_rate_to_target_units() {
     };
     let (plan, _) = produce(
         &package,
+        qsl_semantics::library::LibraryName::new("fixture").expect("a library name"),
         clause,
         &target,
         &TimingObligationSettings::default(),
@@ -195,6 +198,7 @@ fn producer_refuses_a_gap_at_least_one_full_counter_wrap() {
     assert_eq!(
         produce(
             &package,
+            qsl_semantics::library::LibraryName::new("fixture").expect("a library name"),
             clause,
             &target,
             &TimingObligationSettings::default()

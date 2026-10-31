@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! CST identity: a revision digest, a span and a structural path derived on
-//! request, with reuse decided by a one-to-one span mapping over typed
-//! productions. The digest count and the name-independence of reuse are
-//! unit tests beside `LosslessCst` in `src/cst.rs`.
+//! CST identity: a span and an arena position, with the structural path
+//! derived on request and reuse decided by a one-to-one span mapping over
+//! typed productions.
 use ix_trace_rs::trace;
 use qsl_cst::{CstElement, CstNode, Limits, LosslessCst, NodeIdentity, Production, SourceChange};
 use qsl_foundation::{SourceIdentity, Span};

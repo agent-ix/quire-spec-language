@@ -9,12 +9,9 @@ use super::*;
 use crate::check::check::EnumBinding;
 use crate::value::definition::{admit_ieee_profile, DefinitionRole};
 
-/// The text-profile definition the lock evidence of these fixtures selects.
+/// QSL's text-profile definition, the law a text operation names.
 fn text_definition() -> DefinitionReference {
-    DefinitionReference {
-        authority: "agent-ix".to_owned(),
-        identity: "unicode-text".to_owned(),
-    }
+    DefinitionRole::TextProfile.reference()
 }
 
 /// The pinned lock's IEEE profile definition.
@@ -23,7 +20,7 @@ fn ieee_definition() -> DefinitionReference {
 }
 
 fn law(role: LawRole, definition: DefinitionReference) -> Json {
-    serde_json::to_value(OperationLaw { role, definition }).expect("a law serializes")
+    view::law_json(&OperationLaw { role, definition })
 }
 
 fn text_law() -> Json {
@@ -47,6 +44,7 @@ fn type_key(value_type: &ValueType) -> NodeKey {
         std::slice::from_ref(value_type),
     )
     .1[0]
+        .clone()
 }
 
 fn type_argument(value_type: &ValueType) -> Json {
@@ -123,7 +121,7 @@ struct Row {
     arity: usize,
 }
 
-/// A package holding `functions`, with the text-profile lock evidence, the
+/// A package holding `functions`, with the
 /// pinned IEEE profile and the accumulator aliases these rows use.
 fn package(functions: Vec<FunctionDeclaration>) -> PackageDeclarations {
     let ieee =
@@ -134,9 +132,12 @@ fn package(functions: Vec<FunctionDeclaration>) -> PackageDeclarations {
             ("Total".to_owned(), ValueType::Integer),
             ("Small".to_owned(), int(0, 5)),
         ],
-        lock_evidence: LockEvidence::default().with_text_profile(text_definition()),
         ieee_profile: Some(ieee),
-        ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
+        ..PackageDeclarations::new(
+            fixture_source(),
+            "fixture",
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
 }
 
@@ -543,54 +544,24 @@ fn enum_binding(name: &str, cases: &[&str]) -> EnumBinding {
     use crate::value::enumeration::{
         AdmittedEnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
     };
-    use crate::value::semantic_node::{
-        NodeIdentityPreimage, NodeOwner, OwnerSelection, OwnerSubject,
-    };
-    let owners = OwnerSelection::new([NodeOwner::Definition(OwnerSubject {
-        authority: "agent-ix".to_owned(),
-        identity: "example-model".to_owned(),
-    })]);
-    let preimage = EnumDeclarationPreimage::from_json(json!({
-        "version": "quire.enum-declaration-node/v1",
-        "owner": {"kind": "definition", "authority": "agent-ix", "identity": "example-model"},
-        "qualified_declaration": ["Example", name],
-        "ordered": false,
-        "members": cases,
-    }))
-    .unwrap();
-    let key = NodeKey::from_digest(
-        preimage
-            .digest(qsl_foundation::IdentityLimits::default())
-            .unwrap(),
-    );
-    let declaration = AdmittedEnumDeclaration::admit(
-        preimage,
-        key,
-        &owners,
-        qsl_foundation::IdentityLimits::default(),
+    use crate::value::semantic_node::{NodeOwner, OwnerSelection, OwnerSubject};
+    let subject = OwnerSubject::new("agent-ix", "example-model", "example-model");
+    let owners = OwnerSelection::new([NodeOwner::Definition(subject.clone())]);
+    let preimage = EnumDeclarationPreimage::new(
+        NodeOwner::Definition(subject),
+        vec!["Example".to_owned(), name.to_owned()],
+        false,
+        cases.iter().map(|case| (*case).to_owned()).collect(),
     )
     .unwrap();
+    let key = preimage.key().unwrap();
+    let declaration = AdmittedEnumDeclaration::admit(preimage, key.clone(), &owners).unwrap();
     let members = cases
         .iter()
         .map(|case| {
-            let member = EnumMemberPreimage::from_json(json!({
-                "version": "quire.enum-member-node/v1",
-                "declaration_node_id": node_ref(key),
-                "case": case,
-            }))
-            .unwrap();
-            let member_key = NodeKey::from_digest(
-                member
-                    .digest(qsl_foundation::IdentityLimits::default())
-                    .unwrap(),
-            );
-            declaration
-                .admit_member(
-                    &member,
-                    member_key,
-                    qsl_foundation::IdentityLimits::default(),
-                )
-                .unwrap()
+            let member = EnumMemberPreimage::new(key.clone(), *case).unwrap();
+            let member_key = member.key().unwrap();
+            declaration.admit_member(&member, member_key).unwrap()
         })
         .collect();
     EnumBinding {
@@ -619,7 +590,11 @@ fn enum_parameter_package(functions: usize) -> PackageDeclarations {
                 )
             })
             .collect(),
-        ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
+        ..PackageDeclarations::new(
+            fixture_source(),
+            "fixture",
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
 }
 
@@ -693,7 +668,7 @@ fn value_family_rows_carry_their_member_mode_laws_and_leaves() {
 #[trace("FR-093-AC-3", "TC-415")]
 #[test]
 fn a_tuple_value_is_a_value_node_over_its_arguments() {
-    let pair = NodeKey::from_digest([7; 32]);
+    let pair = fixture_key("pair");
     let types = TypeEnvironment::new(
         [CompositeDeclaration::new(
             pair,
@@ -713,7 +688,11 @@ fn a_tuple_value_is_a_value_node_over_its_arguments() {
     let checked = PackageDeclarations {
         types,
         functions: vec![make],
-        ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
+        ..PackageDeclarations::new(
+            fixture_source(),
+            "fixture",
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
     .check(CheckingLimits::default())
     .expect("the tuple fixture checks");
@@ -742,10 +721,12 @@ fn a_tuple_value_is_a_value_node_over_its_arguments() {
 }
 
 /// TC-413 step 7 (FR-092-AC-9): `rational(1, 2)` and `rational(2, 4)` as a
-/// `Rational[-9, 9; 1, 9]` literal, through `check`, key to L3.
+/// `Rational[-9, 9; 1, 9]` literal, through `check`, give the same one
+/// literal node.
 #[trace("FR-092-AC-9", "TC-413")]
 #[test]
-fn rational_literals_key_to_l3_through_check() {
+fn rational_literals_are_one_literal_node_through_check() {
+    let mut keys = Vec::new();
     for (numerator, denominator) in [(1_i64, 2_i64), (2, 4)] {
         let literal = function(
             "half",
@@ -755,8 +736,14 @@ fn rational_literals_key_to_l3_through_check() {
             Expression::rational(Integer::from(numerator), Integer::from(denominator)),
         );
         let checked = check(vec![literal]).expect("the literal checks");
-        let graph = checked.semantic_graph();
-        let key = node_by_key(graph, &vector_key("L3")).key();
-        assert_vector(graph, key, "L3");
+        let literals: Vec<NodeKey> = checked
+            .semantic_graph()
+            .nodes()
+            .filter(|node| node.semantic_form() == "literal")
+            .map(SemanticNode::key)
+            .collect();
+        assert_eq!(literals.len(), 1);
+        keys.push(literals[0].clone());
     }
+    assert_eq!(keys[0], keys[1], "an equal rational is one node");
 }

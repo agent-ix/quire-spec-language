@@ -34,13 +34,12 @@
 //! right type compiles:
 //!
 //! ```compile_fail
-//! # use qsl_replay::spine::{check, AdmittedModels, DependencyInput, LockEvidence, SpineLimits};
+//! # use qsl_replay::spine::{check, AdmittedModels, DependencyInput, SpineLimits};
 //! # use quire_exact::Cancel;
 //! let _ = check(
 //!     b"language \"ix:native\" edition \"1-draft\";",
 //!     &AdmittedModels::default(),
 //!     &DependencyInput::default(),
-//!     &LockEvidence::default(),
 //!     SpineLimits::default(),
 //!     &Cancel::new(),
 //! );
@@ -48,15 +47,15 @@
 //!
 //! ```
 //! # use qsl_replay::spine::{
-//! #     check, AdmittedModels, DependencyInput, LockEvidence, ParsedSource, SpineLimits,
+//! #     check, AdmittedModels, DependencyInput, ParsedSource, SpineLimits,
 //! # };
 //! # use quire_exact::Cancel;
 //! fn control(parsed: &ParsedSource) {
 //!     let _ = check(
 //!         parsed,
+//!         "fixture".to_owned(),
 //!         &AdmittedModels::default(),
 //!         &DependencyInput::default(),
-//!         &LockEvidence::default(),
 //!         SpineLimits::default(),
 //!         &Cancel::new(),
 //!     );
@@ -101,7 +100,7 @@ use qsl_package::{
 };
 use qsl_semantics::check::{
     resolve_profiles, AdmittedImport, AssemblyCause, CheckCause, CorrespondenceConflict, KeyFault,
-    LockEvidence, PackageDeclarations,
+    PackageDeclarations,
 };
 use qsl_semantics::library::{ImportView, LibraryName};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -255,10 +254,10 @@ fn limit_of(
             refusal: ImportRefusal::View { refusal, .. },
             ..
         } => match &**refusal {
-            ImportViewRefusal::Read {
-                refusal: StageFailure::Limit(limit),
-                ..
-            } => Some(limit.clone()),
+            ImportViewRefusal::Read { refusal, .. } => match refusal.as_ref() {
+                StageFailure::Limit(limit) => Some(limit.clone()),
+                _ => None,
+            },
             _ => None,
         },
         CompileRefusal::Limit(limit) => Some(limit.clone()),
@@ -382,7 +381,7 @@ impl ParsedSource {
 #[derive(Clone, Debug, Default)]
 pub struct AdmittedModels {
     models: SelectedModels,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
 }
 
 impl AdmittedModels {
@@ -391,8 +390,8 @@ impl AdmittedModels {
         &self.models
     }
 
-    /// The supplied domain package documents, by their `sha256-jcs` digest.
-    pub(crate) fn packages(&self) -> &BTreeMap<[u8; 32], Vec<u8>> {
+    /// The supplied domain package documents, by package identity.
+    pub(crate) fn packages(&self) -> &qsl_semantics::model::intake::PackageInput {
         &self.packages
     }
 }
@@ -454,7 +453,7 @@ pub struct EmittedUnit {
 }
 
 impl EmittedUnit {
-    /// The v2 wire bytes with their `package_id`.
+    /// The v2 wire bytes for the compiled package.
     pub fn package(&self) -> &pkg::EmittedPackage {
         &self.package
     }
@@ -496,12 +495,12 @@ pub fn parse(
 }
 
 /// I1: admit each domain package `parsed`'s `model` declarations select,
-/// from `packages`, the supplied documents by their `sha256-jcs` digest
+/// from `packages`, the supplied documents by package identity
 /// (FR-056, FR-278). Refuses at the first `model` declaration that does not
 /// admit.
 pub fn select(
     parsed: &ParsedSource,
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &qsl_semantics::model::intake::PackageInput,
     limits: ModelNormalizationLimits,
     cancel: &Cancel,
 ) -> Result<Staged<AdmittedModels>, FrontEndFailure> {
@@ -516,25 +515,24 @@ pub fn select(
     })
 }
 
-/// S3 and S4: check and link `parsed` against `models`, the dependency
-/// input (ADR-015 D-1, FR-099) and the package's lock evidence (ADR-011
-/// §2.4, FR-278). The S4 source resolution compiles
+/// S3 and S4: check and link `parsed` against `models` and the dependency
+/// input (ADR-015 D-1, FR-099, FR-278). The S4 source resolution compiles
 /// each library the unit's `import`s reach, against the same package input,
 /// dependency input and `limits`.
 pub fn check(
     parsed: &ParsedSource,
+    package_name: String,
     models: &AdmittedModels,
     dependencies: &DependencyInput,
-    lock: &LockEvidence,
     limits: SpineLimits,
     cancel: &Cancel,
 ) -> Result<Staged<CheckedUnit>, FrontEndFailure> {
     check_with_execution_points(
         parsed,
+        package_name,
         &BTreeMap::new(),
         models,
         dependencies,
-        lock,
         limits,
         cancel,
     )
@@ -545,10 +543,10 @@ pub fn check(
 /// independently compiled libraries.
 pub fn check_with_execution_points(
     parsed: &ParsedSource,
+    package_name: String,
     execution_points: &super::StateClauseExecutionPoints,
     models: &AdmittedModels,
     dependencies: &DependencyInput,
-    lock: &LockEvidence,
     limits: SpineLimits,
     cancel: &Cancel,
 ) -> Result<Staged<CheckedUnit>, FrontEndFailure> {
@@ -581,8 +579,8 @@ pub fn check_with_execution_points(
         };
         let package = resolution.check_unit(
             parsed,
+            package_name.clone(),
             models.models.clone(),
-            lock,
             execution_points.clone(),
         )?;
         *work = resolution.work;
@@ -703,7 +701,7 @@ fn parse_unit(
 /// I1 over one unit's `model` declarations.
 fn select_models(
     parsed: &ParsedSource,
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &qsl_semantics::model::intake::PackageInput,
     limits: ModelNormalizationLimits,
     cancel: &Cancel,
 ) -> Result<SelectedModels, Box<CompileRefusal>> {
@@ -786,7 +784,7 @@ fn emit_unit(
 pub(crate) struct ComposedUnit {
     /// The S4 in-process package.
     pub(crate) package: Arc<pkg::CheckedPackage>,
-    /// The emitted wire bytes with their `package_id`.
+    /// The emitted wire bytes for the compiled package.
     pub(crate) emitted: pkg::EmittedPackage,
     /// The unit's own source.
     pub(crate) source: Source,
@@ -798,7 +796,7 @@ pub(crate) fn compose(
     source: SourceIdentity,
     path: &str,
     bytes: &[u8],
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &qsl_semantics::model::intake::PackageInput,
     dependencies: &DependencyInput,
     limits: SpineLimits,
 ) -> Result<ComposedUnit, Box<CompileRefusal>> {
@@ -823,9 +821,9 @@ pub(crate) fn compose(
         .into_value();
     let checked = check(
         &parsed,
+        "fixture".to_owned(),
         &models,
         dependencies,
-        &LockEvidence::default(),
         limits,
         &cancel,
     )
@@ -834,7 +832,7 @@ pub(crate) fn compose(
     let emitted = package(&checked, PackageLimits::default(), &cancel)
         .map_err(refusal)?
         .into_value();
-    record_declarations(&checked.package, &emitted.package().package_id().hex());
+    record_declarations(&checked.package);
     Ok(ComposedUnit {
         emitted: emitted.package().clone(),
         source: checked.source,
@@ -845,59 +843,40 @@ pub(crate) fn compose(
 #[cfg(test)]
 thread_local! {
     /// The `declaration` occurrence of each function of each composed
-    /// package, by `package_id` hex and function name: the key a `function`
-    /// replay request carries for the predicate claim (FR-098).
-    static DECLARATIONS: std::cell::RefCell<BTreeMap<(String, String), qsl_foundation::source::provenance::OccurrenceKey>> =
+    /// package, by the callable's own node key: the key a `function` replay
+    /// request carries for the predicate claim (FR-098).
+    static DECLARATIONS: std::cell::RefCell<BTreeMap<quire_exact::NodeKey, qsl_foundation::source::provenance::OccurrenceKey>> =
         const { std::cell::RefCell::new(BTreeMap::new()) };
 }
 
 /// Remember the `declaration` occurrence of each function of `package`.
 #[cfg(test)]
-fn record_declarations(package: &pkg::CheckedPackage, package_id: &str) {
-    use qsl_foundation::digest::WireNodeId;
+fn record_declarations(package: &pkg::CheckedPackage) {
     use qsl_foundation::source::provenance::OccurrenceKey;
     use quire_exact::{Origin, Role};
     let graph = package.graph();
     for state in (0..).map_while(|index| graph.function_state(index)) {
         if let Some(callable) = graph.callable(state.name) {
             let key = OccurrenceKey::new(
-                WireNodeId::from_digest(*callable.identity.as_bytes()),
+                callable.identity.clone(),
                 Origin::new(Role::new("declaration"), 0),
             );
             DECLARATIONS.with(|declarations| {
                 declarations
                     .borrow_mut()
-                    .insert((package_id.to_owned(), state.name.to_owned()), key);
+                    .insert(callable.identity.clone(), key);
             });
         }
     }
 }
 
-/// Whether a package with this `package_id` hex was [`compose`]d on this
-/// thread.
-#[cfg(test)]
-pub(crate) fn composed_here(package_id: &str) -> bool {
-    DECLARATIONS.with(|declarations| {
-        declarations
-            .borrow()
-            .keys()
-            .any(|(composed, _)| composed == package_id)
-    })
-}
-
-/// The `declaration` occurrence of `function` in a package [`compose`]d on
-/// this thread, by its `package_id` hex.
+/// The `declaration` occurrence of the callable `callable` in a package
+/// [`compose`]d on this thread.
 #[cfg(test)]
 pub(crate) fn composed_declaration(
-    package_id: &str,
-    function: &str,
+    callable: &quire_exact::NodeKey,
 ) -> Option<qsl_foundation::source::provenance::OccurrenceKey> {
-    DECLARATIONS.with(|declarations| {
-        declarations
-            .borrow()
-            .get(&(package_id.to_owned(), function.to_owned()))
-            .cloned()
-    })
+    DECLARATIONS.with(|declarations| declarations.borrow().get(callable).cloned())
 }
 
 #[cfg(test)]
@@ -917,7 +896,7 @@ struct ResolvedLibrary {
 /// One compile's S4 source resolution state (ADR-015 D-1).
 struct Resolution<'a> {
     dependencies: &'a DependencyInput,
-    packages: &'a BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &'a qsl_semantics::model::intake::PackageInput,
     limits: SpineLimits,
     cancel: &'a Cancel,
     /// The libraries whose compile is in progress, outermost first.
@@ -943,10 +922,11 @@ struct Resolution<'a> {
 /// One unit whose imports the resolution is walking: the unit itself, or a
 /// library whose compile is in progress.
 struct Frame {
+    /// The manifest's top-level package name for this unit.
+    package_name: String,
     raw: RawSourceRef,
     unit: ParsedUnit,
     models: SelectedModels,
-    lock: LockEvidence,
     /// Accepted points supplied for the root unit. Library frames always
     /// carry an empty map because they compile independently.
     execution_points: super::StateClauseExecutionPoints,
@@ -959,16 +939,16 @@ struct Frame {
 impl Frame {
     fn new(
         parsed: &ParsedSource,
+        package_name: String,
         models: SelectedModels,
-        lock: LockEvidence,
         execution_points: super::StateClauseExecutionPoints,
     ) -> Self {
         let imports = parsed.unit.selections().imports.len();
         Self {
+            package_name,
             raw: parsed.source().reference().clone(),
             unit: parsed.unit.clone(),
             models,
-            lock,
             execution_points,
             next: 0,
             admitted: Vec::with_capacity(imports),
@@ -1048,16 +1028,15 @@ impl<'a> Resolution<'a> {
         let models = charged(cancel, &mut self.work.i1, || {
             select_models(&parsed, packages, limits.model, cancel)
         })?;
-        // A library is compiled independently of whoever imports it, so its
-        // recomputed `package_id` cannot depend on the importer: it is
-        // checked under the default lock evidence, never the importer's.
+        // A library is compiled under its own identity, independently of
+        // whoever imports it.
         Ok(Library {
-            identity,
+            identity: identity.clone(),
             source: parsed.source().clone(),
             frame: Frame::new(
                 &parsed,
+                identity.as_str().to_owned(),
                 models,
-                LockEvidence::default(),
                 super::StateClauseExecutionPoints::new(),
             ),
         })
@@ -1071,6 +1050,7 @@ impl<'a> Resolution<'a> {
         let limits = self.limits;
         let raw = frame.raw.clone();
         let unit = frame.unit.clone();
+        let package_name = frame.package_name.clone();
         let models = std::mem::take(&mut frame.models);
         let admitted = std::mem::take(&mut frame.admitted);
         let links = std::mem::take(&mut frame.links);
@@ -1087,12 +1067,15 @@ impl<'a> Resolution<'a> {
         let mut declarations = charged(cancel, &mut self.work.s3, || {
             PackageDeclarations::assemble_with_execution_points_and_cancel(
                 raw.clone(),
+                package_name,
                 unit,
                 models,
                 admitted,
                 limits.assembly,
-                cancel,
-                execution_points,
+                qsl_semantics::check::AssemblyRun {
+                    cancel,
+                    execution_points,
+                },
             )
         })
         .map_err(|refusal| {
@@ -1112,12 +1095,6 @@ impl<'a> Resolution<'a> {
                 refusal,
             })
         })?;
-        // The caller's lock evidence supplies the value laws; the protocol
-        // profile stays the one the unit's header selected (FR-110).
-        declarations.lock_evidence = frame
-            .lock
-            .clone()
-            .with_header_selection_of(&declarations.lock_evidence);
         // FR-302: link the dispatch table of each family a dispatched call's
         // member name may name, under the caller's model normalization
         // limits, before `check` types the calls against them. A family
@@ -1168,11 +1145,11 @@ impl<'a> Resolution<'a> {
     fn check_unit(
         &mut self,
         parsed: &ParsedSource,
+        package_name: String,
         models: SelectedModels,
-        lock: &LockEvidence,
         execution_points: super::StateClauseExecutionPoints,
     ) -> Result<pkg::CheckedPackage, Box<CompileRefusal>> {
-        let mut root = Frame::new(parsed, models, lock.clone(), execution_points);
+        let mut root = Frame::new(parsed, package_name, models, execution_points);
         let mut libraries: Vec<Library> = Vec::new();
         loop {
             let frame = current(&mut root, &mut libraries);

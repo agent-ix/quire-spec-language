@@ -90,7 +90,7 @@ request the default refuses (TC-904).
   identity, the scalar node and its occurrence key, the obligation kind, the
   operator, the operands with their identities and ranges, the result range,
   the limits and the native outcome. The function identity
-  is the obligation identity, the package identity as supplied, the `function`
+  is the obligation identity, the `function`
   replay target as the request's `function` member sent it (absent when the
   request carries no `function` member), the
   occurrence key as the request sent it (absent when it carries none), the
@@ -140,7 +140,7 @@ request the default refuses (TC-904).
   (`invalid_runtime_input`/`unknown-member`), after the replay-target check
   and before the recompile, as FR-484 states: a value-parity claim has no
   proving run, and the clause-profile definitions bind through
-  `package_id`.
+  the request's package.
 - The function entry SHALL refuse a function declared `Boolean` with
   `ReplayRefusal::NotAValueFunction`, before any call.
 - The function entry SHALL then check the request's occurrence key against
@@ -183,7 +183,7 @@ request the default refuses (TC-904).
 | FR-357-AC-16 | **RETIRED (staleness check withdrawn).** The operator entry no longer recomputes the claim's obligation identity and compares it with the request's `obligation_identity`; no QSL check could fail on it. A difference in the native outcome alone is detected as `report.claim()` differing from the claim sent (AC-13). | Test (TC-904), retired |
 | FR-357-AC-17 | **RETIRED (staleness check withdrawn).** The operator entry no longer compares the claim's operands, literal values or operand count with the recompiled package; no QSL check could fail on it. The selector lookups (`Node`, `Operator`, `Occurrence`, `Function`) remain and are covered by AC-11. | Test (TC-904), retired |
 | FR-357-AC-18 | **RETIRED (staleness check withdrawn).** The replay no longer recomputes the obligation identity, so neither the `Encoding` nor the `Obligation` refusal exists at replay; `parity_obligation`'s own encoder refusals are covered by AC-19. | Test (TC-904), retired |
-| FR-357-AC-19 | `parity_obligation`, the one preimage encoder both parity arms call, gives for ADR-013 O-09's worked example (a record with one `Sequence` field, bounds on the sequence and its element) the preimage tuple the ADR states, for the argument entry and for the whole preimage, and orders harness bounds by the bytes of each key's RFC 8785 encoding and refuses a repeated key. | Test (TC-904) |
+| FR-357-AC-19 | Harness bounds are ordered by the bytes of each key's RFC 8785 encoding, and a repeated key is refused. | Test (TC-904) |
 | FR-357-AC-20 | Function and operator level: `replay_value_parity` and `replay_operator_parity` each refuse a request whose replay target is `frame_operation` (`Config::ConfigVersion`, `attemptUpdate`) or `state_clause` (`VersionUnchanged`) `invalid_runtime_input`/`unknown-member` at `/replay/frame_operation` or `/replay/state_clause`, naming the target, the entry and the member `function`, before the recompile; the function claim holds no `function`. | Test (TC-904) |
 
 ## Dependencies

@@ -10,16 +10,14 @@
 //! (FR-111-CON-1). A source's header profile selections resolve at E3
 //! (FR-110), its `import` selections in the spine (FR-099) and its `model`
 //! selections at I1 (FR-056); none of them reaches this module.
-use quire_canonical::FixedShape;
 use std::collections::{BTreeMap, BTreeSet};
 
-use serde::Serialize;
 use std::sync::Arc;
 
 use qsl_foundation::selection::{
     DefinitionRef, InvalidDefinitionComponent, MAX_SELECTED_DEFINITIONS,
 };
-use qsl_foundation::{ByteDigest, Code, IdentityLimits, Setting, SettingLimits};
+use qsl_foundation::{Code, Setting, SettingLimits};
 
 /// Unforgeable crate-issued proof that typed definition parts came from
 /// the owning reader boundary.
@@ -90,20 +88,6 @@ impl DefinitionRole {
             Self::MethodPlan => Some(Facet::MethodPlan),
             Self::Backend => Some(Facet::Backend),
             Self::ToolingEvidence => Some(Facet::ToolingEvidence),
-        }
-    }
-
-    fn identity_name(self) -> &'static str {
-        match self {
-            Self::Source => "source",
-            Self::ValueModelExpression => "value-model-expression",
-            Self::Temporal => "temporal",
-            Self::Observation => "observation",
-            Self::Protocol => "protocol",
-            Self::Runtime => "runtime",
-            Self::MethodPlan => "method-plan",
-            Self::Backend => "backend",
-            Self::ToolingEvidence => "tooling-evidence",
         }
     }
 }
@@ -471,25 +455,11 @@ impl Facet {
     }
 }
 
-/// The linked complete-V1 semantic identity: SHA-256 over the
-/// `quire.complete.resolved-graph/2` domain label and the RFC 8785 bytes of
-/// the bundle's identity preimage (FR-111).
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct SemanticDigest(ByteDigest);
-
-impl SemanticDigest {
-    /// Borrow the underlying SHA-256 value after domain selection.
-    pub fn digest(self) -> ByteDigest {
-        self.0
-    }
-}
-
 /// Immutable result of selecting the dependency-closed complete profile.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CompleteBundle {
     facets: BTreeSet<Facet>,
     capabilities: BTreeSet<CapabilityId>,
-    identity: SemanticDigest,
 }
 
 impl CompleteBundle {
@@ -501,11 +471,6 @@ impl CompleteBundle {
     /// All 176 atomic required capabilities.
     pub fn capabilities(&self) -> &BTreeSet<CapabilityId> {
         &self.capabilities
-    }
-
-    /// Semantic identity of the closed selection.
-    pub fn identity(&self) -> SemanticDigest {
-        self.identity
     }
 
     /// Verify that a consumer understands every atomic selected capability.
@@ -637,12 +602,11 @@ impl ResolutionCause {
 ///
 /// The roots close over their dependency edges depth first. Every
 /// [`PackageLimits`] field applies exactly as supplied. No backend, installed
-/// runtime or support set is an input, so none changes the bundle's identity.
+/// runtime or support set is an input to the selected bundle.
 pub fn link_bundle(
     roots: &[DefinitionRef],
     catalog: &DefinitionCatalog,
     limits: PackageLimits,
-    identity: IdentityLimits,
 ) -> Result<LinkedBundle, BundleRefusal> {
     if roots.len() > limits.definitions {
         return Err(refusal(
@@ -800,21 +764,10 @@ pub fn link_bundle(
             PackageError::MissingFacet(*missing),
         ));
     }
-    let identity =
-        resolved_graph_identity(&resolved, &capabilities, identity).map_err(|cause| {
-            let code = match &cause {
-                PackageError::CanonicalSize | PackageError::ResourceLimit { .. } => {
-                    Code::ResourceExhausted
-                }
-                _ => Code::InvalidPackage,
-            };
-            refusal(code, None, cause)
-        })?;
     Ok(LinkedBundle {
         bundle: CompleteBundle {
             facets,
             capabilities,
-            identity,
         },
         definitions: resolved,
         limits,
@@ -865,98 +818,9 @@ fn cause_tag(code: Code, cause: &PackageError) -> ResolutionCause {
         PackageError::DefinitionCycle(_) => Tag::DefinitionCycle,
         PackageError::MissingCapability(_) => Tag::UnsupportedFeature,
         PackageError::UnknownCapability(_) => Tag::UnknownFeature,
-        PackageError::CanonicalSize | PackageError::ResourceLimit { .. } => {
-            Tag::InsufficientNextCharge
-        }
+        PackageError::ResourceLimit { .. } => Tag::InsufficientNextCharge,
         PackageError::MissingFacet(_) => Tag::FeatureSetMismatch,
     }
-}
-
-/// The digest-domain label of a bundle's identity.
-const RESOLVED_GRAPH_DOMAIN: &[u8] = b"quire.complete.resolved-graph/2";
-
-/// A bundle's identity preimage: every closed definition (its reference,
-/// the SHA-256 of its bytes, role, dependencies and capabilities) in key
-/// order, `models`,
-/// which is always empty because model selections resolve only through I1
-/// (FR-111, FR-056), then the bundle's capabilities.
-#[derive(Serialize, FixedShape)]
-struct ResolvedGraphPreimage<'a> {
-    definitions: Vec<ResolvedDefinitionPreimage<'a>>,
-    models: [&'a str; 0],
-    capabilities: Vec<&'a str>,
-}
-
-#[derive(Serialize, FixedShape)]
-struct ResolvedDefinitionPreimage<'a> {
-    exact: ExactRefPreimage<'a>,
-    digest: String,
-    role: &'static str,
-    dependencies: Vec<ExactRefPreimage<'a>>,
-    capabilities: Vec<&'a str>,
-}
-
-/// A `{authority, identity}` definition reference.
-#[derive(Serialize, FixedShape)]
-struct ExactRefPreimage<'a> {
-    authority: &'a str,
-    identity: &'a str,
-}
-
-impl<'a> From<&'a DefinitionRef> for ExactRefPreimage<'a> {
-    fn from(exact: &'a DefinitionRef) -> Self {
-        Self {
-            authority: exact.authority(),
-            identity: exact.identity(),
-        }
-    }
-}
-
-/// The [`SemanticDigest`] of a bundle: SHA-256 over the
-/// `quire.complete.resolved-graph/2` domain label and the RFC 8785 bytes of
-/// its [`ResolvedGraphPreimage`], through `quire-canonical`'s named-domain
-/// digest (ADR-013 §2, ADR-013:113: the one RFC 8785 implementation).
-///
-/// A refusal of the encoder (for a preimage of strings, its bytes reaching
-/// `identity`'s byte limit or a failed heap reservation) is
-/// [`PackageError::CanonicalSize`]: the graph's canonical form cannot be
-/// produced at its size.
-fn resolved_graph_identity(
-    definitions: &BTreeMap<DefinitionRef, Arc<Definition>>,
-    capabilities: &BTreeSet<CapabilityId>,
-    identity: IdentityLimits,
-) -> Result<SemanticDigest, PackageError> {
-    let preimage = ResolvedGraphPreimage {
-        definitions: definitions
-            .values()
-            .map(|definition| ResolvedDefinitionPreimage {
-                exact: ExactRefPreimage::from(&definition.exact),
-                digest: ByteDigest::of(&definition.exact_bytes).to_string(),
-                role: definition.role.identity_name(),
-                dependencies: definition
-                    .dependencies
-                    .iter()
-                    .map(ExactRefPreimage::from)
-                    .collect(),
-                capabilities: definition
-                    .capabilities
-                    .iter()
-                    .map(CapabilityId::as_str)
-                    .collect(),
-            })
-            .collect(),
-        models: [],
-        capabilities: capabilities.iter().map(CapabilityId::as_str).collect(),
-    };
-    let digest = quire_canonical::sha256_with_domain(
-        RESOLVED_GRAPH_DOMAIN,
-        &preimage,
-        quire_canonical::Limits::new(identity.input_bytes),
-    )
-    .map_err(|_| PackageError::CanonicalSize)?;
-    ByteDigest::from_hex(&digest.to_string())
-        .map(SemanticDigest)
-        .map_err(|_| PackageError::CanonicalSize)
 }
 
 /// Typed complete-package refusal.
@@ -988,9 +852,6 @@ pub enum PackageError {
     /// Dependency closure omitted one atomic required capability.
     #[error("missing required capability {0:?}")]
     MissingCapability(CapabilityId),
-    /// Canonical length cannot be represented by the versioned wire encoding.
-    #[error("canonical field exceeds the u64 wire length domain")]
-    CanonicalSize,
     /// Package input reached a configured [`PackageLimits`] ceiling.
     #[error("package resource limit exceeded: {kind} (limit {limit}, reached {actual}); raise it with `--limit {setting}=<n>`", setting = .kind.setting())]
     ResourceLimit {
@@ -1019,39 +880,4 @@ pub struct DefinitionConflict {
     pub first_root: usize,
     /// Conflicting later exact selection.
     pub second: DefinitionRef,
-}
-
-#[cfg(test)]
-mod tests {
-    use ix_trace_rs::trace;
-    use sha2::{Digest as _, Sha256};
-
-    use super::*;
-
-    /// Golden vector for the bundle identity's named
-    /// `quire-canonical` domain: SHA-256 over the label's big-endian `u64`
-    /// length, the label `quire.complete.resolved-graph/2`, and the
-    /// preimage's RFC 8785 text, all written out by hand.
-    #[trace("TC-491", "FR-111-AC-5", "QSpec-FR-131-AC-2")]
-    #[test]
-    fn resolved_graph_identity_is_the_hash_of_its_hand_written_preimage() {
-        const TEXT: &str =
-            r#"{"capabilities":["V1-SRC-001","V1-TYPE-002"],"definitions":[],"models":[]}"#;
-        // FR-111's domain label, written out; not the production constant.
-        const DOMAIN: &[u8] = b"quire.complete.resolved-graph/2";
-        let mut hasher = Sha256::new();
-        hasher.update(u64::try_from(DOMAIN.len()).unwrap().to_be_bytes());
-        hasher.update(DOMAIN);
-        hasher.update(TEXT.as_bytes());
-        let digest = format!("{:x}", hasher.finalize());
-
-        let capabilities = ["V1-SRC-001", "V1-TYPE-002"]
-            .into_iter()
-            .map(|id| CapabilityId::complete(id).unwrap())
-            .collect();
-        let identity =
-            resolved_graph_identity(&BTreeMap::new(), &capabilities, IdentityLimits::default())
-                .unwrap();
-        assert_eq!(format!("{:x}", identity.digest()), digest);
-    }
 }

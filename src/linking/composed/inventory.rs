@@ -118,12 +118,6 @@ pub(super) fn prepare(
     for (index, source) in report.supplied.iter().enumerate() {
         let selected = expected[source.identity()][0];
         selections.push(selected);
-        if source.digest() != inventory.units[selected].digest {
-            report.issues.push(InventoryIssue::DigestMismatch {
-                expected: selected,
-                supplied: index,
-            });
-        }
         match crate::parse_native_source(source.clone(), report.parser_limits) {
             Ok(unit) => {
                 let (language, edition) = match &unit {

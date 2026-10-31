@@ -16,29 +16,22 @@ use std::collections::BTreeSet;
 
 use ix_trace_rs::trace;
 use qsl_foundation::bound::DomainKind;
-use qsl_foundation::digest::ByteDigest;
 use qsl_foundation::BackendId;
 use qsl_route::{
     descriptor_from_manifest, descriptor_from_manifest_with_dynamics, BackendDescriptor, Candidate,
     CandidateOutcome, DynamicsDefect, DynamicsKind, DynamicsMember, EvidenceKind,
-    FairnessKindsMember, FairnessLabel, ItemEvidence, ManifestDigest, ManifestMembers, Mode,
-    ProviderOrigin, RegistrationCause, RegistrationRefusal, Registry, SolverBounds,
+    FairnessKindsMember, FairnessLabel, ItemEvidence, ManifestMembers, Mode, ProviderOrigin,
+    RegistrationCause, RegistrationRefusal, Registry, SolverBounds,
 };
 use qsl_semantics::check::Capability;
 
-fn digest(seed: &[u8]) -> ManifestDigest {
-    ManifestDigest::from_digest(ByteDigest::of(seed).as_bytes())
-}
-
 fn backend(
     id: &str,
-    seed: &[u8],
     advertises: impl IntoIterator<Item = (Capability, Mode)>,
 ) -> BackendDescriptor {
     BackendDescriptor::new(
         Candidate::new(BackendId::new(id)),
         ProviderOrigin::Linked,
-        digest(seed),
         advertises,
         Some(BTreeSet::from([DomainKind::Collection])),
         // Used only by a descriptor advertising `probabilistic-satisfaction`.
@@ -65,12 +58,10 @@ fn set_ids(outcome: CandidateOutcome) -> Vec<String> {
 fn hybrid_and_discrete_items_route_to_their_advertised_dynamics() {
     let discrete = backend(
         "qsl-model-check",
-        b"discrete",
         [(Capability::TemporalSatisfaction, Mode::Bounded)],
     );
     let hybrid = backend(
         "hybrid-fixture",
-        b"hybrid",
         [(Capability::TemporalSatisfaction, Mode::Bounded)],
     )
     .with_dynamics(
@@ -119,7 +110,6 @@ fn hybrid_manifest_admission_checks_dynamics_after_fairness_and_evidence() {
         descriptor_from_manifest_with_dynamics(
             Candidate::new(BackendId::new("hybrid-fixture")),
             ProviderOrigin::Linked,
-            digest(b"hybrid-manifest"),
             [(Some("temporal-satisfaction"), Some("bounded"))],
             ManifestMembers {
                 domains: Some(&["collection"]),
@@ -223,14 +213,12 @@ fn candidate_set_matches_registered_backends_advertising_the_requested_kind() {
     registry
         .register(backend(
             "backend-a",
-            b"a",
             [(Capability::ValueValidity, Mode::Bounded)],
         ))
         .unwrap();
     registry
         .register(backend(
             "backend-b",
-            b"b",
             [(Capability::OperationContract, Mode::Bounded)],
         ))
         .unwrap();
@@ -268,7 +256,6 @@ fn candidate_set_matches_registered_backends_advertising_the_requested_kind() {
     absent
         .register(backend(
             "backend-c",
-            b"c",
             [(Capability::TemporalSatisfaction, Mode::Bounded)],
         ))
         .unwrap();
@@ -285,7 +272,6 @@ fn candidate_set_matches_registered_backends_advertising_the_requested_kind() {
     bounded_only
         .register(backend(
             "backend-d",
-            b"d",
             [(Capability::FiniteReplay, Mode::Bounded)],
         ))
         .unwrap();
@@ -313,7 +299,6 @@ fn unregistered_named_backend_yields_a_distinct_unknown_backend_marker() {
     registry
         .register(backend(
             "backend-a",
-            b"a",
             [(Capability::ValueValidity, Mode::Bounded)],
         ))
         .unwrap();
@@ -338,24 +323,15 @@ fn unregistered_named_backend_yields_a_distinct_unknown_backend_marker() {
 }
 
 /// FR-075-AC-7 (quire-specification TC-282 DB-01, FR-290-AC-9): repeating
-/// an identical registration -- same id, manifest digest, tool and
-/// advertised pairs -- is one registration and is never refused.
+/// an identical registration -- same id, tool and advertised pairs
+/// -- is one registration and is never refused.
 #[test]
 #[trace("TC-448", "FR-075-AC-7")]
 fn identical_repeat_registration_is_not_refused() {
-    let a1 = backend(
-        "backend-a",
-        b"a",
-        [(Capability::ValueValidity, Mode::Bounded)],
-    );
-    let a2 = backend(
-        "backend-a",
-        b"a",
-        [(Capability::ValueValidity, Mode::Bounded)],
-    );
+    let a1 = backend("backend-a", [(Capability::ValueValidity, Mode::Bounded)]);
+    let a2 = backend("backend-a", [(Capability::ValueValidity, Mode::Bounded)]);
     let b = backend(
         "backend-b",
-        b"b",
         [(Capability::OperationContract, Mode::Bounded)],
     );
 
@@ -399,44 +375,36 @@ fn identical_repeat_registration_is_not_refused() {
 }
 
 /// FR-075-AC-4 (quire-specification TC-282 DB-03, FR-290-AC-10): two
-/// unequal descriptors under one `BackendId` conflict. Every registration
-/// of that identity is refused, the held registration is withdrawn, and
-/// the identity becomes unregistered -- under either arrival order.
+/// unequal descriptors under one `BackendId` conflict. The identity is
+/// refused, the held registration is withdrawn, and the identity becomes
+/// unregistered -- under either arrival order.
 #[test]
 #[trace("TC-196", "FR-075-AC-4")]
-fn conflicting_backend_identity_registration_refuses_both_under_either_order() {
+fn conflicting_backend_identity_registration_is_refused_under_either_order() {
     for reversed in [false, true] {
         let mut registry = Registry::new();
-        let a1 = backend(
-            "backend-a",
-            b"a",
-            [(Capability::ValueValidity, Mode::Bounded)],
-        );
+        let a1 = backend("backend-a", [(Capability::ValueValidity, Mode::Bounded)]);
         let a2 = backend(
             "backend-a",
-            b"a2",
             [(Capability::OperationContract, Mode::Bounded)],
         );
         let (first, second) = if reversed { (a2, a1) } else { (a1, a2) };
 
         registry.register(first).unwrap();
-        let refusals = registry
+        let refusal = registry
             .register(second)
-            .expect_err("a conflicting descriptor under one identity refuses both");
+            .expect_err("a conflicting descriptor under one identity is refused");
 
-        assert_eq!(refusals.len(), 2, "reversed={reversed}");
-        for refusal in &refusals {
-            assert_eq!(
-                refusal.identity(),
-                &BackendId::new("backend-a"),
-                "reversed={reversed}"
-            );
-            assert_eq!(
-                refusal.catalog_code().to_string(),
-                "invalid_capability/duplicate-backend",
-                "reversed={reversed}"
-            );
-        }
+        assert_eq!(
+            refusal.identity(),
+            &BackendId::new("backend-a"),
+            "reversed={reversed}"
+        );
+        assert_eq!(
+            refusal.catalog_code().to_string(),
+            "invalid_capability/duplicate-backend",
+            "reversed={reversed}"
+        );
 
         // Neither advertised kind is reachable any more: the identity is
         // withdrawn entirely, not merely refused for the second arrival.
@@ -474,7 +442,6 @@ fn empty_candidate_set_carries_the_data_an_unsupported_warning_needs() {
     registry
         .register(backend(
             "backend-a",
-            b"a",
             [(Capability::ValueValidity, Mode::Bounded)],
         ))
         .unwrap();
@@ -513,7 +480,6 @@ fn backend_absence_never_settles_as_a_refusal_or_a_hold_at_the_registry() {
     registry
         .register(backend(
             "backend-a",
-            b"a",
             [(Capability::ValueValidity, Mode::Bounded)],
         ))
         .unwrap();
@@ -526,21 +492,18 @@ fn backend_absence_never_settles_as_a_refusal_or_a_hold_at_the_registry() {
     assert!(set.is_empty());
 
     // Registration refusal: `register` returns
-    // `Result<(), Vec<RegistrationRefusal>>`, a wholly different type from
+    // `Result<(), RegistrationRefusal>`, a wholly different type from
     // `candidates`'s `CandidateOutcome` -- there is no shared enum whose
     // variants a caller could confuse, and no conversion exists between the
-    // two. Each `RegistrationRefusal` itself names only the conflicted
-    // identity; it carries no candidate-set data.
-    let refusals = registry
+    // two. The `RegistrationRefusal` names only the conflicted identity; it
+    // carries no candidate-set data.
+    let refusal = registry
         .register(backend(
             "backend-a",
-            b"a2",
             [(Capability::OperationContract, Mode::Bounded)],
         ))
         .expect_err("conflicting registration is refused");
-    for refusal in &refusals {
-        assert_eq!(refusal.identity().as_str(), "backend-a");
-    }
+    assert_eq!(refusal.identity().as_str(), "backend-a");
 
     // Neither `CandidateOutcome` variant is a deferred/pending/hold: both
     // are ordinary data, produced synchronously and carrying nothing that
@@ -566,22 +529,15 @@ mod adr_012_section_5_2_rows {
     fn row_a_duplicate_backend_id_is_refused() {
         let mut registry = Registry::new();
         registry
-            .register(backend(
-                "x",
-                b"1",
-                [(Capability::ValueValidity, Mode::Bounded)],
-            ))
+            .register(backend("x", [(Capability::ValueValidity, Mode::Bounded)]))
             .unwrap();
-        let refusals = registry
+        let refusal = registry
             .register(backend(
                 "x",
-                b"2",
                 [(Capability::OperationContract, Mode::Bounded)],
             ))
             .expect_err("a conflicting registration under the same identity must be refused");
-        for refusal in &refusals {
-            assert_eq!(refusal.identity().as_str(), "x");
-        }
+        assert_eq!(refusal.identity().as_str(), "x");
     }
 
     /// Row (b): a capability kind outside the vocabulary cannot reach the
@@ -597,7 +553,7 @@ mod adr_012_section_5_2_rows {
             .map(|&kind| (kind, Mode::Bounded))
             .collect();
         registry
-            .register(backend("x", b"1", advertises))
+            .register(backend("x", advertises))
             .expect("every Capability::ALL member registers without a registry-level refusal");
         for kind in Capability::ALL {
             let CandidateOutcome::Candidates(set) = registry.candidates_for_evidence(
@@ -634,11 +590,7 @@ mod adr_012_section_5_2_rows {
     fn row_d_unadvertised_kind_yields_an_empty_candidate_set() {
         let mut registry = Registry::new();
         registry
-            .register(backend(
-                "x",
-                b"1",
-                [(Capability::ValueValidity, Mode::Bounded)],
-            ))
+            .register(backend("x", [(Capability::ValueValidity, Mode::Bounded)]))
             .unwrap();
         let CandidateOutcome::Candidates(set) = registry.candidates(Capability::Composition, None)
         else {
@@ -655,18 +607,10 @@ mod adr_012_section_5_2_rows {
     fn row_e_more_than_one_match_with_no_named_backend_returns_every_candidate() {
         let mut registry = Registry::new();
         registry
-            .register(backend(
-                "x",
-                b"1",
-                [(Capability::ValueValidity, Mode::Bounded)],
-            ))
+            .register(backend("x", [(Capability::ValueValidity, Mode::Bounded)]))
             .unwrap();
         registry
-            .register(backend(
-                "y",
-                b"2",
-                [(Capability::ValueValidity, Mode::Unbounded)],
-            ))
+            .register(backend("y", [(Capability::ValueValidity, Mode::Unbounded)]))
             .unwrap();
         let CandidateOutcome::Candidates(set) =
             registry.candidates(Capability::ValueValidity, None)
@@ -685,58 +629,33 @@ mod adr_012_section_5_2_rows {
 mod tc_282_duplicate_backend_identity {
     use super::*;
 
-    /// `A1`: identity `a`, one digest, advertising (`value-validity`,
-    /// `bounded`).
+    /// `A1`: identity `a`, advertising (`value-validity`, `bounded`).
     fn a1() -> BackendDescriptor {
-        backend(
-            "a",
-            b"tc282-a-1",
-            [(Capability::ValueValidity, Mode::Bounded)],
-        )
+        backend("a", [(Capability::ValueValidity, Mode::Bounded)])
     }
 
-    /// `A2`: identity `a`, a second, distinct digest, advertising the same
-    /// (`value-validity`, `bounded`) pair as `A1`.
+    /// `A2`: identity `a`, advertising (`value-validity`, `bounded`) and
+    /// (`value-validity`, `unbounded`), so it differs from `A1` by one
+    /// extra advertised pair.
     fn a2() -> BackendDescriptor {
         backend(
             "a",
-            b"tc282-a-2",
-            [(Capability::ValueValidity, Mode::Bounded)],
+            [
+                (Capability::ValueValidity, Mode::Bounded),
+                (Capability::ValueValidity, Mode::Unbounded),
+            ],
         )
     }
 
-    /// `A1'`: identity `a`, `A1`'s own digest, advertising
-    /// (`value-validity`, `unbounded`) instead.
+    /// `A1'`: identity `a`, advertising (`value-validity`, `unbounded`)
+    /// instead of `A1`'s pair.
     fn a1_prime() -> BackendDescriptor {
-        backend(
-            "a",
-            b"tc282-a-1",
-            [(Capability::ValueValidity, Mode::Unbounded)],
-        )
+        backend("a", [(Capability::ValueValidity, Mode::Unbounded)])
     }
 
     /// `B`: identity `b`, advertising (`value-validity`, `bounded`).
     fn b_backend() -> BackendDescriptor {
-        backend(
-            "b",
-            b"tc282-b",
-            [(Capability::ValueValidity, Mode::Bounded)],
-        )
-    }
-
-    /// `A1`'s and `A2`'s manifest digests, ordered so `.0 < .1` bytewise.
-    /// TC-282 labels the smaller `d1` and the larger `d2`; which of `a1()`
-    /// and `a2()`'s own hash-derived digests happens to come out smaller is
-    /// not asserted anywhere else, so this orders them at run time rather
-    /// than assuming a fixed seed produces the smaller hash.
-    fn ordered_digests() -> (ManifestDigest, ManifestDigest) {
-        let x = a1().manifest_digest();
-        let y = a2().manifest_digest();
-        if x < y {
-            (x, y)
-        } else {
-            (y, x)
-        }
+        backend("b", [(Capability::ValueValidity, Mode::Bounded)])
     }
 
     /// Every ordering of `0..n` (n <= 5 here, so a plain recursive
@@ -761,66 +680,36 @@ mod tc_282_duplicate_backend_identity {
     }
 
     /// Register `pool[order[i]]` for each `i` in turn, collecting each
-    /// call's own `Err` (if any). TC-282's own vectors are registry-level;
-    /// none of DB-01..DB-06 or DB-08's descriptors are refused at admission.
-    fn build(
-        order: &[usize],
-        pool: &[BackendDescriptor],
-    ) -> (Registry, Vec<Vec<RegistrationRefusal>>) {
+    /// call's own refusal (if any).
+    fn build(order: &[usize], pool: &[BackendDescriptor]) -> (Registry, Vec<RegistrationRefusal>) {
         let mut registry = Registry::new();
         let mut errs = Vec::new();
         for &index in order {
-            if let Err(refusals) = registry.register(pool[index].clone()) {
-                errs.push(refusals);
+            if let Err(refusal) = registry.register(pool[index].clone()) {
+                errs.push(refusal);
             }
         }
         (registry, errs)
     }
 
-    fn refusal_digests(registry: &Registry) -> Vec<ManifestDigest> {
+    /// The identities the registry's standing refusals name, in order.
+    fn refusal_ids(registry: &Registry) -> Vec<String> {
         registry
             .refusals()
-            .map(|refusal| refusal.manifest_digest())
+            .map(|refusal| refusal.identity().as_str().to_owned())
             .collect()
     }
 
-    /// Every refusal in every `Err` this identity's registrations produced
-    /// is well-formed: identity `"a"`, cause `DuplicateBackend`, a digest
-    /// drawn from `valid_digests`, and -- within one `Err` -- refusals in
-    /// ascending digest order with no repeated digest. Used where the
-    /// number and grouping of failing calls legitimately varies with
-    /// registration order (unlike DB-03/DB-04/DB-06/DB-08, which always
-    /// produce exactly one `Err` whose content an equality check can pin
-    /// down directly).
-    fn assert_refusals_well_formed(
-        errs: &[Vec<RegistrationRefusal>],
-        valid_digests: &[ManifestDigest],
-    ) {
-        for err in errs {
-            assert!(!err.is_empty(), "an Err must never be empty");
-            let mut previous: Option<ManifestDigest> = None;
-            for refusal in err {
-                assert_eq!(refusal.identity().as_str(), "a");
-                assert_eq!(refusal.cause(), &RegistrationCause::DuplicateBackend);
-                let digest = refusal.manifest_digest();
-                assert!(
-                    valid_digests.contains(&digest),
-                    "refusal digest must be one of this identity's own digests"
-                );
-                if let Some(prev) = previous {
-                    assert!(
-                        prev < digest,
-                        "refusals within one Err are ascending with no repeat"
-                    );
-                }
-                previous = Some(digest);
-            }
-        }
+    /// A `duplicate-backend` refusal of identity `a`.
+    fn duplicate_of_a() -> RegistrationRefusal {
+        let mut registry = Registry::new();
+        registry.register(a1()).unwrap();
+        registry.register(a2()).unwrap_err()
     }
 
-    /// DB-01: `A1`, `A1` -- `a` held once with `d1`; no refusal; the
-    /// unnamed item's candidates are exactly (`a`, `d1`); the snapshot
-    /// equals one registration of `A1`.
+    /// DB-01: `A1`, `A1` -- `a` held once; no refusal; the unnamed item's
+    /// candidates are exactly `a`; the snapshot equals one registration of
+    /// `A1`.
     #[test]
     #[trace("TC-447", "FR-075-AC-7")]
     fn db_01_identical_repeat_holds_once_with_no_refusal() {
@@ -832,7 +721,7 @@ mod tc_282_duplicate_backend_identity {
             let (registry, errs) = build(order, &pool);
             assert!(errs.is_empty(), "order {order:?}");
             assert_eq!(registry, baseline_registry, "order {order:?}");
-            assert_eq!(refusal_digests(&registry).len(), 0, "order {order:?}");
+            assert_eq!(registry.refusals().count(), 0, "order {order:?}");
             assert_eq!(
                 set_ids(registry.candidates(Capability::ValueValidity, None)),
                 ["a"],
@@ -890,31 +779,27 @@ mod tc_282_duplicate_backend_identity {
         }
     }
 
-    /// DB-03: `A1`, `A2` -- two refusals, `invalid_capability`/
-    /// `duplicate-backend` keyed (`a`, `d1`) then (`a`, `d2`); `a` is not
-    /// held; the unnamed item's candidates are empty; the item naming `a`
-    /// receives the unknown-backend mark carrying `a`.
+    /// DB-03: `A1`, `A2` -- one refusal, `invalid_capability`/
+    /// `duplicate-backend` keyed `a`; `a` is not held; the unnamed item's
+    /// candidates are empty; the item naming `a` receives the unknown-backend
+    /// mark carrying `a`.
     #[test]
     #[trace("TC-447", "FR-075-AC-4")]
-    fn db_03_conflicting_digests_refuse_both_and_unregister_the_identity() {
-        let (d1, d2) = ordered_digests();
+    fn db_03_conflicting_descriptors_refuse_and_unregister_the_identity() {
         let pool = [a1(), a2()];
         let orderings = permutations(pool.len());
         let baseline_registry = build(&orderings[0], &pool).0;
-        // Regardless of which of A1/A2 arrives first, the conflicting call's
-        // own `Err` carries both digests, ascending -- order affects only
-        // which call it is, never its content.
-        let baseline_err = {
-            let mut registry = Registry::new();
-            registry.register(a1()).unwrap();
-            registry.register(a2()).unwrap_err()
-        };
 
         for order in &orderings {
             let (registry, errs) = build(order, &pool);
-            assert_eq!(errs, vec![baseline_err.clone()], "order {order:?}");
+            assert_eq!(errs, vec![duplicate_of_a()], "order {order:?}");
+            assert_eq!(
+                errs[0].cause(),
+                &RegistrationCause::DuplicateBackend,
+                "order {order:?}"
+            );
             assert_eq!(registry, baseline_registry, "order {order:?}");
-            assert_eq!(refusal_digests(&registry), vec![d1, d2], "order {order:?}");
+            assert_eq!(refusal_ids(&registry), ["a"], "order {order:?}");
             assert!(registry.backends().next().is_none(), "order {order:?}");
             assert!(
                 set_ids(registry.candidates(Capability::ValueValidity, None)).is_empty(),
@@ -928,31 +813,50 @@ mod tc_282_duplicate_backend_identity {
         }
     }
 
+    /// FR-075-AC-4: a conflict is not special-cased to exactly two unequal
+    /// descriptors. Three unequal descriptors of one identity leave the
+    /// identity unregistered with one refusal for `a`, under every order.
+    #[test]
+    #[trace("TC-447", "FR-075-AC-4")]
+    fn three_way_conflict_unregisters_the_identity_under_every_order() {
+        let pool = [a1(), a2(), a1_prime()];
+        let orderings = permutations(pool.len());
+        assert_eq!(orderings.len(), 6, "3! = 6 orderings");
+        let baseline_registry = build(&orderings[0], &pool).0;
+
+        for order in &orderings {
+            let (registry, _) = build(order, &pool);
+            assert_eq!(registry, baseline_registry, "order {order:?}");
+            assert_eq!(refusal_ids(&registry), ["a"], "order {order:?}");
+            assert!(registry.backends().next().is_none(), "order {order:?}");
+            assert_eq!(
+                registry.candidates(Capability::ValueValidity, Some(&BackendId::new("a"))),
+                CandidateOutcome::UnknownBackend(BackendId::new("a")),
+                "order {order:?}"
+            );
+        }
+    }
+
     /// DB-04: `A1`, `A2`, `B` -- as DB-03 for `a`; `b` is held; the unnamed
     /// item's candidates are exactly `b`; the item naming `b` holds `b`.
     #[test]
     #[trace("TC-447", "FR-075-AC-4")]
     fn db_04_conflicting_identity_alongside_an_unrelated_identity() {
-        let (d1, d2) = ordered_digests();
         let pool = [a1(), a2(), b_backend()];
         let orderings = permutations(pool.len());
         let baseline_registry = build(&orderings[0], &pool).0;
-        let baseline_err = {
-            let mut registry = Registry::new();
-            registry.register(a1()).unwrap();
-            registry.register(a2()).unwrap_err()
-        };
 
         for order in &orderings {
             let (registry, errs) = build(order, &pool);
-            assert_eq!(errs, vec![baseline_err.clone()], "order {order:?}");
+            assert_eq!(errs, vec![duplicate_of_a()], "order {order:?}");
             assert_eq!(registry, baseline_registry, "order {order:?}");
-            assert_eq!(refusal_digests(&registry), vec![d1, d2], "order {order:?}");
-            assert!(
-                !registry
+            assert_eq!(refusal_ids(&registry), ["a"], "order {order:?}");
+            assert_eq!(
+                registry
                     .backends()
                     .map(BackendId::as_str)
-                    .any(|id| id == "a"),
+                    .collect::<Vec<_>>(),
+                ["b"],
                 "order {order:?}"
             );
             assert_eq!(
@@ -968,71 +872,49 @@ mod tc_282_duplicate_backend_identity {
         }
     }
 
-    /// DB-05: `A1`, `A2`, `A1` -- as DB-03; the second `A1` is refused with
-    /// the first, and no third refusal key is reported.
+    /// DB-05: `A1`, `A2`, `A1` -- as DB-03; every registration of `a` from
+    /// the conflict on is refused, and the registry reports one refusal.
     #[test]
     #[trace("TC-447", "FR-075-AC-4")]
-    fn db_05_a_further_repeat_of_a_conflicted_identity_adds_no_new_key() {
-        let (d1, d2) = ordered_digests();
+    fn db_05_a_further_repeat_of_a_conflicted_identity_is_refused() {
         let pool = [a1(), a2(), a1()];
         let orderings = permutations(pool.len());
         let baseline_registry = build(&orderings[0], &pool).0;
 
         for order in &orderings {
             let (registry, errs) = build(order, &pool);
-            // Which call discovers the conflict (and so how many calls fail
-            // at all) depends on where the repeated `A1` falls relative to
-            // `A2` -- that is legitimate order-dependent *shape*, not a
-            // violation of order-independence, so each `Err`'s own content
-            // is checked structurally rather than against one fixed
-            // sequence.
-            assert_refusals_well_formed(&errs, &[d1, d2]);
-            assert_eq!(
-                errs.iter().filter(|err| err.len() == 2).count(),
-                1,
-                "exactly one call discovers the two-digest conflict; order {order:?}"
-            );
-            assert_eq!(registry, baseline_registry, "order {order:?}");
-            assert_eq!(refusal_digests(&registry), vec![d1, d2], "order {order:?}");
-            assert!(registry.backends().next().is_none(), "order {order:?}");
+            // How many calls fail depends on where the repeated `A1` falls
+            // relative to `A2`; each refusal is the same `a` refusal.
+            assert!(!errs.is_empty(), "order {order:?}");
             assert!(
-                set_ids(registry.candidates(Capability::ValueValidity, None)).is_empty(),
+                errs.iter().all(|err| *err == duplicate_of_a()),
                 "order {order:?}"
             );
+            assert_eq!(registry, baseline_registry, "order {order:?}");
+            assert_eq!(refusal_ids(&registry), ["a"], "order {order:?}");
+            assert!(registry.backends().next().is_none(), "order {order:?}");
             assert_eq!(
                 registry.candidates(Capability::ValueValidity, Some(&BackendId::new("a"))),
                 CandidateOutcome::UnknownBackend(BackendId::new("a")),
                 "order {order:?}"
             );
-            assert_eq!(
-                registry.candidates(Capability::ValueValidity, Some(&BackendId::new("b"))),
-                CandidateOutcome::UnknownBackend(BackendId::new("b")),
-                "order {order:?}: b was never registered in this vector"
-            );
         }
     }
 
-    /// DB-06: `A1`, `A1'` -- one refusal, `invalid_capability`/
-    /// `duplicate-backend` keyed (`a`, `d1`); `a` is not held; the item
-    /// naming `a` receives the unknown-backend mark.
+    /// DB-06: `A1`, `A1'` -- one refusal keyed `a`; `a` is not held; the
+    /// item naming `a` receives the unknown-backend mark.
     #[test]
     #[trace("TC-447", "FR-075-AC-4")]
-    fn db_06_same_digest_different_contents_gives_one_refusal() {
-        let d1 = a1().manifest_digest();
+    fn db_06_a_differing_pair_refuses_the_identity_once() {
         let pool = [a1(), a1_prime()];
         let orderings = permutations(pool.len());
         let baseline_registry = build(&orderings[0], &pool).0;
-        let baseline_err = {
-            let mut registry = Registry::new();
-            registry.register(a1()).unwrap();
-            registry.register(a1_prime()).unwrap_err()
-        };
 
         for order in &orderings {
             let (registry, errs) = build(order, &pool);
-            assert_eq!(errs, vec![baseline_err.clone()], "order {order:?}");
+            assert_eq!(errs, vec![duplicate_of_a()], "order {order:?}");
             assert_eq!(registry, baseline_registry, "order {order:?}");
-            assert_eq!(refusal_digests(&registry), vec![d1], "order {order:?}");
+            assert_eq!(refusal_ids(&registry), ["a"], "order {order:?}");
             assert!(registry.backends().next().is_none(), "order {order:?}");
             assert_eq!(
                 registry.candidates(Capability::ValueValidity, Some(&BackendId::new("a"))),
@@ -1043,23 +925,20 @@ mod tc_282_duplicate_backend_identity {
     }
 
     /// DB-07: `A1`, `M` -- `M` refuses as `invalid_capability`/
-    /// `unknown-mode` keyed (`a`, `d2`); it is not admitted, so `a` is held
-    /// once with `d1` and no `duplicate-backend` is reported. `M` never
-    /// becomes a [`BackendDescriptor`] (it fails
-    /// [`descriptor_from_manifest`]), so it cannot appear in a `Registry`
-    /// permutation pool at all; both relative arrival orders are exercised
-    /// directly instead.
+    /// `unknown-mode` keyed `a`; it is not admitted, so `a` is held once and
+    /// no `duplicate-backend` is reported. `M` never becomes a
+    /// [`BackendDescriptor`] (it fails [`descriptor_from_manifest`]), so it
+    /// cannot appear in a `Registry` permutation pool at all; both relative
+    /// arrival orders are exercised directly instead.
     #[test]
     #[trace("TC-447", "FR-057-AC-8")]
     fn db_07_a_malformed_registration_never_reaches_the_registry() {
-        let (_d1, d2) = ordered_digests();
         for m_first in [false, true] {
             let mut registry = Registry::new();
             let attempt_m = || {
                 descriptor_from_manifest(
                     Candidate::new(BackendId::new("a")),
                     ProviderOrigin::Linked,
-                    d2,
                     [(Some("value-validity"), Some("finite"))],
                     ManifestMembers {
                         domains: Some(&["collection"]),
@@ -1071,35 +950,21 @@ mod tc_282_duplicate_backend_identity {
                 )
                 .expect_err("`finite` is not an FR-290 mode")
             };
-
+            if !m_first {
+                registry.register(a1()).unwrap();
+            }
+            let refusal = attempt_m();
+            assert_eq!(
+                refusal.backend(),
+                &Candidate::new(BackendId::new("a")),
+                "m_first={m_first}"
+            );
+            assert_eq!(
+                refusal.cause(),
+                &RegistrationCause::UnknownMode(Some("finite".to_owned()))
+            );
             if m_first {
-                let refusal = attempt_m();
-                assert_eq!(refusal.identity().as_str(), "a", "m_first={m_first}");
-                assert_eq!(
-                    refusal.backend(),
-                    &Candidate::new(BackendId::new("a")),
-                    "M's refusal is keyed (a, d2); m_first={m_first}"
-                );
-                assert_eq!(refusal.manifest_digest(), d2, "m_first={m_first}");
-                assert_eq!(
-                    refusal.cause(),
-                    &RegistrationCause::UnknownMode(Some("finite".to_owned()))
-                );
                 registry.register(a1()).unwrap();
-            } else {
-                registry.register(a1()).unwrap();
-                let refusal = attempt_m();
-                assert_eq!(refusal.identity().as_str(), "a", "m_first={m_first}");
-                assert_eq!(
-                    refusal.backend(),
-                    &Candidate::new(BackendId::new("a")),
-                    "M's refusal is keyed (a, d2); m_first={m_first}"
-                );
-                assert_eq!(refusal.manifest_digest(), d2, "m_first={m_first}");
-                assert_eq!(
-                    refusal.cause(),
-                    &RegistrationCause::UnknownMode(Some("finite".to_owned()))
-                );
             }
 
             assert_eq!(
@@ -1110,7 +975,7 @@ mod tc_282_duplicate_backend_identity {
                 ["a"],
                 "m_first={m_first}"
             );
-            assert_eq!(refusal_digests(&registry).len(), 0, "m_first={m_first}");
+            assert_eq!(registry.refusals().count(), 0, "m_first={m_first}");
             assert_eq!(
                 set_ids(registry.candidates(Capability::ValueValidity, None)),
                 ["a"],
@@ -1121,67 +986,31 @@ mod tc_282_duplicate_backend_identity {
 
     /// DB-08: register `A1` and read the snapshot; register `A2` and read
     /// the snapshot again; repeat with `A2` first -- the first snapshot
-    /// holds `a` with the first registration's digest; the second equals
-    /// DB-03's snapshot, with the first registration withdrawn and its
-    /// refusal reported.
+    /// holds `a` as first registered; the second equals DB-03's snapshot,
+    /// with the first registration withdrawn and its refusal reported.
     #[test]
     #[trace("TC-447", "FR-075-AC-4")]
     fn db_08_the_conflict_appears_only_once_the_second_registration_arrives() {
-        let (d1, d2) = ordered_digests();
-        let baseline_err = {
-            let mut registry = Registry::new();
-            registry.register(a1()).unwrap();
-            registry.register(a2()).unwrap_err()
-        };
         let mut second_snapshots = Vec::new();
 
         for a2_first in [false, true] {
             let mut registry = Registry::new();
             let (first, second) = if a2_first { (a2(), a1()) } else { (a1(), a2()) };
-            let first_digest = first.manifest_digest();
 
-            registry.register(first).unwrap();
+            registry.register(first.clone()).unwrap();
             assert_eq!(
-                registry
-                    .backends()
-                    .map(BackendId::as_str)
-                    .collect::<Vec<_>>(),
-                ["a"],
+                registry.descriptors().collect::<Vec<_>>(),
+                [&first],
                 "a2_first={a2_first}"
             );
-            let CandidateOutcome::Candidates(set) =
-                registry.candidates(Capability::ValueValidity, None)
-            else {
-                panic!("expected a computed candidate set; a2_first={a2_first}");
-            };
-            assert_eq!(
-                set.candidates()
-                    .iter()
-                    .map(|candidate| candidate.id().as_str())
-                    .collect::<Vec<_>>(),
-                ["a"],
-                "a2_first={a2_first}"
-            );
-            assert_eq!(
-                registry
-                    .descriptors()
-                    .map(BackendDescriptor::manifest_digest)
-                    .collect::<Vec<_>>(),
-                [first_digest],
-                "a2_first={a2_first}"
-            );
-            assert_eq!(refusal_digests(&registry).len(), 0, "a2_first={a2_first}");
+            assert_eq!(registry.refusals().count(), 0, "a2_first={a2_first}");
 
             let err = registry
                 .register(second)
                 .expect_err("the conflicting arrival refuses");
-            assert_eq!(err, baseline_err, "a2_first={a2_first}");
+            assert_eq!(err, duplicate_of_a(), "a2_first={a2_first}");
             assert!(registry.backends().next().is_none(), "a2_first={a2_first}");
-            assert_eq!(
-                refusal_digests(&registry),
-                vec![d1, d2],
-                "a2_first={a2_first}"
-            );
+            assert_eq!(refusal_ids(&registry), ["a"], "a2_first={a2_first}");
             assert!(
                 set_ids(registry.candidates(Capability::ValueValidity, None)).is_empty(),
                 "a2_first={a2_first}"
@@ -1192,60 +1021,6 @@ mod tc_282_duplicate_backend_identity {
         // The second snapshot -- DB-03's snapshot -- is the same whichever
         // of A1/A2 arrived first.
         assert_eq!(second_snapshots[0], second_snapshots[1]);
-    }
-
-    /// FR-075-AC-4: a conflict is not special-cased to exactly two distinct
-    /// manifest digests. Three admitted registrations of one identity, all
-    /// with distinct digests, still refuse one distinct digest per
-    /// registration, keyed `(identity, digest)` bytewise, under every order.
-    #[test]
-    #[trace("TC-447", "FR-075-AC-4")]
-    fn three_way_conflict_reports_one_refusal_per_distinct_digest() {
-        let a1 = a1();
-        let a2 = a2();
-        let a3 = backend(
-            "a",
-            b"tc282-a-3",
-            [(Capability::ValueValidity, Mode::Bounded)],
-        );
-        let mut digests: Vec<ManifestDigest> = [&a1, &a2, &a3]
-            .iter()
-            .map(|d| d.manifest_digest())
-            .collect();
-        digests.sort();
-        assert_eq!(
-            digests.len(),
-            3,
-            "seeds must hash to three distinct digests"
-        );
-
-        let pool = [a1, a2, a3];
-        let orderings = permutations(pool.len());
-        assert_eq!(orderings.len(), 6, "3! = 6 orderings");
-        let baseline_registry = build(&orderings[0], &pool).0;
-
-        for order in &orderings {
-            let (registry, errs) = build(order, &pool);
-            assert_refusals_well_formed(&errs, &digests);
-            assert_eq!(
-                errs.iter()
-                    .flat_map(|err| err.iter().map(|r| r.manifest_digest()))
-                    .collect::<std::collections::BTreeSet<_>>(),
-                digests
-                    .iter()
-                    .copied()
-                    .collect::<std::collections::BTreeSet<_>>(),
-                "every digest is refused exactly once across the call sequence; order {order:?}"
-            );
-            assert_eq!(registry, baseline_registry, "order {order:?}");
-            assert_eq!(refusal_digests(&registry), digests, "order {order:?}");
-            assert!(registry.backends().next().is_none(), "order {order:?}");
-            assert_eq!(
-                registry.candidates(Capability::ValueValidity, Some(&BackendId::new("a"))),
-                CandidateOutcome::UnknownBackend(BackendId::new("a")),
-                "order {order:?}"
-            );
-        }
     }
 }
 
@@ -1260,22 +1035,13 @@ mod permutation_equality {
         vec![
             backend(
                 "backend-a",
-                b"a",
                 [
                     (Capability::ValueValidity, Mode::Bounded),
                     (Capability::OperationContract, Mode::Bounded),
                 ],
             ),
-            backend(
-                "backend-b",
-                b"b",
-                [(Capability::ValueValidity, Mode::Unbounded)],
-            ),
-            backend(
-                "backend-c",
-                b"c",
-                [(Capability::FiniteReplay, Mode::Bounded)],
-            ),
+            backend("backend-b", [(Capability::ValueValidity, Mode::Unbounded)]),
+            backend("backend-c", [(Capability::FiniteReplay, Mode::Bounded)]),
         ]
     }
 
@@ -1416,7 +1182,7 @@ mod permutation_equality {
         ];
 
         // A fixed-seed generator is used here rather than a hand-picked
-        // provider pair: every case changes the identity, digest, origin and
+        // provider pair: every case changes the identity, origin and
         // advertised mode while retaining the same locality oracle.
         for seed in 0..8 {
             let (item_kind, item_label) = kinds[seed % kinds.len()];
@@ -1432,7 +1198,6 @@ mod permutation_equality {
                 } else {
                     ProviderOrigin::Process
                 },
-                digest(format!("item-manifest-{seed}").as_bytes()),
                 [(
                     Some(item_label),
                     Some(if seed % 2 == 0 {
@@ -1453,7 +1218,6 @@ mod permutation_equality {
             let irrelevant = descriptor_from_manifest(
                 Candidate::new(BackendId::new(irrelevant_id)),
                 ProviderOrigin::Process,
-                digest(format!("irrelevant-manifest-{seed}").as_bytes()),
                 [(Some(other_label), Some("bounded"))],
                 ManifestMembers {
                     domains: Some(&["collection"]),
@@ -1467,7 +1231,6 @@ mod permutation_equality {
             let relevant = descriptor_from_manifest(
                 Candidate::new(BackendId::new(relevant_id.clone())),
                 ProviderOrigin::Linked,
-                digest(format!("relevant-manifest-{seed}").as_bytes()),
                 [(Some(item_label), Some("unbounded"))],
                 ManifestMembers {
                     domains: Some(&["collection"]),
@@ -1512,11 +1275,11 @@ mod permutation_equality {
     #[trace("TC-194", "FR-075-AC-2", "FR-080-AC-1")]
     fn all_120_orderings_of_five_descriptors_agree() {
         let pool = vec![
-            backend("a", b"1", [(Capability::ValueValidity, Mode::Bounded)]),
-            backend("b", b"2", [(Capability::ValueValidity, Mode::Bounded)]),
-            backend("c", b"3", [(Capability::OperationContract, Mode::Bounded)]),
-            backend("d", b"4", [(Capability::FiniteReplay, Mode::Unbounded)]),
-            backend("e", b"5", [(Capability::Composition, Mode::Bounded)]),
+            backend("a", [(Capability::ValueValidity, Mode::Bounded)]),
+            backend("b", [(Capability::ValueValidity, Mode::Bounded)]),
+            backend("c", [(Capability::OperationContract, Mode::Bounded)]),
+            backend("d", [(Capability::FiniteReplay, Mode::Unbounded)]),
+            backend("e", [(Capability::Composition, Mode::Bounded)]),
         ];
         let items = items();
         let orderings = heap_permutations(pool.len());
@@ -1551,31 +1314,15 @@ mod permutation_equality {
     #[test]
     #[trace("TC-194", "FR-075-AC-2", "FR-075-AC-4", "FR-075-AC-7")]
     fn permutation_invariance_holds_with_repeats_and_conflicts_in_the_multiset() {
-        let repeat = backend(
-            "backend-a",
-            b"a",
-            [(Capability::ValueValidity, Mode::Bounded)],
-        );
-        let conflict_first = backend(
-            "backend-c",
-            b"c1",
-            [(Capability::FiniteReplay, Mode::Bounded)],
-        );
-        let conflict_second = backend(
-            "backend-c",
-            b"c2",
-            [(Capability::FiniteReplay, Mode::Unbounded)],
-        );
+        let repeat = backend("backend-a", [(Capability::ValueValidity, Mode::Bounded)]);
+        let conflict_first = backend("backend-c", [(Capability::FiniteReplay, Mode::Bounded)]);
+        let conflict_second = backend("backend-c", [(Capability::FiniteReplay, Mode::Unbounded)]);
         let pool = vec![
             repeat.clone(),
             repeat,
             conflict_first,
             conflict_second,
-            backend(
-                "backend-b",
-                b"b",
-                [(Capability::ValueValidity, Mode::Unbounded)],
-            ),
+            backend("backend-b", [(Capability::ValueValidity, Mode::Unbounded)]),
         ];
         let items = items();
         let orderings = heap_permutations(pool.len());
@@ -1585,9 +1332,8 @@ mod permutation_equality {
         let baseline_refusals: Vec<_> = baseline_registry.refusals().collect();
         assert_eq!(
             baseline_refusals.len(),
-            2,
-            "backend-c's two descriptors carry distinct digests (DB-03 shape), so the \
-             conflict is one refusal per digest"
+            1,
+            "backend-c's two differing descriptors conflict as one refusal"
         );
         for order in &orderings {
             let registry = build_allowing_conflicts(order, &pool);
@@ -1607,7 +1353,7 @@ mod permutation_equality {
 
     /// A mutant registry that stores registrations in a `Vec` and returns
     /// candidates in that `Vec`'s own insertion order, never sorting by
-    /// `(identity, manifest digest)`. This demonstrates the property-test
+    /// identity. This demonstrates the property-test
     /// methodology above is actually sensitive to order-dependent candidate
     /// computation, not vacuously passing (TC-194 Test Procedure step 6).
     struct MutantRegistry(Vec<BackendDescriptor>);
@@ -1644,16 +1390,8 @@ mod permutation_equality {
         // observable in the mutant's unsorted output, but not in the real
         // `Registry`'s sorted output.
         let pool = vec![
-            backend(
-                "z-backend",
-                b"z",
-                [(Capability::ValueValidity, Mode::Bounded)],
-            ),
-            backend(
-                "a-backend",
-                b"a",
-                [(Capability::ValueValidity, Mode::Bounded)],
-            ),
+            backend("z-backend", [(Capability::ValueValidity, Mode::Bounded)]),
+            backend("a-backend", [(Capability::ValueValidity, Mode::Bounded)]),
         ];
         let forward =
             MutantRegistry::build(&[0, 1], &pool).candidates_unsorted(Capability::ValueValidity);
@@ -1686,16 +1424,8 @@ mod permutation_equality {
     #[trace("TC-194")]
     fn the_shared_permutation_assertion_actually_fails_against_the_mutant_registry() {
         let pool = vec![
-            backend(
-                "z-backend",
-                b"z",
-                [(Capability::ValueValidity, Mode::Bounded)],
-            ),
-            backend(
-                "a-backend",
-                b"a",
-                [(Capability::ValueValidity, Mode::Bounded)],
-            ),
+            backend("z-backend", [(Capability::ValueValidity, Mode::Bounded)]),
+            backend("a-backend", [(Capability::ValueValidity, Mode::Bounded)]),
         ];
         let orderings = vec![vec![0, 1], vec![1, 0]];
         let items = vec![Capability::ValueValidity];

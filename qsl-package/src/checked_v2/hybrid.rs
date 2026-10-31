@@ -21,7 +21,6 @@
 
 use std::collections::BTreeMap;
 
-use qsl_foundation::digest::WireNodeId;
 use qsl_semantics::check::{
     hybrid_horizon, ArithmeticOp, CaptureIndex, CheckedFunctionRef, CheckedHybridClaim,
     CheckedHybridModel, CheckedMode, CheckedTransition, CompareOp, ContinuousVariable,
@@ -34,7 +33,7 @@ use quire_contract_model::{
     CheckedTerm, HybridForm, LiteralKind, ScalarTypeForm, TemporalForm, ValueForm,
 };
 use quire_exact::{
-    DecimalType, FloatType, Identifier, IeeeWidth, Integer, IntegerInterval, Rational,
+    DecimalType, FloatType, Identifier, IeeeWidth, Integer, IntegerInterval, NodeKey, Rational,
     RationalDomain, RoundingMode, ValueType,
 };
 use quire_semantic_value::catalog::InternalFault;
@@ -50,14 +49,14 @@ pub struct HybridRead {
     pub claims: Vec<ReadHybridClaim>,
     /// Every `function` node, in graph order: the [`CheckedFunctionRef`] of a
     /// call indexes it.
-    pub functions: Vec<WireNodeId>,
+    pub functions: Vec<NodeKey>,
 }
 
 /// A model read back, with its node.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReadHybridModel {
     /// The `hybrid`/`hybrid_model` node.
-    pub node: WireNodeId,
+    pub node: NodeKey,
     /// The model.
     pub model: CheckedHybridModel,
 }
@@ -66,7 +65,7 @@ pub struct ReadHybridModel {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReadHybridClaim {
     /// The `temporal`/`temporal_clause` node.
-    pub node: WireNodeId,
+    pub node: NodeKey,
     /// The claim.
     pub claim: CheckedHybridClaim,
 }
@@ -81,7 +80,7 @@ pub enum HybridReadError {
     /// package.
     CaptureTypeNotCarried {
         /// The claim's clause node.
-        claim: WireNodeId,
+        claim: NodeKey,
         /// The capture's name.
         capture: String,
     },
@@ -108,10 +107,10 @@ fn shape<T>(found: Option<T>) -> Result<T, HybridReadError> {
 pub fn read_hybrids(package: &CheckedPackageV2, limit: u64) -> Result<HybridRead, HybridReadError> {
     let nodes = &package.graph().nodes;
     let kinds = package.node_kinds();
-    let positions: BTreeMap<&str, usize> = nodes
+    let positions: BTreeMap<&CheckedNodeId, usize> = nodes
         .iter()
         .enumerate()
-        .map(|(position, node)| (&*node.node_id.digest, position))
+        .map(|(position, node)| (&node.node_id, position))
         .collect();
     let reader = Reader {
         package,
@@ -120,7 +119,7 @@ pub fn read_hybrids(package: &CheckedPackageV2, limit: u64) -> Result<HybridRead
             .iter()
             .zip(kinds)
             .filter(|(_, kind)| matches!(kind, CheckedNodeKind::Function(_)))
-            .map(|(node, _)| &*node.node_id.digest)
+            .map(|(node, _)| &node.node_id)
             .collect(),
         limit,
         used: std::cell::Cell::new(0),
@@ -143,9 +142,7 @@ pub fn read_hybrids(package: &CheckedPackageV2, limit: u64) -> Result<HybridRead
             continue;
         }
         let over = reader.over(node)?;
-        let Some(model_position) = facts
-            .iter()
-            .position(|fact| is_text(&fact.digest, &over.semantic_type.digest))
+        let Some(model_position) = facts.iter().position(|fact| fact.id == over.semantic_type)
         else {
             continue;
         };
@@ -168,29 +165,29 @@ pub fn read_hybrids(package: &CheckedPackageV2, limit: u64) -> Result<HybridRead
         functions: reader
             .functions
             .iter()
-            .map(|digest| shape(WireNodeId::from_hex(digest)))
+            .map(|id| wire_id(id))
             .collect::<Result<_, _>>()?,
     })
 }
 
-fn wire_id(id: &CheckedNodeId) -> Result<WireNodeId, HybridReadError> {
-    shape(WireNodeId::from_hex(&id.digest))
+fn wire_id(id: &CheckedNodeId) -> Result<NodeKey, HybridReadError> {
+    crate::emit::admitted_key(id).map_err(|_| HybridReadError::Fault(SHAPE))
 }
 
 /// What a claim needs of the model it is over.
 struct ModelFacts {
-    /// The model node's digest.
-    digest: Box<str>,
-    /// Each variable node's digest, in variable order.
-    variables: Vec<Box<str>>,
-    /// Each mode node's digest, in mode order.
-    modes: Vec<Box<str>>,
+    /// The model node's structural identity.
+    id: CheckedNodeId,
+    /// Each variable node's structural identity, in variable order.
+    variables: Vec<CheckedNodeId>,
+    /// Each mode node's structural identity, in mode order.
+    modes: Vec<CheckedNodeId>,
 }
 
 /// What one construct's terms may read.
 struct Scope<'s> {
-    /// Each variable node's digest and position.
-    variables: BTreeMap<&'s str, usize>,
+    /// Each variable node's identity and position.
+    variables: BTreeMap<&'s CheckedNodeId, usize>,
     /// The model's variable count; `0` outside a claim.
     count: usize,
     /// The declared type of each capture a term read, by capture position.
@@ -199,8 +196,8 @@ struct Scope<'s> {
 
 struct Reader<'p> {
     package: &'p CheckedPackageV2,
-    positions: BTreeMap<&'p str, usize>,
-    functions: Vec<&'p str>,
+    positions: BTreeMap<&'p CheckedNodeId, usize>,
+    functions: Vec<&'p CheckedNodeId>,
     limit: u64,
     used: std::cell::Cell<u64>,
 }
@@ -438,12 +435,12 @@ impl Reader<'_> {
     }
 
     fn node(&self, id: &CheckedNodeId) -> Result<&CheckedSemanticNodeV2, HybridReadError> {
-        let position = shape(self.positions.get(&*id.digest))?;
+        let position = shape(self.positions.get(id))?;
         shape(self.package.graph().nodes.get(*position))
     }
 
     fn kind(&self, id: &CheckedNodeId) -> Result<CheckedNodeKind, HybridReadError> {
-        let position = shape(self.positions.get(&*id.digest))?;
+        let position = shape(self.positions.get(id))?;
         shape(self.package.node_kinds().get(*position).copied())
     }
 
@@ -479,7 +476,7 @@ impl Reader<'_> {
         let name = last_segment(node)?;
 
         let mut variables = Vec::new();
-        let mut variable_digests = Vec::new();
+        let mut variable_ids = Vec::new();
         let mut scope = Scope {
             variables: BTreeMap::new(),
             count: 0,
@@ -492,8 +489,8 @@ impl Reader<'_> {
                 name: shape(Identifier::new(self.parameter(parameter)?.0).ok())?,
                 class,
             });
-            variable_digests.push(parameter.node_id.digest.clone());
-            scope.variables.insert(&*parameter.node_id.digest, position);
+            variable_ids.push(parameter.node_id.clone());
+            scope.variables.insert(&parameter.node_id, position);
         }
 
         let mode_nodes: Vec<&CheckedSemanticNodeV2> = members(bound(body, "modes")?)?
@@ -522,12 +519,9 @@ impl Reader<'_> {
         };
 
         let facts = ModelFacts {
-            digest: node.node_id.digest.clone(),
-            variables: variable_digests,
-            modes: mode_nodes
-                .iter()
-                .map(|mode| mode.node_id.digest.clone())
-                .collect(),
+            id: node.node_id.clone(),
+            variables: variable_ids,
+            modes: mode_nodes.iter().map(|mode| mode.node_id.clone()).collect(),
         };
         Ok((
             CheckedHybridModel {
@@ -672,11 +666,8 @@ impl Reader<'_> {
                         }
                         TermOperation::Call => {
                             let callee = target(shape(arguments.first())?)?;
-                            let function = shape(
-                                self.functions
-                                    .iter()
-                                    .position(|digest| is_text(digest, &callee.digest)),
-                            )?;
+                            let function =
+                                shape(self.functions.iter().position(|id| **id == *callee))?;
                             let mut operands = Vec::with_capacity(arguments.len());
                             for _ in 1..arguments.len() {
                                 operands.push(pop()?);
@@ -702,7 +693,7 @@ impl Reader<'_> {
         node: &CheckedSemanticNodeV2,
         scope: &mut Scope<'_>,
     ) -> Result<HybridTerm, HybridReadError> {
-        if let Some(&position) = scope.variables.get(&*node.node_id.digest) {
+        if let Some(&position) = scope.variables.get(&node.node_id) {
             return Ok(HybridTerm::Variable(VariableIndex::new(position)));
         }
         let (_, level) = self.parameter(node)?;
@@ -820,7 +811,7 @@ impl Reader<'_> {
                 .variables
                 .iter()
                 .enumerate()
-                .map(|(position, digest)| (&**digest, position))
+                .map(|(position, id)| (id, position))
                 .collect(),
             count: model.variables.len(),
             captured: BTreeMap::new(),
@@ -898,12 +889,9 @@ impl Reader<'_> {
         let record = record(operation)?;
         let member = shape(record.get("member"))?;
         let field = |name: &str| shape(member.get(name).and_then(|value| value.as_str()));
-        let declaration = shape(
-            member
-                .get("declaration")
-                .and_then(|declaration| declaration.get("digest"))
-                .and_then(|digest| digest.as_str()),
-        )?;
+        let declaration: CheckedNodeId =
+            serde_json::from_value(shape(member.get("declaration"))?.clone())
+                .map_err(|_| HybridReadError::Fault(SHAPE))?;
         let name = field("name")?;
         let mode_named = |name: &str| {
             model
@@ -912,7 +900,7 @@ impl Reader<'_> {
                 .position(|mode| is_text(mode.name.as_str(), name))
         };
         let (transitions, named_target): (Vec<(ModeIndex, TransitionIndex)>, Option<ModeIndex>) =
-            if is_text(declaration, &facts.digest) {
+            if declaration == facts.id {
                 // `fair S`: every transition of `S`.
                 let mode = shape(mode_named(name))?;
                 (
@@ -923,12 +911,7 @@ impl Reader<'_> {
                 )
             } else {
                 // `fair S::T`: the transitions of `S` that go to `T`.
-                let mode = shape(
-                    facts
-                        .modes
-                        .iter()
-                        .position(|digest| is_text(digest, declaration)),
-                )?;
+                let mode = shape(facts.modes.iter().position(|id| *id == declaration))?;
                 let target = shape(mode_named(name))?;
                 (
                     model.modes[mode]

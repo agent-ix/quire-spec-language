@@ -27,14 +27,14 @@ relationships:
 ## Description
 
 QSpec FR-322 defines the checked-package/v2 node contract and application
-identity rules (FR-322-AC-10, AC-17 and AC-18). `check` mints node keys at E3
+identity rules (FR-322-AC-10, AC-17 and AC-18). `check` assigns node ids at E3
 (ADR-011 §2.2, FB-13), so `check` lowers each checked expression into its
-FR-322 node before it can key it. This requirement fixes QSL's lowering:
+FR-322 node before it can identify it. This requirement fixes QSL's lowering:
 which nodes a checked expression becomes, and the operator, operation
 identity, laws, mode, member and arguments of each application.
 [FR-092](FR-092-key-type-parameter-and-declared-nodes.md) fixes the type,
-parameter and function nodes the lowering references and the preimage of
-every node that holds no application.
+parameter and function nodes the lowering references and the structural
+id of every node.
 
 The source is the checked tree (`check::ir::Node`), not the parsed
 `Expression`: each checked node carries its checked type, and FR-322 takes
@@ -139,7 +139,7 @@ both branches of an `if`.
 | `Literal` of a Boolean, integer or rational value (`true`, `false`, an integer literal, `rational(n, d)`) | `value` / `literal`; `semantic_type` its type node; body `literal{type, value_kind, value}` spelled as FR-092 fixes. An integer literal that is an operand of `quire.op.integer.add`, `sub`, `mul` or `negate` is no node: it is the same `literal{type, value_kind, value}` term, typed at the builtin `Integer` node, in that application's `arguments` (FR-357, FR-358, ADR-013 O-09), as is an integer literal operand of an integer `quire.op.integer.eq` or `ne` (FR-358 step 6); every other literal operand, including the integer literal of an ordering, the literal that an equality over a bounded integer peer wraps in a `numeric.narrow` application (the operand is that application, identified `graph_child` by FR-358 step 6), and the operands of a composite or non-integer equality, is a reference to its node |
 | `Literal` of a String, UUID or Timestamp value (`"abc"`, `UUID("...")`, `Timestamp(n)`, as check resolves the two calls) | `value` / `literal`; `semantic_type` the node of the native `string`, `uuid` or `timestamp` scalar type; body `literal{type, value_kind, value}` with `value_kind` `string`, `uuid` or `timestamp` and `value` spelled as FR-092 fixes |
 | `Literal` of a quantity value (`3 ms`) | `value` / `literal`; `semantic_type` its unit's `scalar_type`/`unit` node; body `literal{type, value_kind, value}` with `value_kind` `quantity` and `value` the canonical magnitude ("Quantity literals") |
-| `Literal` of an enum member (`E::m`, or a bare `m` that FR-317 resolves to `E::m`) | the enum member's QSpec `value` / `enum_value` node (FR-092 rule 1) |
+| `Literal` of an enum member (`E::m`, or a bare `m` that FR-317 resolves to `E::m`) | the enum member's QSpec `value` / `enum_value` node (FR-092) |
 | `Record{declaration, slots}` (`R { f: e, g: null }`) | `value` / `record_value`; `semantic_type` the record's node; body `aggregate` of one binding per slot in declaration order: `f` = `reference(e)` for a present slot, and `f` = `literal{type: the field's Option node, value_kind: "none", value: null}` for a `null` slot and for an omitted optional slot, which denote one value |
 | `Tuple{declaration, arguments}` (`Q(a, b)`) | `value` / `tuple_value`; `semantic_type` the tuple's node; body `aggregate{[reference(a), reference(b)]}` |
 
@@ -376,7 +376,7 @@ operand itself does. A `ConvertText` reads a number out of text, so a guard over
 it bounds no operand.
 
 The model nodes, the `Reference<T>` and `Population<T>[N]` type nodes and
-the model rows' vectors E4 to E9 are
+the model rows of AC-8 are
 [FR-094](FR-094-key-model-owned-reference-population-and-quantity-nodes.md)'s.
 
 A selected relationship declaration is an unconditional model-graph root,
@@ -538,7 +538,7 @@ chain of `next` fields.
 
 ### Union text-leaf vectors
 
-These vectors fix the leaf list independently of node identity preimages.
+These vectors fix the leaf list independently of node identity.
 The text definition is the Recursive text-leaf
 vectors': `{authority: "agent-ix", identity: "quire.value.text.unicode-17.0.0/v1"}`.
 In the table, `N(p)` is exactly
@@ -571,33 +571,34 @@ to E17 recursive vectors retain their paths, profiles and order.
 ### Who builds the lowering
 
 `check` builds this lowering and FR-092's keys (#384), in the layer-3
-`check` core, because E3 mints node keys and each key is the preimage of the lowered
-body (ADR-011 SG-1, FB-13). The checked semantic graph holds each lowered
-node: its tag, form, semantic type, declaration, owner, body and key. The
+`check` core, because E3 assigns node ids (ADR-011 SG-1, FB-13). The checked
+semantic graph holds each lowered node: its tag, form, semantic type,
+declaration, owner, body and structural id. The
 M-4 v2 emission arm (layer-4 `package`) writes those nodes to the
-wire: it adds each node's `node_id`, `dependencies`, `occurrences` and
-`recursion_group` and the graph order, and it builds no body term and mints
-no key of its own.
+wire: it adds each node's `dependencies`, `occurrences` and
+`recursion_group` and the graph order, and it builds no body term and assigns
+no node id of its own.
 
 The emission SHALL write a node's `owner` member (QSpec FR-322 `owner`)
-exactly when the node's `quire.structural-node/v1` preimage carries one: a
+exactly when the node is a declared structural node, a model declaration
+node or a clause function (QSpec FR-322 owner table): a
 declared structural node carries its unit's `SourceOwner`
 (`{kind: "source", authority, identity}`, FR-092), and a model declaration
 node or clause function carries its `ModelOwner`
 (`{kind: "model", identity, node}`, FR-094). The value is the checked
-node's owner, the same value its key carries, copied and not rebuilt. A
-nominal node, a node keyed by `quire.application-node/v1` and every
+node's owner, copied and not rebuilt, and no part of the node's id. A
+nominal node, an application node and every
 undeclared node that is not model-owned carry no `owner`. The node's
-`owner` is not carried in a separate projection; the wire carries no `identity_projection`. A reader therefore re-derives every structural key, in-group
-keys and group labels included, from the emitted package alone, and reads
+`owner` is not carried in a separate projection; the wire carries no `identity_projection`. A reader derives no node id, and reads
 no owner from the source map. The package's `sources` holds each emitted
 `SourceOwner`'s (`authority`, `identity`), and each emitted `ModelOwner`'s
-`identity` joins to a `model_root` node, the joins FR-322 checks (BLOCKED-BY QSpec #510/STD-583 (owner: planner titan:QSL:plan)).
+`identity` joins to a `model_root` node, the joins FR-322 checks.
 
 A recursion group's members carry one `recursion_group`
 label, the group label (FR-092), and the emission
-writes them in ordinal order, so FR-322's ordinal, which a reader derives
-from graph order, equals the ordinal each member's key carries.
+writes them in the member order FR-322's `recursion` `{size, ordinal}` gives;
+each member's `node_id` ordinal is the producer-assigned one (FR-322
+"Structural node identity").
 
 The emission writes `diagnostics.catalog` as QSpec's native diagnostics
 catalog, a QSpec `DefinitionRef` naming QSpec's `native-diagnostics.md`:
@@ -608,7 +609,7 @@ authority `agent-ix` and identity `quire.native.diagnostics/v1`.
 A node's `dependencies` list the nodes its definition is built from. A v2
 reader follows them, beside `semantic_type` and the body's own references,
 when it builds a node's closure and checks graph cycles, and it joins them
-exactly against the body of an application node, the nominal preimage of an
+exactly against the body of an application node, the nominal joins of an
 enum, dimension or unit node, and the entries of a frame (QSpec FR-322,
 FR-340). The wire carries no `identity_projection` for them.
 
@@ -621,7 +622,7 @@ unique and ascending by node id, that these rules name:
    member kind that names a declaring node; QSL's rows use `field`,
    `operation` and `type_argument`);
 3. for a `bounded_domain` node, its `semantic_type`, the type it bounds;
-4. for a node that carries a `nominal_identity_preimage`, the nodes FR-322's
+4. for an enum, dimension or unit node, the nodes FR-322's
    nominal joins name: an `enum_value` node's enum declaration, a
    dimension's term dimensions, and a unit's dimension and target unit;
 5. for a `state`/`frame` node, each entry of its `modifies`, `creates` and
@@ -638,12 +639,11 @@ dependency package, adds no entry, and a reader reaches it through
 `dependency_selections`.
 
 On the wire, a reference to a member of the node's own recursion group is a
-`reference` naming that member's `node_id`. `{term: "group_reference",
-ordinal}` is its spelling inside a key preimage only (FR-092, FR-322
-`application_node_preimage`). A group member is therefore a dependency by
-rule 1, and by rule 3 when it is a `bounded_domain` node's `semantic_type`.
-In FR-092's vectors, G6 `f(x - 1)` lists G4 and E13, and G9
-`Sequence<Tree>[0, 3]` lists G8.
+`reference` naming that member's `node_id`. A group member is therefore a
+dependency by rule 1, and by rule 3 when it is a `bounded_domain` node's
+`semantic_type`. For the recursive `f` of FR-092, the application `f(x - 1)`
+lists the group's member nodes it references, and `Sequence<Tree>[0, 3]` lists
+its `Tree` group member.
 
 Rules 1 and 2 are FR-322's rule for an application node: "the unique
 reference targets and member declarations of its body, ascending by node id.
@@ -661,7 +661,7 @@ the writer's rule until QSpec states one.
 | declared `composite_type` `record` or `tuple` | each field or position type node; an optional field's `Option` node |
 | `value` `literal` or `parameter` | `[]`; the body holds literals only |
 | `value` `record_value` or `tuple_value` | each node a present slot references |
-| `scalar_type` `enum` (an enum declaration) | `[]`; its nominal preimage names no node |
+| `scalar_type` `enum` (an enum declaration) | `[]`; it names no node |
 | `value` `enum_value` | its enum declaration node |
 | `expression` holding an application | rules 1 and 2 over the application |
 | `function`, a clause function included | its parameter nodes, its body's root node and its measure's node |
@@ -675,8 +675,8 @@ QSpec's v2 positive fixtures carry placeholders: the all-`1` `quire-edition`
 edition (ADR-011 §2.4), the diagnostics `catalog` reference, and a
 placeholder key for every node whose body holds no application. Each
 fixture application key holds placeholder operand keys. The emission's
-`edition`, law `definition`s, `node_id`s, node keys
-in bodies and `dependencies`, `semantic_type`s, `identity_preimage`,
+`edition`, law `definition`s, `node_id`s
+in bodies and `dependencies`, `semantic_type`s,
 `package_id`, `source_map` and `diagnostics` are therefore outside the
 comparison.
 
@@ -692,8 +692,8 @@ package. The test reads the fixtures from the `QSPEC_DIR` checkout under
 
 ### Recursive text-leaf vectors
 
-Each vector below is the exact preimage bytes and the key `check` SHALL mint
-for the named node, under owner (`a`, `u`), from these declarations:
+The vectors below name the nodes `check` mints for these declarations under
+owner (`a`, `u`); the table gives each comparison's leaves:
 
 - `record Node { label: Text[0, 8; binary-utf8]; next: Node?; }`, a group
   of two (G16, G17);
@@ -721,238 +721,27 @@ are:
 T1 to T3 are FR-092's. The QSpec `structural-eq-record` and `collection-contains` operation vectors
 fix the leaf spelling.
 
-The `digest` and `domain` members of a node-id object in the vectors below
-are QSpec FR-322 wire members that QSL carries as opaque strings (BLOCKED-BY STD-583 (owner: planner titan:QSL:plan)).
-
-| Vector | Node | Key |
-|---|---|---|
-| T13 | `Text[0, 8; binary-utf8]` | the node id QSpec FR-322 assigns to its preimage |
-| T14 | `Text[0, 4; nfc]` | the node id QSpec FR-322 assigns to its preimage |
-| G16 | `record Node`, ordinal 1 | the node id QSpec FR-322 assigns to its preimage |
-| G17 | `Option<Node>`, ordinal 0 | the node id QSpec FR-322 assigns to its preimage |
-| G18 | `Option<A>`, ordinal 0 | the node id QSpec FR-322 assigns to its preimage |
-| G19 | `record B`, ordinal 2 | the node id QSpec FR-322 assigns to its preimage |
-| G20 | `record A`, ordinal 3 | the node id QSpec FR-322 assigns to its preimage |
-| G21 | `Option<B>`, ordinal 1 | the node id QSpec FR-322 assigns to its preimage |
-| S4 | `Sequence<Node>` | the node id QSpec FR-322 assigns to its preimage |
-| S5 | `Sequence<Node>[0, 3]` | the node id QSpec FR-322 assigns to its preimage |
-| P10 | parameter `a: Node`, level 0 | the node id QSpec FR-322 assigns to its preimage |
-| P11 | parameter `b: Node`, level 1 | the node id QSpec FR-322 assigns to its preimage |
-| P12 | parameter `s: Sequence<Node>[0, 3]`, level 0 | the node id QSpec FR-322 assigns to its preimage |
-| P13 | parameter `x: A`, level 0 | the node id QSpec FR-322 assigns to its preimage |
-| P14 | parameter `y: A`, level 1 | the node id QSpec FR-322 assigns to its preimage |
-| P15 | parameter `a: Option<Node>`, level 0 | the node id QSpec FR-322 assigns to its preimage |
-| P16 | parameter `b: Option<Node>`, level 1 | the node id QSpec FR-322 assigns to its preimage |
-| E14 | `a = b` over `Node` | the node id QSpec FR-322 assigns to its preimage |
-| E15 | `contains(s, b)` over `Sequence<Node>[0, 3]` | the node id QSpec FR-322 assigns to its preimage |
-| E16 | `x = y` over `A` | the node id QSpec FR-322 assigns to its preimage |
-| E17 | `a = b` over `Option<Node>` | the node id QSpec FR-322 assigns to its preimage |
-
-**T13**: `Text[0, 8; binary-utf8]` (node-id `digest`/`domain` members: BLOCKED-BY STD-583 (owner: planner titan:QSL:plan))
-
-```json
-{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"<node id of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"<node id of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"8","value_kind":"integer"}},{"name":"text_profile","term":"binding","value":{"term":"literal","type":{"digest":"<node id of FR-092 T3>","domain":"quire.checked-semantic-node/v1"},"value":"binary-utf8","value_kind":"text"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"text_bounds","semantic_type":{"digest":"<node id of FR-092 T3>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
-```
-
-Key: the node id QSpec FR-322 assigns to the preimage above.
-
-**T14**: `Text[0, 4; nfc]` (node-id `digest`/`domain` members: BLOCKED-BY STD-583 (owner: planner titan:QSL:plan))
-
-```json
-{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"<node id of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"<node id of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"4","value_kind":"integer"}},{"name":"text_profile","term":"binding","value":{"term":"literal","type":{"digest":"<node id of FR-092 T3>","domain":"quire.checked-semantic-node/v1"},"value":"nfc","value_kind":"text"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"text_bounds","semantic_type":{"digest":"<node id of FR-092 T3>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
-```
-
-Key: the node id QSpec FR-322 assigns to the preimage above.
-
-**G16**: `record Node`, ordinal 1 (node-id `digest`/`domain` members: BLOCKED-BY STD-583 (owner: planner titan:QSL:plan))
-
-```json
-{"body":{"members":[{"name":"label","term":"binding","value":{"target":{"digest":"<node id of T13>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"next","term":"binding","value":{"members":[{"name":"optional","term":"binding","value":{"ordinal":0,"term":"group_reference"}}],"term":"aggregate"}}],"term":"aggregate"},"declaration":{"qualified_name":["Node"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"<group label of G16>","ordinal":1,"size":2},"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
-```
-
-Key: the node id QSpec FR-322 assigns to the preimage above.
-
-**G17**: `Option<Node>`, ordinal 0
-
-```json
-{"body":{"members":[{"ordinal":1,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"<group label of G16>","ordinal":0,"size":2},"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}
-```
-
-Key: the node id QSpec FR-322 assigns to the preimage above.
-
-**G18**: `Option<A>`, ordinal 0
-
-```json
-{"body":{"members":[{"ordinal":3,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"<group label of G18>","ordinal":0,"size":4},"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}
-```
-
-Key: the node id QSpec FR-322 assigns to the preimage above.
-
-**G19**: `record B`, ordinal 2 (node-id `digest`/`domain` members: BLOCKED-BY STD-583 (owner: planner titan:QSL:plan))
-
-```json
-{"body":{"members":[{"name":"tag","term":"binding","value":{"target":{"digest":"<node id of T14>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"a","term":"binding","value":{"members":[{"name":"optional","term":"binding","value":{"ordinal":0,"term":"group_reference"}}],"term":"aggregate"}}],"term":"aggregate"},"declaration":{"qualified_name":["B"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"<group label of G18>","ordinal":2,"size":4},"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
-```
-
-Key: the node id QSpec FR-322 assigns to the preimage above.
-
-**G20**: `record A`, ordinal 3 (node-id `digest`/`domain` members: BLOCKED-BY STD-583 (owner: planner titan:QSL:plan))
-
-```json
-{"body":{"members":[{"name":"name","term":"binding","value":{"target":{"digest":"<node id of T13>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"b","term":"binding","value":{"members":[{"name":"optional","term":"binding","value":{"ordinal":1,"term":"group_reference"}}],"term":"aggregate"}}],"term":"aggregate"},"declaration":{"qualified_name":["A"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"<group label of G18>","ordinal":3,"size":4},"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
-```
-
-Key: the node id QSpec FR-322 assigns to the preimage above.
-
-**G21**: `Option<B>`, ordinal 1
-
-```json
-{"body":{"members":[{"ordinal":2,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"<group label of G18>","ordinal":1,"size":4},"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}
-```
-
-Key: the node id QSpec FR-322 assigns to the preimage above.
-
-**S4**: `Sequence<Node>` (node-id `digest`/`domain` members: BLOCKED-BY STD-583 (owner: planner titan:QSL:plan))
-
-```json
-{"body":{"members":[{"target":{"digest":"<node id of G16>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":null,"semantic_form":"sequence","semantic_type":null,"version":"quire.structural-node/v1"}
-```
-
-Key: the node id QSpec FR-322 assigns to the preimage above.
-
-**S5**: `Sequence<Node>[0, 3]` (node-id `digest`/`domain` members: BLOCKED-BY STD-583 (owner: planner titan:QSL:plan))
-
-```json
-{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"<node id of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"<node id of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"3","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"collection_bounds","semantic_type":{"digest":"<node id of S4>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
-```
-
-Key: the node id QSpec FR-322 assigns to the preimage above.
-
-**P10**: parameter `a: Node`, level 0 (node-id `digest`/`domain` members: BLOCKED-BY STD-583 (owner: planner titan:QSL:plan))
-
-```json
-{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"<node id of FR-092 T3>","domain":"quire.checked-semantic-node/v1"},"value":"a","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"<node id of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"<node id of G16>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
-```
-
-Key: the node id QSpec FR-322 assigns to the preimage above.
-
-**P11**: parameter `b: Node`, level 1 (node-id `digest`/`domain` members: BLOCKED-BY STD-583 (owner: planner titan:QSL:plan))
-
-```json
-{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"<node id of FR-092 T3>","domain":"quire.checked-semantic-node/v1"},"value":"b","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"<node id of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"1","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"<node id of G16>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
-```
-
-Key: the node id QSpec FR-322 assigns to the preimage above.
-
-**P12**: parameter `s: Sequence<Node>[0, 3]`, level 0 (node-id `digest`/`domain` members: BLOCKED-BY STD-583 (owner: planner titan:QSL:plan))
-
-```json
-{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"<node id of FR-092 T3>","domain":"quire.checked-semantic-node/v1"},"value":"s","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"<node id of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"<node id of S5>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
-```
-
-Key: the node id QSpec FR-322 assigns to the preimage above.
-
-**P13**: parameter `x: A`, level 0 (node-id `digest`/`domain` members: BLOCKED-BY STD-583 (owner: planner titan:QSL:plan))
-
-```json
-{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"<node id of FR-092 T3>","domain":"quire.checked-semantic-node/v1"},"value":"x","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"<node id of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"<node id of G20>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
-```
-
-Key: the node id QSpec FR-322 assigns to the preimage above.
-
-**P14**: parameter `y: A`, level 1 (node-id `digest`/`domain` members: BLOCKED-BY STD-583 (owner: planner titan:QSL:plan))
-
-```json
-{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"<node id of FR-092 T3>","domain":"quire.checked-semantic-node/v1"},"value":"y","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"<node id of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"1","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"<node id of G20>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
-```
-
-Key: the node id QSpec FR-322 assigns to the preimage above.
-
-**P15**: parameter `a: Option<Node>`, level 0 (node-id `digest`/`domain` members: BLOCKED-BY STD-583 (owner: planner titan:QSL:plan))
-
-```json
-{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"<node id of FR-092 T3>","domain":"quire.checked-semantic-node/v1"},"value":"a","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"<node id of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"<node id of G17>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
-```
-
-Key: the node id QSpec FR-322 assigns to the preimage above.
-
-**P16**: parameter `b: Option<Node>`, level 1 (node-id `digest`/`domain` members: BLOCKED-BY STD-583 (owner: planner titan:QSL:plan))
-
-```json
-{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"<node id of FR-092 T3>","domain":"quire.checked-semantic-node/v1"},"value":"b","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"<node id of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"1","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"<node id of G17>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
-```
-
-Key: the node id QSpec FR-322 assigns to the preimage above.
-
-**E14**: `a = b` over `Node` (node-id `digest`/`domain` members: BLOCKED-BY STD-583 (owner: planner titan:QSL:plan))
-
-```json
-{"body":{"arguments":[{"target":{"digest":"<node id of P10>","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"<node id of P11>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.structural.eq","laws":[],"leaves":[{"laws":[{"definition":{"authority":"agent-ix","identity":"quire.value.text.unicode-17.0.0/v1"},"role":"text_profile"}],"mode":{"kind":"text_profile","value":"binary-utf8"},"path":["field:label"]},{"laws":[],"mode":null,"path":["field:next","inner","recursion:0"]}],"member":null,"mode":null},"operator":"binary","result_type":{"digest":"<node id of FR-092 T1>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"binary","semantic_type":{"digest":"<node id of FR-092 T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
-```
-
-Key: the node id QSpec FR-322 assigns to the preimage above.
-
-**E15**: `contains(s, b)` over `Sequence<Node>[0, 3]` (node-id `digest`/`domain` members: BLOCKED-BY STD-583 (owner: planner titan:QSL:plan))
-
-```json
-{"body":{"arguments":[{"target":{"digest":"<node id of P12>","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"<node id of P11>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.collection.contains","laws":[],"leaves":[{"laws":[{"definition":{"authority":"agent-ix","identity":"quire.value.text.unicode-17.0.0/v1"},"role":"text_profile"}],"mode":{"kind":"text_profile","value":"binary-utf8"},"path":["field:label"]},{"laws":[],"mode":null,"path":["field:next","inner","recursion:0"]}],"member":null,"mode":null},"operator":"collection","result_type":{"digest":"<node id of FR-092 T1>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"collection","semantic_type":{"digest":"<node id of FR-092 T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
-```
-
-Key: the node id QSpec FR-322 assigns to the preimage above.
-
-**E16**: `x = y` over `A` (node-id `digest`/`domain` members: BLOCKED-BY STD-583 (owner: planner titan:QSL:plan))
-
-```json
-{"body":{"arguments":[{"target":{"digest":"<node id of P13>","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"<node id of P14>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.structural.eq","laws":[],"leaves":[{"laws":[{"definition":{"authority":"agent-ix","identity":"quire.value.text.unicode-17.0.0/v1"},"role":"text_profile"}],"mode":{"kind":"text_profile","value":"binary-utf8"},"path":["field:name"]},{"laws":[{"definition":{"authority":"agent-ix","identity":"quire.value.text.unicode-17.0.0/v1"},"role":"text_profile"}],"mode":{"kind":"text_profile","value":"nfc"},"path":["field:b","inner","field:tag"]},{"laws":[],"mode":null,"path":["field:b","inner","field:a","inner","recursion:0"]}],"member":null,"mode":null},"operator":"binary","result_type":{"digest":"<node id of FR-092 T1>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"binary","semantic_type":{"digest":"<node id of FR-092 T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
-```
-
-Key: the node id QSpec FR-322 assigns to the preimage above.
-
-**E17**: `a = b` over `Option<Node>` (node-id `digest`/`domain` members: BLOCKED-BY STD-583 (owner: planner titan:QSL:plan))
-
-```json
-{"body":{"arguments":[{"target":{"digest":"<node id of P15>","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"<node id of P16>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.structural.eq","laws":[],"leaves":[{"laws":[{"definition":{"authority":"agent-ix","identity":"quire.value.text.unicode-17.0.0/v1"},"role":"text_profile"}],"mode":{"kind":"text_profile","value":"binary-utf8"},"path":["inner","field:label"]},{"laws":[],"mode":null,"path":["inner","field:next","inner","recursion:1"]}],"member":null,"mode":null},"operator":"binary","result_type":{"digest":"<node id of FR-092 T1>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"binary","semantic_type":{"digest":"<node id of FR-092 T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
-```
-
-Key: the node id QSpec FR-322 assigns to the preimage above.
-
-G16-G17, recursion group label (QSpec FR-322 `recursion.group`):
-
-| Ordinal | Member |
-|---|---|
-| 0 | G17 `Option<Node>` |
-| 1 | G16 `Node` |
-
-G18-G21, recursion group label (QSpec FR-322 `recursion.group`):
-
-| Ordinal | Member |
-|---|---|
-| 0 | G18 `Option<A>` |
-| 1 | G21 `Option<B>` |
-| 2 | G19 `B` |
-| 3 | G20 `A` |
-
 ## Constraints
 
 | ID | Constraint | Type | Validation |
 | --- | --- | --- | --- |
 | FR-093-CON-1 | The lowering `match` over `NodeKind` has one arm per variant and no `_` or catch-all arm (ADR-012 §5.1), so a new checked node kind does not compile until it has a lowering. | Design | Test (TC-415) |
-| FR-093-CON-2 | Non-test code in the layer-4 `package` crate builds no node body term, builds no node-identity preimage (`quire.application-node/v1`, `quire.structural-node/v1` or a nominal preimage) and calls no `NodeKey` constructor; it serializes the nodes `check` lowered. The I2 reader's rebuild of a node's preimage is outside this constraint. | Design | Test (TC-416) |
+| FR-093-CON-2 | Non-test code in the layer-4 `package` crate builds no node body term, assigns no node id and calls no node id constructor; it serializes the nodes `check` lowered with the ids `check` assigned. | Design | Test (TC-416) |
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-093-AC-1 | For `function t using v(): Boolean pure { if true then true else true }`, the checked graph holds exactly one `value`/`literal` node for `true` and one `expression`/`conditional` node whose arguments are three `reference`s to that literal node, whose operation is `quire.op.control.if` and whose `result_type` and `semantic_type` are T1. The literal node has three `expression` occurrences, ordinals 0 to 2 in source order. | Test (TC-415) |
-| FR-093-AC-2 | For `both`, `nb` (`function nb using v(a: Boolean): Boolean pure { both(a, true) }`) and `h` of FR-092-AC-4, the node of `a and b` keys to E1, the node of `both(a, true)` keys to E2 and the node of `let y = a in y` keys to E3, each with the preimage bytes FR-092 lists. No node is built for a read of `a`, `b` or `y`: each is a `reference` to that parameter's node. | Test (TC-415) |
+| FR-093-AC-2 | For `both`, `nb` (`function nb using v(a: Boolean): Boolean pure { both(a, true) }`) and `h` of FR-092-AC-4, the nodes of `a and b`, `both(a, true)` and `let y = a in y` are three distinct `expression` nodes, each with the operation, members and arguments its row gives. No node is built for a read of `a`, `b` or `y`: each is a `reference` to that parameter's node. | Test (TC-415) |
 | FR-093-AC-3 | For each row of the application table whose checked node the `Value` family builds in a function body (every row except `Attribute`, `Navigate`, `AllInstances`, `Lookup`, `Dispatch` and `Pre`), a fixture function whose body holds that checked node lowers to one `expression` node with the row's `operator`, `semantic_form`, `operation.identity`, member, mode, laws, leaves and argument shape, and its `result_type` is the type node of the checked node's `value_type`. | Test (TC-415) |
 | FR-093-AC-4 | `function c1 using v(x: Int[0, 9]): Int[0, 10] pure { x }` builds no convert node: `c1`'s `body` binding references `x`'s parameter node. `function c2 using v(): Int[0, 9] pure { 3 }` lowers its body to a `convert` node with `quire.op.numeric.narrow` and member `type_argument` naming `Int[0, 9]`'s node, over the literal `3`. `function c3 using v(x: Int[0, 9]): Rational[0, 9; 1, 1] pure { convert<Rational[0, 9; 1, 1]>(x) }` lowers to `quire.op.numeric.convert`. `function fm using v(s: Sequence<Sequence<Int[0, 9]>[0, 2]>[0, 3]): Sequence<Int[0, 9]>[0, 6] pure { flatMap(x in s: x) }` lowers its body to one `quire.op.collection.flat_map` node and no map node. | Test (TC-415) |
 | FR-093-AC-5 | In `function q using v(s: Sequence<Int[0, 9]>[0, 5]): Boolean pure { forall(x in s: exists(y in s: x = y)) and exists(z in s: true) }`, `x`'s parameter node has level 1, `y`'s level 2 and `z`'s level 1. The `forall` argument list is `[reference(s's node), binding{name: "x", value: reference(the exists node)}]`. | Test (TC-415) |
 | FR-093-AC-6 | A text equality carries law `text_profile` with the layer table's text-profile `DefinitionRef` and mode `text_profile` equal to the operands' profile. | Test (TC-415) |
-| FR-093-AC-7 | For every node of a checked package holding `both`, `nb`, `h`, `f` and `t`, the preimage rebuilt from the node as the v2 emission arm writes it (the FR-322 application-node rule, or FR-092's structural-node rule with the owner read from the node's own `owner` member) equals the node's key. The `package` crate's non-test code names no `SemanticTerm` constructor and no key function. For a package holding the recursive `f` of FR-092 vectors G4 to G6, the three members carry the `recursion_group` label `<FR-092 group G4...>`, their graph order is G5, G6, G4, and the keys rebuilt from that graph order are G4 to G6. | Test (TC-416) |
-| FR-093-AC-8 | In functions over a `Population<M::Order>[3]` parameter `p` and a `Reference<M::Order>` parameter `r` (FR-094 vectors E4 to E9), and in a clause function (FR-094) that holds a dispatched call (QSpec FR-151, QSpec TC-196 D06), a checked `Attribute`, `AllInstances`, `Lookup` and `Dispatch` node each lowers to the operation, member, mode and arguments its row gives, and a `Lookup` with `absent empty` carries mode `absence` = `empty`. | Test (TC-415) |
+| FR-093-AC-7 | **Withdrawn.** The rebuilt-preimage-equals-key oracle and the FR-092 vector keys G4 to G6 were superseded by QSpec FR-322 structural node identity, under which a reader derives no node id; the package crate's non-test code names no `SemanticTerm` constructor and no node id function (FR-093-CON-2), and for the recursive `f` of FR-092 the three members carry one `recursion_group` label and distinct producer-assigned `node_id`s. | Withdrawn |
+| FR-093-AC-8 | In functions over a `Population<M::Order>[3]` parameter `p` and a `Reference<M::Order>` parameter `r` (FR-094-AC-3 and AC-4), and in a clause function (FR-094) that holds a dispatched call (QSpec FR-151, QSpec TC-196 D06), a checked `Attribute`, `AllInstances`, `Lookup` and `Dispatch` node each lowers to the operation, member, mode and arguments its row gives, and a `Lookup` with `absent empty` carries mode `absence` = `empty`. | Test (TC-415) |
 | FR-093-AC-9 | Every node of the checked package of AC-7 has at least one occurrence: `a`'s parameter node has an `expression` occurrence over `a: Boolean` (QSpec FR-341-AC-10) and one `expression` occurrence per read, and the `Integer` and text scalar nodes that type P1's body literals have a `generated` occurrence. | Test (TC-416) |
-| FR-093-AC-10 | `eq`, `has`, `eqa` and `eqo` of those vectors check with no refusal. Their `a = b`, `contains(s, b)`, `x = y` and `a = b` nodes key to E14, E15, E16 and E17 with those vectors' preimage bytes, whose leaves are the lists the vectors give, and the type, group and parameter nodes they name key to T13, T14, G16 to G21, S4, S5 and P10 to P16. Declaring `B` before `A` gives the same keys. | Test (TC-415) |
+| FR-093-AC-10 | Withdrawn: the AC asserted node keys that were digests of preimages; those keys are removed with the digest ceremony. The leaf lists it gave are covered by FR-093-AC-11. | Withdrawn |
 | FR-093-AC-11 | Structural equality over `record R { t: Text[0, 64; nfc]?; }` and over `record S { t: Option<Text[0, 64; nfc]>; }` each carries one leaf, path `field:t`, `inner`; over `record W { t: Text[0, 64; nfc]; }` one leaf, path `field:t`. Structural equality and `contains` over FR-092's recursive `List`, which reaches no `Text` type, carry no leaves. Structural equality over `record Tree2 { label: Text[0, 8; binary-utf8]; kids: Sequence<Tree2>[0, 3]; }` carries `field:label`, then `field:kids`, `inner`, `recursion:0`; over `record Two { x: Node; y: Node; }` it carries `field:x`, `field:label`; `field:x`, `field:next`, `inner`, `recursion:1`; `field:y`, `field:label`; `field:y`, `field:next`, `inner`, `recursion:1`. `eq` of the Recursive text-leaf vectors, lowered with a node limit (`CheckingLimits`) that admits every node of its package but not also its two leaves, it stops with `stage_limit_exceeded`/`node-count-exceeded` at the node limit's bound, and yields no node. | Test (TC-415) |
 | FR-093-AC-12 | For every node of the checked package of AC-7, of the package of the recursive `f` and of a package holding `record Tree { kids: Sequence<Tree>[0, 3]; }`, the emitted `dependencies` equal the list that rules 1 to 5 of Node dependencies rebuild from the node as written. In ascending node id order, E1 lists P2 and P1; F2 `both` lists P2, P1 and E1; E2 lists L1, F2 and P1; T1, L1 and P1 list none. In the package of the recursive `f`, T4 `Int[0, 9]` lists T2, G4 lists G5 and P4, G5 lists L1, G6 and E11, and G6 lists E13 and G4. In the `Tree` package, G7 lists G9, G8 lists G7 and G9 lists G8. | Test (TC-416) |
 | FR-093-AC-13 | For each application node of QSpec's `positive-operation-identities.json` and `positive-control-operations.json` whose `operation.identity` a row of the application table lowers, the node emitted for a function whose body holds that operation equals the fixture node in `node_tag`, `semantic_form`, `operator`, `operation.identity`, law roles in order, `mode`, member `kind` and `name`, leaf `path`s and modes, and argument term kinds and binding names, and IR's v2 reader admits the emitted package. The comparison reads none of the members Comparison with QSpec's v2 positive fixtures places outside it. The rows AC-3 excludes (`Attribute`, `Navigate`, `AllInstances`, `Lookup`, `Dispatch`, `Pre`) are outside the comparison. | Test (TC-416) |
@@ -963,7 +752,7 @@ G18-G21, recursion group label (QSpec FR-322 `recursion.group`):
 | FR-093-AC-18 | For `ordered enum Status { READY, DONE }` read from source text, with no member literal written: when the enum's only uses are the parameter types of `before using v(a: Status, b: Status): Boolean pure { a < b }`, or of the same function with `a = b`, each member node has exactly one occurrence, a `generated` one whose source-map region is that function's body text, and the package emits with nothing omitted. When no function names the enum, each member's region is the declared name `Status`, and for `record P { x: Int[0, 9]; }` no function names, the `Int[0, 9]` node's region is `P`, and stays `P` with `record Q { y: Int[0, 9]; }` declared before it. Each of those packages reads back Verified through QSL's I2 read. With `record R { x: Int[0, 9]; }` beside the post clause `VersionUnchanged` over `1 < 2`, which a protocol attempt names, the `Integer` node's only occurrence is `generated`, with region `1 < 2`: a type name never displaces a state clause or attempt placement. | Test (TC-416) |
 | FR-093-AC-19 | Every IR checked-package/v2 node kind (`node_tag`, `semantic_form`) is classified exactly once: as a family QSL's lowering writes, or as a kind QSL's lowering never writes, with the reason. For each family QSL writes, a package holding a node of it is admitted by IR's checked-package/v2 reader, through QSL's I2 read, as emitted. | Test (TC-416) |
 | FR-093-AC-20 | The v2 emission of a checked package holding `t` writes the package's `edition` as the layer table's definition of that role, exactly `{authority, identity}` with no revision. The emission of a `Float64` addition writes the `definition` of the operation's `ieee_profile` law as that same exactly-two-member row. IR's v2 reader admits both packages. | Test (TC-416) |
-| FR-093-AC-21 | The v2 emission writes `owner` on exactly the nodes whose `quire.structural-node/v1` preimage carries one, equal to that preimage's `owner`, and the wire carries no `identity_projection`: a node carries `owner` exactly when its preimage does. Checked under owner (`a`, `u`): `record P { x: Int[0, 9]; }`, the recursive `record Tree { kids: Sequence<Tree>[0, 3]; }` and the declared function over a `Reference<M::Order>` parameter (FR-094-AC-1) carry the `SourceOwner` (`a`, `u`); the model declaration nodes M1 and M5 carry their `ModelOwner`s (`ix://acme/orders/Order`, `ix://acme/orders/Sub`); the clause functions C1, C2, C4, C5 and C6 of FR-094-AC-5, built by `checked_dispatch_operation` with a test-built clause table, carry their `ModelOwner`s; and the `Int[0, 9]`, `Sequence<Tree>`, `collection_bounds`, R1, parameter and expression nodes, and the declaration and member nodes of `ordered enum Status { READY, DONE }`, carry none. The preimage of every emitted structural node rebuilt from the wire node alone, its `owner` included, equals its key, and each `Tree` group's label rebuilds from the wire alone. IR's v2 reader admits each package. | Test (TC-416) |
+| FR-093-AC-21 | The v2 emission writes `owner` on exactly the declared structural nodes (`SourceOwner`) and the model declaration nodes and clause functions (`ModelOwner`), equal to the checked node's owner, and the wire carries no `identity_projection`. Checked under owner (`a`, `u`): `record P { x: Int[0, 9]; }`, the recursive `record Tree { kids: Sequence<Tree>[0, 3]; }` and the declared function over a `Reference<M::Order>` parameter (FR-094-AC-1) carry the `SourceOwner` (`a`, `u`); the model declaration nodes of `Order` and `Sub` (FR-094-AC-1) carry their `ModelOwner`s (`ix://acme/orders/Order`, `ix://acme/orders/Sub`); the clause functions of FR-094-AC-5, built by `checked_dispatch_operation` with a test-built clause table, carry their `ModelOwner`s; and the `Int[0, 9]`, `Sequence<Tree>`, `collection_bounds`, the `Reference<Order>` type node, parameter and expression nodes, and the declaration and member nodes of `ordered enum Status { READY, DONE }`, carry none. IR's v2 reader admits each package. | Test (TC-416) |
 | FR-093-AC-22 | The same source, `record Point { x: Integer; }` and `record List { next?: List; }`, checked and emitted under the owners (`agent-ix`, `example-a`) and (`agent-ix`, `example-b`), gives two packages whose `Point` node ids differ, whose `List` group labels and `List` group member ids differ and whose `Integer` node id is equal; IR's v2 reader admits both. QSL writes the declarations with the qualified names `["Point"]` and `["List"]` (FR-092 D1), so these `Point`, `List` and `Integer` nodes are the corresponding nodes of QSpec's `positive-two-owners-a.json` and `positive-two-owners-b.json` (QSpec FR-322-AC-53). | Test (TC-416) |
 | FR-093-AC-23 | Structural equality and inequality over each Union text-leaf vector U1 to U7 carry exactly that vector's complete ordered leaf list, with the selected text definition and stated profiles. U2's rename, member reorder, payload swap and source arm reorder give exactly the changes the vectors state. | Test |
 | FR-093-AC-24 | For each `K` of `Set`, `Bag` and `OrderedSet`, structural equality over `K<Choice>` (U2) carries U2's leaves with one leading `inner` on every path; `contains` over that collection carries U2's leaves without that prefix (`inner:0`). A catalogued `result_inner` operation yielding `K<Choice>` carries U2's leaves without that prefix, while one yielding `Sequence<Choice>` carries `[]`. Structural equality over `Sequence<Choice>` still carries U2's leaves with one leading `inner`. | Test |
@@ -984,7 +773,7 @@ G18-G21, recursion group label (QSpec FR-322 `recursion.group`):
 ## Dependencies
 
 - [FR-092](FR-092-key-type-parameter-and-declared-nodes.md): type, parameter
-  and function nodes, the structural-node preimage and the literal spellings.
+  and function nodes, the structural node ids and the literal spellings.
 - [FR-319](FR-319-key-union-member-and-case-nodes.md) and
   [FR-323](FR-323-key-union-values-in-collections.md): union identity,
   equality and canonical collection keys; QSpec
@@ -1014,13 +803,10 @@ G18-G21, recursion group label (QSpec FR-322 `recursion.group`):
   `7070…`, whose bodies reference `dddd…`, and for the `bounded_domain`
   node `cccc…`; QSL asks QSpec to correct them.
 - QSpec FR-322 `owner` (QSL-638): the node member the emission writes
-  (the reader's joins over it, FR-322-AC-51 to AC-53, are BLOCKED-BY QSpec #510/STD-583 (owner: planner titan:QSL:plan)). IR's
+  (the reader's joins over it, FR-322-AC-51 to AC-53). IR's
   v2 node type carries it once IR-646 adds `owner` to
   `CheckedSemanticNodeV2`; AC-21 and AC-22 ("IR's v2 reader admits") cannot
   pass before that lands.
-- IR-242: the IR reader's recursion preimage. It derives an in-group
-  ordinal from graph order, which the emission sets to FR-092's group
-  order.
 - The `Attribute` row's `record.project` over a `deref` result: FR-322 gives a
   model entity type the family `reference`, and no QSpec fixture projects an
   attribute of a dereferenced object. The row is QSL's proposal (ADR-013

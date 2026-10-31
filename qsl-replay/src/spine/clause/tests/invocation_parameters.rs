@@ -64,20 +64,14 @@ fn bump_operation() -> serde_json::Value {
     })
 }
 
-fn bump_unit_and_packages() -> (String, BTreeMap<[u8; 32], Vec<u8>>, String) {
+fn bump_unit_and_packages() -> (String, qsl_semantics::model::intake::PackageInput) {
     let document = config_version_domain_document_with_operations(vec![bump_operation()]);
     let (unit, packages) = config_version_unit_and_packages_for(document);
-    let digest = {
-        let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-            panic!("one supplied document");
-        };
-        hex(digest)
-    };
-    (format!("{unit}{BUMP_CLAUSES}"), packages, digest)
+    (format!("{unit}{BUMP_CLAUSES}"), packages)
 }
 
 fn bump_request(selection: ClauseRunSelection) -> ClauseRunRequest {
-    let (unit, packages, _) = bump_unit_and_packages();
+    let (unit, packages) = bump_unit_and_packages();
     config_version_request_for(unit, packages, "invocation-parameters.native", selection)
 }
 
@@ -86,17 +80,16 @@ fn bump_request(selection: ClauseRunSelection) -> ClauseRunRequest {
 /// its digest is taken.
 struct BumpInvocation {
     invocation: DocumentRef,
-    snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
-    invocations: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
+    snapshots: qsl_semantics::model::observation::DocumentProvision,
+    invocations: qsl_semantics::model::observation::DocumentProvision,
 }
 
 fn bump_invocation(
     post_child_version: i64,
     edit: impl FnOnce(&mut serde_json::Value),
 ) -> BumpInvocation {
-    let (_, _, model_digest_hex) = bump_unit_and_packages();
     let model_snapshot = |label: &DocumentRef, observation: &str, child_version: i64| {
-        let mut document: serde_json::Value = serde_json::from_slice(&snapshot(
+        let document: serde_json::Value = serde_json::from_slice(&snapshot(
             label,
             observation,
             &[
@@ -105,7 +98,6 @@ fn bump_invocation(
             ],
         ))
         .expect("the fixture is JSON");
-        document["model"]["digest"] = json!(format!("sha256-jcs:{model_digest_hex}"));
         document.to_string().into_bytes()
     };
     let (pre, pre_bytes) =
@@ -115,7 +107,7 @@ fn bump_invocation(
     });
     let (invocation, invocation_bytes) = document_ref_and_bytes("bump-invocation", |label| {
         let mut document: serde_json::Value = serde_json::from_slice(
-            &config_version_invocation_bytes(label, &model_digest_hex, &pre, &post, "child"),
+            &config_version_invocation_bytes(label, &pre, &post, "child"),
         )
         .expect("the fixture is JSON");
         document["operation"] = json!("bump");
@@ -126,11 +118,8 @@ fn bump_invocation(
     });
     BumpInvocation {
         invocation: invocation.clone(),
-        snapshots: BTreeMap::from([
-            (pre.source_identity(), pre_bytes),
-            (post.source_identity(), post_bytes),
-        ]),
-        invocations: BTreeMap::from([(invocation.source_identity(), invocation_bytes)]),
+        snapshots: BTreeMap::from([(pre.clone(), pre_bytes), (post.clone(), post_bytes)]),
+        invocations: BTreeMap::from([(invocation.clone(), invocation_bytes)]),
     }
 }
 
@@ -213,37 +202,24 @@ fn an_invocation_carrying_a_replacement_frame_is_refused_not_obeyed() {
     let changed_parent = |edit: fn(&mut serde_json::Value)| {
         let mut input = bump_invocation(1, edit);
         // Re-point `post` at a snapshot whose `child.parent` is absent.
-        let (_, _, model_digest_hex) = bump_unit_and_packages();
         let (post, post_bytes) = document_ref_and_bytes("bump-post-parent", |label| {
-            let mut document: serde_json::Value = serde_json::from_slice(&snapshot(
+            let document: serde_json::Value = serde_json::from_slice(&snapshot(
                 label,
                 "post",
                 &[object("root", 1, None), object("child", 1, None)],
             ))
             .expect("the fixture is JSON");
-            document["model"]["digest"] = json!(format!("sha256-jcs:{model_digest_hex}"));
             document.to_string().into_bytes()
         });
-        input.snapshots.insert(post.source_identity(), post_bytes);
+        input.snapshots.insert(post.clone(), post_bytes);
         let (invocation, invocation_bytes) = document_ref_and_bytes("bump-invocation", |label| {
-            let pre_ref = config_version_document_ref("bump-pre");
-            let pre_bytes = input
-                .snapshots
-                .get(&pre_ref.source_identity())
-                .expect("the pre snapshot");
             let pre_ref = DocumentRef {
-                digest: document_digest(pre_bytes),
-                ..pre_ref
+                ..config_version_document_ref("bump-pre")
             };
-            let mut document: serde_json::Value =
-                serde_json::from_slice(&config_version_invocation_bytes(
-                    label,
-                    &model_digest_hex,
-                    &pre_ref,
-                    &post,
-                    "child",
-                ))
-                .expect("the fixture is JSON");
+            let mut document: serde_json::Value = serde_json::from_slice(
+                &config_version_invocation_bytes(label, &pre_ref, &post, "child"),
+            )
+            .expect("the fixture is JSON");
             document["operation"] = json!("bump");
             document["parameters"] = json!({"expectedVersion": {"integer": "1"}});
             document["result"] = serde_json::Value::Null;
@@ -251,7 +227,7 @@ fn an_invocation_carrying_a_replacement_frame_is_refused_not_obeyed() {
             document.to_string().into_bytes()
         });
         input.invocation = invocation.clone();
-        input.invocations = BTreeMap::from([(invocation.source_identity(), invocation_bytes)]);
+        input.invocations = BTreeMap::from([(invocation.clone(), invocation_bytes)]);
         input
     };
 

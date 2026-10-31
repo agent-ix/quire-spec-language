@@ -4,8 +4,6 @@
 //! `check`; no caller states a checked fact, and the work assertions read the
 //! meter the model admission carried into the conformance stage.
 
-use std::collections::BTreeMap;
-
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
 use qsl_semantics::check::{
@@ -15,7 +13,6 @@ use qsl_semantics::model::accounting::{
     ChargePoint, Incomplete, LimitKind, ModelNormalizationLimits,
 };
 use qsl_semantics::model::intake::{admit_unit, package_input, UnitIntakeCause};
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::normalize::ModelRefusalCause;
 use quire_checked::key::DeclarationKey;
 use quire_semantic_value::checking::CheckingLimits;
@@ -210,7 +207,7 @@ struct Run {
     outcome: Result<(), Vec<CheckRefusal>>,
 }
 
-fn admit_n(unit: &str, packages: &BTreeMap<[u8; 32], Vec<u8>>) -> u64 {
+fn admit_n(unit: &str, packages: &qsl_semantics::model::intake::PackageInput) -> u64 {
     let built = parse_and_build(unit);
     admit_unit(
         &built.selections().models,
@@ -228,7 +225,11 @@ fn run(document: &[u8], body: &str, extra: Option<u64>) -> Run {
     run_unit(&unit, &packages, extra)
 }
 
-fn run_unit(unit: &str, packages: &BTreeMap<[u8; 32], Vec<u8>>, extra: Option<u64>) -> Run {
+fn run_unit(
+    unit: &str,
+    packages: &qsl_semantics::model::intake::PackageInput,
+    extra: Option<u64>,
+) -> Run {
     let n = admit_n(unit, packages);
     let limits = ModelNormalizationLimits {
         work_units: extra.map_or(u64::MAX, |extra| n + extra),
@@ -255,6 +256,7 @@ fn run_unit(unit: &str, packages: &BTreeMap<[u8; 32], Vec<u8>>, extra: Option<u6
     .expect("source");
     let outcome = PackageDeclarations::assemble(
         raw.source().reference().clone(),
+        crate::TEST_PACKAGE_NAME.to_owned(),
         built,
         selected,
         Vec::new(),
@@ -660,15 +662,7 @@ pub(super) fn cross_selection_refinement_decoy(row: usize) {
         .unwrap()
         .replace(PACKAGE, "example/other")
         .into_bytes();
-    let first_digest = package_input([bytes.as_slice()])
-        .into_keys()
-        .next()
-        .unwrap();
-    let other_digest = package_input([decoy.as_slice()])
-        .into_keys()
-        .next()
-        .unwrap();
-    let packages = package_input([bytes.as_slice(), decoy.as_slice()]);
+    let packages = package_input([bytes.as_slice(), decoy.as_slice()]).unwrap();
     let proof = if numeric {
         format!("self.{proof_field} <= 5")
     } else {
@@ -676,14 +670,8 @@ pub(super) fn cross_selection_refinement_decoy(row: usize) {
     };
     for reverse in [false, true] {
         let mut selections = [
-            format!(
-                "model Original = {PACKAGE:?} version \"1.0.0\" digest \"sha256-jcs:{}\";",
-                hex(&first_digest)
-            ),
-            format!(
-                "model Decoy = \"example/other\" version \"1.0.0\" digest \"sha256-jcs:{}\";",
-                hex(&other_digest)
-            ),
+            format!("model Original = {PACKAGE:?};"),
+            String::from("model Decoy = \"example/other\";"),
         ];
         if reverse {
             selections.reverse();
@@ -1267,7 +1255,7 @@ fn reference_covariance_uses_the_complete_model_without_a_writer_obligation() {
 
 // ------------------------------------------------------------------ C06 / C07
 
-fn two_model_unit(reverse: bool) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
+fn two_model_unit(reverse: bool) -> (String, qsl_semantics::model::intake::PackageInput) {
     let bytes = document(|_| {
         vec![
             object(
@@ -1289,24 +1277,10 @@ fn two_model_unit(reverse: bool) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
         .expect("fixture JSON")
         .replace(PACKAGE, "example/other")
         .into_bytes();
-    let input = package_input([bytes.as_slice(), second.as_slice()]);
-    let first_digest = package_input([bytes.as_slice()])
-        .into_keys()
-        .next()
-        .expect("first digest");
-    let second_digest = package_input([second.as_slice()])
-        .into_keys()
-        .next()
-        .expect("second digest");
+    let input = package_input([bytes.as_slice(), second.as_slice()]).unwrap();
     let mut declarations = [
-        format!(
-            "model Z = {PACKAGE:?} version \"1.0.0\" digest \"sha256-jcs:{}\";",
-            hex(&first_digest)
-        ),
-        format!(
-            "model A = \"example/other\" version \"1.0.0\" digest \"sha256-jcs:{}\";",
-            hex(&second_digest)
-        ),
+        format!("model Z = {PACKAGE:?};"),
+        String::from("model A = \"example/other\";"),
     ];
     if reverse {
         declarations.reverse();
@@ -1575,12 +1549,12 @@ fn one_actual_member_can_subset_and_redefine_the_same_parent() {
         )
         .expect("different rules retain equal inputs without a duplicate-path refusal");
         let view = &selected[0].view;
-        let owner = view.type_identities()[&key("B")];
+        let owner = view.type_identities()[&key("B")].clone();
         let entry = view
             .declarations()
             .iter()
             .find(|entry| {
-                entry.preimage.owner_effective_type == Some(owner)
+                entry.preimage.owner_effective_type == Some(owner.clone())
                     && entry.preimage.original == key("B/xb")
             })
             .expect("the member's effective entry");
@@ -1701,6 +1675,7 @@ fn staged_admission_spends_the_work_of_strict_admission() {
         .expect("source");
         let declarations = PackageDeclarations::assemble(
             raw.source().reference().clone(),
+            crate::TEST_PACKAGE_NAME.to_owned(),
             built,
             selected,
             Vec::new(),

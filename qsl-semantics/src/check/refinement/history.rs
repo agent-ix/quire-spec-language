@@ -141,7 +141,8 @@ impl<'c, 'a> Checker<'c, 'a> {
             // The type, its ancestors and every subtype declare the name: a
             // history field would shadow a subtype's own field in a row.
             let declared_by_type = concrete_types.iter().any(|other| {
-                types.conforms(other.id, object.id) && types.attribute(other.id, name).is_some()
+                types.conforms(other.id.clone(), object.id.clone())
+                    && types.attribute(other.id.clone(), name).is_some()
             });
             // A field of a type and a field of its ancestor or subtype with one
             // name would be one name on the subtype's objects.
@@ -149,7 +150,8 @@ impl<'c, 'a> Checker<'c, 'a> {
                 .iter()
                 .find(|(other, other_name, _)| {
                     *other_name == name
-                        && (types.conforms(*other, object.id) || types.conforms(object.id, *other))
+                        && (types.conforms(other.clone(), object.id.clone())
+                            || types.conforms(object.id.clone(), other.clone()))
                 })
                 .map(|(_, _, span)| *span);
             if declared_by_type || earlier.is_some() {
@@ -162,7 +164,7 @@ impl<'c, 'a> Checker<'c, 'a> {
                 );
                 continue;
             }
-            seen.push((object.id, name, row.field.span));
+            seen.push((object.id.clone(), name, row.field.span));
             let location = Location::root(Origin::Expression);
             let declared = match resolve_type_form(self.declarations.scope, &row.ty, &location) {
                 Ok(declared) => declared,
@@ -199,13 +201,13 @@ impl<'c, 'a> Checker<'c, 'a> {
                 }
             };
             self.history.push(ScopedHistory {
-                object_type: object.id,
+                object_type: object.id.clone(),
                 name: name.to_owned(),
                 value_type: declared.clone(),
             });
             headers.push(Header {
                 form: row,
-                object: object.id,
+                object: object.id.clone(),
                 object_name: object.name.clone(),
                 object_key: object.key.clone(),
                 declared,
@@ -309,7 +311,8 @@ impl<'c, 'a> Checker<'c, 'a> {
                     complete = false;
                     continue;
                 };
-                let mut parameters = vec![("self".to_owned(), ValueType::Reference(object.id))];
+                let mut parameters =
+                    vec![("self".to_owned(), ValueType::Reference(object.id.clone()))];
                 parameters.extend(concrete.parameters().iter().cloned());
                 let expression = self.check_row(
                     &update.value,

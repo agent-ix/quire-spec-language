@@ -684,8 +684,7 @@ fn operation(step: &ModelStep) -> String {
         .to_owned()
 }
 
-/// The receiver key a step's transition names: its reference's identity,
-/// hex-encoded in the transition identity.
+/// The receiver key a step's transition names: its reference's identity.
 fn receiver(step: &ModelStep) -> String {
     fn identity(value: &serde_json::Value) -> Option<String> {
         match value {
@@ -701,12 +700,7 @@ fn receiver(step: &ModelStep) -> String {
     let text: serde_json::Value =
         serde_json::from_str(step.transition.receiver().expect("a receiver"))
             .expect("a reference document");
-    let hex = identity(&text).expect("the reference's identity");
-    let bytes: Vec<u8> = (0..hex.len())
-        .step_by(2)
-        .map(|at| u8::from_str_radix(&hex[at..at + 2], 16).expect("hex"))
-        .collect();
-    String::from_utf8(bytes).expect("a key")
+    identity(&text).expect("the reference's identity")
 }
 
 fn names(steps: &[ModelStep]) -> Vec<String> {

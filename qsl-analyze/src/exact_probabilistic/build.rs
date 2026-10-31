@@ -69,7 +69,7 @@ pub fn build_product(
                 .into_iter()
                 .map(|instance| {
                     let reference = system
-                        .bound_reference(*object, &instance)
+                        .bound_reference(object.clone(), &instance)
                         .map_err(ProductRefusal::Internal)?;
                     Ok((Some(instance), Some(reference)))
                 })

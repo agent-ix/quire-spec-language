@@ -51,14 +51,14 @@ no stage of the S1 to S4 spine calls it.
 - `library::bundle::link_bundle(roots, catalog, limits)
   -> Result<LinkedBundle, BundleRefusal>`.
 - `LinkedBundle`: the closed definitions by `DefinitionRef`, the
-  `CompleteBundle` (facets, capabilities and its structural identity)
-  and the `PackageLimits` it was checked against.
+  `CompleteBundle` (facets and capabilities) and the `PackageLimits` it was
+  checked against.
 - `BundleRefusal`: the `Code`, the `ResolutionCause`, the typed
   `PackageError` and the index of the root whose closure refused.
 
 A refusal of the whole link
 (the root list's ceiling, the closed definitions' bytes, the capabilities,
-the facets, the identity) carries no root index: `BundleRefusal::root` is
+or the facets) carries no root index: `BundleRefusal::root` is
 `None`.
 
 ## Behavior
@@ -96,13 +96,6 @@ the facets, the identity) carries no root index: `BundleRefusal::root` is
   missing, then `link_bundle` SHALL refuse
   `unknown_required_feature`/`unsupported-feature`; a capability outside
   the inventory SHALL refuse `unknown_required_feature`/`unknown-feature`.
-- The bundle's identity SHALL be the preimage `{capabilities, definitions,
-  models}` itself, compared by equality: the capabilities, the closed
-  definitions (each definition's `{authority, identity}`, its role, its
-  dependencies as `{authority, identity}` pairs and its capabilities) and
-  `models`, which is always the empty array, because model selections
-  resolve only through I1 (FR-056). No backend, installed runtime or support
-  set is an input, so none changes the identity or the admission.
 
 ### Refusals
 
@@ -139,11 +132,10 @@ names the field, its bound, the count reached and its setting
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-111-AC-1 | Roots whose closure covers the nine facets and the 176 capabilities link. The `LinkedBundle` holds every closed definition and the nine facets, and its identity is unchanged when the caller's known-backend set is broader or narrower (`CompleteBundle::validate_known_capabilities` alone refuses an unknown capability). | Test (TC-491) |
+| FR-111-AC-1 | Roots whose closure covers the nine facets and the 176 capabilities link. The `LinkedBundle` holds every closed definition and the nine facets; `CompleteBundle::validate_known_capabilities` alone refuses an unknown capability in a caller's known-backend set. | Test (TC-491) |
 | FR-111-AC-2 | A root whose identity the catalog lacks, or holds only under another authority, refuses `unknown_profile`/`unsupported-selection`; a root whose identity the catalog holds resolves whatever revision label or bytes the catalog's definition carries; a dependency edge to an absent definition refuses `missing_import`/`missing-selection`. Each refusal names the root's index. | Test (TC-491) |
 | FR-111-AC-3 | Two roots, or a root and a reached definition, selecting one identity under two authorities refuse `ambiguous_declaration`/`conflicting-authority` naming both; a dependency cycle refuses `invalid_package`/`definition-cycle` naming the cycle in path order. | Test (TC-491) |
 | FR-111-AC-4 | Removing the definitions of one facet refuses `invalid_package`/`feature-set-mismatch` naming that facet; removing one capability refuses `unknown_required_feature`/`unsupported-feature`. | Test (TC-491) |
-| FR-111-AC-5 | The bundle identity of an empty definition set equals the preimage `{"capabilities":[…],"definitions":[],"models":[]}` by structural equality, and changing one definition's role, dependencies or capabilities changes it. | Test (TC-491) |
 | FR-111-AC-6 | Each `PackageLimits` field admits at its bound and refuses one past it, at catalog construction and at link, with the table's code and cause; a caller-raised `definitions` ceiling admits a catalog the default refuses, and the link records the limits it ran under. | Test (TC-491) |
 | FR-111-AC-7 | Every refusal's (code, cause) pair is one `quire.native.diagnostics/v1` lists. | Test (TC-491) |
 
@@ -152,8 +144,7 @@ names the field, its bound, the count reached and its setting
 - QSpec FR-131 (AC-1 to AC-3), FR-339 (AC-3) and `native-diagnostics.md`.
 - QSpec FR-133 and FR-467: an extension definition's grammar schema and
   typed-node schema members are QSpec's definition format (FR-467 "Members").
-  The catalog carries them as part of the definition's bytes, so they enter
-  the bundle identity with the rest of the definition (AC-5), and FR-354 reads
-  them from the linked bundle.
+  The catalog carries them as part of the definition's bytes, and FR-354
+  reads them from the linked bundle.
 - [ADR-011](../decisions/ADR-011-stage-dag-and-dependency-architecture.md) §6.1, §6.2 (`complete::package` → layer-3 `library`).
 - [FR-087](FR-087-typestate-and-cross-package-node-key.md), whose AC-7 moves this capability here when `ResolvedSourcePackage` retires.

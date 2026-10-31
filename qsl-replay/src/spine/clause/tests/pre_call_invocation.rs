@@ -17,7 +17,7 @@ const PARENT_PRESENT: &str = "ParentPresent";
 
 /// The base ConfigVersion unit plus the precondition `ParentPresent` on
 /// `attemptUpdate`.
-fn pre_call_unit_and_packages() -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
+fn pre_call_unit_and_packages() -> (String, qsl_semantics::model::intake::PackageInput) {
     let (base_unit, packages) = config_version_unit_and_packages();
     let unit = format!(
         "{base_unit}\
@@ -93,7 +93,6 @@ fn run_invocation(
     post: PostProvision,
     edit: impl FnOnce(&mut serde_json::Value),
 ) -> super::super::ClauseRunReport {
-    let model_digest_hex = config_version_model_digest_hex();
     let (pre, pre_bytes) = pre_snapshot();
     let (post_label, post_bytes) =
         document_ref_and_bytes("forbidden-parent-change-post", |label| {
@@ -106,13 +105,7 @@ fn run_invocation(
     let (invocation, invocation_bytes) =
         document_ref_and_bytes("forbidden-parent-change", |label| {
             edited(
-                &config_version_invocation_bytes(
-                    label,
-                    &model_digest_hex,
-                    &pre,
-                    &post_label,
-                    "child",
-                ),
+                &config_version_invocation_bytes(label, &pre, &post_label, "child"),
                 edit,
             )
         });
@@ -120,23 +113,21 @@ fn run_invocation(
     let mut request = request(ClauseRunSelection::Clause(
         config_version_invocation_selection(PARENT_PRESENT, invocation.clone()),
     ));
-    request.snapshots.insert(pre.source_identity(), pre_bytes);
+    request.snapshots.insert(pre.clone(), pre_bytes);
     match post {
         PostProvision::Snapshot => {
-            request
-                .snapshots
-                .insert(post_label.source_identity(), post_bytes);
+            request.snapshots.insert(post_label.clone(), post_bytes);
         }
         PostProvision::Absent => {}
         PostProvision::Malformed => {
             request
                 .snapshots
-                .insert(post_label.source_identity(), b"not json {".to_vec());
+                .insert(post_label.clone(), b"not json {".to_vec());
         }
     }
     request
         .invocations
-        .insert(invocation.source_identity(), invocation_bytes);
+        .insert(invocation.clone(), invocation_bytes);
     run_clause(request).expect("a well-formed request always reports")
 }
 
@@ -152,7 +143,7 @@ fn run_pre_call() -> ClauseDisposition {
             parameters: BTreeMap::new(),
         },
     }));
-    request.snapshots.insert(pre.source_identity(), pre_bytes);
+    request.snapshots.insert(pre.clone(), pre_bytes);
     run_clause(request)
         .expect("a well-formed request always reports")
         .disposition
@@ -216,17 +207,16 @@ fn a_precondition_over_an_invocation_neither_requires_nor_reads_its_post_side_me
 #[trace("TC-464", "FR-106-AC-9", "QSpec-V1-EXPR-019")]
 #[test]
 fn a_precondition_over_an_invocation_reads_no_result_value() {
-    let model_digest_hex = config_version_step3_model_digest_hex();
     let objects = config_version_step3_chain_objects();
     let (pre, pre_bytes) = document_ref_and_bytes("probe-result-pre", |label| {
-        config_version_step3_snapshot(label, &model_digest_hex, "pre", &objects)
+        config_version_step3_snapshot(label, "pre", &objects)
     });
     let (post, post_bytes) = document_ref_and_bytes("probe-result-post", |label| {
-        config_version_step3_snapshot(label, &model_digest_hex, "post", &objects)
+        config_version_step3_snapshot(label, "post", &objects)
     });
     let (invocation, invocation_bytes) = document_ref_and_bytes("probe-result", |label| {
         edited(
-            &config_version_probe_invocation_bytes(label, &model_digest_hex, &pre, &post, "a", "c"),
+            &config_version_probe_invocation_bytes(label, &pre, &post, "a", "c"),
             |document| document["result"] = json!({"boolean": true}),
         )
     });
@@ -236,13 +226,11 @@ fn a_precondition_over_an_invocation_reads_no_result_value() {
     ));
     over_invocation
         .snapshots
-        .insert(pre.source_identity(), pre_bytes.clone());
-    over_invocation
-        .snapshots
-        .insert(post.source_identity(), post_bytes);
+        .insert(pre.clone(), pre_bytes.clone());
+    over_invocation.snapshots.insert(post.clone(), post_bytes);
     over_invocation
         .invocations
-        .insert(invocation.source_identity(), invocation_bytes);
+        .insert(invocation.clone(), invocation_bytes);
 
     let mut pre_call = config_version_step3_request(ClauseRunSelection::Clause(ClauseSelection {
         name: "ReachesTarget".to_owned(),
@@ -261,7 +249,7 @@ fn a_precondition_over_an_invocation_reads_no_result_value() {
             )]),
         },
     }));
-    pre_call.snapshots.insert(pre.source_identity(), pre_bytes);
+    pre_call.snapshots.insert(pre.clone(), pre_bytes);
 
     let run = |request| {
         run_clause(request)

@@ -298,8 +298,8 @@ pub fn check_value(
 pub struct ValueCounterexample {
     /// The claim's `{node, occurrence}`.
     pub claim: qsl_replay::OccurrenceKey,
-    /// The parameters' wire node ids, in the order of the assignment.
-    pub parameters: Vec<qsl_replay::WireNodeId>,
+    /// The parameters' node identities, in the order of the assignment.
+    pub parameters: Vec<quire_exact::NodeKey>,
     /// The reproduced violation.
     pub reproduced: ReproducedViolation,
 }
@@ -309,7 +309,7 @@ pub(crate) enum ValueReport {
     /// The arm's finding, with the counterexample's identity.
     Found(
         ValueOutcome,
-        Vec<qsl_replay::WireNodeId>,
+        Vec<quire_exact::NodeKey>,
         qsl_replay::OccurrenceKey,
     ),
     /// An arm `unsupported` outcome.
@@ -536,7 +536,7 @@ mod tests {
 
     fn claim_key() -> qsl_replay::OccurrenceKey {
         qsl_replay::OccurrenceKey::new(
-            qsl_replay::WireNodeId::from_digest([1; 32]),
+            crate::test_ids::node_key([1]),
             quire_exact::Origin::new(quire_exact::Role::new("claim"), 0),
         )
     }

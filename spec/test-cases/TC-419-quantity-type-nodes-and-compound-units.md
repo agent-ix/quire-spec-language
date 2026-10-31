@@ -1,32 +1,31 @@
 ---
 id: TC-419
-title: "A declared unit's quantity type is its unit node, and a compound unit's keys to the key vectors"
+title: "A declared unit's quantity type is its unit node, and a compound unit is its own node"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-094
     type: verifies
 ---
-# TC-419: A declared unit's quantity type is its unit node, and a compound unit's keys to the key vectors
+# TC-419: A declared unit's quantity type is its unit node, and a compound unit is its own node
 
 ## Description
 
 Verify that a quantity of a declared unit is typed by that unit's QSpec
 nominal node with no wrapper node, that a compound unit's type node lists its
-terms in the compound-unit preimage's order, and that a compound unit the
+terms in ascending root-unit node-id order, and that a compound unit the
 check stage's unit scope does not hold is an internal fault.
 
 This catches a wrapper node that splits a declared unit's quantity type from
 its unit, terms emitted in source order instead of canonical order, and a
 single-term compound unit merged with its declared unit.
 
-Scope: FR-094-AC-6, FR-094-AC-7 (its compound-unit and declared-unit cases), FR-094-AC-8, FR-094-AC-11, FR-094-AC-12, FR-094-CON-1.
+Scope: FR-094-AC-6, FR-094-AC-7 (its compound-unit and declared-unit cases), FR-094-AC-8, FR-094-AC-11, FR-094-AC-13, FR-094-CON-1.
 
 ## Test Procedure
 
 The unit table admits QSpec's `dimension-length`, `dimension-time`,
-`unit-metre` and `unit-second` preimages from `node-identity-vectors.json`
-(their preimage members only),
-read at run time from `QSPEC_DIR` (the opt-in `make conformance` gate).
+`unit-metre` and `unit-second` nominal nodes, read at run time from
+`QSPEC_DIR` (the opt-in `make conformance` gate).
 
 1. Check a parameter typed as a quantity of the declared unit `metre`. Read
    its semantic type, and list the graph's `compound_unit` nodes.
@@ -49,7 +48,7 @@ read at run time from `QSPEC_DIR` (the opt-in `make conformance` gate).
    `d / -(3 ms)`, `a / -(3 ms)` and `a / 0.5 s`, and read the result type node
    of each division.
 7. With `acme/rpc` (alias `R`) and `acme/flow` (alias `F`) each declaring base
-   dimension `Time` and a root unit, emit the unit of FR-094-AC-12 with
+   dimension `Time` and a root unit, emit the unit of FR-094-AC-13 with
    `dimension R::Time ~ F::Time by 1 R::s = 1000 F::ms;`, with
    `dimension F::Time ~ R::Time by 1000 F::ms = 1 R::s;` in its place, and with
    `dimension R::Time ~ Time by 1 R::s = 1 s;` added; then with a third package
@@ -63,34 +62,34 @@ Tag the tests `#[trace("FR-094-AC-n", "TC-419")]` with the AC each backs.
 
 ## Expected Results
 
-- Step 1: the semantic type is QSpec's `unit-metre` key, and the
+- Step 1: the semantic type is QSpec's `unit-metre` node, and the
   graph holds no `compound_unit` node. It holds the `metre` node, a
-  `scalar_type`/`unit` node carrying its `quire.unit-node/v1` preimage, whose
-  preimage bytes are that key, typed by the `dimension-length` node, which it also
+  `scalar_type`/`unit` node typed by the `dimension-length` node, which it also
   holds as a `scalar_type`/`dimension` node.
-- Step 2: `a * a`'s result type is U1; the three formed units key to U2
-  (whose first term names metre), U3 and U4, byte for byte. U4 differs from
-  the `metre` unit key.
+- Step 2: `a * a`'s result type is the `compound_unit` node of `metre^2`; the
+  three formed units are the `compound_unit` nodes of `metre^1 second^-1`
+  (whose first term names metre), the dimensionless unit and `metre^1`. The
+  `metre^1` node differs from the `metre` unit node.
 - Step 3: an internal fault naming the `UnitId`, and no key; for the table
-  with no admitted nodes, an internal fault naming `metre`'s key, and no
+  with no admitted nodes, an internal fault naming `metre`, and no
   node.
 - Step 4: no `_` arm.
-- Step 5: no node is omitted; `km` depends on `Length` and `metre` and its
-  preimage targets `metre` at scale `1000`; `Velocity` depends on `Length`
-  and `Time` and its preimage holds both terms; `mps` is typed by
+- Step 5: no node is omitted; `km` depends on `Length` and `metre` and
+  targets `metre` at scale `1000`; `Velocity` depends on `Length`
+  and `Time` and holds both terms; `mps` is typed by
   `Velocity`; IR admits the package.
 - Step 6: `a / 3 ms` has one `scalar_type`/`compound_unit` node with no
   `declaration` and no `owner`, whose body holds the `m` term with exponent
-  `1` and the `s` term with exponent `-1` in ascending root-unit key order;
+  `1` and the `s` term with exponent `-1` in ascending root-unit node-id order;
   `a / 0.5 s` and `a / -(3 ms)` have the same node. `d / 3 ms`, `d / 3 s`,
   `d / rational(-3, 1) ms` and `d / -(3 ms)` have one node whose body is `aggregate{[]}`. None
   of the nodes is the `m` unit node.
 - Step 7: one `scalar_type`/`dimension_equivalence` node with no
-  `declaration`, self-typed, preimage ids in ascending key order, key
-  the vector's preimage and `root_scale` 1/1 under QSpec's vector owner, exactly the two
-  package `Time` keys as dependencies and one `anchor` occurrence of ordinal 0; the
-  reversed spelling gives the same key; the added `R::Time ~ Time` is a second node of
-  ordinal 1; the `acme/clock` pair has `root_scale` 1000/1 and the vector's preimage as key in
-  both spellings; the `Time` nodes keep their keys; the node is emitted with no
+  `declaration`, self-typed, relating the two package `Time` nodes in ascending
+  node-id order with `root_scale` 1/1, exactly the two
+  package `Time` nodes as dependencies and one `anchor` occurrence of ordinal 0; the
+  reversed spelling gives the same node; the added `R::Time ~ Time` is a second node of
+  ordinal 1; the `acme/clock` pair has `root_scale` 1000/1 in
+  both spellings; the `Time` nodes are unchanged; the node is emitted with no
   quantity type naming either dimension; IR admits each package and refuses each
   changed `root_scale` with `invalid_semantic_graph`.

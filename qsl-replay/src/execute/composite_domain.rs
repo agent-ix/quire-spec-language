@@ -17,7 +17,6 @@ use std::rc::Rc;
 
 use qsl_foundation::bound::{DomainKey, FiniteBound, FiniteBoundKind, ProofBound};
 use qsl_foundation::diagnostic::Code;
-use qsl_foundation::digest::WireNodeId;
 use qsl_package::CheckedPackage;
 use quire_exact::{IntegerInterval, NodeKey, ValueType};
 use quire_semantic_value::catalog::InternalFault;
@@ -217,7 +216,7 @@ pub(super) struct Positions(BTreeMap<DomainKey, Position>);
 
 /// One pending type position of the walk.
 struct Pending<'t> {
-    root: WireNodeId,
+    root: NodeKey,
     path: Path,
     value_type: &'t ValueType,
     /// The records and tuples on the path to this position, innermost first.
@@ -257,7 +256,7 @@ fn indexes(path: &Path) -> Vec<u32> {
 /// Derive the positions of `parameters`, each a node id and its declared
 /// type (FR-358 step 3), visiting at most `limit` type positions.
 pub(super) fn derive(
-    parameters: &[(WireNodeId, &ValueType)],
+    parameters: &[(NodeKey, &ValueType)],
     package: &CheckedPackage,
     limit: u64,
 ) -> Result<Positions, ReplayRefusal> {
@@ -268,7 +267,7 @@ pub(super) fn derive(
         .iter()
         .rev()
         .map(|(root, value_type)| Pending {
-            root: *root,
+            root: root.clone(),
             path: None,
             value_type,
             composites: None,
@@ -281,7 +280,7 @@ pub(super) fn derive(
         }
         visited += 1;
         let key = || DomainKey::Node {
-            node: position.root,
+            node: position.root.clone(),
             path: indexes(&position.path),
         };
         match position.value_type {
@@ -337,7 +336,7 @@ pub(super) fn derive(
                     continue;
                 }
                 let composite = types
-                    .composite(*declaration)
+                    .composite(declaration.clone())
                     .ok_or_else(|| fault("composite-type-in-environment"))?;
                 let members: Vec<&ValueType> = match composite.shape() {
                     CompositeShape::Record(fields) => {
@@ -350,7 +349,7 @@ pub(super) fn derive(
                         .collect(),
                 };
                 for (index, member) in members.into_iter().enumerate().rev() {
-                    pending.push(child(&position, index, member, Some(*declaration))?);
+                    pending.push(child(&position, index, member, Some(declaration.clone()))?);
                 }
             }
             ValueType::Rational(_)
@@ -405,7 +404,7 @@ fn child<'t>(
         None => parent.composites.clone(),
     };
     Ok(Pending {
-        root: parent.root,
+        root: parent.root.clone(),
         path: Some(Rc::new(Step {
             index,
             parent: parent.path.clone(),

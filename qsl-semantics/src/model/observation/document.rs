@@ -14,7 +14,7 @@ use qsl_foundation::diagnostic::Code;
 use super::helpers::{admission_record, object_reference};
 use super::tree::{read_raw_value, Json, Object};
 use super::{
-    check_document_digest, collection_tag, fault, incomplete, population_universe, refuse,
+    check_document_valid, collection_tag, fault, incomplete, population_universe, refuse,
     AdmissionFailure, AdmissionRecord, DocumentRef, ModelView, NativeKind, ObservationLimits,
     OutOfRange, PathStep, PostStateRange, RawForm, RawNative, RawNativeKind, RawValue, ReadMeter,
     SelectedObject, SnapshotValue,
@@ -50,8 +50,6 @@ pub(super) enum DocumentKind {
 #[derive(Clone, Debug)]
 pub(super) struct ModelHeader {
     pub(super) identity: String,
-    pub(super) version: String,
-    pub(super) digest: String,
 }
 
 #[derive(Clone, Debug)]
@@ -314,15 +312,15 @@ fn first_blank_label(identity: &DocumentRef) -> Option<&'static str> {
 }
 
 /// FR-106 check 1: read one document from `provision` under `selected`'s
-/// digest, running the seven ordered conditions.
+/// reference, running the ordered conditions.
 pub(super) fn read_document(
     kind: DocumentKind,
-    provision: &BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
+    provision: &BTreeMap<DocumentRef, Vec<u8>>,
     selected: &DocumentRef,
     limits: ObservationLimits,
 ) -> Result<ReadDocument, AdmissionFailure> {
     // 1.1
-    let bytes = provision.get(&selected.source_identity()).ok_or_else(|| {
+    let bytes = provision.get(selected).ok_or_else(|| {
         incomplete(admission_record(
             Code::UnavailableObservation,
             "missing-required-artifact",
@@ -337,15 +335,12 @@ pub(super) fn read_document(
         ));
     }
     // The one read of the document, through the shared reader at any depth
-    // (FR-261): check 1.3 digests this tree, and every later check reads
+    // (FR-261): check 1.3 validates this tree, and every later check reads
     // members from it.
     let read = quire_canonical::read(bytes, limits.document_bytes);
-    // 1.3: digest, before any member is read. Bytes the reader refuses are
-    // digested raw, and so refuse here.
-    check_document_digest(bytes, &read, selected.digest, limits)?;
-    let digest = selected.digest;
-    // Bytes that matched the expected digest raw (never parsed as JSON at
-    // all) or that parsed but are not a JSON object trivially hold no
+    // 1.3: document validity, before any member is read.
+    check_document_valid(&read, limits)?;
+    // Bytes that parsed but are not a JSON object trivially hold no
     // `format` member at all: absent is not the expected format string, so
     // check 1.4 (which comes before 1.5's member-presence check, FR-106's
     // own order) refuses it here, never 1.5's `missing-member` (SR-750
@@ -476,7 +471,6 @@ pub(super) fn read_document(
         identity: label("identity")?,
         revision_namespace: label("revision_namespace")?,
         revision: label("revision")?,
-        digest,
     };
     if let Some(blank_label) = first_blank_label(&document_identity) {
         return Err(refuse(
@@ -512,19 +506,11 @@ pub(super) fn read_document(
 }
 
 /// Reads the document's own `model` member into a [`ModelHeader`]: a
-/// wire-reading edge (ADR-012 §9), converting `identity`/`version`/`digest`
+/// wire-reading edge (ADR-012 §9), converting `identity`
 /// once, here, into the typed header [`check_model`] compares against the
-/// package's own model selection. A missing `identity`/`version`/`digest`
+/// package's own model selection. A missing `identity`
 /// member refuses `invalid_runtime_input`/`missing-member` at that member
-/// (check 1.5's own cause, generalized to a nested member); `digest` not
-/// spelled with the exact `sha256-jcs:` prefix refuses
-/// `invalid_runtime_input`/`wrong-value-kind` at `digest` -- `strip_prefix`,
-/// not `trim_start_matches`, so a wrong prefix refuses rather than silently
-/// keeping the whole unstripped string. Before this fix, a missing or
-/// malformed member silently became `""` (`unwrap_or_default`), which
-/// [`check_model`] would then merely fail to match against any package's
-/// model selection, misreporting `wrong-model-selection` for what is
-/// actually a missing- or malformed-member document defect.
+/// (check 1.5's own cause, generalized to a nested member).
 #[ix_trace_rs::string_edge]
 fn read_model(object: Object<'_>) -> Result<ModelHeader, AdmissionFailure> {
     let model = object
@@ -540,29 +526,7 @@ fn read_model(object: Object<'_>) -> Result<ModelHeader, AdmissionFailure> {
         .and_then(|value| value.as_str())
         .ok_or_else(|| missing_member("identity"))?
         .to_owned();
-    let version = model
-        .member("version")
-        .and_then(|value| value.as_str())
-        .ok_or_else(|| missing_member("version"))?
-        .to_owned();
-    let digest_raw = model
-        .member("digest")
-        .and_then(|value| value.as_str())
-        .ok_or_else(|| missing_member("digest"))?;
-    let digest = digest_raw
-        .strip_prefix("sha256-jcs:")
-        .ok_or_else(|| {
-            refuse(
-                admission_record(Code::InvalidRuntimeInput, "wrong-value-kind")
-                    .with("field", "digest"),
-            )
-        })?
-        .to_owned();
-    Ok(ModelHeader {
-        identity,
-        version,
-        digest,
-    })
+    Ok(ModelHeader { identity })
 }
 
 fn wrong_kind(field: impl Into<String>) -> AdmissionFailure {
@@ -594,11 +558,14 @@ fn read_object_ref(
     Ok(SelectedObject { population, key })
 }
 
-/// Reads a `{identity: {...}, digest: "sha256-jcs:<hex>"}` document
-/// reference at `field`: a wire-reading edge (ADR-012 §9), same as
-/// [`read_model`]. `strip_prefix`, not `trim_start_matches` (SR-750
-/// FND-003): a digest with no `sha256-jcs:` prefix, or a doubled one,
-/// refuses rather than being silently accepted or kept whole.
+/// The reference a document names itself by, from its root `identity`.
+pub(super) fn reference_of(bytes: &[u8]) -> Option<DocumentRef> {
+    let document = quire_canonical::read(bytes, u64::MAX).ok()?;
+    read_document_ref(Json::of(document.root()), "document").ok()
+}
+
+/// Reads a `{identity: {...}}` document reference at `field`: a wire-reading
+/// edge (ADR-012 §9), same as [`read_model`].
 #[ix_trace_rs::string_edge]
 fn read_document_ref(
     value: Json<'_>,
@@ -616,49 +583,12 @@ fn read_document_ref(
             .map(str::to_owned)
             .ok_or_else(|| missing_member(field))
     };
-    let digest_raw = object
-        .member("digest")
-        .and_then(|value| value.as_str())
-        .ok_or_else(|| missing_member(field))?;
-    let digest_hex = digest_raw
-        .strip_prefix("sha256-jcs:")
-        .ok_or_else(|| wrong_kind(field))?;
-    let bytes = hex_bytes(digest_hex).ok_or_else(|| wrong_kind(field))?;
-    if bytes.len() != 32 {
-        return Err(wrong_kind(field));
-    }
-    let mut digest = [0u8; 32];
-    digest.copy_from_slice(&bytes);
     Ok(DocumentRef {
         authority: label("authority")?,
         identity: label("identity")?,
         revision_namespace: label("revision_namespace")?,
         revision: label("revision")?,
-        digest,
     })
-}
-
-/// Decodes `text` as ASCII hex, or `None` for anything else -- including
-/// non-ASCII text, where byte-index slicing would otherwise panic on a
-/// char boundary (an untrusted digest such as `"sha256-jcs:aé…"`, reached
-/// after the invocation's own digest check passes). Checked one byte at a
-/// time over `text.as_bytes()`, never `&text[at..at + 2]` (which slices by
-/// byte offset but assumes every two offsets fall on a char boundary).
-fn hex_bytes(text: &str) -> Option<Vec<u8>> {
-    let bytes = text.as_bytes();
-    if !bytes.len().is_multiple_of(2) || !bytes.iter().all(u8::is_ascii_hexdigit) {
-        return None;
-    }
-    bytes
-        .as_chunks::<2>()
-        .0
-        .iter()
-        .map(|pair| {
-            let high = (pair[0] as char).to_digit(16)?;
-            let low = (pair[1] as char).to_digit(16)?;
-            Some((high * 16 + low) as u8)
-        })
-        .collect()
 }
 
 /// Reads the snapshot's own body (`observation`, `anchor`, `populations`),
@@ -1197,7 +1127,7 @@ impl<'a> References<'a> {
                 let Some(effective) = view.view.type_identities().get(&key) else {
                     continue;
                 };
-                let Ok(reference) = object_reference(views, *effective, &object.key) else {
+                let Ok(reference) = object_reference(views, effective.clone(), &object.key) else {
                     continue;
                 };
                 admitted
@@ -1225,13 +1155,9 @@ impl<'a> References<'a> {
         let views = self.views;
         self.variant_keys
             .get_or_insert_with(|| {
-                let unbounded = qsl_foundation::IdentityLimits {
-                    input_bytes: u64::MAX,
-                };
                 let mut found = BTreeMap::new();
                 for view in views {
-                    let Ok(declared) =
-                        crate::check::variant_type_declarations(&view.view, "", unbounded)
+                    let Ok(declared) = crate::check::variant_type_declarations(&view.view, "")
                     else {
                         continue;
                     };
@@ -1258,7 +1184,7 @@ impl<'a> References<'a> {
         self.record_keys
             .get_or_insert_with(|| record_keys(views))
             .get(identity)
-            .copied()
+            .cloned()
     }
 
     /// FR-106 check 8 over one check-10 value (a parameter or the result):
@@ -1306,7 +1232,7 @@ impl<'a> References<'a> {
     ) -> Result<ObjectReference, AdmissionRecord> {
         let wire = (reference.population.as_str(), reference.key.as_str());
         if let Some(target) = self.admitted.get(&wire) {
-            return if self.types.conforms(target.object_type(), declared) {
+            return if self.types.conforms(target.object_type().clone(), declared) {
                 Ok(target.clone())
             } else {
                 Err(admission_record(
@@ -1427,14 +1353,14 @@ fn admit_leaf(
         }
         (RawForm::Reference(reference), quire_exact::ValueType::Reference(type_identity)) => {
             references
-                .resolve(reference, *type_identity)
+                .resolve(reference, type_identity.clone())
                 .map(Value::Reference)
         }
         (RawForm::Variant(variant), quire_exact::ValueType::Enum(slot)) => {
             admit_variant(references, variant, slot)
         }
         (RawForm::Variant(variant), quire_exact::ValueType::Composite(handle)) => {
-            admit_union_case(references, variant, *handle)
+            admit_union_case(references, variant, handle.clone())
         }
         (RawForm::Native(native), value_type) => admit_native(native, value_type, references.types),
         _ => Err(admission_record(
@@ -1561,9 +1487,8 @@ pub(super) fn quantity_magnitude(
 /// The qualified name of the declared unit `unit` in `types`, segments
 /// joined by `::`, or `None` for a unit with no declared name.
 pub(crate) fn unit_name(types: &TypeEnvironment, unit: quire_exact::UnitId) -> Option<String> {
-    types
-        .units()
-        .nominal_node(unit.as_bytes())
+    unit.declared_key()
+        .and_then(|key| types.units().nominal_node(key))
         .map(|node| node.declaration.qualified_declaration.join("::"))
 }
 
@@ -1630,7 +1555,7 @@ fn admit_native(
             }
         }
         (NativeKind::Quantity, quire_exact::ValueType::Quantity(unit)) => {
-            if unit_name(types, *unit).as_deref() != Some(payload_text(native, "unit")) {
+            if unit_name(types, unit.clone()).as_deref() != Some(payload_text(native, "unit")) {
                 return Err(wrong("unit"));
             }
             let magnitude = native
@@ -1638,7 +1563,7 @@ fn admit_native(
                 .ok_or_else(|| wrong("magnitude"))?;
             Ok(Value::Quantity(quire_exact::Quantity::new(
                 quantity_magnitude(magnitude)?,
-                *unit,
+                unit.clone(),
             )))
         }
         // Type fit (check 6) refuses every other pairing before any length,
@@ -1783,17 +1708,14 @@ fn admit_union_case(
     if variant.has_extra_member() {
         return Err(refuse("unknown-member"));
     }
-    let unbounded = qsl_foundation::IdentityLimits {
-        input_bytes: u64::MAX,
-    };
     let names = references.views.iter().any(|view| {
         view.view.domain_package().records.iter().any(|record| {
             matches!(
                 record,
                 crate::model::domain_package::DomainPackageRecord::Enum(_)
             ) && record.key().node == type_identity
-                && crate::check::record_node_key(record, unbounded)
-                    .is_ok_and(|key| key == Some(handle))
+                && crate::check::record_node_key(record)
+                    .is_ok_and(|key| key == Some(handle.clone()))
         })
     });
     let Some(CompositeShape::Union(members)) = names
@@ -1805,7 +1727,7 @@ fn admit_union_case(
     };
     members
         .iter()
-        .find(|member| member.identifier().as_str() == case && member.positions().is_empty())
+        .find(|member| member.identifier() == case && member.positions().is_empty())
         .and_then(|member| member.member())
         .map(|member| quire_exact::UnionValue::from_admitted(member.clone(), Vec::new()))
         .ok_or_else(|| refuse("invalid-value"))
@@ -2027,11 +1949,12 @@ fn admit_value<'a: 'w, 'w>(
                         let Some(own) = references.record_type(record.type_identity()) else {
                             return Err(refuse_at("wrong-value-kind", &path));
                         };
-                        if !types.composite_conforms(own, *slot) {
+                        if !types.composite_conforms(own.clone(), slot.clone()) {
                             return Err(refuse_at("wrong-value-kind", &path));
                         }
-                        let Some(CompositeShape::Record(declared)) =
-                            types.composite(own).map(|declaration| declaration.shape())
+                        let Some(CompositeShape::Record(declared)) = types
+                            .composite(own.clone())
+                            .map(|declaration| declaration.shape())
                         else {
                             return Err(refuse_at("wrong-value-kind", &path));
                         };
@@ -2310,9 +2233,6 @@ fn form_collection_value(
 /// record the unit assembled had already keyed under the unit's own identity
 /// limits, and the key does not depend on the limit.
 pub(super) fn record_keys(views: &[ModelView]) -> BTreeMap<String, quire_exact::NodeKey> {
-    let unbounded = qsl_foundation::IdentityLimits {
-        input_bytes: u64::MAX,
-    };
     let mut keys = BTreeMap::new();
     for view in views {
         for record in &view.view.domain_package().records {
@@ -2321,7 +2241,7 @@ pub(super) fn record_keys(views: &[ModelView]) -> BTreeMap<String, quire_exact::
             else {
                 continue;
             };
-            if let Ok(Some(key)) = crate::check::record_node_key(record, unbounded) {
+            if let Ok(Some(key)) = crate::check::record_node_key(record) {
                 keys.entry(declared.key.node.clone()).or_insert(key);
             }
         }
@@ -2338,7 +2258,8 @@ pub(super) fn record_field_type<'t>(
     identity: &str,
     field: &str,
 ) -> Option<&'t quire_exact::ValueType> {
-    let CompositeShape::Record(declared) = types.composite(*keys.get(identity)?)?.shape() else {
+    let CompositeShape::Record(declared) = types.composite(keys.get(identity)?.clone())?.shape()
+    else {
         return None;
     };
     declared
@@ -2476,7 +2397,10 @@ impl<'t> PopulationValues<'t> {
             )
         })?;
         let reference = ObjectReference::new(
-            UniverseId::from_digest(snapshot.digest),
+            // QSpec FR-208 "Context universe key": the universe of a
+            // state-machine context is the model declaration node of the
+            // most-specific machine; no node is added for it.
+            UniverseId::new(context_universe_key(&context.effective)?),
             context.effective,
             object,
         );
@@ -2622,13 +2546,14 @@ pub(super) fn admit_population_values<'t>(
                         .with("object", object.key.clone()),
                 ));
             }
-            let effective_type = *population_view
+            let effective_type = population_view
                 .view
                 .type_identities()
                 .get(&object_key)
-                .ok_or_else(|| fault("object-type-has-no-effective-id"))?;
+                .ok_or_else(|| fault("object-type-has-no-effective-id"))?
+                .clone();
 
-            let declared = types.attributes(effective_type).ok_or_else(|| {
+            let declared = types.attributes(effective_type.clone()).ok_or_else(|| {
                 AdmissionFailure::Fault(quire_semantic_value::catalog::InternalFault::new(
                     "observation-admission",
                     "object-type-has-no-checked-attributes",
@@ -2857,13 +2782,14 @@ fn admit_contexts<'t>(
             ));
         }
         machines.push(machine);
-        let effective = *view
+        let effective = view
             .view
             .type_identities()
             .get(&key)
-            .ok_or_else(|| fault("context-machine-has-no-effective-id"))?;
+            .ok_or_else(|| fault("context-machine-has-no-effective-id"))?
+            .clone();
         let declared = types
-            .attributes(effective)
+            .attributes(effective.clone())
             .ok_or_else(|| fault("context-machine-has-no-checked-attributes"))?;
         // 6.12: the fields, in the machine's exposed effective order.
         if let Some(field) = population_collection_field(declared) {
@@ -2946,7 +2872,10 @@ fn admit_contexts<'t>(
             }));
             attributes.push((name, value));
         }
-        if read_machine.is_some_and(|clause| types.conforms(effective, clause)) {
+        if read_machine
+            .as_ref()
+            .is_some_and(|clause| types.conforms(effective.clone(), clause.clone()))
+        {
             read.push(ReadContext {
                 machine: machine.to_owned(),
                 entry,
@@ -2972,9 +2901,9 @@ pub(super) fn read_context<'s>(
 ) -> Option<(&'s RawContext, quire_exact::EffectiveId)> {
     snapshot.contexts.contexts().find_map(|(_, context)| {
         let (view, key) = find_declaration(views, &context.machine)?;
-        let effective = *view.view.type_identities().get(&key)?;
+        let effective = view.view.type_identities().get(&key)?.clone();
         types
-            .conforms(effective, machine)
+            .conforms(effective.clone(), machine.clone())
             .then_some((context, effective))
     })
 }
@@ -3617,9 +3546,9 @@ pub(super) fn resolve_self(
         .type_identities()
         .iter()
         .find(|(key, _)| key.node == context_name)
-        .map(|(_, effective)| *effective)
+        .map(|(_, effective)| effective.clone())
         .ok_or_else(|| fault("context-type-unresolved"))?;
-    let universe = population_universe(views, context_effective)?;
+    let universe = population_universe(views, context_effective.clone())?;
     let wrong_role_mapping = || {
         refuse(admission_record(
             Code::InvalidRuntimeInput,
@@ -3630,7 +3559,7 @@ pub(super) fn resolve_self(
         .objects()
         .find(universe, &self_object.key)
         .ok_or_else(wrong_role_mapping)?;
-    if types.conforms(reference.object_type(), context_effective) {
+    if types.conforms(reference.object_type().clone(), context_effective) {
         Ok(reference.clone())
     } else {
         Err(wrong_role_mapping())
@@ -3715,6 +3644,22 @@ pub(super) fn admit_result(
     }
 }
 
+/// The universe of a state-machine context object (FR-208-AC-20): the model
+/// declaration node of the most-specific machine,
+/// `{package, ["model", "state_machine", <machine identity>], 0}`.
+fn context_universe_key(
+    effective: &quire_exact::EffectiveId,
+) -> Result<quire_exact::NodeKey, AdmissionFailure> {
+    let original = effective.original();
+    crate::model::key::model_node_key(
+        original.package(),
+        "model",
+        "state_machine",
+        original.node(),
+    )
+    .map_err(|_| fault("context-universe-unkeyed"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3727,45 +3672,6 @@ mod tests {
         read_raw_value(Json::of(document.root()), &mut || Ok::<(), ()>(()))
             .expect("an uncharged read does not fail")
             .expect("test fixture is a value form")
-    }
-
-    /// SR-750 FND-002: a non-ASCII digest string must refuse, never panic
-    /// on a byte-index char-boundary slice. `read_document_ref` is
-    /// `hex_bytes`'s one caller reachable with untrusted input (a `pre`/
-    /// `post` document reference's own digest).
-    #[test]
-    fn a_non_ascii_digest_refuses_rather_than_panics() {
-        let text = serde_json::json!({
-            "identity": {
-                "authority": "a",
-                "identity": "b",
-                "revision_namespace": "c",
-                "revision": "d",
-            },
-            "digest": "sha256-jcs:aé00000000000000000000000000000000000000000000000000000000000",
-        })
-        .to_string();
-        let document =
-            quire_canonical::read(text.as_bytes(), u64::MAX).expect("test fixture is JSON");
-        let result = read_document_ref(Json::of(document.root()), "pre");
-        assert!(
-            matches!(result, Err(AdmissionFailure::Refused(_))),
-            "expected Err(Refused(..)), got {result:?}"
-        );
-    }
-
-    /// `hex_bytes` decodes a well-formed 32-byte digest.
-    #[test]
-    fn hex_bytes_decodes_a_well_formed_digest() {
-        let hex = "00".repeat(32);
-        let bytes = hex_bytes(&hex).expect("32 zero bytes decode");
-        assert_eq!(bytes, vec![0u8; 32]);
-    }
-
-    /// `hex_bytes` refuses an odd-length string before ever indexing it.
-    #[test]
-    fn hex_bytes_refuses_an_odd_length_string() {
-        assert_eq!(hex_bytes("abc"), None);
     }
 
     /// `collect_references` finds a reference nested under `present` and
@@ -4444,7 +4350,7 @@ mod tests {
             quire_exact::IeeeWidth::Binary64,
             quire_exact::RoundingMode::Exact,
         ));
-        let quantity = quire_exact::ValueType::Quantity(quire_exact::UnitId::compound([1; 32]));
+        let quantity = quire_exact::ValueType::Quantity(quire_exact::UnitId::compound(Vec::new()));
         let decimal = r#"{"kind":"decimal","coefficient":"5","scale":"1"}"#;
         let in_quantity = r#"{"kind":"quantity","unit":"s","magnitude":{"kind":"rational","numerator":"1","denominator":"2"}}"#;
         let rational = rational_object("1", "2");

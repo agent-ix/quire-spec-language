@@ -22,19 +22,17 @@ fn population() -> String {
 
 /// The unit selecting the fixture's package for `operations`, and its
 /// package input.
-pub(super) fn unit_and_packages(operations: &[&str]) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
+pub(super) fn unit_and_packages(
+    operations: &[&str],
+) -> (String, qsl_semantics::model::intake::PackageInput) {
     let document = serde_json::to_vec(&fixture::document(operations, &[])).expect("fixture");
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
-         model Counters = {package:?} version \"1\" digest \"sha256-jcs:{digest}\";\n\
+         model Counters = {package:?};\n\
          {posts}",
         package = fixture::PACKAGE,
-        digest = hex(digest),
         posts = fixture::posts(operations).replace("M::", "Counters::"),
     );
     (unit, packages)
@@ -52,7 +50,6 @@ pub(super) fn counter(key: &str, value: i64) -> serde_json::Value {
 }
 
 pub(super) fn snapshot(
-    operations: &[&str],
     label: &DocumentRef,
     observation: &str,
     objects: &[serde_json::Value],
@@ -61,19 +58,11 @@ pub(super) fn snapshot(
         "format": "quire.state.snapshot/v1",
         "identity": document_identity_json(label),
         "observation": observation,
-        "model": {"identity": fixture::PACKAGE, "version": "1", "digest": model_digest(operations)},
+        "model": {"identity": fixture::PACKAGE},
         "populations": [{"population": population(), "complete": true, "objects": objects}],
     })
     .to_string()
     .into_bytes()
-}
-
-fn model_digest(operations: &[&str]) -> String {
-    let (_, packages) = unit_and_packages(operations);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    format!("sha256-jcs:{}", hex(digest))
 }
 
 /// Runs the `Frame` of `operation` over an invocation with `self` `c1` whose
@@ -107,28 +96,21 @@ fn run_selected(
 ) -> super::super::ClauseRunReport {
     let (unit, packages) = unit_and_packages(operations);
     let (pre, pre_bytes) = document_ref_and_bytes("counters-pre", |label| {
-        snapshot(
-            operations,
-            label,
-            "pre",
-            &[counter("c1", 0), counter("c2", 0)],
-        )
+        snapshot(label, "pre", &[counter("c1", 0), counter("c2", 0)])
     });
     let (post, post_bytes) = document_ref_and_bytes("counters-post", |label| {
-        snapshot(operations, label, "post", post_objects)
+        snapshot(label, "post", post_objects)
     });
     let (invocation, invocation_bytes) = document_ref_and_bytes("counters-invocation", |label| {
         json!({
             "format": "quire.state.invocation/v1",
             "identity": document_identity_json(label),
-            "model": {"identity": fixture::PACKAGE, "version": "1", "digest": model_digest(operations)},
+            "model": {"identity": fixture::PACKAGE},
             "context": type_of("Counter"),
             "operation": operation,
             "self": {"population": population(), "key": "c1"},
-            "pre": {"identity": document_identity_json(&pre),
-                    "digest": format!("sha256-jcs:{}", hex(&pre.digest))},
-            "post": {"identity": document_identity_json(&post),
-                     "digest": format!("sha256-jcs:{}", hex(&post.digest))},
+            "pre": {"identity": document_identity_json(&pre)},
+            "post": {"identity": document_identity_json(&post)},
             "parameters": {},
             "result": null,
             "created": [],
@@ -150,11 +132,11 @@ fn run_selected(
             invocation.clone(),
         ),
     );
-    request.snapshots.insert(pre.source_identity(), pre_bytes);
-    request.snapshots.insert(post.source_identity(), post_bytes);
+    request.snapshots.insert(pre.clone(), pre_bytes);
+    request.snapshots.insert(post.clone(), post_bytes);
     request
         .invocations
-        .insert(invocation.source_identity(), invocation_bytes);
+        .insert(invocation.clone(), invocation_bytes);
     run_clause(request).expect("a well-formed request always reports")
 }
 

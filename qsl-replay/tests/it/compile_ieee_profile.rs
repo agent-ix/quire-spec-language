@@ -21,9 +21,12 @@ const TO_R: &str = include_str!("../fixtures/ieee_float/to_rational.native");
 
 fn compile(text: &str) -> Result<AdmittedCompilation, AdmittedRefusal> {
     compile_admitted(
-        SourceIdentity::new("a", "ieee", "git", "1"),
-        "ieee.native",
-        text.as_bytes(),
+        qsl_replay::CompileUnit {
+            source: SourceIdentity::new("a", "ieee", "git", "1"),
+            package_name: "fixture".to_owned(),
+            path: "ieee.native",
+            bytes: text.as_bytes(),
+        },
         [],
         &DependencyInput::default(),
         StageLimits::default(),
@@ -103,10 +106,6 @@ fn declared_floats_select_the_profile_even_without_an_ieee_application() {
     ] {
         let wire = wire(&format!("{HEADER}{declaration}"));
         assert_eq!(ieee_selection(&wire).len(), 1, "{declaration}");
-        assert_eq!(
-            wire["lock"]["definition_selections"],
-            wire["identity_preimage"]["definition_selections"],
-        );
     }
     let wire = wire(&format!(
         "{HEADER}function plain using v(a: Int[0, 10], b: Int[0, 10]): Int[0, 20] pure {{ a + b }}"
@@ -154,10 +153,6 @@ fn strict_ir_reader_admits_the_genuine_float_source_packages() {
         assert_eq!(
             package.graph().nodes.len(),
             wire["semantic_graph"]["nodes"].as_array().unwrap().len()
-        );
-        assert_eq!(
-            package.package_id().digest.as_ref(),
-            compiled.package().package_id().hex()
         );
     }
 }
@@ -396,9 +391,9 @@ fn admitted_float_arithmetic_and_rational_conversion_evaluate_through_the_source
                 .into_value();
             let checked = spine::check(
                 &parsed,
+                "fixture".to_owned(),
                 &models,
                 &DependencyInput::default(),
-                &spine::LockEvidence::default(),
                 limits,
                 &cancel,
             )

@@ -28,15 +28,11 @@ fn assemble_as(alias: &str, declarations: &str) -> PackageDeclarations {
 
 fn assemble_document(document: &Value, alias: &str, declarations: &str) -> PackageDeclarations {
     let bytes = serde_json::to_vec(document).expect("the fixture serializes");
-    let packages = package_input([bytes.as_slice()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one model package");
-    };
-    let digest = qsl_semantics::model::key::hex(digest);
+    let packages = package_input([bytes.as_slice()]).unwrap();
     let source = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
-         model {alias} = {package:?} version \"1\" digest \"sha256-jcs:{digest}\";\n\
+         model {alias} = {package:?};\n\
          {declarations}\n",
         package = fixture::PACKAGE,
     );
@@ -57,6 +53,7 @@ fn assemble_document(document: &Value, alias: &str, declarations: &str) -> Packa
     .expect("I1 admits and normalizes the fixture package");
     PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        crate::TEST_PACKAGE_NAME.to_owned(),
         unit,
         selected,
         Vec::new(),
@@ -295,22 +292,22 @@ fn equality_over_event_operands_stays_refused() {
     }
 }
 
+/// The JSON of a node's owner, under an `owner` member.
+fn owner_view(node: &qsl_semantics::check::SemanticNode) -> Value {
+    serde_json::json!({"owner": serde_json::to_value(node.owner()).expect("an owner is JSON")})
+}
+
 fn model_nodes(graph: &CheckedGraph) -> Vec<(NodeTag, &'static str, Value)> {
     graph
         .semantic_graph()
         .nodes()
         .filter(|node| node.node_tag() == NodeTag::Model)
-        .map(|node| {
-            let preimage: Value =
-                serde_json::from_slice(node.preimage()).expect("a node preimage is JSON");
-            (node.node_tag(), node.semantic_form(), preimage)
-        })
+        .map(|node| (node.node_tag(), node.semantic_form(), owner_view(node)))
         .collect()
 }
 
 /// FR-359-AC-3 (records): every record value type is a model-owned
-/// `record_value_type` node, none is a `composite_type`, and
-/// no node carries a `supertypes` member or a conversion.
+/// `record_value_type` node, none is a `composite_type`.
 #[trace("FR-359-AC-3", "TC-998")]
 #[test]
 fn records_are_model_owned_nodes_without_supertypes() {
@@ -346,26 +343,15 @@ fn records_are_model_owned_nodes_without_supertypes() {
             .semantic_graph()
             .nodes()
             .all(|node| node.node_tag() != NodeTag::CompositeType
-                || !String::from_utf8_lossy(node.preimage()).contains("OrderPlaced")),
+                || !owner_view(node).to_string().contains("OrderPlaced")),
         "no record of the package is a composite_type"
     );
-    for node in graph.semantic_graph().nodes() {
-        let preimage: Value = serde_json::from_slice(node.preimage()).unwrap();
-        assert!(
-            !contains_member(&preimage, "supertypes"),
-            "no node carries a supertypes member"
-        );
-        assert!(
-            !contains_member(&preimage, "convert"),
-            "no node is a conversion"
-        );
-    }
 }
 
 /// FR-359-AC-3, event half: a package whose unit takes an event-typed
 /// parameter holds the event as one `model`/`event_type` node owned by its
 /// declaring package and node, beside the record nodes, with no
-/// `composite_type` and no `supertypes` member. The unit needs no read of the
+/// `composite_type`. The unit needs no read of the
 /// event's Timestamp field, whose lowering waits on PR #789.
 #[trace("FR-359-AC-3", "TC-998")]
 #[test]
@@ -396,72 +382,7 @@ fn an_event_type_is_one_model_owned_event_type_node_in_a_package() {
         "the record sits beside the event"
     );
     for node in graph.semantic_graph().nodes() {
-        let preimage: Value = serde_json::from_slice(node.preimage()).unwrap();
-        assert!(!contains_member(&preimage, "supertypes"));
         assert_ne!(node.node_tag(), NodeTag::CompositeType);
-    }
-}
-
-fn contains_member(value: &Value, member: &str) -> bool {
-    match value {
-        Value::Object(map) => {
-            map.contains_key(member) || map.values().any(|value| contains_member(value, member))
-        }
-        Value::Array(items) => items.iter().any(|value| contains_member(value, member)),
-        _ => false,
-    }
-}
-
-/// FR-359-AC-3: the call to `f` takes its argument by `ref`, and the field
-/// read is one `quire.op.record.project` naming `OrderPlaced`'s node and
-/// `occurred_at`.
-#[trace("FR-359-AC-3", "TC-998")]
-#[test]
-fn a_field_read_names_the_parent_node_and_the_call_adds_no_node() {
-    let graph = check(
-        "function occurredAt using v(e: M::OrderPlaced): Integer pure { e.occurred_at }\n\
-         function fromExpress using v(e: M::ExpressOrderPlaced): Integer pure { occurredAt(e) }",
-    )
-    .expect("the unit checks");
-    let placed = graph
-        .semantic_graph()
-        .nodes()
-        .find(|node| {
-            node.node_tag() == NodeTag::Model && node.semantic_form() == "record_value_type" && {
-                let preimage: Value = serde_json::from_slice(node.preimage()).unwrap();
-                preimage["owner"]["node"] == fixture::id("OrderPlaced")
-            }
-        })
-        .expect("OrderPlaced is a model node")
-        .key()
-        .to_string();
-    let all: Vec<Value> = graph
-        .semantic_graph()
-        .nodes()
-        .map(|node| serde_json::from_slice(node.preimage()).unwrap())
-        .collect();
-    let projects: Vec<&Value> = all
-        .iter()
-        .filter(|preimage| preimage["body"]["operation"]["identity"] == "quire.op.record.project")
-        .collect();
-    assert_eq!(projects.len(), 1, "one record.project application");
-    let member = &projects[0]["body"]["operation"]["member"];
-    assert_eq!(member["kind"], "field");
-    assert_eq!(member["name"], "occurred_at");
-    assert_eq!(member["declaration"]["digest"], placed);
-    assert!(
-        all.iter()
-            .all(|preimage| !contains_text(preimage, "convert") && !contains_text(preimage, "cast")),
-        "no conversion node between the call and its argument"
-    );
-}
-
-fn contains_text(value: &Value, needle: &str) -> bool {
-    match value {
-        Value::String(text) => text.contains(needle),
-        Value::Object(map) => map.values().any(|value| contains_text(value, needle)),
-        Value::Array(items) => items.iter().any(|value| contains_text(value, needle)),
-        _ => false,
     }
 }
 
@@ -492,8 +413,7 @@ fn a_model_record_key_is_its_model_node_key_whatever_the_alias() {
                 .get(&composite.key())
                 .unwrap_or_else(|| panic!("{name} declares its model node's key"));
             assert_eq!(node.node_tag(), NodeTag::Model);
-            let preimage: Value = serde_json::from_slice(node.preimage()).unwrap();
-            assert_eq!(preimage["owner"]["node"], fixture::id(name));
+            assert_eq!(owner_view(node)["owner"]["node"], fixture::id(name));
             keys.insert(name.to_owned(), composite.key());
         }
         keys
@@ -613,18 +533,13 @@ fn admit_order_usage(
     edit: impl FnOnce(String) -> String,
 ) -> Result<AdmissionUsage, AdmissionFailure> {
     let document = serde_json::to_vec(&fixture::document()).expect("the fixture serializes");
-    let packages = package_input([document.as_slice()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one model package");
-    };
-    let model_digest = qsl_semantics::model::key::hex(digest);
+    let packages = package_input([document.as_slice()]).unwrap();
     let graph = check("function noop using v(): Boolean pure { true }").expect("the unit checks");
     let label = DocumentRef {
         authority: "test".to_owned(),
         identity: "orders".to_owned(),
         revision_namespace: "fixture".to_owned(),
         revision: "1".to_owned(),
-        digest: [0; 32],
     };
     let text = serde_json::to_string(&json!({
         "format": "quire.state.snapshot/v1",
@@ -636,7 +551,6 @@ fn admit_order_usage(
         "anchor": {"kind": "handler", "name": "validate"},
         "model": {
             "identity": fixture::PACKAGE, "version": "1",
-            "digest": format!("sha256-jcs:{model_digest}"),
         },
         "populations": [{
             "population": fixture::id("orders"),
@@ -646,12 +560,12 @@ fn admit_order_usage(
     }))
     .expect("the snapshot serializes");
     let bytes = edit(text).into_bytes();
-    let parsed = quire_canonical::read(&bytes, u64::MAX).expect("the snapshot is JSON");
-    let digest = *quire_canonical::sha256(&parsed, quire_canonical::Limits::new(u64::MAX))
-        .expect("the snapshot is canonical")
-        .as_bytes();
-    let selected = DocumentRef { digest, ..label };
-    let snapshots = BTreeMap::from([(selected.source_identity(), bytes)]);
+    let selected = label;
+    let snapshots = BTreeMap::from([(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    )]);
     admit_current_snapshot(
         graph.model_selections(),
         graph.scope().types(),

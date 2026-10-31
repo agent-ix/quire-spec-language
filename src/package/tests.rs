@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Compare the actual private canonical pass separately from its digest.
+//! Compare the private canonical pass and emitted package with fixed byte vectors.
 
 use crate::runtime_test_setup::native_rule_model;
 #[path = "../../tests/support/package_vector_setup.rs"]
@@ -15,14 +15,14 @@ use crate::runtime_test_setup as setup;
 
 #[test]
 #[trace("TC-090", "FR-021-AC-1", "FR-021-AC-6")]
-fn canonical_pass_bytes_match_each_independent_fixed_vector_before_hashing() {
+fn canonical_pass_bytes_match_each_independent_fixed_vector() {
     let models = [package_vector_setup::vectors::model()];
     for vector in package_vector_setup::cases(&models[0]) {
         let checked = package_vector_setup::checked(&vector, &models);
         let features = features::derive(&checked).unwrap();
         let mut usage = PackageUsage::default();
         let bytes = run(
-            &view::Manifest::new(&checked, &features, false, None),
+            &view::Manifest::new(&checked, &features, false),
             PackageLimits::default(),
             Pass::Canonical,
             &mut usage,
@@ -36,7 +36,6 @@ fn canonical_pass_bytes_match_each_independent_fixed_vector_before_hashing() {
         assert!(usage.encode.is_none());
         let package = NativePackage::new(checked, PackageLimits::default()).unwrap();
         assert_eq!(package.bytes(), vector.artifact);
-        assert_eq!(package.canonical_identity().to_string(), vector.digest);
     }
 }
 
@@ -56,7 +55,7 @@ fn runtime_populations_and_evaluator_budgets_do_not_enter_static_passes() {
     let canonical = |package: &NativePackage<'_>| {
         let features = features::derive(package.checked()).unwrap();
         run(
-            &view::Manifest::new(package.checked(), &features, false, None),
+            &view::Manifest::new(package.checked(), &features, false),
             PackageLimits::default(),
             Pass::Canonical,
             &mut PackageUsage::default(),
@@ -64,12 +63,10 @@ fn runtime_populations_and_evaluator_budgets_do_not_enter_static_passes() {
         .unwrap()
     };
     let original_canonical = canonical(&package);
-    let mut runtime_digests = std::collections::BTreeSet::new();
     for (number, truth) in [(0, false), (1, true), (2, false)] {
         let mut data = setup::draft(&models[0]);
         setup::change_field(&mut data, "n", ValueNode::Integer { value: number });
         let snapshot = setup::snapshot(data);
-        assert!(runtime_digests.insert(snapshot.digest().to_string()));
         let selected = setup::selection(&models[0], snapshot.reference());
         let context = validate(
             package.checked(),
@@ -102,10 +99,7 @@ fn runtime_populations_and_evaluator_budgets_do_not_enter_static_passes() {
             assert_eq!(canonical(&package), original_canonical);
             assert_eq!(canonical(&rebuilt), original_canonical);
             assert_eq!(rebuilt.bytes(), package.bytes());
-            assert_eq!(rebuilt.digest(), package.digest());
-            assert_eq!(rebuilt.canonical_identity(), package.canonical_identity());
             assert_eq!(rebuilt.usage(), package.usage());
         }
     }
-    assert_eq!(runtime_digests.len(), 3);
 }

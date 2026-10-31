@@ -60,17 +60,15 @@ checked-input:
 # corpus does not admit a case its prior revision admitted, or when the gate
 # reports anything but success (exit 0).
 #
-# FR-340: the corpus is generated into a temporary directory on every run, with
-# the model digest computed from examples/config-version/model.semantic-ir.json
-# then. Nothing is committed with a frozen digest.
+# FR-340: the corpus is generated into a temporary directory on every run from
+# examples/config-version/model.semantic-ir.json. Nothing is committed.
 refinement-versioning:
 	@corpus=$$(mktemp -d "$${TMPDIR:-/tmp}/refinement-versioning.XXXXXX") && \
 	trap 'rm -rf "$$corpus"' EXIT && \
 	cargo run --package xtask -- refinement generate-versioning "$$corpus" && \
 	cargo run --package xtask -- refinement versioning "$$corpus"
 
-# FR-345: generate the real layering corpus into a temporary directory, with
-# each model digest computed then, and run the layering CLI over it with no
+# FR-345: generate the real layering corpus into a temporary directory and run the layering CLI over it with no
 # negotiation function. The target passes only the CLI's expected run: exit 21,
 # every layer `unresolved (unsupported)` for reason `not-negotiated` over a
 # non-empty candidate set, and every case and edge holding or not applicable
@@ -320,8 +318,8 @@ ci-docs:
 # the S3 checker: 10,000 generated sources nested 1 to 100,000 levels deep.
 # Depths are spread over orders of magnitude (`qsl_bench::deep_input`).
 # It resolves against the root `Cargo.lock`, copied in (fuzz/Cargo.lock is
-# gitignored), and builds on the caller's active toolchain (CI derives it from
-# `Cargo.toml`'s `rust-version`), with no sanitizer:
+# gitignored), and builds on the caller's active toolchain (selected by
+# `rust-toolchain.toml`), with no sanitizer:
 # QSL's crates forbid `unsafe`, so the run checks panics, aborts
 # and stack overflows. Needs `cargo install cargo-fuzz`. Not part of `ci:`.
 FUZZ_RUNS ?= 10000

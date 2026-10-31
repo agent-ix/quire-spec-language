@@ -4,12 +4,11 @@
 //! manifests.
 
 use ix_trace_rs::trace;
-use qsl_foundation::digest::ByteDigest;
 use qsl_foundation::{BackendId, SourceIdentity};
 use qsl_route::request::items_from_requirements;
 use qsl_route::{
     descriptor_from_manifest, Candidate, CandidateOutcome, FairnessKindsMember, FairnessLabel,
-    ManifestDigest, ManifestMembers, ProviderOrigin, Registry,
+    ManifestMembers, ProviderOrigin, Registry,
 };
 use qsl_semantics::check::{Capability, PackageDeclarations};
 use quire_semantic_value::checking::CheckingLimits;
@@ -17,16 +16,14 @@ use quire_semantic_value::checking::CheckingLimits;
 /// The ConfigVersion unit with one infinite-trace clause whose body is `body`.
 pub(crate) fn graph_of(body: &str) -> qsl_semantics::check::CheckedGraph {
     let document = crate::support::config_version_spine::spine::DOMAIN_PACKAGE.as_bytes();
-    let packages = qsl_semantics::model::intake::package_input([document]);
-    let digest = packages.keys().next().expect("one package");
+    let packages = qsl_semantics::model::intake::package_input([document]).unwrap();
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
          profile t = \"quire.temporal.infinite-trace/v1\";\n\
-         model Config = \"example/config-version\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         model Config = \"example/config-version\";\n\
          temporal C using t over (c: Config::ConfigVersion) clock \"model-steps\" \
-         on origin {{ {body} }}\n",
-        qsl_semantics::model::key::hex(digest)
+         on origin {{ {body} }}\n"
     );
     let parsed = qsl_cst::parse(
         SourceIdentity::new("agent-ix", "test:fairness", "fixture", "fixture:1"),
@@ -44,7 +41,7 @@ pub(crate) fn graph_of(body: &str) -> qsl_semantics::check::CheckedGraph {
         qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
     )
     .expect("the model is admitted");
-    PackageDeclarations::assemble(raw, unit, models, Vec::new())
+    PackageDeclarations::assemble(raw, "fixture".to_string(), unit, models, Vec::new())
         .expect("the unit assembles")
         .check(CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("{body}: {refusals:?}"))
@@ -54,20 +51,16 @@ pub(crate) fn graph_of(body: &str) -> qsl_semantics::check::CheckedGraph {
 /// `weak` and `strong`, `weak-only` advertises `weak`.
 fn registry() -> Registry {
     let mut registry = Registry::new();
-    for (index, (id, labels)) in [
+    for (id, labels) in [
         (
             "both",
             &[FairnessLabel::Text("weak"), FairnessLabel::Text("strong")][..],
         ),
         ("weak-only", &[FairnessLabel::Text("weak")][..]),
-    ]
-    .into_iter()
-    .enumerate()
-    {
+    ] {
         let descriptor = descriptor_from_manifest(
             Candidate::new(BackendId::new(id)),
             ProviderOrigin::Process,
-            ManifestDigest::from_digest(ByteDigest::of(&[index as u8]).as_bytes()),
             [(Some("temporal-satisfaction"), Some("unbounded"))],
             ManifestMembers {
                 domains: None,

@@ -41,8 +41,7 @@ fn record(
         .iter()
         .filter(|(_, record)| record.owner() == Some(owner))
         .filter_map(|(key, _)| {
-            let node = graph.semantic_graph().resolve_wire(key.node())?;
-            let location = graph.occurrence(node, key.origin())?;
+            let location = graph.occurrence(key.node().clone(), key.origin())?;
             let region = graph.region(location)?;
             let text = &source
                 [usize::try_from(region.start()).ok()?..usize::try_from(region.end()).ok()?];
@@ -64,7 +63,7 @@ fn declaration(compiled: &ComposedUnit, function: &str) -> OccurrenceKey {
         .callable(function)
         .expect("declared")
         .identity;
-    OccurrenceKey::new(wire_id(identity), Origin::new(Role::new("declaration"), 0))
+    OccurrenceKey::new(identity.clone(), Origin::new(Role::new("declaration"), 0))
 }
 
 /// A request for `function` at `key` carrying `source`.
@@ -75,12 +74,7 @@ fn at(
     key: &OccurrenceKey,
     source: ReplaySource,
 ) -> ReplayRequestWire {
-    let mut wire = request(
-        source_text.as_bytes(),
-        compiled.emitted.package_id(),
-        name(&[function]),
-        source,
-    );
+    let mut wire = request(source_text.as_bytes(), compiled, name(&[function]), source);
     wire.replay_target = crate::RequestTargetWire::function(name(&[function]), key.clone());
     wire
 }
@@ -130,12 +124,12 @@ fn run(
     compiled: &ComposedUnit,
     function: &str,
     key: &OccurrenceKey,
-    values: &[(WireNodeId, WitnessValue)],
+    values: &[(NodeKey, WitnessValue)],
 ) -> Result<ReplayResult, ReplayRefusal> {
     let assignments = values
         .iter()
         .map(|(parameter, value)| CanonicalAssignment {
-            parameter: *parameter,
+            parameter: parameter.clone(),
             value: value.clone(),
         })
         .collect();
@@ -201,7 +195,11 @@ fn tc_444_the_occurrence_key_selects_the_predicate_or_the_application_claim() {
     );
     let witness = |value: &str| {
         ReplaySource::Witness(
-            Witness::parse(format!("<<<assertion|h|c|{}={value}>>>", x("r"))).unwrap(),
+            Witness::parse(format!(
+                "<<<assertion|h|c|{}={value}>>>",
+                crate::pn(&x("r"))
+            ))
+            .unwrap(),
         )
     };
     assert_eq!(
@@ -245,14 +243,17 @@ fn tc_444_the_occurrence_key_selects_the_predicate_or_the_application_claim() {
             value: int(0),
         }]),
     );
-    identified.obligation_identity = [9; 32];
+    identified.obligation_identity =
+        crate::ObligationIdentity::new(crate::fixture_node(9), None, 0);
     assert_eq!(
         settled(replay(identified, ReplayLimits::default())),
         Settled::Verdicts(boolean(true))
     );
     // The identity is carried unchanged into the request the result settles
     // from: a distinct identity per request survives decoding.
-    for identity in [[1; 32], [2; 32]] {
+    for identity in
+        [1_u8, 2].map(|n| crate::ObligationIdentity::new(crate::fixture_node(n), None, 0))
+    {
         let mut wire = at(
             &source,
             &compiled,
@@ -263,9 +264,9 @@ fn tc_444_the_occurrence_key_selects_the_predicate_or_the_application_claim() {
                 value: int(0),
             }]),
         );
-        wire.obligation_identity = identity;
+        wire.obligation_identity = identity.clone();
         let request = ReplayRequest::decode(wire, ReplayLimits::default()).unwrap();
-        assert_eq!(request.obligation_identity().as_bytes(), &identity);
+        assert_eq!(request.obligation_identity(), identity);
     }
 }
 
@@ -280,11 +281,23 @@ fn tc_444_each_occurrence_of_one_node_is_a_claim_of_its_own() {
     let then_branch = record(&compiled, &source, "s", "10 mod x", 0);
     let right_operand = record(&compiled, &source, "s", "10 mod x", 1);
     assert_eq!(
-        settled(run(&source, &compiled, "s", &then_branch, &[(x, int(0))])),
+        settled(run(
+            &source,
+            &compiled,
+            "s",
+            &then_branch,
+            &[(x.clone(), int(0))]
+        )),
         Settled::NoValue
     );
     assert_eq!(
-        settled(run(&source, &compiled, "s", &right_operand, &[(x, int(0))])),
+        settled(run(
+            &source,
+            &compiled,
+            "s",
+            &right_operand,
+            &[(x.clone(), int(0))]
+        )),
         Settled::Reproduced(boolean(false))
     );
     assert_eq!(
@@ -312,7 +325,7 @@ fn tc_444_binder_bodies_are_observed_and_unread_parameters_are_filled() {
             &compiled,
             "b",
             &b_application,
-            &[(t, sequence(&[3, 0]))]
+            &[(t.clone(), sequence(&[3, 0]))]
         )),
         Settled::Reproduced(boolean(false))
     );
@@ -322,7 +335,7 @@ fn tc_444_binder_bodies_are_observed_and_unread_parameters_are_filled() {
             &compiled,
             "b",
             &b_application,
-            &[(t, sequence(&[3]))]
+            &[(t.clone(), sequence(&[3]))]
         )),
         Settled::Verdicts(boolean(true))
     );
@@ -333,7 +346,7 @@ fn tc_444_binder_bodies_are_observed_and_unread_parameters_are_filled() {
         &compiled,
         "b",
         &b_application,
-        &[(t, sequence(&[3])), (binder, int(0))],
+        &[(t, sequence(&[3])), (binder.clone(), int(0))],
     )
     .unwrap_err();
     assert!(matches!(refused, ReplayRefusal::UnknownParameter(node) if node == binder));
@@ -342,18 +355,32 @@ fn tc_444_binder_bodies_are_observed_and_unread_parameters_are_filled() {
     let y = parameter(&compiled, "u", 1);
     let u_application = record(&compiled, &source, "u", "10 mod x", 0);
     assert_eq!(
-        settled(run(&source, &compiled, "u", &u_application, &[(x, int(0))])),
+        settled(run(
+            &source,
+            &compiled,
+            "u",
+            &u_application,
+            &[(x.clone(), int(0))]
+        )),
         Settled::Reproduced(boolean(false))
     );
     let refused = run(&source, &compiled, "u", &u_application, &[(y, int(1))]).unwrap_err();
     assert!(matches!(refused, ReplayRefusal::UnboundParameter(node) if node == x));
     // The predicate claim binds every parameter.
     let u_declaration = declaration(&compiled, "u");
-    let refused = run(&source, &compiled, "u", &u_declaration, &[(x, int(0))]).unwrap_err();
+    let refused = run(
+        &source,
+        &compiled,
+        "u",
+        &u_declaration,
+        &[(x.clone(), int(0))],
+    )
+    .unwrap_err();
     assert!(matches!(refused, ReplayRefusal::NotAPredicate { .. }));
     // A witness transcript may likewise leave the unread parameter out.
-    let transcript =
-        ReplaySource::Witness(Witness::parse(format!("<<<assertion|h|c|{x}=0>>>")).unwrap());
+    let transcript = ReplaySource::Witness(
+        Witness::parse(format!("<<<assertion|h|c|{}=0>>>", crate::pn(&x))).unwrap(),
+    );
     assert_eq!(
         settled(replay(
             at(&source, &compiled, "u", &u_application, transcript),
@@ -365,19 +392,20 @@ fn tc_444_binder_bodies_are_observed_and_unread_parameters_are_filled() {
 
 /// The node of `function`'s first `forall` binder: the node of a
 /// quantifier's bound variable, which is no parameter.
-fn record_binder_node(compiled: &ComposedUnit, function: &str) -> WireNodeId {
+fn record_binder_node(compiled: &ComposedUnit, function: &str) -> NodeKey {
     let graph = compiled.package.graph();
     let record = graph
         .requirements()
         .values()
         .find(|record| record.owner() == Some(function))
         .expect("a record");
-    let parameters: Vec<WireNodeId> = (0..1).map(|i| parameter(compiled, function, i)).collect();
-    *record
+    let parameters: Vec<NodeKey> = (0..1).map(|i| parameter(compiled, function, i)).collect();
+    record
         .extent_roots()
         .iter()
         .find(|root| !parameters.contains(root))
         .expect("the binder is an extent root")
+        .clone()
 }
 
 /// FR-098-AC-25: a key that selects no claim of the function refuses
@@ -391,7 +419,7 @@ fn tc_444_a_key_selecting_no_claim_of_the_function_refuses() {
     let x = |function| parameter(&compiled, function, 0);
     let r_application = record(&compiled, &source, "r", "10 mod x", 0);
     let no_node = OccurrenceKey::new(
-        WireNodeId::from_digest([0x11; 32]),
+        crate::fixture_node(0x11),
         Origin::new(Role::new("expression"), 0),
     );
     // The narrow that wraps `inc`'s `x + 1` is located with the application
@@ -408,7 +436,7 @@ fn tc_444_a_key_selecting_no_claim_of_the_function_refuses() {
                         && source[..start].ends_with("Int[0, 10] pure { ")
                 })
         })
-        .map(|(node, origin, _)| OccurrenceKey::new(wire_id(node), origin))
+        .map(|(node, origin, _)| OccurrenceKey::new(node.clone(), origin))
         .filter(|key| *key != inc_application && graph.requirements().get(key).is_none())
         .collect();
     assert!(
@@ -474,8 +502,8 @@ fn tc_444_a_key_selecting_no_claim_of_the_function_refuses() {
     );
 }
 
-/// FR-098-AC-26: the refusal order. A stale `package_id` and an unknown
-/// function precede `ClaimOccurrence`, which precedes the argument join.
+/// FR-098-AC-26: the refusal order. An unknown
+/// function precedes `ClaimOccurrence`, which precedes the argument join.
 #[trace("TC-444", "FR-098-AC-26")]
 #[test]
 fn tc_444_claim_selection_comes_after_the_function_and_before_the_join() {
@@ -490,20 +518,11 @@ fn tc_444_claim_selection_comes_after_the_function_and_before_the_join() {
             "p",
             &r_application,
             ReplaySource::Input(vec![CanonicalAssignment {
-                parameter: x,
+                parameter: x.clone(),
                 value: int(0),
             }]),
         )
     };
-    let mut stale = build();
-    stale.package_id = (
-        Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
-        DigestRecord::mint(DigestDomain::PackageSemanticV2, [5; 32]).hex(),
-    );
-    assert!(matches!(
-        replay(stale, ReplayLimits::default()).unwrap_err(),
-        ReplayRefusal::PackageIdMismatch { .. }
-    ));
     let mut unknown = build();
     unknown.replay_target =
         crate::RequestTargetWire::function(name(&["nope"]), r_application.clone());
@@ -518,7 +537,7 @@ fn tc_444_claim_selection_comes_after_the_function_and_before_the_join() {
             value: int(0),
         },
         CanonicalAssignment {
-            parameter: WireNodeId::from_digest([0x22; 32]),
+            parameter: crate::fixture_node(0x22),
             value: int(0),
         },
     ]);

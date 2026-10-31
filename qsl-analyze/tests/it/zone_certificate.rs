@@ -21,7 +21,7 @@ use qsl_route::deadlock::{ItemObligation, ObligationKind};
 use quire_exact::Cancel;
 
 use crate::timed_world::{document, world, World, DENSE};
-use crate::zone_replay::{fault, lock_resetting, package_id};
+use crate::zone_replay::{fault, lock_resetting};
 use crate::zone_search::{
     check, claim, deadlock, lock, proved, rpc, Certificate, Outcome, INFINITE, SUBJECT,
 };
@@ -394,7 +394,6 @@ fn a_zone_proof_settles_through_the_core_checker() {
     let settle = |outcome: &Outcome| {
         settle_zone_check(
             ZoneItem::Outcome(outcome),
-            &package_id(),
             &Cancel::new(),
             |certificate| Ok(verdict(&world, certificate)),
             |_| Err(fault()),
@@ -439,7 +438,6 @@ fn a_settles_proof_settles_through_the_core_checker() {
     let settle = |outcome: &Outcome| {
         settle_zone_check(
             ZoneItem::Outcome(outcome),
-            &package_id(),
             &Cancel::new(),
             |certificate| Ok(verdict(&world, certificate)),
             |_| Err(fault()),
@@ -896,7 +894,6 @@ fn a_refused_certificate_check_settles_stale_or_failed() {
     let settle = |refusal: qsl_replay::ZoneCertificateRefusal<ItemObligation<&'static str>>| {
         settle_zone_check(
             ZoneItem::Outcome(&proof),
-            &package_id(),
             &Cancel::new(),
             |_| Err(refusal),
             |_| Err(fault()),

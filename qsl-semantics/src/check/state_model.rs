@@ -139,7 +139,7 @@ fn navigation(end: &Navigable<'_>, reference: NodeId) -> Result<(NodeKind, Value
     if multiplicity.ordered {
         return Err(unsupported(NavigationBound::Ordered));
     }
-    let element = ValueType::Reference(destination.object);
+    let element = ValueType::Reference(destination.object.clone());
     let value_type = match (multiplicity.lower, upper) {
         (0, 1) => ValueType::option(element),
         (1, 1) => element,
@@ -192,8 +192,8 @@ fn reaches_end(
     other: quire_exact::EffectiveId,
 ) -> Result<(), CheckCause> {
     let ineligible = || CheckCause::IllTyped(IllTypedCause::OperatorIneligible);
-    let near = end.relationship.end(end.near).object;
-    if !types.conforms(other, near) {
+    let near = end.relationship.end(end.near).object.clone();
+    if !types.conforms(other, near.clone()) {
         return Err(ineligible());
     }
     if !end.direction_admitted() {
@@ -273,7 +273,7 @@ impl FamilyContract for StateModelFamily {
                     let ValueType::Reference(object) = value_type else {
                         return Err(mismatch(operand_location));
                     };
-                    let declared = scope.types().attribute(*object, field);
+                    let declared = scope.types().attribute(object.clone(), field);
                     // `deref(r)` names the object, and a relationship end is
                     // no member of it: only `r.name` navigates (FR-363).
                     let ends: Vec<Navigable<'_>> = if *derefed {
@@ -281,7 +281,7 @@ impl FamilyContract for StateModelFamily {
                     } else {
                         scope
                             .relationships()
-                            .navigable(scope.types(), *object, field)
+                            .navigable(scope.types(), object.clone(), field)
                             .collect()
                     };
                     match (declared, ends.as_slice()) {
@@ -338,16 +338,16 @@ impl FamilyContract for StateModelFamily {
                     else {
                         return Err(ineligible(location));
                     };
-                    let declared = scope.types().attribute(*object, edge);
+                    let declared = scope.types().attribute(object.clone(), edge);
                     let ends: Vec<Navigable<'_>> = scope
                         .relationships()
-                        .navigable(scope.types(), *object, edge)
+                        .navigable(scope.types(), object.clone(), edge)
                         .collect();
                     let attribute = match (declared, ends.as_slice()) {
                         (None, []) => return Err(missing(edge)),
                         (Some(attribute), []) => attribute,
                         (None, [end]) => {
-                            reaches_end(end, scope.types(), *other)
+                            reaches_end(end, scope.types(), other.clone())
                                 .map_err(|cause| refuse(location, cause))?;
                             return Ok(make(
                                 NodeKind::ReachesEnd {
@@ -373,8 +373,8 @@ impl FamilyContract for StateModelFamily {
                     };
                     let owner = attribute.owner();
                     let endpoints_admitted = if scope.complete_model {
-                        scope.types().conforms(*object, owner)
-                            && scope.types().conforms(*other, owner)
+                        scope.types().conforms(object.clone(), owner.clone())
+                            && scope.types().conforms(other.clone(), owner.clone())
                     } else {
                         *object == owner && *other == owner
                     };
@@ -454,7 +454,7 @@ impl FamilyContract for StateModelFamily {
                     else {
                         return Err(mismatch(reference_location));
                     };
-                    if !scope.types().conforms(*s, *t) {
+                    if !scope.types().conforms(s.clone(), t.clone()) {
                         return Err(mismatch(reference_location));
                     }
                     let value_type = match absence {
@@ -499,7 +499,7 @@ impl FamilyContract for StateModelFamily {
                         .ok_or_else(|| {
                             let mut refusal = missing(member);
                             if let CheckCause::StateModel(model) = &mut refusal.cause {
-                                model.receiver = Some(*receiver_type);
+                                model.receiver = Some(receiver_type.clone());
                             }
                             refusal
                         })?;
@@ -532,10 +532,10 @@ impl FamilyContract for StateModelFamily {
                     let admitted = actual == required
                         || match (actual, required) {
                             (ValueType::Reference(s), ValueType::Reference(t)) => {
-                                scope.types().conforms(*s, *t)
+                                scope.types().conforms(s.clone(), t.clone())
                             }
                             (ValueType::Composite(s), ValueType::Composite(t)) => {
-                                scope.types().composite_conforms(*s, *t)
+                                scope.types().composite_conforms(s.clone(), t.clone())
                             }
                             _ => false,
                         };
@@ -639,7 +639,14 @@ mod tests {
         use quire_semantic_value::declaration::{
             CompositeDeclaration, CompositeShape, FieldDeclaration, TypeEnvironment,
         };
-        let [money, taxed, fee] = [1, 2, 3].map(|byte| NodeKey::from_digest([byte; 32]));
+        let [money, taxed, fee] = [1, 2, 3].map(|byte| {
+            quire_exact::NodeKey::new(
+                "fixture".to_owned(),
+                vec![quire_exact::PathSegment::Text(format!("n{byte}"))],
+                0,
+            )
+            .expect("a fixture key")
+        });
         let record = |key, name: &str, supertypes: Vec<NodeKey>| {
             CompositeDeclaration::new(
                 key,
@@ -654,9 +661,9 @@ mod tests {
         };
         let types = TypeEnvironment::new(
             [
-                record(money, "Money", vec![]),
-                record(taxed, "TaxedMoney", vec![money]),
-                record(fee, "Fee", vec![]),
+                record(money.clone(), "Money", vec![]),
+                record(taxed.clone(), "TaxedMoney", vec![money.clone()]),
+                record(fee.clone(), "Fee", vec![]),
             ],
             [],
         )
@@ -691,8 +698,8 @@ mod tests {
             ValueType::collection(CollectionType::new(CollectionKind::Sequence, element, None))
         };
         for (actual, required) in [
-            (composite(taxed), composite(money)),
-            (composite(money), composite(money)),
+            (composite(taxed.clone()), composite(money.clone())),
+            (composite(money.clone()), composite(money.clone())),
         ] {
             match argument(actual, required.clone()) {
                 Ok(Checked::Type(declared)) => assert_eq!(declared, required),
@@ -700,9 +707,12 @@ mod tests {
             }
         }
         for (actual, required) in [
-            (composite(money), composite(taxed)),
-            (composite(fee), composite(money)),
-            (sequence_of(composite(taxed)), sequence_of(composite(money))),
+            (composite(money.clone()), composite(taxed.clone())),
+            (composite(fee.clone()), composite(money.clone())),
+            (
+                sequence_of(composite(taxed.clone())),
+                sequence_of(composite(money.clone())),
+            ),
         ] {
             assert!(argument(actual, required).is_err());
         }

@@ -14,7 +14,6 @@ use std::collections::BTreeMap;
 use crate::model::normalize::ModelRefusal;
 use crate::model::origin::JsonValue;
 use qsl_forms::Expression;
-use quire_canonical::FixedShape;
 use quire_checked::key::DeclarationKey;
 use quire_exact::{Presence, TextType};
 use quire_semantic_value::location::OperationClauseKind;
@@ -999,51 +998,14 @@ impl DomainPackageRecord {
     }
 }
 
-/// A domain package selection: `{identity, version, digest_domain: "sha256-jcs",
-/// digest}` (FR-321, `model-complete.md`:50).
+/// A domain package selection: the identity a source `model` names (FR-321).
+/// The selection is the identity alone.
 ///
 /// quire:canonical
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DomainPackageRef {
     /// The domain package's own identity (e.g. `test/orders`).
     pub identity: String,
-    /// The domain package's own version.
-    pub version: String,
-    /// The SHA-256 digest of the domain package's JCS bytes.
-    pub digest: [u8; 32],
-}
-
-impl std::fmt::Debug for DomainPackageRef {
-    /// Prints `digest` as hex, not 32 decimal bytes — readable in refusal
-    /// payloads (e.g. `ForeignModelSelection { expected }`) the way the
-    /// deleted `ProducerDigest`'s own hex `Debug` was.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("DomainPackageRef")
-            .field("identity", &self.identity)
-            .field("version", &self.version)
-            .field("digest", &super::key::hex(&self.digest))
-            .finish()
-    }
-}
-
-/// A [`DomainPackageRef`]'s preimage form inside the `quire.model.*` identities.
-#[derive(serde::Serialize, FixedShape)]
-pub(super) struct DomainPackageRefWire<'a> {
-    identity: &'a str,
-    digest_domain: &'static str,
-    digest: String,
-}
-
-impl DomainPackageRef {
-    /// This selection's FR-321 preimage form: `{identity, digest_domain,
-    /// digest}`, the digest lowercase hex.
-    pub(super) fn wire(&self) -> DomainPackageRefWire<'_> {
-        DomainPackageRefWire {
-            identity: &self.identity,
-            digest_domain: super::key::SHA256_JCS_DIGEST_DOMAIN,
-            digest: super::key::hex(&self.digest),
-        }
-    }
 }
 
 /// A domain package: a [`DomainPackageRef`] and its ordered records.

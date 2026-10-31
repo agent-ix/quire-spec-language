@@ -11,7 +11,7 @@ use quire_contract_model::{
 };
 
 use super::*;
-use crate::checked_v2::tests::{derived_package_id, rekey_stale};
+
 use crate::checked_v2::{read_checked_package_v2, read_hybrids, HybridRead, V2ReadRefusal};
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
@@ -99,6 +99,7 @@ fn compile_checked(declarations: &str) -> (Emission, Value, Checked) {
     let form = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
     let graph = PackageDeclarations::assemble(
         raw,
+        "example".to_owned(),
         form,
         qsl_semantics::model::intake::SelectedModels::default(),
         Vec::new(),
@@ -118,26 +119,38 @@ fn compile_checked(declarations: &str) -> (Emission, Value, Checked) {
 
 /// `emission` after QSL's full I2 read, which runs IR's FR-481 reader.
 fn admitted(emission: &Emission) {
-    let Read::Verified { package, .. } = read_back(emission) else {
-        panic!("the I2 read admits the package: {:?}", read_back(emission));
+    let read = || {
+        read_v2(
+            emission.package.bytes(),
+            library(),
+            V2ReadLimits::default(),
+            &read_evidence(emission),
+        )
     };
-    assert_eq!(package.package_id(), emission.package.package_id());
+    let Read::Verified { .. } = read() else {
+        panic!("the I2 read admits the package: {:?}", read());
+    };
 }
 
-fn package_id(emission: &Emission) -> qsl_semantics::library::PackageId {
-    emission.package.package_id()
+/// The package the QSpec vectors are keyed under.
+fn library() -> LibraryName {
+    LibraryName::new("example").unwrap()
 }
 
-fn node_with<'w>(wire: &'w Value, digest: &str) -> &'w Value {
+fn idtext(id: &Value) -> String {
+    id.to_string()
+}
+
+fn node_with(wire: &Value, digest: impl AsRef<str>) -> &Value {
     nodes(wire)
         .iter()
-        .find(|node| node["node_id"]["digest"] == digest)
-        .unwrap_or_else(|| panic!("a node {digest}"))
+        .find(|node| idtext(&node["node_id"]) == digest.as_ref())
+        .unwrap_or_else(|| panic!("a node {}", digest.as_ref()))
 }
 
-fn target(term: &Value) -> &str {
+fn target(term: &Value) -> String {
     assert_eq!(term["term"], "reference", "{term}");
-    term["target"]["digest"].as_str().expect("a target digest")
+    idtext(&term["target"])
 }
 
 /// The nodes of `wire` with the form `form`, in graph order.
@@ -201,7 +214,7 @@ fn targets(body: &Value, found: &mut BTreeSet<String>) {
     match body {
         Value::Object(map) => {
             if map.get("term") == Some(&json!("reference")) {
-                found.insert(map["target"]["digest"].as_str().unwrap().to_owned());
+                found.insert(idtext(&map["target"]));
             } else {
                 map.values().for_each(|value| targets(value, found));
             }
@@ -240,10 +253,9 @@ fn law(clause: &Value) -> &str {
         .unwrap()
 }
 
-/// FR-447-AC-5 (FR-481-AC-1, AC-6): `Braking` and `SlowEnough` emit the
+/// FR-447-AC-5 (FR-481-AC-1): `Braking` and `SlowEnough` emit the
 /// model, mode and transition nodes and the claim node FR-481 states, and
-/// QSL's I2 read admits the package; replacing `Moving`'s `v' = -a` by
-/// `v' = -(2 * a)` changes the `package_id`.
+/// QSL's I2 read admits the package.
 #[trace("TC-1187", "FR-447-AC-5")]
 #[test]
 fn braking_and_slow_enough_emit_as_hybrid_nodes_the_i2_read_admits() {
@@ -268,7 +280,7 @@ fn braking_and_slow_enough_emit_as_hybrid_nodes_the_i2_read_admits() {
             .as_array()
             .unwrap()
             .iter()
-            .map(|dependency| dependency["digest"].as_str().unwrap().to_owned())
+            .map(idtext)
             .collect();
         assert_eq!(dependencies, expected, "{node}");
     }
@@ -313,7 +325,7 @@ fn braking_and_slow_enough_emit_as_hybrid_nodes_the_i2_read_admits() {
     assert_eq!(operation(negated), "quire.op.rational.negate");
     assert_eq!(
         target(&negated["body"]["arguments"][0]),
-        variable_nodes[1]["node_id"]["digest"]
+        idtext(&variable_nodes[1]["node_id"])
     );
     assert_eq!(entry(&wire, rates, 1)["body"]["value"], "0");
     assert_eq!(entry(&wire, rates, 2)["body"]["value"], "1");
@@ -373,16 +385,8 @@ fn braking_and_slow_enough_emit_as_hybrid_nodes_the_i2_read_admits() {
     assert_eq!(operation(comparison), "quire.op.rational.lt");
     assert_eq!(
         target(&comparison["body"]["arguments"][0]),
-        variable_nodes[0]["node_id"]["digest"]
+        idtext(&variable_nodes[0]["node_id"])
     );
-
-    // Replacing `v' = -a` by `v' = -(2 * a)` changes the package identity.
-    let (replaced, _) = compile(&format!(
-        "{}{}",
-        braking("v' = -(2 * a); a' = 0; t' = 1;"),
-        slow_enough("p", BODY)
-    ));
-    assert_ne!(package_id(&emission), package_id(&replaced));
 }
 
 /// FR-447-AC-12 (FR-481-AC-8, AC-9): `Braking2`, `Slows` and `Recent` emit
@@ -450,17 +454,14 @@ fn braking2_slows_and_recent_emit_initial_entries_resets_activation_and_fairness
     assert_eq!(parameter(read), ("v".to_owned(), "3".to_owned()));
     // The capture `v0` holds the activation read of `v`.
     let capture = &slows["body"]["arguments"][3];
-    assert_eq!(
-        target(binding(capture, "v0")),
-        read["node_id"]["digest"].as_str().unwrap()
-    );
+    assert_eq!(target(binding(capture, "v0")), idtext(&read["node_id"]));
     // Fairness: weak whole over `[Braking2, Moving]` and `Stopped`.
     let fairness = &slows["body"]["arguments"][4];
     let fair = node_with(&wire, target(&fairness["members"][0]));
     let member = &fair["body"]["operation"]["member"];
     assert_eq!(member["fairness_kind"], "weak");
     assert_eq!(member["granularity"], "whole");
-    assert_eq!(member["declaration"]["digest"], moving["node_id"]["digest"]);
+    assert_eq!(member["declaration"], moving["node_id"]);
     assert_eq!(member["name"], "Stopped");
     // The timed interval `[0, 21/2]` over `holds`, whose operand reads the
     // capture at level 6 typed by the `rational_range` node.
@@ -478,7 +479,7 @@ fn braking2_slows_and_recent_emit_initial_entries_resets_activation_and_fairness
     let below = node_with(&wire, target(&conjunction["body"]["arguments"][0]));
     let v0 = node_with(&wire, target(&below["body"]["arguments"][1]));
     assert_eq!(parameter(v0), ("v0".to_owned(), "6".to_owned()));
-    let range = node_with(&wire, v0["semantic_type"]["digest"].as_str().unwrap());
+    let range = node_with(&wire, idtext(&v0["semantic_type"]));
     assert_eq!(range["semantic_form"], "rational_range");
 
     // `Recent`: clock `model-steps`, an integer `once` interval `[0, 2]`.
@@ -511,33 +512,18 @@ fn braking2_restored_nodes_match_qspec_vectors() {
     admitted(&emission);
     let expected_ids: BTreeSet<String> = expected
         .iter()
-        .map(|node| {
-            node["node_id"]["digest"]
-                .as_str()
-                .expect("QSpec node id")
-                .to_owned()
-        })
+        .map(|node| idtext(&node["node_id"]))
         .collect();
     let base_ids: BTreeSet<String> = fixture["nodes"]
         .as_array()
         .expect("QSpec base nodes")
         .iter()
-        .map(|node| {
-            node["node_id"]["digest"]
-                .as_str()
-                .expect("QSpec node id")
-                .to_owned()
-        })
+        .map(|node| idtext(&node["node_id"]))
         .collect();
     let model = declared(&wire, "hybrid_model", &["Braking2"]);
     let mut pending: Vec<String> = std::iter::once(model)
         .chain(of_form(&wire, "temporal_clause"))
-        .map(|node| {
-            node["node_id"]["digest"]
-                .as_str()
-                .expect("node id")
-                .to_owned()
-        })
+        .map(|node| idtext(&node["node_id"]))
         .collect();
     let mut reached = BTreeSet::new();
     while let Some(id) = pending.pop() {
@@ -550,25 +536,15 @@ fn braking2_restored_nodes_match_qspec_vectors() {
                 .as_array()
                 .expect("node dependencies")
                 .iter()
-                .map(|dependency| {
-                    dependency["digest"]
-                        .as_str()
-                        .expect("dependency id")
-                        .to_owned()
-                }),
+                .map(idtext),
         );
-        pending.push(
-            node["semantic_type"]["digest"]
-                .as_str()
-                .expect("type id")
-                .to_owned(),
-        );
+        pending.push(idtext(&node["semantic_type"]));
     }
     let actual_ids: BTreeSet<String> = reached.difference(&base_ids).cloned().collect();
     assert_eq!(actual_ids, expected_ids, "complete restored node set");
     for node in expected {
-        let id = node["node_id"]["digest"].as_str().expect("QSpec node id");
-        let mut actual = node_with(&wire, id).clone();
+        let id = idtext(&node["node_id"]);
+        let mut actual = node_with(&wire, &id).clone();
         let mut expected = node.clone();
         // A package's source map may attach more occurrences to a shared
         // semantic node; it does not change the node's semantic content.
@@ -583,7 +559,6 @@ fn braking2_restored_nodes_match_qspec_vectors() {
 #[trace("TC-1187", "FR-447-AC-5", "QSpec-FR-481-AC-9")]
 #[test]
 fn fairness_member_preserves_the_source_mode_or_target_form() {
-    let mut package_ids = Vec::new();
     for (source, declaration, name) in [
         ("fair Moving;", "model", "Moving"),
         ("fair Moving::Stopped;", "mode", "Stopped"),
@@ -595,7 +570,6 @@ fn fairness_member_preserves_the_source_mode_or_target_form() {
         let (emission, wire, checked) = compile_checked(&format!("{}{}", braking(FLOW), claim));
         admitted(&emission);
         assert_read_back_equals(&read_back_hybrids(&emission, &wire), &checked);
-        package_ids.push(package_id(&emission));
         let model = declared(&wire, "hybrid_model", &["Braking"]);
         let mode = declared(&wire, "hybrid_mode", &["Braking", "Moving"]);
         let claim = clause(&wire, "h");
@@ -605,7 +579,6 @@ fn fairness_member_preserves_the_source_mode_or_target_form() {
         assert_eq!(member["declaration"], expected["node_id"], "{source}");
         assert_eq!(member["name"], name, "{source}");
     }
-    assert_ne!(package_ids[0], package_ids[1]);
 }
 
 /// FR-447-AC-14: `always [0, 10] true` emits `quire.op.temporal.true` under
@@ -677,47 +650,6 @@ fn interval_forms_follow_the_claims_profile() {
     );
 }
 
-/// FR-447-AC-4 (identity), AC-6 (package identity), AC-7 (`drag`'s body):
-/// the checked package identity follows the hybrid content. `Braking2` and
-/// `Braking` differ; `Braking` with the written default `initial` is
-/// `Braking`; a claim and a captured value, a fairness constraint, the
-/// call's function body and a rate each decide it.
-#[trace("TC-1187", "FR-447-AC-6")]
-#[test]
-fn the_package_identity_follows_the_hybrid_content() {
-    let id = |declarations: &str| {
-        let (emission, _) = compile(declarations);
-        package_id(&emission)
-    };
-    let default = braking(FLOW);
-    let written = default.replace(
-        "mode Moving invariant",
-        "initial { mode Moving when { true }; }\n mode Moving invariant",
-    );
-    assert_eq!(id(&default), id(&written));
-    admitted(&compile(&written).0);
-    assert_ne!(id(&default), id(BRAKING2));
-    assert_ne!(
-        id(&format!("{default}{}", slow_enough("p", BODY))),
-        id(&format!(
-            "{default}{}",
-            slow_enough("p", "always [0, 11] holds(h.v < 30)")
-        ))
-    );
-
-    let drag = |body: &str| {
-        format!(
-            "function drag using v(s: Rational[-100, 100; 1, 1]): \
-             Rational[-100, 100; 1, 1] pure {{ {body} }}\n{}",
-            braking("v' = drag(v); a' = 0; t' = 1;")
-        )
-    };
-    // The emission is the identity: QSpec's reader refuses a call whose
-    // range-typed parameter takes a continuous variable (FR-347), so these
-    // packages are not read back.
-    assert_ne!(id(&drag("-s")), id(&drag("s")));
-}
-
 // ------------------------------------------------------------- read-back
 
 /// QSL's I2 read-back of the hybrid models and claims of `emission`.
@@ -731,7 +663,6 @@ fn read_back_hybrids(emission: &Emission, wire: &Value) -> HybridRead {
         library(),
         V2ReadLimits::default(),
         &evidence,
-        &qsl_semantics::library::fixtures::single_pin(library(), emission.package.package_id()),
     )
     .unwrap_or_else(|failure| panic!("the I2 read admits the package: {failure:?}"));
     read_hybrids(&read.into_value().admitted, 100_000).expect("the package reads back")
@@ -838,33 +769,25 @@ fn edited(wire: &Value, digest: &str, edit: impl FnOnce(&mut Value)) -> Value {
         .as_array_mut()
         .expect("nodes")
         .iter_mut()
-        .find(|node| node["node_id"]["digest"] == digest)
+        .find(|node| idtext(&node["node_id"]) == digest)
         .expect("the edited node");
     edit(node);
-    rekey_stale(&mut envelope);
     envelope
 }
 
 /// QSL's I2 read of `envelope`, expected to refuse in IR's reader.
 fn refused(emission: &Emission, wire: &Value, envelope: &Value) -> (CheckedPackageRefusal, String) {
-    let package_id = derived_package_id(envelope);
-    let read = read_v2(
-        &jcs(envelope),
-        library(),
-        V2ReadLimits::default(),
-        &{
-            let mut evidence = CheckedPackageEvidence::new();
-            for feature in wire["lock"]["required_features"].as_array().unwrap() {
-                evidence.support_feature(feature.as_str().unwrap());
-            }
-            evidence
-        },
-        &qsl_semantics::library::fixtures::single_pin(library(), package_id),
-    );
+    let read = read_v2(&jcs(envelope), library(), V2ReadLimits::default(), &{
+        let mut evidence = CheckedPackageEvidence::new();
+        for feature in wire["lock"]["required_features"].as_array().unwrap() {
+            evidence.support_feature(feature.as_str().unwrap());
+        }
+        evidence
+    });
     let _ = emission;
     match read {
         Read::Refused(V2ReadRefusal::Envelope { refusal, .. }) => {
-            let path = refusal
+            let path = refusal.loci[0]
                 .path
                 .as_ref()
                 .map(|pointer| pointer.as_str().to_owned())
@@ -876,7 +799,7 @@ fn refused(emission: &Emission, wire: &Value, envelope: &Value) -> (CheckedPacka
 }
 
 /// FR-447-AC-13, AC-16 (QSpec FR-481 "Reader order"): with `dependencies`,
-/// keys and `package_id` rebuilt after each edit, QSL's I2 read refuses a
+/// keys rebuilt after each edit, QSL's I2 read refuses a
 /// mode with a fourth rate, every variable classed `clock`, a claim clock
 /// `wall`, a model body with `modes` before `variables`, a written default
 /// `initial` and a fairness member naming `Halted`, each at its FR-481 locus.
@@ -889,12 +812,8 @@ fn the_i2_read_refuses_each_fr_481_defect_at_its_locus() {
         braking(FLOW),
         slow_enough("p", BODY)
     ));
-    let digest = |form: &str, name: &[&str]| -> String {
-        declared(&wire, form, name)["node_id"]["digest"]
-            .as_str()
-            .unwrap()
-            .to_owned()
-    };
+    let digest =
+        |form: &str, name: &[&str]| -> String { idtext(&declared(&wire, form, name)["node_id"]) };
     let refuse = |envelope: &Value| refused(&emission, &wire, envelope);
 
     // A fourth rate in `Braking.Moving`: `invalid_model_binding` at `rates`.
@@ -942,11 +861,9 @@ fn the_i2_read_refuses_each_fr_481_defect_at_its_locus() {
                 && node["body"]["arguments"][1]["value"] == "model-time"
         })
         .expect("SlowEnough");
-    let (refusal, path) = refuse(&edited(
-        &wire,
-        claim["node_id"]["digest"].as_str().unwrap(),
-        |node| node["body"]["arguments"][1]["value"] = json!("wall"),
-    ));
+    let (refusal, path) = refuse(&edited(&wire, &idtext(&claim["node_id"]), |node| {
+        node["body"]["arguments"][1]["value"] = json!("wall")
+    }));
     assert_eq!(refusal.code, CheckedPackageRefusalCode::InvalidPackage);
     assert_eq!(
         refusal.cause,
@@ -958,7 +875,7 @@ fn the_i2_read_refuses_each_fr_481_defect_at_its_locus() {
     let mut swapped = wire.clone();
     let position = nodes(&swapped)
         .iter()
-        .position(|node| node["node_id"]["digest"] == model.as_str())
+        .position(|node| idtext(&node["node_id"]) == model)
         .unwrap();
     swapped["semantic_graph"]["nodes"][position]["body"]["members"]
         .as_array_mut()
@@ -979,13 +896,21 @@ fn the_i2_read_refuses_each_fr_481_defect_at_its_locus() {
         .find(|node| node["node_tag"] == "scalar_type" && node["semantic_form"] == "integer")
         .expect("the integer scalar node")["node_id"]
         .clone();
-    let placeholder = "f".repeat(64);
+    let placeholder = qsl_foundation::node_wire::node_key_to_json(
+        &quire_exact::NodeKey::new(
+            boolean["package"].as_str().unwrap().to_owned(),
+            vec![quire_exact::PathSegment::Text("placeholder".to_owned())],
+            0,
+        )
+        .unwrap(),
+    )
+    .unwrap();
     let mut with_literal = wire.clone();
     with_literal["semantic_graph"]["nodes"]
         .as_array_mut()
         .unwrap()
         .push(json!({
-            "node_id": {"domain": boolean["domain"], "digest": placeholder},
+            "node_id": placeholder,
             "schema_version": "quire.checked-semantic-graph/v2",
             "node_tag": "value",
             "semantic_form": "literal",
@@ -1003,13 +928,16 @@ fn the_i2_read_refuses_each_fr_481_defect_at_its_locus() {
                     "term": "literal", "type": integer, "value": "0", "value_kind": "integer"}},
                 {"term": "binding", "name": "condition", "value": {
                     "term": "reference",
-                    "target": {"domain": boolean["domain"], "digest": placeholder}}},
+                    "target": placeholder}},
             ]}]},
         }));
-        node["dependencies"]
-            .as_array_mut()
-            .unwrap()
-            .push(json!({"domain": boolean["domain"], "digest": placeholder}));
+        let dependencies = node["dependencies"].as_array_mut().unwrap();
+        dependencies.push(placeholder.clone());
+        // The reader takes dependencies in ascending node-id order.
+        dependencies.sort_by_key(|dependency| {
+            serde_json::from_value::<quire_contract_model::CheckedNodeId>(dependency.clone())
+                .expect("a node id")
+        });
     }));
     assert_eq!(
         refusal.code,
@@ -1022,11 +950,9 @@ fn the_i2_read_refuses_each_fr_481_defect_at_its_locus() {
     let [fair] = fair[..] else {
         panic!("one fairness node");
     };
-    let (refusal, _) = refuse(&edited(
-        &wire,
-        fair["node_id"]["digest"].as_str().unwrap(),
-        |node| node["body"]["operation"]["member"]["name"] = json!("Halted"),
-    ));
+    let (refusal, _) = refuse(&edited(&wire, &idtext(&fair["node_id"]), |node| {
+        node["body"]["operation"]["member"]["name"] = json!("Halted")
+    }));
     assert_eq!(refusal.code, CheckedPackageRefusalCode::MissingDeclaration);
     assert_eq!(refusal.cause, Some(CheckedPackageRefusalCause::MissingName));
 }

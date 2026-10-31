@@ -8,8 +8,8 @@
 //!
 //! Every fixture is emitted and read back through QSL's I2 read
 //! (`read_checked_package_v2`, which runs IR's checked-package/v2 reader).
-//! An admitted row asserts IR admits a node of its family at the emitted
-//! `package_id`. The families each fixture hands the emitter, decoded
+//! An admitted row asserts IR admits a node of its family in the emitted
+//! package. The families each fixture hands the emitter, decoded
 //! through IR's `CheckedNodeKind`, must all be row families, so a fixture
 //! that starts emitting an unclassified or not-emitted kind fails. A new IR
 //! kind fails until it is classified.
@@ -180,7 +180,7 @@ const UNION_NODES: &str =
 /// `temporal`/`temporal_clause`, `temporal`/`formula` and
 /// `temporal`/`fairness` families FR-337 emits.
 const TEMPORAL_CLAUSE: &str = "profile t = \"quire.temporal.infinite-trace/v1\";\n\
-     model Config = \"example/config-version\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+     model Config = \"example/config-version\";\n\
      temporal ReachesTwo using t over (c: Config::ConfigVersion) clock \"model-steps\" on origin {\n\
      fair weak each Config::ConfigVersion::attemptUpdate;\n\
      always eventually holds(c.versionNumber = 2)\n\
@@ -190,7 +190,7 @@ const TEMPORAL_CLAUSE: &str = "profile t = \"quire.temporal.infinite-trace/v1\";
 /// `match` conjunct and a `holds` atom, emitting the `claim`/`hyperproperty`
 /// family and its `temporal`/`temporal_clause` body wrapper.
 const HYPER_CLAUSE: &str = "profile t = \"quire.temporal.infinite-trace/v1\";\n\
-     model Config = \"example/config-version\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+     model Config = \"example/config-version\";\n\
      hyper Same using t over behaviours (c: Config::ConfigVersion) \
      forall trace a of Config fair weak each Config::ConfigVersion::attemptUpdate; \
      forall trace b of Config \
@@ -200,8 +200,7 @@ const HYPER_CLAUSE: &str = "profile t = \"quire.temporal.infinite-trace/v1\";\n\
 /// FR-410: ADR-022 section 7's three forms over the ConfigVersion domain
 /// package, a claim with no `over`, and an `always possible` claim written
 /// with and without `from`, emitting the `claim`/`state_graph` family.
-const STATE_GRAPH_CLAIMS: &str =
-    "model Config = \"example/config-version\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+const STATE_GRAPH_CLAIMS: &str = "model Config = \"example/config-version\";\n\
      possible ReachesTwo using v over (c: Config::ConfigVersion) { c.versionNumber = 2 }\n\
      always possible CanStillWin using v over (c: Config::ConfigVersion) \
      from (c.versionNumber != 0) { c.versionNumber = 2 }\n\
@@ -212,8 +211,7 @@ const STATE_GRAPH_CLAIMS: &str =
 
 /// A model `terminal when` declaration over the ConfigVersion domain
 /// package, emitting the `temporal`/`terminal` family.
-const TERMINAL_DECLARATION: &str =
-    "model Config = \"example/config-version\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+const TERMINAL_DECLARATION: &str = "model Config = \"example/config-version\";\n\
      terminal Done using v on Config when { self.versionNumber = 3 };\n";
 
 /// Structural equality over TC-416's recursive `Tree`, the STD-129 case: a
@@ -270,13 +268,11 @@ const HYBRID_UNIT: &str = "profile p = \"quire.temporal.infinite-trace/v1\";\n\
      }\n";
 
 /// The relationship model source after [`COMPLETE_V1_HEADER`].
-const RELATIONSHIP_MODEL_UNIT: &str =
-    "model M = \"acme/orders\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+const RELATIONSHIP_MODEL_UNIT: &str = "model M = \"acme/orders\";\n\
      function keep using v(g: M::Widget): M::Widget pure { g }\n";
 
 /// The systems-interface model source after [`COMPLETE_V1_HEADER`].
-const SYSTEMS_INTERFACE_UNIT: &str =
-    "model S = \"acme/systems\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+const SYSTEMS_INTERFACE_UNIT: &str = "model S = \"acme/systems\";\n\
      function keep using v(s: S::Sensor): S::Sensor pure { s }\n";
 
 /// One package of a fixture, checked, linked and emitted, with the domain
@@ -352,22 +348,16 @@ impl Fixture {
             }
             Self::RelationshipModel => {
                 let document = RELATIONSHIP_MODEL_DOCUMENT;
-                let unit = format!(
-                    "{}{}",
-                    COMPLETE_V1_HEADER,
-                    RELATIONSHIP_MODEL_UNIT.replace("{}", &document_digest(document)),
-                );
+                let unit = format!("{}{}", COMPLETE_V1_HEADER, RELATIONSHIP_MODEL_UNIT,);
                 Emitted::placed(modelled(&unit, document, Vec::new()), vec![document])
             }
             Self::RefinementV2Empty => {
                 let abstract_document = state_machine_document("example/refinement-abstract");
                 let concrete_document = state_machine_document("example/refinement-concrete");
-                let abstract_digest = document_digest(&abstract_document);
-                let concrete_digest = document_digest(&concrete_document);
                 let unit = format!(
                     "{COMPLETE_V1_HEADER}profile inf = \"quire.temporal.infinite-trace/v1\";\n\
-                     model A = \"example/refinement-abstract\" version \"1.0.0\" digest \"sha256-jcs:{abstract_digest}\";\n\
-                     model C = \"example/refinement-concrete\" version \"1.0.0\" digest \"sha256-jcs:{concrete_digest}\";\n\
+                     model A = \"example/refinement-abstract\";\n\
+                     model C = \"example/refinement-concrete\";\n\
                      refinement R using inf abstract A concrete C {{}}\n"
                 );
                 let documents = vec![abstract_document, concrete_document];
@@ -377,11 +367,7 @@ impl Fixture {
                 )
             }
             Self::SystemsInterface => {
-                let unit = format!(
-                    "{}{}",
-                    COMPLETE_V1_HEADER,
-                    SYSTEMS_INTERFACE_UNIT.replace("{}", &document_digest(SYSTEMS_DOCUMENT)),
-                );
+                let unit = format!("{}{}", COMPLETE_V1_HEADER, SYSTEMS_INTERFACE_UNIT,);
                 Emitted::placed(
                     modelled(&unit, SYSTEMS_DOCUMENT, Vec::new()),
                     vec![SYSTEMS_DOCUMENT],
@@ -389,34 +375,22 @@ impl Fixture {
             }
             Self::TemporalClause => {
                 let document = config_version_unit::DOMAIN_PACKAGE.as_bytes();
-                let unit = format!(
-                    "{COMPLETE_V1_HEADER}{}",
-                    TEMPORAL_CLAUSE.replace("{}", &document_digest(document))
-                );
+                let unit = format!("{COMPLETE_V1_HEADER}{}", TEMPORAL_CLAUSE);
                 Emitted::placed(modelled(&unit, document, Vec::new()), vec![document])
             }
             Self::HyperClause => {
                 let document = config_version_unit::DOMAIN_PACKAGE.as_bytes();
-                let unit = format!(
-                    "{COMPLETE_V1_HEADER}{}",
-                    HYPER_CLAUSE.replace("{}", &document_digest(document))
-                );
+                let unit = format!("{COMPLETE_V1_HEADER}{}", HYPER_CLAUSE);
                 Emitted::placed(modelled(&unit, document, Vec::new()), vec![document])
             }
             Self::StateGraphClaim => {
                 let document = config_version_unit::DOMAIN_PACKAGE.as_bytes();
-                let unit = format!(
-                    "{COMPLETE_V1_HEADER}{}",
-                    STATE_GRAPH_CLAIMS.replace("{}", &document_digest(document))
-                );
+                let unit = format!("{COMPLETE_V1_HEADER}{}", STATE_GRAPH_CLAIMS);
                 Emitted::placed(modelled(&unit, document, Vec::new()), vec![document])
             }
             Self::Terminal => {
                 let document = config_version_unit::DOMAIN_PACKAGE.as_bytes();
-                let unit = format!(
-                    "{COMPLETE_V1_HEADER}{}",
-                    TERMINAL_DECLARATION.replace("{}", &document_digest(document))
-                );
+                let unit = format!("{COMPLETE_V1_HEADER}{}", TERMINAL_DECLARATION);
                 Emitted::placed(modelled(&unit, document, Vec::new()), vec![document])
             }
             Self::Hybrid => text(HYBRID_UNIT),
@@ -426,7 +400,7 @@ impl Fixture {
             ),
             Self::ConfigVersion => {
                 let document = config_version_unit::DOMAIN_PACKAGE.as_bytes();
-                let unit = config_version_unit::unit_text(&document_digest(document));
+                let unit = config_version_unit::unit_text();
                 Emitted::placed(modelled(&unit, document, Vec::new()), vec![document])
             }
             Self::ExtentRecords => whole(package_declaring(
@@ -445,11 +419,9 @@ impl Fixture {
             Self::VariantType => {
                 let document = VARIANT_DOCUMENT.as_slice();
                 let unit = format!(
-                    "{COMPLETE_V1_HEADER}model M = {package:?} version \"1\" \
-                     digest \"sha256-jcs:{digest}\";\n\
+                    "{COMPLETE_V1_HEADER}model M = {package:?};\n\
                      function keep using v(t: M::Tier): M::Tier pure {{ t }}\n",
                     package = variant_fixture::PACKAGE,
-                    digest = document_digest(document),
                 );
                 Emitted::placed(modelled(&unit, document, Vec::new()), vec![document])
             }
@@ -472,15 +444,6 @@ impl Fixture {
         };
         vec![one]
     }
-}
-
-/// `document`'s `sha256-jcs` digest, as `intake::package_input` keys it.
-fn document_digest(document: &[u8]) -> String {
-    let packages = qsl_semantics::model::intake::package_input([document]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    qsl_semantics::model::key::hex(digest)
 }
 
 /// The spine fixture's object package with one minimal, independent state
@@ -513,7 +476,6 @@ fn with_state_machine(base: &[u8], from: &str, package: &str) -> Vec<u8> {
         .push(json!({
             "kind": {"module": package, "name": "state_machine"},
             "moduleVersion": "1.0.0",
-            "manifestDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
             "construct": {
                 "identity": "none", "shape": "record",
                 "members": {"states": "required", "transitions": "required"},
@@ -562,7 +524,7 @@ fn modelled(
     document: &'static [u8],
     functions: Vec<FunctionDeclaration>,
 ) -> CheckedPackage {
-    let packages = qsl_semantics::model::intake::package_input([document]);
+    let packages = qsl_semantics::model::intake::package_input([document]).unwrap();
     let mut declarations =
         assemble_with_models(unit.as_bytes(), &packages).expect("the unit assembles");
     declarations.functions.extend(functions);
@@ -578,7 +540,8 @@ fn modelled_with_documents(
     documents: &[Vec<u8>],
     functions: Vec<FunctionDeclaration>,
 ) -> CheckedPackage {
-    let packages = qsl_semantics::model::intake::package_input(documents.iter().map(Vec::as_slice));
+    let packages =
+        qsl_semantics::model::intake::package_input(documents.iter().map(Vec::as_slice)).unwrap();
     let mut declarations =
         assemble_with_models(unit.as_bytes(), &packages).expect("the unit assembles");
     declarations.functions.extend(functions);
@@ -590,7 +553,7 @@ fn modelled_with_documents(
 }
 
 /// One family and the fixture that emits it: IR's reader admits the
-/// fixture, at its emitted `package_id`, with a node of the family, and
+/// fixture with a node of the family, and
 /// when `operation` is named, a node of the family that applies it.
 #[derive(Clone, Copy, Debug)]
 struct Row {
@@ -799,26 +762,21 @@ fn families(package: &CheckedPackage) -> BTreeMap<CheckedNodeKind, Vec<CheckedNo
     families
 }
 
-/// QSL's I2 read of `emitted`, pinned at its own `package_id`, with the
-/// lock's required features and the fixture's domain package documents as
+/// QSL's I2 read of `emitted`, with the lock's required features and the
+/// fixture's domain package documents as
 /// evidence.
 fn read(emitted: &Emitted) -> Result<V2Read, StageFailure<V2ReadRefusal>> {
     let mut evidence = read_evidence(&emitted.emission);
     for document in &emitted.documents {
         evidence
-            .insert_domain_package_document(document_digest(document), document.to_vec())
+            .insert_domain_package_document(package_identity(document), document.to_vec())
             .expect("a fresh evidence key");
     }
-    let pinned: PinnedRequest = qsl_semantics::library::fixtures::single_pin(
-        library(),
-        emitted.emission.package.package_id(),
-    );
     read_checked_package_v2(
         emitted.emission.package.bytes(),
         library(),
         V2ReadLimits::default(),
         &evidence,
-        &pinned,
     )
     .map(Staged::into_value)
 }
@@ -882,20 +840,15 @@ fn check_row(row: &Row, outcomes: &[Outcome], failures: &mut Vec<String>) {
     }
 }
 
-/// The checks of one fixture's packages: each is admitted at its own
-/// `package_id`, and none omits a node.
+/// The checks of one fixture's packages: each is admitted, and none omits
+/// a node.
 fn check_fixture(fixture: Fixture, rows: &[Row], outcomes: &[Outcome], failures: &mut Vec<String>) {
     if !rows.iter().any(|row| row.fixture == fixture) {
         failures.push(format!("{fixture:?}: backs no row"));
     }
     for outcome in outcomes {
-        let emitted_at = outcome.emitted.emission.package.package_id();
         match &outcome.read {
-            Ok(read) if read.package.package_id() == emitted_at => {}
-            Ok(read) => failures.push(format!(
-                "{fixture:?}: admitted at {:?}, emitted at {emitted_at:?}",
-                read.package.package_id(),
-            )),
+            Ok(_) => {}
             Err(failure) => failures.push(format!("{fixture:?}: not admitted: {failure:?}")),
         }
         for omission in &outcome.emitted.emission.omitted {
@@ -907,12 +860,12 @@ fn check_fixture(fixture: Fixture, rows: &[Row], outcomes: &[Outcome], failures:
 /// FR-093-AC-19 (TC-416 step 11): every kind of IR's closed node-kind list
 /// is classified exactly once, as admitted or not written by QSL. Each
 /// row's fixture is admitted by IR's checked-package/v2 reader, through
-/// QSL's I2 read, at its emitted `package_id`, with a node of the row's
+/// QSL's I2 read, with a node of the row's
 /// family (the cyclic compared type's structural equality included), and
 /// no fixture emits a family without a row.
 #[trace("FR-093-AC-19", "TC-416")]
 #[test]
-fn every_emitted_node_family_is_admitted_at_its_package_id() {
+fn every_emitted_node_family_is_admitted() {
     let rows = rows();
 
     // Every IR kind is classified exactly once. A family with several rows,
@@ -1029,42 +982,35 @@ fn every_emitted_node_family_is_admitted_at_its_package_id() {
 }
 
 /// Two refinements of different names with one subject, profile and body
-/// key one node today, though a refinement's name is part of its identity
-/// (the planner's ruling on STD-493): the later declaration refuses
-/// `unsupported_construct`/`not-yet-implemented`, naming both, and no
-/// package is written.
+/// are two nodes, because a refinement's name is part of its identity (the
+/// planner's ruling on STD-493): both emit, under distinct node ids.
 #[trace("FR-375", "TC-310")]
 #[test]
-fn two_refinements_of_one_meaning_refuse_naming_both() {
+fn two_refinements_of_one_meaning_are_two_distinct_nodes() {
     let abstract_document = state_machine_document("example/refinement-abstract");
     let concrete_document = state_machine_document("example/refinement-concrete");
     let unit = format!(
         "{COMPLETE_V1_HEADER}profile inf = \"quire.temporal.infinite-trace/v1\";\n\
-         model A = \"example/refinement-abstract\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
-         model C = \"example/refinement-concrete\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         model A = \"example/refinement-abstract\";\n\
+         model C = \"example/refinement-concrete\";\n\
          refinement R using inf abstract A concrete C {{}}\n\
          refinement R2 using inf abstract A concrete C {{}}\n",
-        document_digest(&abstract_document),
-        document_digest(&concrete_document),
     );
     let package =
         modelled_with_documents(&unit, &[abstract_document, concrete_document], Vec::new());
-    let refusal = emit_checked(&package).expect_err("the second declaration refuses");
-    assert!(
-        matches!(
-            &refusal,
-            EmitRefusal::SameMeaningRefinements { first, second }
-                if first == "R" && second == "R2"
-        ),
-        "{refusal:?}"
-    );
-    assert_eq!(refusal.code(), Code::UnsupportedConstruct);
-    assert_eq!(refusal.cause(), Some("not-yet-implemented"));
+    let emission = emit_checked(&package).expect("both refinements emit");
+    let wire = wire(&emission);
+    let refinements: Vec<&Value> = nodes(&wire)
+        .iter()
+        .filter(|node| node["node_tag"] == "relation" && node["semantic_form"] == "refinement")
+        .collect();
+    assert_eq!(refinements.len(), 2, "{refinements:?}");
+    assert_ne!(refinements[0]["node_id"], refinements[1]["node_id"]);
 }
 
 /// Two refinements of different meanings are two nodes and both emit: `R`
 /// refines `A` by `C` and `R2` refines `C` by `A`, so their subjects differ
-/// and no declaration refuses as [`EmitRefusal::SameMeaningRefinements`].
+/// and both emit.
 #[trace("FR-375", "TC-310")]
 #[test]
 fn two_refinements_of_different_meanings_both_emit() {
@@ -1072,12 +1018,10 @@ fn two_refinements_of_different_meanings_both_emit() {
     let concrete_document = state_machine_document("example/refinement-concrete");
     let unit = format!(
         "{COMPLETE_V1_HEADER}profile inf = \"quire.temporal.infinite-trace/v1\";\n\
-         model A = \"example/refinement-abstract\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
-         model C = \"example/refinement-concrete\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         model A = \"example/refinement-abstract\";\n\
+         model C = \"example/refinement-concrete\";\n\
          refinement R using inf abstract A concrete C {{}}\n\
          refinement R2 using inf abstract C concrete A {{}}\n",
-        document_digest(&abstract_document),
-        document_digest(&concrete_document),
     );
     let package =
         modelled_with_documents(&unit, &[abstract_document, concrete_document], Vec::new());
@@ -1096,79 +1040,13 @@ fn two_refinements_of_different_meanings_both_emit() {
 fn row_empty_refinement() -> (String, Vec<Vec<u8>>) {
     let abstract_document = state_machine_document("example/refinement-abstract");
     let concrete_document = state_machine_document("example/refinement-concrete");
-    let abstract_digest = document_digest(&abstract_document);
-    let concrete_digest = document_digest(&concrete_document);
     let unit = format!(
         "{COMPLETE_V1_HEADER}profile inf = \"quire.temporal.infinite-trace/v1\";\n\
-         model A = \"example/refinement-abstract\" version \"1.0.0\" digest \"sha256-jcs:{abstract_digest}\";\n\
-         model C = \"example/refinement-concrete\" version \"1.0.0\" digest \"sha256-jcs:{concrete_digest}\";\n\
+         model A = \"example/refinement-abstract\";\n\
+         model C = \"example/refinement-concrete\";\n\
          refinement R using inf abstract A concrete C {{}}\n"
     );
     (unit, vec![abstract_document, concrete_document])
-}
-
-/// QSpec FR-375-AC-20's refusal half: the reader recomputes the refinement
-/// node's key from the closed `quire.refinement-node/v1` preimage, so
-/// changing only its `semantic_type` root, or only one body row, while
-/// keeping its node id (the package id and dependencies recomputed) refuses
-/// `invalid_package`/`stale-node-key` at that node.
-#[trace("FR-375-AC-20", "TC-310")]
-#[test]
-fn a_refinement_changed_under_its_node_id_is_a_stale_node_key() {
-    let (unit, documents) = row_empty_refinement();
-    let package = modelled_with_documents(&unit, &documents, Vec::new());
-    let emission = emit_checked(&package).expect("the row-empty refinement emits");
-    let wire = wire(&emission);
-    let position = nodes(&wire)
-        .iter()
-        .position(|node| node["node_tag"] == "relation" && node["semantic_form"] == "refinement")
-        .expect("one refinement relation node");
-    let refinement = &wire["semantic_graph"]["nodes"][position];
-    let abstract_root = refinement["body"]["abstract"].clone();
-    let verdict = |envelope: &Value| {
-        let mut evidence = read_evidence(&emission);
-        for document in &documents {
-            evidence
-                .insert_domain_package_document(document_digest(document), document.to_vec())
-                .expect("a fresh evidence key");
-        }
-        match quire_contract_model::read_checked_package(
-            &jcs(envelope),
-            quire_contract_model::CheckedPackageReadLimits::bounded(),
-            &evidence,
-        ) {
-            quire_contract_model::CheckedPackageDispatchResult::AdmittedV2(_) => {
-                "admitted".to_owned()
-            }
-            quire_contract_model::CheckedPackageDispatchResult::Refused(refusal) => format!(
-                "{:?} at {} ({:?})",
-                refusal.code,
-                refusal.path.as_ref().map_or("-", |path| path.as_str()),
-                refusal.cause
-            ),
-            other => format!("{other:?}"),
-        }
-    };
-    assert_eq!(verdict(&wire), "admitted");
-    let expected =
-        format!("InvalidPackage at /semantic_graph/nodes/{position}/node_id (Some(StaleNodeKey))");
-
-    // The concrete root swapped for the abstract one: the subject changes,
-    // the dependencies (the abstract root alone) do not.
-    let mut retyped = wire.clone();
-    retyped["semantic_graph"]["nodes"][position]["semantic_type"] = abstract_root.clone();
-    crate::checked_v2::tests::refresh_frame_identity(&mut retyped);
-    assert_ne!(retyped["package_id"], wire["package_id"]);
-    assert_eq!(verdict(&retyped), expected);
-
-    // One body member changed: the selected profile. This model has no
-    // population or object to write a valid row over, so the profile is the
-    // body change that leaves every other member admissible.
-    let mut reprofiled = wire.clone();
-    reprofiled["semantic_graph"]["nodes"][position]["body"]["profile"]["identity"] =
-        json!("quire.temporal.finite-trace/v1");
-    crate::checked_v2::tests::refresh_frame_identity(&mut reprofiled);
-    assert_eq!(verdict(&reprofiled), expected);
 }
 
 /// The declaration occurrence is provenance rather than refinement identity:
@@ -1258,7 +1136,6 @@ fn a_row_empty_refinement_identity_excludes_its_source_region() {
         assert_eq!(first_node["body"][array], json!([]), "{array}");
     }
     assert_eq!(first_node["node_id"], shifted_node["node_id"]);
-    assert_eq!(first.package.package_id(), shifted.package.package_id());
     let declaration_region = |emission: &Emission, node: &Value| {
         wire(emission)["source_map"]
             .as_array()
@@ -1286,8 +1163,8 @@ fn catalog_refinement() -> (String, Vec<Vec<u8>>) {
     let unit = format!(
         "{COMPLETE_V1_HEADER}profile inf = \"quire.temporal.infinite-trace/v1\";\n\
          profile p = \"quire.protocol.finite-global/v1\";\n\
-         model A = \"example/refinement-abstract\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
-         model C = \"example/refinement-concrete\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         model A = \"example/refinement-abstract\";\n\
+         model C = \"example/refinement-concrete\";\n\
          protocol Local using p over (input: C::Widget) on origin {{\n\
          role w on C::Widget;\n\
          channel ch from w to w carries Boolean ordering unordered delivery unknown \
@@ -1296,8 +1173,6 @@ fn catalog_refinement() -> (String, Vec<Vec<u8>>) {
          finish Done as (d: Boolean) {{ true }};\n\
          }}\n\
          refinement R using inf abstract A concrete C {{}}\n",
-        document_digest(&abstract_document),
-        document_digest(&concrete_document),
     );
     (unit, vec![abstract_document, concrete_document])
 }
@@ -1383,7 +1258,9 @@ fn a_concrete_protocol_gives_a_model_refinement_its_class_catalog() {
         "channel"
     );
     let mut sorted = dependencies.clone();
-    sorted.sort_by(|left, right| left["digest"].as_str().cmp(&right["digest"].as_str()));
+    sorted.sort_by_key(|dependency| {
+        qsl_foundation::node_wire::node_key_from_json(dependency).expect("a node id")
+    });
     assert_eq!(&sorted, dependencies, "dependencies ascend");
 
     // With the clause over the abstract model instead, the concrete side
@@ -1395,7 +1272,6 @@ fn a_concrete_protocol_gives_a_model_refinement_its_class_catalog() {
     let other = modelled_with_documents(&without, &documents, Vec::new());
     let other = refinement_node(&emit_checked(&other).expect("the refinement emits"));
     assert!(other["body"].get("class_catalog").is_none(), "{other}");
-    assert_ne!(other["node_id"], node["node_id"]);
 }
 
 /// QSpec FR-375-AC-27: an `on each` clause over the concrete model writes
@@ -1449,11 +1325,7 @@ fn a_clause_over_a_third_model_contributes_no_class() {
     let unit = unit
         .replace(
             "protocol Local",
-            &format!(
-                "model T = \"example/refinement-third\" version \"1.0.0\" \
-                 digest \"sha256-jcs:{}\";\nprotocol Local",
-                document_digest(&third)
-            ),
+            &String::from("model T = \"example/refinement-third\";\nprotocol Local"),
         )
         .replace("over (input: C::Widget)", "over (input: T::Widget)")
         .replace("role w on C::Widget", "role w on T::Widget");
@@ -1483,13 +1355,14 @@ fn protocol_subject() -> (String, Vec<Vec<u8>>) {
 const MODEL_SUBJECT_R2: &str = "refinement R2 using inf abstract A concrete C {}\n";
 
 /// `unit` over `documents` with the `refinement_internals` value `internals`,
-/// checked and emitted: the package id and every refinement node by name.
+/// checked and emitted: every refinement node by name.
 fn emit_with_internals(
     unit: &str,
     documents: &[Vec<u8>],
     internals: Option<Value>,
-) -> (Value, BTreeMap<String, Value>) {
-    let packages = qsl_semantics::model::intake::package_input(documents.iter().map(Vec::as_slice));
+) -> BTreeMap<String, Value> {
+    let packages =
+        qsl_semantics::model::intake::package_input(documents.iter().map(Vec::as_slice)).unwrap();
     let mut declarations =
         assemble_with_models(unit.as_bytes(), &packages).expect("the unit assembles");
     if let Some(value) = internals {
@@ -1534,7 +1407,7 @@ fn emit_with_internals(
             (name, node)
         })
         .collect();
-    (wire["package_id"].clone(), by_name)
+    by_name
 }
 
 /// QSpec FR-375-AC-12: the `refinement_internals` value is the only host of
@@ -1547,14 +1420,13 @@ fn the_internal_list_value_hosts_abstract_internal() {
     let (unit, documents) = protocol_subject();
     let internal =
         |name: &str, entries: &[&str]| json!([{"refinement": name, "internal": entries}]);
-    let (_, listed) =
-        emit_with_internals(&unit, &documents, Some(internal("R", &["A::Local::Done"])));
+    let listed = emit_with_internals(&unit, &documents, Some(internal("R", &["A::Local::Done"])));
     assert_eq!(
         listed["R"]["body"]["abstract_internal"],
         json!(["Local::Done"])
     );
     for value in [None, Some(json!([]))] {
-        let (_, plain) = emit_with_internals(&unit, &documents, value.clone());
+        let plain = emit_with_internals(&unit, &documents, value.clone());
         assert!(
             plain["R"]["body"].get("abstract_internal").is_none(),
             "{value:?}"
@@ -1562,21 +1434,19 @@ fn the_internal_list_value_hosts_abstract_internal() {
     }
     // A value naming only another refinement, the model subject `R2`.
     let two = format!("{unit}{MODEL_SUBJECT_R2}");
-    let (_, nodes) = emit_with_internals(&two, &documents, Some(internal("R2", &[])));
+    let nodes = emit_with_internals(&two, &documents, Some(internal("R2", &[])));
     assert!(nodes["R"]["body"].get("abstract_internal").is_none());
     assert!(nodes["R2"]["body"].get("abstract_internal").is_none());
 }
 
-/// QSpec FR-375-AC-13: a list and none give different refinement node ids
-/// and package ids; reordering the value's objects or entries changes
-/// neither, nor does renaming the abstract alias with the value's spellings
-/// renamed to match.
+/// QSpec FR-375-AC-13: reordering the value's objects or entries changes
+/// neither the refinement node nor its written internal list, nor does
+/// renaming the abstract alias with the value's spellings renamed to match.
 #[trace("FR-375-AC-13", "TC-310")]
 #[test]
-fn the_internal_list_enters_the_identity_and_its_order_does_not() {
+fn the_internal_list_order_does_not_change_the_refinement_node() {
     let (unit, documents) = protocol_subject();
     let two = format!("{unit}{MODEL_SUBJECT_R2}");
-    let (none_id, none) = emit_with_internals(&two, &documents, None);
     let value = |alias: &str, entries: [&str; 2], objects_reversed: bool| {
         let r = json!({"refinement": "R", "internal": entries.map(|entry| entry.replace("A::", &format!("{alias}::")))});
         let r2 = json!({"refinement": "R2", "internal": []});
@@ -1588,19 +1458,16 @@ fn the_internal_list_enters_the_identity_and_its_order_does_not() {
     };
     let entries = ["A::Local::Done", "lose A::Local::ch"];
     let reversed = ["lose A::Local::ch", "A::Local::Done"];
-    let (listed_id, listed) =
-        emit_with_internals(&two, &documents, Some(value("A", entries, false)));
-    assert_ne!(listed["R"]["node_id"], none["R"]["node_id"]);
-    assert_ne!(listed_id, none_id);
+    let listed = emit_with_internals(&two, &documents, Some(value("A", entries, false)));
     assert_eq!(
         listed["R"]["body"]["abstract_internal"],
         json!(["Local::Done", "lose Local::ch"])
     );
     for (order, objects_reversed) in [(reversed, false), (entries, true), (reversed, true)] {
-        let (id, nodes) =
+        let nodes =
             emit_with_internals(&two, &documents, Some(value("A", order, objects_reversed)));
-        assert_eq!(id, listed_id, "{order:?} {objects_reversed}");
         assert_eq!(nodes["R"]["node_id"], listed["R"]["node_id"]);
+        assert_eq!(nodes["R"]["body"], listed["R"]["body"]);
         assert_eq!(nodes["R2"]["node_id"], listed["R2"]["node_id"]);
     }
     // The abstract alias renamed, with the value's spellings to match.
@@ -1608,10 +1475,8 @@ fn the_internal_list_enters_the_identity_and_its_order_does_not() {
         .replace("model A ", "model S ")
         .replace("abstract A ", "abstract S ")
         .replace("A::", "S::");
-    let (renamed_id, renamed_nodes) =
-        emit_with_internals(&renamed, &documents, Some(value("S", entries, false)));
+    let renamed_nodes = emit_with_internals(&renamed, &documents, Some(value("S", entries, false)));
     assert_eq!(renamed_nodes["R"]["node_id"], listed["R"]["node_id"]);
-    assert_eq!(renamed_id, listed_id);
 }
 
 /// QSpec FR-375 (AC-11, AC-25): a row-empty protocol subject keeps the
@@ -1675,7 +1540,6 @@ fn a_row_empty_protocol_subject_names_its_clause() {
     let model_node =
         refinement_node(&emit_checked(&model_subject).expect("the model subject emits"));
     assert!(model_node["body"].get("protocol").is_none());
-    assert_ne!(model_node["node_id"], node["node_id"]);
 }
 
 /// QSpec FR-375: the protocol subject reads back through IR.
@@ -1795,6 +1659,14 @@ fn every_emitted_body_of_the_corpus_is_in_the_stratified_grammar() {
                     assert_eq!(members[3]["value"]["term"], "reference");
                     continue;
                 }
+                if matches!(
+                    node["body"]["term"].as_str(),
+                    Some("enum" | "dimension" | "unit" | "dimension_equivalence")
+                ) {
+                    // FR-322: a source nominal declaration's closed body,
+                    // outside the ordinary five-stratum term grammar.
+                    continue;
+                }
                 assert!(
                     qsl_semantics::check::stratum::is_stratified_body(&node["body"]),
                     "{fixture:?}: a written body is outside the stratified grammar: {}",
@@ -1853,7 +1725,7 @@ const QUANTITY_OPERATIONS: &[(&str, &str, Option<&str>)] = &[
 
 /// FR-091-AC-44, FR-093 (QSL-946, IR-263): each operation over operands
 /// typed `Quantity<u>` in genuine source emits a package IR's strict
-/// checked-package/v2 reader admits at its `package_id`, and the package
+/// checked-package/v2 reader admits, and the package
 /// applies the operation's `quire.op.quantity.*` identity.
 #[trace("FR-091-AC-44", "FR-093-AC-19", "TC-483", "TC-416")]
 #[test]
@@ -1887,8 +1759,7 @@ fn quantity_typed_source_operations_are_admitted_by_the_strict_reader() {
             failures.push(format!("{name}: no application of {identity:?}"));
         }
         match &outcome.read {
-            Ok(read)
-                if read.package.package_id() == outcome.emitted.emission.package.package_id() => {}
+            Ok(_) => {}
             other => failures.push(format!("{name}: not admitted: {other:?}")),
         }
     }
@@ -1982,7 +1853,7 @@ fn quantity_literals_lower_to_shared_quantity_literal_nodes_the_strict_reader_ad
         want.sort_by_key(|(value, unit)| (value.clone(), unit.to_string()));
         assert_eq!(literals, want, "{functions}");
         match read(&emitted) {
-            Ok(read) if read.package.package_id() == emitted.emission.package.package_id() => {}
+            Ok(_) => {}
             other => panic!("{functions}: not admitted: {other:?}"),
         }
     }
@@ -2174,11 +2045,9 @@ fn rows_refinement_with(
         with_state_machine(&base, "example/config-version", "example/rows-concrete");
     let unit = format!(
         "{COMPLETE_V1_HEADER}profile inf = \"quire.temporal.infinite-trace/v1\";\n\
-         model A = \"example/rows-abstract\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
-         model C = \"example/rows-concrete\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         model A = \"example/rows-abstract\";\n\
+         model C = \"example/rows-concrete\";\n\
          refinement R using inf abstract A concrete C {{\n{rows}\n}}\n",
-        document_digest(&abstract_document),
-        document_digest(&concrete_document),
     );
     (unit, vec![abstract_document, concrete_document])
 }
@@ -2278,10 +2147,6 @@ fn step_rows_carry_their_source_regions_by_canonical_ordinal() {
     );
     assert_eq!(forward_node["node_id"], reversed_node["node_id"]);
     assert_eq!(forward_node["body"], reversed_node["body"]);
-    assert_eq!(
-        wire(&forward.emission)["package_id"],
-        wire(&reversed.emission)["package_id"]
-    );
     let classes: Vec<&str> = forward_node["body"]["steps"]
         .as_array()
         .expect("steps")
@@ -2335,7 +2200,8 @@ fn step_rows_carry_their_source_regions_by_canonical_ordinal() {
 /// The refusals of [`rows_refinement`] over `rows`, which must not check.
 fn refused_rows(rows: &str, operations: &[&str]) -> Vec<qsl_semantics::check::CheckCause> {
     let (unit, documents) = rows_refinement(rows, operations);
-    let packages = qsl_semantics::model::intake::package_input(documents.iter().map(Vec::as_slice));
+    let packages =
+        qsl_semantics::model::intake::package_input(documents.iter().map(Vec::as_slice)).unwrap();
     assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
         .check(CheckingLimits::default())
@@ -2541,7 +2407,7 @@ pub(super) const PROTOCOL_ROWS: [&str; 3] = [
 ];
 
 /// QSpec FR-375-AC-19 (the declaration-naming rows): a protocol subject's
-/// `steps` are ordered by their node's digest, rows of one node by their
+/// `steps` are ordered by their node key, rows of one node by their
 /// alias-free class spelling (`duplicate Impl::ch` before `lose Impl::ch`),
 /// each naming its class catalog node, whatever order they are written in.
 #[trace("FR-375-AC-19", "TC-310")]
@@ -2556,17 +2422,15 @@ fn protocol_step_rows_order_by_node_then_class_spelling() {
         (node["body"]["steps"].clone(), catalog)
     };
     let (written, catalog) = steps(&PROTOCOL_ROWS);
-    let steps_of = |steps: &Value| -> Vec<(String, String)> {
+    let steps_of = |steps: &Value| -> Vec<(NodeKey, String)> {
         steps
             .as_array()
             .expect("steps")
             .iter()
             .map(|step| {
                 (
-                    step["source_node"]["digest"]
-                        .as_str()
-                        .expect("a node")
-                        .to_owned(),
+                    qsl_foundation::node_wire::node_key_from_json(&step["source_node"])
+                        .expect("a node id"),
                     step["source_class"].as_str().expect("a class").to_owned(),
                 )
             })
@@ -2665,10 +2529,6 @@ fn memory_rows_go_last_drain_before_flush() {
         refinement_node(&reversed.emission)["node_id"],
         node["node_id"]
     );
-    assert_eq!(
-        wire(&reversed.emission)["package_id"],
-        wire(&forward.emission)["package_id"]
-    );
 }
 
 /// QSpec FR-375-AC-23 and AC-26: over `parallel` controls defaulting to
@@ -2732,37 +2592,16 @@ fn memory_rows_read_back() {
     assert!(admitted.is_ok(), "the memory rows read back: {admitted:?}");
 }
 
-/// IR's verdict on `envelope`, a rewrite of `emitted`'s package, with the
-/// refinement node at `position` rekeyed from its closed
-/// `quire.refinement-node/v1` preimage and the frame identity refreshed.
-fn refinement_verdict(emitted: &Emitted, envelope: &Value, position: usize) -> String {
-    let mut envelope = envelope.clone();
-    let node = &envelope["semantic_graph"]["nodes"][position];
-    let old = node["node_id"]["digest"]
-        .as_str()
-        .expect("a digest")
-        .to_owned();
-    let preimage = json!({
-        "version": "quire.refinement-node/v1",
-        "semantic_type": node["semantic_type"],
-        "body": node["body"],
-    });
-    let new = quire_canonical::sha256(&preimage, quire_canonical::Limits::new(u64::MAX))
-        .expect("the preimage encodes")
-        .to_string();
-    let text = serde_json::to_string(&envelope)
-        .expect("the envelope serializes")
-        .replace(&old, &new);
-    envelope = serde_json::from_str(&text).expect("the envelope parses");
-    crate::checked_v2::tests::refresh_frame_identity(&mut envelope);
+/// IR's verdict on `envelope`, a rewrite of `emitted`'s package.
+fn refinement_verdict(emitted: &Emitted, envelope: &Value, _position: usize) -> String {
     let mut evidence = read_evidence(&emitted.emission);
     for document in &emitted.documents {
         evidence
-            .insert_domain_package_document(document_digest(document), document.to_vec())
+            .insert_domain_package_document(package_identity(document), document.to_vec())
             .expect("a fresh evidence key");
     }
     match quire_contract_model::read_checked_package(
-        &jcs(&envelope),
+        &jcs(envelope),
         quire_contract_model::CheckedPackageReadLimits::bounded(),
         &evidence,
     ) {
@@ -2770,7 +2609,10 @@ fn refinement_verdict(emitted: &Emitted, envelope: &Value, position: usize) -> S
         quire_contract_model::CheckedPackageDispatchResult::Refused(refusal) => format!(
             "{:?} at {} ({:?})",
             refusal.code,
-            refusal.path.as_ref().map_or("-", |path| path.as_str()),
+            refusal.loci[0]
+                .path
+                .as_ref()
+                .map_or("-", |path| path.as_str()),
             refusal.cause
         ),
         other => format!("{other:?}"),
@@ -2824,22 +2666,32 @@ fn a_refinement_row_or_header_key_of_the_wrong_kind_or_absent_refuses_at_its_mem
     );
 
     let mut absent = wire.clone();
-    let root = absent["semantic_graph"]["nodes"][position]["body"]["abstract"]["digest"]
-        .as_str()
-        .expect("a local abstract key")
-        .to_owned();
-    let missing = "0".repeat(64);
+    let root = absent["semantic_graph"]["nodes"][position]["body"]["abstract"].clone();
+    let foreign = |package: &str| {
+        qsl_foundation::node_wire::node_key_to_json(
+            &NodeKey::new(
+                package.to_owned(),
+                vec![quire_exact::PathSegment::Text("missing".to_owned())],
+                0,
+            )
+            .expect("a fixture key is a valid structural identity"),
+        )
+        .expect("a structural node id")
+    };
+    let missing = foreign(root["package"].as_str().expect("a package name"));
     let node = &mut absent["semantic_graph"]["nodes"][position];
-    node["body"]["abstract"]["digest"] = json!(missing);
+    node["body"]["abstract"] = missing.clone();
     for dependency in node["dependencies"].as_array_mut().expect("dependencies") {
-        if dependency["digest"] == root {
-            dependency["digest"] = json!(missing);
+        if *dependency == root {
+            *dependency = missing.clone();
         }
     }
     node["dependencies"]
         .as_array_mut()
         .expect("dependencies")
-        .sort_by(|left, right| left["digest"].as_str().cmp(&right["digest"].as_str()));
+        .sort_by_key(|dependency| {
+            qsl_foundation::node_wire::node_key_from_json(dependency).expect("a node id")
+        });
     let verdict = refinement_verdict(&emitted, &absent, position);
     assert!(
         verdict.starts_with("MissingDeclaration at ")
@@ -2853,10 +2705,7 @@ fn a_refinement_row_or_header_key_of_the_wrong_kind_or_absent_refuses_at_its_mem
     let mut external = wire.clone();
     let node = &mut external["semantic_graph"]["nodes"][position];
     let local = node["body"]["abstract"].clone();
-    node["body"]["abstract"] = json!({
-        "package": {"domain": "quire.package", "algorithm": "sha256", "digest": "1".repeat(64)},
-        "node": local,
-    });
+    node["body"]["abstract"] = foreign("elsewhere");
     node["dependencies"]
         .as_array_mut()
         .expect("dependencies")

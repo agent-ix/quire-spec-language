@@ -6,7 +6,6 @@ use std::collections::BTreeMap;
 
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::diagnostic::Locus;
-use qsl_foundation::digest::{parse_lower_hex32, DigestDomain, DigestRecord};
 use qsl_foundation::wire_format::WireFormat;
 use qsl_foundation::LocatedSpan;
 use quire_canonical::{Document, Encode, Limits, Node, NodeRef, Sink, Writer};
@@ -94,11 +93,6 @@ pub enum NativeRunResult {
 pub struct ClauseRunRecord(ClauseRead, Option<Vec<u8>>, Option<FrameWitness>);
 
 impl ClauseRunRecord {
-    /// The compiled package identity, absent before compile completed.
-    pub fn package_id(&self) -> Option<&str> {
-        self.0.package_id.as_deref()
-    }
-
     /// The settlement basis label.
     pub fn basis(&self) -> &'static str {
         self.0.basis.as_str()
@@ -626,27 +620,17 @@ struct DocumentRefRead {
     identity: String,
     revision_namespace: String,
     revision: String,
-    digest: String,
 }
 
 impl DocumentRefRead {
     #[ix_trace_rs::string_edge]
-    fn typed(&self, member: &'static str) -> Result<DocumentRef, NativeRunReadError> {
-        let digest = self
-            .digest
-            .strip_prefix("sha256-jcs:")
-            .and_then(parse_lower_hex32)
-            .ok_or(NativeRunReadError::Invalid {
-                member,
-                reason: "expected sha256-jcs digest",
-            })?;
-        Ok(DocumentRef {
+    fn typed(&self) -> DocumentRef {
+        DocumentRef {
             authority: self.authority.clone(),
             identity: self.identity.clone(),
             revision_namespace: self.revision_namespace.clone(),
             revision: self.revision.clone(),
-            digest,
-        })
+        }
     }
 }
 
@@ -800,15 +784,9 @@ impl FrameWitnessRead {
         Ok(FrameWitness {
             code: Code::FrameViolation,
             cause: "unauthorized-change",
-            invocation: self
-                .invocation
-                .typed("disposition.refusal.frame_witness.invocation.digest")?,
-            pre: self
-                .pre
-                .typed("disposition.refusal.frame_witness.pre.digest")?,
-            post: self
-                .post
-                .typed("disposition.refusal.frame_witness.post.digest")?,
+            invocation: self.invocation.typed(),
+            pre: self.pre.typed(),
+            post: self.post.typed(),
             population: self.population.clone(),
             change: self.change.typed(),
         })
@@ -832,10 +810,10 @@ pub enum RefusalLocusRead {
         /// Byte after the region.
         end: u64,
     },
-    /// Source digest and line-column span.
+    /// Source path and line-column span.
     Located {
-        /// Source digest.
-        source_digest: String,
+        /// Source path.
+        file: String,
         /// Source span.
         span: SpanRead,
     },
@@ -867,10 +845,6 @@ pub struct SourceRefRead {
     pub authority: String,
     /// Source identity.
     pub identity: String,
-    /// Domain of the source digest.
-    pub digest_domain: String,
-    /// Lowercase source digest.
-    pub digest: String,
 }
 
 #[derive(Deserialize)]
@@ -892,8 +866,6 @@ struct DispositionRead {
 #[serde(deny_unknown_fields)]
 struct ClauseRead {
     format: String,
-    #[serde(default, deserialize_with = "present")]
-    package_id: Option<String>,
     disposition: DispositionRead,
     usage: UsageRead,
     basis: Basis,
@@ -1372,17 +1344,11 @@ fn validate_command_details(
                 let Node::Object(members) = node.node() else {
                     return false;
                 };
-                members.len() == 4
-                    && matches!(node.get("identity").map(|value| value.node()), Some(Node::String(_)))
-                    && matches!(node.get("version").map(|value| value.node()), Some(Node::String(_)))
-                    && node.get("digest_domain").is_some_and(|value| {
-                        matches!(value.node(), Node::String(domain) if domain == "sha256-jcs")
-                    })
-                    && node
-                        .get("digest")
-                        .is_some_and(|value| {
-                            matches!(value.node(), Node::String(digest) if digest.len() == 64 && digest.bytes().all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase()))
-                        })
+                members.len() == 1
+                    && matches!(
+                        node.get("identity").map(|value| value.node()),
+                        Some(Node::String(_))
+                    )
             };
             match cause {
                 "foreign-model-selection" => {
@@ -1546,7 +1512,6 @@ pub fn read_native_run_result(bytes: &[u8]) -> Result<NativeRunResult, NativeRun
     if !command_shape
         && (root.get("disposition").is_some()
             || root.get("usage").is_some()
-            || root.get("package_id").is_some()
             || root.get("witness").is_some())
     {
         if root.get("disposition").is_none() {
@@ -1581,23 +1546,6 @@ pub fn read_native_run_result(bytes: &[u8]) -> Result<NativeRunResult, NativeRun
             .transpose()?;
         if document.format != format {
             return Err(NativeRunReadError::UnsupportedFormat(document.format));
-        }
-        if document.package_id.as_ref().is_some_and(|id| {
-            id.len() != 64
-                || !id
-                    .bytes()
-                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-        }) {
-            return Err(NativeRunReadError::Invalid {
-                member: "package_id",
-                reason: "expected 64 lowercase hex digits",
-            });
-        }
-        if !matches!(document.disposition.stage, Stage::Compile) && document.package_id.is_none() {
-            return Err(NativeRunReadError::Invalid {
-                member: "package_id",
-                reason: "completed compilation needs its package identity",
-            });
         }
         if document.basis.is_decisive() != document.witness.is_some() {
             return Err(NativeRunReadError::Invalid {
@@ -1891,18 +1839,15 @@ struct DocumentRefWire {
     identity: String,
     revision_namespace: String,
     revision: String,
-    digest: String,
 }
 
 impl From<&DocumentRef> for DocumentRefWire {
     fn from(value: &DocumentRef) -> Self {
-        let digest = DigestRecord::mint(DigestDomain::Sha256Jcs, value.digest);
         Self {
             authority: value.authority.clone(),
             identity: value.identity.clone(),
             revision_namespace: value.revision_namespace.clone(),
             revision: value.revision.clone(),
-            digest: format!("sha256-jcs:{}", digest.hex()),
         }
     }
 }
@@ -2045,8 +1990,6 @@ struct Disposition {
 #[derive(Serialize)]
 struct ClauseRunDocument {
     format: WireFormat,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    package_id: Option<String>,
     disposition: Disposition,
     usage: Usage,
     basis: &'static str,
@@ -2089,13 +2032,6 @@ impl Disposition {
                 result.refusal = Some(
                     RefusalWire::new(Code::UnknownLanguage.as_str(), None)
                         .fields(BTreeMap::from([("language", language.clone())])),
-                );
-            }
-            ClauseDisposition::StalePackage { expected, actual } => {
-                result.refusal = Some(
-                    RefusalWire::new(Code::StaleDependency.as_str(), Some("stale-package")).fields(
-                        BTreeMap::from([("expected", expected.clone()), ("actual", actual.hex())]),
-                    ),
                 );
             }
             ClauseDisposition::MissingName { name } => {
@@ -2202,9 +2138,9 @@ impl Disposition {
                             } => {
                                 fields.insert(
                                     "required",
-                                    qsl_semantics::model::key::hex(expected.as_bytes()),
+                                    expected.root_type().to_string(),
                                 );
-                                fields.insert("supplied", qsl_semantics::model::key::hex(actual));
+                                fields.insert("supplied", actual.to_string());
                             }
                             _ => {}
                         }
@@ -2303,12 +2239,7 @@ fn format_declaration_key(key: &quire_checked::key::DeclarationKey) -> String {
 fn format_model_selection(
     selection: &qsl_semantics::model::domain_package::DomainPackageRef,
 ) -> String {
-    format!(
-        "{}@{}#{}",
-        selection.identity,
-        selection.version,
-        qsl_semantics::model::key::hex(&selection.digest)
-    )
+    selection.identity.clone()
 }
 
 /// Serialize one FR-109 report as RFC 8785 `native-run-result/2` bytes.
@@ -2345,7 +2276,6 @@ pub fn write_clause_run_result(report: &ClauseRunReport) -> Result<Vec<u8>, Nati
     let witness = report.witness.as_ref().map(RecordWire::of).transpose()?;
     let document = ClauseRunDocument {
         format: WireFormat::RunResult,
-        package_id: report.package_id.as_ref().map(|id| id.hex()),
         disposition: Disposition::of(&report.disposition),
         usage: Usage {
             admission: AdmissionUsage {

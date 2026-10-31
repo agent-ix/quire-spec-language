@@ -237,7 +237,7 @@ impl ModelSystem<'_> {
     /// The declaration key of the type of `reference`, when this system's
     /// model declares it.
     pub fn type_key_of(&self, reference: &ObjectReference) -> Option<&DeclarationKey> {
-        self.model.type_key(reference.object_type())
+        self.model.type_key(reference.object_type().clone())
     }
 }
 

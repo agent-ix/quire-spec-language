@@ -13,21 +13,19 @@
 //! evaluation `run_clause`'s `Clause` selection runs (FR-109) -- and
 //! settles an FR-072 result on the envelope's arm.
 
-use std::collections::BTreeMap;
-
 use qsl_forms::StateClauseKind;
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::check::CheckedStateClause;
-use qsl_semantics::library::PackageId;
+use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::observation::{
     ClauseSelection, ClauseSelectionInput, DocumentRef, ObservationForm, OutOfRange,
     PostStateRange, Provisions,
 };
+use quire_exact::NodeKey;
 use quire_semantic_value::catalog::InternalFault;
 
 use super::{
-    check_envelope_target, consumed, domain_packages, one_source, recompile, wire_id, wrong_target,
+    check_envelope_target, consumed, domain_packages, one_source, recompile, wrong_target,
     ReplayRefusal,
 };
 use crate::bounds::ReplayLimits;
@@ -64,9 +62,9 @@ pub enum ClauseIdentityMismatch {
     )]
     Node {
         /// The envelope's clause node.
-        envelope: WireNodeId,
+        envelope: NodeKey,
         /// The recompiled clause node.
-        recompiled: WireNodeId,
+        recompiled: NodeKey,
     },
     /// The clause declaration's `claim` occurrence.
     #[error("the envelope names occurrence {envelope:?} but the package recompiles it as {recompiled:?}")]
@@ -80,7 +78,7 @@ pub enum ClauseIdentityMismatch {
 
 /// FR-122 Outputs: an FR-072 result on the envelope's arm, with the
 /// identities the replay kept: the source unit's identity and digest, the
-/// `package_id`, the request's `state_clause` and the payload's observation
+/// package name, the request's `state_clause` and the payload's observation
 /// (for a pre-call observation, its self object and parameter values), the envelope's
 /// clause node and occurrence key (each equal to the recompiled one, or the
 /// replay refused), and every document admission read.
@@ -88,9 +86,9 @@ pub enum ClauseIdentityMismatch {
 pub struct StateClauseReplayResult {
     result: ReplayResult,
     source: RawSourceRef,
-    package_id: PackageId,
+    package_name: LibraryName,
     clause: crate::identity::QualifiedName,
-    clause_node: WireNodeId,
+    clause_node: NodeKey,
     occurrence_key: OccurrenceKey,
     observation: ClauseSelectionInput,
     documents: Vec<DocumentRef>,
@@ -106,17 +104,17 @@ impl StateClauseReplayResult {
     pub fn source(&self) -> &RawSourceRef {
         &self.source
     }
-    /// The recompiled `package_id`.
-    pub fn package_id(&self) -> PackageId {
-        self.package_id
+    /// The recompiled package's name.
+    pub fn package_name(&self) -> &LibraryName {
+        &self.package_name
     }
     /// The request's `state_clause`.
     pub fn clause(&self) -> &crate::identity::QualifiedName {
         &self.clause
     }
     /// The envelope's clause node.
-    pub fn clause_node(&self) -> WireNodeId {
-        self.clause_node
+    pub fn clause_node(&self) -> &NodeKey {
+        &self.clause_node
     }
     /// The envelope's occurrence key: the clause's `claim` occurrence.
     pub fn occurrence_key(&self) -> &OccurrenceKey {
@@ -154,7 +152,7 @@ impl StateClauseReplayResult {
 /// (before recompiling, in this order) when the request's target is not
 /// `state_clause` and when the envelope's target differs from the request's,
 /// then by FR-098's rules (in FR-098's order), when the recompiled
-/// `package_id` is not the envelope's, when the request's `state_clause`
+/// when the request's `state_clause`
 /// names no state clause, when the envelope's clause node or occurrence key is stale, when the
 /// observation's form is not the clause kind's (each before any
 /// admission), and when FR-106 admission fails. The counterexample refuted
@@ -193,13 +191,7 @@ pub fn replay_state_clause(
         replay_limits,
     )?;
     let compiled = recompile(&request, &limits)?;
-    let package_id = compiled.emitted.package().package_id();
-    if !package_id.matches(&envelope.package_id()) {
-        return Err(ReplayRefusal::PackageIdMismatch {
-            requested: envelope.package_id(),
-            recompiled: package_id,
-        });
-    }
+    let package_name = compiled.package.clone();
     let payload = envelope.family_payload();
     let graph = compiled.checked.package().graph();
     // Complete-V1 declares no qualified names, so only a one-segment name
@@ -210,7 +202,7 @@ pub fn replay_state_clause(
     }
     .ok_or_else(|| ReplayRefusal::UnknownClause {
         clause: target.clone(),
-        package: package_id,
+        package: package_name.clone(),
     })?;
     check_identities(envelope, clause).map_err(ReplayRefusal::ClauseIdentity)?;
     let form = payload.observation.form();
@@ -222,20 +214,11 @@ pub fn replay_state_clause(
     }
 
     // `recompile` already required exactly one source, provided.
-    let source = one_source(request.source_digests())?;
-    let packages = domain_packages(&request);
+    let source = one_source(request.sources())?;
+    let packages = domain_packages(&request)?;
     // FR-106 reads every document only from the byte provision, by its
-    // `sha256-jcs` digest.
-    let documents: BTreeMap<_, Vec<u8>> = request
-        .byte_provision()
-        .entries()
-        .filter_map(|(identity, bytes)| match identity {
-            crate::request::ProvisionIdentity::Source(identity) => {
-                Some((identity.clone(), bytes.to_vec()))
-            }
-            crate::request::ProvisionIdentity::DomainPackage => None,
-        })
-        .collect();
+    // identity labels.
+    let documents = request.byte_provision().snapshots();
     let mut sources = Vec::with_capacity(1 + compiled.checked.libraries().len());
     sources.push(compiled.checked.source().clone());
     sources.extend(compiled.checked.libraries().iter().cloned());
@@ -256,7 +239,6 @@ pub fn replay_state_clause(
         },
         accounting: request.accounting_limits(),
         package: compiled.checked.package(),
-        package_id,
         sources: &sources,
     };
     let ClauseCheck {
@@ -316,7 +298,6 @@ pub fn replay_state_clause(
         // argument and checks no frame.
         ClauseDisposition::Compile(_)
         | ClauseDisposition::UnknownLanguage { .. }
-        | ClauseDisposition::StalePackage { .. }
         | ClauseDisposition::NotAPredicate { .. }
         | ClauseDisposition::ArgumentRefusal(_)
         | ClauseDisposition::Temporal(_)
@@ -338,9 +319,9 @@ pub fn replay_state_clause(
         return Ok(StateClauseReplayResult {
             result,
             source: source.clone(),
-            package_id,
+            package_name: package_name.clone(),
             clause: target.clone(),
-            clause_node: envelope.clause_node(),
+            clause_node: envelope.clause_node().clone(),
             occurrence_key: envelope.occurrence_key().clone(),
             observation: payload.observation.clone(),
             documents: read_documents,
@@ -401,9 +382,9 @@ pub fn replay_state_clause(
     Ok(StateClauseReplayResult {
         result,
         source: source.clone(),
-        package_id,
+        package_name,
         clause: target.clone(),
-        clause_node: envelope.clause_node(),
+        clause_node: envelope.clause_node().clone(),
         occurrence_key: envelope.occurrence_key().clone(),
         observation: payload.observation.clone(),
         documents: read_documents,
@@ -429,10 +410,10 @@ fn check_identities(
     envelope: &WitnessEnvelope<StateClauseCounterexample>,
     clause: &CheckedStateClause,
 ) -> Result<(), Box<ClauseIdentityMismatch>> {
-    let node = wire_id(clause.identity());
-    if envelope.clause_node() != node {
+    let node = clause.identity().clone();
+    if envelope.clause_node() != &node {
         return Err(Box::new(ClauseIdentityMismatch::Node {
-            envelope: envelope.clause_node(),
+            envelope: envelope.clause_node().clone(),
             recompiled: node,
         }));
     }

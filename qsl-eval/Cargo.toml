@@ -12,6 +12,10 @@ description = "ADR-011 §6.1 layer 5: the S6a evaluator (value::expression) over
 # the four layer crates, plus the third-party crates the shipped code calls.
 # No `test-support` feature: nothing here is test-only.
 [dependencies]
+# The structural node identity wire form (`qsl_foundation::node_wire`) is
+# `serde_json::Value`; `model::encode` writes and reads it, and several
+# `tests/it/*.rs` fixtures build JSON directly.
+serde_json = "1.0.151"
 # ADR-012 section 9 / FR-064: the `#[string_edge]` marker attribute, exempt
 # from the layer table below (it is a zero-cost marker `xtask string-edge`
 # reads, not a semantic dependency).
@@ -44,11 +48,6 @@ thiserror = "2.0.20"
 test-support = []
 
 [dev-dependencies]
-# Test-only since the deletion of qsl-eval's second v2 producer: the
-# layer-5 `quire.checked-function-package/v2` codec (`emit_function_package_v2`/`decode_function_package_v2`, its
-# one shipped caller) was deleted; several `tests/it/*.rs` fixtures still
-# build JSON directly.
-serde_json = "1.0.151"
 # The evaluator's tests build `PackageDeclarations` from layer-2 parsed forms
 # (`Expression`, `FunctionDeclaration`, `TypeForm`): `check` takes forms as its
 # input and qsl-semantics exposes no builder of them. Layer 2 is below this

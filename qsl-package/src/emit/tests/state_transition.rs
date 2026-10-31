@@ -115,13 +115,9 @@ struct Compiled {
 
 /// The unit selecting the Switch model and the protocol profile (unless
 /// `protocol` is false), followed by `clauses`.
-fn unit(clauses: &str, protocol: bool) -> (String, BTreeMap<[u8; 32], Vec<u8>>, String) {
+fn unit(clauses: &str, protocol: bool) -> (String, qsl_semantics::model::intake::PackageInput) {
     let document = serde_json::to_vec(&document()).expect("the fixture serializes");
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    let digest = qsl_semantics::model::key::hex(digest);
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let profile = if protocol {
         "profile p = \"quire.protocol.finite-global/v1\";\n"
     } else {
@@ -131,20 +127,23 @@ fn unit(clauses: &str, protocol: bool) -> (String, BTreeMap<[u8; 32], Vec<u8>>, 
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
          {profile}\
-         model M = {package:?} version \"1\" digest \"sha256-jcs:{digest}\";\n\
+         model M = {package:?};\n\
          {clauses}\n",
         package = base::PACKAGE,
     );
-    (unit, packages, digest)
+    (unit, packages)
 }
 
-fn check(clauses: &str, protocol: bool) -> (CheckedPackage, BTreeMap<[u8; 32], Vec<u8>>, String) {
-    let (unit, packages, digest) = unit(clauses, protocol);
+fn check(
+    clauses: &str,
+    protocol: bool,
+) -> (CheckedPackage, qsl_semantics::model::intake::PackageInput) {
+    let (unit, packages) = unit(clauses, protocol);
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
         .check(CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}\n{unit}"));
-    (CheckedPackage::link(graph), packages, digest)
+    (CheckedPackage::link(graph), packages)
 }
 
 fn compile(clauses: &str) -> Compiled {
@@ -152,7 +151,7 @@ fn compile(clauses: &str) -> Compiled {
 }
 
 fn compile_with(clauses: &str, protocol: bool) -> Compiled {
-    let (package, _, digest) = check(clauses, protocol);
+    let (package, _) = check(clauses, protocol);
     let emission = emit_checked(&package).expect("the package emits");
     assert_eq!(emission.omitted, []);
     let wire = wire(&emission);
@@ -162,7 +161,7 @@ fn compile_with(clauses: &str, protocol: bool) -> Compiled {
     }
     evidence
         .insert_domain_package_document(
-            digest.as_str(),
+            base::PACKAGE,
             serde_json::to_vec(&document()).unwrap().as_slice(),
         )
         .expect("a fresh evidence key");
@@ -319,7 +318,7 @@ fn a_boolean_field_constrained_by_one_postcondition_gets_one_transition() {
 /// derived `precondition` and one derived `postcondition` node holding the
 /// left fold of `quire.op.boolean.and` over the authored conditions in
 /// ascending clause-name order; the authored nodes stay; swapping the source
-/// order of `Q1` and `Q2` changes no node id and not the `package_id`.
+/// order of `Q1` and `Q2` changes no node id.
 #[trace("TC-1271", "FR-105-AC-14", "FR-105-AC-15")]
 #[test]
 fn several_clauses_are_bound_by_an_exact_conjunction_in_clause_name_order() {
@@ -374,12 +373,6 @@ fn several_clauses_are_bound_by_an_exact_conjunction_in_clause_name_order() {
     }
     compiled.verified();
 
-    // Source order changes no node id and not the package id.
-    let swapped = compile(&unit_13(&format!("{P2}{Q2}")));
-    assert_eq!(
-        compiled.emission.package().package_id(),
-        swapped.emission.package().package_id()
-    );
     // The authored nodes are the same with and without the transition: the
     // 5 clause nodes of AC-13 are all present in the AC-14 package.
     let base = compile(&unit_13(""));
@@ -639,7 +632,7 @@ fn a_fault_on_the_transition_or_a_derived_node_refuses_the_compile() {
         .find(|clause| clause["occurrences"].as_array().unwrap().len() == 2)
         .expect("the derived postcondition")["node_id"]
         .clone();
-    let (package, _, _) = check(&source, true);
+    let (package, _) = check(&source, true);
     for (label, id) in [("transition", transition), ("derived", derived)] {
         let reason = format!("fault injection (test): {label}");
         let id: CheckedNodeId = serde_json::from_value(id).unwrap();
@@ -661,7 +654,10 @@ fn a_fault_on_the_transition_or_a_derived_node_refuses_the_compile() {
 fn masked(value: &Value) -> Value {
     match value {
         Value::Object(map)
-            if map.len() == 2 && map.contains_key("digest") && map.contains_key("domain") =>
+            if map.len() == 3
+                && map.contains_key("package")
+                && map.contains_key("path")
+                && map.contains_key("ordinal") =>
         {
             json!("<node>")
         }
@@ -784,7 +780,7 @@ fn an_execution_point_on_a_clause_of_the_operation_gives_no_transition() {
             },
         ),
     ] {
-        let (unit, packages, _) = unit(&clauses, true);
+        let (unit, packages) = unit(&clauses, true);
         let parsed = qsl_cst::parse(
             qsl_foundation::SourceIdentity::new("agent-ix", "test:tc-1271", "fixture", "fixture:1"),
             "program.native",
@@ -802,12 +798,15 @@ fn an_execution_point_on_a_clause_of_the_operation_gives_no_transition() {
         .expect("intake admits the package");
         let graph = PackageDeclarations::assemble_with_execution_points_and_cancel(
             raw,
+            "pkg".to_owned(),
             built,
             models,
             Vec::new(),
             Default::default(),
-            &quire_exact::Cancel::new(),
-            BTreeMap::from([(clause.to_owned(), point)]),
+            qsl_semantics::check::AssemblyRun {
+                cancel: &quire_exact::Cancel::new(),
+                execution_points: BTreeMap::from([(clause.to_owned(), point)]),
+            },
         )
         .expect("the unit assembles")
         .check(CheckingLimits::default())
@@ -820,16 +819,16 @@ fn an_execution_point_on_a_clause_of_the_operation_gives_no_transition() {
         );
     }
 }
-
-/// The node id of the condition of the one `kind` clause `declaration`
-/// declares: nodes are content-keyed, so the same body gives the same id in
-/// any package over this model.
-fn condition_id(declaration: &str, kind: &str) -> Value {
-    let alone = compile(declaration);
-    let [clause] = alone.clauses(kind)[..] else {
-        panic!("one {kind} clause in {declaration}");
-    };
-    alone.condition(clause)["node_id"].clone()
+/// The node ids of the conditions of the authored (not derived)
+/// preconditions of `compiled`, in source order.
+fn authored_conditions(compiled: &Compiled) -> Vec<Value> {
+    compiled
+        .clauses("precondition")
+        .into_iter()
+        .map(|clause| compiled.condition(clause))
+        .filter(|condition| condition["body"]["operation"]["identity"] != "quire.op.boolean.and")
+        .map(|condition| condition["node_id"].clone())
+        .collect()
 }
 
 /// The operands of a left fold of `quire.op.boolean.and` rooted at `node`,
@@ -858,7 +857,6 @@ fn the_fold_follows_ascending_clause_names_not_source_order() {
         "not flag or self.lit",
         "flag or self.lit",
     );
-    let [ia, ib, id] = [a, b, d].map(|body| condition_id(&c("P", body), "precondition"));
     // Source order is P3, P1, P2; clause-name order is P1, P2, P3.
     let compiled = compile(&format!(
         "{BASE_POST}{}{}{}",
@@ -870,9 +868,13 @@ fn the_fold_follows_ascending_clause_names_not_source_order() {
         panic!("one transition");
     };
     let derived = compiled.node(&member_targets(Compiled::bound(transition, "pre"))[0]);
+    // The authored clauses' conditions, read from this same compile in source
+    // order (P3, P1, P2), so clause-name order is positions 1, 2, 0.
+    let [p3, p1, p2] = <[Value; 3]>::try_from(authored_conditions(&compiled))
+        .expect("three authored preconditions");
     assert_eq!(
         fold_operands(&compiled, compiled.condition(derived)),
-        [ia.clone(), ib.clone(), id.clone()]
+        [p1, p2, p3]
     );
 
     // One node declared as P1 and P9 sorts by its least name P1, before P5.
@@ -886,9 +888,14 @@ fn the_fold_follows_ascending_clause_names_not_source_order() {
         panic!("one transition");
     };
     let derived = shared.node(&member_targets(Compiled::bound(transition, "pre"))[0]);
+    // Source order is P9, P5, P1; P9 and P1 check to the one node, whose
+    // listed position is P9's.
+    let authored = authored_conditions(&shared);
+    let operands = fold_operands(&shared, shared.condition(derived));
+    assert_eq!(operands.len(), 2, "two clauses, not three");
     assert_eq!(
-        fold_operands(&shared, shared.condition(derived)),
-        [ia, ib],
-        "the node declared as P1 and P9 comes first; two clauses, not three"
+        operands,
+        [authored[0].clone(), authored[1].clone()],
+        "the node declared as P1 and P9 comes first"
     );
 }

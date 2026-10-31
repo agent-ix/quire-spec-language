@@ -17,15 +17,11 @@ pub(super) mod fixture;
 /// document as evidence.
 fn emit_unit(unit_body: &str) -> (Emission, Value, Read) {
     let document = serde_json::to_vec(&fixture::document()).expect("the fixture serializes");
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    let digest = qsl_semantics::model::key::hex(digest);
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
-         model M = {package:?} version \"1\" digest \"sha256-jcs:{digest}\";\n\
+         model M = {package:?};\n\
          {unit_body}\n",
         package = fixture::PACKAGE,
     );
@@ -41,14 +37,13 @@ fn emit_unit(unit_body: &str) -> (Emission, Value, Read) {
         evidence.support_feature(feature.as_str().unwrap());
     }
     evidence
-        .insert_domain_package_document(digest.as_str(), document.as_slice())
+        .insert_domain_package_document(package_identity(&document), document.as_slice())
         .expect("a fresh evidence key");
     let read = read_v2(
         emission.package.bytes(),
         library(),
         V2ReadLimits::default(),
         &evidence,
-        &qsl_semantics::library::fixtures::single_pin(library(), emission.package.package_id()),
     );
     (emission, wire, read)
 }
@@ -114,11 +109,9 @@ fn records_are_model_owned_nodes_and_the_call_takes_its_argument_by_ref() {
 #[trace("FR-359-AC-3", "FR-359-AC-8", "TC-998", "TC-1001")]
 #[test]
 fn a_child_record_argument_reads_back_verified() {
-    let (emission, _, read) = emit_unit(UNIT);
+    let (_, _, read) = emit_unit(UNIT);
     match read {
-        Read::Verified { package, .. } => {
-            assert_eq!(package.package_id(), emission.package.package_id());
-        }
+        Read::Verified { .. } => {}
         other => panic!("expected Verified, got {other:?}"),
     }
 }
@@ -131,7 +124,7 @@ fn a_child_record_argument_reads_back_verified() {
 #[trace("FR-359-AC-8", "TC-1001")]
 #[test]
 fn an_operation_over_a_record_parameter_emits_and_reads_back() {
-    let (emission, wire, read) = emit_unit(
+    let (_, wire, read) = emit_unit(
         "function keep using v(m: M::Money): M::Money pure { m }\n\
          function passTaxed using v(m: M::TaxedMoney): M::Money pure { keep(m) }\n\
          pre PayHolds using v on M::Ledger::pay { m.amount_minor > 0 }\n\
@@ -148,9 +141,7 @@ fn an_operation_over_a_record_parameter_emits_and_reads_back() {
         "no conversion node between an argument and its parameter"
     );
     match read {
-        Read::Verified { package, .. } => {
-            assert_eq!(package.package_id(), emission.package.package_id());
-        }
+        Read::Verified { .. } => {}
         other => panic!("expected Verified, got {other:?}"),
     }
 }

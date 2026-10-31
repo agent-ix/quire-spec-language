@@ -6,14 +6,19 @@
 
 use ix_trace_rs::trace;
 use qsl_foundation::bound::{DomainKey, DomainKind};
-use qsl_foundation::digest::WireNodeId;
 use qsl_semantics::check::{
     check_clauses, Capability, CheckedGraph, CheckedTemporalClause, TemporalTraceFamily,
 };
 use qsl_semantics::family::{ClaimExtent, FamilyContract};
-use quire_exact::Identifier;
+use quire_exact::{Identifier, NodeKey, PathSegment};
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::json;
+
+/// A structural fixture node key named `name`.
+fn fixture_node(name: &str) -> NodeKey {
+    NodeKey::new("fixture", vec![PathSegment::Text(name.to_owned())], 0)
+        .expect("a fixture node key is well formed")
+}
 
 use crate::model_operations::{
     add_sub_type, admit_and_assemble, admit_and_assemble_with_profiles, archive_population,
@@ -82,14 +87,19 @@ fn an_unbounded_population_stays_in_the_requirement_record() {
     let [domain] = claim.populations() else {
         panic!("config_history has no maximum: {:?}", claim.populations());
     };
-    assert_eq!(graph.population_key(*domain).as_ref(), Ok(&population));
-
-    let (clause_node, over) = (
-        WireNodeId::from_digest([1; 32]),
-        WireNodeId::from_digest([2; 32]),
+    assert_eq!(
+        graph.population_key(domain.clone()).as_ref(),
+        Ok(&population)
     );
+
+    let (clause_node, over) = (fixture_node("clause"), fixture_node("over"));
     let record = claim
-        .requirements(clause_node, &[over], std::slice::from_ref(&population), &[])
+        .requirements(
+            clause_node.clone(),
+            std::slice::from_ref(&over),
+            std::slice::from_ref(&population),
+            &[],
+        )
         .expect("keyed");
     assert_eq!(record.kind(), Capability::TemporalSatisfaction);
     let ClaimExtent::Unbounded(domains) = record.extent() else {
@@ -98,7 +108,7 @@ fn an_unbounded_population_stays_in_the_requirement_record() {
     assert_eq!(domains.kind(&population), Some(DomainKind::Population));
     assert_eq!(
         domains.kind(&DomainKey::Node {
-            node: clause_node,
+            node: clause_node.clone(),
             path: Vec::new()
         }),
         Some(DomainKind::InfiniteTrace)
@@ -118,12 +128,7 @@ fn a_bounded_population_joins_no_domain() {
         .expect("one claim");
     assert!(claim.populations().is_empty());
     let record = claim
-        .requirements(
-            WireNodeId::from_digest([1; 32]),
-            &[WireNodeId::from_digest([2; 32])],
-            &[],
-            &[],
-        )
+        .requirements(fixture_node("clause"), &[fixture_node("over")], &[], &[])
         .expect("keyed");
     let ClaimExtent::Unbounded(domains) = record.extent() else {
         panic!("the formula is infinite-trace: {:?}", record.extent());
@@ -187,12 +192,7 @@ fn two_populations_of_the_over_type_are_both_domains_of_the_clause() {
     }
     assert_ne!(keys[0], keys[1]);
     let record = claim
-        .requirements(
-            WireNodeId::from_digest([1; 32]),
-            &[WireNodeId::from_digest([2; 32])],
-            &keys,
-            &[],
-        )
+        .requirements(fixture_node("clause"), &[fixture_node("over")], &keys, &[])
         .expect("keyed");
     let ClaimExtent::Unbounded(domains) = record.extent() else {
         panic!("unbounded: {:?}", record.extent());
@@ -202,8 +202,8 @@ fn two_populations_of_the_over_type_are_both_domains_of_the_clause() {
     }
     assert!(claim
         .requirements(
-            WireNodeId::from_digest([1; 32]),
-            &[WireNodeId::from_digest([2; 32])],
+            fixture_node("clause"),
+            &[fixture_node("over")],
             &keys[..1],
             &[],
         )
@@ -290,7 +290,11 @@ fn subtype_populations_overlap_temporal_domains_but_unrelated_ones_do_not() {
     let actual: Vec<DomainKey> = claim
         .populations()
         .iter()
-        .map(|domain| graph.population_key(*domain).expect("population key"))
+        .map(|domain| {
+            graph
+                .population_key(domain.clone())
+                .expect("population key")
+        })
         .collect();
     assert_eq!(
         actual, keys,

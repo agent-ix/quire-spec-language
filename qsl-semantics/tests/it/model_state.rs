@@ -11,7 +11,6 @@ use qsl_foundation::diagnostic::Code;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::domain_package::OperationEffect;
 use qsl_semantics::model::intake::package_input;
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::normalize::ModelRefusalCause;
 use qsl_semantics::model::observation::{
     admit_current_snapshot, declared_type_universe_for, AdmissionFailure, AdmissionRecord,
@@ -58,7 +57,7 @@ fn field(name: &str) -> DeclarationKey {
 struct Fixture {
     model: StateModel,
     graph: qsl_semantics::check::CheckedGraph,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
     header: serde_json::Value,
 }
 
@@ -78,8 +77,7 @@ fn fixture_with(relationships: serde_json::Value) -> Fixture {
         vec![],
         relationships,
     );
-    let packages = package_input([document.as_slice()]);
-    let digest = *packages.keys().next().expect("one model");
+    let packages = package_input([document.as_slice()]).unwrap();
     let graph =
         admit_and_assemble_with_body(&document, "function noop using v(): Boolean pure { true }")
             .expect("assemble model")
@@ -92,8 +90,7 @@ fn fixture_with(relationships: serde_json::Value) -> Fixture {
         ModelNormalizationLimits::default(),
     )
     .expect("model views");
-    let header = json!({"identity": PACKAGE_IDENTITY, "version": "1.0.0",
-        "digest": format!("sha256-jcs:{}", hex(&digest))});
+    let header = json!({"identity": PACKAGE_IDENTITY});
     Fixture {
         model,
         graph,
@@ -108,7 +105,6 @@ fn label(name: &str) -> DocumentRef {
         identity: name.to_owned(),
         revision_namespace: "fixture".to_owned(),
         revision: "fixture:1".to_owned(),
-        digest: [0; 32],
     }
 }
 
@@ -131,7 +127,7 @@ fn snapshot(
     objects: Vec<serde_json::Value>,
 ) -> (
     DocumentRef,
-    BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
+    qsl_semantics::model::observation::DocumentProvision,
 ) {
     let reference = label("start");
     let mut document = json!({
@@ -145,16 +141,14 @@ fn snapshot(
         document["anchor"] = anchor;
     }
     let bytes = document.to_string().into_bytes();
-    let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-    let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-        .expect("canonical fixture")
-        .as_bytes();
-    let selected = DocumentRef {
-        digest,
-        ..reference
-    };
-    let provision = BTreeMap::from([(selected.source_identity(), bytes)]);
-    (selected, provision)
+    (
+        DocumentRef { ..reference },
+        BTreeMap::from([(
+            qsl_semantics::model::observation::document_reference(&bytes)
+                .expect("a document names itself"),
+            bytes,
+        )]),
+    )
 }
 
 fn initial_anchor() -> serde_json::Value {
@@ -315,7 +309,7 @@ fn an_initial_snapshot_with_a_wrong_model_a_dangling_reference_or_an_incomplete_
         (Code::IncompletePopulation, "incomplete-scope")
     );
 
-    fixture.header["version"] = json!("9.9.9");
+    fixture.header["identity"] = json!("example/other-package");
     let record = refused(admit(&fixture, "current", initial_anchor(), true, two_objects()).err());
     assert_eq!(
         (record.code, record.cause),
@@ -331,7 +325,7 @@ fn slots(
 ) -> Vec<(String, Option<Value>)> {
     let types = fixture.graph.scope().types();
     types
-        .attributes(reference.object_type())
+        .attributes(reference.object_type().clone())
         .expect("object type attributes")
         .iter()
         .map(|attribute| {
@@ -392,11 +386,11 @@ fn a_states_observation_matches_the_environment_fr106_admits_from_the_same_docum
         let ours = observation
             .environment
             .objects()
-            .find(universe, key)
+            .find(universe.clone(), key)
             .expect("observation holds the object");
         let theirs = admitted
             .objects()
-            .find(universe, key)
+            .find(universe.clone(), key)
             .expect("FR-106 holds the object");
         assert_eq!(ours, theirs, "same universe, effective type and key");
         let ours = slots(&fixture, &observation.environment, ours);
@@ -410,7 +404,7 @@ fn a_states_observation_matches_the_environment_fr106_admits_from_the_same_docum
     let a = observation
         .environment
         .objects()
-        .find(universe, "a")
+        .find(universe.clone(), "a")
         .expect("a");
     let a = slots(&fixture, &observation.environment, a);
     assert_eq!(a[0].0, "versionNumber");
@@ -444,7 +438,7 @@ fn a_changed_state_observes_its_changed_field() {
     let a = observation
         .environment
         .objects()
-        .find(universe, "a")
+        .find(universe.clone(), "a")
         .expect("a");
     let a = slots(&fixture, &observation.environment, a);
     assert_eq!(a[0].0, "versionNumber");
@@ -639,17 +633,13 @@ fn a_states_observation_navigates_the_relationships_its_snapshot_listed() {
             }],
         });
         let bytes = document.to_string().into_bytes();
-        let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-        let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-            .expect("canonical fixture")
-            .as_bytes();
-        let selected = DocumentRef {
-            digest,
-            ..reference
-        };
         (
-            selected.clone(),
-            BTreeMap::from([(selected.source_identity(), bytes)]),
+            DocumentRef { ..reference },
+            BTreeMap::from([(
+                qsl_semantics::model::observation::document_reference(&bytes)
+                    .expect("a document names itself"),
+                bytes,
+            )]),
         )
     };
     let (state, _) = fixture
@@ -686,7 +676,7 @@ fn a_states_observation_navigates_the_relationships_its_snapshot_listed() {
                 key: &str| {
         environment
             .objects()
-            .find(universe, key)
+            .find(universe.clone(), key)
             .expect("object")
             .clone()
     };

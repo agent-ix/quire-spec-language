@@ -12,7 +12,6 @@ use super::protocol_graph::{argument, clause, member, target, PROFILES};
 use super::protocol_reference::clause_argument;
 use super::reachability::{lower_with, Lowered};
 use super::*;
-use crate::checked_v2::tests::rekey_stale;
 
 const MEMBERS: &str = "role Buyer on M::Order;\nrole Seller on M::Person;\n\
     channel Ch from Buyer to Seller carries Boolean ordering unordered \
@@ -119,27 +118,26 @@ fn pair(name: &str, level: &str) -> (String, String) {
 }
 
 /// Sets `node`'s dependencies to the reference targets of its body, once each
-/// in ascending digest order (a control depends on what it names).
+/// in ascending structural-key order (a control depends on what it names).
 fn redepend(envelope: &mut Value, position: usize) {
     let node = &mut envelope["semantic_graph"]["nodes"][position];
     let mut found = Vec::new();
     targets(&node["body"], &mut found);
-    found.sort_by(|left, right| left["digest"].as_str().cmp(&right["digest"].as_str()));
+    found.sort_by_key(|value| qsl_foundation::node_wire::node_key_from_json(value).unwrap());
     found.dedup();
     node["dependencies"] = Value::Array(found);
 }
 
-/// `lowered` after `edit`, with every stale key rebuilt.
-fn rekeyed(lowered: &Lowered, edit: impl FnOnce(&mut Value)) -> Value {
+/// `lowered` after `edit`; structural keys remain stable.
+fn modified(lowered: &Lowered, edit: impl FnOnce(&mut Value)) -> Value {
     let mut envelope = lowered.wire.clone();
     edit(&mut envelope);
-    rekey_stale(&mut envelope);
     envelope
 }
 
-/// IR's verdict on `lowered` after `edit`, with every stale key rebuilt.
+/// IR's verdict on `lowered` after `edit`.
 fn edited(lowered: &Lowered, edit: impl FnOnce(&mut Value)) -> String {
-    verdict(lowered, &rekeyed(lowered, edit))
+    verdict(lowered, &modified(lowered, edit))
 }
 
 fn children_of(envelope: &mut Value, position: usize) -> &mut Vec<Value> {
@@ -376,7 +374,7 @@ fn a_check_condition_that_reads_model_state_is_operator_ineligible() {
     let initializer = member(capture, "initializer").clone();
     assert_eq!(initializer["term"], "reference");
     let at = position(wire, run_control(wire, "Gate"));
-    let mutated = rekeyed(&lowered, |envelope| {
+    let mutated = modified(&lowered, |envelope| {
         envelope["semantic_graph"]["nodes"][at]["body"]["arguments"][0]["value"] = initializer;
         redepend(envelope, at);
     });
@@ -399,17 +397,12 @@ fn domain_document() -> &'static [u8] {
 /// `declarations` over the ConfigVersion model (one operation,
 /// `attemptUpdate`), emitted and read back by IR; returns the wire.
 fn admitted_config(declarations: &str) -> Value {
-    let packages = qsl_semantics::model::intake::package_input([domain_document()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    let digest = qsl_semantics::model::key::hex(digest);
+    let packages = qsl_semantics::model::intake::package_input([domain_document()]).unwrap();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
          profile p = \"quire.protocol.finite-global/v1\";\n\
-         model Config = \"example/config-version\" version \"1.0.0\" \
-         digest \"sha256-jcs:{digest}\";\n{declarations}\n"
+         model Config = \"example/config-version\";\n{declarations}\n"
     );
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
@@ -423,14 +416,16 @@ fn admitted_config(declarations: &str) -> Value {
         evidence.support_feature(feature.as_str().unwrap());
     }
     evidence
-        .insert_domain_package_document(digest, domain_document().to_vec())
+        .insert_domain_package_document(
+            package_identity(domain_document()),
+            domain_document().to_vec(),
+        )
         .expect("a fresh evidence key");
     crate::checked_v2::read_checked_package_v2(
         emission.package.bytes(),
         library(),
         V2ReadLimits::default(),
         &evidence,
-        &qsl_semantics::library::fixtures::single_pin(library(), emission.package.package_id()),
     )
     .unwrap_or_else(|failure| panic!("the I2 read admits the package: {failure:?}"));
     wire
@@ -676,22 +671,17 @@ fn a_fence_emits_each_of_its_orderings() {
 #[trace("FR-383-AC-7", "TC-1061")]
 #[test]
 fn an_attempt_ordering_outside_a_parallel_is_refused_so_the_group_is_empty() {
-    let packages = qsl_semantics::model::intake::package_input([domain_document()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    let digest = qsl_semantics::model::key::hex(digest);
-    let unit = format!(
+    let packages = qsl_semantics::model::intake::package_input([domain_document()]).unwrap();
+    let unit = String::from(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
          profile p = \"quire.protocol.finite-global/v1\";\n\
-         model Config = \"example/config-version\" version \"1.0.0\" \
-         digest \"sha256-jcs:{digest}\";\n\
-         protocol Flow using v over (input: Config::ConfigVersion) on origin {{\n\
+         model Config = \"example/config-version\";\n\
+         protocol Flow using v over (input: Config::ConfigVersion) on origin {\n\
          role R on Config::ConfigVersion;\n\
          run attempt Update by R on Config::ConfigVersion::attemptUpdate \
-         ordering seq_cst contracts [] as (tried: Boolean) {{ true }};\n\
-         finish End as (outcome: Boolean) {{ true }};\n}}\n"
+         ordering seq_cst contracts [] as (tried: Boolean) { true };\n\
+         finish End as (outcome: Boolean) { true };\n}\n",
     );
     let refusals = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
@@ -739,11 +729,11 @@ fn two_contracts_are_listed_in_digest_order_whatever_the_source_order() {
     };
     let forward = contracts("Alpha, Beta");
     assert_eq!(forward.len(), 2);
-    let digests: Vec<&str> = forward
+    let keys: Vec<NodeKey> = forward
         .iter()
-        .map(|id| id["digest"].as_str().unwrap())
+        .map(|id| qsl_foundation::node_wire::node_key_from_json(id).unwrap())
         .collect();
-    assert!(digests[0] < digests[1], "{digests:?}");
+    assert!(keys[0] < keys[1], "{keys:?}");
     assert_eq!(forward, contracts("Beta, Alpha"));
 }
 

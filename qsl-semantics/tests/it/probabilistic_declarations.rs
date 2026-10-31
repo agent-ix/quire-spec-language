@@ -48,7 +48,6 @@ fn construct(name: &str, meaning: &str, shape: &str, members: Value) -> Value {
     json!({
         "kind": {"module": P, "name": name},
         "moduleVersion": "1.0.0",
-        "manifestDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
         "construct": {"identity": "none", "shape": shape, "members": members, "meaning": meaning},
     })
 }
@@ -249,7 +248,7 @@ fn service_document_with_parameter_type(
 /// The unit selecting `Service`, with `dimension Time` and `unit ms`, and
 /// `body` after them; a `model` line of `body` is a second selection and
 /// goes in the header.
-fn service_unit(body: &str) -> (String, std::collections::BTreeMap<[u8; 32], Vec<u8>>) {
+fn service_unit(body: &str) -> (String, qsl_semantics::model::intake::PackageInput) {
     service_unit_over(&service_document(), body)
 }
 
@@ -257,18 +256,14 @@ fn service_unit(body: &str) -> (String, std::collections::BTreeMap<[u8; 32], Vec
 fn service_unit_over(
     document: &[u8],
     body: &str,
-) -> (String, std::collections::BTreeMap<[u8; 32], Vec<u8>>) {
-    let packages = package_input([document]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    let digest = qsl_semantics::model::key::hex(digest);
+) -> (String, qsl_semantics::model::intake::PackageInput) {
+    let packages = package_input([document]).unwrap();
     let (selections, body): (Vec<&str>, Vec<&str>) =
         body.lines().partition(|line| line.starts_with("model "));
     let packages = if selections.is_empty() {
         packages
     } else {
-        package_input([document, other_document().as_slice()])
+        package_input([document, other_document().as_slice()]).unwrap()
     };
     let (selections, body) = (selections.join("\n"), body.join("\n"));
     let unit = format!(
@@ -277,7 +272,7 @@ fn service_unit_over(
          profile ev = \"quire.temporal.event-position.false-extension/v1\";\n\
          profile inf = \"quire.temporal.infinite-trace/v1\";\n\
          profile tm = \"quire.temporal.timed/v1\";\n\
-         model Service = {P:?} version \"1.0.0\" digest \"sha256-jcs:{digest}\";\n\
+         model Service = {P:?};\n\
          {selections}\n\
          dimension Time;\n\
          dimension Length;\n\
@@ -317,8 +312,14 @@ fn assemble_over(document: &[u8], body: &str) -> PackageDeclarations {
     .source()
     .reference()
     .clone();
-    PackageDeclarations::assemble(raw, built, models, Vec::new())
-        .unwrap_or_else(|refusal| panic!("{body}: the unit assembles: {refusal:?}"))
+    PackageDeclarations::assemble(
+        raw,
+        crate::TEST_PACKAGE_NAME.to_owned(),
+        built,
+        models,
+        Vec::new(),
+    )
+    .unwrap_or_else(|refusal| panic!("{body}: the unit assembles: {refusal:?}"))
 }
 
 fn checked(body: &str) -> CheckedGraph {
@@ -960,7 +961,7 @@ fn a_quantity_reward_checks_and_reward_names_are_per_operation() {
     let ValueType::Quantity(unit) = latency.value_type() else {
         panic!("a quantity: {:?}", latency.value_type());
     };
-    assert_eq!(rewards[3].value_type(), &ValueType::Quantity(*unit));
+    assert_eq!(rewards[3].value_type(), &ValueType::Quantity(unit.clone()));
 }
 
 /// FR-185-AC-8 (TC-620): a `Quantity<ms>` random parameter admits same-unit
@@ -2999,14 +3000,7 @@ fn other_document() -> Vec<u8> {
 /// The `model Other` selection of [`other_document`]: a second model of
 /// the package.
 fn other_model() -> String {
-    let packages = package_input([other_document().as_slice()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    format!(
-        "model Other = {OTHER:?} version \"1.0.0\" digest \"sha256-jcs:{}\";",
-        qsl_semantics::model::key::hex(digest)
-    )
+    format!("model Other = {OTHER:?};")
 }
 
 /// FR-185-AC-5 (TC-620 step 5): a second `workload Steady on Service`, and a

@@ -32,15 +32,15 @@ const NATIVE: &str = "ix://quire/native";
 /// object type `Pump` in the populations `Q` and `Spare`, and the clauses.
 struct Orders {
     package: CheckedPackage,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
     model: Json,
 }
 
 /// The documents offered to one admission.
 #[derive(Clone, Default)]
 struct Docs {
-    snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
-    invocations: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
+    snapshots: qsl_semantics::model::observation::DocumentProvision,
+    invocations: qsl_semantics::model::observation::DocumentProvision,
 }
 
 impl Docs {
@@ -50,8 +50,8 @@ impl Docs {
             .unwrap()
             .to_owned();
         let bytes = serde_json::to_vec(document).unwrap();
-        let reference = lifecycle_document_ref(&label, &bytes);
-        self.snapshots.insert(reference.source_identity(), bytes);
+        let reference = lifecycle_document_ref(&label);
+        self.snapshots.insert(reference.clone(), bytes);
         reference
     }
 
@@ -61,8 +61,8 @@ impl Docs {
             .unwrap()
             .to_owned();
         let bytes = serde_json::to_vec(document).unwrap();
-        let reference = lifecycle_document_ref(&label, &bytes);
-        self.invocations.insert(reference.source_identity(), bytes);
+        let reference = lifecycle_document_ref(&label);
+        self.invocations.insert(reference.clone(), bytes);
         reference
     }
 }
@@ -73,7 +73,6 @@ fn labelled(label: &str) -> DocumentRef {
         identity: label.to_owned(),
         revision_namespace: "tc235".to_owned(),
         revision: "1".to_owned(),
-        digest: [0; 32],
     }
 }
 
@@ -320,11 +319,9 @@ impl Orders {
              post PumpServiced using v on M::Pump::service { true }",
         )
         .expect("the Orders fixture checks");
-        let digest = packages.keys().next().expect("the package");
         let model = json!({
             "identity": crate::tc235_k2::PACKAGE,
             "version": "1",
-            "digest": format!("sha256-jcs:{}", qsl_semantics::model::key::hex(digest)),
         });
         Self {
             package,
@@ -368,7 +365,6 @@ impl Orders {
         let reference = |document: &DocumentRef| {
             json!({
                 "identity": lifecycle_identity(document),
-                "digest": format!("sha256-jcs:{}", qsl_semantics::model::key::hex(&document.digest)),
             })
         };
         json!({
@@ -461,7 +457,7 @@ impl Orders {
                 let slot = observation.environment.objects().attribute(
                     types,
                     &admitted.self_object,
-                    &FieldRef::new(owner, *name),
+                    &FieldRef::new(owner.clone(), *name),
                 );
                 match slot {
                     Some(FieldValue::Present(Datum::Boolean(held))) => *held,
@@ -625,16 +621,6 @@ fn a_context_selection_admits_one_side_of_the_invocation() {
             "{side:?}: member order changes no value"
         );
     }
-    let digest_of = |document: &Json| {
-        let mut docs = Docs::default();
-        docs.snapshot(document).digest
-    };
-    assert_eq!(
-        digest_of(&orders.snapshot("p1", "pre", vec![lifecycle(false, false)])),
-        digest_of(&orders.snapshot("p1", "pre", vec![reversed(false)])),
-        "member order is no part of the digest"
-    );
-
     // A false invariant is a logical violation after admission (AC-42).
     let (docs, i1) = orders.place(vec![lifecycle(false, false)], vec![lifecycle(true, true)]);
     let admitted = orders
@@ -661,33 +647,22 @@ fn side_pre_ignores_the_post_side_and_the_parameters() {
         .unwrap();
     assert!(orders.verdict("Consistent", &pre));
 
-    let q1 = docs.invocations.values().next().cloned().map(|bytes| {
-        let document: Json = serde_json::from_slice(&bytes).unwrap();
-        document["post"].clone()
-    });
-    let q1_identity = q1
-        .as_ref()
-        .map(|reference| {
-            qsl_foundation::SourceIdentity::new(
-                reference["identity"]["authority"].as_str().unwrap(),
-                reference["identity"]["identity"].as_str().unwrap(),
-                reference["identity"]["revision_namespace"]
-                    .as_str()
-                    .unwrap(),
-                reference["identity"]["revision"].as_str().unwrap(),
-            )
-        })
-        .unwrap();
+    let q1_digest = docs
+        .snapshots
+        .keys()
+        .find(|reference| reference.identity == "q1")
+        .cloned()
+        .expect("the post snapshot is provisioned");
 
     // The post snapshot absent, and its bytes not JSON.
     let mut absent = docs.clone();
-    absent.snapshots.remove(&q1_identity);
+    absent.snapshots.remove(&q1_digest);
     let admitted = orders
         .context(&absent, "Consistent", &i1, ContextSide::Pre)
         .unwrap();
     assert!(orders.verdict("Consistent", &admitted));
     let mut garbage = docs.clone();
-    garbage.snapshots.insert(q1_identity, b"not json".to_vec());
+    garbage.snapshots.insert(q1_digest, b"not json".to_vec());
     let admitted = orders
         .context(&garbage, "Consistent", &i1, ContextSide::Pre)
         .unwrap();
@@ -753,7 +728,7 @@ fn a_snapshot_must_hold_exactly_one_context_of_the_machine() {
                 .values()
                 .find_map(|bytes| {
                     let document: Json = serde_json::from_slice(bytes).unwrap();
-                    (document["observation"] == "pre").then(|| lifecycle_document_ref("p1", bytes))
+                    (document["observation"] == "pre").then(|| lifecycle_document_ref("p1"))
                 })
                 .unwrap();
             ClauseSelectionInput::PreCall {
@@ -1156,7 +1131,7 @@ fn the_post_state_range_witness_reaches_a_context() {
         .find(|declared| declared.name() == "M::ExpressLifecycle")
         .expect("ExpressLifecycle")
         .key();
-    assert_eq!(breach.object.object_type(), express);
+    assert_eq!(breach.object.object_type(), &express);
     assert!(!orders.verdict("Bounded", &admitted));
 
     let record = refused(select(
@@ -1308,15 +1283,7 @@ fn self_and_the_selection_must_agree_with_the_receiver() {
     );
 
     // Selections the clause does not take.
-    let p1 = lifecycle_document_ref(
-        "p1",
-        docs.snapshots
-            .values()
-            .find(|bytes| {
-                serde_json::from_slice::<Json>(bytes).unwrap()["identity"]["identity"] == "p1"
-            })
-            .unwrap(),
-    );
+    let p1 = lifecycle_document_ref("p1");
     let wrong = |outcome| {
         assert_refusal(
             &refused(outcome),

@@ -9,7 +9,6 @@ use quire_exact::Origin;
 
 use super::admission_corpus::config_version_unit;
 use super::*;
-use crate::checked_v2::tests::rekey_stale;
 use crate::checked_v2::{
     clause_roots, resolve_clause_root, resolve_state_graph_root, state_graph_roots,
     ClauseRootUnresolved, StateGraphKind, StateGraphRoot, V2ReadRefusal,
@@ -19,23 +18,14 @@ fn document() -> &'static [u8] {
     config_version_unit::DOMAIN_PACKAGE.as_bytes()
 }
 
-fn document_digest() -> String {
-    let packages = qsl_semantics::model::intake::package_input([document()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    qsl_semantics::model::key::hex(digest)
-}
-
 /// A unit selecting the ConfigVersion model, then `declarations`.
 fn unit(declarations: &str) -> String {
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
          profile t = \"quire.temporal.infinite-trace/v1\";\n\
-         model Config = \"example/config-version\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
-         {declarations}\n",
-        document_digest()
+         model Config = \"example/config-version\";\n\
+         {declarations}\n"
     )
 }
 
@@ -57,7 +47,7 @@ struct Compiled {
 }
 
 fn compile(unit: &str) -> Compiled {
-    let packages = qsl_semantics::model::intake::package_input([document()]);
+    let packages = qsl_semantics::model::intake::package_input([document()]).unwrap();
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
         .check(CheckingLimits::default())
@@ -74,23 +64,13 @@ fn evidence(wire: &Value) -> CheckedPackageEvidence {
         evidence.support_feature(feature.as_str().unwrap());
     }
     evidence
-        .insert_domain_package_document(document_digest(), document().to_vec())
+        .insert_domain_package_document(package_identity(document()), document().to_vec())
         .expect("a fresh evidence key");
     evidence
 }
 
-fn package_id(compiled: &Compiled) -> qsl_semantics::library::PackageId {
-    compiled.emission.package.package_id()
-}
-
-fn read_bytes(bytes: &[u8], wire: &Value, package_id: qsl_semantics::library::PackageId) -> Read {
-    read_v2(
-        bytes,
-        library(),
-        V2ReadLimits::default(),
-        &evidence(wire),
-        &qsl_semantics::library::fixtures::single_pin(library(), package_id),
-    )
+fn read_bytes(bytes: &[u8], wire: &Value) -> Read {
+    read_v2(bytes, library(), V2ReadLimits::default(), &evidence(wire))
 }
 
 /// QSL's full I2 read of `compiled`, and IR's admitted package.
@@ -100,23 +80,22 @@ fn admit(compiled: &Compiled) -> std::sync::Arc<quire_contract_model::CheckedPac
         library(),
         V2ReadLimits::default(),
         &evidence(&compiled.wire),
-        &qsl_semantics::library::fixtures::single_pin(library(), package_id(compiled)),
     )
     .unwrap_or_else(|failure| panic!("the I2 read admits the package: {failure:?}"))
     .into_value()
     .admitted
 }
 
-fn node_with<'w>(wire: &'w Value, digest: &str) -> &'w Value {
+fn node_with<'w>(wire: &'w Value, key: &Value) -> &'w Value {
     nodes(wire)
         .iter()
-        .find(|node| node["node_id"]["digest"] == digest)
-        .unwrap_or_else(|| panic!("a node {digest}"))
+        .find(|node| &node["node_id"] == key)
+        .unwrap_or_else(|| panic!("a node {key}"))
 }
 
-fn target(term: &Value) -> &str {
+fn target(term: &Value) -> &Value {
     assert_eq!(term["term"], "reference", "{term}");
-    term["target"]["digest"].as_str().expect("a target digest")
+    &term["target"]
 }
 
 fn binding<'v>(body: &'v Value, name: &str) -> &'v Value {
@@ -154,8 +133,8 @@ fn claim_of<'w>(wire: &'w Value, kind: &str) -> &'w Value {
     node
 }
 
-fn digest(node: &Value) -> String {
-    node["node_id"]["digest"].as_str().unwrap().to_owned()
+fn key(node: &Value) -> NodeKey {
+    qsl_foundation::node_wire::node_key_from_json(&node["node_id"]).expect("a structural node key")
 }
 
 fn is_empty_aggregate(term: &Value) -> bool {
@@ -192,7 +171,7 @@ fn the_three_forms_emit_claim_nodes_the_i2_read_admits() {
             .map(|occurrence| &occurrence["role"])
             .collect();
         assert_eq!(roles, [&json!("claim")]);
-        let boolean = node_with(wire, node["semantic_type"]["digest"].as_str().unwrap());
+        let boolean = node_with(wire, &node["semantic_type"]);
         assert_eq!(boolean["semantic_form"], "boolean");
     }
 
@@ -226,54 +205,43 @@ fn the_three_forms_emit_claim_nodes_the_i2_read_admits() {
     };
     let possible_root = root_of(StateGraphKind::Possible);
     assert_eq!(possible_root.from(), None);
-    assert_eq!(
-        possible_root.over().map(|id| id.to_string()),
-        Some(digest(over))
-    );
-    assert_eq!(possible_root.target().to_string(), digest(goal));
+    assert_eq!(possible_root.over(), Some(&key(over)));
+    assert_eq!(possible_root.target(), &key(goal));
     let always_root = root_of(StateGraphKind::AlwaysPossible);
-    assert_eq!(
-        always_root.from().map(|id| id.to_string()),
-        Some(digest(from))
-    );
+    assert_eq!(always_root.from(), Some(&key(from)));
     let unique_root = root_of(StateGraphKind::UniquePath);
     assert_eq!(
-        unique_root.from().map(|id| id.to_string()),
-        Some(target(binding(&unique["body"], "from")).to_owned())
+        unique_root.from(),
+        Some(
+            &qsl_foundation::node_wire::node_key_from_json(target(binding(
+                &unique["body"],
+                "from"
+            )))
+            .unwrap()
+        )
     );
     assert_eq!(
-        unique_root.target().to_string(),
-        target(binding(&unique["body"], "target"))
+        unique_root.target(),
+        &qsl_foundation::node_wire::node_key_from_json(target(binding(&unique["body"], "target")))
+            .unwrap()
     );
 }
 
-/// FR-410-AC-2: `possible P` and `always possible P` emit different node ids
-/// and `package_id`s; an `always possible` claim without `from` and with
-/// `from (true)` emit one node id with `from` the `true` literal node; a
+/// FR-410-AC-2: an `always possible` claim without `from` and with
+/// `from (true)` emit the `true` literal node as `from`; a
 /// claim with no `over` emits the empty aggregate for `over` and the `true`
 /// literal node as its `target`; one claim declared twice under two names
 /// emits one node with two `claim` occurrences and no `declaration`.
 #[trace("TC-1140", "FR-410-AC-2")]
 #[test]
 fn the_form_enters_the_identity_and_equal_claims_share_one_node() {
-    let possible = compile(&unit(REACHES_TWO));
-    let always = compile(&unit(
-        "always possible ReachesTwo using v over (c: Config::ConfigVersion) \
-         { c.versionNumber = 2 }",
-    ));
-    assert_ne!(
-        digest(claim_of(&possible.wire, "possible")),
-        digest(claim_of(&always.wire, "always-possible"))
-    );
-    assert_ne!(package_id(&possible), package_id(&always));
-
     let omitted = compile(&unit(OPEN_ALWAYS));
     let written = compile(&unit(TRUE_FROM));
     let (omitted_node, written_node) = (
         claim_of(&omitted.wire, "always-possible"),
         claim_of(&written.wire, "always-possible"),
     );
-    assert_eq!(digest(omitted_node), digest(written_node));
+    assert_eq!(omitted_node["body"], written_node["body"]);
     let truth = node_with(
         &omitted.wire,
         target(binding(&omitted_node["body"], "from")),
@@ -311,75 +279,7 @@ fn the_form_enters_the_identity_and_equal_claims_share_one_node() {
     assert_eq!(ordinals, [&json!(0), &json!(1)]);
 }
 
-/// The node id of the one `kind` claim that compiling `declarations` emits.
-fn claim_id(declarations: &str, kind: &str) -> String {
-    digest(claim_of(&compile(&unit(declarations)).wire, kind))
-}
-
 const OVER_C: &str = "using v over (c: Config::ConfigVersion)";
-
-/// QSL-1108 (SR-17237 FND-001): the three forms over equal predicates give
-/// three distinct node ids, and swapping `unique path`'s `from` and `to`
-/// gives a fourth, so the form and each predicate's role enter the identity.
-#[trace("TC-1140")]
-#[test]
-fn the_form_and_the_unique_path_roles_each_change_the_node_id() {
-    let two = "c.versionNumber = 2";
-    let possible = claim_id(&format!("possible P {OVER_C} {{ {two} }}"), "possible");
-    let always = claim_id(
-        &format!("always possible P {OVER_C} from (true) {{ {two} }}"),
-        "always-possible",
-    );
-    let unique = claim_id(
-        &format!("unique path P {OVER_C} from (true) to ({two});"),
-        "unique-path",
-    );
-    assert_ne!(possible, always);
-    assert_ne!(always, unique);
-    assert_ne!(possible, unique);
-
-    let forward = claim_id(
-        &format!("unique path P {OVER_C} from (c.versionNumber = 0) to ({two});"),
-        "unique-path",
-    );
-    let swapped = claim_id(
-        &format!("unique path P {OVER_C} from ({two}) to (c.versionNumber = 0);"),
-        "unique-path",
-    );
-    assert_ne!(forward, swapped);
-}
-
-/// QSL-1108 (SR-17237 FND-001): whitespace, redundant parentheses, the claim's
-/// name, the order of the unit's claims and other claims in the unit leave a
-/// claim's node id unchanged.
-#[trace("TC-1140")]
-#[test]
-fn spelling_order_and_other_claims_leave_the_node_id_unchanged() {
-    let plain = claim_id(REACHES_TWO, "possible");
-    let spaced = claim_id(
-        "possible   ReachesTwo   using v\n  over (c: Config::ConfigVersion)\n \
-         {   c.versionNumber   =   2   }",
-        "possible",
-    );
-    let parenthesised = claim_id(
-        "possible ReachesTwo using v over (c: Config::ConfigVersion) \
-         { ((c.versionNumber = 2)) }",
-        "possible",
-    );
-    let renamed = claim_id(&REACHES_TWO.replace("ReachesTwo", "Elsewhere"), "possible");
-    for same in [&spaced, &parenthesised, &renamed] {
-        assert_eq!(&plain, same);
-    }
-
-    let others = format!("{CAN_STILL_WIN}\n{IN_ONE_WAY}");
-    let before = format!("{REACHES_TWO}\n{others}");
-    let after = format!("{others}\n{REACHES_TWO}");
-    for declarations in [before, after] {
-        let compiled = compile(&unit(&declarations));
-        assert_eq!(claim_nodes(&compiled.wire).len(), 3);
-        assert_eq!(digest(claim_of(&compiled.wire, "possible")), plain);
-    }
-}
 
 /// QSL-1108 (SR-17237 FND-001): a `{ true }` target is the `true` literal
 /// node the omitted `from` already references, so one literal node serves
@@ -400,24 +300,6 @@ fn a_true_target_reuses_the_true_literal_node() {
         .filter(|node| node["semantic_form"] == "literal" && node["body"]["value"] == json!(true))
         .count();
     assert_eq!(literals, 1, "one true literal node in the package");
-}
-
-/// QSL-1108 (SR-17236 FND-007): renaming the `over` parameter changes the
-/// node id, because the parameter node carries its name (documented).
-#[trace("TC-1140")]
-#[test]
-fn the_over_parameter_name_enters_the_node_id() {
-    let renamed = REACHES_TWO
-        .replace("(c:", "(d:")
-        .replace("c.version", "d.version");
-    assert_ne!(
-        claim_id(REACHES_TWO, "possible"),
-        claim_id(&renamed, "possible")
-    );
-}
-
-fn wire_id(digest: &str) -> WireNodeId {
-    WireNodeId::from_hex(digest).expect("a node digest")
 }
 
 /// FR-410-AC-3: the lookup returns `[node, "claim", ordinal]` for
@@ -441,23 +323,21 @@ fn the_i2_lookup_resolves_the_triple_and_each_lookup_takes_only_its_own_form() {
         .try_into()
         .unwrap_or_else(|roots: Vec<StateGraphRoot>| panic!("one root: {roots:?}"));
     let triple = root.occurrence().clone();
-    assert_eq!(triple.node(), wire_id(&digest(claim)));
+    assert_eq!(triple.node(), &key(claim));
     assert_eq!(triple.origin().role().as_str(), "claim");
 
     let recompiled = admit(&compile(&text));
     assert_eq!(resolve_state_graph_root(&recompiled, &triple), Ok(Ok(root)));
 
-    let temporal = nodes(&compiled.wire)
-        .iter()
-        .find(|node| node["semantic_form"] == "temporal_clause")
-        .expect("the temporal clause node");
     let claim_at =
         |node, ordinal| OccurrenceKey::new(node, Origin::new(Role::new("claim"), ordinal));
     let ordinal = triple.origin().ordinal();
     for foreign in [
-        claim_at(WireNodeId::from_digest([7; 32]), ordinal),
-        claim_at(wire_id(&digest(temporal)), 0),
-        claim_at(triple.node(), ordinal + 1),
+        claim_at(
+            NodeKey::new("pkg", vec![PathSegment::Text("missing".into())], 0).unwrap(),
+            ordinal,
+        ),
+        claim_at(triple.node().clone(), ordinal + 1),
     ] {
         assert_eq!(
             resolve_state_graph_root(&recompiled, &foreign),
@@ -479,72 +359,58 @@ fn the_i2_lookup_resolves_the_triple_and_each_lookup_takes_only_its_own_form() {
         .all(|clause| clause.occurrence() != &triple));
 }
 
-/// `compiled`'s wire with the node `digest` edited by `edit`, every stale
-/// key renamed and the `package_id` recomputed.
-fn edited(
-    compiled: &Compiled,
-    digest: &str,
-    edit: impl FnOnce(&mut Value),
-) -> (Value, BTreeMap<String, String>) {
+/// `compiled`'s wire with one structurally keyed node edited by `edit`.
+fn edited(compiled: &Compiled, key: &Value, edit: impl FnOnce(&mut Value)) -> Value {
     let mut envelope = compiled.wire.clone();
     let node = envelope["semantic_graph"]["nodes"]
         .as_array_mut()
         .expect("nodes")
         .iter_mut()
-        .find(|node| node["node_id"]["digest"] == digest)
+        .find(|node| &node["node_id"] == key)
         .expect("the edited node");
     edit(node);
-    let renames = rekey_stale(&mut envelope);
-    (envelope, renames)
+    envelope
 }
 
 fn ir_refusal(
     compiled: &Compiled,
     envelope: &Value,
 ) -> quire_contract_model::CheckedPackageRefusal {
-    let package_id = crate::checked_v2::tests::derived_package_id(envelope);
-    match read_bytes(&jcs(envelope), &compiled.wire, package_id) {
+    match read_bytes(&jcs(envelope), &compiled.wire) {
         Read::Refused(V2ReadRefusal::Envelope { refusal, .. }) => *refusal,
         other => panic!("an IR refusal, not {other:?}"),
     }
 }
 
 fn path(refusal: &quire_contract_model::CheckedPackageRefusal) -> String {
-    refusal
+    refusal.loci[0]
         .path
         .as_ref()
         .map(|pointer| pointer.as_str().to_owned())
         .unwrap_or_default()
 }
 
-fn position(envelope: &Value, digest: &str) -> usize {
+fn position(envelope: &Value, key: &Value) -> usize {
     nodes(envelope)
         .iter()
-        .position(|node| node["node_id"]["digest"] == digest)
+        .position(|node| &node["node_id"] == key)
         .expect("the node is in the graph")
-}
-
-fn renamed(renames: &BTreeMap<String, String>, digest: &str) -> String {
-    renames
-        .get(digest)
-        .cloned()
-        .unwrap_or_else(|| digest.to_owned())
 }
 
 /// FR-410-AC-4: AC-1's `ReachesTwo` node with `kind` `eventually-possible`
 /// refuses `invalid_package`/`invalid-value` at the `kind` binding, and with
 /// `target` a reference to `c`'s parameter node and `dependencies` rewritten
 /// to the body's targets refuses `ill_typed`/`operator-ineligible` at the
-/// target, the node key and `package_id` recomputed after each edit.
+/// target, with structural keys remaining stable after each edit.
 #[trace("TC-1140", "FR-410-AC-4")]
 #[test]
 fn the_i2_read_refuses_each_fr475_defect_at_its_locus() {
     use quire_contract_model::CheckedPackageRefusalCause as Cause;
     let compiled = compile(&unit(REACHES_TWO));
     let node = claim_of(&compiled.wire, "possible");
-    let claim_digest = digest(node);
+    let claim_key = node["node_id"].clone();
 
-    let (envelope, renames) = edited(&compiled, &claim_digest, |node| {
+    let envelope = edited(&compiled, &claim_key, |node| {
         node["body"]["members"][0]["value"]["value"] = json!("eventually-possible");
     });
     let refusal = ir_refusal(&compiled, &envelope);
@@ -556,7 +422,7 @@ fn the_i2_read_refuses_each_fr475_defect_at_its_locus() {
         ),
         "{refusal:?}"
     );
-    let at = position(&envelope, &renamed(&renames, &claim_digest));
+    let at = position(&envelope, &claim_key);
     assert_eq!(
         path(&refusal),
         format!("/semantic_graph/nodes/{at}/body/members/0")
@@ -564,8 +430,8 @@ fn the_i2_read_refuses_each_fr475_defect_at_its_locus() {
 
     let over = target(binding(&node["body"], "over")).to_owned();
     let node_ref = node_with(&compiled.wire, &over)["node_id"].clone();
-    let (envelope, renames) = edited(&compiled, &claim_digest, |node| {
-        node["body"]["members"][3]["value"]["target"]["digest"] = json!(over);
+    let envelope = edited(&compiled, &claim_key, |node| {
+        node["body"]["members"][3]["value"]["target"] = over.clone();
         node["dependencies"] = json!([node_ref]);
     });
     let refusal = ir_refusal(&compiled, &envelope);
@@ -577,7 +443,7 @@ fn the_i2_read_refuses_each_fr475_defect_at_its_locus() {
         ),
         "{refusal:?}"
     );
-    let at = position(&envelope, &renamed(&renames, &claim_digest));
+    let at = position(&envelope, &claim_key);
     assert_eq!(
         path(&refusal),
         format!("/semantic_graph/nodes/{at}/body/members/3/value/target"),

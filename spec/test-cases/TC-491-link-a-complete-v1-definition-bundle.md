@@ -11,7 +11,8 @@ relationships:
 ## Description
 
 Verify `library::bundle::link_bundle` over a caller-supplied
-`DefinitionCatalog`. Scope: FR-111-AC-1 to FR-111-AC-7. These are the
+`DefinitionCatalog`. Scope: FR-111-AC-1 to FR-111-AC-4 and FR-111-AC-6 to
+FR-111-AC-7. These are the
 scenarios the former `tests/it/complete_package.rs` and
 `complete::package_tests` covered against the retired resolver, moved to
 the relocated module with their QSpec tags (`QSpec-FR-131-AC-1` to
@@ -24,7 +25,7 @@ complete-V1 facet, together carrying the 176-capability inventory, with
 dependency edges between them.
 
 1. Link the full root set; read the bundle's definitions, facets,
-   capabilities, identity and limits. Validate the capabilities against a
+   capabilities and limits. Validate the capabilities against a
    broader and a narrower known set.
 2. Link against catalogs that lack a root's identity, and hold a root whose
    edge names an absent definition.
@@ -32,19 +33,16 @@ dependency edges between them.
    reaches another selection of a root's identity, and a catalog with a
    dependency cycle.
 4. Link a closure missing one facet, and one missing one capability.
-5. Compute the identity (the structural preimage) of the bundle, then change one
-   definition's role, dependencies, capabilities and bytes in turn.
-6. For each `PackageLimits` field, build and link at its bound and one
+5. For each `PackageLimits` field, build and link at its bound and one
    past it; raise `definitions` above the default and build a catalog the
    default refuses.
-7. For every refusal above, check its (code, cause) pair against the
+6. For every refusal above, check its (code, cause) pair against the
    catalog.
 
 ## Expected Results
 
-- Step 1 links, with nine facets and every closed definition; the
-  identity is the same under both known sets, and only
-  `validate_known_capabilities` refuses the narrower one.
+- Step 1 links, with nine facets and every closed definition; only
+  `validate_known_capabilities` refuses the narrower known set.
 - Step 2 refuses `unknown_profile`/`unsupported-selection` and
   `missing_import`/`missing-selection`, each naming the root's index.
 - Step 3 refuses `ambiguous_declaration`/`conflicting-authority` twice,
@@ -52,9 +50,7 @@ dependency edges between them.
   the cycle in path order.
 - Step 4 refuses `invalid_package`/`feature-set-mismatch` naming the facet,
   and `unknown_required_feature`/`unsupported-feature`.
-- Step 5 equals the expected preimage tuple, and each change gives a different
-  identity.
-- Step 6 admits each bound and refuses one past it with
+- Step 5 admits each bound and refuses one past it with
   `resource_exhausted`/`insufficient-next-charge`; the raised ceiling
   admits.
-- Step 7: every pair is listed by `quire.native.diagnostics/v1`.
+- Step 6: every pair is listed by `quire.native.diagnostics/v1`.

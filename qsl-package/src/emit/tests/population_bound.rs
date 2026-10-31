@@ -168,6 +168,7 @@ fn a_bounded_walked_population_is_linked_as_one_anonymous_node() {
             "kind": "relationship_end",
             "declaration": relation["node_id"],
             "name": "next",
+            "destination_type": model_node(wire, "Order")["node_id"],
             "population": population["node_id"],
         })
     );
@@ -212,6 +213,7 @@ fn an_unbounded_walked_population_keeps_its_member_and_node_identity() {
             "kind": "relationship_end",
             "declaration": relation["node_id"],
             "name": "next",
+            "destination_type": model_node(&unbounded.wire, "Order")["node_id"],
         })
     );
     assert_eq!(population_nodes(&unbounded.wire), Vec::<&Value>::new());
@@ -379,10 +381,9 @@ fn selections(
     applications(&lowered.wire, "quire.op.model.reaches")
         .into_iter()
         .map(|reach| {
-            let id = quire_contract_model::CheckedNodeId {
-                domain: reach["node_id"]["domain"].as_str().unwrap().into(),
-                digest: reach["node_id"]["digest"].as_str().unwrap().into(),
-            };
+            let id = crate::emit::checked_node_id_of(
+                &qsl_foundation::node_wire::node_key_from_json(&reach["node_id"]).unwrap(),
+            );
             let selector = ir
                 .reaches_population(&id)
                 .unwrap_or_else(|error| {
@@ -425,8 +426,8 @@ fn ir_reads_each_bounded_package_and_selects_its_population() {
         for (member, binding, occurrence) in selections(&lowered) {
             let population = node_of(&lowered.wire, &member);
             assert_eq!(
-                json!(binding.digest.as_ref()),
-                population["node_id"]["digest"],
+                serde_json::to_value(&binding).unwrap(),
+                population["node_id"],
                 "{unit}: the selector names the member's node"
             );
             let least = type_occurrences(&lowered, population)

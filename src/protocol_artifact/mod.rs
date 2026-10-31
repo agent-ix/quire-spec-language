@@ -31,7 +31,7 @@ pub use number::{
     NUMERIC_PROFILE,
 };
 
-pub use domain::{AdmittedDomainPackage, DOMAIN_PACKAGE_VERSION_NAMESPACE};
+pub use domain::{AdmittedDomainPackage, DOMAIN_PACKAGE_REVISION_NAMESPACE};
 pub use encoding::encode_candidate;
 pub use intake::read;
 pub use occurrence::{
@@ -265,7 +265,7 @@ pub enum Invalid {
     Definition,
     /// A reference or export has no matching admitted model authority.
     Model,
-    /// A foreign source's identity, path or digest disagrees with an earlier
+    /// A foreign source's identity or path disagrees with an earlier
     /// occurrence of the same locus.
     ForeignLocus,
     /// A locus falls outside its owning declaration's recorded span, or names

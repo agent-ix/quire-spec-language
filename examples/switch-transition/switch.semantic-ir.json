@@ -1,7 +1,6 @@
 {
   "canonicalization": {
-    "algorithm": "rfc8785-v1",
-    "digest": "sha256-jcs"
+    "algorithm": "rfc8785-v1"
   },
   "constructs": [
     {
@@ -17,7 +16,6 @@
         "module": "test/business",
         "name": "thing"
       },
-      "manifestDigest": "sha256:878fa019c4476525ff2453945ca3d89f343c8f978f6589f02f330c73dbe508c7",
       "moduleVersion": "1.0.0"
     }
   ],
@@ -26,15 +24,12 @@
   "occurrences": [],
   "package": {
     "identity": "test/orders",
-    "lockDigest": "sha256:878fa019c4476525ff2453945ca3d89f343c8f978f6589f02f330c73dbe508c7",
-    "manifestDigest": "sha256:878fa019c4476525ff2453945ca3d89f343c8f978f6589f02f330c73dbe508c7",
     "mappingVersions": [],
     "profileVersions": [],
     "version": "1"
   },
   "source": {
     "dialect": "spec-bundle",
-    "digest": "sha256:878fa019c4476525ff2453945ca3d89f343c8f978f6589f02f330c73dbe508c7",
     "identity": "ix://test/orders/spec",
     "version": "1.0.0"
   },
@@ -137,6 +132,53 @@
                   "generatorVersion": "1.0.0",
                   "inputIdentities": [
                     "ix://test/orders/Switch/set/flag"
+                  ]
+                }
+              },
+              "presence": "required",
+              "typeRef": "ix://quire/native/Boolean"
+            }
+          ],
+          "post": [],
+          "pre": []
+        },
+        {
+          "frame": {
+            "creates": [],
+            "deletes": [],
+            "modifies": [
+              "ix://test/orders/Switch/on"
+            ]
+          },
+          "identity": "ix://test/orders/Switch/adjust",
+          "name": "adjust",
+          "origin": {
+            "generated": {
+              "generatorIdentity": "ix://test/orders/Switch/adjust",
+              "generatorVersion": "1.0.0",
+              "inputIdentities": [
+                "ix://test/orders/Switch/adjust"
+              ]
+            }
+          },
+          "params": [
+            {
+              "defaultKind": "none",
+              "identity": "ix://test/orders/Switch/adjust/flag",
+              "multiplicity": {
+                "lower": 1,
+                "ordered": false,
+                "unique": true,
+                "upper": 1
+              },
+              "name": "flag",
+              "nullable": false,
+              "origin": {
+                "generated": {
+                  "generatorIdentity": "ix://test/orders/Switch/adjust/flag",
+                  "generatorVersion": "1.0.0",
+                  "inputIdentities": [
+                    "ix://test/orders/Switch/adjust/flag"
                   ]
                 }
               },

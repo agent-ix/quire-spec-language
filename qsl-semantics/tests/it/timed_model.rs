@@ -8,8 +8,9 @@
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
 use qsl_semantics::check::{
-    CheckCause, CheckRefusal, CheckedGraph, CheckedNode, ClockOp, MeasureObligation, NodeKind,
-    StatePredicate, TemporalCause, TimeSourceKind, TimedConstruct, TimedModel,
+    AggregateTerm, BodyTerm, CheckCause, CheckRefusal, CheckedGraph, CheckedNode, ClockOp,
+    MeasureObligation, NodeKind, StatePredicate, TemporalCause, TimeSourceKind, TimedConstruct,
+    TimedModel,
 };
 use qsl_semantics::model::intake::meaning;
 use quire_exact::{Integer, Rational};
@@ -506,14 +507,11 @@ pub(super) fn declared_names(graph: &CheckedGraph) -> Vec<String> {
         .semantic_graph()
         .nodes()
         .filter_map(|node| {
-            let preimage: Value = serde_json::from_slice(node.preimage()).ok()?;
-            let names = preimage["declaration"]["qualified_name"]
-                .as_array()?
-                .clone();
+            let names = node.declaration()?;
             Some(
                 names
                     .iter()
-                    .filter_map(Value::as_str)
+                    .map(|name| name.as_str())
                     .collect::<Vec<_>>()
                     .join("::"),
             )
@@ -721,15 +719,18 @@ fn clock_typed_declarations_raise_no_refusal_of_their_own() {
     let timer = graph
         .semantic_graph()
         .nodes()
-        .find_map(|node| {
-            let preimage: Value = serde_json::from_slice(node.preimage()).ok()?;
-            (preimage["declaration"]["qualified_name"] == json!(["Timer"])).then_some(preimage)
+        .find(|node| {
+            node.declaration()
+                .is_some_and(|path| path.len() == 1 && path[0].as_str() == "Timer")
         })
         .expect("the Timer record node");
+    let BodyTerm::Aggregate(AggregateTerm { members }) = timer.body() else {
+        panic!("Timer's body is an aggregate: {:?}", timer.body());
+    };
     assert_eq!(
-        timer["body"]["members"].as_array().map(Vec::len),
-        Some(1),
-        "Timer lists its data field n only: {timer}"
+        members.len(),
+        1,
+        "Timer lists its data field n only: {members:?}"
     );
 }
 

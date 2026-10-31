@@ -12,7 +12,7 @@ use quire_spec_language::linking::composed::{
 use quire_spec_language::Limits;
 
 const HEADER: &str = r#"language "ix:native" edition "1-draft";
-profile S = "test:state-definition" version "1" digest "not-admitted";
+profile S = "test:state-definition";
 "#;
 
 fn identity(authority: &str) -> SourceIdentity {
@@ -60,7 +60,6 @@ fn inventory(sources: &[Source]) -> SourceInventory {
             .map(|source| ExpectedSource {
                 authority: source.identity().identity.clone(),
                 identity: source.identity().clone(),
-                digest: source.digest(),
             })
             .collect(),
     }
@@ -558,9 +557,9 @@ fn calls_in_activation_capture_compensation_and_control_bodies_keep_their_owner(
     let text = format!(
         "{HEADER}{}",
         r#"
-profile T = "test:temporal-definition" version "1" digest "not-admitted";
-profile P = "test:protocol-definition" version "1" digest "not-admitted";
-model M = "test:model" version "1" digest "not-admitted";
+profile T = "test:temporal-definition";
+profile P = "test:protocol-definition";
+model M = "test:model";
 predicate Leaf using S (): Boolean { true }
 pre Allowed using S on M::Job::run { Leaf() }
 temporal Future using T over (sample: M::Sample) clock "clock"
@@ -675,7 +674,6 @@ fn sources_differing_only_in_authority_are_distinct() {
             .map(|source| ExpectedSource {
                 authority: source.identity().authority.clone(),
                 identity: source.identity().clone(),
-                digest: source.digest(),
             })
             .collect(),
         ..inventory(&sources)

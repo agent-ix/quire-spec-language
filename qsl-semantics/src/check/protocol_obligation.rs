@@ -1096,7 +1096,11 @@ impl Checker<'_, '_> {
         form: &CompensationForm,
         operation: &ClauseOperation,
     ) -> Option<Option<PopulationDomain>> {
-        match population_of(self.input.models, operation.declaring, self.scope().types()) {
+        match population_of(
+            self.input.models,
+            operation.declaring.clone(),
+            self.scope().types(),
+        ) {
             Ok(domain) => Some(domain),
             Err(populations) => {
                 self.refuse(ObligationCause::AmbiguousPopulation {
@@ -1379,7 +1383,7 @@ fn is_record(scope: &Scope, value_type: &ValueType) -> bool {
     };
     scope
         .types()
-        .composite(*key)
+        .composite(key.clone())
         .is_some_and(|declaration| matches!(declaration.shape(), CompositeShape::Record(_)))
 }
 

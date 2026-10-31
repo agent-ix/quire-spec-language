@@ -21,16 +21,13 @@ use qsl_analyze::model_check::{check_model, ModelCheckRefusal, ModelCheckRequest
 use qsl_eval::automaton::{SafetyState, SafetyTranslation, StateContext};
 use qsl_eval::simulation::model::{ModelSimState, ModelSystem};
 use qsl_eval::simulation::TransitionSystem;
-use qsl_foundation::digest::WireNodeId;
-use qsl_foundation::SourceIdentity;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
-    check_closure, compile_package, settle_model_check, CertificateLocus, CertificateRejection,
-    CertificateRequest, CertificateRule, Certification, ClauseIdentity, ClauseRootRefusal,
-    ClosureCertificate, ClosureRefusal, DependencyInput, DigestDomain, DigestRecord, Execution,
-    IncompleteCause, InconclusiveCause, ItemRefusal, ModelCheckItem, ModelCheckLimit,
-    ModelCheckLimits, ModelCheckOutcome, ProductStateRef, ProofBasis, ProofCertificate,
-    ReachedLimit, ReplayLimits, ResultLabel, SettlementBasis, StageLimits,
+    check_closure, settle_model_check, CertificateLocus, CertificateRejection, CertificateRequest,
+    CertificateRule, Certification, ClauseIdentity, ClauseRootRefusal, ClosureCertificate,
+    ClosureRefusal, DigestDomain, DigestRecord, Execution, IncompleteCause, InconclusiveCause,
+    ItemRefusal, ModelCheckItem, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome,
+    ProductStateRef, ProofBasis, ProofCertificate, ReachedLimit, ResultLabel, SettlementBasis,
     TemporalCertificateCheck, TerminalValue, UndecidedCause,
 };
 use qsl_semantics::check::CheckedTemporalClause;
@@ -38,8 +35,8 @@ use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::{Cancel, CancelCause, ObjectReference, ScalarLimits, Value};
 
 use crate::counter::{
-    clause_text, document, package, package_with_clauses, reference, subject, unit_text, value,
-    Documents, Letters, CONTRACT, UNLIMITED, ZERO,
+    document, package, package_with_clauses, reference, subject, value, Documents, Letters,
+    CONTRACT, UNLIMITED, ZERO,
 };
 
 const GUARDED: &str = "pre CanInc using v on M::Counter::inc { 6 mod (2 - self.value) >= 0 }\n\
@@ -69,10 +66,8 @@ pub(crate) fn world(body: &str, start: &[(&'static str, i64)]) -> World {
 }
 
 /// A TP-1 clause with its letters, declared in a package of its own: the
-/// clause is a declaration of that package, whose `body` the unit text ends
-/// with.
+/// clause is a declaration of that package.
 pub(crate) struct Invariant {
-    body: String,
     package: CheckedPackage,
     clause: CheckedTemporalClause,
     letters: Letters,
@@ -84,15 +79,13 @@ impl World {
         let declared = [("C", "", formula)];
         let (package, mut clauses) =
             package_with_clauses(&self.documents.document, &self.body, &declared);
-        let body = format!("{}{}", self.body, clause_text("C", "", formula));
-        self.declared(body, package, clauses.remove(0), atom)
+        self.declared(package, clauses.remove(0), atom)
     }
 
-    /// `clause`, declared by `package` whose unit body is `body`, with
-    /// letters over this world's objects.
+    /// `clause`, declared by `package`, with letters over this world's
+    /// objects.
     fn declared(
         &self,
-        body: String,
         package: CheckedPackage,
         clause: CheckedTemporalClause,
         atom: fn(i64) -> Option<bool>,
@@ -101,7 +94,6 @@ impl World {
             ClauseIdentity::resolve(&package, &self.documents.packages, &clause, &Cancel::new())
                 .expect("the package declares the clause");
         Invariant {
-            body,
             package,
             clause,
             letters: Letters { atom },
@@ -142,27 +134,6 @@ impl World {
             item,
             smt_encoding: qsl_replay::SmtEncodingLimits::default(),
         }
-    }
-
-    /// The `package_id` FR-098's recompile of the unit gives.
-    fn package_id(&self) -> DigestRecord {
-        self.package_id_of(&self.body)
-    }
-
-    /// The `package_id` FR-098's recompile of the unit with `body` gives.
-    fn package_id_of(&self, body: &str) -> DigestRecord {
-        let unit = unit_text(&self.documents.document, body);
-        compile_package(
-            SourceIdentity::new("agent-ix", "counter", "git", "1"),
-            "counter.native",
-            unit.as_bytes(),
-            [self.documents.document.as_slice()],
-            &DependencyInput::default(),
-            StageLimits::default(),
-            ReplayLimits::default(),
-        )
-        .expect("the unit compiles")
-        .package_id()
     }
 
     fn system(&self) -> ModelSystem<'_> {
@@ -228,8 +199,8 @@ impl World {
 
 impl Invariant {
     /// The EN-1 item `analyze` runs for this clause under `limits`
-    /// (FR-281): the run, its closure checker's request, the `package_id`
-    /// the run checked, and `replay` for a counterexample.
+    /// (FR-281): the run, its closure checker's request, and `replay` for a
+    /// counterexample.
     pub(crate) fn model_item<'w>(
         &'w self,
         world: &'w World,
@@ -255,7 +226,6 @@ impl Invariant {
                 reductions: Default::default(),
             },
             certificate: self.request(world, UNLIMITED),
-            package_id: self.package_id(world),
             replay: Box::new(replay),
         }
     }
@@ -285,12 +255,6 @@ impl Invariant {
         world.run_in(&self.package, self.item())
     }
 
-    /// The `package_id` of the recompile of the unit that declares the
-    /// clause.
-    fn package_id(&self, world: &World) -> DigestRecord {
-        world.package_id_of(&self.body)
-    }
-
     /// The translation of the instance bound to `object`.
     fn translation(&self, object: &ObjectReference) -> SafetyTranslation {
         let binding = vec![qsl_eval::automaton::ContextBinding {
@@ -318,13 +282,6 @@ fn closure_proof(certificate: &ProofCertificate) -> &ClosureCertificate {
         ProofCertificate::Closure(closure) => closure,
         ProofCertificate::Component(_) => panic!("expected a closure certificate"),
     }
-}
-
-fn package_identity(package: &CheckedPackage) -> qsl_semantics::library::PackageId {
-    qsl_package::emit_checked(package)
-        .expect("the package emits")
-        .package()
-        .package_id()
 }
 
 fn check(
@@ -365,11 +322,9 @@ fn least(states: &[ProductStateRef]) -> ProductStateRef {
 fn closure(
     states: &[(DigestRecord, Vec<i64>)],
     translation: &SafetyTranslation,
-    package_id: qsl_semantics::library::PackageId,
 ) -> ClosureCertificate {
     let key = translation.key(SafetyState::Carried).expect("encodes");
     ClosureCertificate {
-        package_id,
         states: states
             .iter()
             .map(|(digest, _)| ProductStateRef {
@@ -394,69 +349,13 @@ fn a_proved_invariant_carries_a_certificate_the_core_accepts() {
     assert_eq!(reachable.len(), 16);
     let mut expected = Vec::new();
     for object in world.objects() {
-        expected.extend(
-            closure(
-                &reachable,
-                &invariant.translation(&object),
-                package_identity(&invariant.package),
-            )
-            .states,
-        );
+        expected.extend(closure(&reachable, &invariant.translation(&object)).states);
     }
     expected.sort();
     assert_eq!(certificate.states, expected);
     assert_eq!(
         check(&invariant.request(&world, UNLIMITED), &certificate),
         TemporalCertificateCheck::Accepted
-    );
-}
-
-/// FR-282 package identity is checked before any closure rule: a certificate
-/// from another checked package is stale even when its listed states are
-/// malformed.
-#[trace("TC-525", "TC-1141", "FR-338-AC-11")]
-#[test]
-fn a_certificate_from_another_package_is_stale_before_closure_rules() {
-    let world = world(CONTRACT, &[("c", 0)]);
-    let invariant = world.invariant("always holds(c.value <= 3)", |v| Some(v <= 3));
-    let outcome = invariant.run(&world);
-    let request = invariant.request(&world, UNLIMITED);
-    let mut certificate = certificate(&outcome);
-    let recompiled = package_identity(&invariant.package);
-    let foreign = package_identity(&world.package);
-    assert_ne!(foreign, recompiled);
-    certificate.package_id = foreign;
-    certificate.states.clear();
-
-    assert_eq!(
-        check(&request, &certificate),
-        TemporalCertificateCheck::PackageMismatch {
-            certificate: foreign,
-            recompiled,
-        }
-    );
-
-    let ModelCheckOutcome::Holds { stats, .. } = &outcome else {
-        panic!("the proof outcome holds");
-    };
-    let stale_outcome = ModelCheckOutcome::Holds {
-        certificate: ProofCertificate::Closure(certificate),
-        stats: *stats,
-    };
-    let record = settle_model_check(
-        &stale_outcome,
-        &ModelCheckLimits::default(),
-        &invariant.package_id(&world),
-        &request,
-        &Cancel::new(),
-        |_| panic!("a proof replays nothing"),
-    );
-    assert_eq!(
-        record.value,
-        TerminalValue::Inconclusive(InconclusiveCause::StaleDependency {
-            requested: qsl_replay::StaleIdentity::Package(foreign.record()),
-            recompiled: qsl_replay::StaleIdentity::Package(recompiled.record()),
-        })
     );
 }
 
@@ -509,10 +408,7 @@ fn a_deadlock_is_bad_for_the_deadlock_item_alone() {
     let deadlock = SafetyTranslation::deadlock_freedom().expect("translates");
     let request = world.request(ModelCheckItem::DeadlockFreedom, UNLIMITED);
     assert_eq!(
-        check(
-            &request,
-            &closure(&reachable, &deadlock, package_identity(&world.package),),
-        ),
+        check(&request, &closure(&reachable, &deadlock),),
         rejected(
             CertificateRule::BadState,
             ProductStateRef {
@@ -527,11 +423,7 @@ fn a_deadlock_is_bad_for_the_deadlock_item_alone() {
     assert_eq!(
         check(
             &invariant.request(&world, UNLIMITED),
-            &closure(
-                &reachable,
-                &translation,
-                package_identity(&invariant.package),
-            )
+            &closure(&reachable, &translation)
         ),
         TemporalCertificateCheck::Accepted
     );
@@ -553,7 +445,7 @@ fn an_undetermined_contract_or_a_failing_atom_is_a_bad_state() {
     assert_eq!(
         check(
             &truth.request(&world, UNLIMITED),
-            &closure(&reachable, &translation, package_identity(&truth.package),)
+            &closure(&reachable, &translation)
         ),
         rejected(
             CertificateRule::BadState,
@@ -580,11 +472,7 @@ fn an_undetermined_contract_or_a_failing_atom_is_a_bad_state() {
         assert_eq!(
             check(
                 &invariant.request(&world, UNLIMITED),
-                &closure(
-                    &reachable,
-                    &translation,
-                    package_identity(&invariant.package),
-                )
+                &closure(&reachable, &translation)
             ),
             rejected(
                 CertificateRule::BadState,
@@ -612,18 +500,13 @@ fn a_certificate_of_another_item_is_not_admitted() {
     let deadlock = closure(
         &reachable,
         &SafetyTranslation::deadlock_freedom().expect("translates"),
-        package_identity(&invariant.package),
     );
     assert_eq!(
         check(&invariant.request(&world, UNLIMITED), &deadlock),
         rejected(CertificateRule::ShapeMismatch, least(&deadlock.states))
     );
 
-    let own = closure(
-        &reachable,
-        &invariant.translation(&world.objects()[0]),
-        package_identity(&invariant.package),
-    );
+    let own = closure(&reachable, &invariant.translation(&world.objects()[0]));
     let mut foreign = own.clone();
     foreign.states[0].model_state = DigestRecord::mint(
         DigestDomain::Sha256Jcs,
@@ -651,12 +534,6 @@ fn the_checker_resolves_each_clause_s_identity_from_the_package() {
         &world.body,
         &[("C", "", formula), ("D", "", formula)],
     );
-    let body = format!(
-        "{}{}{}",
-        world.body,
-        clause_text("C", "", formula),
-        clause_text("D", "", formula)
-    );
     let [c, d] = clauses.as_slice() else {
         panic!("two declared clauses");
     };
@@ -670,37 +547,26 @@ fn the_checker_resolves_each_clause_s_identity_from_the_package() {
             .expect("the package declares the clause")
     };
     for (identity, node) in [(at(c), node_c), (at(d), node_d)] {
-        assert_eq!(
-            identity.occurrence().node(),
-            WireNodeId::from_digest(*node.identity().as_bytes())
-        );
+        assert_eq!(*identity.occurrence().node(), node.identity());
         assert_eq!(identity.occurrence().origin(), node.claim());
         assert_eq!(identity.occurrence().origin().role().as_str(), "claim");
-        assert_eq!(
-            identity.over(),
-            Some(WireNodeId::from_digest(*node.over().as_bytes()))
-        );
+        assert_eq!(identity.over(), Some(node.over().clone()));
     }
     assert_ne!(
         at(c).occurrence().origin().ordinal(),
         at(d).occurrence().origin().ordinal()
     );
 
-    let c = world.declared(body.clone(), package, c.clone(), |v| Some(v <= 3));
+    let c = world.declared(package, c.clone(), |v| Some(v <= 3));
     let (package, _) = package_with_clauses(
         &world.documents.document,
         &world.body,
         &[("C", "", formula), ("D", "", formula)],
     );
-    let d = world.declared(body, package, d.clone(), |v| Some(v <= 3));
+    let d = world.declared(package, d.clone(), |v| Some(v <= 3));
     let own = certificate(&c.run(&world));
     let reachable = world.reachable();
-    let mut expected = closure(
-        &reachable,
-        &c.translation(&world.objects()[0]),
-        package_identity(&c.package),
-    )
-    .states;
+    let mut expected = closure(&reachable, &c.translation(&world.objects()[0])).states;
     expected.sort();
     assert_eq!(own.states, expected);
     assert_eq!(
@@ -775,7 +641,6 @@ fn a_request_whose_clause_root_does_not_resolve_settles_failed() {
     let record = settle_model_check(
         &outcome,
         &ModelCheckLimits::default(),
-        &invariant.package_id(&world),
         &request,
         &Cancel::new(),
         |_| panic!("a proof replays nothing"),
@@ -800,7 +665,6 @@ fn a_safety_proof_with_an_empty_certificate_settles_failed_never_proved() {
     let record = settle_model_check(
         &outcome,
         &ModelCheckLimits::default(),
-        &claim.package_id(&world),
         &claim.request(&world, UNLIMITED),
         &Cancel::new(),
         |_| panic!("a proof replays nothing"),
@@ -816,9 +680,7 @@ fn a_safety_proof_with_an_empty_certificate_settles_failed_never_proved() {
 /// a `Holds` outcome's certificate itself, over the request's own package. The engine's certificate settles
 /// `proved`, `closed-scope`, `Proved{Exhaustive, Certified}`; the same
 /// outcome with a state removed settles `inconclusive`, `unsettled`,
-/// `CertificateRejected{SuccessorMissing, at}`, never `proved`; settled
-/// against another `package_id` than the request's package it is
-/// `ReplayRefused(stale_dependency)`, never `proved`.
+/// `CertificateRejected{SuccessorMissing, at}`, never `proved`.
 #[trace("TC-525", "FR-127-AC-1")]
 #[test]
 fn a_proof_settles_certified_only_when_its_certificate_is_accepted() {
@@ -826,19 +688,15 @@ fn a_proof_settles_certified_only_when_its_certificate_is_accepted() {
     let invariant = world.invariant("always holds(c.value <= 3)", |v| Some(v <= 3));
     let outcome = invariant.run(&world);
     let request = invariant.request(&world, UNLIMITED);
-    let package = invariant.package_id(&world);
-    let settle_at = |outcome: &ModelCheckOutcome, package: &DigestRecord, cancel: &Cancel| {
+    let settle = |outcome: &ModelCheckOutcome, cancel: &Cancel| {
         settle_model_check(
             outcome,
             &ModelCheckLimits::default(),
-            package,
             &request,
             cancel,
             |_| panic!("a proof replays nothing"),
         )
     };
-    let settle =
-        |outcome: &ModelCheckOutcome, cancel: &Cancel| settle_at(outcome, &package, cancel);
     let proved = settle(&outcome, &Cancel::new());
     assert_eq!(
         proved.value,
@@ -854,15 +712,6 @@ fn a_proof_settles_certified_only_when_its_certificate_is_accepted() {
             SettlementBasis::ClosedScope,
             Execution::Completed
         )
-    );
-
-    let elsewhere = DigestRecord::mint(DigestDomain::PackageSemanticV2, [9; 32]);
-    assert_eq!(
-        settle_at(&outcome, &elsewhere, &Cancel::new()).value,
-        TerminalValue::Inconclusive(InconclusiveCause::StaleDependency {
-            requested: qsl_replay::StaleIdentity::Package(elsewhere),
-            recompiled: qsl_replay::StaleIdentity::Package(package),
-        })
     );
 
     let ModelCheckOutcome::Holds { certificate, stats } = outcome else {
@@ -923,13 +772,11 @@ fn a_certificate_check_settles_accepted_rejected_or_stopped_with_the_named_setti
     let world = world(CONTRACT, &[("a", 0), ("b", 0)]);
     let invariant = world.invariant("always holds(c.value <= 3)", |v| Some(v <= 3));
     let outcome = invariant.run(&world);
-    let package = invariant.package_id(&world);
     let settle =
         |outcome: &ModelCheckOutcome, limits: &ModelCheckLimits, meter, cancel: &Cancel| {
             settle_model_check(
                 outcome,
                 limits,
-                &package,
                 &invariant.request(&world, meter),
                 cancel,
                 |_| panic!("a proof replays nothing"),
@@ -1054,13 +901,11 @@ fn a_cancellation_during_the_certificate_check_settles_cancelled() {
     let world = world(CONTRACT, &[("a", 0), ("b", 0)]);
     let invariant = world.invariant("always holds(c.value <= 3)", |v| Some(v <= 3));
     let outcome = invariant.run(&world);
-    let package = invariant.package_id(&world);
     let request = invariant.request(&world, UNLIMITED);
     let settle = |cancel: &Cancel| {
         settle_model_check(
             &outcome,
             &ModelCheckLimits::default(),
-            &package,
             &request,
             cancel,
             |_| panic!("a proof replays nothing"),
@@ -1167,14 +1012,9 @@ fn a_stopped_check_names_what_stopped_it() {
         );
     }
 
-    let record = settle_model_check(
-        &outcome,
-        &states,
-        &invariant.package_id(&world),
-        &request,
-        &Cancel::new(),
-        |_| panic!("a proof replays nothing"),
-    );
+    let record = settle_model_check(&outcome, &states, &request, &Cancel::new(), |_| {
+        panic!("a proof replays nothing")
+    });
     assert_eq!(
         record.value,
         TerminalValue::Incomplete(IncompleteCause::LimitReached {
@@ -1210,10 +1050,7 @@ fn a_clause_with_no_instance_is_never_certified() {
     assert!(matches!(
         check_closure(
             &invariant.request(&world, UNLIMITED),
-            &ClosureCertificate {
-                package_id: package_identity(&invariant.package),
-                states: Vec::new(),
-            },
+            &ClosureCertificate { states: Vec::new() },
             &ModelCheckLimits::default(),
             &Cancel::new()
         ),
@@ -1243,7 +1080,6 @@ fn a_clause_with_no_instance_settles_inconclusive_never_proved_or_refuted() {
     let record = settle_model_check(
         &outcome,
         &ModelCheckLimits::default(),
-        &world.package_id(),
         &request,
         &Cancel::new(),
         |_| panic!("no instance replays nothing"),
@@ -1268,10 +1104,7 @@ fn a_subject_with_no_initial_state_is_never_certified() {
     let mut world = world(CONTRACT, &[("c", 0)]);
     world.initial.clear();
     let request = world.request(ModelCheckItem::DeadlockFreedom, UNLIMITED);
-    let empty = ClosureCertificate {
-        package_id: package_identity(&world.package),
-        states: Vec::new(),
-    };
+    let empty = ClosureCertificate { states: Vec::new() };
     assert!(matches!(
         check_closure(
             &request,
@@ -1287,7 +1120,6 @@ fn a_subject_with_no_initial_state_is_never_certified() {
             stats: qsl_replay::RunStats::default(),
         },
         &ModelCheckLimits::default(),
-        &world.package_id(),
         &request,
         &Cancel::new(),
         |_| panic!("a proof replays nothing"),
@@ -1368,7 +1200,7 @@ fn a_malformed_key_in_a_certificate_is_refused_before_membership() {
         carried.replace(r#"[[],"positive"]"#, r#"[["01"],"positive"]"#),
         carried.replace(",", ", "),
     ] {
-        let mut certificate = closure(&reachable, &deadlock, package_identity(&world.package));
+        let mut certificate = closure(&reachable, &deadlock);
         let at = ProductStateRef {
             automaton_state: qsl_eval::automaton::AutomatonStateKey::imported(
                 octets.clone().into_bytes(),
@@ -1399,7 +1231,6 @@ fn a_refused_key_rejects_the_certificate_at_the_least_refused_state() {
     let outcome = invariant.run(&world);
     let full = certificate(&outcome);
     let request = invariant.request(&world, UNLIMITED);
-    let package = invariant.package_id(&world);
     let imported =
         |octets: String| qsl_eval::automaton::AutomatonStateKey::imported(octets.into_bytes());
     let valid =
@@ -1431,7 +1262,6 @@ fn a_refused_key_rejects_the_certificate_at_the_least_refused_state() {
                 stats: outcome.stats(),
             },
             &ModelCheckLimits::default(),
-            &package,
             &request,
             &Cancel::new(),
             |_| panic!("a proof replays nothing"),

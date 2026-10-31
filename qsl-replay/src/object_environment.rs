@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-071: the request's optional `object_environment` member.
 //!
-//! The member names one `quire.state.snapshot/v1` document of the byte
-//! provision by its four identity labels, in the form FR-106's invocation
+//! The member names one `quire.state.snapshot/v1` document of the request's
+//! documents by its four identity labels, in the form FR-106's invocation
 //! uses for its `pre` and `post` members. The
 //! reader reads the member alone. It reads no document and requires no
-//! byte-provision entry: the executor admits the document by FR-106
+//! provided document: the executor admits the document by FR-106
 //! (FR-098).
 
-use crate::request::ProvisionIdentity;
 use crate::witness::WitnessValue;
-use qsl_foundation::{Code, SourceIdentity};
+use qsl_foundation::Code;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::domain_package::DomainPackageRef;
+use qsl_semantics::model::intake::PackageInput;
 use qsl_semantics::model::observation::{
     declared_type_universe_for, write_environment_document, AdmissionFailure,
 };
@@ -21,7 +21,6 @@ pub use qsl_semantics::model::observation::{
 };
 use quire_checked::key::DeclarationKey;
 use serde_json::{Map, Value};
-use std::collections::BTreeMap;
 
 const MEMBER: &str = "object_environment";
 const LABELS: [&str; 4] = ["authority", "identity", "revision_namespace", "revision"];
@@ -36,13 +35,14 @@ pub struct ObjectEnvironmentRef {
 /// `invalid_runtime_input`, naming the member or the member inside it.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum ObjectEnvironmentRefusal {
-    /// The member, `identity`, or an identity label is of the wrong JSON kind.
+    /// The member, `identity`, or an identity label, is of the wrong JSON
+    /// kind.
     #[error("invalid_runtime_input/wrong-value-kind: `{member}`")]
     WrongValueKind {
         /// The member at fault, as a dotted path.
         member: String,
     },
-    /// `identity` or one of its labels is missing.
+    /// `identity` or an identity label is missing.
     #[error("invalid_runtime_input/missing-member: `{member}`")]
     MissingMember {
         /// The missing member, as a dotted path.
@@ -82,12 +82,12 @@ impl ObjectEnvironmentRefusal {
 }
 
 impl ObjectEnvironmentRef {
-    /// The member naming the document by its four FR-001 labels.
+    /// The member naming the document by its labels.
     pub fn new(identity: EnvironmentLabels) -> Self {
         Self { identity }
     }
 
-    /// The labels used to select the document from the provision.
+    /// The labels naming the document.
     pub fn identity(&self) -> &EnvironmentLabels {
         &self.identity
     }
@@ -143,13 +143,13 @@ fn labels(identity: &Value) -> Result<EnvironmentLabels, ObjectEnvironmentRefusa
 }
 
 /// Read a wire `object_environment` member (FR-071): a closed object with
-/// exactly `identity`, containing the four FR-001 labels.
+/// exactly `identity`, the four identity labels.
 ///
 /// # Errors
 ///
 /// [`ObjectEnvironmentRefusal`] for a member that is not an object, an
-/// `identity` of the wrong JSON kind, a missing member, or an unknown
-/// member.
+/// `identity` of the wrong JSON kind, a missing member or an unknown member.
+#[ix_trace_rs::string_edge]
 pub fn read_object_environment(
     value: &Value,
 ) -> Result<ObjectEnvironmentRef, ObjectEnvironmentRefusal> {
@@ -168,8 +168,8 @@ pub fn read_object_environment(
             .get(name)
             .ok_or_else(|| ObjectEnvironmentRefusal::MissingMember { member: path(name) })
     };
-    let identity = member("identity")?;
-    Ok(ObjectEnvironmentRef::new(labels(identity)?))
+    let identity = labels(member("identity")?)?;
+    Ok(ObjectEnvironmentRef::new(identity))
 }
 
 /// An object environment document written for a request: its canonical
@@ -191,23 +191,14 @@ impl ObjectEnvironmentDocument {
         &self.bytes
     }
 
-    /// The `object_environment` member: its four identity labels.
+    /// The `object_environment` member: the labels.
     pub fn member(&self) -> &ObjectEnvironmentRef {
         &self.member
     }
 
-    /// The document as a `ReplayRequestWire::byte_provision` entry.
-    pub fn provision_entry(&self) -> (ProvisionIdentity, Vec<u8>) {
-        let labels = self.member.identity();
-        (
-            ProvisionIdentity::Source(SourceIdentity::new(
-                labels.authority.clone(),
-                labels.identity.clone(),
-                labels.revision_namespace.clone(),
-                labels.revision.clone(),
-            )),
-            self.bytes.clone(),
-        )
+    /// The document as a `ReplayRequestWire::documents` entry.
+    pub fn provision_document(&self) -> Vec<u8> {
+        self.bytes.clone()
     }
 }
 
@@ -246,8 +237,6 @@ impl ObjectEnvironmentDocument {
 ///     },
 ///     &EnvironmentModel {
 ///         identity: "test/graph".to_owned(),
-///         version: "1.0.0".to_owned(),
-///         digest: [7; 32],
 ///     },
 ///     &[EnvironmentPopulation {
 ///         population: "ix://test/graph/G".to_owned(),
@@ -269,7 +258,7 @@ pub fn write_object_environment(
 ) -> Result<ObjectEnvironmentDocument, ObjectEnvironmentWriteError> {
     let bytes = write_environment_document(&identity, model, populations)
         .map_err(ObjectEnvironmentWriteError)?;
-    let member = ObjectEnvironmentRef { identity };
+    let member = ObjectEnvironmentRef::new(identity);
     Ok(ObjectEnvironmentDocument { bytes, member })
 }
 
@@ -309,7 +298,7 @@ pub enum ObjectReferenceError {
 /// not re-resolve.
 pub fn object_reference_witness(
     model_selections: &[DomainPackageRef],
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &PackageInput,
     model_limits: ModelNormalizationLimits,
     type_identity: &DeclarationKey,
     key: &str,
@@ -319,8 +308,8 @@ pub fn object_reference_witness(
             .map_err(ObjectReferenceError::Admission)?
             .ok_or_else(|| ObjectReferenceError::UndeclaredType(type_identity.clone()))?;
     Ok(WitnessValue::Reference {
-        universe: *universe.as_bytes(),
-        object_type: *object_type.as_bytes(),
+        universe,
+        object_type,
         identity: key.as_bytes().to_vec(),
     })
 }

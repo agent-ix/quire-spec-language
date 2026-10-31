@@ -7,7 +7,7 @@ use std::str::FromStr;
 use quire_contract_model::{
     CheckedDeclaration, CheckedNodeId, CheckedNodeOwner, CheckedNodeTag, CheckedOccurrence,
     CheckedOccurrenceRole, CheckedPackageV2, CheckedSemanticNodeV2, CheckedTerm, LiteralKind,
-    NominalIdentityPreimage, TimedModelForm,
+    TimedModelForm,
 };
 use quire_exact::{Integer, Rational};
 
@@ -54,8 +54,6 @@ pub struct TimedNodeMetadata {
     pub occurrences: Vec<CheckedOccurrence>,
     /// Recursion group, absent for timed nodes.
     pub recursion_group: Option<Box<str>>,
-    /// Nominal identity preimage, absent for timed nodes.
-    pub nominal_identity_preimage: Option<NominalIdentityPreimage>,
     /// Declaration name, present for the root.
     pub declaration: Option<CheckedDeclaration>,
     /// Structural owner, present for the root.
@@ -358,7 +356,7 @@ impl CheckedTimedModel {
         rational_type: CheckedNodeId,
         source_alias: &str,
     ) -> Option<Self> {
-        let model = checked_id(source.model_node);
+        let model = checked_id(&source.model_node);
         let source_metadata = TimedNodeMetadata {
             node_id: source_id.clone(),
             schema_version: "quire.checked-semantic-graph/v2".into(),
@@ -369,7 +367,6 @@ impl CheckedTimedModel {
                 ordinal: 0,
             }],
             recursion_group: None,
-            nominal_identity_preimage: None,
             declaration: None,
             owner: None,
         };
@@ -380,7 +377,7 @@ impl CheckedTimedModel {
             qsl_semantics::check::TimeSourceKind::Tick { period, .. } => (
                 CheckedTimeSourceKind::Tick,
                 Some(model.clone()),
-                Some(checked_id(source.tick_operation_anchor?)),
+                Some(checked_id(source.tick_operation_anchor.as_ref()?)),
                 Some(format!("{}/{}", period.numerator(), period.denominator())),
                 Some(rational_type),
             ),
@@ -388,7 +385,7 @@ impl CheckedTimedModel {
         let timed_source = CheckedTimeSource {
             metadata: source_metadata,
             kind,
-            unit: checked_id(source.unit_node),
+            unit: checked_id(&source.unit_node),
             model: model_ref,
             operation,
             period,
@@ -404,7 +401,6 @@ impl CheckedTimedModel {
                 ordinal: 0,
             }],
             recursion_group: None,
-            nominal_identity_preimage: None,
             declaration: Some(CheckedDeclaration {
                 qualified_name: vec![source_alias.into(), "Timed".into()],
             }),
@@ -413,7 +409,7 @@ impl CheckedTimedModel {
         Some(Self {
             metadata: root_metadata,
             model: model.clone(),
-            time_dimension: checked_id(source.time_dimension),
+            time_dimension: checked_id(&source.time_dimension),
             source: timed_source,
             clock_places: Vec::new(),
             resets: Vec::new(),
@@ -465,7 +461,7 @@ impl CheckedTimedModel {
             })
             .copied()
             .collect::<Vec<_>>();
-        roots.sort_by(|a, b| a.node_id.digest.cmp(&b.node_id.digest));
+        roots.sort_by(|a, b| a.node_id.cmp(&b.node_id));
         if roots.is_empty() {
             return Ok(Vec::new());
         }
@@ -512,11 +508,8 @@ impl CheckedTimedModel {
     }
 }
 
-fn checked_id(key: quire_exact::NodeKey) -> CheckedNodeId {
-    CheckedNodeId {
-        domain: quire_exact::NODE_KEY_DOMAIN.into(),
-        digest: key.to_string().into(),
-    }
+fn checked_id(key: impl std::borrow::Borrow<quire_exact::NodeKey>) -> CheckedNodeId {
+    crate::emit::node_id(key)
 }
 
 impl TimedNodeMetadata {
@@ -528,7 +521,6 @@ impl TimedNodeMetadata {
             dependencies: node.dependencies.clone(),
             occurrences: node.occurrences.clone(),
             recursion_group: node.recursion_group.clone(),
-            nominal_identity_preimage: node.nominal_identity_preimage.clone(),
             declaration: node.declaration.clone(),
             owner: node.owner.clone(),
         }
@@ -545,7 +537,6 @@ impl TimedNodeMetadata {
             dependencies: self.dependencies.clone(),
             occurrences: self.occurrences.clone(),
             recursion_group: self.recursion_group.clone(),
-            nominal_identity_preimage: self.nominal_identity_preimage.clone(),
             declaration: self.declaration.clone(),
             owner: self.owner.clone(),
             body,
@@ -1314,25 +1305,15 @@ mod intake_proofs {
     use super::*;
 
     fn fixture_node(form: &str) -> CheckedSemanticNodeV2 {
-        let directory = std::env::var_os("QSPEC_DIR").expect("QSPEC_DIR supplies owner fixtures");
         let fixture = if form == "time_source" {
-            "positive-tick-timed-model-nodes.json"
+            "fixtures/positive-tick-timed-model-nodes.json"
         } else {
-            "positive-timed-model-nodes.json"
+            "fixtures/positive-timed-model-nodes.json"
         };
-        let path = std::path::Path::new(&directory)
-            .join("proposals/checked-package-v2/fixtures")
-            .join(fixture);
-        let bytes = std::fs::read(path).expect("the published timed-model fixture is readable");
-        let package: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-        let node = package["semantic_graph"]["nodes"]
-            .as_array()
+        fixture_nodes(fixture)
+            .into_iter()
+            .find(|node| node.semantic_form.as_ref() == form)
             .unwrap()
-            .iter()
-            .find(|node| node["semantic_form"] == form)
-            .unwrap()
-            .clone();
-        serde_json::from_value(node).unwrap()
     }
 
     fn replace_binding(body: &mut CheckedTerm, name: &str, replacement: CheckedTerm) {
@@ -1352,15 +1333,9 @@ mod intake_proofs {
         **value = replacement;
     }
 
-    /// The graph nodes of the published fixture `name`.
-    fn fixture_nodes(name: &str) -> Vec<CheckedSemanticNodeV2> {
-        let directory = std::env::var_os("QSPEC_DIR").expect("QSPEC_DIR supplies owner fixtures");
-        let path = std::path::Path::new(&directory)
-            .join("proposals/checked-package-v2/fixtures")
-            .join(name);
-        let bytes = std::fs::read(path).expect("the published fixture is readable");
-        let package: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-        serde_json::from_value(package["semantic_graph"]["nodes"].clone()).unwrap()
+    /// The admitted graph nodes of the published fixture `fixture`.
+    fn fixture_nodes(fixture: &str) -> Vec<CheckedSemanticNodeV2> {
+        crate::checked_v2::tests::admitted_fixture_graph(fixture, None).0
     }
 
     /// QSpec FR-322-AC-261, FR-322-AC-266 (TC-367 CK-32): the clause
@@ -1370,7 +1345,7 @@ mod intake_proofs {
     #[ix_trace_rs::trace("QSpec-FR-322-AC-261", "QSpec-FR-322-AC-266")]
     #[test]
     fn clause_intake_is_total_and_round_trips_the_clause_fixture() {
-        let nodes = fixture_nodes("positive-timed-clause-nodes.json");
+        let nodes = fixture_nodes("fixtures/positive-timed-clause-nodes.json");
         let models = CheckedTimedModel::from_nodes(&nodes).expect("the clause fixture projects");
         let [model] = models.as_slice() else {
             panic!("one timed model");
@@ -1518,7 +1493,12 @@ mod intake_proofs {
         let text_type = literal_type(binding(&source.body, "kind").unwrap()).unwrap();
         let text = |value: &str| CheckedTerm::literal_text(text_type.clone(), value);
         let integer = |value| CheckedTerm::literal_integer(text_type.clone(), value);
-        let integer_type = || checked_id(qsl_semantics::check::builtin_integer_type_key());
+        let integer_type = || {
+            checked_id(
+                qsl_semantics::check::builtin_integer_type_key(&source.node_id.package)
+                    .expect("the built-in integer key"),
+            )
+        };
         let step = |kind: &str, name: &str, value| {
             CheckedTerm::aggregate(vec![
                 CheckedTerm::binding("kind", text(kind)),

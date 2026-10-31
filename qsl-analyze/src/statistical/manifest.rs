@@ -11,13 +11,13 @@
 //! owns it, so this module restates no wire string.
 //!
 //! The driver reads the manifest and supplies the host-side facts the
-//! manifest does not carry, the [`ProviderOrigin`] and the manifest digest;
+//! manifest does not carry, the [`ProviderOrigin`];
 //! [`descriptor`] converts the rest through FR-288's one conversion.
 
 use qsl_foundation::bound::DomainKind;
 use qsl_route::{
-    descriptor_from_manifest, BackendDescriptor, Candidate, EvidenceKind, ManifestDigest,
-    ManifestMembers, Mode, ProviderOrigin, RegistrationRefusal,
+    descriptor_from_manifest, BackendDescriptor, Candidate, EvidenceKind, ManifestMembers, Mode,
+    ProviderOrigin, RegistrationRefusal,
 };
 use qsl_semantics::check::Capability;
 
@@ -40,21 +40,16 @@ pub const DOMAINS: [&str; 2] = [
 pub const EVIDENCE_KINDS: [&str; 1] = [EvidenceKind::Statistical.to_wire()];
 
 /// EN-4's routed descriptor, converted from [`ADVERTISED`], [`DOMAINS`] and
-/// [`EVIDENCE_KINDS`] by FR-288's conversion. `origin` and `manifest_digest`
-/// are the host's facts (ADR-029 PV-1).
+/// [`EVIDENCE_KINDS`] by FR-288's conversion. `origin` is the host's fact (ADR-029 PV-1).
 ///
 /// # Errors
 ///
 /// Only if the registry's admission rules refuse this module's own data, which
 /// the tests of this module rule out.
-pub fn descriptor(
-    origin: ProviderOrigin,
-    manifest_digest: ManifestDigest,
-) -> Result<BackendDescriptor, RegistrationRefusal> {
+pub fn descriptor(origin: ProviderOrigin) -> Result<BackendDescriptor, RegistrationRefusal> {
     descriptor_from_manifest(
         Candidate::new(qsl_foundation::BackendId::new(BACKEND_ID)),
         origin,
-        manifest_digest,
         ADVERTISED,
         ManifestMembers {
             domains: Some(&DOMAINS),

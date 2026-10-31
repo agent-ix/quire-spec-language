@@ -34,8 +34,8 @@ fn not_markov() -> NotMarkov {
         transition: qsl_eval::simulation::model::ScheduledIdentity {
             operation: "tick".to_owned(),
             receiver: quire_exact::ObjectReference::new(
-                quire_exact::UniverseId::from_digest([1; 32]),
-                quire_exact::EffectiveId::from_digest([2; 32]),
+                crate::test_ids::universe_id([1]),
+                crate::test_ids::effective_id([2]),
                 quire_exact::ObjectId::new("n").expect("a key"),
             ),
             arguments: Vec::new(),

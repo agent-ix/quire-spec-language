@@ -52,8 +52,6 @@ use crate::counter::UNLIMITED;
 use crate::reduction_world::{clause_identity, replay_unit, ReplayUnit};
 use crate::units::{checked, clause, unit, Domain};
 
-const PLACEHOLDER: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
-
 /// The keys of the subject's population.
 pub(crate) const KEYS: [&str; 2] = ["a", "b"];
 
@@ -260,19 +258,17 @@ impl Subject {
         .into_iter()
         .map(|(name, meaning)| {
             json!({"kind": {"module": package, "name": name}, "moduleVersion": "1.0.0",
-                "manifestDigest": PLACEHOLDER,
                 "construct": {"identity": "none", "shape": "record", "members": {},
                     "meaning": meaning}})
         })
         .collect();
         let document = json!({
             "contractVersion": "2.0.0",
-            "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
+            "canonicalization": {"algorithm": "rfc8785-v1"},
             "source": {"identity": self.ident("spec"), "version": "1.0.0",
-                "dialect": "spec-bundle", "digest": PLACEHOLDER},
+                "dialect": "spec-bundle"},
             "package": {"identity": package, "version": "1.0.0",
-                "manifestDigest": PLACEHOLDER, "mappingVersions": [], "profileVersions": [],
-                "lockDigest": PLACEHOLDER},
+                "mappingVersions": [], "profileVersions": []},
             "occurrences": [], "extensions": [],
             "constructs": constructs,
             "types": [
@@ -305,8 +301,8 @@ pub(crate) struct World {
     clauses: Vec<CheckedTemporalClause>,
     document: Vec<u8>,
     text: String,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
+    snapshots: qsl_semantics::model::observation::DocumentProvision,
     initial: Vec<DocumentRef>,
 }
 
@@ -327,9 +323,8 @@ impl World {
             &format!("{}{}", subject.contracts(), clause(over, fairness, formula)),
         );
         let (package, clauses) = checked(&domain, &text);
-        let packages = package_input([domain.document.as_slice()]);
-        let header = json!({"identity": subject.package(), "version": "1.0.0",
-            "digest": format!("sha256-jcs:{}", domain.digest_hex())});
+        let packages = package_input([domain.document.as_slice()]).unwrap();
+        let header = json!({"identity": subject.package()});
         let mut snapshots = BTreeMap::new();
         let mut initial = Vec::new();
         for (index, start) in subject.starts().into_iter().enumerate() {
@@ -343,7 +338,7 @@ impl World {
                 .collect();
             let document = json!({
                 "format": "quire.state.snapshot/v1",
-                "identity": {"authority": "test", "identity": name.clone(),
+                "identity": {"authority": "test", "identity": name,
                     "revision_namespace": "fixture", "revision": "fixture:1"},
                 "observation": "current", "model": header,
                 "anchor": {"kind": "initialization", "name": "start"},
@@ -356,20 +351,16 @@ impl World {
                 ],
             });
             let bytes = document.to_string().into_bytes();
-            let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-            let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-                .expect("canonical fixture")
-                .as_bytes();
             snapshots.insert(
-                qsl_foundation::SourceIdentity::new("test", name.clone(), "fixture", "fixture:1"),
+                qsl_semantics::model::observation::document_reference(&bytes)
+                    .expect("a document names itself"),
                 bytes,
             );
             initial.push(DocumentRef {
                 authority: "test".to_owned(),
-                identity: name.clone(),
+                identity: name,
                 revision_namespace: "fixture".to_owned(),
                 revision: "fixture:1".to_owned(),
-                digest,
             });
         }
         Self {
@@ -471,7 +462,6 @@ impl World {
         replay_unit(
             &ReplayUnit {
                 identity: "units",
-                path: "units.native",
                 text: self.text.as_bytes(),
                 document: &self.document,
                 snapshots: &self.snapshots,

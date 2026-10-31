@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-019/021: borrowed typed package views, preserving the specified record order.
 
-use std::{collections::BTreeSet, fmt};
+use std::collections::BTreeSet;
 
 use quire_contract_model as ir;
 use serde::{
@@ -9,10 +9,9 @@ use serde::{
     Serialize, Serializer,
 };
 
-use super::NativePackageIdentity;
 use crate::checking::{CheckedPackage, RuntimeRequirements, UniverseRequirement};
 use crate::linking::{DeclarationKey, DeclarationLocation, ResolutionTarget, ResolvedOccurrence};
-use qsl_foundation::{ByteDigest, Span};
+use qsl_foundation::Span;
 
 pub(super) const FORMAT: &str = qsl_foundation::wire_format::WireFormat::LinkedPackage.as_str();
 
@@ -37,30 +36,13 @@ impl Semantics {
     }
 }
 
-struct DisplayValue<T>(T);
-
-impl<T: fmt::Display> Serialize for DisplayValue<T> {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_str(&self.0)
-    }
-}
-
 #[derive(Serialize)]
 struct Source<'a> {
     authority: &'a str,
     identity: &'a str,
     revision_namespace: &'a str,
     revision: &'a str,
-    digest: DisplayValue<ByteDigest>,
     formal: &'a ir::SourceIdentity,
-}
-
-#[derive(Serialize)]
-struct CanonicalIdentity {
-    domain: &'static str,
-    version: &'static str,
-    algorithm: &'static str,
-    digest: DisplayValue<NativePackageIdentity>,
 }
 
 #[derive(Serialize)]
@@ -71,8 +53,6 @@ pub(super) struct Manifest<'a, 'model> {
     source: Source<'a>,
     models: Models<'a, 'model>,
     clauses: Clauses<'a, 'model>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    canonical_identity: Option<CanonicalIdentity>,
 }
 
 impl<'a, 'model> Manifest<'a, 'model> {
@@ -80,7 +60,6 @@ impl<'a, 'model> Manifest<'a, 'model> {
         checked: &'a CheckedPackage<'model>,
         features: &'a BTreeSet<&'static str>,
         projections: bool,
-        identity: Option<NativePackageIdentity>,
     ) -> Self {
         let original = checked.bindings().source.source();
         Self {
@@ -92,7 +71,6 @@ impl<'a, 'model> Manifest<'a, 'model> {
                 identity: &original.identity().identity,
                 revision_namespace: &original.identity().revision_namespace,
                 revision: &original.identity().revision,
-                digest: DisplayValue(original.digest()),
                 formal: checked.bindings().source.identity(),
             },
             models: Models(checked),
@@ -100,12 +78,6 @@ impl<'a, 'model> Manifest<'a, 'model> {
                 checked,
                 projections,
             },
-            canonical_identity: identity.map(|digest| CanonicalIdentity {
-                domain: "quire.native.bound-package",
-                version: "v1",
-                algorithm: "sha256",
-                digest: DisplayValue(digest),
-            }),
         }
     }
 }
@@ -114,7 +86,6 @@ impl<'a, 'model> Manifest<'a, 'model> {
 struct Model<'a> {
     alias: &'a str,
     owner: &'a ir::RequirementRef,
-    digest: DisplayValue<ByteDigest>,
     artifact: &'a str,
 }
 
@@ -138,7 +109,6 @@ impl Serialize for Models<'_, '_> {
             seq.serialize_element(&Model {
                 alias: &import.alias.value,
                 owner: model.environment().owner(),
-                digest: DisplayValue(model.digest()),
                 artifact,
             })?;
         }

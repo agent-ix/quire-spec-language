@@ -270,12 +270,11 @@ pub(crate) fn check_declarations(
     package: DomainPackage,
     declarations: &str,
 ) -> Result<CheckedGraph, Vec<CheckRefusal>> {
-    let digest = qsl_semantics::model::key::hex(&package.model_selection.digest);
     let identity = package.model_selection.identity.clone();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
-         model M = {identity:?} version \"1\" digest \"sha256-jcs:{digest}\";\n\
+         model M = {identity:?};\n\
          {declarations}\n"
     );
     let selected = SelectedModels::fixture(
@@ -293,9 +292,14 @@ pub(crate) fn check_declarations(
         qsl_cst::Limits::default(),
     )
     .expect("S1 admits the unit");
-    let declarations =
-        PackageDeclarations::assemble(raw.source().reference().clone(), built, selected, vec![])
-            .expect("the model assembles");
+    let declarations = PackageDeclarations::assemble(
+        raw.source().reference().clone(),
+        crate::TEST_PACKAGE_NAME.to_owned(),
+        built,
+        selected,
+        vec![],
+    )
+    .expect("the model assembles");
     declarations.check(CheckingLimits::default())
 }
 

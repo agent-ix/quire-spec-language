@@ -28,7 +28,6 @@ use qsl_eval::simulation::{NotSimulated, RequiresBound};
 use qsl_eval::temporal::{AtomReading, UndefinedCause};
 use qsl_foundation::bound::{DomainKey, DomainKind};
 use qsl_foundation::diagnostic::Code;
-use qsl_foundation::digest::WireNodeId;
 use qsl_package::CheckedPackage;
 use qsl_replay::{check_closure, CertificateRequest, ClosureCertificate, ClosureRefusal};
 use qsl_replay::{CounterexampleKind, ModelCheckItem, ModelCheckLimits};
@@ -37,7 +36,6 @@ use qsl_semantics::check::{CheckedTemporalClause, FormulaNode, FormulaNodeId};
 use qsl_semantics::family::ClaimExtent;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{meaning, package_input};
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::observation::{AdmissionFailure, DocumentRef, ObservationLimits};
 use quire_checked::key::DeclarationKey;
 use quire_exact::{Cancel, Meter};
@@ -45,12 +43,9 @@ use quire_semantic_value::catalog::{UndefinedReason, UndefinedRecord};
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
 
-use crate::counter::{
-    declarations_in, declarations_with_model_profile, document_digest, UNLIMITED,
-};
+use crate::counter::{declarations_in, declarations_with_model_profile, UNLIMITED};
 
 const PACKAGE: &str = "test/things";
-const PLACEHOLDER: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 
 fn ident(suffix: &str) -> String {
     format!("ix://{PACKAGE}/{suffix}")
@@ -120,7 +115,6 @@ fn document(populations: &[(&str, &[&str])]) -> Vec<u8> {
     .into_iter()
     .map(|(name, meaning)| {
         json!({"kind": {"module": PACKAGE, "name": name}, "moduleVersion": "1.0.0",
-            "manifestDigest": PLACEHOLDER,
             "construct": {"identity": "none", "shape": "record", "members": {},
                 "meaning": meaning}})
     })
@@ -139,11 +133,10 @@ fn document(populations: &[(&str, &[&str])]) -> Vec<u8> {
         .collect();
     json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
-        "source": {"identity": ident("spec"), "version": "1.0.0", "dialect": "spec-bundle",
-            "digest": PLACEHOLDER},
-        "package": {"identity": PACKAGE, "version": "1.0.0", "manifestDigest": PLACEHOLDER,
-            "mappingVersions": [], "profileVersions": [], "lockDigest": PLACEHOLDER},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
+        "source": {"identity": ident("spec"), "version": "1.0.0", "dialect": "spec-bundle"},
+        "package": {"identity": PACKAGE, "version": "1.0.0",
+            "mappingVersions": [], "profileVersions": []},
         "occurrences": [], "extensions": [],
         "constructs": constructs,
         "types": [
@@ -170,8 +163,8 @@ type Held<'a> = (&'a str, &'a [(&'a str, &'a str)]);
 struct World {
     document: Vec<u8>,
     package: CheckedPackage,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
+    snapshots: qsl_semantics::model::observation::DocumentProvision,
     initial: Vec<DocumentRef>,
 }
 
@@ -203,21 +196,17 @@ fn world(populations: &[(&str, &[&str])], held: &[Held<'_>]) -> World {
         "identity": {"authority": "test", "identity": "s0", "revision_namespace": "fixture",
             "revision": "fixture:1"},
         "observation": "current",
-        "model": {"identity": PACKAGE, "version": "1.0.0",
-            "digest": format!("sha256-jcs:{}", hex(&document_digest(&document)))},
+        "model": {"identity": PACKAGE},
         "anchor": {"kind": "initialization", "name": "start"},
         "populations": populations,
     })
     .to_string()
     .into_bytes();
-    let read = quire_canonical::read(&snapshot, u64::MAX).expect("JSON fixture");
-    let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-        .expect("canonical fixture")
-        .as_bytes();
     World {
-        packages: package_input([document.as_slice()]),
+        packages: package_input([document.as_slice()]).unwrap(),
         snapshots: BTreeMap::from([(
-            qsl_foundation::SourceIdentity::new("test", "s0", "fixture", "fixture:1"),
+            qsl_semantics::model::observation::document_reference(&snapshot)
+                .expect("a document names itself"),
             snapshot,
         )]),
         initial: vec![DocumentRef {
@@ -225,7 +214,6 @@ fn world(populations: &[(&str, &[&str])], held: &[Held<'_>]) -> World {
             identity: "s0".to_owned(),
             revision_namespace: "fixture".to_owned(),
             revision: "fixture:1".to_owned(),
-            digest,
         }],
         document,
         package,
@@ -382,13 +370,7 @@ impl World {
                 },
                 smt_encoding: qsl_replay::SmtEncodingLimits::default(),
             },
-            &ClosureCertificate {
-                package_id: qsl_package::emit_checked(&package)
-                    .expect("the package emits")
-                    .package()
-                    .package_id(),
-                states: Vec::new(),
-            },
+            &ClosureCertificate { states: Vec::new() },
             &ModelCheckLimits::default(),
             &Cancel::new(),
         )
@@ -427,16 +409,20 @@ fn instance(population: &str, key: &str) -> ModelInstance {
     }
 }
 
-/// The requires-bound root of `population`: the digest of its declaration
-/// identity, as FR-120 names a population root.
+/// The requires-bound root of `population`: its declaration node, as FR-120
+/// names a population root.
 fn population_root(population: &str) -> DomainKey {
-    let naming = json!({"digest_domain": "sha256-jcs", "node": ident(population),
-        "package": PACKAGE});
-    let read = quire_canonical::read(naming.to_string().as_bytes(), u64::MAX).expect("JSON");
-    let digest =
-        quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX)).expect("canonical");
     DomainKey::Node {
-        node: WireNodeId::from_digest(*digest.as_bytes()),
+        node: quire_exact::NodeKey::new(
+            PACKAGE,
+            vec![
+                quire_exact::PathSegment::Text("relation".to_owned()),
+                quire_exact::PathSegment::Text("population".to_owned()),
+                quire_exact::PathSegment::Text(ident(population)),
+            ],
+            0,
+        )
+        .expect("a population node is admissible"),
         path: Vec::new(),
     }
 }
@@ -1455,14 +1441,9 @@ fn two_state_world() -> World {
         .expect("utf8")
         .replace("\"s0\"", "\"s1\"")
         .into_bytes();
-    let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-    let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-        .expect("canonical fixture")
-        .as_bytes();
-    let mut reference = first.initial[0].clone();
-    reference.identity = "s1".to_owned();
-    reference.digest = digest;
-    first.snapshots.insert(reference.source_identity(), bytes);
+    let reference = qsl_semantics::model::observation::document_reference(&bytes)
+        .expect("a document names itself");
+    first.snapshots.insert(reference.clone(), bytes);
     first.initial.push(reference);
     first
 }

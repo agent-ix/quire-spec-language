@@ -20,7 +20,6 @@ use std::num::NonZeroU64;
 use ix_trace_rs::trace;
 use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
 use qsl_semantics::library::LibraryName;
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::observation::{
     AdmittedObservations, ClauseSelection, ClauseSelectionInput, DocumentRef, Observation,
@@ -30,7 +29,7 @@ use quire_eval::CallFailure;
 use quire_eval::FamilyOutcome;
 use quire_exact::{
     ChargePoint, EffectiveId, FieldValue, InjectedDenial, LimitKind, Meter, NodeKey, ObjectId,
-    ObjectReference, Outcome, UniverseId, Value,
+    ObjectReference, Outcome, Value,
 };
 use quire_semantic_value::call::InputRefusal;
 use quire_semantic_value::object_closure::ObjectClosure;
@@ -49,7 +48,7 @@ fn compose(
     identity: qsl_foundation::SourceIdentity,
     path: &str,
     bytes: &[u8],
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &qsl_semantics::model::intake::PackageInput,
     dependencies: &DependencyInput,
     limits: SpineLimits,
 ) -> Result<ComposedUnit, Box<crate::spine::CompileRefusal>> {
@@ -81,7 +80,7 @@ fn compose(
         formatted,
         "{path}: private fixture second-pass bytes",
     );
-    let checked = crate::spine::compose(
+    crate::spine::compose(
         formatted_identity,
         path,
         formatted.as_bytes(),
@@ -90,11 +89,6 @@ fn compose(
         formatted_limits,
     )
     .unwrap_or_else(|refusal| panic!("{path}: formatted private fixture refuses: {refusal:?}"));
-    assert_eq!(
-        checked.emitted.package_id(),
-        original.emitted.package_id(),
-        "{path}: private fixture formatting changed checked package identity",
-    );
     Ok(original)
 }
 
@@ -120,8 +114,6 @@ fn private_clause_source_generators_keep_format_identity() {
 }
 
 const PACKAGE_IDENTITY: &str = "test/nodes";
-const PLACEHOLDER_DIGEST: &str =
-    "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 
 fn node_type() -> String {
     format!("ix://{PACKAGE_IDENTITY}/Node")
@@ -139,20 +131,17 @@ fn domain_document() -> Vec<u8> {
     let population = population_identity();
     let envelope = json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
         "source": {
             "identity": format!("ix://{PACKAGE_IDENTITY}/spec"),
             "version": "1.0.0",
             "dialect": "spec-bundle",
-            "digest": PLACEHOLDER_DIGEST,
         },
         "package": {
             "identity": PACKAGE_IDENTITY,
             "version": "1.0.0",
-            "manifestDigest": PLACEHOLDER_DIGEST,
             "mappingVersions": [],
             "profileVersions": [],
-            "lockDigest": PLACEHOLDER_DIGEST,
         },
         "occurrences": [],
         "extensions": [],
@@ -160,7 +149,6 @@ fn domain_document() -> Vec<u8> {
             {
                 "kind": {"module": PACKAGE_IDENTITY, "name": "object_type"},
                 "moduleVersion": "1.0.0",
-                "manifestDigest": PLACEHOLDER_DIGEST,
                 "construct": {
                     "identity": "none",
                     "shape": "record",
@@ -171,7 +159,6 @@ fn domain_document() -> Vec<u8> {
             {
                 "kind": {"module": PACKAGE_IDENTITY, "name": "population"},
                 "moduleVersion": "1.0.0",
-                "manifestDigest": PLACEHOLDER_DIGEST,
                 "construct": {
                     "identity": "none",
                     "shape": "record",
@@ -250,17 +237,13 @@ fn domain_document() -> Vec<u8> {
 
 /// The unit text selecting [`domain_document`] as model alias `M`, plus
 /// `NoCycle` and the `Function`-selection fixtures.
-fn unit_and_packages() -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
+fn unit_and_packages() -> (String, qsl_semantics::model::intake::PackageInput) {
     let document = domain_document();
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    let digest = hex(digest);
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
-         model M = {PACKAGE_IDENTITY:?} version \"1.0.0\" digest \"sha256-jcs:{digest}\";\n\
+         model M = {PACKAGE_IDENTITY:?};\n\
          invariant NoCycle using v on M::Node at current {{ not reaches(self, self, next) }}\n\
          function isPositive using v(n: Integer): Boolean pure {{ n > 0 }}\n\
          function seven using v(): Integer pure {{ 7 }}\n\
@@ -286,28 +269,10 @@ fn compiled() -> ComposedUnit {
     .unwrap_or_else(|refusal| panic!("compile refused: {refusal:?}"))
 }
 
-/// `document`'s `sha256-jcs` digest, computed the same way `model::
-/// observation`'s own `document_digest` does (FR-056's digest-first rule):
-/// bytes that parse as JSON are digested over RFC 8785 canonical bytes.
-fn document_digest(bytes: &[u8]) -> [u8; 32] {
-    let document = quire_canonical::read(bytes, u64::MAX).expect("test fixture is JSON");
-    *quire_canonical::sha256(&document, quire_canonical::Limits::new(u64::MAX))
-        .expect("test fixture is RFC 8785 canonical")
-        .as_bytes()
-}
-
-fn observation_identity_from_bytes(bytes: &[u8]) -> qsl_foundation::SourceIdentity {
-    crate::spine::SuppliedObservation::from_document("fixture", bytes.to_vec())
-        .expect("fixture observation has source labels")
-        .reference
-        .source_identity()
-}
-
-fn model_header_json(model_digest_hex: &str) -> serde_json::Value {
+fn model_header_json() -> serde_json::Value {
     json!({
         "identity": PACKAGE_IDENTITY,
         "version": "1.0.0",
-        "digest": format!("sha256-jcs:{model_digest_hex}"),
     })
 }
 
@@ -323,11 +288,7 @@ fn document_identity_json(label: &DocumentRef) -> serde_json::Value {
 /// A snapshot document naming `label`, admitting the given `next` chain in
 /// population `all_nodes` (each entry a `(key, next_key)` pair; `None`
 /// means `next` is absent), observed `current`.
-fn snapshot_bytes(
-    label: &DocumentRef,
-    model_digest_hex: &str,
-    chain: &[(&str, Option<&str>)],
-) -> Vec<u8> {
+fn snapshot_bytes(label: &DocumentRef, chain: &[(&str, Option<&str>)]) -> Vec<u8> {
     let population = population_identity();
     let node = node_type();
     let objects: Vec<_> = chain
@@ -351,7 +312,7 @@ fn snapshot_bytes(
         "identity": document_identity_json(label),
         "observation": "current",
         "anchor": {"kind": "initialization", "name": "init"},
-        "model": model_header_json(model_digest_hex),
+        "model": model_header_json(),
         "populations": [
             {"population": population, "complete": true, "objects": objects},
         ],
@@ -383,7 +344,7 @@ fn no_cycle_selection(label: DocumentRef, self_key: &str) -> ClauseSelection {
 /// (FR-107), so one arbitrary universe for the whole environment suffices.
 fn node_reference(node_effective: EffectiveId, key: &str) -> ObjectReference {
     ObjectReference::new(
-        UniverseId::from_digest([7; 32]),
+        crate::spine::fixture_ids::universe(7),
         node_effective,
         ObjectId::new(key.to_owned()).expect("non-empty key"),
     )
@@ -399,10 +360,13 @@ fn node_environment(
     let mut objects = Vec::with_capacity(chain.len());
     for (index, key) in chain.iter().enumerate() {
         let next = chain.get(index + 1).map(|next_key| {
-            FieldValue::Present(Value::Reference(node_reference(node_effective, next_key)))
+            FieldValue::Present(Value::Reference(node_reference(
+                node_effective.clone(),
+                next_key,
+            )))
         });
         objects.push((
-            node_reference(node_effective, key),
+            node_reference(node_effective.clone(), key),
             vec![("next", next.unwrap_or(FieldValue::Absent))],
         ));
     }
@@ -425,7 +389,6 @@ fn no_cycle_observations(
                 identity: "snap".to_owned(),
                 revision_namespace: "ns".to_owned(),
                 revision: "1".to_owned(),
-                digest: [0; 32],
             },
             environment,
             populations: BTreeMap::from([(population_identity(), true)]),
@@ -474,11 +437,11 @@ fn no_cycle_completes_true_with_the_expected_reaches_charge_log() {
     let clause = graph.state_clause("NoCycle").expect("NoCycle is declared");
     let node_effective = clause.context();
     let types = graph.scope().types();
-    let environment = node_environment(types, node_effective, &["a", "b", "c"]);
+    let environment = node_environment(types, node_effective.clone(), &["a", "b", "c"]);
     let observations = no_cycle_observations(
         clause.identity(),
         environment,
-        node_reference(node_effective, "a"),
+        node_reference(node_effective.clone(), "a"),
     );
 
     let mut meter = Meter::new(default_accounting(1_000_000));
@@ -529,17 +492,23 @@ fn no_cycle_completes_false_over_a_cycle() {
             types,
             vec![
                 (
-                    node_reference(node_effective, "a"),
+                    node_reference(node_effective.clone(), "a"),
                     vec![(
                         "next",
-                        FieldValue::Present(Value::Reference(node_reference(node_effective, "b"))),
+                        FieldValue::Present(Value::Reference(node_reference(
+                            node_effective.clone(),
+                            "b",
+                        ))),
                     )],
                 ),
                 (
-                    node_reference(node_effective, "b"),
+                    node_reference(node_effective.clone(), "b"),
                     vec![(
                         "next",
-                        FieldValue::Present(Value::Reference(node_reference(node_effective, "a"))),
+                        FieldValue::Present(Value::Reference(node_reference(
+                            node_effective.clone(),
+                            "a",
+                        ))),
                     )],
                 ),
             ],
@@ -550,7 +519,7 @@ fn no_cycle_completes_false_over_a_cycle() {
     let observations = no_cycle_observations(
         clause.identity(),
         environment,
-        node_reference(node_effective, "a"),
+        node_reference(node_effective.clone(), "a"),
     );
     let mut meter = Meter::new(default_accounting(1_000_000));
     let name = QualifiedName::unqualified("NoCycle").unwrap();
@@ -572,11 +541,11 @@ fn evaluate_clause_refuses_an_unknown_clause_name() {
     let clause = graph.state_clause("NoCycle").expect("NoCycle is declared");
     let node_effective = clause.context();
     let types = graph.scope().types();
-    let environment = node_environment(types, node_effective, &["a"]);
+    let environment = node_environment(types, node_effective.clone(), &["a"]);
     let observations = no_cycle_observations(
         clause.identity(),
         environment,
-        node_reference(node_effective, "a"),
+        node_reference(node_effective.clone(), "a"),
     );
     let mut meter = Meter::new(default_accounting(1_000_000));
     let name = QualifiedName::unqualified("NoSuchClause").unwrap();
@@ -604,18 +573,28 @@ fn evaluate_clause_refuses_observations_admitted_for_another_clause() {
     let clause = graph.state_clause("NoCycle").expect("NoCycle is declared");
     let node_effective = clause.context();
     let types = graph.scope().types();
-    let environment = node_environment(types, node_effective, &["a"]);
+    let environment = node_environment(types, node_effective.clone(), &["a"]);
     // A clause identity that is not `NoCycle`'s own -- any other `NodeKey`
     // disagrees.
     assert_ne!(
         clause.identity(),
-        quire_exact::NodeKey::from_digest([9; 32])
+        quire_exact::NodeKey::new(
+            "fixture",
+            vec![quire_exact::PathSegment::Text("node".into())],
+            9
+        )
+        .expect("a fixture key")
     );
-    let wrong_identity = quire_exact::NodeKey::from_digest([9; 32]);
+    let wrong_identity = quire_exact::NodeKey::new(
+        "fixture",
+        vec![quire_exact::PathSegment::Text("node".into())],
+        9,
+    )
+    .expect("a fixture key");
     let observations = no_cycle_observations(
         wrong_identity,
         environment,
-        node_reference(node_effective, "a"),
+        node_reference(node_effective.clone(), "a"),
     );
     let mut meter = Meter::new(default_accounting(1_000_000));
     let name = QualifiedName::unqualified("NoCycle").unwrap();
@@ -648,7 +627,7 @@ fn evaluate_clause_is_deterministic() {
         let observations = no_cycle_observations(
             clause.identity(),
             environment,
-            node_reference(node_effective, self_key),
+            node_reference(node_effective.clone(), self_key),
         );
         let mut meter = Meter::new(default_accounting(1_000_000));
         let name = QualifiedName::unqualified("NoCycle").unwrap();
@@ -667,11 +646,11 @@ fn evaluate_clause_is_deterministic() {
     // charge logs.
     assert_eq!(
         run(
-            node_environment(types, node_effective, &["a", "b", "c"]),
+            node_environment(types, node_effective.clone(), &["a", "b", "c"]),
             "a"
         ),
         run(
-            node_environment(types, node_effective, &["a", "b", "c"]),
+            node_environment(types, node_effective.clone(), &["a", "b", "c"]),
             "a"
         )
     );
@@ -681,21 +660,21 @@ fn evaluate_clause_is_deterministic() {
                 types,
                 vec![
                     (
-                        node_reference(node_effective, "a"),
+                        node_reference(node_effective.clone(), "a"),
                         vec![(
                             "next",
                             FieldValue::Present(Value::Reference(node_reference(
-                                node_effective,
+                                node_effective.clone(),
                                 "b",
                             ))),
                         )],
                     ),
                     (
-                        node_reference(node_effective, "b"),
+                        node_reference(node_effective.clone(), "b"),
                         vec![(
                             "next",
                             FieldValue::Present(Value::Reference(node_reference(
-                                node_effective,
+                                node_effective.clone(),
                                 "a",
                             ))),
                         )],
@@ -725,7 +704,7 @@ fn evaluate_clause_reports_incomplete_when_the_meter_is_exhausted() {
     let clause = graph.state_clause("NoCycle").expect("NoCycle is declared");
     let node_effective = clause.context();
     let types = graph.scope().types();
-    let environment = node_environment(types, node_effective, &["a", "b", "c"]);
+    let environment = node_environment(types, node_effective.clone(), &["a", "b", "c"]);
     let observations = no_cycle_observations(
         clause.identity(),
         environment,
@@ -764,15 +743,6 @@ fn evaluate_clause_reports_incomplete_when_the_meter_is_exhausted() {
 // FR-109: `run_clause`.
 // ---------------------------------------------------------------------------
 
-fn model_digest_hex() -> String {
-    let (unit, packages) = unit_and_packages();
-    let _ = unit;
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    hex(digest)
-}
-
 fn request(selection: ClauseRunSelection) -> ClauseRunRequest {
     let (unit, packages) = unit_and_packages();
     ClauseRunRequest {
@@ -786,8 +756,7 @@ fn request(selection: ClauseRunSelection) -> ClauseRunRequest {
         snapshots: BTreeMap::new(),
         invocations: BTreeMap::new(),
         selection,
-        expected_package_id: None,
-        expected_package_id_claim: None,
+        package_name: "fixture".to_owned(),
         limits: SpineLimits::default(),
         observation_limits: ObservationLimits::default(),
         accounting: default_accounting(1_000_000),
@@ -797,49 +766,33 @@ fn request(selection: ClauseRunSelection) -> ClauseRunRequest {
 /// A healthy-parent (acyclic) or violating-parent (cyclic) `NoCycle`
 /// request, for FR-109-AC-1 and FR-109-AC-5.
 fn no_cycle_request(chain: &[(&str, Option<&str>)]) -> (ClauseRunRequest, DocumentRef) {
-    let model_digest = model_digest_hex();
     let label = DocumentRef {
         authority: "test".to_owned(),
         identity: "snap".to_owned(),
         revision_namespace: "ns".to_owned(),
         revision: "1".to_owned(),
-        digest: [0; 32],
     };
-    let bytes = snapshot_bytes(&label, &model_digest, chain);
-    let digest = document_digest(&bytes);
-    let label = DocumentRef { digest, ..label };
+    let bytes = snapshot_bytes(&label, chain);
     let selection = no_cycle_selection(label.clone(), "a");
 
     let mut request = request(ClauseRunSelection::Clause(selection));
-    request
-        .snapshots
-        .insert(observation_identity_from_bytes(&bytes), bytes);
+    request.snapshots.insert(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    );
     (request, label)
 }
 
 /// TC-468 (FR-109-AC-1): a `Clause` selection over a `current` snapshot of
 /// an acyclic chain evaluates `NoCycle` to `Completed(Boolean(true))`, and
 /// a cyclic chain to `Completed(Boolean(false))`; both carry the
-/// compiled `package_id` and the usage
+/// usage
 /// (`FR-109-run-a-state-clause-through-the-spine.md:149`).
 #[trace("TC-468", "FR-109-AC-1", "FR-109-AC-6")]
 #[test]
 fn run_clause_evaluates_a_clause_selection() {
     let (request, _label) = no_cycle_request(&[("a", Some("b")), ("b", None)]);
-    // The package `compose` emits for this unit on its own, independent of
-    // the run.
-    let (unit, packages) = unit_and_packages();
-    let expected_package_id = compose(
-        source(),
-        "clause-run.native",
-        unit.as_bytes(),
-        &packages,
-        &DependencyInput::default(),
-        SpineLimits::default(),
-    )
-    .expect("the unit compiles")
-    .emitted
-    .package_id();
     let report = run_clause(request).expect("a well-formed request always reports");
     match report.disposition {
         ClauseDisposition::Evaluate(super::CallOutcome::Completed(super::CallValue::Boolean(
@@ -857,7 +810,6 @@ fn run_clause_evaluates_a_clause_selection() {
     assert_eq!(report.disposition.truth(), Some(true));
     assert_eq!(report.disposition.category().exit_code(), 0);
 
-    assert_eq!(report.package_id, Some(expected_package_id));
     assert!(
         report.usage.evaluation_admissions > 0,
         "the evaluation meter's charges are reported"
@@ -927,7 +879,6 @@ fn running_the_same_request_twice_gives_equal_reports_including_usage() {
     let report_one = run_clause(request_one).expect("a well-formed request always reports");
     let report_two = run_clause(request_two).expect("a well-formed request always reports");
 
-    assert_eq!(report_one.package_id, report_two.package_id);
     assert_eq!(
         report_one.disposition.truth(),
         report_two.disposition.truth()
@@ -959,24 +910,22 @@ fn running_the_same_request_twice_gives_equal_reports_including_usage() {
 #[trace("TC-468", "FR-109-AC-2")]
 #[test]
 fn run_clause_reports_missing_name_for_an_unknown_clause() {
-    let model_digest = model_digest_hex();
     let label = DocumentRef {
         authority: "test".to_owned(),
         identity: "snap".to_owned(),
         revision_namespace: "ns".to_owned(),
         revision: "1".to_owned(),
-        digest: [0; 32],
     };
-    let bytes = snapshot_bytes(&label, &model_digest, &[("a", None)]);
-    let digest = document_digest(&bytes);
-    let label = DocumentRef { digest, ..label };
+    let bytes = snapshot_bytes(&label, &[("a", None)]);
     let mut selection = no_cycle_selection(label, "a");
     selection.name = "NoSuchClause".to_owned();
 
     let mut request = request(ClauseRunSelection::Clause(selection));
-    request
-        .snapshots
-        .insert(observation_identity_from_bytes(&bytes), bytes);
+    request.snapshots.insert(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    );
     let report = run_clause(request).unwrap();
     assert!(matches!(
         report.disposition,
@@ -991,17 +940,13 @@ fn run_clause_reports_missing_name_for_an_unknown_clause() {
 #[trace("TC-468", "FR-109-AC-3")]
 #[test]
 fn run_clause_evaluates_a_function_selection_with_an_integer_argument() {
-    let model_digest = model_digest_hex();
     let label = DocumentRef {
         authority: "test".to_owned(),
         identity: "snap".to_owned(),
         revision_namespace: "ns".to_owned(),
         revision: "1".to_owned(),
-        digest: [0; 32],
     };
-    let bytes = snapshot_bytes(&label, &model_digest, &[]);
-    let digest = document_digest(&bytes);
-    let label = DocumentRef { digest, ..label };
+    let bytes = snapshot_bytes(&label, &[]);
 
     let mut request = request(ClauseRunSelection::Function {
         name: "isPositive".to_owned(),
@@ -1011,9 +956,11 @@ fn run_clause_evaluates_a_function_selection_with_an_integer_argument() {
         }],
         snapshot: label,
     });
-    request
-        .snapshots
-        .insert(observation_identity_from_bytes(&bytes), bytes);
+    request.snapshots.insert(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    );
     let report = run_clause(request).unwrap();
     match report.disposition {
         ClauseDisposition::Evaluate(super::CallOutcome::Completed(super::CallValue::Boolean(
@@ -1031,17 +978,13 @@ fn run_clause_evaluates_a_function_selection_with_an_integer_argument() {
 #[trace("TC-468", "FR-109-AC-4")]
 #[test]
 fn run_clause_evaluates_a_function_selection_with_a_reference_argument() {
-    let model_digest = model_digest_hex();
     let label = DocumentRef {
         authority: "test".to_owned(),
         identity: "snap".to_owned(),
         revision_namespace: "ns".to_owned(),
         revision: "1".to_owned(),
-        digest: [0; 32],
     };
-    let bytes = snapshot_bytes(&label, &model_digest, &[("a", Some("b")), ("b", None)]);
-    let digest = document_digest(&bytes);
-    let label = DocumentRef { digest, ..label };
+    let bytes = snapshot_bytes(&label, &[("a", Some("b")), ("b", None)]);
 
     let mut request = request(ClauseRunSelection::Function {
         name: "hasNext".to_owned(),
@@ -1054,9 +997,11 @@ fn run_clause_evaluates_a_function_selection_with_a_reference_argument() {
         }],
         snapshot: label,
     });
-    request
-        .snapshots
-        .insert(observation_identity_from_bytes(&bytes), bytes);
+    request.snapshots.insert(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    );
     let report = run_clause(request).unwrap();
     match report.disposition {
         ClauseDisposition::Evaluate(super::CallOutcome::Completed(super::CallValue::Boolean(
@@ -1074,17 +1019,13 @@ fn run_clause_evaluates_a_function_selection_with_a_reference_argument() {
 #[trace("TC-468", "FR-109-AC-4")]
 #[test]
 fn run_clause_refuses_an_unresolved_reference_argument() {
-    let model_digest = model_digest_hex();
     let label = DocumentRef {
         authority: "test".to_owned(),
         identity: "snap".to_owned(),
         revision_namespace: "ns".to_owned(),
         revision: "1".to_owned(),
-        digest: [0; 32],
     };
-    let bytes = snapshot_bytes(&label, &model_digest, &[("a", None)]);
-    let digest = document_digest(&bytes);
-    let label = DocumentRef { digest, ..label };
+    let bytes = snapshot_bytes(&label, &[("a", None)]);
 
     let mut request = request(ClauseRunSelection::Function {
         name: "hasNext".to_owned(),
@@ -1097,9 +1038,11 @@ fn run_clause_refuses_an_unresolved_reference_argument() {
         }],
         snapshot: label,
     });
-    request
-        .snapshots
-        .insert(observation_identity_from_bytes(&bytes), bytes);
+    request.snapshots.insert(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    );
     let report = run_clause(request).unwrap();
     assert_eq!(report.disposition.stage(), ClauseRunStage::Admit);
     match report.disposition {
@@ -1121,64 +1064,30 @@ fn run_clause_refuses_an_unresolved_reference_argument() {
 #[trace("TC-468", "FR-109-AC-5")]
 #[test]
 fn run_clause_reports_not_a_predicate_for_an_integer_function() {
-    let model_digest = model_digest_hex();
     let label = DocumentRef {
         authority: "test".to_owned(),
         identity: "snap".to_owned(),
         revision_namespace: "ns".to_owned(),
         revision: "1".to_owned(),
-        digest: [0; 32],
     };
-    let bytes = snapshot_bytes(&label, &model_digest, &[]);
-    let digest = document_digest(&bytes);
-    let label = DocumentRef { digest, ..label };
+    let bytes = snapshot_bytes(&label, &[]);
 
     let mut request = request(ClauseRunSelection::Function {
         name: "seven".to_owned(),
         arguments: Vec::new(),
         snapshot: label,
     });
-    request
-        .snapshots
-        .insert(observation_identity_from_bytes(&bytes), bytes);
+    request.snapshots.insert(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    );
     let report = run_clause(request).unwrap();
     assert!(matches!(
         report.disposition,
         ClauseDisposition::NotAPredicate { .. }
     ));
     assert_eq!(report.disposition.stage(), ClauseRunStage::Select);
-}
-
-/// FR-098's stale-package rule (reused verbatim by FR-109): an
-/// `expected_package_id` the recompile disagrees with refuses at stage
-/// `compile`, before any selection.
-#[trace("TC-468", "FR-109-AC-2")]
-#[test]
-fn run_clause_reports_a_stale_package() {
-    let compiled = compiled();
-    let real_id = compiled.emitted.package_id();
-    let bogus_id = qsl_semantics::library::PackageId::of_preimage(b"not-the-real-package");
-    assert_ne!(real_id, bogus_id, "the bogus id must actually differ");
-
-    let mut request = request(ClauseRunSelection::Function {
-        name: "seven".to_owned(),
-        arguments: Vec::new(),
-        snapshot: DocumentRef {
-            authority: "test".to_owned(),
-            identity: "snap".to_owned(),
-            revision_namespace: "ns".to_owned(),
-            revision: "1".to_owned(),
-            digest: [0; 32],
-        },
-    });
-    request.expected_package_id = Some(bogus_id);
-    let report = run_clause(request).unwrap();
-    assert!(matches!(
-        report.disposition,
-        ClauseDisposition::StalePackage { .. }
-    ));
-    assert_eq!(report.disposition.stage(), ClauseRunStage::Compile);
-    assert_eq!(report.disposition.category().exit_code(), 20);
 }
 
 /// [`ClauseRunRefusal::EmptySource`]: an empty unit refuses before any
@@ -1196,7 +1105,6 @@ fn run_clause_refuses_an_empty_source() {
             identity: "snap".to_owned(),
             revision_namespace: "ns".to_owned(),
             revision: "1".to_owned(),
-            digest: [0; 32],
         },
     });
     request.source = ClauseRunSource::Program {
@@ -1212,7 +1120,7 @@ fn run_clause_refuses_an_empty_source() {
 
 /// TC-468 step 2 (FR-109-AC-2): no domain package bytes supplied for the
 /// unit's `model` declaration refuses at stage `compile`,
-/// `missing_import`/`missing-selection`, exit 20, with no `package_id`.
+/// `missing_import`/`missing-selection`, exit 20.
 #[trace("TC-468", "FR-109-AC-2")]
 #[test]
 fn run_clause_reports_missing_import_when_no_package_bytes_are_supplied() {
@@ -1221,7 +1129,6 @@ fn run_clause_reports_missing_import_when_no_package_bytes_are_supplied() {
         identity: "snap".to_owned(),
         revision_namespace: "ns".to_owned(),
         revision: "1".to_owned(),
-        digest: [0; 32],
     };
     let mut request = request(ClauseRunSelection::Function {
         name: "seven".to_owned(),
@@ -1247,7 +1154,6 @@ fn run_clause_reports_missing_import_when_no_package_bytes_are_supplied() {
     }
     assert_eq!(report.disposition.stage(), ClauseRunStage::Compile);
     assert_eq!(report.disposition.category().exit_code(), 20);
-    assert_eq!(report.package_id, None);
 }
 
 /// FR-255-AC-1 (QSL-745): a model-normalization ceiling and the intake byte
@@ -1263,7 +1169,6 @@ fn run_clause_writes_the_caller_budget_fields_of_a_compile_ceiling() {
         identity: "snap".to_owned(),
         revision_namespace: "ns".to_owned(),
         revision: "1".to_owned(),
-        digest: [0; 32],
     };
     let selection = || ClauseRunSelection::Function {
         name: "seven".to_owned(),
@@ -1322,39 +1227,35 @@ fn run_clause_writes_the_caller_budget_fields_of_a_compile_ceiling() {
 #[trace("TC-465", "FR-106-AC-2")]
 #[test]
 fn run_clause_reports_the_document_order_first_unknown_member_not_the_alphabetical_one() {
-    let model_digest = model_digest_hex();
     let label = DocumentRef {
         authority: "test".to_owned(),
         identity: "snap".to_owned(),
         revision_namespace: "ns".to_owned(),
         revision: "1".to_owned(),
-        digest: [0; 32],
     };
     // Hand-written text, not `serde_json::json!` + `.to_string()`: without
     // the crate-wide `preserve_order` feature (deliberately off, see
     // `ordered_json.rs`'s own module doc), `json!`'s `Map` is `BTreeMap`-
     // backed and would serialize its members alphabetically regardless of
     // insertion order, destroying the very ordering this test exercises.
-    let bytes = format!(
-        r#"{{
+    let bytes = r#"{
             "format": "quire.state.snapshot/v1",
-            "identity": {{"authority": "test", "identity": "snap", "revision_namespace": "ns", "revision": "1"}},
+            "identity": {"authority": "test", "identity": "snap", "revision_namespace": "ns", "revision": "1"},
             "observation": "current",
-            "model": {{"identity": "test/nodes", "version": "1.0.0", "digest": "sha256-jcs:{model_digest}"}},
+            "model": {"identity": "test/nodes", "version": "1.0.0"},
             "populations": [],
             "zzz_unknown": true,
             "aaa_unknown": true
-        }}"#
-    )
+        }"#.to_string()
     .into_bytes();
-    let digest = document_digest(&bytes);
-    let label = DocumentRef { digest, ..label };
     let selection = no_cycle_selection(label, "a");
 
     let mut request = request(ClauseRunSelection::Clause(selection));
-    request
-        .snapshots
-        .insert(observation_identity_from_bytes(&bytes), bytes);
+    request.snapshots.insert(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    );
     let report = run_clause(request).expect("a well-formed request always reports");
     match report.disposition {
         ClauseDisposition::Admit(super::AdmissionFailure::Refused(record)) => {
@@ -1385,11 +1286,9 @@ fn run_clause_reports_the_document_order_first_unknown_member_not_the_alphabetic
 #[test]
 fn population_universe_for_agrees_with_normalize_s_own_universe_assignment() {
     let document = domain_document();
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let model_selection = qsl_semantics::model::domain_package::DomainPackageRef {
         identity: PACKAGE_IDENTITY.to_owned(),
-        version: "1.0.0".to_owned(),
-        digest: document_digest(&document),
     };
 
     // Admit and normalize the same package directly -- independent of
@@ -1397,8 +1296,7 @@ fn population_universe_for_agrees_with_normalize_s_own_universe_assignment() {
     // the `Node` type's real `EffectiveId` and the real `UniverseId`
     // normalization assigns its universe.
     let admitted = qsl_semantics::model::intake::admit_selections(
-        std::slice::from_ref(&model_selection),
-        qsl_semantics::model::key::SHA256_JCS_DIGEST_DOMAIN,
+        std::slice::from_ref(&model_selection.identity),
         &packages,
         qsl_foundation::IntakeLimits::default(),
     )
@@ -1419,10 +1317,11 @@ fn population_universe_for_agrees_with_normalize_s_own_universe_assignment() {
         package: PACKAGE_IDENTITY.to_owned(),
         node: node_type(),
     };
-    let node_effective = *view
+    let node_effective = view
         .type_identities()
         .get(&node_key)
-        .expect("Node is a declared object type");
+        .expect("Node is a declared object type")
+        .clone();
     let expected_universe = view
         .object_universe_of(&node_key)
         .expect("Node has a universe")
@@ -1432,12 +1331,13 @@ fn population_universe_for_agrees_with_normalize_s_own_universe_assignment() {
         std::slice::from_ref(&model_selection),
         &packages,
         limits,
-        node_effective,
+        node_effective.clone(),
     )
     .expect("population_universe_for resolves the same object type's universe");
 
     assert_eq!(
-        admitted_universe, expected_universe,
+        admitted_universe,
+        expected_universe.expect("a universe identity"),
         "admission's own universe resolution must agree with normalize's"
     );
 }
@@ -1447,110 +1347,6 @@ fn population_universe_for_agrees_with_normalize_s_own_universe_assignment() {
 // refuses a missing or malformed member rather than silently defaulting to
 // an empty string.
 // ---------------------------------------------------------------------------
-
-/// A snapshot document naming `label`, with `model` set to the raw JSON
-/// `model_json` verbatim -- for exercising `read_model`'s own defect
-/// reporting, never a well-formed `model` header.
-fn snapshot_bytes_with_model(label: &DocumentRef, model_json: &str) -> Vec<u8> {
-    format!(
-        r#"{{
-            "format": "quire.state.snapshot/v1",
-            "identity": {{"authority": "{}", "identity": "{}", "revision_namespace": "{}", "revision": "{}"}},
-            "observation": "current",
-            "model": {model_json},
-            "populations": []
-        }}"#,
-        label.authority, label.identity, label.revision_namespace, label.revision
-    )
-    .into_bytes()
-}
-
-/// FR-106 check 4 (`read_model`): a `model` member missing `digest`
-/// refuses `invalid_runtime_input`/`missing-member` naming `digest`, not a
-/// silent `""` that would later misreport `wrong-model-selection`.
-#[trace("TC-465", "FR-106-AC-3")]
-#[test]
-fn run_clause_refuses_a_model_with_a_missing_digest() {
-    let label = DocumentRef {
-        authority: "test".to_owned(),
-        identity: "snap".to_owned(),
-        revision_namespace: "ns".to_owned(),
-        revision: "1".to_owned(),
-        digest: [0; 32],
-    };
-    let bytes =
-        snapshot_bytes_with_model(&label, r#"{"identity": "test/nodes", "version": "1.0.0"}"#);
-    let digest = document_digest(&bytes);
-    let label = DocumentRef { digest, ..label };
-    let selection = no_cycle_selection(label, "a");
-
-    let mut request = request(ClauseRunSelection::Clause(selection));
-    request
-        .snapshots
-        .insert(observation_identity_from_bytes(&bytes), bytes);
-    let report = run_clause(request).expect("a well-formed request always reports");
-    match report.disposition {
-        ClauseDisposition::Admit(super::AdmissionFailure::Refused(record)) => {
-            assert_eq!(
-                record.code,
-                qsl_foundation::diagnostic::Code::InvalidRuntimeInput
-            );
-            assert_eq!(record.cause, "missing-member");
-            assert_eq!(
-                record.fields.get("field").map(String::as_str),
-                Some("digest")
-            );
-        }
-        other => panic!("expected Admit(Refused(missing-member/digest)), got {other:?}"),
-    }
-}
-
-/// FR-106 check 4 (`read_model`): a `model.digest` not spelled with the
-/// exact `sha256-jcs:` prefix refuses `invalid_runtime_input`/
-/// `wrong-value-kind` naming `digest` -- `strip_prefix`, not
-/// `trim_start_matches`, so a wrong prefix is a refusal, never a silent
-/// pass-through of the whole unstripped string.
-#[trace("TC-465", "FR-106-AC-3")]
-#[test]
-fn run_clause_refuses_a_model_digest_with_the_wrong_prefix() {
-    let label = DocumentRef {
-        authority: "test".to_owned(),
-        identity: "snap".to_owned(),
-        revision_namespace: "ns".to_owned(),
-        revision: "1".to_owned(),
-        digest: [0; 32],
-    };
-    let model_digest = model_digest_hex();
-    let bytes = snapshot_bytes_with_model(
-        &label,
-        &format!(
-            r#"{{"identity": "test/nodes", "version": "1.0.0", "digest": "sha256:{model_digest}"}}"#
-        ),
-    );
-    let digest = document_digest(&bytes);
-    let label = DocumentRef { digest, ..label };
-    let selection = no_cycle_selection(label, "a");
-
-    let mut request = request(ClauseRunSelection::Clause(selection));
-    request
-        .snapshots
-        .insert(observation_identity_from_bytes(&bytes), bytes);
-    let report = run_clause(request).expect("a well-formed request always reports");
-    match report.disposition {
-        ClauseDisposition::Admit(super::AdmissionFailure::Refused(record)) => {
-            assert_eq!(
-                record.code,
-                qsl_foundation::diagnostic::Code::InvalidRuntimeInput
-            );
-            assert_eq!(record.cause, "wrong-value-kind");
-            assert_eq!(
-                record.fields.get("field").map(String::as_str),
-                Some("digest")
-            );
-        }
-        other => panic!("expected Admit(Refused(wrong-value-kind/digest)), got {other:?}"),
-    }
-}
 
 // ---------------------------------------------------------------------------
 // TC-466 (FR-107-AC-1, AC-2, AC-3; SR-751 FND-003): S6a evaluates state
@@ -1650,20 +1446,17 @@ fn config_version_domain_document_with_operations(
     operations.extend(extra_operations);
     let envelope = json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
         "source": {
             "identity": format!("ix://{CONFIG_VERSION_PACKAGE_IDENTITY}/spec"),
             "version": "1.0.0",
             "dialect": "spec-bundle",
-            "digest": PLACEHOLDER_DIGEST,
         },
         "package": {
             "identity": CONFIG_VERSION_PACKAGE_IDENTITY,
             "version": "1.0.0",
-            "manifestDigest": PLACEHOLDER_DIGEST,
             "mappingVersions": [],
             "profileVersions": [],
-            "lockDigest": PLACEHOLDER_DIGEST,
         },
         "occurrences": [],
         "extensions": [],
@@ -1671,7 +1464,6 @@ fn config_version_domain_document_with_operations(
             {
                 "kind": {"module": CONFIG_VERSION_PACKAGE_IDENTITY, "name": "object_type"},
                 "moduleVersion": "1.0.0",
-                "manifestDigest": PLACEHOLDER_DIGEST,
                 "construct": {
                     "identity": "none",
                     "shape": "record",
@@ -1682,7 +1474,6 @@ fn config_version_domain_document_with_operations(
             {
                 "kind": {"module": CONFIG_VERSION_PACKAGE_IDENTITY, "name": "population"},
                 "moduleVersion": "1.0.0",
-                "manifestDigest": PLACEHOLDER_DIGEST,
                 "construct": {
                     "identity": "none",
                     "shape": "record",
@@ -1693,7 +1484,6 @@ fn config_version_domain_document_with_operations(
             {
                 "kind": {"module": CONFIG_VERSION_PACKAGE_IDENTITY, "name": "value_type"},
                 "moduleVersion": "1.0.0",
-                "manifestDigest": PLACEHOLDER_DIGEST,
                 "construct": {
                     "identity": "none",
                     "shape": "record",
@@ -1805,7 +1595,8 @@ fn config_version_domain_document_with_operations(
 /// at all ("Today QSL emits no `state` node",
 /// `spec/functional/FR-105-emit-state-nodes.md`). `VersionUnchanged` below
 /// is that postcondition, now reachable through `run_clause` end to end.
-pub(crate) fn config_version_unit_and_packages() -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
+pub(crate) fn config_version_unit_and_packages(
+) -> (String, qsl_semantics::model::intake::PackageInput) {
     config_version_unit_and_packages_for(config_version_domain_document())
 }
 
@@ -1813,17 +1604,12 @@ pub(crate) fn config_version_unit_and_packages() -> (String, BTreeMap<[u8; 32], 
 /// variant of [`config_version_domain_document`]) as model `Config`.
 fn config_version_unit_and_packages_for(
     document: Vec<u8>,
-) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    let digest = hex(digest);
+) -> (String, qsl_semantics::model::intake::PackageInput) {
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
-         model Config = {CONFIG_VERSION_PACKAGE_IDENTITY:?} version \"1.0.0\" \
-         digest \"sha256-jcs:{digest}\";\n\
+         model Config = {CONFIG_VERSION_PACKAGE_IDENTITY:?};\n\
          invariant ParentOrder using v on Config::ConfigVersion at current {{ \
          present(self.parent) implies deref(value(self.parent)).versionNumber < self.versionNumber }}\n\
          invariant NoCycle using v on Config::ConfigVersion at current {{ \
@@ -1837,22 +1623,13 @@ fn config_version_unit_and_packages_for(
     (unit, packages)
 }
 
-fn config_version_model_digest_hex() -> String {
-    let (unit, packages) = config_version_unit_and_packages();
-    let _ = unit;
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    hex(digest)
-}
-
 /// The shared `ClauseRunRequest` shape for a config-version unit: `unit` and
 /// `packages` (either the base unit or a unit extending it) supply the
 /// program, `path` names it for diagnostics, and every other member is the
 /// same across every config-version test.
 fn config_version_request_for(
     unit: String,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
     path: &str,
     selection: ClauseRunSelection,
 ) -> ClauseRunRequest {
@@ -1867,8 +1644,7 @@ fn config_version_request_for(
         snapshots: BTreeMap::new(),
         invocations: BTreeMap::new(),
         selection,
-        expected_package_id: None,
-        expected_package_id_claim: None,
+        package_name: "fixture".to_owned(),
         limits: SpineLimits::default(),
         observation_limits: ObservationLimits::default(),
         accounting: default_accounting(1_000_000),
@@ -1891,7 +1667,6 @@ fn config_version_document_ref(identity: &str) -> DocumentRef {
         identity: identity.to_owned(),
         revision_namespace: "ns".to_owned(),
         revision: "1".to_owned(),
-        digest: [0; 32],
     }
 }
 
@@ -1923,7 +1698,6 @@ fn config_version_objects(root_version: i64, child_version: Option<i64>) -> Vec<
 /// single `root` object with no parent -- the absent-parent case).
 fn config_version_snapshot(
     label: &DocumentRef,
-    model_digest_hex: &str,
     root_version: i64,
     child_version: Option<i64>,
 ) -> Vec<u8> {
@@ -1936,7 +1710,6 @@ fn config_version_snapshot(
         "anchor": {"kind": "handler", "name": "validate"},
         "model": {
             "identity": CONFIG_VERSION_PACKAGE_IDENTITY, "version": "1.0.0",
-            "digest": format!("sha256-jcs:{model_digest_hex}"),
         },
         "populations": [{"population": population, "complete": true, "objects": objects}],
     });
@@ -1974,17 +1747,16 @@ fn run_config_version_current(
     child_version: Option<i64>,
     self_key: &str,
 ) -> ClauseDisposition {
-    let model_digest_hex = config_version_model_digest_hex();
     let label = config_version_document_ref("current-snap");
-    let bytes = config_version_snapshot(&label, &model_digest_hex, root_version, child_version);
-    let digest = document_digest(&bytes);
-    let label = DocumentRef { digest, ..label };
+    let bytes = config_version_snapshot(&label, root_version, child_version);
     let selection = config_version_current_selection(clause_name, label, self_key);
 
     let mut request = config_version_request(ClauseRunSelection::Clause(selection));
-    request
-        .snapshots
-        .insert(observation_identity_from_bytes(&bytes), bytes);
+    request.snapshots.insert(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    );
     run_clause(request)
         .expect("a well-formed request always reports")
         .disposition
@@ -2003,20 +1775,19 @@ fn boolean_disposition(disposition: &ClauseDisposition) -> bool {
 /// over `config_version_snapshot`'s distinct-identities case (`root` at
 /// version 1, `child` at version 2).
 fn config_version_function_request(name: &str, arguments: Vec<ClauseArgument>) -> ClauseRunRequest {
-    let model_digest_hex = config_version_model_digest_hex();
     let label = config_version_document_ref("distinct-identities");
-    let bytes = config_version_snapshot(&label, &model_digest_hex, 1, Some(2));
-    let digest = document_digest(&bytes);
-    let label = DocumentRef { digest, ..label };
+    let bytes = config_version_snapshot(&label, 1, Some(2));
 
     let mut request = config_version_request(ClauseRunSelection::Function {
         name: name.to_owned(),
         arguments,
         snapshot: label,
     });
-    request
-        .snapshots
-        .insert(observation_identity_from_bytes(&bytes), bytes);
+    request.snapshots.insert(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    );
     request
 }
 
@@ -2033,17 +1804,16 @@ fn config_version_reference(key: &str) -> ClauseArgumentValue {
 #[trace("TC-468", "FR-109-AC-2")]
 #[test]
 fn run_clause_reports_missing_name_selecting_absent_clause() {
-    let model_digest_hex = config_version_model_digest_hex();
     let label = config_version_document_ref("current-snap");
-    let bytes = config_version_snapshot(&label, &model_digest_hex, 1, None);
-    let digest = document_digest(&bytes);
-    let label = DocumentRef { digest, ..label };
+    let bytes = config_version_snapshot(&label, 1, None);
     let selection = config_version_current_selection("Absent", label, "root");
 
     let mut request = config_version_request(ClauseRunSelection::Clause(selection));
-    request
-        .snapshots
-        .insert(observation_identity_from_bytes(&bytes), bytes);
+    request.snapshots.insert(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    );
     let report = run_clause(request).unwrap();
     assert!(matches!(
         report.disposition,
@@ -2059,17 +1829,16 @@ fn run_clause_reports_missing_name_selecting_absent_clause() {
 #[trace("TC-468", "FR-109-AC-2")]
 #[test]
 fn run_clause_reports_missing_name_for_a_clause_selection_naming_a_function() {
-    let model_digest_hex = config_version_model_digest_hex();
     let label = config_version_document_ref("current-snap");
-    let bytes = config_version_snapshot(&label, &model_digest_hex, 1, None);
-    let digest = document_digest(&bytes);
-    let label = DocumentRef { digest, ..label };
+    let bytes = config_version_snapshot(&label, 1, None);
     let selection = config_version_current_selection("sameIdentity", label, "root");
 
     let mut request = config_version_request(ClauseRunSelection::Clause(selection));
-    request
-        .snapshots
-        .insert(observation_identity_from_bytes(&bytes), bytes);
+    request.snapshots.insert(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    );
     let report = run_clause(request).unwrap();
     assert!(matches!(
         report.disposition,
@@ -2078,46 +1847,12 @@ fn run_clause_reports_missing_name_for_a_clause_selection_naming_a_function() {
     assert_eq!(report.disposition.stage(), ClauseRunStage::Select);
 }
 
-/// TC-468 step 2 (FR-109-AC-2): an `expected_package_id` taken from
-/// compiling a different unit (the `test/model` fixture, not
-/// `test/config-version`) refuses `compile`, `stale_dependency`, naming
-/// both identities.
-#[trace("TC-468", "FR-109-AC-2")]
-#[test]
-fn run_clause_reports_a_stale_package_naming_another_units_package_id() {
-    let other = compiled();
-    let other_id = other.emitted.package_id();
-
-    let mut request = config_version_request(ClauseRunSelection::Function {
-        name: "n".to_owned(),
-        arguments: vec![ClauseArgument {
-            parameter: "a".to_owned(),
-            value: config_version_reference("root"),
-        }],
-        snapshot: config_version_document_ref("current-snap"),
-    });
-    request.expected_package_id = Some(other_id);
-    let report = run_clause(request).unwrap();
-    match &report.disposition {
-        ClauseDisposition::StalePackage {
-            expected, actual, ..
-        } => {
-            assert_eq!(expected, &other_id.hex());
-            assert_ne!(*actual, other_id, "the config-version package differs");
-        }
-        other => panic!("expected StalePackage {{ .. }}, got {other:?}"),
-    }
-    assert_eq!(report.disposition.stage(), ClauseRunStage::Compile);
-    assert_eq!(report.disposition.category().exit_code(), 20);
-}
-
 /// TC-468 step 3 (FR-109-AC-2): a dangling `parent` reference (naming a key
 /// no admitted population holds) refuses `admit`, `refusal`,
 /// `dangling_reference`, exit 20.
 #[trace("TC-468", "FR-109-AC-2")]
 #[test]
 fn run_clause_refuses_a_dangling_parent_reference() {
-    let model_digest_hex = config_version_model_digest_hex();
     let label = config_version_document_ref("dangling-parent");
     let population = config_version_population_identity();
     let config_version = config_version_type();
@@ -2131,7 +1866,6 @@ fn run_clause_refuses_a_dangling_parent_reference() {
         "anchor": {"kind": "handler", "name": "validate"},
         "model": {
             "identity": CONFIG_VERSION_PACKAGE_IDENTITY, "version": "1.0.0",
-            "digest": format!("sha256-jcs:{model_digest_hex}"),
         },
         "populations": [{
             "population": population,
@@ -2146,14 +1880,14 @@ fn run_clause_refuses_a_dangling_parent_reference() {
         }],
     });
     let bytes = value.to_string().into_bytes();
-    let digest = document_digest(&bytes);
-    let label = DocumentRef { digest, ..label };
     let selection = config_version_current_selection("ParentOrder", label, "child");
 
     let mut request = config_version_request(ClauseRunSelection::Clause(selection));
-    request
-        .snapshots
-        .insert(observation_identity_from_bytes(&bytes), bytes);
+    request.snapshots.insert(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    );
     let report = run_clause(request).unwrap();
     assert_eq!(report.disposition.stage(), ClauseRunStage::Admit);
     match &report.disposition {
@@ -2176,7 +1910,6 @@ fn run_clause_refuses_a_dangling_parent_reference() {
 #[trace("TC-468", "FR-109-AC-2")]
 #[test]
 fn run_clause_reports_incomplete_for_an_incomplete_population() {
-    let model_digest_hex = config_version_model_digest_hex();
     let label = config_version_document_ref("incomplete-population");
     let population = config_version_population_identity();
     let config_version = config_version_type();
@@ -2190,7 +1923,6 @@ fn run_clause_reports_incomplete_for_an_incomplete_population() {
         "anchor": {"kind": "handler", "name": "validate"},
         "model": {
             "identity": CONFIG_VERSION_PACKAGE_IDENTITY, "version": "1.0.0",
-            "digest": format!("sha256-jcs:{model_digest_hex}"),
         },
         "populations": [{
             "population": population,
@@ -2205,14 +1937,14 @@ fn run_clause_reports_incomplete_for_an_incomplete_population() {
         }],
     });
     let bytes = value.to_string().into_bytes();
-    let digest = document_digest(&bytes);
-    let label = DocumentRef { digest, ..label };
     let selection = config_version_current_selection("ParentOrder", label, "child");
 
     let mut request = config_version_request(ClauseRunSelection::Clause(selection));
-    request
-        .snapshots
-        .insert(observation_identity_from_bytes(&bytes), bytes);
+    request.snapshots.insert(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    );
     let report = run_clause(request).unwrap();
     assert_eq!(report.disposition.stage(), ClauseRunStage::Admit);
     match &report.disposition {
@@ -2239,17 +1971,16 @@ fn run_clause_reports_incomplete_for_an_incomplete_population() {
 #[trace("TC-468", "FR-109-AC-2")]
 #[test]
 fn run_clause_reports_incomplete_when_work_units_are_exhausted() {
-    let model_digest_hex = config_version_model_digest_hex();
     let label = config_version_document_ref("current-snap");
-    let bytes = config_version_snapshot(&label, &model_digest_hex, 1, Some(2));
-    let digest = document_digest(&bytes);
-    let label = DocumentRef { digest, ..label };
+    let bytes = config_version_snapshot(&label, 1, Some(2));
     let selection = config_version_current_selection("ParentOrder", label, "child");
 
     let mut request = config_version_request(ClauseRunSelection::Clause(selection));
-    request
-        .snapshots
-        .insert(observation_identity_from_bytes(&bytes), bytes);
+    request.snapshots.insert(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    );
     request.accounting = default_accounting(0);
     let report = run_clause(request).unwrap();
     assert_eq!(report.disposition.stage(), ClauseRunStage::Evaluate);
@@ -2389,52 +2120,6 @@ fn run_clause_evaluates_the_same_identity_family() {
         ClauseDisposition::NotAPredicate { .. }
     ));
     assert_eq!(report.usage.evaluation_admissions, 0, "meter never charged");
-}
-
-/// FR-106 check 1.3 (TC-465): editing the snapshot bytes after the
-/// selection's digest was taken (so the stored digest no longer matches the
-/// bytes it labels) refuses `admit`, `stale_dependency`/
-/// `content-mismatch`.
-#[trace("TC-465", "FR-106-AC-3")]
-#[test]
-fn run_clause_refuses_a_snapshot_edited_after_its_digest_was_taken() {
-    let model_digest_hex = config_version_model_digest_hex();
-    let label = config_version_document_ref("current-snap");
-    let bytes = config_version_snapshot(&label, &model_digest_hex, 1, None);
-    let digest = document_digest(&bytes);
-    let label = DocumentRef { digest, ..label };
-    let selection = config_version_current_selection("ParentOrder", label, "root");
-
-    // The selection's digest was taken over `bytes`; store different bytes
-    // (root at a different version) under that same digest key.
-    let edited = config_version_snapshot(
-        &DocumentRef {
-            digest: [0; 32],
-            ..config_version_document_ref("current-snap")
-        },
-        &model_digest_hex,
-        99,
-        None,
-    );
-
-    let mut request = config_version_request(ClauseRunSelection::Clause(selection));
-    request
-        .snapshots
-        .insert(observation_identity_from_bytes(&edited), edited);
-    let report = run_clause(request).unwrap();
-    assert_eq!(report.disposition.stage(), ClauseRunStage::Admit);
-    match &report.disposition {
-        ClauseDisposition::Admit(qsl_semantics::model::observation::AdmissionFailure::Refused(
-            record,
-        )) => {
-            assert_eq!(
-                record.code,
-                qsl_foundation::diagnostic::Code::StaleDependency
-            );
-            assert_eq!(record.cause, "content-mismatch");
-        }
-        other => panic!("expected Admit(Refused(content-mismatch)), got {other:?}"),
-    }
 }
 
 /// TC-468 step 5 (FR-109-AC-5): `FR-100`'s outcome mapping
@@ -2710,7 +2395,6 @@ fn tc466_step1_parent_order_over_admitted_snapshots() {
 /// `anchor` optional, and only a `current` snapshot carries one.
 fn config_version_invocation_snapshot(
     label: &DocumentRef,
-    model_digest_hex: &str,
     observation: &str,
     root_version: i64,
     child_version: i64,
@@ -2723,7 +2407,6 @@ fn config_version_invocation_snapshot(
         "observation": observation,
         "model": {
             "identity": CONFIG_VERSION_PACKAGE_IDENTITY, "version": "1.0.0",
-            "digest": format!("sha256-jcs:{model_digest_hex}"),
         },
         "populations": [{"population": population, "complete": true, "objects": objects}],
     });
@@ -2736,7 +2419,6 @@ fn config_version_invocation_snapshot(
 /// own frame modifies only `versionNumber`, never creates or deletes.
 fn config_version_invocation_bytes(
     label: &DocumentRef,
-    model_digest_hex: &str,
     pre_ref: &DocumentRef,
     post_ref: &DocumentRef,
     self_key: &str,
@@ -2747,18 +2429,15 @@ fn config_version_invocation_bytes(
         "identity": document_identity_json(label),
         "model": {
             "identity": CONFIG_VERSION_PACKAGE_IDENTITY, "version": "1.0.0",
-            "digest": format!("sha256-jcs:{model_digest_hex}"),
         },
         "context": config_version_type(),
         "operation": "attemptUpdate",
         "self": {"population": population, "key": self_key},
         "pre": {
             "identity": document_identity_json(pre_ref),
-            "digest": format!("sha256-jcs:{}", hex(&pre_ref.digest)),
         },
         "post": {
             "identity": document_identity_json(post_ref),
-            "digest": format!("sha256-jcs:{}", hex(&post_ref.digest)),
         },
         "parameters": {},
         "result": {"boolean": true},
@@ -2814,8 +2493,7 @@ fn document_ref_and_bytes(
 ) -> (DocumentRef, Vec<u8>) {
     let label = config_version_document_ref(name);
     let bytes = build(&label);
-    let digest = document_digest(&bytes);
-    (DocumentRef { digest, ..label }, bytes)
+    (label, bytes)
 }
 
 /// Runs `clause_name` (a precondition/postcondition of `attemptUpdate`),
@@ -2839,41 +2517,23 @@ fn run_config_version_invocation_report(
     versions: InvocationVersions,
     self_key: &str,
 ) -> super::ClauseRunReport {
-    let model_digest_hex = config_version_model_digest_hex();
-
     let (pre_label, pre_bytes) = document_ref_and_bytes("invocation-pre", |label| {
-        config_version_invocation_snapshot(
-            label,
-            &model_digest_hex,
-            "pre",
-            versions.root_pre,
-            versions.child_pre,
-        )
+        config_version_invocation_snapshot(label, "pre", versions.root_pre, versions.child_pre)
     });
     let (post_label, post_bytes) = document_ref_and_bytes("invocation-post", |label| {
-        config_version_invocation_snapshot(
-            label,
-            &model_digest_hex,
-            "post",
-            versions.root_post,
-            versions.child_post,
-        )
+        config_version_invocation_snapshot(label, "post", versions.root_post, versions.child_post)
     });
     let (invocation_label, invocation_bytes) = document_ref_and_bytes("invocation", |label| {
-        config_version_invocation_bytes(label, &model_digest_hex, &pre_label, &post_label, self_key)
+        config_version_invocation_bytes(label, &pre_label, &post_label, self_key)
     });
 
     let selection = config_version_invocation_selection(clause_name, invocation_label.clone());
     let mut request = request_builder(ClauseRunSelection::Clause(selection));
-    request
-        .snapshots
-        .insert(pre_label.source_identity(), pre_bytes);
-    request
-        .snapshots
-        .insert(post_label.source_identity(), post_bytes);
+    request.snapshots.insert(pre_label.clone(), pre_bytes);
+    request.snapshots.insert(post_label.clone(), post_bytes);
     request
         .invocations
-        .insert(invocation_label.source_identity(), invocation_bytes);
+        .insert(invocation_label.clone(), invocation_bytes);
     run_clause(request).expect("a well-formed request always reports")
 }
 
@@ -2910,7 +2570,8 @@ fn tc466_step1_version_unchanged_over_an_invocation() {
 /// other one, because `s4_emits_exactly_the_fr_105_state_nodes` (TC-462,
 /// below) counts that other unit's own emitted `state_clause` nodes
 /// exactly.
-fn config_version_step2_unit_and_packages() -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
+fn config_version_step2_unit_and_packages() -> (String, qsl_semantics::model::intake::PackageInput)
+{
     let (base_unit, packages) = config_version_unit_and_packages();
     let unit = format!(
         "{base_unit}\
@@ -3085,29 +2746,20 @@ fn config_version_step3_domain_document() -> Vec<u8> {
 
 /// The package provision holding [`config_version_step3_domain_document`]
 /// and nothing else.
-fn config_version_step3_packages() -> BTreeMap<[u8; 32], Vec<u8>> {
+fn config_version_step3_packages() -> qsl_semantics::model::intake::PackageInput {
     qsl_semantics::model::intake::package_input([config_version_step3_domain_document().as_slice()])
-}
-
-/// The hex model digest of [`config_version_step3_packages`]'s one document.
-fn config_version_step3_model_digest_hex() -> String {
-    let packages = config_version_step3_packages();
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    hex(digest)
+        .unwrap()
 }
 
 /// The unit text selecting [`config_version_step3_domain_document`] as
 /// model alias `Config`, with one precondition: `ReachesTarget`.
-fn config_version_step3_unit_and_packages() -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
+fn config_version_step3_unit_and_packages() -> (String, qsl_semantics::model::intake::PackageInput)
+{
     let packages = config_version_step3_packages();
-    let digest = config_version_step3_model_digest_hex();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
-         model Config = {CONFIG_VERSION_PACKAGE_IDENTITY:?} version \"1.0.0\" \
-         digest \"sha256-jcs:{digest}\";\n\
+         model Config = {CONFIG_VERSION_PACKAGE_IDENTITY:?};\n\
          pre ReachesTarget using v on Config::ConfigVersion::probe {{ \
          reaches(self, target, parent) }}\n"
     );
@@ -3132,7 +2784,6 @@ fn config_version_step3_request(selection: ClauseRunSelection) -> ClauseRunReque
 /// self-loop, which `config_version_objects` cannot express.
 fn config_version_step3_snapshot(
     label: &DocumentRef,
-    model_digest_hex: &str,
     observation: &str,
     objects: &[serde_json::Value],
 ) -> Vec<u8> {
@@ -3143,7 +2794,6 @@ fn config_version_step3_snapshot(
         "observation": observation,
         "model": {
             "identity": CONFIG_VERSION_PACKAGE_IDENTITY, "version": "1.0.0",
-            "digest": format!("sha256-jcs:{model_digest_hex}"),
         },
         "populations": [
             {"population": population, "complete": true, "objects": objects},
@@ -3197,7 +2847,6 @@ fn config_version_step3_loop_objects() -> Vec<serde_json::Value> {
 /// doc comment).
 fn config_version_probe_invocation_bytes(
     label: &DocumentRef,
-    model_digest_hex: &str,
     pre_ref: &DocumentRef,
     post_ref: &DocumentRef,
     self_key: &str,
@@ -3209,18 +2858,15 @@ fn config_version_probe_invocation_bytes(
         "identity": document_identity_json(label),
         "model": {
             "identity": CONFIG_VERSION_PACKAGE_IDENTITY, "version": "1.0.0",
-            "digest": format!("sha256-jcs:{model_digest_hex}"),
         },
         "context": config_version_type(),
         "operation": "probe",
         "self": {"population": population, "key": self_key},
         "pre": {
             "identity": document_identity_json(pre_ref),
-            "digest": format!("sha256-jcs:{}", hex(&pre_ref.digest)),
         },
         "post": {
             "identity": document_identity_json(post_ref),
-            "digest": format!("sha256-jcs:{}", hex(&post_ref.digest)),
         },
         "parameters": {"target": {"reference": {"population": population, "key": target_key}}},
         "result": serde_json::Value::Null,
@@ -3232,12 +2878,12 @@ fn config_version_probe_invocation_bytes(
 
 /// One `probe` invocation's provisioned documents: the invocation's own
 /// label (what a `ReachesTarget` selection names), and the snapshot and
-/// invocation provisions keyed by source labels, ready for a `ClauseRunRequest`
+/// invocation provisions keyed by digest, ready for a `ClauseRunRequest`
 /// or a hand-built `Provisions`.
 struct ProbeDocuments {
     invocation: DocumentRef,
-    snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
-    invocations: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
+    snapshots: qsl_semantics::model::observation::DocumentProvision,
+    invocations: qsl_semantics::model::observation::DocumentProvision,
 }
 
 /// Builds a `probe` invocation over `objects` (chain or loop), naming
@@ -3248,19 +2894,16 @@ fn probe_documents(
     self_key: &str,
     target_key: &str,
 ) -> ProbeDocuments {
-    let model_digest_hex = config_version_step3_model_digest_hex();
-
     let (pre_label, pre_bytes) = document_ref_and_bytes("probe-pre", |label| {
-        config_version_step3_snapshot(label, &model_digest_hex, "pre", objects)
+        config_version_step3_snapshot(label, "pre", objects)
     });
     let (post_label, post_bytes) = document_ref_and_bytes("probe-post", |label| {
-        config_version_step3_snapshot(label, &model_digest_hex, "post", objects)
+        config_version_step3_snapshot(label, "post", objects)
     });
     let (invocation_label, invocation_bytes) =
         document_ref_and_bytes("probe-invocation", |label| {
             config_version_probe_invocation_bytes(
                 label,
-                &model_digest_hex,
                 &pre_label,
                 &post_label,
                 self_key,
@@ -3270,10 +2913,10 @@ fn probe_documents(
 
     ProbeDocuments {
         snapshots: BTreeMap::from([
-            (pre_label.source_identity(), pre_bytes),
-            (post_label.source_identity(), post_bytes),
+            (pre_label.clone(), pre_bytes),
+            (post_label.clone(), post_bytes),
         ]),
-        invocations: BTreeMap::from([(invocation_label.source_identity(), invocation_bytes)]),
+        invocations: BTreeMap::from([(invocation_label.clone(), invocation_bytes)]),
         invocation: invocation_label,
     }
 }
@@ -3462,21 +3105,17 @@ fn a_postcondition_with_only_a_pre_observation_faults() {
     let compiled = config_version_compiled();
     let (_, packages) = config_version_unit_and_packages();
     let package = &compiled.package;
-    let model_digest_hex = config_version_model_digest_hex();
     let (pre, pre_bytes) = document_ref_and_bytes("only-pre", |label| {
-        config_version_invocation_snapshot(label, &model_digest_hex, "pre", 1, 2)
+        config_version_invocation_snapshot(label, "pre", 1, 2)
     });
     let (post, post_bytes) = document_ref_and_bytes("only-post", |label| {
-        config_version_invocation_snapshot(label, &model_digest_hex, "post", 1, 3)
+        config_version_invocation_snapshot(label, "post", 1, 3)
     });
     let (invocation, invocation_bytes) = document_ref_and_bytes("only-invocation", |label| {
-        config_version_invocation_bytes(label, &model_digest_hex, &pre, &post, "child")
+        config_version_invocation_bytes(label, &pre, &post, "child")
     });
-    let snapshots = BTreeMap::from([
-        (pre.source_identity(), pre_bytes),
-        (post.source_identity(), post_bytes),
-    ]);
-    let invocations = BTreeMap::from([(invocation.source_identity(), invocation_bytes)]);
+    let snapshots = BTreeMap::from([(pre.clone(), pre_bytes), (post.clone(), post_bytes)]);
+    let invocations = BTreeMap::from([(invocation.clone(), invocation_bytes)]);
     let clause = package
         .graph()
         .state_clause("VersionUnchanged")
@@ -3699,12 +3338,12 @@ mod extracted {
 
     /// TC-468 step 6 (FR-109-AC-6): the healthy-parent request whose unit
     /// is an I3 extracted source compiles the extracted body and reports
-    /// `success` as the program source does, with the body's `package_id`.
+    /// `success` as the program source does.
     #[trace("TC-468", "FR-109-AC-6")]
     #[test]
     fn run_clause_compiles_an_extracted_body() {
         let (mut request, _label) = no_cycle_request(&[("a", Some("b")), ("b", None)]);
-        let (unit, packages) = unit_and_packages();
+        let (unit, _packages) = unit_and_packages();
         let extracted = extracted();
         let body = extracted.map().body();
         assert_eq!(
@@ -3712,31 +3351,17 @@ mod extracted {
             unit.trim_end_matches('\n'),
             "the extracted body is the fenced unit"
         );
-        // The package the extracted body compiles to on its own: the unit
-        // `run_clause` compiled is that body, not the original document.
-        let body_package_id = compose(
-            body.identity().clone(),
-            body.path(),
-            body.text().as_bytes(),
-            &packages,
-            &DependencyInput::default(),
-            SpineLimits::default(),
-        )
-        .expect("the extracted body compiles")
-        .emitted
-        .package_id();
         request.source = ClauseRunSource::Extracted(extracted);
         let report = run_clause(request).expect("a well-formed request always reports");
 
         assert_eq!(report.disposition.stage(), ClauseRunStage::Evaluate);
         assert_eq!(report.disposition.truth(), Some(true));
         assert_eq!(report.disposition.category().exit_code(), 0);
-        assert_eq!(report.package_id, Some(body_package_id));
     }
 
     /// TC-468 step 6 (FR-109-AC-6): a violating-parent I3 request reports
     /// `violation`, and a compile refusal over an I3 source (no domain
-    /// package supplied) reports stage `compile` with no `package_id`.
+    /// package supplied) reports stage `compile`.
     #[trace("TC-468", "FR-109-AC-6")]
     #[test]
     fn run_clause_reports_a_violation_and_a_compile_refusal_over_an_extracted_body() {
@@ -3751,13 +3376,12 @@ mod extracted {
         missing.packages = BTreeMap::new();
         let report = run_clause(missing).expect("a well-formed request always reports");
         assert_eq!(report.disposition.stage(), ClauseRunStage::Compile);
-        assert_eq!(report.package_id, None);
     }
 }
 
 /// TC-468 step 6 (FR-109-AC-6): an I3 extracted source whose fence declares
 /// a language other than `ix:native` reports stage `compile`, `refusal`,
-/// `unknown_language`, exit 20, with no `package_id` -- the same refusal the root crate's
+/// `unknown_language`, exit 20, -- the same refusal the root crate's
 /// `mapped::compile` gives that fence.
 #[cfg(feature = "quire-extraction")]
 #[trace("TC-468", "FR-109-AC-6")]
@@ -3786,7 +3410,6 @@ fn run_clause_refuses_an_extracted_fence_that_is_not_ix_native() {
             .exit_code()
     );
     assert_eq!(report.disposition.category().exit_code(), 20);
-    assert_eq!(report.package_id, None);
 }
 
 // ---------------------------------------------------------------------------
@@ -3930,7 +3553,8 @@ fn s4_emits_exactly_the_fr_105_state_nodes() {
         .expect("ConfigVersion's own object_type node is in the graph")
         .key();
     assert_eq!(
-        context_ref.0, config_version_node,
+        crate::adm(context_ref),
+        config_version_node,
         "operation_anchor's context is ConfigVersion's own node, verified via resolve_declaration"
     );
 
@@ -3961,7 +3585,8 @@ fn s4_emits_exactly_the_fr_105_state_nodes() {
             panic!("state_clause's anchor argument is a reference");
         };
         assert_eq!(
-            target.0, config_version_node,
+            crate::adm(target),
+            config_version_node,
             "an invariant's anchor argument names ConfigVersion's own node"
         );
     }
@@ -3991,13 +3616,13 @@ fn s4_emits_exactly_the_fr_105_state_nodes() {
     };
     assert_eq!(only.field_name(), Some("versionNumber"));
     assert_eq!(
-        only.declaration().0,
-        context_ref.0,
+        crate::adm(&only.declaration()),
+        crate::adm(context_ref),
         "modifies names ConfigVersion's own node"
     );
     assert_eq!(
         frames[0].semantic_type(),
-        Some(context_ref.0),
+        Some(crate::adm(context_ref)),
         "the frame's own semantic_type is the declaring object type"
     );
     let qsl_semantics::check::MemberTerm::Binding(qsl_semantics::check::Binding {
@@ -4015,7 +3640,7 @@ fn s4_emits_exactly_the_fr_105_state_nodes() {
         panic!("frame's value is a reference");
     };
     assert_eq!(
-        frame_target.0,
+        crate::adm(frame_target),
         frames[0].key(),
         "the anchor's frame binding names the frame node"
     );
@@ -4104,7 +3729,7 @@ fn a_fault_on_the_frame_node_refuses_the_whole_config_version_package() {
         })
         .expect("exactly one frame node (asserted by s4_emits_exactly_the_fr_105_state_nodes)")
         .key();
-    let frame_id = qsl_package::checked_node_id_of(frame_key);
+    let frame_id = qsl_package::checked_node_id_of(&frame_key);
     let fault_reason = "fault injection (test): forced encoding failure at the frame node";
 
     let refusal = qsl_package::emit_checked_with_fault(&compiled.package, |id| {
@@ -4162,10 +3787,7 @@ fn s4_emitted_frame_node_lists_configversion_in_dependencies() {
         })
         .expect("ConfigVersion's own object_type node is in the graph")
         .key();
-    let expected_id = json!({
-        "domain": quire_exact::NODE_KEY_DOMAIN,
-        "digest": config_version_node.to_string(),
-    });
+    let expected_id = wire_node_id(config_version_node.clone());
 
     let wire: serde_json::Value =
         serde_json::from_slice(compiled.emitted.bytes()).expect("emitted bytes are JSON");
@@ -4198,7 +3820,7 @@ fn s4_emitted_frame_node_lists_configversion_in_dependencies() {
 }
 
 /// TC-463 step 2 (FR-105-AC-4): compiling FR-108's unit twice gives
-/// identical bytes and the same `package_id`.
+/// identical bytes.
 #[trace("TC-463", "FR-105-AC-4")]
 #[test]
 fn s4_state_package_emission_is_stable_across_compiles() {
@@ -4209,7 +3831,6 @@ fn s4_state_package_emission_is_stable_across_compiles() {
         second.emitted.bytes(),
         "compiling the same unit twice gives identical bytes"
     );
-    assert_eq!(first.emitted.package_id(), second.emitted.package_id());
 }
 
 // ---------------------------------------------------------------------------
@@ -4306,7 +3927,7 @@ fn named_clause_node<'g>(
         .identity();
     graph
         .semantic_graph()
-        .node(identity)
+        .node(identity.clone())
         .unwrap_or_else(|| panic!("clause {name}'s node {identity} is in the graph"))
 }
 
@@ -4323,7 +3944,7 @@ fn single_state_node_key(graph: &qsl_semantics::check::CheckedGraph, form: &str)
     let [key] = keys.as_slice() else {
         panic!("exactly one state/{form} node, got {keys:?}");
     };
-    *key
+    key.clone()
 }
 
 /// The body of the `expression` node `leaf` references (FR-093's
@@ -4336,7 +3957,7 @@ fn resolve_expression<'g>(
     let qsl_semantics::check::LeafTerm::Reference { target } = leaf else {
         return None;
     };
-    let node = graph.semantic_graph().node(target.0)?;
+    let node = graph.semantic_graph().node(crate::adm(target))?;
     (node.node_tag() == qsl_semantics::check::NodeTag::Expression).then(|| node.body())
 }
 
@@ -4392,12 +4013,9 @@ fn find_field_read_member<'g>(
         .member()
 }
 
-/// `key`'s wire `node_id` object (`quire.checked-semantic-node/v1`).
-fn wire_node_id(key: NodeKey) -> serde_json::Value {
-    json!({
-        "domain": quire_exact::NODE_KEY_DOMAIN,
-        "digest": key.to_string(),
-    })
+/// `key`'s wire `node_id` object: the structural `{package, path, ordinal}` form.
+fn wire_node_id(key: impl std::borrow::Borrow<NodeKey>) -> serde_json::Value {
+    qsl_foundation::node_wire::node_key_to_json(&key.borrow().clone()).expect("a node id encodes")
 }
 
 /// Every occurrence of `key` as a `(role, ordinal)` pair (`claim`, `anchor`,
@@ -4439,11 +4057,11 @@ fn emitted_dependencies_of(compiled: &ComposedUnit, key: NodeKey) -> Vec<serde_j
     let nodes = wire["semantic_graph"]["nodes"]
         .as_array()
         .expect("semantic_graph.nodes is an array");
-    let id = wire_node_id(key);
+    let id = wire_node_id(&key);
     nodes
         .iter()
         .find(|node| node["node_id"] == id)
-        .unwrap_or_else(|| panic!("node {key} is in the emitted wire"))["dependencies"]
+        .unwrap_or_else(|| panic!("node {key:?} is in the emitted wire"))["dependencies"]
         .as_array()
         .expect("dependencies is an array")
         .clone()
@@ -4478,7 +4096,7 @@ fn clause_parameters(
             };
             let node = graph
                 .semantic_graph()
-                .node(target.0)
+                .node(crate::adm(target))
                 .expect("the parameter node is in the graph");
             assert_eq!(
                 (node.node_tag(), node.semantic_form()),
@@ -4507,7 +4125,7 @@ fn clause_parameters(
                     _ => None,
                 })
                 .expect("a parameter node binds its name as a text literal");
-            (target.0, name)
+            (crate::adm(target), name)
         })
         .collect()
 }
@@ -4521,7 +4139,7 @@ fn clause_condition_node(clause: &qsl_semantics::check::SemanticNode) -> NodeKey
     else {
         panic!("a state_clause's condition argument references its expression node");
     };
-    target.0
+    crate::adm(target)
 }
 
 /// TC-462 (FR-105-AC-2): each `state`/`state_clause`, `state`/
@@ -4557,9 +4175,9 @@ fn s4_state_clause_and_anchor_dependencies_beyond_the_frame() {
     assert_eq!(names, ["self", "result"], "self, then result");
     let mut expected: Vec<serde_json::Value> = parameters
         .iter()
-        .map(|(key, _)| wire_node_id(*key))
+        .map(|(key, _)| wire_node_id(key))
         .collect();
-    expected.push(wire_node_id(anchor_key));
+    expected.push(wire_node_id(&anchor_key));
     expected.push(wire_node_id(clause_condition_node(version_unchanged)));
     assert_eq!(
         sorted_json(emitted_dependencies_of(&compiled, version_unchanged.key())),
@@ -4577,8 +4195,8 @@ fn s4_state_clause_and_anchor_dependencies_beyond_the_frame() {
         assert_eq!(
             sorted_json(emitted_dependencies_of(&compiled, invariant.key())),
             sorted_json(vec![
-                wire_node_id(*self_key),
-                wire_node_id(config_version_node),
+                wire_node_id(self_key),
+                wire_node_id(&config_version_node),
                 wire_node_id(clause_condition_node(invariant)),
             ]),
             "{name} depends on exactly self, ConfigVersion (its anchor) and its condition"
@@ -4588,7 +4206,7 @@ fn s4_state_clause_and_anchor_dependencies_beyond_the_frame() {
     assert_eq!(
         sorted_json(emitted_dependencies_of(&compiled, anchor_key)),
         sorted_json(vec![
-            wire_node_id(config_version_node),
+            wire_node_id(&config_version_node),
             wire_node_id(frame_key)
         ]),
         "the operation_anchor's own dependencies are exactly its two reference bindings: \
@@ -4596,7 +4214,7 @@ fn s4_state_clause_and_anchor_dependencies_beyond_the_frame() {
     );
 
     let version_number_member = qsl_semantics::value::Member::Field {
-        declaration: config_version_node,
+        declaration: config_version_node.clone(),
         name: quire_exact::Identifier::new("versionNumber").expect("valid identifier"),
     };
     let field_read = graph
@@ -4627,7 +4245,7 @@ fn s4_state_clause_and_anchor_dependencies_beyond_the_frame() {
     assert_eq!(
         graph
             .semantic_graph()
-            .node(receiver.0)
+            .node(crate::adm(receiver))
             .map(qsl_semantics::check::SemanticNode::node_tag),
         Some(qsl_semantics::check::NodeTag::Expression),
         "the field read's receiver is the `deref(self)` expression node"
@@ -4635,8 +4253,8 @@ fn s4_state_clause_and_anchor_dependencies_beyond_the_frame() {
     assert_eq!(
         sorted_json(emitted_dependencies_of(&compiled, field_read.key())),
         sorted_json(vec![
-            wire_node_id(config_version_node),
-            wire_node_id(receiver.0),
+            wire_node_id(&config_version_node),
+            wire_node_id(crate::adm(receiver)),
         ]),
         "the versionNumber field read depends on exactly ConfigVersion (its member's \
          declaration) and its receiver expression node"
@@ -4692,7 +4310,7 @@ fn s4_state_clause_semantic_type_is_the_boolean_scalar_type_node() {
     for (node, kind) in state_clause_nodes(graph) {
         assert_eq!(
             node.semantic_type(),
-            Some(boolean),
+            Some(boolean.clone()),
             "{kind}'s state_clause node's own semantic_type is the Boolean scalar type node"
         );
     }
@@ -4824,7 +4442,10 @@ fn s4_parent_order_self_parent_read_shares_no_cycles_member_shape() {
 // ---------------------------------------------------------------------------
 
 /// Compile `unit` against `packages` through the whole spine (S1 to S5).
-fn compile_config_version_unit(unit: &str, packages: &BTreeMap<[u8; 32], Vec<u8>>) -> ComposedUnit {
+fn compile_config_version_unit(
+    unit: &str,
+    packages: &qsl_semantics::model::intake::PackageInput,
+) -> ComposedUnit {
     compose(
         source(),
         "clause-run-config-version.native",
@@ -4887,7 +4508,7 @@ fn clause_anchor_target(clause: &qsl_semantics::check::SemanticNode) -> NodeKey 
     else {
         panic!("state_clause's second argument is a reference to its anchor: {arguments:?}");
     };
-    target.0
+    crate::adm(target)
 }
 
 /// TC-463 (FR-105-AC-4): renaming `ParentOrder` changes no node id -- the
@@ -4930,48 +4551,6 @@ fn s4_renaming_parent_order_changes_no_node_id() {
     );
 }
 
-/// TC-463 (FR-105-AC-4): changing `ParentOrder`'s `<` to `<=` changes its
-/// `state_clause` node id and the `package_id`, and leaves the other two
-/// clauses' node ids unchanged.
-#[trace("TC-463", "FR-105-AC-4", "FR-003-AC-9")]
-#[test]
-fn s4_changing_parent_orders_comparison_changes_its_node_id_and_the_package_id() {
-    let (unit, packages) = config_version_unit_and_packages();
-    let base = compile_config_version_unit(&unit, &packages);
-    let edited_unit = edit_once(
-        &unit,
-        ".versionNumber < self.versionNumber",
-        ".versionNumber <= self.versionNumber",
-    );
-    let edited = compile_config_version_unit(&edited_unit, &packages);
-    let identity = |compiled: &ComposedUnit, name: &str| {
-        compiled
-            .package
-            .graph()
-            .state_clause(name)
-            .unwrap_or_else(|| panic!("{name} is checked"))
-            .identity()
-    };
-
-    assert_ne!(
-        identity(&base, "ParentOrder"),
-        identity(&edited, "ParentOrder"),
-        "ParentOrder's state_clause node id covers its body"
-    );
-    assert_ne!(
-        base.emitted.package_id(),
-        edited.emitted.package_id(),
-        "the package_id covers the state_clause node"
-    );
-    for name in ["NoCycle", "VersionUnchanged"] {
-        assert_eq!(
-            identity(&base, name),
-            identity(&edited, name),
-            "{name}'s node id is untouched by ParentOrder's edit"
-        );
-    }
-}
-
 /// TC-463 (FR-105-AC-4, FR-104-AC-6): adding `ParentOrder2` with
 /// `ParentOrder`'s body adds no node and a second `claim` occurrence
 /// (ordinal 1) to `ParentOrder`'s node.
@@ -5009,7 +4588,7 @@ fn s4_parent_order2_with_parent_orders_body_adds_no_node_and_a_second_claim() {
         "ParentOrder2 checks to ParentOrder's node"
     );
     assert_eq!(
-        occurrences_of(base.package.graph(), parent_order),
+        occurrences_of(base.package.graph(), parent_order.clone()),
         occurrences_in("claim", &[0])
     );
     assert_eq!(
@@ -5174,7 +4753,7 @@ fn s4_pre_clauses_via_config_version_and_sub_share_one_anchor_at_config_version(
     );
     let anchor_node = graph
         .semantic_graph()
-        .node(anchor)
+        .node(anchor.clone())
         .expect("the anchor node is in the graph");
     let qsl_semantics::check::BodyTerm::Aggregate(qsl_semantics::check::AggregateTerm { members }) =
         anchor_node.body()
@@ -5197,7 +4776,8 @@ fn s4_pre_clauses_via_config_version_and_sub_share_one_anchor_at_config_version(
         panic!("the context binding's value is a reference, got {value:?}");
     };
     assert_eq!(
-        context.0, config_version_node,
+        crate::adm(context),
+        config_version_node,
         "the shared anchor's context is ConfigVersion, the operation's declaring type"
     );
     assert_eq!(anchor_node.semantic_type(), Some(config_version_node));
@@ -5210,7 +4790,7 @@ fn s4_pre_clauses_via_config_version_and_sub_share_one_anchor_at_config_version(
 
 /// TC-463 step 1 (FR-105-AC-3): the emitted package reads back through
 /// QSL's I2 reader (`read_import_view`), including its frame step, with its
-/// recomputed `package_id` equal to the emitted one. `ParentOrder`'s
+/// `ParentOrder`'s
 /// cycle-safety predicate lowers to a `quire.op.model.reaches_field`
 /// application, so the read also checks that application's reference edge.
 #[trace("TC-463", "FR-105-AC-3")]
@@ -5221,8 +4801,7 @@ fn s4_state_package_reads_back_through_i2() {
 
     let emission = qsl_package::emit_checked(&first.package)
         .unwrap_or_else(|refusal| panic!("emission refused: {refusal:?}"));
-    assert_eq!(emission.package().package_id(), first.emitted.package_id());
-    let library = LibraryName::new(CONFIG_VERSION_PACKAGE_IDENTITY.to_owned()).unwrap();
+    let library = LibraryName::new("fixture".to_owned()).unwrap();
     let mut admitted = qsl_package::AdmittedPackages::default();
     let view = qsl_package::read_import_view(
         &first.package,

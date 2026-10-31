@@ -12,17 +12,15 @@
 //! over the invocation, admitted by FR-106 from the byte provision, and
 //! settles an FR-072 result on the envelope's arm.
 
-use std::collections::BTreeMap;
-
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::check::{CheckedGraph, CheckedOperationFrame};
-use qsl_semantics::library::PackageId;
+use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::observation::{DocumentRef, FrameWitness, Provisions};
+use quire_exact::NodeKey;
 use quire_semantic_value::catalog::InternalFault;
 
 use super::{
-    charges, check_envelope_target, domain_packages, one_source, recompile, wire_id, wrong_target,
+    charges, check_envelope_target, domain_packages, one_source, recompile, wrong_target,
     MalformedOperationReason, ReplayRefusal,
 };
 use crate::bounds::ReplayLimits;
@@ -51,9 +49,9 @@ pub enum FrameIdentityMismatch {
     )]
     EnvelopeFrame {
         /// The envelope's clause node.
-        envelope: WireNodeId,
+        envelope: NodeKey,
         /// The payload's frame node.
-        payload: WireNodeId,
+        payload: NodeKey,
     },
     /// The envelope's `occurrence_key`, which for a frame packet is the
     /// payload's frame occurrence.
@@ -70,9 +68,9 @@ pub enum FrameIdentityMismatch {
     )]
     Anchor {
         /// The payload's anchor node.
-        payload: WireNodeId,
+        payload: NodeKey,
         /// The recompiled anchor node.
-        recompiled: WireNodeId,
+        recompiled: NodeKey,
     },
     /// The operation's `state`/`frame` node.
     #[error(
@@ -80,9 +78,9 @@ pub enum FrameIdentityMismatch {
     )]
     Frame {
         /// The payload's frame node.
-        payload: WireNodeId,
+        payload: NodeKey,
         /// The recompiled frame node.
-        recompiled: WireNodeId,
+        recompiled: NodeKey,
     },
     /// The frame node's `generated` occurrence.
     #[error("the payload names frame occurrence {payload:?} but the package recompiles it as {recompiled:?}")]
@@ -96,7 +94,7 @@ pub enum FrameIdentityMismatch {
 
 /// FR-116 Outputs: an FR-072 result on the envelope's arm, with the
 /// identities the replay kept: the source unit's identity and digest, the
-/// `package_id`, the request's `frame_operation`, the payload's anchor, frame and occurrence
+/// package name, the request's `frame_operation`, the payload's anchor, frame and occurrence
 /// (each equal to the recompiled one, or the replay refused), the three
 /// admitted documents, the payload's claimed change and the change the
 /// replay found.
@@ -104,10 +102,10 @@ pub enum FrameIdentityMismatch {
 pub struct FrameReplayResult {
     result: ReplayResult,
     source: RawSourceRef,
-    package_id: PackageId,
+    package_name: LibraryName,
     operation: FrameOperation,
-    anchor: WireNodeId,
-    frame: WireNodeId,
+    anchor: NodeKey,
+    frame: NodeKey,
     occurrence: OccurrenceKey,
     invocation: DocumentRef,
     pre: DocumentRef,
@@ -125,21 +123,21 @@ impl FrameReplayResult {
     pub fn source(&self) -> &RawSourceRef {
         &self.source
     }
-    /// The recompiled `package_id`.
-    pub fn package_id(&self) -> PackageId {
-        self.package_id
+    /// The recompiled package's name.
+    pub fn package_name(&self) -> &LibraryName {
+        &self.package_name
     }
     /// The request's `frame_operation`.
     pub fn operation(&self) -> &FrameOperation {
         &self.operation
     }
     /// The operation's anchor node.
-    pub fn anchor(&self) -> WireNodeId {
-        self.anchor
+    pub fn anchor(&self) -> &NodeKey {
+        &self.anchor
     }
     /// The operation's frame node.
-    pub fn frame(&self) -> WireNodeId {
-        self.frame
+    pub fn frame(&self) -> &NodeKey {
+        &self.frame
     }
     /// The frame node's `generated` occurrence key.
     pub fn occurrence(&self) -> &OccurrenceKey {
@@ -180,8 +178,7 @@ impl FrameReplayResult {
 /// `frame_operation`, when the envelope's target differs from the request's,
 /// and when the envelope's `clause_node` or `occurrence_key` is not the
 /// payload's frame node or frame occurrence, then by FR-098's rules (in
-/// FR-098's order), when the recompiled `package_id` is not the envelope's,
-/// when the request's `frame_operation` names no operation frame, names an
+/// FR-098's order), /// when the request's `frame_operation` names no operation frame, names an
 /// object that only inherits the operation or is ambiguous, when a payload
 /// identity is stale (before any admission), and when FR-106 admission
 /// fails. The counterexample refuted the frame, so the proved
@@ -217,33 +214,18 @@ pub fn replay_frame(
         replay_limits,
     )?;
     let compiled = recompile(&request, &limits)?;
-    let package_id = compiled.emitted.package().package_id();
-    if !package_id.matches(&envelope.package_id()) {
-        return Err(ReplayRefusal::PackageIdMismatch {
-            requested: envelope.package_id(),
-            recompiled: package_id,
-        });
-    }
+    let package_name = compiled.package.clone();
     let payload = envelope.family_payload();
     let graph = compiled.checked.package().graph();
-    let (context, operation_frame) = resolve_target(graph, target, package_id)?;
+    let (context, operation_frame) = resolve_target(graph, target, &package_name)?;
     check_identities(payload, operation_frame).map_err(ReplayRefusal::FrameIdentity)?;
 
     // `recompile` already required exactly one source, provided.
-    let source = one_source(request.source_digests())?;
-    let packages = domain_packages(&request);
+    let source = one_source(request.sources())?;
+    let packages = domain_packages(&request)?;
     // FR-106 reads the invocation and its snapshots only from the byte
-    // provision, by their `sha256-jcs` digests.
-    let documents: BTreeMap<_, Vec<u8>> = request
-        .byte_provision()
-        .entries()
-        .filter_map(|(identity, bytes)| match identity {
-            crate::request::ProvisionIdentity::Source(identity) => {
-                Some((identity.clone(), bytes.to_vec()))
-            }
-            crate::request::ProvisionIdentity::DomainPackage => None,
-        })
-        .collect();
+    // provision, by their identity labels.
+    let documents = request.byte_provision().snapshots();
     let mut sources = Vec::with_capacity(1 + compiled.checked.libraries().len());
     sources.push(compiled.checked.source().clone());
     sources.extend(compiled.checked.libraries().iter().cloned());
@@ -257,7 +239,6 @@ pub fn replay_frame(
         observation_limits: limits.observation,
         accounting: request.accounting_limits(),
         package: compiled.checked.package(),
-        package_id,
         sources: &sources,
     };
     let FrameCheck { report, documents } =
@@ -296,7 +277,6 @@ pub fn replay_frame(
         // selection and argument stages are behind it.
         ClauseDisposition::Compile(_)
         | ClauseDisposition::UnknownLanguage { .. }
-        | ClauseDisposition::StalePackage { .. }
         | ClauseDisposition::MissingName { .. }
         | ClauseDisposition::NotAPredicate { .. }
         | ClauseDisposition::Temporal(_)
@@ -343,10 +323,10 @@ pub fn replay_frame(
     Ok(FrameReplayResult {
         result,
         source: source.clone(),
-        package_id,
+        package_name,
         operation: target.clone(),
-        anchor: payload.anchor,
-        frame: payload.frame,
+        anchor: payload.anchor.clone(),
+        frame: payload.frame.clone(),
         occurrence: payload.occurrence.clone(),
         invocation,
         pre,
@@ -380,17 +360,17 @@ fn operation_name(operation: &FrameOperation) -> Option<OperationName> {
 pub(crate) fn resolve_target<'g>(
     graph: &'g CheckedGraph,
     target: &FrameOperation,
-    package: PackageId,
+    package: &LibraryName,
 ) -> Result<(quire_exact::EffectiveId, &'g CheckedOperationFrame), ReplayRefusal> {
     let unknown = || ReplayRefusal::UnknownOperation {
         operation: target.clone(),
-        package,
+        package: package.clone(),
     };
     let name = operation_name(target).ok_or_else(unknown)?;
     if graph.names_non_owner_declaration(&name.model, &name.object) {
         return Err(ReplayRefusal::MalformedOperationTarget {
             operation: target.clone(),
-            package,
+            package: package.clone(),
             reason: MalformedOperationReason::NotAnObjectType,
         });
     }
@@ -400,14 +380,14 @@ pub(crate) fn resolve_target<'g>(
     if graph.operation_is_ambiguous(&selection) {
         return Err(ReplayRefusal::AmbiguousOperation {
             operation: target.clone(),
-            package,
+            package: package.clone(),
         });
     }
     let (context, frame) = graph.operation_frame(&selection).ok_or_else(unknown)?;
     if frame.operation().declaring != context {
         return Err(ReplayRefusal::MalformedOperationTarget {
             operation: target.clone(),
-            package,
+            package: package.clone(),
             reason: MalformedOperationReason::OnlyInherited,
         });
     }
@@ -423,10 +403,10 @@ fn check_envelope(
     envelope: &WitnessEnvelope<FrameCounterexample>,
 ) -> Result<(), Box<FrameIdentityMismatch>> {
     let payload = envelope.family_payload();
-    if envelope.clause_node() != payload.frame {
+    if envelope.clause_node() != &payload.frame {
         return Err(Box::new(FrameIdentityMismatch::EnvelopeFrame {
-            envelope: envelope.clause_node(),
-            payload: payload.frame,
+            envelope: envelope.clause_node().clone(),
+            payload: payload.frame.clone(),
         }));
     }
     if *envelope.occurrence_key() != payload.occurrence {
@@ -452,10 +432,10 @@ fn check_identities(
     payload: &FrameCounterexample,
     recompiled: &CheckedOperationFrame,
 ) -> Result<(), Box<FrameIdentityMismatch>> {
-    let frame = wire_id(recompiled.frame());
+    let frame = recompiled.frame().clone();
     if frame != payload.frame {
         return Err(Box::new(FrameIdentityMismatch::Frame {
-            payload: payload.frame,
+            payload: payload.frame.clone(),
             recompiled: frame,
         }));
     }
@@ -466,10 +446,10 @@ fn check_identities(
             recompiled: occurrence,
         }));
     }
-    let anchor = wire_id(recompiled.anchor());
+    let anchor = recompiled.anchor().clone();
     if anchor != payload.anchor {
         return Err(Box::new(FrameIdentityMismatch::Anchor {
-            payload: payload.anchor,
+            payload: payload.anchor.clone(),
             recompiled: anchor,
         }));
     }

@@ -1419,7 +1419,7 @@ fn a_node_row_argument_of_the_wrong_type_is_refused_at_the_argument() {
     let counter = base
         .protocol("Twice")
         .and_then(|twice| twice.roles.first())
-        .and_then(|role| role.context)
+        .and_then(|role| role.context.clone())
         .expect("the role w acts on Spec::Counter");
     assert_eq!(**expected, quire_exact::ValueType::Reference(counter));
     assert_eq!(**actual, quire_exact::ValueType::Boolean);

@@ -257,17 +257,11 @@ fn fixture_f1() -> DomainPackage {
 /// F1's (TC-198 L04's foreign-universe key).
 fn fixture_other_universe() -> DomainPackage {
     DomainPackage::new(
-        DomainPackageRef::fixture("bundle.n02"),
-        vec![object_type("model.A", vec![])],
+        DomainPackageRef {
+            identity: "bundle.n02".to_owned(),
+        },
+        vec![object_type("model.Foreign", vec![])],
     )
-}
-
-/// A version-only variant of [`fixture_f1`]: same `identity` and digest as
-/// `fixture_f1()` — only `version` differs.
-fn fixture_f1_with_version(version: &str) -> DomainPackage {
-    let mut domain_package = fixture_f1();
-    domain_package.model_selection.version = version.to_owned();
-    domain_package
 }
 
 fn view_of(domain_package: &DomainPackage) -> EffectiveView {
@@ -285,7 +279,7 @@ fn type_id(view: &EffectiveView, identity: &str) -> EffectiveId {
         .find(|entry| {
             entry.preimage.owner_effective_type.is_none() && entry.preimage.original == original
         })
-        .map(|entry| entry.effective_id)
+        .map(|entry| entry.effective_id.clone())
         .unwrap_or_else(|| panic!("{identity} has no type-level effective declaration"))
 }
 
@@ -331,8 +325,8 @@ fn p1(model_identity: &str) -> PopulationDocument {
 
 fn reference_key(universe: &UniverseId, type_identity: &EffectiveId, object: &str) -> ReferenceKey {
     ReferenceKey {
-        universe: *universe,
-        type_identity: *type_identity,
+        universe: universe.clone(),
+        type_identity: type_identity.clone(),
         object: object.to_owned(),
     }
 }
@@ -351,8 +345,8 @@ fn lookup_key(
 ) -> LookupKey {
     LookupKey {
         static_type,
-        universe: universe.as_bytes().to_vec(),
-        type_identity: *type_identity,
+        universe: universe.clone(),
+        type_identity: type_identity.clone(),
         object: object.as_bytes().to_vec(),
     }
 }
@@ -373,7 +367,10 @@ fn finite_object_population_requires_explicit_closure() {
     let binding = admitted_binding(&view, &document);
     let a = type_id(&view, "model.A");
     let b = type_id(&view, "model.B");
-    let universe = view.object_universe().identity();
+    let universe = view
+        .object_universe()
+        .identity()
+        .expect("the universe has a root type");
     let expected: BTreeSet<_> = [
         reference_key(&universe, &a, "a1"),
         reference_key(&universe, &a, "a2"),
@@ -433,7 +430,10 @@ fn finite_object_population_requires_explicit_closure() {
 fn l01_all_instances_selects_subtype_population_once() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
-    let universe = view_of(&domain_package).object_universe().identity();
+    let universe = view_of(&domain_package)
+        .object_universe()
+        .identity()
+        .expect("the universe has a root type");
     let a = type_id(&view, "model.A");
     let b = type_id(&view, "model.B");
 
@@ -991,7 +991,10 @@ fn admitted_binding(view: &EffectiveView, document: &PopulationDocument) -> Popu
 fn l03_lookup_undefined_mode() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
-    let universe = view_of(&domain_package).object_universe().identity();
+    let universe = view_of(&domain_package)
+        .object_universe()
+        .identity()
+        .expect("the universe has a root type");
     let a = type_id(&view, "model.A");
     let b = type_id(&view, "model.B");
     let binding = admitted_binding(&view, &p1("test/orders"));
@@ -1048,7 +1051,10 @@ fn l03_lookup_undefined_mode() {
 fn l03_lookup_empty_mode() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
-    let universe = view_of(&domain_package).object_universe().identity();
+    let universe = view_of(&domain_package)
+        .object_universe()
+        .identity()
+        .expect("the universe has a root type");
     let a = type_id(&view, "model.A");
     let b = type_id(&view, "model.B");
     let binding = admitted_binding(&view, &p1("test/orders"));
@@ -1098,7 +1104,10 @@ fn l03_lookup_empty_mode() {
 fn l03_lookup_refused_mode() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
-    let universe = view_of(&domain_package).object_universe().identity();
+    let universe = view_of(&domain_package)
+        .object_universe()
+        .identity()
+        .expect("the universe has a root type");
     let a = type_id(&view, "model.A");
     let binding = admitted_binding(&view, &p1("test/orders"));
 
@@ -1117,7 +1126,7 @@ fn l03_lookup_refused_mode() {
             assert_eq!(
                 refusal.cause,
                 ModelRefusalCause::AbsentKey {
-                    binding: binding.population_id().to_string(),
+                    binding: format!("{:?}", binding.population_id()),
                     key: b"c9".to_vec(),
                 }
             );
@@ -1140,13 +1149,16 @@ fn l03_lookup_refused_mode() {
 fn l03_lookup_refused_mode_malformed_identity_reports_hex_detail() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
-    let universe = view_of(&domain_package).object_universe().identity();
+    let universe = view_of(&domain_package)
+        .object_universe()
+        .identity()
+        .expect("the universe has a root type");
     let a = type_id(&view, "model.A");
     let binding = admitted_binding(&view, &p1("test/orders"));
 
     let malformed = LookupKey {
         static_type: DeclarationKey::fixture("model.A"),
-        universe: universe.as_bytes().to_vec(),
+        universe: universe.clone(),
         type_identity: a,
         object: vec![0xFF, 0xFE],
     };
@@ -1163,7 +1175,7 @@ fn l03_lookup_refused_mode_malformed_identity_reports_hex_detail() {
         LookupOutcome::Refused(ModelRefusal {
             code: Code::InvalidRuntimeInput,
             cause: ModelRefusalCause::AbsentKey {
-                binding: binding.population_id().to_string(),
+                binding: format!("{:?}", binding.population_id()),
                 key: vec![0xFF, 0xFE],
             },
             detail: "identity bytes 0xfffe (not UTF-8) is not a member of the bound population"
@@ -1183,14 +1195,17 @@ fn l03_lookup_refused_mode_malformed_identity_reports_hex_detail() {
 fn l03_lookup_present_member_found_through_the_raw_bytes_path() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
-    let universe = view_of(&domain_package).object_universe().identity();
+    let universe = view_of(&domain_package)
+        .object_universe()
+        .identity()
+        .expect("the universe has a root type");
     let a = type_id(&view, "model.A");
     let binding = admitted_binding(&view, &p1("test/orders"));
 
     let ra = LookupKey {
         static_type: DeclarationKey::fixture("model.A"),
-        universe: universe.as_bytes().to_vec(),
-        type_identity: a,
+        universe: universe.clone(),
+        type_identity: a.clone(),
         object: b"a1".to_vec(),
     };
     let mut meter = Meter::new(SCALAR_UNLIMITED);
@@ -1222,7 +1237,10 @@ fn l03_lookup_present_member_found_through_the_raw_bytes_path() {
 fn l03_lookup_type_mismatch_before_any_charge() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
-    let universe = view_of(&domain_package).object_universe().identity();
+    let universe = view_of(&domain_package)
+        .object_universe()
+        .identity()
+        .expect("the universe has a root type");
     let a = type_id(&view, "model.A");
     let binding = admitted_binding(&view, &p1("test/orders"));
 
@@ -1265,7 +1283,10 @@ fn l04_lookup_foreign_universe_refuses() {
     let binding = admitted_binding(&view, &p1("test/orders"));
 
     let other = fixture_other_universe();
-    let foreign_universe = view_of(&other).object_universe().identity();
+    let foreign_universe = view_of(&other)
+        .object_universe()
+        .identity()
+        .expect("the universe has a root type");
     assert_ne!(&foreign_universe, binding.universe());
 
     let rx = lookup_key(
@@ -1288,60 +1309,8 @@ fn l04_lookup_foreign_universe_refuses() {
             assert_eq!(
                 refusal.cause,
                 ModelRefusalCause::ForeignUniverse {
-                    actual: foreign_universe.as_bytes().to_vec(),
-                    expected: *binding.universe(),
-                }
-            );
-        }
-        other => panic!("expected Refused(foreign_reference/foreign-universe), got {other:?}"),
-    }
-    assert_eq!(meter.consumed(LimitKind::WorkUnits), 1);
-}
-
-/// TC-198 L04's byte-comparison layer: a `LookupKey.universe` of some length
-/// other than 32 (never a well-formed `quire_exact::UniverseId`, ADR-013 §8
-/// OQ-C ruling) still refuses `foreign_reference`/`foreign-universe`,
-/// reporting the caller's own raw bytes as `actual` rather than a
-/// substituted or truncated identity -- `lookup`'s own
-/// `r.universe.as_slice() != binding.universe().as_bytes().as_slice()`
-/// comparison is a plain byte-slice inequality, which Rust never panics on
-/// for a length mismatch, so this is memory-safe and refuses exactly like a
-/// well-formed-but-different universe does. Constructed directly through
-/// `LookupKey` (bypassing `ObjectReference`, which cannot represent a
-/// wrong-length universe at all after ADR-013 §8's fix) -- exactly the
-/// direct-construction path `crate::value::model_query`'s own module docs
-/// cite as this byte-level defense's real test.
-#[test]
-#[trace("QSpec-TC-198", "QSpec-FR-153-AC-3")]
-fn l04b_lookup_wrong_length_universe_refuses_as_foreign() {
-    let domain_package = fixture_f1();
-    let view = view_of(&domain_package);
-    let a = type_id(&view, "model.A");
-    let binding = admitted_binding(&view, &p1("test/orders"));
-
-    let wrong_length_universe = vec![0x07; 31];
-    let rx = LookupKey {
-        static_type: DeclarationKey::fixture("model.A"),
-        universe: wrong_length_universe.clone(),
-        type_identity: a,
-        object: b"a1".to_vec(),
-    };
-    let mut meter = Meter::new(SCALAR_UNLIMITED);
-    let outcome = lookup(
-        &binding,
-        &DeclarationKey::fixture("model.A"),
-        &rx,
-        AbsenceMode::Empty,
-        &mut meter,
-    );
-    match outcome {
-        LookupOutcome::Refused(refusal) => {
-            assert_eq!(refusal.code, Code::ForeignReference);
-            assert_eq!(
-                refusal.cause,
-                ModelRefusalCause::ForeignUniverse {
-                    actual: wrong_length_universe,
-                    expected: *binding.universe(),
+                    actual: foreign_universe.root_type().clone(),
+                    expected: binding.universe().clone(),
                 }
             );
         }
@@ -1425,8 +1394,8 @@ fn oqe_lookup_across_connected_components_refuses_as_foreign_universe() {
             assert_eq!(
                 refusal.cause,
                 ModelRefusalCause::ForeignUniverse {
-                    actual: e_binding.universe().as_bytes().to_vec(),
-                    expected: *ab_binding.universe(),
+                    actual: e_binding.universe().root_type().clone(),
+                    expected: ab_binding.universe().clone(),
                 }
             );
         }
@@ -1523,11 +1492,6 @@ fn l05_duplicate_collapses_and_recovers_l01() {
         "the exact duplicate collapses, not a fourth member"
     );
     assert_eq!(admission.consumed(AdmissionLimitKind::PopulationMembers), 4);
-    assert_eq!(
-        admission.consumed(AdmissionLimitKind::WorkUnits),
-        16_318,
-        "duplicate input is member-priced once; identity work includes worst-case sort comparisons"
-    );
 
     let mut meter = Meter::new(SCALAR_UNLIMITED);
     let selected = match all_instances(&binding, &DeclarationKey::fixture("model.A"), &mut meter) {
@@ -1839,8 +1803,8 @@ fn admission_admits_when_the_population_key_resolves_in_the_domain_package() {
     assert_eq!(binding.members().len(), 3);
     assert_eq!(
         admission.admitted_charges().len(),
-        4,
-        "three binding.member charges plus the pre-encoding identity-work charge"
+        3,
+        "three binding.member charges"
     );
 }
 
@@ -2334,11 +2298,6 @@ fn r06_subsetting_satisfied_admits_with_the_charged_subset_value() {
             .count(),
         1
     );
-    assert_eq!(
-        admission.consumed(AdmissionLimitKind::WorkUnits),
-        5_963,
-        "admission prices member work, subsetting, identity encoding, and worst-case sort comparisons"
-    );
 }
 
 /// A member declaring the same field twice in its own `field_values` must
@@ -2465,7 +2424,10 @@ fn invocation_context<'a>(
 fn l07_invocation_admits_a_declared_delete_and_attaches_the_pre_anchor() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
-    let universe = view_of(&domain_package).object_universe().identity();
+    let universe = view_of(&domain_package)
+        .object_universe()
+        .identity()
+        .expect("the universe has a root type");
     let a = type_id(&view, "model.A");
     let effect = deletes_a_effect();
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
@@ -3425,19 +3387,10 @@ fn invocation_refuses_a_declared_delta_that_declares_the_same_identity_created_a
     }
 }
 
-/// TC-291 (FR-089-AC-1): `PopulationId` is deterministic over its admission
-/// preimage -- the domain package it was admitted against, the
-/// `population_key` declaring it, and the closed three-state admission-role
-/// discriminator (`Direct`/`Pre`/`Post`) -- and distinguishes an admission
-/// that differs in any of them. Two independent `Direct` admissions of the
-/// same document/package/`population_key` mint the same id; a distinct
-/// `population_key` on the same package, a distinct domain package (this
-/// suite's `DomainPackageRef::fixture` hard-codes `identity` to
-/// `"test/orders"` for every fixture, so a distinct domain package here
-/// means a version-only header divergence -- `admit_binding`'s own doc
-/// already treats the full header, not bare `identity`, as what
-/// distinguishes one domain package selection from another), and the `Pre`
-/// versus `Post` role within one invocation, each mint a different id.
+/// TC-291 (FR-089-AC-1): `PopulationId` is the structural key of the
+/// `population_key` declaring it. Two independent admissions of the same
+/// `population_key` mint the same id; a distinct `population_key` mints a
+/// different id.
 #[test]
 #[trace("TC-291", "FR-089-AC-1")]
 fn tc_291_population_id_is_deterministic_over_its_admission_preimage() {
@@ -3446,9 +3399,10 @@ fn tc_291_population_id_is_deterministic_over_its_admission_preimage() {
 
     let admit = |view: &EffectiveView, key: &DeclarationKey| {
         let mut meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+        let model_identity = view.model_selection().identity.clone();
         match admit_binding(
             view,
-            &p1("test/orders"),
+            &p1(&model_identity),
             key,
             GeneralizationClosure::Closed,
             Some(3),
@@ -3469,273 +3423,6 @@ fn tc_291_population_id_is_deterministic_over_its_admission_preimage() {
     // a different identity.
     let direct_second_key = admit(&view, &second_population_key());
     assert_ne!(direct_second_key, direct_1);
-
-    // Step 3: the same document/population_key, a distinct domain package
-    // (version-only header divergence) -> a different identity.
-    let other_package = fixture_f1_with_version("2");
-    let other_view = view_of(&other_package);
-    let direct_other_package = admit(&other_view, &p1_population_key());
-    assert_ne!(direct_other_package, direct_1);
-
-    // Step 4: within one invocation, admit the same document/package/key as
-    // the Pre binding, then again as the corresponding Post binding -- the
-    // two mint different identities from each other.
-    let effect = OperationEffect {
-        modifies: Vec::new(),
-        creates: Vec::new(),
-        deletes: Vec::new(),
-        ..Default::default()
-    };
-    let declared = InvocationDelta {
-        effect: &effect,
-        declared_created: &[],
-        declared_deleted: &[],
-    };
-    let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
-    let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
-    let invocation_binding = match admit_invocation(
-        invocation_context(&view, &p1_population_key()),
-        &p1("test/orders"),
-        &p1("test/orders"),
-        &declared,
-        &mut pre_meter,
-        &mut post_meter,
-    ) {
-        AdmissionOutcome::Admitted(binding) => binding,
-        other => panic!("expected an admitted invocation, got {other:?}"),
-    };
-    let id_post = invocation_binding.population_id();
-    let id_pre = invocation_binding
-        .pre_anchor()
-        .expect("admit_invocation attaches a pre binding")
-        .population_id();
-    assert_ne!(id_pre, id_post);
-}
-
-/// TC-296 (FR-089-AC-1's own collision case): a standalone `Direct`
-/// admission and an `admit_invocation`-attached `Post` binding, over the
-/// same domain package and `population_key`, mint distinct `PopulationId`s
-/// even when admitting the same document -- the collision a two-state
-/// `Option<AnchorSide>` discriminator (`None`/`Some(Post)`) could still
-/// produce depending on how the `Option` wrapper is discarded before
-/// hashing; this asserts the identity *values* themselves stay pairwise
-/// distinct, robust to either representation.
-#[test]
-#[trace("TC-296", "FR-089-AC-1")]
-fn tc_296_standalone_direct_admission_distinct_from_invocation_post() {
-    let domain_package = fixture_f1();
-    let view = view_of(&domain_package);
-
-    let mut direct_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
-    let id_direct = match admit_binding(
-        &view,
-        &p1("test/orders"),
-        &p1_population_key(),
-        GeneralizationClosure::Closed,
-        Some(3),
-        &mut direct_meter,
-    ) {
-        AdmissionOutcome::Admitted(binding) => binding.population_id(),
-        other => panic!("expected an admitted Direct binding, got {other:?}"),
-    };
-
-    let effect = OperationEffect {
-        modifies: Vec::new(),
-        creates: Vec::new(),
-        deletes: Vec::new(),
-        ..Default::default()
-    };
-    let declared = InvocationDelta {
-        effect: &effect,
-        declared_created: &[],
-        declared_deleted: &[],
-    };
-    let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
-    let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
-    let invocation_binding = match admit_invocation(
-        invocation_context(&view, &p1_population_key()),
-        &p1("test/orders"),
-        &p1("test/orders"),
-        &declared,
-        &mut pre_meter,
-        &mut post_meter,
-    ) {
-        AdmissionOutcome::Admitted(binding) => binding,
-        other => panic!("expected an admitted invocation, got {other:?}"),
-    };
-    let id_pre = invocation_binding
-        .pre_anchor()
-        .expect("admit_invocation attaches a pre binding")
-        .population_id();
-    let id_post = invocation_binding.population_id();
-
-    assert_ne!(
-        id_direct, id_post,
-        "a standalone Direct admission and an invocation's Post binding must not collide"
-    );
-    assert_ne!(id_direct, id_pre);
-    assert_ne!(id_pre, id_post);
-}
-
-fn identity_binding(
-    view: &EffectiveView,
-    document: &PopulationDocument,
-    maximum: Option<u64>,
-) -> PopulationBinding {
-    match admit_binding(
-        view,
-        document,
-        &p1_population_key(),
-        GeneralizationClosure::Closed,
-        maximum,
-        &mut AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED),
-    ) {
-        AdmissionOutcome::Admitted(binding) => binding,
-        other => panic!("expected admitted binding, got {other:?}"),
-    }
-}
-
-/// Independently constructs the FR-089 object from an admitted binding.
-fn expected_population_id(binding: &PopulationBinding, role: &str) -> String {
-    use qsl_semantics::model::key::hex;
-    use sha2::{Digest, Sha256};
-
-    let mut members: Vec<_> = binding
-        .members()
-        .iter()
-        .map(|(key, declaration)| {
-            serde_json::json!({
-                "universe": hex(key.universe.as_bytes()),
-                "type": hex(key.type_identity.as_bytes()),
-                "object": key.object,
-                "declaration": {
-                    "package": declaration.package,
-                    "node": declaration.node,
-                    "digest_domain": "sha256-jcs"
-                }
-            })
-        })
-        .collect();
-    members.sort_by_cached_key(|member| serde_json::to_vec(member).unwrap());
-    let selection = binding.model_selection();
-    let preimage = serde_json::json!({
-        "version": "quire.population/v1",
-        "domain_package_selection": {
-            "identity": selection.identity,
-            "version": selection.version,
-            "digest_domain": "sha256-jcs",
-            "digest": hex(&selection.digest)
-        },
-        "population_key": {
-            "package": "test/orders",
-            "node": P1_POPULATION,
-            "digest_domain": "sha256-jcs"
-        },
-        "admission_role": role,
-        "declared_maximum": binding.declared_maximum().map(|n| n.to_string()),
-        "members": members,
-        "pre": binding.pre_anchor().map(|pre| pre.population_id().to_string())
-    });
-    hex(&Sha256::digest(serde_json::to_vec(&preimage).unwrap()))
-}
-
-#[test]
-#[trace("TC-291", "FR-089-AC-7")]
-fn population_identity_binds_maximum_and_canonical_members() {
-    let view = view_of(&fixture_f1());
-    let document = PopulationDocument {
-        model_identity: "test/orders".into(),
-        // Object-byte order differs from reference-key order.
-        members: vec![member("a", "model.B"), member("z", "model.A")],
-    };
-    let binding = identity_binding(&view, &document, Some(3));
-    assert_eq!(
-        binding.population_id().to_string(),
-        expected_population_id(&binding, "direct")
-    );
-
-    let mut reversed = document.clone();
-    reversed.members.reverse();
-    assert_eq!(
-        binding.population_id(),
-        identity_binding(&view, &reversed, Some(3)).population_id(),
-        "member order in the input document does not change identity"
-    );
-    assert_ne!(
-        binding.population_id(),
-        identity_binding(&view, &document, Some(7)).population_id(),
-        "declared maximum is part of identity"
-    );
-    let mut changed_member = document.clone();
-    changed_member.members[0].object = "another".into();
-    assert_ne!(
-        binding.population_id(),
-        identity_binding(&view, &changed_member, Some(3)).population_id(),
-        "changing one member changes identity"
-    );
-}
-
-#[test]
-#[trace("TC-291", "FR-089-AC-7")]
-fn population_identity_golden_vector_contains_all_seven_fields() {
-    use qsl_semantics::model::key::hex;
-    use sha2::{Digest, Sha256};
-
-    const TEXT: &str = r#"{"admission_role":"direct","declared_maximum":null,"domain_package_selection":{"digest":"1111111111111111111111111111111111111111111111111111111111111111","digest_domain":"sha256-jcs","identity":"test/orders","version":"1"},"members":[],"population_key":{"digest_domain":"sha256-jcs","node":"model.pop.p1","package":"test/orders"},"pre":null,"version":"quire.population/v1"}"#;
-    let mut package = fixture_f1();
-    package.model_selection.digest = [0x11; 32];
-    let binding = identity_binding(
-        &view_of(&package),
-        &PopulationDocument {
-            model_identity: "test/orders".into(),
-            members: Vec::new(),
-        },
-        None,
-    );
-    assert_eq!(
-        binding.population_id().to_string(),
-        hex(&Sha256::digest(TEXT.as_bytes()))
-    );
-}
-
-#[test]
-#[trace("TC-291", "FR-089-AC-7")]
-fn population_post_identity_binds_its_pre_population_id() {
-    let view = view_of(&fixture_f1());
-    let post_document = p1_minus_a2("test/orders");
-    let admit = |pre_document: &PopulationDocument, deleted: &[String]| {
-        let effect = deletes_a_effect();
-        match admit_invocation(
-            invocation_context(&view, &p1_population_key()),
-            pre_document,
-            &post_document,
-            &InvocationDelta {
-                effect: &effect,
-                declared_created: &[],
-                declared_deleted: deleted,
-            },
-            &mut AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED),
-            &mut AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED),
-        ) {
-            AdmissionOutcome::Admitted(binding) => binding,
-            other => panic!("expected admitted invocation, got {other:?}"),
-        }
-    };
-    let removed = admit(&p1("test/orders"), &["a2".into()]);
-    let unchanged = admit(&post_document, &[]);
-    assert_eq!(removed.members(), unchanged.members());
-    assert_ne!(removed.population_id(), unchanged.population_id());
-    for binding in [&removed, &unchanged] {
-        assert_eq!(
-            binding.population_id().to_string(),
-            expected_population_id(binding, "post")
-        );
-        let pre = binding.pre_anchor().expect("invocation has pre binding");
-        assert_eq!(
-            pre.population_id().to_string(),
-            expected_population_id(pre, "pre")
-        );
-    }
 }
 
 #[test]
@@ -4081,7 +3768,13 @@ fn qsl204_admission_reads_the_domain_package_the_view_was_normalized_from() {
         assert_eq!(view.domain_package(), domain_package);
         let binding = admitted_binding(&view, &p1("test/orders"));
         assert_eq!(binding.model_selection(), view.model_selection());
-        assert_eq!(*binding.universe(), view.object_universe().identity());
+        assert_eq!(
+            binding.universe(),
+            &view
+                .object_universe()
+                .identity()
+                .expect("the universe has a root type")
+        );
     }
     let forward_root = type_id(&view_of(&forward), "model.A");
     let reversed_root = type_id(&view_of(&reversed), "model.B");
@@ -4094,8 +3787,14 @@ fn qsl204_admission_reads_the_domain_package_the_view_was_normalized_from() {
         vec![reversed_root]
     );
     assert_ne!(
-        view_of(&forward).object_universe().identity(),
-        view_of(&reversed).object_universe().identity()
+        view_of(&forward)
+            .object_universe()
+            .identity()
+            .expect("the universe has a root type"),
+        view_of(&reversed)
+            .object_universe()
+            .identity()
+            .expect("the universe has a root type")
     );
 
     let mut cyclic = fixture_f1();
@@ -4143,20 +3842,11 @@ fn an_unbounded_binding_selects_every_member_with_no_bound() {
 
 /// TC-410 (FR-084-AC-7): object types `A <- B`, `C, D <- E` and `X` form
 /// three supertype components; a member admitted in each component's own
-/// population carries that component's universe, the
-/// `quire.model.object-universe/v2` digest over the model selection and the
-/// component's root types, and its object component is the authored identity.
-///
-/// Mutation used (derived by reading, not executed): one universe over every
-/// root type makes the three universes equal; one universe per root type
-/// splits `{C, D}` into two and changes `e1`'s universe; digesting the
-/// object component changes the asserted `object` bytes.
+/// population carries that component's universe, distinct from the other
+/// components', and its object component is the authored identity.
 #[test]
 #[trace("TC-410", "FR-084-AC-7")]
 fn tc_410_each_connected_component_has_its_own_object_universe() {
-    use qsl_semantics::model::key::hex;
-    use sha2::{Digest, Sha256};
-
     let domain_package = DomainPackage::new(
         DomainPackageRef::fixture("bundle.tc410"),
         vec![
@@ -4172,43 +3862,11 @@ fn tc_410_each_connected_component_has_its_own_object_universe() {
         ],
     );
     let view = view_of(&domain_package);
-    let selection = view.model_selection();
-
-    let expected_universe = |roots: &[&str]| -> Vec<u8> {
-        let mut ids: Vec<String> = roots
-            .iter()
-            .map(|root| type_id(&view, root).to_string())
-            .collect();
-        ids.sort();
-        let preimage = serde_json::json!({
-            "version": "quire.model.object-universe/v2",
-            "model_selection": {
-                "identity": selection.identity,
-                "digest_domain": "sha256-jcs",
-                "digest": hex(&selection.digest)
-            },
-            "root_types": ids
-                .iter()
-                .map(|digest| serde_json::json!({
-                    "domain": "quire.model.effective-declaration/v2",
-                    "digest": digest
-                }))
-                .collect::<Vec<_>>()
-        });
-        Sha256::digest(serde_json::to_vec(&preimage).unwrap()).to_vec()
-    };
-
     let mut observed = Vec::new();
-    for (population, member_type, object, queried, roots) in [
-        ("model.pop.p1", "model.B", "b1", "model.A", vec!["model.A"]),
-        (
-            "model.pop.p2",
-            "model.E",
-            "e1",
-            "model.C",
-            vec!["model.C", "model.D"],
-        ),
-        ("model.pop.p3", "model.X", "x1", "model.X", vec!["model.X"]),
+    for (population, member_type, object, queried) in [
+        ("model.pop.p1", "model.B", "b1", "model.A"),
+        ("model.pop.p2", "model.E", "e1", "model.C"),
+        ("model.pop.p3", "model.X", "x1", "model.X"),
     ] {
         let document = PopulationDocument {
             model_identity: "test/orders".to_owned(),
@@ -4239,18 +3897,13 @@ fn tc_410_each_connected_component_has_its_own_object_universe() {
                 selected.members()
             );
         };
-        assert_eq!(
-            key.universe.as_bytes().to_vec(),
-            expected_universe(&roots),
-            "{population}"
-        );
         assert_eq!(key.object, object, "{population}");
         assert_eq!(
             key.type_identity,
             type_id(&view, member_type),
             "{population}"
         );
-        observed.push(key.universe);
+        observed.push(key.universe.clone());
     }
     assert_eq!(
         observed.iter().collect::<BTreeSet<_>>().len(),

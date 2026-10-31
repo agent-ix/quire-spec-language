@@ -12,16 +12,13 @@ use std::cmp::Ordering;
 
 use super::*;
 use ix_trace_rs::trace;
-use qsl_semantics::check::mint_union_member_key;
 use qsl_semantics::check::union_fixture as fixture;
-use quire_exact::{
-    compare_keys, Identifier, Integer, ObjectId, UnionMember, UnionValue, UniverseId,
-};
+use quire_exact::{compare_keys, Integer, ObjectId, UnionMember, UnionValue};
 
 /// The model object type `T` that `Holder` references; the kernel
 /// constructor is called here, in a test, not in the fixture.
 fn object_type() -> quire_exact::EffectiveId {
-    quire_exact::EffectiveId::from_digest([9; 32])
+    crate::test_ids::effective_id([9])
 }
 
 fn int(number: i64) -> Value {
@@ -61,11 +58,7 @@ fn refused_as_wrong_kind(result: Result<(), CallFailure>, case: &str) {
 /// declaration does not list.
 fn undeclared_member(union: &str, name: &str, payload: Vec<Value>) -> Value {
     UnionValue::from_admitted(
-        UnionMember::from_admitted(
-            fixture::settled(union),
-            mint_union_member_key(fixture::settled(union), name),
-            Identifier::new(name).expect("an identifier"),
-        ),
+        UnionMember::from_admitted(fixture::settled(union), name).expect("a member name"),
         payload,
     )
 }
@@ -122,7 +115,7 @@ fn a_dangling_reference_in_a_union_payload_is_refused_by_the_reference_walk() {
     let objects = ObjectEnvironment::default();
     let holder = fixture::union_type("Holder");
     let reference = Value::Reference(quire_exact::ObjectReference::new(
-        UniverseId::from_digest([1; 32]),
+        crate::test_ids::universe_id([1]),
         object_type(),
         ObjectId::new("i1").expect("an object id"),
     ));

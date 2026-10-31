@@ -190,6 +190,9 @@ fn lt16_collected_sc_predecessors_still_constrain_the_sc_load() {
     let selection = [select("SB::Main::Both", MemoryModelName::Ra)];
     let system = case.system(&selection, Ra::default()).expect("builds");
     let reached = reachable(&system);
+    let transitions = reached.iter().map(|state| state.steps.len()).sum::<usize>();
+    assert_eq!(reached.len(), 7_607, "LT-16 reachable state count");
+    assert_eq!(transitions, 19_574, "LT-16 successor edge count");
     let accesses = case.accesses(&selection);
     let x = accesses
         .shared()

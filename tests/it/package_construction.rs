@@ -22,7 +22,7 @@ mod schema;
 mod static_changes;
 
 use ix_trace_rs::trace;
-use qsl_foundation::{ByteDigest, Code, SourceIdentity};
+use qsl_foundation::{Code, SourceIdentity};
 use quire_contract_model as ir;
 use quire_spec_language::checking::{
     check, CheckBindings, CheckLimits, CheckedPackage, ClauseBinding,
@@ -91,7 +91,7 @@ fn minimal<'a>(
     path: &str,
 ) -> CheckedPackage<'a> {
     checked(
-        &vectors::source(&models[0]),
+        &vectors::source(),
         identity,
         revision,
         formal_revision,
@@ -116,13 +116,6 @@ fn minimum_admitted_unit_has_exact_independent_static_bytes() {
         std::str::from_utf8(package.bytes()).unwrap(),
         expected.artifact
     );
-    assert_eq!(
-        package.digest(),
-        ByteDigest::of(expected.artifact.as_bytes())
-    );
-    assert_eq!(package.canonical_identity().to_string(), expected.digest);
-    assert_eq!(package.reference().digest(), package.digest());
-    assert_eq!(package.reference().format(), "native-linked-package/1");
     assert_eq!(package.checked().clauses().len(), 1);
     assert_eq!(package.checked().linked().models().len(), 1);
     let again = NativePackage::new(
@@ -137,7 +130,6 @@ fn minimum_admitted_unit_has_exact_independent_static_bytes() {
     )
     .unwrap();
     assert_eq!(package.bytes(), again.bytes());
-    assert_eq!(package.canonical_identity(), again.canonical_identity());
     assert_eq!(
         package.checked().linked().unit().source().path(),
         "first.native"
@@ -173,19 +165,10 @@ fn canonical_unicode_controls_and_large_revision_are_exact() {
         std::str::from_utf8(package.bytes()).unwrap(),
         expected.artifact
     );
-    assert_eq!(package.canonical_identity().to_string(), expected.digest);
     let wire: serde_json::Value = serde_json::from_slice(package.bytes()).unwrap();
     assert_eq!(
         wire["source"]["formal"]["revision"].as_u64(),
         Some(9_007_199_254_740_992)
-    );
-    assert_ne!(
-        package
-            .digest()
-            .to_string()
-            .strip_prefix("sha256:")
-            .unwrap(),
-        expected.digest
     );
     assert_eq!(
         package.usage().canonical.as_ref().unwrap().output_bytes,
@@ -206,8 +189,7 @@ fn canonical_unicode_controls_and_large_revision_are_exact() {
 fn actual_checked_clause_retains_complete_selected_model_and_dispositions() {
     let models = [native_rule_model::parts().model()];
     let text = format!(
-        "{HEADER}model M = \"example/rule-tests\" version \"1\" digest \"{}\";\ninvariant Rule on M::Node at current {{ true }}\n",
-        models[0].digest()
+        "{HEADER}model M = \"example/rule-tests\";\ninvariant Rule on M::Node at current {{ true }}\n"
     );
     let binding = ClauseBinding {
         name: "Rule".into(),
@@ -233,7 +215,6 @@ fn actual_checked_clause_retains_complete_selected_model_and_dispositions() {
     let wire: serde_json::Value = serde_json::from_slice(package.bytes()).unwrap();
     assert_eq!(wire["models"].as_array().unwrap().len(), 1);
     assert_eq!(wire["models"][0]["alias"], "M");
-    assert_eq!(wire["models"][0]["digest"], models[0].digest().to_string());
     assert_eq!(
         wire["models"][0]["artifact"],
         std::str::from_utf8(models[0].artifact_bytes()).unwrap()

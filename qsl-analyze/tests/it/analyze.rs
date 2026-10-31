@@ -33,7 +33,7 @@ use qsl_replay::{
     ModelTraceSettlement, ModelTraceValue, ProofBasis, RunStats, TemporalCounterexample,
     TerminalValue, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
-use qsl_route::{ManifestDigest, Mode, ProviderOrigin};
+use qsl_route::{Mode, ProviderOrigin};
 use qsl_semantics::check::Capability;
 use quire_exact::{Cancel, CancelCause, Undefined};
 use quire_semantic_value::catalog::Category;
@@ -362,7 +362,7 @@ fn an_undefined_claim_evaluation_settles_refuted_with_the_undefined_cause() {
     let evaluation = UndefinedEvaluation {
         site: UndefinedSite {
             position: last,
-            state_key: case.package_id,
+            state_key: DigestRecord::mint(DigestDomain::SimulationStateKeyV1, [9; 32]),
             locus: UndefinedLocus::Contract("CanInc".to_owned()),
             transition: None,
             time: None,
@@ -376,7 +376,6 @@ fn an_undefined_claim_evaluation_settles_refuted_with_the_undefined_cause() {
             stats: RunStats::default(),
         },
         &ModelCheckLimits::default(),
-        &case.package_id,
         &case.request(),
         &Cancel::new(),
         |payload| {
@@ -437,8 +436,7 @@ fn an_undefined_claim_evaluation_settles_refuted_with_the_undefined_cause() {
 fn en1_advertises_exactly_the_temporal_satisfaction_pair() {
     use qsl_analyze::model_check::manifest;
     let descriptor =
-        manifest::descriptor(ProviderOrigin::Linked, ManifestDigest::from_digest([1; 32]))
-            .expect("EN-1's own manifest is admitted");
+        manifest::descriptor(ProviderOrigin::Linked).expect("EN-1's own manifest is admitted");
     assert_eq!(descriptor.id().as_str(), manifest::BACKEND_ID);
     assert_eq!(
         descriptor.advertises().collect::<Vec<_>>(),
@@ -454,8 +452,7 @@ fn en1_advertises_the_memory_models_sc_tso_and_ra() {
     use qsl_analyze::model_check::manifest;
     use qsl_foundation::MemoryModelName::{Ra, Sc, Tso};
     let descriptor =
-        manifest::descriptor(ProviderOrigin::Linked, ManifestDigest::from_digest([1; 32]))
-            .expect("EN-1's own manifest is admitted");
+        manifest::descriptor(ProviderOrigin::Linked).expect("EN-1's own manifest is admitted");
     assert_eq!(
         descriptor.memory_models(),
         &std::collections::BTreeSet::from([Sc, Tso, Ra])

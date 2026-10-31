@@ -22,14 +22,13 @@ use quire_eval::Evaluation;
 use quire_eval::FamilyOutcome;
 use quire_exact::{
     EffectiveId, FieldValue, IllTypedCause, Integer, Meter, ObjectId, ObjectReference, Outcome,
-    Presence, ScalarLimits, UniverseId, Value, ValueType,
+    Presence, ScalarLimits, Value, ValueType,
 };
 use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 use quire_semantic_value::declaration::{
     FieldDeclaration, FieldRef, ObjectTypeDeclaration, TypeEnvironment,
 };
 use quire_semantic_value::object_closure::ObjectClosure;
-use sha2::{Digest, Sha256};
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
     integer_bits: u64::MAX,
@@ -45,7 +44,7 @@ const UNLIMITED: ScalarLimits = ScalarLimits {
 };
 
 fn effective(label: &str) -> EffectiveId {
-    EffectiveId::from_digest(Sha256::digest(label.as_bytes()).into())
+    crate::support::ids::effective_id(label.as_bytes())
 }
 
 fn integer_field(name: &str) -> FieldDeclaration {
@@ -75,6 +74,7 @@ fn package(object_types: Vec<ObjectTypeDeclaration>) -> (CheckedPackage, TypeEnv
         types: types.clone(),
         ..PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
         )
     }
@@ -85,7 +85,7 @@ fn package(object_types: Vec<ObjectTypeDeclaration>) -> (CheckedPackage, TypeEnv
 
 fn reference(label: &str, object: &str) -> ObjectReference {
     ObjectReference::new(
-        UniverseId::from_digest([0x42; 32]),
+        crate::support::ids::universe_id([0x42]),
         effective(label),
         ObjectId::new(object).unwrap(),
     )

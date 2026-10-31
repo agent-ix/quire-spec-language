@@ -9,10 +9,10 @@
 //! subexpression, evaluated.
 
 use qsl_eval::value::evaluate_closed;
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::check::{CheckedNode, NodeKind};
 use quire_eval::FamilyOutcome;
+use quire_exact::NodeKey;
 use quire_exact::Origin as BodyKey;
 use quire_exact::{Meter, Outcome, Value, ValueType};
 use quire_semantic_value::catalog::InternalFault;
@@ -21,7 +21,7 @@ use quire_semantic_value::location::Origin as BodyOrigin;
 
 use super::operator_parity::ScalarIdentityMismatch;
 use super::scalar_site::{equality_operator, in_body};
-use super::{callable_parameter_keys, lookup, wire_id, Recompiled, ReplayRefusal};
+use super::{callable_parameter_keys, lookup, Recompiled, ReplayRefusal};
 use crate::identity::QualifiedName;
 
 /// One operand of the claimed equality.
@@ -29,7 +29,7 @@ pub(super) enum Operand {
     /// A reference to a parameter of the enclosing function.
     Parameter {
         /// The parameter's node id.
-        node: WireNodeId,
+        node: NodeKey,
         /// The parameter's declared type.
         value_type: ValueType,
     },
@@ -67,49 +67,46 @@ fn fault(invariant: &'static str) -> ReplayRefusal {
 pub(super) fn locate(
     compiled: &Recompiled,
     function: &QualifiedName,
-    node: WireNodeId,
+    node: &NodeKey,
     occurrence: &BodyKey,
     operator: EqualityOperator,
 ) -> Result<Site, ReplayRefusal> {
-    let package_id = compiled.emitted.package().package_id();
+    let package_name = compiled.package.clone();
     let mismatch = |cause: ScalarIdentityMismatch| ReplayRefusal::ScalarIdentity(Box::new(cause));
     let (segment, callable) = lookup(compiled, function)?;
     let package = compiled.checked.package();
     let graph = package.graph().semantic_graph();
-    let semantic = graph
-        .resolve_wire(node)
-        .and_then(|key| graph.node(key))
-        .ok_or_else(|| {
-            mismatch(ScalarIdentityMismatch::Node {
-                node,
-                package: package_id,
-            })
-        })?;
-    if !in_body(graph, callable.identity, semantic.key()) {
+    let semantic = graph.node(node.clone()).ok_or_else(|| {
+        mismatch(ScalarIdentityMismatch::Node {
+            node: node.clone(),
+            package: package_name.clone(),
+        })
+    })?;
+    if !in_body(graph, &callable.identity, semantic.key()) {
         return Err(mismatch(ScalarIdentityMismatch::Function {
-            node,
+            node: node.clone(),
             function: function.clone(),
-            package: package_id,
+            package: package_name.clone(),
         }));
     }
     if equality_operator(semantic) != Some(operator) {
         return Err(mismatch(ScalarIdentityMismatch::Equality {
-            node,
+            node: node.clone(),
             operator,
-            package: package_id,
+            package: package_name.clone(),
         }));
     }
     // The claimed occurrence must be one of this node in this function's
     // body: a node shared by two occurrences is two obligations.
     let refused = || {
         mismatch(ScalarIdentityMismatch::Occurrence {
-            node,
+            node: node.clone(),
             occurrence: occurrence.clone(),
         })
     };
     let location = package
         .graph()
-        .occurrence(semantic.key(), occurrence)
+        .occurrence(semantic.key().clone(), occurrence)
         .filter(|location| match &location.origin {
             BodyOrigin::Body { function, .. } => function == segment.as_str(),
             BodyOrigin::Measure { .. }
@@ -123,7 +120,7 @@ pub(super) fn locate(
         .ok_or_else(refused)?;
     let state = package
         .graph()
-        .function_by_identity(callable.identity)
+        .function_by_identity(callable.identity.clone())
         .ok_or_else(|| fault("function-identity-has-a-checked-body"))?;
     let (left, right) = equality_operands(state.body, &location)
         .ok_or_else(|| fault("claimed-node-has-a-checked-twin"))?;
@@ -131,9 +128,9 @@ pub(super) fn locate(
     let operand = |position: usize, checked: CheckedNode<'_>| -> Result<Operand, ReplayRefusal> {
         let refused = || {
             mismatch(ScalarIdentityMismatch::Operand {
-                node,
+                node: node.clone(),
                 position,
-                package: package_id,
+                package: package_name.clone(),
             })
         };
         if let NodeKind::Local(slot) = checked.kind() {
@@ -142,7 +139,7 @@ pub(super) fn locate(
                 .get(*slot)
                 .ok_or_else(|| fault("parameter-slot-has-a-node"))?;
             return Ok(Operand::Parameter {
-                node: wire_id(*key),
+                node: key.clone(),
                 value_type: value_type.clone(),
             });
         }
@@ -161,7 +158,7 @@ pub(super) fn locate(
         })
     };
     Ok(Site {
-        occurrence: OccurrenceKey::new(node, occurrence.clone()),
+        occurrence: OccurrenceKey::new(node.clone(), occurrence.clone()),
         operands: [operand(0, left)?, operand(1, right)?],
     })
 }

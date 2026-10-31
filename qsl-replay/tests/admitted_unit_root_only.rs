@@ -11,7 +11,7 @@
 use ix_trace_rs::trace;
 use qsl_replay::{
     compile_admitted, AdmittedContext, AdmittedUnit, DependencyInput, Identifier, ReplayLimits,
-    SourceIdentity, StageLimits, WireNodeId,
+    SourceIdentity, StageLimits,
 };
 use quire_exact::Outcome;
 use quire_exact::{Integer, Meter, Quantity, Rational, ScalarLimits, Value, ValueType};
@@ -27,9 +27,12 @@ const SOURCE: &str = "language \"ix:native\" edition \"1-draft\";\n\
 
 fn context() -> AdmittedContext {
     compile_admitted(
-        SourceIdentity::new("a", "u", "git", "1"),
-        "unit.native",
-        SOURCE.as_bytes(),
+        qsl_replay::CompileUnit {
+            source: SourceIdentity::new("a", "u", "git", "1"),
+            package_name: "fixture".to_owned(),
+            path: "unit.native",
+            bytes: SOURCE.as_bytes(),
+        },
         [],
         &DependencyInput::default(),
         StageLimits::default(),
@@ -49,7 +52,7 @@ fn unit<'a>(context: &'a AdmittedContext, name: &str) -> &'a AdmittedUnit {
         .find(|unit| unit.qualified_name().last() == Some(&name))
         .expect("the unit is admitted");
     context
-        .unit_declaration(WireNodeId::from_digest(*found.node().as_bytes()))
+        .unit_declaration(&found.node().clone())
         .expect("the lookup finds it")
 }
 

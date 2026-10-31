@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-411 (TC-1142): a checked model `terminal` declaration emits as QSpec
 //! FR-476's `temporal`/`terminal` node, QSL's I2 read admits it and reads the
-//! declaration back, and the node enters the `package_id`. The subject is the
+//! declaration back. The subject is the
 //! ConfigVersion domain package, whose one object type `ConfigVersion` is the
 //! type its one population ranges over.
 
@@ -21,22 +21,13 @@ fn document() -> &'static [u8] {
     config_version_unit::DOMAIN_PACKAGE.as_bytes()
 }
 
-fn document_digest() -> String {
-    let packages = qsl_semantics::model::intake::package_input([document()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    qsl_semantics::model::key::hex(digest)
-}
-
 /// A unit selecting the ConfigVersion model, then `declarations`.
 fn unit(declarations: &str) -> String {
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
-         model Config = \"example/config-version\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
-         {declarations}\n",
-        document_digest()
+         model Config = \"example/config-version\";\n\
+         {declarations}\n"
     )
 }
 
@@ -48,7 +39,7 @@ struct Compiled {
 
 fn compile(declarations: &str) -> Compiled {
     let text = unit(declarations);
-    let packages = qsl_semantics::model::intake::package_input([document()]);
+    let packages = qsl_semantics::model::intake::package_input([document()]).unwrap();
     let graph = assemble_with_models(text.as_bytes(), &packages)
         .expect("the unit assembles")
         .check(CheckingLimits::default())
@@ -69,19 +60,17 @@ fn evidence(wire: &Value) -> CheckedPackageEvidence {
         evidence.support_feature(feature.as_str().unwrap());
     }
     evidence
-        .insert_domain_package_document(document_digest(), document().to_vec())
+        .insert_domain_package_document(package_identity(document()), document().to_vec())
         .expect("a fresh evidence key");
     evidence
 }
 
 fn read_envelope(envelope: &Value, wire: &Value) -> Read {
-    let package_id = crate::checked_v2::tests::derived_package_id(envelope);
     read_v2(
         &jcs(envelope),
         library(),
         V2ReadLimits::default(),
         &evidence(wire),
-        &qsl_semantics::library::fixtures::single_pin(library(), package_id),
     )
 }
 
@@ -92,10 +81,6 @@ fn admit(compiled: &Compiled) -> Arc<quire_contract_model::CheckedPackageV2> {
         library(),
         V2ReadLimits::default(),
         &evidence(&compiled.wire),
-        &qsl_semantics::library::fixtures::single_pin(
-            library(),
-            compiled.emission.package.package_id(),
-        ),
     )
     .unwrap_or_else(|failure| panic!("the I2 read admits the package: {failure:?}"))
     .into_value()
@@ -123,27 +108,20 @@ fn binding<'v>(body: &'v Value, name: &str) -> &'v Value {
         .unwrap_or_else(|| panic!("a binding {name} in {body}"))
 }
 
-fn target(term: &Value) -> &str {
+fn target(term: &Value) -> &Value {
     assert_eq!(term["term"], "reference", "{term}");
-    term["target"]["digest"].as_str().expect("a target digest")
+    &term["target"]
 }
 
-fn node_with<'w>(wire: &'w Value, digest: &str) -> &'w Value {
+fn node_with<'w>(wire: &'w Value, key: &Value) -> &'w Value {
     nodes(wire)
         .iter()
-        .find(|node| node["node_id"]["digest"] == digest)
-        .unwrap_or_else(|| panic!("a node {digest}"))
+        .find(|node| &node["node_id"] == key)
+        .unwrap_or_else(|| panic!("a node {key}"))
 }
 
-fn wire_id(digest: &str) -> WireNodeId {
-    WireNodeId::from_hex(digest).expect("a node digest")
-}
-
-fn package_digest(compiled: &Compiled) -> String {
-    compiled.wire["package_id"]["digest"]
-        .as_str()
-        .expect("a package digest")
-        .to_owned()
+fn key(value: &Value) -> NodeKey {
+    qsl_foundation::node_wire::node_key_from_json(value).expect("a structural node key")
 }
 
 /// FR-411-AC-1: `when` emits one `temporal`/`terminal` node with its four
@@ -205,13 +183,10 @@ fn a_terminal_declaration_emits_its_node_and_the_i2_read_returns_it() {
     );
     // `self` is typed `Reference<T>` for the model's one object type, which is
     // the node the terminal's `model` binding names.
-    let self_type = node_with(
-        &when.wire,
-        parameter["semantic_type"]["digest"].as_str().unwrap(),
-    );
+    let self_type = node_with(&when.wire, &parameter["semantic_type"]);
     assert_eq!(self_type["node_tag"], "composite_type");
     assert_eq!(self_type["semantic_form"], "reference");
-    assert_eq!(target(&self_type["body"]["members"][0]), node_id(model));
+    assert_eq!(target(&self_type["body"]["members"][0]), &model["node_id"]);
     let claims: Vec<&Value> = when.wire["source_map"]
         .as_array()
         .unwrap()
@@ -238,73 +213,50 @@ fn a_terminal_declaration_emits_its_node_and_the_i2_read_returns_it() {
     let model_of = |compiled: &Compiled| {
         let package = admit(compiled);
         let terminals = read_terminals(&package).expect("the terminals read");
-        let model = terminals.first().map(|terminal| terminal.model);
+        let model = terminals.first().map(|terminal| terminal.model.clone());
         (package, terminals, model)
     };
     let (package, terminals, model) = model_of(&when);
     let model = model.expect("one terminal");
-    let [read] = terminals[..] else {
+    let [read] = &terminals[..] else {
         panic!("one terminal: {terminals:?}");
     };
-    assert_eq!(read.node, wire_id(node_id(terminal_node(&when.wire))));
+    assert_eq!(read.node, key(&terminal_node(&when.wire)["node_id"]));
     assert_eq!(
         read.declaration,
         ReadTerminalDeclaration::When {
-            parameter: Some(wire_id(target(&parameters[0]))),
-            condition: wire_id(target(binding(
+            parameter: Some(key(target(&parameters[0]))),
+            condition: key(target(binding(
                 &terminal_node(&when.wire)["body"],
                 "condition"
             ))),
         }
     );
-    assert_eq!(read_terminal(&package, model), Ok(read.declaration));
+    assert_eq!(
+        read_terminal(&package, &model),
+        Ok(read.declaration.clone())
+    );
 
     let (package, terminals, any_model) = model_of(&any);
-    let [read] = terminals[..] else {
+    let [read] = &terminals[..] else {
         panic!("one terminal: {terminals:?}");
     };
     assert_eq!(read.declaration, ReadTerminalDeclaration::Any);
     assert_eq!(
-        read_terminal(&package, any_model.expect("one terminal")),
+        read_terminal(&package, &any_model.expect("one terminal")),
         Ok(ReadTerminalDeclaration::Any)
     );
 
     let package = admit(&none);
     assert_eq!(read_terminals(&package), Ok(Vec::new()));
     assert_eq!(
-        read_terminal(&package, model),
+        read_terminal(&package, &model),
         Ok(ReadTerminalDeclaration::None)
     );
 }
 
-fn node_id(node: &Value) -> &str {
-    node["node_id"]["digest"].as_str().expect("a node digest")
-}
-
-/// FR-411-AC-2: the `when` and `any` units have different `package_id`s;
-/// renaming `Done` to `Stop` keeps the node id and the `package_id`; the
-/// same model with and without the declaration has different `package_id`s.
-#[trace("TC-1142", "FR-411-AC-2")]
-#[test]
-fn the_terminal_node_enters_the_package_id_and_its_written_name_does_not() {
-    let when = compile(WHEN);
-    let any = compile(ANY);
-    let none = compile(NONE);
-    assert_ne!(package_digest(&when), package_digest(&any));
-    assert_ne!(package_digest(&when), package_digest(&none));
-    assert_ne!(package_digest(&any), package_digest(&none));
-
-    let renamed = compile(&WHEN.replace("Done", "Stop"));
-    assert_eq!(
-        node_id(terminal_node(&when.wire)),
-        node_id(terminal_node(&renamed.wire))
-    );
-    assert_eq!(package_digest(&when), package_digest(&renamed));
-}
-
 /// QSL's I2 read of `compiled`'s wire after `edit` changes the terminal node,
-/// `dependencies` set to the body's targets, every stale key renamed and the
-/// `package_id` recomputed: IR's refusal.
+/// with `dependencies` set to the body's targets: IR's refusal.
 fn refusal_after(
     compiled: &Compiled,
     edit: impl FnOnce(&mut Value),
@@ -332,9 +284,8 @@ fn refusal_after(
             }
         })
         .collect();
-    targets.sort_by(|left, right| left["digest"].as_str().cmp(&right["digest"].as_str()));
+    targets.sort_by_key(|value| qsl_foundation::node_wire::node_key_from_json(value).unwrap());
     node["dependencies"] = Value::Array(targets);
-    crate::checked_v2::tests::rekey_stale(&mut envelope);
     match read_envelope(&envelope, &compiled.wire) {
         Read::Refused(V2ReadRefusal::Envelope { refusal, .. }) => *refusal,
         other => panic!("an IR refusal, not {other:?}"),
@@ -361,7 +312,7 @@ fn the_i2_read_refuses_a_malformed_terminal_node_at_its_locus() {
     assert_eq!(some.code, RefusalCode::InvalidPackage);
     assert_eq!(some.cause, Some(Cause::InvalidValue));
     assert_eq!(
-        some.path.as_ref().map(|path| path.as_str()),
+        some.loci[0].path.as_ref().map(|path| path.as_str()),
         Some(&*format!("{body}/1"))
     );
 
@@ -370,7 +321,7 @@ fn the_i2_read_refuses_a_malformed_terminal_node_at_its_locus() {
     });
     assert_eq!(empty.code, RefusalCode::InvalidSemanticGraph);
     assert_eq!(
-        empty.path.as_ref().map(|path| path.as_str()),
+        empty.loci[0].path.as_ref().map(|path| path.as_str()),
         Some(&*format!("{body}/3"))
     );
 }
@@ -398,7 +349,7 @@ fn a_packages_terminals_resolve_through_their_emitted_nodes() {
 
     let resolved = |declaration: &str| {
         let text = unit(declaration);
-        let packages = qsl_semantics::model::intake::package_input([document()]);
+        let packages = qsl_semantics::model::intake::package_input([document()]).unwrap();
         let graph = assemble_with_models(text.as_bytes(), &packages)
             .expect("the unit assembles")
             .check(CheckingLimits::default())
@@ -436,7 +387,7 @@ fn a_packages_terminals_resolve_through_their_emitted_nodes() {
 fn resolution_follows_the_node_not_the_checked_declaration() {
     use crate::checked_v2::{resolve_terminals, TerminalResolveRefusal};
 
-    let packages = qsl_semantics::model::intake::package_input([document()]);
+    let packages = qsl_semantics::model::intake::package_input([document()]).unwrap();
     let checked = || {
         assemble_with_models(unit(WHEN).as_bytes(), &packages)
             .expect("the unit assembles")
@@ -444,7 +395,7 @@ fn resolution_follows_the_node_not_the_checked_declaration() {
             .expect("the package checks")
     };
     let mut graph = checked();
-    let [node] = graph.terminal_nodes()[..] else {
+    let [node] = &graph.terminal_nodes()[..] else {
         panic!("one terminal node");
     };
     assert_eq!(
@@ -453,7 +404,10 @@ fn resolution_follows_the_node_not_the_checked_declaration() {
             .len(),
         1
     );
-    assert!(graph.semantic_graph_mut().remove(node.node).is_some());
+    assert!(graph
+        .semantic_graph_mut()
+        .remove(node.node.clone())
+        .is_some());
     assert_eq!(
         resolve_terminals(&CheckedPackage::link(graph)).err(),
         Some(TerminalResolveRefusal::Disagrees {

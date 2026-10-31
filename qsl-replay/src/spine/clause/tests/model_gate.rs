@@ -63,24 +63,22 @@ fn size_operation() -> serde_json::Value {
 
 /// The header of a unit selecting `profiles` (alias, identity) and the
 /// `Config` model, with the packages that supply it.
-fn header(profiles: &[(&str, &str)], imports: &str) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
+fn header(
+    profiles: &[(&str, &str)],
+    imports: &str,
+) -> (String, qsl_semantics::model::intake::PackageInput) {
     let document = config_version_domain_document_with_operations(vec![
         size_operation(),
         config_version_probe_operation(),
     ]);
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let profiles: String = profiles
         .iter()
         .map(|(alias, identity)| format!("profile {alias} = \"{identity}\";\n"))
         .collect();
     let header = format!(
         "language \"ix:native\" edition \"1-draft\";\n{profiles}{imports}\
-         model Config = {CONFIG_VERSION_PACKAGE_IDENTITY:?} version \"1.0.0\" \
-         digest \"sha256-jcs:{}\";\n",
-        hex(digest)
+         model Config = {CONFIG_VERSION_PACKAGE_IDENTITY:?};\n"
     );
     (header, packages)
 }

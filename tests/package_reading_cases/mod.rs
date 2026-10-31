@@ -22,7 +22,6 @@ fn read<'a>(
     let bytes = serde_json::to_vec(value).unwrap();
     NativePackage::read_verified(
         &bytes,
-        NativePackageRef::new(ByteDigest::of(&bytes)),
         bindings,
         models,
         &PackageSupport::default(),
@@ -52,7 +51,7 @@ fn rule<'a>(models: &'a [NativeModel], kind: &str, expression: &str) -> NativePa
         ),
         _ => unreachable!("known test clause kind"),
     };
-    let text = format!("language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"example/rule-tests\" version \"1\" digest \"{}\";\n{kind} Rule on {context} {{ {expression} }}\n", models[0].digest());
+    let text = format!("language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"example/rule-tests\";\n{kind} Rule on {context} {{ {expression} }}\n");
     let unit = parse(
         SourceIdentity {
             authority: "test".into(),
@@ -210,9 +209,6 @@ fn selection_order_and_feature_sets_do_not_depend_on_object_order() {
         ("/semantics/syntax_profile", Code::UnknownProfile),
         ("/semantics/model_profile", Code::UnknownProfile),
         ("/semantics/checking_contract", Code::UnknownProfile),
-        ("/canonical_identity/domain", Code::UnknownProfile),
-        ("/canonical_identity/version", Code::UnknownProfile),
-        ("/canonical_identity/algorithm", Code::UnknownProfile),
     ];
     // Leave every later selector wrong too: the first selected mismatch must
     // win even though serde_json emits these object members in a different order.
@@ -240,7 +236,6 @@ fn selection_order_and_feature_sets_do_not_depend_on_object_order() {
     let raw = serde_json::to_vec_pretty(&changed).unwrap();
     let package = NativePackage::read_verified(
         &raw,
-        NativePackageRef::new(ByteDigest::of(&raw)),
         bindings.clone(),
         &models,
         &PackageSupport::default(),
@@ -249,11 +244,6 @@ fn selection_order_and_feature_sets_do_not_depend_on_object_order() {
     .unwrap();
     assert_eq!(package.bytes(), raw);
     assert_ne!(package.bytes(), vector.artifact);
-    assert_ne!(package.digest(), ByteDigest::of(&vector.artifact));
-    assert_eq!(
-        package.canonical_identity().to_string(),
-        vector.digest.as_str()
-    );
     for (feature, expected) in [
         ("boolean", Code::InvalidPackage),
         ("future-feature", Code::UnknownRequiredFeature),
@@ -272,7 +262,6 @@ fn selection_order_and_feature_sets_do_not_depend_on_object_order() {
     support.features.remove("boolean");
     let error = NativePackage::read_verified(
         &vector.artifact,
-        NativePackageRef::new(ByteDigest::of(&vector.artifact)),
         bindings,
         &models,
         &support,
@@ -302,7 +291,6 @@ fn validly_shaped_forged_claims_fail_actual_reconstruction_comparison() {
         ("/clauses/0/projections/1/status", json!("available")),
         ("/clauses/0/projections/1/span/end", json!(999)),
         ("/models/0/artifact", json!("forged model")),
-        ("/canonical_identity/digest", json!("0".repeat(64))),
     ] {
         assert_ne!(
             original.pointer(pointer).unwrap(),
@@ -371,7 +359,6 @@ fn real_frontend_limits_preserve_native_causes_and_retry_state() {
     for (dimension, limits) in requests {
         let error = NativePackage::read_verified(
             package.bytes(),
-            package.reference(),
             bindings.clone(),
             &models,
             &PackageSupport::default(),
@@ -411,7 +398,6 @@ fn real_frontend_limits_preserve_native_causes_and_retry_state() {
         assert!(error.usage.derive.is_none());
         let retry = NativePackage::read_verified(
             package.bytes(),
-            package.reference(),
             bindings.clone(),
             &models,
             &PackageSupport::default(),

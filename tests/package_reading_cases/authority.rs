@@ -11,10 +11,7 @@ fn ordered_import_occurrence_and_observation_claims_cannot_be_permuted() {
     let mut bindings = base.checked().bindings().clone();
     let text = bindings.source.source().text().replacen(
         "post Rule",
-        &format!(
-            "model Extra = \"example/rule-tests\" version \"1\" digest \"{}\";\npost Rule",
-            models[0].digest()
-        ),
+        &String::from("model Extra = \"example/rule-tests\";\npost Rule"),
         1,
     );
     let unit = parse(
@@ -111,11 +108,6 @@ fn source_and_authored_axes_are_checked_against_external_bindings() {
             Code::InvalidModelBinding,
         ),
         (
-            "/source/digest",
-            json!(ByteDigest::of(b"foreign").to_string()),
-            Code::StaleDependency,
-        ),
-        (
             "/source/formal/document",
             json!("Foreign"),
             Code::InvalidModelBinding,
@@ -189,9 +181,9 @@ fn source_and_authored_axes_are_checked_against_external_bindings() {
 fn conflicting_unselected_inventory_is_not_hidden_by_wire_imports() {
     let original_model = native_rule_model::parts().model();
     let changed = native_rule_model::from_text(
-        &(native_rule_model::fixture().to_owned() + " "),
+        native_rule_model::fixture(),
         "changed.native-model",
-        "draft:1",
+        "draft:2",
     )
     .unwrap()
     .model();
@@ -199,27 +191,29 @@ fn conflicting_unselected_inventory_is_not_hidden_by_wire_imports() {
         original_model.environment().owner(),
         changed.environment().owner()
     );
-    assert_ne!(original_model.digest(), changed.digest());
     let models = [original_model, changed];
     let package = rule(&models[..1], "invariant", "true");
-    for (offered, code) in [
-        (&models[..], Code::InvalidModelBinding),
-        (&models[1..], Code::StaleDependency),
+    for (offered, code, stage) in [
+        (&models[..], Code::InvalidModelBinding, PackageStage::Rebind),
+        // Only the changed artifact offered: the import selects it, and the
+        // package it rebuilds is not the one read.
+        (&models[1..], Code::InvalidPackage, PackageStage::Compare),
     ] {
         let error = NativePackage::read_verified(
             package.bytes(),
-            package.reference(),
             package.checked().bindings().clone(),
             offered,
             &PackageSupport::default(),
             PackageReadLimits::default(),
         )
         .unwrap_err();
-        assert_eq!((error.code, error.stage), (code, PackageStage::Rebind));
-        assert!(matches!(
-            error.cause,
-            Some(PackageCause::Linking(_)) | Some(PackageCause::Checking(_))
-        ));
+        assert_eq!((error.code, error.stage), (code, stage));
+        if stage == PackageStage::Rebind {
+            assert!(matches!(
+                error.cause,
+                Some(PackageCause::Linking(_)) | Some(PackageCause::Checking(_))
+            ));
+        }
     }
 }
 
@@ -262,8 +256,6 @@ fn forged_checked_claims_cannot_bypass_real_parse_link_type_or_definedness_failu
         .unwrap();
         let mut external = bindings.clone();
         external.source = FormalSource::new(native.clone(), bindings.source.identity().clone());
-        let mut wire = original.clone();
-        wire["source"]["digest"] = json!(native.digest().to_string());
         let direct = parse(
             native.identity().clone(),
             native.path(),
@@ -283,7 +275,7 @@ fn forged_checked_claims_cannot_bypass_real_parse_link_type_or_definedness_failu
             (code, phase),
             "independent expected native refusal"
         );
-        let error = read(&wire, external, &models).unwrap_err();
+        let error = read(&original, external, &models).unwrap_err();
         assert_eq!((error.code, error.stage), (code, PackageStage::Rebind));
         let (found_phase, found_span) = match error.cause {
             Some(PackageCause::Native(cause)) => (cause.phase, cause.span),

@@ -175,10 +175,10 @@ pub fn resolve_profiles(profiles: &[ProfileSelection]) -> Result<(), Vec<Profile
             } else if DefinitionRole::ALL
                 .into_iter()
                 .any(|role| role.identity() == selected)
-                || crate::value::ModelRole::ALL
+                || crate::value::definition::ModelRole::ALL
                     .into_iter()
                     .any(|role| role.identity() == selected)
-                || crate::value::TemporalRole::ALL
+                || crate::value::definition::TemporalRole::ALL
                     .into_iter()
                     .any(|role| role.identity() == selected)
             {

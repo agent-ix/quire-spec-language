@@ -89,9 +89,7 @@ pub(super) fn catalog<'a>(
         let native = model.source().source();
         if let Some(previous) = sources.insert(formal, model) {
             let previous_source = previous.source().source();
-            if previous_source.identity() != native.identity()
-                || previous_source.digest() != native.digest()
-            {
+            if previous_source.identity() != native.identity() {
                 return Err(conflict(
                     model,
                     previous,
@@ -100,7 +98,7 @@ pub(super) fn catalog<'a>(
             }
         }
         if let Some(previous) = owners.insert(model.environment().owner(), model) {
-            if previous.digest() != model.digest() {
+            if previous.artifact_bytes() != model.artifact_bytes() {
                 return Err(conflict(
                     model,
                     previous,
@@ -110,7 +108,6 @@ pub(super) fn catalog<'a>(
         }
         catalog.push(LinkedModel {
             environment: model.environment(),
-            digest: model.digest(),
             native: Some(model),
         });
     }

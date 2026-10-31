@@ -5,7 +5,17 @@
 //! `step(i)` and `reset()`), the same package again as a second model under
 //! alias `N`, and a unit that declares one hyper clause.
 
+use quire_exact::NodeKey;
 use std::collections::BTreeMap;
+
+fn fixture_node(fill: u8) -> NodeKey {
+    NodeKey::new(
+        "fixture",
+        vec![quire_exact::PathSegment::Text(fill.to_string())],
+        0,
+    )
+    .expect("fixture node")
+}
 
 use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::simulation::model::{ExpansionLimits, ModelSimulationRequest, PopulationUniverse};
@@ -18,7 +28,6 @@ use qsl_semantics::check::{
 };
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
 use qsl_semantics::value::{admit_integer_division, DefinitionRole};
 use quire_checked::key::DeclarationKey;
@@ -29,7 +38,6 @@ use serde_json::{json, Value as Json};
 const PACKAGE: &str = "test/vault";
 const OTHER: &str = "test/vault-other";
 const OTHER_ALIAS: &str = "N";
-const PLACEHOLDER: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 
 pub const UNLIMITED: ScalarLimits = ScalarLimits {
     integer_bits: 1 << 20,
@@ -205,7 +213,6 @@ fn document(busy: bool, reset: bool) -> Vec<u8> {
     .into_iter()
     .map(|(name, meaning)| {
         json!({"kind": {"module": PACKAGE, "name": name}, "moduleVersion": "1.0.0",
-            "manifestDigest": PLACEHOLDER,
             "construct": {"identity": "none", "shape": "record", "members": {},
                 "meaning": meaning}})
     })
@@ -226,11 +233,10 @@ fn document(busy: bool, reset: bool) -> Vec<u8> {
     let population = ident("vaults");
     json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
-        "source": {"identity": ident("spec"), "version": "1.0.0", "dialect": "spec-bundle",
-            "digest": PLACEHOLDER},
-        "package": {"identity": PACKAGE, "version": "1.0.0", "manifestDigest": PLACEHOLDER,
-            "mappingVersions": [], "profileVersions": [], "lockDigest": PLACEHOLDER},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
+        "source": {"identity": ident("spec"), "version": "1.0.0", "dialect": "spec-bundle"},
+        "package": {"identity": PACKAGE, "version": "1.0.0",
+            "mappingVersions": [], "profileVersions": []},
         "occurrences": [], "extensions": [],
         "constructs": constructs,
         "types": [
@@ -262,7 +268,7 @@ fn other_document(document: &[u8]) -> Vec<u8> {
 }
 
 fn declarations(documents: &[&[u8]], text: &str) -> PackageDeclarations {
-    let packages = package_input(documents.iter().copied());
+    let packages = package_input(documents.iter().copied()).unwrap();
     let parsed = qsl_cst::parse(
         SourceIdentity::new("agent-ix", "hyper", "git", "1"),
         "hyper.native",
@@ -284,6 +290,7 @@ fn declarations(documents: &[&[u8]], text: &str) -> PackageDeclarations {
     .expect("the operation clauses parse");
     let mut declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         built,
         models,
         Vec::new(),
@@ -303,16 +310,13 @@ fn declarations(documents: &[&[u8]], text: &str) -> PackageDeclarations {
 /// One snapshot of the vaults `(key, (h, l))`, provisioned in `snapshots`;
 /// each vault of a busy world has `busy` as its flag.
 fn snapshot(
-    document: &[u8],
-    snapshots: &mut BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
+    snapshots: &mut qsl_semantics::model::observation::DocumentProvision,
     name: &str,
     vaults: &[(&str, (i64, i64))],
     busy: Option<i64>,
     second: Option<&[(&str, (i64, i64))]>,
 ) -> DocumentRef {
-    let digest = *package_input([document]).keys().next().expect("one model");
-    let header = json!({"identity": PACKAGE, "version": "1.0.0",
-        "digest": format!("sha256-jcs:{}", hex(&digest))});
+    let header = json!({"identity": PACKAGE});
     let population = |package: &str, vaults: &[(&str, (i64, i64))]| {
         let ident = |suffix: &str| format!("ix://{package}/{suffix}");
         json!({"population": ident("vaults"), "complete": true,
@@ -337,12 +341,9 @@ fn snapshot(
         "populations": populations,
     });
     let bytes = body.to_string().into_bytes();
-    let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-    let hash = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-        .expect("canonical fixture")
-        .as_bytes();
     snapshots.insert(
-        qsl_foundation::SourceIdentity::new("test", name, "fixture", "fixture:1"),
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
         bytes,
     );
     DocumentRef {
@@ -350,31 +351,25 @@ fn snapshot(
         identity: name.to_owned(),
         revision_namespace: "fixture".to_owned(),
         revision: "fixture:1".to_owned(),
-        digest: hash,
     }
 }
 
 /// The unit text: the header selecting the domain package as `V` (and the
 /// second as `N`), the secure `step` contract, and `body`.
-fn unit_text(document: &[u8], other: Option<&[u8]>, build: &Build<'_>, body: &str) -> String {
-    let digest = *package_input([document]).keys().next().expect("one model");
-    let second = other.map_or_else(String::new, |other| {
-        let digest = *package_input([other]).keys().next().expect("one model");
-        format!(
-            "model {OTHER_ALIAS} = \"{OTHER}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n",
-            hex(&digest)
-        )
-    });
+fn unit_text(other: Option<&[u8]>, build: &Build<'_>, body: &str) -> String {
+    let second = if other.is_some() {
+        format!("model {OTHER_ALIAS} = \"{OTHER}\";\n")
+    } else {
+        String::new()
+    };
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
          profile inf = \"quire.temporal.infinite-trace/v1\";\n\
-         model V = \"{PACKAGE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         model V = \"{PACKAGE}\";\n\
          {second}function Noop using v(): Boolean pure {{ true }}\n\
          post Step using v on V::Vault::step {{ {} }}\n{}\n{body}",
-        hex(&digest),
-        build.post,
-        build.extra,
+        build.post, build.extra,
     )
 }
 
@@ -384,10 +379,10 @@ pub struct World {
     temporal_clause: Option<CheckedTemporalClause>,
     /// The same clause as S3 checked it, before any package assembled it.
     pub unassembled: CheckedHyperClause,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
+    snapshots: qsl_semantics::model::observation::DocumentProvision,
     /// A provision that holds no document.
-    no_snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
+    no_snapshots: qsl_semantics::model::observation::DocumentProvision,
     initial: Vec<DocumentRef>,
     /// The keys of the universe of `vaults`.
     pub universe: Vec<String>,
@@ -455,7 +450,7 @@ impl World {
         let other = second.then(|| other_document(&document));
         let other = other.as_deref();
         let documents: Vec<&[u8]> = std::iter::once(document.as_slice()).chain(other).collect();
-        let text = unit_text(&document, other, build, &format!("{declaration}\n"));
+        let text = unit_text(other, build, &format!("{declaration}\n"));
         let assembled = declarations(&documents, &text);
         let temporal_clause = check_clauses(&assembled)
             .into_iter()
@@ -484,7 +479,6 @@ impl World {
                     let others: Option<Vec<(&str, (i64, i64))>> =
                         other_universe.map(|keys| keys.iter().map(|key| (*key, *start)).collect());
                     snapshot(
-                        &document,
                         &mut snapshots,
                         &format!("{name}{index}"),
                         &vaults,
@@ -505,7 +499,7 @@ impl World {
             package,
             temporal_clause,
             unassembled,
-            packages: package_input(documents.iter().copied()),
+            packages: package_input(documents.iter().copied()).unwrap(),
             snapshots,
             no_snapshots: BTreeMap::new(),
             initial,
@@ -618,7 +612,6 @@ mod tp4 {
     use qsl_eval::simulation::model::ModelSimState;
     use qsl_eval::simulation::model::ModelSystem;
     use qsl_eval::temporal::AtomReading;
-    use qsl_foundation::digest::WireNodeId;
     use qsl_foundation::source::provenance::OccurrenceKey;
     use qsl_replay::ClauseIdentity;
     use qsl_replay::{
@@ -678,7 +671,6 @@ mod tp4 {
 
     pub struct Case {
         world: World,
-        package_id: qsl_semantics::library::PackageId,
     }
 
     impl Case {
@@ -687,11 +679,7 @@ mod tp4 {
                 "temporal Live using inf over (v: V::Vault) clock \"model-steps\" on origin {{ {BODY} }}"
             );
             let world = World::new(&["v"], false, &format!("{FORALL_EXISTS}\n{temporal}"));
-            let package_id = qsl_package::emit_checked(world.package())
-                .expect("the checked package emits")
-                .package()
-                .package_id();
-            Self { world, package_id }
+            Self { world }
         }
 
         pub fn clause(&self) -> &CheckedTemporalClause {
@@ -739,10 +727,7 @@ mod tp4 {
         /// partition remains to reject (`NotPartition`).
         pub fn certificate(&self) -> ClosureCertificate {
             let keys = self.expected_keys();
-            let mut certificate = ClosureCertificate {
-                package_id: self.package_id,
-                states: Vec::new(),
-            };
+            let mut certificate = ClosureCertificate { states: Vec::new() };
             // The checker names each absent product state (its model-state
             // digest is the model's identity, which this test does not
             // recompute); the automaton key of every one is checked against
@@ -803,7 +788,7 @@ mod tp4 {
                 panic!("the clause ranges over a reference");
             };
             let reference = system
-                .bound_reference(*object_type, &instance)
+                .bound_reference(object_type.clone(), &instance)
                 .expect("the instance has a reference");
             StateContext::clause(
                 self.clause(),
@@ -853,7 +838,7 @@ mod tp4 {
 
         pub fn foreign_keys(&self) -> BuchiStates {
             let identity = OccurrenceKey::new(
-                WireNodeId::from_digest([0x53; 32]),
+                super::fixture_node(0x53),
                 Origin::new(Role::new("temporal"), 1),
             );
             let context = StateContext::clause(self.clause(), identity, Vec::new());

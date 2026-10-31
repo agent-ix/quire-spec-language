@@ -49,7 +49,7 @@ public constructor and no evaluation callback.
 Both documents contain exactly, in canonical field order: `contract`,
 `identity`, `package`, `subject`, `source`, `clause`, `expression`, `bindings`,
 `type`, `profiles`, and `limits`. `package` retains the exact v2 artifact identity and
-version and native static identity. `subject` retains the parent and leaf subject kinds
+version. `subject` retains the parent and leaf subject kinds
 and identities. Source/clause/expression retain exact artifact references,
 qualified authored identities and half-open UTF-8 byte spans. `bindings` is a
 sorted distinct bounded population of exact model, declaration, expression,

@@ -56,10 +56,7 @@ fn structural_schema_accepts_fixed_and_real_producer_manifests() {
             },
         ),
     ] {
-        let source = format!(
-            "{HEADER}model M = \"example/rule-tests\" version \"1\" digest \"{}\";\n{clause}\n",
-            models[0].digest()
-        );
+        let source = format!("{HEADER}model M = \"example/rule-tests\";\n{clause}\n");
         let package = NativePackage::new(
             checked(
                 &source,
@@ -92,10 +89,6 @@ fn structural_schema_rejects_missing_unknown_and_wrong_type_members() {
     assert_closed_records(&schema, &value);
     for (path, replacement) in [
         ("/format", json!("native-linked-package/2")),
-        ("/canonical_identity/domain", json!("foreign.domain")),
-        ("/canonical_identity/version", json!("v2")),
-        ("/canonical_identity/algorithm", json!("sha512")),
-        ("/canonical_identity/digest", json!("A".repeat(64))),
         ("/source/formal/revision", json!(0)),
         ("/source/formal/revision", json!(1.5)),
         ("/source/formal/revision", json!(9_007_199_254_740_993_u64)),

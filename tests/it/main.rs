@@ -26,6 +26,8 @@
 //! not touch this process's own state and is unaffected by running
 //! alongside every other module here.
 
+const TEST_PACKAGE_NAME: &str = "root-integration-tests";
+
 #[path = "../support/mod.rs"]
 pub(crate) mod support;
 
@@ -127,4 +129,3 @@ mod temporal_negotiation;
 mod text_enum_identity;
 mod unbounded_declarations;
 mod union_nodes;
-mod verified_binding_witness;

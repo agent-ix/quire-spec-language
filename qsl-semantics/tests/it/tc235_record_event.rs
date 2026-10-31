@@ -14,7 +14,6 @@ use qsl_semantics::model::domain_package::{
     ClauseRecord, DomainPackageRecord, FieldMemberRecord, RecordValueTypeRecord, ValueTypeRef,
 };
 use qsl_semantics::model::intake::admit_unit;
-use qsl_semantics::model::key::hex;
 use quire_checked::key::DeclarationKey;
 use serde_json::json;
 
@@ -211,11 +210,11 @@ fn tc235_m20_process_subtype_inherits_identity_and_steps() {
         .type_identities()
         .contains_key(&key("ExpressFulfilment")));
     assert!(view.type_identities().contains_key(&key("Fulfilment")));
-    let subtype_identity = view.type_identities()[&key("ExpressFulfilment")];
+    let subtype_identity = view.type_identities()[&key("ExpressFulfilment")].clone();
     assert!(view.declarations().iter().any(|declaration| {
         declaration.visible
             && declaration.preimage.original == key("Fulfilment/correlation_id")
-            && declaration.preimage.owner_effective_type == Some(subtype_identity)
+            && declaration.preimage.owner_effective_type == Some(subtype_identity.clone())
     }));
     let population = package.records.iter().find_map(|record| match record {
         DomainPackageRecord::Population(population) if population.key == key("PF") => {
@@ -845,17 +844,15 @@ fn tc235_m22_flags_parameter_is_assembled_as_a_record() {
     let view = record_charges(&package, 25);
 
     let bytes = serde_json::to_vec(&document).expect("M22 package serializes");
-    let packages = package_input([bytes.as_slice()]);
-    let digest = hex(packages.keys().next().expect("one offered package"));
+    let packages = package_input([bytes.as_slice()]).unwrap();
     let unit = format!(
         concat!(
             "language \"ix:native\" edition \"1-draft\";\n",
             "profile v = \"quire.model.complete/v1\";\n",
-            "model K2 = {PACKAGE:?} version \"1\" digest \"sha256-jcs:{digest}\";\n",
+            "model K2 = {PACKAGE:?};\n",
             "function noop using v(): Boolean pure {{ true }}\n",
         ),
         PACKAGE = PACKAGE,
-        digest = digest,
     );
     let parsed = qsl_cst::parse(
         SourceIdentity::new("test", "tc-235", "m22-flags", "fixture:1"),
@@ -874,12 +871,13 @@ fn tc235_m22_flags_parameter_is_assembled_as_a_record() {
     .expect("M22 package admits for assembly");
     let declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        crate::TEST_PACKAGE_NAME.to_owned(),
         built,
         models,
         Vec::new(),
     )
     .expect("M22 package assembles");
-    let lifecycle = view.type_identities()[&key("OrderLifecycle")];
+    let lifecycle = view.type_identities()[&key("OrderLifecycle")].clone();
     let place = declarations
         .operations
         .declared_by(lifecycle)
@@ -932,11 +930,11 @@ fn tc235_m02_record_value_field_and_clause_bind_to_order() {
     let clause = clause_for(&package, "Order/QuotedIsTotal");
     assert_eq!(clause.owner, key("Order"));
     assert_eq!(clause.text, "self.quoted = self.total");
-    let order_type = view.type_identities()[&key("Order")];
+    let order_type = view.type_identities()[&key("Order")].clone();
     assert!(view.declarations().iter().any(|declaration| {
         declaration.visible
             && declaration.preimage.original == key("Order/QuotedIsTotal")
-            && declaration.preimage.owner_effective_type == Some(order_type)
+            && declaration.preimage.owner_effective_type == Some(order_type.clone())
     }));
 }
 
@@ -996,14 +994,14 @@ fn tc235_m13_record_invariant_binds_all_reachable_value_sources() {
 
     let package = read_k2(&document).expect("M13 K2 source reads");
     let view = record_charges(&package, 26);
-    let money_type = view.type_identities()[&key("Money")];
+    let money_type = view.type_identities()[&key("Money")].clone();
     let invariant = clause_for(&package, "Money/NonNegative");
     assert_eq!(invariant.owner, key("Money"));
     assert_eq!(invariant.text, "self.amount_minor >= 0");
     assert!(view.declarations().iter().any(|declaration| {
         declaration.visible
             && declaration.preimage.original == key("Money/NonNegative")
-            && declaration.preimage.owner_effective_type == Some(money_type)
+            && declaration.preimage.owner_effective_type == Some(money_type.clone())
     }));
 
     assert_eq!(
@@ -1154,7 +1152,7 @@ fn tc235_m17_record_value_specialization_vectors() {
     let package = read_k2(&positive_document).expect("M17 record subtype reads");
     let view = record_charges(&package, 24);
     let taxed_key = key("TaxedMoney");
-    let taxed_type = view.type_identities()[&taxed_key];
+    let taxed_type = view.type_identities()[&taxed_key].clone();
     let DomainPackageRecord::RecordValueType(RecordValueTypeRecord { supertypes, .. }) = package
         .records
         .iter()
@@ -1172,7 +1170,8 @@ fn tc235_m17_record_value_specialization_vectors() {
         .declarations()
         .iter()
         .filter(|declaration| {
-            declaration.visible && declaration.preimage.owner_effective_type == Some(taxed_type)
+            declaration.visible
+                && declaration.preimage.owner_effective_type == Some(taxed_type.clone())
         })
         .map(|declaration| declaration.preimage.original.node.clone())
         .collect();
@@ -1323,7 +1322,7 @@ fn qsl_732_composite_subtype_is_admitted_at_its_parent_slot_only() {
     );
     assert_eq!(
         assembled_composite(&declarations, "M::TaxedMoney").supertypes(),
-        [money]
+        std::slice::from_ref(&money)
     );
     assert!(assembled_composite(&declarations, "M::Money")
         .supertypes()
@@ -1334,32 +1333,38 @@ fn qsl_732_composite_subtype_is_admitted_at_its_parent_slot_only() {
     let parent = money_value(&declarations, "M::Money", false);
     let unrelated = money_value(&declarations, "M::Discount", false);
 
-    assert_eq!(types.admits(&ValueType::Composite(money), &child), Ok(true));
-    assert_eq!(types.admits(&ValueType::Composite(taxed), &child), Ok(true));
+    assert_eq!(
+        types.admits(&ValueType::Composite(money.clone()), &child),
+        Ok(true)
+    );
+    assert_eq!(
+        types.admits(&ValueType::Composite(taxed.clone()), &child),
+        Ok(true)
+    );
     // The child keeps its own identity when admitted at the parent's slot.
     let Value::Composite(record) = &child else {
         panic!("a composite value");
     };
-    assert_eq!(record.declaration(), taxed);
+    assert_eq!(record.declaration(), &taxed);
 
     assert_eq!(
-        types.admits(&ValueType::Composite(taxed), &parent),
+        types.admits(&ValueType::Composite(taxed.clone()), &parent),
         Ok(false)
     );
     assert_eq!(
-        types.admits(&ValueType::Composite(money), &unrelated),
+        types.admits(&ValueType::Composite(money.clone()), &unrelated),
         Ok(false)
     );
     assert_eq!(
-        types.admits(&ValueType::Composite(taxed), &unrelated),
+        types.admits(&ValueType::Composite(taxed.clone()), &unrelated),
         Ok(false)
     );
     assert_eq!(
-        types.admits(&ValueType::Composite(discount), &child),
+        types.admits(&ValueType::Composite(discount.clone()), &child),
         Ok(false)
     );
     assert_eq!(
-        types.admits(&ValueType::Composite(discount), &parent),
+        types.admits(&ValueType::Composite(discount.clone()), &parent),
         Ok(false)
     );
 }
@@ -1378,11 +1383,11 @@ fn qsl_732_event_subtype_conforms_to_its_parent_event() {
         assembled_composite(&declarations, "M::ExpressOrderPlaced").key(),
     );
     let types = &declarations.types;
-    assert!(types.composite_conforms(express, placed));
-    assert!(types.composite_conforms(express, express));
-    assert!(!types.composite_conforms(placed, express));
+    assert!(types.composite_conforms(express.clone(), placed.clone()));
+    assert!(types.composite_conforms(express.clone(), express.clone()));
+    assert!(!types.composite_conforms(placed.clone(), express.clone()));
     let money = assembled_composite(&declarations, "M::Money").key();
-    assert!(!types.composite_conforms(express, money));
+    assert!(!types.composite_conforms(express.clone(), money));
 }
 
 /// TC-235 M17 run 1, value half, on the row's input: K2 with `Money` given
@@ -1468,7 +1473,7 @@ fn tc235_m17_run1_taxed_money_is_admitted_at_order_total_and_not_equal_to_money(
     };
     assert_eq!(
         record.declaration(),
-        assembled_composite(&declarations, "M::TaxedMoney").key(),
+        &assembled_composite(&declarations, "M::TaxedMoney").key(),
         "t keeps its TaxedMoney type"
     );
     let unlimited = quire_exact::ScalarLimits {

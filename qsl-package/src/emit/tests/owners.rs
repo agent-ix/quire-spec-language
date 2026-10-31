@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-093-AC-21 and AC-22 (TC-416 steps 12 and 13): the v2 emission writes each
-//! structural node's `owner` onto the node, exactly where the node's
-//! `quire.structural-node/v1` preimage carries one. Each key is recomputed
-//! from the wire node alone, and every package is read back through IR's v2
-//! reader.
+//! structural node's `owner` onto the node under FR-322's presence rule, and
+//! every package is read back through IR's v2 reader.
 
 use qsl_semantics::check::{
     checked_dispatch_operation, AdmittedModel, DispatchRoot, OperationClauses,
@@ -21,17 +19,9 @@ use quire_semantic_value::declaration::ObjectTypeDeclaration;
 
 use super::*;
 
-fn source_of(authority: &str, identity: &str) -> RawSourceRef {
-    qsl_semantics::check::admitted_source(
-        qsl_foundation::SourceIdentity::new(authority, identity, "git", "1"),
-        TEXT,
-    )
-}
-
 /// The owner kind FR-322's presence rule requires of a wire node.
 fn required_kind(node: &Value) -> Option<&'static str> {
-    let structural =
-        node.get("nominal_identity_preimage").is_none() && node["body"]["term"] != "application";
+    let structural = node["body"]["term"] != "application";
     if !structural {
         None
     } else if node.get("declaration").is_some() {
@@ -50,36 +40,14 @@ fn required_kind(node: &Value) -> Option<&'static str> {
     }
 }
 
-/// The group label FR-092 computes, rebuilt from the wire alone: the digest of
-/// the array of the members' group-local preimage digests in ordinal order.
-fn rebuilt_label(group: &[&Value]) -> String {
-    let local: Vec<String> = group
-        .iter()
-        .map(|member| sha256_hex(&jcs(&rebuilt_preimage(member, group, false))))
-        .collect();
-    sha256_hex(&jcs(&json!(local)))
-}
-
 /// Every owner check of FR-093-AC-21 over one emitted package: each node's
-/// `owner` equals the owner of the checked node's
-/// preimage (none for a nominal node), follows FR-322's presence rule, each
-/// key and each group label recomputes from the wire alone, and `read` admits
-/// the package. Returns the wire.
-fn assert_owners(package: &CheckedPackage, emission: &Emission, read: impl Fn(&Emission)) -> Value {
-    let expected: BTreeMap<String, Option<Value>> = package
-        .graph()
-        .semantic_graph()
-        .nodes()
-        .map(|node| {
-            let owner = if node.nominal().is_some() {
-                None
-            } else {
-                let preimage: Value = serde_json::from_slice(node.preimage()).unwrap();
-                preimage.get("owner").cloned()
-            };
-            (node.key().to_string(), owner)
-        })
-        .collect();
+/// `owner` follows FR-322's presence rule, and `read` admits the package.
+/// Returns the wire.
+fn assert_owners(
+    _package: &CheckedPackage,
+    emission: &Emission,
+    read: impl Fn(&Emission),
+) -> Value {
     let wire = wire(emission);
     assert!(
         wire["identity_preimage"]
@@ -87,42 +55,21 @@ fn assert_owners(package: &CheckedPackage, emission: &Emission, read: impl Fn(&E
             .is_none(),
         "the wire preimage carries no identity_projection (FR-322)"
     );
-    let written = nodes(&wire);
-    for node in written {
-        let id = node["node_id"]["digest"].as_str().unwrap();
+    for node in nodes(&wire) {
         if node["semantic_form"] == "model_root" {
-            // A root is derived from its selection row, not lowered from a
-            // checked node (FR-322-AC-134).
-            let selected = wire["lock"]["model_selections"].as_array().unwrap();
-            assert!(selected.iter().any(|row| node["owner"]
-                == json!({"kind": "model_root", "identity": row["identity"], "digest": row["digest"]})));
+            // A root is derived from its package identity, not lowered from
+            // a checked node (FR-322-AC-134).
+            assert_eq!(node["owner"]["kind"], "model_root");
+            assert!(node["owner"]["identity"].is_string());
+            assert!(node["owner"].get("digest").is_none());
             continue;
         }
         assert_eq!(
-            node.get("owner").cloned(),
-            expected[id],
-            "{} {} carries the owner of its preimage",
-            node["node_tag"],
-            node["semantic_form"]
-        );
-        assert_eq!(
             node.get("owner").and_then(|owner| owner["kind"].as_str()),
             required_kind(node),
-            "{id}: FR-322's presence rule"
+            "{}: FR-322's presence rule",
+            node["node_id"]
         );
-    }
-    for (node, group) in with_groups(written)
-        .into_iter()
-        .filter(|(node, _)| node.get("nominal_identity_preimage").is_none())
-    {
-        assert_eq!(
-            json!(rebuilt_key(node, &group)),
-            node["node_id"]["digest"],
-            "{node}"
-        );
-        if let Some(label) = node["recursion_group"].as_str() {
-            assert_eq!(rebuilt_label(&group), label, "the group label recomputes");
-        }
     }
     read(emission);
     wire
@@ -145,16 +92,16 @@ pub(super) fn node_where<'w>(wire: &'w Value, tag: &str, form: &str) -> Vec<&'w 
 
 /// `record P { x: Int[0, 9]; }` and `record Tree { kids: Sequence<Tree>[0, 3]; }`.
 fn p_and_tree_types() -> TypeEnvironment {
-    let tree = NodeKey::from_digest([6; 32]);
+    let tree = NodeKey::new("pkg", vec![PathSegment::Text("Tree".to_owned())], 0).unwrap();
     let kids = ValueType::collection(CollectionType::new(
         CollectionKind::Sequence,
-        ValueType::Composite(tree),
+        ValueType::Composite(tree.clone()),
         Some(CardinalityBound::new(0, 3).unwrap()),
     ));
     TypeEnvironment::new(
         [
             CompositeDeclaration::new(
-                NodeKey::from_digest([1; 32]),
+                NodeKey::new("pkg", vec![PathSegment::Text("P".to_owned())], 0).unwrap(),
                 "P",
                 CompositeShape::Record(vec![FieldDeclaration::new(
                     "x",
@@ -185,7 +132,10 @@ fn p_and_tree_types() -> TypeEnvironment {
 #[trace("FR-093-AC-21", "TC-416")]
 #[test]
 fn source_declared_nodes_carry_their_source_owner() {
-    let status = status_enum(owner_json("a", "u"), "Status");
+    let status = status_enum(
+        json!({"kind": "source", "authority": "a", "identity": "u", "package_name": "pkg"}),
+        "Status",
+    );
     let status_type = || TypeForm::name("Status", SPAN);
     let keep = FunctionDeclaration::new(
         "keep",
@@ -199,7 +149,7 @@ fn source_declared_nodes_carry_their_source_owner() {
             types: p_and_tree_types(),
             enums: vec![status],
             functions: vec![keep],
-            ..PackageDeclarations::new(source(), qsl_foundation::IdentityLimits::default())
+            ..PackageDeclarations::new(source(), "pkg", qsl_foundation::IdentityLimits::default())
         }
         .check(CheckingLimits::default())
         .expect("the package checks"),
@@ -221,11 +171,6 @@ fn source_declared_nodes_carry_their_source_owner() {
         assert!(!found.is_empty(), "{tag}/{form} is written");
         assert!(found.iter().all(|node| node.get("owner").is_none()));
     }
-    let nominal = nodes(&wire)
-        .iter()
-        .filter(|node| node.get("nominal_identity_preimage").is_some())
-        .count();
-    assert!(nominal >= 3, "the enum and its members are written");
 }
 
 fn one() -> Multiplicity {
@@ -317,7 +262,7 @@ fn acme_document() -> Vec<u8> {
 fn clauses(order: EffectiveId, sub: EffectiveId) -> OperationClauses {
     let mut clauses = OperationClauses::default();
     for (operation, member, receiver, precondition, body) in [
-        ("Order/size", "size", order, true, 7_i64),
+        ("Order/size", "size", order.clone(), true, 7_i64),
         ("Order/count", "count", order, true, 1),
         ("Sub/size", "size", sub, false, 8),
     ] {
@@ -349,13 +294,9 @@ fn clauses(order: EffectiveId, sub: EffectiveId) -> OperationClauses {
 #[test]
 fn model_declaration_nodes_and_clause_functions_carry_their_model_owner() {
     let document = acme_document();
-    let digest: [u8; 32] =
-        Sha256::digest(jcs(&serde_json::from_slice::<Value>(&document).unwrap())).into();
     let package = DomainPackage::new(
         DomainPackageRef {
             identity: "acme/orders".to_owned(),
-            version: "1.0.0".to_owned(),
-            digest,
         },
         vec![
             object("Order", &[]),
@@ -371,13 +312,14 @@ fn model_declaration_nodes_and_clause_functions_carry_their_model_owner() {
         panic!("acme/orders normalizes");
     };
     let model = AdmittedModel::new(&package, &view).expect("the view is the package's own");
-    let id = |name: &str| view.type_identities()[&model_key(name)];
+    let id = |name: &str| view.type_identities()[&model_key(name)].clone();
     let (order, sub) = (id("Order"), id("Sub"));
     let types = TypeEnvironment::new(
         [],
         [
-            ObjectTypeDeclaration::new(order, "M::Order", Vec::new()),
-            ObjectTypeDeclaration::new(sub, "M::Sub", Vec::new()).with_supertypes(vec![order]),
+            ObjectTypeDeclaration::new(order.clone(), "M::Order", Vec::new()),
+            ObjectTypeDeclaration::new(sub.clone(), "M::Sub", Vec::new())
+                .with_supertypes(vec![order.clone()]),
         ],
     )
     .expect("the acme object types admit");
@@ -398,8 +340,9 @@ fn model_declaration_nodes_and_clause_functions_carry_their_model_owner() {
                 key: model_key(root),
                 closure: GeneralizationClosure::Closed,
             },
-            &clauses(order, sub),
+            &clauses(order.clone(), sub.clone()),
             source(),
+            "pkg".to_owned(),
             &mut meter,
             qsl_foundation::IdentityLimits::default(),
         )
@@ -418,12 +361,8 @@ fn model_declaration_nodes_and_clause_functions_carry_their_model_owner() {
         assert_eq!(emission.omitted, []);
         let read = |emission: &Emission| {
             let mut evidence = read_evidence(emission);
-            let wire = wire(emission);
-            let digest = wire["lock"]["model_selections"][0]["digest"]
-                .as_str()
-                .unwrap();
             evidence
-                .insert_domain_package_document(digest, &document[..])
+                .insert_domain_package_document(package_identity(&document[..]), &document[..])
                 .expect("a fresh evidence key");
             assert!(
                 matches!(read_with(emission, &evidence), Read::Verified { .. }),
@@ -472,149 +411,4 @@ fn model_declaration_nodes_and_clause_functions_carry_their_model_owner() {
         ]),
         "the clause functions are owned by their operation members"
     );
-}
-
-/// `record Point { x: Integer; }` and `record List { next?: List; }`.
-fn point_and_list_package(owner: &RawSourceRef) -> CheckedPackage {
-    let list = NodeKey::from_digest([7; 32]);
-    let types = TypeEnvironment::new(
-        [
-            CompositeDeclaration::new(
-                NodeKey::from_digest([8; 32]),
-                "Point",
-                CompositeShape::Record(vec![FieldDeclaration::new(
-                    "x",
-                    ValueType::Integer,
-                    Presence::Required,
-                )]),
-            ),
-            CompositeDeclaration::new(
-                list,
-                "List",
-                CompositeShape::Record(vec![FieldDeclaration::new(
-                    "next",
-                    ValueType::Composite(list),
-                    Presence::Optional,
-                )]),
-            ),
-        ],
-        [],
-    )
-    .expect("FR-143 admits Point and List");
-    CheckedPackage::link(
-        PackageDeclarations {
-            types,
-            ..PackageDeclarations::new(owner.clone(), qsl_foundation::IdentityLimits::default())
-        }
-        .check(CheckingLimits::default())
-        .expect("Point and List check"),
-    )
-}
-
-fn two_owner_emission(identity: &str) -> (CheckedPackage, Emission) {
-    let owner = source_of("agent-ix", identity);
-    let package = point_and_list_package(&owner);
-    let emission = emit_under(&package, &owner);
-    (package, emission)
-}
-
-/// The node ids of one package by role: `Point`, the `List` group's members in
-/// graph order and its label, `Integer`.
-fn two_owner_ids(wire: &Value) -> (Value, Vec<Value>, Value, Value) {
-    let point = declared(wire, "Point")["node_id"].clone();
-    let members: Vec<&Value> = nodes(wire)
-        .iter()
-        .filter(|node| node.get("recursion_group").is_some())
-        .collect();
-    let label = members[0]["recursion_group"].clone();
-    let integer = node_where(wire, "scalar_type", "integer")[0]["node_id"].clone();
-    (
-        point,
-        members.iter().map(|node| node["node_id"].clone()).collect(),
-        label,
-        integer,
-    )
-}
-
-/// FR-093-AC-22 (TC-416 step 13): one source under owners `example-a` and
-/// `example-b` gives two packages whose `Point` ids, `List` group labels and
-/// member ids differ and whose `Integer` id is equal; their `package_id`s
-/// differ and IR's v2 reader admits both.
-#[trace("FR-093-AC-22", "TC-416")]
-#[test]
-fn one_source_under_two_owners_differs_exactly_on_the_owner_keyed_nodes() {
-    let (package_a, emission_a) = two_owner_emission("example-a");
-    let (package_b, emission_b) = two_owner_emission("example-b");
-    let wire_a = assert_owners(&package_a, &emission_a, verified);
-    let wire_b = assert_owners(&package_b, &emission_b, verified);
-    assert_eq!(
-        declared(&wire_a, "Point")["owner"],
-        owner_json("agent-ix", "example-a")
-    );
-    assert_eq!(
-        declared(&wire_b, "Point")["owner"],
-        owner_json("agent-ix", "example-b")
-    );
-    let (point_a, list_a, label_a, integer_a) = two_owner_ids(&wire_a);
-    let (point_b, list_b, label_b, integer_b) = two_owner_ids(&wire_b);
-    assert_ne!(point_a, point_b);
-    assert_ne!(label_a, label_b);
-    assert_eq!(list_a.len(), 2, "the List record and its Option node");
-    assert!(list_a.iter().zip(&list_b).all(|(a, b)| a != b));
-    assert_eq!(integer_a, integer_b);
-    assert_ne!(
-        emission_a.package.package_id(),
-        emission_b.package.package_id()
-    );
-}
-
-/// The emitter reproduces the nodes of QSpec's published two-owner and
-/// recursive-record fixtures (QSpec FR-322-AC-53): equal node ids, owners,
-/// group labels and bodies for `Point`, `List`, its `Option` node and
-/// `Integer`. Reads the fixtures from `$QSPEC_DIR` (skipped, and passing,
-/// when it is unset; `make conformance` requires it); nothing of QSpec is
-/// copied into this repository.
-#[trace("FR-093-AC-22", "TC-416")]
-#[test]
-fn conformance_the_emitter_reproduces_qspec_two_owner_fixture_nodes() {
-    let Some(qspec) = std::env::var_os("QSPEC_DIR") else {
-        println!("skipped: QSPEC_DIR not set");
-        return;
-    };
-    let directory = std::path::Path::new(&qspec).join("proposals/checked-package-v2/fixtures");
-    for (file, identity) in [
-        ("positive-two-owners-a.json", "example-a"),
-        ("positive-two-owners-b.json", "example-b"),
-    ] {
-        let bytes = std::fs::read(directory.join(file)).unwrap();
-        let fixture: Value = serde_json::from_slice(&bytes).unwrap();
-        let (_, emission) = two_owner_emission(identity);
-        let emitted = wire(&emission);
-        let published = |node: &Value| {
-            fixture["semantic_graph"]["nodes"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .find(|candidate| candidate["node_id"] == node["node_id"])
-                .unwrap_or_else(|| panic!("{file} holds {}", node["node_id"]))
-                .clone()
-        };
-        let compared = [
-            "node_id",
-            "node_tag",
-            "semantic_form",
-            "semantic_type",
-            "declaration",
-            "owner",
-            "recursion_group",
-            "body",
-            "dependencies",
-        ];
-        for node in nodes(&emitted) {
-            let other = published(node);
-            for member in compared {
-                assert_eq!(node.get(member), other.get(member), "{file}: {member}");
-            }
-        }
-    }
 }

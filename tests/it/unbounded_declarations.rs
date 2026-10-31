@@ -10,7 +10,6 @@ use std::collections::BTreeMap;
 use ix_trace_rs::trace;
 use qsl_forms::build_unit;
 use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound, ProofBound};
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::{Code, RequestIndex, SourceIdentity};
 use qsl_route::request::{items_from_requirements, ExtentClassification, RequestWriter};
 use qsl_route::routing::{route, Disposition};
@@ -19,7 +18,7 @@ use qsl_semantics::check::{
     AssemblyCause, AssemblyRefusal, Capability, CheckedGraph, PackageDeclarations, TypeFormFault,
 };
 use qsl_semantics::family::{ClaimExtent, Requirements};
-use quire_exact::NodeKey;
+use quire_exact::{NodeKey, PathSegment};
 
 use super::request_builder::{check, package, registry, HEADER};
 
@@ -37,24 +36,11 @@ fn try_assemble(declarations: &str) -> Result<PackageDeclarations, AssemblyRefus
     let unit = build_unit(&parsed).expect("S2 builds the unit");
     PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_string(),
         unit,
         Vec::new(),
         Vec::new(),
     )
-}
-
-/// The `package_id` the spine emits for `declarations`.
-fn package_id(declarations: &str) -> String {
-    let text = format!("{HEADER}{declarations}\n");
-    let emitted = crate::support::front_end::emitted(
-        SourceIdentity::new("a", "u", "git", "1"),
-        "unit.native",
-        text.as_bytes(),
-        &BTreeMap::new(),
-        &qsl_replay::spine::DependencyInput::default(),
-    )
-    .expect("the unit compiles");
-    format!("{:?}", emitted.package().package_id())
 }
 
 /// The parameter node `index` of function `name`.
@@ -68,6 +54,7 @@ fn parameter(graph: &CheckedGraph, name: &str, index: usize) -> NodeKey {
         )
         .and_then(|function| function.function_parameters())
         .expect("a function node")[index]
+        .clone()
 }
 
 /// The type node of parameter `index` of function `name`.
@@ -166,16 +153,13 @@ fn an_inverted_bound_refuses_and_a_non_numeric_bound_fails_at_s1() {
 /// node carries `minimum` and `maximum` as the root definition states.
 #[trace("TC-844", "FR-334-AC-1")]
 #[test]
-fn bound_presence_changes_the_node_key_and_the_package_id() {
+fn a_collection_bound_adds_minimum_and_maximum_to_the_type_node() {
     let unbounded = "function f using v(s: Set<Integer>): Integer pure { 0 }";
     let bounded =
         "function f using v(s: Set<Integer>[0, 18446744073709551615]): Integer pure { 0 }";
     let (unbounded_graph, bounded_graph) = (check(unbounded), check(bounded));
     let unbounded_type = parameter_type(&unbounded_graph, "f", 0);
     let bounded_type = parameter_type(&bounded_graph, "f", 0);
-    assert_ne!(unbounded_type, bounded_type);
-    assert_ne!(package_id(unbounded), package_id(bounded));
-
     let (form, body) = form_and_body(&unbounded_graph, unbounded_type);
     assert_eq!(form, "set");
     assert!(!body.contains("min") && !body.contains("max"), "{body}");
@@ -185,8 +169,7 @@ fn bound_presence_changes_the_node_key_and_the_package_id() {
     assert!(body.contains("18446744073709551615"), "{body}");
 }
 
-/// FR-334-AC-3: the same bounded unit compiles to the same node keys and
-/// `package_id`.
+/// FR-334-AC-3: the same bounded unit compiles to the same node keys.
 #[trace("TC-844", "FR-334-AC-3")]
 #[test]
 fn compiling_a_bounded_unit_twice_gives_the_same_identities() {
@@ -196,7 +179,6 @@ fn compiling_a_bounded_unit_twice_gives_the_same_identities() {
         parameter_type(&first, "f", 0),
         parameter_type(&second, "f", 0)
     );
-    assert_eq!(package_id(unit), package_id(unit));
 }
 
 const UNBOUNDED_CLAIM: &str =
@@ -205,7 +187,7 @@ const UNBOUNDED_CLAIM: &str =
 /// The domain key of parameter 0 of `f`.
 fn domain_of_parameter(graph: &CheckedGraph) -> DomainKey {
     DomainKey::Node {
-        node: WireNodeId::from_digest(*parameter(graph, "f", 0).as_bytes()),
+        node: parameter(graph, "f", 0),
         path: Vec::new(),
     }
 }
@@ -332,7 +314,8 @@ fn a_quantity_root_leaves_no_finite_bound_available() {
     let graph = package.graph();
     let s = domain_of_parameter(graph);
     let quantity = DomainKey::Node {
-        node: WireNodeId::from_digest([7; 32]),
+        node: NodeKey::new("fixture", vec![PathSegment::Text("quantity".into())], 0)
+            .expect("a valid key"),
         path: Vec::new(),
     };
     let requirements = Requirements::new(

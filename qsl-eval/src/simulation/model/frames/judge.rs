@@ -125,6 +125,11 @@ impl ModelSystem<'_> {
     /// # Errors
     ///
     /// An [`ExpansionStop`] when the successor set cannot be known.
+    ///
+    /// No post-state presences are supplied: a postcondition's
+    /// `present(self.v)` read fails closed with `place-presence-unrecorded`.
+    /// Dense timed models route only to EN-6, so nothing reaches it here
+    /// today.
     pub fn expand_state(
         &self,
         state: &ModelState,
@@ -297,13 +302,13 @@ impl ModelSystem<'_> {
         let preconditions = walk.applicable(
             &self.clauses.preconditions,
             row,
-            application.declaring,
+            application.declaring.clone(),
             &application.name,
         );
         let postconditions = walk.applicable(
             &self.clauses.postconditions,
             row,
-            application.declaring,
+            application.declaring.clone(),
             &application.name,
         );
         let mut judged = Vec::new();

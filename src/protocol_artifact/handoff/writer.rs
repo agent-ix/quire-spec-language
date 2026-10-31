@@ -49,7 +49,7 @@ use crate::{
         native, v2, wire as w,
     },
 };
-use qsl_foundation::{ByteDigest, Source, SourceIdentity};
+use qsl_foundation::{Source, SourceIdentity};
 use quire_contract_model as ir;
 
 const AUTHORITY: &str = "ix://agent-ix/quire-spec-language";
@@ -629,16 +629,11 @@ fn source(model: &NativeModel, recipe: &UnitRecipe) -> Result<Source, Error> {
     let mut text = "language \"ix:native\" edition \"1-draft\";\n".to_owned();
     for (alias, definition) in recipe.profiles {
         let selected = definition.selection();
-        text.push_str(&format!(
-            "profile {alias} = \"{}\" version \"{}\" digest \"{}\";\n",
-            selected.identity, selected.revision, selected.digest
-        ));
+        text.push_str(&format!("profile {alias} = \"{}\";\n", selected.identity));
     }
     text.push_str(&format!(
-        "model M = \"{}\" version \"{}\" digest \"{}\";\n",
-        model.environment().owner().package().as_str(),
-        model.environment().owner().revision().get(),
-        model.digest()
+        "model M = \"{}\";\n",
+        model.environment().owner().package().as_str()
     ));
     text.push_str(recipe.body);
     Ok(Source::read(
@@ -956,7 +951,6 @@ impl DefinitionInputs {
             .values()
             .map(|rule| definitions::RuleInput {
                 path: rule.path,
-                digest: ByteDigest::of(rule.path.as_bytes()),
                 bytes: rule.path.as_bytes(),
             })
             .collect::<Vec<_>>();
@@ -1233,7 +1227,6 @@ fn compile_with<T>(
             .map(|unit| linking::ExpectedSource {
                 authority: unit.artifact.identity.clone(),
                 identity: unit.mapping.source.source().identity().clone(),
-                digest: unit.mapping.source.source().digest(),
             })
             .collect(),
     };
@@ -1314,9 +1307,6 @@ fn namespace_issue(issue: &linking::InventoryIssue) -> StageIssue {
         ),
         I::MissingSource { .. } => ("missing source", None, None, None),
         I::UnexpectedSource { supplied } => ("unexpected source", Some(*supplied), None, None),
-        I::DigestMismatch { supplied, .. } => {
-            ("source digest mismatch", Some(*supplied), None, None)
-        }
         I::HeaderConflict {
             supplied,
             language,

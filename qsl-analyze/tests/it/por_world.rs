@@ -32,7 +32,6 @@ use qsl_route::reductions::Reductions;
 use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId, PackageDeclarations};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
 use quire_checked::key::DeclarationKey;
 use quire_exact::{Cancel, Meter, Value};
@@ -43,7 +42,6 @@ use crate::counter::UNLIMITED;
 use crate::reduction_world::{clause_identity, replay_unit, ReplayUnit};
 
 const PACKAGE: &str = "test/por";
-const PLACEHOLDER: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 const BOOLEAN: &str = "ix://quire/native/Boolean";
 
 fn ident(suffix: &str) -> String {
@@ -182,7 +180,6 @@ fn document(types: Vec<Json>, populations: &[(&str, &str)]) -> Vec<u8> {
     })
     .map(|(name, meaning)| {
         json!({"kind": {"module": PACKAGE, "name": name}, "moduleVersion": "1.0.0",
-            "manifestDigest": PLACEHOLDER,
             "construct": {"identity": "none", "shape": "record", "members": {},
                 "meaning": meaning}})
     })
@@ -200,11 +197,10 @@ fn document(types: Vec<Json>, populations: &[(&str, &str)]) -> Vec<u8> {
         .collect();
     json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
-        "source": {"identity": ident("spec"), "version": "1.0.0", "dialect": "spec-bundle",
-            "digest": PLACEHOLDER},
-        "package": {"identity": PACKAGE, "version": "1.0.0", "manifestDigest": PLACEHOLDER,
-            "mappingVersions": [], "profileVersions": [], "lockDigest": PLACEHOLDER},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
+        "source": {"identity": ident("spec"), "version": "1.0.0", "dialect": "spec-bundle"},
+        "package": {"identity": PACKAGE, "version": "1.0.0",
+            "mappingVersions": [], "profileVersions": []},
         "occurrences": [], "extensions": [],
         "constructs": constructs, "types": types, "populations": populations,
     })
@@ -257,11 +253,10 @@ pub(crate) type Atom = Box<dyn Fn(&ModelSimState, &str) -> Option<bool>>;
 pub(crate) struct Fixture {
     package: CheckedPackage,
     clauses: Vec<CheckedTemporalClause>,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
+    snapshots: qsl_semantics::model::observation::DocumentProvision,
     initial: Vec<DocumentRef>,
     universes: Vec<(String, Vec<String>)>,
-    digest: [u8; 32],
     document: Vec<u8>,
     text: String,
 }
@@ -286,8 +281,7 @@ impl Fixture {
         universes: &[(&str, &[&str])],
     ) -> Self {
         let document = document(types, populations);
-        let packages = package_input([document.as_slice()]);
-        let digest = *packages.keys().next().expect("one model");
+        let packages = package_input([document.as_slice()]).unwrap();
         let declared = clauses
             .iter()
             .enumerate()
@@ -302,9 +296,8 @@ impl Fixture {
             "language \"ix:native\" edition \"1-draft\";\n\
              profile v = \"quire.value.complete/v1\";\n\
              profile t = \"quire.temporal.infinite-trace/v1\";\n\
-             model M = \"{PACKAGE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+             model M = \"{PACKAGE}\";\n\
              function Noop using v(): Boolean pure {{ true }}\n{}\n{declared}",
-            hex(&digest),
             contracts.join("\n"),
         );
         let parsed = qsl_cst::parse(
@@ -328,6 +321,7 @@ impl Fixture {
         .expect("the operation clauses parse");
         let graph = PackageDeclarations::assemble(
             parsed.source().reference().clone(),
+            "package".to_owned(),
             built,
             models,
             Vec::new(),
@@ -356,7 +350,6 @@ impl Fixture {
                     )
                 })
                 .collect(),
-            digest,
             document,
             text,
         };
@@ -384,8 +377,7 @@ impl Fixture {
                 json!({"population": ident(population), "complete": true, "objects": members})
             })
             .collect();
-        let header = json!({"identity": PACKAGE, "version": "1.0.0",
-            "digest": format!("sha256-jcs:{}", hex(&self.digest))});
+        let header = json!({"identity": PACKAGE});
         let document = json!({
             "format": "quire.state.snapshot/v1",
             "identity": {"authority": "test", "identity": name, "revision_namespace": "fixture",
@@ -395,19 +387,17 @@ impl Fixture {
             "populations": listed,
         });
         let bytes = document.to_string().into_bytes();
-        let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-        let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-            .expect("canonical fixture")
-            .as_bytes();
-        let reference = DocumentRef {
+        self.snapshots.insert(
+            qsl_semantics::model::observation::document_reference(&bytes)
+                .expect("a document names itself"),
+            bytes,
+        );
+        DocumentRef {
             authority: "test".to_owned(),
             identity: name.to_owned(),
             revision_namespace: "fixture".to_owned(),
             revision: "fixture:1".to_owned(),
-            digest,
-        };
-        self.snapshots.insert(reference.source_identity(), bytes);
-        reference
+        }
     }
 
     fn universes(&self) -> Vec<PopulationUniverse> {
@@ -567,7 +557,6 @@ impl Fixture {
         replay_unit(
             &ReplayUnit {
                 identity: "por",
-                path: "por.native",
                 text: self.text.as_bytes(),
                 document: &self.document,
                 snapshots: &self.snapshots,

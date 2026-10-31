@@ -21,7 +21,7 @@ expected result regardless of order. Scope: FR-075-AC-4, FR-075-AC-7.
 ## Test Procedure
 
 Build complete `BackendDescriptor` fixtures for TC-282's roles. Descriptor
-equality covers identity, provider origin, manifest, advertised
+equality covers identity, provider origin, advertised
 (kind, mode) pairs, retained `domains`, and evidence-kind sets. For TC-282's
 non-probabilistic vectors, each descriptor has no evidence kinds; keep the
 other members equal within each duplicate comparison. Where TC-282's `A2`
@@ -70,7 +70,7 @@ above:
 
 Every ordering of a vector's registrations gives the same registry, the same
 refusals in the same reported order, and the same candidate set for every
-item. A repeat of an identical complete manifest is never refused
+item. A repeat of an identical registration is never refused
 (FR-075-AC-7). A repeat differing only in evidence-kind set is conflicting,
 not identical. A conflicting identity is never held, contributes no candidate, and never
 refuses a registration of another identity (FR-075-AC-4). The

@@ -8,7 +8,6 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use ix_trace_rs::trace;
-use qsl_foundation::digest::{DigestDomain, DigestRecord};
 use qsl_foundation::source::provenance::RawSourceRef;
 use serde_json::{json, Value};
 use xtask::refinement::compare::CaseResult;
@@ -25,15 +24,19 @@ const PACKAGE: &str = "repo:examples/config-version/model.semantic-ir.json";
 const POPULATION: &str = "ix://example/config-version/config_history";
 const PARENT_ORDER: &str = "deref(value(self.parent)).versionNumber < self.versionNumber";
 
-fn model_digest_hex() -> String {
-    let packages =
-        qsl_semantics::model::intake::package_input([config_version::DOMAIN_PACKAGE.as_bytes()]);
-    let digest = packages.keys().next().expect("one supplied package");
-    qsl_semantics::model::key::hex(digest)
+/// The unit selects the domain package by the identity its document declares.
+#[test]
+#[trace("TC-864", "FR-340-AC-8")]
+fn the_unit_selects_the_package_by_its_declared_identity() {
+    let document: Value = serde_json::from_str(config_version::DOMAIN_PACKAGE).unwrap();
+    assert_eq!(
+        document["package"]["identity"],
+        config_version::PACKAGE_IDENTITY
+    );
 }
 
 fn unit() -> String {
-    config_version::unit_text(&model_digest_hex())
+    config_version::unit_text()
 }
 
 /// The unit with `ParentOrder` strengthened so the healthy-parent snapshot
@@ -118,8 +121,6 @@ fn snapshot(name: &str, rows: &[(&str, i64, Option<&str>)]) -> Value {
         "anchor": {"kind": "handler", "name": "validate"},
         "model": {
             "identity": config_version::PACKAGE_IDENTITY,
-            "version": config_version::PACKAGE_VERSION,
-            "digest": format!("sha256-jcs:{}", model_digest_hex()),
         },
         "populations": [{"population": POPULATION, "complete": true, "objects": objects}],
     })
@@ -345,8 +346,6 @@ fn a_well_formed_pair_reports_one_result_per_case() {
         for side in ["prior", "superseding"] {
             assert_eq!(name[side]["authority"], AUTHORITY);
             assert_eq!(name[side]["identity"], IDENTITY);
-            assert_eq!(name[side]["digest_domain"], "quire.source.bytes/v1");
-            assert_eq!(name[side]["digest"].as_str().unwrap().len(), 64);
         }
         assert_eq!(name["selection"]["clause"]["name"], "ParentOrder");
     }
@@ -571,14 +570,6 @@ fn a_seeded_regression_fails_the_gate_naming_exactly_that_case() {
     assert_eq!(seeded["superseding"]["class"], "refused");
     assert_eq!(seeded["superseding"]["stage"], "evaluate");
     assert_eq!(seeded["superseding"]["codes"], json!([]));
-    // The tightened pair's two sources differ in digest, so its name differs
-    // from the identity pair's, whose two sources are the same bytes.
-    assert_ne!(seeded["name"]["prior"], seeded["name"]["superseding"]);
-    let identity_cases = entries
-        .iter()
-        .filter(|entry| entry["name"]["prior"] == entry["name"]["superseding"])
-        .count();
-    assert_eq!(identity_cases, 2);
     let others: Vec<String> = entries
         .iter()
         .filter(|entry| *entry != seeded)
@@ -674,10 +665,9 @@ fn the_real_corpus_passes_and_the_seeded_copy_fails() {
 }
 
 /// FR-340-AC-8 and FR-340-AC-9: the corpus carries what the model file says, never a constant.
-/// After the model file is edited (its package version and its package
-/// identity, so its digest too) the corpus is generated again; the unit and
-/// both snapshots change together and name the edited values, and the gate
-/// still passes.
+/// After the model file is edited (its package identity) the corpus is
+/// generated again; the unit and both snapshots change together and name the
+/// edited identity, and the gate still passes.
 #[test]
 #[trace("TC-864", "FR-340-AC-8", "FR-340-AC-9")]
 fn the_generated_corpus_follows_the_model_file() {
@@ -689,26 +679,20 @@ fn the_generated_corpus_follows_the_model_file() {
     // names it (its own `identity`, module references and `ix://` type ids).
     let edited = original
         .replacen(
-            "\"version\": \"1.0.0\",\n    \"manifestDigest\"",
-            "\"version\": \"1.0.7\",\n    \"manifestDigest\"",
+            "\"version\": \"1.0.0\",
+    \"mappingVersions\"",
+            "\"version\": \"1.0.7\",
+    \"mappingVersions\"",
             1,
         )
         .replace("example/config-version", "example/config-version-b");
     assert_ne!(edited, original, "the model edit applies");
     fs::write(root.path().join(model), &edited).unwrap();
 
-    let before = real_corpus(&repository());
     let after = real_corpus(root.path());
     let read = |corpus: &tempfile::TempDir, name: &str| {
         fs::read_to_string(corpus.path().join("config-version-revision").join(name)).unwrap()
     };
-    let digest_of = |text: &str| {
-        let start = text.find("sha256-jcs:").expect("a digest") + "sha256-jcs:".len();
-        text[start..start + 64].to_owned()
-    };
-    let old_digest = digest_of(&read(&before, "unit.native"));
-    let new_digest = digest_of(&read(&after, "unit.native"));
-    assert_ne!(old_digest, new_digest, "the digest follows the model");
     for name in [
         "unit.native",
         "superseding.native",
@@ -716,22 +700,12 @@ fn the_generated_corpus_follows_the_model_file() {
         "violating-parent.json",
     ] {
         let text = read(&after, name);
-        assert_eq!(
-            digest_of(&text),
-            new_digest,
-            "{name} carries the new digest"
-        );
-        assert!(!text.contains(&old_digest), "{name} keeps no old digest");
-        assert!(
-            text.contains("1.0.7") && !text.contains("1.0.0"),
-            "{name} names the edited package version"
-        );
         assert!(
             text.contains("example/config-version-b"),
             "{name} names the edited package identity"
         );
     }
-    // The root holds only the model file: no committed digest is read.
+    // The root holds only the model file: nothing committed is read.
     let report = versioning::run(after.path(), root.path());
     assert_eq!(
         report.verdict,
@@ -905,12 +879,7 @@ fn cases_differing_only_in_their_self_object_have_distinct_names() {
 }
 
 fn dummy_reference(identity: &str) -> RawSourceRef {
-    RawSourceRef::new(
-        AUTHORITY,
-        identity,
-        DigestRecord::mint(DigestDomain::SourceBytesV1, [7; 32]),
-    )
-    .unwrap()
+    RawSourceRef::new(AUTHORITY, identity).unwrap()
 }
 
 fn side(class: &'static str, stage: &'static str) -> Option<SideReport> {

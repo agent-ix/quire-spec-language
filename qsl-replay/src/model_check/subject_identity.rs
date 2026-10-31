@@ -6,21 +6,17 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_eval::model_subject::ModelSubject;
 use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound, ProofBound};
-use qsl_package::{emit_checked, EmitRefusal};
-use qsl_semantics::library::PackageId;
 use quire_checked::key::DeclarationKey;
 use quire_exact::Integer;
 
 /// An initial state's document, as the identity reads it: the four source
-/// labels and the digest.
-type InitialState = (String, String, String, String, [u8; 32]);
+/// labels.
+type InitialState = (String, String, String, String);
 
 /// The identity projection of a [`ModelSubject`] (ADR-013 O-09, FR-336): what
 /// a verdict over the subject holds for.
 ///
-/// It is the subject's checked package (its canonical `package_id`, which
-/// covers every contract the successor relation reads, not only the clause's
-/// own nodes), the initial states, each population's universe, the digests of
+/// It is the initial states, each population's universe, the identities of
 /// the domain packages the package's model selections name, and the proof
 /// bounds. The order of the initial states, of a universe's keys and of the
 /// proof bounds is immaterial. The expansion limits, the evaluation meter,
@@ -29,10 +25,9 @@ type InitialState = (String, String, String, String, [u8; 32]);
 /// are no part of it.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct SubjectIdentity {
-    package: PackageId,
     initial: BTreeSet<InitialState>,
     universes: BTreeMap<DeclarationKey, BTreeSet<String>>,
-    packages: BTreeSet<[u8; 32]>,
+    packages: BTreeSet<String>,
     proof_bounds: BTreeSet<BoundKey>,
 }
 
@@ -61,23 +56,9 @@ fn bound_key(bound: &ProofBound) -> BoundKey {
     (bound.domain().clone(), bound.kind(), finite)
 }
 
-/// Why no [`SubjectIdentity`] was made.
-#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
-pub enum SubjectIdentityRefusal {
-    /// The subject's checked package has no emission, so no canonical
-    /// identity.
-    #[error(transparent)]
-    Package(#[from] EmitRefusal),
-}
-
 impl SubjectIdentity {
     /// The identity of `subject`.
-    ///
-    /// # Errors
-    ///
-    /// [`SubjectIdentityRefusal::Package`] when the subject's checked package
-    /// has no emission, so no canonical identity.
-    pub fn of(subject: &ModelSubject<'_>) -> Result<Self, SubjectIdentityRefusal> {
+    pub fn of(subject: &ModelSubject<'_>) -> Self {
         let simulation = &subject.simulation;
         let mut universes: BTreeMap<DeclarationKey, BTreeSet<String>> = BTreeMap::new();
         for universe in &simulation.universes {
@@ -86,9 +67,7 @@ impl SubjectIdentity {
                 .or_default()
                 .extend(universe.keys.iter().cloned());
         }
-        let package = emit_checked(simulation.package)?.package().package_id();
-        Ok(Self {
-            package,
+        Self {
             initial: simulation
                 .initial
                 .iter()
@@ -98,7 +77,6 @@ impl SubjectIdentity {
                         document.identity.clone(),
                         document.revision_namespace.clone(),
                         document.revision.clone(),
-                        document.digest,
                     )
                 })
                 .collect(),
@@ -108,10 +86,10 @@ impl SubjectIdentity {
                 .graph()
                 .model_selections()
                 .iter()
-                .map(|selection| selection.digest)
+                .map(|selection| selection.identity.clone())
                 .collect(),
             proof_bounds: subject.proof_bounds.iter().map(bound_key).collect(),
-        })
+        }
     }
 
     /// The key set of `population`'s universe; `None` when the subject

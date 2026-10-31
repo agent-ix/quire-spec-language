@@ -9,7 +9,8 @@ use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::{kernel_refusal_record, Locus};
 use quire_exact::{
     DecimalType, DivisionMember, IeeeFlag, IeeeWidth, InexactTarget, Integer, IntegerInterval,
-    Location, NodeKey, Origin, RationalDomain, Refusal, RoundingMode, TextProfile, TextType,
+    Location, NodeKey, Origin, PathSegment, RationalDomain, Refusal, RoundingMode, TextProfile,
+    TextType,
 };
 use quire_semantic_value::catalog::{CatalogCode, Category};
 
@@ -27,7 +28,7 @@ fn rational(lo: i64, hi: i64, dmin: i64, dmax: i64) -> Box<RationalDomain> {
 
 fn locus() -> Locus {
     Locus::Occurrence(Location::new(
-        NodeKey::from_digest([7; 32]),
+        NodeKey::new("pkg", vec![PathSegment::Text("n".into())], 7).expect("node key"),
         Origin::new("body".into(), 0),
     ))
 }

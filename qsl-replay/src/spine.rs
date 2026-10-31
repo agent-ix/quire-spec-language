@@ -16,7 +16,7 @@
 //! It lives in layer 6 `replay` because its callers are layer 6: `command`'s
 //! CLI `compile`, which writes the emitted bytes, and this crate's replay
 //! executor ([`crate::replay`]), which recompiles a replay request's
-//! source-label-selected source and keeps the in-process checked package
+//! digest-addressed source and keeps the in-process checked package
 //! (ADR-011 §2.1 E9). No layer below 6 may depend on S1 and S2 together
 //! (ADR-011 §6.1), and `replay` may not depend on `command`, so this is the
 //! one place the chain is written.
@@ -49,16 +49,15 @@ pub use lifecycle::{
     check, check_with_execution_points, package, parse, refusal_or_fault, select, AdmittedModels,
     CheckedUnit, EmittedUnit, FrontEndFailure, PackageLimits, ParseRequest, ParsedSource,
 };
-pub use qsl_semantics::check::LockEvidence;
 
 /// Accepted execution points keyed by the exact authored state-clause name
 /// (FR-104-AC-15). An absent entry means no point was supplied.
 pub type StateClauseExecutionPoints = BTreeMap<String, quire_contract_model::ExecutionPoint>;
 
 #[cfg(test)]
-pub(crate) use lifecycle::{compose, ComposedUnit};
+pub(crate) use lifecycle::composed_declaration;
 #[cfg(test)]
-pub(crate) use lifecycle::{composed_declaration, composed_here};
+pub(crate) use lifecycle::{compose, ComposedUnit};
 
 mod bind;
 pub use bind::{
@@ -356,7 +355,6 @@ impl CompileRefusal {
                 | Setting::ModelDerivationFacts
                 | Setting::ModelEffectiveDeclarations
                 | Setting::ModelDispatchCandidates
-                | Setting::ModelHashedBytes
                 | Setting::ModelWorkUnits
                 | Setting::ModelAncestorSteps
                 | Setting::ModelFamilySteps
@@ -502,9 +500,6 @@ fn forms_message(refusal: &FormsRefusal) -> String {
 /// A readable account of an I1 refusal.
 pub(crate) fn intake_message(cause: &UnitIntakeCause) -> String {
     match cause {
-        UnitIntakeCause::ArtifactDigest => {
-            "a `sha256:` digest selects a compiled-model artifact, not a domain package".to_owned()
-        }
         UnitIntakeCause::Refused(refusals) => {
             let first = &refusals[0];
             with_more(
@@ -1520,9 +1515,8 @@ fn display_path(path: &[LibraryName]) -> String {
 }
 
 /// One supplied library as its supplier names it (ADR-015 D-1; QSpec
-/// FR-307): its identity and its source unit. It carries no
-/// `package_id`: a library's `package_id` is the one its own compile yields
-/// (ADR-013 O-02).
+/// FR-307): its identity and its source unit. A library is identified by
+/// its [`LibraryName`](qsl_semantics::library::LibraryName).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SuppliedLibrary {
     /// The library identity, a non-empty string (ADR-015 D-3).
@@ -1848,6 +1842,9 @@ impl Default for DependencyLimits {
 mod dependency_tests;
 
 #[cfg(test)]
+pub(crate) mod fixture_ids;
+
+#[cfg(test)]
 pub(crate) mod spine_model;
 
 #[cfg(test)]
@@ -1880,8 +1877,10 @@ fn value_type_source(value_type: &quire_exact::ValueType) -> String {
                 mode => format!("{bare}[{}]", mode.as_str()),
             }
         }
-        ValueType::Quantity(unit) => format!("Quantity[{unit}]"),
-        ValueType::BoundedQuantity(bounded) => format!("BoundedQuantity[{}]", bounded.unit()),
+        ValueType::Quantity(unit) => format!("Quantity[{}]", unit_spelling(unit)),
+        ValueType::BoundedQuantity(bounded) => {
+            format!("BoundedQuantity[{}]", unit_spelling(bounded.unit()))
+        }
         ValueType::Map(map) => {
             let values = value_type_source(map.values());
             match map.bound() {
@@ -1922,10 +1921,30 @@ fn value_type_source(value_type: &quire_exact::ValueType) -> String {
                 None => format!("{kind}<{element}>"),
             }
         }
-        ValueType::Reference(id) => format!("Reference[{id}]"),
+        ValueType::Reference(id) => format!("Reference[{}]", effective_spelling(id)),
         ValueType::Population(Some(maximum)) => format!("Population<_>[{maximum}]"),
         ValueType::Population(None) => "Population<_>".to_owned(),
     }
+}
+
+/// A structural spelling of a unit: the declared node's key, or the
+/// compound terms as `key^exponent` factors.
+fn unit_spelling(unit: &quire_exact::UnitId) -> String {
+    if let Some(key) = unit.declared_key() {
+        return key.to_string();
+    }
+    unit.compound_terms()
+        .unwrap_or_default()
+        .iter()
+        .map(|(key, exponent)| format!("{key}^{exponent}"))
+        .collect::<Vec<_>>()
+        .join("*")
+}
+
+/// A structural spelling of an effective identity: its original declaration.
+pub(crate) fn effective_spelling(id: &quire_exact::EffectiveId) -> String {
+    let original = id.original();
+    format!("{}/{}", original.package(), original.node())
 }
 
 #[cfg(test)]
@@ -1977,14 +1996,21 @@ mod tests {
             super::value_type_source(&map(Some(bound))),
             "Map<Text, Boolean>[1, 4]"
         );
-        let unit = quire_exact::UnitId::compound([5; 32]);
+        let unit = quire_exact::UnitId::declared(
+            quire_exact::NodeKey::new(
+                "fixture",
+                vec![quire_exact::PathSegment::Text("unit".into())],
+                5,
+            )
+            .expect("a key"),
+        );
         let bounded = ValueType::BoundedQuantity(std::sync::Arc::new(
-            quire_exact::BoundedQuantityType::new(unit, None, None)
+            quire_exact::BoundedQuantityType::new(unit.clone(), None, None)
                 .expect("an unbounded bounded quantity type"),
         ));
         assert_eq!(
             super::value_type_source(&bounded),
-            format!("BoundedQuantity[{unit}]")
+            format!("BoundedQuantity[{}]", super::unit_spelling(&unit))
         );
     }
 
@@ -2503,6 +2529,12 @@ mod tests {
             ValueType::Integer,
             Some(CardinalityBound::new(1, 4).unwrap()),
         ));
+        let composite = NodeKey::new(
+            "fixture",
+            vec![quire_exact::PathSegment::Text("node".into())],
+            0xab,
+        )
+        .expect("a fixture key");
         let cases = [
             (
                 ValueType::Float(FloatType::exact(IeeeWidth::Binary64)),
@@ -2525,8 +2557,8 @@ mod tests {
                 "Option<Sequence<Integer>[1, 4]>",
             ),
             (
-                ValueType::Composite(NodeKey::from_digest([0xab; 32])),
-                &format!("Composite[{}]", "ab".repeat(32)),
+                ValueType::Composite(composite.clone()),
+                &format!("Composite[{composite}]"),
             ),
         ];
         for (value_type, expected) in cases {

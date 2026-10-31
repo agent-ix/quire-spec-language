@@ -7,11 +7,10 @@ use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
 use qsl_analyze::schedulability::manifest;
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::Span;
 use qsl_route::request::items_from_requirements;
-use qsl_route::{CandidateOutcome, ManifestDigest, ProviderOrigin, Registry};
+use qsl_route::{CandidateOutcome, ProviderOrigin, Registry};
 use qsl_semantics::check::{
     Capability, CheckedScheduleClaim, RequirementRecord, ScheduleClaim, SchedulingPolicy,
 };
@@ -32,8 +31,7 @@ fn en_7_registers_and_a_schedulability_claim_routes_to_it() {
     let mut registry = Registry::new();
     registry
         .register(
-            manifest::descriptor(ProviderOrigin::Linked, ManifestDigest::from_digest([7; 32]))
-                .expect("EN-7's manifest is admitted"),
+            manifest::descriptor(ProviderOrigin::Linked).expect("EN-7's manifest is admitted"),
         )
         .expect("EN-7 registers");
     let records: BTreeMap<OccurrenceKey, RequirementRecord> = [
@@ -44,12 +42,12 @@ fn en_7_registers_and_a_schedulability_claim_routes_to_it() {
     .map(|(name, policy, fill)| {
         (
             OccurrenceKey::new(
-                WireNodeId::from_digest([fill; 32]),
+                crate::fixture_ids::node_key([fill]),
                 Origin::new(Role::new("claim"), 0),
             ),
             RequirementRecord::model_claim(
                 claim(name, policy).requirements(),
-                WireNodeId::from_digest([99; 32]),
+                crate::fixture_ids::node_key([99]),
             ),
         )
     })

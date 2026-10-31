@@ -916,8 +916,8 @@ fn native_v2_emission_reaches_the_strict_reader_and_authenticated_l5_adapter() {
             emitted
                 .admitted()
                 .schema_model(0)
-                .map(|model| model.digest()),
-            Some(selected.models[0].model.digest())
+                .map(|model| model.artifact_bytes()),
+            Some(selected.models[0].model.artifact_bytes())
         );
         assert_eq!(package.temporal_bindings.len(), 3);
         assert!(package
@@ -935,8 +935,8 @@ fn native_v2_emission_reaches_the_strict_reader_and_authenticated_l5_adapter() {
         let admitted = read.result().expect("strict v2 reader");
         assert_eq!(admitted.package(), emitted.admitted().package());
         assert_eq!(
-            admitted.schema_model(0).map(|model| model.digest()),
-            Some(selected.models[0].model.digest())
+            admitted.schema_model(0).map(|model| model.artifact_bytes()),
+            Some(selected.models[0].model.artifact_bytes())
         );
         // Emission produces bytes before any caller publishes an identity for
         // them; the reader retains the identity it independently admitted.

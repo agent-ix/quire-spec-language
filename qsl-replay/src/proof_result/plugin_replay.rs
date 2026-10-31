@@ -11,6 +11,7 @@
 //! the application claim). Every other item is non-replayable and settles
 //! `inconclusive` with cause `replay-refused` (ADR-029 PL-7).
 
+use quire_exact::NodeKey;
 use std::collections::BTreeMap;
 
 use super::{InconclusiveCause, TerminalRecord, TerminalValue};
@@ -18,16 +19,14 @@ use crate::execute::{process_provider_obligation, BoundEntries, IdentityEncodeEr
 use crate::identity::{DeclaredDomain, QualifiedName, RawSourceRef};
 use crate::limits::CallerLimits;
 use crate::outcome::OutcomeDiagnostic;
-use crate::request::{DependencyEntryWire, ProvisionIdentity, ReplayRequestWire, StateEnvironment};
+use crate::request::{DependencyEntryWire, ReplayRequestWire, StateEnvironment};
 use crate::spine::{AdmittedModels, CheckedUnit, EmittedUnit};
 use crate::witness::{CanonicalAssignment, ReplaySource};
 use qsl_foundation::bound::ProofBound;
-use qsl_foundation::digest::{DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::source::{Source, SourceLabel};
 use qsl_foundation::{BackendId, Code, RequestIndex, Setting, SettingLimits};
 use qsl_semantics::check::Capability;
-use qsl_semantics::library::PackageId;
 use quire_exact::{Identifier, Origin, Role, ScalarLimits, ValueType};
 use quire_semantic_value::catalog::InternalFault;
 
@@ -50,32 +49,30 @@ struct FunctionDeclaration {
 #[derive(Clone, Debug)]
 struct DependencySelection {
     identity: String,
-    package_id: DigestRecord,
     source: Option<RawSourceRef>,
 }
 
 /// The package-wide members of a plugin counterexample's replay request
 /// (FR-290 "Replay context"). It copies what it needs from the units and
 /// refuses nothing: a pair of units that do not match is caught by the
-/// replay's own recompile, which requires the recompiled `package_id` to
-/// equal the request's (FR-098).
+/// replay's own recompile (FR-098).
 #[derive(Clone, Debug)]
 pub struct PluginReplayContext {
-    package_id: DigestRecord,
+    package_name: String,
     source: RawSourceRef,
     dependencies: Vec<DependencySelection>,
-    functions: BTreeMap<WireNodeId, FunctionDeclaration>,
+    functions: BTreeMap<NodeKey, FunctionDeclaration>,
     /// Every requirement record of the package, with the function whose
     /// application claim it is when `replay` can select that function by
     /// name: a `value-validity` record owned by a callable function.
     requirements: BTreeMap<OccurrenceKey, Option<Identifier>>,
-    byte_provision: Vec<(ProvisionIdentity, Vec<u8>)>,
+    byte_provision: Vec<(String, String, Vec<u8>)>,
+    documents: Vec<Vec<u8>>,
     stage_limits: BTreeMap<String, u64>,
     accounting_limits: ScalarLimits,
 }
 
-/// The reference a replay request names `source` by: its four FR-001 labels
-/// and its `quire.source.bytes/v1` digest.
+/// The reference a replay request names `source` by: its four FR-001 labels.
 fn source_reference(source: &Source) -> RawSourceRef {
     let identity = source.identity();
     RawSourceRef::new(
@@ -83,7 +80,6 @@ fn source_reference(source: &Source) -> RawSourceRef {
         identity.label(SourceLabel::Identity).to_owned(),
         identity.label(SourceLabel::RevisionNamespace).to_owned(),
         identity.label(SourceLabel::Revision).to_owned(),
-        source.reference().digest(),
     )
 }
 
@@ -106,7 +102,7 @@ impl PluginReplayContext {
                 let callable = graph.callable(state.name)?;
                 let name = Identifier::new(state.name).ok();
                 Some((
-                    WireNodeId::from_digest(*callable.identity.as_bytes()),
+                    callable.identity.clone(),
                     FunctionDeclaration {
                         name,
                         predicate: *callable.result == ValueType::Boolean,
@@ -117,24 +113,27 @@ impl PluginReplayContext {
         let dependencies = checked
             .package()
             .dependency_selections()
-            .iter()
-            .map(|(identity, resolved)| DependencySelection {
+            .keys()
+            .map(|identity| DependencySelection {
                 identity: identity.as_str().to_owned(),
-                package_id: resolved.package_id.record(),
                 source: checked.library_source(identity).map(source_reference),
             })
             .collect();
         let sources = emitted.sources().iter().map(|source| {
             (
-                ProvisionIdentity::Source(source.identity().clone()),
+                (
+                    source.reference().authority().to_owned(),
+                    source.reference().identity().to_owned(),
+                ),
                 source.text().as_bytes().to_vec(),
             )
         });
-        let documents = models
-            .packages()
-            .values()
-            .map(|bytes| (ProvisionIdentity::DomainPackage, bytes.clone()));
-        let byte_provision = sources.chain(documents).collect();
+        let documents: Vec<Vec<u8>> = models.packages().values().cloned().collect();
+        let byte_provision = sources
+            .collect::<BTreeMap<_, _>>()
+            .into_iter()
+            .map(|((authority, identity), bytes)| (authority, identity, bytes))
+            .collect();
         let stage_limits = limits
             .bounds()
             .into_iter()
@@ -147,7 +146,7 @@ impl PluginReplayContext {
             .map(|(setting, bound)| (setting.name().to_owned(), bound))
             .collect();
         Self {
-            package_id: emitted.package().package_id().record(),
+            package_name: graph.package_name().to_owned(),
             source: source_reference(checked.source()),
             dependencies,
             functions,
@@ -164,6 +163,7 @@ impl PluginReplayContext {
                 })
                 .collect(),
             byte_provision,
+            documents,
             stage_limits,
             accounting_limits: limits.accounting.0,
         }
@@ -195,7 +195,7 @@ impl PluginReplayContext {
     ) -> Result<ReplayRequestWire, PluginReplayRefusal> {
         let declaration = Origin::new(Role::new(DECLARATION_ROLE), 0);
         let function = (occurrence.origin() == &declaration)
-            .then(|| self.functions.get(&occurrence.node()))
+            .then(|| self.functions.get(occurrence.node()))
             .flatten();
         let record = self.requirements.get(occurrence);
         if function.is_none() && record.is_none() {
@@ -225,10 +225,6 @@ impl PluginReplayContext {
                 })?;
                 Ok(DependencyEntryWire {
                     identity: selection.identity.clone(),
-                    package_id: (
-                        Some(selection.package_id.domain().as_str().to_owned()),
-                        selection.package_id.hex(),
-                    ),
                     sources: vec![source.to_wire()],
                 })
             })
@@ -262,19 +258,16 @@ impl PluginReplayContext {
         let name = name.ok_or_else(fault)?;
         let selected_function = QualifiedName::new(vec![name]).map_err(|_| fault())?;
         Ok(ReplayRequestWire {
+            package_name: self.package_name.clone(),
             profile_selections: Vec::new(),
-            package_id: (
-                Some(self.package_id.domain().as_str().to_owned()),
-                self.package_id.hex(),
-            ),
-            source_digests: vec![self.source.to_wire()],
+            sources: vec![self.source.to_wire()],
             dependencies,
             replay_target: crate::RequestTargetWire::function(
                 selected_function,
                 occurrence.clone(),
             ),
             source: ReplaySource::Input(assignments),
-            obligation_identity: *obligation.as_bytes(),
+            obligation_identity: obligation.clone(),
             backend: plugin.as_str().to_owned(),
             state_environment: StateEnvironment::new(Vec::new()),
             accounting_limits: self.accounting_limits,
@@ -287,6 +280,7 @@ impl PluginReplayContext {
                 .map(DeclaredDomain::new)
                 .collect(),
             byte_provision: self.byte_provision.clone(),
+            documents: self.documents.clone(),
         })
     }
 }
@@ -329,16 +323,6 @@ pub enum PluginReplayRefusal {
         /// The repeated key, in its display form.
         key: String,
     },
-    /// The request names a `package_id` other than the run's (FR-404). A node's
-    /// occurrence key carries no package, so only the pairing key tells two
-    /// runs that hold the same function apart.
-    #[error("stale_dependency/content-mismatch: the request names package {} but the run is package {}", received.hex(), run.hex())]
-    ForeignRun {
-        /// The `package_id` the request named.
-        received: PackageId,
-        /// The run's `package_id`.
-        run: PackageId,
-    },
     /// The request index is no member of the run's call: a record of the
     /// package that belongs to another function, or an index past the
     /// package's records (FR-404).
@@ -362,7 +346,6 @@ impl PluginReplayRefusal {
             Self::NotReplayable { .. } => (Code::UnknownRequiredFeature, "unsupported-feature"),
             Self::UnresolvedDependency { .. } => (Code::MissingImport, "missing-selection"),
             Self::DuplicateBoundKey { .. } => (Code::InvalidRuntimeInput, "duplicate-member"),
-            Self::ForeignRun { .. } => (Code::StaleDependency, "content-mismatch"),
             Self::NotACallItem { .. } => (Code::MissingDeclaration, "missing-name"),
             Self::Fault(_) => (Code::RuntimeInvariant, "established-invariant-broken"),
         };
@@ -391,7 +374,6 @@ impl PluginReplayRefusal {
             Self::UnknownOccurrence { .. }
             | Self::UnresolvedDependency { .. }
             | Self::DuplicateBoundKey { .. }
-            | Self::ForeignRun { .. }
             | Self::NotACallItem { .. }
             | Self::Fault(_) => TerminalRecord::failed(request_index, plugin),
         }

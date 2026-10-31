@@ -4,7 +4,7 @@
 #
 #   examples/config-version/requests.sh /tmp/config-version/healthy-parent ParentOrder
 #
-# Both requests select the case's 1-draft unit and its domain model by identity labels;
+# Both requests select the case's 1-draft unit and its domain model by identity;
 # run.json checks CLAUSE for the object keyed "child" in the current snapshot.
 set -eu
 dir=$1

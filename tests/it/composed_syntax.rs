@@ -11,10 +11,10 @@ use quire_spec_language::syntax::{BinaryOp, ExprId, ExprKind};
 use quire_spec_language::{parse, parse_native, parse_native_source, Limits};
 
 const HEADER: &str = r#"language "ix:native" edition "1-draft";
-profile S = "quire.state.graph/v1" version "test:state" digest "unresolved-state";
-profile T = "quire.temporal.timestamped-event.finite-window/v1" version "test:temporal" digest "unresolved-temporal";
-profile P = "quire.protocol.finite-global/v1" version "test:protocol" digest "unresolved-protocol";
-model M = "test:orders-and-refunds" version "test:model" digest "unresolved-model";
+profile S = "quire.state.graph/v1";
+profile T = "quire.temporal.timestamped-event.finite-window/v1";
+profile P = "quire.protocol.finite-global/v1";
+model M = "test:orders-and-refunds";
 "#;
 const PREDICATE: &str =
     "predicate RefundMatches using S (v: M::OrderView): Boolean { v.refund = v.paid }";
@@ -349,7 +349,7 @@ fn keyword_classification_is_edition_and_position_specific() {
             .value,
         "retrying"
     );
-    let historical = "language \"ix:native\" edition \"0-draft\"; profile \"state-finite/0-draft\"; model M = \"test:model\" version \"1\" digest \"unresolved\"; invariant Test on M::Thing at current { let retry = true in retry }";
+    let historical = "language \"ix:native\" edition \"0-draft\"; profile \"state-finite/0-draft\"; model M = \"test:model\"; invariant Test on M::Thing at current { let retry = true in retry }";
     let NativeUnit::Historical(selected) = read(historical, Limits::default()).unwrap() else {
         panic!("historical edition");
     };
@@ -360,7 +360,7 @@ fn keyword_classification_is_edition_and_position_specific() {
         Limits::default(),
     )
     .unwrap();
-    assert_eq!(selected.source().digest(), original.source().digest());
+    assert_eq!(selected.source().identity(), original.source().identity());
 }
 
 #[test]
@@ -477,12 +477,12 @@ fn negative_and_unbounded_choreography_counts_refuse_as_unsigned_syntax() {
 #[test]
 #[trace("TC-113", "FR-035-AC-5")]
 fn exact_small_limits_admit_and_each_next_charge_refuses() {
-    // 25 authored tokens; one profile, one declaration and one Boolean node.
+    // 21 authored tokens; one profile, one declaration and one Boolean node.
     // The existing value parser enters expression and precedence contexts.
-    let text = "language \"ix:native\" edition \"1-draft\"; profile S = \"test:profile\" version \"1\" digest \"unresolved\"; predicate P using S(): Boolean { true }";
+    let text = "language \"ix:native\" edition \"1-draft\"; profile S = \"test:profile\"; predicate P using S(): Boolean { true }";
     let exact = Limits {
         source_bytes: text.len(),
-        tokens: 25,
+        tokens: 21,
         nodes: 3,
     };
     let NativeUnit::Composed(parsed) = read(text, exact).unwrap() else {
@@ -502,7 +502,7 @@ fn exact_small_limits_admit_and_each_next_charge_refuses() {
         ),
         (
             Limits {
-                tokens: 24,
+                tokens: 20,
                 ..exact
             },
             Phase::Lex,

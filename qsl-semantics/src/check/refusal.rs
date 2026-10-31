@@ -1245,9 +1245,11 @@ pub enum UnwrittenTimedMember {
     /// present(e))`), whose quantifier over the collection's slots has no
     /// checked form until STD-554.
     ElementPresence,
-    /// A postcondition's requirement on a clock place's presence, which no
-    /// FR-322 clause form carries.
-    PresenceRequirement,
+    /// A postcondition requiring a clock presence by a comparison with
+    /// `absent` (`self.v != absent`, `not (self.v = absent)`), whose
+    /// `presence_read` S3 does not write yet; `present(self.v)` is written
+    /// (QSpec FR-322 `CW-05`).
+    ComparedPresence,
     /// A reset of an element clock that no single binder selects: a clock
     /// below two collections, or an element named by position.
     ElementReset,
@@ -1266,7 +1268,9 @@ impl UnwrittenTimedMember {
             Self::ElementPresence => {
                 "a predicate reading a clock collection's element presences waits on STD-554"
             }
-            Self::PresenceRequirement => "a postcondition requiring a clock presence",
+            Self::ComparedPresence => {
+                "a postcondition requiring a clock presence by comparison with `absent`"
+            }
             Self::ElementReset => "a reset of an element clock no single binder selects",
         }
     }
@@ -2394,7 +2398,6 @@ impl TryFrom<Setting> for CheckingLimitKind {
             | Setting::ModelDerivationFacts
             | Setting::ModelEffectiveDeclarations
             | Setting::ModelDispatchCandidates
-            | Setting::ModelHashedBytes
             | Setting::ModelWorkUnits
             | Setting::ModelAncestorSteps
             | Setting::ModelFamilySteps
@@ -2731,10 +2734,9 @@ pub enum CheckCause {
     InvalidDispatchDeclaration(Box<InvalidDispatchDeclaration>),
     /// `missing_declaration` / `missing-selection` (FR-093): a lowered
     /// operation or leaf needs a profile law whose `DefinitionRef` the
-    /// package's lock evidence does not supply. `check` writes no law from a
-    /// constant (ADR-011 §2.4), so the node is not built.
+    /// package does not select, so the node is not built.
     MissingSelection {
-        /// The law role the lock evidence does not select.
+        /// The law role the package does not select.
         role: super::node_key::LawRole,
     },
     /// `unknown_required_feature` / `unsupported-feature` (FR-092 "Recursion
@@ -2908,10 +2910,14 @@ pub enum KeyFault {
     /// one version of each (FR-094, ADR-013 O-01).
     DuplicateModelSelection(String),
     /// A selected model package's `model_root` node has no key.
-    ModelRootKey(super::lowering::ModelRootKeyError),
+    /// The text of the key formation refusal.
+    ModelRootKey(String),
     /// An admitted enum declaration or member whose nominal preimage has no
     /// RFC 8785 encoding.
     NonCanonicalNominal(quire_exact::NodeKey),
+    /// A union or enum declaration whose member has no valid structural key:
+    /// the declaration's path extended by the member name is not a node key.
+    InvalidMemberKey(quire_exact::NodeKey),
     /// A family `check` reported a stage limit whose setting no checking
     /// limit has.
     UncheckedLimit(Setting),
@@ -2962,6 +2968,7 @@ impl KeyFault {
             Self::DuplicateModelSelection(_) => "one-model-version-per-identity",
             Self::ModelRootKey(_) => "model-root-keyed",
             Self::NonCanonicalNominal(_) => "nominal-preimage-canonical",
+            Self::InvalidMemberKey(_) => "member-key-valid",
             Self::UncheckedLimit(_) => "family-limit-is-a-checking-limit",
             Self::UnkeyableRequirements => "requirements-item-keyed",
             Self::UnclassifiedExtent(fault) | Self::StageFault(fault) => fault.invariant(),

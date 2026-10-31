@@ -12,7 +12,7 @@
 //! `MemberPath`; the reader names it in each refusal's detail until then.
 
 use ix_trace_rs::trace;
-use qsl_foundation::{ByteDigest, Code, IntakeLimits};
+use qsl_foundation::{Code, IntakeLimits};
 use qsl_semantics::check::AssemblyCause;
 use qsl_semantics::model::accounting::{Meter, ModelNormalizationLimits};
 use qsl_semantics::model::admitted::{AdmittedPackage, DeclarationKind};
@@ -20,9 +20,7 @@ use qsl_semantics::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, EnumRecord, ValueTypeRef, VariantRecord,
 };
 use qsl_semantics::model::intake::{admit, meaning, package_input, read_domain_package};
-use qsl_semantics::model::key::{
-    hex, EffectiveDeclarationPreimage, RULE_QUALIFY, SHA256_JCS_DIGEST_DOMAIN,
-};
+use qsl_semantics::model::key::{EffectiveDeclarationPreimage, RULE_QUALIFY};
 use qsl_semantics::model::normalize::{
     normalize_with_meter, EffectiveView, ModelRefusal, ModelRefusalCause, NormalizeOutcome,
 };
@@ -74,7 +72,6 @@ fn construct(name: &str, meaning: &str, shape: &str, members: Value) -> Value {
     json!({
         "kind": {"module": MODULE, "name": name},
         "moduleVersion": "1.0.0",
-        "manifestDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
         "construct": {
             "identity": "none", "shape": shape, "members": members, "meaning": meaning,
         },
@@ -117,25 +114,17 @@ fn variant_type(name: &str, cases: Vec<Value>) -> Value {
     definition(name, "variant_type", json!({"variants": cases}))
 }
 
-fn document(mut constructs: Vec<Value>, types: Vec<Value>) -> Value {
-    // The wire requires content digests; bind them to the authored types.
-    let digest = format!(
-        "sha256:{}",
-        hex(&ByteDigest::of(&serde_json::to_vec(&types).unwrap()).as_bytes())
-    );
-    for construct in &mut constructs {
-        construct["manifestDigest"] = json!(digest);
-    }
+fn document(constructs: Vec<Value>, types: Vec<Value>) -> Value {
     json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
         "source": {
             "identity": id("spec"), "version": "1.0.0",
-            "dialect": "spec-bundle", "digest": digest,
+            "dialect": "spec-bundle"
         },
         "package": {
-            "identity": P, "version": "1.0.0", "manifestDigest": digest,
-            "mappingVersions": [], "profileVersions": [], "lockDigest": digest,
+            "identity": P, "version": "1.0.0",
+            "mappingVersions": [], "profileVersions": [],
         },
         "constructs": constructs, "types": types, "occurrences": [], "extensions": [],
     })
@@ -159,16 +148,12 @@ fn tiers(tier_cases: &[&str]) -> Value {
 
 fn read(document: &Value) -> Result<DomainPackage, Vec<ModelRefusal>> {
     let bytes = serde_json::to_vec(document).expect("authored document serializes");
-    let packages = package_input([bytes.as_slice()]);
-    let digest = *packages.keys().next().expect("one authored package");
+    let packages = package_input([bytes.as_slice()]).unwrap();
     let selection = DomainPackageRef {
         identity: document["package"]["identity"].as_str().unwrap().to_owned(),
-        version: document["package"]["version"].as_str().unwrap().to_owned(),
-        digest,
     };
     let (selection, admitted) = admit(
-        &selection,
-        SHA256_JCS_DIGEST_DOMAIN,
+        selection.identity.as_str(),
         &packages,
         IntakeLimits::default(),
     )
@@ -971,10 +956,10 @@ fn a_variant_type_and_its_cases_have_effective_identities() {
     }
     assert_eq!(identities.len(), 2, "only the variant types are types");
 
-    let tier = identities[&key("Tier")];
-    let level = identities[&key("Level")];
+    let tier = identities[&key("Tier")].clone();
+    let level = identities[&key("Level")].clone();
     for (owner, node) in [
-        (tier, "variant/Tier-Gold"),
+        (tier.clone(), "variant/Tier-Gold"),
         (tier, "variant/Tier-Standard"),
         (level, "variant/Level-Gold"),
     ] {
@@ -1013,13 +998,17 @@ fn reordering_the_cases_changes_no_effective_identity() {
 #[test]
 fn cases_differing_in_letter_case_have_distinct_effective_identities() {
     let view = view_of(&tiers(&["Gold", "gold"]));
-    let upper = entry_of(&view, &key("variant/Tier-Gold")).effective_id;
-    let lower = entry_of(&view, &key("variant/Tier-gold")).effective_id;
+    let upper = entry_of(&view, &key("variant/Tier-Gold"))
+        .effective_id
+        .clone();
+    let lower = entry_of(&view, &key("variant/Tier-gold"))
+        .effective_id
+        .clone();
     assert_ne!(upper, lower);
     let ids: std::collections::BTreeSet<EffectiveId> = view
         .declarations()
         .iter()
-        .map(|entry| entry.effective_id)
+        .map(|entry| entry.effective_id.clone())
         .collect();
     assert_eq!(ids.len(), view.declarations().len());
 }

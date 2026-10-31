@@ -593,7 +593,7 @@ fn with_hyper_replay<T>(
             })?;
         let DomainKey::Population { ordinal, .. } = package
             .graph()
-            .population_key(parameter.population)
+            .population_key(parameter.population.clone())
             .map_err(ReplayRefusal::Fault)?
         else {
             return Err(ReplayRefusal::Fault(

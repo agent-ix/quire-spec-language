@@ -10,44 +10,36 @@ use qsl_foundation::Code;
 use quire_contract_model::{CheckedPackageRefusalCause, CheckedPackageRefusalCode};
 
 use super::*;
-use crate::checked_v2::tests::rekey_stale;
+
 use crate::checked_v2::V2ReadRefusal;
 
 #[path = "../../../../qsl-semantics/tests/support/receiver_frames.rs"]
 pub(super) mod fixture;
 
-const NODE_DOMAIN: &str = "quire.checked-semantic-node/v1";
-
 struct Emitted {
-    emission: Emission,
     wire: Value,
     evidence: CheckedPackageEvidence,
 }
 
 /// What [`unit_of`] builds: the unit text, the package document, the package
-/// input keyed by digest, and the hex digest the unit pins the package by.
+/// input keyed by identity.
 struct UnitParts {
     unit: String,
     document: Vec<u8>,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
-    digest: String,
+    packages: qsl_semantics::model::intake::PackageInput,
 }
 
 /// The unit text selecting the package holding `operations` of `Counter`
 /// (each named by its own postcondition clause) with the frames of
-/// `overrides`, the package document, and the digest the unit pins it by.
+/// `overrides`, and the package document.
 fn unit_of(operations: &[&str], overrides: &[(&str, Value)]) -> UnitParts {
     let document = serde_json::to_vec(&fixture::document(operations, overrides))
         .expect("the fixture serializes");
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    let digest = qsl_semantics::model::key::hex(digest);
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
-         model M = {package:?} version \"1\" digest \"sha256-jcs:{digest}\";\n\
+         model M = {package:?};\n\
          {posts}",
         package = fixture::PACKAGE,
         posts = fixture::posts(operations),
@@ -56,7 +48,6 @@ fn unit_of(operations: &[&str], overrides: &[(&str, Value)]) -> UnitParts {
         unit,
         document,
         packages,
-        digest,
     }
 }
 
@@ -67,7 +58,6 @@ fn emit(operations: &[&str], overrides: &[(&str, Value)]) -> Emitted {
         unit,
         document,
         packages,
-        digest,
     } = unit_of(operations, overrides);
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
@@ -81,26 +71,19 @@ fn emit(operations: &[&str], overrides: &[(&str, Value)]) -> Emitted {
         evidence.support_feature(feature.as_str().unwrap());
     }
     evidence
-        .insert_domain_package_document(digest.as_str(), document.as_slice())
+        .insert_domain_package_document(package_identity(&document), document.as_slice())
         .expect("a fresh evidence key");
-    Emitted {
-        emission,
-        wire,
-        evidence,
-    }
+    Emitted { wire, evidence }
 }
 
 impl Emitted {
-    /// QSL's I2 read of `envelope` as the package pinned at its own
-    /// recomputed `package_id`.
+    /// QSL's I2 read of `envelope` as the package it names.
     fn read_envelope(&self, envelope: &Value) -> Read {
-        let package_id = crate::checked_v2::tests::derived_package_id(envelope);
         read_v2(
             &jcs(envelope),
             library(),
             V2ReadLimits::default(),
             &self.evidence,
-            &qsl_semantics::library::fixtures::single_pin(library(), package_id),
         )
     }
 
@@ -146,7 +129,7 @@ impl Emitted {
 
 /// The NodeRef object `<Counter>` stands for.
 fn node_ref(id: &Value) -> Value {
-    json!({"digest": id["digest"], "domain": NODE_DOMAIN})
+    id.clone()
 }
 
 /// The frame body vectors W1 to W6 over `counter` (`<Counter>`).
@@ -205,12 +188,11 @@ fn the_frame_bodies_of_scoped_entries_are_the_wire_vectors() {
 
 /// FR-154-AC-7, FR-105 (TC-1043 steps 1 and 2): `own`, `all` and `drop` are
 /// vectors W4, W5 and W6; frames differing only by one entry's scope, or only
-/// by `deletes self`, have different node ids; two packages differing only by
-/// that one scope have different `package_id`s; a frame of type-wide entries
+/// by `deletes self`, have different node ids; a frame of type-wide entries
 /// carries `deletes_scoped: []` and every field entry `every-object`.
 #[trace("TC-1043", "FR-154-AC-7")]
 #[test]
-fn a_scope_or_a_scoped_delete_changes_the_node_id_and_the_package_id() {
+fn a_scope_or_a_scoped_delete_changes_the_node_id() {
     let emitted = emit(&ALL, &[]);
     let counter = emitted.counter();
     let [_, _, w3, w4, w5, w6] = vectors(&counter);
@@ -221,20 +203,6 @@ fn a_scope_or_a_scoped_delete_changes_the_node_id_and_the_package_id() {
     assert_ne!(emitted.frame_id("drop"), emitted.frame_id("noop"));
     assert_eq!(emitted.frame("noop")["body"], w3);
     assert_eq!(emitted.frame("all")["body"]["deletes_scoped"], json!([]));
-
-    let without_all: Vec<&str> = ALL.iter().copied().filter(|name| *name != "all").collect();
-    let b1 = emit(&without_all, &[]);
-    let b2 = emit(
-        &without_all,
-        &[(
-            "own",
-            json!({"modifies": [fixture::id("Counter/value")], "creates": [], "deletes": []}),
-        )],
-    );
-    assert_ne!(
-        b1.emission.package().package_id(),
-        b2.emission.package().package_id()
-    );
 }
 
 /// FR-154-AC-4 (TC-573): the frame node of an operation under `modifies self.value`
@@ -334,8 +302,8 @@ fn equal_frames_share_one_node_with_an_occurrence_per_operation() {
 }
 
 /// Edits the frame node of `operation` in a copy of the emitted package by
-/// `edit`, re-keys the node, its anchor and their dependents, and recomputes
-/// the `package_id`, then reads the copy (TC-1043 step 4).
+/// `edit`, re-keys the node, its anchor and their dependents, then reads the
+/// copy (TC-1043 step 4).
 fn read_edited(emitted: &Emitted, operation: &str, edit: impl FnOnce(&mut Value)) -> Read {
     let id = emitted.frame_id(operation);
     let mut envelope = emitted.wire.clone();
@@ -346,7 +314,6 @@ fn read_edited(emitted: &Emitted, operation: &str, edit: impl FnOnce(&mut Value)
         .find(|node| node["node_id"] == id)
         .expect("the frame node");
     edit(&mut node["body"]);
-    rekey_stale(&mut envelope);
     emitted.read_envelope(&envelope)
 }
 
@@ -440,49 +407,13 @@ fn a_misordered_deletes_scoped_and_an_unknown_parameter_refuse() {
     let Read::Refused(V2ReadRefusal::Envelope { refusal, .. }) = &x6 else {
         panic!("{x6:?}");
     };
-    let rekeyed = frame_with_parameter_c(&emitted);
     assert_eq!(
-        refusal.locus.as_ref().map(|node| node.digest.as_ref()),
-        Some(rekeyed.as_str())
+        refusal
+            .locus
+            .as_ref()
+            .map(|node| serde_json::to_value(node).expect("a node id serialises")),
+        Some(emitted.frame_id("merge"))
     );
-}
-
-/// The digest of the re-keyed frame node holding X6's `parameter c` entry.
-fn frame_with_parameter_c(emitted: &Emitted) -> String {
-    let mut envelope = emitted.wire.clone();
-    let id = emitted.frame_id("merge");
-    let node = envelope["semantic_graph"]["nodes"]
-        .as_array_mut()
-        .expect("nodes")
-        .iter_mut()
-        .find(|node| node["node_id"] == id)
-        .expect("the frame node");
-    node["body"]["deletes_scoped"] = json!([
-        {"kind": "receiver"},
-        {"kind": "parameter", "name": "a"},
-        {"kind": "parameter", "name": "b"},
-        {"kind": "parameter", "name": "c"},
-    ]);
-    rekey_stale(&mut envelope);
-    let nodes = envelope["semantic_graph"]["nodes"]
-        .as_array()
-        .expect("nodes");
-    let frames: Vec<&Value> = nodes
-        .iter()
-        .filter(|node| {
-            node["semantic_form"] == "frame"
-                && node["body"]["deletes_scoped"]
-                    .as_array()
-                    .is_some_and(|entries| entries.len() == 4)
-        })
-        .collect();
-    let [frame] = frames[..] else {
-        panic!("one re-keyed frame: {frames:#?}");
-    };
-    frame["node_id"]["digest"]
-        .as_str()
-        .expect("digest")
-        .to_owned()
 }
 
 /// FR-154-AC-10 (X7 to X9): the body of W1 re-keyed is admitted; two entries
@@ -551,17 +482,12 @@ fn a_deletes_self_frame_grants_the_receiver_only_and_differs_from_deletes_type()
     );
 
     let parts = unit_of(&operations, &overrides);
-    let [(digest, _)] = parts.packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
+    assert_eq!(parts.packages.len(), 1, "one supplied document");
     let selection = DomainPackageRef {
         identity: fixture::PACKAGE.to_owned(),
-        version: "1".to_owned(),
-        digest: *digest,
     };
     let (selection, document) = admit(
-        &selection,
-        qsl_semantics::model::key::SHA256_JCS_DIGEST_DOMAIN,
+        selection.identity.as_str(),
         &parts.packages,
         qsl_foundation::IntakeLimits::default(),
     )
@@ -686,7 +612,6 @@ fn execution_point_on_clause_and_anchor_reads_back() {
         }
     }
     assert_eq!((clause, anchor), (1, 1));
-    rekey_stale(&mut envelope);
     assert!(
         matches!(emitted.read_envelope(&envelope), Read::Verified { .. }),
         "the exact clause and anchor carriers read back together"
@@ -722,17 +647,13 @@ fn constraint_state_clause_reads_back_as_a_distinct_kind() {
         evidence.support_feature(feature.as_str().unwrap());
     }
     evidence
-        .insert_domain_package_document(parts.digest.as_str(), parts.document.as_slice())
+        .insert_domain_package_document(
+            package_identity(&parts.document),
+            parts.document.as_slice(),
+        )
         .expect("a fresh evidence key");
-    let package_id = crate::checked_v2::tests::derived_package_id(&wire);
     assert!(matches!(
-        read_v2(
-            &jcs(&wire),
-            library(),
-            V2ReadLimits::default(),
-            &evidence,
-            &qsl_semantics::library::fixtures::single_pin(library(), package_id),
-        ),
+        read_v2(&jcs(&wire), library(), V2ReadLimits::default(), &evidence,),
         Read::Verified { .. }
     ));
 }

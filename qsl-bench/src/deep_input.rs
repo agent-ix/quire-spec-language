@@ -17,8 +17,7 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
 use qsl_replay::spine::{
-    DependencyInput, EmittedUnit, FrontEndFailure, LockEvidence, PackageLimits, ParseRequest,
-    SpineLimits,
+    DependencyInput, EmittedUnit, FrontEndFailure, PackageLimits, ParseRequest, SpineLimits,
 };
 use qsl_replay::SourceIdentity;
 use quire_exact::Cancel;
@@ -221,9 +220,9 @@ impl DeepInput {
         let models = select(&parsed, &BTreeMap::new(), limits.model, &cancel)?.into_value();
         let checked = check(
             &parsed,
+            String::from("qsl-bench"),
             &models,
             &DependencyInput::default(),
-            &LockEvidence::default(),
             limits,
             &cancel,
         )?

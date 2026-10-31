@@ -23,17 +23,16 @@ use qsl_eval::simulation::protocol::{
 };
 use qsl_eval::simulation::{independent, Location, SubjectSystem, TransitionSystem};
 use qsl_eval::temporal::AtomReading;
-use qsl_foundation::digest::{DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
-use qsl_foundation::{MemoryModelName, SourceIdentity};
+use qsl_foundation::MemoryModelName;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
-    compile_package, replay_protocol_trace, settle_protocol_check, DependencyInput,
-    InconclusiveCause, MemoryBound, MemoryBoundMember, MemoryCause, ModelCheckItem,
-    ModelCheckLimits, ModelCheckOutcome, ModelCheckRecord, ModelTraceRefusal,
-    ModelTraceReplayResult, ModelTraceSettlement, ModelTraceSubject, ProtocolCertificateRequest,
-    ProtocolTraceSubject, ReplayLimits, ReplayRefusal, ResultLabel, StatedMemoryBound,
-    TemporalCounterexample, TerminalValue, UnavailabilityCause, UndecidedCause, WeakAccessFailure,
+    replay_protocol_trace, settle_protocol_check, InconclusiveCause, MemoryBound,
+    MemoryBoundMember, MemoryCause, ModelCheckItem, ModelCheckLimits, ModelCheckOutcome,
+    ModelCheckRecord, ModelTraceRefusal, ModelTraceReplayResult, ModelTraceSettlement,
+    ModelTraceSubject, ProtocolCertificateRequest, ProtocolTraceSubject, ReplayLimits,
+    ReplayRefusal, ResultLabel, StatedMemoryBound, TemporalCounterexample, TerminalValue,
+    UnavailabilityCause, UndecidedCause, WeakAccessFailure,
 };
 use qsl_route::model_request::ModelRequest;
 use qsl_semantics::check::{AccessClass, FormulaNodeId};
@@ -254,7 +253,6 @@ impl Case {
         settle_protocol_check(
             outcome,
             &ModelCheckLimits::default(),
-            &self.package_id(),
             &ProtocolCertificateRequest {
                 subject,
                 item: ModelCheckItem::DeadlockFreedom,
@@ -286,7 +284,6 @@ impl Case {
         settle_protocol_check(
             outcome,
             &ModelCheckLimits::default(),
-            &self.package_id(),
             &ProtocolCertificateRequest {
                 subject: self.subject(selection),
                 item,
@@ -309,7 +306,6 @@ impl Case {
         settle_protocol_check(
             outcome,
             &ModelCheckLimits::default(),
-            &self.package_id(),
             &ProtocolCertificateRequest {
                 subject: self.subject(selection),
                 item: ModelCheckItem::RaceFreedom,
@@ -330,30 +326,14 @@ impl Case {
         payload: TemporalCounterexample<ProtocolTransition>,
     ) -> Result<ModelTraceReplayResult, ReplayRefusal> {
         let unit = unit_text_with(self.profiles, &self.body).into_bytes();
-        let id = self.package_id();
-        let (node, occurrence) = qsl_replay::race_freedom_clause(&id);
+        let (node, occurrence) = crate::model_settle::protocol_anchor(&self.checked, "SB");
         replay_protocol_trace(
-            request(&document(), self.documents.snapshots.iter(), &unit, id),
+            request(&document(), self.documents.snapshots.iter(), &unit),
             &self.trace_subject(selection),
-            &envelope_at(&unit, id, payload, node, occurrence),
+            &envelope_at(payload, node, occurrence),
             self.letters,
             ReplayLimits::default(),
         )
-    }
-
-    /// FR-098's `package_id` of the unit.
-    pub(crate) fn package_id(&self) -> DigestRecord {
-        compile_package(
-            SourceIdentity::new("agent-ix", "litmus", "git", "1"),
-            "litmus.native",
-            unit_text_with(self.profiles, &self.body).as_bytes(),
-            [document().as_slice()],
-            &DependencyInput::default(),
-            qsl_replay::StageLimits::default(),
-            ReplayLimits::default(),
-        )
-        .expect("the unit compiles")
-        .package_id()
     }
 
     /// The subject FR-217's replay reads, its resolved models `selection`'s
@@ -385,14 +365,13 @@ impl Case {
         payload: TemporalCounterexample<ProtocolTransition>,
     ) -> Result<ModelTraceReplayResult, ReplayRefusal> {
         let unit = unit_text_with(self.profiles, &self.body).into_bytes();
-        let id = self.package_id();
         let node = &self.checked.graph().temporal_clauses()[0];
-        let clause_node = WireNodeId::from_digest(*node.identity().as_bytes());
-        let occurrence = OccurrenceKey::new(clause_node, node.claim().clone());
+        let clause_node = node.identity().clone();
+        let occurrence = OccurrenceKey::new(clause_node.clone(), node.claim().clone());
         replay_protocol_trace(
-            request(&document(), self.documents.snapshots.iter(), &unit, id),
+            request(&document(), self.documents.snapshots.iter(), &unit),
             &self.trace_subject(selection),
-            &envelope_at(&unit, id, payload, clause_node, occurrence),
+            &envelope_at(payload, clause_node, occurrence),
             self.letters,
             ReplayLimits::default(),
         )

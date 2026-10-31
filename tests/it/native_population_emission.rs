@@ -505,7 +505,7 @@ fn another_admitted_model_cannot_replace_the_original_population_owner() {
         inputs.model.roles().objects[0].record,
         foreign.roles().objects[0].record
     );
-    assert_ne!(inputs.model.digest(), foreign.digest());
+    assert_ne!(inputs.model.artifact_bytes(), foreign.artifact_bytes());
     inputs.with_proofs(
         TypeLimits::default(),
         proofs::ProofLimits::default(),

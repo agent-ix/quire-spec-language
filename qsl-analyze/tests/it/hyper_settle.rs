@@ -20,7 +20,6 @@ use qsl_analyze::analyze::{analyze, hyper_form_item, DispositionKind, Engines, S
 use qsl_analyze::model_check::ModelCheckRefusal;
 use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::bound::{DomainKey, DomainKind};
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::ReductionKind;
 use qsl_foundation::{BackendId, RequestIndex};
@@ -33,7 +32,7 @@ use qsl_replay::{
 };
 use qsl_route::reductions::Reductions;
 use qsl_route::request::items_from_requirements;
-use qsl_route::{BackendDescriptor, Candidate, ManifestDigest, Mode, ProviderOrigin, Registry};
+use qsl_route::{BackendDescriptor, Candidate, Mode, ProviderOrigin, Registry};
 use qsl_semantics::check::{Capability, HyperForm, HyperUnsupported, RequirementRecord};
 use qsl_semantics::family::{ClaimExtent, Requirements, UnsupportedItem};
 use quire_exact::{Cancel, Origin, Role, Undefined};
@@ -661,8 +660,8 @@ fn an_other_clause_settles_unsupported_at_negotiation_with_no_run() {
 fn routed_hp4_hyper_item_settles_unsupported_requested_capability() {
     let reason = HyperUnsupported::ExistentialBeforeUniversal;
     let form = HyperForm::Other { reason };
-    let node = WireNodeId::from_digest([17; 32]);
-    let occurrence = OccurrenceKey::new(node, Origin::new(Role::new("claim"), 0));
+    let node = crate::fixture_ids::node_key([17]);
+    let occurrence = OccurrenceKey::new(node.clone(), Origin::new(Role::new("claim"), 0));
     let extent = ClaimExtent::from_domains(
         [(
             DomainKey::Node {
@@ -679,7 +678,7 @@ fn routed_hp4_hyper_item_settles_unsupported_requested_capability() {
         requirements.unsupported(),
         Some(&UnsupportedItem::HyperForm { reason })
     );
-    let record = RequirementRecord::model_claim(requirements, WireNodeId::from_digest([18; 32]));
+    let record = RequirementRecord::model_claim(requirements, crate::fixture_ids::node_key([18]));
     let records = [(occurrence, record)].into_iter().collect();
     let mut registry = Registry::new();
     registry
@@ -687,7 +686,6 @@ fn routed_hp4_hyper_item_settles_unsupported_requested_capability() {
             BackendDescriptor::new(
                 Candidate::new(BackendId::new("en1")),
                 ProviderOrigin::Linked,
-                ManifestDigest::from_digest([19; 32]),
                 [(Capability::TemporalSatisfaction, Mode::Unbounded)],
                 None,
                 None,

@@ -121,7 +121,6 @@
 // `numeric` and `text` are deleted; their former items are imported from `quire_exact`
 // directly.
 
-pub(crate) mod counter;
 pub(crate) mod definition;
 mod diagnostics_catalog;
 pub mod enumeration;
@@ -129,6 +128,7 @@ pub mod environment_stage;
 pub(crate) mod layer;
 pub(crate) mod member;
 pub mod model_query;
+pub mod nominal_payload;
 pub(crate) mod semantic_node;
 pub(crate) mod unit;
 
@@ -200,8 +200,7 @@ pub use member::{AcceptedPoint, Member};
 // `quire_semantic_value::semantic_node`'s (ADR-011 §6.1 layer SV); consumers
 // import them from there, not through a re-export here.
 pub use semantic_node::{
-    identity_limit, ModelSubject, NodeIdentityPreimage, NodeOwner, NominalRefusal, OwnerSelection,
-    OwnerSubject,
+    identity_limit, ModelSubject, NodeOwner, NominalRefusal, OwnerSelection, OwnerSubject,
 };
 // `admit_text`, `compare_text`, `Text`, `TextPayload` and
 // `InvalidTextLiteral` were this module's own `text` submodule, a

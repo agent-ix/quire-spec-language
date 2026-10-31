@@ -28,10 +28,10 @@ use super::contracts::{conjunction, Conjunction};
 use super::domain::{Domain, Odometer};
 use super::encode::{self, value_enc, values_equal, Typing};
 use super::footprints::ReadCheck;
-use super::walk::{stop, Applied, Budget, ContractFinding, Row, Selected, Walk};
+use super::walk::{stop, Applied, Budget, ContractFinding, FindingCase, Row, Selected, Walk};
 use super::{
-    handler_anchor, identity_limits, state_document, Application, ClauseInfo, FieldChange,
-    ModelFinding, ModelSimState, StepEffect, WrittenSlots, BROKEN, EXHAUSTED,
+    handler_anchor, identity_limits, state_document, Application, ClauseInfo, ClauseOutcome,
+    FieldChange, ModelFinding, ModelSimState, StepEffect, WrittenSlots, BROKEN, EXHAUSTED,
 };
 use crate::simulation::expansion::ExpansionStop;
 use crate::simulation::footprint::Footprint;
@@ -98,10 +98,11 @@ fn argument_domains(
         .iter()
         .enumerate()
         .map(|(position, (_, value_type))| {
-            match system
-                .probabilistic
-                .support(application.declaring, &application.name, position)
-            {
+            match system.probabilistic.support(
+                application.declaring.clone(),
+                &application.name,
+                position,
+            ) {
                 Some(support) => Some(Domain::Listed(support.values())),
                 None => Domain::of(value_type, &references, system.types, &system.record_orders),
             }
@@ -240,6 +241,11 @@ pub(super) fn apply(
                             clause,
                             evaluation,
                         },
+                        case: Box::new(FindingCase {
+                            receiver: row.reference.clone(),
+                            arguments: args.iter().map(|(_, value)| value.clone()).collect(),
+                            post: None,
+                        }),
                     });
                 }
                 continue;
@@ -273,7 +279,7 @@ pub(super) fn apply(
         if let Some(enabled) = enabled.as_deref_mut() {
             enabled.push(EnabledVector {
                 receiver: row.reference.clone(),
-                declaring: application.declaring,
+                declaring: application.declaring.clone(),
                 name: application.name.clone(),
                 operation: application.text.clone(),
                 args,
@@ -314,6 +320,56 @@ pub(super) fn first_precondition(
         }
     }
     Ok(Some((transition, None)))
+}
+
+/// One argument vector of an application and how its one precondition
+/// read there (QSpec FR-485 "Clause"): `None` when it decided a Boolean,
+/// else the outcome that decided none.
+pub(super) struct PreconditionCase {
+    /// The FR-120 transition identity.
+    pub(super) transition: ModelTransition,
+    /// The arguments, in parameter order.
+    pub(super) arguments: Vec<Value>,
+    /// The evaluation that decided no Boolean, if any.
+    pub(super) undecided: Option<ClauseOutcome>,
+}
+
+/// QSpec FR-485 "Clause": the precondition `clause` of `application` at
+/// `row` evaluated alone at every argument vector, each counted against
+/// `budget`, with no candidate post-state built.
+///
+/// # Errors
+///
+/// An [`ExpansionStop`] when the budget runs out or an evaluation stops.
+pub(super) fn precondition_cases(
+    walk: &Walk<'_, '_>,
+    row: &Row,
+    application: &Application,
+    clause: &ClauseInfo,
+    budget: &mut Budget,
+) -> Result<Vec<PreconditionCase>, ExpansionStop> {
+    let domains = argument_domains(walk, application)?;
+    let mut arguments = Odometer::new(domains.iter().map(Domain::len).collect());
+    let mut cases = Vec::new();
+    while let Some(digits) = arguments.next_digits() {
+        let args = arguments_of(application, &domains, &digits)?;
+        budget.charge()?;
+        let transition = transition_of(row, application, &args, walk.system.typing())?;
+        let verdict = conjunction(walk, &[clause], |info| {
+            pre_observations(walk, info, row, &args)
+        })?;
+        cases.push(PreconditionCase {
+            transition,
+            arguments: args.into_iter().map(|(_, value)| value).collect(),
+            undecided: match verdict {
+                Conjunction::True | Conjunction::False(_) => None,
+                Conjunction::Undecided(mut undecided) => {
+                    undecided.pop().map(|(_, outcome)| outcome)
+                }
+            },
+        });
+    }
+    Ok(cases)
 }
 
 /// Where [`apply`] records what one application found: its contract
@@ -387,7 +443,7 @@ fn pre_observations(
 ) -> AdmittedObservations {
     AdmittedObservations {
         usage: AdmissionUsage::default(),
-        clause: clause.identity,
+        clause: clause.identity.clone(),
         current: None,
         pre: Some(walk.observation.clone()),
         post: None,
@@ -540,9 +596,9 @@ impl Run<'_, '_, '_> {
                         .model
                         .type_identity(candidate)
                         .is_some_and(|identity| {
-                            members
-                                .iter()
-                                .any(|member| system.types.conforms(identity, *member))
+                            members.iter().any(|member| {
+                                system.types.conforms(identity.clone(), member.clone())
+                            })
                         })
                 })
                 .cloned()
@@ -852,7 +908,7 @@ impl Run<'_, '_, '_> {
                 .filter_map(|(name, value)| match value {
                     Value::Reference(bound)
                         if before.get(bound.object().as_str()).is_some_and(|object| {
-                            system.model.type_identity(&object.type_identity)
+                            system.model.type_identity(&object.type_identity).as_ref()
                                 == Some(bound.object_type())
                         }) =>
                     {
@@ -1119,10 +1175,7 @@ impl Run<'_, '_, '_> {
             let state_key = encode::model_key(&system.model, candidate, system.typing());
             let (bytes, digest) =
                 key::state_key(&state_key, identity_limits()).map_err(|_| stop(BROKEN))?;
-            let observation = system
-                .model
-                .observation(candidate, state_document(&digest))
-                .map_err(|_| stop(BROKEN))?;
+            let observation = self.post_observation(candidate, &digest)?;
             *evidence = Some((bytes.as_bytes().to_vec(), digest, observation));
         }
         let (_, _, post) = evidence.as_ref().ok_or_else(|| stop(BROKEN))?;
@@ -1136,7 +1189,7 @@ impl Run<'_, '_, '_> {
         let verdict = conjunction(self.walk, self.postconditions, |info| {
             let observations = AdmittedObservations {
                 usage: AdmissionUsage::default(),
-                clause: info.identity,
+                clause: info.identity.clone(),
                 current: None,
                 pre: Some(self.walk.observation.clone()),
                 post: Some(post.clone()),
@@ -1234,6 +1287,28 @@ impl Run<'_, '_, '_> {
         Ok((candidate, written))
     }
 
+    /// The observation of `candidate` as a post-state, keyed `digest`, with
+    /// the presence of each guarded clock place it holds, which a
+    /// postcondition's `present(self.v)` reads (QSpec FR-322 `CW-05`).
+    fn post_observation(
+        &self,
+        candidate: &ModelState,
+        digest: &DigestRecord,
+    ) -> Result<Observation, ExpansionStop> {
+        let mut observation = self
+            .walk
+            .system
+            .model
+            .observation(candidate, state_document(digest))
+            .map_err(|_| stop(BROKEN))?;
+        if let Some(presence) = self.walk.post_presence {
+            observation
+                .environment
+                .set_place_presence(presence(candidate));
+        }
+        Ok(observation)
+    }
+
     /// The observations of the postcondition `info` with `candidate` as
     /// the post-state.
     fn post_observations(
@@ -1246,14 +1321,11 @@ impl Run<'_, '_, '_> {
         let state_key = encode::model_key(&system.model, candidate, system.typing());
         let (_, digest) =
             key::state_key(&state_key, identity_limits()).map_err(|_| stop(BROKEN))?;
-        let post = system
-            .model
-            .observation(candidate, state_document(&digest))
-            .map_err(|_| stop(BROKEN))?;
+        let post = self.post_observation(candidate, &digest)?;
         let effect = self.effect_of(candidate, delta)?;
         Ok(AdmittedObservations {
             usage: AdmissionUsage::default(),
-            clause: info.identity,
+            clause: info.identity.clone(),
             current: None,
             pre: Some(self.walk.observation.clone()),
             post: Some(post),
@@ -1361,6 +1433,15 @@ impl Run<'_, '_, '_> {
                                 clause,
                                 evaluation,
                             },
+                            case: Box::new(FindingCase {
+                                receiver: self.row.reference.clone(),
+                                arguments: self
+                                    .args
+                                    .iter()
+                                    .map(|(_, value)| value.clone())
+                                    .collect(),
+                                post: Some((candidate.clone(), result.clone())),
+                            }),
                         });
                     }
                 }

@@ -4,7 +4,7 @@
 use crate::support::native_rule_model;
 
 use ix_trace_rs::trace;
-use qsl_foundation::{ByteDigest, Source, SourceIdentity, Spanned};
+use qsl_foundation::{Source, SourceIdentity, Spanned};
 use quire_contract_model as ir;
 use quire_spec_language::checking::NativeType;
 use quire_spec_language::formal_source::FormalSource;
@@ -123,11 +123,9 @@ fn a_named_record_cannot_grant_related_instance_authority() {
 fn program(model: &NativeModel, declarations: &str) -> String {
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
-        profile S = \"test:unresolved-definition\" version \"1\" digest \"unresolved\";\n\
-        model M = \"{}\" version \"{}\" digest \"{}\";\n{declarations}",
-        model.environment().owner().package().as_str(),
-        model.environment().owner().revision().get(),
-        model.digest()
+        profile S = \"test:unresolved-definition\";\n\
+        model M = \"{}\";\n{declarations}",
+        model.environment().owner().package().as_str()
     )
 }
 
@@ -158,7 +156,6 @@ fn with_namespace(texts: &[String], test: impl FnOnce(&SyntaxNamespace)) {
             .map(|source| ExpectedSource {
                 authority: source.identity().identity.clone(),
                 identity: source.identity().clone(),
-                digest: source.digest(),
             })
             .collect(),
     };
@@ -264,34 +261,15 @@ fn scalar_field_and_operation_exports_reuse_actual_native_roles() {
 
 #[test]
 #[trace("TC-114", "FR-036-AC-3")]
-fn changed_import_components_refuse_only_the_dependent_model_lookup() {
+fn a_missing_package_refuses_only_the_dependent_model_lookup() {
     let model = model("test/native", "NativeModel", "native-model");
     let inputs = [ModelInput::Native(&model)];
     let good = program(&model, "predicate Dependent using S (item: M::Node): Boolean { true }\npredicate Independent using S (): Boolean { true }");
-    for (text, expected) in [
-        (
+    {
+        let (text, expected) = (
             good.replace("test/native", "test/missing"),
             ImportRefusal::MissingPackage,
-        ),
-        (
-            good.replace(
-                "model M = \"test/native\" version \"1\"",
-                "model M = \"test/native\" version \"2\"",
-            ),
-            ImportRefusal::StaleSelection,
-        ),
-        (
-            good.replace(
-                &model.digest().to_string(),
-                &ByteDigest::of(b"other bytes").to_string(),
-            ),
-            ImportRefusal::StaleSelection,
-        ),
-        (
-            good.replace(&model.digest().to_string(), "canonical:unsupported"),
-            ImportRefusal::InvalidDigest,
-        ),
-    ] {
+        );
         with_namespace(&[text], |namespace| {
             let bindings = bind_models(namespace, &inputs, &mut work());
             assert_eq!(bindings.imports()[0].selection, Err(expected));
@@ -339,8 +317,11 @@ fn conflicting_formal_owner_retains_both_artifacts_and_independent_import() {
             assert_eq!(bindings.conflicts().len(), 1);
             assert_eq!(bindings.conflicts()[0].kind, ModelConflictKind::Owner);
             assert_eq!(bindings.conflicts()[0].inputs, [0, 1]);
-            assert!(
-                matches!(&bindings.imports()[0].selection, Err(ImportRefusal::ConflictingModel { groups }) if groups == &[0])
+            // Selection is by package identity alone: the package both
+            // conflicting artifacts own is ambiguous, not silently chosen.
+            assert_eq!(
+                bindings.imports()[0].selection,
+                Err(ImportRefusal::AmbiguousSelection { inputs: vec![0, 1] })
             );
             assert_eq!(bindings.imports()[1].selection, Ok(2));
             let (unit, name) = parameter(namespace, "Spare", 0);
@@ -486,15 +467,10 @@ fn exact_model_bytes_entries_and_lookup_limits_preserve_partial_report_and_retry
         |namespace| {
             let import = &namespace.units()[0].models()[0];
             let bytes = model.artifact_bytes().len()
-                + [
-                    &import.alias.value,
-                    &import.package.value,
-                    &import.version.value,
-                    &import.digest.value,
-                ]
-                .iter()
-                .map(|value| value.len())
-                .sum::<usize>();
+                + [&import.alias.value, &import.package.value]
+                    .iter()
+                    .map(|value| value.len())
+                    .sum::<usize>();
             // Stored indexes: 3 per record, 2 per field/value/object/operation,
             // one per scalar role/site/frame field, then one import record.
             let bindings_count = 3 * 2 + 2 * 11 + 2 * 3 + 7 + 9 + 2 + 2 + 1 + 1;
@@ -620,12 +596,7 @@ fn multi_model_indexes_reserve_only_selected_inputs_and_share_repeated_imports()
                 .units()
                 .iter()
                 .flat_map(|unit| unit.models())
-                .map(|import| {
-                    import.alias.value.len()
-                        + import.package.value.len()
-                        + import.version.value.len()
-                        + import.digest.value.len()
-                })
+                .map(|import| import.alias.value.len() + import.package.value.len())
                 .sum::<usize>();
         let exact = BindingLimits {
             models: 16,
@@ -896,43 +867,6 @@ fn duplicate_exact_models_are_ambiguous_and_conflict_comparisons_are_charged() {
             assert_eq!(partial.exhaustion().unwrap().requested, 1);
         },
     );
-}
-
-#[test]
-#[trace("TC-114", "FR-036-AC-3")]
-fn native_revision_spelling_refuses_without_reclassifying_a_stale_revision() {
-    let model = model("test/native", "NativeModel", "native-model");
-    let inputs = [ModelInput::Native(&model)];
-    let original = program(
-        &model,
-        "predicate Rule using S (item: M::Node): Boolean { true }",
-    );
-    for (revision, expected) in [
-        ("1", Ok(0)),
-        ("2", Err(ImportRefusal::StaleSelection)),
-        ("01", Err(ImportRefusal::InvalidRevision)),
-        ("+1", Err(ImportRefusal::InvalidRevision)),
-        (" 1", Err(ImportRefusal::InvalidRevision)),
-        ("1 ", Err(ImportRefusal::InvalidRevision)),
-        ("0", Err(ImportRefusal::InvalidRevision)),
-        ("-1", Err(ImportRefusal::InvalidRevision)),
-        ("1.0", Err(ImportRefusal::InvalidRevision)),
-        ("1e0", Err(ImportRefusal::InvalidRevision)),
-        ("18446744073709551616", Err(ImportRefusal::InvalidRevision)),
-        ("", Err(ImportRefusal::InvalidRevision)),
-    ] {
-        let text = original.replace(
-            "model M = \"test/native\" version \"1\"",
-            &format!("model M = \"test/native\" version \"{revision}\""),
-        );
-        with_namespace(&[text], |namespace| {
-            let bindings = bind_models(namespace, &inputs, &mut work());
-            assert!(bindings.complete());
-            assert_eq!(bindings.imports().len(), 1);
-            assert_eq!(bindings.imports()[0].selection, expected, "{revision:?}");
-            assert_eq!(namespace.units()[0].models()[0].version.value, revision);
-        });
-    }
 }
 
 #[test]

@@ -6,9 +6,7 @@
 use std::collections::BTreeSet;
 
 use qsl_foundation::diagnostic::Code;
-use qsl_foundation::digest::ByteDigest;
 use qsl_foundation::source::provenance::RawSourceRef;
-use qsl_foundation::SourceIdentity;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::observation::{
     admit_object_environment, AdmissionFailure, BundleKey, DocumentRef, ObservationOrigin,
@@ -127,10 +125,10 @@ pub(super) fn holds_reference(types: &TypeEnvironment, declared: &[ValueType]) -
             ValueType::Collection(collection) => pending.push(collection.element()),
             ValueType::Map(map) => pending.push(map.values()),
             ValueType::Composite(declaration) => {
-                if !entered.insert(*declaration) {
+                if !entered.insert(declaration.clone()) {
                     continue;
                 }
-                let Some(composite) = types.composite(*declaration) else {
+                let Some(composite) = types.composite(declaration.clone()) else {
                     continue;
                 };
                 match composite.shape() {
@@ -192,42 +190,13 @@ pub(super) fn admit(
         return Err(fault("environment-admitted-only-when-named"));
     };
     let package = compiled.checked.package();
+    let provision = request.byte_provision().snapshots();
     let labels = named.identity();
-    let identity = SourceIdentity::new(
-        labels.authority.clone(),
-        labels.identity.clone(),
-        labels.revision_namespace.clone(),
-        labels.revision.clone(),
-    );
-    let provision = request
-        .byte_provision()
-        .entries()
-        .filter_map(|(identity, bytes)| match identity {
-            crate::request::ProvisionIdentity::Source(identity) => {
-                Some((identity.clone(), bytes.to_vec()))
-            }
-            crate::request::ProvisionIdentity::DomainPackage => None,
-        })
-        .collect::<std::collections::BTreeMap<_, _>>();
-    let digest = provision.get(&identity).map_or([0; 32], |bytes| {
-        match quire_canonical::read(bytes, limits.observation.document_bytes) {
-            Ok(document) => quire_canonical::sha256(
-                &document,
-                quire_canonical::Limits::new(limits.observation.document_bytes),
-            )
-            .map_or_else(
-                |_| ByteDigest::of(bytes).as_bytes(),
-                |digest| *digest.as_bytes(),
-            ),
-            Err(_) => ByteDigest::of(bytes).as_bytes(),
-        }
-    });
     let selected = DocumentRef {
         authority: labels.authority.clone(),
         identity: labels.identity.clone(),
         revision_namespace: labels.revision_namespace.clone(),
         revision: labels.revision.clone(),
-        digest,
     };
     let held: Vec<ObjectReference> = references
         .iter()
@@ -246,17 +215,17 @@ pub(super) fn admit(
     .map_err(environment_refusal)?;
 
     let unit = request
-        .source_digests()
+        .sources()
         .first()
         .ok_or_else(|| fault("decoded-request-names-a-source"))?;
-    let source = RawSourceRef::new(unit.authority(), unit.identity(), unit.digest())
+    let source = RawSourceRef::new(unit.authority(), unit.identity())
         .map_err(|_| fault("package-source-names-a-source-document"))?;
     let key = BundleKey {
         source,
         clause: function,
-        documents: vec![selected.digest],
+        documents: vec![selected.clone()],
         role: ObservationRole::Current,
-        origin: ObservationOrigin::Document(selected.digest),
+        origin: ObservationOrigin::Document(selected.clone()),
     };
     let bundle = ResolveBundle::over(&environment, &key, package.graph().scope().types())
         .map_err(environment_refusal)?;

@@ -10,14 +10,13 @@ use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
 use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound, FiniteBoundKind, ProofBound};
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::RequestIndex;
 use qsl_route::request::{
     items_from_requirements, BoundRefusal, ExtentClassification, RequirementItem,
 };
 use qsl_route::Registry;
 use qsl_semantics::check::Capability;
-use quire_exact::Integer;
+use quire_exact::{Integer, NodeKey, PathSegment};
 use quire_semantic_value::catalog::{CatalogCode, CatalogCoded};
 
 use super::request_builder::package;
@@ -190,7 +189,8 @@ fn subject_proof_bounds_are_independent_of_the_extent() {
     assert_eq!(model.temporal_proof_bounds(), Some(&[][..]));
 
     let key = |ordinal: u32| DomainKey::Population {
-        member_type: WireNodeId::from_digest([1; 32]),
+        member_type: NodeKey::new("fixture", vec![PathSegment::Text("member".into())], 0)
+            .expect("a valid key"),
         ordinal,
     };
     let bounds = BTreeMap::from([
@@ -224,7 +224,8 @@ fn subject_proof_bounds_are_independent_of_the_extent() {
     assert_eq!(trace.temporal_proof_bounds(), None);
     let set = item("function f using v(s: Set<Int[0, 9999]>): Integer pure { size(s) + 1 }");
     let node = DomainKey::Node {
-        node: WireNodeId::from_digest([2; 32]),
+        node: NodeKey::new("fixture", vec![PathSegment::Text("node".into())], 0)
+            .expect("a valid key"),
         path: Vec::new(),
     };
     let refusals = [

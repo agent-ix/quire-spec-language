@@ -7,13 +7,18 @@ use super::*;
 
 /// A node of `tag` and `form`, with no declaration or occurrences.
 fn node_of_wire(tag: CheckedNodeTag, form: &str) -> CheckedSemanticNodeV2 {
-    let id = CheckedNodeId {
-        domain: NODE_KEY_DOMAIN.into(),
-        digest: "0".repeat(64).into(),
+    let key = || {
+        quire_exact::NodeKey::new(
+            "pkg".to_owned(),
+            vec![quire_exact::PathSegment::Text("control".to_owned())],
+            0,
+        )
+        .expect("a fixture key is a valid structural identity")
     };
+    let id = crate::emit::checked_node_id_of(&key());
     CheckedSemanticNodeV2 {
         owner_model: None,
-        node_id: id.clone(),
+        node_id: crate::emit::checked_node_id_of(&key()),
         schema_version: GRAPH_V2.into(),
         node_tag: tag.as_wire().into(),
         semantic_form: form.into(),
@@ -21,7 +26,6 @@ fn node_of_wire(tag: CheckedNodeTag, form: &str) -> CheckedSemanticNodeV2 {
         dependencies: Vec::new(),
         occurrences: Vec::new(),
         recursion_group: None,
-        nominal_identity_preimage: None,
         declaration: None,
         owner: None,
         body: CheckedTerm::Aggregate {

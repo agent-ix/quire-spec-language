@@ -66,7 +66,12 @@ pub fn function(
 }
 
 fn handle(label: &str) -> NodeKey {
-    NodeKey::from_digest(qsl_foundation::ByteDigest::of(label.as_bytes()).as_bytes())
+    NodeKey::new(
+        "fixture",
+        vec![quire_exact::PathSegment::Text(label.to_owned())],
+        0,
+    )
+    .expect("a fixture node key is well formed")
 }
 
 /// `record N { v: Boolean; next: N?; }` and `tuple T(Boolean)`.
@@ -424,6 +429,10 @@ pub fn declarations(form: Form, levels: usize) -> PackageDeclarations {
         ],
         types: types(),
         aliases: vec![("Total".to_owned(), ValueType::Integer)],
-        ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
+        ..PackageDeclarations::new(
+            fixture_source(),
+            "fixture",
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
 }

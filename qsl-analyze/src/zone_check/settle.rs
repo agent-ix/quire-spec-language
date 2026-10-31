@@ -8,7 +8,6 @@
 //! checked. The caller supplies both: `check` runs the certificate checker
 //! and `replay` the replay.
 
-use qsl_foundation::digest::DigestRecord;
 use qsl_replay::{
     CertificateRejection, CounterexampleKind, IncompleteCause, InconclusiveCause, ModelCheckLimit,
     ModelTraceReplayResult, ModelTraceSettlement, ProofBasis, ReachedLimit,
@@ -125,8 +124,8 @@ impl ZoneCheckRecord {
     }
 }
 
-/// FR-235: settle `item`, run over the package `package_id`, as one
-/// terminal record. The map is exhaustive with no `_` arm:
+/// FR-235: settle `item` as one terminal record. The map is exhaustive with
+/// no `_` arm:
 ///
 /// - V-1: `Holds` whose certificate `check` accepts is
 ///   `Proved{ZoneCertified, Certified}`, `closed-scope`;
@@ -153,7 +152,6 @@ impl ZoneCheckRecord {
 ///   and `SymmetryBroken` is `Inconclusive`.
 pub fn settle_zone_check<S>(
     item: ZoneItem<'_, S>,
-    package_id: &DigestRecord,
     cancel: &Cancel,
     check: impl FnOnce(
         &ZoneCertificate<ItemObligation<S>>,
@@ -213,12 +211,6 @@ pub fn settle_zone_check<S>(
         }
         ZoneCheckOutcome::Stopped { cause, .. } => stopped(*cause, cancel),
         ZoneCheckOutcome::Violated { counterexample, .. } => match replay(counterexample) {
-            Ok(ModelTraceReplayResult {
-                package_id: replayed,
-                ..
-            }) if !replayed.matches(package_id) => ZoneCheckRecord::inconclusive(
-                InconclusiveCause::ReplayRefused(qsl_foundation::diagnostic::Code::StaleDependency),
-            ),
             Ok(ModelTraceReplayResult {
                 settlement: ModelTraceSettlement::Reproduced { .. },
                 ..
@@ -337,8 +329,8 @@ fn certified<O>(
         // A checker that cannot read the certificate's item is a tool
         // failure (ADR-013 C-09), never a verdict.
         Err(
-            ZoneCertificateRefusal::Admission(_)
-            | ZoneCertificateRefusal::Package(_)
+            ZoneCertificateRefusal::Package(_)
+            | ZoneCertificateRefusal::Admission(_)
             | ZoneCertificateRefusal::TimedSubject(_)
             | ZoneCertificateRefusal::UnsupportedItem
             | ZoneCertificateRefusal::Unbounded

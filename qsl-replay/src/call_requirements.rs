@@ -3,7 +3,7 @@
 //! FR-100's [`run`](crate::spine::run) does and return, with its outcome, the
 //! identities of the requirement items that belong to the selected function.
 //!
-//! The members come from the same compile as the call and the `package_id`.
+//! The members come from the same compile as the call.
 //! The check stage recorded each `value-validity` record's owner (FR-062
 //! "Owner"); this module reads that field and recomputes nothing. A consumer
 //! reaches [`run_with_requirements`] and its result types through the
@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::{RequestIndex, SourceIdentity};
 use qsl_semantics::check::{Capability, CheckedGraph, RequirementRecord};
-use qsl_semantics::library::PackageId;
+use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_exact::{planned_equality, Cancel, Meter, Outcome, Value};
 use quire_semantic_value::catalog::InternalFault;
@@ -53,32 +53,24 @@ impl CallRequirement {
     }
 }
 
-/// The requirement items of the selected call (FR-395 Outputs): the
-/// `package_id` of the compile that produced them, the call as received and
-/// its members in ascending occurrence-key order. The pairing key of a member
-/// and its item is (`package_id`, request index).
+/// The requirement items of the selected call (FR-395 Outputs): the call as
+/// received and its members in ascending occurrence-key order. The pairing key
+/// of a member and its item is its request index.
 #[derive(Clone, Debug)]
 pub struct CallRequirements {
-    package_id: PackageId,
     function: String,
     arguments: Vec<CallArgument>,
     members: Vec<CallRequirement>,
 }
 
 impl CallRequirements {
-    /// The requirement items `members` of `call`, from the compile whose id is `package_id`.
-    pub(crate) fn new(package_id: PackageId, call: &Call, members: Vec<CallRequirement>) -> Self {
+    /// The requirement items `members` of `call`.
+    pub(crate) fn new(call: &Call, members: Vec<CallRequirement>) -> Self {
         Self {
-            package_id,
             function: call.function.clone(),
             arguments: call.arguments.clone(),
             members,
         }
-    }
-
-    /// The `package_id` of the compile that produced the members.
-    pub fn package_id(&self) -> PackageId {
-        self.package_id
     }
 
     /// The selected function's name, as received.
@@ -133,19 +125,20 @@ fn same_value(left: &Value, right: &Value) -> bool {
     }
 }
 
-/// What [`run_with_requirements`] returns: `run`'s `package_id` and outcome
-/// and the selected call's [`CallRequirements`], all from one compile.
+/// What [`run_with_requirements`] returns: `run`'s outcome and the selected
+/// call's [`CallRequirements`], all from one compile.
 #[derive(Debug)]
 pub struct RunWithRequirements {
-    package_id: PackageId,
+    package_name: LibraryName,
     outcome: CallOutcome,
     requirements: CallRequirements,
 }
 
 impl RunWithRequirements {
-    /// The compiled package's id, as `run` returns it for the same inputs.
-    pub fn package_id(&self) -> PackageId {
-        self.package_id
+    /// The compiled package's library name: the identity of the source unit
+    /// the run compiled.
+    pub fn package_name(&self) -> &LibraryName {
+        &self.package_name
     }
 
     /// The call's outcome, as `run` returns it for the same inputs.
@@ -158,14 +151,14 @@ impl RunWithRequirements {
         &self.requirements
     }
 
-    /// The package id, the outcome and the requirement items.
-    pub fn into_parts(self) -> (PackageId, CallOutcome, CallRequirements) {
-        (self.package_id, self.outcome, self.requirements)
+    /// The outcome and the requirement items.
+    pub fn into_parts(self) -> (CallOutcome, CallRequirements) {
+        (self.outcome, self.requirements)
     }
 }
 
 /// Compile `bytes` once, call `call`'s function as FR-100's
-/// [`run`](crate::spine::run) does, and return the call's `package_id` and
+/// [`run`](crate::spine::run) does, and return the call's
 /// outcome with the requirement items whose owner is the selected function
 /// (FR-395). Arguments do not select items: the members of a call whose
 /// outcome is refused, undefined or incomplete are those of a completed call.
@@ -180,17 +173,20 @@ impl RunWithRequirements {
 )]
 pub fn run_with_requirements(
     source: SourceIdentity,
+    package_name: String,
     path: &str,
     bytes: &[u8],
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &qsl_semantics::model::intake::PackageInput,
     dependencies: &DependencyInput,
     limits: SpineLimits,
     call: &Call,
     objects: &ObjectEnvironment,
     cancel: &Cancel,
 ) -> Result<RunWithRequirements, Box<RunRefusal>> {
-    let (package_id, outcome, members) = run_reading(
+    let library_name = package_name_of(&package_name)?;
+    let (outcome, members) = run_reading(
         source,
+        package_name,
         path,
         bytes,
         packages,
@@ -206,9 +202,19 @@ pub fn run_with_requirements(
         },
     )?;
     Ok(RunWithRequirements {
-        package_id,
+        package_name: library_name,
         outcome,
-        requirements: CallRequirements::new(package_id, call, members),
+        requirements: CallRequirements::new(call, members),
+    })
+}
+
+/// The library name the manifest's package name spells.
+pub(crate) fn package_name_of(name: &str) -> Result<LibraryName, Box<RunRefusal>> {
+    LibraryName::new(name).map_err(|_| {
+        Box::new(RunRefusal::Fault(InternalFault::new(
+            "spine-run",
+            "package-name-is-a-library-name",
+        )))
     })
 }
 
@@ -273,9 +279,9 @@ mod tests {
             .into_value();
         let unit = spine::check(
             &parsed,
+            "fixture".to_owned(),
             &models,
             &DependencyInput::default(),
-            &spine::LockEvidence::default(),
             limits,
             &cancel,
         )
@@ -312,7 +318,7 @@ mod tests {
     #[test]
     fn a_population_argument_is_equal_to_itself_and_not_to_another() {
         use quire_exact::{Integer, PopulationId};
-        let population = |fill| Value::Population(PopulationId::from_digest([fill; 32]));
+        let population = |fill| Value::Population(PopulationId::new(crate::fixture_node(fill)));
         assert!(same_value(&population(1), &population(1)));
         assert!(!same_value(&population(1), &population(2)));
         let integer = |value: i64| Value::Integer(Integer::from(value));

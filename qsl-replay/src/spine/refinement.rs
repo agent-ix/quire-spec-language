@@ -188,10 +188,10 @@ impl CompileRefusal {
                     RefusalCause::new(refusal.code(), refusal.cause()).reaching(match refusal {
                         ImportRefusal::Limit(limit) => Some(ReachedLimit::of(limit)),
                         ImportRefusal::View { refusal, .. } => match refusal.as_ref() {
-                            ImportViewRefusal::Read {
-                                refusal: StageFailure::Limit(limit),
-                                ..
-                            } => Some(ReachedLimit::of(limit)),
+                            ImportViewRefusal::Read { refusal, .. } => match refusal.as_ref() {
+                                StageFailure::Limit(limit) => Some(ReachedLimit::of(limit)),
+                                _ => None,
+                            },
                             _ => None,
                         },
                         ImportRefusal::Cycle { .. }
@@ -419,9 +419,7 @@ fn group(refusal: &CompileRefusal) -> Group {
         | CompileRefusal::Check { .. } => Group::Content,
         CompileRefusal::Intake { refusal, .. } => match refusal.cause {
             UnitIntakeCause::Limit(_) => Group::IntakeBudget,
-            UnitIntakeCause::ArtifactDigest
-            | UnitIntakeCause::Refused(_)
-            | UnitIntakeCause::Invariant => Group::Setup,
+            UnitIntakeCause::Refused(_) | UnitIntakeCause::Invariant => Group::Setup,
         },
         CompileRefusal::Profile { .. }
         | CompileRefusal::DependencyInput(_)
@@ -429,10 +427,11 @@ fn group(refusal: &CompileRefusal) -> Group {
         CompileRefusal::Import { refusal, .. } => match refusal {
             ImportRefusal::Limit(_) => Group::Limit,
             ImportRefusal::View { refusal, .. } => match refusal.as_ref() {
-                ImportViewRefusal::Read {
-                    refusal: StageFailure::Limit(_),
-                    ..
-                } => Group::Limit,
+                ImportViewRefusal::Read { refusal, .. }
+                    if matches!(refusal.as_ref(), StageFailure::Limit(_)) =>
+                {
+                    Group::Limit
+                }
                 ImportViewRefusal::Read { .. }
                 | ImportViewRefusal::Emission { .. }
                 | ImportViewRefusal::UnheldDependency { .. }
@@ -525,7 +524,6 @@ fn classify_disposition(disposition: &ClauseDisposition) -> Classification {
     match disposition {
         ClauseDisposition::Compile(refusal) => classify_refusal(refusal),
         ClauseDisposition::UnknownLanguage { .. } => one(ToolFailure, Code::UnknownLanguage, None),
-        ClauseDisposition::StalePackage { .. } => one(ToolFailure, Code::StaleDependency, None),
         ClauseDisposition::MissingName { .. } => {
             one(Absent, Code::MissingDeclaration, Some("missing-name"))
         }

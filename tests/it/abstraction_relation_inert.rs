@@ -6,14 +6,13 @@
 //! declaration, so no span of an earlier declaration moves.
 
 use ix_trace_rs::trace;
-use qsl_foundation::digest::ByteDigest;
 use qsl_foundation::{BackendId, SourceIdentity};
 use qsl_replay::spine::{run_clause, ClauseRunStage};
 use qsl_route::request::items_from_requirements;
 use qsl_route::routing::{route, Disposition};
 use qsl_route::{
-    descriptor_from_manifest, Candidate, CandidateOutcome, ManifestDigest, ManifestMembers,
-    ProviderOrigin, Registry,
+    descriptor_from_manifest, Candidate, CandidateOutcome, ManifestMembers, ProviderOrigin,
+    Registry,
 };
 use qsl_semantics::check::{CheckedGraph, PackageDeclarations};
 use quire_semantic_value::checking::CheckingLimits;
@@ -33,7 +32,8 @@ fn with_relation(unit: &str) -> String {
 }
 
 fn graph_of(text: &str) -> CheckedGraph {
-    let packages = spine::domain_packages();
+    let packages =
+        qsl_semantics::model::intake::package_input([spine::DOMAIN_PACKAGE.as_bytes()]).unwrap();
     let parsed = qsl_cst::parse(
         SourceIdentity::new("agent-ix", "test:abstraction-inert", "fixture", "fixture:1"),
         "program.native",
@@ -50,7 +50,7 @@ fn graph_of(text: &str) -> CheckedGraph {
         qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
     )
     .expect("the model is admitted");
-    PackageDeclarations::assemble(raw, unit, models, Vec::new())
+    PackageDeclarations::assemble(raw, "fixture".to_string(), unit, models, Vec::new())
         .expect("the unit assembles")
         .check(CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("{refusals:?}"))
@@ -66,11 +66,10 @@ fn registry(graph: &CheckedGraph) -> Registry {
         .collect();
     kinds.sort_unstable();
     kinds.dedup();
-    for (index, kind) in kinds.into_iter().enumerate() {
+    for kind in kinds {
         let descriptor = descriptor_from_manifest(
             Candidate::new(BackendId::new(format!("backend-{kind}"))),
             ProviderOrigin::Process,
-            ManifestDigest::from_digest(ByteDigest::of(&[index as u8]).as_bytes()),
             [(Some(kind), Some("unbounded"))],
             ManifestMembers {
                 domains: None,
@@ -159,8 +158,8 @@ fn a_relation_changes_no_clause_disposition() {
 
         let plain = run_clause(plain).expect("a plain report");
         let carried = run_clause(carried).expect("a report with the relation");
-        // A compile-stage refusal names the digest of the source bytes, which
-        // the declaration changes by being there; its stage and category are
+        // A compile-stage refusal may name the source that contains the
+        // declaration; its stage and category are
         // what must agree. Every other disposition is compared whole.
         if plain.disposition.stage() == ClauseRunStage::Compile {
             assert_eq!(carried.disposition.stage(), ClauseRunStage::Compile);

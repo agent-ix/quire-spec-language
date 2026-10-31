@@ -22,17 +22,16 @@ use qsl_eval::simulation::protocol::{
 };
 use qsl_eval::simulation::{SubjectSystem, TransitionSystem};
 use qsl_eval::temporal::AtomReading;
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::{Code, MemoryModelName, SourceIdentity};
 use qsl_package::CheckedPackage;
 use qsl_replay::{
-    check_protocol_closure, check_protocol_components, compile_package, replay_protocol_trace,
+    check_protocol_closure, check_protocol_components, replay_protocol_trace,
     settle_protocol_check, CertificateRule, ClosureRefusal, ComponentCertificate,
-    CounterexampleKind, DependencyInput, Lasso, MemoryBound, MemoryBoundMember, MemoryCause,
-    ModelCheckItem, ModelCheckLimits, ModelCheckOutcome, ModelStep, ModelTraceRefusal,
-    ModelTraceSubject, ProofCertificate, ProtocolCertificateRequest, ProtocolTraceSubject,
-    ReplayLimits, ReplayRefusal, TemporalCertificateCheck, TemporalCounterexample,
+    CounterexampleKind, Lasso, MemoryBound, MemoryBoundMember, MemoryCause, ModelCheckItem,
+    ModelCheckLimits, ModelCheckOutcome, ModelStep, ModelTraceRefusal, ModelTraceSubject,
+    ProofCertificate, ProtocolCertificateRequest, ProtocolTraceSubject, ReplayLimits,
+    ReplayRefusal, TemporalCertificateCheck, TemporalCounterexample,
 };
 use qsl_semantics::check::FormulaNodeId;
 use quire_exact::{Cancel, Meter};
@@ -208,23 +207,12 @@ impl Unit {
         payload: TemporalCounterexample<ProtocolTransition>,
     ) -> Result<qsl_replay::ModelTraceReplayResult, ReplayRefusal> {
         let unit = unit_text(&self.body).into_bytes();
-        let id = compile_package(
-            SourceIdentity::new("agent-ix", "litmus", "git", "1"),
-            "litmus.native",
-            &unit,
-            [document().as_slice()],
-            &DependencyInput::default(),
-            qsl_replay::StageLimits::default(),
-            ReplayLimits::default(),
-        )
-        .expect("the unit compiles")
-        .package_id();
         let node = &self.checked.graph().temporal_clauses()[0];
-        let clause_node = WireNodeId::from_digest(*node.identity().as_bytes());
-        let occurrence = OccurrenceKey::new(clause_node, node.claim().clone());
+        let clause_node = node.identity().clone();
+        let occurrence = OccurrenceKey::new(clause_node.clone(), node.claim().clone());
         let subject = self.subject(selection);
         replay_protocol_trace(
-            request(&document(), self.documents.snapshots.iter(), &unit, id),
+            request(&document(), self.documents.snapshots.iter(), &unit),
             &ProtocolTraceSubject {
                 model: ModelTraceSubject {
                     timed: None,
@@ -240,7 +228,7 @@ impl Unit {
                 max_messages: None,
                 max_live_instances: None,
             },
-            &envelope_at(&unit, id, payload, clause_node, occurrence),
+            &envelope_at(payload, clause_node, occurrence),
             self.letters,
             ReplayLimits::default(),
         )
@@ -587,22 +575,9 @@ fn ignoring_memory_fairness_returns_a_non_replayable_diagnostic() {
         "the unflushed lasso is diagnostic only: {outcome:?}"
     );
 
-    let source = unit_text(&unit.body).into_bytes();
-    let package_id = compile_package(
-        SourceIdentity::new("agent-ix", "litmus", "git", "1"),
-        "litmus.native",
-        &source,
-        [document().as_slice()],
-        &DependencyInput::default(),
-        qsl_replay::StageLimits::default(),
-        ReplayLimits::default(),
-    )
-    .expect("the unit compiles")
-    .package_id();
     let record = settle_protocol_check(
         &outcome,
         &ModelCheckLimits::default(),
-        &package_id,
         &unit.certificate_request(&unit.tso(), unit.item()),
         &Cancel::new(),
         |_| panic!("a diagnostic lasso must not enter standard replay"),
@@ -618,9 +593,7 @@ fn ignoring_memory_fairness_returns_a_non_replayable_diagnostic() {
 
 /// FR-339's checker over a protocol subject: `Spin`'s component certificate
 /// is accepted by `check_protocol_components`; the same components reversed
-/// are `BackwardEdge` and none at all are `NotPartition`; a certificate whose
-/// `package_id` is another package's is `PackageMismatch`, before any
-/// component is read; the closure alone of a liveness proof is refused
+/// are `BackwardEdge` and none at all are `NotPartition`; the closure alone of a liveness proof is refused
 /// `LivenessNeedsComponents`, and components offered for a deadlock-freedom
 /// item are refused `NotLiveness`.
 #[test]
@@ -647,22 +620,6 @@ fn a_protocol_component_certificate_is_checked_by_the_protocol_checker() {
         panic!("no components partition nothing");
     };
     assert_eq!(rejection.rule, CertificateRule::NotPartition);
-
-    let other = Unit::new(&spin_run(), &SETTLES.replace("= 1", "= 2"), &IS_ONE);
-    let foreign = qsl_package::emit_checked(&other.checked)
-        .expect("the package emits")
-        .package()
-        .package_id();
-    assert_ne!(foreign, certificate.closure.package_id);
-    let mut stale = emptied;
-    stale.closure.package_id = foreign;
-    assert_eq!(
-        unit.components(&stale).expect("the request is checked"),
-        TemporalCertificateCheck::PackageMismatch {
-            certificate: foreign,
-            recompiled: certificate.closure.package_id,
-        }
-    );
 
     assert!(matches!(
         check_protocol_closure(
@@ -857,7 +814,7 @@ fn refusal_of(fairness: &str) -> qsl_semantics::check::CheckRefusal {
     let body = contracts() + &protocol("SB", &spin_run()) + &claim;
     let document = document();
     let text = unit_text(&body);
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let parsed = qsl_cst::parse(
         SourceIdentity::new("agent-ix", "litmus", "git", "1"),
         "litmus.native",
@@ -879,6 +836,7 @@ fn refusal_of(fairness: &str) -> qsl_semantics::check::CheckRefusal {
     .expect("the operation clauses parse");
     let mut refusals = qsl_semantics::check::PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "package".to_owned(),
         built,
         models,
         Vec::new(),

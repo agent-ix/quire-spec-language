@@ -214,7 +214,7 @@ impl From<ModelQueryHalt> for Halt {
             ))),
             ModelQueryHalt::AbsentKey { population, key } => Self::Family(FamilyResult::Undefined(
                 Box::new(StateModelUndefined::AbsentKey {
-                    binding: population.to_string(),
+                    binding: population.node().to_string(),
                     key: render_identity(&key),
                 }),
             )),
@@ -1339,7 +1339,7 @@ impl<'a, 'm> Machine<'a, 'm> {
         self.frame_guard_provenance
             .last()
             .and_then(|frame| frame.get(slot))
-            .copied()
+            .cloned()
             .ok_or_else(|| invariant("evaluation-local-provenance-unbound"))
     }
 
@@ -1368,7 +1368,7 @@ impl<'a, 'm> Machine<'a, 'm> {
         let (position, _) = self
             .scope
             .types()
-            .union_member(*declaration, scrutinee.variant())
+            .union_member(declaration.clone(), scrutinee.variant().clone())
             .ok_or_else(|| invariant("case-scrutinee-member-unresolved"))?;
         let arm = arms
             .iter()
@@ -1594,7 +1594,7 @@ impl<'a, 'm> Machine<'a, 'm> {
             NodeKind::Local(slot) => {
                 if let Some((binder, cause)) = self.unavailable_slots.get(slot) {
                     return Err(Halt::Unavailable {
-                        binder: *binder,
+                        binder: binder.clone(),
                         cause: *cause,
                     });
                 }
@@ -1730,7 +1730,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 let binding = match self
                     .scope
                     .types()
-                    .composite(*declaration)
+                    .composite(declaration.clone())
                     .map(|union| union.shape())
                 {
                     Some(CompositeShape::Union(members)) => members
@@ -2076,7 +2076,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 // are not a positional prefix of that record's.
                 let index = self
                     .scope
-                    .record_slot(composite.declaration(), field)
+                    .record_slot(composite.declaration().clone(), field)
                     .ok_or_else(|| invariant("field-slot-unresolved"))?;
                 let slot = composite
                     .slots()
@@ -2269,7 +2269,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 let library = self
                     .graph
                     .scope()
-                    .imported_graph(callee.package)
+                    .imported_graph(callee)
                     .ok_or_else(|| invariant("evaluation-imported-graph-unresolved"))?;
                 let callable = library
                     .function_state(*function)
@@ -2304,7 +2304,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 let value = self
                     .scope
                     .types()
-                    .tuple(*declaration, arguments)
+                    .tuple(declaration.clone(), arguments)
                     .map_err(|refusal| construction_fault(ConstructionSite::Tuple, &refusal))?;
                 outcome_into_stop(retain_composite(value, self.meter))?
             }
@@ -2317,7 +2317,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 let Some(CompositeShape::Record(declared)) = self
                     .scope
                     .types()
-                    .composite(*declaration)
+                    .composite(declaration.clone())
                     .map(|declaration| declaration.shape())
                 else {
                     return Err(invariant("record-declaration-unresolved"));
@@ -2338,7 +2338,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 let value = self
                     .scope
                     .types()
-                    .record(*declaration, fields)
+                    .record(declaration.clone(), fields)
                     .map_err(|refusal| construction_fault(ConstructionSite::Record, &refusal))?;
                 outcome_into_stop(retain_composite(value, self.meter))?
             }
@@ -2529,9 +2529,9 @@ impl<'a, 'm> Machine<'a, 'm> {
                 // seam's own enum.
                 #[allow(clippy::wildcard_enum_match_arm)]
                 let target_key = match node.value_type() {
-                    ValueType::Reference(key) => *key,
+                    ValueType::Reference(key) => key.clone(),
                     ValueType::Option(payload) => match &**payload {
-                        ValueType::Reference(key) => *key,
+                        ValueType::Reference(key) => key.clone(),
                         _ => return Err(invariant("lookup-reference-result-expected")),
                     },
                     _ => return Err(invariant("lookup-reference-result-expected")),
@@ -2546,7 +2546,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 evaluate_lookup(
                     binding,
                     target_key,
-                    *static_key,
+                    static_key.clone(),
                     reference_value,
                     *absence,
                     node.value_type(),
@@ -2581,7 +2581,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                     .ok_or_else(|| invariant("dispatch-table-unresolved"))?;
                 charge_dispatch_select(self.meter, table_ref.candidate_count())?;
                 let candidate = table_ref
-                    .linked_for(&subtype)
+                    .linked_for(subtype)
                     .ok_or_else(|| invariant("dispatch-candidate-unresolved"))?
                     .clone();
                 let mut full_arguments = Vec::with_capacity(arguments.len() + 1);
@@ -2661,7 +2661,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 return components
                     .environments
                     .get(*component)
-                    .copied()
+                    .cloned()
                     .ok_or_else(|| invariant("component-environment-resolved"));
             }
         }
@@ -2698,7 +2698,7 @@ impl<'a, 'm> Machine<'a, 'm> {
         let attribute = self
             .scope
             .types()
-            .attributes(reference.object_type())
+            .attributes(reference.object_type().clone())
             .and_then(|attributes| {
                 attributes
                     .iter()
@@ -2777,13 +2777,13 @@ impl<'a, 'm> Machine<'a, 'm> {
         let ValueType::Reference(target) = result_type.element() else {
             return Err(invariant("all-instances-reference-element-expected"));
         };
-        self.named_covers(members, *target)?;
+        self.named_covers(members, target.clone())?;
         let types = self.scope.types();
         let listed = self.named_members(node, population)?;
         let mut selected = Vec::new();
         for reference in listed {
             charge_named(self.meter, ChargePoint::PopulationVisit)?;
-            if types.conforms(reference.object_type(), *target) {
+            if types.conforms(reference.object_type().clone(), target.clone()) {
                 selected.push(Value::Reference(reference.clone()));
             }
         }
@@ -2804,7 +2804,10 @@ impl<'a, 'm> Machine<'a, 'm> {
         target: quire_exact::EffectiveId,
     ) -> Result<(), Halt> {
         let types = self.scope.types();
-        if members.iter().any(|member| types.conforms(target, *member)) {
+        if members
+            .iter()
+            .any(|member| types.conforms(target.clone(), member.clone()))
+        {
             return Ok(());
         }
         let queried = self
@@ -2864,22 +2867,22 @@ impl<'a, 'm> Machine<'a, 'm> {
         let ValueType::Reference(target) = target else {
             return Err(invariant("lookup-reference-result-expected"));
         };
-        self.named_covers(members, *target)?;
+        self.named_covers(members, target.clone())?;
         if !self
             .scope
             .types()
-            .conforms(reference.object_type(), *target)
+            .conforms(reference.object_type().clone(), target.clone())
         {
             return Err(Halt::Family(FamilyResult::Refused(Box::new(
                 ModelQueryRefusal::from(
                     qsl_semantics::model::normalize::ModelRefusal::type_mismatch(
                         self.graph
-                            .object_type_key(reference.object_type())
+                            .object_type_key(reference.object_type().clone())
                             .ok_or_else(|| invariant("named-reference-type-declared"))?
                             .node
                             .clone(),
                         self.graph
-                            .object_type_key(*target)
+                            .object_type_key(target.clone())
                             .ok_or_else(|| invariant("named-queried-type-declared"))?
                             .node
                             .clone(),
@@ -3223,7 +3226,7 @@ impl<'a, 'm> Machine<'a, 'm> {
         let declared = self
             .scope
             .types()
-            .attributes(current.object_type())
+            .attributes(current.object_type().clone())
             .ok_or_else(|| invariant("edge-attribute-declarations-unresolved"))?;
         let attribute = declared
             .iter()
@@ -3338,8 +3341,8 @@ impl<'a, 'm> Machine<'a, 'm> {
             }
             (OrderedKind::Enums, Value::Enum(l), Value::Enum(r)) => {
                 let (Some(l), Some(r)) = (
-                    self.enum_members.resolve(l.variant()),
-                    self.enum_members.resolve(r.variant()),
+                    self.enum_members.resolve(l.variant().clone()),
+                    self.enum_members.resolve(r.variant().clone()),
                 ) else {
                     return Err(invariant("ordered-enumeration-variant-unresolved"));
                 };
@@ -3843,7 +3846,7 @@ impl<'a, 'm> Machine<'a, 'm> {
         let Some(CompositeShape::Record(fields)) = self
             .scope
             .types()
-            .composite(composite.declaration())
+            .composite(composite.declaration().clone())
             .map(|declaration| declaration.shape())
         else {
             return;
@@ -4164,14 +4167,14 @@ mod tests {
             FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment,
         };
         use std::collections::BTreeMap;
-        let context_type = quire_exact::EffectiveId::from_digest([12; 32]);
+        let context_type = crate::test_ids::effective_id([12]);
         let collection_type =
             quire_exact::CollectionType::new(CollectionKind::Sequence, ValueType::Integer, None);
         let graph = PackageDeclarations {
             types: TypeEnvironment::new(
                 [],
                 [ObjectTypeDeclaration::new(
-                    context_type,
+                    context_type.clone(),
                     "Context",
                     vec![FieldDeclaration::new(
                         "items",
@@ -4183,6 +4186,7 @@ mod tests {
             .unwrap(),
             ..PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
             )
         }
@@ -4193,7 +4197,10 @@ mod tests {
         let checked = package
             .graph()
             .check_clause_expression(
-                vec![("self".to_owned(), ValueType::Reference(context_type))],
+                vec![(
+                    "self".to_owned(),
+                    ValueType::Reference(context_type.clone()),
+                )],
                 &Expression::binary(qsl_forms::BinaryOperator::Equal, field(), field()),
                 None,
                 qsl_forms::ClauseKind::Postcondition,
@@ -4210,12 +4217,12 @@ mod tests {
         )]);
         let reference = |universe| {
             ObjectReference::new(
-                quire_exact::UniverseId::from_digest([universe; 32]),
-                context_type,
+                crate::test_ids::universe_id([universe]),
+                context_type.clone(),
                 quire_exact::ObjectId::new("i1").unwrap(),
             )
         };
-        let pre_receiver = reference(1);
+        let pre_receiver = reference(1).clone();
         let receiver = reference(2);
         let pre_items = quire_exact::from_admitted(
             collection_type.clone(),
@@ -4371,7 +4378,7 @@ mod tests {
         let a = view
             .type_identities()
             .get(&DeclarationKey::fixture("model.A"))
-            .copied()
+            .cloned()
             .expect("model.A has a type-level effective declaration");
         let types = quire_semantic_value::declaration::TypeEnvironment::new(
             [],
@@ -4406,6 +4413,7 @@ mod tests {
             )],
             ..PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
             )
         }
@@ -4431,7 +4439,7 @@ mod tests {
     fn evaluate_bypassing_admission_with_an_unresolved_population_id_is_an_internal_fault() {
         let (package, identity) = population_function_package();
         let objects = ObjectEnvironment::default();
-        let unresolved_id = PopulationId::from_digest([7; 32]);
+        let unresolved_id = PopulationId::new(crate::test_ids::node_key([7]));
         let mut env = crate::value::expression::family::EvaluationEnv::new(
             &package,
             &objects,
@@ -4521,7 +4529,9 @@ mod tests {
             qsl_semantics::model::clause_observation::Observation,
         > = std::collections::BTreeMap::new();
         let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
-        let arguments = vec![Value::Population(PopulationId::from_digest([9; 32]))];
+        let arguments = vec![Value::Population(PopulationId::new(
+            crate::test_ids::node_key([9]),
+        ))];
         let evaluation = Machine::with_pre(
             graph.scope(),
             graph,
@@ -4575,7 +4585,7 @@ mod tests {
             NormalizeOutcome::Completed(view) => view
                 .type_identities()
                 .get(&DeclarationKey::fixture("model.A"))
-                .copied()
+                .cloned()
                 .expect("model.A has a type-level effective declaration"),
             other => panic!("expected a completed effective view, got {other:?}"),
         };
@@ -4583,7 +4593,7 @@ mod tests {
             .check_expression(
                 vec![
                     ("p".to_owned(), ValueType::Population(Some(3))),
-                    ("r".to_owned(), ValueType::Reference(a)),
+                    ("r".to_owned(), ValueType::Reference(a.clone())),
                 ],
                 &Expression::lookup(
                     TypeForm::name("M::A", SPAN),
@@ -4603,9 +4613,9 @@ mod tests {
         > = std::collections::BTreeMap::new();
         let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
         let arguments = vec![
-            Value::Population(PopulationId::from_digest([9; 32])),
+            Value::Population(PopulationId::new(crate::test_ids::node_key([9]))),
             Value::Reference(ObjectReference::new(
-                quire_exact::UniverseId::from_digest([9; 32]),
+                crate::test_ids::universe_id([9]),
                 a,
                 quire_exact::ObjectId::new("root".to_owned()).expect("non-empty key"),
             )),
@@ -4669,13 +4679,13 @@ mod tests {
         let a = view
             .type_identities()
             .get(&DeclarationKey::fixture("model.A"))
-            .copied()
+            .cloned()
             .expect("model.A has a type-level effective declaration");
         let types = quire_semantic_value::declaration::TypeEnvironment::new(
             [],
             [
                 quire_semantic_value::declaration::ObjectTypeDeclaration::new(
-                    a,
+                    a.clone(),
                     "M::A",
                     vec![quire_semantic_value::declaration::FieldDeclaration::new(
                         "x",
@@ -4693,6 +4703,7 @@ mod tests {
             models: vec![model],
             ..PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
             )
         }
@@ -4701,7 +4712,7 @@ mod tests {
 
         let expression = graph
             .check_expression(
-                vec![("r".to_owned(), ValueType::Reference(a))],
+                vec![("r".to_owned(), ValueType::Reference(a.clone()))],
                 &Expression::field(
                     Expression::deref(Expression::name("r".to_owned())),
                     "x".to_owned(),
@@ -4725,7 +4736,7 @@ mod tests {
         let objects = ObjectEnvironment::default();
         let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
         let arguments = vec![Value::Reference(ObjectReference::new(
-            quire_exact::UniverseId::from_digest([9; 32]),
+            crate::test_ids::universe_id([9]),
             a,
             quire_exact::ObjectId::new("a1".to_owned()).expect("non-empty key"),
         ))];
@@ -4780,13 +4791,13 @@ mod tests {
         let a = view
             .type_identities()
             .get(&DeclarationKey::fixture("model.A"))
-            .copied()
+            .cloned()
             .expect("model.A has a type-level effective declaration");
         let types = quire_semantic_value::declaration::TypeEnvironment::new(
             [],
             [
                 quire_semantic_value::declaration::ObjectTypeDeclaration::new(
-                    a,
+                    a.clone(),
                     "M::A",
                     vec![quire_semantic_value::declaration::FieldDeclaration::new(
                         "x",
@@ -4804,6 +4815,7 @@ mod tests {
             models: vec![model],
             ..PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
             )
         }
@@ -4812,7 +4824,7 @@ mod tests {
 
         let expression = graph
             .check_expression(
-                vec![("r".to_owned(), ValueType::Reference(a))],
+                vec![("r".to_owned(), ValueType::Reference(a.clone()))],
                 &Expression::field(
                     Expression::deref(Expression::name("r".to_owned())),
                     "x".to_owned(),
@@ -4833,7 +4845,7 @@ mod tests {
             qsl_semantics::model::clause_observation::Observation::Current,
         )]);
         let reference = ObjectReference::new(
-            quire_exact::UniverseId::from_digest([9; 32]),
+            crate::test_ids::universe_id([9]),
             a,
             quire_exact::ObjectId::new("a1".to_owned()).expect("non-empty key"),
         );
@@ -4901,9 +4913,9 @@ mod tests {
         };
         let items_type =
             quire_exact::CollectionType::new(CollectionKind::Sequence, ValueType::Integer, None);
-        let point = quire_exact::NodeKey::from_digest([4; 32]);
+        let point = crate::test_ids::node_key([4]);
         let record = CompositeDeclaration::new(
-            point,
+            point.clone(),
             "Holder",
             CompositeShape::Record(vec![DeclaredField::new(
                 "items",
@@ -4915,6 +4927,7 @@ mod tests {
             types: TypeEnvironment::new([record], []).expect("one record admits"),
             ..PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
             )
         }
@@ -4951,8 +4964,8 @@ mod tests {
             panic!("a record value");
         };
         let object = ObjectReference::new(
-            quire_exact::UniverseId::from_digest([1; 32]),
-            quire_exact::EffectiveId::from_digest([2; 32]),
+            crate::test_ids::universe_id([1]),
+            crate::test_ids::effective_id([2]),
             quire_exact::ObjectId::new("o".to_owned()).unwrap(),
         );
         let trail = machine.trail.as_mut().unwrap();

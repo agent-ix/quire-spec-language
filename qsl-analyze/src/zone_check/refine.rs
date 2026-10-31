@@ -300,19 +300,12 @@ pub fn check_timed_refinement<S>(
             witness,
         } => {
             let certified = product.certificate(&mut run, &initial, root, &witness)?;
-            let package_id = |package: &CheckedPackage| {
-                qsl_package::emit_checked(package)
-                    .map(|emission| emission.package().package_id())
-                    .map_err(|_| Halt::from(ZoneCheckRefusal::Fault("refinement-package-emits")))
-            };
             let refinement_node = refinement
                 .requirement_occurrence()
                 .ok_or(Halt::from(ZoneCheckRefusal::Fault("refinement-record")))?
                 .node();
             let part = RefinementPart {
-                refinement_node,
-                concrete_package: package_id(request.concrete.package)?,
-                abstract_package: package_id(request.abstract_package)?,
+                refinement_node: refinement_node.clone(),
                 positions: certified.positions,
                 taken: certified.taken,
             };

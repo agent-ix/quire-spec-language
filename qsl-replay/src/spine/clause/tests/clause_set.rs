@@ -27,27 +27,26 @@ fn unit() -> Unit {
 
 /// The documents of the TC-1039 invocations and the current snapshot.
 pub(super) struct Documents {
-    pub(super) snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
-    pub(super) invocations: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
+    pub(super) snapshots: qsl_semantics::model::observation::DocumentProvision,
+    pub(super) invocations: qsl_semantics::model::observation::DocumentProvision,
 }
 
 impl Documents {
     /// An `attemptUpdate` invocation on `child` whose version goes `from` to
     /// `to`, with `root` at 0 in both snapshots.
     pub(super) fn invocation(&mut self, name: &str, from: i64, to: i64) -> DocumentRef {
-        let digest = config_version_model_digest_hex();
         let (pre, pre_bytes) = document_ref_and_bytes(&format!("{name}-pre"), |label| {
-            config_version_invocation_snapshot(label, &digest, "pre", 0, from)
+            config_version_invocation_snapshot(label, "pre", 0, from)
         });
         let (post, post_bytes) = document_ref_and_bytes(&format!("{name}-post"), |label| {
-            config_version_invocation_snapshot(label, &digest, "post", 0, to)
+            config_version_invocation_snapshot(label, "post", 0, to)
         });
         let (invocation, bytes) = document_ref_and_bytes(name, |label| {
-            config_version_invocation_bytes(label, &digest, &pre, &post, "child")
+            config_version_invocation_bytes(label, &pre, &post, "child")
         });
-        self.snapshots.insert(pre.source_identity(), pre_bytes);
-        self.snapshots.insert(post.source_identity(), post_bytes);
-        self.invocations.insert(invocation.source_identity(), bytes);
+        self.snapshots.insert(pre.clone(), pre_bytes);
+        self.snapshots.insert(post.clone(), post_bytes);
+        self.invocations.insert(invocation.clone(), bytes);
         invocation
     }
 
@@ -64,11 +63,10 @@ impl Documents {
         root_version: i64,
         child_version: Option<i64>,
     ) -> DocumentRef {
-        let digest = config_version_model_digest_hex();
         let (current, bytes) = document_ref_and_bytes(name, |label| {
-            config_version_snapshot(label, &digest, root_version, child_version)
+            config_version_snapshot(label, root_version, child_version)
         });
-        self.snapshots.insert(current.source_identity(), bytes);
+        self.snapshots.insert(current.clone(), bytes);
         current
     }
 }
@@ -87,7 +85,8 @@ pub(super) fn admit(
     clause: &str,
     selection: ClauseSelection,
 ) -> AdmittedObservations {
-    let packages = qsl_semantics::model::intake::package_input([unit.domain_document.as_slice()]);
+    let packages =
+        qsl_semantics::model::intake::package_input([unit.domain_document.as_slice()]).unwrap();
     let graph = unit.compiled.package.graph();
     let declaration = graph.state_clause(clause).expect("the clause is declared");
     admit_clause_observations(

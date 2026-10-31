@@ -62,7 +62,7 @@ fn model_values_use_selected_inventory_and_ambiguous_inputs_refuse_upstream() {
             let Some(NativeType::Scalar { model, role, .. }) = &delta.ty else {
                 panic!("selected model input must retain its nominal scalar type");
             };
-            assert_eq!(model.digest(), selected.digest());
+            assert_eq!(model.artifact_bytes(), selected.artifact_bytes());
             assert_eq!(model.environment().owner(), selected.environment().owner());
             assert_eq!(role.name.as_str(), "Signed");
             assert!(report.exhaustion().is_none());
@@ -726,7 +726,7 @@ fn exhaustion_preserves_earlier_types_but_never_admits_an_unfinished_forward_dep
                 .namespace()
                 .units()
                 .iter()
-                .map(|unit| unit.source().digest())
+                .map(|unit| unit.source().identity().clone())
                 .collect();
             // One bounded IR rational normalization reserves exactly 128 steps,
             // independent of gcd input values. The Boolean/call nodes need none.
@@ -787,7 +787,7 @@ fn exhaustion_preserves_earlier_types_but_never_admits_an_unfinished_forward_dep
                         .namespace()
                         .units()
                         .iter()
-                        .map(|unit| unit.source().digest())
+                        .map(|unit| unit.source().identity().clone())
                         .collect::<Vec<_>>(),
                     original
                 );

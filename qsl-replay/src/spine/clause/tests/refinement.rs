@@ -464,16 +464,15 @@ fn the_accessor_yields_every_cause_in_order() {
 }
 
 pub(super) fn current_report(clause: &str, root: i64, child: i64) -> ClauseRunReport {
-    let model_digest_hex = config_version_model_digest_hex();
     let label = config_version_document_ref("current-snap");
-    let bytes = config_version_snapshot(&label, &model_digest_hex, root, Some(child));
-    let digest = document_digest(&bytes);
-    let label = DocumentRef { digest, ..label };
+    let bytes = config_version_snapshot(&label, root, Some(child));
     let selection = config_version_current_selection(clause, label, "child");
     let mut request = config_version_request(ClauseRunSelection::Clause(selection));
-    request
-        .snapshots
-        .insert(super::observation_identity_from_bytes(&bytes), bytes);
+    request.snapshots.insert(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    );
     run_clause(request).expect("a well-formed request always reports")
 }
 
@@ -558,16 +557,15 @@ fn select_and_admit_refusals_classify_at_their_stage() {
 #[trace("TC-862", "FR-342-AC-3")]
 #[test]
 fn an_exhausted_budget_is_incomplete_naming_work_units() {
-    let model_digest_hex = config_version_model_digest_hex();
     let label = config_version_document_ref("current-snap");
-    let bytes = config_version_snapshot(&label, &model_digest_hex, 1, Some(2));
-    let digest = document_digest(&bytes);
-    let label = DocumentRef { digest, ..label };
+    let bytes = config_version_snapshot(&label, 1, Some(2));
     let selection = config_version_current_selection("ParentOrder", label, "child");
     let mut request = config_version_request(ClauseRunSelection::Clause(selection));
-    request
-        .snapshots
-        .insert(super::observation_identity_from_bytes(&bytes), bytes);
+    request.snapshots.insert(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    );
     request.accounting = default_accounting(0);
     let report = run_clause(request).unwrap();
     let classified = assert_run(
@@ -600,7 +598,6 @@ fn dispositions_the_gate_never_produces_are_tool_failures() {
     ];
     for disposition in dispositions {
         let report = ClauseRunReport {
-            package_id: None,
             usage: Default::default(),
             basis: crate::proof_result::SettlementBasis::Unavailable,
             witness: None,
@@ -761,7 +758,6 @@ fn a_check_type_admission_limit_is_incomplete_naming_the_limit() {
 #[test]
 fn a_clause_run_compile_type_admission_limit_names_the_limit() {
     let report = ClauseRunReport {
-        package_id: None,
         usage: Default::default(),
         basis: crate::proof_result::SettlementBasis::Unavailable,
         witness: None,
@@ -801,7 +797,11 @@ fn an_import_read_ceiling_is_incomplete_naming_the_limit() {
             identity: identity.clone(),
             refusal: Box::new(ImportViewRefusal::Read {
                 package: identity,
-                refusal: StageFailure::Limit(LimitExceeded::new(Setting::I2Nodes, 1, 2)),
+                refusal: Box::new(StageFailure::Limit(LimitExceeded::new(
+                    Setting::I2Nodes,
+                    1,
+                    2,
+                ))),
             }),
         },
         region: None,
@@ -820,7 +820,6 @@ fn an_import_read_ceiling_is_incomplete_naming_the_limit() {
 /// A one-object `current` snapshot for `ParentOrder`: `child` at version 2
 /// naming `parent_key`, in a population that is `complete` or not.
 fn child_snapshot_report(identity: &str, complete: bool, parent_key: &str) -> ClauseRunReport {
-    let model_digest_hex = config_version_model_digest_hex();
     let label = config_version_document_ref(identity);
     let population = config_version_population_identity();
     let value = json!({
@@ -833,7 +832,6 @@ fn child_snapshot_report(identity: &str, complete: bool, parent_key: &str) -> Cl
         "anchor": {"kind": "handler", "name": "validate"},
         "model": {
             "identity": CONFIG_VERSION_PACKAGE_IDENTITY, "version": "1.0.0",
-            "digest": format!("sha256-jcs:{model_digest_hex}"),
         },
         "populations": [{
             "population": population,
@@ -848,13 +846,13 @@ fn child_snapshot_report(identity: &str, complete: bool, parent_key: &str) -> Cl
         }],
     });
     let bytes = value.to_string().into_bytes();
-    let digest = document_digest(&bytes);
-    let label = DocumentRef { digest, ..label };
     let selection = config_version_current_selection("ParentOrder", label, "child");
     let mut request = config_version_request(ClauseRunSelection::Clause(selection));
-    request
-        .snapshots
-        .insert(super::observation_identity_from_bytes(&bytes), bytes);
+    request.snapshots.insert(
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
+        bytes,
+    );
     run_clause(request).unwrap()
 }
 
@@ -884,31 +882,12 @@ fn an_incomplete_population_is_incomplete_at_admit() {
     assert!(classified.classification.limits().is_empty());
 }
 
-/// FR-342-AC-4: a stale package is a `tool failure` at `compile`.
-#[trace("TC-862", "FR-342-AC-4")]
-#[test]
-fn a_stale_package_is_a_tool_failure_at_compile() {
-    let mut request = config_version_request(ClauseRunSelection::Function {
-        name: "n".to_owned(),
-        arguments: Vec::new(),
-        snapshot: config_version_document_ref("current-snap"),
-    });
-    request.expected_package_id = Some(compiled().emitted.package_id());
-    let report = run_clause(request).unwrap();
-    assert_run(
-        &report,
-        RefinementClass::ToolFailure,
-        ClauseRunStage::Compile,
-    );
-}
-
 /// FR-342: a cancelled argument refusal reads as the table's `refused`,
 /// carrying the `cancelled` code.
 #[trace("TC-862", "FR-342-AC-2")]
 #[test]
 fn a_cancelled_argument_refusal_is_refused_at_admit() {
     let report = ClauseRunReport {
-        package_id: None,
         usage: Default::default(),
         basis: crate::proof_result::SettlementBasis::Unavailable,
         witness: None,

@@ -15,7 +15,6 @@ use qsl_package::CheckedPackage;
 use qsl_semantics::check::{PackageDeclarations, Workload};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::observation::{AdmissionFailure, DocumentRef, ObservationLimits};
 use quire_exact::ScalarLimits;
 use quire_semantic_value::checking::CheckingLimits;
@@ -25,8 +24,6 @@ use crate::simulation::model::{
     ExpansionLimits, ModelSimState, ModelSimulationRequest, ModelSystem, PopulationUniverse,
 };
 use crate::simulation::TransitionSystem;
-
-const PLACEHOLDER: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 
 /// The native Boolean type reference.
 pub(crate) const BOOLEAN: &str = "ix://quire/native/Boolean";
@@ -146,7 +143,6 @@ impl Model {
             .into_iter()
             .map(|(name, meaning)| {
                 json!({"kind": {"module": self.package, "name": name}, "moduleVersion": "1.0.0",
-                "manifestDigest": PLACEHOLDER,
                 "construct": {"identity": "none", "shape": "record", "members": {},
                     "meaning": meaning}})
             })
@@ -180,12 +176,11 @@ impl Model {
         let population = self.ident(self.population);
         json!({
             "contractVersion": "2.0.0",
-            "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
+            "canonicalization": {"algorithm": "rfc8785-v1"},
             "source": {"identity": self.ident("spec"), "version": "1.0.0",
-                "dialect": "spec-bundle", "digest": PLACEHOLDER},
+                "dialect": "spec-bundle"},
             "package": {"identity": self.package, "version": "1.0.0",
-                "manifestDigest": PLACEHOLDER, "mappingVersions": [], "profileVersions": [],
-                "lockDigest": PLACEHOLDER},
+                "mappingVersions": [], "profileVersions": []},
             "occurrences": [], "extensions": [],
             "constructs": constructs,
             "types": types,
@@ -204,8 +199,8 @@ impl Model {
 /// A checked fixture model with its initial snapshot.
 pub(crate) struct World {
     pub(crate) package: CheckedPackage,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
+    snapshots: qsl_semantics::model::observation::DocumentProvision,
     initial: DocumentRef,
     universe: PopulationUniverse,
 }
@@ -228,14 +223,11 @@ impl World {
     /// `model`, checked.
     pub(crate) fn new(model: &Model) -> Self {
         let document = model.document();
-        let packages = package_input([document.as_slice()]);
-        let digest = *packages.keys().next().expect("one model");
+        let packages = package_input([document.as_slice()]).expect("one model");
         let unit = format!(
             "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\n\
-             model M = \"{}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n{}\n",
-            model.package,
-            hex(&digest),
-            model.body
+             model M = \"{}\";\n{}\n",
+            model.package, model.body
         );
         let parsed = qsl_cst::parse(
             qsl_foundation::SourceIdentity::new("test", "fr-188", "fixture", "1"),
@@ -258,6 +250,7 @@ impl World {
         .expect("the kept operation clauses parse");
         let graph = PackageDeclarations::assemble(
             parsed.source().reference().clone(),
+            "fixture".to_owned(),
             built,
             models,
             Vec::new(),
@@ -266,8 +259,7 @@ impl World {
         .check(CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:#?}"));
 
-        let header = json!({"identity": model.package, "version": "1.0.0",
-            "digest": format!("sha256-jcs:{}", hex(&digest))});
+        let header = json!({"identity": model.package});
         let snapshot = json!({
             "format": "quire.state.snapshot/v1",
             "identity": {"authority": "test", "identity": "s0", "revision_namespace": "fixture",
@@ -280,11 +272,6 @@ impl World {
         })
         .to_string()
         .into_bytes();
-        let read = quire_canonical::read(&snapshot, u64::MAX).expect("JSON fixture");
-        let snapshot_digest =
-            *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-                .expect("canonical fixture")
-                .as_bytes();
         let population = quire_checked::key::DeclarationKey {
             package: model.package.to_owned(),
             node: model.ident(model.population),
@@ -294,12 +281,11 @@ impl World {
             identity: "s0".to_owned(),
             revision_namespace: "fixture".to_owned(),
             revision: "fixture:1".to_owned(),
-            digest: snapshot_digest,
         };
         Self {
             package: CheckedPackage::link(graph),
             packages,
-            snapshots: BTreeMap::from([(initial.source_identity(), snapshot)]),
+            snapshots: BTreeMap::from([(initial.clone(), snapshot)]),
             initial,
             universe: PopulationUniverse {
                 population,

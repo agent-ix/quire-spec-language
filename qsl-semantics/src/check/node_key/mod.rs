@@ -1,96 +1,23 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Checked node keys: the FR-322 `quire.application-node/v1`
-//! preimage and QSL's FR-092 `quire.structural-node/v1` preimage, and the
-//! `quire.checked-semantic-node/v1` key each hashes to.
+//! Structural references used by the checked semantic graph.
 //!
-//! FR-092 "Which preimage keys a node": a node whose body contains an
-//! `application` term is keyed by FR-322's `application_node_preimage`,
-//! `{version: "quire.application-node/v1", node_tag, semantic_form,
-//! semantic_type, declaration, recursion, body}`; every other node the
-//! `Value` family builds is keyed by `quire.structural-node/v1`, the same
-//! members with that version, an `owner` member exactly when `declaration`
-//! is not `null` (a `SourceOwner`) or the node is model-owned (a
-//! `ModelOwner` with a `null` `declaration`, FR-094), and a `null`
-//! `semantic_type` for a self-typed node.
-//! [`node_key`] makes that choice from the body alone, so the two preimages
-//! cannot disagree about which applies; the one exception is a
-//! `value`/`union_value` node, which QSpec FR-440 keys by FR-322's preimage
-//! although its aggregate body holds no `application`. The nominal enum, enum member,
-//! dimension and unit preimages (FR-092 rule 1) are QSpec's own, built by
-//! `value::enumeration` and `value::unit`.
-//!
-//! `declaration` is the node's `declaration` member or `null`. [`node_key`]
-//! keys a node outside every recursion group (`recursion` `null`);
-//! [`group_keys`] keys a group's members by FR-092's group order: shapes,
-//! refinement signatures, classes, ordinals and the group digest. An
-//! in-group node's `recursion` is `{size, ordinal}` (application) or
-//! `{group, size, ordinal}` (structural), and each position naming a member
-//! of its group, a body `reference` or its `semantic_type`, becomes
-//! `{term: "group_reference", ordinal}`.
-//!
-//! The body is typed ([`BodyTerm`] and its strata mirror the v2 schema's
-//! closed `SemanticTerm`, `Operation`, `OperationLaw`, `OperationMode` and
-//! `OperationLeaf` definitions), so the preimage has a field list the compiler
-//! checks rather than a `serde_json::Value` assembled by hand. Mode values are
-//! the crate's own domain enums (`quire_exact::RoundingMode`,
-//! `quire_exact::TextProfile`, `qsl_foundation::absence::AbsenceMode`),
-//! spelled through their `as_str`. A literal's value is typed by its kind
-//! ([`LiteralValue`]); FR-092 spells an integer as its canonical decimal
-//! string and a rational as `"n/d"`, never as a JSON number.
-//!
-//! Canonical bytes: the typed preimage, each signature round and the group
-//! digest's array are encoded by `quire-canonical`, the one RFC 8785
-//! implementation (ADR-013 §2, ADR-013:113), which orders members itself.
-//! The preimage's body nests as deep as its term, so it is written through
-//! the encoder's event API from an explicit stack; every other part has a
-//! fixed shape and takes the encoder's `FixedShape` serde path. The group
-//! order's shapes are the one place a preimage is rewritten rather than
-//! built: its canonical bytes are read back through `quire-canonical`'s
-//! reader and written again with the placeholders' ordinals left out (and,
-//! for the anonymous shape, `owner` left out and `declaration` cleared). The only
-//! JSON numbers in a preimage are
-//! `recursion`'s size and ordinal, a `group_reference` ordinal and an
-//! `operation.member` position; each is a counter ([`Counter`]): the JSON
-//! number up to 2^53-1 and its decimal string beyond, never refused. No
-//! `Debug` or `Display` formatting of a Rust value is on the path except the
-//! canonical wire spelling `Integer` (the complete-V1 canonical decimal)
-//! documents as a contract. A node key, a group digest and a signature are
-//! spelled by this module's own lowercase hex ([`HexDigest`]), which is
-//! `NodeKey`'s wire spelling. The pinned-bytes tests fix the exact encoding.
-//!
-//! The body is stratified ([`BodyTerm`], [`MemberTerm`], [`GroupTerm`],
-//! [`LeafTerm`]): no stratum names itself or a higher one, so keying a body
-//! is a fixed-depth match and every preimage nests a depth the grammar fixes,
-//! whatever the expression's depth (ADR-030 D-2, FR-258).
-//!
-//! Conformance against QSpec's own published `operation_vectors` is the
-//! opt-in `conformance` test (`make conformance` with `QSPEC_DIR` pointing at
-//! a quire-specification checkout). QSpec is not public yet, so nothing of it
-//! is copied here; the test reads the vectors at run time.
+//! QSpec FR-322 defines a node identity as `{package, path, ordinal}`.
+//! Lowering carries source or producer-assigned identities and resolves local
+//! placeholders before admission. Body terms retain typed semantic content;
+//! they no longer derive identities from canonical preimages or digests.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
-
-use qsl_foundation::ByteDigest;
-use quire_canonical::{Encode, FixedShape, Sink, Writer};
+use quire_canonical::FixedShape;
 use serde::Serialize;
 
-use crate::value::semantic_node::{NodeIdentityPreimage, NodeOwner, NominalRefusal, OwnerSubject};
-use qsl_foundation::IdentityLimits;
+use crate::value::semantic_node::{NodeOwner, OwnerSubject};
 use quire_semantic_value::semantic_node::IdentityRefusal;
 
 use qsl_foundation::absence::AbsenceMode;
 use quire_exact::{Identifier, Integer, Rational, RoundingMode, TextProfile, Timestamp, Uuid};
 
-use crate::value::counter::Counter;
 use crate::value::definition::DefinitionReference;
 use crate::value::member::{AcceptedPoint, Member};
-use quire_exact::{NodeKey, NODE_KEY_DOMAIN};
-
-/// FR-322's application-node preimage version.
-pub(crate) const APPLICATION_NODE_VERSION: &str = "quire.application-node/v1";
-
-/// FR-092's structural-node preimage version.
-pub(crate) const STRUCTURAL_NODE_VERSION: &str = "quire.structural-node/v1";
+use quire_exact::NodeKey;
 
 /// The owner of a declared node (ADR-013 O-04): the declaring source unit's
 /// `SourceOwner{kind: "source", authority, identity}`, a required E3 input
@@ -154,12 +81,13 @@ impl SourceOwner {
         })
     }
 
-    /// This owner as the nominal preimages' `{kind: "source", authority,
+    /// This owner as the nominal source descriptor `{kind: "source", authority,
     /// identity}` owner subject (FR-091 "Enum declarations").
-    pub(crate) fn node_owner(&self) -> NodeOwner {
+    pub(crate) fn node_owner(&self, package_name: &str) -> NodeOwner {
         NodeOwner::Source(OwnerSubject {
             authority: self.authority.clone(),
             identity: self.identity.clone(),
+            package_name: package_name.to_owned(),
         })
     }
 
@@ -178,7 +106,7 @@ impl SourceOwner {
 /// content-only `ModelOwner{kind: "model", identity, node}`. `identity` is
 /// the declaring domain package's `DomainPackageRef` identity; `node` is the
 /// declaration's IR node identity. The owner carries no version, and the
-/// lock's `model_selections` selects the package by identity and digest, so
+/// source `model` selects the package by identity alone, so
 /// a change of the domain package that leaves a node's content unchanged keys
 /// the same node.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, FixedShape)]
@@ -239,11 +167,10 @@ impl ModelOwner {
 }
 
 /// The owner of a selected model package's `model_root` node (QSpec FR-322
-/// `ModelRootOwner`): the selected package's identity and `sha256-jcs` digest
-/// as lowercase hex, never a declaration or an alias.
+/// `ModelRootOwner`): the selected package's identity, never a declaration
+/// or an alias.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, FixedShape)]
 pub struct ModelRootOwner {
-    digest: String,
     identity: String,
     kind: ModelRootOwnerKind,
 }
@@ -255,21 +182,13 @@ enum ModelRootOwnerKind {
 }
 
 impl ModelRootOwner {
-    /// The root owner `{kind: "model_root", identity, digest}`.
-    pub fn new(
-        identity: impl Into<String>,
-        digest: impl Into<String>,
-    ) -> Result<Self, InvalidModelOwner> {
+    /// The root owner `{kind: "model_root", identity}`.
+    pub fn new(identity: impl Into<String>) -> Result<Self, InvalidModelOwner> {
         let identity = identity.into();
-        let digest = digest.into();
         if identity.is_empty() {
             return Err(InvalidModelOwner::EmptyIdentity);
         }
-        if digest.is_empty() {
-            return Err(InvalidModelOwner::EmptyNode);
-        }
         Ok(Self {
-            digest,
             identity,
             kind: ModelRootOwnerKind::ModelRoot,
         })
@@ -278,11 +197,6 @@ impl ModelRootOwner {
     /// The selected package's identity.
     pub fn identity(&self) -> &str {
         &self.identity
-    }
-
-    /// The selected package's digest, lowercase hex.
-    pub fn digest(&self) -> &str {
-        &self.digest
     }
 }
 
@@ -300,38 +214,42 @@ pub enum Owner {
     ModelRoot(ModelRootOwner),
 }
 
-/// A `NodeRef` (`{domain, digest}`) naming a checked node by key.
+/// A local draft handle; its value never reaches a checked package.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct NodeRef(pub NodeKey);
+pub struct PlaceholderId(pub(crate) usize);
 
-impl Serialize for NodeRef {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        // `NodeKey`'s lowercase-hex spelling, written on the stack: a
-        // preimage names many keys, and each is spelled without
-        // allocating or formatting.
-        let digits = HexDigest::of(self.0.as_bytes());
-        NodeIdWire {
-            domain: NODE_KEY_DOMAIN,
-            digest: digits.as_str(),
-        }
-        .serialize(serializer)
+/// A node reference during lowering. The pending form must be resolved to
+/// an admitted structural identity before the body crosses a wire boundary.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum NodeRef {
+    /// A source-supplied or producer-assigned structural node identity.
+    Admitted(NodeKey),
+    /// A local group member whose structural identity is not yet assigned.
+    Pending(PlaceholderId),
+}
+
+impl From<NodeKey> for NodeRef {
+    fn from(node: NodeKey) -> Self {
+        Self::Admitted(node)
     }
 }
 
-/// A [`NodeRef`] serializes as a `NodeIdWire`, so it nests as deep.
-impl FixedShape for NodeRef {
-    const DEPTH: usize = <NodeIdWire<'static> as FixedShape>::DEPTH;
+impl NodeRef {
+    /// Borrow the admitted node identity after placeholder resolution.
+    pub fn admitted(&self) -> Option<&NodeKey> {
+        match self {
+            Self::Admitted(node) => Some(node),
+            Self::Pending(_) => None,
+        }
+    }
+
+    /// Require a resolved structural identity at an admission boundary.
+    fn require_admitted(&self) -> Result<&NodeKey, NodeKeyRefusal> {
+        self.admitted().ok_or(NodeKeyRefusal::UnresolvedPlaceholder)
+    }
 }
 
-/// A node id as a preimage or term writes it: `{domain, digest}`, the
-/// digest in lowercase hex.
-#[derive(Serialize, FixedShape)]
-struct NodeIdWire<'a> {
-    domain: &'static str,
-    digest: &'a str,
-}
-
-/// The preimage schema's closed `node_tag` vocabulary.
+/// The checked semantic graph's closed `node_tag` vocabulary.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, FixedShape)]
 #[cfg_attr(test, derive(serde::Deserialize))]
 #[serde(rename_all = "snake_case")]
@@ -370,24 +288,38 @@ pub enum NodeTag {
     TimedModel,
 }
 
+impl NodeTag {
+    /// The closed v2 node tag spelling used as a derived path segment.
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::ScalarType => "scalar_type",
+            Self::CompositeType => "composite_type",
+            Self::BoundedDomain => "bounded_domain",
+            Self::Value => "value",
+            Self::Expression => "expression",
+            Self::Function => "function",
+            Self::Model => "model",
+            Self::Relation => "relation",
+            Self::State => "state",
+            Self::Temporal => "temporal",
+            Self::Protocol => "protocol",
+            Self::Claim => "claim",
+            Self::Correspondence => "correspondence",
+            Self::Hybrid => "hybrid",
+            Self::TimedModel => "timed_model",
+        }
+    }
+}
+
 /// The Leaf stratum of QSpec FR-322's v2 body grammar (ADR-030 D-2): a
-/// term that holds no other term. Its depth is fixed, so it encodes through
-/// `quire-canonical`'s serde path (its `flatten` and tag only make the
-/// derived depth an overestimate).
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, FixedShape)]
-#[cfg_attr(test, derive(serde::Deserialize))]
-// No `deny_unknown_fields`: serde does not combine it with the literal's
-// `flatten`, and the conformance test compares re-encoded bytes with the
-// published ones, so a dropped member fails there instead.
-#[serde(tag = "term", rename_all = "snake_case")]
+/// term that holds no other term. Its depth is fixed by the grammar.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum LeafTerm {
     /// A typed literal: its kind and JSON value come from [`LiteralValue`].
     Literal {
         /// The literal's type node.
-        #[serde(rename = "type")]
         ty: NodeRef,
         /// The literal's value.
-        #[serde(flatten)]
         value: LiteralValue,
     },
     /// A reference to another node.
@@ -395,22 +327,16 @@ pub enum LeafTerm {
         /// The referenced node.
         target: NodeRef,
     },
-    /// A reference to a node of a dependency package (ADR-015 D-5, QSpec
-    /// FR-322): the dependency's `package_id` and the node's id there. It
-    /// enters the referencing node's identity and is never one of its
-    /// `dependencies` (FR-322-AC-36, FR-322-AC-37).
+    /// A reference to an imported node, retaining that node's own package
+    /// name inside its structural identity.
     DependencyReference {
-        /// The dependency's `package_id`.
-        package: PackageRef,
-        /// The node's id in the dependency.
-        node: WireNodeRef,
+        /// The node's structural identity in its owning package.
+        node: NodeRef,
     },
 }
 
 /// `{term: "binding", name, value}`: a named `value` of a lower stratum.
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
-#[cfg_attr(test, derive(serde::Deserialize))]
-#[serde(tag = "term", rename = "binding")]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Binding<V> {
     /// The bound name (schema `Nonempty`; an empty name is refused).
     pub name: String,
@@ -419,9 +345,7 @@ pub struct Binding<V> {
 }
 
 /// A member of a [`GroupTerm`]: a Leaf, or a binding whose value is a Leaf.
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
-#[cfg_attr(test, derive(serde::Deserialize))]
-#[serde(untagged)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum GroupMember {
     /// A Leaf.
     Leaf(LeafTerm),
@@ -431,18 +355,14 @@ pub enum GroupMember {
 
 /// The Group stratum: an `aggregate` whose members are each a Leaf or a
 /// binding of a Leaf.
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
-#[cfg_attr(test, derive(serde::Deserialize))]
-#[serde(tag = "term", rename = "aggregate")]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct GroupTerm {
     /// The members, in order.
     pub members: Vec<GroupMember>,
 }
 
 /// A member of a [`TupleTerm`]: a Leaf or a Group.
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
-#[cfg_attr(test, derive(serde::Deserialize))]
-#[serde(untagged)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum TupleMember {
     /// A Leaf.
     Leaf(LeafTerm),
@@ -452,9 +372,7 @@ pub enum TupleMember {
 
 /// The Tuple stratum: an `aggregate` whose members are each a Leaf or a
 /// Group.
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
-#[cfg_attr(test, derive(serde::Deserialize))]
-#[serde(tag = "term", rename = "aggregate")]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct TupleTerm {
     /// The members, in order.
     pub members: Vec<TupleMember>,
@@ -464,9 +382,7 @@ pub struct TupleTerm {
 /// closed nested aggregate where a QSpec body production requires one (for
 /// example FR-477's execution-entry bindings). Other bindings retain the
 /// FR-322 grammar's existing strata.
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
-#[cfg_attr(test, derive(serde::Deserialize))]
-#[serde(untagged)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum BindingValue {
     /// A Leaf.
     Leaf(LeafTerm),
@@ -485,9 +401,7 @@ pub enum BindingValue {
 
 /// The Member stratum: an application argument or a body aggregate's
 /// member.
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
-#[cfg_attr(test, derive(serde::Deserialize))]
-#[serde(untagged)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum MemberTerm {
     /// A Leaf.
     Leaf(LeafTerm),
@@ -499,9 +413,7 @@ pub enum MemberTerm {
 
 /// An operation application: a Body production whose arguments are each a
 /// Member.
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
-#[cfg_attr(test, derive(serde::Deserialize))]
-#[serde(tag = "term", rename = "application")]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct ApplicationTerm {
     /// The operator class.
     pub operator: Operator,
@@ -514,31 +426,25 @@ pub struct ApplicationTerm {
 }
 
 /// An ordered aggregate: a Body production whose members are each a Member.
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
-#[cfg_attr(test, derive(serde::Deserialize))]
-#[serde(tag = "term", rename = "aggregate")]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct AggregateTerm {
     /// The members, in order.
     pub members: Vec<MemberTerm>,
 }
 
 /// A `state`/`frame` node's own body shape (QSpec FR-340), valid only as a
-/// node's body. It contains no `application`, so `node_key` always keys a
-/// frame node through the FR-092 structural preimage, never the application
-/// one.
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
-#[cfg_attr(test, derive(serde::Deserialize))]
-#[serde(tag = "term", rename = "frame")]
+/// node's body.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct FrameTerm {
     /// Every field or relationship the operation may write, ascending by
-    /// (declaring node digest, field name), a relationship's name being
+    /// (declaring node identity, field name), a relationship's name being
     /// empty (FR-340).
     pub modifies: Vec<FrameModifies>,
     /// Every object type or process the operation may create, ascending by
-    /// node digest.
+    /// structural node identity.
     pub creates: Vec<NodeRef>,
     /// Every object type or process the operation may delete, ascending by
-    /// node digest.
+    /// structural node identity.
     pub deletes: Vec<NodeRef>,
     /// The scoped deletes: `receiver` first, then each reference parameter
     /// by name as UTF-8 bytes (QSpec FR-340). Always present.
@@ -547,11 +453,9 @@ pub struct FrameTerm {
 
 /// A node's body: the Body stratum of QSpec FR-322's v2 body grammar
 /// (ADR-030 D-2, FR-258). No stratum names itself or a higher one, so every
-/// body, and its node-key preimage, nests a depth the grammar fixes, and
+/// body nests a depth the grammar fixes, and
 /// every composite subterm is its own node, reached by `reference`.
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
-#[cfg_attr(test, derive(serde::Deserialize))]
-#[serde(untagged)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum BodyTerm {
     /// A Leaf.
     Leaf(LeafTerm),
@@ -582,8 +486,8 @@ impl FrameModifies {
     /// relationship's own node.
     pub fn declaration(&self) -> NodeRef {
         match self {
-            Self::Field(field) => field.declaration,
-            Self::Relationship(declaration) => *declaration,
+            Self::Field(field) => field.declaration.clone(),
+            Self::Relationship(declaration) => declaration.clone(),
         }
     }
 
@@ -593,50 +497,6 @@ impl FrameModifies {
             Self::Field(field) => Some(field.name()),
             Self::Relationship(_) => None,
         }
-    }
-}
-
-impl Serialize for FrameModifies {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        match self {
-            Self::Field(field) => field.serialize(serializer),
-            Self::Relationship(declaration) => FrameRelationshipWire {
-                kind: "relationship",
-                declaration: *declaration,
-            }
-            .serialize(serializer),
-        }
-    }
-}
-
-/// The deeper of the two entry shapes, so a [`FrameModifies`] nests as deep.
-impl FixedShape for FrameModifies {
-    const DEPTH: usize = {
-        let field = <FrameField as FixedShape>::DEPTH;
-        let relationship = <FrameRelationshipWire as FixedShape>::DEPTH;
-        if field > relationship {
-            field
-        } else {
-            relationship
-        }
-    };
-}
-
-/// `{kind: "relationship", declaration}`.
-#[derive(Serialize, FixedShape)]
-struct FrameRelationshipWire {
-    kind: &'static str,
-    declaration: NodeRef,
-}
-
-// Test-only, matching `LiteralValue`'s own pattern: QSpec's operation
-// vectors carry no frame body, so the conformance decoder never needs one.
-#[cfg(test)]
-impl<'de> serde::Deserialize<'de> for FrameModifies {
-    fn deserialize<D: serde::Deserializer<'de>>(_: D) -> Result<Self, D::Error> {
-        Err(serde::de::Error::custom(
-            "frame entries are not decoded from vectors",
-        ))
     }
 }
 
@@ -650,16 +510,6 @@ pub enum FrameScope {
     Receiver,
 }
 
-impl FrameScope {
-    /// The wire spelling.
-    const fn as_wire(self) -> &'static str {
-        match self {
-            Self::EveryObject => "every-object",
-            Self::Receiver => "receiver",
-        }
-    }
-}
-
 /// One `deletes_scoped` entry of a `state`/`frame` node's body (QSpec
 /// FR-340): `deletes self` or `deletes p`.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -668,56 +518,6 @@ pub enum FrameDeletesScoped {
     Receiver,
     /// `{kind: "parameter", name}`.
     Parameter(String),
-}
-
-impl Serialize for FrameDeletesScoped {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        match self {
-            Self::Receiver => FrameReceiverWire { kind: "receiver" }.serialize(serializer),
-            Self::Parameter(name) => FrameParameterWire {
-                kind: "parameter",
-                name,
-            }
-            .serialize(serializer),
-        }
-    }
-}
-
-/// The deeper of the two entry shapes, so a [`FrameDeletesScoped`] nests as
-/// deep.
-impl FixedShape for FrameDeletesScoped {
-    const DEPTH: usize = {
-        let receiver = <FrameReceiverWire as FixedShape>::DEPTH;
-        let parameter = <FrameParameterWire<'static> as FixedShape>::DEPTH;
-        if receiver > parameter {
-            receiver
-        } else {
-            parameter
-        }
-    };
-}
-
-/// `{kind: "receiver"}`.
-#[derive(Serialize, FixedShape)]
-struct FrameReceiverWire {
-    kind: &'static str,
-}
-
-/// `{kind: "parameter", name}`.
-#[derive(Serialize, FixedShape)]
-struct FrameParameterWire<'a> {
-    kind: &'static str,
-    name: &'a str,
-}
-
-// Test-only, matching `FrameModifies`.
-#[cfg(test)]
-impl<'de> serde::Deserialize<'de> for FrameDeletesScoped {
-    fn deserialize<D: serde::Deserializer<'de>>(_: D) -> Result<Self, D::Error> {
-        Err(serde::de::Error::custom(
-            "frame entries are not decoded from vectors",
-        ))
-    }
 }
 
 /// A `modifies` entry naming a field: the field's declaring node, its own
@@ -733,7 +533,7 @@ impl FrameField {
     /// `{kind: "field", declaration, name, scope}`.
     pub(crate) fn new(declaration: NodeKey, name: impl Into<String>, scope: FrameScope) -> Self {
         Self {
-            declaration: NodeRef(declaration),
+            declaration: NodeRef::Admitted(declaration),
             name: name.into(),
             scope,
         }
@@ -746,7 +546,7 @@ impl FrameField {
 
     /// The field's declaring node.
     pub fn declaration(&self) -> NodeRef {
-        self.declaration
+        self.declaration.clone()
     }
 
     /// The field's own name.
@@ -755,120 +555,25 @@ impl FrameField {
     }
 }
 
-impl Serialize for FrameField {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        FrameFieldWire {
-            kind: "field",
-            declaration: self.declaration,
-            name: &self.name,
-            scope: self.scope.as_wire(),
-        }
-        .serialize(serializer)
-    }
-}
-
-/// A [`FrameField`] serializes as a `FrameFieldWire`, so it nests as deep.
-impl FixedShape for FrameField {
-    const DEPTH: usize = <FrameFieldWire<'static> as FixedShape>::DEPTH;
-}
-
-/// `{kind: "field", declaration, name, scope}`.
-#[derive(Serialize, FixedShape)]
-struct FrameFieldWire<'a> {
-    kind: &'static str,
-    declaration: NodeRef,
-    name: &'a str,
-    scope: &'static str,
-}
-
-/// A dependency's `package_id` as a term writes it: a
-/// `quire.package.semantic/v2` SHA-256 semantic id.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct PackageRef(pub crate::library::PackageId);
-
-impl Serialize for PackageRef {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let digits = HexDigest::of(self.0.as_bytes());
-        PackageIdWire {
-            domain: PACKAGE_DOMAIN_V2,
-            algorithm: "sha256",
-            digest: digits.as_str(),
-        }
-        .serialize(serializer)
-    }
-}
-
-/// A [`PackageRef`] serializes as a `PackageIdWire`, so it nests as deep.
-impl FixedShape for PackageRef {
-    const DEPTH: usize = <PackageIdWire<'static> as FixedShape>::DEPTH;
-}
-
-/// `{domain, algorithm: "sha256", digest}`.
-#[derive(Serialize, FixedShape)]
-struct PackageIdWire<'a> {
-    domain: &'static str,
-    algorithm: &'static str,
-    digest: &'a str,
-}
-
-/// A dependency node's id as a term writes it: a node id in the node
-/// domain, the spelling the dependency's own graph gives it.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct WireNodeRef(pub qsl_foundation::digest::WireNodeId);
-
-impl Serialize for WireNodeRef {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let digits = HexDigest::of(self.0.as_bytes());
-        NodeIdWire {
-            domain: NODE_KEY_DOMAIN,
-            digest: digits.as_str(),
-        }
-        .serialize(serializer)
-    }
-}
-
-/// A [`WireNodeRef`] serializes as a `NodeIdWire`, so it nests as deep.
-impl FixedShape for WireNodeRef {
-    const DEPTH: usize = <NodeIdWire<'static> as FixedShape>::DEPTH;
-}
-
-/// The `package_id` domain a `dependency_reference` names (QSpec FR-322).
-const PACKAGE_DOMAIN_V2: &str = "quire.package.semantic/v2";
-
-// Test-only: QSpec's operation vectors carry no `dependency_reference`, so
-// the conformance decoder never needs one.
-#[cfg(test)]
-impl<'de> serde::Deserialize<'de> for PackageRef {
-    fn deserialize<D: serde::Deserializer<'de>>(_: D) -> Result<Self, D::Error> {
-        Err(serde::de::Error::custom(
-            "dependency references are not decoded from vectors",
-        ))
-    }
-}
-
-#[cfg(test)]
-impl<'de> serde::Deserialize<'de> for WireNodeRef {
-    fn deserialize<D: serde::Deserializer<'de>>(_: D) -> Result<Self, D::Error> {
-        Err(serde::de::Error::custom(
-            "dependency references are not decoded from vectors",
-        ))
-    }
-}
-
 impl LeafTerm {
     /// `{term: "reference", target}`.
     pub(crate) fn reference(target: NodeKey) -> Self {
-        Self::Reference {
-            target: NodeRef(target),
-        }
+        Self::reference_node(target.into())
+    }
+
+    /// A reference to an admitted identity or lowering-local placeholder.
+    pub(crate) fn reference_node(target: NodeRef) -> Self {
+        Self::Reference { target }
     }
 
     /// `{term: "literal", type, value_kind, value}`.
     pub(crate) fn literal(ty: NodeKey, value: LiteralValue) -> Self {
-        Self::Literal {
-            ty: NodeRef(ty),
-            value,
-        }
+        Self::literal_node(ty.into(), value)
+    }
+
+    /// A literal typed by an admitted identity or lowering-local placeholder.
+    pub(crate) fn literal_node(ty: NodeRef, value: LiteralValue) -> Self {
+        Self::Literal { ty, value }
     }
 
     /// The node key this leaf names in its own graph: a `reference`'s
@@ -876,26 +581,23 @@ impl LeafTerm {
     /// graph.
     pub fn key(&self) -> Option<NodeKey> {
         match self {
-            Self::Literal { ty, .. } => Some(ty.0),
-            Self::Reference { target } => Some(target.0),
+            Self::Literal { ty, .. } => ty.admitted().cloned(),
+            Self::Reference { target } => target.admitted().cloned(),
             Self::DependencyReference { .. } => None,
         }
     }
 
     /// This leaf with the node key it names replaced by `map`'s image.
-    fn map_keys(&self, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Self {
+    fn map_refs(&self, map: &mut impl FnMut(&NodeRef) -> NodeRef) -> Self {
         match self {
             Self::Literal { ty, value } => Self::Literal {
-                ty: NodeRef(map(ty.0)),
+                ty: map(ty),
                 value: value.clone(),
             },
             Self::Reference { target } => Self::Reference {
-                target: NodeRef(map(target.0)),
+                target: map(target),
             },
-            Self::DependencyReference { package, node } => Self::DependencyReference {
-                package: *package,
-                node: *node,
-            },
+            Self::DependencyReference { node } => Self::DependencyReference { node: map(node) },
         }
     }
 }
@@ -911,8 +613,8 @@ impl<V> Binding<V> {
 }
 
 impl Binding<LeafTerm> {
-    fn map_keys(&self, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Self {
-        Self::new(self.name.clone(), self.value.map_keys(map))
+    fn map_refs(&self, map: &mut impl FnMut(&NodeRef) -> NodeRef) -> Self {
+        Self::new(self.name.clone(), self.value.map_refs(map))
     }
 }
 
@@ -924,10 +626,10 @@ impl GroupMember {
         }
     }
 
-    fn map_keys(&self, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Self {
+    fn map_refs(&self, map: &mut impl FnMut(&NodeRef) -> NodeRef) -> Self {
         match self {
-            Self::Leaf(leaf) => Self::Leaf(leaf.map_keys(map)),
-            Self::Binding(binding) => Self::Binding(binding.map_keys(map)),
+            Self::Leaf(leaf) => Self::Leaf(leaf.map_refs(map)),
+            Self::Binding(binding) => Self::Binding(binding.map_refs(map)),
         }
     }
 }
@@ -940,10 +642,15 @@ impl GroupTerm {
 
     /// An aggregate of the references to `targets`, in order.
     pub(crate) fn references(targets: impl IntoIterator<Item = NodeKey>) -> Self {
+        Self::references_nodes(targets.into_iter().map(NodeRef::from))
+    }
+
+    /// An aggregate of admitted references and pending local handles.
+    pub(crate) fn references_nodes(targets: impl IntoIterator<Item = NodeRef>) -> Self {
         Self::new(
             targets
                 .into_iter()
-                .map(|target| GroupMember::Leaf(LeafTerm::reference(target)))
+                .map(|target| GroupMember::Leaf(LeafTerm::reference_node(target)))
                 .collect(),
         )
     }
@@ -953,17 +660,26 @@ impl GroupTerm {
         self.members.iter().map(GroupMember::leaf)
     }
 
-    fn map_keys(&self, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Self {
+    fn map_refs(&self, map: &mut impl FnMut(&NodeRef) -> NodeRef) -> Self {
         Self::new(
             self.members
                 .iter()
-                .map(|member| member.map_keys(map))
+                .map(|member| member.map_refs(map))
                 .collect(),
         )
     }
 }
 
 impl TupleMember {
+    /// Call `visit` with every Leaf of this member, in order, without
+    /// allocating.
+    pub(crate) fn for_each_leaf(&self, visit: &mut impl FnMut(&LeafTerm)) {
+        match self {
+            Self::Leaf(leaf) => visit(leaf),
+            Self::Group(group) => group.leaves().for_each(visit),
+        }
+    }
+
     /// Every Leaf of this member, in order.
     pub fn leaves(&self) -> Vec<&LeafTerm> {
         match self {
@@ -972,15 +688,22 @@ impl TupleMember {
         }
     }
 
-    fn map_keys(&self, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Self {
+    fn map_refs(&self, map: &mut impl FnMut(&NodeRef) -> NodeRef) -> Self {
         match self {
-            Self::Leaf(leaf) => Self::Leaf(leaf.map_keys(map)),
-            Self::Group(group) => Self::Group(group.map_keys(map)),
+            Self::Leaf(leaf) => Self::Leaf(leaf.map_refs(map)),
+            Self::Group(group) => Self::Group(group.map_refs(map)),
         }
     }
 }
 
 impl TupleTerm {
+    /// Call `visit` with every Leaf of this Tuple, in order.
+    pub(crate) fn for_each_leaf(&self, visit: &mut impl FnMut(&LeafTerm)) {
+        for member in &self.members {
+            member.for_each_leaf(visit);
+        }
+    }
+
     /// `{term: "aggregate", members}` over Tuple members.
     pub(crate) fn new(members: Vec<TupleMember>) -> Self {
         Self { members }
@@ -991,11 +714,11 @@ impl TupleTerm {
         self.members.iter().flat_map(TupleMember::leaves).collect()
     }
 
-    fn map_keys(&self, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Self {
+    fn map_refs(&self, map: &mut impl FnMut(&NodeRef) -> NodeRef) -> Self {
         Self::new(
             self.members
                 .iter()
-                .map(|member| member.map_keys(map))
+                .map(|member| member.map_refs(map))
                 .collect(),
         )
     }
@@ -1008,6 +731,21 @@ impl BindingValue {
         Self::Group(GroupTerm::new(vec![GroupMember::Binding(Binding::new(
             name, leaf,
         ))]))
+    }
+
+    /// Call `visit` with every Leaf this value holds, in order.
+    pub(crate) fn for_each_leaf(&self, visit: &mut impl FnMut(&LeafTerm)) {
+        match self {
+            Self::Leaf(leaf) => visit(leaf),
+            Self::Group(group) => group.leaves().for_each(visit),
+            Self::Tuple(tuple) => tuple.for_each_leaf(visit),
+            Self::Aggregate(aggregate) => {
+                for member in &aggregate.members {
+                    member.for_each_leaf(visit);
+                }
+            }
+            Self::ExecutionPoint(_) => {}
+        }
     }
 
     /// Every Leaf this value holds, in order.
@@ -1025,16 +763,16 @@ impl BindingValue {
         }
     }
 
-    fn map_keys(&self, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Self {
+    fn map_refs(&self, map: &mut impl FnMut(&NodeRef) -> NodeRef) -> Self {
         match self {
-            Self::Leaf(leaf) => Self::Leaf(leaf.map_keys(map)),
-            Self::Group(group) => Self::Group(group.map_keys(map)),
-            Self::Tuple(tuple) => Self::Tuple(tuple.map_keys(map)),
+            Self::Leaf(leaf) => Self::Leaf(leaf.map_refs(map)),
+            Self::Group(group) => Self::Group(group.map_refs(map)),
+            Self::Tuple(tuple) => Self::Tuple(tuple.map_refs(map)),
             Self::Aggregate(aggregate) => Self::Aggregate(AggregateTerm {
                 members: aggregate
                     .members
                     .iter()
-                    .map(|member| member.map_keys(map))
+                    .map(|member| member.map_refs(map))
                     .collect(),
             }),
             Self::ExecutionPoint(point) => Self::ExecutionPoint(point.clone()),
@@ -1045,7 +783,12 @@ impl BindingValue {
 impl MemberTerm {
     /// `{term: "reference", target}` as a Member.
     pub(crate) fn reference(target: NodeKey) -> Self {
-        Self::Leaf(LeafTerm::reference(target))
+        Self::reference_node(target.into())
+    }
+
+    /// A Member reference to an admitted identity or pending local handle.
+    pub(crate) fn reference_node(target: NodeRef) -> Self {
+        Self::Leaf(LeafTerm::reference_node(target))
     }
 
     /// `{term: "binding", name, value}` as a Member.
@@ -1058,6 +801,15 @@ impl MemberTerm {
         Self::binding(name, BindingValue::Leaf(value))
     }
 
+    /// Call `visit` with every Leaf this Member holds, in order.
+    pub(crate) fn for_each_leaf(&self, visit: &mut impl FnMut(&LeafTerm)) {
+        match self {
+            Self::Leaf(leaf) => visit(leaf),
+            Self::Group(group) => group.leaves().for_each(visit),
+            Self::Binding(binding) => binding.value.for_each_leaf(visit),
+        }
+    }
+
     /// Every Leaf this Member holds, in order.
     pub fn leaves(&self) -> Vec<&LeafTerm> {
         match self {
@@ -1067,13 +819,13 @@ impl MemberTerm {
         }
     }
 
-    fn map_keys(&self, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Self {
+    fn map_refs(&self, map: &mut impl FnMut(&NodeRef) -> NodeRef) -> Self {
         match self {
-            Self::Leaf(leaf) => Self::Leaf(leaf.map_keys(map)),
-            Self::Group(group) => Self::Group(group.map_keys(map)),
+            Self::Leaf(leaf) => Self::Leaf(leaf.map_refs(map)),
+            Self::Group(group) => Self::Group(group.map_refs(map)),
             Self::Binding(binding) => Self::Binding(Binding::new(
                 binding.name.clone(),
-                binding.value.map_keys(map),
+                binding.value.map_refs(map),
             )),
         }
     }
@@ -1090,7 +842,12 @@ impl AggregateTerm {
 impl BodyTerm {
     /// `{term: "literal", type, value_kind, value}` as a body.
     pub(crate) fn literal(ty: NodeKey, value: LiteralValue) -> Self {
-        Self::Leaf(LeafTerm::literal(ty, value))
+        Self::literal_node(ty.into(), value)
+    }
+
+    /// A literal body typed by an admitted identity or pending handle.
+    pub(crate) fn literal_node(ty: NodeRef, value: LiteralValue) -> Self {
+        Self::Leaf(LeafTerm::literal_node(ty, value))
     }
 
     /// `{term: "aggregate", members}` as a body.
@@ -1109,14 +866,29 @@ impl BodyTerm {
         Self::Application(ApplicationTerm {
             operator,
             operation,
-            result_type: NodeRef(result_type),
+            result_type: NodeRef::Admitted(result_type),
+            arguments,
+        })
+    }
+
+    /// An application typed by an admitted identity or pending handle.
+    pub(crate) fn application_node(
+        operator: Operator,
+        operation: Operation,
+        result_type: NodeRef,
+        arguments: Vec<MemberTerm>,
+    ) -> Self {
+        Self::Application(ApplicationTerm {
+            operator,
+            operation,
+            result_type,
             arguments,
         })
     }
 
     /// `{term: "frame", modifies, creates, deletes, deletes_scoped}` (QSpec FR-340).
-    /// `creates` and `deletes` are each an ascending-by-digest list of
-    /// object type or process node keys.
+    /// `creates` and `deletes` are each ordered lists of object type or
+    /// process node keys.
     pub(crate) fn frame(
         modifies: Vec<FrameModifies>,
         creates: Vec<NodeKey>,
@@ -1125,8 +897,8 @@ impl BodyTerm {
     ) -> Self {
         Self::Frame(FrameTerm {
             modifies,
-            creates: creates.into_iter().map(NodeRef).collect(),
-            deletes: deletes.into_iter().map(NodeRef).collect(),
+            creates: creates.into_iter().map(NodeRef::Admitted).collect(),
+            deletes: deletes.into_iter().map(NodeRef::Admitted).collect(),
             deletes_scoped,
         })
     }
@@ -1136,6 +908,21 @@ impl BodyTerm {
         match self {
             Self::Application(application) => Some(application),
             Self::Leaf(_) | Self::Aggregate(_) | Self::Frame(_) | Self::Abstraction(_) => None,
+        }
+    }
+
+    /// Call `visit` with every Leaf of this body, in order, without
+    /// allocating.
+    pub(crate) fn for_each_leaf(&self, visit: &mut impl FnMut(&LeafTerm)) {
+        match self {
+            Self::Leaf(leaf) => visit(leaf),
+            Self::Application(ApplicationTerm { arguments, .. })
+            | Self::Aggregate(AggregateTerm { members: arguments }) => {
+                for member in arguments {
+                    member.for_each_leaf(visit);
+                }
+            }
+            Self::Frame(_) | Self::Abstraction(_) => {}
         }
     }
 
@@ -1157,7 +944,10 @@ impl BodyTerm {
     /// Call `visit` with every node key this body names (FR-092 "names"):
     /// each `reference` target, literal `type`, application `result_type`
     /// and operation member `declaration`, and a frame's entries.
-    pub(crate) fn for_each_key(&self, visit: &mut impl FnMut(NodeKey)) {
+    pub(crate) fn for_each_key(
+        &self,
+        visit: &mut impl FnMut(NodeKey),
+    ) -> Result<(), NodeKeyRefusal> {
         match self {
             Self::Application(ApplicationTerm {
                 operation,
@@ -1170,7 +960,7 @@ impl BodyTerm {
                 if let Some(population) = operation.member.as_ref().and_then(Member::population) {
                     visit(population);
                 }
-                visit(result_type.0);
+                visit(result_type.require_admitted()?.clone());
             }
             Self::Frame(FrameTerm {
                 modifies,
@@ -1179,28 +969,110 @@ impl BodyTerm {
                 deletes_scoped: _,
             }) => {
                 for entry in modifies {
-                    visit(entry.declaration().0);
+                    visit(entry.declaration().require_admitted()?.clone());
                 }
                 for reference in creates.iter().chain(deletes) {
-                    visit(reference.0);
+                    visit(reference.require_admitted()?.clone());
                 }
             }
             Self::Abstraction(term) => {
-                for target in term.targets() {
+                for target in term.targets()? {
                     visit(target);
                 }
             }
             Self::Leaf(_) | Self::Aggregate(_) => {}
         }
-        for key in self.leaves().into_iter().filter_map(LeafTerm::key) {
-            visit(key);
+        for leaf in self.leaves() {
+            match leaf {
+                LeafTerm::Literal { ty, .. } => visit(ty.require_admitted()?.clone()),
+                LeafTerm::Reference { target } => visit(target.require_admitted()?.clone()),
+                // A dependency target is outside this graph, so it is not
+                // visited, but a local pending handle cannot cross admission.
+                LeafTerm::DependencyReference { node } => {
+                    node.require_admitted()?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Call `visit` with every node reference this body holds, admitted or
+    /// pending (a reference, a literal or result type, a dependency
+    /// reference, a frame entry, an abstraction target, an operation
+    /// member's declaration or population), without copying the body.
+    pub(crate) fn for_each_ref(&self, visit: &mut impl FnMut(&NodeRef)) {
+        match self {
+            Self::Application(ApplicationTerm {
+                operation,
+                result_type,
+                ..
+            }) => {
+                if let Some(member) = operation.member.as_ref() {
+                    for key in [
+                        member.declaration(),
+                        member.destination_type(),
+                        member.population(),
+                    ]
+                    .into_iter()
+                    .flatten()
+                    {
+                        visit(&NodeRef::Admitted(key));
+                    }
+                }
+                visit(result_type);
+            }
+            Self::Frame(FrameTerm {
+                modifies,
+                creates,
+                deletes,
+                deletes_scoped: _,
+            }) => {
+                for entry in modifies {
+                    visit(&entry.declaration());
+                }
+                for reference in creates.iter().chain(deletes) {
+                    visit(reference);
+                }
+            }
+            Self::Abstraction(term) => term.for_each_ref(visit),
+            Self::Leaf(_) | Self::Aggregate(_) => {}
+        }
+        self.for_each_leaf(&mut |leaf| match leaf {
+            LeafTerm::Literal { ty, .. } => visit(ty),
+            LeafTerm::Reference { target } => visit(target),
+            LeafTerm::DependencyReference { node } => visit(node),
+        });
+    }
+
+    /// This body with every node reference it holds replaced by `map`'s
+    /// image. An operation member's declaration or population is a node
+    /// key: it takes the image only when that is admitted.
+    ///
+    /// # Errors
+    ///
+    /// [`NodeKeyRefusal::UnresolvedPlaceholder`] when `map` returns a pending
+    /// handle for an operation member's declaration or population, which are
+    /// always admitted node keys.
+    pub(crate) fn map_refs(
+        &self,
+        map: &mut impl FnMut(&NodeRef) -> NodeRef,
+    ) -> Result<Self, NodeKeyRefusal> {
+        let mut pending_member = false;
+        let mapped = self.map_refs_in(map, &mut pending_member);
+        if pending_member {
+            Err(NodeKeyRefusal::UnresolvedPlaceholder)
+        } else {
+            Ok(mapped)
         }
     }
 
-    /// This body with every node key it names replaced by `map`'s image.
-    pub(crate) fn map_keys(&self, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Self {
+    fn map_refs_in(
+        &self,
+        map: &mut impl FnMut(&NodeRef) -> NodeRef,
+        pending_member: &mut bool,
+    ) -> Self {
         match self {
-            Self::Leaf(leaf) => Self::Leaf(leaf.map_keys(map)),
+            Self::Leaf(leaf) => Self::Leaf(leaf.map_refs(map)),
             Self::Application(ApplicationTerm {
                 operator,
                 operation,
@@ -1208,19 +1080,21 @@ impl BodyTerm {
                 arguments,
             }) => {
                 let mut operation = operation.clone();
-                operation.member = operation.member.map(|member| map_member(member, map));
+                operation.member = operation
+                    .member
+                    .map(|member| map_member(member, map, pending_member));
                 Self::Application(ApplicationTerm {
                     operator: *operator,
                     operation,
-                    result_type: NodeRef(map(result_type.0)),
+                    result_type: map(result_type),
                     arguments: arguments
                         .iter()
-                        .map(|argument| argument.map_keys(map))
+                        .map(|argument| argument.map_refs(map))
                         .collect(),
                 })
             }
             Self::Aggregate(AggregateTerm { members }) => Self::Aggregate(AggregateTerm {
-                members: members.iter().map(|member| member.map_keys(map)).collect(),
+                members: members.iter().map(|member| member.map_refs(map)).collect(),
             }),
             Self::Frame(FrameTerm {
                 modifies,
@@ -1232,21 +1106,98 @@ impl BodyTerm {
                     .iter()
                     .map(|entry| match entry {
                         FrameModifies::Field(field) => FrameModifies::Field(FrameField {
-                            declaration: NodeRef(map(field.declaration.0)),
+                            declaration: map(&field.declaration),
                             name: field.name.clone(),
                             scope: field.scope,
                         }),
                         FrameModifies::Relationship(declaration) => {
-                            FrameModifies::Relationship(NodeRef(map(declaration.0)))
+                            FrameModifies::Relationship(map(declaration))
                         }
                     })
                     .collect(),
-                creates: creates.iter().map(|node| NodeRef(map(node.0))).collect(),
-                deletes: deletes.iter().map(|node| NodeRef(map(node.0))).collect(),
+                creates: creates.iter().map(&mut *map).collect(),
+                deletes: deletes.iter().map(&mut *map).collect(),
                 deletes_scoped: deletes_scoped.clone(),
             }),
-            Self::Abstraction(term) => Self::Abstraction(term.map_keys(map)),
+            Self::Abstraction(term) => Self::Abstraction(term.map_refs(map)),
         }
+    }
+}
+
+/// Remap only the admitted declaration references of an operation member.
+fn map_key(
+    map: &mut impl FnMut(&NodeRef) -> NodeRef,
+    pending_member: &mut bool,
+    key: NodeKey,
+) -> NodeKey {
+    match map(&NodeRef::Admitted(key.clone())) {
+        NodeRef::Admitted(mapped) => mapped,
+        NodeRef::Pending(_) => {
+            *pending_member = true;
+            key
+        }
+    }
+}
+
+fn map_member(
+    member: Member,
+    map: &mut impl FnMut(&NodeRef) -> NodeRef,
+    pending_member: &mut bool,
+) -> Member {
+    match member {
+        Member::Field { declaration, name } => Member::Field {
+            declaration: map_key(map, pending_member, declaration),
+            name,
+        },
+        Member::Position {
+            declaration,
+            position,
+        } => Member::Position {
+            declaration: map_key(map, pending_member, declaration),
+            position,
+        },
+        Member::Element { declaration } => Member::Element {
+            declaration: map_key(map, pending_member, declaration),
+        },
+        Member::RelationshipEnd {
+            declaration,
+            name,
+            destination_type,
+            population,
+        } => Member::RelationshipEnd {
+            declaration: map_key(map, pending_member, declaration),
+            name,
+            destination_type: map_key(map, pending_member, destination_type),
+            population: population.map(|population| map_key(map, pending_member, population)),
+        },
+        Member::Operation { declaration, name } => Member::Operation {
+            declaration: map_key(map, pending_member, declaration),
+            name,
+        },
+        Member::TypeArgument { declaration } => Member::TypeArgument {
+            declaration: map_key(map, pending_member, declaration),
+        },
+        Member::ProfileOperator { operator } => Member::ProfileOperator { operator },
+        Member::StateClause {
+            clause,
+            execution_point,
+        } => Member::StateClause {
+            clause,
+            execution_point,
+        },
+        Member::TemporalInterval { interval } => Member::TemporalInterval { interval },
+        timed @ Member::TimedInterval(_) => timed,
+        Member::Fairness {
+            kind,
+            granularity,
+            declaration,
+            name,
+        } => Member::Fairness {
+            kind,
+            granularity,
+            declaration: map_key(map, pending_member, declaration),
+            name,
+        },
     }
 }
 
@@ -1289,114 +1240,8 @@ pub enum LiteralValue {
     Enum(String),
 }
 
-impl LiteralValue {
-    /// This literal's `{value_kind, value}` as written.
-    fn wire(&self) -> LiteralWire<'_> {
-        let (value_kind, value) = match self {
-            Self::Boolean(value) => ("boolean", LiteralJson::Boolean(*value)),
-            Self::Integer(value) => ("integer", LiteralJson::Spelled(value.to_string())),
-            Self::Count(value) => ("integer", LiteralJson::Number(*value)),
-            // QSpec FR-322 "Scalar literal values": the canonical magnitude
-            // spelling (`0`, `-3`, `1/2`), so one rational has one spelling.
-            Self::Rational(value) => (
-                "rational",
-                LiteralJson::Spelled(if value.is_integer() {
-                    value.numerator().to_string()
-                } else {
-                    format!("{}/{}", value.numerator(), value.denominator())
-                }),
-            ),
-            Self::Float32Bits(value) => {
-                ("float32_bits", LiteralJson::Spelled(format!("{value:08x}")))
-            }
-            Self::Float64Bits(value) => (
-                "float64_bits",
-                LiteralJson::Spelled(format!("{value:016x}")),
-            ),
-            Self::Quantity(value) => (
-                "quantity",
-                LiteralJson::Spelled(if value.is_integer() {
-                    value.numerator().to_string()
-                } else {
-                    format!("{}/{}", value.numerator(), value.denominator())
-                }),
-            ),
-            Self::Text(value) => ("text", LiteralJson::Text(value)),
-            Self::String(value) => ("string", LiteralJson::Text(value)),
-            Self::Uuid(value) => ("uuid", LiteralJson::Spelled(value.to_string())),
-            Self::Timestamp(value) => ("timestamp", LiteralJson::Spelled(value.to_string())),
-            Self::None => ("none", LiteralJson::Null(())),
-            Self::Enum(case) => ("enum", LiteralJson::Text(case)),
-        };
-        LiteralWire { value_kind, value }
-    }
-}
-
-impl Serialize for LiteralValue {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.wire().serialize(serializer)
-    }
-}
-
-/// A [`LiteralValue`] serializes as a `LiteralWire`, so it nests as deep.
-impl FixedShape for LiteralValue {
-    const DEPTH: usize = <LiteralWire<'static> as FixedShape>::DEPTH;
-}
-
-/// A literal's `value_kind` and its JSON `value`.
-#[derive(Serialize, FixedShape)]
-struct LiteralWire<'a> {
-    value_kind: &'static str,
-    value: LiteralJson<'a>,
-}
-
-/// A literal's JSON `value`: a boolean, a number, a string, or `null`.
-#[derive(Serialize, FixedShape)]
-#[serde(untagged)]
-enum LiteralJson<'a> {
-    Boolean(bool),
-    Number(u64),
-    Text(&'a str),
-    Spelled(String),
-    Null(()),
-}
-
-// Test-only: the conformance decoder reads the literal kinds QSpec's vectors
-// carry in an application's arguments (`boolean`, `integer`, `text`,
-// `string` and `none`); any other kind refuses rather than guessing.
-#[cfg(test)]
-impl<'de> serde::Deserialize<'de> for LiteralValue {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        use serde::de::Error;
-        // The literal kind is the serde tag, so an unlisted kind is refused
-        // by the decoder rather than matched by name here.
-        #[derive(serde::Deserialize)]
-        #[serde(tag = "value_kind", content = "value", rename_all = "snake_case")]
-        enum Wire {
-            Boolean(bool),
-            Integer(String),
-            Text(String),
-            String(String),
-            None(()),
-        }
-        Ok(match Wire::deserialize(deserializer)? {
-            Wire::Boolean(value) => Self::Boolean(value),
-            Wire::Integer(value) => {
-                Self::Integer(value.parse().map_err(|_| {
-                    D::Error::custom("an integer literal's value is a decimal string")
-                })?)
-            }
-            Wire::Text(value) => Self::Text(value),
-            Wire::String(value) => Self::String(value),
-            Wire::None(()) => Self::None,
-        })
-    }
-}
-
 /// The schema's closed application `operator` vocabulary.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, FixedShape)]
-#[cfg_attr(test, derive(serde::Deserialize))]
-#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Operator {
     /// `call`.
     Call,
@@ -1448,6 +1293,34 @@ pub enum Operator {
 }
 
 impl Operator {
+    /// The operator class's schema spelling (`application.operator`).
+    pub(crate) fn wire_name(self) -> &'static str {
+        match self {
+            Self::Call => "call",
+            Self::Unary => "unary",
+            Self::Binary => "binary",
+            Self::Conditional => "conditional",
+            Self::Let => "let",
+            Self::Quantify => "quantify",
+            Self::Collection => "collection",
+            Self::Query => "query",
+            Self::Convert => "convert",
+            Self::Pre => "pre",
+            Self::Present => "present",
+            Self::Value => "value",
+            Self::Deref => "deref",
+            Self::Reaches => "reaches",
+            Self::Temporal => "temporal",
+            Self::TemporalFormula => "temporal_formula",
+            Self::TemporalFairness => "temporal_fairness",
+            Self::ProtocolControl => "protocol_control",
+            Self::StateTransition => "state_transition",
+            Self::StateClause => "state_clause",
+            Self::Claim => "claim",
+            Self::Case => "case",
+        }
+    }
+
     /// The `semantic_form` an application node rooted at this operator class
     /// carries (FR-093 "One node per checked expression").
     pub(crate) fn semantic_form(self) -> &'static str {
@@ -1489,9 +1362,7 @@ impl Operator {
 
 /// The schema's `Operation`: a catalogued operation with its laws, mode,
 /// member and leaves.
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, FixedShape)]
-#[cfg_attr(test, derive(serde::Deserialize))]
-#[serde(deny_unknown_fields)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Operation {
     /// The `quire.checked-operation-catalog/v1` identity; catalog membership
     /// is the reader's check, not the key's.
@@ -1501,7 +1372,6 @@ pub struct Operation {
     /// The operation's mode, or `None` (JSON `null`).
     pub(crate) mode: Option<OperationMode>,
     /// The operation's member, or `None` (JSON `null`).
-    #[cfg_attr(test, serde(deserialize_with = "tests::member"))]
     pub(crate) member: Option<Member>,
     /// The operation's leaves.
     pub(crate) leaves: Vec<OperationLeaf>,
@@ -1516,6 +1386,11 @@ impl Operation {
     /// The operation's profile laws, in order.
     pub fn laws(&self) -> &[OperationLaw] {
         &self.laws
+    }
+
+    /// The operation's mode, when it has one.
+    pub fn mode(&self) -> Option<&OperationMode> {
+        self.mode.as_ref()
     }
 
     /// The operation's member, when it names one.
@@ -1541,9 +1416,7 @@ impl Operation {
 }
 
 /// The schema's `OperationLaw`.
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, FixedShape)]
-#[cfg_attr(test, derive(serde::Deserialize))]
-#[serde(deny_unknown_fields)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct OperationLaw {
     /// The law's role.
     pub role: LawRole,
@@ -1552,9 +1425,7 @@ pub struct OperationLaw {
 }
 
 /// The schema's closed `OperationLaw.role` vocabulary.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, FixedShape)]
-#[cfg_attr(test, derive(serde::Deserialize))]
-#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum LawRole {
     /// `integer_division`.
     IntegerDivision,
@@ -1593,36 +1464,8 @@ pub enum OperationMode {
     Absence(AbsenceMode),
 }
 
-impl Serialize for OperationMode {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let wire = match self {
-            Self::Rounding(mode) => OperationModeWire::Rounding(mode.as_str()),
-            Self::TextProfile(profile) => OperationModeWire::TextProfile(profile.as_str()),
-            Self::Absence(mode) => OperationModeWire::Absence(mode.as_str()),
-        };
-        wire.serialize(serializer)
-    }
-}
-
-/// An [`OperationMode`] serializes as an `OperationModeWire`, so it nests
-/// as deep.
-impl FixedShape for OperationMode {
-    const DEPTH: usize = <OperationModeWire as FixedShape>::DEPTH;
-}
-
-/// `{kind, value}`, the mode spelled through its `as_str`.
-#[derive(Serialize, FixedShape)]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
-enum OperationModeWire {
-    Rounding(&'static str),
-    TextProfile(&'static str),
-    Absence(&'static str),
-}
-
 /// The schema's `OperationLeaf`.
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, FixedShape)]
-#[cfg_attr(test, derive(serde::Deserialize))]
-#[serde(deny_unknown_fields)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct OperationLeaf {
     /// The leaf's path from the compared type.
     pub path: Vec<LeafSegment>,
@@ -1650,82 +1493,12 @@ pub enum LeafSegment {
     Recursion(usize),
 }
 
-impl Serialize for LeafSegment {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        match self {
-            Self::Field(name) => serializer.collect_str(&format_args!("field:{}", name.as_str())),
-            Self::Position(position) => {
-                serializer.collect_str(&format_args!("position:{position}"))
-            }
-            Self::Inner => serializer.serialize_str("inner"),
-            Self::Member(name) => serializer.collect_str(&format_args!("member:{}", name.as_str())),
-            Self::Recursion(depth) => serializer.collect_str(&format_args!("recursion:{depth}")),
-        }
-    }
-}
-
-/// A [`LeafSegment`] serializes as one string.
-impl FixedShape for LeafSegment {
-    const DEPTH: usize = <str as FixedShape>::DEPTH;
-}
-
-/// The inputs of one node's key: every member of either preimage.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct NodeInput<'a> {
-    /// The node's owner: for a structural node, a [`SourceOwner`] exactly
-    /// when `declaration` is present, a [`ModelOwner`] for a model-owned node
-    /// (whose `declaration` is absent), else none; an application node has
-    /// none.
-    pub(crate) owner: Option<&'a Owner>,
-    /// The node's v2 `node_tag`.
-    pub(crate) node_tag: NodeTag,
-    /// The node's v2 `semantic_form`, spelled as on the wire (schema
-    /// `Nonempty`; an empty form is refused).
-    pub(crate) semantic_form: &'a str,
-    /// The node's semantic type key, or `None` for a self-typed node
-    /// (structural preimage only).
-    pub(crate) semantic_type: Option<NodeKey>,
-    /// The node's `declaration.qualified_name`, when it carries one (schema
-    /// `minItems: 1`; an empty name is refused).
-    pub(crate) declaration: Option<&'a [Identifier]>,
-    /// The node's body.
-    pub(crate) body: &'a BodyTerm,
-    /// QSpec FR-464's `owner_model`: the exact model declaration node a
-    /// `protocol`/`protocol_clause` node is declared over, `Some` for that
-    /// node and `None` for every other; it enters the clause's
-    /// `quire.application-node/v1` preimage.
-    pub(crate) owner_model: Option<NodeKey>,
-}
-
-/// The inputs of one application-bearing node's FR-322 key: the
-/// conformance test's view of [`NodeInput`].
-#[cfg(test)]
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct ApplicationNode<'a> {
-    /// The node's v2 `node_tag`.
-    pub(crate) node_tag: NodeTag,
-    /// The node's v2 `semantic_form`.
-    pub(crate) semantic_form: &'a str,
-    /// The node's semantic type key.
-    pub(crate) semantic_type: NodeKey,
-    /// The node's `declaration.qualified_name`, when it carries one.
-    pub(crate) declaration: Option<&'a [Identifier]>,
-    /// The node's body.
-    pub(crate) body: &'a BodyTerm,
-}
-
-/// The canonical preimage bytes and the key they hash to.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct KeyedPreimage {
-    /// The canonical JCS bytes of the node's preimage.
-    pub(crate) preimage: Vec<u8>,
-    /// SHA-256 of [`Self::preimage`].
-    pub(crate) key: NodeKey,
-}
-
 /// Why no key exists for a node.
 #[derive(Clone, Debug, Eq, Hash, PartialEq, thiserror::Error)]
 pub enum NodeKeyRefusal {
+    /// A lowering-local group handle reached an admission boundary unresolved.
+    #[error("a lowering placeholder has no admitted structural node identity")]
+    UnresolvedPlaceholder,
     /// The body contains no application term, so FR-322's application
     /// preimage does not key this node.
     #[error("the node body contains no application term")]
@@ -1802,902 +1575,9 @@ pub enum NodeKeyRefusal {
     Identity(IdentityRefusal),
 }
 
-/// An encoder error at a node-key site: the byte limit and an allocation
-/// failure as [`NodeKeyRefusal::Identity`], anything else as no encoding.
-fn encode_refusal(error: quire_canonical::Error) -> NodeKeyRefusal {
-    let reason = error.to_string();
-    match IdentityRefusal::from(error) {
-        IdentityRefusal::NonCanonical => NodeKeyRefusal::Encode { reason },
-        identity => NodeKeyRefusal::Identity(identity),
-    }
-}
-
-/// The FR-322 `application_node_preimage` key of `node`, refusing a body
-/// with no application.
-// Production keys every node through `node_key`; the conformance test and
-// the application-only unit tests call this one.
-#[cfg(test)]
-pub(crate) fn application_node_key(
-    node: &ApplicationNode<'_>,
-) -> Result<KeyedPreimage, NodeKeyRefusal> {
-    let input = NodeInput {
-        owner: None,
-        node_tag: node.node_tag,
-        semantic_form: node.semantic_form,
-        semantic_type: Some(node.semantic_type),
-        declaration: node.declaration,
-        body: node.body,
-        owner_model: None,
-    };
-    let (_, has_application) = Walk::OUTSIDE.body(node.body)?;
-    if !has_application {
-        return Err(NodeKeyRefusal::NoApplication);
-    }
-    node_key(&input, IdentityLimits::default())
-}
-
-/// The key of `node`, a node outside every recursion group (FR-092 "Which
-/// preimage keys a node"): the FR-322 application-node preimage when its
-/// body contains an application, else the FR-092 structural-node preimage,
-/// with `recursion` `null`.
-pub(crate) fn node_key(
-    node: &NodeInput<'_>,
-    identity: IdentityLimits,
-) -> Result<KeyedPreimage, NodeKeyRefusal> {
-    let (preimage, _) = typed_preimage(node, Walk::OUTSIDE, None)?;
-    keyed(&preimage, identity)
-}
-
-/// The keys of one recursion group's members (FR-092 "Recursion groups").
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct GroupKeys {
-    /// Each member's preimage and key, in input order. Members of one class
-    /// have equal preimages.
-    pub(crate) members: Vec<KeyedPreimage>,
-    /// Each member's ordinal (its class's rank), in input order.
-    pub(crate) ordinals: Vec<usize>,
-    /// The number of classes.
-    pub(crate) size: usize,
-    /// The group digest.
-    pub(crate) digest: [u8; 32],
-    /// Each member's anonymous-pass signature, lowercase hex, in input order.
-    pub(crate) anonymous: Vec<String>,
-    /// Each member's full-pass signature, lowercase hex, in input order.
-    pub(crate) full: Vec<String>,
-}
-
-/// Key the recursion group `members` (FR-092 "The group order"). Each
-/// member's references to another member name it by its handle, the
-/// matching entry of `handles`: any key that is not a member's key, since
-/// no member's key exists before its group is keyed. `semantic_form` is the
-/// member's own (a function member's is `recursive_function`).
-///
-/// No step reads a handle's value: the shapes write every in-group position
-/// as `{term: "group_reference"}`, so the order, ordinals, digest and keys
-/// are the same whatever handles name the members.
-///
-/// `charge` is called with the number of preimages or signature rounds
-/// each step hashes, before it hashes them, so a caller bounds the work
-/// (a refinement pass is up to `n` rounds of `n` hashes); its refusal ends
-/// the keying.
-pub(crate) fn group_keys(
-    members: &[NodeInput<'_>],
-    handles: &[NodeKey],
-    identity: IdentityLimits,
-    charge: &mut dyn FnMut(u64) -> Result<(), NodeKeyRefusal>,
-) -> Result<GroupKeys, NodeKeyRefusal> {
-    let positions: BTreeMap<NodeKey, usize> = handles
-        .iter()
-        .enumerate()
-        .map(|(position, handle)| (*handle, position))
-        .collect();
-    if members.is_empty() || members.len() != handles.len() || positions.len() != handles.len() {
-        return Err(NodeKeyRefusal::InvalidGroup);
-    }
-    let count = members.len();
-    let work = u64::try_from(count).map_err(|_| NodeKeyRefusal::InvalidGroup)?;
-    // 1-2. Each member's full and anonymous shapes and its targets: the
-    // placeholders carry the target's input position as their ordinal,
-    // which `shape_targets` removes in RFC 8785 order.
-    charge(work)?;
-    let mut full_shapes = Vec::with_capacity(count);
-    let mut anonymous_shapes = Vec::with_capacity(count);
-    let mut targets = Vec::with_capacity(count);
-    for member in members {
-        let (preimage, _) = typed_preimage(member, Walk { group: &positions }, None)?;
-        let shapes = shape::member_shapes(&canonical_bytes(&preimage, identity)?, count, identity)?;
-        full_shapes.push(shapes.full);
-        anonymous_shapes.push(shapes.anonymous);
-        targets.push(shapes.targets);
-    }
-    // 3-4. One refinement pass per kind of shape, then the order.
-    let anonymous = refine(&anonymous_shapes, &targets, work, identity, charge)?;
-    let full = refine(&full_shapes, &targets, work, identity, charge)?;
-    let order = group_order(&anonymous, &full);
-    // 5. Equal full signatures are one class; a class's ordinal is its rank,
-    // and its first member in the order represents it.
-    let mut classes: HashMap<&str, usize> = HashMap::new();
-    let mut representatives = Vec::new();
-    let mut ordinals = vec![0; count];
-    for member in order {
-        let next = classes.len();
-        let ordinal = *classes.entry(full[member].as_str()).or_insert(next);
-        if ordinal == next {
-            representatives.push(member);
-        }
-        ordinals[member] = ordinal;
-    }
-    let size = classes.len();
-    let ordinal_of: BTreeMap<NodeKey, usize> = handles
-        .iter()
-        .zip(&ordinals)
-        .map(|(handle, ordinal)| (*handle, *ordinal))
-        .collect();
-    // The group digest: over each class's group-local preimage, in ordinal
-    // order.
-    charge(work)?;
-    let mut local = Vec::with_capacity(size);
-    for (ordinal, member) in representatives.iter().enumerate() {
-        let recursion = RecursionPreimage {
-            group: None,
-            ordinal: Counter::from(ordinal),
-            size: Counter::from(size),
-        };
-        let (preimage, _) = typed_preimage(
-            &members[*member],
-            Walk { group: &ordinal_of },
-            Some(recursion),
-        )?;
-        local.push(hex(&canonical_sha256(&preimage, identity)?));
-    }
-    let digest = canonical_sha256(&local, identity)?;
-    let digest_hex = hex(&digest);
-    charge(work)?;
-    let mut keys = Vec::with_capacity(count);
-    for (member, ordinal) in members.iter().zip(&ordinals) {
-        let recursion = RecursionPreimage {
-            group: Some(digest_hex.clone()),
-            ordinal: Counter::from(*ordinal),
-            size: Counter::from(size),
-        };
-        let (preimage, _) = typed_preimage(member, Walk { group: &ordinal_of }, Some(recursion))?;
-        keys.push(keyed(&preimage, identity)?);
-    }
-    Ok(GroupKeys {
-        members: keys,
-        ordinals,
-        size,
-        digest,
-        anonymous,
-        full,
-    })
-}
-
-/// Canonical member order, ascending by `(anonymous, full)` signature.
-/// The signatures are fixed-width lowercase SHA-256 hex, so stable byte
-/// radix passes keep this ordering deterministic in O(nodes) time.
-fn group_order(anonymous: &[String], full: &[String]) -> Vec<usize> {
-    const SIGNATURE_BYTES: usize = 64;
-    let mut order: Vec<usize> = (0..anonymous.len()).collect();
-    let mut scratch = vec![0; order.len()];
-    for signatures in [full, anonymous] {
-        for offset in (0..SIGNATURE_BYTES).rev() {
-            let mut offsets = [0_usize; 256];
-            for member in &order {
-                let byte = signatures[*member].as_bytes()[offset];
-                offsets[usize::from(byte)] += 1;
-            }
-            let mut start = 0;
-            for count in &mut offsets {
-                let members = *count;
-                *count = start;
-                start += members;
-            }
-            for &member in &order {
-                let byte = signatures[member].as_bytes()[offset];
-                let position = &mut offsets[usize::from(byte)];
-                scratch[*position] = member;
-                *position += 1;
-            }
-            std::mem::swap(&mut order, &mut scratch);
-        }
-    }
-    order
-}
-
-/// A refinement pass (FR-092 "The group order", step 3): each member's
-/// signature over `shapes`, lowercase hex. Each round charges `work`, the
-/// member count.
-fn refine(
-    shapes: &[String],
-    targets: &[Vec<usize>],
-    work: u64,
-    identity: IdentityLimits,
-    charge: &mut dyn FnMut(u64) -> Result<(), NodeKeyRefusal>,
-) -> Result<Vec<String>, NodeKeyRefusal> {
-    charge(work)?;
-    let initial: Vec<String> = shapes
-        .iter()
-        .map(|shape| hex(&ByteDigest::of(shape.as_bytes()).as_bytes()))
-        .collect();
-    let distinct = |signatures: &[String]| signatures.iter().collect::<HashSet<_>>().len();
-    let mut previous = initial.clone();
-    // Each round before the last adds a distinct value, so at most one
-    // round per member runs.
-    for _ in 0..shapes.len() {
-        charge(work)?;
-        let mut next = Vec::with_capacity(initial.len());
-        for (shape, member_targets) in initial.iter().zip(targets) {
-            let round_targets = member_targets
-                .iter()
-                .map(|target| previous.get(*target).ok_or(NodeKeyRefusal::InvalidGroup))
-                .collect::<Result<Vec<_>, _>>()?;
-            let round = SignatureRound {
-                shape,
-                targets: round_targets,
-            };
-            next.push(hex(&canonical_sha256(&round, identity)?));
-        }
-        let stable = distinct(&next) == distinct(&previous);
-        previous = next;
-        if stable {
-            break;
-        }
-    }
-    Ok(previous)
-}
-
-/// One refinement round's input: `{shape, targets}`, the member's initial
-/// signature and its targets' previous-round signatures.
-#[derive(Serialize, FixedShape)]
-struct SignatureRound<'a> {
-    shape: &'a str,
-    targets: Vec<&'a String>,
-}
-
-/// A 32-byte digest's lowercase hex, the spelling FR-092 gives every digest
-/// inside a preimage or a signature round, and `NodeKey`'s wire spelling.
-struct HexDigest([u8; 64]);
-
-impl HexDigest {
-    fn of(bytes: &[u8; 32]) -> Self {
-        const DIGITS: &[u8; 16] = b"0123456789abcdef";
-        let mut digits = [0; 64];
-        let (pairs, _) = digits.as_chunks_mut::<2>();
-        for (pair, byte) in pairs.iter_mut().zip(bytes) {
-            *pair = [
-                DIGITS[usize::from(byte >> 4)],
-                DIGITS[usize::from(byte & 0x0f)],
-            ];
-        }
-        Self(digits)
-    }
-
-    /// The digits as text.
-    fn as_str(&self) -> &str {
-        std::str::from_utf8(&self.0).expect("every hex digit is ASCII, so the digits are UTF-8")
-    }
-}
-
-/// [`HexDigest`] as an owned string.
-pub(super) fn hex(bytes: &[u8; 32]) -> String {
-    String::from(HexDigest::of(bytes).as_str())
-}
-
-/// The handle a record or tuple declared in source is named by in
-/// `ValueType::Composite` before lowering keys its node (FR-091 "Node key
-/// owner"): the SHA-256 of `{version, owner, name}`'s RFC 8785 bytes. It is
-/// a checker-internal name for the declaration, stable for an unchanged
-/// declaration under one owner and different under another; lowering maps
-/// it to the node's FR-092 key, which is what the wire carries.
-pub(crate) fn declared_type_handle(
-    owner: &SourceOwner,
-    name: &str,
-    identity: IdentityLimits,
-) -> Result<NodeKey, NodeKeyRefusal> {
-    #[derive(Serialize, FixedShape)]
-    struct Handle<'a> {
-        version: &'static str,
-        owner: &'a SourceOwner,
-        name: &'a str,
-    }
-    canonical_sha256(
-        &Handle {
-            version: "quire.qsl.declared-type-handle/v1",
-            owner,
-            name,
-        },
-        identity,
-    )
-    .map(NodeKey::from_digest)
-}
-
-/// The key of a nominal node (an enum declaration or member, a dimension
-/// or a unit): the SHA-256 of its owner-bearing preimage's RFC 8785 bytes
-/// (FR-091 "Enum declarations"; ADR-013 O-04). It is the one function that
-/// mints a nominal node's key, and only `check` calls it (FB-13).
-/// [`node_key`] keys structural and application nodes and never a nominal
-/// preimage. Encoding a preimage can refuse, and the refusal is the
-/// caller's nominal-admission fault.
-pub(crate) fn nominal_key(
-    preimage: &impl NodeIdentityPreimage,
-    identity: IdentityLimits,
-) -> Result<NodeKey, NominalRefusal> {
-    preimage.digest(identity).map(NodeKey::from_digest)
-}
-
-/// `preimage`'s RFC 8785 bytes and the node key they hash to.
-fn keyed(
-    preimage: &Preimage<'_>,
-    identity: IdentityLimits,
-) -> Result<KeyedPreimage, NodeKeyRefusal> {
-    let preimage = canonical_bytes(preimage, identity)?;
-    let key = NodeKey::from_digest(ByteDigest::of(&preimage).as_bytes());
-    Ok(KeyedPreimage { preimage, key })
-}
-
-/// `value`'s RFC 8785 bytes, from `quire-canonical` (ADR-013 §2,
-/// ADR-013:113: the one RFC 8785 implementation).
-pub(super) fn canonical_bytes(
-    value: &(impl Encode + ?Sized),
-    identity: IdentityLimits,
-) -> Result<Vec<u8>, NodeKeyRefusal> {
-    quire_canonical::to_vec(value, quire_canonical::Limits::new(identity.input_bytes))
-        .map_err(encode_refusal)
-}
-
-/// The SHA-256 of `value`'s RFC 8785 bytes, hashed by `quire-canonical` as
-/// it encodes (ADR-013:113).
-fn canonical_sha256(
-    value: &(impl Encode + ?Sized),
-    identity: IdentityLimits,
-) -> Result<[u8; 32], NodeKeyRefusal> {
-    quire_canonical::sha256(value, quire_canonical::Limits::new(identity.input_bytes))
-        .map(|digest| *digest.as_bytes())
-        .map_err(encode_refusal)
-}
-
-/// `node`'s typed preimage, with `walk` rewriting references to its group's
-/// members, and whether it has an application. A structural preimage's
-/// `recursion` keeps `group`; an application preimage's drops it.
-fn typed_preimage<'a>(
-    node: &NodeInput<'a>,
-    walk: Walk<'_>,
-    recursion: Option<RecursionPreimage>,
-) -> Result<(Preimage<'a>, bool), NodeKeyRefusal> {
-    if node.semantic_form.is_empty() {
-        return Err(NodeKeyRefusal::EmptySemanticForm);
-    }
-    if node.declaration.is_some_and(<[Identifier]>::is_empty) {
-        return Err(NodeKeyRefusal::EmptyQualifiedName);
-    }
-    let (body, has_application) = walk.body(node.body)?;
-    // QSpec FR-440 and FR-319: a `union_value` node is keyed by the
-    // application preimage even though its body, an aggregate over the
-    // member binding, contains no `application` term.
-    let has_application = has_application || is_union_value(node);
-    if node.owner_model.is_some() != is_protocol_clause(node) {
-        return Err(NodeKeyRefusal::OwnerModelPresence);
-    }
-    let (version, recursion) = if has_application {
-        if node.owner.is_some() {
-            return Err(NodeKeyRefusal::OwnedApplication);
-        }
-        if node.semantic_type.is_none() {
-            return Err(NodeKeyRefusal::UntypedApplication);
-        }
-        // FR-322: an application node's `recursion` is `{size, ordinal}`.
-        let recursion = recursion.map(|recursion| RecursionPreimage {
-            group: None,
-            ..recursion
-        });
-        (APPLICATION_NODE_VERSION, recursion)
-    } else {
-        // FR-092: a `SourceOwner` exactly when `declaration` is present;
-        // FR-094: a model-owned node's `declaration` is `null`.
-        let consistent = match node.owner {
-            Some(Owner::Source(_)) => node.declaration.is_some(),
-            Some(Owner::Model(_) | Owner::ModelRoot(_)) | None => node.declaration.is_none(),
-        };
-        if !consistent {
-            return Err(NodeKeyRefusal::OwnerDeclarationMismatch);
-        }
-        (STRUCTURAL_NODE_VERSION, recursion)
-    };
-    let semantic_type = node
-        .semantic_type
-        .map(|semantic_type| match walk.ordinal(semantic_type) {
-            Some(ordinal) => SemanticTypePreimage::Group(GroupReference {
-                ordinal: Counter::from(ordinal),
-            }),
-            None => SemanticTypePreimage::Node(NodeRef(semantic_type)),
-        });
-    let preimage = Preimage {
-        version,
-        owner: node.owner,
-        node_tag: node.node_tag,
-        semantic_form: node.semantic_form,
-        semantic_type,
-        declaration: node.declaration.map(|segments| DeclarationPreimage {
-            qualified_name: segments.iter().map(Identifier::as_str).collect(),
-        }),
-        owner_model: node.owner_model.map(NodeRef),
-        recursion,
-        body,
-    };
-    Ok((preimage, has_application))
-}
-
-/// Whether `node` is a `protocol`/`protocol_clause` node, the one node that
-/// carries an `owner_model` (QSpec FR-464).
-#[ix_trace_rs::string_edge]
-fn is_protocol_clause(node: &NodeInput<'_>) -> bool {
-    node.node_tag == NodeTag::Protocol && node.semantic_form == PROTOCOL_CLAUSE_FORM
-}
-
-/// The `semantic_form` of a protocol clause node.
-pub(crate) const PROTOCOL_CLAUSE_FORM: &str = "protocol_clause";
-
-/// Whether `node` is a `value`/`union_value` node, which QSpec FR-440 keys by
-/// `quire.application-node/v1` whatever its body holds.
-#[ix_trace_rs::string_edge]
-fn is_union_value(node: &NodeInput<'_>) -> bool {
-    node.node_tag == NodeTag::Value && node.semantic_form == UNION_VALUE_FORM
-}
-
-/// The `semantic_form` of a union construction node.
-pub(crate) const UNION_VALUE_FORM: &str = "union_value";
-
-/// A node's preimage. Its `body` nests as deep as the term it keys, so it
-/// is written through `quire-canonical`'s event API from an explicit stack
-/// ([`PreimageTerm`]'s [`Encode`]); every other member has a fixed shape.
-struct Preimage<'a> {
-    version: &'static str,
-    owner: Option<&'a Owner>,
-    node_tag: NodeTag,
-    semantic_form: &'a str,
-    semantic_type: Option<SemanticTypePreimage>,
-    declaration: Option<DeclarationPreimage<'a>>,
-    owner_model: Option<NodeRef>,
-    recursion: Option<RecursionPreimage>,
-    body: PreimageTerm<'a>,
-}
-
-impl Encode for Preimage<'_> {
-    fn encode_into<S: Sink + ?Sized>(
-        &self,
-        writer: &mut Writer<'_, S>,
-    ) -> Result<(), quire_canonical::Error> {
-        writer.begin_object()?;
-        writer.name("version")?;
-        writer.string(self.version)?;
-        if let Some(owner) = self.owner {
-            writer.name("owner")?;
-            writer.serialize(owner)?;
-        }
-        writer.name("node_tag")?;
-        writer.serialize(&self.node_tag)?;
-        writer.name("semantic_form")?;
-        writer.string(self.semantic_form)?;
-        writer.name("semantic_type")?;
-        writer.serialize(&self.semantic_type)?;
-        writer.name("declaration")?;
-        writer.serialize(&self.declaration)?;
-        if let Some(owner_model) = &self.owner_model {
-            writer.name("owner_model")?;
-            writer.serialize(owner_model)?;
-        }
-        writer.name("recursion")?;
-        writer.serialize(&self.recursion)?;
-        writer.name("body")?;
-        self.body.encode_into(writer)?;
-        writer.end_object()
-    }
-}
-
-/// A `semantic_type` as it enters the preimage: a `NodeRef`, or a
-/// `group_reference` when it names a member of the node's own group (G9).
-#[derive(Serialize, FixedShape)]
-#[serde(untagged)]
-enum SemanticTypePreimage {
-    /// A type outside the node's group, by its `NodeRef`.
-    Node(NodeRef),
-    /// A member of the node's own group, by its group ordinal.
-    Group(GroupReference),
-}
-
-/// `{"term": "group_reference", "ordinal": n}`: the same text as
-/// [`PreimageLeaf::GroupReference`], the one shape a `semantic_type` naming
-/// a member of the node's own group has.
-#[derive(Serialize, FixedShape)]
-#[serde(tag = "term", rename = "group_reference")]
-struct GroupReference {
-    ordinal: Counter,
-}
-
-#[derive(Serialize, FixedShape)]
-struct DeclarationPreimage<'a> {
-    qualified_name: Vec<&'a str>,
-}
-
-#[derive(Serialize, FixedShape)]
-struct RecursionPreimage {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    group: Option<String>,
-    ordinal: Counter,
-    size: Counter,
-}
-
-/// A body term as it enters the preimage: [`SemanticTerm`] with references
-/// to recursion-group members replaced by their group ordinal. A leaf has a
-/// fixed shape; the three composite terms nest their subterms.
-enum PreimageTerm<'a> {
-    Leaf(PreimageLeaf<'a>),
-    Application {
-        operator: Operator,
-        operation: &'a Operation,
-        result_type: NodeRef,
-        arguments: Vec<PreimageTerm<'a>>,
-    },
-    Aggregate {
-        members: Vec<PreimageTerm<'a>>,
-    },
-    Binding {
-        name: &'a str,
-        value: Box<PreimageTerm<'a>>,
-    },
-    /// An `execution_point` binding's value, serialized as the IR's closed
-    /// `{kind, name | operation}` object.
-    ExecutionPoint(&'a AcceptedPoint),
-}
-
-/// A preimage term with no subterm.
-#[derive(Serialize, FixedShape)]
-#[serde(tag = "term", rename_all = "snake_case")]
-enum PreimageLeaf<'a> {
-    Literal {
-        #[serde(rename = "type")]
-        ty: NodeRef,
-        #[serde(flatten)]
-        value: &'a LiteralValue,
-    },
-    Reference {
-        target: NodeRef,
-    },
-    GroupReference {
-        ordinal: Counter,
-    },
-    DependencyReference {
-        package: PackageRef,
-        node: WireNodeRef,
-    },
-    Frame {
-        modifies: &'a [FrameModifies],
-        creates: &'a [NodeRef],
-        deletes: &'a [NodeRef],
-        deletes_scoped: &'a [FrameDeletesScoped],
-    },
-}
-
-/// The term's RFC 8785 text, written from an explicit heap stack of
-/// pending subterms and closings, so encoding never recurses with the
-/// term's depth.
-impl Encode for PreimageTerm<'_> {
-    fn encode_into<S: Sink + ?Sized>(
-        &self,
-        writer: &mut Writer<'_, S>,
-    ) -> Result<(), quire_canonical::Error> {
-        enum Task<'t, 'a> {
-            Term(&'t PreimageTerm<'a>),
-            EndArray,
-            EndObject,
-        }
-        let mut tasks = vec![Task::Term(self)];
-        while let Some(task) = tasks.pop() {
-            match task {
-                Task::Term(PreimageTerm::Leaf(leaf)) => writer.serialize(leaf)?,
-                Task::Term(PreimageTerm::ExecutionPoint(point)) => writer.serialize(*point)?,
-                Task::Term(PreimageTerm::Application {
-                    operator,
-                    operation,
-                    result_type,
-                    arguments,
-                }) => {
-                    writer.begin_object()?;
-                    writer.name("term")?;
-                    writer.string("application")?;
-                    writer.name("operator")?;
-                    writer.serialize(operator)?;
-                    writer.name("operation")?;
-                    writer.serialize(*operation)?;
-                    writer.name("result_type")?;
-                    writer.serialize(result_type)?;
-                    writer.name("arguments")?;
-                    writer.begin_array()?;
-                    tasks.push(Task::EndObject);
-                    tasks.push(Task::EndArray);
-                    tasks.extend(arguments.iter().rev().map(Task::Term));
-                }
-                Task::Term(PreimageTerm::Aggregate { members }) => {
-                    writer.begin_object()?;
-                    writer.name("term")?;
-                    writer.string("aggregate")?;
-                    writer.name("members")?;
-                    writer.begin_array()?;
-                    tasks.push(Task::EndObject);
-                    tasks.push(Task::EndArray);
-                    tasks.extend(members.iter().rev().map(Task::Term));
-                }
-                Task::Term(PreimageTerm::Binding { name, value }) => {
-                    writer.begin_object()?;
-                    writer.name("term")?;
-                    writer.string("binding")?;
-                    writer.name("name")?;
-                    writer.string(name)?;
-                    writer.name("value")?;
-                    tasks.push(Task::EndObject);
-                    tasks.push(Task::Term(value));
-                }
-                Task::EndArray => writer.end_array()?,
-                Task::EndObject => writer.end_object()?,
-            }
-        }
-        Ok(())
-    }
-}
-
-/// `member` with its declaring node replaced by `map`'s image.
-fn map_member(member: Member, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Member {
-    match member {
-        Member::Field { declaration, name } => Member::Field {
-            declaration: map(declaration),
-            name,
-        },
-        Member::Position {
-            declaration,
-            position,
-        } => Member::Position {
-            declaration: map(declaration),
-            position,
-        },
-        Member::Element { declaration } => Member::Element {
-            declaration: map(declaration),
-        },
-        Member::RelationshipEnd {
-            declaration,
-            name,
-            population,
-        } => Member::RelationshipEnd {
-            declaration: map(declaration),
-            name,
-            population: population.map(&mut *map),
-        },
-        Member::Operation { declaration, name } => Member::Operation {
-            declaration: map(declaration),
-            name,
-        },
-        Member::TypeArgument { declaration } => Member::TypeArgument {
-            declaration: map(declaration),
-        },
-        Member::ProfileOperator { operator } => Member::ProfileOperator { operator },
-        // No `declaration`: nothing for `map` to remap.
-        Member::StateClause {
-            clause,
-            execution_point,
-        } => Member::StateClause {
-            clause,
-            execution_point,
-        },
-        Member::TemporalInterval { interval } => Member::TemporalInterval { interval },
-        timed @ Member::TimedInterval(_) => timed,
-        Member::Fairness {
-            kind,
-            granularity,
-            declaration,
-            name,
-        } => Member::Fairness {
-            kind,
-            granularity,
-            declaration: map(declaration),
-            name,
-        },
-    }
-}
-
-/// One pass over a body: builds its preimage form, reports whether it is
-/// an application, and enforces the number bounds.
-#[derive(Clone, Copy)]
-struct Walk<'g> {
-    /// The recursion group's members by handle, each with the ordinal its
-    /// `group_reference` carries.
-    group: &'g BTreeMap<NodeKey, usize>,
-}
-
-/// The empty group of a node outside every recursion group.
-static NO_GROUP: BTreeMap<NodeKey, usize> = BTreeMap::new();
-
-impl Walk<'_> {
-    /// The walk of a node outside every group.
-    const OUTSIDE: Walk<'static> = Walk { group: &NO_GROUP };
-
-    /// The `group_reference` ordinal of `key`, when it names a member.
-    fn ordinal(&self, key: NodeKey) -> Option<usize> {
-        self.group.get(&key).copied()
-    }
-
-    /// Refuse `key` at a type position when it names a member.
-    fn type_position(&self, key: NodeKey) -> Result<(), NodeKeyRefusal> {
-        match self.ordinal(key) {
-            Some(_) => Err(NodeKeyRefusal::GroupMemberAtTypePosition),
-            None => Ok(()),
-        }
-    }
-
-    /// `leaf` in preimage form.
-    fn leaf<'a>(&self, leaf: &'a LeafTerm) -> Result<PreimageTerm<'a>, NodeKeyRefusal> {
-        Ok(match leaf {
-            LeafTerm::Literal { ty, value } => {
-                self.type_position(ty.0)?;
-                PreimageTerm::Leaf(PreimageLeaf::Literal { ty: *ty, value })
-            }
-            LeafTerm::Reference { target } => match self.ordinal(target.0) {
-                Some(ordinal) => PreimageTerm::Leaf(PreimageLeaf::GroupReference {
-                    ordinal: Counter::from(ordinal),
-                }),
-                None => PreimageTerm::Leaf(PreimageLeaf::Reference { target: *target }),
-            },
-            // ADR-015 D-5: the dependency's `package_id` and node id enter
-            // the preimage as written; neither names a node of this graph.
-            LeafTerm::DependencyReference { package, node } => {
-                PreimageTerm::Leaf(PreimageLeaf::DependencyReference {
-                    package: *package,
-                    node: *node,
-                })
-            }
-        })
-    }
-
-    /// `binding` of a value already in preimage form.
-    fn binding<'a>(
-        name: &'a str,
-        value: PreimageTerm<'a>,
-    ) -> Result<PreimageTerm<'a>, NodeKeyRefusal> {
-        if name.is_empty() {
-            return Err(NodeKeyRefusal::EmptyBindingName);
-        }
-        Ok(PreimageTerm::Binding {
-            name,
-            value: Box::new(value),
-        })
-    }
-
-    /// A binding of a Leaf in preimage form.
-    fn bound_leaf<'a>(
-        &self,
-        binding: &'a Binding<LeafTerm>,
-    ) -> Result<PreimageTerm<'a>, NodeKeyRefusal> {
-        Self::binding(&binding.name, self.leaf(&binding.value)?)
-    }
-
-    /// `group` in preimage form.
-    fn group<'a>(&self, group: &'a GroupTerm) -> Result<PreimageTerm<'a>, NodeKeyRefusal> {
-        let members = group
-            .members
-            .iter()
-            .map(|member| match member {
-                GroupMember::Leaf(leaf) => self.leaf(leaf),
-                GroupMember::Binding(binding) => self.bound_leaf(binding),
-            })
-            .collect::<Result<_, _>>()?;
-        Ok(PreimageTerm::Aggregate { members })
-    }
-
-    /// `tuple` in preimage form.
-    fn tuple<'a>(&self, tuple: &'a TupleTerm) -> Result<PreimageTerm<'a>, NodeKeyRefusal> {
-        let members = tuple
-            .members
-            .iter()
-            .map(|member| match member {
-                TupleMember::Leaf(leaf) => self.leaf(leaf),
-                TupleMember::Group(group) => self.group(group),
-            })
-            .collect::<Result<_, _>>()?;
-        Ok(PreimageTerm::Aggregate { members })
-    }
-
-    /// `member` in preimage form.
-    fn member<'a>(&self, member: &'a MemberTerm) -> Result<PreimageTerm<'a>, NodeKeyRefusal> {
-        match member {
-            MemberTerm::Leaf(leaf) => self.leaf(leaf),
-            MemberTerm::Group(group) => self.group(group),
-            MemberTerm::Binding(binding) => {
-                let value = match &binding.value {
-                    BindingValue::Leaf(leaf) => self.leaf(leaf)?,
-                    BindingValue::Group(group) => self.group(group)?,
-                    BindingValue::Tuple(tuple) => self.tuple(tuple)?,
-                    BindingValue::Aggregate(aggregate) => PreimageTerm::Aggregate {
-                        members: aggregate
-                            .members
-                            .iter()
-                            .map(|member| self.member(member))
-                            .collect::<Result<_, _>>()?,
-                    },
-                    BindingValue::ExecutionPoint(point) => PreimageTerm::ExecutionPoint(point),
-                };
-                Self::binding(&binding.name, value)
-            }
-        }
-    }
-
-    /// `body` in preimage form, and whether it is an application. Each
-    /// stratum's function calls only the strata below it, so the walk is a
-    /// fixed-depth match whatever the expression's depth (FR-258).
-    fn body<'a>(&self, body: &'a BodyTerm) -> Result<(PreimageTerm<'a>, bool), NodeKeyRefusal> {
-        let members = |members: &'a [MemberTerm]| {
-            members
-                .iter()
-                .map(|member| self.member(member))
-                .collect::<Result<Vec<_>, _>>()
-        };
-        Ok(match body {
-            BodyTerm::Leaf(leaf) => (self.leaf(leaf)?, false),
-            BodyTerm::Application(ApplicationTerm {
-                operator,
-                operation,
-                result_type,
-                arguments,
-            }) => {
-                if let Some(declaration) = operation.member.as_ref().and_then(Member::declaration) {
-                    self.type_position(declaration)?;
-                }
-                self.type_position(result_type.0)?;
-                let preimage = PreimageTerm::Application {
-                    operator: *operator,
-                    operation,
-                    result_type: *result_type,
-                    arguments: members(arguments)?,
-                };
-                (preimage, true)
-            }
-            BodyTerm::Aggregate(AggregateTerm { members: terms }) => (
-                PreimageTerm::Aggregate {
-                    members: members(terms)?,
-                },
-                false,
-            ),
-            // QSpec FR-451 keys an abstraction relation by a preimage of its
-            // own, `abstraction_node_key`, never by FR-092's.
-            BodyTerm::Abstraction(_) => return Err(NodeKeyRefusal::AbstractionBody),
-            // QSpec FR-340: a frame body holds no application, and its
-            // `modifies`/`creates`/`deletes` entries are plain `NodeRef`
-            // members, never `reference` terms -- so, unlike every other
-            // position above, group substitution does not apply here. A
-            // `state`/`frame` node is never part of a recursion group (only
-            // a function's own body can be), so this is a direct passthrough,
-            // not a gap in the group-reference rule.
-            BodyTerm::Frame(FrameTerm {
-                modifies,
-                creates,
-                deletes,
-                deletes_scoped,
-            }) => (
-                PreimageTerm::Leaf(PreimageLeaf::Frame {
-                    modifies,
-                    creates,
-                    deletes,
-                    deletes_scoped,
-                }),
-                false,
-            ),
-        })
-    }
-}
-
 mod abstraction;
-mod shape;
 
-pub use abstraction::AbstractionTerm;
-pub(crate) use abstraction::{abstraction_node_key, FrameEntry, ObjectEntry, PopulationEntry};
+pub use abstraction::{AbstractionTerm, FrameEntry, ObjectEntry, PopulationEntry};
 
 #[cfg(test)]
-mod tests;
+mod ref_tests;

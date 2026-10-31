@@ -4,8 +4,8 @@
 
 use ix_trace_rs::trace;
 use qsl_replay::{
-    acquire_checked_closure, DependencyInput, NominalDeclarationForm, NominalDeclarationMember,
-    ReplayLimits, SourceIdentity, StageLimits, WireNodeId,
+    acquire_checked_closure, DependencyInput, NodeKey, NominalDeclarationForm,
+    NominalDeclarationMember, ReplayLimits, SourceIdentity, StageLimits,
 };
 use quire_exact::ValueType;
 use serde_json::Value as JsonValue;
@@ -17,7 +17,7 @@ union Shape { Empty, Circle(Integer) }\n\
 record Holder { datum: Integer; pair: Pair; shape: Shape; }\n\
 function consume using v(x: Holder): Boolean pure { true }\n";
 
-fn node_id(package: &[u8], tag: &str, name: &str) -> WireNodeId {
+fn node_id(package: &[u8], tag: &str, name: &str) -> NodeKey {
     let package: JsonValue = serde_json::from_slice(package).expect("checked package JSON");
     package["semantic_graph"]["nodes"]
         .as_array()
@@ -31,8 +31,7 @@ fn node_id(package: &[u8], tag: &str, name: &str) -> WireNodeId {
                     .and_then(JsonValue::as_str)
                     == Some(name)
         })
-        .and_then(|node| node["node_id"]["digest"].as_str())
-        .and_then(WireNodeId::from_hex)
+        .and_then(|node| qsl_foundation::node_wire::node_key_from_json(&node["node_id"]).ok())
         .expect("matching node id")
 }
 
@@ -40,9 +39,12 @@ fn node_id(package: &[u8], tag: &str, name: &str) -> WireNodeId {
 #[test]
 fn public_consumer_reads_complete_ordered_nominal_members_from_one_selection() {
     let acquisition = acquire_checked_closure(
-        SourceIdentity::new("a", "unit", "git", "1"),
-        "unit.native",
-        SOURCE.as_bytes(),
+        qsl_replay::CompileUnit {
+            source: SourceIdentity::new("a", "unit", "git", "1"),
+            package_name: "fixture".to_owned(),
+            path: "unit.native",
+            bytes: SOURCE.as_bytes(),
+        },
         [],
         &DependencyInput::default(),
         StageLimits::default(),
@@ -55,18 +57,18 @@ fn public_consumer_reads_complete_ordered_nominal_members_from_one_selection() {
     let shape_id = node_id(acquisition.package().bytes(), "composite_type", "Shape");
     let handle = acquisition.handle();
     let selection = handle
-        .lookup_callable(handle.package_id(), function)
+        .lookup_callable(handle.package_name(), &function)
         .expect("checked callable selection");
 
     let holder = handle
-        .nominal_declaration(&selection, holder_id)
+        .nominal_declaration(&selection, &holder_id)
         .expect("signature's record declaration");
-    assert_eq!(holder.package_id(), handle.package_id());
+    assert_eq!(holder.package_name(), handle.package_name());
     assert_eq!(
         selection.signature().parameters(),
-        &[ValueType::Composite(holder.key())]
+        &[ValueType::Composite(holder.key().clone())]
     );
-    assert_eq!(holder.node().as_bytes(), holder_id.as_bytes());
+    assert_eq!(holder.node(), &holder_id);
     assert_eq!(holder.form(), NominalDeclarationForm::Record);
     assert!(matches!(
         holder.members(),
@@ -78,7 +80,7 @@ fn public_consumer_reads_complete_ordered_nominal_members_from_one_selection() {
     ));
 
     let pair = handle
-        .nominal_declaration(&selection, pair_id)
+        .nominal_declaration(&selection, &pair_id)
         .expect("nested tuple declaration");
     assert_eq!(pair.form(), NominalDeclarationForm::Tuple);
     assert!(matches!(
@@ -96,7 +98,7 @@ fn public_consumer_reads_complete_ordered_nominal_members_from_one_selection() {
     ));
 
     let shape = handle
-        .nominal_declaration(&selection, shape_id)
+        .nominal_declaration(&selection, &shape_id)
         .expect("nested union declaration");
     assert_eq!(shape.form(), NominalDeclarationForm::Union);
     let [NominalDeclarationMember::UnionMember {
@@ -111,10 +113,10 @@ fn public_consumer_reads_complete_ordered_nominal_members_from_one_selection() {
     else {
         panic!("all declared union variants are available in order");
     };
-    assert_eq!(empty.identifier().as_str(), "Empty");
-    assert_eq!(empty.variant(), *empty_variant);
+    assert_eq!(empty.identifier(), "Empty");
+    assert_eq!(empty.variant(), empty_variant);
     assert!(empty_payload.is_empty());
-    assert_eq!(circle.identifier().as_str(), "Circle");
-    assert_eq!(circle.variant(), *circle_variant);
+    assert_eq!(circle.identifier(), "Circle");
+    assert_eq!(circle.variant(), circle_variant);
     assert_eq!(circle_payload, &[ValueType::Integer]);
 }

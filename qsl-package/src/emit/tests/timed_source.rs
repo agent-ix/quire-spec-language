@@ -47,11 +47,8 @@ fn package_units_document() -> Vec<u8> {
 #[test]
 fn a_checked_time_source_emits_and_reads_back_its_resolved_nodes() {
     let document = config_version_unit::DOMAIN_PACKAGE.as_bytes();
-    let packages = qsl_semantics::model::intake::package_input([document]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    let unit = config_version_unit::unit_text(&qsl_semantics::model::key::hex(digest)).replace(
+    let packages = qsl_semantics::model::intake::package_input([document]).unwrap();
+    let unit = config_version_unit::unit_text().replace(
         "profile v = \"quire.model.complete/v1\";\n",
         "profile v = \"quire.model.complete/v1\";\n\
          profile t = \"quire.temporal.complete/v1\";\n",
@@ -66,8 +63,8 @@ fn a_checked_time_source_emits_and_reads_back_its_resolved_nodes() {
     let [checked_source] = graph.time_sources() else {
         panic!("one checked time source");
     };
-    let model_node = checked_source.model_node.to_string();
-    let unit_node = checked_source.unit_node.to_string();
+    let model_node = checked_source.model_node.clone();
+    let unit_node = checked_source.unit_node.clone();
     let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
     assert_eq!(emission.omitted, []);
 
@@ -90,13 +87,12 @@ fn a_checked_time_source_emits_and_reads_back_its_resolved_nodes() {
         .unwrap()
         .iter()
         .find(|member| member["name"] == "time_dimension")
-        .unwrap()["value"]["target"]["digest"]
-        .as_str()
-        .unwrap();
+        .unwrap()["value"]["target"]
+        .clone();
     assert!(
         nodes(&wire)
             .iter()
-            .any(|node| node["node_id"]["digest"] == time_dimension),
+            .any(|node| node["node_id"] == time_dimension),
         "the time dimension node {time_dimension} is in the emitted graph"
     );
     let model = root["body"]["members"]
@@ -105,18 +101,20 @@ fn a_checked_time_source_emits_and_reads_back_its_resolved_nodes() {
         .iter()
         .find(|member| member["name"] == "model")
         .unwrap();
-    assert_eq!(model["value"]["target"]["digest"], model_node);
+    assert_eq!(
+        qsl_foundation::node_wire::node_key_from_json(&model["value"]["target"]).unwrap(),
+        model_node
+    );
     let source_id = root["body"]["members"]
         .as_array()
         .unwrap()
         .iter()
         .find(|member| member["name"] == "source")
-        .unwrap()["value"]["target"]["digest"]
-        .as_str()
-        .unwrap();
+        .unwrap()["value"]["target"]
+        .clone();
     let source_node = nodes(&wire)
         .iter()
-        .find(|node| node["node_id"]["digest"] == source_id)
+        .find(|node| node["node_id"] == source_id)
         .expect("the root references its typed source");
     assert_eq!(source_node["semantic_form"], "time_source");
     assert_eq!(
@@ -125,8 +123,8 @@ fn a_checked_time_source_emits_and_reads_back_its_resolved_nodes() {
             .unwrap()
             .iter()
             .find(|member| member["name"] == "unit")
-            .unwrap()["value"]["target"]["digest"],
-        unit_node
+            .unwrap()["value"]["target"],
+        qsl_foundation::node_wire::node_key_to_json(&unit_node).unwrap()
     );
 
     let mut evidence = CheckedPackageEvidence::new();
@@ -134,14 +132,13 @@ fn a_checked_time_source_emits_and_reads_back_its_resolved_nodes() {
         evidence.support_feature(feature.as_str().unwrap());
     }
     evidence
-        .insert_domain_package_document(qsl_semantics::model::key::hex(digest), document.to_vec())
+        .insert_domain_package_document(package_identity(document), document.to_vec())
         .expect("a fresh evidence key");
     let read = read_checked_package_v2(
         emission.package.bytes(),
         library(),
         V2ReadLimits::default(),
         &evidence,
-        &qsl_semantics::library::fixtures::single_pin(library(), emission.package.package_id()),
     )
     .unwrap_or_else(|failure| panic!("the I2 read admits the emitted timed model: {failure:?}"));
     let typed = CheckedTimedModel::from_admitted(&read.into_value().admitted)
@@ -149,7 +146,10 @@ fn a_checked_time_source_emits_and_reads_back_its_resolved_nodes() {
     let [timed] = typed.as_slice() else {
         panic!("one timed model reads back");
     };
-    assert_eq!(timed.model.digest.as_ref(), model_node);
+    assert_eq!(
+        serde_json::to_value(&timed.model).unwrap(),
+        qsl_foundation::node_wire::node_key_to_json(&model_node).unwrap()
+    );
     assert_eq!(
         timed.source.kind,
         crate::checked_v2::CheckedTimeSourceKind::Dense
@@ -166,11 +166,8 @@ fn a_checked_time_source_emits_and_reads_back_its_resolved_nodes() {
 #[test]
 fn a_package_owned_time_unit_emits_its_model_owned_nominal_nodes() {
     let document = package_units_document();
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    let unit = config_version_unit::unit_text(&qsl_semantics::model::key::hex(digest)).replace(
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
+    let unit = config_version_unit::unit_text().replace(
         "profile v = \"quire.model.complete/v1\";\n",
         "profile v = \"quire.model.complete/v1\";\n\
          profile t = \"quire.temporal.complete/v1\";\n",
@@ -183,17 +180,22 @@ fn a_package_owned_time_unit_emits_its_model_owned_nominal_nodes() {
     let [checked_source] = graph.time_sources() else {
         panic!("one checked time source");
     };
-    let dimension_node = checked_source.time_dimension.to_string();
-    let unit_node = checked_source.unit_node.to_string();
+    let dimension_node = checked_source.time_dimension.clone();
+    let unit_node = checked_source.unit_node.clone();
     let emission =
         emit_checked(&CheckedPackage::link(graph)).expect("the package-owned timed model emits");
     let wire = wire(&emission);
-    for digest in [&dimension_node, &unit_node] {
+    for key in [&dimension_node, &unit_node] {
         assert!(
             nodes(&wire)
                 .iter()
-                .any(|node| node["node_id"]["digest"].as_str() == Some(digest)),
-            "the model-owned nominal node {digest} is emitted"
+                .any(
+                    |node| qsl_foundation::node_wire::node_key_from_json(&node["node_id"])
+                        .ok()
+                        .as_ref()
+                        == Some(key)
+                ),
+            "the model-owned nominal node {key} is emitted"
         );
     }
     let mut evidence = CheckedPackageEvidence::new();
@@ -201,14 +203,13 @@ fn a_package_owned_time_unit_emits_its_model_owned_nominal_nodes() {
         evidence.support_feature(feature.as_str().unwrap());
     }
     evidence
-        .insert_domain_package_document(qsl_semantics::model::key::hex(digest), document)
+        .insert_domain_package_document(package_identity(&document), document)
         .expect("a fresh evidence key");
     read_checked_package_v2(
         emission.package.bytes(),
         library(),
         V2ReadLimits::default(),
         &evidence,
-        &qsl_semantics::library::fixtures::single_pin(library(), emission.package.package_id()),
     )
     .unwrap_or_else(|failure| panic!("the I2 read admits package-owned time nodes: {failure:?}"));
 }
@@ -217,11 +218,8 @@ fn a_package_owned_time_unit_emits_its_model_owned_nominal_nodes() {
 #[test]
 fn a_tick_time_source_emits_its_exact_period_and_operation_anchor() {
     let document = config_version_unit::DOMAIN_PACKAGE.as_bytes();
-    let packages = qsl_semantics::model::intake::package_input([document]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    let unit = config_version_unit::unit_text(&qsl_semantics::model::key::hex(digest)).replace(
+    let packages = qsl_semantics::model::intake::package_input([document]).unwrap();
+    let unit = config_version_unit::unit_text().replace(
         "profile v = \"quire.model.complete/v1\";\n",
         "profile v = \"quire.model.complete/v1\";\n\
          profile t = \"quire.temporal.complete/v1\";\n",
@@ -240,14 +238,13 @@ fn a_tick_time_source_emits_its_exact_period_and_operation_anchor() {
         evidence.support_feature(feature.as_str().unwrap());
     }
     evidence
-        .insert_domain_package_document(qsl_semantics::model::key::hex(digest), document.to_vec())
+        .insert_domain_package_document(package_identity(document), document.to_vec())
         .expect("a fresh evidence key");
     let read = read_checked_package_v2(
         emission.package.bytes(),
         library(),
         V2ReadLimits::default(),
         &evidence,
-        &qsl_semantics::library::fixtures::single_pin(library(), emission.package.package_id()),
     )
     .unwrap_or_else(|failure| panic!("the I2 read admits the tick model: {failure:?}"));
     let typed = CheckedTimedModel::from_admitted(&read.into_value().admitted)
@@ -268,12 +265,11 @@ fn a_tick_time_source_emits_its_exact_period_and_operation_anchor() {
 /// `Time`, `sec`) both selected and a source `Time` with `s`, the time
 /// members `time R dense unit R::ms`, `time R dense unit F::sec` and `time
 /// R dense unit s` each emit a timed root whose `time_dimension` is their
-/// own `Time` node, three different nodes, and the three packages have
-/// three different identities. The S3 refusals of mixed
+/// own `Time` node, three different structural nodes. The S3 refusals of mixed
 /// dimensions are `qsl-semantics`' `time_dimensions_of_different_owners_do_not_mix`.
 #[trace("TC-685", "FR-230-AC-18")]
 #[test]
-fn three_time_dimensions_give_three_package_identities() {
+fn three_time_dimensions_have_distinct_structural_keys() {
     let rpc = package_units_document();
     let mut flow: Value = serde_json::from_str(
         &config_version_unit::DOMAIN_PACKAGE.replace("example/config-version", "example/flow"),
@@ -289,32 +285,24 @@ fn three_time_dimensions_give_three_package_identities() {
         "scale": "1", "offset": "0", "origin": origin,
     }]);
     let flow = serde_json::to_vec(&flow).expect("JSON");
-    let packages = qsl_semantics::model::intake::package_input([rpc.as_slice(), flow.as_slice()]);
-    let digest = |bytes: &[u8]| {
-        packages
-            .iter()
-            .find(|(_, document)| document.as_slice() == bytes)
-            .map(|(digest, _)| qsl_semantics::model::key::hex(digest))
-            .expect("a supplied document")
-    };
+    let packages =
+        qsl_semantics::model::intake::package_input([rpc.as_slice(), flow.as_slice()]).unwrap();
     let identity = |unit: &str| {
         let text = format!(
             "language \"ix:native\" edition \"1-draft\";\n\
              profile v = \"quire.model.complete/v1\";\n\
              profile t = \"quire.temporal.complete/v1\";\n\
-             model R = \"example/config-version\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
-             model F = \"example/flow\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+             model R = \"example/config-version\";\n\
+             model F = \"example/flow\";\n\
              dimension Time;\nunit s : Time = rational(1, 1);\n\
              function noop using v(): Boolean pure {{ true }}\n\
-             time R dense unit {unit};\n",
-            digest(&rpc),
-            digest(&flow)
+             time R dense unit {unit};\n"
         );
         let graph = assemble_with_models(text.as_bytes(), &packages)
             .expect("the unit assembles")
             .check(CheckingLimits::default())
             .unwrap_or_else(|refusals| panic!("{unit}: {refusals:?}"));
-        let dimension = graph.time_sources()[0].time_dimension.to_string();
+        let dimension = graph.time_sources()[0].time_dimension.clone();
         let emission = emit_checked(&CheckedPackage::link(graph))
             .unwrap_or_else(|refusal| panic!("{unit} emits: {refusal:?}"));
         // The emitted timed root references the checked time dimension.
@@ -333,17 +321,20 @@ fn three_time_dimensions_give_three_package_identities() {
                     .iter()
                     .find(|member| member["name"] == "time_dimension")
             })
-            .map(|member| member["value"]["target"]["digest"].clone())
+            .map(|member| member["value"]["target"].clone())
             .expect("the root's time dimension");
-        assert_eq!(emitted, json!(dimension), "{unit}");
-        (dimension, emission.package().package_id().hex())
+        assert_eq!(
+            qsl_foundation::node_wire::node_key_from_json(&emitted).unwrap(),
+            dimension,
+            "{unit}"
+        );
+        dimension
     };
     let rpc = identity("R::ms");
     let flow = identity("F::sec");
     let own = identity("s");
-    // The time dimensions differ, and with them the packages.
+    // The three selected time dimensions remain distinct.
     for (left, right) in [(&rpc, &flow), (&rpc, &own), (&flow, &own)] {
-        assert_ne!(left.0, right.0);
-        assert_ne!(left.1, right.1);
+        assert_ne!(left, right);
     }
 }

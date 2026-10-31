@@ -5,12 +5,9 @@
 //! other -- exactly FR-322's `source_map` (`SourceMapEntry`: `node_id`,
 //! `role`, `ordinal`, `regions`).
 //!
-//! The map is keyed by the wire node id ([`WireNodeId`]): it is read from
-//! `quire.checked-package/v2` bytes, and a node id read from a wire never
-//! becomes a `NodeKey` by conversion (R-10). A kernel
-//! [`quire_exact::Location`] (the checked occurrence tag, which carries no
-//! bytes) resolves through the map in the other, emission, direction
-//! ([`OccurrenceKey::from`]).
+//! The map is keyed by the admitted structural node identity. A kernel
+//! [`quire_exact::Location`] resolves through the map by the same node and
+//! occurrence, with no digest conversion ([`OccurrenceKey::from`]).
 //!
 //! Admission of the wire's own map (every occurrence mapped, every region
 //! under a locked, current source, no overlap within one occurrence and
@@ -23,9 +20,7 @@ use alloc::collections::BTreeMap;
 use alloc::{boxed::Box, string::String, vec::Vec};
 use core::fmt;
 
-use quire_exact::{Location, Origin, Role};
-
-use crate::digest::{DigestDomain, DigestRecord, WireNodeId};
+use quire_exact::{Location, NodeKey, Origin, Role};
 
 /// Why a provenance value could not be formed. Each condition a caller must
 /// tell apart is its own variant.
@@ -37,10 +32,6 @@ pub enum InvalidProvenance {
     /// A [`RawSourceRef`]'s identity is empty (QSpec `Nonempty`).
     #[error("the source identity is empty")]
     EmptyIdentity,
-    /// A [`RawSourceRef`]'s digest is not a `quire.source.bytes/v1` digest
-    /// (QSpec `RawSourceRef.digest_domain` is that constant).
-    #[error("a raw source digest must be quire.source.bytes/v1, not {0}")]
-    NotSourceBytes(DigestDomain),
     /// A [`SourceRegion`]'s end precedes its start.
     #[error("region end {end} precedes start {start}")]
     ReversedRegion {
@@ -59,39 +50,32 @@ pub enum InvalidProvenance {
 }
 
 /// ADR-013 O-07 and QSpec `RawSourceRef`: names one source document by
-/// authority and identity and binds it to its bytes by their
-/// `quire.source.bytes/v1` digest (QSpec STD-150).
+/// its authority and identity.
 ///
 /// quire:canonical
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct RawSourceRef {
     authority: String,
     identity: String,
-    digest: DigestRecord,
 }
 
-/// QSpec FR-322 `RawSourceRef`, member for member: `authority`, `identity`,
-/// `digest_domain` (always `quire.source.bytes/v1`) and the lowercase-hex
-/// `digest`.
+/// QSpec FR-322 `RawSourceRef`, member for member: `authority` and
+/// `identity`.
 impl serde::Serialize for RawSourceRef {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
-        let mut record = serializer.serialize_struct("RawSourceRef", 4)?;
+        let mut record = serializer.serialize_struct("RawSourceRef", 2)?;
         record.serialize_field("authority", &self.authority)?;
         record.serialize_field("identity", &self.identity)?;
-        record.serialize_field("digest_domain", self.digest.domain().as_str())?;
-        record.serialize_field("digest", &self.digest.hex())?;
         record.end()
     }
 }
 
 impl RawSourceRef {
-    /// Name a source document. Refuses an empty authority or identity, and
-    /// a digest outside `quire.source.bytes/v1`.
+    /// Name a source document. Refuses an empty authority or identity.
     pub fn new(
         authority: impl Into<String>,
         identity: impl Into<String>,
-        digest: DigestRecord,
     ) -> Result<Self, InvalidProvenance> {
         let (authority, identity) = (authority.into(), identity.into());
         if authority.is_empty() {
@@ -100,13 +84,9 @@ impl RawSourceRef {
         if identity.is_empty() {
             return Err(InvalidProvenance::EmptyIdentity);
         }
-        if digest.domain() != DigestDomain::SourceBytesV1 {
-            return Err(InvalidProvenance::NotSourceBytes(digest.domain()));
-        }
         Ok(Self {
             authority,
             identity,
-            digest,
         })
     }
 
@@ -119,20 +99,14 @@ impl RawSourceRef {
     pub fn identity(&self) -> &str {
         &self.identity
     }
-
-    /// The `quire.source.bytes/v1` digest of the source's bytes.
-    pub fn digest(&self) -> DigestRecord {
-        self.digest
-    }
 }
 
 /// ADR-013 O-07/O-12: a half-open UTF-8 byte interval `[start, end)` under
 /// one source document.
 ///
-/// Equality, ordering and hashing are lexical over (`RawSourceRef` digest,
-/// start, end), exactly O-12's region equality: the document's digest names
-/// its bytes, so two regions over the same bytes and offsets are one region
-/// whatever authority or identity label named the document.
+/// Equality, ordering and hashing are lexical over (`RawSourceRef` authority,
+/// identity, start, end): two regions over the same document and offsets are
+/// one region.
 ///
 /// An empty region (`start == end`) is a point, which a diagnostic may
 /// name. A v2 source-map entry's regions are non-empty; IR's reader
@@ -168,9 +142,14 @@ impl SourceRegion {
         self.end
     }
 
-    /// The lexical key O-12's equality compares.
-    fn key(&self) -> (DigestRecord, u64, u64) {
-        (self.source.digest, self.start, self.end)
+    /// The lexical key a region's equality compares.
+    fn key(&self) -> (&str, &str, u64, u64) {
+        (
+            &self.source.authority,
+            &self.source.identity,
+            self.start,
+            self.end,
+        )
     }
 }
 
@@ -201,39 +180,39 @@ impl Ord for SourceRegion {
 }
 
 /// ADR-013 O-07: an occurrence key, (node id, role, ordinal), exactly
-/// FR-322's `source_map` key. The node half is the wire node id; the role
+/// FR-322's `source_map` key. The node half is the admitted node id; the role
 /// and ordinal half is the kernel [`Origin`]. Equality and ordering are
 /// lexical over (node id, role, ordinal).
 ///
 /// quire:canonical
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct OccurrenceKey {
-    node: WireNodeId,
+    node: NodeKey,
     origin: Origin,
 }
 
 impl OccurrenceKey {
-    /// Name an occurrence by wire node id, role and ordinal.
-    pub fn new(node: WireNodeId, origin: Origin) -> Self {
+    /// Name an occurrence by structural node id, role and ordinal.
+    pub fn new(node: NodeKey, origin: Origin) -> Self {
         Self { node, origin }
     }
 
     /// The `generated` occurrence of `node` at ordinal 0: the one
     /// occurrence of a node the producer writes with no source construct of
     /// its own, such as a `model_root` node (QSpec FR-322-AC-132).
-    pub fn generated(node: WireNodeId) -> Self {
+    pub fn generated(node: NodeKey) -> Self {
         Self::new(node, Origin::new(Role::new("generated"), 0))
     }
 
     /// The `declaration` occurrence of `node` at ordinal 0, such as a
     /// protocol clause node's (QSpec FR-368 "Claim and anchor").
-    pub fn declaration(node: WireNodeId) -> Self {
+    pub fn declaration(node: NodeKey) -> Self {
         Self::new(node, Origin::new(Role::new("declaration"), 0))
     }
 
-    /// The occurrence's wire node id.
-    pub fn node(&self) -> WireNodeId {
-        self.node
+    /// The occurrence's structural node id.
+    pub fn node(&self) -> &NodeKey {
+        &self.node
     }
 
     /// The occurrence's role and ordinal.
@@ -243,19 +222,15 @@ impl OccurrenceKey {
 
     /// The first key of `node` in key order: the empty role sorts before
     /// every role, and ordinal zero before every ordinal.
-    fn first_of(node: WireNodeId) -> Self {
+    fn first_of(node: NodeKey) -> Self {
         Self::new(node, Origin::new(Role::new(""), 0))
     }
 }
 
-/// The emission direction: a checked location's node id, as the wire
-/// spells it. The reverse is never defined (R-10).
+/// A checked location's admitted structural node and occurrence.
 impl From<&Location> for OccurrenceKey {
     fn from(location: &Location) -> Self {
-        Self::new(
-            WireNodeId::from_digest(*location.node().as_bytes()),
-            location.occurrence().clone(),
-        )
+        Self::new(location.node().clone(), location.occurrence().clone())
     }
 }
 
@@ -277,7 +252,7 @@ impl fmt::Display for OccurrenceKey {
 pub enum UnresolvedOccurrence {
     /// The package maps no occurrence of the tag's node.
     #[error("the package names no node {0}")]
-    UnknownNode(WireNodeId),
+    UnknownNode(NodeKey),
     /// The package maps the tag's node, but not at the tag's role and
     /// ordinal.
     #[error("the package maps no occurrence {0}")]
@@ -326,10 +301,11 @@ impl PackageSourceMap {
     /// each with its regions.
     pub fn occurrences(
         &self,
-        node: WireNodeId,
+        node: &NodeKey,
     ) -> impl Iterator<Item = (&OccurrenceKey, &[SourceRegion])> {
+        let node = node.clone();
         self.entries
-            .range(OccurrenceKey::first_of(node)..)
+            .range(OccurrenceKey::first_of(node.clone())..)
             .take_while(move |(key, _)| key.node == node)
             .map(|(key, regions)| (key, &**regions))
     }
@@ -342,7 +318,7 @@ impl PackageSourceMap {
         if let Some(regions) = self.regions(&key) {
             return Ok(regions);
         }
-        if self.occurrences(key.node).next().is_none() {
+        if self.occurrences(&key.node).next().is_none() {
             Err(UnresolvedOccurrence::UnknownNode(key.node))
         } else {
             Err(UnresolvedOccurrence::UnknownOccurrence(key))
@@ -354,75 +330,63 @@ impl PackageSourceMap {
 mod tests {
     use alloc::{vec, vec::Vec};
     use ix_trace_rs::trace;
-    use quire_exact::NodeKey;
+    use quire_exact::PathSegment;
 
     use super::*;
 
-    fn digest(domain: DigestDomain, fill: u8) -> DigestRecord {
-        DigestRecord::mint(domain, [fill; 32])
+    fn source(authority: &str) -> RawSourceRef {
+        RawSourceRef::new(authority, "unit").unwrap()
     }
 
-    fn source(authority: &str, fill: u8) -> RawSourceRef {
-        RawSourceRef::new(authority, "unit", digest(DigestDomain::SourceBytesV1, fill)).unwrap()
+    fn region(authority: &str, start: u64, end: u64) -> SourceRegion {
+        SourceRegion::new(source(authority), start, end).unwrap()
     }
 
-    fn region(fill: u8, start: u64, end: u64) -> SourceRegion {
-        SourceRegion::new(source("a", fill), start, end).unwrap()
+    fn node(value: u8) -> NodeKey {
+        NodeKey::new("test", vec![PathSegment::Text(value.to_string())], 0)
+            .expect("test node has a valid structural identity")
     }
 
     fn key(node: u8, role: &str, ordinal: u64) -> OccurrenceKey {
-        OccurrenceKey::new(
-            WireNodeId::from_digest([node; 32]),
-            Origin::new(Role::new(role), ordinal),
-        )
+        OccurrenceKey::new(self::node(node), Origin::new(Role::new(role), ordinal))
     }
 
-    /// O-12 region equality is lexical over (digest, start, end): the
-    /// authority and identity labels take no part, while each of
-    /// the three compared members does.
+    /// A region's equality is lexical over (authority, identity, start,
+    /// end): each of the four compared members separates two regions.
     #[trace("TC-420", "FR-095-AC-2")]
     #[test]
-    fn region_equality_is_over_digest_start_and_end_only() {
-        let base = region(1, 4, 9);
-        let relabelled = SourceRegion::new(
-            RawSourceRef::new("b", "other", digest(DigestDomain::SourceBytesV1, 1)).unwrap(),
-            4,
-            9,
-        )
-        .unwrap();
-        assert_eq!(base, relabelled);
-        assert_eq!(base.cmp(&relabelled), core::cmp::Ordering::Equal);
-        assert_ne!(base, region(2, 4, 9));
-        assert_ne!(base, region(1, 5, 9));
-        assert_ne!(base, region(1, 4, 8));
+    fn region_equality_is_over_source_start_and_end() {
+        let base = region("a", 4, 9);
+        assert_eq!(base, region("a", 4, 9));
+        assert_eq!(base.cmp(&region("a", 4, 9)), core::cmp::Ordering::Equal);
+        assert_ne!(base, region("b", 4, 9));
+        assert_ne!(
+            base,
+            SourceRegion::new(RawSourceRef::new("a", "other").unwrap(), 4, 9).unwrap()
+        );
+        assert_ne!(base, region("a", 5, 9));
+        assert_ne!(base, region("a", 4, 8));
     }
 
     /// A `RawSourceRef` is QSpec's: non-empty authority and identity
-    /// members, and a `quire.source.bytes/v1` digest only. A region's end
-    /// never precedes its start; an empty region is a point.
+    /// members. A region's end never precedes its start; an empty region is a
+    /// point.
     #[trace("TC-420", "FR-095-AC-1")]
     #[test]
     fn raw_source_refs_and_regions_refuse_malformed_members() {
-        let bytes = digest(DigestDomain::SourceBytesV1, 1);
         assert_eq!(
-            RawSourceRef::new("", "u", bytes),
+            RawSourceRef::new("", "u"),
             Err(InvalidProvenance::EmptyAuthority)
         );
         assert_eq!(
-            RawSourceRef::new("a", "", bytes),
+            RawSourceRef::new("a", ""),
             Err(InvalidProvenance::EmptyIdentity)
         );
         assert_eq!(
-            RawSourceRef::new("a", "u", digest(DigestDomain::DefinitionBytesV1, 1)),
-            Err(InvalidProvenance::NotSourceBytes(
-                DigestDomain::DefinitionBytesV1
-            ))
-        );
-        assert_eq!(
-            SourceRegion::new(source("a", 1), 5, 4).unwrap_err(),
+            SourceRegion::new(source("a"), 5, 4).unwrap_err(),
             InvalidProvenance::ReversedRegion { start: 5, end: 4 }
         );
-        let point = SourceRegion::new(source("a", 1), 5, 5).unwrap();
+        let point = SourceRegion::new(source("a"), 5, 5).unwrap();
         assert_eq!((point.start(), point.end()), (5, 5));
     }
 
@@ -433,19 +397,37 @@ mod tests {
     fn occurrence_keys_compare_over_node_role_and_ordinal() {
         assert_eq!(key(1, "expression", 0), key(1, "expression", 0));
         assert_ne!(key(1, "expression", 0), key(2, "expression", 0));
+        let same_path_other_package =
+            NodeKey::new("other", vec![PathSegment::Text("1".into())], 0).unwrap();
+        assert_ne!(
+            key(1, "expression", 0),
+            OccurrenceKey::new(
+                same_path_other_package,
+                Origin::new(Role::new("expression"), 0)
+            )
+        );
+        let same_path_other_ordinal =
+            NodeKey::new("test", vec![PathSegment::Text("1".into())], 1).unwrap();
+        assert_ne!(
+            key(1, "expression", 0),
+            OccurrenceKey::new(
+                same_path_other_ordinal,
+                Origin::new(Role::new("expression"), 0)
+            )
+        );
         assert_ne!(key(1, "expression", 0), key(1, "type", 0));
         assert_ne!(key(1, "expression", 0), key(1, "expression", 1));
     }
 
     fn map() -> PackageSourceMap {
         PackageSourceMap::from_entries([
-            (key(1, "declaration", 0), vec![region(1, 0, 4)]),
+            (key(1, "declaration", 0), vec![region("a", 0, 4)]),
             (
                 key(1, "expression", 0),
-                vec![region(1, 10, 12), region(1, 20, 22)],
+                vec![region("a", 10, 12), region("a", 20, 22)],
             ),
-            (key(1, "expression", 1), vec![region(1, 30, 31)]),
-            (key(2, "type", 0), vec![region(1, 40, 41)]),
+            (key(1, "expression", 1), vec![region("a", 30, 31)]),
+            (key(2, "type", 0), vec![region("a", 40, 41)]),
         ])
         .unwrap()
     }
@@ -459,15 +441,15 @@ mod tests {
         let map = map();
         assert_eq!(
             map.regions(&key(1, "expression", 0)),
-            Some(&[region(1, 10, 12), region(1, 20, 22)][..])
+            Some(&[region("a", 10, 12), region("a", 20, 22)][..])
         );
         assert_eq!(
             map.regions(&key(1, "expression", 1)),
-            Some(&[region(1, 30, 31)][..])
+            Some(&[region("a", 30, 31)][..])
         );
         assert_eq!(map.regions(&key(1, "expression", 2)), None);
         let node_one: Vec<_> = map
-            .occurrences(WireNodeId::from_digest([1; 32]))
+            .occurrences(&node(1))
             .map(|(key, _)| key.clone())
             .collect();
         assert_eq!(
@@ -478,7 +460,7 @@ mod tests {
                 key(1, "expression", 1)
             ]
         );
-        assert_eq!(map.occurrences(WireNodeId::from_digest([3; 32])).count(), 0);
+        assert_eq!(map.occurrences(&node(3)).count(), 0);
     }
 
     /// O-12: a location tag resolves through the map by its node id and
@@ -489,20 +471,15 @@ mod tests {
     fn a_location_resolves_or_refuses_by_cause() {
         let map = map();
         let location = |node: u8, role: &str, ordinal| {
-            Location::new(
-                NodeKey::from_digest([node; 32]),
-                Origin::new(Role::new(role), ordinal),
-            )
+            Location::new(self::node(node), Origin::new(Role::new(role), ordinal))
         };
         assert_eq!(
             map.resolve(&location(2, "type", 0)),
-            Ok(&[region(1, 40, 41)][..])
+            Ok(&[region("a", 40, 41)][..])
         );
         assert_eq!(
             map.resolve(&location(3, "type", 0)),
-            Err(UnresolvedOccurrence::UnknownNode(WireNodeId::from_digest(
-                [3; 32]
-            )))
+            Err(UnresolvedOccurrence::UnknownNode(node(3)))
         );
         assert_eq!(
             map.resolve(&location(2, "type", 1)),
@@ -520,8 +497,8 @@ mod tests {
         );
         assert_eq!(
             PackageSourceMap::from_entries([
-                (key(1, "type", 0), vec![region(1, 0, 1)]),
-                (key(1, "type", 0), vec![region(1, 2, 3)]),
+                (key(1, "type", 0), vec![region("a", 0, 1)]),
+                (key(1, "type", 0), vec![region("a", 2, 3)]),
             ]),
             Err(InvalidProvenance::DuplicateOccurrence(key(1, "type", 0)))
         );

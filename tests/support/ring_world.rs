@@ -24,7 +24,6 @@ use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckedGraph, CheckedRefinement, PackageDeclarations};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, package_input};
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
 use qsl_semantics::model::state::{ModelState, StateObject};
 use quire_exact::{Integer, ScalarLimits, Value};
@@ -300,39 +299,29 @@ pub fn ring_is_queue(items: &str) -> String {
 
 /// The unit text: both models, the contracts of `variant` and `refinement`.
 fn unit_text(
-    documents: &BTreeMap<[u8; 32], Vec<u8>>,
+    documents: &qsl_semantics::model::intake::PackageInput,
     refinement: &str,
     variant: Variant,
 ) -> String {
-    let digest = |package: &str| {
-        documents
-            .iter()
-            .find(|(_, bytes)| {
-                serde_json::from_slice::<Json>(bytes)
-                    .is_ok_and(|json| json["package"]["identity"] == package)
-            })
-            .map(|(digest, _)| hex(digest))
-            .expect("the package is provisioned")
-    };
+    let _ = documents;
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
          profile inf = \"quire.temporal.infinite-trace/v1\";\n\
-         model Q = \"{QUEUE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
-         model R = \"{RING}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         model Q = \"{QUEUE}\";\n\
+         model R = \"{RING}\";\n\
          {}{refinement}\n",
-        digest(QUEUE),
-        digest(RING),
         contracts(variant),
     )
 }
 
-/// The two domain packages' documents, by digest.
-fn packages(variant: Variant) -> BTreeMap<[u8; 32], Vec<u8>> {
+/// The two domain packages' documents, by identity.
+fn packages(variant: Variant) -> qsl_semantics::model::intake::PackageInput {
     package_input([
         queue_document(variant).as_slice(),
         ring_document(variant).as_slice(),
     ])
+    .unwrap()
 }
 
 /// The checked graph of the unit with `refinement`, or its refusals.
@@ -360,6 +349,7 @@ pub fn check(variant: Variant, refinement: &str) -> Result<CheckedGraph, String>
     .expect("the operation clauses parse");
     let declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_string(),
         built,
         models,
         Vec::new(),
@@ -375,32 +365,23 @@ pub fn check(variant: Variant, refinement: &str) -> Result<CheckedGraph, String>
 /// (population name, objects as (key, type name, fields)).
 fn snapshot(
     package: &str,
-    document: &[u8],
     populations: Vec<Json>,
-    snapshots: &mut BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
+    snapshots: &mut qsl_semantics::model::observation::DocumentProvision,
 ) -> DocumentRef {
-    let model_digest = *package_input([document])
-        .keys()
-        .next()
-        .expect("one package");
     let name = format!("{package}/start");
     let snapshot = json!({
         "format": "quire.state.snapshot/v1",
         "identity": {"authority": "test", "identity": name, "revision_namespace": "fixture",
             "revision": "fixture:1"},
         "observation": "current",
-        "model": {"identity": package, "version": "1.0.0",
-            "digest": format!("sha256-jcs:{}", hex(&model_digest))},
+        "model": {"identity": package},
         "anchor": {"kind": "initialization", "name": "start"},
         "populations": populations,
     });
     let bytes = snapshot.to_string().into_bytes();
-    let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-    let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-        .expect("canonical fixture")
-        .as_bytes();
     snapshots.insert(
-        qsl_foundation::SourceIdentity::new("test", name.clone(), "fixture", "fixture:1"),
+        qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("a document names itself"),
         bytes,
     );
     DocumentRef {
@@ -408,15 +389,14 @@ fn snapshot(
         identity: name,
         revision_namespace: "fixture".to_owned(),
         revision: "fixture:1".to_owned(),
-        digest,
     }
 }
 
 /// The unit's package, the two models' documents and their initial states.
 pub struct RingWorld {
     package: CheckedPackage,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
+    snapshots: qsl_semantics::model::observation::DocumentProvision,
     queue_initial: DocumentRef,
     ring_initial: DocumentRef,
 }
@@ -442,7 +422,6 @@ impl RingWorld {
         }
         let queue_initial = snapshot(
             QUEUE,
-            &queue_document(variant),
             vec![
                 json!({"population": node(QUEUE, "queues"), "complete": true,
                 "objects": [{"key": "r", "type": node(QUEUE, "Queue"),
@@ -463,7 +442,6 @@ impl RingWorld {
         };
         let ring_initial = snapshot(
             RING,
-            &ring_document(variant),
             vec![
                 json!({"population": node(RING, "rings"), "complete": true,
                     "objects": [{"key": "r", "type": node(RING, "Ring"),
@@ -710,8 +688,8 @@ pub fn custom_state(
 /// initial state.
 pub struct MapWorld {
     package: CheckedPackage,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<qsl_foundation::SourceIdentity, Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
+    snapshots: qsl_semantics::model::observation::DocumentProvision,
 }
 
 impl MapWorld {

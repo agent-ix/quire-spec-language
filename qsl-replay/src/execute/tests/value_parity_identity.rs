@@ -6,192 +6,15 @@
 use super::*;
 use crate::witness::{NoPayload, WitnessEnvelope, WitnessPacket};
 use crate::{ProfileSelection, TracePosition};
-use quire_canonical::Limits;
-use quire_exact::{IntegerInterval, NodeKey, Origin, Role};
+use quire_exact::{NodeKey, Origin, Role};
 use quire_semantic_value::supplied_stop::{SuppliedLimitKind, SuppliedLimits};
 
-const NODE: [u8; 32] = [0x22; 32];
-/// The first argument's parameter and type nodes: arbitrary distinct ids.
-const P0: [u8; 32] = [0x55; 32];
-const T0: [u8; 32] = [0x66; 32];
-
-/// 64 lowercase hex digits of `bytes`.
-fn hex64(bytes: [u8; 32]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
-}
-
-fn argument(
-    parameter: WireNodeId,
-    position: usize,
-    semantic_type: WireNodeId,
-) -> ValueParityArgument {
+fn argument(parameter: NodeKey, position: usize, semantic_type: NodeKey) -> ValueParityArgument {
     ValueParityArgument {
         parameter,
         position,
         semantic_type,
     }
-}
-
-/// The spec's first argument: `x: Int[0, 9]` (QSpec FR-322 P4 typed by T4).
-fn first() -> ValueParityArgument {
-    argument(WireNodeId::from_digest(P0), 0, WireNodeId::from_digest(T0))
-}
-
-fn second() -> ValueParityArgument {
-    argument(
-        WireNodeId::from_digest([0x33; 32]),
-        1,
-        WireNodeId::from_digest([0x44; 32]),
-    )
-}
-
-fn v2() -> ValueParityPreimage {
-    ValueParityPreimage {
-        node: WireNodeId::from_digest(NODE),
-        arguments: vec![first(), second()],
-    }
-}
-
-fn bytes_of<T: quire_canonical::Encode>(value: &T) -> String {
-    String::from_utf8(quire_canonical::to_vec(value, Limits::new(u64::MAX)).unwrap()).unwrap()
-}
-
-fn sha_hex(text: &str) -> String {
-    ByteDigest::of(text.as_bytes())
-        .as_bytes()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
-}
-
-fn identity_hex(preimage: &ValueParityPreimage) -> String {
-    value_parity_obligation(preimage).unwrap().to_string()
-}
-
-/// FR-484-AC-1: the 516-byte canonical text, its digest, and the first
-/// argument alone.
-#[trace("TC-1252", "FR-484-AC-1")]
-#[test]
-fn tc_1252_the_preimage_encodes_to_the_specified_bytes_and_digest() {
-    let (p0, t0) = (hex64(P0), hex64(T0));
-    let text = format!(
-        concat!(
-            r#"{{"arguments":[{{"parameter":"{p0}","position":0,"type":"{t0}"}},"#,
-            r#"{{"parameter":"{p1}","position":1,"type":"{t1}"}}],"#,
-            r#""node":"{node}","#,
-            r#""occurrence_key":{{"ordinal":0,"role":"declaration"}},"subject_kind":"function-value-parity"}}"#
-        ),
-        p0 = p0,
-        t0 = t0,
-        p1 = hex64([0x33; 32]),
-        t1 = hex64([0x44; 32]),
-        node = hex64(NODE),
-    );
-    assert_eq!(text.len(), 516);
-    assert_eq!(bytes_of(&v2()), text);
-    // The identity is the SHA-256 of those bytes, hashed independently.
-    assert_eq!(identity_hex(&v2()), sha_hex(&text));
-    let argument_text = format!(r#"{{"parameter":"{p0}","position":0,"type":"{t0}"}}"#);
-    assert_eq!(bytes_of(&first()), argument_text);
-}
-
-/// FR-484-AC-2: the empty list, the first argument alone, and the declared
-/// order being part of the identity.
-#[trace("TC-1252", "FR-484-AC-2")]
-#[test]
-fn tc_1252_the_declared_order_is_part_of_the_identity() {
-    let with = |arguments| ValueParityPreimage {
-        node: v2().node,
-        arguments,
-    };
-    let empty = with(Vec::new());
-    let node = hex64(NODE);
-    let tail = format!(
-        r#""node":"{node}","occurrence_key":{{"ordinal":0,"role":"declaration"}},"subject_kind":"function-value-parity"}}"#
-    );
-    let empty_text = format!(r#"{{"arguments":[],{tail}"#);
-    assert_eq!(bytes_of(&empty), empty_text);
-    assert_eq!(identity_hex(&empty), sha_hex(&empty_text));
-    let argument_json = |parameter: [u8; 32], position: usize, semantic_type: [u8; 32]| {
-        format!(
-            r#"{{"parameter":"{}","position":{position},"type":"{}"}}"#,
-            hex64(parameter),
-            hex64(semantic_type)
-        )
-    };
-    let one_text = format!(r#"{{"arguments":[{}],{tail}"#, argument_json(P0, 0, T0));
-    assert_eq!(identity_hex(&with(vec![first()])), sha_hex(&one_text));
-    let swapped = with(vec![
-        argument(second().parameter, 0, second().semantic_type),
-        argument(first().parameter, 1, first().semantic_type),
-    ]);
-    let swapped_text = format!(
-        r#"{{"arguments":[{},{}],{tail}"#,
-        argument_json([0x33; 32], 0, [0x44; 32]),
-        argument_json(P0, 1, T0)
-    );
-    assert_eq!(identity_hex(&swapped), sha_hex(&swapped_text));
-    // Order is part of the identity: all four spellings differ.
-    let identities = [
-        identity_hex(&empty),
-        identity_hex(&with(vec![first()])),
-        identity_hex(&swapped),
-        identity_hex(&v2()),
-    ];
-    let distinct: std::collections::BTreeSet<_> = identities.iter().collect();
-    assert_eq!(distinct.len(), identities.len());
-}
-
-/// FR-484-AC-3: every member changes the digest, a position out of order
-/// refuses, and the form never equals an operator-parity preimage.
-#[trace("TC-1252", "FR-484-AC-3")]
-#[test]
-fn tc_1252_every_member_changes_the_digest_and_a_position_out_of_order_refuses() {
-    let base = identity_hex(&v2());
-    let other = WireNodeId::from_digest([0x55; 32]);
-    let mut variants = Vec::new();
-    let mut changed = v2();
-    changed.node = other;
-    variants.push(changed);
-    let mut changed = v2();
-    changed.arguments[1].parameter = other;
-    variants.push(changed);
-    let mut changed = v2();
-    changed.arguments[1].semantic_type = other;
-    variants.push(changed);
-    let mut changed = v2();
-    changed.arguments.pop();
-    variants.push(changed);
-    let mut changed = v2();
-    changed.arguments.push(argument(other, 2, other));
-    variants.push(changed);
-    for variant in &variants {
-        assert_ne!(identity_hex(variant), base);
-    }
-    let mut misplaced = v2();
-    misplaced.arguments[1].position = 3;
-    assert_eq!(
-        value_parity_obligation(&misplaced),
-        Err(IdentityEncodeError::PositionOrder {
-            index: 1,
-            position: 3
-        })
-    );
-    let operator = ParityPreimage {
-        node: v2().node,
-        occurrence: Origin::new(Role::new("expression"), 0),
-        obligation_kind: "operator_parity".to_owned(),
-        arguments: vec![ParityArgument {
-            identity: crate::OperandIdentity::GraphChild(other),
-            domain: Domain::Range(
-                IntegerInterval::new(Integer::from(0_i64), Integer::from(9_i64)).unwrap(),
-            ),
-        }],
-    };
-    assert_ne!(
-        crate::parity_obligation(&operator).unwrap(),
-        value_parity_obligation(&v2()).unwrap()
-    );
 }
 
 fn unit() -> String {
@@ -208,6 +31,7 @@ fn unit() -> String {
 fn site(source: &str, function: &str) -> crate::CallSite<crate::FunctionSite> {
     crate::call_site(
         SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
+        "fixture".to_owned(),
         IDENTITY,
         source.as_bytes(),
         [],
@@ -224,19 +48,15 @@ fn retained_request(source: &str, function: &str, value: i64) -> ReplayRequestWi
     let compiled = spine(source, &BTreeMap::new());
     let mut wire = request(
         source.as_bytes(),
-        compiled.emitted.package_id(),
+        &compiled,
         name(&[function]),
-        input(located.site.parameters[0].1, value),
+        input(located.site.parameters[0].1.clone(), value),
     );
-    assert_eq!(
-        wire.package_id.1,
-        located.package_id.hex(),
-        "the retained package reference is call_site's"
-    );
+    assert_eq!(wire.package_name, "fixture");
     wire.replay_target =
         crate::RequestTargetWire::function(name(&[function]), located.site.declaration.clone());
     if let Some(parity) = &located.site.value_parity {
-        wire.obligation_identity = *parity.obligation_identity.as_bytes();
+        wire.obligation_identity = parity.obligation_identity.clone();
     }
     wire
 }
@@ -249,6 +69,7 @@ fn function_node(source: &str, function: &str) -> NodeKey {
         .callable(function)
         .unwrap()
         .identity
+        .clone()
 }
 
 /// FR-484-AC-4: `call_site` mints the identity of a non-`Boolean` function
@@ -266,32 +87,20 @@ fn tc_1252_call_site_mints_the_identity_of_a_value_function_only() {
             .expect("a value function has an identity");
         assert_eq!(parity.preimage.node, located.function);
         assert_eq!(parity.preimage.arguments.len(), located.parameters.len());
-        let mut text = String::from("{\"arguments\":[");
         for (position, (_, parameter)) in located.parameters.iter().enumerate() {
-            let key = semantic.resolve_wire(*parameter).expect("a parameter node");
             let declared = semantic
-                .node(key)
+                .node(parameter.clone())
                 .and_then(|node| node.semantic_type())
-                .expect("a typed parameter");
-            let declared = WireNodeId::from_digest(*declared.as_bytes());
+                .expect("a typed parameter")
+                .clone();
             assert_eq!(
                 parity.preimage.arguments[position],
-                argument(*parameter, position, declared)
+                argument(parameter.clone(), position, declared.clone())
             );
-            if position > 0 {
-                text.push(',');
-            }
-            text.push_str(&format!(
-                "{{\"parameter\":\"{parameter}\",\"position\":{position},\"type\":\"{declared}\"}}"
-            ));
         }
-        text.push_str(&format!(
-            "],\"node\":\"{}\",\"occurrence_key\":{{\"ordinal\":0,\"role\":\"declaration\"}},\"subject_kind\":\"function-value-parity\"}}",
-            located.function
-        ));
         assert_eq!(
-            parity.obligation_identity.to_string(),
-            sha_hex(&text),
+            parity.obligation_identity,
+            crate::ObligationIdentity::new(located.function.clone(), None, 0),
             "{function}"
         );
     }
@@ -315,17 +124,12 @@ fn tc_1252_a_request_from_the_retained_inputs_replays_and_carries_them() {
         assert_eq!(value_kind(report.result()), kind);
         let held = report.claim();
         assert_eq!(
-            held.obligation.as_bytes(),
-            located
-                .value_parity
-                .as_ref()
-                .unwrap()
-                .obligation_identity
-                .as_bytes()
+            held.obligation,
+            located.value_parity.as_ref().unwrap().obligation_identity
         );
         assert_eq!(held.occurrence_key, Some(located.declaration.clone()));
         assert_eq!(held.function, Some(name(&["inc"])));
-        assert_eq!(held.package_id, wire.package_id);
+        assert_eq!(held.package_name, wire.package_name);
         assert_eq!(held.source, wire.source);
         assert_eq!(held.limits, wire.accounting_limits);
         assert_eq!(held.supplied, SuppliedLimits::default());
@@ -350,25 +154,29 @@ fn tc_1252_a_wrong_identity_refuses_obligation_before_the_argument_join() {
     let source = unit();
     let inc = site(&source, "inc").site.value_parity.unwrap();
     let add = site(&source, "add").site;
-    let mut retyped = inc.preimage.clone();
-    retyped.arguments[0].semantic_type = WireNodeId::from_digest([0x44; 32]);
-    let retyped = value_parity_obligation(&retyped).unwrap();
-    let add_identity = add.value_parity.as_ref().unwrap().obligation_identity;
-    let stray = add.parameters[1].1;
+    let add_identity = add
+        .value_parity
+        .as_ref()
+        .unwrap()
+        .obligation_identity
+        .clone();
+    let stray = add.parameters[1].1.clone();
     for (claimed, extra) in [
-        (*add_identity.as_bytes(), false),
-        ([0; 32], false),
-        (*retyped.as_bytes(), false),
-        (*add_identity.as_bytes(), true),
+        (add_identity.clone(), false),
+        (
+            crate::ObligationIdentity::new(crate::fixture_node(0), None, 0),
+            false,
+        ),
+        (add_identity.clone(), true),
     ] {
         let mut wire = retained_request(&source, "inc", 3);
-        wire.obligation_identity = claimed;
+        wire.obligation_identity = claimed.clone();
         if extra {
             let ReplaySource::Input(assignments) = &mut wire.source else {
                 panic!("an input source");
             };
             assignments.push(CanonicalAssignment {
-                parameter: stray,
+                parameter: stray.clone(),
                 value: WitnessValue::Integer(1),
             });
         }
@@ -383,13 +191,13 @@ fn tc_1252_a_wrong_identity_refuses_obligation_before_the_argument_join() {
         else {
             panic!("expected the Obligation cause: {mismatch:?}");
         };
-        assert_eq!(named.as_bytes(), &claimed);
+        assert_eq!(named, &claimed);
         assert_eq!(recomputed, &inc.obligation_identity);
         assert_eq!(
             report.terminal_value(),
             TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(Code::StaleDependency))
         );
-        assert_eq!(report.claim().obligation.as_bytes(), &claimed);
+        assert_eq!(report.claim().obligation, claimed);
     }
 }
 
@@ -400,7 +208,7 @@ fn tc_1252_a_wrong_identity_refuses_obligation_before_the_argument_join() {
 fn tc_1252_a_foreign_occurrence_refuses_before_any_call() {
     let source = unit();
     let compiled = spine(&source, &BTreeMap::new());
-    let inc_node = wire_id(function_node(&source, "inc"));
+    let inc_node = (function_node(&source, "inc")).clone();
     // `inc`'s `x + 1` application: an `expression` occurrence found by its
     // region text (a record-less occurrence still counts).
     let graph = compiled.package.graph();
@@ -415,9 +223,9 @@ fn tc_1252_a_foreign_occurrence_refuses_before_any_call() {
                         .ends_with("function inc using v(x: Int[0, 9]): Integer pure { ")
             })
         })
-        .map(|(node, origin, _)| OccurrenceKey::new(wire_id(node), origin))
+        .map(|(node, origin, _)| OccurrenceKey::new(node.clone(), origin))
         .expect("inc holds an `x + 1` expression occurrence");
-    assert_ne!(application.node(), inc_node);
+    assert_ne!(application.node().clone(), inc_node);
     let keys = [
         site(&source, "add").site.declaration,
         application,
@@ -426,7 +234,7 @@ fn tc_1252_a_foreign_occurrence_refuses_before_any_call() {
     for key in keys {
         let mut wire = retained_request(&source, "inc", 3);
         // The identity is wrong too: the occurrence check comes first.
-        wire.obligation_identity = [0; 32];
+        wire.obligation_identity = crate::ObligationIdentity::new(crate::fixture_node(0), None, 0);
         wire.replay_target = crate::RequestTargetWire::function(name(&["inc"]), key.clone());
         let report = replay_generated(wire, integer(4), ReplayLimits::default());
         let ReplayRefusal::ClaimOccurrence {
@@ -441,18 +249,6 @@ fn tc_1252_a_foreign_occurrence_refuses_before_any_call() {
         assert_eq!(refusal_of(&report).code(), Code::MissingDeclaration);
     }
     let foreign = site(&source, "add").site.declaration;
-    let mut stale = retained_request(&source, "inc", 3);
-    stale.package_id = (
-        Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
-        DigestRecord::mint(DigestDomain::PackageSemanticV2, [1; 32]).hex(),
-    );
-    stale.replay_target = crate::RequestTargetWire::function(name(&["inc"]), foreign.clone());
-    let report = replay_generated(stale, integer(4), ReplayLimits::default());
-    assert!(
-        matches!(refusal_of(&report), ReplayRefusal::PackageIdMismatch { .. }),
-        "{:?}",
-        report.result()
-    );
     let mut small = retained_request(&source, "small", 3);
     small.replay_target = crate::RequestTargetWire::function(name(&["small"]), foreign);
     let report = replay_generated(small, integer(4), ReplayLimits::default());
@@ -472,7 +268,7 @@ fn tc_1252_the_content_identity_and_occurrence_bind_into_the_claim() {
     let source = unit();
     let content = |byte: u8| DigestRecord::mint(DigestDomain::SourceBytesV1, [byte; 32]);
     let mut wrong = retained_request(&source, "inc", 3);
-    wrong.obligation_identity = [0; 32];
+    wrong.obligation_identity = crate::ObligationIdentity::new(crate::fixture_node(0), None, 0);
     let cases = [
         (retained_request(&source, "inc", 3), integer(4), "agrees"),
         (retained_request(&source, "inc", 3), integer(5), "diverged"),
@@ -513,7 +309,7 @@ fn tc_1252_the_content_identity_and_occurrence_bind_into_the_claim() {
 /// The lock of `call_site`'s package bytes selects no profile for this unit.
 /// The request still carries an empty list: STD-443 fixes a value-parity
 /// claim's `profile_selections` empty (FR-484), and lock rows bind through
-/// `package_id` alone.
+/// the package name alone.
 fn assert_lock_selects_no_profile(package: &[u8]) {
     let wire: serde_json::Value = serde_json::from_slice(package).expect("package JSON");
     assert_eq!(wire["lock"]["profile_selections"], serde_json::json!([]));
@@ -532,13 +328,13 @@ fn tc_1252_the_input_arm_packet_round_trips_and_replays() {
         assert_lock_selects_no_profile(&located.package);
         let wire = retained_request(&source, function, value);
         assert!(wire.profile_selections.is_empty());
-        let identity = *located
+        let identity = located
             .site
             .value_parity
             .as_ref()
             .unwrap()
             .obligation_identity
-            .as_bytes();
+            .clone();
         let envelope_source = match wire.source.clone() {
             crate::ReplaySource::Witness(witness) => crate::EnvelopeSource::Witness(witness),
             crate::ReplaySource::Input(assignments) => crate::EnvelopeSource::Input(assignments),
@@ -552,13 +348,8 @@ fn tc_1252_the_input_arm_packet_round_trips_and_replays() {
         let packet = WitnessPacket {
             obligation_identity: Some(identity),
             occurrence_key: Some(located.site.declaration.clone()),
-            clause_node: Some(located.site.function),
+            clause_node: Some(located.site.function.clone()),
             replay_target: crate::ReplayTargetMembers::function(name(&[function])),
-            package_id: Some((
-                Some(located.package_id.domain().as_str().to_owned()),
-                located.package_id.hex(),
-            )),
-            source_digests: Some(wire.source_digests.clone()),
             profile_selections: Some(Vec::<ProfileSelection>::new()),
             run_limits: Some(wire.accounting_limits),
             declared_domains: Some(Vec::new()),
@@ -572,7 +363,7 @@ fn tc_1252_the_input_arm_packet_round_trips_and_replays() {
             WitnessEnvelope::reconstruct(packet, ReplayLimits::default()).expect("admitted");
         assert!(envelope.declared_domains().is_empty());
         assert_eq!(envelope.trace_position(), None);
-        // Every one of the thirteen members round-trips exactly.
+        // Every one of the twelve members round-trips exactly.
         let back = WitnessEnvelope::reconstruct(envelope.to_packet(), ReplayLimits::default())
             .expect("the round trip is admitted")
             .to_packet();
@@ -580,8 +371,6 @@ fn tc_1252_the_input_arm_packet_round_trips_and_replays() {
         assert_eq!(back.occurrence_key, sent.occurrence_key);
         assert_eq!(back.clause_node, sent.clause_node);
         assert_eq!(back.replay_target.select(), sent.replay_target.select());
-        assert_eq!(back.package_id, sent.package_id);
-        assert_eq!(back.source_digests, sent.source_digests);
         assert_eq!(back.profile_selections, sent.profile_selections);
         assert_eq!(back.run_limits, sent.run_limits);
         assert_eq!(back.declared_domains, sent.declared_domains);
@@ -592,16 +381,7 @@ fn tc_1252_the_input_arm_packet_round_trips_and_replays() {
 
         // The request is built from the admitted envelope's members alone.
         let mut built = wire;
-        built.obligation_identity = *envelope.obligation_identity().as_bytes();
-        built.package_id = (
-            Some(envelope.package_id().domain().as_str().to_owned()),
-            envelope.package_id().hex(),
-        );
-        built.source_digests = envelope
-            .source_digests()
-            .iter()
-            .map(crate::RawSourceRef::to_wire)
-            .collect();
+        built.obligation_identity = envelope.obligation_identity();
         built.profile_selections = envelope.profile_selections().to_vec();
         built.accounting_limits = envelope.run_limits();
         built.backend = envelope.backend().as_str().to_owned();
@@ -671,17 +451,11 @@ fn tc_1252_the_supplied_ceilings_bind_into_the_claim() {
 }
 
 /// Replace the request's one source with bytes no recompile admits, keeping
-/// its digest and byte provision consistent so the request still decodes.
+/// its byte provision consistent so the request still decodes.
 fn make_unrecompilable(wire: &mut ReplayRequestWire) {
     let bytes = b"this is not a unit";
-    let digest = source_digest(bytes);
-    wire.source_digests[0].5 = digest.hex();
-    wire.byte_provision = vec![(
-        crate::request::ProvisionIdentity::Source(qsl_foundation::SourceIdentity::new(
-            AUTHORITY, IDENTITY, NAMESPACE, REVISION,
-        )),
-        bytes.to_vec(),
-    )];
+    let (authority, identity) = (wire.sources[0].0.clone(), wire.sources[0].1.clone());
+    wire.byte_provision = vec![(authority, identity, bytes.to_vec())];
 }
 
 fn quire_selection() -> ProfileSelection {
@@ -690,18 +464,14 @@ fn quire_selection() -> ProfileSelection {
 
 /// FR-484-AC-12: a value-parity request carrying a profile selection
 /// refuses `UnusedProfileSelections` before the recompile, whatever the
-/// generated outcome, identity or package id; selections the request decode
+/// generated outcome, identity or package name; selections the request decode
 /// refuses never reach the entry.
 #[trace("TC-1252", "FR-484-AC-12")]
 #[test]
 fn tc_1252_a_profile_selection_refuses_before_the_recompile() {
     let source = unit();
     let selection = quire_selection();
-    let stale_package = (
-        Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
-        DigestRecord::mint(DigestDomain::PackageSemanticV2, [1; 32]).hex(),
-    );
-    // (generated outcome, replace the identity, replace the package id)
+    // (generated outcome, replace the identity, replace the package name)
     let cases = [
         (4, false, false),
         (5, false, false),
@@ -712,10 +482,11 @@ fn tc_1252_a_profile_selection_refuses_before_the_recompile() {
         let mut wire = retained_request(&source, "inc", 3);
         wire.profile_selections = vec![selection.clone()];
         if zero_identity {
-            wire.obligation_identity = [0; 32];
+            wire.obligation_identity =
+                crate::ObligationIdentity::new(crate::fixture_node(0), None, 0);
         }
         if stale {
-            wire.package_id = stale_package.clone();
+            wire.package_name = "other".to_owned();
         }
         // A recompile would refuse this source: the refusal comes before it.
         make_unrecompilable(&mut wire);

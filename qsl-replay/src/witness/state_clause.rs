@@ -22,7 +22,7 @@ pub struct StateClauseCounterexample {
     /// The observation, by the clause's kind: `PreCall` for a
     /// precondition, `Invocation` for a postcondition, `Current` for an
     /// invariant. Its documents are read from the replay request's byte
-    /// provision by their `sha256-jcs` digests.
+    /// provision by their document labels.
     pub observation: ClauseSelectionInput,
     /// FR-268 (ADR-031 SW-8): the clause's separating witness record,
     /// present exactly when the producing run's settlement basis was

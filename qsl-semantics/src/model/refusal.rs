@@ -602,15 +602,8 @@ pub enum ModelRefusalCause {
     },
     /// A reference key names a universe other than the binding's.
     ForeignUniverse {
-        /// The reference key's raw universe bytes, exactly as supplied. Not
-        /// always a well-formed 32-byte identity: a
-        /// [`crate::model::population::LookupKey`] whose `universe` is some
-        /// other length is also refused under this cause
-        /// (`crate::model::population::lookup`'s own raw-byte universe
-        /// comparison, never a separate malformed case), reporting the bytes
-        /// the caller actually supplied rather than a substituted or
-        /// truncated identity.
-        actual: Vec<u8>,
+        /// The reference key's universe root type node, as supplied.
+        actual: quire_exact::NodeKey,
         /// The binding's universe (ADR-013 §8 OQ-C ruling: a `UniverseId`,
         /// not an `EffectiveId`).
         expected: UniverseId,
@@ -889,37 +882,17 @@ pub enum ModelRefusalCause {
         /// The frame entry's member (`Operation.frame.creates[0]`).
         member: MemberPath,
     },
-    /// FR-154 Intake check 1 (`model-complete.md:67`): the selection's
-    /// digest domain is not the one domain Intake accepts.
-    DigestDomainMismatch {
-        /// The one digest domain Intake accepts (`sha256-jcs`).
-        expected: &'static str,
-        /// The selection's actual digest domain.
-        actual: String,
-    },
-    /// FR-154 Intake check 2 (`model-complete.md:68`): the package input
-    /// supplies no bytes under the selection's digest.
+    /// FR-154 Intake check 1: the package input supplies no document under
+    /// the selection's identity.
     MissingSelection {
-        /// The caller's selection, already admitted past check 1.
-        selection: DomainPackageRef,
+        /// The identity the source's `model` declaration names.
+        identity: String,
     },
-    /// FR-154 Intake check 3 (`model-complete.md:69`): the canonical
-    /// `sha256-jcs` digest of the supplied domain-package document differs
-    /// from the selected digest.
-    ContentMismatch {
-        /// The selected digest.
-        selected: [u8; 32],
-        /// The digest recomputed from the supplied document.
-        recomputed: [u8; 32],
-    },
-    /// FR-154 Intake check 3 (`model-complete.md:69`) for bytes the shared
-    /// reader refuses: such bytes have no canonical form, so the raw bytes'
-    /// own digest is compared with the selected digest and differs.
-    ByteDigestMismatch {
-        /// The selected digest.
-        expected: [u8; 32],
-        /// The digest of the supplied raw bytes.
-        actual: [u8; 32],
+    /// The package input supplies two documents under one identity: one
+    /// domain package per identity (`invalid_package`/`conflicting-definition`).
+    ConflictingPackage {
+        /// The identity two supplied documents declare.
+        identity: String,
     },
     /// ADR-011 Limits: a domain package document reached one of intake's
     /// parse limits, so it has no parsed form to digest or read. Names the
@@ -943,9 +916,8 @@ pub enum ModelRefusalCause {
     },
     /// FR-056: a domain package document carries a number with no exact
     /// RFC 8785 spelling. RFC 8785 encodes every number as the shortest
-    /// round-trip text of its nearest double, so the document's
-    /// `sha256-jcs` digest would be the digest of a different value;
-    /// intake's read refuses it before the digest is taken.
+    /// round-trip text of its nearest double, so the document would be read
+    /// as a different value; intake's read refuses it.
     NoncanonicalNumber {
         /// Why the number has no exact spelling; its cause tag.
         inexact: Inexact,
@@ -953,15 +925,13 @@ pub enum ModelRefusalCause {
         /// order.
         document_pointer: JsonPointer,
     },
-    /// FR-154 Intake check 4 (`model-complete.md:70`): the package's own
-    /// identity and version disagree with the selection.
+    /// FR-154 Intake check 2: the package's own declared identity
+    /// disagrees with the identity it was supplied under.
     WrongModelSelection {
-        /// The caller's selection.
-        selection: DomainPackageRef,
+        /// The selected identity.
+        identity: String,
         /// The package's own declared identity.
         actual_identity: String,
-        /// The package's own declared version.
-        actual_version: String,
     },
     /// ADR-010 OBS-006 / ADR-013 O-03: a selection names the reserved
     /// `quire/native` pseudo-package identity
@@ -973,8 +943,8 @@ pub enum ModelRefusalCause {
     /// [`Self::MalformedDeclaration`] (#157's precedent for a condition the
     /// closed catalog does not name separately).
     ReservedPackageIdentity {
-        /// The offered selection naming the reserved identity.
-        selection: DomainPackageRef,
+        /// The offered identity, the reserved one.
+        identity: String,
     },
     /// ADR-013 O-01/QC-5, catalogued `duplicate_selection`/`duplicate-identity`
     /// (revision `1-draft.6`): a package selects at most one version of a
@@ -984,10 +954,6 @@ pub enum ModelRefusalCause {
     DuplicateSelection {
         /// The repeated domain-package identity.
         identity: String,
-        /// The version already selected for `identity`.
-        already_selected_version: String,
-        /// The version this second selection requested.
-        requested_version: String,
     },
     /// A population member declares the same field twice in its
     /// `field_values`. FR-272's `invalid_runtime_input` cause list is
@@ -1237,8 +1203,8 @@ impl ModelRefusalCause {
                 ("key", render_identity(key)),
             ])),
             Self::ForeignUniverse { actual, expected } => Some(std::collections::BTreeMap::from([
-                ("required", crate::model::key::hex(expected.as_bytes())),
-                ("supplied", crate::model::key::hex(actual)),
+                ("required", expected.root_type().to_string()),
+                ("supplied", actual.to_string()),
             ])),
             // A caller-budget ceiling (ADR-014 section 1): FR-255 Behavior 1's
             // record, built once by `BudgetDenial`.
@@ -1302,10 +1268,8 @@ impl ModelRefusalCause {
             | Self::UnsupportedDeclarationForm { .. }
             | Self::FrameEntryMissing { .. }
             | Self::FrameEntryMalformed { .. }
-            | Self::DigestDomainMismatch { .. }
             | Self::MissingSelection { .. }
-            | Self::ContentMismatch { .. }
-            | Self::ByteDigestMismatch { .. }
+            | Self::ConflictingPackage { .. }
             | Self::AllocationFailed { .. }
             | Self::NoncanonicalNumber { .. }
             | Self::WrongModelSelection { .. }
@@ -1394,10 +1358,8 @@ impl ModelRefusalCause {
             Self::FrameEntryMissing { .. } | Self::IntakeMissingDeclaration { .. } => {
                 "missing-name"
             }
-            Self::DigestDomainMismatch { .. } => "digest-domain-mismatch",
             Self::MissingSelection { .. } => "missing-selection",
-            Self::ContentMismatch { .. } => "content-mismatch",
-            Self::ByteDigestMismatch { .. } => "byte-digest-mismatch",
+            Self::ConflictingPackage { .. } => "conflicting-definition",
             Self::WrongModelSelection { .. } => "wrong-model-selection",
             Self::IntakeLimitExceeded { .. } => "intake-limit-exceeded",
             Self::AllocationFailed { .. } => ALLOCATION_FAILED.cause(),
@@ -1492,9 +1454,7 @@ impl ModelRefusalCause {
             | Self::IntakeMissingDeclaration { .. } => "missing_declaration",
             Self::AboveMaximum { .. } => "cardinality_out_of_bound",
             Self::UnsupportedDeclarationForm { .. } => "unsupported_construct",
-            Self::DigestDomainMismatch { .. }
-            | Self::ContentMismatch { .. }
-            | Self::ByteDigestMismatch { .. } => "stale_dependency",
+            Self::ConflictingPackage { .. } => "invalid_package",
             Self::MissingSelection { .. } => "missing_import",
             Self::DuplicateSelection { .. } => "duplicate_selection",
             Self::FrameCreateOutsideGrant { .. }
@@ -1530,7 +1490,7 @@ pub mod fixtures {
     //! (`value::expression::causes`), which reach it across the
     //! `qsl-semantics` crate boundary through `test-support`.
     use super::{MemberPath, MemberRoot, ModelRefusalCause, OfferedSelection};
-    use crate::model::domain_package::{DomainPackageRef, Multiplicity, ValueTypeRef};
+    use crate::model::domain_package::{Multiplicity, ValueTypeRef};
     use qsl_foundation::source::{LocatedSpan, Position};
     use quire_checked::key::DeclarationKey;
     use quire_exact::UniverseId;
@@ -1543,14 +1503,15 @@ pub mod fixtures {
     }
 
     fn effective_id() -> crate::model::key::EffectiveId {
-        // The SHA-256 of the RFC 8785 text `null`: any fixed digest serves.
-        crate::model::key::EffectiveId::from_digest(
-            qsl_foundation::ByteDigest::of(b"null").as_bytes(),
-        )
+        crate::model::key::effective_id_of(None, &key("type"))
+    }
+
+    fn type_node() -> quire_exact::NodeKey {
+        crate::model::key::object_type_node_key(&key("type")).expect("valid node key")
     }
 
     fn universe_id() -> UniverseId {
-        UniverseId::from_digest(*effective_id().as_bytes())
+        UniverseId::new(type_node())
     }
 
     fn multiplicity() -> Multiplicity {
@@ -1704,7 +1665,7 @@ pub mod fixtures {
             maximum: 0,
         },
         ForeignUniverse => ModelRefusalCause::ForeignUniverse {
-            actual: effective_id().as_bytes().to_vec(),
+            actual: type_node(),
             expected: universe_id(),
         },
         AbsentKey => ModelRefusalCause::AbsentKey {
@@ -1827,25 +1788,15 @@ pub mod fixtures {
             }),
             entry: String::new(),
         },
-        DigestDomainMismatch => ModelRefusalCause::DigestDomainMismatch {
-            expected: crate::model::key::SHA256_JCS_DIGEST_DOMAIN,
-            actual: String::new(),
-        },
         MissingSelection => ModelRefusalCause::MissingSelection {
-            selection: DomainPackageRef::fixture("p"),
+            identity: String::new(),
         },
-        ContentMismatch => ModelRefusalCause::ContentMismatch {
-            selected: [0; 32],
-            recomputed: [0; 32],
-        },
-        ByteDigestMismatch => ModelRefusalCause::ByteDigestMismatch {
-            expected: [0; 32],
-            actual: [0; 32],
+        ConflictingPackage => ModelRefusalCause::ConflictingPackage {
+            identity: String::new(),
         },
         WrongModelSelection => ModelRefusalCause::WrongModelSelection {
-            selection: DomainPackageRef::fixture("p"),
+            identity: String::new(),
             actual_identity: String::new(),
-            actual_version: String::new(),
         },
         IntakeLimitExceeded => ModelRefusalCause::IntakeLimitExceeded {
             limit: super::IntakeLimit::InputBytes,
@@ -1858,12 +1809,10 @@ pub mod fixtures {
             document_pointer: qsl_foundation::diagnostic::JsonPointer::root(),
         },
         ReservedPackageIdentity => ModelRefusalCause::ReservedPackageIdentity {
-            selection: DomainPackageRef::fixture("p"),
+            identity: String::new(),
         },
         DuplicateSelection => ModelRefusalCause::DuplicateSelection {
             identity: String::new(),
-            already_selected_version: String::new(),
-            requested_version: String::new(),
         },
         DuplicateMember => ModelRefusalCause::DuplicateMember {
             object: String::new(),
@@ -2035,10 +1984,8 @@ pub(crate) mod tests {
             ModelRefusalCause::UnsupportedDeclarationForm { .. } => "declaration-form",
             ModelRefusalCause::FrameEntryMissing { .. }
             | ModelRefusalCause::IntakeMissingDeclaration { .. } => "missing-name",
-            ModelRefusalCause::DigestDomainMismatch { .. } => "digest-domain-mismatch",
             ModelRefusalCause::MissingSelection { .. } => "missing-selection",
-            ModelRefusalCause::ContentMismatch { .. } => "content-mismatch",
-            ModelRefusalCause::ByteDigestMismatch { .. } => "byte-digest-mismatch",
+            ModelRefusalCause::ConflictingPackage { .. } => "conflicting-definition",
             ModelRefusalCause::WrongModelSelection { .. } => "wrong-model-selection",
             ModelRefusalCause::IntakeLimitExceeded { .. } => "intake-limit-exceeded",
             ModelRefusalCause::AllocationFailed { .. } => "allocation-failed",
@@ -2138,9 +2085,7 @@ pub(crate) mod tests {
             | ModelRefusalCause::IntakeMissingDeclaration { .. } => "missing_declaration",
             ModelRefusalCause::AboveMaximum { .. } => "cardinality_out_of_bound",
             ModelRefusalCause::UnsupportedDeclarationForm { .. } => "unsupported_construct",
-            ModelRefusalCause::DigestDomainMismatch { .. } => "stale_dependency",
-            ModelRefusalCause::ContentMismatch { .. } => "stale_dependency",
-            ModelRefusalCause::ByteDigestMismatch { .. } => "stale_dependency",
+            ModelRefusalCause::ConflictingPackage { .. } => "invalid_package",
             ModelRefusalCause::MissingSelection { .. } => "missing_import",
             ModelRefusalCause::DuplicateSelection { .. } => "duplicate_selection",
             ModelRefusalCause::FrameCreateOutsideGrant { .. } => "frame_violation",
