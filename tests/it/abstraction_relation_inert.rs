@@ -195,7 +195,11 @@ fn a_source_relation_is_emitted_and_unbound_items_name_the_population() {
     let source_relation = "abstraction A using v {\n\
         type Config::ConfigVersion to \"store::Version\" { versionNumber to \"number\"; };\n\
         }\n";
-    let text = format!("{}{source_relation}", spine::unit_text());
+    let text = format!(
+        "{}function bump using v(c: Config::ConfigVersion): Integer pure {{ \
+         deref(c).versionNumber + 1 }}\n{source_relation}",
+        spine::unit_text()
+    );
     let graph = graph_of(&text);
 
     let base_roots: Vec<_> = base.model_roots().collect();
