@@ -76,3 +76,10 @@ No applicable AssuranceProfile with an enforced review policy was found in `spec
 | FND-001 | fixed | FR-390-AC-23 now names the separate E-P fixture and TC-1070 adds E-P with `Receipt.peer`, `Other`, `otherNodes`/`otherSpare`, and concrete root/record/option/sequence occurrence paths and overlap cases. after_excerpt: `TC-1070's E-P procedure carries one exact population declaration for every root and nested reference occurrence in a supplied source, including record, present-option and sequence paths.` |
 | FND-002 | still-open | The E-P definitions contain only marker fields on Other and Elsewhere, and retain the existing Node-to-Node Owns relationship. There is no concrete reference field or relationship end in the fixture and no row with a recursive target or expected closure refusal, so the stated closure behavior remains unverified. |
 | FND-003 | still-open | The sole added unknown-member mutation uses the existing scalar field path forward.total. The procedure has no occurrence entry on a path that does not exist in the supplied value, so the separate extra-path case remains unverified. |
+| FND-002 | fixed | E-P now defines `Other.next: Option<Reference<Other>>`, the `OtherLinks` relationship, and rows 42–46 for recursive completeness, field/relationship check-8 ordering and successful closure. after_excerpt: `Rows 42 and 43 prove that a reference field in a target object and a parsed relationship end extend check 7's required-population closure independently.` |
+| FND-003 | fixed | E-P now adds an entry at a nonexistent nested field path and expects `unknown-member`. after_excerpt: `Add entry for a nonexistent nested field` |
+
+
+## Disposition review pass 2
+
+Rechecked fix commit `0c3cdb06` and the current diff. FND-002 and FND-003 are fixed by the E-P recursive-closure rows and absent-path mutation. No additional specification defect was found. The focused `qsl-eval` protocol-slot suite passed 17 tests, but it still loads the unchanged shared E/L fixture and does not execute E-P.
