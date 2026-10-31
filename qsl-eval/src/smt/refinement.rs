@@ -10,7 +10,9 @@
 //! each of its fields is its mapping row read over the concrete copy with
 //! `self` bound to that object, together with the row's definedness.
 //!
-//! The script is FR-315's normative order, which FR-314 compares byte for
+//! Every assertion is printed in FR-315's refinement-query normal form
+//! ([`Term::normal`]), so no subterm is left that folds or rewrites. The
+//! script is FR-315's normative order, which FR-314 compares byte for
 //! byte: `(set-logic QF_LIA)`; the `declare-const` commands of `s0`, then of
 //! `s1`; the range assertions of `s0`, then of `s1`; for `Initial` the
 //! concrete initial-state predicate on `s0`; the hypothesis list `H` on `s0`
@@ -20,8 +22,8 @@
 //! `(or (not D) (not R))`, `R` the disjunction over the abstract initial
 //! states of `map(s0)`'s field equalities with each. For `Step { row }` it
 //! is the row disjunction: over the row's applications, the operation
-//! disjunct's conjuncts followed by `(or (not D_a) (not R_a))`, a disjunct
-//! equal to an earlier one printed once. `D` conjoins the definedness of the
+//! disjunct's conjuncts followed by `(or (not D_a) (not R_a))`; the normal
+//! form prints a disjunct equal to an earlier one once. `D` conjoins the definedness of the
 //! receiver, the arguments, the mapping rows over `s0`, then over `s1`.
 //!
 //! The encoding reads no encoding limit (FR-314 "Encoding limits"). It
@@ -221,14 +223,14 @@ pub fn encode_refinement_query(
     }
     for copy in &copies {
         for range in concrete_layout.ranges(copy) {
-            script.assert(&range);
+            script.assert(&range.normal());
         }
     }
     if row.is_none() {
-        script.assert(&concrete_layout.initial(&first, &concrete)?);
+        script.assert(&concrete_layout.initial(&first, &concrete)?.normal());
     }
     for hypothesis in sides.hypotheses(request.package, &first)? {
-        script.assert(&hypothesis);
+        script.assert(&hypothesis.normal());
     }
     let negated = match (row, operation) {
         (Some((_, row)), Some(operation)) => {
@@ -241,7 +243,6 @@ pub fn encode_refinement_query(
                 current: StateRef::Copy(second.clone()),
             };
             let mut disjuncts: Vec<Term> = Vec::new();
-            let mut printed = std::collections::HashSet::new();
             for application in built.iter().filter(|found| found.operation().is(operation)) {
                 let mut conjuncts = application.conjuncts(
                     &concrete,
@@ -251,16 +252,13 @@ pub fn encode_refinement_query(
                 )?;
                 let (defined, rule) = sides.rule(row, application, (&first, &second))?;
                 conjuncts.push(refuted(defined, rule));
-                let disjunct = Term::all(conjuncts);
-                if printed.insert(disjunct.text()) {
-                    disjuncts.push(disjunct);
-                }
+                disjuncts.push(Term::all(conjuncts));
             }
             Term::any(disjuncts)
         }
         _ => sides.initial_negation(&first)?,
     };
-    script.assert(&negated);
+    script.assert(&negated.normal());
     if script.closing_command_exceeded() {
         return Err(Refusal::TooLarge {
             measure: Measure::ScriptBytes,
