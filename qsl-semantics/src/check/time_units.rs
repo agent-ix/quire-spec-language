@@ -379,7 +379,10 @@ pub(crate) fn package_unit_scale(
 /// The key of a model package's dimension or unit node: package the
 /// declaring model package, path `["scalar_type", form, <FCD identity>]` (the
 /// identity opaque, never split) and ordinal 0.
-fn scalar_type_key(key: &quire_checked::key::DeclarationKey, form: &str) -> Option<NodeKey> {
+pub(crate) fn scalar_type_key(
+    key: &quire_checked::key::DeclarationKey,
+    form: &str,
+) -> Option<NodeKey> {
     crate::check::declared_node_key(
         key.package.clone(),
         vec!["scalar_type".to_owned(), form.to_owned(), key.node.clone()],
