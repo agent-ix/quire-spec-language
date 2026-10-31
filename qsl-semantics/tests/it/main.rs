@@ -38,6 +38,8 @@ mod model_conformance_boundary;
 #[cfg(feature = "test-support")]
 mod model_dispatch;
 #[cfg(feature = "test-support")]
+mod model_identity_contracts;
+#[cfg(feature = "test-support")]
 mod model_identity_cost;
 #[cfg(feature = "test-support")]
 mod model_identity_full_size;

@@ -839,7 +839,7 @@ fn n02_normalizes_f2_diamond_inheritance_to_stable_deterministic_identities() {
 /// members by shape, or dropping the original key from an effective
 /// member's identity, leaves ten declarations, or equal `(D, B/y)` and
 /// `(D, C/y)` identities, and fails the count and distinctness assertions.
-#[trace("QSpec-TC-195", "QSpec-FR-150-AC-2")]
+#[trace("TC-214", "FR-081-AC-2", "QSpec-TC-195", "QSpec-FR-150-AC-2")]
 #[test]
 fn n03_equal_shaped_members_from_distinct_originals_stay_distinct_effective_declarations() {
     let mut records = fixture_f2().records;

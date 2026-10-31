@@ -391,7 +391,7 @@ fn check_against_enumeration(fixture: &Fixture) {
     }
 }
 
-#[trace("QSpec-TC-195", "QSpec-FR-081-AC-9")]
+#[trace("TC-1022", "FR-081-AC-9", "QSpec-TC-195")]
 #[test]
 fn links_expand_to_independent_enumeration() {
     check_against_enumeration(&four_type_chain());
@@ -400,7 +400,7 @@ fn links_expand_to_independent_enumeration() {
 }
 
 /// TC-1022 step 4: the diamond stores one inherit fact per direct edge.
-#[trace("QSpec-TC-195", "QSpec-FR-081-AC-9")]
+#[trace("TC-1022", "FR-081-AC-9", "QSpec-TC-195")]
 #[test]
 fn the_diamond_holds_two_inherit_facts_not_three() {
     let view = diamond().view();
@@ -440,7 +440,7 @@ fn the_diamond_holds_two_inherit_facts_not_three() {
 }
 
 /// The reader's own ceiling: an expansion past `max_facts` is refused.
-#[trace("QSpec-TC-195", "QSpec-FR-081-AC-9")]
+#[trace("TC-1022", "FR-081-AC-9", "QSpec-TC-195")]
 #[test]
 fn an_expansion_past_the_readers_ceiling_is_refused() {
     let view = diamond().view();
@@ -492,7 +492,7 @@ fn refusal_cause(entries: &[ViewEntry]) -> ModelRefusalCause {
 
 /// TC-1022 step 5 and TC-195 N10: every mutation of a link is refused by the
 /// strict reader.
-#[trace("QSpec-TC-195", "QSpec-FR-081-AC-9")]
+#[trace("TC-1022", "FR-081-AC-9", "QSpec-TC-195")]
 #[test]
 fn the_strict_reader_refuses_every_mis_wired_link() {
     let view = diamond().view();
@@ -568,7 +568,7 @@ fn the_strict_reader_refuses_every_mis_wired_link() {
 }
 
 /// N10: facts out of order, and a repeated rule over equal inputs.
-#[trace("QSpec-TC-195", "QSpec-FR-081-AC-9")]
+#[trace("TC-1022", "FR-081-AC-9", "QSpec-TC-195")]
 #[test]
 fn n10_unsorted_derivation_is_refused() {
     let view = diamond().view();
