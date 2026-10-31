@@ -380,10 +380,10 @@ fn replay_claim_undefined(
     over: Option<&ObjectReference>,
     undefined: &crate::model_check::state_graph::GraphUndefined,
 ) -> Result<bool, ReplayRefusal> {
-    let Some((_, digest)) = positions.last() else {
+    let Some((_, state_key)) = positions.last() else {
         return Err(fault("undefined-has-initial"));
     };
-    if *digest != undefined.state_key {
+    if *state_key != undefined.state_key {
         return Ok(false);
     }
     if let Some(transition) = undefined.transition.as_ref() {

@@ -827,7 +827,7 @@ enum Before {
 
 /// A model state reached where the negation automaton has no move.
 struct DeadRoot<State, T> {
-    /// The product state it was reached from, by its model state's digest and
+    /// The product state it was reached from, by its model state's state key and
     /// automaton state, and the transition taken; `None` for an initial state.
     via: Option<(StateKey, StateId, PT<T>)>,
     model: State,
@@ -900,10 +900,10 @@ impl<S: LiveSubject> LassoSystem<'_, S> {
             })
     }
 
-    fn digest_of(&self, state: &S::State) -> Result<StateKey, ExpansionStop> {
+    fn state_key_of(&self, state: &S::State) -> Result<StateKey, ExpansionStop> {
         self.system
             .state_key(state)
-            .map(|(_, digest)| digest)
+            .map(|(_, state_key)| state_key)
             .map_err(|refusal| self.record(Halt::Refusal(ModelCheckRefusal::Encoding(refusal))))
     }
 
@@ -915,8 +915,8 @@ impl<S: LiveSubject> LassoSystem<'_, S> {
     /// The letter of `state`, `initial` when it is position 0 of the trace.
     /// Only an `on origin` clause's captures read differently there.
     fn reading_at(&self, state: &S::State, initial: bool) -> Result<Reading, ExpansionStop> {
-        let digest = self.digest_of(state)?;
-        let key = (digest, initial && self.captured == CaptureSite::Origin);
+        let state_key = self.state_key_of(state)?;
+        let key = (state_key, initial && self.captured == CaptureSite::Origin);
         if let Some(known) = self.readings.borrow().get(&key) {
             return Ok(known.clone());
         }
@@ -1156,7 +1156,7 @@ impl<S: LiveSubject> TransitionSystem for LassoSystem<'_, S> {
             let properties = self.step(before, &reading)?;
             if let (true, Before::At(at)) = (properties.is_empty(), before) {
                 self.dead.borrow_mut().push(DeadRoot {
-                    via: Some((self.digest_of(&state.model)?, at, transition.clone())),
+                    via: Some((self.state_key_of(&state.model)?, at, transition.clone())),
                     model: model.clone(),
                     depth: state.depth.saturating_add(1),
                 });
@@ -1340,16 +1340,16 @@ impl<T: SubjectTransition> FirstHit<T> {
 }
 
 /// The shallowest depth each model state is known at, by its state-key
-/// digest: a product state's, or the model-only pass's own.
+/// state key: a product state's, or the model-only pass's own.
 #[derive(Default)]
 struct Depths(BTreeMap<StateKey, usize>);
 
 impl Depths {
-    /// Record that `digest` is reached at `depth`; whether that is news: the
+    /// Record that `state_key` is reached at `depth`; whether that is new: the
     /// state is new, or this is shallower than where it was known, so a
     /// finding there ranks first (UE-4).
-    fn reach(&mut self, digest: StateKey, depth: usize) -> bool {
-        match self.0.entry(digest) {
+    fn reach(&mut self, state_key: StateKey, depth: usize) -> bool {
+        match self.0.entry(state_key) {
             std::collections::btree_map::Entry::Vacant(slot) => {
                 slot.insert(depth);
                 true
@@ -1594,7 +1594,7 @@ impl<'r, S: LiveSubject> Run<'r, S> {
         for run in &explored {
             for state in run.graph.states() {
                 if state.findings.contains(&Finding::BoundLimited) {
-                    limited.insert(self.digest(&state.state.model)?);
+                    limited.insert(self.state_key(&state.state.model)?);
                 }
             }
         }
@@ -1950,10 +1950,10 @@ impl<'r, S: LiveSubject> Run<'r, S> {
         let mut examined = Depths::default();
         let mut live: BTreeMap<(StateKey, StateId), ProductStateId> = BTreeMap::new();
         for (index, state) in run.graph.states().iter().enumerate() {
-            let digest = self.digest(&state.state.model)?;
-            examined.reach(digest.clone(), state.depth);
+            let state_key = self.state_key(&state.state.model)?;
+            examined.reach(state_key.clone(), state.depth);
             if let Property::After(at) = &state.state.property {
-                live.insert((digest.clone(), *at), ProductStateId(index));
+                live.insert((state_key.clone(), *at), ProductStateId(index));
             }
         }
         let mut nodes: Vec<DeadNode<S::State, Tr<S>>> = Vec::new();
@@ -1962,7 +1962,7 @@ impl<'r, S: LiveSubject> Run<'r, S> {
             if bound.is_some_and(|bound| entry.depth >= bound) {
                 continue;
             }
-            if examined.reach(self.digest(&entry.model)?, entry.depth) {
+            if examined.reach(self.state_key(&entry.model)?, entry.depth) {
                 if *states_left == 0 {
                     phase.stopped = out_of(ModelCheckLimit::MaxStates, limits.max_states);
                     return Ok(phase);
@@ -2007,7 +2007,9 @@ impl<'r, S: LiveSubject> Run<'r, S> {
                 }
             };
             if cut.memory {
-                self.dead_limited.borrow_mut().insert(self.digest(&model)?);
+                self.dead_limited
+                    .borrow_mut()
+                    .insert(self.state_key(&model)?);
             }
             let kind = if let Reading::Undefined { locus, cause } = reading {
                 Some((locus, None, cause))
@@ -2075,7 +2077,7 @@ impl<'r, S: LiveSubject> Run<'r, S> {
                     return Ok(phase);
                 }
                 *edges_left -= 1;
-                if examined.reach(self.digest(&next)?, depth.saturating_add(1)) {
+                if examined.reach(self.state_key(&next)?, depth.saturating_add(1)) {
                     if *states_left == 0 {
                         phase.stopped = out_of(ModelCheckLimit::MaxStates, limits.max_states);
                         return Ok(phase);
@@ -2138,8 +2140,8 @@ impl<'r, S: LiveSubject> Run<'r, S> {
             // canonicalised: each is a step with the identity permutation.
             let identity = Permutation::identity();
             let (initial, mut lift) = match &root.via {
-                Some((digest, at, transition)) => {
-                    let Some(parent) = live.get(&(digest.clone(), *at)) else {
+                Some((state_key, at, transition)) => {
+                    let Some(parent) = live.get(&(state_key.clone(), *at)) else {
                         return Err(fault("a-dead-root-was-reached-from-a-product-state").into());
                     };
                     let (start, path) = tree_path(&run.graph, *parent);
@@ -2198,16 +2200,11 @@ impl<'r, S: LiveSubject> Run<'r, S> {
         })
     }
 
-    fn digest(&self, state: &S::State) -> Result<StateKey, ModelCheckRefusal> {
-        Ok(self.system.state_key(state)?.1)
-    }
-
     fn state_key(
         &self,
         state: &S::State,
     ) -> Result<qsl_eval::simulation::StateKey, ModelCheckRefusal> {
-        let (bytes, _) = self.system.state_key(state)?;
-        Ok(qsl_eval::simulation::StateKey::from_canonical_bytes(bytes))
+        Ok(self.system.state_key(state)?.1)
     }
 
     /// The finite-prefix counterexample to product state `at`: its

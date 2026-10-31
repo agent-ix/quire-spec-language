@@ -398,10 +398,9 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
                 "{crate_name} depends on layer-1 qsl-cst"
             );
             fcd_is_named_by_model_intake_only(&package.normal);
-            // ADR-013 §2, ADR-013:113: shipped code encodes and
-            // hashes identities through `quire-canonical` and
-            // `qsl_foundation::ByteDigest`; `sha2` is no dependency of
-            // this crate, so no shipped module can hash on its own.
+            // ADR-013 §2, ADR-013:113: shipped code encodes identities
+            // through `quire-canonical`; `sha2` is no dependency of this
+            // crate, so no shipped module can hash on its own.
             assert!(
                 package
                     .normal
@@ -488,7 +487,7 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
         }
         if crate_name == "qsl-route" {
             // Layer R (ADR-011 §6.1 row "4, 3, F, SV, K"): `route` names
-            // layer 3's `Capability`, F's `ByteDigest`, `CatalogCode` and
+            // layer 3's `Capability`, F's `CatalogCode` and
             // `MemoryModelName` (FR-226),
             // SV's `PropertyForm` for the FR-124 deadlock-freedom item, and
             // `thiserror` for `RegistrationRefusal`, `ix-trace-rs` for the

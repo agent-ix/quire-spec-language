@@ -26,12 +26,12 @@
 use crate::hybrid::{BoundDimension, SolverHorizon};
 use qsl_cst::format::FormatRefusal;
 use qsl_foundation::diagnostic::{Code, Locus, StageFailure, Staged};
-use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::source::provenance::{OccurrenceKey, RawSourceRef};
 use qsl_foundation::{LocatedSpan, RequestIndex};
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_exact::{CancelCause, NodeKey};
 use quire_semantic_value::catalog::Category;
+use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -1011,36 +1011,6 @@ impl OutcomeDiagnostic {
     }
 }
 
-/// The kind of identity an artifact member holds.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ArtifactKind {
-    /// A generated artifact's content identity.
-    Generated,
-}
-
-/// The identity of one artifact an operation produced.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct OutcomeArtifact {
-    kind: ArtifactKind,
-    id: String,
-}
-
-impl OutcomeArtifact {
-    /// A generated artifact's content identity.
-    pub fn generated(digest: &DigestRecord) -> Self {
-        Self {
-            kind: ArtifactKind::Generated,
-            id: digest.hex(),
-        }
-    }
-
-    /// The identity, lower-case hex.
-    pub fn id(&self) -> &str {
-        &self.id
-    }
-}
-
 /// A completed call's value, in FR-100's rendering.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -1117,18 +1087,32 @@ impl From<&CallIncomplete> for ResultLimit {
 /// `items` is always written, an empty array for an operation with no
 /// requested items. `last_stage` is `null` when no stage is known to have
 /// run. `result` is always written: `null` except for a completed,
-/// undefined or incomplete `execute` outcome.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+/// undefined or incomplete `execute` outcome. `artifacts` is always written
+/// as an empty array.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OutcomeDocument {
     format: &'static str,
     operation: Operation,
     last_stage: Option<OutcomeStage>,
-    #[serde(serialize_with = "category_str")]
     category: Category,
     items: Vec<OutcomeItem>,
     diagnostics: Vec<OutcomeDiagnostic>,
-    artifacts: Vec<OutcomeArtifact>,
     result: Option<ExecuteResult>,
+}
+
+impl Serialize for OutcomeDocument {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut document = serializer.serialize_struct("OutcomeDocument", 8)?;
+        document.serialize_field("format", &self.format)?;
+        document.serialize_field("operation", &self.operation)?;
+        document.serialize_field("last_stage", &self.last_stage)?;
+        document.serialize_field("category", self.category.as_str())?;
+        document.serialize_field("items", &self.items)?;
+        document.serialize_field("diagnostics", &self.diagnostics)?;
+        document.serialize_field("artifacts", &[(); 0])?;
+        document.serialize_field("result", &self.result)?;
+        document.end()
+    }
 }
 
 /// Why a document could not be written.
@@ -1147,7 +1131,6 @@ impl OutcomeDocument {
             category,
             items: Vec::new(),
             diagnostics: Vec::new(),
-            artifacts: Vec::new(),
             result: None,
         }
     }
@@ -1183,13 +1166,6 @@ impl OutcomeDocument {
     #[must_use]
     pub fn with_diagnostics(mut self, diagnostics: Vec<OutcomeDiagnostic>) -> Self {
         self.diagnostics = diagnostics;
-        self
-    }
-
-    /// This document with the identities of the artifacts produced.
-    #[must_use]
-    pub fn with_artifacts(mut self, artifacts: Vec<OutcomeArtifact>) -> Self {
-        self.artifacts = artifacts;
         self
     }
 

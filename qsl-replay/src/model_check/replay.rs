@@ -777,7 +777,7 @@ pub fn replay_timed_counterexample(
 /// `subject` by [`replay_model_trace`]'s rules, re-executing each step
 /// through the subject's protocol system under its resolved memory models
 /// and store buffer bound (FR-227): a step whose recomputed post-state
-/// differs under them refuses on its digest, and one whose recomputed
+/// differs under them refuses on its state key, and one whose recomputed
 /// memory component differs from the one it carries refuses
 /// [`ModelTraceRefusal::MemoryComponent`] (ADR-025 MK-2). An authored
 /// clause's payload carries the fairness set the recompiled clause and
@@ -1148,10 +1148,10 @@ pub(super) fn fault(invariant: &'static str) -> ReplayRefusal {
     ReplayRefusal::Fault(InternalFault::new("replay-model-trace", invariant))
 }
 
-/// One replayed position: its state and digest.
+/// One replayed position: its state and state key.
 pub(super) struct Position<State = ModelSimState> {
     pub(super) state: State,
-    pub(super) digest: qsl_eval::simulation::StateKey,
+    pub(super) state_key: qsl_eval::simulation::StateKey,
 }
 
 /// One expansion of a subject's state.
@@ -1384,8 +1384,8 @@ fn replay_prefix<S: SubjectSystem>(
                 count,
             })
         })?;
-    let digest = digest_of(system, &state)?;
-    let mut positions = vec![Position { state, digest }];
+    let state_key = state_key_of(system, &state)?;
+    let mut positions = vec![Position { state, state_key }];
     let mut steps = Vec::with_capacity(payload.prefix.len());
     for (index, step) in payload.prefix.iter().enumerate() {
         let current = positions.last().ok_or_else(|| fault("a-position-exists"))?;
@@ -1395,24 +1395,24 @@ fn replay_prefix<S: SubjectSystem>(
         };
         let mut enabled = false;
         let mut reached = None;
-        let mut digests = Vec::new();
+        let mut state_keys = Vec::new();
         for (transition, next) in expansion.successors {
             if transition != step.transition {
                 continue;
             }
             enabled = true;
-            let digest = digest_of(system, &next)?;
-            if digest == step.post_state {
+            let state_key = state_key_of(system, &next)?;
+            if state_key == step.post_state {
                 reached = Some((
                     Position {
                         state: next,
-                        digest,
+                        state_key,
                     },
                     transition,
                 ));
                 break;
             }
-            digests.push(digest);
+            state_keys.push(state_key);
         }
         if !enabled {
             return Err(refused((rules.not_enabled)(index, &step.transition)));
@@ -1421,7 +1421,7 @@ fn replay_prefix<S: SubjectSystem>(
             refused(ModelTraceRefusal::PostState {
                 step: index,
                 recorded: step.post_state.clone(),
-                reached: digests,
+                reached: state_keys,
             })
         })?;
         let replayed = system
@@ -1468,7 +1468,7 @@ pub(super) fn close_loop<S: SubjectSystem>(
     }
     let entry = positions.get(lasso.entry).ok_or_else(open)?;
     let last = positions.last().ok_or_else(|| fault("a-position-exists"))?;
-    if lasso.entry >= steps || entry.digest != last.digest {
+    if lasso.entry >= steps || entry.state_key != last.state_key {
         return Err(open());
     }
     Ok(())
@@ -2032,7 +2032,7 @@ pub(super) fn hints_of(
     hints
 }
 
-pub(super) fn digest_of<S: SubjectSystem>(
+pub(super) fn state_key_of<S: SubjectSystem>(
     system: &S,
     state: &S::State,
 ) -> Result<qsl_eval::simulation::StateKey, ReplayRefusal> {
@@ -2078,7 +2078,7 @@ fn deadlock<S: SubjectSystem>(
             value: ModelTraceValue::Undefined(UndefinedEvaluation {
                 site: UndefinedSite {
                     position: position_of(positions.len() - 1),
-                    state_key: last.digest.clone(),
+                    state_key: last.state_key.clone(),
                     locus: UndefinedLocus::Terminal(model),
                     transition: None,
                     time: None,
@@ -2162,7 +2162,7 @@ fn undefined<S: SubjectSystem>(
     for (index, position) in positions.iter().enumerate() {
         let site = |locus, transition| UndefinedSite {
             position: position_of(index),
-            state_key: position.digest.clone(),
+            state_key: position.state_key.clone(),
             locus,
             transition,
             time: None,

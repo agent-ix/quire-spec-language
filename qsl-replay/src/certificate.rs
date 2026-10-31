@@ -119,7 +119,7 @@ pub enum CertificateLocus {
         part: QueryPart,
     },
     /// The model state of a state-graph certificate at which a rule failed
-    /// (FR-169): its `quire.simulation.state-key/v1` digest.
+    /// (FR-169): its `quire.simulation.state-key/v1` state key.
     ModelState(StateKey),
     /// The full canonical model state key of an FR-169 certificate rejection.
     ModelKey(StateKey),

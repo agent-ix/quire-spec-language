@@ -401,7 +401,7 @@ pub enum HyperFinding {
     MatchUndefined {
         /// The joint step.
         step: HyperTransition,
-        /// The digest of each component's post-state, in quantifier order.
+        /// The state key of each component's post-state, in quantifier order.
         posts: Vec<crate::simulation::StateKey>,
         /// The index of the conjunct that has no value.
         conjunct: usize,
@@ -416,7 +416,7 @@ pub enum HyperFinding {
     ExistentialMatchUndefined {
         /// The joint step, every component's.
         step: HyperTransition,
-        /// The digest of each component's post-state, in quantifier order.
+        /// The state key of each component's post-state, in quantifier order.
         posts: Vec<crate::simulation::StateKey>,
         /// The index of the conjunct among the existential conjuncts.
         conjunct: usize,
@@ -743,7 +743,7 @@ impl TransitionSystem for HyperProduct<'_, '_> {
                 Matched::Holds => {}
                 Matched::Undefined { conjunct, cause } => {
                     findings.push(HyperFinding::MatchUndefined {
-                        posts: self.joint.digests(&posts)?,
+                        posts: self.joint.state_keys(&posts)?,
                         step,
                         conjunct,
                         cause,

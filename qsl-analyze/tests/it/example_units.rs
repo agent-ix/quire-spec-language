@@ -133,7 +133,7 @@ pub(crate) fn violated(outcome: &Outcome) -> &TemporalCounterexample {
 }
 
 /// The model states a counterexample's steps reach (each step's post-state
-/// is the successor of its transition whose digest it records).
+/// is the successor of its transition whose state key it records).
 fn positions(world: &World, counterexample: &TemporalCounterexample) -> Vec<ModelSimState> {
     let system = ModelSystem::new(world.unlimited().simulation).expect("the subject admits");
     let mut current = system.initial()[counterexample.initial_state].clone();

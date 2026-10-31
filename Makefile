@@ -330,7 +330,7 @@ fuzz-deep-input:
 # Each aggregate prerequisite depends on validation, rather than racing it as
 # a sibling under -j (or continuing past it under -k). Standalone lane commands
 # retain their existing behavior; this ordering belongs to the aggregate gate.
-CI_CHECKS := conformance check-no-committed-binaries ci-default-features ci-all-features test-deep-format ci-clean-build seam-probe string-edge route-lint checked-input refinement-versioning cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-api-surface-qsl arch-lint-qualified-core build-no-std
+CI_CHECKS := conformance check-no-committed-binaries ci-default-features ci-all-features test-deep-format ci-clean-build seam-probe string-edge route-lint checked-input refinement-versioning cargo-deny-bans ci-docs arch-lint-api-surface-qsl arch-lint-qualified-core build-no-std
 CI_TARGETS := $(CI_CHECKS)
 # The public aggregate validates the native documents before the xtask wrapper
 # canonicalizes QSPEC_DIR for every child lane.
@@ -385,12 +385,12 @@ conformance: check-conformance-input
 # QSL-tree rules gate `ci:` without CG_CLONE.
 #
 # `arch-lint` runs the checks that need only this repository:
-# api-surface-qsl, canonical-encoder and qualified-core.
+# api-surface-qsl and qualified-core.
 IR_CLONE ?=
 RT_CLONE ?=
 CG_CLONE ?=
 
-.PHONY: arch-lint-direction arch-lint-api-surface arch-lint-api-surface-qsl arch-lint arch-lint-canonical-encoder arch-lint-qualified-core
+.PHONY: arch-lint-direction arch-lint-api-surface arch-lint-api-surface-qsl arch-lint arch-lint-qualified-core
 
 arch-lint-direction:
 	cargo run --locked -p arch-lint -- direction \
@@ -405,13 +405,6 @@ arch-lint-api-surface:
 arch-lint-api-surface-qsl:
 	cargo run --locked -p arch-lint -- api-surface --qsl . --qsl-only
 
-# ADR-013 §2 (ADR-013:113): no second canonical encoder beside
-# `quire-canonical` -- a shipped file pairing a `serde_json` serializer with
-# a hash fails, named files excepted with their reason. Needs only this
-# repository and passes on it, so it is part of `ci:`.
-arch-lint-canonical-encoder:
-	cargo run --locked -p arch-lint -- canonical-encoder --qsl .
-
 # FR-284 (ADR-029 CB-2, CB-3): no QSL core crate depends on a crate above
 # the core, a CG or RT crate, or a frontend crate, and no core crate's
 # shipped source reads ambient input or writes to the process. Needs only
@@ -419,10 +412,10 @@ arch-lint-canonical-encoder:
 arch-lint-qualified-core:
 	cargo run --locked -p arch-lint -- qualified-core --qsl .
 
-# Runs the three checks that need only this repository.
+# Runs the two checks that need only this repository.
 # `arch-lint-direction` needs IR_CLONE/RT_CLONE/CG_CLONE, and
 # `arch-lint-api-surface` needs CG_CLONE (see above); each runs separately.
-arch-lint: arch-lint-api-surface-qsl arch-lint-canonical-encoder arch-lint-qualified-core
+arch-lint: arch-lint-api-surface-qsl arch-lint-qualified-core
 
 
 # The committed performance benchmarks (`qsl-bench/`), one

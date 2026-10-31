@@ -360,8 +360,8 @@ fn refusal(
 
 /// Verifies the prefix refusals of FR-128-AC-3, not its lasso,
 /// fairness-set, interval, stutter or `observed` refusals: a post-state
-/// digest altered refuses
-/// `stale_dependency`/`content-mismatch` naming the step and the digest; a
+/// state key altered refuses
+/// `stale_dependency`/`content-mismatch` naming the step and the state key; a
 /// step appended past the terminal state is not enabled and refuses
 /// `invalid_runtime_input`/`invalid-value` naming the step; an
 /// `initial_state` of 1 over a one-snapshot subject refuses

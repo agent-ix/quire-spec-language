@@ -1491,7 +1491,7 @@ fn sc_is_the_identity_of_the_memory_seam() {
 
 /// FR-217-AC-2 (TC-662): the deadlock counterexample reproduces; changing
 /// its second step's post-state key refuses `stale_dependency`/
-/// `content-mismatch` naming the step, the recorded digest and the digest
+/// `content-mismatch` naming the step, the recorded state key and the state key
 /// the step reaches; replacing the second
 /// step with `join(Both)` refuses `invalid_runtime_input`/`invalid-value`.
 #[trace("TC-662", "FR-217-AC-2")]
@@ -1510,7 +1510,7 @@ fn a_protocol_replay_refuses_a_stale_or_disabled_step() {
     let recorded = stale.prefix[0].post_state.clone();
     stale.prefix[1].post_state = recorded.clone();
     let Err(ReplayRefusal::ModelTrace(refusal)) = case.replay("Fill", stale) else {
-        panic!("a stale digest refuses");
+        panic!("a stale state_key refuses");
     };
     assert_eq!(
         *refusal,
@@ -1543,7 +1543,7 @@ fn a_protocol_replay_refuses_a_stale_or_disabled_step() {
 /// `content-mismatch`, naming the step and both records. Removing a send's
 /// record, or adding one to the attempt, refuses `invalid_runtime_input`/
 /// `invalid-value` before any step is replayed: so it does when an earlier
-/// step's digest is also stale, which replaying that step would refuse.
+/// step's state key is also stale, which replaying that step would refuse.
 #[trace("TC-662", "FR-217-AC-5", "FR-217-AC-6")]
 #[test]
 fn a_protocol_replay_checks_each_send_record() {
@@ -1633,7 +1633,7 @@ fn a_protocol_replay_checks_each_send_record() {
     missing.prefix[1].transition = missing.prefix[1].transition.clone().carrying(None);
     // The shape check runs before any step: with step 0's post-state key
     // also stale, a misplaced record on step 3 still refuses as a shape
-    // defect, not as step 0's stale digest.
+    // defect, not as step 0's stale state key.
     let mut first = counterexample.clone();
     first.prefix[0].post_state = first.prefix[1].post_state.clone();
     first.prefix[3].transition = first.prefix[3].transition.clone().carrying(None);
@@ -1690,7 +1690,7 @@ fn a_protocol_replay_recomputes_the_blocked_threads() {
         .blocked
         .retain(|thread| thread.path != branch("right"));
     parity(dropped);
-    // s0 to s6 through `B` first, recorded with its digests.
+    // s0 to s6 through `B` first, recorded with its state keys.
     let subject = case.subject("Fill");
     let system = sc_system(&subject);
     let reached = reachable(&system);
@@ -1702,10 +1702,10 @@ fn a_protocol_replay_recomputes_the_blocked_threads() {
             .iter()
             .find(|(_, next)| *next == wanted)
             .expect("an edge");
-        let (_, digest) = system.state_key(&reached[wanted].state).expect("a key");
+        let (_, state_key) = system.state_key(&reached[wanted].state).expect("a key");
         prefix.push(ModelStep {
             transition: transition.clone(),
-            post_state: digest,
+            post_state: state_key,
             delay: None,
         });
         at = wanted;

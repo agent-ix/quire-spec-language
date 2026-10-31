@@ -141,7 +141,7 @@ struct Node {
 struct Oracle<'w> {
     world: &'w World,
     system: ModelSystem<'w>,
-    /// Whether `reset` is enabled at the state with the digest.
+    /// Whether `reset` is enabled at the state with the state key.
     enables_reset: RefCell<HashMap<StateKey, bool>>,
 }
 

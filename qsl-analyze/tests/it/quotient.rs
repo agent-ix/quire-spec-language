@@ -652,7 +652,7 @@ fn carries_only_concrete_members(counterexample: &TemporalCounterexample) {
 /// constraint demonstrably cuts the search (`always holds(x.v <= 2)` settles
 /// `ConstraintReached{12}` over 20 stored states, where the unconstrained
 /// run is violated). AC-1's, AC-2's and AC-3's concretised counterexamples
-/// replay, and each step's recorded post-state is the digest of a concrete
+/// replay, and each step's recorded post-state is the state key of a concrete
 /// successor of its transition. Every one is a `TemporalCounterexample`
 /// whose members hold no canonical state, permutation or reduction name.
 /// Concretising AC-1 twice gives equal counterexamples.

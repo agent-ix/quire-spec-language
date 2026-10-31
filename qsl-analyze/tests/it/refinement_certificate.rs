@@ -95,8 +95,8 @@ fn rejected(check: TemporalCertificateCheck) -> (CertificateRule, CertificateLoc
     (rejection.rule, rejection.at)
 }
 
-/// The digest of the concrete state `state` in `system`.
-fn digest(system: &ModelSystem<'_>, state: &ModelState) -> qsl_eval::simulation::StateKey {
+/// The state key of the concrete state `state` in `system`.
+fn state_key(system: &ModelSystem<'_>, state: &ModelState) -> qsl_eval::simulation::StateKey {
     let (bytes, _) = system.state_key_of(state).expect("a key");
     qsl_eval::simulation::StateKey::from_canonical_bytes(bytes)
 }
@@ -105,7 +105,7 @@ fn digest(system: &ModelSystem<'_>, state: &ModelState) -> qsl_eval::simulation:
 /// `(value, tmpA, busyA, tmpB, busyB)`.
 fn position_of(world: &World, certificate: &SimulationCertificate, at: [i64; 5]) -> u64 {
     let concrete = world.concrete_system(UNLIMITED);
-    let wanted = digest(
+    let wanted = state_key(
         &concrete,
         &cas_state(at[0], at[1], at[2] == 1, at[3], at[4] == 1),
     );
@@ -244,8 +244,8 @@ fn a_changed_added_or_reordered_edge_is_rejected() {
 }
 
 /// FR-149-AC-2 (TC-556 step 2): every field of a certificate, corrupted, is
-/// rejected: the initial list, a position's concrete digest and abstract
-/// digests, a post index, and a `Taken`.
+/// rejected: the initial list, a position's concrete state key and abstract
+/// state keys, a post index, and a `Taken`.
 #[trace("TC-556", "FR-149-AC-2")]
 #[test]
 fn each_corrupted_field_is_rejected() {
@@ -266,7 +266,7 @@ fn each_corrupted_field_is_rejected() {
         (CertificateRule::Malformed, step(0, None))
     );
 
-    // The initial position's concrete digest, its abstract digests.
+    // The initial position's concrete state key, its abstract state keys.
     let mut concrete = certificate.clone();
     concrete.positions[0].concrete = other.concrete;
     assert_eq!(
@@ -280,7 +280,7 @@ fn each_corrupted_field_is_rejected() {
         CertificateRule::InitialMismatch
     );
 
-    // A later position's digests are met as the post of an edge.
+    // A later position's state keys are met as the post of an edge.
     let mut later = certificate.clone();
     later.positions[1].concrete = certificate.positions[0].concrete.clone();
     assert_eq!(
@@ -390,7 +390,7 @@ fn listed(world: &World) -> SimulationCertificate {
         ],
     };
     let certified = |position: &RefinementPosition| CertifiedPosition {
-        concrete: digest(concrete, &position.concrete),
+        concrete: state_key(concrete, &position.concrete),
         history: position.history.key(concrete).expect("a key"),
         abstract_states: position
             .abstract_states

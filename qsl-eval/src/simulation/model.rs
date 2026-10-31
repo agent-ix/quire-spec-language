@@ -897,7 +897,7 @@ impl<'a> ModelSystem<'a> {
         Ok(system)
     }
 
-    /// The RFC 8785 key bytes and `quire.simulation.state-key/v1` digest of
+    /// The RFC 8785 key bytes and `quire.simulation.state-key/v1` state key of
     /// `state`, under the identity limits exploration encodes with.
     ///
     /// # Errors

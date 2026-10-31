@@ -28,10 +28,10 @@ use quire_semantic_value::catalog::Category;
 use quire_semantic_value::fairness::{FairnessConstraint, FairnessGranularity, FairnessKind};
 
 use super::{
-    check_formula, digest_of, disagreement, disagrees, fault, hints_of, no_value, position_of,
-    refused, replayed_letters, undefined, undefined_letter, DelayBar, FormulaReplay, HintState,
-    ItemReads, LetterRead, ModelTraceRefusal, ModelTraceSettlement, ModelTraceValue, Position,
-    StrongFairnessHint, UndefinedLetter,
+    check_formula, disagreement, disagrees, fault, hints_of, no_value, position_of, refused,
+    replayed_letters, state_key_of, undefined, undefined_letter, DelayBar, FormulaReplay,
+    HintState, ItemReads, LetterRead, ModelTraceRefusal, ModelTraceSettlement, ModelTraceValue,
+    Position, StrongFairnessHint, UndefinedLetter,
 };
 use crate::execute::ReplayRefusal;
 use crate::model_check::counterexample::{
@@ -62,7 +62,7 @@ struct TimedPosition {
     state: TimedState,
     stamp: Rational,
     /// The timed state's complete FR-236 key, clocks included.
-    digest: qsl_eval::simulation::StateKey,
+    state_key: qsl_eval::simulation::StateKey,
     /// The step that reached it, the one whose post-state key is the
     /// recorded one; `None` at position 0.
     step: Option<GuardedStep>,
@@ -97,8 +97,8 @@ pub(super) fn settle(
     let mut positions = Vec::with_capacity(replayed.len());
     for position in &replayed {
         let state = position.state.discrete().clone();
-        let digest = digest_of(system, &state)?;
-        positions.push(Position { state, digest });
+        let state_key = state_key_of(system, &state)?;
+        positions.push(Position { state, state_key });
     }
     let mut behaviour = None;
     if let Some(lasso) = payload.lasso {
@@ -206,7 +206,7 @@ fn behaviour_of(timed: &TimedSystem<'_, '_>, replayed: &[TimedPosition]) -> Opti
                 candidate.transition() == step.transition()
                     && timed
                         .state_key(state)
-                        .is_ok_and(|digest| digest == after.digest)
+                        .is_ok_and(|state_key| state_key == after.state_key)
             })
             .ok()?;
     }
@@ -269,11 +269,11 @@ fn replay_prefix(
                 count,
             })
         })?;
-    let digest = timed_digest(timed, &state)?;
+    let state_key = timed_state_key(timed, &state)?;
     let mut positions = vec![TimedPosition {
         state,
         stamp: zero(),
-        digest,
+        state_key,
         step: None,
     }];
     for (index, step) in payload.prefix.iter().enumerate() {
@@ -291,7 +291,7 @@ fn replay_prefix(
         let mut named = Vec::new();
         let mut enabled = false;
         let mut reached = None;
-        let mut digests = Vec::new();
+        let mut state_keys = Vec::new();
         for candidate in guarded
             .iter()
             .filter(|candidate| candidate.transition() == &step.transition)
@@ -306,12 +306,12 @@ fn replay_prefix(
             }
             enabled = true;
             let next = TimedState::new(candidate.post().clone(), candidate.reset(delayed.clocks()));
-            let digest = timed_digest(timed, &next)?;
-            if digest == step.post_state {
-                reached = Some((candidate, next, digest));
+            let state_key = timed_state_key(timed, &next)?;
+            if state_key == step.post_state {
+                reached = Some((candidate, next, state_key));
                 break;
             }
-            digests.push(digest);
+            state_keys.push(state_key);
         }
         if !enabled {
             // Enabled by no data precondition, or by one whose clock guard
@@ -328,11 +328,11 @@ fn replay_prefix(
                 },
             }));
         }
-        let (candidate, next, digest) = reached.ok_or_else(|| {
+        let (candidate, next, state_key) = reached.ok_or_else(|| {
             refused(ModelTraceRefusal::PostState {
                 step: index,
                 recorded: step.post_state.clone(),
-                reached: digests,
+                reached: state_keys,
             })
         })?;
         match timed.broken_invariant(&next) {
@@ -352,22 +352,22 @@ fn replay_prefix(
         positions.push(TimedPosition {
             state: next,
             stamp,
-            digest,
+            state_key,
             step: Some(candidate.clone()),
         });
     }
     Ok(Some(positions))
 }
 
-/// Each replayed position's discrete state with its digest, and its timed
+/// Each replayed position's discrete state with its state key, and its timed
 /// state.
 pub(crate) type TimedPrefix = (Vec<Position>, Vec<TimedState>);
 
 /// QSpec FR-430: `payload`'s prefix re-executed over time by FR-237's rules
 /// (each delay admissible, each step enabled after it, each post-state
-/// digest the recorded one, each target invariant holding), a lasso's loop
+/// state key the recorded one, each target invariant holding), a lasso's loop
 /// closing with a positive total delay: every
-/// position's discrete state with its digest, and its timed state; `None`
+/// position's discrete state with its state key, and its timed state; `None`
 /// when the subject cannot decide a step.
 ///
 /// # Errors
@@ -385,8 +385,8 @@ pub(crate) fn timed_prefix(
     let mut states = Vec::with_capacity(replayed.len());
     for position in &replayed {
         let state = position.state.discrete().clone();
-        let digest = digest_of(system, &state)?;
-        positions.push(Position { state, digest });
+        let state_key = state_key_of(system, &state)?;
+        positions.push(Position { state, state_key });
         states.push(position.state.clone());
     }
     // A lasso's loop closes over time (FR-237 "Lasso").
@@ -396,7 +396,7 @@ pub(crate) fn timed_prefix(
     Ok(Some((positions, states)))
 }
 
-fn timed_digest(
+fn timed_state_key(
     timed: &TimedSystem<'_, '_>,
     state: &TimedState,
 ) -> Result<qsl_eval::simulation::StateKey, ReplayRefusal> {
@@ -455,7 +455,7 @@ fn delay_by(
 /// every constant of the model at entry, so it runs free; a
 /// terminal-stutter loop stands where the idle tail lets time diverge
 /// (FR-231): a quiescent state, or under a tick source a terminal one.
-/// `discrete` holds each position's discrete digest.
+/// `discrete` holds each position's discrete state key.
 fn close_loop(
     timed: &TimedSystem<'_, '_>,
     positions: &[TimedPosition],
@@ -491,7 +491,7 @@ fn close_loop(
     let same_discrete = discrete
         .get(lasso.entry)
         .zip(discrete.last())
-        .is_some_and(|(entry, last)| entry.digest == last.digest);
+        .is_some_and(|(entry, last)| entry.state_key == last.state_key);
     if lasso.entry >= steps || !same_discrete {
         return Err(open());
     }

@@ -378,7 +378,7 @@ pub struct GraphUndefined {
     pub predicate: Option<PredicateRole>,
     /// The transition whose guard has no value, when this names a guard.
     pub transition: Option<quire_semantic_value::model_transition::ModelTransition>,
-    /// The `quire.simulation.state-key/v1` digest of the node.
+    /// The `quire.simulation.state-key/v1` state key of the node.
     pub state_key: StateKey,
     /// The expression with no value, when the evaluator located it.
     pub locus: Option<Location>,

@@ -1240,7 +1240,7 @@ fn an_undefined_evaluation_on_a_reduced_run_refutes_with_a_concrete_prefix() {
 /// deadlock-freedom item of counters that stop at 2 under `[[a, b, c]]`
 /// reaches its deadlock through canonical states, and the concretised
 /// prefix is a path of the subject, six steps from `(0,0,0)` to
-/// `(2,2,2)`, whose recorded digests and transitions re-execute, and which
+/// `(2,2,2)`, whose recorded state keys and transitions re-execute, and which
 /// FR-128's `replay_model_trace` reproduces with no reduction.
 #[test]
 fn a_reduced_prefix_concretises_to_a_subject_path() {
