@@ -537,7 +537,6 @@ fn model_names_its_domain_package_directly_and_refuses_the_deleted_producer_shap
     let producer_object = json!({
         "interface": 0, "kind": "object", "authority": "test:producer",
         "identity": "claimed", "revision": {"namespace": "n", "value": "1"},
-        "digest": {"domain": "d", "version": "1", "algorithm": "sha256", "value": "v"},
     });
     let correspondence = json!({
         "producer": producer_object, "native": 0, "relation": 0, "exports": [0],
