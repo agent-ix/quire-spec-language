@@ -603,3 +603,112 @@ fn provider_entry_settles_an_incomplete_binding_per_item() {
         Some("unavailable_observation/missing-required-artifact".to_owned())
     );
 }
+
+/// FR-280-AC-6 (TC-761 step 5): a refused undeclared-population binding
+/// settles each item in input order and no engine is invoked.
+#[trace("TC-761", "FR-280-AC-6")]
+#[test]
+fn provider_entry_refuses_undeclared_population_before_running_items_in_input_order() {
+    use crate::prob_world::{self, World};
+    use qsl_replay::{ProofRefusalCause, TerminalValue};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    let claim = "probabilistic Two using ev on M over (s: M::Server) under Steady on origin \
+         with alpha 0.01, beta 0.01, indifference 0.01 \
+         { quantile 0.95 of (accumulate duration from holds(s.phase = 1) \
+         until holds(s.phase = 2) within 10) <= 2 }\n";
+    let world = World::new(&prob_world::service(claim));
+    let mut binding = world.binding();
+    binding.universes[0]
+        .population
+        .node
+        .push_str("/UndeclaredPopulation");
+
+    let first = routed_service_item(&world);
+    let mut second = first.clone();
+    second.item.request_index = index(1);
+    let first = qsl_analyze::provider::RoutedItem {
+        item: qsl_analyze::provider::ClaimItem {
+            request_index: index(0),
+            ..first.item
+        },
+        backend: first.backend,
+    };
+    let engine_charges = Arc::new(AtomicUsize::new(0));
+    let observed_charges = Arc::clone(&engine_charges);
+    let cancel = Cancel::observing(move || {
+        observed_charges.fetch_add(1, Ordering::Relaxed);
+    });
+    let records = qsl_analyze::provider::run(
+        &world.package,
+        &binding,
+        &[second, first],
+        &Engines::qsl().expect("they register"),
+        &AnalyzeLimits {
+            accounting: prob_world::UNLIMITED,
+            ..AnalyzeLimits::default()
+        },
+        &cancel,
+    );
+
+    assert_eq!(
+        records
+            .iter()
+            .map(|record| record.request_index)
+            .collect::<Vec<_>>(),
+        [index(1), index(0)]
+    );
+    for record in &records {
+        assert!(matches!(
+            record.value(),
+            TerminalValue::Declined {
+                cause: ProofRefusalCause::InvalidInput,
+                ..
+            }
+        ));
+        assert_eq!(record.backend(), None);
+        assert_eq!(
+            record.diagnostic().map(|code| code.to_string()),
+            Some("invalid_runtime_input/wrong-role-mapping".to_owned())
+        );
+    }
+    assert_eq!(engine_charges.load(Ordering::Relaxed), 0);
+}
+
+/// FR-281: a zero-millisecond wall-clock deadline cancels the request before
+/// its engine runs, producing the typed incomplete deadline outcome.
+#[trace("FR-281")]
+#[test]
+fn provider_entry_settles_a_zero_millisecond_deadline_as_incomplete() {
+    use crate::prob_world::{self, World};
+    use qsl_replay::{IncompleteCause, TerminalValue};
+
+    let claim = "probabilistic Two using ev on M over (s: M::Server) under Steady on origin \
+         with alpha 0.01, beta 0.01, indifference 0.01 \
+         { quantile 0.95 of (accumulate duration from holds(s.phase = 1) \
+         until holds(s.phase = 2) within 10) <= 2 }\n";
+    let world = World::new(&prob_world::service(claim));
+    let cancel = Cancel::new();
+    let records = qsl_analyze::provider::run(
+        &world.package,
+        &world.binding(),
+        &[routed_service_item(&world)],
+        &Engines::qsl().expect("they register"),
+        &AnalyzeLimits {
+            accounting: prob_world::UNLIMITED,
+            deadline_ms: Some(0),
+            ..AnalyzeLimits::default()
+        },
+        &cancel,
+    );
+
+    assert_eq!(records.len(), 1);
+    assert_eq!(cancel.cause(), Some(CancelCause::Deadline));
+    assert_eq!(
+        records[0].value(),
+        &TerminalValue::Incomplete(IncompleteCause::Cancelled {
+            source: CancelCause::Deadline,
+        })
+    );
+}

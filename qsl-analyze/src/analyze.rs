@@ -37,7 +37,7 @@ use qsl_eval::simulation::model::{
     ExpansionLimits, ModelSimulationRequest, ModelSystem, PopulationUniverse,
 };
 use qsl_eval::simulation::protocol::ProtocolTransition;
-use qsl_foundation::diagnostic::{Code, StageFailure, Staged};
+use qsl_foundation::diagnostic::{Code, InternalFault, StageFailure, Staged};
 use qsl_foundation::{BackendId, RequestIndex};
 use qsl_package::CheckedPackage;
 use qsl_replay::statistical::StatisticalRecord;
@@ -53,7 +53,7 @@ use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::observation::{
     AdmissionFailure, DocumentProvision, DocumentRef, ObservationLimits,
 };
-use quire_exact::{Cancel, ScalarLimits};
+use quire_exact::{Cancel, CancelCause, ScalarLimits};
 use quire_semantic_value::catalog::CatalogCode;
 
 pub use crate::contract_check::contract_item;
@@ -258,6 +258,45 @@ pub enum AnalyzeRefusal {
     /// FR-120 did not admit the subject binding.
     #[error("the analyze subject binding did not admit: {0:?}")]
     Binding(AdmissionFailure),
+}
+
+/// Cancels an analyze request when its wall-clock deadline elapses.
+struct DeadlineGuard {
+    finished: std::sync::mpsc::Sender<()>,
+    worker: std::thread::JoinHandle<()>,
+}
+
+impl DeadlineGuard {
+    fn start(cancel: &Cancel, deadline_ms: Option<u64>) -> Result<Option<Self>, std::io::Error> {
+        let Some(deadline_ms) = deadline_ms else {
+            return Ok(None);
+        };
+        if deadline_ms == 0 {
+            cancel.cancel(CancelCause::Deadline);
+            return Ok(None);
+        }
+
+        let (finished, wait_for_finish) = std::sync::mpsc::channel();
+        let cancel = cancel.clone();
+        let worker = std::thread::Builder::new()
+            .name("qsl-analyze-deadline".to_owned())
+            .spawn(move || {
+                if matches!(
+                    wait_for_finish.recv_timeout(std::time::Duration::from_millis(deadline_ms)),
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+                ) {
+                    cancel.cancel(CancelCause::Deadline);
+                }
+            })?;
+        Ok(Some(Self { finished, worker }))
+    }
+}
+
+impl Drop for DeadlineGuard {
+    fn drop(&mut self) {
+        let _ = self.finished.send(());
+        let _ = self.worker.join();
+    }
 }
 
 impl Engines {
@@ -647,6 +686,10 @@ pub fn analyze(
     limits: &AnalyzeLimits,
     cancel: &Cancel,
 ) -> Result<Staged<AnalyzeOutcome>, StageFailure<AnalyzeRefusal>> {
+    let _deadline = DeadlineGuard::start(cancel, limits.deadline_ms).map_err(|_| {
+        StageFailure::Fault(InternalFault::new("analyze", "deadline-timer-unavailable"))
+    })?;
+
     let simulation = ModelSimulationRequest {
         package,
         packages: request.binding.packages,
@@ -954,6 +997,33 @@ mod tests {
     use qsl_route::descriptor_from_manifest;
 
     use super::*;
+
+    #[test]
+    fn deadline_guard_cancels_when_the_wall_clock_deadline_elapses() {
+        let cancel = Cancel::new();
+        let deadline = DeadlineGuard::start(&cancel, Some(1))
+            .expect("the deadline watcher starts")
+            .expect("a finite deadline has a watcher");
+
+        std::thread::sleep(std::time::Duration::from_millis(25));
+        drop(deadline);
+
+        assert_eq!(cancel.cause(), Some(CancelCause::Deadline));
+    }
+
+    #[test]
+    fn deadline_guard_stops_its_watcher_when_analysis_finishes_early() {
+        let cancel = Cancel::new();
+        drop(
+            DeadlineGuard::start(&cancel, Some(20))
+                .expect("the deadline watcher starts")
+                .expect("a finite deadline has a watcher"),
+        );
+
+        std::thread::sleep(std::time::Duration::from_millis(25));
+
+        assert_eq!(cancel.cause(), None);
+    }
 
     fn engine(id: &str, kind: Capability) -> Engine {
         Engine::new(
