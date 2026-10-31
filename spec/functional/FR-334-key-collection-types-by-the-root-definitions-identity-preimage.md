@@ -26,17 +26,17 @@ relationships:
 
 QSL's S4 emitter SHALL emit collection and population type nodes whose
 identity conforms to QSpec's complete value and model type rules (FR-144-AC-9
-and AC-13; FR-153-AC-9). The emitter computes node keys with QSL's own code.
+and AC-13; FR-153-AC-9). The emitter computes structural node keys with QSL's own code.
 QSL's conformance tests compare those keys with QSpec's published node
-identity vectors in FR-322. Every package with a collection type gets the
-node ids and `package_id` determined by those keys.
+identity vectors in FR-322. Packages are compared by their emitted JSON values,
+including those structural node ids, under FR-322's package equality rule.
 
 ## Use case
 
 Two teams exchange packages, one declaring `Set<Account>` and one
 `Set<Account>[0, 100]`. The two types must never be confused by a consumer
 that compares node identities, and a package's identity must follow from
-its content under the one rule QSpec publishes.
+its name and contents under the one rule QSpec publishes.
 
 ## Inputs
 
@@ -44,8 +44,8 @@ its content under the one rule QSpec publishes.
 
 ## Outputs
 
-- v2 type nodes and their node keys (FR-092), and the package's
-  `package_id`.
+- v2 type nodes and their structural node keys (FR-092), and the emitted
+  package value.
 
 ## Behavior
 
@@ -61,8 +61,8 @@ its content under the one rule QSpec publishes.
   FR-153-AC-9; FR-322).
 - QSL SHALL compute the node keys using its own code, conforming to QSpec
   FR-322.
-- A package's `package_id` SHALL follow from these node keys, so changing
-  only a bound's presence or value changes the `package_id`.
+- Emitted packages SHALL compare structurally under QSpec FR-322, so changing
+  only a bound's presence or value changes the emitted package value.
 - The emitter SHALL preserve a bounded corpus's source spelling and meaning;
   the test compares its output with the published QSpec vectors (FR-334-AC-4).
 
@@ -70,9 +70,9 @@ its content under the one rule QSpec publishes.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-334-AC-1 | A unit whose only difference from another is `s: Set<Integer>` against `s: Set<Integer>[0, 18446744073709551615]` emits a different node key for `s`'s type and a different `package_id`; the unbounded node has no `collection_bounds` member and the bounded node has one with `min` 0 and `max` 18446744073709551615. | Test (TC-844) |
+| FR-334-AC-1 | A unit whose only difference from another is `s: Set<Integer>` against `s: Set<Integer>[0, 18446744073709551615]` emits a different structural node key for `s`'s type and a structurally unequal package value; the unbounded node has no `collection_bounds` member and the bounded node has one with `min` 0 and `max` 18446744073709551615. | Test (TC-844) |
 | FR-334-AC-2 | `p: Population<Account>` lowers to a population node with no maximum, whose node key differs from those of `Population<Account>[4]` and of an unbounded `Set<Reference<Account>>`; it lowers with no refusal. | Test (TC-844) |
-| FR-334-AC-3 | Compiling the same bounded unit twice gives the same node keys and `package_id`. | Test (TC-844) |
+| FR-334-AC-3 | Compiling the same bounded unit twice gives the same structural node keys and structurally equal emitted package values. | Test (TC-844) |
 | FR-334-AC-4 | Conformance: for each collection and population type vector in QSpec FR-322, read in place from the QSpec repository by the test, QSL's node key equals the vector's expected key; the vectors exercise collection and population types covered by FR-144-AC-9, AC-13 and FR-153-AC-9. | Test (TC-844) |
 
 ## Dependencies
@@ -87,5 +87,9 @@ its content under the one rule QSpec publishes.
 
 ## References
 
+- Structural-identity erratum: QSpec FR-322, Properties, states: "two checked
+  packages are the same package exactly when their JSON values are equal member
+  by member and, for arrays, element by element in order." It also states:
+  "No identifier, hash, digest or seal of a package exists."
 - Linear QSL-385 (spec ticket); QSL-42 (implementation).
 - QSpec half: QSpec FR-144 (merged).

@@ -95,9 +95,11 @@ trigger observation; QSL derives the rows and constructs no binding.
   unchanged leaves the map unchanged.
 - If a read-back package holds a `requirements` entry or an `each` trigger
   whose target is absent from the clause's `dependencies`, then QSL's I2
-  reader SHALL refuse the package with `missing_declaration`/`missing-name`
-  at the target (QSpec FR-464-AC-6), and QSL SHALL return no map, partial or
-  whole.
+  reader SHALL refuse the package with `invalid_semantic_graph` at the
+  clause's `/dependencies` (QSpec FR-322-AC-96, before the protocol step).
+  If the target names no node, the reader SHALL refuse with
+  `missing_declaration`/`missing-name` at the target (QSpec FR-464-AC-6).
+  In either case QSL SHALL return no map, partial or whole.
 - A `requires temporal` name that resolves to no temporal clause of the unit
   is refused at S3 (FR-218), so S4 emits no protocol node and no map exists
   for that unit.
@@ -107,10 +109,10 @@ trigger observation; QSL derives the rows and constructs no binding.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-449-AC-1 | Over fixture **W** (TC-1061: `activation on each (opened: M::OrderStarted)`, `requires temporal OrderClosureBounded`), the map has exactly one row: the `OrderFlow` clause key, `Each` with `opened`'s node key, and `OrderClosureBounded`'s node key. | Test (TC-1194) |
-| FR-449-AC-2 | **W** with `activation on origin` gives one row carrying `Origin` and no trigger; **W** with no `requires temporal` gives an empty map; **W** with a second `requires temporal OrderClosureBounded` gives AC-1's map. | Test (TC-1194) |
+| FR-449-AC-2 | **W** with `activation on origin` and the `order` capture rebound from `opened.order` to `deref(view).order` (the origin activation introduces no trigger binder) gives one row carrying `Origin` and no trigger; **W** with no `requires temporal` gives an empty map; **W** with a second `requires temporal OrderClosureBounded` gives AC-1's map. | Test (TC-1194) |
 | FR-449-AC-3 | **W** with a second temporal clause `OrderPaidBounded` and `requires temporal OrderPaidBounded` gives two rows in ascending node id order of the two temporal clause nodes; **W** with a temporal clause `RefundBounded` on the clock `refund-clock` that the protocol does not require gives AC-1's map. | Test (TC-1194) |
 | FR-449-AC-4 | The map of **W** derived from the in-process package equals the map derived from the package read back through the I2 reader; compiling **W** twice, and compiling **W** reformatted with a comment added, give equal maps. | Test (TC-1194) |
-| FR-449-AC-5 | **W**'s emitted package edited so that the `requirements` entry, or separately the `each` trigger, names a node absent from the clause's `dependencies` is refused by the I2 reader with `missing_declaration`/`missing-name` at the target, and no map is returned. | Test (TC-1194) |
+| FR-449-AC-5 | **W**'s emitted package edited so that the `requirements` entry, or separately the `each` trigger, names an existing node absent from the clause's `dependencies` is refused by the I2 reader with `invalid_semantic_graph` at the clause's `/dependencies`. Separately, each reference retargeted to a key present in the clause's `dependencies` but naming no node is refused with `missing_declaration`/`missing-name` at the target. Neither refusal returns a map. | Test (TC-1194) |
 | FR-449-AC-6 | **W** with `requires temporal Missing`, where the unit declares no temporal clause `Missing`, is refused at S3 with `missing_declaration`/`missing-name` at the name, with no package and no map. | Test (TC-1194) |
 
 ## Dependencies

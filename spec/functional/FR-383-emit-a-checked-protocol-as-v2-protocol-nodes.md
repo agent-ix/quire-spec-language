@@ -150,8 +150,9 @@ arguments. `P` is the protocol's qualified name.
   model type, channels with their queues, a `sequence` run
   tree, a `finish`, an `origin` or `each` activation (with or without a
   guard), protocol captures and a `scheduling` member emits the clause with its
-  thirteen arguments in order (every set it does not hold an empty Group,
-  `relationships` always), the `over` and trigger binders at levels 0 and 1,
+  thirteen arguments in order (every set it does not hold an empty Group),
+  with `relationships` naming its checked model relationship nodes once each
+  in ascending node id order, the `over` and trigger binders at levels 0 and 1,
   the capture binders at the consecutive levels that follow them (the count of
   `over` and the trigger, then each later capture the next level) with the
   `captures` argument one `binder`/`initializer` Group per capture in source
@@ -171,9 +172,7 @@ arguments. `P` is the protocol's qualified name.
   of function calls and protocol references, whose recursion group is not
   written yet (QSL-844: a body that calls a function, or refers to a protocol,
   is keyed after that function or protocol, QSL-1121g, so only a cycle is
-  refused); a `relationship` member (QSL-1141: a real model package
-  cannot name a relationship yet, so the `relationships` set is unproved
-  against the reader); a channel that carries a bounded scalar or collection
+  refused); a channel that carries a bounded scalar or collection
   (QSL-1137: a `bounded_domain` node, which the reader does not admit as
   `carries`; a quantity, a nominal enum, an `option`, an unbounded collection
   and a declared record are admitted); a FIFO channel whose key type is not equality-stable

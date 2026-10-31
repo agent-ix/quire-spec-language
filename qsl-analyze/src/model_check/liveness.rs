@@ -73,6 +73,10 @@
 //! `MemoryBoundReached` in place of a proof or a counterexample, since the
 //! cut store is enabled for the fairness filter (ADR-025 MF-4) and the
 //! engine does not read it so.
+//! For an `on each` protocol, an enabled activation at
+//! `max_live_instances` is likewise left unexpanded (ADR-027 AE-4). A fair
+//! lasso remains a counterexample; without one, any instance-limited state
+//! settles `InstanceBoundReached` before the search horizon.
 //!
 //! Under partial-order reduction (ADR-021 POR-6 to POR-11) each product
 //! state is expanded through the ample set `ample` chooses at its model
@@ -105,10 +109,10 @@ use qsl_eval::temporal::{AtomReading, CaptureReading, UndefinedCause};
 use qsl_foundation::IdentityLimits;
 use qsl_replay::{
     undefined_finding, AppliedReduction, ClauseIdentity, ClauseRootRefusal, CounterexampleKind,
-    IncompleteCause, Instance, ItemRefusal, Lasso, MemoryBound, MemoryCause, ModelCheckItem,
-    ModelCheckLimit, ModelCheckOutcome, ModelStep, ProofCertificate, Proviso, ReachedLimit,
-    ReductionCause, RunStats, TemporalCounterexample, UndecidedCause, UndefinedEvaluation,
-    UndefinedLocus, UndefinedSite,
+    IncompleteCause, Instance, InstanceBound, ItemRefusal, Lasso, MemoryBound, MemoryCause,
+    ModelCheckItem, ModelCheckLimit, ModelCheckOutcome, ModelStep, ProofCertificate, Proviso,
+    ReachedLimit, ReductionCause, RunStats, TemporalCounterexample, UndecidedCause,
+    UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
 use qsl_semantics::check::{CaptureSite, CheckedTemporalClause, FormulaNodeId};
 use quire_canonical::{Encode, Sink, Writer};
@@ -237,6 +241,7 @@ pub(super) fn check(
             diagnostic_fairness: None,
             bindings: &bindings,
             memory_bound: None,
+            instance_bound: None,
             root_cancelled,
             no_initial,
             certify: Certify {
@@ -277,6 +282,7 @@ pub(super) fn check(
 pub(super) struct ProtocolLivenessOptions {
     pub(super) limits: qsl_replay::ModelCheckLimits,
     pub(super) ignore_memory_constraints: bool,
+    pub(super) instance_bound: Option<InstanceBound>,
 }
 
 pub(super) fn check_protocol<M: MemoryModel>(
@@ -334,6 +340,7 @@ pub(super) fn check_protocol<M: MemoryModel>(
             diagnostic_fairness,
             bindings: &bindings,
             memory_bound,
+            instance_bound: options.instance_bound,
             root_cancelled,
             no_initial: simulation.initial.is_empty(),
             certify: Certify {
@@ -373,6 +380,8 @@ struct Bound<'r, S: LiveSubject> {
     /// The memory bound a protocol subject runs under, which a bound-limited
     /// state reaches (ADR-025 MB-4).
     memory_bound: Option<MemoryBound>,
+    /// The live-instance bound a protocol liveness run explored under.
+    instance_bound: Option<InstanceBound>,
     /// The cancellation that stopped the clause identity's resolution.
     root_cancelled: Option<CancelCause>,
     no_initial: bool,
@@ -435,6 +444,7 @@ fn decide_bindings<S: LiveSubject>(
         letters: bound.letters,
         bindings: bound.bindings,
         memory_bound: bound.memory_bound,
+        instance_bound: bound.instance_bound,
         request,
         cancel,
         meter: RefCell::new(Meter::new(meter)),
@@ -653,7 +663,7 @@ fn exhausted<T: SubjectTransition>(
 }
 
 /// The counts of the products explored so far.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 struct Totals {
     states: u64,
     edges: u64,
@@ -663,6 +673,9 @@ struct Totals {
     /// but in no product total.
     charged_states: u64,
     charged_edges: u64,
+    /// Distinct protocol states where an enabled activation was left
+    /// unexpanded by `max_live_instances` (ADR-027 AE-4).
+    instance_limited: BTreeSet<StateKey>,
 }
 
 impl Totals {
@@ -689,7 +702,7 @@ impl Totals {
             automaton_states: self.automaton_states,
             depth: self.depth,
             bound_limited: 0,
-            instance_limited: 0,
+            instance_limited: widen(self.instance_limited.len()),
         }
     }
 
@@ -802,6 +815,8 @@ enum Finding<T> {
     HorizonCut,
     /// The memory bound left a store of the state unexpanded (ADR-025 MB-3).
     BoundLimited,
+    /// The live-instance bound left an enabled activation unexpanded.
+    InstanceBoundLimited,
 }
 
 /// Why a product's exploration ended before its frontier emptied.
@@ -1114,6 +1129,9 @@ impl<S: LiveSubject> TransitionSystem for LassoSystem<'_, S> {
         if cut.memory {
             findings.push(Finding::BoundLimited);
         }
+        if cut.instances {
+            findings.push(Finding::InstanceBoundLimited);
+        }
         if findings
             .iter()
             .any(|finding| matches!(finding, Finding::Contract(_)))
@@ -1133,9 +1151,9 @@ impl<S: LiveSubject> TransitionSystem for LassoSystem<'_, S> {
                 findings,
             });
         }
-        // ADR-025 MB-3: a state whose only enabled steps are cut stores is a
-        // boundary state, never stutter-extended.
-        if cut.memory && expansion.successors.is_empty() {
+        // ADR-025 MB-3 and ADR-027 AE-4: a boundary state with only cut
+        // successors is never stutter-extended.
+        if (cut.memory || cut.instances) && expansion.successors.is_empty() {
             return Ok(Expansion {
                 successors: Vec::new(),
                 findings,
@@ -1446,6 +1464,7 @@ struct Run<'r, S: LiveSubject> {
     letters: &'r dyn ModelLetters,
     bindings: &'r [Binding],
     memory_bound: Option<MemoryBound>,
+    instance_bound: Option<InstanceBound>,
     request: RunRequest,
     cancel: &'r Cancel,
     /// The run's meter, which the annotated quotient's work of every
@@ -1618,6 +1637,15 @@ impl<'r, S: LiveSubject> Run<'r, S> {
                 stats: totals.stats(),
             });
         }
+        if let (Some(bound), false) = (self.instance_bound, totals.instance_limited.is_empty()) {
+            return Ok(ModelCheckOutcome::Undecided {
+                cause: UndecidedCause::InstanceBoundReached {
+                    bound,
+                    states: widen(totals.instance_limited.len()),
+                },
+                stats: totals.stats(),
+            });
+        }
         // ADR-021 RV-1: the reductions in the order symmetry, partial-order.
         let mut reductions: Vec<AppliedReduction> = self
             .bindings
@@ -1730,6 +1758,15 @@ impl<'r, S: LiveSubject> Run<'r, S> {
         };
         let automaton_states = widen(product.automaton.borrow().reached_states());
         totals.add::<S>(&exploration.graph, transitions, automaton_states);
+        for state in exploration.graph.states() {
+            if state.findings.contains(&Finding::InstanceBoundLimited) {
+                let (_, state_key) = self
+                    .system
+                    .state_key(&state.state.model)
+                    .map_err(ModelCheckRefusal::Encoding)?;
+                totals.instance_limited.insert(state_key);
+            }
+        }
         self.charge_lifted(totals);
         let ending = match &exploration.outcome {
             Outcome::Exhaustive(_) => Ending::Complete,

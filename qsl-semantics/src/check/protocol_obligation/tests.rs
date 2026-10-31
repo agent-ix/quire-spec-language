@@ -406,7 +406,7 @@ fn protocol_captures_are_recorded_in_source_order() {
 /// with `foreign`, and two captures that read each other give exactly one
 /// refusal, at the read inside the earlier capture, with the later capture
 /// checking.
-#[trace("TC-1057", "FR-381-AC-2")]
+#[trace("TC-1057", "FR-381-AC-2", "TC-1074", "FR-390-AC-12")]
 #[test]
 fn a_capture_cannot_read_itself_a_later_capture_or_another_templates() {
     let (text, cause) = only(&plain(TICK, "capture a: Boolean = a;"));
@@ -482,6 +482,7 @@ fn a_capture_cannot_read_itself_a_later_capture_or_another_templates() {
 
 /// FR-381-AC-2 for a template: a registration capture that reads itself
 /// refuses `forward`.
+#[trace("TC-1074", "FR-390-AC-12")]
 #[test]
 fn a_registration_capture_cannot_read_itself() {
     let (text, cause) = only(&changed(
@@ -498,6 +499,15 @@ fn a_registration_capture_cannot_read_itself() {
         )
     );
     assert!(text[cause.span().start..].starts_with("target;"));
+
+    let (text, cause) = only(&changed(
+        "capture target: M::Total = forward.total;",
+        "capture target: M::Total = forward.total; capture a: Boolean = b; capture b: Boolean = true;",
+    ));
+    assert_eq!(stage_read(&cause).0, "b");
+    assert_eq!(stage_read(&cause).1, ObligationStage::RegistrationCapture);
+    assert_eq!(stage_read(&cause).3, ReadClass::Forward);
+    assert!(text[cause.span().start..].starts_with("b;"));
 }
 
 /// FR-381-AC-1: a read of a name another stage's row owns refuses

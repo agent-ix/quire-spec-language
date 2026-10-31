@@ -6,12 +6,63 @@
 //! verdict is the reader's, not one the test computes.
 
 use super::admission_corpus::config_version_unit;
-use super::owner_model::{targets, verdict};
+use super::owner_model::targets;
 use super::population_bound::document;
 use super::protocol_graph::{argument, clause, member, target, PROFILES};
 use super::protocol_reference::clause_argument;
+use super::protocol_terminal::argument as named_argument;
 use super::reachability::{lower_with, Lowered};
 use super::*;
+use crate::checked_v2::V2ReadRefusal;
+use quire_contract_model::{CheckedPackageRefusalCause, CheckedPackageRefusalCode};
+
+/// Read the complete envelope through QSL's I2 dispatch with its domain evidence.
+fn read_protocol(wire: &Value) -> Read {
+    read_protocol_over(wire, &document())
+}
+
+fn read_protocol_over(wire: &Value, document: &[u8]) -> Read {
+    let mut evidence = CheckedPackageEvidence::new();
+    for feature in wire["lock"]["required_features"].as_array().unwrap() {
+        evidence.support_feature(feature.as_str().unwrap());
+    }
+    evidence
+        .insert_domain_package_document(package_identity(document), document)
+        .expect("fresh domain evidence");
+    read_v2(&jcs(wire), library(), V2ReadLimits::default(), &evidence)
+}
+
+fn refused_at(
+    wire: &Value,
+    code: CheckedPackageRefusalCode,
+    cause: Option<CheckedPackageRefusalCause>,
+    pointer: &str,
+) -> quire_contract_model::CheckedPackageRefusal {
+    assert_refused_at(read_protocol(wire), code, cause, pointer)
+}
+
+fn assert_refused_at(
+    outcome: Read,
+    code: CheckedPackageRefusalCode,
+    cause: Option<CheckedPackageRefusalCause>,
+    pointer: &str,
+) -> quire_contract_model::CheckedPackageRefusal {
+    let Read::Refused(V2ReadRefusal::Envelope { refusal, .. }) = outcome else {
+        panic!("expected {code:?} at {pointer}");
+    };
+    assert_eq!(refusal.code, code, "{refusal:?}");
+    assert_eq!(refusal.cause, cause, "{refusal:?}");
+    assert_eq!(
+        refusal
+            .loci
+            .first()
+            .and_then(|locus| locus.path.as_ref())
+            .map(|path| path.as_str()),
+        Some(pointer),
+        "{refusal:?}"
+    );
+    *refusal
+}
 
 const MEMBERS: &str = "role Buyer on M::Order;\nrole Seller on M::Person;\n\
     channel Ch from Buyer to Seller carries Boolean ordering unordered \
@@ -135,15 +186,189 @@ fn modified(lowered: &Lowered, edit: impl FnOnce(&mut Value)) -> Value {
     envelope
 }
 
-/// IR's verdict on `lowered` after `edit`.
-fn edited(lowered: &Lowered, edit: impl FnOnce(&mut Value)) -> String {
-    verdict(lowered, &modified(lowered, edit))
-}
-
 fn children_of(envelope: &mut Value, position: usize) -> &mut Vec<Value> {
     envelope["semantic_graph"]["nodes"][position]["body"]["arguments"][0]["value"]["members"]
         .as_array_mut()
         .expect("children")
+}
+
+/// I2 retains each emitted protocol node and its occurrence records.
+#[trace("FR-383-AC-19", "TC-1063")]
+#[test]
+fn protocol_nodes_and_occurrences_survive_the_whole_i2_read() {
+    let lowered = emitted(&flow(RUN));
+    let Read::Verified { admitted, .. } = read_protocol(&lowered.wire) else {
+        panic!("the emitted protocol is admitted");
+    };
+    let expected = nodes(&lowered.wire)
+        .iter()
+        .filter(|node| node["node_tag"] == "protocol")
+        .collect::<Vec<_>>();
+    assert!(!expected.is_empty());
+    for node in expected {
+        let key = qsl_foundation::node_wire::node_key_from_json(&node["node_id"]).unwrap();
+        let typed = admitted
+            .graph()
+            .nodes
+            .iter()
+            .find(|candidate| serde_json::to_value(&candidate.node_id).unwrap() == node["node_id"])
+            .expect("emitted protocol node retained by I2");
+        let retained = serde_json::to_value(typed).unwrap();
+        for field in [
+            "node_id",
+            "node_tag",
+            "semantic_form",
+            "semantic_type",
+            "declaration",
+            "body",
+            "dependencies",
+            "occurrences",
+        ] {
+            assert_eq!(retained[field], node[field], "{key}: {field}");
+        }
+    }
+    assert_eq!(
+        serde_json::to_value(admitted.source_map()).unwrap(),
+        lowered.wire["source_map"]
+    );
+}
+
+/// TC-1063 row 8a: sets are strictly ascending and duplicate-free.
+#[trace("FR-383-AC-20", "TC-1063")]
+#[test]
+fn a_misordered_or_repeated_role_is_refused_by_i2_at_its_normative_locus() {
+    let lowered = emitted(&flow(RUN));
+    let at = position(&lowered.wire, clause(&lowered.wire));
+    for repeat in [false, true] {
+        let mut wire = lowered.wire.clone();
+        let roles = wire["semantic_graph"]["nodes"][at]["body"]["arguments"][3]["value"]["members"]
+            .as_array_mut()
+            .unwrap();
+        assert_eq!(roles.len(), 2);
+        if repeat {
+            roles.insert(0, roles[0].clone());
+        } else {
+            roles.swap(0, 1);
+        }
+        let at = if repeat {
+            position(
+                &wire,
+                target(
+                    &wire,
+                    &clause_argument(clause(&wire), "roles")["members"][0],
+                ),
+            )
+        } else {
+            at
+        };
+        refused_at(
+            &wire,
+            CheckedPackageRefusalCode::InvalidSemanticGraph,
+            None,
+            &format!("/semantic_graph/nodes/{at}"),
+        );
+    }
+}
+
+/// TC-1063 row 8b: each channel has exactly one queue.
+#[trace("FR-383-AC-20", "TC-1063")]
+#[test]
+fn a_missing_or_second_queue_is_refused_by_i2() {
+    let lowered = emitted(&flow_with(&format!("{MEMBERS}\nchannel Other from Seller to Buyer carries Boolean ordering unordered delivery unknown capacity 2 overflow block;"), RUN));
+    let clause_at = position(&lowered.wire, clause(&lowered.wire));
+    let queues = nodes(&lowered.wire)
+        .iter()
+        .filter(|node| node["semantic_form"] == "queue")
+        .collect::<Vec<_>>();
+    assert_eq!(queues.len(), 2);
+    for second in [false, true] {
+        let mut wire = lowered.wire.clone();
+        if second {
+            let at = position(&wire, queues[1]);
+            wire["semantic_graph"]["nodes"][at]["body"]["arguments"][0]["value"] =
+                queues[0]["body"]["arguments"][0]["value"].clone();
+            redepend(&mut wire, at);
+        } else {
+            let key = &queues[1]["node_id"];
+            wire["semantic_graph"]["nodes"][clause_at]["body"]["arguments"][6]["value"]["members"]
+                .as_array_mut()
+                .unwrap()
+                .retain(|entry| entry["target"] != *key);
+            wire["semantic_graph"]["nodes"]
+                .as_array_mut()
+                .unwrap()
+                .retain(|node| node["node_id"] != *key);
+            wire["source_map"]
+                .as_array_mut()
+                .unwrap()
+                .retain(|entry| entry["node_id"] != *key);
+        }
+        let clause_at = position(&wire, clause(&lowered.wire));
+        super::owner_model::depend_on(&mut wire, clause_at, &clause(&lowered.wire)["owner_model"]);
+        let expected_channel = if second {
+            let mut channels = nodes(&wire)
+                .iter()
+                .filter(|node| node["semantic_form"] == "channel")
+                .collect::<Vec<_>>();
+            channels.sort_by_key(|node| {
+                qsl_foundation::node_wire::node_key_from_json(&node["node_id"]).unwrap()
+            });
+            channels[0]
+        } else {
+            target(&wire, &queues[1]["body"]["arguments"][0]["value"])
+        };
+        let channel_at = position(&wire, expected_channel);
+        refused_at(
+            &wire,
+            CheckedPackageRefusalCode::InvalidSemanticGraph,
+            None,
+            &format!("/semantic_graph/nodes/{channel_at}"),
+        );
+    }
+}
+
+/// TC-1063 row 8f: a role's model is a domain object, never a record type.
+#[trace("FR-383-AC-20", "TC-1063")]
+#[test]
+fn a_record_type_as_a_role_model_is_refused_at_the_target() {
+    let lowered = emitted(&deciding(&format!("sequence Main {{ {RECEIVED} }}")));
+    let record = nodes(&lowered.wire)
+        .iter()
+        .find(|node| node["node_tag"] == "composite_type" && node["semantic_form"] == "record")
+        .expect("the channel carries the Ack record");
+    let role_at = position(
+        &lowered.wire,
+        control(&lowered.wire, &["Flow", "role", "Buyer"]),
+    );
+    let mut wire = lowered.wire.clone();
+    wire["semantic_graph"]["nodes"][role_at]["body"]["arguments"][0]["value"] =
+        json!({"term": "reference", "target": record["node_id"]});
+    redepend(&mut wire, role_at);
+    refused_at(
+        &wire,
+        CheckedPackageRefusalCode::InvalidModelBinding,
+        Some(CheckedPackageRefusalCause::MalformedDeclaration),
+        &format!("/semantic_graph/nodes/{role_at}/body/arguments/0/value/target"),
+    );
+}
+
+/// TC-1063 row 8h: a choice's cases follow label byte order.
+#[trace("FR-383-AC-20", "TC-1063")]
+#[test]
+fn descending_choice_labels_are_refused_by_i2() {
+    let lowered = emitted(&flow("sequence Main { choice Pick by Buyer visible () { case a when { true } sequence A { } case z when { false } sequence Z { } } }"));
+    let at = position(&lowered.wire, run_control(&lowered.wire, "Pick"));
+    let mut wire = lowered.wire.clone();
+    wire["semantic_graph"]["nodes"][at]["body"]["arguments"][2]["value"]["members"]
+        .as_array_mut()
+        .unwrap()
+        .swap(0, 1);
+    refused_at(
+        &wire,
+        CheckedPackageRefusalCode::InvalidSemanticGraph,
+        None,
+        &format!("/semantic_graph/nodes/{at}"),
+    );
 }
 
 /// FR-383-AC-7, FR-466 (QSpec): `send`, `receive`, `check`, `event`, `commit`
@@ -302,15 +527,15 @@ fn a_control_dropped_from_its_holders_children_is_refused_at_the_control() {
     let main = position(wire, control(wire, &["Flow", "run", "Main"]));
     let gate = run_control(wire, "Gate");
     let at = position(wire, gate);
-    let verdict = edited(&lowered, |envelope| {
+    let mutated = modified(&lowered, |envelope| {
         children_of(envelope, main).retain(|child| child["target"] != gate["node_id"]);
         redepend(envelope, main);
     });
-    assert!(
-        verdict.starts_with(&format!(
-            "InvalidSemanticGraph at /semantic_graph/nodes/{at}"
-        )),
-        "{verdict}"
+    refused_at(
+        &mutated,
+        CheckedPackageRefusalCode::InvalidSemanticGraph,
+        None,
+        &format!("/semantic_graph/nodes/{at}"),
     );
 }
 
@@ -322,10 +547,25 @@ fn a_receive_sequenced_before_its_send_is_a_definition_cycle() {
     let lowered = emitted(&flow(RUN));
     let wire = &lowered.wire;
     let main = position(wire, control(wire, &["Flow", "run", "Main"]));
-    let verdict = edited(&lowered, |envelope| children_of(envelope, main).swap(0, 1));
-    assert!(
-        verdict.starts_with("InvalidPackage at") && verdict.ends_with("(Some(DefinitionCycle))"),
-        "{verdict}"
+    let mutated = modified(&lowered, |envelope| children_of(envelope, main).swap(0, 1));
+    let at = position(wire, run_control(wire, "Got"));
+    let refusal = refused_at(
+        &mutated,
+        CheckedPackageRefusalCode::InvalidPackage,
+        Some(CheckedPackageRefusalCause::DefinitionCycle),
+        &format!("/semantic_graph/nodes/{at}"),
+    );
+    let Some(quire_contract_model::CheckedProtocolRefusalDetail::CausalCycle { controls }) =
+        refusal.protocol_detail.as_deref()
+    else {
+        panic!("the causal cycle retains its controls: {refusal:?}");
+    };
+    assert_eq!(
+        serde_json::to_value(controls).unwrap(),
+        json!([
+            run_control(wire, "Got")["node_id"],
+            run_control(wire, "Placed")["node_id"]
+        ])
     );
 }
 
@@ -334,25 +574,42 @@ fn a_receive_sequenced_before_its_send_is_a_definition_cycle() {
 #[trace("FR-383-AC-20", "TC-1063")]
 #[test]
 fn a_missing_or_swapped_control_binding_is_malformed_wire() {
+    let mut attempt = admitted_config(
+        "protocol Flow using v over (input: Config::ConfigVersion) on origin {\n\
+         role R on Config::ConfigVersion;\n\
+         run attempt Update by R on Config::ConfigVersion::attemptUpdate \
+         contracts [] as (tried: Boolean) { true };\n\
+         finish End as (outcome: Boolean) { true };\n}\n",
+    );
+    let at = position(&attempt, control(&attempt, &["Flow", "run", "Update"]));
+    attempt["semantic_graph"]["nodes"][at]["body"]["arguments"]
+        .as_array_mut()
+        .unwrap()
+        .remove(3);
+    redepend(&mut attempt, at);
+    assert_refused_at(
+        read_protocol_over(&attempt, domain_document()),
+        CheckedPackageRefusalCode::MalformedWire,
+        None,
+        &format!("/semantic_graph/nodes/{at}/body"),
+    );
+
     let lowered = emitted(&flow(RUN));
     let wire = &lowered.wire;
     let placed = position(wire, run_control(wire, "Placed"));
-    let expected = format!("MalformedWire at /semantic_graph/nodes/{placed}/body (None)");
-    let missing = edited(&lowered, |envelope| {
-        let arguments = envelope["semantic_graph"]["nodes"][placed]["body"]["arguments"]
-            .as_array_mut()
-            .unwrap();
-        arguments.remove(1);
-        redepend(envelope, placed);
-    });
-    assert_eq!(missing, expected);
-    let swapped = edited(&lowered, |envelope| {
+    let expected = format!("/semantic_graph/nodes/{placed}/body");
+    let swapped = modified(&lowered, |envelope| {
         envelope["semantic_graph"]["nodes"][placed]["body"]["arguments"]
             .as_array_mut()
             .unwrap()
             .swap(0, 1);
     });
-    assert_eq!(swapped, expected);
+    refused_at(
+        &swapped,
+        CheckedPackageRefusalCode::MalformedWire,
+        None,
+        &expected,
+    );
 }
 
 /// FR-383-AC-20, TC-1063 row 8g: a `check` condition that reads model state
@@ -382,11 +639,11 @@ fn a_check_condition_that_reads_model_state_is_operator_ineligible() {
         .iter()
         .position(|node| node["semantic_form"] == "parameter" && level(node) == pair("input", "0"))
         .expect("the over binder");
-    assert_eq!(
-        verdict(&lowered, &mutated),
-        format!("IllTyped at /semantic_graph/nodes/{over} (Some(OperatorIneligible))"),
-        "{}",
-        lowered.text
+    refused_at(
+        &mutated,
+        CheckedPackageRefusalCode::IllTyped,
+        Some(CheckedPackageRefusalCause::OperatorIneligible),
+        &format!("/semantic_graph/nodes/{over}"),
     );
 }
 
@@ -1061,4 +1318,104 @@ fn a_decision_that_calls_a_function_reads_back() {
              exhausted sequence Out { } }",
         )
     ));
+}
+
+#[path = "../../../../qsl-semantics/tests/support/tc1070.rs"]
+mod tc1070;
+
+/// Finds an existing emitted subexpression below the given expression reference.
+fn expression_with_operation<'a>(
+    wire: &'a Value,
+    term: &'a Value,
+    operation: &str,
+) -> Option<&'a Value> {
+    if term["term"] != "reference" {
+        return None;
+    }
+    let body = &target(wire, term)["body"];
+    if body["operation"]["identity"] == operation {
+        return Some(term);
+    }
+    body["arguments"]
+        .as_array()?
+        .iter()
+        .find_map(|argument| expression_with_operation(wire, argument, operation))
+}
+
+/// TC-1074 rows 4-6: actual E bytes admit before either initializer edit;
+/// the reader then reports the offending binder read, retaining structural keys.
+#[test]
+#[trace("TC-1074", "FR-390-AC-12")]
+fn activation_capture_self_and_foreign_reads_are_refused_by_the_reader() {
+    let document = serde_json::to_vec(&tc1070::document()).unwrap();
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
+    let graph = assemble_with_models(tc1070::SOURCE.as_bytes(), &packages)
+        .expect("E assembles")
+        .check(CheckingLimits::default())
+        .expect("E checks");
+    let emission = emit_checked(&CheckedPackage::link(graph)).expect("E emits");
+    assert!(emission.omitted.is_empty());
+    let wire = wire(&emission);
+    let positive = read_protocol_over(&wire, &document);
+    assert!(
+        matches!(positive, Read::Verified { .. }),
+        "unchanged E admits: {positive:?}"
+    );
+    let refund = control(&wire, &["Refunds", "compensate", "Refund"]);
+    let partial = control(&wire, &["Refunds", "compensate", "Partial"]);
+    let refund_at = position(&wire, refund);
+    let self_read = expression_with_operation(
+        &wire,
+        member(named_argument(refund, "retry"), "relation"),
+        "quire.op.boolean.not",
+    )
+    .expect("Refund's retry contains not activated");
+    let foreign_read = expression_with_operation(
+        &wire,
+        member(named_argument(partial, "trigger"), "guard"),
+        "quire.op.integer.ge",
+    )
+    .expect("Partial's guard contains partialTarget >= 0");
+    for (replacement, name, read) in [
+        (self_read, "activated", "forward"),
+        (foreign_read, "partialTarget", "foreign"),
+    ] {
+        let mut mutated = wire.clone();
+        let arguments = mutated["semantic_graph"]["nodes"][refund_at]["body"]["arguments"]
+            .as_array_mut()
+            .unwrap();
+        let captures = &mut arguments
+            .iter_mut()
+            .find(|argument| argument["name"] == "activation_captures")
+            .unwrap()["value"]["members"];
+        let initializer = captures[0]["members"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|binding| binding["name"] == "initializer")
+            .unwrap();
+        initializer["value"] = replacement.clone();
+        redepend(&mut mutated, refund_at);
+        assert_eq!(mutated["name"], wire["name"]);
+        assert_eq!(
+            nodes(&mutated)
+                .iter()
+                .map(|node| &node["node_id"])
+                .collect::<Vec<_>>(),
+            nodes(&wire)
+                .iter()
+                .map(|node| &node["node_id"])
+                .collect::<Vec<_>>()
+        );
+        let refusal = assert_refused_at(
+            read_protocol_over(&mutated, &document),
+            CheckedPackageRefusalCode::MissingDeclaration,
+            Some(CheckedPackageRefusalCause::MissingName),
+            &format!("/semantic_graph/nodes/{refund_at}"),
+        );
+        assert!(
+            matches!(refusal.protocol_detail.as_deref(), Some(quire_contract_model::CheckedProtocolRefusalDetail::BinderScope { name: actual, stage, owner, read: actual_read }) if actual.as_ref() == name && stage.as_ref() == "activation-capture" && actual_read.as_ref() == read && serde_json::to_value(owner).unwrap() == refund["node_id"]),
+            "{refusal:?}"
+        );
+    }
 }

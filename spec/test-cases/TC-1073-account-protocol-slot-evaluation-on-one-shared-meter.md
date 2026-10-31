@@ -27,8 +27,9 @@ Every row asserts relations and boundaries, never an absolute count: `U` is
 measured on the row's own call, and a row compares a call's usage with another
 measured usage, with `U` and `U` less one, or with the sum of measured usages.
 The charge points and their order are FR-390's: expression nodes in evaluation
-order, `model.navigate` and `model.deref` where the slot may read model state,
-then `result_units`.
+order, `model.navigate` for a model field read and `model.deref` for an explicit
+`deref(...)`, with `result_units` only at the existing S6a retain points the
+expression reaches.
 
 Fixture **E** and the observation of TC-1070. The five calls of one
 compensation, with the supplies of TC-1070 rows 3, 6, 4, 8 and 12, are **R**
@@ -39,7 +40,19 @@ compensation, with the supplies of TC-1070 rows 3, 6, 4, 8 and 12, are **R**
 counters it consumed on a fresh meter with every counter unbounded, measured by
 running it; its **charged counters** are those with nonzero usage. The meter
 takes its limits from FR-255's accounting table: a counter at a bound `B` is set
-by its name.
+by its name. **D** is the variant of C whose initializer is
+`deref(view).total`, with the same observation and supply. C is navigate-only;
+D charges both `model.deref` and `model.navigate`.
+
+R, A, C and D return forwarded scalars and have `result_units` **zero by S6a**.
+The literal `Closed.constraint` of TC-1070 row 22 also has `result_units` zero
+by S6a. G reaches `ordering.result-retain` and `boolean.result-retain`; T
+reaches `ordering.result-retain`, `integer-arithmetic.result-retain`,
+`equality.result-retain` and `boolean.result-retain`; V reaches
+`equality.result-retain` and `boolean.result-retain`. These existing retain
+points make G, T and V's `result_units` nonzero. Assert these point sets and
+the zero usages independently of the measured-boundary loop: a missing charge
+must not remove its own test coverage by making a counter appear uncharged.
 
 ## Test Procedure
 
@@ -53,12 +66,15 @@ by its name.
 | 6 | T with every counter at its measured usage | `Completed(true)` |
 | 7 | T with each charged counter in turn at its usage less one and every other counter at its usage | `Incomplete` naming that counter, no value; one run per charged counter |
 | 8 | T after row 3 on a fresh meter with the default limits | `Completed(true)` with usage equal to row 1's |
-| 9 | C with every counter at its measured usage, then each charged counter in turn one below | the first completes with 5; each of the others is `Incomplete` naming that counter (C is the call that charges `model.deref` and `model.navigate`) |
+| 9 | C with every counter at its measured usage, then each charged counter in turn one below | the first completes with 5; each of the others is `Incomplete` naming that counter; C charges `model.navigate`, with `value_occurrences` and `work_units` nonzero, and `result_units` zero by S6a |
 | 10 | one meter with `work_units` = the sum of the `Uw` of R, A, G, T and V; run them in that order | all five complete; the meter's `work_units` consumed equals the sum |
 | 11 | one meter with `work_units` = that sum - 1; run R, A, G, T, V in turn | R, A, G and T complete; V returns `Incomplete` naming `work_units`; the meter holds R's, A's, G's and T's charges plus V's up to the denial |
 | 12 | one meter with the sum as `work_units`; run V, T, G, A, R in turn | all five complete; the consumed total equals row 10's |
 | 13 | T over the checked package and over the package the contract reader returns for the bytes FR-383 emits for it | equal results and equal charge logs |
 | 14 | a refused call (TC-1071 row 12) on a meter, then T on that meter | the meter after the refusal equals the meter before it; T completes |
+| 15 | D with every counter at its measured usage, then each charged counter in turn one below | the first completes with 5; each of the others is `Incomplete` naming that counter; D charges `model.deref` then `model.navigate`, each reading one value occurrence; `result_units` is zero by S6a |
+| 16 | R, A, G, T and V separately on fresh unbounded meters | R and A have `result_units` zero by S6a; G, T and V have nonzero `result_units` from exactly the existing retain-point sets listed above |
+| 17 | the literal `Closed.constraint` of TC-1070 row 22 on a fresh unbounded meter | `Completed(true)` with `result_units` zero by S6a and no retain point |
 
 ## Expected Results
 

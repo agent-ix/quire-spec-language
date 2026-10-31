@@ -226,8 +226,10 @@ fn function_like(
     let node = production_node(construct)?;
     let items = items(cst, node);
     let identifiers = tokens_of(&items, TokenKind::Identifier);
-    let [name, alias] = identifiers.as_slice() else {
-        return Err(unexpected(node));
+    let (name, alias) = match identifiers.as_slice() {
+        [name] => (*name, None),
+        [name, alias] => (*name, Some(*alias)),
+        _ => return Err(unexpected(node)),
     };
     let mut parameters = Vec::new();
     let mut parameter_spans = Vec::new();
@@ -269,13 +271,9 @@ fn function_like(
     let (measure, measure_spans) = measure.map_or((None, None), |(measure, spans)| {
         (Some(measure), Some(spans))
     });
-    let declaration =
+    let mut declaration =
         FunctionDeclaration::new(text(name, node)?, parameters, result, measure, body)
             .with_kind(kind)
-            .with_using(UsingAlias {
-                alias: text(alias, node)?,
-                span: alias.span(),
-            })
             .with_spans(DeclarationSpans {
                 declaration: construct.node.span(),
                 body: body_spans,
@@ -284,6 +282,12 @@ fn function_like(
             .map_err(|_| unexpected(node))?
             .with_parameter_spans(parameter_spans)
             .map_err(|_| unexpected(node))?;
+    if let Some(alias) = alias {
+        declaration = declaration.with_using(UsingAlias {
+            alias: text(alias, node)?,
+            span: alias.span(),
+        });
+    }
     Ok(DeclarationForm::Function(Box::new(declaration)))
 }
 
@@ -722,6 +726,7 @@ struct Pending {
     /// The CST production this node maps from, for a refusal naming it.
     production: Production,
     span: Span,
+    operator_span: Option<Span>,
     parent: Option<usize>,
     children: Vec<usize>,
 }
@@ -1178,6 +1183,7 @@ impl<'c> Mapping<'c> {
             shape,
             production,
             span,
+            operator_span: None,
             parent,
             children: Vec::new(),
         });
@@ -1554,12 +1560,13 @@ impl<'c> Mapping<'c> {
         let start = node.span().start;
         let mut parent = task.parent;
         let mut links = Vec::with_capacity(chain.len());
-        for (operator, right) in chain.iter().zip(&operands[1..]).rev() {
+        for ((operator, right), token) in chain.iter().zip(&operands[1..]).zip(&operators).rev() {
             let span = Span {
                 start,
                 end: right.span().end,
             };
             let index = self.node(Shape::Binary(*operator), node.production(), span, parent);
+            self.arena[index].operator_span = Some(token.span());
             links.push(index);
             parent = Some(index);
         }
@@ -2283,6 +2290,11 @@ impl<'c> Mapping<'c> {
                     .push_child(parent, pending.span)
                     .map_err(|_| shape_at(pending))?,
             );
+        }
+        for (pending, id) in self.arena.iter().zip(ids) {
+            if let Some(operator) = pending.operator_span {
+                spans.set_operator_span(id, operator);
+            }
         }
         let mut built: Vec<Option<ExprId>> = vec![None; self.arena.len()];
         let mut builder = ExpressionBuilder::new();

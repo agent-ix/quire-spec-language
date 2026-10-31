@@ -27,6 +27,8 @@ use qsl_semantics::library::{ImportView, LibraryName};
 use quire_exact::{NodeKey, Origin, Role};
 use quire_semantic_value::catalog::{CatalogCode, CatalogCoded, Category};
 
+mod protocol_corpus;
+
 fn node_ref(label: &str) -> Value {
     json!({"package": "pkg", "path": label.split("::").skip(1).collect::<Vec<_>>(), "ordinal": 0})
 }
@@ -3114,7 +3116,7 @@ fn conformance_fr340_frame_mutations_match_qspec_vectors() {
         let (_, outcome) = read_fixture_wire(ALL_FAMILIES, &candidate);
         match outcome {
             Read::Refused(V2ReadRefusal::Envelope { refusal, .. }) => {
-                assert_eq!(refusal.code, expected_code, "{name}: code");
+                assert_eq!(refusal.code, expected_code, "{name}: code ({refusal:?})");
                 assert_eq!(refusal.cause, expected_cause, "{name}: cause");
                 assert_eq!(
                     refusal

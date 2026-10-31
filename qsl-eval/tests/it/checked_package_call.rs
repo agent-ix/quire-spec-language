@@ -373,3 +373,104 @@ fn a_second_call_on_a_spent_meter_is_denied_at_its_function_call() {
         other => panic!("expected Outcome::Incomplete(_), got {other:?}"),
     }
 }
+
+/// The refusal `call` returns for `function` on `package`, asserting that it
+/// charged nothing and left the meter exactly as a fresh one.
+fn refused_call(package: &CheckedPackage, function: &QualifiedName) -> CallFailure {
+    let mut meter = Meter::new(UNLIMITED);
+    let refusal = package
+        .call(
+            function,
+            vec![Value::Integer(Integer::from(1_i64))],
+            &ObjectEnvironment::default(),
+            &mut meter,
+        )
+        .expect_err("a handle naming nothing callable is refused");
+    assert_eq!(
+        meter,
+        Meter::new(UNLIMITED),
+        "a refused handle charges nothing"
+    );
+    refusal
+}
+
+/// TC-136 H1: a `QualifiedName` the package does not declare is refused
+/// `UnknownFunction` naming it as spelled, with no charge. A qualified name
+/// whose last segment is a declared function is no fallback: the lookup does
+/// not compare display names or drop the qualifier.
+#[trace("TC-136")]
+#[test]
+fn h1_an_undeclared_name_is_refused_by_the_spelling_given() {
+    let package = link(
+        declarations(vec![function_one()])
+            .check(CheckingLimits::default())
+            .unwrap(),
+    );
+    for segments in [vec!["missing"], vec!["pkg", "one"], vec!["one", "missing"]] {
+        let function = QualifiedName::new(
+            segments
+                .iter()
+                .map(|segment| (*segment).to_owned())
+                .collect(),
+        )
+        .unwrap();
+        assert_eq!(
+            refused_call(&package, &function),
+            CallFailure::Input(InputRefusal::UnknownFunction(function.to_string())),
+            "{segments:?}"
+        );
+    }
+}
+
+/// TC-136 H2: the name of a declaration the package holds that is not
+/// callable by name gets the same `UnknownFunction` refusal as an undeclared
+/// name, naming it, with no charge. The control `one` is callable.
+#[trace("TC-136")]
+#[test]
+fn h2_a_declaration_not_callable_by_name_is_refused_like_an_undeclared_one() {
+    let package = link(
+        PackageDeclarations {
+            functions: vec![
+                function_one(),
+                FunctionDeclaration::clause(
+                    "internal_guard",
+                    vec![],
+                    crate::support::type_form::type_form(&ValueType::Boolean),
+                    None,
+                    Expression::boolean(true),
+                    qsl_forms::DeclaredClauseKind::Body,
+                ),
+            ],
+            ..PackageDeclarations::new(
+                qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
+                qsl_foundation::IdentityLimits::default(),
+            )
+        }
+        .check(CheckingLimits::default())
+        .unwrap(),
+    );
+    assert!(
+        package.graph().declares_function("internal_guard"),
+        "the package holds the declaration, so H2 is not H1"
+    );
+    let held = QualifiedName::unqualified("internal_guard").unwrap();
+    let undeclared = QualifiedName::unqualified("undeclared").unwrap();
+    assert_eq!(
+        refused_call(&package, &held),
+        CallFailure::Input(InputRefusal::UnknownFunction("internal_guard".to_owned()))
+    );
+    assert_eq!(
+        refused_call(&package, &undeclared),
+        CallFailure::Input(InputRefusal::UnknownFunction("undeclared".to_owned()))
+    );
+    let mut meter = Meter::new(UNLIMITED);
+    assert!(package
+        .call(
+            &QualifiedName::unqualified("one").unwrap(),
+            vec![Value::Integer(Integer::from(1_i64))],
+            &ObjectEnvironment::default(),
+            &mut meter,
+        )
+        .is_ok());
+}

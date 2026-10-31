@@ -306,23 +306,8 @@ impl Lowering<'_> {
                 .map(|(_, key)| MemberTerm::bound("channel", LeafTerm::reference(key.clone())))
                 .ok_or_else(unchecked)
         };
-        // A `related by` clause names a relationship, which is not written
-        // yet ([`ProtocolConstruct::Relationships`](crate::check::refusal::ProtocolConstruct)).
-        let related = || {
-            if checked
-                .slots
-                .related
-                .iter()
-                .any(|related| related.node == node)
-            {
-                return Err(unchecked());
-            }
-            Ok(MemberTerm::binding(
-                "related",
-                BindingValue::Tuple(TupleTerm::new(Vec::new())),
-            ))
-        };
         let entry = checked.slots.entries.get(&node).ok_or_else(unchecked)?;
+        let related = self.related_arguments(controls, node, entry, location)?;
 
         Ok(match control.kind {
             ProtocolNodeKind::Sequence => {
@@ -359,7 +344,7 @@ impl Lowering<'_> {
                     vec![
                         channel()?,
                         binder()?,
-                        related()?,
+                        related,
                         MemberTerm::bound("constraint", constraint),
                     ],
                 )
@@ -372,7 +357,7 @@ impl Lowering<'_> {
                         channel()?,
                         MemberTerm::bound("of", LeafTerm::reference(anchor_of()?)),
                         binder()?,
-                        related()?,
+                        related,
                         MemberTerm::bound("constraint", constraint),
                     ],
                 )
@@ -409,7 +394,7 @@ impl Lowering<'_> {
                             ))),
                         ),
                         binder()?,
-                        related()?,
+                        related,
                         MemberTerm::bound("constraint", constraint),
                     ],
                 )
@@ -421,7 +406,7 @@ impl Lowering<'_> {
                     vec![
                         MemberTerm::bound("of", LeafTerm::reference(anchor_of()?)),
                         binder()?,
-                        related()?,
+                        related,
                         MemberTerm::bound("constraint", constraint),
                     ],
                 )
@@ -434,7 +419,7 @@ impl Lowering<'_> {
                         role(declaration.role.as_ref().map(|role| role.name.as_str()))?,
                         MemberTerm::binding("compensation", empty_group()),
                         binder()?,
-                        related()?,
+                        related,
                         MemberTerm::bound("constraint", constraint),
                     ],
                 )
@@ -786,6 +771,73 @@ impl Lowering<'_> {
             }
         }
         Ok(BindingValue::Group(GroupTerm::references(sorted(nodes))))
+    }
+
+    /// FR-466's relationship records, over the control's readable binders
+    /// and its own payload. Reference-valued ends lower to references, so
+    /// their JCS order is the order of their target's canonical JSON text.
+    fn related_arguments(
+        &mut self,
+        controls: &Controls<'_, '_>,
+        node: ProtocolNodeId,
+        entry: &BTreeSet<usize>,
+        location: &quire_semantic_value::location::Location,
+    ) -> Result<MemberTerm, CheckRefusal> {
+        let unchecked = || fault(location, KeyFault::UncheckedProtocolFact);
+        let mut readable = entry.clone();
+        if let Some(own) = controls.own.get(&node) {
+            readable.insert(own.slot);
+        }
+        let mut records = Vec::new();
+        for related in controls
+            .protocol
+            .checked
+            .slots
+            .related
+            .iter()
+            .filter(|related| related.node == node)
+        {
+            let relationship = controls
+                .protocol
+                .checked
+                .relationships
+                .get(related.relationship)
+                .ok_or_else(unchecked)?;
+            let relationship = self.model_node(&relationship.key, location)?;
+            let from = self.scoped_body(controls, &related.ends[0], &readable, location)?;
+            let to = self.scoped_body(controls, &related.ends[1], &readable, location)?;
+            let canonical = |term: &LeafTerm| {
+                let LeafTerm::Reference { target } = term else {
+                    return Err(unchecked());
+                };
+                let target = target.admitted().ok_or_else(unchecked)?;
+                qsl_foundation::node_wire::node_key_to_text(target).map_err(|error| {
+                    super::super::preimage_refusal(
+                        location,
+                        crate::check::node_key::NodeKeyRefusal::Encode {
+                            reason: error.to_string(),
+                        },
+                    )
+                })
+            };
+            let order = (relationship.clone(), canonical(&from)?, canonical(&to)?);
+            records.push((
+                order,
+                TupleMember::Group(GroupTerm::new(vec![
+                    member("relationship", LeafTerm::reference(relationship)),
+                    member("from", from),
+                    member("to", to),
+                ])),
+            ));
+        }
+        records.sort_by(|left, right| left.0.cmp(&right.0));
+        records.dedup_by(|left, right| left.0 == right.0);
+        Ok(MemberTerm::binding(
+            "related",
+            BindingValue::Tuple(TupleTerm::new(
+                records.into_iter().map(|(_, record)| record).collect(),
+            )),
+        ))
     }
 
     /// `body`, lowered over the binders readable at a control's entry

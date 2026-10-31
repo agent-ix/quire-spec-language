@@ -91,7 +91,7 @@ fn model_document_over(wobble: bool) -> Vec<u8> {
     serde_json::to_vec(&document).unwrap()
 }
 
-fn view() -> EffectiveView {
+pub(crate) fn view() -> EffectiveView {
     view_over(false)
 }
 
@@ -144,7 +144,7 @@ fn declarations_over(
 ) -> (PackageDeclarations, EffectiveView, String) {
     let view = view_over(wobble);
     let selection = view.model_selection();
-    let source = format!("language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\nmodel M = {:?};\nfunction Guard using v(): Boolean pure {{ {guard} }}\nfunction Body using v(): Boolean pure {{ true }}\n{body}\n", selection.identity);
+    let source = format!("language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\nprofile p = \"quire.protocol.finite-global/v1\";\nmodel M = {:?};\nfunction Guard using v(): Boolean pure {{ {guard} }}\nfunction Body using v(): Boolean pure {{ true }}\n{body}\n", selection.identity);
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("test", "sm1", "fixture", "1"),
         "sm1.native",
@@ -546,7 +546,7 @@ fn tc790_all_instances_missing_target_type_refuses_during_assembly() {
     assert_eq!(authored, "M::Missing");
 }
 
-fn objects(
+pub(crate) fn objects(
     graph: &CheckedGraph,
     view: &EffectiveView,
 ) -> (ObjectEnvironment, ObjectReference, ObjectReference) {
@@ -942,6 +942,19 @@ fn an_unbounded_population_has_its_own_node_and_no_maximum() {
     };
     let unbounded = parameter("Population<M::A>");
     let bounded = parameter("Population<M::A>[4]");
+    let set = parameter("Set<M::A>");
+    let unbounded_key = parameter_type_node(&unbounded);
+    let bounded_key = parameter_type_node(&bounded);
+    let set_key = parameter_type_node(&set);
+    assert_ne!(
+        unbounded_key, bounded_key,
+        "the population maximum enters its key"
+    );
+    assert_ne!(
+        unbounded_key, set_key,
+        "an unbounded population is not a set"
+    );
+    assert_ne!(bounded_key, set_key, "a bounded population is not a set");
 
     let node = |graph: &CheckedGraph| {
         let node = graph

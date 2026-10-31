@@ -379,8 +379,8 @@ fn every_unwritten_construct_refuses_the_protocol_naming_its_ticket() {
         (bare("on origin", "", "true"), vec![], ""),
         (
             bare("on origin", "relationship Pipe = M::pipe;", "true"),
-            vec![C::Relationships],
-            "QSL-1141",
+            vec![],
+            "",
         ),
         (
             bare("on origin", "capture start: M::Total = view.total;", "true"),

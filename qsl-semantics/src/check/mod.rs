@@ -2258,6 +2258,24 @@ impl PackageDeclarations {
                     // channel: no `.expect(...)` unwrap of a slot `check`
                     // might not have filled.
                     let checked = staged.into_value();
+                    nodes_used = checked.body.nodes_used;
+                    if let Some(refusal) = layer::typed_equalities(
+                        &checked.body.body,
+                        self.function_selections.get(&index),
+                        scope.types(),
+                        function.spans().map(|spans| &spans.body),
+                    )
+                    .or_else(|| {
+                        layer::typed_equalities(
+                            checked.body.measure.as_ref()?,
+                            self.function_selections.get(&index),
+                            scope.types(),
+                            function.spans().and_then(|spans| spans.measure.as_ref()),
+                        )
+                    }) {
+                        refusals.push(refusal);
+                        continue;
+                    }
                     // ADR-012 §13.5: read this declaration's claims before
                     // `checked` is unpacked below.
                     claims.extend(
@@ -2265,12 +2283,6 @@ impl PackageDeclarations {
                             .into_iter()
                             .map(|claim| claim.owned_by(&function.name)),
                     );
-                    // PR #303 review round 3, finding F1: advance the
-                    // package's running node total from this admitted
-                    // declaration's own final count, so the next
-                    // declaration's `Typer` picks up where this one left
-                    // off instead of restarting at zero.
-                    nodes_used = checked.body.nodes_used;
                     drafts.push((signatures.as_slice()[index].clone(), checked.body, kind));
                 }
                 // NFR-011: a reached stage limit stops checking.
@@ -2334,6 +2346,15 @@ impl PackageDeclarations {
                 Ok(staged) => {
                     let checked = staged.into_value();
                     nodes_used = checked.nodes_used;
+                    if let Some(refusal) = layer::typed_equalities(
+                        &checked.body,
+                        Some(&clause.selection),
+                        scope.types(),
+                        Some(&clause.spans.body),
+                    ) {
+                        refusals.push(refusal);
+                        continue;
+                    }
                     if let (qsl_forms::StateClauseKind::Precondition, Some(operation)) =
                         (clause.kind, &clause.operation)
                     {
@@ -7205,6 +7226,14 @@ fn register_protocol_sites(
                 protocol_site(name, ProtocolSite::Control(&control.path)),
                 declaration.name.span,
             );
+            for end in declaration.related.iter().flat_map(|related| &related.ends) {
+                if let Some(span) = protocol_slots::decision_span(end) {
+                    site_spans.insert(
+                        protocol_site(name, ProtocolSite::Related(&control.path, span)),
+                        end.spans.clone(),
+                    );
+                }
+            }
         }
     }
     for member in &protocol.members {
