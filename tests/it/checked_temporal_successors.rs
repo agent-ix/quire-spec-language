@@ -300,7 +300,8 @@ language "ix:native" edition "1-draft";
 profile v = "quire.model.complete/v1";
 profile t = "quire.temporal.event-position.false-extension/v1";
 model M = "acme/orders";
-temporal Due using t over (value: Int[0,9]) clock "orders" on origin {
+record Counter { level: Int[0, 9]; }
+temporal Due using t over (c: Int[0,9]) clock "orders" on origin {
     always[0,2] count over past[0,3] >= 1
 }
 "#;
