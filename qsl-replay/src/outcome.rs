@@ -2288,6 +2288,42 @@ mod tests {
                 }),
             ),
             (
+                TerminalValue::Inconclusive(InconclusiveCause::ScalarAgrees(
+                    crate::scalar::ScalarAgreement::new(
+                        crate::scalar::ScalarClaim::Function(Box::new(crate::ValueIdentity {
+                            obligation: crate::identity::ObligationIdentity::new(
+                                crate::fixture_node(1),
+                                None,
+                                0,
+                            ),
+                            package_name: "fixture".to_owned(),
+                            function: Some(
+                                QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap(),
+                            ),
+                            source: crate::ReplaySource::Input(Vec::new()),
+                            limits: quire_exact::ScalarLimits {
+                                integer_bits: 1,
+                                decimal_digits: 1,
+                                scale_expansion: 1,
+                                text_input_bytes: 1,
+                                text_scalars: 1,
+                                normalized_scalars: 1,
+                                unit_edges: 1,
+                                value_occurrences: 1,
+                                work_units: 1,
+                                result_units: 1,
+                            },
+                            occurrence_key: None,
+                            supplied: quire_semantic_value::supplied_stop::SuppliedLimits::default(
+                            ),
+                            generated: crate::scalar::ScalarOutcome::OutOfRange,
+                        })),
+                        crate::scalar::ScalarOutcome::OutOfRange,
+                    ),
+                )),
+                json!({"result": "inconclusive", "cause": {"kind": "scalar-agrees"}, "category": "inconclusive"}),
+            ),
+            (
                 TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(parity)),
                 json!({"result": "inconclusive", "cause": {"kind": "replay-parity", "parity": {"reason": "verdicts", "proved": "success", "replayed": "violation"}}, "category": "inconclusive"}),
             ),

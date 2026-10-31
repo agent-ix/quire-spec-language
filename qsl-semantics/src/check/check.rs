@@ -332,8 +332,7 @@ pub struct PackageDeclarations {
     /// The declaring source unit's `RawSourceRef` (FR-001), the reference
     /// its caller named and S0 minted. Its authority and identity are the
     /// unit's owner (ADR-013 O-04, FR-091), carried by every declared
-    /// record, tuple and function node key (FR-092); its revision and digest
-    /// enter no key. The checked graph carries it on for the lock's
+    /// record, tuple and function node key (FR-092). The checked graph carries it on for the lock's
     /// `sources` entry. `check` holds no constant owner.
     pub source: qsl_foundation::source::provenance::RawSourceRef,
     /// The package's name: the package manifest's top-level `name`, required

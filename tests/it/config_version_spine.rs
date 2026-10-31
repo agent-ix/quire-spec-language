@@ -1035,7 +1035,7 @@ fn tc_469_step_4_generation_and_reports_are_deterministic() {
         let report_b = run_clause(request_b).unwrap();
 
         // The full report: exit code, disposition (stage/category/truth/
-        // code via the same summary step 2 uses), source digest
+        // code via the same summary step 2 uses), source identity
         // and usage all agree between the two runs.
         assert_eq!(
             report_a.disposition.category().exit_code(),

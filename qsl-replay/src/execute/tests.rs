@@ -6,7 +6,6 @@ use quire_semantic_value::catalog::Category;
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
-use qsl_foundation::digest::{DigestDomain, DigestRecord};
 use qsl_foundation::{Code, SourceIdentity};
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::intake::package_input;
@@ -2078,15 +2077,12 @@ fn minted_identity(source: &str, function: &str) -> crate::ObligationIdentity {
     )
 }
 
-/// The driver's observation of `generated`, under a fixed content identity.
+/// The driver's generated outcome.
 fn value_claim(generated: ScalarOutcome) -> crate::ValueClaim {
-    crate::ValueClaim {
-        generated,
-        content_identity: DigestRecord::mint(DigestDomain::SourceBytesV1, [9; 32]),
-    }
+    crate::ValueClaim { generated }
 }
 
-/// `replay_value_parity` over `generated` and the fixed content identity.
+/// `replay_value_parity` over `generated`.
 fn replay_generated(
     wire: ReplayRequestWire,
     generated: ScalarOutcome,
@@ -2627,7 +2623,6 @@ mod operator_arm {
             result_range: range(-150, 150),
             limits: UNLIMITED,
             generated,
-            identity: DigestRecord::mint(DigestDomain::Sha256Jcs, [9; 32]),
         }
     }
 
@@ -2762,16 +2757,11 @@ mod operator_arm {
             let OperatorIdentity {
                 obligation: carried,
                 node,
-                identity,
                 operation: named,
                 ..
             } = &**found;
             assert_eq!(*carried, expected);
             assert_eq!(*node, node_of(site(&operation).0));
-            assert_eq!(
-                *identity,
-                DigestRecord::mint(DigestDomain::Sha256Jcs, [9; 32])
-            );
             assert_eq!(named, &sent_operation);
         }
     }
@@ -3094,8 +3084,8 @@ mod operator_arm {
     }
 
     /// FR-357-AC-13: an operator report carries the claim identity, with the
-    /// obligation, node, operator, operands and ranges, result range, limits
-    /// and observation digest, on every outcome: agrees, diverged, generated
+    /// obligation, node, operator, operands and ranges, result range and
+    /// limits, on every outcome: agrees, diverged, generated
     /// fault, refused operand, incomplete and each kind of refusal.
     #[trace("TC-904", "FR-357-AC-13")]
     #[test]
@@ -3167,43 +3157,6 @@ mod operator_arm {
         ] {
             assert_ne!(sent(&base), sent(&other));
         }
-    }
-
-    /// FR-357-AC-14: the observation digest is carry-and-bind: the report
-    /// carries exactly the digest the claim carried, on every outcome, and an
-    /// agreement's claim holds it too. A digest that matches nothing is not
-    /// refused, and claims that differ only in the digest are different
-    /// claims.
-    #[trace("TC-904", "FR-357-AC-14")]
-    #[test]
-    fn tc_904_the_observation_digest_is_carried_unchanged_and_never_recomputed() {
-        let digest = |byte: u8| DigestRecord::mint(DigestDomain::Sha256Jcs, [byte; 32]);
-        let with = |byte: u8, generated: NativeOutcome| {
-            let mut claim = claim(add(41, 1), generated);
-            claim.identity = digest(byte);
-            claim
-        };
-        let agrees = replayed(with(7, completed(42)));
-        assert_eq!(kind(agrees.result()), "agrees");
-        assert_eq!(agrees.claim().identity, digest(7));
-        let OperatorParityResult::Agrees { agreement, .. } = agrees.result() else {
-            panic!("{:?}", agrees.result());
-        };
-        let ScalarClaim::Operator(held) = agreement.claim() else {
-            panic!("an operator claim");
-        };
-        assert_eq!(held.identity, digest(7));
-        for (byte, native, expected_kind) in [
-            (0, completed(43), "diverged"),
-            (255, NativeOutcome::ExecutionFault, "generated fault"),
-            (1, completed(42), "agrees"),
-        ] {
-            let report = replayed(with(byte, native));
-            assert_eq!(kind(report.result()), expected_kind);
-            assert_eq!(report.claim().identity, digest(byte));
-        }
-        let other = replayed(with(8, completed(42)));
-        assert_ne!(agrees.claim(), other.claim());
     }
 
     /// FR-357-AC-16: a request whose obligation identity is not the

@@ -1756,6 +1756,37 @@ mod tests {
         }
     }
 
+    fn function_claim(assignments: Vec<CanonicalAssignment>) -> ScalarClaim {
+        ScalarClaim::Function(Box::new(crate::ValueIdentity {
+            obligation: crate::ObligationIdentity::new(crate::fixture_node(1), None, 0),
+            package_name: "fixture".to_owned(),
+            function: Some(
+                crate::QualifiedName::new(vec![quire_exact::Identifier::new("f").unwrap()])
+                    .unwrap(),
+            ),
+            source: crate::ReplaySource::Input(assignments),
+            limits: quire_exact::ScalarLimits {
+                integer_bits: 1,
+                decimal_digits: 1,
+                scale_expansion: 1,
+                text_input_bytes: 1,
+                text_scalars: 1,
+                normalized_scalars: 1,
+                unit_edges: 1,
+                value_occurrences: 1,
+                work_units: 1,
+                result_units: 1,
+            },
+            occurrence_key: None,
+            supplied: quire_semantic_value::supplied_stop::SuppliedLimits::default(),
+            generated: ScalarOutcome::OutOfRange,
+        }))
+    }
+
+    fn agreement() -> ScalarAgreement {
+        ScalarAgreement::new(function_claim(Vec::new()), ScalarOutcome::OutOfRange)
+    }
+
     fn parity_cause() -> DisagreementCause {
         DisagreementCause::Verdicts {
             proved: Verdict::from_category(Category::Violation),

@@ -242,7 +242,6 @@ impl Unit {
             obligation_kind: "bounded_shadow".to_owned(),
             harness_bounds,
             limits: UNLIMITED,
-            content_identity: DigestRecord::mint(DigestDomain::Sha256Jcs, [9; 32]),
         }
     }
 
