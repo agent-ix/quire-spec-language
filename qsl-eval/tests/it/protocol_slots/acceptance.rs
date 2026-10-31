@@ -365,16 +365,13 @@ fn observation(
     )
 }
 
-#[test]
-#[trace("TC-1070", "FR-390-AC-1")]
-fn activation_capture_and_both_related_ends_use_the_supplied_observation() {
-    let (package, view) = fixture_with_view();
-    let emission = qsl_package::emit_checked(&package).expect("the complete E/L package emits");
+fn assert_reader_admits(package: &CheckedPackage) {
+    let emission = qsl_package::emit_checked(package).expect("the complete E/L package emits");
     let bytes = serde_json::to_vec(&document()).unwrap();
     let input = qsl_semantics::model::intake::package_input([bytes.as_slice()]).unwrap();
     let mut admitted = qsl_package::AdmittedPackages::default();
     qsl_package::read_import_view(
-        &package,
+        package,
         &emission,
         qsl_semantics::library::LibraryName::new(package.emitted_package_name().unwrap()).unwrap(),
         &input,
@@ -384,6 +381,13 @@ fn activation_capture_and_both_related_ends_use_the_supplied_observation() {
     .expect(
         "the actual contract reader admits the emitted related records before any slot evaluates",
     );
+}
+
+#[test]
+#[trace("TC-1070", "FR-390-AC-1")]
+fn activation_capture_and_both_related_ends_use_the_supplied_observation() {
+    let (package, view) = fixture_with_view();
+    assert_reader_admits(&package);
     let (observation, reference) = observation(&package, &view);
     let mut meter = Meter::new(UNLIMITED);
     let tick = record(
@@ -440,6 +444,68 @@ fn activation_capture_and_both_related_ends_use_the_supplied_observation() {
             "{member} returns the supplied endpoint"
         );
     }
+}
+
+#[test]
+#[trace("TC-1070", "FR-390-AC-1", "FR-390-AC-4")]
+fn related_indexes_follow_the_emitted_record_order() {
+    let source = SOURCE.replace("protocol Pipeline using P over (view: M::Node) on origin {", "protocol Pipeline using P over (view: M::Node) on origin {\n capture peer: M::Node = view;")
+        .replace("related by Owns (view, view)", "related by Owns (view, peer) related by Owns (peer, view) related by Owns (peer, view)");
+    let (package, view) = fixture_from_source(&source);
+    assert_reader_admits(&package);
+    let (mut observation, n5) = observation(&package, &view);
+    let n9 = ObjectReference::new(
+        n5.universe().clone(),
+        n5.object_type().clone(),
+        ObjectId::new("n9").unwrap(),
+    );
+    observation.environment = ObjectEnvironment::new(
+        ObjectClosure::new(
+            package.graph().scope().types(),
+            [
+                (n5.clone(), vec![("total", FieldValue::Present(int(5)))]),
+                (n9.clone(), vec![("total", FieldValue::Present(int(9)))]),
+            ],
+            &[],
+        )
+        .unwrap(),
+    )
+    .with_references(vec![n5.clone(), n9.clone()]);
+    for (index, member, name, reference) in [
+        (0, "related.from", "peer", &n9),
+        (0, "related.to", "view", &n5),
+        (1, "related.from", "view", &n5),
+        (1, "related.to", "peer", &n9),
+    ] {
+        let value = completed(
+            package
+                .evaluate_protocol_slot(
+                    &slot(&package, "Pipeline", "Got", member, Some(index)),
+                    &supply(
+                        &package,
+                        "Pipeline",
+                        vec![(name, Value::Reference(reference.clone()))],
+                        Some(&observation),
+                    ),
+                    &mut Meter::new(UNLIMITED),
+                )
+                .unwrap(),
+        );
+        assert!(
+            matches!(value, Value::Reference(actual) if actual == *reference),
+            "{member}[{index}] follows the canonical related record"
+        );
+    }
+    assert_refused(
+        &package,
+        &slot(&package, "Pipeline", "Got", "related.from", Some(2)),
+        &supply(&package, "Pipeline", vec![], None),
+        CatalogCode::new("missing_declaration", "missing-name"),
+        CallAdmissionLocus::Member {
+            name: "related.from".to_owned(),
+            index: Some(2),
+        },
+    );
 }
 
 const COUNTERS: [LimitKind; 10] = [

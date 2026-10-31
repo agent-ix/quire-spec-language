@@ -3,8 +3,9 @@
 
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{
-    CaptureOwner, CheckedActivation, CheckedBody, CheckedLifetime, CheckedOrdering,
-    CheckedProtocol, CheckedRetry, CheckedSlots, ProtocolNodeId,
+    BindingValue, BodyTerm, CaptureOwner, CheckedActivation, CheckedBody, CheckedLifetime,
+    CheckedOrdering, CheckedProtocol, CheckedRetry, CheckedSlots, GroupMember, LeafTerm,
+    MemberTerm, ProtocolNodeId, TupleMember,
 };
 use quire_eval::{CallAdmissionFailure, CallAdmissionLocus, CallAdmissionRecord, CallFailure};
 use quire_exact::{NodeKey, ValueType};
@@ -272,7 +273,7 @@ fn compensation_retry(compensation: &CheckedRetry) -> Vec<(String, ValueType)> {
 /// decoded from arbitrary text.
 #[ix_trace_rs::string_edge]
 fn run_body<'a>(
-    _package: &'a CheckedPackage,
+    package: &'a CheckedPackage,
     protocol: &'a CheckedProtocol,
     node: ProtocolNodeId,
     member: &str,
@@ -360,28 +361,63 @@ fn run_body<'a>(
                 .body,
             slots,
         )),
-        ("send" | "receive" | "attempt" | "effect" | "event", "related.from") => Some((
-            protocol
+        ("send" | "receive" | "attempt" | "effect" | "event", "related.from" | "related.to") => {
+            // The emitted records are canonically sorted and deduplicated.
+            // Select their checked expression identity before locating its
+            // executable body; source declaration order is not a slot index.
+            let keys = package.graph().protocol_node_keys(&protocol.name)?;
+            let control = package
+                .graph()
+                .semantic_graph()
+                .node(keys.nodes.get(&node)?.clone())?;
+            let BodyTerm::Application(application) = control.body() else {
+                return None;
+            };
+            let records = application
+                .arguments
+                .iter()
+                .find_map(|argument| match argument {
+                    MemberTerm::Binding(binding) if binding.name == "related" => {
+                        match &binding.value {
+                            BindingValue::Tuple(records) => Some(records),
+                            _ => None,
+                        }
+                    }
+                    _ => None,
+                })?;
+            let TupleMember::Group(record) = records.members.get(index?)? else {
+                return None;
+            };
+            let end = if member == "related.from" {
+                "from"
+            } else {
+                "to"
+            };
+            let target = record.members.iter().find_map(|entry| match entry {
+                GroupMember::Binding(binding) if binding.name == end => match &binding.value {
+                    LeafTerm::Reference { target } => target.admitted(),
+                    _ => None,
+                },
+                _ => None,
+            })?;
+            let body = protocol
                 .slots
                 .related
                 .iter()
                 .filter(|related| related.node == node)
-                .nth(index?)?
-                .ends
-                .first()?,
-            slots,
-        )),
-        ("send" | "receive" | "attempt" | "effect" | "event", "related.to") => Some((
-            protocol
-                .slots
-                .related
-                .iter()
-                .filter(|related| related.node == node)
-                .nth(index?)?
-                .ends
-                .get(1)?,
-            slots,
-        )),
+                .flat_map(|related| &related.ends)
+                .find(|body| {
+                    package
+                        .graph()
+                        .occurrences()
+                        .any(|(key, origin, location)| {
+                            key == *target
+                                && origin.role().as_str() == "expression"
+                                && location == body.root().location()
+                        })
+                })?;
+            Some((body, slots))
+        }
         _ => None,
     }
 }
