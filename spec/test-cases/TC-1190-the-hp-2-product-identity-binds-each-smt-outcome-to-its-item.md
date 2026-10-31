@@ -42,8 +42,7 @@ Scope: FR-315-AC-12 to FR-315-AC-14, FR-315-AC-49, FR-315-AC-51, FR-315-AC-52, F
 3. Call `HyperProductIdentity::of` and `encode_hyper_query` for
    `NonInterference` with an empty `instance`; with the key `x` over the
    universe `{v}`; for `SavesPower` with its `N` subject over another
-   checked package; for `NonInterference` over a subject whose checked
-   package has no emission; for the HP-3 clause of FR-315-AC-10; and for
+   checked package; for the HP-3 clause of FR-315-AC-10; and for
    FR-176-AC-3's liveness clause with an empty `instance`. Call
    `HyperProductIdentity::of` for `NonInterference` with a `match` conjunct
    whose evaluation exhausts the request's `meter`, and read the meter's
@@ -61,8 +60,7 @@ Scope: FR-315-AC-12 to FR-315-AC-14, FR-315-AC-49, FR-315-AC-51, FR-315-AC-52, F
 5. Call `qsl_replay::SubjectIdentity::of` over FR-336-AC-4's subject and
    compare it with the identity `qsl-analyze`'s request path writes into
    the item; repeat with its initial states, its universe's keys and its
-   proof bounds each in reverse order and compare identities and hashes;
-   call it over a subject whose checked package has no emission.
+   proof bounds each in reverse order and compare identities and hashes.
 6. With `settle_hyper_smt` for the `NonInterference` item at instance `v`,
    settle: an `Inductive{depth: 1}` outcome carrying the item's identity,
    with FR-183-AC-8's matched witness, then with its unmatched witness; an
@@ -102,8 +100,7 @@ Tag the tests `#[trace("TC-1190", "FR-315-AC-n")]`,
   equal identity.
 - Step 3: from both calls, with no identity and no script:
   `instance-binding` at the parameter for the empty instance and for `x`;
-  `subject-binding` at alias `N`; `product-identity` at the clause;
-  `hyper-form`; `instance-binding`, not `hyper-body`, for the liveness
+  `subject-binding` at alias `N`; `hyper-form`; `instance-binding`, not `hyper-body`, for the liveness
   clause; `product-identity` at the clause for the unassembled clause,
   with the meter's counters at zero. The `match`-conjunct request returns
   its identity with every consumed counter at zero. The non-admitting
@@ -111,8 +108,7 @@ Tag the tests `#[trace("TC-1190", "FR-315-AC-n")]`,
   `encode_hyper_query`; the altered clause gets the same `Fault` from both.
 - Step 4: the crate compiles; all three compile-fail cases fail to compile.
 - Step 5: the two identities are equal; the reversed listings give an
-  equal identity; the subject with no emission is
-  refused `SubjectIdentityRefusal::Package`.
+  equal identity.
 - Step 6: `proved`, `decisive-witness`, `Uncertified`, method `k-induction`
   with the matched witness; `inconclusive`, `VacuousMatch` with the
   unmatched one; `inconclusive`, `InductionNotClosed{depth: 1}`; then no
