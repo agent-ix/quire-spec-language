@@ -281,17 +281,29 @@ impl DeadlineGuard {
         let worker = std::thread::Builder::new()
             .name("qsl-analyze-deadline".to_owned())
             .spawn(move || {
-                if matches!(
-                    wait_for_finish.recv_timeout(std::time::Duration::from_millis(deadline_ms)),
-                    Err(std::sync::mpsc::RecvTimeoutError::Timeout)
-                ) {
-                    cancel.cancel(CancelCause::Deadline);
-                }
+                wait_for_deadline(
+                    &cancel,
+                    wait_for_finish,
+                    std::time::Duration::from_millis(deadline_ms),
+                );
             })?;
         Ok(Some(Self {
             finished,
             worker: Some(worker),
         }))
+    }
+}
+
+fn wait_for_deadline(
+    cancel: &Cancel,
+    wait_for_finish: std::sync::mpsc::Receiver<()>,
+    timeout: std::time::Duration,
+) {
+    if matches!(
+        wait_for_finish.recv_timeout(timeout),
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+    ) {
+        cancel.cancel(CancelCause::Deadline);
     }
 }
 
@@ -1004,28 +1016,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn deadline_guard_cancels_when_the_wall_clock_deadline_elapses() {
+    fn deadline_guard_cancels_when_its_wait_times_out() {
         let cancel = Cancel::new();
-        let deadline = DeadlineGuard::start(&cancel, Some(1))
-            .expect("the deadline watcher starts")
-            .expect("a finite deadline has a watcher");
+        let (_finished, wait_for_finish) = std::sync::mpsc::channel();
 
-        std::thread::sleep(std::time::Duration::from_millis(25));
-        drop(deadline);
+        wait_for_deadline(&cancel, wait_for_finish, std::time::Duration::ZERO);
 
         assert_eq!(cancel.cause(), Some(CancelCause::Deadline));
     }
 
     #[test]
-    fn deadline_guard_stops_its_watcher_when_analysis_finishes_early() {
+    fn deadline_guard_does_not_cancel_when_analysis_finishes_before_timeout() {
         let cancel = Cancel::new();
-        drop(
-            DeadlineGuard::start(&cancel, Some(20))
-                .expect("the deadline watcher starts")
-                .expect("a finite deadline has a watcher"),
-        );
+        let (finished, wait_for_finish) = std::sync::mpsc::channel();
+        finished.send(()).expect("the request finished");
 
-        std::thread::sleep(std::time::Duration::from_millis(25));
+        wait_for_deadline(&cancel, wait_for_finish, std::time::Duration::from_secs(1));
 
         assert_eq!(cancel.cause(), None);
     }

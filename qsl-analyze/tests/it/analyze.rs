@@ -676,9 +676,8 @@ fn provider_entry_refuses_undeclared_population_before_running_items_in_input_or
     assert_eq!(engine_charges.load(Ordering::Relaxed), 0);
 }
 
-/// FR-281: a zero-millisecond wall-clock deadline cancels the request before
-/// its engine runs, producing the typed incomplete deadline outcome.
-#[trace("FR-281")]
+/// A zero-millisecond wall-clock deadline cancels the request before its
+/// engine runs, producing the typed incomplete deadline outcome.
 #[test]
 fn provider_entry_settles_a_zero_millisecond_deadline_as_incomplete() {
     use crate::prob_world::{self, World};

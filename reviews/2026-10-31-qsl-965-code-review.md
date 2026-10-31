@@ -14,11 +14,11 @@ review_set: subset
 
 ## Summary
 
-Independently reviewed the current PR diff, its prior review artifact, the FR-280/FR-281 contracts and the changed Rust tests. The provider path still accepts `AnalyzeLimits.deadline_ms` without enforcing it, so a finite request deadline can elapse while the analysis continues.
+Disposition pass 1 confirms that all four original findings are fixed on the reviewed head. The deadline tests introduce a new low severity issue: they use `thread::sleep` as a synchronization oracle, contrary to the Rust testing guidance.
 
 ## Verdict
 
-**CONDITIONAL** — one medium finding remains. Formatting, Clippy and the two focused provider tests pass; `cargo deny check` fails on an unchanged AGPL dependency allowance, and the repository-wide matrix did not complete.
+**CONDITIONAL** — all original findings are fixed, but one new test-quality finding remains open.
 
 ## Findings
 
@@ -36,20 +36,26 @@ Independently reviewed the current PR diff, its prior review artifact, the FR-28
 | FND-001 | fixed | The provider maps `AdmissionFailure` directly to backend-free terminal records and preserves the typed catalog code. |
 | FND-002 | fixed | The Service test now replays every retained witness and asserts `Reproduced`. |
 | FND-003 | fixed | `AnalyzeRequest` carries routed EN-4 claim data; `analyze` constructs the statistical request from its one admitted `SubjectBinding`. |
+| FND-004 | fixed | `analyze` starts a `DeadlineGuard` from `limits.deadline_ms`; the guard cancels with `CancelCause::Deadline`, and a focused integration test verifies the deadline settlement. |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | low | The deadline-guard tests use `std::thread::sleep` as a synchronization oracle, making the cancellation assertions timing-sensitive and violating the Rust testing guidance. | qsl-analyze/src/analyze.rs:1013,1028 |
 
 ## Coverage
 
 Plan completion: not assessed.
 
-Scope examined: FR-280-AC-1 through AC-7, FR-281's `AnalyzeLimits` input and cancellation/limit behavior, the complete PR diff, the new provider path, settlement conversion, touched test modules, and repository Rust guidance. Optional semantic review was skipped. `quoin gap-analysis --help` failed with `command gap-analysis not found` under quoin 0.29.1. `quoin matrix --repo . --json` produced no output and was interrupted after more than 90 seconds, so repository-wide matrix, reverse-gap and stub conclusions are unavailable; the targeted manual acceptance check is recorded separately.
+Rechecked findings against fix commits `a8858796c`, `9c17d3d66`, and `255746a05` at head `255746a05f86bf63c9c80c9200111057d1b016cb`. FND-001 through FND-004 are fixed. FND-005 is new and remains open. `codex exec review` remains unavailable because its in-process app-server client fails to initialize (`Operation not permitted`); static review used the installed code-review, rust-review, and rust-style checklists.
 
-Focused evidence at the reviewed head:
+Disposition checks on the updated head:
 
 - `cargo fmt --all -- --check` — passed.
 - `cargo clippy -p qsl-analyze -p qsl-replay --all-targets -- -D warnings` — passed.
-- `cargo test -p qsl-analyze --test it analyze_and_the_provider_entry_settle_one_record_for_one_en4_item` — passed.
-- `cargo test -p qsl-analyze --test it provider_entry_settles_an_incomplete_binding_per_item` — passed.
-- `cargo deny check` — failed on `AGPL-3.0-or-later` not being explicitly allowed for unchanged `agent-ix-semantic-ir` / `agent-ix-extraction-frontend` dependencies; this PR changes no manifests or lockfile.
-- No CI workflow files changed.
+- `cargo test -p qsl-analyze --lib deadline_guard` — 2 passed.
+- `cargo test -p qsl-analyze --test it provider_entry_refuses_undeclared_population_before_running_items_in_input_order` — passed.
+- `cargo test -p qsl-analyze --test it provider_entry_settles_a_zero_millisecond_deadline_as_incomplete` — passed.
 
-The documented `codex exec review --base origin/main` method could not initialize its in-process app-server client (`Operation not permitted`); this review was completed manually against the code-review and Rust-review checklists.
+Earlier review limitations still apply: quoin 0.29.1 does not provide `gap-analysis`; the repository-wide matrix did not complete; `cargo deny check` fails on unchanged AGPL dependency allowances.
