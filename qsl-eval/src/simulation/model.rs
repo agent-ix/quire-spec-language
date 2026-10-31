@@ -456,6 +456,9 @@ pub struct ModelSystem<'a> {
     footprints: footprints::FootprintCache,
     /// [`Self::universe_declaring`] per field, computed once.
     declaring: std::sync::Mutex<BTreeMap<DeclarationKey, Option<Vec<ObjectReference>>>>,
+    /// The attempts' applications already computed, by observed state and
+    /// attempt: see [`application::AppliedMemo`].
+    applied: application::AppliedMemo,
     /// FR-185's random parameters and rewards, as FR-187 reads them.
     probabilistic: probabilistic::Tables,
     /// QSpec FR-154's unit bounds on fields, each an invariant of every
@@ -886,6 +889,7 @@ impl<'a> ModelSystem<'a> {
             meter: request.meter,
             footprints: footprints::FootprintCache::default(),
             declaring: std::sync::Mutex::default(),
+            applied: application::AppliedMemo::default(),
             probabilistic: probabilistic::Tables::of(graph.probabilistic_model())?,
             member_bounds,
             record_orders,

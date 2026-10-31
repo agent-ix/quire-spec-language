@@ -58,6 +58,11 @@ impl Budget {
             Ok(())
         }
     }
+    /// The candidates counted so far.
+    pub(super) const fn used(&self) -> u64 {
+        self.used
+    }
+
     /// Count `count` candidates at once.
     ///
     /// # Errors
@@ -198,6 +203,7 @@ pub(super) struct FindingCase {
 /// One successor of one application (FR-120 "Applications and transition
 /// identities"): its transition identity, the state it reaches, and the
 /// receiver, argument vector and result the application chose.
+#[derive(Clone)]
 pub(crate) struct Applied {
     /// The FR-120 transition identity.
     pub(crate) transition: ModelTransition,

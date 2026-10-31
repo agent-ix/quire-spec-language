@@ -1465,13 +1465,18 @@ fn frame_objects(objects: &BTreeMap<String, StateObject>) -> Vec<FrameObject<'_,
 
 /// Whether every reference of `candidate` names one of `references`.
 fn is_closed(candidate: &ModelState, references: &[ObjectReference]) -> bool {
-    let present: BTreeSet<&ObjectReference> = references.iter().collect();
     let mut named = Vec::new();
     for object in candidate.populations.values().flat_map(BTreeMap::values) {
         for value in object.fields.values() {
             collect_references(value, &mut named);
         }
     }
+    // Most candidates name no object: the set of present references is built
+    // only when one does.
+    if named.is_empty() {
+        return true;
+    }
+    let present: BTreeSet<&ObjectReference> = references.iter().collect();
     named
         .into_iter()
         .all(|reference| present.contains(reference))

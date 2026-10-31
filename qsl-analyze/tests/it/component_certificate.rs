@@ -669,7 +669,9 @@ fn a_certificate_lists_its_states_and_bindings_in_canonical_order() {
 /// guarded by `c.versionNumber = guard`, read through the production letters.
 fn guarded_world(fairness: &str, formula: &str, guard: &str) -> World {
     use crate::example_units::{CYCLES, OVER};
-    let domain = crate::units::Domain::config_version();
+    // The unit reaches versions 0 to 2; the guards name 1 and 7, so the
+    // domain is narrowed to `Int[0, 7]`, the smallest that holds the 7.
+    let domain = crate::units::Domain::config_version().with_versions_up_to(7);
     let clause = format!(
         "temporal C using t0 over ({OVER}) clock \"model-steps\" \
          on each (q: Config::ConfigVersion) when ({guard}) {{ {fairness} {formula} }}\n"

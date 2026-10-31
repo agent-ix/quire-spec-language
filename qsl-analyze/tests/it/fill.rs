@@ -553,6 +553,8 @@ fn compiled_with(
 /// each successor's identity and index.
 pub(crate) struct Reached<M: MemoryModel = Sc> {
     pub(crate) state: ProtocolState<M>,
+    /// The state's canonical key bytes.
+    pub(crate) key: Vec<u8>,
     pub(crate) steps: Vec<(ProtocolTransition, usize)>,
 }
 
@@ -578,7 +580,7 @@ pub(crate) fn reachable<M: MemoryModel>(system: &ProtocolSystem<'_, M>) -> Vec<R
                      reached: &mut Vec<Reached<M>>,
                      queue: &mut std::collections::VecDeque<usize>|
      -> usize {
-        let (_, key) = SubjectSystem::state_key(system, &state).expect("a key");
+        let (bytes, key) = SubjectSystem::state_key(system, &state).expect("a key");
         if let Some(index) = known.get(&key) {
             return *index;
         }
@@ -586,6 +588,7 @@ pub(crate) fn reachable<M: MemoryModel>(system: &ProtocolSystem<'_, M>) -> Vec<R
         known.insert(key, index);
         reached.push(Reached {
             state,
+            key: bytes,
             steps: Vec::new(),
         });
         queue.push_back(index);
