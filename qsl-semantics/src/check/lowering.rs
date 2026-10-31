@@ -29,7 +29,8 @@
 //! `clause` binding, and quantity type nodes. `check` records each model
 //! declaration node it keys in the model correspondence.
 
-use std::collections::{btree_map, BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{hash_map, BTreeMap, BTreeSet, HashMap, HashSet};
+use std::fmt;
 use std::ops::ControlFlow;
 
 use quire_exact::{
@@ -291,9 +292,33 @@ impl SemanticNode {
 const FUNCTION_PARAMETERS: &str = "parameters";
 
 /// The checked semantic graph: every lowered node by key.
-#[derive(Clone, Debug, Default)]
+///
+/// Nodes are held by hash, so a lookup costs a key's hash and, for the
+/// same stored key, a pointer comparison, whatever its depth. Lowering adds
+/// nodes unranked and ranks the ascending key order [`Self::nodes`] reads
+/// once, when it finishes ([`super::key_order`]): a deep key chain is never
+/// compared position by position.
+#[derive(Clone, Default)]
 pub struct SemanticGraph {
-    nodes: BTreeMap<NodeKey, SemanticNode>,
+    nodes: HashMap<NodeKey, SemanticNode>,
+    /// `nodes`' keys ascending, once ranked.
+    order: Vec<NodeKey>,
+}
+
+impl fmt::Debug for SemanticGraph {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        struct Ordered<'g>(&'g SemanticGraph);
+        impl fmt::Debug for Ordered<'_> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.debug_map()
+                    .entries(self.0.nodes().map(|node| (&node.key, node)))
+                    .finish()
+            }
+        }
+        f.debug_struct("SemanticGraph")
+            .field("nodes", &Ordered(self))
+            .finish()
+    }
 }
 
 impl SemanticGraph {
@@ -304,26 +329,42 @@ impl SemanticGraph {
 
     /// Every node, ascending by key.
     pub fn nodes(&self) -> impl Iterator<Item = &SemanticNode> {
-        self.nodes.values()
+        self.order.iter().filter_map(|key| self.nodes.get(key))
+    }
+
+    /// Rank every node's key: lowering's nodes enter unranked.
+    fn rank(&mut self) {
+        self.order =
+            super::key_order::sorted_by_key(self.nodes.keys().cloned().collect(), |key| key);
+    }
+
+    /// Add `node` to a ranked graph, in its place in key order.
+    fn insert_ranked(&mut self, node: SemanticNode) {
+        if let Err(at) = self.order.binary_search(&node.key) {
+            self.order.insert(at, node.key.clone());
+        }
+        self.nodes.insert(node.key.clone(), node);
     }
 
     /// Add a node finalized after the main lowering pass, provided a node
     /// with the same content-addressed identity is absent or identical.
     pub(crate) fn insert_finalized(&mut self, node: SemanticNode) -> Result<(), ()> {
-        match self.nodes.entry(node.key.clone()) {
-            btree_map::Entry::Vacant(slot) => {
-                slot.insert(node);
+        match self.nodes.get(&node.key) {
+            None => {
+                self.insert_ranked(node);
                 Ok(())
             }
-            btree_map::Entry::Occupied(slot) if slot.get().content == node.content => Ok(()),
-            btree_map::Entry::Occupied(_) => Err(()),
+            Some(held) if held.content == node.content => Ok(()),
+            Some(_) => Err(()),
         }
     }
 
     /// Take out the node keyed `key`, as a re-key leaves the key it had.
     #[cfg(any(test, feature = "test-support"))]
     pub fn remove(&mut self, key: NodeKey) -> Option<SemanticNode> {
-        self.nodes.remove(&key)
+        let node = self.nodes.remove(&key)?;
+        self.order.retain(|ranked| *ranked != key);
+        Some(node)
     }
 
     /// Add an enclosing narrow node for a claims-keying fixture. The cloned
@@ -334,8 +375,7 @@ impl SemanticGraph {
     pub(crate) fn with_test_narrow_over(&self, key: NodeKey, operand: NodeKey) -> Self {
         let mut graph = self.clone();
         let mut enclosing = self
-            .nodes
-            .values()
+            .nodes()
             .find(|node| {
                 matches!(
                     &node.content.body,
@@ -355,7 +395,7 @@ impl SemanticGraph {
                 target: operand.into(),
             },
         )];
-        graph.nodes.insert(key, enclosing);
+        graph.insert_ranked(enclosing);
         graph
     }
 }
@@ -522,7 +562,7 @@ pub(crate) struct Lowering<'a> {
     node_index: HashMap<NodeContent, NodeKey>,
     /// The next unused ordinal of each structural path, keyed by the
     /// path's ordinal-0 identity.
-    ordinals: BTreeMap<NodeKey, u64>,
+    ordinals: HashMap<NodeKey, u64>,
     /// The checked unit's own source: the owner of every node it declares.
     owner: SourceOwner,
     models: &'a [AdmittedModel],
@@ -538,7 +578,7 @@ pub(crate) struct Lowering<'a> {
     /// Each lowered function's node, by function index.
     functions: Vec<Option<NodeRef>>,
     /// Each declared composite's node, by its declaration key.
-    composites: BTreeMap<NodeKey, NodeRef>,
+    composites: HashMap<NodeKey, NodeRef>,
     /// The model record value type or event type each model-owned composite
     /// declaration key stands for (FR-359 item 9), built on first use.
     /// The `functions` slots and `composites` entries written since the
@@ -552,10 +592,10 @@ pub(crate) struct Lowering<'a> {
     /// [`Self::composites_in_progress`] as a set: a chain of composites
     /// each reaching the next is as deep as it is long, so membership is
     /// a lookup, never a scan of the stack.
-    composites_open: BTreeSet<NodeKey>,
+    composites_open: HashSet<NodeKey>,
     /// The placeholder naming each composite in progress that reached
     /// itself.
-    composite_placeholders: BTreeMap<NodeKey, NodeRef>,
+    composite_placeholders: HashMap<NodeKey, NodeRef>,
     /// Whether a recursive function group is being lowered.
     functions_open: bool,
     /// The `clock_place` template node of each clock place of the unit's
@@ -592,7 +632,7 @@ pub(crate) struct Lowering<'a> {
     node_budget: u64,
     /// Whether a text type is reachable from each composite a text-leaf
     /// walk asked about.
-    text_reach: BTreeMap<NodeKey, bool>,
+    text_reach: HashMap<NodeKey, bool>,
     /// FR-104: the `Origin` recording one occurrence of a named operation's
     /// `frame` node, by the operation's own identity (its declaring type
     /// and name), not by the frame node's key. Two operations whose frame
@@ -1126,7 +1166,7 @@ struct LeafWalk<'w> {
     /// unit, and each leaf charges its materialized key bytes.
     meter: &'w mut Meter,
     /// Whether a text type is reachable from each composite asked so far.
-    reach: &'w mut BTreeMap<NodeKey, bool>,
+    reach: &'w mut HashMap<NodeKey, bool>,
     /// The path from the compared type.
     stack: Vec<StackEntry<'w>>,
     /// Every path prefix a leaf was appended under, shared between leaves.
@@ -1137,7 +1177,7 @@ struct LeafWalk<'w> {
     /// The open composites, in the order the walk entered them.
     open: Vec<NodeKey>,
     /// The path length each open composite was entered at.
-    entered_at: BTreeMap<NodeKey, usize>,
+    entered_at: HashMap<NodeKey, usize>,
     /// The node-limit units left.
     budget: u64,
     /// The node limit, which a refusal names.
@@ -1559,7 +1599,7 @@ impl<'a> Lowering<'a> {
         Self {
             package_name: package_name.to_owned(),
             node_index: HashMap::new(),
-            ordinals: BTreeMap::new(),
+            ordinals: HashMap::new(),
             scope,
             owner: owner.clone(),
             models,
@@ -1569,12 +1609,12 @@ impl<'a> Lowering<'a> {
             graph: SemanticGraph::default(),
             occurrences,
             functions: vec![None; function_count],
-            composites: BTreeMap::new(),
+            composites: HashMap::new(),
             unsettled_functions: Vec::new(),
             unsettled_composites: Vec::new(),
             composites_in_progress: Vec::new(),
-            composites_open: BTreeSet::new(),
-            composite_placeholders: BTreeMap::new(),
+            composites_open: HashSet::new(),
+            composite_placeholders: HashMap::new(),
             functions_open: false,
             timed_places: Vec::new(),
             placeholders: BTreeMap::new(),
@@ -1589,7 +1629,7 @@ impl<'a> Lowering<'a> {
             meter,
             node_limit: u64::MAX,
             node_budget: u64::MAX,
-            text_reach: BTreeMap::new(),
+            text_reach: HashMap::new(),
             frame_origins: BTreeMap::new(),
             population_nodes: BTreeSet::new(),
             bound_sites: BTreeSet::new(),
@@ -1622,7 +1662,8 @@ impl<'a> Lowering<'a> {
     /// The finished graph, its model correspondence and each
     /// function's key. Every node that no region denotes gets its one
     /// `generated` occurrence (FR-093), at `root`.
-    pub(crate) fn finish(self, root: &Location) -> Lowered {
+    pub(crate) fn finish(mut self, root: &Location) -> Lowered {
+        self.graph.rank();
         let enclosing = enclosing_declarations(&self.graph, self.occurrences);
         for key in self.graph.nodes.keys() {
             if !self.occurrences.has(key.clone()) {
@@ -1640,9 +1681,11 @@ impl<'a> Lowering<'a> {
                     .map(|key| ((key.clone(), site.binder.clone()), *span))
             })
             .collect();
+        // Only each node's own occurrences' order decides which one a site's
+        // span goes to, so the nodes may come in any order.
         let parameter_spans = self
             .occurrences
-            .iter()
+            .iter_any_order()
             .filter_map(|(key, origin, location)| {
                 // The declaration occurrence precedes reads of its parameter;
                 // removing the site assigns its span to that one occurrence only.
@@ -1662,13 +1705,18 @@ impl<'a> Lowering<'a> {
             binders: self.binders,
             parameter_spans,
             population_nodes: self.population_nodes,
-            composites: self
-                .composites
-                .into_iter()
-                .filter_map(|(declaration, node)| {
-                    node.admitted().cloned().map(|node| (declaration, node))
-                })
-                .collect(),
+            // Ranked first, so collecting compares each key with one neighbour.
+            composites: super::key_order::sorted_by_key(
+                self.composites
+                    .into_iter()
+                    .filter_map(|(declaration, node)| {
+                        node.admitted().cloned().map(|node| (declaration, node))
+                    })
+                    .collect(),
+                |(declaration, _)| declaration,
+            )
+            .into_iter()
+            .collect(),
             protocol_members: self.protocol_members,
         }
     }
@@ -1853,7 +1901,7 @@ impl<'a> Lowering<'a> {
             return Ok(NodeRef::Pending(handle));
         }
         let key = self.admitted_node_key(location, &content)?;
-        if let btree_map::Entry::Vacant(slot) = self.graph.nodes.entry(key.clone()) {
+        if let hash_map::Entry::Vacant(slot) = self.graph.nodes.entry(key.clone()) {
             slot.insert(SemanticNode {
                 key: key.clone(),
                 recursion: None,
@@ -2642,7 +2690,7 @@ impl<'a> Lowering<'a> {
     ) -> Result<bool, CheckRefusal> {
         self.charge(1, location)?;
         match self.graph.nodes.entry(key.clone()) {
-            btree_map::Entry::Occupied(slot) => {
+            hash_map::Entry::Occupied(slot) => {
                 let held = &slot.get().content;
                 if held.node_tag == content.node_tag && held.semantic_form == content.semantic_form
                 {
@@ -2651,7 +2699,7 @@ impl<'a> Lowering<'a> {
                     Err(fault(location, KeyFault::NominalKeyClash(key)))
                 }
             }
-            btree_map::Entry::Vacant(slot) => {
+            hash_map::Entry::Vacant(slot) => {
                 slot.insert(SemanticNode {
                     key,
                     recursion: None,
@@ -2723,7 +2771,7 @@ impl<'a> Lowering<'a> {
             prefixes: Vec::new(),
             leaves: Vec::new(),
             open: Vec::new(),
-            entered_at: BTreeMap::new(),
+            entered_at: HashMap::new(),
             budget: self.node_budget,
             limit: self.node_limit,
         };
@@ -5655,7 +5703,7 @@ fn named_nodes(node: &SemanticNode) -> Vec<NodeKey> {
 /// rule 1), so each is placed with it whether or not a literal names it.
 fn reached_nodes<'g>(
     node: &'g SemanticNode,
-    members: &'g BTreeMap<NodeKey, Vec<NodeKey>>,
+    members: &'g HashMap<NodeKey, Vec<NodeKey>>,
 ) -> impl Iterator<Item = NodeKey> + 'g {
     named_nodes(node)
         .into_iter()
@@ -5663,8 +5711,8 @@ fn reached_nodes<'g>(
 }
 
 /// Each enum declaration node's member nodes in `graph`.
-fn enum_members(graph: &SemanticGraph) -> BTreeMap<NodeKey, Vec<NodeKey>> {
-    let mut members: BTreeMap<NodeKey, Vec<NodeKey>> = BTreeMap::new();
+fn enum_members(graph: &SemanticGraph) -> HashMap<NodeKey, Vec<NodeKey>> {
+    let mut members: HashMap<NodeKey, Vec<NodeKey>> = HashMap::new();
     for node in graph.nodes.values() {
         if let (NodeTag::Value, "enum_value", Some(NodeRef::Admitted(declaration))) = (
             node.content.node_tag,
@@ -5692,7 +5740,7 @@ fn enum_members(graph: &SemanticGraph) -> BTreeMap<NodeKey, Vec<NodeKey>> {
 fn enclosing_declarations(
     graph: &SemanticGraph,
     occurrences: &OccurrenceMap<Location>,
-) -> BTreeMap<NodeKey, Location> {
+) -> HashMap<NodeKey, Location> {
     let members = enum_members(graph);
     // Only a function body or measure, a state clause body (FR-104), or a
     // protocol attempt's own declared name (FR-114: an operation named only
@@ -5710,7 +5758,7 @@ fn enclosing_declarations(
                     | Origin::ProtocolAttempt { .. }
             )
         }),
-        &BTreeMap::new(),
+        &HashMap::new(),
     );
     // A declared type's `declaration` occurrence names its declared name
     // (FR-322), which the assembler located.
@@ -5730,18 +5778,18 @@ fn enclosing_declarations(
 fn roots(
     occurrences: &OccurrenceMap<Location>,
     admits: impl Fn(&Location) -> bool,
-) -> BTreeMap<NodeKey, Location> {
-    let mut roots: BTreeMap<NodeKey, Location> = BTreeMap::new();
-    for (key, _, location) in occurrences.iter() {
+) -> HashMap<NodeKey, Location> {
+    let mut roots: HashMap<NodeKey, Location> = HashMap::new();
+    for (key, _, location) in occurrences.iter_any_order() {
         if !admits(location) {
             continue;
         }
         let root = Location::root(location.origin.clone());
         match roots.entry(key) {
-            btree_map::Entry::Vacant(entry) => {
+            hash_map::Entry::Vacant(entry) => {
                 entry.insert(root);
             }
-            btree_map::Entry::Occupied(mut entry) => {
+            hash_map::Entry::Occupied(mut entry) => {
                 if root < *entry.get() {
                     entry.insert(root);
                 }
@@ -5762,17 +5810,19 @@ fn roots(
 /// The walk is an explicit worklist: graph depth is unbounded.
 fn relax(
     graph: &SemanticGraph,
-    members: &BTreeMap<NodeKey, Vec<NodeKey>>,
-    roots: BTreeMap<NodeKey, Location>,
-    placed: &BTreeMap<NodeKey, Location>,
-) -> BTreeMap<NodeKey, Location> {
+    members: &HashMap<NodeKey, Vec<NodeKey>>,
+    roots: HashMap<NodeKey, Location>,
+    placed: &HashMap<NodeKey, Location>,
+) -> HashMap<NodeKey, Location> {
+    // Roots with equal anchors may go in either order: each node either
+    // root reaches first takes that one anchor, so the result is the same.
     let mut ordered: Vec<(NodeKey, Location)> = roots.into_iter().collect();
     ordered.sort_by(|(_, left), (_, right)| left.cmp(right));
-    let mut anchors: BTreeMap<NodeKey, Location> = BTreeMap::new();
+    let mut anchors: HashMap<NodeKey, Location> = HashMap::new();
     let mut work: Vec<NodeKey> = Vec::new();
     for (root, anchor) in ordered {
         // A lesser root already reached this one, and everything it reaches.
-        let btree_map::Entry::Vacant(entry) = anchors.entry(root.clone()) else {
+        let hash_map::Entry::Vacant(entry) = anchors.entry(root.clone()) else {
             continue;
         };
         entry.insert(anchor.clone());
@@ -5785,7 +5835,7 @@ fn relax(
                 if placed.contains_key(&named) {
                     continue;
                 }
-                if let btree_map::Entry::Vacant(entry) = anchors.entry(named) {
+                if let hash_map::Entry::Vacant(entry) = anchors.entry(named) {
                     work.push(entry.key().clone());
                     entry.insert(anchor.clone());
                 }

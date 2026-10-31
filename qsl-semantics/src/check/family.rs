@@ -43,7 +43,8 @@
 //! `crate::check` -- layer 5 depending on layer 3 is the permitted
 //! direction (ADR-011 §6.1).
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::fmt;
 
 use quire_exact::{CollectionKind, NodeKey, Origin, Role};
 
@@ -1403,13 +1404,24 @@ pub(crate) fn check_declaration_body(
 /// the real mechanism: ordinal assignment and lookup by (identity, role,
 /// ordinal) do not depend on what a span actually is.
 ///
-/// Keyed by (identity, role): the key's value holds that role's
-/// spans in ordinal order, so the next ordinal is its length and an
-/// ordinal's span is an index. Neither `record` nor `resolve` scans another
-/// entry.
-#[derive(Clone, Debug, Eq, PartialEq)]
+/// Keyed by identity, then role: each role's value holds its spans in
+/// ordinal order, so the next ordinal is its length and an ordinal's span
+/// is an index. Neither `record` nor `resolve` scans another entry, and
+/// neither compares node keys beyond a hash and an equality test, so a key's
+/// nesting depth never multiplies their cost. The ascending iterations rank
+/// the keys once per call ([`super::key_order`]).
+#[derive(Clone, Eq, PartialEq)]
 pub(crate) struct OccurrenceMap<S> {
-    spans: BTreeMap<(NodeKey, OccurrenceRole), Vec<S>>,
+    spans: HashMap<NodeKey, Roles<S>>,
+}
+
+/// One node's occurrences: each role's spans in ordinal order.
+type Roles<S> = BTreeMap<OccurrenceRole, Vec<S>>;
+
+impl<S: fmt::Debug> fmt::Debug for OccurrenceMap<S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_list().entries(self.iter()).finish()
+    }
 }
 
 /// The role an occurrence plays for its node (FR-322): a closed set, so no
@@ -1465,12 +1477,12 @@ impl OccurrenceRole {
 }
 
 // A hand-written `Default`, not `#[derive(Default)]`: the derive macro adds
-// an `S: Default` bound even though `BTreeMap::default()` needs none -- a
+// an `S: Default` bound even though `HashMap::default()` needs none -- a
 // known derive-macro imprecision, not a real requirement on the span type.
 impl<S> Default for OccurrenceMap<S> {
     fn default() -> Self {
         Self {
-            spans: BTreeMap::new(),
+            spans: HashMap::new(),
         }
     }
 }
@@ -1486,7 +1498,9 @@ impl<S> OccurrenceMap<S> {
         // single occurrence from reserving a vector's default four slots.
         let spans = self
             .spans
-            .entry((identity, role))
+            .entry(identity)
+            .or_default()
+            .entry(role)
             .or_insert_with(|| Vec::with_capacity(1));
         let ordinal = u64::try_from(spans.len()).unwrap_or(u64::MAX);
         spans.push(span);
@@ -1506,7 +1520,11 @@ impl<S> OccurrenceMap<S> {
         position: impl Fn(&S) -> K,
     ) {
         for node in nodes {
-            if let Some(spans) = self.spans.get_mut(&(node.clone(), role)) {
+            if let Some(spans) = self
+                .spans
+                .get_mut(node)
+                .and_then(|roles| roles.get_mut(&role))
+            {
                 spans.sort_by_key(&position);
             }
         }
@@ -1514,26 +1532,24 @@ impl<S> OccurrenceMap<S> {
 
     /// Whether any occurrence of `identity` is recorded.
     pub(crate) fn has(&self, identity: NodeKey) -> bool {
-        // `Anchor` sorts first, so the first key at or after it is
-        // `identity`'s first recorded role, if it has one.
-        self.spans
-            .range((identity.clone(), OccurrenceRole::Anchor)..)
-            .next()
-            .is_some_and(|((node, _), _)| *node == identity)
+        self.spans.contains_key(&identity)
     }
 
     /// Every recorded occurrence, ascending by (identity, role), each role's
     /// occurrences in ordinal order.
     pub(crate) fn iter(&self) -> impl Iterator<Item = (NodeKey, Origin, &S)> {
-        self.spans.iter().flat_map(|((identity, role), spans)| {
-            (0_u64..).zip(spans).map(move |(ordinal, span)| {
-                (
-                    identity.clone(),
-                    Origin::new(role.kernel_role(), ordinal),
-                    span,
-                )
-            })
-        })
+        self.ascending(|_| true)
+            .into_iter()
+            .flat_map(|(identity, roles)| occurrences_of(identity, roles))
+    }
+
+    /// Every recorded occurrence, each node's in (role, ordinal) order but
+    /// the nodes in no particular order: for a reader whose result does not
+    /// depend on which node comes first.
+    pub(crate) fn iter_any_order(&self) -> impl Iterator<Item = (NodeKey, Origin, &S)> {
+        self.spans
+            .iter()
+            .flat_map(|(identity, roles)| occurrences_of(identity, roles))
     }
 
     /// Every recorded occurrence of exactly `role`, ascending by identity,
@@ -1542,27 +1558,73 @@ impl<S> OccurrenceMap<S> {
         &self,
         role: OccurrenceRole,
     ) -> impl Iterator<Item = (NodeKey, Origin, &S)> {
-        self.spans
-            .iter()
-            .filter(move |((_, recorded), _)| *recorded == role)
-            .flat_map(|((identity, role), spans)| {
-                (0_u64..).zip(spans).map(move |(ordinal, span)| {
-                    (
-                        identity.clone(),
-                        Origin::new(role.kernel_role(), ordinal),
-                        span,
-                    )
-                })
+        self.ascending(|roles| roles.contains_key(&role))
+            .into_iter()
+            .flat_map(move |(identity, roles)| {
+                let spans = roles.get(&role).map(Vec::as_slice).unwrap_or_default();
+                role_occurrences(identity, role, spans)
             })
+    }
+
+    /// The `Origin` of the first `role` occurrence of `identity` whose span
+    /// `at` admits, if any.
+    pub(crate) fn first_origin(
+        &self,
+        identity: &NodeKey,
+        role: OccurrenceRole,
+        at: impl Fn(&S) -> bool,
+    ) -> Option<Origin> {
+        let spans = self.spans.get(identity)?.get(&role)?;
+        let ordinal = spans.iter().position(at)?;
+        Some(Origin::new(
+            role.kernel_role(),
+            u64::try_from(ordinal).unwrap_or(u64::MAX),
+        ))
     }
 
     /// The span recorded for `identity` at exactly `origin`, if any.
     pub(crate) fn resolve(&self, identity: NodeKey, origin: &Origin) -> Option<&S> {
         let ordinal = usize::try_from(origin.ordinal()).ok()?;
         self.spans
-            .get(&(identity, OccurrenceRole::of(origin.role())?))?
+            .get(&identity)?
+            .get(&OccurrenceRole::of(origin.role())?)?
             .get(ordinal)
     }
+
+    /// The nodes whose roles `admits`, ascending by key.
+    fn ascending(&self, admits: impl Fn(&Roles<S>) -> bool) -> Vec<(&NodeKey, &Roles<S>)> {
+        let nodes = self
+            .spans
+            .iter()
+            .filter(|(_, roles)| admits(roles))
+            .collect();
+        super::key_order::sorted_by_key(nodes, |(identity, _)| identity)
+    }
+}
+
+/// `identity`'s occurrences in (role, ordinal) order.
+fn occurrences_of<'m, S>(
+    identity: &'m NodeKey,
+    roles: &'m Roles<S>,
+) -> impl Iterator<Item = (NodeKey, Origin, &'m S)> + 'm {
+    roles
+        .iter()
+        .flat_map(move |(role, spans)| role_occurrences(identity, *role, spans))
+}
+
+/// `identity`'s `role` occurrences in ordinal order.
+fn role_occurrences<'m, S>(
+    identity: &'m NodeKey,
+    role: OccurrenceRole,
+    spans: &'m [S],
+) -> impl Iterator<Item = (NodeKey, Origin, &'m S)> + 'm {
+    (0_u64..).zip(spans).map(move |(ordinal, span)| {
+        (
+            identity.clone(),
+            Origin::new(role.kernel_role(), ordinal),
+            span,
+        )
+    })
 }
 
 /// [`ValueFunctionFamily`]'s [`crate::family::FamilyContract::Declarations`]:

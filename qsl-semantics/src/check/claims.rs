@@ -36,7 +36,7 @@
 //! of a `let` binder contributes the roots its bound value reads; a
 //! literal contributes none.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::ops::ControlFlow;
 
 use qsl_foundation::bound::DomainKey;
@@ -1005,7 +1005,9 @@ pub(crate) fn key_claims(
     };
     let scalar =
         |key: NodeKey| application(key).is_some_and(|(identity, _)| is_scalar_identity(identity));
-    let mut records = BTreeMap::new();
+    // Keyed by hash while claims are keyed; ranked once at the end
+    // ([`super::key_order`]), so no insertion compares node keys.
+    let mut records = HashMap::new();
     for claim in claims {
         let site = claim.site;
         // FR-062 "Owner": a claim `check` found in a function body always
@@ -1097,7 +1099,14 @@ pub(crate) fn key_claims(
             }
         }
     }
-    Ok(records)
+    // By origin, then (stably) by node: ascending `OccurrenceKey` order.
+    let mut records: Vec<(OccurrenceKey, RequirementRecord)> = records.into_iter().collect();
+    records.sort_by(|(left, _), (right, _)| left.origin().cmp(right.origin()));
+    Ok(
+        super::key_order::sorted_by_key(records, |(occurrence, _)| occurrence.node())
+            .into_iter()
+            .collect(),
+    )
 }
 
 /// The one occurrence in `here` whose node no other node in `here` names:
