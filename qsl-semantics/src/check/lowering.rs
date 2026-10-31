@@ -193,7 +193,7 @@ impl SemanticNode {
         }
     }
 
-    /// The node's `quire.checked-semantic-node/v1` key.
+    /// The node's structural `NodeKey`.
     pub fn key(&self) -> NodeKey {
         self.key.clone()
     }
@@ -2318,7 +2318,6 @@ impl<'a> Lowering<'a> {
         }
         // FR-359 item 3: a model record value type or event type is a
         // model-owned node, never a `composite_type`.
-        // BLOCKED-BY QSL-1282 (owner: planner titan:QSL:plan): model record declaration lookup was keyed by a digest node key; needs the structural model-record key source
         if let Some(model_record) = self.model_record_declaration(declaration.clone(), location)? {
             let key = self.model_node(&model_record, location)?;
             // The record has no checked occurrence of its own: root it at the
@@ -3759,6 +3758,7 @@ impl<'a> Lowering<'a> {
                 reference,
                 relationship,
                 role,
+                near,
                 ..
             } => {
                 // FR-093/FR-094 (FR-363): one `quire.op.model.navigate` over
@@ -3766,6 +3766,8 @@ impl<'a> Lowering<'a> {
                 // node and the role. No `deref` node: the reference is the
                 // argument.
                 let declaration = self.model_node(relationship, node.location())?;
+                let destination_type =
+                    self.destination_type_node(relationship, *near, node.location())?;
                 let name = Identifier::new(role.clone()).map_err(|_| {
                     refuse(
                         node.location(),
@@ -3779,6 +3781,7 @@ impl<'a> Lowering<'a> {
                             member: Some(Member::RelationshipEnd {
                                 declaration,
                                 name,
+                                destination_type,
                                 population: None,
                             }),
                             ..plain("quire.op.model.navigate")
@@ -4245,6 +4248,8 @@ impl<'a> Lowering<'a> {
                 // node and the role. No `deref` node: the references are
                 // the arguments.
                 let declaration = self.model_node(relationship, node.location())?;
+                let destination_type =
+                    self.destination_type_node(relationship, *near, node.location())?;
                 let name = Identifier::new(role.clone()).map_err(|_| {
                     refuse(
                         node.location(),
@@ -4276,6 +4281,7 @@ impl<'a> Lowering<'a> {
                             member: Some(Member::RelationshipEnd {
                                 declaration,
                                 name,
+                                destination_type,
                                 population,
                             }),
                             ..plain("quire.op.model.reaches")
@@ -5316,6 +5322,52 @@ fn strongly_connected_metered(
 /// repeat of its path takes the next producer ordinal.
 fn derived_operands(content: &NodeContent) -> Vec<quire_exact::PathSegment> {
     use quire_exact::PathSegment;
+    if content.node_tag == NodeTag::State {
+        match (content.semantic_form, &content.body) {
+            // A clause's name is no part of its identity, so neither is its
+            // source position: its kind, anchor and condition tell clauses
+            // apart whatever order they are written in.
+            ("state_clause", BodyTerm::Application(application)) => {
+                let mut operands = Vec::new();
+                if let Some(Member::StateClause { clause, .. }) = &application.operation.member {
+                    operands.push(PathSegment::Text(format!("{clause:?}").to_lowercase()));
+                }
+                for argument in application.arguments.iter().skip(1) {
+                    if let MemberTerm::Leaf(LeafTerm::Reference {
+                        target: NodeRef::Admitted(key),
+                    }) = argument
+                    {
+                        operands.push(PathSegment::Node(key.clone()));
+                    }
+                }
+                return operands;
+            }
+            // An operation's anchor is keyed by its declaring type and its
+            // name, one node per operation whatever clause names it first.
+            ("operation_anchor", BodyTerm::Aggregate(aggregate)) => {
+                let mut operands = Vec::new();
+                for member in &aggregate.members {
+                    let MemberTerm::Binding(binding) = member else {
+                        continue;
+                    };
+                    match (binding.name.as_str(), &binding.value) {
+                        (
+                            "context",
+                            BindingValue::Leaf(LeafTerm::Reference {
+                                target: NodeRef::Admitted(key),
+                            }),
+                        ) => operands.push(PathSegment::Node(key.clone())),
+                        ("operation", BindingValue::Leaf(LeafTerm::Literal { value, .. })) => {
+                            operands.push(PathSegment::Text(literal_operand_text(value)));
+                        }
+                        _ => {}
+                    }
+                }
+                return operands;
+            }
+            _ => {}
+        }
+    }
     if matches!(
         content.node_tag,
         NodeTag::Value

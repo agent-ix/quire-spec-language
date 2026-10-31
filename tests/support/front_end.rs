@@ -153,7 +153,9 @@ fn checked_once(
         .into_value();
     Ok(check(
         &parsed,
-        crate::TEST_PACKAGE_NAME.to_owned(),
+        source
+            .label(qsl_foundation::source::SourceLabel::Identity)
+            .to_owned(),
         &models,
         dependencies,
         limits,

@@ -18,6 +18,7 @@ use quire_exact::{EffectiveId, Integer, NodeKey, UnitDomain, UnitId, ValueType};
 use super::{identifiers, refuse, require_admitted, type_declaration, Lowering, NodeContent};
 use crate::check::assemble::DimensionEquivalence;
 use crate::check::family::OccurrenceRole;
+use crate::check::navigation::EndSide;
 use crate::check::node_key::{
     Binding, BodyTerm, GroupMember, GroupTerm, LeafTerm, MemberTerm, ModelOwner, NodeRef, NodeTag,
     Owner,
@@ -1933,6 +1934,27 @@ impl<'a> Lowering<'a> {
             }
         }
         Ok(None)
+    }
+
+    /// FR-322: the model declaration node of the object type at the end of
+    /// `relationship` opposite `near`, the end a navigation or reachability
+    /// from `near` arrives at.
+    pub(super) fn destination_type_node(
+        &mut self,
+        relationship: &DeclarationKey,
+        near: EndSide,
+        location: &Location,
+    ) -> Result<NodeKey, CheckRefusal> {
+        let far = match near {
+            EndSide::Source => EndSide::Target,
+            EndSide::Target => EndSide::Source,
+        };
+        let object = self
+            .scope
+            .relationships()
+            .end_object(relationship, far)
+            .ok_or_else(|| mismatch(location))?;
+        self.object_node(object, location)
     }
 
     /// The model declaration node of `declaration`, recorded in the model

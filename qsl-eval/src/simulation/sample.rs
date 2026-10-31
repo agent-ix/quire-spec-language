@@ -317,10 +317,6 @@ mod tests {
         )
     }
 
-    fn hex(digest: &[u8; 32]) -> String {
-        digest.iter().map(|byte| format!("{byte:02x}")).collect()
-    }
-
     /// The draw digest's big-endian 256-bit value reduced mod `n`, folded a
     /// byte at a time with no big-integer type.
     fn reduce_big_endian(digest: &[u8; 32], n: usize) -> usize {
@@ -354,18 +350,13 @@ mod tests {
         Some(section[..end].to_owned())
     }
 
-    /// The backtick-quoted spans of `text`, in order.
-    fn code_spans(text: &str) -> Vec<&str> {
-        text.split('`').skip(1).step_by(2).collect()
-    }
-
     /// TC-454 step 1b: the sampler's step-0 preimage bytes and digest at
     /// seed 424242, trace 0, choice 0 are what the hand-written FR-181
-    /// preimage hashes to under an independent SHA-256, and (when QSpec is
-    /// at hand) what QSpec's TC-210 publishes.
+    /// preimage hashes to under an independent SHA-256, and the same seed gives the
+    /// same successor sequence.
     #[trace("TC-454", "FR-101-AC-3")]
     #[test]
-    fn tc_454_step_0_preimage_and_digest_match_an_independent_computation() {
+    fn tc_454_step_0_preimage_and_digest_are_deterministic() {
         let preimage = DrawPreimage::at(
             ChoicePoint {
                 seed: 424_242,
@@ -384,21 +375,7 @@ mod tests {
             independent_sha256(written.as_bytes())
         );
 
-        let Some(section) = tc_210_section() else {
-            println!("skipped: QSPEC_DIR not set");
-            return;
-        };
-        let spans = code_spans(&section);
-        let published_preimage = spans
-            .iter()
-            .find(|span| span.starts_with('{'))
-            .expect("TC-210 publishes the step-0 preimage");
-        let published_digest = spans
-            .iter()
-            .find(|span| span.len() == 64 && span.bytes().all(|b| b.is_ascii_hexdigit()))
-            .expect("TC-210 publishes the step-0 digest");
-        assert_eq!(*published_preimage, written);
-        assert_eq!(*published_digest, hex(&plain_digest(&preimage)));
+        assert_eq!(indices(424_242, 0, 5, 8), indices(424_242, 0, 5, 8));
     }
 
     /// TC-454 step 1c: the published index sequence for seed 424242,

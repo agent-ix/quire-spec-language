@@ -96,6 +96,10 @@ pub enum Member {
         declaration: NodeKey,
         /// The end's own identifier.
         name: Identifier,
+        /// The model declaration node of the destination end's object type
+        /// (FR-322): the type a navigation or reachability over this end
+        /// arrives at.
+        destination_type: NodeKey,
         /// The `bounded_domain`/`model_population` node of the population a
         /// reachability over this end walks, when the unit bounds that
         /// population (FR-365 "The population link", FR-380). Absent from
@@ -211,6 +215,17 @@ impl Member {
             | Self::StateClause { .. }
             | Self::TemporalInterval { .. }
             | Self::TimedInterval(_) => None,
+        }
+    }
+
+    /// The destination type node a relationship end names, when this member
+    /// is one.
+    pub fn destination_type(&self) -> Option<NodeKey> {
+        match self {
+            Self::RelationshipEnd {
+                destination_type, ..
+            } => Some(destination_type.clone()),
+            _ => None,
         }
     }
 

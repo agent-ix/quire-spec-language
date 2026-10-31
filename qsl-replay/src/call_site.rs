@@ -33,8 +33,7 @@ use crate::execute::{
     callable_parameter_keys, declaration_occurrence, value_parity_obligation,
     value_parity_preimage, ValueParityPreimage,
 };
-use crate::identity::ObligationIdentity;
-use crate::identity::QualifiedName;
+use crate::identity::{ModelIdentity, ObligationIdentity, QualifiedName};
 use crate::spine::{self, CompileRefusal, DependencyInput, DependencyInputRefusal, OperationName};
 use crate::FrameOperation;
 
@@ -159,6 +158,9 @@ pub struct FunctionSite {
     /// declaration occurrence member of that preimage. Its source span is
     /// not part of it.
     pub declaration: OccurrenceKey,
+    /// The function-contract obligation at the declaration occurrence,
+    /// issued by this compilation for a consumer to carry unchanged.
+    obligation_identity: ObligationIdentity,
     /// The parameters, in declared order. Each pair is the parameter's
     /// declared name and the `NodeKey` a `CanonicalAssignment::parameter`
     /// or a witness transcript names to bind that parameter's argument --
@@ -182,6 +184,13 @@ pub struct ValueParitySite {
     pub obligation_identity: ObligationIdentity,
 }
 
+impl FunctionSite {
+    /// The QSL-issued function-contract obligation identity for this site.
+    pub fn obligation_identity(&self) -> &ObligationIdentity {
+        &self.obligation_identity
+    }
+}
+
 /// An operation's identities in the compiled package (FR-104, FR-105): the
 /// members a frame counterexample carries (FR-116) and the node and
 /// occurrence each state clause naming the operation is recorded under.
@@ -200,9 +209,19 @@ pub struct OperationSite {
     /// the frame's `operation-contract` requirement is recorded under and
     /// a frame counterexample names.
     pub frame_occurrence: OccurrenceKey,
+    /// The operation-contract obligation at the frame occurrence, issued
+    /// by this compilation for a consumer to carry unchanged.
+    obligation_identity: ObligationIdentity,
     /// Every `pre` and `post` clause of the unit whose operation resolves
     /// to this operation, in declaration order.
     pub clauses: Vec<ClauseSite>,
+}
+
+impl OperationSite {
+    /// The QSL-issued operation-frame obligation identity for this site.
+    pub fn obligation_identity(&self) -> &ObligationIdentity {
+        &self.obligation_identity
+    }
 }
 
 /// A state field's domain in the compiled package (ADR-012 §15.4).
@@ -634,6 +653,7 @@ impl sealed::Locate for QualifiedName {
         Ok(FunctionSite {
             function: function.clone(),
             declaration: declaration_occurrence(function.clone()),
+            obligation_identity: ObligationIdentity::new(function, None, 0),
             parameters,
             value_parity,
         })
@@ -769,6 +789,11 @@ fn operation_site(
         .ok_or_else(|| fault("declaring-object-is-a-declaration-of-the-selected-model"))?;
     let object = QualifiedName::new(vec![model.clone(), object.clone()])
         .map_err(|_| fault("frame-operation-object-has-segments"))?;
+    let model_identity = graph
+        .model_package_identity(model.as_str())
+        .ok_or_else(|| fault("frame-model-has-a-package-selection"))?;
+    let ordinal = u32::try_from(frame.frame_origin().ordinal())
+        .map_err(|_| fault("frame-occurrence-ordinal-fits-obligation-identity"))?;
     Ok(OperationSite {
         frame_operation: FrameOperation {
             object,
@@ -779,7 +804,12 @@ fn operation_site(
         },
         anchor: frame.anchor().clone(),
         frame: frame_node.clone(),
-        frame_occurrence: OccurrenceKey::new(frame_node, frame.frame_origin().clone()),
+        frame_occurrence: OccurrenceKey::new(frame_node.clone(), frame.frame_origin().clone()),
+        obligation_identity: ObligationIdentity::new(
+            frame_node,
+            Some(ModelIdentity::new(model_identity)),
+            ordinal,
+        ),
         clauses,
     })
 }

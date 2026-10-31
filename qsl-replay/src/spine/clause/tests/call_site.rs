@@ -164,7 +164,7 @@ fn claim(node: NodeKey) -> OccurrenceKey {
 /// through the facade's own `OccurrenceKey::new` and `Origin::new` -- and
 /// exactly the one postcondition naming the operation, at its `claim`
 /// occurrence.
-#[trace("TC-516", "FR-121-AC-3")]
+#[trace("TC-516", "FR-121-AC-3", "FR-121-AC-31")]
 #[test]
 fn call_site_locates_an_operations_anchor_frame_and_clauses() {
     let site = operation_site(operation("Config", "ConfigVersion", "attemptUpdate"))
@@ -186,6 +186,15 @@ fn call_site_locates_an_operations_anchor_frame_and_clauses() {
     assert_eq!(
         operation.frame_occurrence,
         OccurrenceKey::new(frame, Origin::new(Role::new("generated"), 0))
+    );
+    assert_eq!(operation.obligation_identity().node(), &operation.frame);
+    assert_eq!(operation.obligation_identity().ordinal(), 0);
+    assert_eq!(
+        operation
+            .obligation_identity()
+            .model()
+            .map(crate::ModelIdentity::as_str),
+        Some(CONFIG_VERSION_PACKAGE_IDENTITY)
     );
 
     let posts: Vec<NodeKey> = state_clause_nodes(graph)
@@ -241,7 +250,7 @@ fn call_site_refuses_an_unknown_operation_paired_with_its_package() {
 /// its precondition and its postcondition, in declaration order;
 /// `probe`'s postcondition and the invariants are absent, and `probe`'s
 /// own selection returns only its postcondition.
-#[trace("TC-516", "FR-121-AC-6")]
+#[trace("TC-516", "FR-121-AC-6", "FR-121-AC-31")]
 #[test]
 fn call_site_returns_only_the_selected_operations_clauses_in_declaration_order() {
     let (unit, document) = two_operation_unit(true);
@@ -272,6 +281,10 @@ fn call_site_returns_only_the_selected_operations_clauses_in_declaration_order()
         .collect();
     assert_eq!(names, ["ProbeUnchanged"]);
     assert_ne!(attempt.site.frame, probe.site.frame);
+    assert_ne!(
+        attempt.site.obligation_identity(),
+        probe.site.obligation_identity()
+    );
 }
 
 /// FR-121-AC-7: `probe` is declared in the supplied domain package, but no
@@ -401,7 +414,7 @@ fn function_nodes_declaring(
 /// declaring it and `declaration` is the occurrence a client builds through
 /// the facade; a comment and blank lines before `p` change neither; and
 /// `sameIdentity`'s `function` is no clause node of the AC-6 unit.
-#[trace("TC-516", "FR-121-AC-15")]
+#[trace("TC-516", "FR-121-AC-15", "FR-121-AC-30")]
 #[test]
 fn function_site_names_its_function_node_and_declaration_occurrence() {
     const PQ: &str = "language \"ix:native\" edition \"1-draft\";\n\
@@ -446,18 +459,23 @@ fn function_site_names_its_function_node_and_declaration_occurrence() {
         p.declaration,
         OccurrenceKey::new(p.function.clone(), Origin::new(Role::new("declaration"), 0))
     );
+    assert_eq!(p.obligation_identity().node(), &p.function);
+    assert_eq!(p.obligation_identity().model(), None);
+    assert_eq!(p.obligation_identity().ordinal(), 0);
     assert_eq!(
         q.declaration,
         OccurrenceKey::new(q.function.clone(), Origin::new(Role::new("declaration"), 0))
     );
     assert_eq!(p.parameters, q.parameters, "one shared parameter node");
     assert_ne!(p.function, q.function);
+    assert_ne!(p.obligation_identity(), q.obligation_identity());
     assert_ne!(p.declaration, q.declaration);
 
     let shifted = PQ.replacen("function p", "// a comment\n\n\nfunction p", 1);
     let moved = site(&shifted, "p");
     assert_eq!(moved.function, p.function);
     assert_eq!(moved.declaration, p.declaration);
+    assert_eq!(moved.obligation_identity(), p.obligation_identity());
 
     let (unit, document) = two_operation_unit(true);
     let same_identity = locate(
@@ -942,7 +960,7 @@ fn call_site_refuses_an_unknown_population_paired_with_its_package() {
 /// `Config::Sub::attemptUpdate` selection's `frame_operation` names the
 /// declaring `ConfigVersion`, not the selected `Sub`, and every other
 /// identity equals the `ConfigVersion` selection's.
-#[trace("TC-516", "FR-121-AC-23")]
+#[trace("TC-516", "FR-121-AC-23", "FR-121-AC-31")]
 #[test]
 fn call_site_names_the_declaring_object_of_an_inherited_operation() {
     let (unit, _) = sub_field_unit_and_packages();
@@ -965,6 +983,10 @@ fn call_site_names_the_declaring_object_of_an_inherited_operation() {
     assert_eq!(
         inherited.site.frame_occurrence,
         declared.site.frame_occurrence
+    );
+    assert_eq!(
+        inherited.site.obligation_identity(),
+        declared.site.obligation_identity()
     );
 }
 

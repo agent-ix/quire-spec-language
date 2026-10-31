@@ -319,7 +319,7 @@ mod tests {
         source::provenance::{RawSourceRef, SourceRegion},
     };
     use qsl_semantics::model::observation::DocumentRef;
-    use quire_exact::{Identifier, Origin, Role};
+    use quire_exact::Identifier;
 
     use super::*;
     use crate::InspectLimits;
@@ -381,40 +381,42 @@ mod tests {
         ));
     }
 
-    fn fixture_node(name: &str) -> quire_exact::NodeKey {
-        quire_exact::NodeKey::new(
-            "fixture",
-            vec![quire_exact::PathSegment::Text(name.to_owned())],
-            0,
-        )
-        .expect("a fixture node key is well formed")
-    }
-
     #[trace("TC-782", "FR-297-AC-3")]
     #[test]
     fn counterexample_assignments_join_to_parameter_names_by_identity() {
-        let function = qsl_replay::QualifiedName::new(vec![
-            Identifier::new("math").unwrap(),
-            Identifier::new("seven").unwrap(),
-        ])
-        .unwrap();
-        let parameter = fixture_node("parameter");
-        let site = qsl_replay::FunctionSite {
-            function: fixture_node("function"),
-            declaration: qsl_foundation::source::provenance::OccurrenceKey::new(
-                fixture_node("function"),
-                Origin::new(Role::new("declaration"), 0),
-            ),
-            parameters: vec![(Identifier::new("x").unwrap(), parameter.clone())],
-            value_parity: None,
+        let function =
+            qsl_replay::QualifiedName::new(vec![Identifier::new("seven").unwrap()]).unwrap();
+        let source = b"language \"ix:native\" edition \"1-draft\";\n\
+            profile v = \"quire.value.complete/v1\";\n\
+            function seven using v(x: Int[0, 9], y: Int[0, 9]): Boolean pure { x < y }\n";
+        let site = qsl_replay::call_site(
+            qsl_foundation::SourceIdentity::new("tests", "inspect", "fixture", "current"),
+            String::from("fixture"),
+            "inspect.native",
+            source,
+            [],
+            &qsl_replay::DependencyInput::default(),
+            &function,
+        )
+        .expect("the source locates seven");
+        let [(x_name, x), (y_name, y)] = site.site.parameters.as_slice() else {
+            panic!("seven has two checked parameters");
         };
-        let assignments = [qsl_replay::CanonicalAssignment {
-            parameter: parameter.clone(),
-            value: qsl_replay::WitnessValue::Boolean(true),
-        }];
+        assert_eq!(x_name.as_str(), "x");
+        assert_eq!(y_name.as_str(), "y");
+        let assignments = [
+            qsl_replay::CanonicalAssignment {
+                parameter: y.clone(),
+                value: qsl_replay::WitnessValue::Integer(7),
+            },
+            qsl_replay::CanonicalAssignment {
+                parameter: x.clone(),
+                value: qsl_replay::WitnessValue::Integer(3),
+            },
+        ];
         let result = inspect_counterexample(
             &function,
-            &site,
+            &site.site,
             &assignments,
             Some(qsl_replay::Certification::Trusted),
             InspectLimits::default(),
@@ -425,8 +427,10 @@ mod tests {
             panic!("counterexample request gives counterexample view");
         };
         assert_eq!(view.function, &function);
-        assert_eq!(view.assignments[0].parameter, "x");
-        assert_eq!(view.assignments[0].identity, &parameter);
+        assert_eq!(view.assignments[0].parameter, "y");
+        assert_eq!(view.assignments[0].identity, y);
+        assert_eq!(view.assignments[1].parameter, "x");
+        assert_eq!(view.assignments[1].identity, x);
         assert_eq!(view.certification, Some(qsl_replay::Certification::Trusted));
     }
 

@@ -1017,9 +1017,10 @@ fn member_value(member: &Member) -> Result<serde_json::Value, EmitRefusal> {
         Member::RelationshipEnd {
             declaration,
             name,
+            destination_type,
             population,
         } => {
-            let mut record = json!({"kind":"relationship_end","declaration":node_id(declaration),"name":name.as_str()});
+            let mut record = json!({"kind":"relationship_end","declaration":node_id(declaration),"name":name.as_str(),"destination_type":node_id(destination_type)});
             if let Some(population) = population {
                 record["population"] = json!(node_id(population));
             }

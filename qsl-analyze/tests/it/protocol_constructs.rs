@@ -28,6 +28,15 @@ fn case(members: &str, run: &str) -> Case {
     )
 }
 
+/// [`case`] without the protocol profile, for a protocol whose forms the
+/// protocol clause node does not write yet.
+fn case_unprofiled(members: &str, run: &str) -> Case {
+    Case::unprofiled(
+        &(contracts("self.v = 0") + &protocol("P", members, run, "d")),
+        &[0],
+    )
+}
+
 /// A channel `name` of `Boolean` from `w` to `w` with `premises` (ordering,
 /// delivery, capacity and overflow).
 fn channel(name: &str, premises: &str) -> String {
@@ -546,7 +555,7 @@ fn structural_moves_add_no_step() {
         touch("Y"),
         touch("N"),
     );
-    let unit = case("", &run);
+    let unit = case_unprofiled("", &run);
     let subject = unit.subject("P");
     let system = sc_system(&subject);
     let reached = reachable(&system);
@@ -1167,7 +1176,7 @@ fn a_nested_repeat_counter_restarts_on_each_entry() {
         touch("E"),
         touch("F"),
     );
-    let unit = case("", &run);
+    let unit = case_unprofiled("", &run);
     let subject = unit.subject("P");
     let system = sc_system(&subject);
     let reached = reachable(&system);
