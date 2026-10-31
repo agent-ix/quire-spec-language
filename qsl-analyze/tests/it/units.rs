@@ -68,6 +68,29 @@ impl Domain {
         }
     }
 
+    /// This domain with `VersionNumber` narrowed from `Int[0, 1000]` to
+    /// `Int[0, max]`, for a unit that reaches versions up to `max` only.
+    /// Expanding a state tries every value of the field, one candidate each;
+    /// a candidate over `max` is rejected by the unit's post clause and never
+    /// becomes a state, so the extra candidates cost about a second a state
+    /// and add no behaviour.
+    pub(crate) fn with_versions_up_to(mut self, max: i64) -> Self {
+        let mut document: Json =
+            serde_json::from_slice(&self.document).expect("the domain package is JSON");
+        let bound = document["types"][0]["constraints"]
+            .as_array_mut()
+            .and_then(|constraints| {
+                constraints
+                    .iter_mut()
+                    .find(|constraint| constraint["keyword"] == "max")
+            })
+            .expect("VersionNumber has a max constraint");
+        assert_eq!(bound["operands"]["value"], "1000");
+        bound["operands"]["value"] = json!(max.to_string());
+        self.document = document.to_string().into_bytes();
+        self
+    }
+
     fn ident(&self, suffix: &str) -> String {
         format!("ix://{}/{suffix}", self.package)
     }

@@ -12,11 +12,10 @@ use quire_semantic_value::model_transition::ModelTransition;
 
 use super::footprints::Enforcement;
 use super::{
-    contracts, encode, frames, identity_limits, state_document, Application, ClauseInfo,
-    ModelFinding, ModelSimState, ModelSystem, BROKEN, EXHAUSTED,
+    contracts, frames, state_document, Application, ClauseInfo, ModelFinding, ModelSimState,
+    ModelSystem, BROKEN, EXHAUSTED,
 };
 use crate::simulation::expansion::{Expansion, ExpansionLimit, ExpansionStop};
-use crate::simulation::key;
 
 /// A stop with `cause`.
 pub(super) const fn stop(cause: quire_semantic_value::catalog::CatalogCode) -> ExpansionStop {
@@ -242,9 +241,6 @@ pub(super) fn walk_of<'s, 'a>(
     state: &'s ModelSimState,
     enforcement: Option<&'s Enforcement<'s>>,
 ) -> Result<Walk<'s, 'a>, ExpansionStop> {
-    let identity = identity_limits();
-    let state_key = encode::model_key(&system.model, &state.state, system.typing());
-    let _state_key = key::state_key(&state_key, identity).map_err(|_| stop(BROKEN))?;
     let observation = system
         .model
         .observation(&state.state, state_document())

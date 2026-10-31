@@ -1626,10 +1626,60 @@ pub fn sample_model(
     Ok(ModelTrace { trace, effects })
 }
 
+/// The expansions of one run's sampled walks, kept so that a state the walks
+/// reach again is expanded once. An expansion is a function of the state's
+/// key and anchor alone (each expansion draws a fresh budget), so a hit is
+/// the expansion the system would return. The run that makes the memo owns
+/// it; it holds every state its walks reached and is dropped with the run.
+#[derive(Default)]
+pub struct WalkMemo {
+    expansions: std::cell::RefCell<std::collections::HashMap<MemoAt, ModelExpansion>>,
+}
+
+/// A state's canonical key bytes and its anchor.
+type MemoAt = (Vec<u8>, String);
+
+type ModelExpansion = Expansion<ModelTransition, ModelSimState, ModelFinding>;
+
+impl WalkMemo {
+    /// An empty memo.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// `system`'s expansion of `state`, computed once per state key and
+    /// anchor.
+    ///
+    /// # Errors
+    ///
+    /// [`ExpansionStop`] as `system` returns it; a stop is not kept.
+    pub fn successors(
+        &self,
+        system: &ModelSystem<'_>,
+        state: &ModelSimState,
+    ) -> Result<Expansion<ModelTransition, ModelSimState, ModelFinding>, ExpansionStop> {
+        let limits = identity_limits();
+        let Ok(bytes) = quire_canonical::to_vec(
+            &system.key(state),
+            quire_canonical::Limits::new(limits.input_bytes),
+        ) else {
+            return system.successors(state);
+        };
+        let at = (bytes, format!("{:?}", state.anchor));
+        if let Some(found) = self.expansions.borrow().get(&at) {
+            return Ok(found.clone());
+        }
+        let expanded = system.successors(state)?;
+        self.expansions.borrow_mut().insert(at, expanded.clone());
+        Ok(expanded)
+    }
+}
+
 /// `system` with one initial state.
 struct OneInitial<'s, 'a> {
     system: &'s ModelSystem<'a>,
     start: ModelSimState,
+    memo: Option<&'s WalkMemo>,
 }
 
 impl TransitionSystem for OneInitial<'_, '_> {
@@ -1650,7 +1700,10 @@ impl TransitionSystem for OneInitial<'_, '_> {
         &self,
         state: &Self::State,
     ) -> Result<Expansion<Self::TransitionId, Self::State, Self::Finding>, ExpansionStop> {
-        self.system.successors(state)
+        match self.memo {
+            Some(memo) => memo.successors(self.system, state),
+            None => self.system.successors(state),
+        }
     }
 }
 
@@ -1677,6 +1730,7 @@ pub fn sample_model_walk(
     seed: u64,
     trace: u64,
     max_steps: usize,
+    memo: Option<&WalkMemo>,
     end: impl FnMut(&ModelSimState) -> bool,
 ) -> Result<Trace<ModelTransition, ModelFinding>, NotSimulated> {
     let start = system
@@ -1684,7 +1738,11 @@ pub fn sample_model_walk(
         .get(initial)
         .cloned()
         .ok_or(NotSimulated::EmptyInitial)?;
-    let view = OneInitial { system, start };
+    let view = OneInitial {
+        system,
+        start,
+        memo,
+    };
     let domains = system.rooted_domains();
     let roots: Vec<(NodeKey, Vec<u32>, &ValueType)> = domains
         .iter()

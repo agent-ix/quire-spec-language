@@ -34,11 +34,15 @@ use qsl_replay::{
 use qsl_semantics::check::{FormulaNodeId, HyperForm};
 use quire_exact::{Cancel, CancelCause, Meter, Undefined};
 use quire_semantic_value::catalog::InternalFault;
+use quire_semantic_value::model_transition::ModelTransition;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use crate::counter::UNLIMITED;
-use crate::hyper_world::{high, input_of, instance, low, non_interference, Vault, World, STARTS};
+use crate::hyper_world::{
+    high, input_of, instance, low, non_interference, Seams, Vault, World, STARTS,
+};
 
 /// A start whose first vault has output 1 already.
 const MIXED: [(i64, i64); 2] = [(0, 1), (1, 0)];
@@ -82,12 +86,12 @@ fn witnessed(outcome: &ExistentialOutcome) -> &[LassoWitness] {
 }
 
 /// The body's atoms on the states of a lasso, through the world's seam.
-struct Letters<'w> {
-    world: &'w World,
+struct Letters<'a, 'w> {
+    seams: &'a Seams<'w>,
     states: Vec<ModelSimState>,
 }
 
-impl TupleLetters for Letters<'_> {
+impl TupleLetters for Letters<'_, '_> {
     fn atom(
         &mut self,
         atom: FormulaNodeId,
@@ -100,8 +104,7 @@ impl TupleLetters for Letters<'_> {
             .states
             .get(index)
             .ok_or(LetterStop::Fault(InternalFault::new("oracle", "position")))?;
-        self.world
-            .seams()
+        self.seams
             .atom(atom, &instance(), &[state], meter)
             .map_err(LetterStop::from)
     }
@@ -136,67 +139,115 @@ struct Node {
     key: StateKey,
 }
 
-/// The vault's own system, which the oracle re-executes lassos through, and
-/// the clause evaluator it reads them with.
-struct Oracle<'w> {
-    world: &'w World,
+/// The steps out of a state and the states they reach.
+type Edges = Rc<Vec<(ModelTransition, Rc<Node>)>>;
+
+/// The expansions of one vault system: each state's successors with their
+/// keys, computed once. They do not depend on the clause, so every oracle
+/// over the same vault, reset and starts shares them.
+struct Expansions<'w> {
     system: ModelSystem<'w>,
+    successors: RefCell<HashMap<StateKey, Edges>>,
     /// Whether `reset` is enabled at the state with the state key.
     enables_reset: RefCell<HashMap<StateKey, bool>>,
 }
 
-impl<'w> Oracle<'w> {
-    fn new(world: &'w World) -> Self {
-        Self {
-            world,
+impl<'w> Expansions<'w> {
+    fn new(world: &'w World) -> Rc<Self> {
+        Rc::new(Self {
             system: ModelSystem::new(world.subject().simulation).expect("the subject admits"),
+            successors: RefCell::new(HashMap::new()),
             enables_reset: RefCell::new(HashMap::new()),
-        }
+        })
     }
 
-    fn node(&self, state: ModelSimState) -> Node {
+    fn node(&self, state: ModelSimState) -> Rc<Node> {
         let (bytes, _) = self.system.state_key(&state).expect("a key");
         let key = qsl_eval::simulation::StateKey::from_canonical_bytes(bytes);
-        Node { state, key }
+        Rc::new(Node { state, key })
+    }
+
+    fn initial(&self, index: usize) -> Rc<Node> {
+        self.node(self.system.initial_states()[index].clone())
+    }
+
+    fn successors(&self, node: &Node) -> Edges {
+        if let Some(found) = self.successors.borrow().get(&node.key) {
+            return Rc::clone(found);
+        }
+        let expanded: Vec<_> = self
+            .system
+            .successors(&node.state)
+            .expect("the vault expands")
+            .successors
+            .into_iter()
+            .map(|(transition, state)| (transition, self.node(state)))
+            .collect();
+        let expanded = Rc::new(expanded);
+        self.successors
+            .borrow_mut()
+            .insert(node.key.clone(), Rc::clone(&expanded));
+        expanded
+    }
+
+    fn enables_reset(&self, node: &Node) -> bool {
+        if let Some(found) = self.enables_reset.borrow().get(&node.key) {
+            return *found;
+        }
+        let enabled = self
+            .successors(node)
+            .iter()
+            .any(|(transition, _)| is_reset(transition.operation()));
+        self.enables_reset
+            .borrow_mut()
+            .insert(node.key.clone(), enabled);
+        enabled
+    }
+}
+
+/// The vault's own system, which the oracle re-executes lassos through, and
+/// the clause evaluator it reads them with.
+struct Oracle<'w> {
+    world: &'w World,
+    /// The world's seams, built once: building them admits the subject.
+    seams: Seams<'w>,
+    expansions: Rc<Expansions<'w>>,
+}
+
+impl<'w> Oracle<'w> {
+    fn new(world: &'w World) -> Self {
+        Self::sharing(world, Expansions::new(world))
+    }
+
+    /// An oracle for `world` that reuses the expansions of another world over
+    /// the same vault, reset and starts.
+    fn sharing(world: &'w World, expansions: Rc<Expansions<'w>>) -> Self {
+        Self {
+            world,
+            seams: world.seams(),
+            expansions,
+        }
     }
 
     /// The states of `lasso` by re-executing its steps: one for the initial
     /// state and one for each step.
-    fn replayed(&self, lasso: &ModelLasso) -> Vec<Node> {
-        let mut nodes =
-            vec![self.node(self.system.initial_states()[lasso.path.initial as usize].clone())];
+    fn replayed(&self, lasso: &ModelLasso) -> Vec<Rc<Node>> {
+        let mut nodes = vec![self.expansions.initial(lasso.path.initial as usize)];
         for step in &lasso.path.steps {
-            let last = &nodes.last().expect("a state").state;
+            let last = Rc::clone(nodes.last().expect("a state"));
             let next = self
-                .system
-                .successors(last)
-                .expect("the vault expands")
-                .successors
-                .into_iter()
-                .map(|(transition, state)| (transition, self.node(state)))
+                .expansions
+                .successors(&last)
+                .iter()
                 .find(|(transition, next)| {
                     *transition == step.transition && next.key == step.post_state
                 })
                 .unwrap_or_else(|| panic!("{step:?} is not a step of the vault"))
-                .1;
+                .1
+                .clone();
             nodes.push(next);
         }
         nodes
-    }
-
-    fn enables_reset(&self, node: &Node) -> bool {
-        *self
-            .enables_reset
-            .borrow_mut()
-            .entry(node.key.clone())
-            .or_insert_with(|| {
-                self.system
-                    .successors(&node.state)
-                    .expect("the vault expands")
-                    .successors
-                    .iter()
-                    .any(|(transition, _)| is_reset(transition.operation()))
-            })
     }
 
     /// Whether `lasso` is a lasso of the vault whose loop closes, is fair under
@@ -209,11 +260,7 @@ impl<'w> Oracle<'w> {
         if terminal {
             let last = nodes.last().expect("a state");
             assert!(
-                self.system
-                    .successors(&last.state)
-                    .expect("expands")
-                    .successors
-                    .is_empty(),
+                self.expansions.successors(last).is_empty(),
                 "a stutter loop is at a terminal state"
             );
         } else {
@@ -230,7 +277,7 @@ impl<'w> Oracle<'w> {
     /// re-enters at `entry` is fair under `fairness` and satisfies the body.
     fn satisfies(
         &self,
-        nodes: &[Node],
+        nodes: &[Rc<Node>],
         steps: &[qsl_replay::ModelStep],
         entry: usize,
         terminal: bool,
@@ -259,7 +306,7 @@ impl<'w> Oracle<'w> {
         let taken = loop_steps
             .iter()
             .any(|step| is_reset(step.transition.operation()));
-        let enabled = |node: &Node| self.enables_reset(node);
+        let enabled = |node: &Rc<Node>| self.expansions.enables_reset(node);
         let fair = match fairness {
             Fairness::None => true,
             Fairness::Weak => taken || !loop_nodes.iter().all(enabled),
@@ -269,7 +316,7 @@ impl<'w> Oracle<'w> {
             return false;
         }
         let mut letters = Letters {
-            world: self.world,
+            seams: &self.seams,
             states: positions.iter().map(|node| node.state.clone()).collect(),
         };
         let outcome = evaluate_tuple(
@@ -285,16 +332,12 @@ impl<'w> Oracle<'w> {
     /// Whether some lasso of at most `depth` steps from initial state
     /// `initial` is a witness: the brute-force search.
     fn exists(&self, initial: usize, fairness: Fairness, depth: usize) -> bool {
-        let start = self.node(self.system.initial_states()[initial].clone());
+        let start = self.expansions.initial(initial);
         // Each prefix: the steps taken and the nodes reached.
         let mut stack = vec![(Vec::new(), vec![start])];
         while let Some((steps, nodes)) = stack.pop() {
             let last = nodes.last().expect("a state");
-            let successors = self
-                .system
-                .successors(&last.state)
-                .expect("expands")
-                .successors;
+            let successors = self.expansions.successors(last);
             let mut lassos = Vec::new();
             if successors.is_empty() {
                 lassos.push((steps.len(), true));
@@ -310,22 +353,15 @@ impl<'w> Oracle<'w> {
                 }
             }
             if steps.len() < depth {
-                for (transition, post) in successors {
-                    let post = self.node(post);
+                for (transition, post) in successors.iter() {
                     let mut next_steps = steps.clone();
                     next_steps.push(qsl_replay::ModelStep {
-                        transition,
+                        transition: transition.clone(),
                         post_state: post.key.clone(),
                         delay: None,
                     });
-                    let mut next_nodes: Vec<Node> = nodes
-                        .iter()
-                        .map(|node| Node {
-                            state: node.state.clone(),
-                            key: node.key.clone(),
-                        })
-                        .collect();
-                    next_nodes.push(post);
+                    let mut next_nodes = nodes.clone();
+                    next_nodes.push(Rc::clone(post));
                     stack.push((next_steps, next_nodes));
                 }
             }
@@ -1151,12 +1187,16 @@ fn the_engine_agrees_with_a_brute_force_search_of_lassos() {
             } else {
                 &[Fairness::None]
             };
-            for fairness in fairness.iter().copied() {
-                for starts in [&STARTS, &MIXED] {
+            for starts in [&STARTS, &MIXED] {
+                // The vault's expansions do not depend on the clause or its
+                // fairness: expand each state once for all of them.
+                let base = World::new(vault, reset, starts, &clause("", bodies[0]));
+                let expansions = Expansions::new(&base);
+                for fairness in fairness.iter().copied() {
                     for body in bodies {
                         let world =
                             World::new(vault, reset, starts, &clause(fairness.text(), body));
-                        let oracle = Oracle::new(&world);
+                        let oracle = Oracle::sharing(&world, Rc::clone(&expansions));
                         let expected: Vec<bool> = (0..starts.len())
                             .map(|initial| oracle.exists(initial, fairness, 3))
                             .collect();

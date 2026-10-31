@@ -208,6 +208,7 @@ impl Phase<'_, '_> {
             self.seed,
             trace,
             step_ceiling(self.limits, self.horizon),
+            None,
             |state| {
                 let here = position;
                 position += 1;
