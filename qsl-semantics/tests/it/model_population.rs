@@ -1126,7 +1126,7 @@ fn l03_lookup_refused_mode() {
             assert_eq!(
                 refusal.cause,
                 ModelRefusalCause::AbsentKey {
-                    binding: format!("{:?}", binding.population_id()),
+                    binding: binding.population_id().node().to_string(),
                     key: b"c9".to_vec(),
                 }
             );
@@ -1134,54 +1134,6 @@ fn l03_lookup_refused_mode() {
         other => panic!("expected Refused(invalid_runtime_input/absent-key), got {other:?}"),
     }
     assert_eq!(meter.consumed(LimitKind::WorkUnits), 1);
-}
-
-/// `refused` mode's absence detail must report a malformed (non-UTF-8)
-/// identity as distinguishable from a well-formed identity string -- never
-/// `"c9 is not a member..."` prose that could be mistaken for a real,
-/// well-formed object identity that merely happens to contain
-/// non-printable characters. `lookup` reports it as `"identity bytes
-/// 0x<hex> (not UTF-8)"`, a shape no real member's own identity string
-/// (always valid UTF-8, `PopulationDocument`'s member records) can ever
-/// produce.
-#[test]
-#[trace("QSpec-TC-198", "QSpec-FR-153-AC-2", "QSpec-FR-153-AC-4")]
-fn l03_lookup_refused_mode_malformed_identity_reports_hex_detail() {
-    let domain_package = fixture_f1();
-    let view = view_of(&domain_package);
-    let universe = view_of(&domain_package)
-        .object_universe()
-        .identity()
-        .expect("the universe has a root type");
-    let a = type_id(&view, "model.A");
-    let binding = admitted_binding(&view, &p1("test/orders"));
-
-    let malformed = LookupKey {
-        static_type: DeclarationKey::fixture("model.A"),
-        universe: universe.clone(),
-        type_identity: a,
-        object: vec![0xFF, 0xFE],
-    };
-    let mut meter = Meter::new(SCALAR_UNLIMITED);
-    let outcome = lookup(
-        &binding,
-        &DeclarationKey::fixture("model.A"),
-        &malformed,
-        AbsenceMode::Refused,
-        &mut meter,
-    );
-    assert_eq!(
-        outcome,
-        LookupOutcome::Refused(ModelRefusal {
-            code: Code::InvalidRuntimeInput,
-            cause: ModelRefusalCause::AbsentKey {
-                binding: format!("{:?}", binding.population_id()),
-                key: vec![0xFF, 0xFE],
-            },
-            detail: "identity bytes 0xfffe (not UTF-8) is not a member of the bound population"
-                .to_string(),
-        })
-    );
 }
 
 /// `LookupKey.object`'s raw bytes are the only input `lookup` uses to

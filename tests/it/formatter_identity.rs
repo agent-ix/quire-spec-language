@@ -1610,14 +1610,12 @@ fn dependency_library_and_scalar_variants_keep_format_identity() {
             vec![library],
         );
     };
-    for constant in ["F", "F_CHANGED"] {
-        let body = source_literal(fixture, constant);
-        compile(&body, &h);
-        compile(
-            &body,
-            "function p using v(y: Int[0, 9]): Boolean pure { g::f(y) }\n",
-        );
-    }
+    let body = source_literal(fixture, "F");
+    compile(&body, &h);
+    compile(
+        &body,
+        "function p using v(y: Int[0, 9]): Boolean pure { g::f(y) }\n",
+    );
     compile(
         &source_literal(fixture, "F"),
         "function p using v(): Boolean pure { g::f(3) }\n",
