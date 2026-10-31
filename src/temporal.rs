@@ -476,6 +476,12 @@ fn run(
     };
 
     let root = usize::try_from(root.index).map_err(|_| Refusal::Reference { subject })?;
+    let operations: Vec<_> = selected
+        .declaration
+        .temporal
+        .iter()
+        .map(|node| node.operation.clone())
+        .collect();
     let ordered = trace.ordered();
 
     match activation::resolve(shape, trace, declaration, work)? {
@@ -515,7 +521,7 @@ fn run(
                     profile: selected.profile,
                     trace,
                     ordered: ordered.clone(),
-                    nodes: &selected.declaration.temporal,
+                    nodes: &operations,
                     declaration,
                     instance: ordinal,
                     watermark,
