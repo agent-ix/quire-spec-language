@@ -1015,6 +1015,7 @@ mod tests {
 
     use super::*;
 
+    #[trace("TC-763", "FR-281-AC-12")]
     #[test]
     fn deadline_guard_cancels_when_its_wait_times_out() {
         let cancel = Cancel::new();
@@ -1025,6 +1026,7 @@ mod tests {
         assert_eq!(cancel.cause(), Some(CancelCause::Deadline));
     }
 
+    #[trace("TC-763", "FR-281-AC-12")]
     #[test]
     fn deadline_guard_does_not_cancel_when_analysis_finishes_before_timeout() {
         let cancel = Cancel::new();

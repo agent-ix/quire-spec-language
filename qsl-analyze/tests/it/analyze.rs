@@ -493,6 +493,75 @@ fn routed_service_item(world: &crate::prob_world::World) -> qsl_analyze::provide
     }
 }
 
+fn routed_service_items(
+    world: &crate::prob_world::World,
+    count: usize,
+) -> Vec<qsl_analyze::provider::RoutedItem<'_>> {
+    (0..count)
+        .map(|request_index| {
+            let mut item = routed_service_item(world);
+            item.item.request_index = index(request_index);
+            item
+        })
+        .collect()
+}
+
+fn run_provider(
+    world: &crate::prob_world::World,
+    items: &[qsl_analyze::provider::RoutedItem<'_>],
+    limits: &AnalyzeLimits,
+    cancel: &Cancel,
+) -> Vec<qsl_replay::TerminalRecord> {
+    qsl_analyze::provider::run(
+        &world.package,
+        &world.binding(),
+        items,
+        &Engines::qsl().expect("they register"),
+        limits,
+        cancel,
+    )
+}
+
+fn run_one_observed_service_item(
+    world: &crate::prob_world::World,
+    item: &qsl_analyze::provider::RoutedItem<'_>,
+    limits: &AnalyzeLimits,
+) -> (Vec<qsl_replay::TerminalRecord>, usize) {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    let charges = Arc::new(AtomicUsize::new(0));
+    let observed_charges = Arc::clone(&charges);
+    let cancel = Cancel::observing(move || {
+        observed_charges.fetch_add(1, Ordering::Relaxed);
+    });
+    let records = run_provider(world, std::slice::from_ref(item), limits, &cancel);
+    (records, charges.load(Ordering::Relaxed))
+}
+
+fn cancel_after_charges(charges_before_cancel: usize, cause: CancelCause) -> Cancel {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, OnceLock};
+
+    let handle = Arc::new(OnceLock::<Cancel>::new());
+    let handle_for_observer = Arc::clone(&handle);
+    let charges = Arc::new(AtomicUsize::new(0));
+    let observed_charges = Arc::clone(&charges);
+    let cancel = Cancel::observing(move || {
+        let charge = observed_charges.fetch_add(1, Ordering::Relaxed);
+        if charge >= charges_before_cancel {
+            handle_for_observer
+                .get()
+                .expect("the observed handle is initialized")
+                .cancel(cause);
+        }
+    });
+    handle
+        .set(cancel.clone())
+        .expect("the observed handle initializes once");
+    cancel
+}
+
 /// The `analyze` half of FR-280-AC-5 (TC-761 step 4); FR-280-AC-2 stays
 /// open for EN-1, which has no provider entry yet: over
 /// `Service`, whose checked package S4 refuses to emit, the record `analyze`
@@ -678,6 +747,7 @@ fn provider_entry_refuses_undeclared_population_before_running_items_in_input_or
 
 /// A zero-millisecond wall-clock deadline cancels the request before its
 /// engine runs, producing the typed incomplete deadline outcome.
+#[trace("TC-763", "FR-281-AC-12")]
 #[test]
 fn provider_entry_settles_a_zero_millisecond_deadline_as_incomplete() {
     use crate::prob_world::{self, World};
@@ -710,4 +780,143 @@ fn provider_entry_settles_a_zero_millisecond_deadline_as_incomplete() {
             source: CancelCause::Deadline,
         })
     );
+}
+
+/// TC-763: the finite deadline is request-wide; a prior result survives, and
+/// every later open item settles incomplete with the deadline cause.
+#[trace("TC-763", "FR-281-AC-12")]
+#[test]
+fn finite_deadline_preserves_settled_records_and_cancels_each_open_item() {
+    use crate::prob_world::{self, World};
+    use qsl_replay::{IncompleteCause, TerminalValue};
+
+    let claim = "probabilistic Two using ev on M over (s: M::Server) under Steady on origin \
+         with alpha 0.01, beta 0.01, indifference 0.01 \
+         { quantile 0.95 of (accumulate duration from holds(s.phase = 1) \
+         until holds(s.phase = 2) within 10) <= 2 }\n";
+    let world = World::new(&prob_world::service(claim));
+    let items = routed_service_items(&world, 3);
+    let limits = AnalyzeLimits {
+        accounting: prob_world::UNLIMITED,
+        deadline_ms: Some(60_000),
+        ..AnalyzeLimits::default()
+    };
+    let (completed, charges_before_next_item) = run_one_observed_service_item(
+        &world,
+        &items[0],
+        &AnalyzeLimits {
+            deadline_ms: None,
+            ..limits
+        },
+    );
+    assert!(charges_before_next_item > 0);
+    assert!(matches!(completed[0].value(), TerminalValue::Measured(_)));
+
+    let cancel = cancel_after_charges(charges_before_next_item, CancelCause::Deadline);
+    let records = run_provider(&world, &items, &limits, &cancel);
+
+    assert_eq!(records.len(), 3);
+    assert_eq!(records[0], completed[0]);
+    for record in &records[1..] {
+        assert!(matches!(
+            record.value(),
+            TerminalValue::Incomplete(IncompleteCause::Cancelled {
+                source: CancelCause::Deadline
+            })
+        ));
+    }
+}
+
+/// TC-763: caller cancellation that wins the race keeps its cause for open
+/// items and preserves the result already settled.
+#[trace("TC-763", "FR-281-AC-12")]
+#[test]
+fn caller_cancellation_preserves_settled_records_and_cause_for_open_items() {
+    use crate::prob_world::{self, World};
+    use qsl_replay::{IncompleteCause, TerminalValue};
+
+    let claim = "probabilistic Two using ev on M over (s: M::Server) under Steady on origin \
+         with alpha 0.01, beta 0.01, indifference 0.01 \
+         { quantile 0.95 of (accumulate duration from holds(s.phase = 1) \
+         until holds(s.phase = 2) within 10) <= 2 }\n";
+    let world = World::new(&prob_world::service(claim));
+    let items = routed_service_items(&world, 3);
+    let limits = AnalyzeLimits {
+        accounting: prob_world::UNLIMITED,
+        deadline_ms: Some(60_000),
+        ..AnalyzeLimits::default()
+    };
+    let (completed, charges_before_next_item) = run_one_observed_service_item(
+        &world,
+        &items[0],
+        &AnalyzeLimits {
+            deadline_ms: None,
+            ..limits
+        },
+    );
+    let cancel = cancel_after_charges(charges_before_next_item, CancelCause::Requested);
+    let records = run_provider(&world, &items, &limits, &cancel);
+
+    assert_eq!(records.len(), 3);
+    assert_eq!(records[0], completed[0]);
+    for record in &records[1..] {
+        assert!(matches!(
+            record.value(),
+            TerminalValue::Incomplete(IncompleteCause::Cancelled {
+                source: CancelCause::Requested
+            })
+        ));
+    }
+}
+
+/// TC-763: an engine limit reached before the deadline keeps its typed limit
+/// result while the deadline cancels later open items.
+#[trace("TC-763", "FR-281-AC-12")]
+#[test]
+fn engine_limit_before_deadline_keeps_its_typed_result() {
+    use crate::prob_world::{self, World};
+    use qsl_replay::statistical::StatisticalLimit;
+    use qsl_replay::{IncompleteCause, ModelCheckLimit, TerminalValue};
+
+    let claim = "probabilistic Two using ev on M over (s: M::Server) under Steady on origin \
+         with alpha 0.01, beta 0.01, indifference 0.01 \
+         { quantile 0.95 of (accumulate duration from holds(s.phase = 1) \
+         until holds(s.phase = 2) within 10) <= 2 }\n";
+    let world = World::new(&prob_world::service(claim));
+    let mut items = routed_service_items(&world, 3);
+    items[0].item.limits.max_draws = 0;
+    let limits = AnalyzeLimits {
+        accounting: prob_world::UNLIMITED,
+        deadline_ms: Some(60_000),
+        ..AnalyzeLimits::default()
+    };
+    let (limited, charges_before_next_item) = run_one_observed_service_item(
+        &world,
+        &items[0],
+        &AnalyzeLimits {
+            deadline_ms: None,
+            ..limits
+        },
+    );
+    assert!(matches!(
+        limited[0].value(),
+        TerminalValue::Incomplete(IncompleteCause::LimitReached {
+            limit: ModelCheckLimit::Statistical(StatisticalLimit::MaxDraws),
+            ..
+        })
+    ));
+
+    let cancel = cancel_after_charges(charges_before_next_item, CancelCause::Deadline);
+    let records = run_provider(&world, &items, &limits, &cancel);
+
+    assert_eq!(records.len(), 3);
+    assert_eq!(records[0], limited[0]);
+    for record in &records[1..] {
+        assert!(matches!(
+            record.value(),
+            TerminalValue::Incomplete(IncompleteCause::Cancelled {
+                source: CancelCause::Deadline
+            })
+        ));
+    }
 }
