@@ -93,3 +93,13 @@ scope:
 ## Validation evidence
 
 Frozen-head static review; coder confined focused evidence pending. No reviewer Cargo build, aggregate gate, source edit, push or merge performed.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Pass 1: inspected 29d8fb4e52da9f9e26e4d9ccb0804e0635369859 against d43ffa89a. Precisely the six new test attributes now use QSpec-TC-233 and QSpec-FR-322-AC-278..281. QSpec TC-233 explicitly owns those criteria; unrelated historical tags are preserved. |
+
+## Disposition pass 1 evidence
+
+Frozen head 29d8fb4e52da9f9e26e4d9ccb0804e0635369859. Compared the complete fix diff: six trace attributes and verbatim review custody only. No introduced behavior or test-oracle changes, and no new findings. Original Findings table remains unchanged. Static finding is fixed; scoped mergeability is conditional on completion of coder-owned focused tests and the lead-owned final aggregate gate. Workspace all-targets/all-features Clippy passed on d43ffa89a (9m27s); only tags and SR artifacts changed after it. Format and diff checks passed according to coder evidence. Focused corrected-source tests remain running at this disposition; lead must reconcile their results before merge. No duplicate Cargo or aggregate gate run by reviewer. Full100k/Debug acceptance and QSL-1337 remain open as recorded above.
