@@ -1545,6 +1545,7 @@ fn sample_then_replay_round_trips_and_refuses_tampered_traces() {
         initial: key("b"),
         steps: vec![qsl_eval::simulation::Step {
             transition: op("from_b"),
+            ordinal: 0,
             key: key("z"),
         }],
         findings: vec![],
@@ -1561,10 +1562,12 @@ fn sample_then_replay_round_trips_and_refuses_tampered_traces() {
         steps: vec![
             qsl_eval::simulation::Step {
                 transition: op("t1"),
+                ordinal: 0,
                 key: key("1"),
             },
             qsl_eval::simulation::Step {
                 transition: op("t2"),
+                ordinal: 0,
                 key: key("2"),
             },
         ],
@@ -1589,6 +1592,56 @@ fn sample_then_replay_round_trips_and_refuses_tampered_traces() {
         Err(ReplayError::MissingTransition {
             step: 0,
             transition: op("bogus"),
+        })
+    );
+}
+
+/// TC-454 step 7, FR-101-AC-5: of two successors sharing a transition
+/// identity but reaching different states, a step records the ordinal of the
+/// one it took and replay follows that one; an ordinal past the last
+/// successor refuses `MissingTransition`.
+#[trace("TC-454", "FR-101-AC-5")]
+#[test]
+fn replay_follows_the_recorded_ordinal_among_same_identity_successors() {
+    let system = EdgeGraph::new(
+        vec!["a"],
+        vec![
+            ("a", op("t"), "p"),
+            ("a", op("t"), "q"),
+            ("q", op("u"), "r"),
+        ],
+    );
+    let step = |transition: Transition, ordinal: usize, to: &str| qsl_eval::simulation::Step {
+        transition,
+        ordinal,
+        key: key(to),
+    };
+    let second: Trace<Transition, String> = Trace {
+        initial: key("a"),
+        steps: vec![step(op("t"), 1, "q"), step(op("u"), 0, "r")],
+        findings: vec![],
+        provenance: None,
+    };
+    // Only `q` offers `u`: replay reaches it by following ordinal 1.
+    assert_eq!(replay(&system, &second, IdentityLimits::default()), Ok(()));
+
+    let mut first = second.clone();
+    first.steps[0].ordinal = 0;
+    assert_eq!(
+        replay(&system, &first, IdentityLimits::default()),
+        Err(ReplayError::MissingTransition {
+            step: 1,
+            transition: op("u"),
+        })
+    );
+
+    let mut forged = second.clone();
+    forged.steps[0].ordinal = 2;
+    assert_eq!(
+        replay(&system, &forged, IdentityLimits::default()),
+        Err(ReplayError::MissingTransition {
+            step: 0,
+            transition: op("t"),
         })
     );
 }

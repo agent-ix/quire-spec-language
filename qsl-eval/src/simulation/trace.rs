@@ -18,6 +18,9 @@ use qsl_foundation::IdentityLimits;
 pub struct Step<T> {
     /// The transition taken.
     pub transition: T,
+    /// The zero-based position of the chosen successor among the current
+    /// state's successors that share `transition`, in canonical order.
+    pub ordinal: usize,
     /// The resulting state's `quire.simulation.state-key/v1` digest, kept
     /// for display and reproduction; replay never compares it.
     pub key: DigestRecord,
@@ -82,7 +85,7 @@ pub enum ReplayError<T: std::fmt::Debug> {
         expected: DigestRecord,
     },
     /// At `step`, the current state offers no successor with this
-    /// transition identity.
+    /// transition identity at the step's ordinal.
     #[error("step {step}: no successor offers transition {transition:?}")]
     MissingTransition {
         /// The zero-based index into `Trace::steps`.
@@ -126,10 +129,11 @@ pub enum ReplayError<T: std::fmt::Debug> {
 /// stop anywhere else (FR-101-AC-14). It recomputes each candidate initial
 /// state's key to find the recorded initial state (FR-101-AC-5).
 ///
-/// A step matches by transition identity alone: replay takes the first
-/// successor of the current state, in canonical order (the same order
-/// `explore` and `sample` themselves walk), whose transition equals the
-/// step's. It compares no recorded step key.
+/// A step matches by transition identity, then by ordinal: replay takes the
+/// successor at the step's `ordinal` among the current state's successors
+/// whose transition equals the step's, in canonical order (the same order
+/// `explore` and `sample` themselves walk). An ordinal past the last such
+/// successor refuses `MissingTransition`. It compares no recorded step key.
 ///
 /// # Errors
 ///
@@ -190,7 +194,8 @@ pub fn replay<S: TransitionSystem>(
         };
         current = successors
             .into_iter()
-            .find(|successor| successor.transition == step.transition)
+            .filter(|successor| successor.transition == step.transition)
+            .nth(step.ordinal)
             .map(|successor| successor.state)
             .ok_or_else(|| ReplayError::MissingTransition {
                 step: index,
