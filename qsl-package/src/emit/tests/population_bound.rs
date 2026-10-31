@@ -168,7 +168,7 @@ fn a_bounded_walked_population_is_linked_as_one_anonymous_node() {
             "kind": "relationship_end",
             "declaration": relation["node_id"],
             "name": "next",
-            "destination_type": order["node_id"],
+            "destination_type": model_node(wire, "Order")["node_id"],
             "population": population["node_id"],
         })
     );
