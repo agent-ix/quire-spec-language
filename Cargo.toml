@@ -198,3 +198,7 @@ opt-level = 3
 opt-level = 3
 [profile.dev.package.quire-semantic-value]
 opt-level = 3
+[profile.dev.package.num-bigint]
+opt-level = 3
+[profile.dev.package.quire-exact]
+opt-level = 3

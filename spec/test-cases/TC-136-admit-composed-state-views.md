@@ -36,6 +36,26 @@ bounds or exported member independently; offer a foreign expression handle and
 an out-of-range handle. Attempt to enter using raw bytes and freely constructed
 wire records without the checked package/session.
 
+### Handle and byte admission (FR-049-AC-1)
+
+A checked handle is made only by the supported source pipeline; no public
+constructor builds one from bytes or from a wire record. The procedure
+therefore has two parts. First, a compile-fail public-API fixture attempts to
+pass raw bytes, a freely constructed wire record and a hand-built
+`CheckedExpression` to `CheckedPackageEvaluation::{call, evaluate}` and to
+build a `ProtocolSlot`; each fails to compile. Second, handles that are
+well-typed but name nothing in the selected package are offered at run time:
+
+| # | Entry point | Handle | Expected |
+| --- | --- | --- | --- |
+| H1 | `call` | a `QualifiedName` the package does not declare | `InputRefusal::UnknownFunction` naming it; no charge; no fallback to a display-name comparison |
+| H2 | `call` | the name of a declaration the package holds that is not callable by name | the same `UnknownFunction` refusal as H1 |
+| H3 | `evaluate_holds` | a formula node id that is no `holds` atom of the clause, and an id beyond the clause's node count | an `Err` fault naming the node; no `Evaluation` |
+| H4 | `evaluate_protocol_slot` | a `ProtocolSlot` selected from another package's protocol, and a slot whose supply is for a different slot | refusal before any charge (FR-390), the meter unchanged |
+
+Each row asserts the typed refusal or fault as a field and the unchanged meter,
+never message text.
+
 For an expression requiring model or observation input, use the checked clause
 environment and selected FR-056/observation authority. Supply a duplicate,
 surplus, foreign and wrong-type binder separately. For object inputs, offer a

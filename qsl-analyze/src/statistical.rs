@@ -287,6 +287,10 @@ enum TestEnd {
 struct Tally {
     counted: u64,
     draws: u64,
+    /// The counted samples that held, kept as a count so a Bernoulli draw
+    /// costs an increment, not a rational addition.
+    held: u64,
+    /// The sum of the counted fractions.
     sum: Rational,
     /// The counted measures of a quantile claim by value, ascending: the
     /// distinct values are few, so the tally holds counts, not samples.
@@ -301,6 +305,7 @@ impl Tally {
         Self {
             counted: 0,
             draws: 0,
+            held: 0,
             sum: int(0),
             measures: BTreeMap::new(),
             censored: 0,
@@ -342,6 +347,7 @@ impl Tally {
 
     fn estimate(&self) -> Option<Rational> {
         self.sum
+            .add(&Rational::from_integer(Integer::from(self.held)))
             .div(&Rational::from_integer(Integer::from(self.counted)))
     }
 }
@@ -597,7 +603,7 @@ impl Plan<'_> {
                         tally.measured(value);
                     }
                     if held {
-                        tally.sum = tally.sum.add(&int(1));
+                        tally.held += 1;
                     }
                     if let Some(test) = sequential.as_mut() {
                         test.count(held);
@@ -698,19 +704,20 @@ impl Plan<'_> {
             if cycles.count() < regeneration.min_cycles {
                 continue;
             }
-            let Some(interval) = cycles.interval(&regeneration.z_upper).map_err(fault)? else {
+            let Some(interval) = cycles
+                .interval_within(&regeneration.z_upper, iota)
+                .map_err(fault)?
+            else {
                 continue;
             };
-            if interval.half_width <= *iota {
-                let (decision, bounds) =
-                    interval_decision(claim.bound(), &interval.estimate, &interval.half_width);
-                return Ok(TestEnd::Decided(Decided {
-                    decision,
-                    estimate: Some(interval.estimate),
-                    interval: Some(bounds),
-                    undefined: None,
-                }));
-            }
+            let (decision, bounds) =
+                interval_decision(claim.bound(), &interval.estimate, &interval.half_width);
+            return Ok(TestEnd::Decided(Decided {
+                decision,
+                estimate: Some(interval.estimate),
+                interval: Some(bounds),
+                undefined: None,
+            }));
         }
     }
 
