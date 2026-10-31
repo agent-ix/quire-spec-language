@@ -38,7 +38,7 @@ fn main() {
     match mode.as_str() {
         "no-summary" => {}
         "zero-vectors" => {
-            println!("conformance: 0 of 0 QSpec operation vectors match (process double)")
+            println!("conformance: 0 source-map entries over 1 positive fixtures")
         }
         _ => println!("{}", CHECKS[index].1),
     }
