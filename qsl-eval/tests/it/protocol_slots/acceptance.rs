@@ -511,19 +511,6 @@ fn related_indexes_follow_the_emitted_record_order() {
     );
 }
 
-const COUNTERS: [LimitKind; 10] = [
-    LimitKind::IntegerBits,
-    LimitKind::DecimalDigits,
-    LimitKind::ScaleExpansion,
-    LimitKind::TextInputBytes,
-    LimitKind::TextScalars,
-    LimitKind::NormalizedScalars,
-    LimitKind::UnitEdges,
-    LimitKind::ValueOccurrences,
-    LimitKind::WorkUnits,
-    LimitKind::ResultUnits,
-];
-
 fn set_limit(limits: &mut ScalarLimits, kind: LimitKind, bound: u64) {
     match kind {
         LimitKind::IntegerBits => limits.integer_bits = bound,
@@ -582,7 +569,7 @@ fn measured_boundaries(
         expected
     );
     let mut exact_limits = UNLIMITED;
-    for counter in COUNTERS {
+    for counter in LimitKind::ALL {
         set_limit(&mut exact_limits, counter, measured.consumed(counter));
     }
     let mut exact = Meter::new(exact_limits);
@@ -596,7 +583,7 @@ fn measured_boundaries(
         "every counter at its measured usage completes"
     );
     assert_eq!(exact.admitted_charges(), measured.admitted_charges());
-    for counter in COUNTERS {
+    for counter in LimitKind::ALL {
         let used = measured.consumed(counter);
         if used == 0 {
             continue;
@@ -676,7 +663,7 @@ fn retry_and_observation_capture_obey_every_measured_counter_boundary() {
         LimitKind::WorkUnits,
         LimitKind::ResultUnits,
     ];
-    assert_eq!(COUNTERS.into_iter().filter(|counter| measured.consumed(*counter) > 0).collect::<Vec<_>>(), expected_counters, "T's charged counters are independently required by its arithmetic, comparisons and completed result");
+    assert_eq!(LimitKind::ALL.into_iter().filter(|counter| measured.consumed(*counter) > 0).collect::<Vec<_>>(), expected_counters, "T's charged counters are independently required by its arithmetic, comparisons and completed result");
     let mut repeated = Meter::new(UNLIMITED);
     assert_value_eq!(
         completed(
@@ -728,7 +715,7 @@ fn retry_and_observation_capture_obey_every_measured_counter_boundary() {
     let captured = measured_boundaries(&package, &capture, &values, int(5));
     assert_retain_points(&captured, &[], "C (forwarded scalar)");
     assert_eq!(
-        COUNTERS
+        LimitKind::ALL
             .into_iter()
             .filter(|counter| captured.consumed(*counter) > 0)
             .collect::<Vec<_>>(),
@@ -977,7 +964,7 @@ fn registration_activation_trigger_retry_and_recovery_share_the_sum_in_both_orde
             *expected
         );
     }
-    for counter in COUNTERS {
+    for counter in LimitKind::ALL {
         assert_eq!(
             reverse.consumed(counter),
             forward.consumed(counter),
