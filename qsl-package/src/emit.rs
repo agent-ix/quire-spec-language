@@ -17,9 +17,9 @@ use quire_contract_model::{
     CheckedAbstractionPopulation, CheckedArtifactRef, CheckedCapability,
     CheckedCapabilityDisposition, CheckedDeclaration, CheckedDependencySelection,
     CheckedDiagnosticsV2, CheckedFieldScope, CheckedFrameModification, CheckedNodeId,
-    CheckedNodeKind, CheckedNodeOwner, CheckedNodePathSegment, CheckedNodeTag, CheckedOccurrence,
-    CheckedOccurrenceRole, CheckedOperationAnchorBody, CheckedPackageEvidence,
-    CheckedPackageLockV2, CheckedPackageSourceCorrespondenceRef, CheckedPackageV2, CheckedRational,
+    CheckedNodeKind, CheckedNodeOwner, CheckedNodeTag, CheckedOccurrence, CheckedOccurrenceRole,
+    CheckedOperationAnchorBody, CheckedPackageEvidence, CheckedPackageLockV2,
+    CheckedPackageSourceCorrespondenceRef, CheckedPackageV2, CheckedRational,
     CheckedRefinementStepRowRegion, CheckedScopedDeletion, CheckedSelection, CheckedSelectionRole,
     CheckedSemanticGraphV2, CheckedSemanticNodeV2, CheckedSourceMapEntry, CheckedSourceRef,
     CheckedSourceRegion, CheckedTerm, DimensionTerm, LiteralKind, NominalBody, ProtocolForm,
@@ -43,9 +43,7 @@ use qsl_semantics::value::{
     native_diagnostics_catalog, DefinitionReference, DefinitionRole, HeaderLayer, Member,
     ModelRole, NodeOwner, TemporalRole,
 };
-use quire_exact::{
-    Cancel, NodeKey, NodeKeyView, NodePathIter, Origin, PathSegment, PathSegmentView, Role,
-};
+use quire_exact::{Cancel, NodeKey, Origin, PathSegment, Role};
 use quire_semantic_value::location::Location;
 
 use super::{CheckedPackage, EmittedPackage};
@@ -182,6 +180,15 @@ pub enum EmitRefusal {
     /// A lowering-local placeholder reached the wire boundary unresolved.
     #[error("a checked node body contains an unresolved node reference")]
     UnresolvedNodeReference,
+    /// A written node's path names an operand node the graph does not hold,
+    /// so the operand has no index segment (FR-322 "Operand index segments").
+    #[error("node {node:?} names operand {operand:?}, which the graph does not hold")]
+    OperandNotInGraph {
+        /// The written node.
+        node: Box<CheckedNodeId>,
+        /// Its operand.
+        operand: Box<CheckedNodeId>,
+    },
 }
 
 impl From<quire_canonical::Error> for EmitRefusal {
@@ -212,7 +219,9 @@ impl EmitRefusal {
             Self::RefinementIdentityEncoding => Code::OutputFailure,
             Self::RefinementNotEmitted => Code::UnsupportedConstruct,
             Self::UnlocatedRefinementDeclaration => Code::UnsupportedProjection,
-            Self::SourceMapInvariant | Self::UnresolvedNodeReference => Code::RuntimeInvariant,
+            Self::SourceMapInvariant
+            | Self::UnresolvedNodeReference
+            | Self::OperandNotInGraph { .. } => Code::RuntimeInvariant,
         }
     }
 
@@ -237,7 +246,8 @@ impl EmitRefusal {
             | Self::RefinementIdentityEncoding
             | Self::UnlocatedRefinementDeclaration
             | Self::SourceMapInvariant
-            | Self::UnresolvedNodeReference => None,
+            | Self::UnresolvedNodeReference
+            | Self::OperandNotInGraph { .. } => None,
         }
     }
 }
@@ -350,48 +360,11 @@ fn ir_tag(tag: NodeTag) -> CheckedNodeTag {
     }
 }
 
-/// Convert a checked structural key to the identical V2 wire identity.
-/// Nested path nodes are visited with an explicit stack so their depth
-/// cannot consume the call stack.
+/// The structural V2 identity of a checked key (FR-322 "Operand index
+/// segments"): each operand is the operand node's own id, shared where it is
+/// named twice. The package writer holds each operand as its index segment.
 pub(crate) fn node_id(key: impl std::borrow::Borrow<NodeKey>) -> CheckedNodeId {
-    struct Frame<'a> {
-        package: &'a str,
-        ordinal: u64,
-        segments: NodePathIter<'a>,
-        path: Vec<CheckedNodePathSegment>,
-    }
-    fn frame(view: NodeKeyView<'_>) -> Frame<'_> {
-        Frame {
-            package: view.package(),
-            ordinal: view.ordinal(),
-            segments: view.path(),
-            path: Vec::new(),
-        }
-    }
-    let mut current = frame(key.borrow().view());
-    let mut parents = Vec::new();
-    loop {
-        match current.segments.next() {
-            Some(PathSegmentView::Text(text)) => {
-                current.path.push(CheckedNodePathSegment::Name(text.into()));
-            }
-            Some(PathSegmentView::Node(nested)) => {
-                parents.push(std::mem::replace(&mut current, frame(nested)));
-            }
-            None => {
-                let id = CheckedNodeId {
-                    package: current.package.into(),
-                    path: std::mem::take(&mut current.path),
-                    ordinal: current.ordinal,
-                };
-                let Some(mut parent) = parents.pop() else {
-                    return id;
-                };
-                parent.path.push(CheckedNodePathSegment::Node(Box::new(id)));
-                current = parent;
-            }
-        }
-    }
+    qsl_semantics::check::wire_id::structural_id(key.borrow())
 }
 
 fn admitted_id(reference: &NodeRef) -> Result<CheckedNodeId, EmitRefusal> {
@@ -401,48 +374,11 @@ fn admitted_id(reference: &NodeRef) -> Result<CheckedNodeId, EmitRefusal> {
         .ok_or(EmitRefusal::UnresolvedNodeReference)
 }
 
-/// Recover the structural kernel key of a node that IR has already admitted.
-/// The explicit parent stack handles nested path identities at any depth.
+/// The structural kernel key of an id this emitter built, which holds no
+/// index segment. An id read from a package resolves against that package's
+/// graph instead ([`qsl_semantics::check::wire_id::WireGraph::key`]).
 pub(crate) fn admitted_key(id: &CheckedNodeId) -> Result<NodeKey, EmitRefusal> {
-    struct Frame<'a> {
-        package: &'a str,
-        ordinal: u64,
-        segments: std::slice::Iter<'a, CheckedNodePathSegment>,
-        path: Vec<PathSegment>,
-    }
-    fn frame(id: &CheckedNodeId) -> Frame<'_> {
-        Frame {
-            package: &id.package,
-            ordinal: id.ordinal,
-            segments: id.path.iter(),
-            path: Vec::new(),
-        }
-    }
-    let mut current = frame(id);
-    let mut parents = Vec::new();
-    loop {
-        match current.segments.next() {
-            Some(CheckedNodePathSegment::Name(text)) => {
-                current.path.push(PathSegment::Text(text.to_string()));
-            }
-            Some(CheckedNodePathSegment::Node(nested)) => {
-                parents.push(std::mem::replace(&mut current, frame(nested)));
-            }
-            None => {
-                let key = NodeKey::new(
-                    current.package,
-                    std::mem::take(&mut current.path),
-                    current.ordinal,
-                )
-                .map_err(|_| EmitRefusal::SourceMapInvariant)?;
-                let Some(mut parent) = parents.pop() else {
-                    return Ok(key);
-                };
-                parent.path.push(PathSegment::Node(key));
-                current = parent;
-            }
-        }
-    }
+    qsl_semantics::check::wire_id::node_key(id).map_err(|_| EmitRefusal::SourceMapInvariant)
 }
 
 /// The Contract IR occurrence `origin` names, as [`emit_checked`] writes it
@@ -2002,6 +1938,21 @@ fn rekey_timed_model_nodes(
         if changes.is_empty() {
             return Ok(());
         }
+        // FR-322 "Operand index segments": a node whose own path holds a
+        // rekeyed node as an operand is rekeyed with it, so every operand
+        // stays a node of the graph.
+        let mut next = 0;
+        while let Some((old, new)) = changes.get(next).cloned() {
+            next += 1;
+            for node in nodes.iter() {
+                if changes.iter().any(|(changed, _)| *changed == node.node_id) {
+                    continue;
+                }
+                if let Some(rekeyed) = with_operand(&node.node_id, &old, &new) {
+                    changes.push((node.node_id.clone(), rekeyed));
+                }
+            }
+        }
         for (old, new) in changes {
             for node in nodes.iter_mut() {
                 node.replace_node_id(&old, &new);
@@ -2016,6 +1967,33 @@ fn rekey_timed_model_nodes(
     Err(EmitRefusal::TimedModelWriterInvariant(
         "timed-node identity propagation did not converge",
     ))
+}
+
+/// `id` with each direct operand equal to `old` replaced by `new`, or `None`
+/// when `id` holds no such operand.
+fn with_operand(
+    id: &CheckedNodeId,
+    old: &CheckedNodeId,
+    new: &CheckedNodeId,
+) -> Option<CheckedNodeId> {
+    use quire_contract_model::CheckedNodePathSegment as Segment;
+    let mut changed = false;
+    let path = id
+        .path
+        .iter()
+        .map(|segment| match segment {
+            Segment::Node(operand) if **operand == *old => {
+                changed = true;
+                Segment::Node(std::sync::Arc::new(new.clone()))
+            }
+            other => other.clone(),
+        })
+        .collect();
+    changed.then(|| CheckedNodeId {
+        package: id.package.clone(),
+        path,
+        ordinal: id.ordinal,
+    })
 }
 
 /// The QSpec FR-322 producer identity for a timed node. Declared roots keep
@@ -2250,8 +2228,10 @@ pub fn emit_timed_models(
 
     let lock = base.lock().clone();
     let mut source_map = base.source_map().to_vec();
+    read_index_segments(&mut nodes, &mut source_map)?;
     rekey_timed_model_nodes(&mut nodes, &mut source_map)?;
     let inspection_source_map = inspection_source_map(&source_map)?;
+    write_index_segments(&mut nodes, &mut source_map, &mut [])?;
     let semantic_graph = CheckedSemanticGraphV2 {
         graph_version: base.graph().graph_version.clone(),
         nodes,
@@ -3012,11 +2992,12 @@ fn emit_package_inner(
         dependency_selections: dependency_selections(package),
         refinement_internals: None,
     };
+    let inspection_source_map = inspection_source_map(&source_map)?;
+    write_index_segments(&mut nodes, &mut source_map, &mut step_rows)?;
     let semantic_graph = CheckedSemanticGraphV2 {
         graph_version: GRAPH_V2.into(),
         nodes,
     };
-    let inspection_source_map = inspection_source_map(&source_map)?;
     let capability_report = [CheckedCapability {
         feature: root.into(),
         disposition: CheckedCapabilityDisposition::Available,
@@ -3048,6 +3029,109 @@ fn emit_package_inner(
         capability_report: capability_report.to_vec(),
         source_map: inspection_source_map,
     })
+}
+
+/// FR-322 "Operand index segments": rewrite every structural id the package
+/// holds into its wire form, each operand node written as the index segment
+/// `{"node": i}` of that node in `nodes`, whose order is now final.
+///
+/// Each node whose own path holds an operand gets one wire id, and that id
+/// replaces the structural one throughout the package: in every node
+/// (through IR's typed [`CheckedSemanticNodeV2::replace_node_id`], which
+/// reaches every id a body holds), the source map and the step rows.
+///
+/// Remaining work: IR #736's graph-context encoder (or a bulk node-id
+/// visitor) replaces this pass. One replacement per derived node over every
+/// node is quadratic in the graph size.
+fn write_index_segments(
+    nodes: &mut [CheckedSemanticNodeV2],
+    source_map: &mut [CheckedSourceMapEntry],
+    step_rows: &mut [quire_contract_model::CheckedRefinementStepRowRegion],
+) -> Result<(), EmitRefusal> {
+    use quire_contract_model::CheckedNodePathSegment as Segment;
+    let index: BTreeMap<&CheckedNodeId, u64> = nodes
+        .iter()
+        .enumerate()
+        .map(|(at, node)| (&node.node_id, at as u64))
+        .collect();
+    let mut changes = Vec::new();
+    for node in nodes.iter() {
+        let id = &node.node_id;
+        if !id
+            .path
+            .iter()
+            .any(|segment| matches!(segment, Segment::Node(_)))
+        {
+            continue;
+        }
+        let path = id
+            .path
+            .iter()
+            .map(|segment| match segment {
+                Segment::Node(operand) => index
+                    .get(&**operand)
+                    .map(|at| Segment::Index(*at))
+                    .ok_or_else(|| EmitRefusal::OperandNotInGraph {
+                        node: Box::new(id.clone()),
+                        operand: Box::new((**operand).clone()),
+                    }),
+                other => Ok(other.clone()),
+            })
+            .collect::<Result<_, _>>()?;
+        let wire = CheckedNodeId {
+            package: id.package.clone(),
+            path,
+            ordinal: id.ordinal,
+        };
+        changes.push((id.clone(), wire));
+    }
+    drop(index);
+    for (old, new) in &changes {
+        for node in nodes.iter_mut() {
+            node.replace_node_id(old, new);
+        }
+        for entry in source_map.iter_mut().filter(|entry| entry.node_id == *old) {
+            entry.node_id = new.clone();
+        }
+        for row in step_rows.iter_mut().filter(|row| row.node_id == *old) {
+            row.node_id = new.clone();
+        }
+    }
+    Ok(())
+}
+
+/// The inverse of [`write_index_segments`] over an admitted package's nodes:
+/// every wire id that holds an index segment is replaced throughout by the
+/// structural id of the node it names, so the emitter's identity work
+/// compares structural keys.
+fn read_index_segments(
+    nodes: &mut [CheckedSemanticNodeV2],
+    source_map: &mut [CheckedSourceMapEntry],
+) -> Result<(), EmitRefusal> {
+    use quire_contract_model::CheckedNodePathSegment as Segment;
+    let graph =
+        qsl_semantics::check::wire_id::WireGraph::new(nodes.iter().map(|node| &node.node_id))
+            .map_err(|_| EmitRefusal::SourceMapInvariant)?;
+    let changes: Vec<_> = nodes
+        .iter()
+        .zip(graph.keys())
+        .filter(|(node, _)| {
+            node.node_id
+                .path
+                .iter()
+                .any(|segment| matches!(segment, Segment::Index(_)))
+        })
+        .map(|(node, key)| (node.node_id.clone(), node_id(key)))
+        .collect();
+    for (old, new) in &changes {
+        for node in nodes.iter_mut() {
+            node.replace_node_id(old, new);
+        }
+        for entry in source_map.iter_mut().filter(|entry| entry.node_id == *old) {
+            entry.node_id = new.clone();
+        }
+    }
+    Ok(())
 }
 
 /// The evidence IR's reader needs to read this emission back: each of the

@@ -6,7 +6,7 @@ use ix_trace_rs::trace;
 use qsl_foundation::Setting;
 use qsl_replay::{
     compile_admitted, AdmittedCompilation, AdmittedLookupRefusal, DependencyInput, Identifier,
-    NodeKey, ReplayLimits, SourceIdentity, StageLimits, SuppliedLibrary,
+    NodeKey, ReplayLimits, SourceIdentity, StageLimits, SuppliedLibrary, WireIdError,
 };
 use quire_contract_model::{CheckedNodeId, CheckedNodePathSegment};
 use quire_exact::{InvalidNodeKey, PathSegment};
@@ -26,10 +26,10 @@ fn id(text: &str) -> Identifier {
     Identifier::new(text).expect("an identifier")
 }
 
-/// The structural wire id of `key`, as the emitted package spells it.
+/// The wire id of the declared node `key`, as the emitted package spells
+/// it: its declaration path, all strings.
 fn wire(key: &NodeKey) -> CheckedNodeId {
-    let text = qsl_foundation::node_wire::node_key_to_text(key).expect("a node text");
-    serde_json::from_str(&text).expect("a wire id")
+    qsl_semantics::check::wire_id::declared_id(key).expect("a declared node")
 }
 
 fn library() -> SuppliedLibrary {
@@ -222,28 +222,49 @@ fn composite_by_wire_refuses_wrong_kind() {
     );
 }
 
-/// A wire id whose path nests another node maps to the NodeKey with that
-/// nested node, and an id with no path names no node.
+/// FR-322 "Operand index segments": a wire id whose path holds an index
+/// segment maps to the NodeKey holding the key of the graph node at that
+/// index; an index past the graph and an id with no path name no node.
 #[trace("TC-1090", "FR-396-AC-10")]
 #[test]
-fn nested_and_malformed_wire_ids() {
+fn index_segment_and_malformed_wire_ids() {
     let admitted = own();
     let context = admitted.context();
-    let inner = nobody();
+    let graph = context.wire_graph();
+    let color = context.enums().next().expect("the enum").key().clone();
+    let at = graph.index_of(&color).expect("the enum is a graph node");
+    let derived = |index| CheckedNodeId {
+        package: "fixture".into(),
+        path: vec![
+            CheckedNodePathSegment::Name("derived".into()),
+            CheckedNodePathSegment::Index(index),
+        ],
+        ordinal: 1,
+    };
     let nested_key = NodeKey::new(
         "fixture",
         vec![
             PathSegment::Text("derived".to_owned()),
-            PathSegment::Node(inner),
+            PathSegment::Node(color),
         ],
         1,
     )
     .expect("a nested node");
     assert_eq!(
-        context.composite_declaration_by_wire(&wire(&nested_key)),
+        context.composite_declaration_by_wire(&derived(at)),
         Err(AdmittedLookupRefusal::Unknown {
             declaration: nested_key,
             case: None
+        })
+    );
+    let len = graph.keys().len();
+    assert_eq!(
+        context.composite_declaration_by_wire(&derived(len as u64)),
+        Err(AdmittedLookupRefusal::MalformedWire {
+            cause: WireIdError::IndexOutOfRange {
+                index: len as u64,
+                len
+            }
         })
     );
 
@@ -255,7 +276,7 @@ fn nested_and_malformed_wire_ids() {
     assert_eq!(
         context.composite_declaration_by_wire(&empty),
         Err(AdmittedLookupRefusal::MalformedWire {
-            cause: InvalidNodeKey::EmptyPath
+            cause: WireIdError::Key(InvalidNodeKey::EmptyPath)
         })
     );
 }

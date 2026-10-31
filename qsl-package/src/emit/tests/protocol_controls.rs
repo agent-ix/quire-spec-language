@@ -120,10 +120,11 @@ fn pair(name: &str, level: &str) -> (String, String) {
 /// Sets `node`'s dependencies to the reference targets of its body, once each
 /// in ascending structural-key order (a control depends on what it names).
 fn redepend(envelope: &mut Value, position: usize) {
+    let graph = qsl_semantics::check::wire_id::WireGraph::of_package_value(envelope).unwrap();
     let node = &mut envelope["semantic_graph"]["nodes"][position];
     let mut found = Vec::new();
     targets(&node["body"], &mut found);
-    found.sort_by_key(|value| qsl_foundation::node_wire::node_key_from_json(value).unwrap());
+    found.sort_by_key(|value| graph.key_of_value(value).unwrap());
     found.dedup();
     node["dependencies"] = Value::Array(found);
 }
@@ -710,7 +711,7 @@ fn an_attempt_ordering_outside_a_parallel_is_refused_so_the_group_is_empty() {
 #[trace("FR-383-AC-12", "TC-1061")]
 #[test]
 fn two_contracts_are_listed_in_digest_order_whatever_the_source_order() {
-    let contracts = |listed: &str| -> Vec<Value> {
+    let contracts = |listed: &str| -> Vec<NodeKey> {
         let wire = admitted_config(&format!(
             "post Alpha using v on Config::ConfigVersion::attemptUpdate {{ 1 < 2 }}\n\
              post Beta using v on Config::ConfigVersion::attemptUpdate {{ 2 < 3 }}\n\
@@ -720,20 +721,17 @@ fn two_contracts_are_listed_in_digest_order_whatever_the_source_order() {
              contracts [{listed}] as (tried: Boolean) {{ true }};\n\
              finish End as (outcome: Boolean) {{ true }};\n}}\n"
         ));
+        let graph = qsl_semantics::check::wire_id::WireGraph::of_package_value(&wire).unwrap();
         control(&wire, &["Flow", "run", "Update"])["body"]["arguments"][3]["value"]["members"]
             .as_array()
             .unwrap()
             .iter()
-            .map(|member| member["target"].clone())
-            .collect()
+            .map(|member| graph.key_of_value(&member["target"]).unwrap())
+            .collect::<Vec<NodeKey>>()
     };
     let forward = contracts("Alpha, Beta");
     assert_eq!(forward.len(), 2);
-    let keys: Vec<NodeKey> = forward
-        .iter()
-        .map(|id| qsl_foundation::node_wire::node_key_from_json(id).unwrap())
-        .collect();
-    assert!(keys[0] < keys[1], "{keys:?}");
+    assert!(forward[0] < forward[1], "{forward:?}");
     assert_eq!(forward, contracts("Beta, Alpha"));
 }
 

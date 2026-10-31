@@ -84,10 +84,11 @@ fn set<'w>(wire: &'w Value, name: &str) -> Vec<&'w Value> {
 }
 
 /// The structural keys of `nodes`, which must be strictly ascending.
-fn ascending(nodes: &[&Value]) -> Vec<NodeKey> {
+fn ascending(wire: &Value, nodes: &[&Value]) -> Vec<NodeKey> {
+    let graph = qsl_semantics::check::wire_id::WireGraph::of_package_value(wire).unwrap();
     let keys: Vec<NodeKey> = nodes
         .iter()
-        .map(|node| qsl_foundation::node_wire::node_key_from_json(&node["node_id"]).unwrap())
+        .map(|node| graph.key_of_value(&node["node_id"]).unwrap())
         .collect();
     assert!(
         keys.windows(2).all(|pair| pair[0] < pair[1]),
@@ -354,7 +355,7 @@ fn replicated_roles_emit_their_population_maximum_binder_and_lifetime() {
     );
     let roles = set(&lowered.wire, "roles");
     assert_eq!(roles.len(), 4);
-    ascending(&roles);
+    ascending(&lowered.wire, &roles);
     let role = |name: &str| -> &Value {
         roles
             .iter()
@@ -408,9 +409,10 @@ fn replicated_roles_emit_their_population_maximum_binder_and_lifetime() {
         reads(&lowered.wire, until, &binder["node_id"]),
         "the `until` term reads the role's binder"
     );
+    let graph = qsl_semantics::check::wire_id::WireGraph::of_package_value(&lowered.wire).unwrap();
     let keys: BTreeSet<NodeKey> = roles
         .iter()
-        .map(|role| qsl_foundation::node_wire::node_key_from_json(&role["node_id"]).unwrap())
+        .map(|role| graph.key_of_value(&role["node_id"]).unwrap())
         .collect();
     assert_eq!(keys.len(), 4, "four roles, four keys");
 }
@@ -420,7 +422,8 @@ pub(super) fn reads(wire: &Value, node: &Value, wanted: &Value) -> bool {
     let mut pending = vec![node];
     let mut seen = BTreeSet::new();
     while let Some(node) = pending.pop() {
-        if !seen.insert(qsl_foundation::node_wire::node_key_from_json(&node["node_id"]).unwrap()) {
+        // Within one document equal wire ids are equal keys (FR-322).
+        if !seen.insert(node["node_id"].to_string()) {
             continue;
         }
         for dependency in node["dependencies"].as_array().unwrap() {
@@ -475,7 +478,10 @@ fn the_sets_of_a_clause_do_not_follow_source_order() {
         let first = set(&forward.wire, name);
         let expected = 3;
         assert_eq!(first.len(), expected, "{name}");
-        assert_eq!(ascending(&first), ascending(&set(&backward.wire, name)));
+        assert_eq!(
+            ascending(&forward.wire, &first),
+            ascending(&backward.wire, &set(&backward.wire, name))
+        );
     }
 }
 

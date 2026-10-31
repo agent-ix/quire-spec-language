@@ -16,13 +16,11 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_foundation::Code;
 use qsl_package::CheckedPackage;
+use qsl_semantics::check::wire_id::{WireGraph, WireIdError};
 use qsl_semantics::check::{CheckedGraph, CheckedTypeNode, CompositeForm};
 use qsl_semantics::library::LibraryName;
-use quire_contract_model::{CheckedNodeId, CheckedNodePathSegment};
-use quire_exact::{
-    Identifier, Integer, InvalidNodeKey, NodeKey, PathSegment, UnionMember, UnitId, ValueType,
-    VariantId,
-};
+use quire_contract_model::CheckedNodeId;
+use quire_exact::{Identifier, Integer, NodeKey, UnionMember, UnitId, ValueType, VariantId};
 use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::declaration::{CompositeDeclaration, CompositeShape};
 use quire_semantic_value::quantity::{QuantityUnit, UnitTable};
@@ -347,57 +345,14 @@ pub enum AdmittedLookupRefusal {
         /// The declaration id looked up.
         declaration: NodeKey,
     },
-    /// The by-wire lookups only: the structural wire id is not a well-formed
-    /// node identity, so it names no node of any package.
+    /// The by-wire lookups only: the wire id does not rebuild a well-formed
+    /// node identity against this package's graph (an index segment past
+    /// the graph, or an ill-formed key), so it names no node of any package.
     #[error("malformed_wire_id: the wire node id is not a well-formed node identity: {cause}")]
     MalformedWire {
         /// Why the wire id is not a node identity.
-        cause: InvalidNodeKey,
+        cause: WireIdError,
     },
-}
-
-/// The node identity the structural wire id `id` names. Nested path
-/// identities are converted with an explicit stack so depth cannot consume the
-/// call stack.
-fn node_key_of_wire(id: &CheckedNodeId) -> Result<NodeKey, InvalidNodeKey> {
-    struct Frame<'a> {
-        id: &'a CheckedNodeId,
-        rest: std::slice::Iter<'a, CheckedNodePathSegment>,
-        segments: Vec<PathSegment>,
-    }
-    fn frame(id: &CheckedNodeId) -> Frame<'_> {
-        Frame {
-            id,
-            rest: id.path.iter(),
-            segments: Vec::new(),
-        }
-    }
-    let mut stack = vec![frame(id)];
-    loop {
-        let Some(top) = stack.last_mut() else {
-            return Err(InvalidNodeKey::EmptyPath);
-        };
-        match top.rest.next() {
-            Some(CheckedNodePathSegment::Name(name)) => {
-                top.segments.push(PathSegment::Text(name.to_string()));
-            }
-            Some(CheckedNodePathSegment::Node(nested)) => stack.push(frame(nested)),
-            None => {
-                let Some(done) = stack.pop() else {
-                    return Err(InvalidNodeKey::EmptyPath);
-                };
-                let key = NodeKey::new(&*done.id.package, done.segments, done.id.ordinal)?;
-                match stack.last_mut() {
-                    Some(parent) => parent.segments.push(PathSegment::Node(key)),
-                    None => return Ok(key),
-                }
-            }
-        }
-    }
-}
-
-fn wire_key(id: &CheckedNodeId) -> Result<NodeKey, AdmittedLookupRefusal> {
-    node_key_of_wire(id).map_err(|cause| AdmittedLookupRefusal::MalformedWire { cause })
 }
 
 fn unknown_what(declaration: &NodeKey, case: &Option<Identifier>) -> String {
@@ -431,12 +386,29 @@ pub struct AdmittedContext {
     /// it): the ids a composite, unit or dimension lookup refuses as the
     /// wrong kind when it is not of the looked-up kind.
     nodes: BTreeSet<NodeKey>,
+    /// The emitted package's graph, against which a wire id resolves.
+    graph: WireGraph,
 }
 
 impl AdmittedContext {
     /// The library name of the package whose check admitted this context.
     pub fn package_name(&self) -> &LibraryName {
         &self.package
+    }
+
+    /// The emitted package's graph (FR-322 "Operand index segments"): the
+    /// structural key of each wire id the package holds, and the wire id of
+    /// each key, its operands written as index segments into this graph.
+    pub fn wire_graph(&self) -> &WireGraph {
+        &self.graph
+    }
+
+    /// The key the wire id `id` names, its index segments resolved against
+    /// this package's graph.
+    fn wire_key(&self, id: &CheckedNodeId) -> Result<NodeKey, AdmittedLookupRefusal> {
+        self.graph
+            .key(id)
+            .map_err(|cause| AdmittedLookupRefusal::MalformedWire { cause })
     }
 
     /// The exact emitted checked-package bytes admitted by this context,
@@ -507,7 +479,7 @@ impl AdmittedContext {
         &self,
         id: &CheckedNodeId,
     ) -> Result<&AdmittedEnum, AdmittedLookupRefusal> {
-        self.enum_declaration(&wire_key(id)?)
+        self.enum_declaration(&self.wire_key(id)?)
     }
 
     /// [`Self::enum_case`] for the structural wire id `id`.
@@ -521,7 +493,7 @@ impl AdmittedContext {
         id: &CheckedNodeId,
         case: &Identifier,
     ) -> Result<&AdmittedEnumCase, AdmittedLookupRefusal> {
-        self.enum_case(&wire_key(id)?, case)
+        self.enum_case(&self.wire_key(id)?, case)
     }
 
     /// Every record, tuple and union declaration this package admitted,
@@ -560,7 +532,7 @@ impl AdmittedContext {
         &self,
         id: &CheckedNodeId,
     ) -> Result<&AdmittedComposite, AdmittedLookupRefusal> {
-        self.composite_declaration(&wire_key(id)?)
+        self.composite_declaration(&self.wire_key(id)?)
     }
 
     /// Every unit this package admitted, ascending by node id.
@@ -853,8 +825,11 @@ pub(crate) fn context_of(
         }
         pending.extend(dependency.dependencies().iter());
     }
+    let graph = WireGraph::of_package_bytes(package_bytes)
+        .map_err(|_| InternalFault::new("replay", "emitted-node-ids-rebuild-structural-keys"))?;
     Ok(AdmittedContext {
         package: name.clone(),
+        graph,
         package_bytes: package_bytes.into(),
         enums,
         foreign,

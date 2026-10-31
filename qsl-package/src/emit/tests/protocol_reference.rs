@@ -501,7 +501,10 @@ fn a_trigger_nested_runs_roles_and_scheduling_emit_what_the_reader_admits() {
     let digests: Vec<quire_exact::NodeKey> = roles
         .iter()
         .map(|role| {
-            qsl_foundation::node_wire::node_key_from_json(&role["target"]).expect("a node id")
+            qsl_semantics::check::wire_id::WireGraph::of_package_value(&wire)
+                .unwrap()
+                .key_of_value(&role["target"])
+                .expect("a node id")
         })
         .collect();
     assert_eq!(digests.len(), 2);

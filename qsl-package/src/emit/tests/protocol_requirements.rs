@@ -92,11 +92,11 @@ fn requirements_members(clause: &mut Value) -> &mut Vec<Value> {
         .unwrap()
 }
 
-fn sort_dependencies(clause: &mut Value) {
+fn sort_dependencies(graph: &qsl_semantics::check::wire_id::WireGraph, clause: &mut Value) {
     clause["dependencies"]
         .as_array_mut()
         .unwrap()
-        .sort_by_key(|value| qsl_foundation::node_wire::node_key_from_json(value).unwrap());
+        .sort_by_key(|value| graph.key_of_value(value).unwrap());
 }
 
 /// FR-383-AC-2, AC-13: each mutated clause is refused by the reader's own
@@ -146,14 +146,16 @@ fn requirement_wire_mutations_refuse() {
         })
         .expect("a non-temporal node")["node_id"]
         .clone();
+    let graph = qsl_semantics::check::wire_id::WireGraph::of_package_value(&valid.wire).unwrap();
     let retarget = |replacement: Value| {
         let original = original_target.clone();
+        let graph = graph.clone();
         move |clause: &mut Value| {
             requirements_members(clause)[0]["target"] = replacement.clone();
             let dependencies = clause["dependencies"].as_array_mut().unwrap();
             dependencies.retain(|dependency| dependency != &original);
             dependencies.push(replacement);
-            sort_dependencies(clause);
+            sort_dependencies(&graph, clause);
         }
     };
     let wrong_form = clause_edit_verdict(&valid, retarget(non_temporal));
@@ -215,11 +217,10 @@ fn requirement_order_does_not_change_the_emitted_set() {
     let requirements = clause_argument(clause, "requirements")["members"]
         .as_array()
         .unwrap();
+    let graph = qsl_semantics::check::wire_id::WireGraph::of_package_value(&first.wire).unwrap();
     let keys: Vec<_> = requirements
         .iter()
-        .map(|reference| {
-            qsl_foundation::node_wire::node_key_from_json(&reference["target"]).unwrap()
-        })
+        .map(|reference| graph.key_of_value(&reference["target"]).unwrap())
         .collect();
     assert_eq!(requirements.len(), 2);
     // The expected order comes from the wire's own temporal nodes, sorted
@@ -229,7 +230,7 @@ fn requirement_order_does_not_change_the_emitted_set() {
         .unwrap()
         .iter()
         .filter(|node| node["semantic_form"] == "temporal_clause")
-        .map(|node| qsl_foundation::node_wire::node_key_from_json(&node["node_id"]).unwrap())
+        .map(|node| graph.key_of_value(&node["node_id"]).unwrap())
         .collect();
     temporal_keys.sort_unstable();
     assert_eq!(temporal_keys.len(), 2);

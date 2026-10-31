@@ -24,7 +24,6 @@ use qsl_foundation::source::provenance::OccurrenceKey;
 use quire_contract_model::CheckedNodeId;
 use quire_exact::{NodeKey, Origin, Role};
 
-use super::state_graph_root::node_key;
 use quire_semantic_value::catalog::InternalFault;
 
 /// One declaration of an admitted hyper clause: its identity triple and its
@@ -120,14 +119,20 @@ fn root(node: &NodeKey, ordinal: u64, body: Option<NodeKey>) -> HyperRoot {
 /// per `claim` occurrence, in graph order and then occurrence order.
 pub fn hyper_roots(package: &CheckedPackageV2) -> Result<Vec<HyperRoot>, InternalFault> {
     let mut roots = Vec::new();
-    for node in package.graph().nodes.iter().filter(|node| is_hyper(node)) {
-        let id = node_key(&node.node_id).ok_or(NODE_ID_FAULT)?;
-        let body = body_id(node).and_then(node_key);
+    let graph = super::wire_graph(package).map_err(|_| NODE_ID_FAULT)?;
+    for (node, id) in package
+        .graph()
+        .nodes
+        .iter()
+        .zip(graph.keys())
+        .filter(|(node, _)| is_hyper(node))
+    {
+        let body = body_id(node).and_then(|body| graph.key(body).ok());
         roots.extend(
             node.occurrences
                 .iter()
                 .filter(|occurrence| occurrence.role == CheckedOccurrenceRole::Claim)
-                .map(|occurrence| root(&id, occurrence.ordinal, body.clone())),
+                .map(|occurrence| root(id, occurrence.ordinal, body.clone())),
         );
     }
     Ok(roots)
@@ -142,11 +147,10 @@ pub fn resolve_hyper_root(
     let unresolved = || HyperRootUnresolved {
         root: triple.clone(),
     };
-    let node = package
-        .graph()
-        .nodes
-        .iter()
-        .find(|node| node_key(&node.node_id).as_ref() == Some(triple.node()))
+    let graph = super::wire_graph(package).map_err(|_| unresolved())?;
+    let node = graph
+        .index_of(triple.node())
+        .and_then(|at| package.graph().nodes.get(usize::try_from(at).ok()?))
         .filter(|node| is_hyper(node))
         .ok_or_else(unresolved)?;
     if super::occurrence_role(triple.origin().role().as_str()) != Some(CheckedOccurrenceRole::Claim)
@@ -164,6 +168,6 @@ pub fn resolve_hyper_root(
     Ok(root(
         triple.node(),
         occurrence.ordinal,
-        body_id(node).and_then(node_key),
+        body_id(node).and_then(|body| graph.key(body).ok()),
     ))
 }
