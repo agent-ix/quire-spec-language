@@ -749,7 +749,7 @@ impl Product<'_, '_> {
 
     /// FR-244's refinement form of the run's certificate: the run's proof
     /// with each locked-region node's index written `positions.len()`, the
-    /// positions as digests, and each edge's `taken` in certificate order.
+    /// positions as state keys, and each edge's `taken` in certificate order.
     fn certificate(
         &self,
         run: &mut Run<'_, '_, '_>,

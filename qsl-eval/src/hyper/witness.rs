@@ -59,8 +59,8 @@ pub enum Partner {
         /// The index of each existential component's initial state among its
         /// subject's initial states, in quantifier order.
         indices: Vec<u32>,
-        /// The digest of each existential component's state.
-        digests: Vec<crate::simulation::StateKey>,
+        /// The state key of each existential component's state.
+        state_keys: Vec<crate::simulation::StateKey>,
     },
     /// A tuple reached from another by an existential joint step.
     Step {
@@ -68,22 +68,22 @@ pub enum Partner {
         before: Rc<Partner>,
         /// The existential components' steps, in quantifier order.
         step: Vec<ComponentStep>,
-        /// The digest of each existential component's post-state.
+        /// The state key of each existential component's post-state.
         posts: Vec<crate::simulation::StateKey>,
     },
 }
 
 impl Partner {
-    /// The digest of each existential component's state, in quantifier order.
-    pub fn digests(&self) -> &[crate::simulation::StateKey] {
+    /// The state key of each existential component's state, in quantifier order.
+    pub fn state_keys(&self) -> &[crate::simulation::StateKey] {
         match self {
-            Self::Initial { digests, .. } => digests,
+            Self::Initial { state_keys, .. } => state_keys,
             Self::Step { posts, .. } => posts,
         }
     }
 
     /// The initial indices the path starts from and its steps in order, each
-    /// with the digests of the existential post-states.
+    /// with the state keys of the existential post-states.
     pub fn path(&self) -> (&[u32], Vec<PartnerStep<'_>>) {
         let mut steps = Vec::new();
         let mut cursor = self;
@@ -107,7 +107,7 @@ impl Partner {
 }
 
 /// One step of a [`Partner`]'s path: the existential components' steps and
-/// the digest of each one's post-state.
+/// the state key of each one's post-state.
 pub type PartnerStep<'a> = (&'a [ComponentStep], &'a [crate::simulation::StateKey]);
 
 /// One member of a witness set: an existential tuple of model states and the
@@ -136,7 +136,7 @@ impl Member {
     }
 
     fn identity(&self) -> (&[crate::simulation::StateKey], usize) {
-        (self.partner.digests(), self.automaton.index())
+        (self.partner.state_keys(), self.automaton.index())
     }
 }
 
@@ -289,10 +289,10 @@ impl<'r, 's> WitnessProduct<'r, 's> {
                 let (indices, states): (Vec<u32>, Vec<ModelSimState>) = tuple.into_iter().unzip();
                 let mut joint = components.clone();
                 joint.extend(states.iter().cloned());
-                let digests = self.joint.digests(&joint)?;
+                let state_keys = self.joint.state_keys(&joint)?;
                 let partner = Rc::new(Partner::Initial {
                     indices,
-                    digests: digests[self.universal..].to_vec(),
+                    state_keys: state_keys[self.universal..].to_vec(),
                 });
                 let letter = match self.joint.reading(&joint)? {
                     Reading::Defined(letter) => letter,
@@ -374,7 +374,10 @@ impl<'r, 's> WitnessProduct<'r, 's> {
     /// Add `member` to `collected` unless its identity is already there,
     /// stopping the run when the set would pass `max_witness_set` (FR-184).
     fn admit(&self, collected: &mut Collected, member: Member) -> Result<(), ExpansionStop> {
-        let identity = (member.partner.digests().to_vec(), member.automaton.index());
+        let identity = (
+            member.partner.state_keys().to_vec(),
+            member.automaton.index(),
+        );
         if collected.contains_key(&identity) {
             return Ok(());
         }
@@ -449,7 +452,7 @@ impl<'r, 's> WitnessProduct<'r, 's> {
                     Matched::Fails => continue,
                     Matched::Undefined { conjunct, cause } => {
                         findings.push(HyperFinding::ExistentialMatchUndefined {
-                            posts: self.joint.digests(&joint_posts)?,
+                            posts: self.joint.state_keys(&joint_posts)?,
                             step: joint_step,
                             conjunct,
                             cause,
@@ -462,11 +465,11 @@ impl<'r, 's> WitnessProduct<'r, 's> {
                         continue;
                     }
                 }
-                let digests = self.joint.digests(&joint_posts)?;
+                let state_keys = self.joint.state_keys(&joint_posts)?;
                 let partner = Rc::new(Partner::Step {
                     before: member.partner.clone(),
                     step: existential.0.clone(),
-                    posts: digests[self.universal..].to_vec(),
+                    posts: state_keys[self.universal..].to_vec(),
                 });
                 let letter = match self.joint.reading(&joint_posts)? {
                     Reading::Defined(letter) => letter,
@@ -557,7 +560,7 @@ impl TransitionSystem for WitnessProduct<'_, '_> {
                 Matched::Fails => continue,
                 Matched::Undefined { conjunct, cause } => {
                     findings.push(HyperFinding::MatchUndefined {
-                        posts: self.joint.digests(&posts)?,
+                        posts: self.joint.state_keys(&posts)?,
                         step,
                         conjunct,
                         cause,

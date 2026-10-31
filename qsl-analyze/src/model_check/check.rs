@@ -316,7 +316,7 @@ impl Item<'_> {
 struct Node<State, Transition> {
     state: State,
     key: qsl_eval::simulation::StateKey,
-    digest: StateKey,
+    state_key: StateKey,
     depth: usize,
     /// The counted steps from the initial state (ADR-027 PB-3): the depth
     /// when every step counts.
@@ -371,7 +371,7 @@ type Finding = (CounterexampleKind, usize);
 type Reading = (Vec<StateId>, Vec<BoundedState>, Option<Finding>);
 
 /// One successor of an expansion: the transition identity's order bytes, the
-/// successor's state-key bytes and digest, the transition (none for the
+/// successor's state-key bytes and state key, the transition (none for the
 /// terminal stutter), the canonical state and the permutation that
 /// canonicalised it.
 type Successor<S> = (
@@ -1550,14 +1550,14 @@ struct Run<'r, S: SubjectSystem> {
     /// The memory bound the subject's memory model runs under (ADR-025
     /// MB-2); `None` for one with no bound.
     memory_bound: Option<MemoryBound>,
-    /// The distinct model states, by digest, whose expansion cut a step at
+    /// The distinct model states, by state key, whose expansion cut a step at
     /// the memory bound (ADR-025 MB-3); a model state read under several
     /// monitor states counts once.
     bound_limited: BTreeSet<StateKey>,
     /// The instance bound the subject's `activation on each` runs under
     /// (ADR-027 AE-4); `None` for a subject with none.
     instance_bound: Option<InstanceBound>,
-    /// The distinct model states, by digest, left with an `activate` step
+    /// The distinct model states, by state key, left with an `activate` step
     /// unexpanded at the instance bound (ADR-027 AE-4); a model state read
     /// under several monitor states counts once.
     instance_limited: BTreeSet<StateKey>,
@@ -1825,8 +1825,8 @@ impl<S: SubjectSystem> Run<'_, S> {
         let mut initial = Vec::new();
         for (index, state) in self.system.initial().into_iter().enumerate() {
             let (state, permutation) = self.canonical(state)?;
-            let (key, digest) = self.system.state_key(&state)?;
-            initial.push((key, index, digest, state, permutation));
+            let (key, state_key) = self.system.state_key(&state)?;
+            initial.push((key, index, state_key, state, permutation));
         }
         // Equal keys coalesce into the first initial state that has the key.
         initial.sort_by(|left, right| left.0.cmp(&right.0).then(left.1.cmp(&right.1)));
@@ -1839,14 +1839,14 @@ impl<S: SubjectSystem> Run<'_, S> {
             .into());
         }
         let before = vec![start; self.item.instance_count()];
-        for (key, index, digest, state, permutation) in initial {
+        for (key, index, state_key, state, permutation) in initial {
             if self.first_bad.is_some() && !self.has_unresolved_local_access() {
                 break;
             }
             let node = Node {
                 state,
                 key: qsl_eval::simulation::StateKey::from_canonical_bytes(key.clone()),
-                digest,
+                state_key,
                 depth: 0,
                 distance: 0,
                 parent: None,
@@ -1884,7 +1884,7 @@ impl<S: SubjectSystem> Run<'_, S> {
             self.record_weak_access_classification(&expansion.findings)?;
             self.contracts(at, &expansion.findings)?;
             if cut.memory {
-                self.bound_limited.insert(self.nodes[at].digest.clone());
+                self.bound_limited.insert(self.nodes[at].state_key.clone());
                 // ADR-025 MB-3: a state whose only enabled steps are cut
                 // stores is a boundary state: never stutter-extended and
                 // never a deadlock.
@@ -1896,7 +1896,8 @@ impl<S: SubjectSystem> Run<'_, S> {
             // no expanded successor it is a boundary state, as MB-3's is:
             // never closed, stutter-extended or a deadlock.
             if cut.instances {
-                self.instance_limited.insert(self.nodes[at].digest.clone());
+                self.instance_limited
+                    .insert(self.nodes[at].state_key.clone());
                 if expansion.successors.is_empty() {
                     continue;
                 }
@@ -1932,16 +1933,16 @@ impl<S: SubjectSystem> Run<'_, S> {
             for (transition, state) in expansion.successors {
                 let order = self.system.transition_key(&transition)?;
                 let (state, permutation) = self.canonical(state)?;
-                let (key, digest) = self.system.state_key(&state)?;
-                steps.push((order, key, digest, Some(transition), state, permutation));
+                let (key, state_key) = self.system.state_key(&state)?;
+                steps.push((order, key, state_key, Some(transition), state, permutation));
             }
             steps.sort_by(|left, right| left.0.cmp(&right.0).then(left.1.cmp(&right.1)));
             if terminal && self.stutters() {
-                let (key, digest) = self.system.state_key(&self.nodes[at].state)?;
+                let (key, state_key) = self.system.state_key(&self.nodes[at].state)?;
                 steps.push((
                     Vec::new(),
                     key,
-                    digest,
+                    state_key,
                     None,
                     self.nodes[at].state.clone(),
                     Permutation::identity(),
@@ -1953,11 +1954,11 @@ impl<S: SubjectSystem> Run<'_, S> {
                 // A terminal stutter that coalesces with an explored product
                 // state leaves nothing unexplored.
                 let unexplored = match steps.pop() {
-                    Some((_, key, digest, None, state, permutation)) => {
+                    Some((_, key, state_key, None, state, permutation)) => {
                         let node = Node {
                             state,
                             key: qsl_eval::simulation::StateKey::from_canonical_bytes(key.clone()),
-                            digest,
+                            state_key,
                             depth: depth.saturating_add(1),
                             distance: self.distance_after(at, None),
                             parent: Some((at, None)),
@@ -1979,7 +1980,7 @@ impl<S: SubjectSystem> Run<'_, S> {
                 continue;
             }
             let mut reads = self.ample(at, &before, &mut steps)?.into_iter();
-            for (_, key, digest, transition, state, permutation) in steps {
+            for (_, key, state_key, transition, state, permutation) in steps {
                 if self.edges >= self.limits.limits.max_transitions {
                     return Err(Self::stopped(
                         ModelCheckLimit::MaxTransitions,
@@ -1991,7 +1992,7 @@ impl<S: SubjectSystem> Run<'_, S> {
                 let node = Node {
                     state,
                     key: qsl_eval::simulation::StateKey::from_canonical_bytes(key.clone()),
-                    digest,
+                    state_key,
                     depth: depth.saturating_add(1),
                     distance: self.distance_after(at, transition.as_ref()),
                     parent: Some((at, transition)),
@@ -2040,11 +2041,11 @@ impl<S: SubjectSystem> Run<'_, S> {
         let depth = self.nodes[at].depth;
         let mut fresh: Vec<bool> = Vec::with_capacity(steps.len());
         let mut readings: Vec<Reading> = Vec::with_capacity(steps.len());
-        for (_, key, digest, transition, state, permutation) in steps.iter() {
+        for (_, key, state_key, transition, state, permutation) in steps.iter() {
             let node = Node {
                 state: state.clone(),
                 key: qsl_eval::simulation::StateKey::from_canonical_bytes(key.clone()),
-                digest: digest.clone(),
+                state_key: state_key.clone(),
                 depth: depth.saturating_add(1),
                 distance: self.distance_after(at, transition.as_ref()),
                 parent: Some((at, transition.clone())),

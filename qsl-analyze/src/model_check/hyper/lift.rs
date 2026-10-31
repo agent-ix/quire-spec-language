@@ -24,7 +24,7 @@ use super::{Explored, Run};
 pub(super) struct Lifted {
     /// The concrete state at each joint position of the path, the root first.
     pub(super) states: Vec<HyperState>,
-    /// The joint step into each position after the first, with the digest of
+    /// The joint step into each position after the first, with the state key of
     /// each component's post-state.
     pub(super) steps: Vec<(HyperTransition, Vec<qsl_eval::simulation::StateKey>)>,
     /// Component `k` of the last concrete state is component `positions[k]` of
@@ -109,7 +109,7 @@ impl Run<'_, '_> {
                 })
                 .collect::<Result<_, _>>()?;
             let concrete = reorder(target, &positions);
-            steps.push((step, self.digests(&concrete)?));
+            steps.push((step, self.state_keys(&concrete)?));
             states.push(concrete);
         }
         Ok(Lifted {

@@ -399,7 +399,7 @@ fn a_witness_the_subject_does_not_place_is_refused_with_a_catalog_code() {
 
 /// Checks FR-193-AC-3's first clause: a `Measure` witness of the `2 ms`
 /// claim converts to the counterexample of the qualitative claim, with its
-/// steps and post digests, as a formula refutation. (Its FR-128 settlement
+/// steps and post-state keys, as a formula refutation. (Its FR-128 settlement
 /// is STD-250's.)
 #[trace("TC-628", "FR-193-AC-3")]
 #[test]

@@ -5,7 +5,7 @@
 //! through each trace variable's `ModelSystem`.
 //!
 //! It re-executes every trace from its initial snapshot, a step's post-state
-//! digest selecting its successor among the post-states of its transition
+//! state key selecting its successor among the post-states of its transition
 //! identity, and a terminal-stutter step standing only at a state that
 //! enables no transition identity. It needs no model checker and no solver.
 //! What it checks of the traces then depends on the arm:
@@ -79,8 +79,8 @@ use crate::model_check::hyper_counterexample::{
 };
 use crate::model_check::limits::{ModelCheckLimit, ReachedLimit};
 use crate::model_check::replay::{
-    digest_of, disagreement, expand, fault, no_value_cause, refused, unfair_constraint, LoopState,
-    ModelTraceRefusal, ModelTraceSettlement, ModelTraceValue, Position,
+    disagreement, expand, fault, no_value_cause, refused, state_key_of, unfair_constraint,
+    LoopState, ModelTraceRefusal, ModelTraceSettlement, ModelTraceValue, Position,
 };
 
 /// What replaying a hyper counterexample reads beside the traces: the
@@ -356,8 +356,8 @@ fn reexecute(
         .into_iter()
         .nth(index)
         .ok_or_else(|| refused(ModelTraceRefusal::InitialState { index, count }))?;
-    let digest = digest_of(system, &state)?;
-    let mut positions = vec![Position { state, digest }];
+    let state_key = state_key_of(system, &state)?;
+    let mut positions = vec![Position { state, state_key }];
     for (index, step) in trace.steps.iter().enumerate() {
         let current = positions.last().ok_or_else(|| fault("a-position-exists"))?;
         let Ok(expansion) = expand(system, &current.state)? else {
@@ -372,7 +372,7 @@ fn reexecute(
                 }
                 Position {
                     state: current.state.clone(),
-                    digest: current.digest.clone(),
+                    state_key: current.state_key.clone(),
                 }
             }
             HyperStep::Model(step) => {
@@ -383,18 +383,18 @@ fn reexecute(
                 }
                 let mut enabled = false;
                 let mut reached = None;
-                let mut digests = Vec::new();
+                let mut state_keys = Vec::new();
                 for (transition, next) in expansion.successors {
                     if transition != step.transition {
                         continue;
                     }
                     enabled = true;
-                    let digest = digest_of(system, &next)?;
-                    digests.push(digest.clone());
-                    if digest == step.post_state {
+                    let state_key = state_key_of(system, &next)?;
+                    state_keys.push(state_key.clone());
+                    if state_key == step.post_state {
                         reached = Some(Position {
                             state: next,
-                            digest,
+                            state_key,
                         });
                         break;
                     }
@@ -409,7 +409,7 @@ fn reexecute(
                     refused(ModelTraceRefusal::PostState {
                         step: index,
                         recorded: step.post_state.clone(),
-                        reached: digests,
+                        reached: state_keys,
                     })
                 })?
             }
@@ -545,7 +545,7 @@ fn universal_lasso(
         let (Some(at_entry), Some(last)) = (positions.get(entry), positions.last()) else {
             return Err(fault("a-trace-holds-its-loop-entry"));
         };
-        if at_entry.digest != last.digest {
+        if at_entry.state_key != last.state_key {
             return Err(refused(ModelTraceRefusal::LoopOpen { entry, steps }));
         }
     }
@@ -657,8 +657,8 @@ fn witness_exhausted(
     };
     let at = |state: &HyperState, joint: usize| -> Result<bool, ReplayRefusal> {
         for (component, model) in state.components.iter().enumerate() {
-            let digest = digest_of(replay.systems[component], model)?;
-            if executed[component][lasso.state(joint)].digest != digest {
+            let state_key = state_key_of(replay.systems[component], model)?;
+            if executed[component][lasso.state(joint)].state_key != state_key {
                 return Ok(false);
             }
         }
@@ -971,7 +971,7 @@ fn undefined(
     })
 }
 
-/// `found` as the payload spells it: the joint position, the digests of the
+/// `found` as the payload spells it: the joint position, the state keys of the
 /// named components' states there and their variables with aliases.
 fn evaluated(
     replay: &HyperReplay<'_, '_>,
@@ -982,7 +982,7 @@ fn evaluated(
     let mut state_keys: Vec<qsl_eval::simulation::StateKey> = Vec::new();
     let mut variables = Vec::new();
     for component in &found.components {
-        state_keys.push(executed[*component][found.position].digest.clone());
+        state_keys.push(executed[*component][found.position].state_key.clone());
         let quantifier = &quantifiers[*component];
         variables.push((
             quantifier.variable.clone(),

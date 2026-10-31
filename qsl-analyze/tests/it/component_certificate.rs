@@ -549,9 +549,9 @@ fn component_work_charges_no_budget_and_the_closure_check_stops_first() {
     );
 }
 
-/// The model-state phase, as the digest of the state it is: `Fork`'s
+/// The model-state phase, as the state key of the state it is: `Fork`'s
 /// product states are told apart by their model state and automaton key.
-fn digest_of(fixture: &Fixture, phase: u8) -> qsl_eval::simulation::StateKey {
+fn state_key_of(fixture: &Fixture, phase: u8) -> qsl_eval::simulation::StateKey {
     let system = fixture.system();
     let mut state = fixture.start();
     if phase != 0 {
@@ -595,11 +595,11 @@ fn components_are_listed_by_the_least_vertex_whose_predecessors_are_listed() {
         .map(|component| &component.states[0])
         .collect();
     let phases = [
-        digest_of(&fixture, 0),
-        digest_of(&fixture, 0),
-        digest_of(&fixture, 2),
-        digest_of(&fixture, 1),
-        digest_of(&fixture, 2),
+        state_key_of(&fixture, 0),
+        state_key_of(&fixture, 0),
+        state_key_of(&fixture, 2),
+        state_key_of(&fixture, 1),
+        state_key_of(&fixture, 2),
     ];
     assert_eq!(
         listed

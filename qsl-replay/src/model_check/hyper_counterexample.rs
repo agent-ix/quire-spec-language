@@ -24,7 +24,7 @@ use crate::witness::FamilyPayload;
     reason = "almost every step of a hyper trace is a model step; boxing it would allocate per step"
 )]
 pub enum HyperStep {
-    /// An FR-120 transition identity with its post-state's digest.
+    /// An FR-120 transition identity with its post-state's state key.
     Model(ModelStep),
     /// The terminal stutter step. Its post-state is its pre-state.
     TerminalStutter,
@@ -88,7 +88,7 @@ pub enum HyperLocus {
 pub struct HyperUndefined {
     /// The joint position.
     pub position: u64,
-    /// The `quire.simulation.state-key/v1` digest of each named component's
+    /// The `quire.simulation.state-key/v1` state key of each named component's
     /// state at `position`, in quantifier order.
     pub state_keys: Vec<StateKey>,
     /// The trace variables the evaluation reads with their aliases, in the

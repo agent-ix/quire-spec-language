@@ -729,7 +729,7 @@ mod tp4 {
             let keys = self.expected_keys();
             let mut certificate = ClosureCertificate { states: Vec::new() };
             // The checker names each absent product state (its model-state
-            // digest is the model's identity, which this test does not
+            // state key is the model's identity, which this test does not
             // recompute); the automaton key of every one is checked against
             // the independent replay, and the key set is pinned by the tests.
             for _ in 0..512 {

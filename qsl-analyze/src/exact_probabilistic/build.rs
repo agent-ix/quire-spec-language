@@ -313,7 +313,7 @@ impl Builder<'_, '_> {
     /// The truth of the claim's predicates at `state` under binding
     /// `binding`, or the first that has no value.
     fn truths(&mut self, state: &ModelSimState, binding: usize) -> Step<Result<Vec<bool>, Hit>> {
-        let (model, digest) = self
+        let (model, state_key) = self
             .system
             .state_key(state)
             .map_err(|_| fault("state-key-encodes"))?;
@@ -339,7 +339,7 @@ impl Builder<'_, '_> {
                     return Ok(Err(Hit {
                         read: *read,
                         cause,
-                        state_key: digest,
+                        state_key,
                         model,
                     }));
                 }

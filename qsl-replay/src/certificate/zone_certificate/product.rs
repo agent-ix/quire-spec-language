@@ -58,7 +58,7 @@ pub(super) struct LiveClaim<'c> {
     pub(super) fairness: Vec<FairnessConstraint>,
     /// Each fairness constraint's operation text.
     pub(super) operations: Vec<String>,
-    /// Each letter read, by the state's digest, the instance and whether
+    /// Each letter read, by the state's state key, the instance and whether
     /// it is position 0 of an `on origin` clause with captures; `None` when
     /// undefined.
     readings: RefCell<BTreeMap<(qsl_eval::simulation::StateKey, usize, bool), Option<Letter>>>,
@@ -182,9 +182,9 @@ impl<O> Checker<'_, '_, O> {
         initial: bool,
     ) -> Step<Option<Letter>, O> {
         let live = self.live()?;
-        let digest = self.digest(state)?;
+        let state_key = self.state_key(state)?;
         let key = (
-            digest.clone(),
+            state_key.clone(),
             instance,
             initial && live.capture == CaptureSite::Origin,
         );
@@ -485,12 +485,12 @@ impl<O> Checker<'_, '_, O> {
             return reject(CertificateRule::SuccessorMissing, at_node(node));
         };
         let dense = self.timed.tick_period().is_none();
-        let digest = self.digest(state)?;
+        let state_key = self.state_key(state)?;
         let instance = mark.instance;
         if !mark.tail {
             for step in self.timed.guarded_steps(state).or_else(undecided)? {
                 let target = self.invariants(step.post())?;
-                let post_digest = self.digest(step.post())?;
+                let post_state_key = self.state_key(step.post())?;
                 let tick =
                     self.timed.tick_of(step.operation()) > Rational::from_integer(Integer::zero());
                 for (part, constraints) in step.parts().iter().enumerate() {
@@ -522,7 +522,7 @@ impl<O> Checker<'_, '_, O> {
                                 part: Some(part),
                                 horizon: None,
                                 frees: false,
-                                digest: post_digest.clone(),
+                                state_key: post_state_key.clone(),
                                 q: read.target.index(),
                                 zone: entered,
                                 silent: None,
@@ -556,7 +556,7 @@ impl<O> Checker<'_, '_, O> {
                     part: None,
                     horizon: None,
                     frees: false,
-                    digest: digest.clone(),
+                    state_key: state_key.clone(),
                     q,
                     zone: entered,
                     silent: Some(SilentMove::Wait),
@@ -583,7 +583,7 @@ impl<O> Checker<'_, '_, O> {
                         part: None,
                         horizon: None,
                         frees: false,
-                        digest: digest.clone(),
+                        state_key: state_key.clone(),
                         q,
                         zone: entered,
                         silent: Some(SilentMove::Diverge),
@@ -615,7 +615,7 @@ impl<O> Checker<'_, '_, O> {
                         part: None,
                         horizon: None,
                         frees: false,
-                        digest: digest.clone(),
+                        state_key: state_key.clone(),
                         q: read.target.index(),
                         zone: entered,
                         silent: None,

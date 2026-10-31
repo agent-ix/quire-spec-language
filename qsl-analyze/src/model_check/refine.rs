@@ -422,19 +422,19 @@ impl Run<'_, '_> {
         let mut edges = Vec::with_capacity(expansion.successors.len());
         for (transition, state) in expansion.successors {
             let order = Self::encoding(self.concrete.transition_key(&transition))?;
-            let (key, digest) = Self::encoding(self.concrete.state_key(&state))?;
-            edges.push((order, key, digest, Some(transition), state));
+            let (key, state_key) = Self::encoding(self.concrete.state_key(&state))?;
+            edges.push((order, key, state_key, Some(transition), state));
         }
         edges.sort_by(|left, right| left.0.cmp(&right.0).then(left.1.cmp(&right.1)));
         if edges.is_empty() {
             // ADR-018 SM-4: a terminal state repeats forever, one stutter
             // step that is no model step.
             let state = self.nodes[at].state.clone();
-            let (key, digest) = Self::encoding(self.concrete.state_key(&state))?;
-            edges.push((Vec::new(), key, digest, None, state));
+            let (key, state_key) = Self::encoding(self.concrete.state_key(&state))?;
+            edges.push((Vec::new(), key, state_key, None, state));
         }
         let mut listed = Vec::with_capacity(edges.len());
-        for (_, key, _digest, transition, state) in edges {
+        for (_, key, _state_key, transition, state) in edges {
             if self.transitions >= self.limits.limits.max_transitions {
                 return Err(Self::stopped(
                     ModelCheckLimit::MaxTransitions,
@@ -568,7 +568,7 @@ impl Run<'_, '_> {
     }
 
     /// FR-149's certificate of the finished run: every stored product state
-    /// as the digests of its states, each initial state's position and each
+    /// as the state keys of its states, each initial state's position and each
     /// state's edges.
     fn certificate(&self) -> Result<SimulationCertificate, InternalFault> {
         let encodes = |_| InternalFault::new("refinement-check", "state-encodes");

@@ -343,7 +343,7 @@ fn check_task(task: &Task) -> Result<(), TaskSetRefusal> {
 
 /// A task set and a claim over it, admitted together (FR-246): the subject
 /// of EN-7's analysis and of the closed-form checker's recomputation. Its
-/// obligation identity binds every premise (RT-2); CG mints that digest.
+/// obligation identity binds every premise (RT-2); CG mints that identity.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ScheduleSubject {
     task_set: TaskSet,

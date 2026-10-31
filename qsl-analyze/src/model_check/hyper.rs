@@ -1069,7 +1069,9 @@ impl<'a> Run<'_, 'a> {
             let (from_last, from_left) = (graph.state(last.source), graph.state(left.source));
             let same = last.transition == left.transition
                 && match (from_last, from_left) {
-                    (Some(a), Some(b)) => self.digests(&a.state)? == self.digests(&b.state)?,
+                    (Some(a), Some(b)) => {
+                        self.state_keys(&a.state)? == self.state_keys(&b.state)?
+                    }
                     _ => return Err(fault("a-lasso-step-leaves-a-retained-state")),
                 };
             if !same {
@@ -1662,8 +1664,8 @@ impl<'a> Run<'_, 'a> {
         })
     }
 
-    /// The digest of each component of `state`, in quantifier order.
-    fn digests(
+    /// The state key of each component of `state`, in quantifier order.
+    fn state_keys(
         &self,
         state: &HyperState,
     ) -> Result<Vec<qsl_eval::simulation::StateKey>, ModelCheckRefusal> {
@@ -1859,9 +1861,9 @@ impl<'a> Run<'_, 'a> {
                     Built::Witness(_) | Built::Projected(_) => Some(atom),
                 }
                 .ok_or_else(|| fault("a-copy-permutation-is-an-element-of-the-copy-group"))?;
-                let mut keys = self.digests(state)?;
+                let mut keys = self.state_keys(state)?;
                 if let Some(read) = &read {
-                    keys.extend_from_slice(read.digests());
+                    keys.extend_from_slice(read.state_keys());
                 }
                 partner = read;
                 (
@@ -1888,7 +1890,7 @@ impl<'a> Run<'_, 'a> {
                 let mut keys = posts.clone();
                 if self.witness {
                     let first = Self::first_partner(state)?;
-                    keys.extend_from_slice(first.digests());
+                    keys.extend_from_slice(first.state_keys());
                     partner = Some(first);
                 }
                 (
@@ -1929,7 +1931,7 @@ impl<'a> Run<'_, 'a> {
             }
             Found::MatchAt { conjunct, cause } => (
                 stem,
-                self.digests(state)?,
+                self.state_keys(state)?,
                 variables,
                 HyperLocus::Match { conjunct },
                 None,
@@ -1951,8 +1953,8 @@ impl<'a> Run<'_, 'a> {
                     .iter()
                     .position(|stored| *stored == component)
                     .ok_or_else(|| fault("a-lifted-path-holds-every-component"))?;
-                let digests = self.digests(state)?;
-                let digest = digests
+                let state_keys = self.state_keys(state)?;
+                let state_key = state_keys
                     .get(component)
                     .cloned()
                     .ok_or_else(|| fault("a-contract-finding-names-a-component"))?;
@@ -1962,7 +1964,7 @@ impl<'a> Run<'_, 'a> {
                     .ok_or_else(|| fault("a-contract-finding-names-a-variable"))?;
                 (
                     stem,
-                    vec![digest],
+                    vec![state_key],
                     vec![named],
                     HyperLocus::Contract(clause),
                     guard_of,
@@ -2300,7 +2302,7 @@ impl<'a> Run<'_, 'a> {
 }
 
 /// A trace's step of `component` in the joint step `transition`, with the
-/// digest of its post-state; `None` when the component does not move in it.
+/// state key of its post-state; `None` when the component does not move in it.
 fn hyper_step(
     transition: &HyperTransition,
     posts: &[qsl_eval::simulation::StateKey],
@@ -2316,7 +2318,7 @@ fn hyper_step(
     Ok(component_step(step, post.clone()))
 }
 
-/// A component's `step` as a trace's step, with the digest of its post-state;
+/// A component's `step` as a trace's step, with the state key of its post-state;
 /// `None` for a component that stays.
 fn component_step(step: &ComponentStep, post: qsl_eval::simulation::StateKey) -> Option<HyperStep> {
     match step {

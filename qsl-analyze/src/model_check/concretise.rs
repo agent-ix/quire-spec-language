@@ -249,7 +249,7 @@ impl<'s, S: SubjectSystem> Lift<'s, S> {
         &self.sigma
     }
 
-    /// The concrete state's digest.
+    /// The concrete state's state key.
     pub(super) fn key(&self) -> qsl_eval::simulation::StateKey {
         self.key.clone()
     }
@@ -275,7 +275,7 @@ impl<'s, S: SubjectSystem> Lift<'s, S> {
     }
 
     /// ADR-021 RV-7: an undefined evaluation's site at the path's end,
-    /// concretised: the concrete state's digest and, for a guard, `σ` of
+    /// concretised: the concrete state's state key and, for a guard, `σ` of
     /// the guard, which is checked against the concrete state's own
     /// expansion as each step is. Nothing changes under the trivial group.
     ///

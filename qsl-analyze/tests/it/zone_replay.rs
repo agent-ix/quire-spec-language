@@ -175,7 +175,7 @@ fn a_late_reply_replays_with_its_delays() {
 /// FR-237-AC-2: refusals settle no result. The `timeout` delay 5/2 leaves
 /// its guard `x >= 3` false, named by its clause `Timeout`; 7/2 passes
 /// `x <= 3`, named by the invariant `ServerDeadline`; an altered post-state
-/// digest selects no successor (`stale_dependency`); a lasso whose loop
+/// state key selects no successor (`stale_dependency`); a lasso whose loop
 /// takes no time, and one whose loop does not return to its entry's clock
 /// values, are refused.
 #[trace("TC-692", "FR-237-AC-2")]

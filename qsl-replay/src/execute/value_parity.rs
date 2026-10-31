@@ -174,7 +174,7 @@ fn pre_call(failure: SuppliedFailure) -> Result<ValueParityResult, ReplayRefusal
 /// FR-484: the request's occurrence key is the selected function's one
 /// `declaration` occurrence, then the request's obligation identity is the
 /// one the recompiled package's preimage gives. The preimage is built from
-/// the package alone; the request carries the digest and nothing else of it.
+/// the package alone; the request carries the identity and nothing else of it.
 fn check_identity(
     request: &ReplayRequest,
     package: &CheckedPackage,
