@@ -29,12 +29,13 @@ clause, model, contract, clock and instance role an explicitly authored identity
 do not substitute model ownership for native clause ownership. Concrete
 observations belong only to the later consumer fixture.
 
-**QSL-840 disposition:** TC-121 remains the verification contract for the live
-B8 emitter, reader and handoff-writer behavior until the QSL-851/852/853
-replacement gates, QSL-558 and QSL-839 integration are complete. Passing this
-test exercises the old path; it does not prove the spine replacement or permit
-deletion. The behavior-to-requirement/test map and M-6d deletion gates are in
-[ADR-011 §7.3](../decisions/ADR-011-stage-dag-and-dependency-architecture.md).
+**QSL-840 disposition:** TC-121 covers the live B8 emitter and handoff writer,
+and also contains tests of B9 reader behavior. QSL-840's retirement scope
+covers only the emitter and handoff writer; the B9 readers and their existing
+tests remain assigned to QSL-838 / QSL-498-B6. Keep both sets of tests and
+requirements in force. Passing TC-121 exercises the old paths; it does not
+prove the spine replacement or permit deletion. The behavior-to-requirement/
+test map and M-6d deletion gates are in [ADR-011 §7.3](../decisions/ADR-011-stage-dag-and-dependency-architecture.md).
 The FR-043–FR-053 semantics identified there remain in force, including the
 G9 activation-map gap tracked by QSL-846 / QSpec PR #59.
 
