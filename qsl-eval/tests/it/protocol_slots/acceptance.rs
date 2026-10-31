@@ -894,14 +894,12 @@ fn both_templates_and_the_remaining_run_slots_evaluate_their_own_expressions() {
         let earlier = name("earlier");
         let later = name("later");
         let recovered = name("recovered");
-        assert_value_eq!(
-            run(
-                "registration_captures",
-                Some(0),
-                vec![(&forward, receipt(&package, 5))]
-            ),
-            int(5)
+        let saved_five = run(
+            "registration_captures",
+            Some(0),
+            vec![(&forward, receipt(&package, 5))],
         );
+        assert_value_eq!(saved_five, int(5));
         for ready in [false, true] {
             assert_value_eq!(
                 run(
@@ -959,13 +957,24 @@ fn both_templates_and_the_remaining_run_slots_evaluate_their_own_expressions() {
                 Value::Boolean(expected)
             );
         }
+        let current_nine = run(
+            "registration_captures",
+            Some(0),
+            vec![(&forward, receipt(&package, 9))],
+        );
+        assert_value_eq!(current_nine, int(9));
         assert_value_eq!(
             run(
-                "registration_captures",
-                Some(0),
-                vec![(&forward, receipt(&package, 9))]
+                "recovery.predicate",
+                None,
+                vec![
+                    (&recovered, receipt(&package, 9)),
+                    (&target, saved_five),
+                    (&activated, Value::Boolean(false))
+                ]
             ),
-            int(9)
+            Value::Boolean(false),
+            "a later registration result does not replace the supplied frozen five"
         );
         assert_value_eq!(
             run(
@@ -973,12 +982,12 @@ fn both_templates_and_the_remaining_run_slots_evaluate_their_own_expressions() {
                 None,
                 vec![
                     (&recovered, receipt(&package, 9)),
-                    (&target, int(5)),
+                    (&target, current_nine),
                     (&activated, Value::Boolean(false))
                 ]
             ),
-            Value::Boolean(false),
-            "a later registration result does not replace the supplied frozen five"
+            Value::Boolean(true),
+            "supplying the new captured nine changes the result without recomputation"
         );
     }
     for (owner, values) in [
