@@ -41,7 +41,7 @@ pub(crate) use controls::{AttemptNodes, CompensationNodes};
 
 use super::{fault, refuse, Binder, Binders, Lowering, NodeContent, NodeRef};
 use crate::check::family::OccurrenceRole;
-use crate::check::ir::{CheckedBody, CheckedNode, NodeKind};
+use crate::check::ir::{CheckedBody, CheckedNode};
 use crate::check::node_key::{
     Binding, BindingValue, BodyTerm, GroupMember, GroupTerm, LawRole, LeafTerm, MemberTerm,
     NodeTag, Operation, OperationLaw, Operator, TupleMember, TupleTerm,
@@ -244,20 +244,6 @@ impl ProtocolInput<'_> {
             .any(|repeat| repeat.decisions_read_body && !repeat.post_test)
         {
             unemitted.push(ProtocolConstruct::RepeatDecisionReadsBody);
-        }
-        if slots
-            .choices
-            .iter()
-            .flat_map(|choice| &choice.visible)
-            .chain(slots.repeats.iter().flat_map(|repeat| &repeat.visible))
-            .any(|entry| {
-                matches!(
-                    entry.root().kind(),
-                    NodeKind::Literal(_) | NodeKind::Local(_)
-                )
-            })
-        {
-            unemitted.push(ProtocolConstruct::VisibleEntryNotAnExpression);
         }
         if self.repeat_steps_through_repeat() {
             unemitted.push(ProtocolConstruct::RepeatStepsThroughRepeat);
