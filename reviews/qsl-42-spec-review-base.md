@@ -67,3 +67,25 @@ bindings: []
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | medium | TC-844 still requires package_id comparisons after FR-334 AC-1/AC-3 switch to structural package equality; update its Description, procedure step 1 and expected steps 1/3 to the same contract, leaving step 4 unchanged. | spec/test-cases/TC-844-key-collection-types-by-the-root-definitions-identity-preimage.md:13 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Fix commit 72b7121ec35333f2c5a75191470d5fcef91b6e81 aligns TC-844 Description, procedure 1 and expected results 1/3 with structural node/package equality. Procedure 4, expected result 4 and FR-334 including AC-4 are unchanged. |
+
+## Disposition pass 1
+
+**PASS for the reviewed partial delivery** — no open review findings remain. Reviewed only the documentation fix and verbatim review-artifact custody; no second full review or broad test run. The lead retains aggregate gates and merge ordering (853, then 854, then 42). AC-4 remains unexecuted in QSL-1368 blocked by STD-610. This does not claim full assurance completion.
+
+```yaml
+dispositions:
+- fnd: FND-001
+  outcome: fixed
+  after_excerpt: 'Verify that bound presence and value enter collection and population
+    node
+
+    identity and the emitted package value, and that structural identities and
+
+    package values are deterministic.'
+```
