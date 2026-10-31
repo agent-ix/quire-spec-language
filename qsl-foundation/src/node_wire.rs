@@ -11,7 +11,7 @@
 //! `serde_json` drops a `Value` recursively: release one with
 //! [`discard_node_json`] rather than by `drop` when its depth is untrusted.
 
-use alloc::string::String;
+use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use quire_exact::{
     InvalidNodeKey, NodeKey, NodeKeyView, NodePathIter, PathSegment, PathSegmentView,
@@ -174,6 +174,142 @@ pub fn node_key_from_json(value: &Value) -> Result<NodeKey, NodeWireError> {
     }
 }
 
+/// `key` as its compact JSON text, members in the order `serde_json` writes a
+/// [`Value`] object (`ordinal`, `package`, `path`). Written with an explicit
+/// stack, so depth is bounded only by memory.
+///
+/// # Errors
+///
+/// [`NodeWireError::Allocation`] when storage cannot be reserved, or
+/// [`NodeWireError::Shape`] when a string cannot be written.
+pub fn node_key_to_text(key: &NodeKey) -> Result<String, NodeWireError> {
+    fn reserve(out: &mut String, extra: usize) -> Result<(), NodeWireError> {
+        out.try_reserve(extra)
+            .map_err(|_| NodeWireError::Allocation)
+    }
+    fn string(out: &mut String, text: &str) -> Result<(), NodeWireError> {
+        let quoted = serde_json::to_string(text).map_err(|_| NodeWireError::Shape)?;
+        reserve(out, quoted.len())?;
+        out.push_str(&quoted);
+        Ok(())
+    }
+    fn head(out: &mut String, view: &NodeKeyView<'_>) -> Result<(), NodeWireError> {
+        reserve(out, 32)?;
+        out.push_str("{\"ordinal\":");
+        out.push_str(&view.ordinal().to_string());
+        out.push_str(",\"package\":");
+        string(out, view.package())?;
+        out.push_str(",\"path\":[");
+        Ok(())
+    }
+    let mut out = String::new();
+    let root = key.view();
+    head(&mut out, &root)?;
+    // Each frame: the remaining path and whether a segment was written yet.
+    let mut stack: Vec<(NodePathIter<'_>, bool)> = Vec::new();
+    push(&mut stack, (root.path(), false))?;
+    while let Some(top) = stack.last_mut() {
+        match top.0.next() {
+            Some(segment) => {
+                if top.1 {
+                    reserve(&mut out, 1)?;
+                    out.push(',');
+                }
+                top.1 = true;
+                match segment {
+                    PathSegmentView::Text(text) => string(&mut out, text)?,
+                    PathSegmentView::Node(view) => {
+                        head(&mut out, &view)?;
+                        push(&mut stack, (view.path(), false))?;
+                    }
+                }
+            }
+            None => {
+                reserve(&mut out, 1)?;
+                out.push_str("]}");
+                stack.pop();
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// The node identity `text` spells, read with an explicit stack: `serde_json`
+/// scans the nested objects as raw text, so depth is bounded only by memory
+/// and no recursion limit applies.
+///
+/// # Errors
+///
+/// A [`NodeWireError`] for malformed text, a failed storage reservation, or the
+/// identity's own refusal ([`InvalidNodeKey`]).
+pub fn node_key_from_text(text: &str) -> Result<NodeKey, NodeWireError> {
+    use alloc::collections::BTreeMap;
+    use serde_json::value::RawValue;
+    enum Task<'a> {
+        Parse(&'a RawValue),
+        Finish {
+            package: String,
+            ordinal: u64,
+            len: usize,
+        },
+    }
+    fn read<'a, T: serde::Deserialize<'a>>(raw: &'a str) -> Result<T, NodeWireError> {
+        serde_json::from_str(raw).map_err(|_| NodeWireError::Shape)
+    }
+    let root: &RawValue = read(text)?;
+    let mut tasks = alloc::vec![Task::Parse(root)];
+    let mut segments: Vec<PathSegment> = Vec::new();
+    while let Some(task) = tasks.pop() {
+        match task {
+            Task::Parse(raw) if raw.get().starts_with('"') => {
+                let name: String = read(raw.get())?;
+                push(&mut segments, PathSegment::Text(name))?;
+            }
+            Task::Parse(raw) => {
+                let mut members: BTreeMap<&str, &RawValue> = read(raw.get())?;
+                if members.len() != 3 {
+                    return Err(NodeWireError::Shape);
+                }
+                let package = members.remove("package").ok_or(NodeWireError::Shape)?;
+                let path = members.remove("path").ok_or(NodeWireError::Shape)?;
+                let ordinal = members.remove("ordinal").ok_or(NodeWireError::Shape)?;
+                let package: String = read(package.get()).map_err(|_| NodeWireError::Package)?;
+                let path: Vec<&RawValue> = read(path.get()).map_err(|_| NodeWireError::Path)?;
+                let ordinal: u64 = read(ordinal.get()).map_err(|_| NodeWireError::Ordinal)?;
+                push(
+                    &mut tasks,
+                    Task::Finish {
+                        package,
+                        ordinal,
+                        len: path.len(),
+                    },
+                )?;
+                tasks
+                    .try_reserve(path.len())
+                    .map_err(|_| NodeWireError::Allocation)?;
+                tasks.extend(path.into_iter().rev().map(Task::Parse));
+            }
+            Task::Finish {
+                package,
+                ordinal,
+                len,
+            } => {
+                let start = segments
+                    .len()
+                    .checked_sub(len)
+                    .ok_or(NodeWireError::Shape)?;
+                let path = segments.split_off(start);
+                let key = NodeKey::try_new(package, path, ordinal)?;
+                push(&mut segments, PathSegment::Node(key))?;
+            }
+        }
+    }
+    match segments.pop() {
+        Some(PathSegment::Node(key)) if segments.is_empty() => Ok(key),
+        _ => Err(NodeWireError::Shape),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -194,6 +330,19 @@ mod tests {
             .unwrap();
         }
         key
+    }
+
+    #[test]
+    fn deep_text_round_trips_and_matches_the_value_spelling() {
+        let key = nested(200);
+        let text = node_key_to_text(&key).unwrap();
+        assert_eq!(node_key_from_text(&text).unwrap(), key);
+        let shallow = nested(3);
+        let value = node_key_to_json(&shallow).unwrap();
+        assert_eq!(
+            node_key_to_text(&shallow).unwrap(),
+            serde_json::to_string(&value).unwrap()
+        );
     }
 
     #[test]
