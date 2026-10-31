@@ -35,15 +35,12 @@ fn member<'v>(object: &'v Map<String, Value>, name: &str) -> Option<&'v Value> {
 
 /// A node as its compact JSON object.
 pub(crate) fn node_text(node: &NodeKey) -> Option<String> {
-    written(node_json(node)?)
+    qsl_foundation::node_wire::node_key_to_text(node).ok()
 }
 
 /// The node `text` spells.
 pub(crate) fn node_from_text(text: &str) -> Option<NodeKey> {
-    let value = parsed(text)?;
-    let node = node_of(&value);
-    discard_node_json(value);
-    node
+    qsl_foundation::node_wire::node_key_from_text(text).ok()
 }
 
 /// A unit identity: a declared unit's node, or a compound unit's terms.
@@ -134,4 +131,34 @@ pub(crate) fn variant_from_text(text: &str) -> Option<VariantId> {
     }
     let owner = node_of(member(object, "owner")?)?;
     VariantId::new(owner, member(object, "case")?.as_str()?).ok()
+}
+
+#[cfg(test)]
+mod deep_tests {
+    use super::*;
+
+    fn deep_key() -> quire_exact::NodeKey {
+        let mut key = quire_exact::NodeKey::new(
+            "fixture",
+            vec![quire_exact::PathSegment::Text("leaf".into())],
+            0,
+        )
+        .expect("a fixture key");
+        for ordinal in 1..=200 {
+            key = quire_exact::NodeKey::new(
+                "fixture",
+                vec![quire_exact::PathSegment::Node(key)],
+                ordinal,
+            )
+            .expect("a nested key");
+        }
+        key
+    }
+
+    #[test]
+    fn a_deeply_nested_node_round_trips_through_text() {
+        let key = deep_key();
+        let text = node_text(&key).expect("a deep key spells");
+        assert_eq!(node_from_text(&text), Some(key));
+    }
 }
