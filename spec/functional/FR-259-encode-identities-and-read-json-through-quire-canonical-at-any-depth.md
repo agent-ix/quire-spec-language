@@ -41,18 +41,18 @@ delivers (ADR-030 D-8 O-6):
 
 ## Behavior
 
-1. **Fixed-depth identities.** QSL SHALL encode every identity preimage whose
-   depth is fixed by its schema (node keys, compound-unit identities, the
-   checked and v2 package identities, type and enum preimages) through
-   `quire-canonical`'s fixed-depth serde path.
-2. **Input-depth identities and keys.** QSL SHALL encode every identity or
-   key over data whose depth follows the input (a simulation state key, a
-   replay value, an intake document) through the event API or
-   the tree encoder, driven from an explicit heap stack.
-3. **Identity byte limit.** QSL SHALL encode each identity under the
-   caller's `identity.input_bytes` limit (FR-255), a byte limit only, used
-   as given with no ceiling. Its published default is 16777216 bytes. A site whose stage applies its own byte budget SHALL pass
-   that budget instead.
+1. **Structural identities.** QSL SHALL NOT encode a node key or any
+   other structural identity to a canonical byte string: a node key is the
+   triple `{package, path, ordinal}` and an obligation identity the triple
+   (node, model, ordinal), each compared, ordered and hashed componentwise.
+2. **Input-depth keys.** QSL SHALL encode every key over data whose depth
+   follows the input (a simulation state key, a replay value, an intake
+   document) through the event API or the tree encoder, driven from an
+   explicit heap stack.
+3. **Key byte limit.** QSL SHALL encode each such key under the caller's
+   `identity.input_bytes` limit (FR-255), a byte limit only, used as given
+   with no ceiling. Its published default is 16777216 bytes. A site whose
+   stage applies its own byte budget SHALL pass that budget instead.
 4. **Byte error mapping.** When `quire-canonical` returns its byte error for
    an encoding or a read, QSL SHALL report the calling stage's input-bytes
    limit outcome, naming its bound, the count reached and its setting
@@ -86,8 +86,8 @@ delivers (ADR-030 D-8 O-6):
   D-4.4, D-4.5 and D-8 overlap item O-6.
 - [ADR-013](../decisions/ADR-013-canonical-type-package-conversion-ownership.md)
   §2: one RFC 8785 implementation.
-- [FR-258](FR-258-check-and-lower-expressions-at-any-depth.md) makes every
-  node-key preimage fixed-depth.
+- [FR-258](FR-258-check-and-lower-expressions-at-any-depth.md) checks and
+  lowers expressions at any depth.
 - [FR-255](FR-255-name-the-setting-that-raises-a-reached-limit.md) names the
   settings a byte error reports.
 

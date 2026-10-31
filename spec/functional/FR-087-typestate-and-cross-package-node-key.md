@@ -120,14 +120,10 @@ during implementation.**
    `value::package_identity` are ADR-011's own relocation target for this
    requirement's `library` module, not a naming coincidence next to it.
    ADR-011 `:187` further lists `value::library` among the modules that
-   *today* implement part of the S3 check stage. `library`'s own current
-   source calls a `NodeKey`-shaped constructor:
-   `value/package_identity.rs`'s `node_key` function (`:177-182`) builds a
-   `NodeKey` with `NodeKey::from_hex` from a wire-read JSON preimage, which
-   ADR-013 O-04/R-10 forbid once this code sits in a layer-3 module
-   ordered ahead of `check`, per this requirement's own R-10 boundary
-   (Behavior, "R-10: checked typestate is never built from wire bytes";
-   FR-087-AC-6, FR-087-AC-11). This requirement's Outputs accordingly
+   *today* implement part of the S3 check stage. A node id read from the
+   wire is the structural `NodeKey` `{package, path, ordinal}` it spells,
+   so reading one mints nothing a wire value could forge. This
+   requirement's Outputs accordingly
    include relocating `value::library` and `value::package_identity` into
    the new top-level `library` module — not copying them, and not leaving
    `value::library` behind as a second, un-relocated home for the same
@@ -184,12 +180,7 @@ during implementation.**
   of them (Description, item 3): both relocate into it, carrying FR-307's
   existing acceptance criteria and TC-227's vectors forward, updated to the
   shapes item 3's owner ruling requires (below); `value::library` is not
-  left behind as a second home for the same code. `value::library`'s
-  current `NodeKey::from_hex` call inside `package_identity`'s `node_key`
-  function (ADR-011 `:187`; Description, item 3) does not survive the move:
-  after relocation, `library` calls no `NodeKey` constructor and mints no
-  `NodeKey` from a `WireNodeId` (FR-087-AC-6 and FR-087-AC-11 govern this
-  directly once the code is inside `library`). The module holds:
+  left behind as a second home for the same code. The module holds:
   - `LibraryName`, `LibraryPackage`, `ImportDeclaration`, `LibraryLock`,
     `resolve_libraries` and the rest of `value::library`'s public surface
     (relocated), except `ExportIdentity` and `resolve_name`, which do not
