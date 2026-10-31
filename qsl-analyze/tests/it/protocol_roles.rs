@@ -1284,11 +1284,14 @@ fn liveness_over_on_each_settles_instance_bound_after_no_fair_lasso() {
 #[trace("TC-654", "FR-209-AC-6")]
 #[test]
 fn a_fair_liveness_lasso_may_pass_through_an_instance_limited_state() {
-    let run = format!("sequence Main {{ {} }}", touch("T"));
+    let run = format!(
+        "sequence Main {{ {} }}",
+        attempt("T", "set", "SetPost", "t", "true")
+    );
     let claim = "temporal Live using t0 over (k: M::Cell) clock \"model-steps\" \
-                 on origin { always eventually holds(k.v = 1) }\n";
+                 on origin { always eventually holds(k.v = 0) }\n";
     let world = World::new(&(unit(EACH, "", "", &run) + claim), &["c"], &[0]);
-    let letters = CellV { holds: |v| v == 1 };
+    let letters = CellV { holds: |v| v == 0 };
     let item = world.claim(&letters);
     let outcome = world.check(item, None, Some(1));
     let ModelCheckOutcome::Violated {
@@ -1328,12 +1331,12 @@ fn a_fair_liveness_lasso_may_pass_through_an_instance_limited_state() {
 fn an_on_each_repeat_self_loop_is_fair_at_the_instance_bound() {
     let run = format!(
         "repeat Loop by w visible () while {{ true }} {}",
-        touch("T")
+        attempt("T", "set", "SetPost", "t", "true")
     );
     let claim = "temporal Live using t0 over (k: M::Cell) clock \"model-steps\" \
-                 on origin { always eventually holds(k.v = 1) }\n";
+                 on origin { always eventually holds(k.v = 0) }\n";
     let world = World::new(&(unit(EACH, "", "", &run) + claim), &["c"], &[0]);
-    let letters = CellV { holds: |v| v == 1 };
+    let letters = CellV { holds: |v| v == 0 };
     let item = world.claim(&letters);
     let outcome = world.check(item, None, Some(1));
     let ModelCheckOutcome::Violated {

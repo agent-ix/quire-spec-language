@@ -196,6 +196,7 @@ pub(crate) fn document() -> Vec<u8> {
                     operation("setTwo", &[], true, false),
                     operation("bump", &[], true, false),
                     operation("flag", &[], true, true),
+                    operation("set", &[], true, false),
                     operation("touch", &[], false, false),
                     operation("nudge", &["peer"], true, false),
                     operation("dec", &[], true, false),
@@ -247,6 +248,7 @@ pub(crate) fn contracts(two_pre: &str) -> String {
          post BumpPost using v on M::Cell::bump {{ self.v - pre(self.v) >= 1 }}\n\
          pre FlagPre using v on M::Cell::flag {{ self.v < 3 }}\n\
          post FlagPost using v on M::Cell::flag {{ self.v - pre(self.v) = 1 }}\n\
+         post SetPost using v on M::Cell::set {{ self.v = 1 }}\n\
          pre TouchPre using v on M::Cell::touch {{ true }}\n"
     )
 }
