@@ -325,7 +325,7 @@ fn the_horizon_and_every_limit_stop_the_example_run_naming_what_stopped_it() {
         stopped(metered),
         reached(
             ModelCheckLimit::EvaluationMeter {
-                counter: quire_exact::LimitKind::WorkUnits
+                counter: quire_exact::LimitKind::ValueOccurrences
             },
             0
         )

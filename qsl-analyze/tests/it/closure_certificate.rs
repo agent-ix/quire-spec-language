@@ -834,7 +834,7 @@ fn a_certificate_check_settles_accepted_rejected_or_stopped_with_the_named_setti
     let cancelled_deadline = settle(&outcome, &defaults, UNLIMITED, &deadline);
 
     let meter = ModelCheckLimit::EvaluationMeter {
-        counter: quire_exact::LimitKind::WorkUnits,
+        counter: quire_exact::LimitKind::ValueOccurrences,
     };
     let limit_stops = [
         (
@@ -843,7 +843,7 @@ fn a_certificate_check_settles_accepted_rejected_or_stopped_with_the_named_setti
             2,
             "model_check.max_states",
         ),
-        (&work_units, meter, 0, "accounting.work_units"),
+        (&work_units, meter, 0, "accounting.value_occurrences"),
     ];
     for (record, limit, value, setting) in limit_stops {
         assert_eq!(
@@ -988,7 +988,7 @@ fn a_stopped_check_names_what_stopped_it() {
         .expect("checked"),
         stop(
             ModelCheckLimit::EvaluationMeter {
-                counter: quire_exact::LimitKind::WorkUnits
+                counter: quire_exact::LimitKind::ValueOccurrences
             },
             0
         )
