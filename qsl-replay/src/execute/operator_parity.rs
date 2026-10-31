@@ -162,11 +162,10 @@ pub enum ScalarIdentityMismatch {
 /// that function's body), its
 /// `obligation_identity` is the obligation CG minted, and its `source` is
 /// not read. `claim` carries the scalar node, the operator and operands, the
-/// result range, the limits, the generated outcome and the observation
-/// digest. The returned report carries the full claim identity unchanged on
-/// every outcome, a refusal of the context included
-/// ([`OperatorParityReport::claim`]); the observation digest is carried and
-/// never recomputed or authenticated. `obligation_identity` is recomputed
+/// result range, the limits and the generated outcome. The returned report
+/// carries the full claim identity unchanged on every outcome, a refusal of
+/// the context included ([`OperatorParityReport::claim`]).
+/// `obligation_identity` is recomputed
 /// from the claim's ADR-013 O-09 preimage and a mismatch refuses
 /// [`ReplayRefusal::ScalarIdentity`]. `replay_limits` is `replay.input_bytes`,
 /// as [`crate::replay`] takes it.

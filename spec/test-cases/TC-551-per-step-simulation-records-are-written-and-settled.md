@@ -28,9 +28,7 @@ Fixtures: `CasRefinesCounter` and its lost-update model (ADR-020 §8);
 4. Settle a backend "holds" for the `commitA` record, a backend
    counterexample for the lost-update `commitB` record from `(1, 0, f, 0,
    t)`, and each record with no SMT candidate registered.
-5. Write the requests for `CasRefinesCounter` with its seven `step` rows in
-   reverse source order, and for FR-136-AC-7's protocol (with its channel `ch` and `tso` outermost `parallel`) with its rows
-   in source order and in reverse.
+5. Withdrawn: the step compared `StepRowRef`s across source orders under the digest step order (FR-146-AC-5, retired); the step number is not reused.
 6. Add `AbsInv` on `Spec::Counter` beside `CasInv`, write the request, then
    write the clauses in the opposite source order.
 7. Feed the settlement map the checker's `Rejected` and `Unverifiable`
@@ -60,7 +58,7 @@ Tag the tests `#[trace("TC-551", "FR-146-AC-n")]`.
 - Step 4: `proved`, `decisive-witness`, `Proved{Inductive{depth: 1}, Uncertified}` with no certificate;
   `inconclusive`, `Inconclusive(InductionNotClosed{depth: 1})`;
   `unsupported`.
-- Step 5: the same eight records with the same `StepRowRef`s as step 1; the protocol subject's records name the positions of FR-136's protocol sort key in both orders.
+- Step 5: withdrawn.
 - Step 6: `CasInv` listed and `AbsInv` not; unchanged by clause order.
 - Step 7: `inconclusive`, `CertificateRejected{rule, at}` for `Rejected`;
   `proved`, `Uncertified` for `Unverifiable`.

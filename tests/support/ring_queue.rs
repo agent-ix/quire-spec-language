@@ -363,7 +363,7 @@ pub struct Refused {
 pub struct Checked {
     /// The checked graph.
     pub graph: CheckedGraph,
-    /// The domain packages, by digest.
+    /// The domain packages, by declared identity.
     pub packages: qsl_semantics::model::intake::PackageInput,
 }
 

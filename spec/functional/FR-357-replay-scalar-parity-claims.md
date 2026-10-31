@@ -33,8 +33,8 @@ request the default refuses (TC-904).
 - Operator level: the original proving context as an FR-071 replay request
   (the call site's package reference, dependencies and byte
   provision; the enclosing function, which may be non-`Boolean`, as its
-  `function` replay target (QSpec FR-323); the opaque `ObligationIdentity` the caller minted from
-  the owning obligation's preimage as its `obligation_identity`, which the claim carries unchanged; its `source` is not read); the
+  `function` replay target (QSpec FR-323); the `ObligationIdentity` of the owning obligation, the structural triple
+  (node, model, ordinal), as its `obligation_identity`, which the claim carries unchanged; its `source` is not read); the
   scalar node the catalog operator is tied to, with its occurrence key and the
   `obligation_kind`; the operator (`add`, `subtract`, `multiply` or `negate`) with its ordered
   decoded `i64` operands, each with its operand identity (`GraphChild` or
@@ -55,8 +55,8 @@ request the default refuses (TC-904).
   claim inputs, selecting a function whose declared result is not
   `Boolean`, whose `source` binds that function's declared parameters and
   nothing else, whose occurrence key is the function's `declaration`
-  occurrence and whose `obligation_identity` is the one `call_site` minted
-  from FR-484's preimage; and a
+  occurrence and whose `obligation_identity` is the structural triple `call_site`
+  gives (the function's node, no model, ordinal 0); and a
   `ValueClaim` holding the generated outcome (a value, an out-of-range
   outcome, `Undefined` or `OtherRefusal`, a refusal other than for range)
   and nothing else about the artifact.
@@ -179,11 +179,11 @@ request the default refuses (TC-904).
 | FR-357-AC-12 | The outcome document writes a `ScalarAgrees` cause as `{"kind": "scalar-agrees"}`, the kind only (FR-286). | Test (TC-770) |
 | FR-357-AC-13 | Function and operator level: `report.claim()` equals the claim the caller sent on every outcome: diverged, agrees, refused input or operand, generated fault, incomplete, an identity refusal, an undecodable request and a function the entry refuses; claims that differ in any member are not equal, and an agreement's claim is the report's `claim()`. | Test (TC-904) |
 | FR-357-AC-14 | **RETIRED (observation field removed).** The operator claim carries no such field, so no QSL check could fail on it; the driver's byte comparison of the artifact it ran is the only artifact check. The criterion has no subject; the remaining claim-identity members are covered by AC-13. | Test (TC-904), retired |
-| FR-357-AC-15 | Operator level: the obligation identity `parity_obligation` returns equals the preimage tuple, written out independently, for `GraphChild` operands and for `InlineLiteral` operands, with a negative range bound among them; two literals at different positions of one application get distinct identities. | Test (TC-904) |
+| FR-357-AC-15 | **RETIRED (merged into AC-19).** A parity claim's obligation identity is the structural triple of its node, no model and its occurrence ordinal; AC-19 states it. | Test (TC-904), retired |
 | FR-357-AC-16 | **RETIRED (staleness check withdrawn).** The operator entry no longer recomputes the claim's obligation identity and compares it with the request's `obligation_identity`; no QSL check could fail on it. A difference in the native outcome alone is detected as `report.claim()` differing from the claim sent (AC-13). | Test (TC-904), retired |
 | FR-357-AC-17 | **RETIRED (staleness check withdrawn).** The operator entry no longer compares the claim's operands, literal values or operand count with the recompiled package; no QSL check could fail on it. The selector lookups (`Node`, `Operator`, `Occurrence`, `Function`) remain and are covered by AC-11. | Test (TC-904), retired |
 | FR-357-AC-18 | **RETIRED (staleness check withdrawn).** The replay no longer recomputes the obligation identity, so neither the `Encoding` nor the `Obligation` refusal exists at replay; `parity_obligation`'s own encoder refusals are covered by AC-19. | Test (TC-904), retired |
-| FR-357-AC-19 | Harness bounds are ordered by the bytes of each key's RFC 8785 encoding, and a repeated key is refused. | Test (TC-904) |
+| FR-357-AC-19 | Harness bounds are ordered by the structural order of their `DomainKey`, and a repeated key is refused. The obligation identity `parity_obligation` returns for a parity claim is the structural triple (its node, no model, its occurrence ordinal). | Test (TC-904) |
 | FR-357-AC-20 | Function and operator level: `replay_value_parity` and `replay_operator_parity` each refuse a request whose replay target is `frame_operation` (`Config::ConfigVersion`, `attemptUpdate`) or `state_clause` (`VersionUnchanged`) `invalid_runtime_input`/`unknown-member` at `/replay/frame_operation` or `/replay/state_clause`, naming the target, the entry and the member `function`, before the recompile; the function claim holds no `function`. | Test (TC-904) |
 
 ## Dependencies

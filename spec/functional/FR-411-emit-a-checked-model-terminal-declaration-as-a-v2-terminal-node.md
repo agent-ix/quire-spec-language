@@ -71,13 +71,9 @@ identity changes when the declaration does.
 - The emitter SHALL write `condition` as a reference to the predicate's
   `expression` node for `When(clause)`, and as the empty aggregate for `Any`.
 - The emitter SHALL key the node by FR-322's rules over its body, so the mode, the model and the predicate enter the node id
-  and the `package_id`, and the written name `T` enters neither.
+  and the written name `T` does not.
 - S4 SHALL NOT refuse a checked `terminal` declaration as not emitted.
-- The terminal node enters the package's `package_id`, and a model
-  subject binds its package through that `package_id` (QSpec FR-361,
-  FR-476 "Identity"), so every obligation identity over the subject, the
-  derived deadlock-freedom item's included, changes with the declaration.
-  The request carries no separate terminal member.
+- The request carries no separate terminal member.
 - Replay of a deadlock-freedom counterexample (FR-128) SHALL read the
   model's `TerminalDeclaration` from the recompiled package's
   `temporal`/`terminal` node.
@@ -97,7 +93,7 @@ identity changes when the declaration does.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-411-AC-1 | Compiling FR-126-AC-9's `Counter` unit with `terminal Done using v on Counter when { self.value = 3 };` emits one `temporal`/`terminal` node with `mode` `when`, `parameters` an aggregate holding one reference to the `self` parameter node, `condition` a reference to the `expression` node of `self.value = 3`, no `declaration` and one `claim` occurrence at the declaration's span; with `terminal Halt using v on Counter any;` it emits `mode` `any` with empty `parameters` and `condition`; without a declaration it emits no terminal node. The I2 reader returns `When`, `Any` and `None` respectively. No checked declaration is refused as not emitted. | Test (TC-1142) |
-| FR-411-AC-2 | AC-1's `when` and `any` units have different `package_id`s; renaming `Done` to `Stop` keeps the node id and `package_id`; the deadlock-freedom item over `Counter` with the `when` declaration and with none have different `package_id`s and so different obligation identities, with no other request member differing. | Test (TC-1142) |
+| FR-411-AC-2 | AC-1's `when` and `any` terminal nodes have different node ids; renaming `Done` to `Stop` keeps the node id. | Test (TC-1142) |
 | FR-411-AC-3 | **RETIRED (staleness check withdrawn).** There is no `PackageIdMismatch` refusal for a replay over an edited terminal declaration. | Test (TC-1142), retired |
 | FR-411-AC-4 | Fed to QSL's I2 reader, with `dependencies` set to the body's targets, AC-1's `when` node with `mode` `some` refuses `invalid_package`/`invalid-value`, and with `condition` the empty aggregate refuses `invalid_semantic_graph`, each at FR-476's locus. | Test (TC-1142) |
 

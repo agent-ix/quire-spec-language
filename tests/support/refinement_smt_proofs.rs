@@ -45,14 +45,14 @@ pub(crate) fn with_request<T>(
     body(&request)
 }
 
-/// The position in the `steps` array of the row whose class is spelled
+/// The declaration position of the step row whose class is spelled
 /// `spelling`.
 pub(crate) fn row_of(world: &World, spelling: &str) -> u64 {
-    let refinement = world.refinement();
-    let sources = refinement.v2_emission().expect("emits").step_sources;
-    let position = sources
+    let position = world
+        .refinement()
+        .steps()
         .iter()
-        .position(|source| refinement.steps()[*source].spelling().ends_with(spelling))
+        .position(|row| row.spelling().ends_with(spelling))
         .expect("the row exists");
     u64::try_from(position).expect("a small position")
 }

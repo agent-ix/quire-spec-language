@@ -130,7 +130,7 @@ impl ValueParityResult {
 /// bindings of `f`'s declared parameters, and nothing else, in its `source`
 /// (FR-098's request, whose `source` is the witness's bindings).
 /// `value_claim` is the driver's observation: the generated outcome at those
-/// bindings and the generated-content identity, carried unchanged (FR-484).
+/// bindings (FR-484).
 /// After the target, recompile, package, `UnknownFunction` and
 /// `NotAValueFunction` checks and before the argument join, the request's
 /// occurrence key must be `f`'s `declaration` occurrence

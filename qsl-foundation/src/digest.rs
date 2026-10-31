@@ -618,6 +618,21 @@ mod digest_record_tests {
         assert!(matches!(err, InvalidDigestRecord::UnknownDomain(_)));
     }
 
+    /// C-16 adverse case, FR-201-AC-2: equal digest bytes under two
+    /// different domains are unequal records -- domain is part of
+    /// identity, not decoration, and no conversion collapses the two.
+    #[test]
+    fn a_cross_domain_digest_is_unequal_despite_equal_bytes() {
+        let same_bytes = bytes(0x42);
+        let other = DigestRecord::mint(DigestDomain::DefinitionBytesV1, same_bytes);
+        let effective = DigestRecord::mint(DigestDomain::ModelEffectiveDeclarationV2, same_bytes);
+        assert_ne!(other, effective);
+        assert_eq!(
+            other.as_bytes(),
+            effective.as_bytes(),
+            "sanity: bytes really do match"
+        );
+    }
     /// `DigestDomain::from_str`'s exact-match rule: no case folding and no
     /// hyphen/underscore aliasing (FR-201's own "Key" rule).
     #[test]

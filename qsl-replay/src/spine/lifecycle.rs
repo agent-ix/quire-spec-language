@@ -444,7 +444,7 @@ impl CheckedUnit {
 }
 
 /// A checked package emitted as `quire.checked-package/v2` bytes, with the
-/// identified sources another party needs to import or replay it.
+/// sources another party needs to import or replay it.
 #[derive(Clone, Debug)]
 pub struct EmittedUnit {
     package: pkg::EmittedPackage,

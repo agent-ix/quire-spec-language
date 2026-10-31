@@ -258,7 +258,7 @@ fn tc_1252_a_foreign_occurrence_refuses_before_any_call() {
     );
 }
 
-/// FR-484-AC-8: changing only the occurrence key changes the claim identity.
+/// FR-484-AC-8: the occurrence key is retained and distinguishes claims.
 #[trace("TC-1252", "FR-484-AC-8")]
 #[test]
 fn tc_1252_the_occurrence_key_binds_into_the_claim() {

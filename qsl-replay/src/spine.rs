@@ -16,7 +16,7 @@
 //! It lives in layer 6 `replay` because its callers are layer 6: `command`'s
 //! CLI `compile`, which writes the emitted bytes, and this crate's replay
 //! executor ([`crate::replay`]), which recompiles a replay request's
-//! caller-identified source and keeps the in-process checked package
+//! source-selected inputs and keeps the in-process checked package
 //! (ADR-011 §2.1 E9). No layer below 6 may depend on S1 and S2 together
 //! (ADR-011 §6.1), and `replay` may not depend on `command`, so this is the
 //! one place the chain is written.

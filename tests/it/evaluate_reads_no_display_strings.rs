@@ -84,10 +84,12 @@ impl<'ast> Visit<'ast> for Scan {
     fn visit_expr_method_call(&mut self, call: &'ast syn::ExprMethodCall) {
         let name = call.method.to_string();
         if TEXT_METHODS.contains(&name.as_str()) {
-            // The one allowed rendering: a population's declared name copied
-            // into an absent-key payload (a declared name is checked input).
+            // The one allowed rendering: a population's structural node key
+            // copied into an absent-key payload (checked input, not source text).
             let allowed = name == "to_string"
-                && matches!(&*call.receiver, syn::Expr::Path(path) if path.path.is_ident("population"));
+                && matches!(&*call.receiver, syn::Expr::MethodCall(inner)
+                    if inner.method == "node"
+                        && matches!(&*inner.receiver, syn::Expr::Path(path) if path.path.is_ident("population")));
             if !allowed {
                 self.findings.push(format!(".{name}() call"));
             }
@@ -156,6 +158,6 @@ fn the_evaluator_has_no_path_to_source_text_or_rendering() {
     ] {
         assert!(flagged.iter().any(|f| f == needle), "{needle}: {flagged:?}");
     }
-    assert!(findings("fn f() { population.to_string(); }", None).is_empty());
+    assert!(findings("fn f() { population.node().to_string(); }", None).is_empty());
     assert!(findings("#[cfg(test)] mod t { fn f() { format!(\"x\"); } }", None).is_empty());
 }

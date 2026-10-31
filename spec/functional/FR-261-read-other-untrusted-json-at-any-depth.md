@@ -1,6 +1,6 @@
 ---
 id: FR-261
-title: "Read library preimages and observation documents at any depth"
+title: "Read observation documents at any depth"
 type: FR
 relationships:
   - target: ix://agent-ix/quire-spec-language/US-027
@@ -16,23 +16,22 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-111
     type: traces_to
 ---
-# FR-261: Read library preimages and observation documents at any depth
+# FR-261: Read observation documents at any depth
 
 ## Description
 
 Every QSL read of untrusted JSON that has no typed reader SHALL go through
 `quire-canonical`'s shared reader and its arena tree (FR-259), under the
 calling stage's input byte limit, and SHALL report the document on its
-content whatever its nesting (ADR-030 D-4.10). The sites are:
-
-- the library package identity read, which validates an identity preimage
-  and projects its declarations, under `library.single_artifact_bytes`;
-- the observation document reader (FR-106), under `observation.input_bytes`,
-  `observation.objects` and `observation.values`.
+content whatever its nesting (ADR-030 D-4.10). The site is the observation
+document reader (FR-106), under `observation.input_bytes`,
+`observation.objects` and `observation.values`. A library package has no
+identity document to read: it is identified by its `LibraryName` alone
+(FR-087).
 
 ## Behavior
 
-1. **Shared reader.** Each site SHALL read its document through
+1. **Shared reader.** The site SHALL read its document through
    `quire-canonical`'s shared reader into its arena tree.
 2. **Malformed versus limit.** When the reader refuses the bytes as
    malformed, the site SHALL return its malformed-input refusal carrying the
@@ -57,7 +56,7 @@ content whatever its nesting (ADR-030 D-4.10). The sites are:
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-261-AC-1 | On a thread with a 512 KiB stack, the library package identity read of a canonical preimage object whose members are valid except that `edition` holds an array nested 100,000 deep refuses with `PreimageDefect::MemberType("edition")`, not `PreimageDefect::NotObject`. Bytes that are not JSON refuse with the malformed-input defect carrying the byte offset of the first malformed byte, distinct from the not-an-object defect, which a top-level array gives. | Test (TC-733) |
+| FR-261-AC-1 | **RETIRED (the library package identity read is deleted).** A package is identified by its `LibraryName` alone (FR-087-AC-3); there is no package identity preimage to read and no `PreimageDefect`. | Test (TC-733), retired |
 | FR-261-AC-2 | On a thread with a 512 KiB stack, observation admission over a snapshot document holding a field value nested 100,000 deep, within `observation.input_bytes`, reads the document and proceeds to FR-106's later checks; the same document past `observation.input_bytes` refuses `stage_limit_exceeded`/`input-bytes-exceeded`. | Test (TC-733) |
 | FR-261-AC-3 | On a thread with a 512 KiB stack, the observation document reader reads a snapshot whose population's field holds a value nested 100,000 levels deep, counts it as `observation.values` and judges it on its content. With `observation.input_bytes` and `observation.values` raised to fit, it refuses `invalid_runtime_input`/`wrong-value-kind` at that field, because the field's declared type does not admit that value. With `observation.values` at 50,000, which the nested value alone crosses, it refuses `stage_limit_exceeded`/`node-count-exceeded` naming `observation.values`, bound 50,000 and the count reached, 50,001. | Test (TC-733) |
 

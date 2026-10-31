@@ -1508,9 +1508,9 @@ fn multi_initial_sample_starts_at_trace_index_mod_m() {
 }
 
 /// TC-454 step 7, FR-101-AC-5: an unaltered trace replays; a shared-identity
-/// step replays by taking the successor whose digest matches; a non-first
-/// initial state is found by its digest; and each of a tampered initial
-/// digest, transition and step digest refuses at that exact step.
+/// step replays by transition identity and then the recorded ordinal; a
+/// non-first initial state is found by its recomputed key; and each of a
+/// tampered initial key and tampered transition refuses at that exact step.
 #[trace("TC-454", "FR-101-AC-5")]
 #[test]
 fn sample_then_replay_round_trips_and_refuses_tampered_traces() {
@@ -1519,9 +1519,10 @@ fn sample_then_replay_round_trips_and_refuses_tampered_traces() {
         vec![("0", op("recv"), "1"), ("0", op("recv"), "2")],
     );
     // Seed 2 draws index 1 (recomputed independently), the second-listed
-    // `recv` edge to "2": this is what makes the test discriminate a
-    // replay that only takes the first matching-identity successor from a
-    // replay that matches by digest, per FR-101-AC-5.
+    // `recv` edge to "2", recorded as ordinal 1: this is what makes the
+    // test discriminate a replay that only takes the first
+    // matching-identity successor from a replay that selects by ordinal,
+    // per FR-101-AC-5.
     let sampled = sample_request(
         &duplicate_ids,
         NO_DOMAINS,
@@ -1535,6 +1536,7 @@ fn sample_then_replay_round_trips_and_refuses_tampered_traces() {
     )
     .expect("a bounded, generator-matched sample");
     assert_eq!(sampled.steps[0].key, key("2"));
+    assert_eq!(sampled.steps[0].ordinal, 1);
     assert_eq!(
         replay(&duplicate_ids, &sampled, IdentityLimits::default()),
         Ok(())
@@ -1545,6 +1547,7 @@ fn sample_then_replay_round_trips_and_refuses_tampered_traces() {
         initial: key("b"),
         steps: vec![qsl_eval::simulation::Step {
             transition: op("from_b"),
+            ordinal: 0,
             key: key("z"),
         }],
         findings: vec![],
@@ -1561,10 +1564,12 @@ fn sample_then_replay_round_trips_and_refuses_tampered_traces() {
         steps: vec![
             qsl_eval::simulation::Step {
                 transition: op("t1"),
+                ordinal: 0,
                 key: key("1"),
             },
             qsl_eval::simulation::Step {
                 transition: op("t2"),
+                ordinal: 0,
                 key: key("2"),
             },
         ],
@@ -1591,16 +1596,54 @@ fn sample_then_replay_round_trips_and_refuses_tampered_traces() {
             transition: op("bogus"),
         })
     );
+}
 
-    let mut wrong_key = good.clone();
-    wrong_key.steps[1].key = key("999");
+/// TC-454 step 7, FR-101-AC-5: of two successors sharing a transition
+/// identity but reaching different states, a step records the ordinal of the
+/// one it took and replay follows that one; an ordinal past the last
+/// successor refuses `MissingTransition`.
+#[trace("TC-454", "FR-101-AC-5")]
+#[test]
+fn replay_follows_the_recorded_ordinal_among_same_identity_successors() {
+    let system = EdgeGraph::new(
+        vec!["a"],
+        vec![
+            ("a", op("t"), "p"),
+            ("a", op("t"), "q"),
+            ("q", op("u"), "r"),
+        ],
+    );
+    let step = |transition: Transition, ordinal: usize, to: &str| qsl_eval::simulation::Step {
+        transition,
+        ordinal,
+        key: key(to),
+    };
+    let second: Trace<Transition, String> = Trace {
+        initial: key("a"),
+        steps: vec![step(op("t"), 1, "q"), step(op("u"), 0, "r")],
+        findings: vec![],
+        provenance: None,
+    };
+    // Only `q` offers `u`: replay reaches it by following ordinal 1.
+    assert_eq!(replay(&system, &second, IdentityLimits::default()), Ok(()));
+
+    let mut first = second.clone();
+    first.steps[0].ordinal = 0;
     assert_eq!(
-        replay(&chain, &wrong_key, IdentityLimits::default()),
-        Err(ReplayError::KeyMismatch {
+        replay(&system, &first, IdentityLimits::default()),
+        Err(ReplayError::MissingTransition {
             step: 1,
-            transition: op("t2"),
-            expected: key("999"),
-            actual: key("2"),
+            transition: op("u"),
+        })
+    );
+
+    let mut forged = second.clone();
+    forged.steps[0].ordinal = 2;
+    assert_eq!(
+        replay(&system, &forged, IdentityLimits::default()),
+        Err(ReplayError::MissingTransition {
+            step: 0,
+            transition: op("t"),
         })
     );
 }
@@ -2070,14 +2113,6 @@ fn tc_474_replay_refuses_a_trace_whose_findings_differ() {
     duplicate.findings.push(trace.findings[0].clone());
     assert_eq!(
         replay(&system, &duplicate, IdentityLimits::default()),
-        Err(ReplayError::FindingMismatch { step: 1 })
-    );
-
-    // The right depth and findings under another state's digest.
-    let mut wrong_digest = trace.clone();
-    wrong_digest.findings[0].state = key("1");
-    assert_eq!(
-        replay(&system, &wrong_digest, IdentityLimits::default()),
         Err(ReplayError::FindingMismatch { step: 1 })
     );
 

@@ -400,8 +400,8 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
             fcd_is_named_by_model_intake_only(&package.normal);
             // ADR-013 §2, ADR-013:113: shipped code encodes and
             // hashes identities through `quire-canonical` and
-            // `qsl_foundation::ByteDigest`; `sha2` is a test-only
-            // dependency, so no shipped module can hash on its own.
+            // `qsl_foundation::ByteDigest`; `sha2` is no dependency of
+            // this crate, so no shipped module can hash on its own.
             assert!(
                 package
                     .normal
@@ -426,7 +426,7 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
             // `quire-exact` and `thiserror` are optional, enabled by `std`
             // (NFR-015). `serde_json` is optional too, enabled by `std`: the
             // hybrid reader reads a typed application operation through its
-            // public `Serialize` form. `sha2` is used by tests only.
+            // public `Serialize` form.
             // `ix-trace-rs`
             // (ADR-012 section 9) owns the `#[string_edge]` marker and is
             // exempt from the layer order below (FR-064): it is a
@@ -455,7 +455,7 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
         if crate_name == "qsl-eval" {
             // Layer 5: "4, 3, F, K". The whole shipped table is
             // fixed: the four layer crates, `thiserror` for its error types,
-            // and `quire-canonical`/`serde` for the FR-101 simulation state
+            // and `quire-canonical`/`serde`/`serde_json` for the FR-101 simulation state
             // key and the pinned sampler's draw preimage (ADR-011
             // X-8). `ix-trace-rs` (ADR-012 section 9) owns the
             // `#[string_edge]` marker and is exempt from the layer order
@@ -475,6 +475,7 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
                     "quire-exact",
                     "quire-semantic-value",
                     "serde",
+                    "serde_json",
                     "thiserror"
                 ],
                 "{crate_name}'s [dependencies]"
@@ -493,7 +494,8 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
             // `thiserror` for `RegistrationRefusal`, `ix-trace-rs` for the
             // required FR-064 string-edge marker, and C's `DeclarationKey`
             // (`quire-checked`, X-9) for the population a request's symmetry
-            // declaration names (FR-159); nothing of layer 4,
+            // declaration names (FR-159), `quire-exact`'s `NodeKey` for the
+            // structural node identity a request names; nothing of layer 4,
             // K or the root crate. The whole `[dependencies]` table is checked, so a
             // planted third-party crate fails it too.
             let mut normal: Vec<&str> = package.normal.iter().map(String::as_str).collect();
@@ -505,6 +507,7 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
                     "qsl-foundation",
                     "qsl-semantics",
                     "quire-checked",
+                    "quire-exact",
                     "quire-semantic-value",
                     "thiserror"
                 ],

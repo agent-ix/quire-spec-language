@@ -1511,7 +1511,6 @@ dependencies = [
  "quire-semantic-value",
  "serde",
  "serde_json",
- "sha2",
  "thiserror",
 ]
 
@@ -1577,7 +1576,6 @@ dependencies = [
  "quire-walk",
  "serde",
  "serde_json",
- "sha2",
  "syn 2.0.119",
  "tempfile",
  "thiserror",

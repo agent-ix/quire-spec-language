@@ -242,7 +242,6 @@ impl Unit {
             obligation_kind: "bounded_shadow".to_owned(),
             harness_bounds,
             limits: UNLIMITED,
-            content_identity: DigestRecord::mint(DigestDomain::Sha256Jcs, [9; 32]),
         }
     }
 
@@ -777,9 +776,9 @@ fn tc_907_a_covering_harness_proves() {
     proved(&settle(&unit, "c", bounds, vec![], exhausted));
 }
 
-/// FR-358-AC-9 (TC-907 step 5): evidence short of covering the claim's
+/// FR-358-AC-5 (TC-907 step 5): evidence short of covering the claim's
 /// domain is `Tested`, never `Proved`.
-#[trace("TC-907", "FR-358-AC-9")]
+#[trace("TC-907", "FR-358-AC-5")]
 #[test]
 fn tc_907_anything_short_of_covering_is_tested() {
     let unit = unit();
@@ -1198,7 +1197,7 @@ fn tc_907_a_refinement_disagreement_overrides_every_row() {
 /// collection is a `Cardinality` position no harness bound covers until a
 /// request `DeclaredDomain` substitutes its maximum, and the element's range
 /// is covered as authored.
-#[trace("TC-907", "FR-358-AC-4")]
+#[trace("TC-907", "FR-358-AC-4", "FR-358-AC-5")]
 #[test]
 fn tc_907_an_unbounded_collection_is_covered_only_by_a_declared_cardinality() {
     use crate::execute::composite_domain::derive;

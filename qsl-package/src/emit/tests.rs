@@ -361,8 +361,8 @@ fn a_function_identity_survives_emission_and_the_i2_read() {
 /// from closed role enums, each exactly `{authority, identity}`;
 /// the diagnostics catalog is QSpec's native diagnostics `DefinitionRef`,
 /// `{agent-ix, quire.native.diagnostics/v1}` and no other member; each
-/// source row and source-map region names the caller's source reference; and
-/// IR's reader admits the package.
+/// source row and each source-map region keep the caller's source reference;
+/// and IR's reader admits the package.
 #[trace("TC-416", "FR-093-AC-7", "FR-093-AC-17", "FR-093-AC-20")]
 #[test]
 fn the_lock_selects_the_catalog_definitions() {
@@ -2214,9 +2214,8 @@ fn emit_model_unit(unit: &str, evidence_identity: Option<&str>) -> (Emission, Va
 /// omitted. The assembler declares `M::Gadget` and `M::Widget` in the
 /// package's `TypeEnvironment`, `Gadget` conforming to `Widget` through its
 /// declared supertype. The lock and the identity preimage select the domain
-/// package by identity and the `sha256-jcs` digest of the supplied
-/// document, with no version, while the emitted model nodes are keyed by the
-/// content-only `ModelOwner`, which carries no version. QSL's I2 read, given that digest
+/// package by identity alone, with no version, while the emitted model nodes are keyed by the
+/// content-only `ModelOwner`, which carries no version. QSL's I2 read, given the package
 /// as domain package evidence, returns Verified exporting `keep` and `held`.
 #[trace("TC-442", "FR-027-AC-9", "FR-056-AC-9")]
 #[test]

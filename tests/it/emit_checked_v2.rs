@@ -71,6 +71,11 @@ fn read_back(bytes: &[u8], documents: &[&[u8]]) -> CheckedPackageV2 {
     }
 }
 
+/// The package name the oracle derives from the source label.
+fn producer_name(path: &Path) -> String {
+    format!("source:{}", path.display())
+}
+
 /// The producer's own bytes for `source` over `documents`, by the spine's
 /// four operations rather than by the runnable output.
 ///
@@ -102,9 +107,10 @@ fn the_output_is_the_producers_bytes_and_reads_back() {
     let model = Path::new("tests/fixtures/spine-model.semantic-ir.json");
     let program = spine_model_source(directory.path());
     let program = program.as_path();
+    let oracle_name = producer_name(program);
 
     let mut stdout = Vec::new();
-    let mut command = strings(&["--package-name", PACKAGE_NAME, "--model"]);
+    let mut command = strings(&["--package-name", &oracle_name, "--model"]);
     command.extend(args(&[model, program]));
     run(&command, &mut stdout).expect("the fixture emits");
     assert!(!stdout.is_empty());
@@ -112,7 +118,7 @@ fn the_output_is_the_producers_bytes_and_reads_back() {
     read_back(&stdout, &[document]);
 
     let mut elsewhere = Vec::new();
-    let mut command = strings(&["--package-name", PACKAGE_NAME, "--out"]);
+    let mut command = strings(&["--package-name", &oracle_name, "--out"]);
     command.extend(args(&[&out]));
     command.extend(strings(&["--model"]));
     command.extend(args(&[model, program]));
@@ -140,7 +146,7 @@ fn the_switch_example_pair_emits_a_transition_and_is_admitted() {
     let program = Path::new("examples/switch-transition/switch.native");
     let document = std::fs::read(model).unwrap();
     let source = switch_source();
-    let mut command = strings(&["--package-name", PACKAGE_NAME, "--model"]);
+    let mut command = strings(&["--package-name", &producer_name(program), "--model"]);
     command.extend(args(&[model, program]));
     let bytes = emit(&Request::parse(&command).unwrap()).expect("the transition form emits");
     assert_eq!(bytes, producer_bytes(program, &source, &[&document]));

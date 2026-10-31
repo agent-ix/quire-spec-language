@@ -362,10 +362,7 @@ fn tc_450_step_4_native_only_members_refuse_before_any_model_is_read() {
         ),
         (
             "package",
-            (|job: &mut Value| {
-                job["request"]["package"] =
-                    json!({"file":"p.bin","digest":format!("sha256:{}", "0".repeat(64))})
-            }) as Mutation,
+            (|job: &mut Value| job["request"]["package"] = json!({"file":"p.bin"})) as Mutation,
         ),
         (
             "limits.validation_work",

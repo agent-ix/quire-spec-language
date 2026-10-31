@@ -2369,7 +2369,7 @@ pub fn emit_checked_with_fault(
 /// `frame` node found via [`qsl_semantics::check::SemanticNode::key`])
 /// without reimplementing the conversion. Public only under `test-support`;
 /// see [`emit_checked_with_fault`].
-#[cfg(feature = "test-support")]
+#[cfg(any(test, feature = "test-support"))]
 #[doc(hidden)]
 pub fn checked_node_id_of(key: &NodeKey) -> CheckedNodeId {
     node_id(key)

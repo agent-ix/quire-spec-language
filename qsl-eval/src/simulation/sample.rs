@@ -164,11 +164,17 @@ pub(crate) fn sample<S: TransitionSystem>(
         // `next_index(n)` always returns an index `< n` (its own contract),
         // so `swap_remove` never panics: no fallback branch is needed.
         let index = generator.next_index(n);
+        // The ordinal is counted before `swap_remove` reorders `successors`.
+        let ordinal = successors[..index]
+            .iter()
+            .filter(|earlier| earlier.transition == successors[index].transition)
+            .count();
         let chosen = successors.swap_remove(index);
         current = chosen.state;
         current_digest = chosen.digest;
         steps.push(Step {
             transition: chosen.transition,
+            ordinal,
             key: chosen.digest,
         });
     };
