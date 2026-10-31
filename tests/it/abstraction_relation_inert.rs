@@ -6,7 +6,9 @@
 //! declaration, so no span of an earlier declaration moves.
 
 use ix_trace_rs::trace;
+use qsl_foundation::source::provenance::{OccurrenceKey, SourceRegion};
 use qsl_foundation::{BackendId, SourceIdentity};
+use qsl_package::{emit_package, export_bindings, CheckedPackage, ExportRefusal};
 use qsl_replay::spine::{run_clause, ClauseRunStage};
 use qsl_route::request::items_from_requirements;
 use qsl_route::routing::{route, Disposition};
@@ -181,4 +183,92 @@ fn a_relation_changes_no_clause_disposition() {
         assert_eq!(carried.disposition.truth(), plain.disposition.truth());
     }
     assert!(evaluated >= 10, "the corpus runs past compile: {evaluated}");
+}
+
+/// TC-804/TC-806: a relation authored in the unit survives checked-package
+/// linking and emission, and per-item export refuses only the item whose
+/// referenced population remains unbound.
+#[trace("TC-804", "FR-306-AC-1", "FR-307-AC-1")]
+#[test]
+fn a_source_relation_is_emitted_and_unbound_items_name_the_population() {
+    let base = graph_of(&spine::unit_text());
+    let source_relation = "abstraction A using v {\n\
+        type Config::ConfigVersion to \"store::Version\" { versionNumber to \"number\"; };\n\
+        }\n";
+    let text = format!("{}{source_relation}", spine::unit_text());
+    let graph = graph_of(&text);
+
+    let base_roots: Vec<_> = base.model_roots().collect();
+    let relation_roots: Vec<_> = graph.model_roots().collect();
+    assert_eq!(relation_roots, base_roots, "model admission is unchanged");
+    let relation = graph
+        .abstraction()
+        .cloned()
+        .expect("the source relation checks");
+    assert_eq!(relation.len(), 1, "only ConfigVersion is bound");
+
+    let package = CheckedPackage::link(graph);
+    assert_eq!(
+        package.abstraction(),
+        Some(&relation),
+        "linking carries the source-checked relation"
+    );
+    let source = package.graph().source().clone();
+    let emission = emit_package(&package, move |_| {
+        Some(SourceRegion::new(source.clone(), 0, 1).expect("a source region"))
+    })
+    .expect("the checked package emits");
+    let wire: serde_json::Value =
+        serde_json::from_slice(emission.package().bytes()).expect("the package is JSON");
+    let nodes = wire["semantic_graph"]["nodes"]
+        .as_array()
+        .expect("semantic nodes");
+    let relations: Vec<_> = nodes
+        .iter()
+        .filter(|node| node["semantic_form"] == "abstraction_relation")
+        .collect();
+    let [relation] = relations.as_slice() else {
+        panic!("one emitted abstraction relation: {relations:?}");
+    };
+    assert_eq!(relation["body"]["term"], "abstraction_relation");
+    assert_eq!(
+        relation["body"]["objects"][0]["rust_type"],
+        serde_json::json!(["store", "Version"])
+    );
+
+    let function_item = package
+        .graph()
+        .requirements()
+        .iter()
+        .find(|(_, record)| {
+            record.requirements().kind() == qsl_semantics::check::Capability::ValueValidity
+        })
+        .map(|(key, _)| key.clone())
+        .expect("the unit has a value-validity item");
+    let [Ok(bound)] = export_bindings(&package, std::slice::from_ref(&function_item)).as_slice()
+    else {
+        panic!("the object-reading item is bound");
+    };
+    assert_eq!(bound.bindings.len(), 1);
+    assert!(matches!(
+        bound.bindings[0].0,
+        qsl_semantics::check::AbstractionKey::Object(_)
+    ));
+
+    let clause = package
+        .graph()
+        .state_clause("ParentOrder")
+        .expect("the population-ranging clause");
+    let population_item = OccurrenceKey::new(clause.identity(), clause.claim().clone());
+    let [Err(ExportRefusal::Unbound { elements, .. })] =
+        export_bindings(&package, std::slice::from_ref(&population_item)).as_slice()
+    else {
+        panic!("the population-reading item refuses with its unbound element");
+    };
+    assert_eq!(elements.len(), 1);
+    assert!(matches!(
+        elements[0].key,
+        qsl_semantics::check::AbstractionKey::Population(_)
+    ));
+    assert_eq!(elements[0].package, spine::DOMAIN_PACKAGE);
 }
