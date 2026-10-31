@@ -235,7 +235,7 @@ fn the_text_leaf_walk_enters_two_visits_per_charged_record() {
     let types = TypeEnvironment::new(chain(RECORDS), []).expect("FR-143 admits the chain");
     let location = Location::root(quire_semantic_value::location::Origin::Expression);
     let mut meter = quire_exact::Meter::new(crate::check::family::SCALAR_LIMITS_UNLIMITED);
-    let mut reach = BTreeMap::new();
+    let mut reach = HashMap::new();
     let mut walk = LeafWalk {
         types: &types,
         location: &location,
@@ -245,7 +245,7 @@ fn the_text_leaf_walk_enters_two_visits_per_charged_record() {
         prefixes: Vec::new(),
         leaves: Vec::new(),
         open: Vec::new(),
-        entered_at: BTreeMap::new(),
+        entered_at: HashMap::new(),
         budget: u64::MAX,
         limit: u64::MAX,
     };
