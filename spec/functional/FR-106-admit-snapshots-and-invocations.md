@@ -13,6 +13,8 @@ relationships:
     type: traces_to
   - target: ix://agent-ix/quire-semantic-value/FR-106
     type: depends_on
+  - target: ix://agent-ix/quire-semantic-value/FR-130
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-001
     type: traces_to
   - target: ix://agent-ix/quire-spec-language/FR-038
@@ -111,15 +113,21 @@ that compares only reference-valued fields (`PopulationMember::field_values`,
   operation, and the self object is none. The context is not an object of the
   `ObjectEnvironment`, has no `PopulationBinding` and is never the target of a
   `reference`.
-- Or an `AdmissionFailure`: `Refused(RefusalRecord)` or
-  `Incomplete(RefusalRecord)`, each with a catalog code, a cause and the input
-  path (document identity, population, object key, field) it names.
+- Or an `AdmissionFailure`: `Refused(AdmissionRecord)` or
+  `Incomplete(AdmissionRecord)`, each with the exact shared
+  `quire_semantic_value::admission::AdmissionRecord`; an admission invariant
+  break retains its existing `Fault(InternalFault)` arm. FR-106 SHALL use
+  `quire_semantic_value::admission::PathStep` for nested paths and SHALL
+  declare no local record or path copy. The shared record's `catalog` carries
+  the original code/cause pair; `fields`, `path` and `kernel` retain the named
+  input path and construction cause without rendering or reconstruction.
 
 ## Admitted current-observation authority for protocol slots
 
 For [FR-390](FR-390-evaluate-a-protocol-node-expression-from-a-checked-package.md),
 layer-4 `qsl-package` SHALL retain successful current-snapshot admission as an
-opaque, immutable `AdmittedProtocolObservation<'view>` tied to the exact
+opaque, immutable
+`qsl_package::observation::AdmittedProtocolObservation<'view>` tied to the exact
 `AdmittedEvaluationView` that selected the models. The authority SHALL retain
 the admitted snapshot's document identity, its selected-model provenance,
 the normalized model/type/population associations used by this admission,
@@ -128,15 +136,57 @@ and FR-106 population/reference closure facts. It SHALL retain the population
 declarations' exact checked node identities, including empty and unlisted
 populations; object presence is not evidence of population completeness.
 
-The layer-4 construction entry SHALL reuse this requirement's current-snapshot
-admission over the view's own model selections and type environment, with the
-existing package input, model-normalization limits, snapshot provision,
-selected `DocumentRef` and `ObservationLimits`. A successful authority SHALL
+The layer-4 construction entry SHALL be the following inherent method on
+`AdmittedEvaluationView`, using the existing FR-106 input types:
+
+```rust
+pub fn admit_protocol_observation<'view>(
+    &'view self,
+    model: &DomainPackageRef,
+    packages: &PackageInput,
+    model_limits: ModelNormalizationLimits,
+    snapshots: &BTreeMap<DocumentRef, Vec<u8>>,
+    selected: &DocumentRef,
+    limits: ObservationLimits,
+) -> qsl_package::observation::ProtocolObservationAdmission<'view>;
+```
+
+The entry SHALL reuse FR-106 current-snapshot admission with no clause,
+invocation or anchor comparison. It SHALL verify that `model` is one of the
+view's own selected models and bind the snapshot to that exact model using
+FR-106's model-selection check. The view supplies its admitted type and model
+associations; caller-supplied labels SHALL NOT substitute for them. A model
+outside that selection or a snapshot bound to another model SHALL yield the
+existing `invalid_model_binding`/`wrong-model-selection` record.
+A successful authority SHALL
 own its admitted observation data and borrow its originating view; it SHALL
 borrow neither snapshot bytes nor caller-owned provisions. The entry SHALL
 accept no evaluation `Meter`, evaluate no expression and create no replacement
 meter. Its admission usage and limits SHALL remain FR-106's, separate from
-S6a charges.
+S6a charges. The authority SHALL expose `usage(&self) -> AdmissionUsage`,
+`identity(&self) -> &DocumentRef`, `model_selection(&self) -> &DomainPackageRef`
+and `environment(&self) -> &ObjectEnvironment` as read-only accessors.
+
+The canonical QSL-owned observation-result API SHALL be
+`qsl_package::observation::ProtocolObservationAdmission<'view>` with exactly
+these arms, implementing shared
+[FR-130](ix://agent-ix/quire-semantic-value/FR-130):
+
+```rust
+pub enum ProtocolObservationAdmission<'view> {
+    Admitted(AdmittedProtocolObservation<'view>),
+    Refused(quire_semantic_value::admission::AdmissionRecord),
+    Incomplete(quire_semantic_value::admission::AdmissionRecord),
+    Fault(quire_semantic_value::catalog::InternalFault),
+}
+```
+
+Its `authority(&self) -> Result<&AdmittedProtocolObservation<'view>, &Self>`
+SHALL return the borrowed authority for `Admitted`, and the original borrowed
+non-admitted arm for every other result. It SHALL NOT flatten absence of
+authority to `None`. The enum is the observation-admission result, not a copy
+of `CallAdmissionFailure`: the only input-path record and nested path types
+are QSV's, and `InternalFault` remains the existing fault vocabulary.
 
 An authority SHALL expose read accessors only: no public fields, mutable
 environment, mutable completeness flag, mutable model provenance or mutable
@@ -170,15 +220,13 @@ required populations SHALL retain check 8's dangling-reference record.
 These are FR-106's existing model-admission checks over retained facts, not a
 second evaluator checker, a new document reader or a new refusal vocabulary.
 
-IR-1198 owns the shared canonical admission record, population locus and
-typed admitted-or-refused result needed to carry this authority through the
-protocol-call boundary. The layer-4 authority entry and FR-390 input SHALL
-use that single shared result rather than a QSL-owned mirror of
-`CallAdmissionFailure`. This dependency grants no new shared field, variant,
-constructor or conversion: those public signatures belong to IR-1198.
-Complete AC-6 record transport depends on that shared contract preserving all
-FR-106 record components; a flattened binder locus is not a replacement for
-the required population node or the original model-admission record.
+Shared FR-130 governs the QSV record and `quire-eval`'s downstream call-record
+and population-locus transport; QSL owns the observation API above and the
+admission decision. Runtime delivery of that consumer transport is an
+implementation dependency tracked as IR-1199, distinct from IR-1198's shared
+record contract. This requirement defines no future `quire-eval` field
+or variant spelling. Complete AC-6 transport requires the full shared record
+and population node; a flattened binder locus is not a replacement for them.
 
 ## Document forms
 
@@ -1185,6 +1233,9 @@ required; check 10 settles it.
 | FR-106-AC-60 | Over TC-1171's numeric fixture (also declaring `names: Set<String>[0, 4]`, `notes: Set<Option<String>>[0, 2]` and `lines: OrderedSet<String>[0, 3]`), a current snapshot whose `t1` holds `names` `{"set": [b, "", "\u00e9", "e\u0301"]}` (each as a String object) admits four members, the composed and the decomposed spelling of `é` being two, written `[{"kind":"string","text":""},{"kind":"string","text":"b"},{"kind":"string","text":"e\u0301"},{"kind":"string","text":"\u00e9"}]` ordered by those bytes; `notes` `{"set": [{"present": {"kind":"string","text":"x"}}, {"absent": {}}]}` is written `[{"absent":{}},{"present":{"kind":"string","text":"x"}}]`; `lines` keeps its order. `names` holding `a` twice and `lines` holding `a` twice refuse `invalid_runtime_input`/`duplicate-member` at element 1 naming element 0; a Text object `{"kind":"text","text":"a"}` as an element of `names`, a UUID object, and `{"kind":"string","text":1}` refuse `wrong-value-kind` at element 0, the last naming `text`; `names` with five elements refuses `cardinality_out_of_bound`/`above-maximum` before any element is read. A `retag` invocation whose post `names` holds the pre members in another order is no change, and one whose post `names` replaces U+00E9 by U+0065 U+0301 refuses `frame_violation`/`unauthorized-change` naming `t1` and `names`. | Test (TC-1171) |
 | FR-106-AC-61 | A snapshot whose object type has fields `blob: Bytes`, `doc: JsonObject` and `span: Duration` (the unit of compilation declaring `dimension Time; unit s : Time = rational(1, 1);`) admits `blob` `{"kind":"bytes","text":"00ff"}`, `doc` `{"kind":"json_object","text":"{\"a\":1}"}` and `span` as the quantity form of `3/2` over `s`, and two snapshots differing only in JSON member order of the enclosing document have one typed observation. `blob` `00FF`, `doc` `{"a": 1}` refuse `invalid_runtime_input`/`invalid-value`; the Bytes object in `doc`, the JsonObject object in `blob` and a String object in either refuse `wrong-value-kind`; an object with an extra member or a non-string `text` refuses as the String object does. | Test (TC-1231) |
 
+| FR-106-AC-62 | A current snapshot admitted through the view entry returns `ProtocolObservationAdmission::Admitted`; its authority retains the exact selected model, document identity, population manifest/bundles and admission usage after the caller drops the provisions. Public struct construction, mutation of its environment or completeness/provenance, and conversion from a caller-built `Observation` fail to compile; reading the documented accessors compiles. | Test |
+| FR-106-AC-63 | A snapshot of another model yields `Refused` with the original QSV `AdmissionRecord` and `invalid_model_binding`/`wrong-model-selection`; a nested-value refusal preserves every `catalog`, `fields`, `path` and `kernel` component. `authority()` on `Refused`, `Incomplete` and `Fault` returns that same distinct arm and payload; `Fault` preserves the original `InternalFault`. The QSL admission implementation uses QSV's record/path types with no local copies. | Test |
+| FR-106-AC-64 | Over TC-1071 row 20, an authority retaining `n5` but marking its required `nodes` population incomplete yields `incomplete_population`/`incomplete-scope` naming that population's exact node, before any dangling check. With `nodes` complete and a second unreferenced population incomplete, the same supplied source admits. A recursively required incomplete population is reported in FR-106 walk order; completing it exposes any subsequent check-8 dangling defect. | Test |
 
 ## Dependencies
 

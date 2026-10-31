@@ -49,6 +49,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-058
     type: depends_on
+  - target: ix://agent-ix/quire-semantic-value/FR-130
+    type: depends_on
 ---
 # FR-390: Evaluate a protocol node's expression from a checked package at S6a with shared accounting
 
@@ -108,16 +110,19 @@ names the counter or the value that stopped the evaluation.
     as the slot table below lists it;
   - `index` is the position within a list member, and is present exactly for
     such a member.
-- A `ProtocolSupply { binders, observation }`:
+- A `ProtocolSupply<'a> { binders, observation }`:
   - `binders`: the supplied sources, each a binder node key paired with a
     `SuppliedValue`, which is either a value of FR-106's closed value grammar
     (a Boolean, an integer, a record, a reference to an object of the supplied
     observation, an option or a sequence of those) or `Unavailable(cause)`. A
     captured value is supplied under its capture's binder key;
-  - `observation`: none, or one current snapshot admitted as FR-106 admits the
-    snapshot of a `ValueInvariants` selection, with no clause, anchor
-    comparison or invocation. It is needed exactly when a supplied value is a
-    reference.
+  - `observation`: `Option<&'a ProtocolObservationAdmission<'a>>`, using the
+    one `qsl_package::observation` result defined by FR-106. Its `Admitted`
+    arm carries a current-snapshot authority for the evaluated view and the
+    protocol's selected model; its other arms retain the original admission
+    result. It is required exactly when a supplied source value contains a
+    reference, including a nested reference. It carries no raw snapshot,
+    provision or caller-constructed `Observation`.
 - A `Meter` (FR-107).
 
 The slots of a protocol node:
@@ -162,8 +167,10 @@ the proof before emission and a termination claim is their only reader
 - `CallFailure::Admission(Box<CallAdmissionFailure>)` for a selection or
   supply refused or left incomplete before S6a. `CallAdmissionFailure` is the
   one closed `Refused`/`Incomplete` result owned by quire-eval; each variant
-  carries its catalog code, cause and node/member/binder locus. No QSL-owned
-  mirror admission type is introduced, and nothing is charged.
+  carries the original shared QSV `AdmissionRecord` and the checked-package
+  locus, including a population node where completeness fails, as shared
+  FR-130 requires. No QSL-owned mirror call-admission record or fault type is
+  introduced, and nothing is charged.
 - `CallFailure::Fault(InternalFault)` for an S6a invariant break, as FR-107.
 
 Exit statuses are FR-285's `Category::exit_code` of the outcome's category and
@@ -409,16 +416,28 @@ check with its one record:
    argument; a payload that is not in the type's domain refuses
    `invalid_runtime_input`/`invalid-value`. Each refusal names the binder. A
    captured value is checked against its capture's declared type.
-6. If a supplied value is a reference and `observation` is none, then admission
+6. If a supplied value contains a reference and `observation` is none, then admission
    SHALL return `Incomplete` with `unavailable_observation`/
-   `missing-required-artifact`, naming the binder. Otherwise it SHALL resolve
-   each reference in the observation: an absent target in a complete population
-   refuses `dangling_reference`/`absent-target-in-complete-population`; a
-   required population the observation does not mark complete returns
-   `Incomplete` with `incomplete_population`/`incomplete-scope`, as FR-106
-   check 7 and 8 state. An observation that FR-106 refuses is refused with
-   FR-106's record (for the model the package selects, `invalid_model_binding`/
-   `wrong-model-selection`).
+   `missing-required-artifact`, naming the first such binder in the source
+   order above. When observation admission is required, the call SHALL inspect
+   the supplied typed result after checks 1 through 5: `Refused` and
+   `Incomplete` retain their respective failure kinds and the entire original
+   QSV admission record; `Fault` returns the original `InternalFault` through
+   `CallFailure::Fault`; no non-admitted arm yields an authority. For
+   `Admitted`, admission SHALL verify the authority's association with this
+   evaluated view and the protocol's selected model using FR-106's retained
+   provenance, never infer it from the objects that happen to be present.
+   A wrong model retains `invalid_model_binding`/`wrong-model-selection`.
+   Admission SHALL then reuse FR-106 check 7 for exactly the populations named
+   by supplied source references and their recursive required closure. A
+   required incomplete population returns `Incomplete` with
+   `incomplete_population`/`incomplete-scope` naming its population node and
+   retaining the full FR-106 record, even if the referenced object is present.
+   An unrelated incomplete population has no effect. Only after completeness
+   succeeds SHALL FR-106 check 8 decide absent targets in complete populations
+   as `dangling_reference`/`absent-target-in-complete-population`. These checks
+   operate on the authority's retained admitted facts, read no bytes, perform
+   no expression evaluation and leave the caller's meter unchanged.
 
 A source supplied as `Unavailable` is admitted by checks 4 and 5 without a
 value; check 6 does not apply to it.
@@ -495,6 +514,9 @@ value; check 6 does not apply to it.
 | FR-390-AC-17 | An admitted IR type without a kernel representation yields `ViewFailure::Unsupported` before any view exists, with `unknown_required_feature`/`unsupported-feature`, the affected package/node/location and `MissingTypeRepresentation`; no meter is accepted or charged. A missing literal, operation or binding projection yields its corresponding typed reason. A projection-resource limit yields `Limit`, no partial view. A handle from another owner returns an invariant fault rather than a node. | Test |
 | FR-390-AC-18 | Reader views resolve Boolean, bounded Integer, record/composite and Reference<Node> identities of TC-1070 fixture E to the exact kernel values/types of the in-process view, including recursively nested Option/Collection values used by a slot. AC-11/15 fail if a required QSL-emitted type is reported unsupported; unsupported cases cannot replace any required result/log comparison. | Test |
 | FR-390-AC-19 | A bare `view.total` read and an explicit `deref(view).total` read over the same observation retain their respective in-process charge logs through emitted-package admission and `NodeRead`, including FR-107's explicit-dereference charge distinction. If the representation erases that distinction, view creation returns `MissingChargeSemantics` before a view or meter charge exists, and AC-11 remains unmet; equal completed values or an unsupported result cannot pass the required parity comparison. | Test |
+| FR-390-AC-20 | TC-1071 row 20 uses a successful immutable observation authority in the typed result; although `n5` exists, `nodes` incomplete returns `CallFailure::Admission` with category incomplete, the population locus and the unchanged QSV FR-106 record. An unrelated incomplete population does not alter the successful call. The meter is unchanged on either admission failure. | Test |
+| FR-390-AC-21 | TC-1071 row 21 supplies the `Refused` result of FR-106 current-snapshot admission for another model and returns the original `invalid_model_binding`/`wrong-model-selection` record without a foreign-reference replacement. `Incomplete` preserves its kind/record and `Fault` preserves its `InternalFault`; none supplies successful authority or charges the meter. | Test |
+| FR-390-AC-22 | A malformed slot, duplicate source, unknown source, missing source and wrong-shaped value combined with a refused observation result return the corresponding check-1-through-5 failure before the observation result is inspected. With those defects absent, a reference-valued source and no observation returns the existing unavailable-observation record; a present failed result returns its original arm. All failures leave the caller's existing meter unchanged, and TC-1071 row 22 charges only its successful evaluation. | Test |
 
 ## Dependencies
 
