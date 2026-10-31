@@ -165,12 +165,33 @@ fn checked_mapping_retains_the_checked_selection() {
         classification.retained.profile.identity(),
         temporal::EVENT_POSITION
     );
+    assert_eq!(
+        classification.retained.activation,
+        qsl_semantics::check::Activation::Origin
+    );
     assert!(matches!(
         classification.support,
         temporal::Support::Supported {
             target: temporal::Target::OnlinePrefix,
             ..
         }
+    ));
+}
+
+/// FR-045: selection failure remains a located refusal and cannot be mistaken
+/// for a supported or unsupported mapping classification.
+#[trace("TC-125", "FR-045-AC-6")]
+#[test]
+fn checked_mapping_refuses_an_unselected_clause_index() {
+    let checked = checked("always[0,1] true", temporal::EVENT_POSITION);
+    assert!(matches!(
+        temporal::mapping_support_checked(checked.package(), usize::MAX, Closure::Closed),
+        Err(temporal::Error::Refused(temporal::Refusal::Reference {
+            subject: temporal::Subject {
+                declaration: usize::MAX,
+                ..
+            }
+        }))
     ));
 }
 
