@@ -57,3 +57,9 @@ FR-314 consistency: the checker (qsl-replay/src/certificate/smt.rs:244) and the 
 Tests are not tautological. They fail on the pre-PR encoder, and the `unnormal` walker checks itself against a probe term that has one of each shape.
 
 Rust lane: no `unsafe`, no new panics, no new integer casts. Recursion depth matches the existing printer. `#[must_use]` is on `normal`.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Disposition pass 1 at aa0dff29b. `remainder` (normal.rs) folds `(mod m n)` of a literal `m` to `m` floor-mod `|n|`, which is SMT-LIB's Euclidean remainder in `[0, |n|)` for every sign of `n`. `remainders_of_literals_are_euclidean` covers all four sign combinations. A non-literal dividend keeps its divisor as built. The new `(- 0 t)` to `(- t)` and two-summand `t + (- u)` to `(- t u)` rules are sound. A sum with three or more summands is left as a sum, and a three-summand case is tested. |

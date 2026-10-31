@@ -37,3 +37,9 @@ Ticket: QSL-1306. Plan completion: not assessed. `quoin matrix --repo . --json` 
 ## Verdict
 
 **One medium gap, no orphan code.** The excluded shapes listed in FR-315-AC-56 match the `unnormal` walker one for one, and the walker checks itself with a probe. The pinned `Initial` and `commitA` strings match the AC text byte for byte. The missing cases are untested branches of AC-56's last sentence. A wrong `equality` shift, or a reversed constant-on-left branch, would pass the suite.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Disposition pass 1 at aa0dff29b. `relations_fold_constants` now covers rule 5 across `=`, with the literal on either side, and `<` with the literal on the right, plus rule 4 with the constant on the left. `choices_fold` covers a `false` condition. The `unnormal` walker flags an unshifted relation and a foldable `mod`, and its probe asserts both. |

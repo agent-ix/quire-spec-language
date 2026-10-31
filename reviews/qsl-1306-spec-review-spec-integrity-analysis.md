@@ -42,3 +42,16 @@ Ticket: QSL-1306. Spec-review, integrity and consistency lane, over the FR-315 a
 ## Verdict
 
 **Two wording defects, no contradiction with the code's behaviour.** FND-001 overstates what the normal form guarantees. Narrow the purpose clause to the listed shapes. FND-002 should read "a `false` Boolean field as `(not s0.<object>.<field>)`".
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Disposition pass 1 at aa0dff29b. The Normal form paragraph now lists the shapes removed and says it is not a claim that a solver's rewriter finds nothing else. normal.rs and refinement.rs say the same. |
+| FND-002 | fixed | Disposition pass 1 at aa0dff29b. It now reads "a `false` Boolean field as `(not s0.<object>.<field>)` and an absent optional field as `(not s0.<object>.<field>.present)`". |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | low | Rule 7 says "a sum of exactly `t` and `(- u)` is `(- t u)`" without an order, but `sum` (normal.rs) rewrites only when `(- u)` is the second summand, so `(+ (- u) t)` stays a sum. Say "a sum of two summands whose second is `(- u)`", or rewrite either order | spec/functional/FR-315-encode-the-smt-lib-transition-relation.md:959-960 |

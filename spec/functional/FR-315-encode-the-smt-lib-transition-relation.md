@@ -956,8 +956,8 @@ the term's meaning:
    `(or c e)` for `t` `true`, `(and (not c) e)` for `t` `false`,
    `(or (not c) t)` for `e` `true`, `(and c t)` for `e` `false`;
 7. a sum splices its nested sums and gathers its integer literals into one
-   last summand, dropped when it is 0, and a sum of exactly `t` and `(- u)`
-   is `(- t u)`; a difference, negation or product of literals is the
+   last summand, dropped when it is 0, and a sum of two summands whose
+   second is `(- u)` is `(- t u)`; a difference, negation or product of literals is the
    literal; `(- t 0)` is `t`, `(- 0 t)` is `(- t)`, `(- t t)` is 0,
    `(- (- t))` is `t`, `(* 1 t)` is `t`, `(* 0 t)` is 0 and
    `(* n (* m t))` is `(* nm t)`;
