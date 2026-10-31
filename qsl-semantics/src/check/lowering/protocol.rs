@@ -194,9 +194,6 @@ impl ProtocolInput<'_> {
         {
             unemitted.push(ProtocolConstruct::WholeModelRole);
         }
-        if !form.relationships.is_empty() {
-            unemitted.push(ProtocolConstruct::Relationships);
-        }
         if self
             .checked
             .channels
@@ -935,6 +932,12 @@ impl Lowering<'_> {
 
         let roles_by_name =
             self.role_nodes(protocol, &operation("role")?, &readable, boolean.clone())?;
+        let relationships = protocol
+            .checked
+            .relationships
+            .iter()
+            .map(|relationship| self.model_node(&relationship.key, location))
+            .collect::<Result<Vec<_>, _>>()?;
         let (channels, queues, named_channels) = self.channel_nodes(
             protocol,
             &ChannelOperations {
@@ -1024,7 +1027,10 @@ impl Lowering<'_> {
                     MemberTerm::binding("activation", BindingValue::Group(activation)),
                     MemberTerm::binding("captures", BindingValue::Tuple(captures)),
                     MemberTerm::binding("roles", BindingValue::Group(GroupTerm::references(roles))),
-                    MemberTerm::binding("relationships", empty_group()),
+                    MemberTerm::binding(
+                        "relationships",
+                        BindingValue::Group(GroupTerm::references(sorted(relationships))),
+                    ),
                     MemberTerm::binding(
                         "channels",
                         BindingValue::Group(GroupTerm::references(channels)),
