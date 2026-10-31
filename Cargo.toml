@@ -94,7 +94,6 @@ num-bigint = "0.4.8"
 num-integer = "0.1.47"
 num-traits = "0.2.19"
 serde_json = { version = "1.0.151", features = ["unbounded_depth", "raw_value"] }
-sha2 = "0.10.9"
 serde = { version = "1.0.228", features = ["derive"] }
 thiserror = "2.0.20"
 unicode-normalization = "0.1.25"

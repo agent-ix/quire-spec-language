@@ -121,7 +121,7 @@ FR-273-AC-n.
 | 18 | `quire_exact::integer::Integer` (O-13) | root `protocol_artifact::wire::Integer` | an integer-only wire position | delete; removed with M-6d, SEAM-3 (ADR-011 §7.3) |
 | 19 | `quire_exact::outcome::Outcome` (O-16) | `qsl_eval::simulation::explore::Outcome` | the result of one exploration run | rename `ExplorationOutcome` |
 | 20 | same | `qsl_cst::parser::Outcome` | the result of matching one grammar rule | rename `MatchOutcome` |
-| 21 | same | `tools/arch-lint` `canonical_encoder::Outcome` | the canonical-encoder check's result over one tree | rename `EncoderCheckOutcome` |
+| 21 | same | `tools/arch-lint` `canonical_encoder::Outcome` | the canonical-encoder check's result over one tree | delete; the canonical-encoder check is removed (QSL-1261) |
 | 22 | same | root `command::output::extraction::Outcome` | the serialized view of a clauses outcome | delete; removed with M-6c (ADR-011 §7.3) |
 | 23 | same | root `command::output::types::Outcome` | the stage member of a run-result document | delete; removed with M-6c (ADR-011 §7.3) |
 | 24 | same | root `temporal::activation::Outcome` | what activation produced | delete; removed with M-6c (ADR-011 §7.3) |
@@ -187,7 +187,7 @@ gate. Row n is checked by FR-273-AC-n, and FR-273-AC-51 checks both.
 | FR-273-AC-18 | No module-level item at root `protocol_artifact::wire::Integer` exists in the QSL workspace, and the canonical-types gate reports no `identifier` finding for `Integer` at its former path. | Test (TC-748) |
 | FR-273-AC-19 | The item that was `qsl_eval::simulation::explore::Outcome` is named `ExplorationOutcome` in its definition and every use, and the canonical-types gate over the QSL workspace reports no `identifier` finding for `Outcome` at it. | Test (TC-748) |
 | FR-273-AC-20 | The item that was `qsl_cst::parser::Outcome` is named `MatchOutcome` in its definition and every use, and the canonical-types gate over the QSL workspace reports no `identifier` finding for `Outcome` at it. | Test (TC-748) |
-| FR-273-AC-21 | The item that was `tools/arch-lint` `canonical_encoder::Outcome` is named `EncoderCheckOutcome` in its definition and every use, and the canonical-types gate over the QSL workspace reports no `identifier` finding for `Outcome` at it. | Test (TC-748) |
+| FR-273-AC-21 | Withdrawn: the canonical-encoder check, with its `canonical_encoder::Outcome`, is deleted (QSL-1261). | Withdrawn |
 | FR-273-AC-22 | No module-level item at root `command::output::extraction::Outcome` exists in the QSL workspace, and the canonical-types gate reports no `identifier` finding for `Outcome` at its former path. | Test (TC-748) |
 | FR-273-AC-23 | No module-level item at root `command::output::types::Outcome` exists in the QSL workspace, and the canonical-types gate reports no `identifier` finding for `Outcome` at its former path. | Test (TC-748) |
 | FR-273-AC-24 | No module-level item at root `temporal::activation::Outcome` exists in the QSL workspace, and the canonical-types gate reports no `identifier` finding for `Outcome` at its former path. | Test (TC-748) |

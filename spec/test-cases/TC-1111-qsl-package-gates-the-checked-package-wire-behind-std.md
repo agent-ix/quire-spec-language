@@ -42,7 +42,7 @@ NFR-015-AC-4 to NFR-015-AC-7, NFR-015-AC-9 and NFR-015-AC-10.
    qsl-package --lib checked_v2` and the FR-091 round-trip test.
 6. Search the shipped source of each crate in NFR-015's per-crate table, with
    `#[cfg(feature = "std")]` items excluded, for `serde_json`, `HashMap` and
-   `HashSet`; run `make arch-lint-canonical-encoder`.
+   `HashSet`.
 7. With default features, emit a package with `emit_checked`, call
    `bind_abstraction` with valid bindings and read `emitted_package_id`.
 8. With default features, emit a package with no abstraction relation with `emit_checked`, call
@@ -63,7 +63,7 @@ NFR-015-AC-4 to NFR-015-AC-7, NFR-015-AC-9 and NFR-015-AC-10.
    fails to resolve; the package `link` builds has empty `dependencies` and
    `dependency_selections`.
 5. Both pass: the emitted bytes and `package_id` match the FR-322 vectors.
-6. No match; the canonical-encoder check passes.
+6. No match.
 7. It is `None`.
 8. It is `None` after the binding; the second emission's `package_id`
    differs from the first. The second package's binding is refused with

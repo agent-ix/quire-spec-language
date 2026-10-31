@@ -4,16 +4,12 @@
 //!
 //! `arch-lint direction` is FR-059 (backend direction, FB-05/FB-11).
 //! `arch-lint api-surface` is FR-060 (the reusable API-surface check).
-//! `arch-lint canonical-encoder` is ADR-013 §2's one-RFC-8785-encoder rule
-//! (ADR-013:113): no second canonical encoder beside
-//! `quire-canonical`.
 //! `arch-lint qualified-core` is FR-284 (ADR-029 CB-2, CB-3): no core crate
 //! depends on a crate above the core or a frontend, and no core crate reads
 //! ambient input or writes to the process.
 #![forbid(unsafe_code)]
 
 mod api_surface;
-mod canonical_encoder;
 mod error;
 mod metadata;
 mod qualified_core;
@@ -34,7 +30,6 @@ fn usage() -> Error {
         Code::Usage,
         "arch-lint direction --qsl <path> --ir <path> --rt <path> --cg <path>\n\
          arch-lint api-surface --qsl <path> [--cg <path> | --qsl-only]\n\
-         arch-lint canonical-encoder --qsl <path>\n\
          arch-lint qualified-core --qsl <path>",
     )
 }
@@ -251,16 +246,6 @@ fn run_api_surface(mut args: Vec<String>) -> Result<(String, bool)> {
     Ok((summary, all_passed))
 }
 
-fn run_canonical_encoder(mut args: Vec<String>) -> Result<(String, bool)> {
-    let qsl = require(&mut args, "--qsl")?;
-    if !args.is_empty() {
-        return Err(usage());
-    }
-    api_surface::assert_is_qsl_root(&qsl)?;
-    let outcome = canonical_encoder::evaluate(&qsl)?;
-    Ok((canonical_encoder::report(&outcome), outcome.passed()))
-}
-
 fn run_qualified_core(mut args: Vec<String>) -> Result<(String, bool)> {
     let qsl = require(&mut args, "--qsl")?;
     if !args.is_empty() {
@@ -284,7 +269,6 @@ fn run(arguments: &[OsString]) -> Result<(String, bool)> {
     match mode.as_str() {
         "direction" => run_direction(args),
         "api-surface" => run_api_surface(args),
-        "canonical-encoder" => run_canonical_encoder(args),
         "qualified-core" => run_qualified_core(args),
         _ => Err(usage()),
     }
