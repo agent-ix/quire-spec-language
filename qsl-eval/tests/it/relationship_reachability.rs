@@ -817,7 +817,11 @@ fn row_1(
 }
 
 /// TC-1048 row 11: work-unit budgets 5, 4 and 3 over row 1.
-#[trace("TC-1048", "FR-365-AC-9", "FR-047-AC-7")]
+///
+/// Rows 11 to 14 are partial evidence for FR-049-AC-7 and NFR-009-AC-2: they
+/// cover only the three counters graph reachability charges (`work_units`,
+/// `value_occurrences`, `result_units`), not all ten accounting counters.
+#[trace("TC-1048", "FR-365-AC-9", "FR-047-AC-7", "FR-049-AC-7", "NFR-009-AC-2")]
 #[test]
 fn row_11_work_units_complete_at_five_and_stop_at_the_next_charge_below() {
     let orders = Orders::base();
@@ -853,7 +857,7 @@ fn row_11_work_units_complete_at_five_and_stop_at_the_next_charge_below() {
 }
 
 /// TC-1048 row 12: value-occurrence budgets 2 and 1 over row 1.
-#[trace("TC-1048", "FR-365-AC-9", "FR-047-AC-7")]
+#[trace("TC-1048", "FR-365-AC-9", "FR-047-AC-7", "FR-049-AC-7", "NFR-009-AC-2")]
 #[test]
 fn row_12_value_occurrences_complete_at_two_and_stop_at_the_second_expand_below() {
     let orders = Orders::base();
@@ -879,7 +883,7 @@ fn row_12_value_occurrences_complete_at_two_and_stop_at_the_second_expand_below(
 }
 
 /// TC-1048 row 13: result-unit budgets 1 and 0 over row 1.
-#[trace("TC-1048", "FR-365-AC-9", "FR-047-AC-7")]
+#[trace("TC-1048", "FR-365-AC-9", "FR-047-AC-7", "FR-049-AC-7", "NFR-009-AC-2")]
 #[test]
 fn row_13_result_units_complete_at_one_and_stop_at_retain_at_zero() {
     let orders = Orders::base();
@@ -906,7 +910,7 @@ fn row_13_result_units_complete_at_one_and_stop_at_retain_at_zero() {
 
 /// TC-1048 row 14: a zero work-unit limit is real and stops at the start's
 /// expand.
-#[trace("TC-1048", "FR-365-AC-9", "FR-047-AC-7")]
+#[trace("TC-1048", "FR-365-AC-9", "FR-047-AC-7", "FR-049-AC-7", "NFR-009-AC-2")]
 #[test]
 fn row_14_a_zero_work_limit_stops_before_the_start_is_discovered() {
     let orders = Orders::base();

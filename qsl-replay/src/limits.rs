@@ -590,8 +590,11 @@ mod tests {
     }
 
     /// FR-255-AC-8: each accounting setting sets its counter alone, no
-    /// operand gives the defaults, and `u64::MAX` is a bound.
-    #[trace("TC-921", "FR-255-AC-8")]
+    /// operand gives the defaults, and `u64::MAX` is a bound. Partial evidence
+    /// for NFR-009-AC-1: counters are set independently and zero stays
+    /// effective; it does not assert that the retired evaluation-work
+    /// identity is unexposed.
+    #[trace("TC-921", "FR-255-AC-8", "NFR-009-AC-1")]
     #[test]
     fn each_accounting_setting_sets_its_counter_alone() {
         let defaults = CallerLimits::from_operands([]).unwrap().accounting;
