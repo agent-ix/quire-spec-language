@@ -15,17 +15,9 @@ macro_rules! assert_value_eq {
     }};
 }
 
-#[path = "../../../../qsl-semantics/tests/support/tc235_k2.rs"]
-#[allow(
-    dead_code,
-    clippy::duplicate_mod,
-    reason = "shared semantic-IR fixture constructors"
-)]
-mod model;
-
 #[path = "../../../../qsl-semantics/tests/support/tc1070.rs"]
 mod tc1070;
-use tc1070::{document, SOURCE};
+use tc1070::{document, model, SOURCE};
 
 fn fixture_with_view() -> (
     CheckedPackage,

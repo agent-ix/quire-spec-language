@@ -2,8 +2,12 @@
 //! Shared TC-1070 E/L source and semantic-IR model fixture.
 use serde_json::{json, Value as Json};
 #[path = "tc235_k2.rs"]
-#[allow(dead_code, reason = "shared semantic-IR fixture constructors")]
-mod model;
+#[allow(
+    dead_code,
+    clippy::duplicate_mod,
+    reason = "shared semantic-IR fixture constructors also used by other integration fixtures"
+)]
+pub(crate) mod model;
 
 pub(crate) const SOURCE: &str = r#"
 language "ix:native" edition "1-draft";
