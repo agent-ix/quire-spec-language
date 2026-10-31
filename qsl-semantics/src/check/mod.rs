@@ -3289,6 +3289,7 @@ impl PackageDeclarations {
                 .and_then(|index| model_roots.get(index).cloned())
         };
         for checked in &mut refinements {
+            checked.package_name = Some(package_name.clone());
             let abstract_model = models
                 .iter()
                 .find(|model| model.alias() == Some(checked.abstract_model()));
