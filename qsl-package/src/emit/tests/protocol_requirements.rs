@@ -11,6 +11,8 @@ use super::protocol_reference::{clause_argument, node_by_id, node_of};
 use super::reachability::{lower_with, Lowered};
 use super::*;
 
+mod fixture_w;
+
 const PROFILES: &str = "profile p = \"quire.protocol.finite-global/v1\";\n\
                      profile t = \"quire.temporal.infinite-trace/v1\";\n";
 
@@ -503,11 +505,6 @@ fn a_missing_required_temporal_refuses_at_its_authored_name() {
 #[trace("TC-1194", "FR-449-AC-5", "FR-383-AC-2", "FR-383-AC-13")]
 #[test]
 fn activation_targets_must_exist_and_be_clause_dependencies() {
-    use quire_contract_model::{
-        CheckedPackageDispatchResult, CheckedPackageReadLimits, CheckedPackageRefusalCause,
-        CheckedPackageRefusalCode,
-    };
-
     let unit = format!(
         "temporal Due using t over (c: M::Order) clock \"model-steps\" \
          on origin {{ always true }}\n{}",
@@ -518,8 +515,16 @@ fn activation_targets_must_exist_and_be_clause_dependencies() {
         )
     );
     let valid = lower_with(model(), PROFILES, &unit);
+    assert_activation_target_refusals(&valid, &model());
+}
+
+fn assert_activation_target_refusals(valid: &Lowered, document: &[u8]) {
+    use quire_contract_model::{
+        CheckedPackageDispatchResult, CheckedPackageReadLimits, CheckedPackageRefusalCause,
+        CheckedPackageRefusalCode,
+    };
     assert!(valid.verified, "{}", valid.text);
-    assert_eq!(activation_rows(&valid).len(), 1);
+    assert_eq!(activation_rows(valid).len(), 1);
     let index = protocol_clause_index(&valid.wire);
     let base = format!("/semantic_graph/nodes/{index}");
     for (target_path, missing_path) in [
@@ -549,9 +554,8 @@ fn activation_targets_must_exist_and_be_clause_dependencies() {
             for feature in valid.wire["lock"]["required_features"].as_array().unwrap() {
                 evidence.support_feature(feature.as_str().unwrap());
             }
-            let document = model();
             evidence
-                .insert_domain_package_document(package_identity(&document), document.as_slice())
+                .insert_domain_package_document(package_identity(document), document)
                 .unwrap();
             let CheckedPackageDispatchResult::Refused(refusal) =
                 quire_contract_model::read_checked_package(

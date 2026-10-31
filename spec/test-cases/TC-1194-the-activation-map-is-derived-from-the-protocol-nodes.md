@@ -30,7 +30,7 @@ Fixture **W** is TC-1061's.
 | # | Unit | Expected |
 | --- | --- | --- |
 | 1 | **W** | one row: the `OrderFlow` clause key, `Each` with `opened`'s node key, `OrderClosureBounded`'s node key |
-| 2 | **W** with `activation on origin` | one row: the clause key, `Origin` with no trigger, `OrderClosureBounded`'s node key |
+| 2 | **W** with `activation on origin` and the `order` capture rebound from `opened.order` to `deref(view).order`, since origin introduces no trigger binder | one row: the clause key, `Origin` with no trigger, `OrderClosureBounded`'s node key |
 | 3 | **W** with no `requires temporal` | an empty map |
 | 4 | **W** with a second `requires temporal OrderClosureBounded` | the map of step 1 |
 | 5 | **W** with a temporal clause `OrderPaidBounded` and `requires temporal OrderPaidBounded` | two rows, in ascending node-key order of the two temporal clause nodes |
