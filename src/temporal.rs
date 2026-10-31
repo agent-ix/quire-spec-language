@@ -913,10 +913,12 @@ fn checked_interval(
                     .into())
                 }
             };
-            let lower = serde_json::from_value(serde_json::Value::from(interval.lower()))
-                .map_err(|_| Refusal::Reference { subject })?;
-            let upper = serde_json::from_value(serde_json::Value::from(upper))
-                .map_err(|_| Refusal::Reference { subject })?;
+            let lower = w::Integer(crate::protocol_artifact::NumberWire::Integer {
+                decimal: interval.lower().to_string(),
+            });
+            let upper = w::Integer(crate::protocol_artifact::NumberWire::Integer {
+                decimal: upper.to_string(),
+            });
             Ok(w::Nullable(Some(w::Interval { lower, upper })))
         }
         Some(CheckedInterval::Timed(_)) => Err(Refusal::Binding {
