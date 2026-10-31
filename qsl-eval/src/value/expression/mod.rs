@@ -1217,7 +1217,7 @@ impl CheckedPackageEvaluation for CheckedPackage {
         meter: &mut Meter,
     ) -> Result<ProtocolSlotEvaluation, CallFailure> {
         let selected = protocol_slot::resolve::select(self, slot)?;
-        let sources = selected
+        let mut sources = selected
             .frame
             .iter()
             .enumerate()
@@ -1235,14 +1235,17 @@ impl CheckedPackageEvaluation for CheckedPackage {
                     })
             })
             .collect::<Result<Vec<_>, _>>()?;
+        sources.sort_by_key(|(_, source, key)| (source.level, key.clone()));
         let mut supplied = supply.binders.iter().collect::<Vec<_>>();
         supplied.sort_by_key(|(key, _)| {
             (
-                selected
-                    .frame
+                self.graph()
+                    .protocols()
                     .iter()
-                    .find(|source| source.node == Some(key.clone()))
-                    .map_or(usize::MAX, |source| source.level),
+                    .filter_map(|protocol| self.graph().protocol_node_keys(&protocol.name))
+                    .flat_map(|keys| &keys.binders)
+                    .find(|binder| binder.node == *key)
+                    .map_or(usize::MAX, |binder| binder.level),
                 key.clone(),
             )
         });
@@ -1300,7 +1303,11 @@ impl CheckedPackageEvaluation for CheckedPackage {
                     if !admitted {
                         return Err(protocol_slot::resolve::refused(
                             "invalid_runtime_input",
-                            if protocol_slot::resolve::shape_matches(&source.value_type, value) {
+                            if protocol_slot::resolve::shape_matches(
+                                &source.value_type,
+                                value,
+                                self.graph().scope().types(),
+                            ) {
                                 "invalid-value"
                             } else {
                                 "wrong-value-kind"

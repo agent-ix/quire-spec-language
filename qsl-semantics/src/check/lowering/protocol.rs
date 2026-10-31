@@ -118,6 +118,8 @@ pub(crate) enum ProtocolSite<'a> {
     Control(&'a [String]),
     /// The constraint or condition tree of the control at this path.
     ControlBody(&'a [String]),
+    /// One end of a control's `related` record, distinguished by its span.
+    Related(&'a [String], qsl_foundation::Span),
     /// A `visible` entry, guard, invariant or variant of the `choice` or
     /// `repeat` at this path, told apart by its source span.
     Decision(&'a [String], qsl_foundation::Span),
@@ -149,6 +151,12 @@ pub(crate) fn protocol_site(protocol: &str, site: ProtocolSite<'_>) -> String {
         ProtocolSite::ControlBody(path) => {
             format!("protocol {protocol} run {} body", path.join(" "))
         }
+        ProtocolSite::Related(path, span) => format!(
+            "protocol {protocol} run {} related {} {}",
+            path.join(" "),
+            span.start,
+            span.end
+        ),
         ProtocolSite::Decision(path, span) => format!(
             "protocol {protocol} run {} decision {}..{}",
             path.join(" "),
@@ -366,6 +374,12 @@ impl ProtocolInput<'_> {
         }
         let slots = &self.checked.slots;
         roots.extend(slots.bodies.iter().map(|body| body.body.root()));
+        roots.extend(
+            slots
+                .related
+                .iter()
+                .flat_map(|related| related.ends.iter().map(CheckedBody::root)),
+        );
         // The `choice` and `repeat` decision slots (FR-466 "Decision facts").
         for choice in &slots.choices {
             roots.extend(choice.visible.iter().map(CheckedBody::root));

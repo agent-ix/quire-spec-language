@@ -14,6 +14,8 @@ use quire_semantic_value::checking::CheckingLimits;
 
 const MODEL: &[u8] = include_bytes!("../../../tests/fixtures/spine-model.semantic-ir.json");
 
+mod acceptance;
+
 #[path = "../../../qsl-semantics/tests/support/child_composite.rs"]
 #[allow(
     clippy::duplicate_mod,
