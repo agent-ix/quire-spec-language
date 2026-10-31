@@ -3022,6 +3022,7 @@ fn emit_package_inner(
         .map_err(EmitRefusal::from)
     })?;
     let evidence = own_evidence(&lock);
+    qsl_semantics::check::wire_id::release_structural_ids();
     Ok(Emission {
         package,
         omitted,
@@ -3031,77 +3032,169 @@ fn emit_package_inner(
     })
 }
 
+/// The ids `node` holds that this emitter can reach through IR's public
+/// types: its own id, `semantic_type`, `owner_model`, `dependencies`, and
+/// every id of a body term with public members (reference targets, literal
+/// and result types, frame nodes, dependency nodes, and the terms of
+/// aggregates, bindings, extension clauses and operation anchors). A member
+/// declaration or population an operation record names is a dependency
+/// (FR-093 rule 2). An id held anywhere else stays structural, and IR's
+/// encoder then refuses the package, so a gap fails loudly, never silently.
+fn reachable_ids(node: &CheckedSemanticNodeV2) -> Vec<&CheckedNodeId> {
+    let mut ids = vec![&node.node_id, &node.semantic_type];
+    ids.extend(node.owner_model.iter());
+    ids.extend(node.dependencies.iter());
+    let mut pending = vec![&node.body];
+    while let Some(term) = pending.pop() {
+        match term {
+            CheckedTerm::Literal { type_id, .. } => ids.push(type_id),
+            CheckedTerm::Reference { target } => ids.push(target),
+            CheckedTerm::Application {
+                result_type,
+                arguments,
+                ..
+            } => {
+                ids.push(result_type);
+                pending.extend(arguments.iter());
+            }
+            CheckedTerm::Aggregate { members } => pending.extend(members.iter()),
+            CheckedTerm::Binding { value, .. } => pending.push(value),
+            CheckedTerm::DependencyReference { node, .. } => ids.push(node),
+            CheckedTerm::Frame {
+                creates, deletes, ..
+            } => ids.extend(creates.iter().chain(deletes.iter())),
+            CheckedTerm::ExtensionForm { clauses, .. } => pending.extend(clauses.iter()),
+            CheckedTerm::OperationAnchorBody(body) => pending.extend(body.members.iter()),
+            _ => {}
+        }
+    }
+    ids
+}
+
+/// Whether `id` holds a segment `holds` matches.
+fn holds_segment(
+    id: &CheckedNodeId,
+    holds: impl Fn(&quire_contract_model::CheckedNodePathSegment) -> bool,
+) -> bool {
+    id.path.iter().any(holds)
+}
+
 /// FR-322 "Operand index segments": rewrite every structural id the package
 /// holds into its wire form, each operand node written as the index segment
 /// `{"node": i}` of that node in `nodes`, whose order is now final.
 ///
-/// Each node whose own path holds an operand gets one wire id, and that id
-/// replaces the structural one throughout the package: in every node
-/// (through IR's typed [`CheckedSemanticNodeV2::replace_node_id`], which
-/// reaches every id a body holds), the source map and the step rows.
+/// Linear in the package: each node's key is rebuilt once, sharing the key
+/// of every operand allocation ([`StructuralKeys`]); each graph node's wire
+/// id is written once; then each node's own reachable ids
+/// ([`reachable_ids`]) are replaced in that node alone.
 ///
-/// Remaining work: IR #736's graph-context encoder (or a bulk node-id
-/// visitor) replaces this pass. One replacement per derived node over every
-/// node is quadratic in the graph size.
+/// [`StructuralKeys`]: qsl_semantics::check::wire_id::StructuralKeys
 fn write_index_segments(
     nodes: &mut [CheckedSemanticNodeV2],
     source_map: &mut [CheckedSourceMapEntry],
     step_rows: &mut [quire_contract_model::CheckedRefinementStepRowRegion],
 ) -> Result<(), EmitRefusal> {
     use quire_contract_model::CheckedNodePathSegment as Segment;
-    let index: BTreeMap<&CheckedNodeId, u64> = nodes
+    let is_operand = |segment: &Segment| matches!(segment, Segment::Node(_));
+    let mut keys = qsl_semantics::check::wire_id::StructuralKeys::default();
+    let invariant = |_| EmitRefusal::SourceMapInvariant;
+    let graph_keys = nodes
+        .iter()
+        .map(|node| keys.key(&node.node_id).map_err(invariant))
+        .collect::<Result<Vec<_>, _>>()?;
+    let index: HashMap<&NodeKey, u64> = graph_keys
         .iter()
         .enumerate()
-        .map(|(at, node)| (&node.node_id, at as u64))
+        .map(|(at, key)| (key, at as u64))
         .collect();
-    let mut changes = Vec::new();
-    for node in nodes.iter() {
-        let id = &node.node_id;
-        if !id
-            .path
-            .iter()
-            .any(|segment| matches!(segment, Segment::Node(_)))
-        {
-            continue;
-        }
+    let wire_of = |keys: &mut qsl_semantics::check::wire_id::StructuralKeys,
+                   holder: &CheckedNodeId,
+                   id: &CheckedNodeId|
+     -> Result<CheckedNodeId, EmitRefusal> {
         let path = id
             .path
             .iter()
             .map(|segment| match segment {
-                Segment::Node(operand) => index
-                    .get(&**operand)
-                    .map(|at| Segment::Index(*at))
-                    .ok_or_else(|| EmitRefusal::OperandNotInGraph {
-                        node: Box::new(id.clone()),
-                        operand: Box::new((**operand).clone()),
-                    }),
+                Segment::Node(operand) => {
+                    let key = keys.key(operand).map_err(invariant)?;
+                    index
+                        .get(&key)
+                        .map(|at| Segment::Index(*at))
+                        .ok_or_else(|| EmitRefusal::OperandNotInGraph {
+                            node: Box::new(holder.clone()),
+                            operand: Box::new((**operand).clone()),
+                        })
+                }
                 other => Ok(other.clone()),
             })
             .collect::<Result<_, _>>()?;
-        let wire = CheckedNodeId {
+        Ok(CheckedNodeId {
             package: id.package.clone(),
             path,
             ordinal: id.ordinal,
-        };
-        changes.push((id.clone(), wire));
+        })
+    };
+    // Every rewrite is computed before any node changes, while the operand
+    // allocations the memo keys by are still borrowed.
+    let mut rewrites = Vec::with_capacity(nodes.len());
+    for node in nodes.iter() {
+        let mut changes: Vec<(CheckedNodeId, CheckedNodeId)> = Vec::new();
+        for id in reachable_ids(node) {
+            if holds_segment(id, is_operand) && !changes.iter().any(|(old, _)| old == id) {
+                changes.push((id.clone(), wire_of(&mut keys, &node.node_id, id)?));
+            }
+        }
+        rewrites.push(changes);
     }
-    drop(index);
-    for (old, new) in &changes {
-        for node in nodes.iter_mut() {
+    // A graph node's own id is the first id it reaches.
+    let graph_wire: HashMap<&NodeKey, CheckedNodeId> = rewrites
+        .iter()
+        .zip(nodes.iter())
+        .zip(&graph_keys)
+        .filter_map(|((changes, node), key)| {
+            changes
+                .first()
+                .filter(|(old, _)| *old == node.node_id)
+                .map(|(_, new)| (key, new.clone()))
+        })
+        .collect();
+    let mut sidecar = |id: &mut CheckedNodeId| -> Result<(), EmitRefusal> {
+        if holds_segment(id, is_operand) {
+            let key = keys.key(id).map_err(invariant)?;
+            *id = graph_wire
+                .get(&key)
+                .cloned()
+                .ok_or(EmitRefusal::SourceMapInvariant)?;
+        }
+        Ok(())
+    };
+    let mut sidecar_ids: Vec<CheckedNodeId> = source_map
+        .iter()
+        .map(|entry| entry.node_id.clone())
+        .chain(step_rows.iter().map(|row| row.node_id.clone()))
+        .collect();
+    for id in &mut sidecar_ids {
+        sidecar(id)?;
+    }
+    drop(graph_wire);
+    drop(keys);
+    let (map_ids, row_ids) = sidecar_ids.split_at(source_map.len());
+    for (entry, id) in source_map.iter_mut().zip(map_ids) {
+        entry.node_id = id.clone();
+    }
+    for (row, id) in step_rows.iter_mut().zip(row_ids) {
+        row.node_id = id.clone();
+    }
+    for (node, changes) in nodes.iter_mut().zip(rewrites) {
+        for (old, new) in &changes {
             node.replace_node_id(old, new);
-        }
-        for entry in source_map.iter_mut().filter(|entry| entry.node_id == *old) {
-            entry.node_id = new.clone();
-        }
-        for row in step_rows.iter_mut().filter(|row| row.node_id == *old) {
-            row.node_id = new.clone();
         }
     }
     Ok(())
 }
 
 /// The inverse of [`write_index_segments`] over an admitted package's nodes:
-/// every wire id that holds an index segment is replaced throughout by the
+/// every wire id each node reaches is replaced, in that node, by the
 /// structural id of the node it names, so the emitter's identity work
 /// compares structural keys.
 fn read_index_segments(
@@ -3109,26 +3202,34 @@ fn read_index_segments(
     source_map: &mut [CheckedSourceMapEntry],
 ) -> Result<(), EmitRefusal> {
     use quire_contract_model::CheckedNodePathSegment as Segment;
+    let is_index = |segment: &Segment| matches!(segment, Segment::Index(_));
     let graph =
         qsl_semantics::check::wire_id::WireGraph::new(nodes.iter().map(|node| &node.node_id))
             .map_err(|_| EmitRefusal::SourceMapInvariant)?;
-    let changes: Vec<_> = nodes
-        .iter()
-        .zip(graph.keys())
-        .filter(|(node, _)| {
-            node.node_id
-                .path
-                .iter()
-                .any(|segment| matches!(segment, Segment::Index(_)))
-        })
-        .map(|(node, key)| (node.node_id.clone(), node_id(key)))
-        .collect();
-    for (old, new) in &changes {
-        for node in nodes.iter_mut() {
-            node.replace_node_id(old, new);
+    let structural = |id: &CheckedNodeId| {
+        graph
+            .key(id)
+            .map(|key| node_id(&key))
+            .map_err(|_| EmitRefusal::SourceMapInvariant)
+    };
+    let mut rewrites = Vec::with_capacity(nodes.len());
+    for node in nodes.iter() {
+        let mut changes: Vec<(CheckedNodeId, CheckedNodeId)> = Vec::new();
+        for id in reachable_ids(node) {
+            if holds_segment(id, is_index) && !changes.iter().any(|(old, _)| old == id) {
+                changes.push((id.clone(), structural(id)?));
+            }
         }
-        for entry in source_map.iter_mut().filter(|entry| entry.node_id == *old) {
-            entry.node_id = new.clone();
+        rewrites.push(changes);
+    }
+    for entry in source_map.iter_mut() {
+        if holds_segment(&entry.node_id, is_index) {
+            entry.node_id = structural(&entry.node_id)?;
+        }
+    }
+    for (node, changes) in nodes.iter_mut().zip(rewrites) {
+        for (old, new) in &changes {
+            node.replace_node_id(old, new);
         }
     }
     Ok(())

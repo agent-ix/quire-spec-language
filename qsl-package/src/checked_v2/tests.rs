@@ -1840,28 +1840,6 @@ fn a_no_clock_dense_timed_model_needs_no_integer_literal_type() {
         .filter(|index| !keep.contains(index))
         .map(|index| nodes[index]["node_id"].clone())
         .collect::<Vec<_>>();
-    let removed_ids = removed_ids
-        .iter()
-        .map(|id| graph_before.key_of_value(id).expect("a fixture node id"))
-        .collect::<Vec<_>>();
-    retain_nodes(&mut envelope, |node| {
-        node["node_tag"] != "timed_model"
-            || matches!(
-                node["semantic_form"].as_str(),
-                Some("time_source" | "timed_model")
-            )
-    });
-    let graph = WireGraph::of_package_value(&envelope).expect("the retained graph");
-    let retained_ids = graph.keys().to_vec();
-    envelope["source_map"]
-        .as_array_mut()
-        .unwrap()
-        .retain(|entry| {
-            let Ok(id) = graph.key_of_value(&entry["node_id"]) else {
-                return false;
-            };
-            !removed_ids.contains(&id) && retained_ids.contains(&id)
-        });
 
     fn targets(graph: &WireGraph, body: &Value) -> Vec<Value> {
         fn walk(value: &Value, output: &mut Vec<Value>) {
@@ -1882,11 +1860,25 @@ fn a_no_clock_dense_timed_model_needs_no_integer_literal_type() {
         output.dedup();
         output
     }
-    for node in envelope["semantic_graph"]["nodes"].as_array_mut().unwrap() {
+    // FR-322: drop every naming of the removed nodes while their indices
+    // still name them (the root's emptied lists, its dependencies and their
+    // source-map entries), then remove them and renumber the rest.
+    for node in nodes.iter_mut() {
         if node["node_tag"] == "timed_model" {
-            node["dependencies"] = json!(targets(&graph, &node["body"]));
+            node["dependencies"] = json!(targets(&graph_before, &node["body"]));
         }
     }
+    envelope["source_map"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|entry| !removed_ids.contains(&entry["node_id"]));
+    retain_nodes(&mut envelope, |node| {
+        node["node_tag"] != "timed_model"
+            || matches!(
+                node["semantic_form"].as_str(),
+                Some("time_source" | "timed_model")
+            )
+    });
 
     let (_, outcome) = read_fixture_wire(TIMED_MODEL_NODES, &envelope);
     let Read::Verified {

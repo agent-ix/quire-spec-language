@@ -64,11 +64,46 @@ pub enum WireIdError {
     Key(#[from] InvalidNodeKey),
 }
 
+thread_local! {
+    /// This thread's interned operand ids, by key: every structural id built
+    /// here holds one shared operand id per operand node, so building one is
+    /// linear in its own path and equal operands are one allocation.
+    static INTERNED: std::cell::RefCell<HashMap<NodeKey, Arc<CheckedNodeId>>> =
+        std::cell::RefCell::new(HashMap::new());
+}
+
 /// The structural form of `key`: each operand is a
-/// [`CheckedNodePathSegment::Node`] holding the operand's own id, and an
-/// operand named more than once in `key` is converted once and shared.
+/// [`CheckedNodePathSegment::Node`] holding the operand's own id, interned on
+/// this thread, so every structural id built for one operand shares it.
 pub fn structural_id(key: &NodeKey) -> CheckedNodeId {
-    let mut done: HashMap<NodeKey, Arc<CheckedNodeId>> = HashMap::new();
+    INTERNED.with(|interned| {
+        let mut done = interned.borrow_mut();
+        let path = key
+            .path()
+            .into_iter()
+            .map(|segment| match segment {
+                PathSegment::Text(text) => CheckedNodePathSegment::Name(text.into()),
+                PathSegment::Node(operand) => {
+                    CheckedNodePathSegment::Node(intern(&mut done, &operand))
+                }
+            })
+            .collect();
+        CheckedNodeId {
+            package: key.package().into(),
+            path,
+            ordinal: key.ordinal(),
+        }
+    })
+}
+
+/// Release this thread's interned operand ids. The emitter calls this once
+/// a package is written; ids already built keep their operands alive.
+pub fn release_structural_ids() {
+    INTERNED.with(|interned| interned.borrow_mut().clear());
+}
+
+/// The interned id of `key`, converting each operand not yet interned once.
+fn intern(done: &mut HashMap<NodeKey, Arc<CheckedNodeId>>, key: &NodeKey) -> Arc<CheckedNodeId> {
     let mut pending = vec![(key.clone(), false)];
     while let Some((node, expanded)) = pending.pop() {
         if done.contains_key(&node) {
@@ -101,9 +136,70 @@ pub fn structural_id(key: &NodeKey) -> CheckedNodeId {
         };
         done.insert(node, Arc::new(id));
     }
-    let root = done.remove(key).expect("the root key is converted last");
-    drop(done);
-    Arc::try_unwrap(root).unwrap_or_else(|shared| (*shared).clone())
+    done[key].clone()
+}
+
+/// The structural keys of structural ids, each distinct operand id converted
+/// once (by identity of its shared allocation), so converting every id of a
+/// package is linear in the package. The memo holds each allocation it keys
+/// by, so no address it has seen is reused while it lives.
+#[derive(Default)]
+pub struct StructuralKeys {
+    by_operand: HashMap<*const CheckedNodeId, (Arc<CheckedNodeId>, NodeKey)>,
+}
+
+impl StructuralKeys {
+    /// The key of `id`, which holds no index segment.
+    ///
+    /// # Errors
+    ///
+    /// [`WireIdError::NoGraph`] at an index segment, or [`WireIdError::Key`].
+    pub fn key(&mut self, id: &CheckedNodeId) -> Result<NodeKey, WireIdError> {
+        // Explicit post-order over operand allocations not yet converted.
+        let mut pending: Vec<(Arc<CheckedNodeId>, bool)> = id
+            .path
+            .iter()
+            .filter_map(|segment| match segment {
+                CheckedNodePathSegment::Node(operand) => Some((operand.clone(), false)),
+                _ => None,
+            })
+            .collect();
+        while let Some((node, expanded)) = pending.pop() {
+            if self.by_operand.contains_key(&Arc::as_ptr(&node)) {
+                continue;
+            }
+            if !expanded {
+                pending.push((node.clone(), true));
+                for segment in &node.path {
+                    if let CheckedNodePathSegment::Node(operand) = segment {
+                        if !self.by_operand.contains_key(&Arc::as_ptr(operand)) {
+                            pending.push((operand.clone(), false));
+                        }
+                    }
+                }
+                continue;
+            }
+            let key = self.shallow(&node)?;
+            self.by_operand.insert(Arc::as_ptr(&node), (node, key));
+        }
+        self.shallow(id)
+    }
+
+    /// The key of `id`, every operand already converted.
+    fn shallow(&self, id: &CheckedNodeId) -> Result<NodeKey, WireIdError> {
+        let path = id
+            .path
+            .iter()
+            .map(|segment| match segment {
+                CheckedNodePathSegment::Name(name) => Ok(PathSegment::Text(name.to_string())),
+                CheckedNodePathSegment::Index(index) => Err(WireIdError::NoGraph { index: *index }),
+                CheckedNodePathSegment::Node(operand) => Ok(PathSegment::Node(
+                    self.by_operand[&Arc::as_ptr(operand)].1.clone(),
+                )),
+            })
+            .collect::<Result<_, _>>()?;
+        Ok(NodeKey::new(&*id.package, path, id.ordinal)?)
+    }
 }
 
 /// The wire form of a declared node's key, whose path is its declaration

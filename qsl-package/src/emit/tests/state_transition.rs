@@ -387,11 +387,13 @@ fn several_clauses_are_bound_by_an_exact_conjunction_in_clause_name_order() {
     let base = compile(&unit_13(""));
     for kind in ["precondition", "postcondition"] {
         for clause in base.clauses(kind) {
+            // Two packages: their nodes compare by structural key (FR-322).
+            let key = base.key(&clause["node_id"]);
             assert!(
                 compiled
                     .clauses(kind)
                     .iter()
-                    .any(|c| c["node_id"] == clause["node_id"]),
+                    .any(|c| compiled.key(&c["node_id"]) == key),
                 "{kind} {} stays",
                 clause["node_id"]
             );

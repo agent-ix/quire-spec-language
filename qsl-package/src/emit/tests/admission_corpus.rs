@@ -828,7 +828,11 @@ fn check_row(row: &Row, outcomes: &[Outcome], failures: &mut Vec<String>) {
                 .zip(read.admitted.node_kinds())
                 .any(|(node, kind)| {
                     *kind == family
-                        && operation.is_none_or(|identity| outcome.applies(&node.node_id, identity))
+                        && operation.is_none_or(|identity| {
+                            read.admitted
+                                .structural_key(&node.node_id)
+                                .is_some_and(|key| outcome.applies(key, identity))
+                        })
                 })
         })
     });
