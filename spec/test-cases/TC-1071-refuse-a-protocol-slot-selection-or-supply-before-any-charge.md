@@ -26,6 +26,28 @@ changes the base call as it states, asserts the one refusal's code, cause and
 locus, that the evaluator returned no `Evaluation`, and that the meter's
 counters are as they were before the call.
 
+Reference-bearing supplies below use FR-106's `ProtocolInputValue` with a
+`ReferencePopulation` descriptor for every occurrence. A root reference has the
+empty shared path; other values with no references use an empty descriptor
+list. The selected population's exact checked node key is explicit even for a
+ghost reference or a call with no observation. Plain values in the table are
+notation for the wrapper, not an implicit scope conversion.
+
+### Nested population fixture
+
+For rows 23 onward, keep E's source unchanged and extend its admitted model:
+`Receipt` has `peer: Reference<Other>`, `Other` has `total: Total`, and
+`otherNodes` and `otherSpare` each declare member `Other`. `Other` is not a
+direct protocol context, so this package checks; declaring a direct context
+whose binding is ambiguous is not this fixture. The two populations share the
+reference's universe and effective object type. Select
+`Refund.registration_captures[0]`, supply `forward = Receipt(total 5, peer o1)`
+with the descriptor path `[Field("peer")]`, and use a successful current
+observation authority. Initially `otherNodes` is complete and holds `o1`, and
+`otherSpare` is unlisted. The initializer reads `forward.total`, but admission
+still checks the nested peer. Its kernel reference and supplied record remain
+unchanged when only the explicit population descriptor is changed.
+
 ## Test Procedure
 
 | # | Change | Expected |
@@ -52,6 +74,16 @@ counters are as they were before the call.
 | 20 | the slot `Refunds.captures[0]` with the observation marking `nodes` incomplete | `Incomplete`: `incomplete_population`/`incomplete-scope`, naming `nodes` |
 | 21 | the slot `Refunds.captures[0]` with an observation that is a snapshot of another model | FR-106's `invalid_model_binding`/`wrong-model-selection` |
 | 22 | the unchanged base call after rows 1 to 21 on the same meter | evaluates: true, and the meter holds only this call's charges |
+| 23 | nested fixture, peer descriptor selects otherNodes | evaluates: 5; unlisted compatible otherSpare is irrelevant |
+| 24 | row 23 with only the descriptor changed to otherSpare | Incomplete incomplete_population/incomplete-scope at otherSpare's population node |
+| 25 | row 24 with otherSpare marked complete but empty | dangling_reference/absent-target-in-complete-population at binder forward with path [Field("peer")], naming otherSpare; o1 in otherNodes does not satisfy it |
+| 26 | row 23 with peer descriptor repeated | invalid_runtime_input/duplicate-member at forward, path [Field("peer")], metadata index 1 |
+| 27 | row 23 with an added descriptor at scalar total | invalid_runtime_input/unknown-member at forward, path [Field("total")], metadata index 1 |
+| 28 | row 23 with the peer descriptor omitted | invalid_runtime_input/missing-member at forward, path [Field("peer")] |
+| 29 | row 23 with peer's descriptor naming the nodes population of Node rather than Other | invalid_runtime_input/wrong-role-mapping at forward with the peer path and descriptor index 0 |
+| 30 | row 23 with malformed descriptors and a refused observation result from another model | original invalid_model_binding/wrong-model-selection, before metadata validation |
+| 31 | a bad slot or duplicate, unknown, missing or wrong-shaped source combined with row 26's descriptors | the existing check-1-through-5 failure, before descriptors or observation admission |
+| 32 | row 23 after the failures, on that same meter | evaluates: 5; only this call's evaluation changes the meter |
 
 ## Expected Results
 

@@ -112,10 +112,14 @@ names the counter or the value that stopped the evaluation.
     such a member.
 - A `ProtocolSupply<'a> { binders, observation }`:
   - `binders`: the supplied sources, each a binder node key paired with a
-    `SuppliedValue`, which is either a value of FR-106's closed value grammar
-    (a Boolean, an integer, a record, a reference to an object of the supplied
-    observation, an option or a sequence of those) or `Unavailable(cause)`. A
-    captured value is supplied under its capture's binder key;
+    `SuppliedValue`. Its `Value` arm SHALL carry
+    `qsl_package::observation::ProtocolInputValue`, whose underlying value is
+    in FR-106's closed value grammar (a Boolean, an integer, a record, a
+    reference, an option or a sequence of those) and whose typed descriptors
+    name the exact population declaration for each reference occurrence, as
+    FR-106 defines. Its other arm remains `Unavailable(cause)`. A captured
+    value is supplied under its capture's binder key with the descriptors
+    for that call;
   - `observation`: `Option<&'a quire_semantic_value::admission::ObservationAdmission<qsl_package::observation::AdmittedProtocolObservation<'a>>>`,
     using QSV's existing generic directly as FR-106 defines. Its `Admitted`
     arm carries a current-snapshot authority for the evaluated view and the
@@ -407,7 +411,7 @@ check with its one record:
    `invalid_runtime_input`/`missing-member` naming the first missing source in
    ascending (level, node key) order. The three checks run in that order.
 5. For each supplied binder with a value, in ascending (level, node key) order,
-   admission SHALL check the value against the binder's `semantic_type` in this
+   admission SHALL check `ProtocolInputValue::value()` against the binder's `semantic_type` in this
    order: a value whose shape does not fit refuses `invalid_runtime_input`/
    `wrong-value-kind`; a record or reference of a type that is in the model but
    does not conform refuses `invalid_runtime_input`/`wrong-value-kind`, and a
@@ -428,8 +432,13 @@ check with its one record:
    evaluated view and the protocol's selected model using FR-106's retained
    provenance, never infer it from the objects that happen to be present.
    A wrong model retains `invalid_model_binding`/`wrong-model-selection`.
-   Admission SHALL then reuse FR-106 check 7 for exactly the populations named
-   by supplied source references and their recursive required closure. A
+   Admission SHALL then admit the source's per-occurrence descriptors in the
+   phases FR-106 defines, after the observation result and view/model check.
+   It SHALL reuse FR-106 check 7 for exactly those named population
+   declarations and their recursive required closure. No population is inferred
+   from the supplied kernel reference, even when it is nested or its object
+   exists elsewhere. Checks 1 through 5 and observation/model failures SHALL
+   precede descriptor defects. A
    required incomplete population returns `Incomplete` with
    `incomplete_population`/`incomplete-scope` naming its population node and
    retaining the full FR-106 record, even if the referenced object is present.
@@ -517,6 +526,9 @@ value; check 6 does not apply to it.
 | FR-390-AC-20 | TC-1071 row 20 uses a successful immutable observation authority in the typed result; although `n5` exists, `nodes` incomplete returns `CallFailure::Admission` with category incomplete, the population locus and the unchanged QSV FR-106 record. An unrelated incomplete population does not alter the successful call. The meter is unchanged on either admission failure. | Test |
 | FR-390-AC-21 | TC-1071 row 21 supplies the `Refused` result of FR-106 current-snapshot admission for another model and returns the original `invalid_model_binding`/`wrong-model-selection` record without a foreign-reference replacement. `Incomplete` preserves its kind/record and `Fault` preserves its `InternalFault`; none supplies successful authority or charges the meter. | Test |
 | FR-390-AC-22 | A malformed slot, duplicate source, unknown source, missing source and wrong-shaped value combined with a refused observation result return the corresponding check-1-through-5 failure before the observation result is inspected. With those defects absent, a reference-valued source and no observation returns the existing unavailable-observation record; a present failed result returns its original arm. All failures leave the caller's existing meter unchanged, and TC-1071 row 22 charges only its successful evaluation. | Test |
+| FR-390-AC-23 | TC-1071's accepted nested Other fixture uses one unchanged supplied kernel reference with explicit metadata selecting otherNodes or otherSpare. The selected population alone seeds check 7: an unlisted selected population is incomplete, a complete selected empty population is dangling even if the equal reference occurs elsewhere, and a complete selected population with the target admits while an unselected compatible population is incomplete. | Test |
+| FR-390-AC-24 | A bad slot, duplicate/unknown/missing binder and wrong-shaped value each take precedence over malformed population descriptors. Missing or failed observation admission and wrong model also precede descriptor validation. With those defects absent, the exact FR-106 duplicate/extra/missing/invalid-scope diagnostic is returned and the entire meter is unchanged; a valid retry charges only its evaluation. | Test |
+| FR-390-AC-25 | SuppliedValue::Value takes the QSL layer-4 ProtocolInputValue, and S6a receives only its admitted kernel Value. The same value and expression retain their result and ordered charges when only valid descriptor order changes. Root, nested-field, present-option and sequence references retain distinct typed occurrence paths; Unavailable carries no descriptors. | Test |
 
 ## Dependencies
 

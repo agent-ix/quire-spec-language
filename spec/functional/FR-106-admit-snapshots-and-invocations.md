@@ -205,8 +205,8 @@ the call SHALL NOT replace it with an inferred foreign-reference result.
 
 For a successfully admitted authority, FR-390 SHALL reuse checks 7 and 8 over
 the retained population facts for the exact reference-valued supplied sources
-of the selected slot. Required populations SHALL comprise those named by
-those supplied references, including nested references, and the recursive
+of the selected slot. Required populations SHALL comprise the exact declarations named for each
+supplied reference occurrence by the typed provenance below, and the recursive
 closure through reference fields and relationship ends specified by check 7.
 Admission SHALL test required-population completeness before target presence,
 even when every supplied reference already resolves to an admitted object.
@@ -225,6 +225,129 @@ implementation dependency tracked as IR-1199; IR-1200 governs direct QSV
 result ownership below both consumers. This requirement defines no future `quire-eval` field
 or variant spelling. Complete AC-6 transport requires the full shared record
 and population node; a flattened binder locus is not a replacement for them.
+
+## Population provenance of protocol supplied values
+
+A kernel `ObjectReference` identifies its universe, effective object type and
+object key; it does not identify a population declaration. Distinct declared
+populations may have compatible member types in the same universe. A supplied
+record can contain such a reference even when no direct protocol context uses
+that object type. FR-390 therefore SHALL receive explicit population provenance
+for each reference occurrence, including a reference the expression will not
+read. The provenance SHALL NOT change the kernel value or reference identity.
+
+Layer-4 `qsl_package::observation` SHALL define these input types and methods:
+
+```rust
+pub struct ReferencePopulation {
+    pub path: Vec<quire_semantic_value::admission::PathStep>,
+    pub population: quire_exact::NodeKey,
+}
+
+pub struct ProtocolInputValue { /* private fields */ }
+
+impl ProtocolInputValue {
+    pub fn new(
+        value: quire_exact::Value,
+        reference_populations: Vec<ReferencePopulation>,
+    ) -> Self;
+    pub fn value(&self) -> &quire_exact::Value;
+    pub fn reference_populations(&self) -> &[ReferencePopulation];
+}
+
+impl AdmittedProtocolObservation<'_> {
+    pub fn population_node(
+        &self,
+        declaration: &quire_checked::key::DeclarationKey,
+    ) -> Option<&quire_exact::NodeKey>;
+}
+```
+
+`ProtocolInputValue` SHALL own the supplied value and descriptors and expose no
+mutable accessor. Its constructor SHALL retain them without admission,
+expression evaluation, an observation read or a meter. It SHALL preserve invalid
+descriptors for FR-390's ordered admission rather than return a producer-side
+failure. This input container is not an admitted authority or a checked term.
+Both input types SHALL implement `Clone` and `Debug`; `ReferencePopulation`
+SHALL additionally implement `Eq` and `PartialEq`. QSL SHALL use the existing
+shared `PathStep`, not a path string or a copied path enum.
+
+`population_node` SHALL return the exact population node for a declaration of
+this authority's selected model, including a declared empty or unlisted
+population, and `None` for any other declaration. It SHALL read the retained
+declaration associations, not the objects present in the environment. Its
+`DeclarationKey` input is the existing plain C key, not a new identity type.
+The descriptor's `NodeKey` remains untrusted input until supply admission.
+
+A descriptor's path SHALL start at that binder's supplied value: an empty path
+names a root reference; `Field(name)` selects a record's exact effective field
+name, `OptionValue` the payload of a present optional, and `Index(i)` a sequence
+element. A field named `"0"` and element zero SHALL remain distinct. Absent or
+null fields and absent optionals contain no reference occurrence. Reference
+occurrences SHALL be visited depth first in the existing FR-106 effective-field,
+optional-payload and sequence-index walk order. Equal references at different
+paths remain different occurrences, and may explicitly name different
+populations. The supported value grammar remains FR-390's; this requirement adds
+no union or other value form.
+
+When at least one supplied value contains a reference, FR-390 SHALL first
+decide missing or non-admitted observations and the authority's view/model
+association as already specified. With an admitted authority for this call,
+admission SHALL decide descriptors in source order, with these phases for each
+source. When no supplied value contains a reference, admission SHALL ignore the
+optional observation result and still perform phases 1 and 2 to reject
+extraneous descriptors; no authority or population lookup is needed.
+
+| Phase | Defect | Code / cause | Record and locus |
+| --- | --- | --- | --- |
+| 1 | A descriptor repeats an earlier descriptor's typed path | `invalid_runtime_input` / `duplicate-member` | binder locus; repeated path and later descriptor index |
+| 2 | A descriptor's path does not select a reference leaf, including a nonexistent field/index or an absent optional | `invalid_runtime_input` / `unknown-member` | binder locus; offending path and descriptor index |
+| 3 | A reference occurrence has no descriptor | `invalid_runtime_input` / `missing-member` | binder locus; first missing reference path in value walk order |
+| 4 | The named key is not a population declaration of the view, or the reference's effective object type is not admitted as a member of that population under FR-084 | `invalid_runtime_input` / `wrong-role-mapping` | binder locus; reference path and descriptor index |
+| 4 | The named population belongs to another selected model or universe | `foreign_reference` / `foreign-universe` | binder locus; reference path and descriptor index |
+
+Phase 1 and phase 2 SHALL choose the first defective descriptor in input order;
+phase 3 and phase 4 SHALL use reference walk order. In phase 4 a key known to
+name a population of another selected model SHALL take the foreign-reference
+row before member compatibility is tested. A valid descriptor permutation SHALL
+not alter the admitted scope, required-population order or evaluation.
+Metadata records SHALL use the shared admission record with `fields["member"]`
+`reference_populations`, `fields["index"]` holding the descriptor's decimal
+position when an entry exists, and `path` holding the typed value path. A
+resolved population SHALL retain its declaration identity in the existing
+`population` field. All these failures SHALL name the source's binder through
+the existing call-admission locus, produce no evaluation and leave the entire
+caller meter unchanged. These are existing catalog pairs; no new failure arm,
+record, path vocabulary or meter is introduced.
+
+After all sources pass descriptor admission, check 7 SHALL start from the exact named population
+of every supplied reference occurrence, including nested references and
+references to absent keys. It SHALL not infer scope from object presence,
+choose a compatible population, require every compatible population or merge
+equal reference values before collecting their named populations. Declared but
+unlisted populations SHALL retain their incomplete manifest rows. Check 8 SHALL
+resolve a target against the named population's membership, not merely against
+the global environment: the same typed reference existing in another population
+does not satisfy it. Thus an unlisted named population is incomplete; a named
+complete empty population gives the existing dangling-reference record even if
+another population contains the equal kernel reference.
+
+The authority SHALL retain the exact named target declaration for each admitted
+snapshot field-reference occurrence and each relationship end used by check 7's
+closure. The occurrence association SHALL retain its source document,
+population, object, field and typed nested path, or its relationship instance
+and end, as applicable. Admission SHALL carry those associations from the
+existing parsed FR-106 references; it SHALL NOT reconstruct them from the
+normalized `ObjectReference` or present target membership. Required closure,
+walk order, completeness-before-dangling and original records remain checks 7
+and 8. This applies those checks to supplied values without another model
+checker, JSON reader or identity conversion.
+
+Only the underlying admitted kernel value SHALL enter S6a. Population metadata
+SHALL add no expression operation, charge point or result-value identity. A
+later call that supplies a captured reference-bearing value SHALL provide its
+occurrence descriptors again; equal captured values do not imply equal source
+population intent. `Unavailable` supplies no value or descriptors.
 
 ## Document forms
 
@@ -1230,10 +1353,13 @@ required; check 10 settles it.
 | FR-106-AC-59 | Over TC-1171's numeric fixture, a current snapshot whose `t1` holds `reach` `{"kind":"quantity","unit":"Units::metre","magnitude":{"kind":"rational","numerator":"3","denominator":"6"}}` admits as `1`/`2` metre, and the same with the Decimal magnitude `{"kind":"decimal","coefficient":"5","scale":"1"}` is the same value; `spans` holding the first and the Decimal-magnitude spelling refuses `duplicate-member` at element 1 naming element 0, while `loads` holding them has the one member `1`/`2` metre with multiplicity 2, written `[{"kind":"quantity","magnitude":{"denominator":"2","kind":"rational","numerator":"1"},"unit":"Units::metre"},{"kind":"quantity","magnitude":{"denominator":"2","kind":"rational","numerator":"1"},"unit":"Units::metre"}]`. A `retag` invocation whose post `reach` is the Decimal magnitude spelling over the Rational pre `reach` is no change, and one whose post magnitude is `2`/`3` refuses `frame_violation`/`unauthorized-change` naming `t1` and `reach`. Each of these refuses `invalid_runtime_input` and admits nothing: `unit` `"Units::second"` and `unit` as the JSON number `1`, `wrong-value-kind` naming `unit`; `unit` removed or `magnitude` removed, `missing-member` naming the member; `magnitude` as a String object, `{"integer": "1"}` or a JSON string, `wrong-value-kind` naming `magnitude`; `magnitude` with `denominator` `"0"`, `invalid-value` naming `denominator` at the path `magnitude`; `magnitude` Decimal with `scale` `"-1"`, `invalid-value` naming `scale` at the path `magnitude`; an added member `bits`, `unknown-member` naming `bits`; a Quantity object in `ratio` and a Rational object in `reach`, `wrong-value-kind`. A Decimal magnitude outside any `Decimal[..]` domain admits, because a Quantity magnitude has no declared bound. | Test (TC-1171) |
 | FR-106-AC-60 | Over TC-1171's numeric fixture (also declaring `names: Set<String>[0, 4]`, `notes: Set<Option<String>>[0, 2]` and `lines: OrderedSet<String>[0, 3]`), a current snapshot whose `t1` holds `names` `{"set": [b, "", "\u00e9", "e\u0301"]}` (each as a String object) admits four members, the composed and the decomposed spelling of `é` being two, written `[{"kind":"string","text":""},{"kind":"string","text":"b"},{"kind":"string","text":"e\u0301"},{"kind":"string","text":"\u00e9"}]` ordered by those bytes; `notes` `{"set": [{"present": {"kind":"string","text":"x"}}, {"absent": {}}]}` is written `[{"absent":{}},{"present":{"kind":"string","text":"x"}}]`; `lines` keeps its order. `names` holding `a` twice and `lines` holding `a` twice refuse `invalid_runtime_input`/`duplicate-member` at element 1 naming element 0; a Text object `{"kind":"text","text":"a"}` as an element of `names`, a UUID object, and `{"kind":"string","text":1}` refuse `wrong-value-kind` at element 0, the last naming `text`; `names` with five elements refuses `cardinality_out_of_bound`/`above-maximum` before any element is read. A `retag` invocation whose post `names` holds the pre members in another order is no change, and one whose post `names` replaces U+00E9 by U+0065 U+0301 refuses `frame_violation`/`unauthorized-change` naming `t1` and `names`. | Test (TC-1171) |
 | FR-106-AC-61 | A snapshot whose object type has fields `blob: Bytes`, `doc: JsonObject` and `span: Duration` (the unit of compilation declaring `dimension Time; unit s : Time = rational(1, 1);`) admits `blob` `{"kind":"bytes","text":"00ff"}`, `doc` `{"kind":"json_object","text":"{\"a\":1}"}` and `span` as the quantity form of `3/2` over `s`, and two snapshots differing only in JSON member order of the enclosing document have one typed observation. `blob` `00FF`, `doc` `{"a": 1}` refuse `invalid_runtime_input`/`invalid-value`; the Bytes object in `doc`, the JsonObject object in `blob` and a String object in either refuse `wrong-value-kind`; an object with an extra member or a non-string `text` refuses as the String object does. | Test (TC-1231) |
-
 | FR-106-AC-62 | A current snapshot admitted through the view entry returns QSV `ObservationAdmission::Admitted`; its authority retains the exact selected model, document identity, population manifest/bundles and admission usage after the caller drops the provisions. Public struct construction, mutation of its environment or completeness/provenance, and conversion from a caller-built `Observation` fail to compile; reading the documented accessors compiles. The factory's result type is QSV's generic specialized to the opaque QSL authority; no local result declaration/alias or layer-4 dependency on `quire-eval` exists. | Test |
 | FR-106-AC-63 | A snapshot of another model yields `Refused` with the original QSV `AdmissionRecord` and `invalid_model_binding`/`wrong-model-selection`; a nested-value refusal preserves every `catalog`, `fields`, `path` and `kernel` component. `authority()` on `Refused`, `Incomplete` and `Fault` returns that same distinct arm and payload; `Fault` preserves the original `InternalFault`. The QSL admission implementation uses QSV's record/path types with no local copies. | Test |
 | FR-106-AC-64 | Over TC-1071 row 20, an authority retaining `n5` but marking its required `nodes` population incomplete yields `incomplete_population`/`incomplete-scope` naming that population's exact node, before any dangling check. With `nodes` complete and a second unreferenced population incomplete, the same supplied source admits. A recursively required incomplete population is reported in FR-106 walk order; completing it exposes any subsequent check-8 dangling defect. | Test |
+| FR-106-AC-65 | A root reference uses the empty path, and references in record fields, present optionals and sequences use the exact shared Field/OptionValue/Index paths. Two equal references at distinct paths may name different populations; descriptor permutation preserves the result. No path or kernel reference type is copied or extended. | Test |
+| FR-106-AC-66 | For one source, duplicate metadata paths refuse duplicate-member before extra paths refuse unknown-member, which precedes missing reference paths refusing missing-member. Each failure carries the exact shared path, binder and entry index where present; a valid observation plus a wrong population key or incompatible member type refuses wrong-role-mapping, and a known population of another selected model refuses foreign-universe. No call evaluation or meter change occurs. | Test |
+| FR-106-AC-67 | In the nested Other fixture of TC-1071, metadata selecting complete otherNodes admits while unlisted otherSpare remains irrelevant; selecting otherSpare instead gives incomplete-scope. Marking otherSpare complete but empty gives absent-target-in-complete-population even though an equal reference exists in otherNodes. The same anonymous kernel value is used in all cases. | Test |
+| FR-106-AC-68 | population_node resolves selected-model population declarations even when empty or unlisted and does not resolve another model's declaration. ProtocolInputValue construction preserves malformed metadata without admission; its fields and stored value/descriptor list cannot be mutated through public accessors. Snapshot-field and relationship closure retain their explicit population associations after normalization erases population from the kernel reference. | Test |
 
 ## Dependencies
 

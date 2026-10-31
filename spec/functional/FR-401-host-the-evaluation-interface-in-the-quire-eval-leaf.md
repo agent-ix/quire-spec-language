@@ -140,6 +140,26 @@ These stay where they are and are not part of the leaf: `qsl-foundation`'s
 and `qsl-eval`'s `QualifiedName`, `supplied_stop_code` and
 `supplied_stop_cause`.
 
+### QSL protocol-input provenance
+
+The protocol-input container `ProtocolInputValue` and its
+`ReferencePopulation` descriptors SHALL be owned only by layer-4
+`qsl_package::observation`, as
+[FR-106](FR-106-admit-snapshots-and-invocations.md) defines. They are QSL call
+inputs, not shared evaluation results, checked terms or new kernel reference
+identities. Layer-5 `qsl-eval` MAY name them in FR-390's `SuppliedValue::Value`
+and SHALL pass only the admitted underlying kernel `Value` to S6a. The shared
+`quire-eval` leaf SHALL acquire no QSL dependency or reference-provenance
+wrapper.
+
+The wrappers SHALL use existing K `Value`/`NodeKey`, C `DeclarationKey` and SV
+`admission::PathStep` vocabulary. The observation factory and result SHALL
+continue to use QSV's one `ObservationAdmission<T>` and `AdmissionRecord`;
+QSL SHALL introduce no result or record mirror or alias through E. Neither
+wrapper nor observation authority SHALL introduce a layer-4 dependency on
+`quire-eval`, in any dependency table. Descriptor admission SHALL reuse FR-106
+and SHALL add no evaluator, family dispatch or meter.
+
 ### Body-side SV failures
 
 `Body::resume` SHALL return `Result<Transition, BodyFailure>`. The public
@@ -371,6 +391,7 @@ model index, which are not leaf vocabulary. No slice of this requirement moves
 | FR-401-AC-11 | `quire_eval::{UnsupportedEntry, UnsupportedCause, UntranslatableConstruct, ExecutionBackendChoice}` resolve; `quire_eval::CallFailure::Unsupported(UnsupportedEntry { backend: ExecutionBackendChoice::Jit, cause: UnsupportedCause::Untranslatable { construct: UntranslatableConstruct::ExpressionForm("let"), location } })` constructs from an SV `ExpressionLocation`, and with cause `NotSupplied`; for both, `category()` is `Category::Unsupported` and the catalog code is `unimplemented_capability`; `cargo tree -p quire-eval` lists no QSL crate; and the `no_std` evaluator's suite over FR-403's vectors returns no `CallFailure::Unsupported`. Serialized in an FR-286 document, the `Untranslatable` arm's diagnostic has code `unimplemented_capability`, cause `untranslatable-entry`, `backend` `jit`, `construct` `expression-form`, `construct_name` `let` and `location` the constructed `ExpressionLocation`; with `ValueType(Decimal)` and `Operation(k)`, `construct` is `value-type` with `construct_name` `Decimal`, and `operation` with `construct_name` the node key `k`; and the `NotSupplied` arm's has cause `backend-not-supplied`, `backend` `jit` and no `location`. | Test |
 | FR-401-AC-12 | A public `Body` returns each SV `EnvironmentFailure` variant through `BodyFailure::QsvEnvironment`, and the scheduler returns it as `CallFailure::Body` with the same variant and payload; `BodyFailure::Fault` remains a distinct internal fault. `Refused` is refusal, `Limit`/`Allocation`/`Capacity` are incomplete, and membership `Ok(false)` remains distinct from every error. For `Limit(WorkUnits)`, the exact supplied handle's `CancelCause` appears only when that handle is tripped; an ordinary work ceiling remains cause-free. No body-side SV failure creates an `Evaluation` or expression location; preceding meter charges remain admitted and the failure itself adds none. | Test |
 | FR-401-AC-13 | A public SV `TypeEnvironment` reservation-control entry point exercises the actual construction and membership reservation sites and produces typed `Allocation` and `Capacity` failures without a caller-constructed failure or fabricated declaration. An external QSL application consumer uses this entry point to drive both variants through `BodyFailure` and `CallFailure::Body`; production constructors continue to use their ordinary reservation policy. | Test |
+| FR-401-AC-14 | The protocol provenance input types are defined only in qsl_package::observation and use the existing K/C/SV identities and path. QSL layer 5 consumes them without any normal/dev/build qsl-package-to-quire-eval edge; TC-390 stays green. Shared E has no QSL wrapper or dependency, and S6a takes the existing kernel value rather than the provenance container. | Inspection |
 
 ## Dependencies
 
