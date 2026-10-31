@@ -201,13 +201,12 @@ fn composite_keys_are_the_spines_distinct_and_stable() {
     assert_eq!(table, expected);
 
     // The kernel key is the one the checked function signature carries for
-    // a parameter of the record's type, and not the node id.
+    // a parameter of the record's type.
     let left = context
         .composites()
         .find(|composite| composite.qualified_name().last().map(|n| n.as_str()) == Some("Left"))
         .expect("Left");
     assert_eq!(parameter, ValueType::Composite(left.key().clone()));
-    assert_ne!(left.key(), left.node());
 
     let keys: BTreeSet<_> = expected.iter().map(|(_, key, ..)| key.clone()).collect();
     assert_eq!(keys.len(), 8, "each declaration has its own key");
@@ -377,7 +376,6 @@ fn union_members_are_the_producers_minted_variants_in_declared_order() {
             ValueType::Composite(holder.key().clone())
         ]
     );
-    assert_ne!(shape.key(), shape.node());
     let parameter = with_spine_graph(
         &format!("{HEADER}{UNIT}function takes using v(s: Shape): Boolean pure {{ false }}\n"),
         |graph| {
@@ -406,7 +404,7 @@ fn a_dependencys_composite_is_foreign() {
     let alone = compile_admitted(
         qsl_replay::CompileUnit {
             source: points.source.clone(),
-            package_name: "fixture".to_owned(),
+            package_name: points.identity.clone(),
             path: &points.path,
             bytes: &points.bytes,
         },

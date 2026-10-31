@@ -106,7 +106,7 @@ pub struct TimeNominalNode {
     /// dimension) is owned by that model ([`NodeOwner::Model`], whose
     /// `identity` is the package identity and `node` the declaration's IR
     /// node identity) and has none.
-    pub owner: crate::value::NodeOwner,
+    pub owner: crate::value::semantic_node::NodeOwner,
     /// Nominal nodes this node names.
     pub dependencies: Vec<quire_exact::NodeKey>,
     /// The terms, target and exact conversion of a dimension or unit node,
@@ -140,7 +140,7 @@ impl TimeNominalNode {
     }
 
     /// The admitted owner of the declaration; see the field's owner rule.
-    pub fn owner(&self) -> &crate::value::NodeOwner {
+    pub fn owner(&self) -> &crate::value::semantic_node::NodeOwner {
         &self.owner
     }
 }

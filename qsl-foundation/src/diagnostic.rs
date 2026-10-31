@@ -599,7 +599,7 @@ fn source_refusal(
 
 impl crate::source_map::SourceMap {
     /// Validate a complete monotonic map against immutable exact source bytes.
-    /// Both sources can be loaded with Source::read when consuming pinned artifacts.
+    /// Both sources are loaded as text under their declared identities.
     pub fn verify(
         original: Source,
         body: Source,
@@ -703,7 +703,7 @@ pub const RESERVATION_SIZE_OVERFLOW: CatalogCode =
 /// codes (`unsupported_construct`, `unknown_required_feature`,
 /// `unsupported_projection`) and the incomplete `resource_exhausted` that
 /// this table files under `Refusal`.
-const CATALOG_CATEGORIES: [(&str, Category); 50] = [
+const CATALOG_CATEGORIES: [(&str, Category); 49] = [
     ("invalid_syntax", Category::Refusal),
     ("unsupported_construct", Category::Refusal),
     ("unknown_language", Category::Refusal),
@@ -715,7 +715,6 @@ const CATALOG_CATEGORIES: [(&str, Category); 50] = [
     ("missing_declaration", Category::Refusal),
     ("conflicting_declaration", Category::Refusal),
     ("stale_dependency", Category::Refusal),
-    ("source_digest_mismatch", Category::Refusal),
     ("ambiguous_declaration", Category::Refusal),
     ("invalid_package", Category::Refusal),
     ("invalid_model_binding", Category::Refusal),

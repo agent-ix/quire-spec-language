@@ -928,7 +928,9 @@ mod witness_tests {
                 format!("{x}=1;{b}=0", x = pn_(&x), b = pn_(&b)),
                 &[integer(x.clone())]
             ),
-            Err(DecodeRefusal::Unbound(b.to_string()))
+            Err(DecodeRefusal::Unbound(
+                qsl_foundation::node_wire::node_key_to_text(&b).unwrap()
+            ))
         );
         assert_eq!(
             decode(format!("{x}=1;junk", x = pn_(&x)), &[integer(x.clone())]),

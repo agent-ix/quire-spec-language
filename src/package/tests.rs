@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Compare the actual private canonical pass separately from its digest.
+//! Compare the private canonical pass and emitted package with fixed byte vectors.
 
 use crate::runtime_test_setup::native_rule_model;
 #[path = "../../tests/support/package_vector_setup.rs"]
@@ -15,7 +15,7 @@ use crate::runtime_test_setup as setup;
 
 #[test]
 #[trace("TC-090", "FR-021-AC-1", "FR-021-AC-6")]
-fn canonical_pass_bytes_match_each_independent_fixed_vector_before_hashing() {
+fn canonical_pass_bytes_match_each_independent_fixed_vector() {
     let models = [package_vector_setup::vectors::model()];
     for vector in package_vector_setup::cases(&models[0]) {
         let checked = package_vector_setup::checked(&vector, &models);

@@ -198,10 +198,10 @@ pub(crate) fn law_json(law: &OperationLaw) -> Json {
 fn mode_json(mode: &OperationMode) -> Json {
     match mode {
         OperationMode::Rounding(mode) => {
-            json!({"kind": "rounding", "value": snake(&format!("{mode:?}"))})
+            json!({"kind": "rounding", "value": mode.as_str()})
         }
         OperationMode::TextProfile(profile) => {
-            json!({"kind": "text_profile", "value": snake(&format!("{profile:?}"))})
+            json!({"kind": "text_profile", "value": profile.as_str()})
         }
         OperationMode::Absence(mode) => {
             json!({"kind": "absence", "value": snake(&format!("{mode:?}"))})

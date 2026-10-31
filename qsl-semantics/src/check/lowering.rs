@@ -564,6 +564,8 @@ pub(crate) struct Lowering<'a> {
     placeholder_count: u64,
     /// The drafts, by their local handle.
     drafts: BTreeMap<PlaceholderId, Draft>,
+    /// The handle of each draft's content: equal content is one draft.
+    draft_index: HashMap<NodeContent, PlaceholderId>,
     /// Occurrences of drafts, recorded once the drafts are keyed.
     draft_occurrences: Vec<(NodeRef, OccurrenceRole, Location)>,
     /// Each binder's parameter node, by its [`BinderSite`].
@@ -1573,6 +1575,7 @@ impl<'a> Lowering<'a> {
             placeholders: BTreeMap::new(),
             placeholder_count: 0,
             drafts: BTreeMap::new(),
+            draft_index: HashMap::new(),
             draft_occurrences: Vec::new(),
             binders: BTreeMap::new(),
             draft_binders: Vec::new(),
@@ -1830,7 +1833,11 @@ impl<'a> Lowering<'a> {
             .for_each_ref(&mut |named| names_pending |= Self::pending(named));
         if names_pending {
             // Admitted by `settle`; until then a local handle names the draft.
+            if let Some(handle) = self.draft_index.get(&content) {
+                return Ok(NodeRef::Pending(*handle));
+            }
             let handle = self.fresh_handle();
+            self.draft_index.insert(content.clone(), handle);
             self.drafts.insert(
                 handle,
                 Draft {
@@ -1922,7 +1929,9 @@ impl<'a> Lowering<'a> {
             } else {
                 build(ordinal).map_err(invalid)?
             };
-            if !self.graph.nodes.contains_key(&key) {
+            // A dimension or unit key is held by the unit table whether or
+            // not its node is in the graph yet, so no other node takes it.
+            if !self.graph.nodes.contains_key(&key) && self.units.nominal_node(&key).is_none() {
                 return Ok(key);
             }
         }
@@ -1930,7 +1939,7 @@ impl<'a> Lowering<'a> {
 
     /// The admitted keys of one recursion group's members, in member order.
     /// A declared member is keyed by its declaration's path; any other
-    /// member by the anchor's (first declared member's) path with no
+    /// member by the anchor's (least declared member's) path with no
     /// operand, the producer's ordinal telling the members apart. A group
     /// with no declared member has no anchor, which is an internal fault.
     fn admitted_group_keys(
@@ -1952,13 +1961,14 @@ impl<'a> Lowering<'a> {
                 None => None,
             });
         }
-        // The group's anchor is its first declared member. The pinned
+        // The group's anchor is its least declared member, so the keys do
+        // not depend on the order the members are declared in. The pinned
         // reader (quire-contract-model `validate_recursion`) requires every
         // undeclared member's path to equal the sole declared member's path.
         let anchor_path: Vec<String> = keys
             .iter()
             .flatten()
-            .next()
+            .min()
             .ok_or_else(|| fault(location, KeyFault::InvalidGroup))?
             .view()
             .path()
@@ -2622,7 +2632,15 @@ impl<'a> Lowering<'a> {
     ) -> Result<bool, CheckRefusal> {
         self.charge(1, location)?;
         match self.graph.nodes.entry(key.clone()) {
-            btree_map::Entry::Occupied(_) => Ok(false),
+            btree_map::Entry::Occupied(slot) => {
+                let held = &slot.get().content;
+                if held.node_tag == content.node_tag && held.semantic_form == content.semantic_form
+                {
+                    Ok(false)
+                } else {
+                    Err(fault(location, KeyFault::NominalKeyClash(key)))
+                }
+            }
             btree_map::Entry::Vacant(slot) => {
                 slot.insert(SemanticNode {
                     key,
@@ -2860,6 +2878,7 @@ impl<'a> Lowering<'a> {
     fn settle(&mut self) -> Result<(), CheckRefusal> {
         let placeholders = std::mem::take(&mut self.placeholders);
         let drafts = std::mem::take(&mut self.drafts);
+        self.draft_index.clear();
         let occurrences = std::mem::take(&mut self.draft_occurrences);
         let draft_binders = std::mem::take(&mut self.draft_binders);
         let unsettled_functions = std::mem::take(&mut self.unsettled_functions);

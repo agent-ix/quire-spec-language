@@ -2233,12 +2233,21 @@ impl<'a> Lowering<'a> {
     fn unit_nodes(&mut self, unit: NodeKey, location: &Location) -> Result<(), CheckRefusal> {
         let mut pending = vec![unit];
         while let Some(key) = pending.pop() {
-            if self.graph.nodes.contains_key(&key) {
-                continue;
-            }
             let Some(node) = self.units.nominal_node(&key).cloned() else {
                 return Err(fault(location, KeyFault::UnheldNominal(key)));
             };
+            if let Some(held) = self.graph.nodes.get(&key) {
+                let form = match node.form {
+                    NominalUnitForm::Unit { .. } => "unit",
+                    NominalUnitForm::Dimension { .. } => "dimension",
+                };
+                if held.content.node_tag == NodeTag::ScalarType
+                    && held.content.semantic_form == form
+                {
+                    continue;
+                }
+                return Err(fault(location, KeyFault::NominalKeyClash(key)));
+            }
             let NominalDeclaration {
                 qualified_declaration: qualified,
                 ..
@@ -2310,7 +2319,11 @@ impl<'a> Lowering<'a> {
         for (index, equivalence) in equivalences.iter().enumerate() {
             let site = type_declaration(&equivalence_origin(index));
             for dimension in &equivalence.dimensions {
-                self.unit_nodes(dimension.clone(), &site)?;
+                // A model-owned dimension is no node of this unit's table:
+                // its own model emits it.
+                if self.units.nominal_node(dimension).is_some() {
+                    self.unit_nodes(dimension.clone(), &site)?;
+                }
             }
             let key = equivalence.key.clone();
             let inserted = self.insert_nominal(

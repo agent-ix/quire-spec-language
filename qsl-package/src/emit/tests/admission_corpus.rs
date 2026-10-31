@@ -8,8 +8,8 @@
 //!
 //! Every fixture is emitted and read back through QSL's I2 read
 //! (`read_checked_package_v2`, which runs IR's checked-package/v2 reader).
-//! An admitted row asserts IR admits a node of its family at the emitted
-//! `package_id`. The families each fixture hands the emitter, decoded
+//! An admitted row asserts IR admits a node of its family in the emitted
+//! package. The families each fixture hands the emitter, decoded
 //! through IR's `CheckedNodeKind`, must all be row families, so a fixture
 //! that starts emitting an unclassified or not-emitted kind fails. A new IR
 //! kind fails until it is classified.
@@ -553,7 +553,7 @@ fn modelled_with_documents(
 }
 
 /// One family and the fixture that emits it: IR's reader admits the
-/// fixture, at its emitted `package_id`, with a node of the family, and
+/// fixture with a node of the family, and
 /// when `operation` is named, a node of the family that applies it.
 #[derive(Clone, Copy, Debug)]
 struct Row {
@@ -762,8 +762,8 @@ fn families(package: &CheckedPackage) -> BTreeMap<CheckedNodeKind, Vec<CheckedNo
     families
 }
 
-/// QSL's I2 read of `emitted`, pinned at its own `package_id`, with the
-/// lock's required features and the fixture's domain package documents as
+/// QSL's I2 read of `emitted`, with the lock's required features and the
+/// fixture's domain package documents as
 /// evidence.
 fn read(emitted: &Emitted) -> Result<V2Read, StageFailure<V2ReadRefusal>> {
     let mut evidence = read_evidence(&emitted.emission);
@@ -840,8 +840,8 @@ fn check_row(row: &Row, outcomes: &[Outcome], failures: &mut Vec<String>) {
     }
 }
 
-/// The checks of one fixture's packages: each is admitted at its own
-/// `package_id`, and none omits a node.
+/// The checks of one fixture's packages: each is admitted, and none omits
+/// a node.
 fn check_fixture(fixture: Fixture, rows: &[Row], outcomes: &[Outcome], failures: &mut Vec<String>) {
     if !rows.iter().any(|row| row.fixture == fixture) {
         failures.push(format!("{fixture:?}: backs no row"));
@@ -860,7 +860,7 @@ fn check_fixture(fixture: Fixture, rows: &[Row], outcomes: &[Outcome], failures:
 /// FR-093-AC-19 (TC-416 step 11): every kind of IR's closed node-kind list
 /// is classified exactly once, as admitted or not written by QSL. Each
 /// row's fixture is admitted by IR's checked-package/v2 reader, through
-/// QSL's I2 read, at its emitted `package_id`, with a node of the row's
+/// QSL's I2 read, with a node of the row's
 /// family (the cyclic compared type's structural equality included), and
 /// no fixture emits a family without a row.
 #[trace("FR-093-AC-19", "TC-416")]
@@ -1725,7 +1725,7 @@ const QUANTITY_OPERATIONS: &[(&str, &str, Option<&str>)] = &[
 
 /// FR-091-AC-44, FR-093 (QSL-946, IR-263): each operation over operands
 /// typed `Quantity<u>` in genuine source emits a package IR's strict
-/// checked-package/v2 reader admits at its `package_id`, and the package
+/// checked-package/v2 reader admits, and the package
 /// applies the operation's `quire.op.quantity.*` identity.
 #[trace("FR-091-AC-44", "FR-093-AC-19", "TC-483", "TC-416")]
 #[test]

@@ -4801,7 +4801,7 @@ fn s4_state_package_reads_back_through_i2() {
 
     let emission = qsl_package::emit_checked(&first.package)
         .unwrap_or_else(|refusal| panic!("emission refused: {refusal:?}"));
-    let library = LibraryName::new(CONFIG_VERSION_PACKAGE_IDENTITY.to_owned()).unwrap();
+    let library = LibraryName::new("fixture".to_owned()).unwrap();
     let mut admitted = qsl_package::AdmittedPackages::default();
     let view = qsl_package::read_import_view(
         &first.package,
