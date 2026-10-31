@@ -10,10 +10,10 @@ review_set: subset
 
 ## Summary
 
-The edited requirements and linked test cases were checked for ID shape, criterion clarity, references, verification-method cells and migration consistency. One implementation-evidence gap remains for the new S3 refusal criterion.
+The edited requirements and linked test cases were checked for ID shape, criterion clarity, references, verification-method cells and migration consistency. TC-1056 now covers both choice and repeat refusals/admission; one implementation-evidence gap remains for the new S3 refusal criterion.
 
 ## Findings
 
 | ID | Severity | Summary | Refs | Escape Cause |
 | --- | --- | --- | --- | --- |
-| FND-001 | medium | FR-218-AC-34 is specified and has TC-1056 row 52, but no executable source test carries its criterion trace yet; record it as implementation-stage evidence rather than claiming it is discharged. | FR-218-AC-34, TC-1056 | correct-requirement-no-evidence |
+| FND-001 | medium | FR-218-AC-34 is specified and has TC-1056 rows 52–53 for choice and repeat, but no executable source test carries its criterion trace yet; record it as implementation-stage evidence rather than claiming it is discharged. | FR-218-AC-34, TC-1056 | correct-requirement-no-evidence |

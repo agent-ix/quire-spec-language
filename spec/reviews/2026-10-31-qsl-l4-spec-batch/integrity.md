@@ -10,7 +10,7 @@ review_set: subset
 
 ## Summary
 
-The disposition table and linked criteria were checked for conflicting obligations, traceable ownership and preserved feature scope. FR-042/TC-121 are explicitly retired while FR-046/047 behavior remains mapped to successor tests.
+The disposition table and linked criteria were checked for conflicting obligations, traceable ownership and preserved feature scope. TC-1056 rows 52–53 cover FR-218-AC-34 for both choice and repeat. FR-042/TC-121 are explicitly retired while FR-046/047 behavior remains mapped to successor tests.
 
 ## Findings
 

@@ -10,7 +10,7 @@ review_set: subset
 
 ## Summary
 
-The changed refusal paths and identity boundaries were checked for typed causes, exact loci, short-circuit behavior, purity and graph termination. The S3 refusal occurs before emission.
+The changed refusal paths and identity boundaries were checked for typed causes, exact loci, short-circuit behavior, purity and graph termination. Choice and repeat bare-entry refusals occur at S3 before emission; the admitted composite case retains the individually visible fact while withholding capture disclosure.
 
 ## Findings
 

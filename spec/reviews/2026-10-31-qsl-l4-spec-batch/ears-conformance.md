@@ -10,7 +10,7 @@ review_set: subset
 
 ## Summary
 
-The edited requirement statements were checked against the EARS grammar and the relevant deterministic validation output. The new visible-entry refusal names S3 and its typed outcome.
+The edited requirement statements were checked against the EARS grammar and the relevant deterministic validation output. The new visible-entry refusal names S3 and its typed outcome; TC-1056 gives concrete choice and repeat cases.
 
 ## Findings
 
