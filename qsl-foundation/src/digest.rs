@@ -134,8 +134,6 @@ pub enum DigestDomain {
     Sha256Jcs,
     /// `quire.package.semantic/v2`.
     PackageSemanticV2,
-    /// `quire.source.bytes/v1`.
-    SourceBytesV1,
     /// `quire.definition.bytes/v1`.
     DefinitionBytesV1,
     /// `quire.contract-ir.semantic/v1`.
@@ -161,7 +159,7 @@ pub enum DigestDomain {
 impl DigestDomain {
     /// Every closed variant, in FR-201's own table order, for exhaustive
     /// round-trip tests.
-    pub const ALL: [Self; 19] = [
+    pub const ALL: [Self; 18] = [
         Self::IrCanonical,
         Self::IrBound,
         Self::IrSemantic,
@@ -170,7 +168,6 @@ impl DigestDomain {
         Self::RawArtifactDigest,
         Self::Sha256Jcs,
         Self::PackageSemanticV2,
-        Self::SourceBytesV1,
         Self::DefinitionBytesV1,
         Self::ContractIrSemanticV1,
         Self::DiagnosticCatalogBytesV1,
@@ -196,7 +193,6 @@ impl DigestDomain {
             Self::RawArtifactDigest => "raw-artifact-digest",
             Self::Sha256Jcs => "sha256-jcs",
             Self::PackageSemanticV2 => "quire.package.semantic/v2",
-            Self::SourceBytesV1 => "quire.source.bytes/v1",
             Self::DefinitionBytesV1 => "quire.definition.bytes/v1",
             Self::ContractIrSemanticV1 => "quire.contract-ir.semantic/v1",
             Self::DiagnosticCatalogBytesV1 => "quire.diagnostic-catalog.bytes/v1",
@@ -230,8 +226,7 @@ impl DigestDomain {
     pub fn is_raw_byte_addressed(&self) -> bool {
         matches!(
             self,
-            Self::SourceBytesV1
-                | Self::DefinitionBytesV1
+            Self::DefinitionBytesV1
                 | Self::RawArtifactDigest
                 | Self::DiagnosticCatalogBytesV1
                 | Self::GeneratedArtifactBytesV1
@@ -498,14 +493,14 @@ mod digest_record_tests {
     /// `DigestDomain::as_str()`'s own match arms: a wrong label there (e.g.
     /// `ModelEffectiveDeclarationV2` silently becoming `.../v3`) fails the
     /// first assertion in the loop rather than round-tripping only against
-    /// itself (#260 review item 4). Both `[(...); 19]` and `DigestDomain::
-    /// ALL: [Self; 19]` are fixed-length arrays, so a 19th-to-20th-entry
+    /// itself (#260 review item 4). Both `[(...); 18]` and `DigestDomain::
+    /// ALL: [Self; 18]` are fixed-length arrays, so an entry-count
     /// mismatch between them is a compile error, not something this test
     /// could observe at runtime -- the per-entry label and round-trip
     /// assertions below are this test's real teeth (#260 review round 2).
     #[test]
     fn every_fr201_domain_round_trips_through_the_wire() {
-        let labels: [(DigestDomain, &str); 19] = [
+        let labels: [(DigestDomain, &str); 18] = [
             (DigestDomain::IrCanonical, "ir-canonical"),
             (DigestDomain::IrBound, "ir-bound"),
             (DigestDomain::IrSemantic, "ir-semantic"),
@@ -514,7 +509,6 @@ mod digest_record_tests {
             (DigestDomain::RawArtifactDigest, "raw-artifact-digest"),
             (DigestDomain::Sha256Jcs, "sha256-jcs"),
             (DigestDomain::PackageSemanticV2, "quire.package.semantic/v2"),
-            (DigestDomain::SourceBytesV1, "quire.source.bytes/v1"),
             (DigestDomain::DefinitionBytesV1, "quire.definition.bytes/v1"),
             (
                 DigestDomain::ContractIrSemanticV1,
@@ -550,8 +544,8 @@ mod digest_record_tests {
                 "quire.model.object-universe/v2",
             ),
         ];
-        assert_eq!(DigestDomain::ALL.len(), 19);
-        assert_eq!(labels.len(), 19);
+        assert_eq!(DigestDomain::ALL.len(), 18);
+        assert_eq!(labels.len(), 18);
         for (domain, expected_label) in labels {
             assert_eq!(domain.as_str(), expected_label, "{domain:?}'s FR-201 label");
             let record = DigestRecord::mint(domain, bytes(0xab));
@@ -629,7 +623,7 @@ mod digest_record_tests {
     #[test]
     fn a_cross_domain_digest_is_unequal_despite_equal_bytes() {
         let same_bytes = bytes(0x42);
-        let other = DigestRecord::mint(DigestDomain::SourceBytesV1, same_bytes);
+        let other = DigestRecord::mint(DigestDomain::DefinitionBytesV1, same_bytes);
         let effective = DigestRecord::mint(DigestDomain::ModelEffectiveDeclarationV2, same_bytes);
         assert_ne!(other, effective);
         assert_eq!(
@@ -673,7 +667,7 @@ mod digest_record_tests {
     /// still reports the domain mismatch.
     #[test]
     fn from_wire_expecting_refuses_any_other_domain_before_the_bytes() {
-        let wrong = DigestDomain::SourceBytesV1;
+        let wrong = DigestDomain::DefinitionBytesV1;
         assert_eq!(
             DigestRecord::from_wire_expecting(
                 DigestDomain::Sha256Jcs,

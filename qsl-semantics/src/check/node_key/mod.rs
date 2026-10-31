@@ -48,8 +48,8 @@ pub enum InvalidSourceOwner {
 }
 
 /// FR-001: a unit's owner is the authority and identity of the
-/// `RawSourceRef` it was admitted under; its revision and digest take no
-/// part. A `RawSourceRef`'s members are non-empty, so this cannot fail.
+/// `RawSourceRef` it was admitted under. A `RawSourceRef`'s members are
+/// non-empty, so this cannot fail.
 impl From<&qsl_foundation::source::provenance::RawSourceRef> for SourceOwner {
     fn from(source: &qsl_foundation::source::provenance::RawSourceRef) -> Self {
         Self {

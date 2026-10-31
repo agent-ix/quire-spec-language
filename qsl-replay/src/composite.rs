@@ -12,7 +12,6 @@
 
 use qsl_foundation::bound::ProofBound;
 use qsl_foundation::diagnostic::Code;
-use qsl_foundation::digest::DigestRecord;
 use quire_exact::NodeKey;
 use quire_exact::{Incomplete, Origin, ScalarLimits};
 use quire_semantic_value::declaration::EqualityOperator;
@@ -106,10 +105,6 @@ pub struct CompositeParityClaim {
     /// The accounting limits the exact evaluation runs under, retained from
     /// the proving run.
     pub limits: ScalarLimits,
-    /// The canonical content identity of the proved artifact alone; the
-    /// operands and limits are separate claim fields, not part of this
-    /// digest. Carried into the claim identity; never recomputed.
-    pub content_identity: DigestRecord,
 }
 
 /// The falsified item's evidence: the operands CG decoded from the
@@ -179,8 +174,6 @@ pub struct CompositeIdentity {
     /// observation and refinement of a falsified item, or the SUCCESS count
     /// and refinement of a verified one.
     pub evidence: CompositeEvidence,
-    /// The proof-content identity of the observation, as supplied.
-    pub content_identity: DigestRecord,
     /// The limits the exact evaluation runs under.
     pub limits: ScalarLimits,
 }
@@ -201,16 +194,15 @@ impl CompositeIdentity {
             obligation_kind: claim.obligation_kind.clone(),
             harness_bounds: claim.harness_bounds.clone(),
             evidence,
-            content_identity: claim.content_identity,
             limits: claim.limits,
         }
     }
 
     /// Bytes this identity adds to an encoded record beyond its fixed size:
-    /// the obligation, node and content digests, the kind, the bounds and
+    /// the obligation and node identities, the kind, the bounds and
     /// the operands.
     pub(crate) fn measured_bytes(&self) -> usize {
-        3 * 32
+        2 * 32
             + self.occurrence.role().as_str().len()
             + self.obligation_kind.len()
             + self

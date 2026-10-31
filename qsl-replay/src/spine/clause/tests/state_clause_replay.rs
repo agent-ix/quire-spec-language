@@ -302,7 +302,7 @@ fn without(wire: &mut ReplayRequestWire, reference: &DocumentRef) {
 
 /// Replays `case` and checks it reproduced with an evaluated witness, whose
 /// FR-351 record decides by `false` at index 0, with an empty value path and
-/// no trace position, and that the result keeps the source digest, the
+/// no trace position, and that the result keeps the source identity, the
 /// clause, the envelope's identities and every document
 /// admission read.
 fn assert_reproduces_keeping_identities(case: Case, clause: &str) -> StateClauseReplayResult {
