@@ -213,7 +213,18 @@ pub struct AnalyzeLimits {
 impl Default for AnalyzeLimits {
     fn default() -> Self {
         Self {
-            accounting: ScalarLimits::default(),
+            accounting: ScalarLimits {
+                integer_bits: u64::MAX,
+                decimal_digits: u64::MAX,
+                scale_expansion: u64::MAX,
+                text_input_bytes: u64::MAX,
+                text_scalars: u64::MAX,
+                normalized_scalars: u64::MAX,
+                unit_edges: u64::MAX,
+                value_occurrences: u64::MAX,
+                work_units: 1_000_000,
+                result_units: u64::MAX,
+            },
             observation: ObservationLimits::default(),
             normalization: ModelNormalizationLimits::default(),
             deadline_ms: None,
@@ -623,38 +634,6 @@ pub fn analyze_items(
         .into_iter()
         .map(|item| run(engines, item, cancel))
         .collect()
-}
-
-/// Analyze the negotiated items over one checked-package subject (FR-281).
-/// The subject binding is admitted before any item runs.
-pub fn analyze(
-    package: &CheckedPackage,
-    request: AnalyzeRequest<'_>,
-    engines: &Engines,
-    limits: &AnalyzeLimits,
-    cancel: &Cancel,
-) -> Result<Staged<AnalyzeOutcome>, StageFailure<AnalyzeRefusal>> {
-    let AnalyzeRequest { binding, items } = request;
-    let simulation = ModelSimulationRequest {
-        package,
-        packages: binding.packages,
-        normalization: limits.normalization,
-        snapshots: binding.snapshots,
-        initial: binding.initial,
-        universes: binding.universes,
-        observation: limits.observation,
-        // Subject admission does not expand successors. The item's engine
-        // request owns the expansion budget used when it runs.
-        expansion: ExpansionLimits {
-            max_candidates: u64::MAX,
-        },
-        meter: limits.accounting,
-    };
-    ModelSystem::new(simulation)
-        .map_err(|failure| StageFailure::Refused(AnalyzeRefusal::Binding(failure)))?;
-
-    let records = analyze_items(engines, items, cancel);
-    Ok(Staged::new(AnalyzeOutcome { records }))
 }
 
 /// Analyze the negotiated items over one admitted checked-package subject

@@ -63,10 +63,10 @@ pub fn run(
     limits: &AnalyzeLimits,
     cancel: &Cancel,
 ) -> Vec<TerminalRecord> {
-    let analyze_items = build_analyze_items(package, binding, items, limits);
+    let pending_items = build_analyze_items(package, binding, items, limits);
     let request = AnalyzeRequest {
         binding: binding.clone(),
-        items: analyze_items,
+        items: pending_items,
     };
 
     let records = match analyze(package, request, engines, limits, cancel) {
