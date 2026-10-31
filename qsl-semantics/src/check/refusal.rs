@@ -1651,6 +1651,15 @@ pub enum TemporalCause {
         /// The clause's span.
         span: Span,
     },
+    /// A checked aggregate reaches S3, but its value representation has no
+    /// sound S4 proof transfer yet (FR-046-AC-5). This is distinct from an
+    /// ordinary declaration omitted by the emitter.
+    UnsupportedProofRepresentation {
+        /// The declared clause name.
+        name: String,
+        /// The aggregate expression's span.
+        span: Span,
+    },
     /// FR-212 "Targets at S3": a fairness constraint resolved to a
     /// protocol target, which no S4 emission writes yet: refused rather
     /// than compiled into a clause whose identity does not bind it.
@@ -2002,6 +2011,7 @@ impl TemporalCause {
             | Self::AggregateProfileUnsupported { span }
             | Self::TimedIntervalNotChecked { span }
             | Self::NotEmitted { span, .. }
+            | Self::UnsupportedProofRepresentation { span, .. }
             | Self::ProtocolFairnessNotEmitted { span, .. }
             | Self::InvalidTimedInterval { span, .. }
             | Self::ModelTimeOnUntimedModel { span, .. }
@@ -2077,6 +2087,7 @@ impl TemporalCause {
             | Self::AggregateModelSubject { .. }
             | Self::TimedIntervalNotChecked { .. }
             | Self::NotEmitted { .. }
+            | Self::UnsupportedProofRepresentation { .. }
             | Self::ProtocolFairnessNotEmitted { .. }
             | Self::TimedProfileWithoutModelTime { .. }
             | Self::TimedTraceSubject { .. }
@@ -2171,6 +2182,7 @@ impl TemporalCause {
             Self::AmbiguousReleaseOperation { .. } => "ambiguous-name",
             Self::TimedIntervalNotChecked { .. }
             | Self::NotEmitted { .. }
+            | Self::UnsupportedProofRepresentation { .. }
             | Self::ProtocolFairnessNotEmitted { .. }
             | Self::TimedProfileWithoutModelTime { .. }
             | Self::TimedTraceSubject { .. }

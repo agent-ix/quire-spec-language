@@ -1325,6 +1325,9 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 TemporalCause::NotEmitted { name, .. } => {
                     format!("{message}: `temporal {name}` checks but is not emitted yet")
                 }
+                TemporalCause::UnsupportedProofRepresentation { name, .. } => format!(
+                    "{message}: `temporal {name}` uses an unsupported aggregate proof representation"
+                ),
                 TemporalCause::TimedIntervalNotChecked { .. } => {
                     format!("{message}: a timed interval is not checked yet")
                 }
