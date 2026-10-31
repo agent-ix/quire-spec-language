@@ -203,9 +203,11 @@ layer 5. Its concrete layer-4 input carrier SHALL be
 `qsl_package::evaluation_view::AdmittedEvaluationView<'a>`, with private variants
 that borrow either `&'a CheckedPackage` or the successful I2 read's retained
 admitted package, source map, effective limits and admitted dependency closure.
+The reader variant MAY retain plain kernel values/types and read descriptors
+projected from that witness; it SHALL retain no newly constructed checked term.
 The in-process entry SHALL be `CheckedPackage::evaluation_view(&self) ->
 AdmittedEvaluationView<'_>`; the successful I2 read SHALL expose
-`evaluation_view(&self) -> AdmittedEvaluationView<'_>` over its retained
+`evaluation_view(&self) -> Result<AdmittedEvaluationView<'_>, ViewFailure>` over its retained
 `Arc<quire_contract_model::CheckedPackageV2>`. The reader-result entry and its
 IR variant SHALL exist only with `std`. The view contract and in-process
 variant SHALL introduce no IR or `std` dependency into the no_std path.
@@ -232,7 +234,7 @@ Result<SelectedProtocolTerm<'_>, CallFailure>`. `SelectedProtocolTerm` SHALL
 have private fields and read accessors for its expression handle and ordered
 source descriptors. Each descriptor SHALL expose the admitted binder's
 `NodeKey`, level, `ValueType` and read location. The expression handle
-`TermHandle<'a>` SHALL be opaque, tied to the exact borrowed view and owning
+`TermHandle<'a>` SHALL be a layer-4 opaque value, tied to the exact borrowed view and owning
 body, and unavailable from an integer, a node key, a free-standing term or
 another view. Operand handles SHALL retain that same owner; dependency calls
 SHALL resolve within the witness's exact admitted closure. Slot selection and
@@ -240,9 +242,21 @@ source ordering SHALL obey the selection and supply admission rules below.
 `ProtocolSlot`, `SelectedProtocolTerm`, source descriptors and `CallFailure`
 SHALL remain layer-5 inputs and results; layer 4 SHALL import none of them.
 
-The view SHALL expose each selected term's operation, ordered operands,
-literal value, checked type and location through the one shared checked-term
-read vocabulary governed by [FR-400](FR-400-separate-checked-terms-from-the-checker.md).
+The layer-4 view SHALL expose
+`read_node<'v>(&'v self, handle: &TermHandle<'v>) ->
+Result<quire_checked::NodeRead<'v, TermHandle<'v>>, InternalFault>`.
+The canonical result and its operation vocabulary SHALL be exactly
+[FR-400](FR-400-separate-checked-terms-from-the-checker.md)'s `NodeRead` and
+generic `NodeKind`, including their borrowed literal, type and location.
+Every child position of the returned `NodeKind` SHALL contain a handle of
+that same view and owning expression body; call metadata SHALL retain the
+exact admitted callee identity and closure association. `SelectedProtocolTerm`
+SHALL expose `root(&self) -> &TermHandle<'_>` and
+`sources(&self) -> &[ProtocolSource]`; `ProtocolSource` SHALL expose
+`binder(&self) -> &NodeKey`, `level(&self) -> usize`,
+`value_type(&self) -> &ValueType` and `location(&self) -> &Location`.
+An unavailable literal or type projection SHALL prevent creation of the view,
+never become a late partial `NodeRead` or a successful default value.
 This is a read projection of admitted data; it SHALL neither build a
 `CheckedBody`, `Node` or another checked proof nor call `construct`. The
 in-process and reader projections SHALL be consumed by the existing S6a
@@ -266,26 +280,56 @@ in layer 5, and the shared checked-term vocabulary stays below both. It SHALL
 NOT enable `quire-checked/construct` outside FR-400's existing allowlist or
 place IR types in `quire-checked`, `quire-eval` or the no_std evaluation closure.
 
-### Upstream interface dependency
+### Typed projection admission and upstream dependencies
 
-The shared read vocabulary above is an implementation dependency, not an
-assertion that the current reader already supplies it. At the repository's
-locked IR revision `8320ebe`, `CheckedPackageV2::term` returns
-`Option<&CheckedTerm>` and `graph()` exposes node identities, dependencies and
-`semantic_type`; however `CheckedTerm::Literal.value` is `serde_json::Value`,
-`CheckedBindingName::kind` is private, and the public admitted operation views
-cover specific member shapes rather than the complete expression/type/binder
-view the machine needs. The locked `quire-checked` revision `78e1b2e` also
-precedes FR-400's expression-term separation.
+Reader view creation SHALL resolve all expression, callable and binder types,
+literal payloads, operation members and location associations in the admitted
+closure before yielding a view. Resolution SHALL be fallible: IR's general
+value-type vocabulary SHALL NOT be presumed to represent every kernel
+`ValueType`. The view SHALL use the existing kernel `ValueType` as its only
+evaluation type vocabulary, with no QSL-owned type mirror, guessed identity
+or fallback to an unchecked or serialized interpretation.
 
-Implementation of the reader-backed branch depends on the owning IR/shared
-checked-model lane specifying and delivering typed read access to those
-admitted literal values, operation members and binder/type facts. This
-requirement does not define upstream signatures or authorize new upstream
-constructors. Until that dependency is delivered, AC-11's reader equivalence
-remains unverified; a source-backed call or inspection of JSON SHALL NOT stand
-in for it. Projection MAY traverse already admitted typed data, but SHALL NOT
-repeat admission or give a free-standing decoded term checked authority.
+`ViewFailure` SHALL be the layer-4 closed enum
+`Unsupported(UnsupportedView)`, `Limit(LimitExceeded)` or `Fault(InternalFault)`.
+`UnsupportedView` SHALL carry the catalog pair
+`unknown_required_feature`/`unsupported-feature`, the owning package identity,
+the affected node's `NodeKey`, its `Location`, and one typed reason:
+`MissingTypeRepresentation`, `MissingLiteralProjection`,
+`MissingOperationProjection` or `MissingBindingProjection`.
+If more than one projection is unsupported, view creation SHALL report the
+first by ascending package identity, node key and the reason order above.
+This is evaluation-input admission before S6a, category unsupported, exit 21;
+it SHALL yield no partial view and SHALL leave the successful I2 read intact.
+View creation SHALL accept no `Meter`; it SHALL neither create, replace nor
+charge the caller's evaluation meter. Once a view exists, `read_node` SHALL
+return a complete canonical read or an invariant `InternalFault`, never a
+late unsupported projection. Projection storage and traversal SHALL remain
+within the retained I2 resource ceilings; exhaustion SHALL yield no view and
+return `ViewFailure::Limit` with the existing I2 limit vocabulary, never
+`Unsupported`. A failed I2 read itself retains its existing staged result.
+
+The upstream typed read dependencies are tracked as IR-1193 and IR-969.
+They comprise admitted literal payloads, closed operation/member projections,
+protocol slot and binder identities/levels/types, exact source occurrences,
+callable/dispatch closure associations and semantic-type conversion to kernel
+`ValueType`. General type conversion needs explicit extensions for String,
+Uuid, Timestamp, Dimension, Alias and Union, and exact declaration/object/unit
+identity associations for Composite, Reference and Quantity. Nested Option
+and Collection types require the same associations recursively. These are
+upstream dependencies, not signatures or constructors defined by QSL.
+
+For AC-11 and TC-1073, the upstream extensions SHALL at least cover Boolean,
+bounded Integer, the Receipt/Attempt/Flag/Tick record types with exact member
+and declaration identities, and Reference<Node> with its exact model/object
+identity, as TC-1070 fixture E defines. A type that QSL emits and evaluates
+remains subject to complete AC-11 parity: an unsupported projection of such a
+type SHALL count as an unmet dependency, not a passing parity case or a scope
+reduction. Unrelated IR types that QSL cannot evaluate MAY return the typed
+unsupported admission above. A source-backed call or JSON inspection SHALL
+NOT stand in for reader-backed parity. Projection MAY traverse already
+admitted typed data, but SHALL NOT repeat admission or give a free-standing
+decoded term checked authority.
 
 ### Charge points and their order
 
@@ -423,7 +467,9 @@ value; check 6 does not apply to it.
 | FR-390-AC-13 | With the S6a probe variant of FR-107-AC-6 added, the build fails with E0004 at exactly the checked-in S6a seam list: the arm serving state clauses and protocol slots is the one `ProtocolClause` arm. | Test (TC-1074) |
 | FR-390-AC-14 | A consumer can obtain a view from an in-process package and from a successful I2 reader result. Construction of a reader view or expression handle from a decoded graph, free-standing term, `ImportView`, raw bytes, integer or node key fails to compile. A refused, limited, cancelled or faulted read exposes no evaluation view. | Test |
 | FR-390-AC-15 | For every TC-1070 slot, AC-11 compares the in-process view with a view obtained by emitting and actually admitting that package's bytes: the complete result (including value, unavailable binder, catalog code/cause, location and losses) and every ordered charge-log entry are equal. Repeat for unavailable and short-circuited supplies, each AC-9 counter boundary, and AC-10's shared-meter sequence; each selection/supply refusal has the same locus and leaves its meter unchanged. No fixture recompiles source to produce the reader-side evaluation. | Test |
-| FR-390-AC-16 | Inspection finds one slot-selection view contract and one existing machine/ProtocolClause execution path for both input variants, no checked-term reconstruction, no new `construct` caller and no second family dispatch. With `std` off the in-process view compiles without IR; the reader-result entry is absent, and the existing no_std closure acquires no dependency on IR or `std`. | Inspection |
+| FR-390-AC-16 | Inspection finds one slot-selection view contract and one existing machine/ProtocolClause execution path for both input variants, using FR-400's single generic `NodeKind` read vocabulary, no checked-term reconstruction, no new `construct` caller and no second family dispatch. With `std` off the in-process view compiles without IR; the reader-result entry is absent, and the existing no_std closure acquires no dependency on IR or `std`. | Inspection |
+| FR-390-AC-17 | An admitted IR type without a kernel representation yields `ViewFailure::Unsupported` before any view exists, with `unknown_required_feature`/`unsupported-feature`, the affected package/node/location and `MissingTypeRepresentation`; no meter is accepted or charged. A missing literal, operation or binding projection yields its corresponding typed reason. A projection-resource limit yields `Limit`, no partial view. A handle from another owner returns an invariant fault rather than a node. | Test |
+| FR-390-AC-18 | Reader views resolve Boolean, bounded Integer, record/composite and Reference<Node> identities of TC-1070 fixture E to the exact kernel values/types of the in-process view, including recursively nested Option/Collection values used by a slot. AC-11/15 fail if a required QSL-emitted type is reported unsupported; unsupported cases cannot replace any required result/log comparison. | Test |
 
 ## Dependencies
 
