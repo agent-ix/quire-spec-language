@@ -179,3 +179,15 @@ Methods selected: code-review (documentation lane), base, integrity, dependency,
 ## Integration Dependency
 
 The lead has routed canonical observation-result placement below layer 4 through IR-1200. That route does not resolve the duplicated declaration on this frozen branch or authorize a forbidden layer-4-to-E dependency. No upstream API shape is guessed by this review.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The factory and ProtocolSupply now specialize QSV ObservationAdmission<T> directly with the opaque QSL authority; the local enum and authority query are removed. QSV owns the shipped generic below layer 4, and the spec forbids an alias or layer-4 E import. |
+
+## Disposition pass 1
+
+Current verdict: **PASS**. Inspected only the fix at the supplied frozen head and the actual QSV generic relocation. The original finding above remains verbatim. No new finding or regression was identified. The opaque authority, lifetime, model provenance, full-record/fault preservation and admission ordering remain unchanged; this is specification readiness, not runtime implementation acceptance.
+
+QSV now defines the generic observation result and its authority query. E re-exports that same type; layer 4 names QSV directly and acquires no E edge. Both amended requirements and this updated report validate. The six other method reports retain their original PASS verdicts. No tests, matrix, aggregate gate, source edits or merge were performed.
