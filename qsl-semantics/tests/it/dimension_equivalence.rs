@@ -560,7 +560,7 @@ fn an_equivalence_derives_one_class_with_the_least_key_as_root() {
 /// package declares and a unit's graph names carries that package's
 /// `ModelOwner` (`{identity, node}`) and no `declaration`, while the unit's
 /// own dimension keeps its `SourceOwner` and `declaration`.
-#[trace("FR-322-AC-51")]
+#[trace("FR-322-AC-51", "FR-322-AC-81")]
 #[test]
 fn a_package_dimension_node_is_model_owned_with_no_declaration() {
     use qsl_semantics::check::Owner;
@@ -594,6 +594,15 @@ fn a_package_dimension_node_is_model_owned_with_no_declaration() {
     };
     assert_eq!(owner.identity(), "acme/rpc");
     assert_eq!(owner.node(), "ix://acme/rpc/dimension/Time");
+    // FR-322-AC-81: the path of a model-owned dimension.
+    assert_eq!(
+        time.key().path(),
+        vec![
+            quire_exact::PathSegment::Text("scalar_type".to_owned()),
+            quire_exact::PathSegment::Text("dimension".to_owned()),
+            quire_exact::PathSegment::Text("ix://acme/rpc/dimension/Time".to_owned()),
+        ]
+    );
     // Every other dimension node is the unit's own: declared, source-owned.
     assert!(dimensions.len() > 1, "the unit's own dimensions");
     for own in dimensions

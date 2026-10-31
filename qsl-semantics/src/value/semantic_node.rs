@@ -112,6 +112,36 @@ impl NodeOwner {
         NodeKey::new(package.clone(), segments, ordinal)
     }
 
+    /// The structural key of a `scalar_type` nominal node of `form`
+    /// (`dimension` or `unit`) declared as `path`: a source or definition
+    /// owner keys it as [`Self::declaration_key_at`] does; a model owner
+    /// keys it as every node without a `declaration`, package `identity`,
+    /// path `["scalar_type", form, node]` and ordinal 0 (FR-322 "Nominal
+    /// nodes", the `node` opaque and never split).
+    ///
+    /// # Errors
+    ///
+    /// [`InvalidNodeKey`] when the key cannot be built.
+    pub fn nominal_key(
+        &self,
+        form: &str,
+        path: &[String],
+        ordinal: u64,
+    ) -> Result<NodeKey, InvalidNodeKey> {
+        let Self::Model(subject) = self else {
+            return self.declaration_key_at(path, ordinal);
+        };
+        NodeKey::new(
+            subject.identity.clone(),
+            vec![
+                PathSegment::Text("scalar_type".to_owned()),
+                PathSegment::Text(form.to_owned()),
+                PathSegment::Text(subject.node.clone()),
+            ],
+            0,
+        )
+    }
+
     /// The structural key of a model-owned declaration of `form`
     /// (`record_value_type` or `variant_type`): package `identity`, path
     /// `["model", form, node, ..path]`, ordinal 0, the IR `declaration_id`

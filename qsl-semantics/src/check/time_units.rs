@@ -21,10 +21,10 @@ use quire_semantic_value::unit::{NominalUnitForm, UnitGraph};
 
 use crate::check::assemble::{DimensionEquivalence, EquivalenceClasses};
 use crate::check::lowering::AdmittedModel;
-use crate::check::temporal_clause::TimeNominalNode;
+use crate::check::temporal_clause::{TimeNominalNode, TimeNominalOrigin};
 use crate::model::domain_package::PackageUnitRecord;
 use crate::value::nominal_payload::{DimensionPayload, NominalPayload, UnitPayload};
-use crate::value::semantic_node::{ModelSubject, NodeOwner, OwnerSubject};
+use crate::value::semantic_node::{ModelSubject, OwnerSubject};
 
 use super::refusal::TimeUnitCause;
 
@@ -118,11 +118,7 @@ impl TimeUnits {
         source: &qsl_foundation::source::provenance::RawSourceRef,
         package_name: &str,
     ) -> Self {
-        let source_owner = NodeOwner::Source(OwnerSubject::new(
-            source.authority(),
-            source.identity(),
-            package_name,
-        ));
+        let source_owner = OwnerSubject::new(source.authority(), source.identity(), package_name);
         let table = UnitTable::declared(graph);
         let mut time = None;
         let mut time_dimensions = BTreeMap::new();
@@ -152,8 +148,11 @@ impl TimeUnits {
                         NominalUnitForm::Unit { .. } => "unit",
                     }
                     .to_owned(),
-                    qualified_declaration: Some(node.declaration.qualified_declaration.clone()),
-                    owner: source_owner.clone(),
+                    origin: TimeNominalOrigin::Source {
+                        owner: source_owner.clone(),
+                        qualified_declaration: node.declaration.qualified_declaration.clone(),
+                        name_span: *span,
+                    },
                     nominal: Some(match &node.form {
                         NominalUnitForm::Dimension { terms } => {
                             NominalPayload::Dimension(DimensionPayload::new(terms.clone()))
@@ -171,7 +170,6 @@ impl TimeUnits {
                         )),
                     }),
                     dependencies,
-                    declaration_span: Some(*span),
                 },
             );
             let [name] = node.declaration.qualified_declaration.as_slice() else {
@@ -213,8 +211,7 @@ impl TimeUnits {
                     TimeNominalNode {
                         key: time_key,
                         form: "dimension".to_owned(),
-                        qualified_declaration: None,
-                        owner: NodeOwner::Model(ModelSubject {
+                        origin: TimeNominalOrigin::Model(ModelSubject {
                             identity: package.identity.clone(),
                             node: dimension
                                 .map(|dimension| dimension.key.node.clone())
@@ -222,7 +219,6 @@ impl TimeUnits {
                         }),
                         dependencies: Vec::new(),
                         nominal: Some(NominalPayload::Dimension(DimensionPayload::new(Vec::new()))),
-                        declaration_span: None,
                     },
                 );
             }
@@ -478,8 +474,7 @@ fn package_unit_nominal_nodes(
         nodes.push(TimeNominalNode {
             key,
             form: "unit".to_owned(),
-            qualified_declaration: None,
-            owner: NodeOwner::Model(ModelSubject {
+            origin: TimeNominalOrigin::Model(ModelSubject {
                 identity: identity.to_owned(),
                 node: unit.key.node.clone(),
             }),
@@ -490,7 +485,6 @@ fn package_unit_nominal_nodes(
                 offset,
             ))),
             dependencies: std::iter::once(dimension).chain(target).collect(),
-            declaration_span: None,
         });
         Some(nodes)
     }

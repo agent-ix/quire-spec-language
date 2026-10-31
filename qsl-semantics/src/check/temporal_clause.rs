@@ -88,7 +88,8 @@ pub(crate) mod condition;
 mod timed;
 
 pub use timed::{
-    ModelTimeBinding, ModelTimeSource, TimeNominalNode, TimeSourceKind, TimedPropertyForm,
+    ModelTimeBinding, ModelTimeSource, TimeNominalNode, TimeNominalOrigin, TimeSourceKind,
+    TimedPropertyForm,
 };
 
 /// The stage name this module's faults report.

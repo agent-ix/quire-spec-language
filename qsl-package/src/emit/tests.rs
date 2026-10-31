@@ -885,10 +885,11 @@ fn a_declaration_without_its_occurrence_is_omitted() {
         graph.source(),
         &ir_decodes,
         &HashSet::new(),
+        &BTreeSet::new(),
     )
     .into_iter()
-    .map(|(_, omission)| omission)
-    .collect();
+        .map(|(_, omission)| omission)
+        .collect();
     assert_eq!(
         omitted,
         [OmittedNode {
@@ -1826,13 +1827,6 @@ fn source_text_compiles_through_the_spine_and_reads_back_verified() {
     }
 }
 
-fn definition_metre_units() -> (quire_semantic_value::quantity::UnitTable, NodeKey) {
-    metre_units_owned_by(json!({
-        "kind": "definition", "authority": "agent-ix", "identity": "example-model",
-        "package_name": "example-model"
-    }))
-}
-
 /// The `metre` unit of dimension `Length`, declared by the fixture unit's
 /// own source, whose owner the emitted lock selects; and its unit id.
 pub(super) fn source_metre_units() -> (
@@ -1882,13 +1876,11 @@ fn metre_units_owned_by(owner: Value) -> (quire_semantic_value::quantity::UnitTa
     )
 }
 
-/// TC-160 step 8's package: `q(a: Length): Boolean { a * a == a * a }`,
-/// whose `metre^2` compound unit node names the definition-owned `metre`
-/// unit node, which the emitted lock does not select, beside `t`, which
-/// names no omitted node.
+/// TC-160 step 8's package: `q(a: Length): Boolean { a * a == a * a }`
+/// over the source-owned `metre`, beside `t`.
 fn q_and_t_package() -> CheckedPackage {
-    let (units, metre) = definition_metre_units();
-    q_and_t_package_over(units, quire_exact::UnitId::declared(metre))
+    let (units, metre) = source_metre_units();
+    q_and_t_package_over(units, metre)
 }
 
 /// TC-160 step 8's `q` and `t`, with `Length` the quantity of `metre` in
@@ -1915,117 +1907,6 @@ pub(super) fn q_and_t_package_over(
         .check(CheckingLimits::default())
         .expect("q checks"),
     )
-}
-
-/// IR-280: IR's v2 vocabulary holds `scalar_type`/`compound_unit` (FR-094),
-/// so a compound unit node is never omitted for its form. `q(a: Length):
-/// Boolean { a * a == a * a }` forms the `metre^2` compound unit node; it is
-/// omitted only because it names the `metre` unit node, which lowering
-/// builds (FR-094) and the emission omits: its definition owner is no lock
-/// entry (`UnlockedOwner`), and so is the `Length` dimension node's.
-///
-/// FR-062-AC-9 (TC-160 step 8, as amended): the emitter is
-/// all-or-nothing over the nodes a node names. `q`'s declaration node and
-/// each node on its path to the omitted unit are omitted with
-/// `NamesOmittedNode`; `t` and its body are written; QSL's I2 read is
-/// Verified and exports `t` and not `q`. Were the omission not to close over
-/// dependents, `q` and its `==`/`*` nodes would be written naming an omitted
-/// node and the omitted set below would shrink to the direct namers.
-#[trace("TC-416", "TC-160", "FR-062-AC-9")]
-#[test]
-fn a_compound_unit_is_omitted_only_for_its_omitted_unit() {
-    let package = q_and_t_package();
-    let graph = package.graph().semantic_graph();
-    let key_of = |form: &str| -> Vec<CheckedNodeId> {
-        graph
-            .nodes()
-            .filter(|node| node.semantic_form() == form)
-            .map(|node| node_id(node.key()))
-            .collect()
-    };
-    let compound = key_of("compound_unit");
-    assert_eq!(compound.len(), 1, "a * a forms one compound unit node");
-    let emission = emit(&package);
-    let exports = verified_exports(&emission);
-    assert_eq!(
-        exports.keys().collect::<Vec<_>>(),
-        ["t"],
-        "the I2 read exports t and not q"
-    );
-    let t_key = exports["t"].clone();
-    let q_node = graph
-        .nodes()
-        .filter(|node| node.semantic_form() == "pure_function")
-        .find(|node| node.key().to_string() != t_key)
-        .expect("q's declaration node");
-    let q_text = q_node.key().to_string();
-    let q_key = node_id(q_node.key());
-    let metre_id = node_id(definition_metre_units().1);
-    let cause_of = |id: &CheckedNodeId| {
-        emission
-            .omitted
-            .iter()
-            .find(|omission| omission.node == *id)
-            .map(|omission| &omission.cause)
-    };
-    // Lowering builds the unit and dimension nodes; their owner is unlocked.
-    let units: Vec<CheckedNodeId> = key_of("unit")
-        .into_iter()
-        .chain(key_of("dimension"))
-        .collect();
-    assert_eq!(units.len(), 2, "the metre unit and Length dimension nodes");
-    assert!(units.contains(&metre_id));
-    for id in &units {
-        assert_eq!(cause_of(id), Some(&OmissionCause::UnlockedOwner));
-    }
-    // The compound unit is omitted only for its omitted unit.
-    assert_eq!(
-        cause_of(&compound[0]),
-        Some(&OmissionCause::NamesOmittedNode(metre_id.clone()))
-    );
-    assert!(
-        !emission
-            .omitted
-            .iter()
-            .any(|omission| matches!(omission.cause, OmissionCause::UnsupportedForm { .. })),
-        "{:?}",
-        emission.omitted
-    );
-    // Everything that names an omitted node is omitted with
-    // `NamesOmittedNode`: `q`'s `==` and `*` applications and `q` itself.
-    let binaries = key_of("binary");
-    assert_eq!(binaries.len(), 2, "q's `==` and `*` applications");
-    for id in binaries.iter().chain([&q_key]) {
-        assert!(
-            matches!(cause_of(id), Some(OmissionCause::NamesOmittedNode(_))),
-            "{id:?}: {:?}",
-            emission.omitted
-        );
-    }
-    // The omitted set is exactly the unit and dimension nodes, the compound
-    // unit, the parameter (typed by `metre`), and the nodes that reach them:
-    // `t`'s nodes are not in it.
-    let expected: BTreeSet<CheckedNodeId> = compound
-        .into_iter()
-        .chain(units)
-        .chain(key_of("parameter"))
-        .chain(binaries)
-        .chain([q_key.clone()])
-        .collect();
-    let omitted: BTreeSet<CheckedNodeId> = emission
-        .omitted
-        .iter()
-        .map(|omission| omission.node.clone())
-        .collect();
-    assert_eq!(omitted, expected);
-    let t_id = graph
-        .nodes()
-        .find(|node| node.key().to_string() == t_key)
-        .map(|node| node_id(node.key()))
-        .expect("t's declaration node");
-    assert!(!omitted.contains(&t_id));
-    // `q` is absent from the wire's exports, `t` is present.
-    assert!(!exports.values().any(|key| *key == q_text));
 }
 
 /// FR-062-AC-9 (TC-160 step 8, second half): the same package with an

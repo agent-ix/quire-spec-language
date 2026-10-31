@@ -129,28 +129,13 @@ pub struct TimeNominalNode {
     pub key: quire_exact::NodeKey,
     /// `dimension` or `unit`.
     pub form: String,
-    /// The declaration's qualified name segments: `Some` exactly when
-    /// [`Self::owner`] is [`NodeOwner::Source`], `None` for a model-owned
-    /// node, which carries no declaration (FR-322, AC-105).
-    pub qualified_declaration: Option<Vec<String>>,
-    /// The admitted owner of the declaration. A node of the checked unit's
-    /// own unit graph is owned by the unit's source
-    /// ([`NodeOwner::Source`], whose `package_name` is the manifest
-    /// package name) and has a declaration. A node a selected domain
-    /// package declares (its `Time` dimension or a unit of the `Time`
-    /// dimension) is owned by that model ([`NodeOwner::Model`], whose
-    /// `identity` is the package identity and `node` the declaration's IR
-    /// node identity) and has none.
-    pub owner: crate::value::semantic_node::NodeOwner,
+    /// Who declares the node, and where.
+    pub origin: TimeNominalOrigin,
     /// Nominal nodes this node names.
     pub dependencies: Vec<quire_exact::NodeKey>,
     /// The terms, target and exact conversion of a dimension or unit node,
     /// for source-owned and model-selected nodes alike.
     pub nominal: Option<crate::value::nominal_payload::NominalPayload>,
-    /// The span of the node's own declaration in the checked source (FR-322:
-    /// each declaration's own region): `Some` for a [`NodeOwner::Source`]
-    /// node, `None` for a model-owned node, which no source form declares.
-    pub declaration_span: Option<qsl_foundation::Span>,
 }
 
 impl std::fmt::Debug for TimeNominalNode {
@@ -180,10 +165,32 @@ impl std::hash::Hash for TimeNominalNode {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.key.hash(state);
         self.form.hash(state);
-        self.qualified_declaration.hash(state);
-        self.owner.hash(state);
+        self.origin.hash(state);
         self.dependencies.hash(state);
     }
+}
+
+/// The declaring side of a [`TimeNominalNode`]: what an owner, a
+/// `declaration` and a source region require of each other (FR-322).
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum TimeNominalOrigin {
+    /// A node of the checked unit's own unit graph: owned by the unit's
+    /// source (whose `package_name` is the manifest package name), with a
+    /// declaration, located at the declared name.
+    Source {
+        /// The unit's source owner.
+        owner: crate::value::semantic_node::OwnerSubject,
+        /// The declaration's qualified name segments.
+        qualified_declaration: Vec<String>,
+        /// The span of the declared name in the checked source, where the
+        /// node's `declaration` occurrence is located (FR-322).
+        name_span: qsl_foundation::Span,
+    },
+    /// A node a selected domain package declares (its `Time` dimension or a
+    /// unit of the `Time` dimension): owned by that model (`identity` the
+    /// package identity, `node` the declaration's IR node identity), with
+    /// no declaration and no source form of its own (FR-322, AC-105).
+    Model(crate::value::semantic_node::ModelSubject),
 }
 
 impl TimeNominalNode {
@@ -194,14 +201,23 @@ impl TimeNominalNode {
     }
 
     /// The declaration's qualified name segments (FR-322): `Some` for a
-    /// [`NodeOwner::Source`] node, `None` for a [`NodeOwner::Model`] node.
+    /// source-declared node, `None` for a model-owned node.
     pub fn declaration(&self) -> Option<&[String]> {
-        self.qualified_declaration.as_deref()
+        match &self.origin {
+            TimeNominalOrigin::Source {
+                qualified_declaration,
+                ..
+            } => Some(qualified_declaration),
+            TimeNominalOrigin::Model(_) => None,
+        }
     }
 
-    /// The admitted owner of the declaration; see the field's owner rule.
-    pub fn owner(&self) -> &crate::value::semantic_node::NodeOwner {
-        &self.owner
+    /// The span of the declared name, for a source-declared node.
+    pub fn name_span(&self) -> Option<qsl_foundation::Span> {
+        match &self.origin {
+            TimeNominalOrigin::Source { name_span, .. } => Some(*name_span),
+            TimeNominalOrigin::Model(_) => None,
+        }
     }
 }
 

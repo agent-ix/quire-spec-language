@@ -2280,21 +2280,18 @@ impl<'a> Lowering<'a> {
             // FR-322: a node an admitted domain package declares carries that
             // package's `ModelOwner` and no `declaration`; a node this unit
             // declares carries its name as its `declaration` and its
-            // `SourceOwner`. Any other node (a definition-owned unit) keeps
-            // its name and no owner.
-            let source_owned = key.package() == self.package_name;
-            let model_owner = if source_owned {
-                None
-            } else {
-                self.foreign_nominal_owner(&key)
-            };
-            let model_alias = model_owner.as_ref().map(|(_, alias)| alias.clone());
-            let (declaration, owner) = match model_owner {
-                Some((owner, _)) => (None, Some(Owner::Model(owner))),
-                None => (
+            // `SourceOwner`. The unit table holds no other node.
+            let (declaration, owner, model_alias) = if key.package() == self.package_name {
+                (
                     Some(identifiers(qualified.iter().map(String::as_str), &site)?),
-                    source_owned.then(|| Owner::Source(self.owner.clone())),
-                ),
+                    Owner::Source(self.owner.clone()),
+                    None,
+                )
+            } else {
+                let (owner, alias) = self
+                    .foreign_nominal_owner(&key)
+                    .ok_or_else(|| fault(location, KeyFault::UnheldNominal(key.clone())))?;
+                (None, Owner::Model(owner), Some(alias))
             };
             let inserted = self.insert_nominal(
                 &site,
@@ -2305,7 +2302,7 @@ impl<'a> Lowering<'a> {
                     semantic_form,
                     semantic_type: semantic_type.map(Into::into),
                     declaration,
-                    owner,
+                    owner: Some(owner),
                     body: BodyTerm::aggregate(Vec::new()),
                 },
                 Some(payload),
@@ -2399,7 +2396,7 @@ impl<'a> Lowering<'a> {
                 // FR-322: the anchor's ordinal is the declaration's index
                 // among the source's equivalence declarations.
                 let ordinal = u64::try_from(index).unwrap_or(u64::MAX);
-                self.record_at(key, OccurrenceRole::Anchor, ordinal, site);
+                self.record_at(key, OccurrenceRole::Anchor, ordinal, site.clone())?;
             }
         }
         Ok(())

@@ -1,0 +1,57 @@
+---
+id: SR-1951002
+title: "Gap analysis of PR #1951 (QSL-1315): FR-322 anchor ordinal, foreign unit owner, nominal regions"
+type: SpecReview
+analysis: gap-analysis
+date: 2026-10-31
+scope: "agent-ix/quire-spec-language; PR #1951 git diff origin/main...c93bba59f (three FR-322-AC-51-tagged tests and the code they exercise); ticket QSL-1315; QSpec FR-322 at c5deb110"
+review_set: subset
+relationships:
+- target: ix://agent-ix/quire-spec-language/FR-322
+  type: reviews
+---
+# SR-1951002: gap analysis of PR #1951 (QSL-1315)
+
+## Summary
+
+Ticket: QSL-1315. Plan completion: not assessed. The criteria-to-test check was done by hand over the diff, comparing each new test with FR-322's acceptance criteria at QSpec c5deb110. All three new tests are tagged `FR-322-AC-51`. AC-51 is the owner-presence criterion, and only one of the three tests asserts an owner. No live FR-322 AC covers the anchor ordinal or the nominal declaration region: AC-118 and AC-139 are withdrawn.
+
+Reverted-code runs: with the PR's source reverted and its tests kept, each of the three tests fails on the old code.
+- The anchor test gets ordinals `[(0, ..), (0, ..)]`.
+- The ModelOwner test panics at tests/it/dimension_equivalence.rs:589 (no declaration-less dimension).
+- The region test reads `"time Config dense unit ms;"` where it expects `"Time"`.
+
+All three pass at the head.
+
+## Scope
+
+| Unit | Path | Role |
+| --- | --- | --- |
+| FR-322-AC-51 | spec/objects/interfaces/FR-322-checked-package-artifact.md:3317 | examined |
+| FR-322 dimension equivalence anchor rule | spec/objects/interfaces/FR-322-checked-package-artifact.md:1598-1601 | examined |
+| FR-322-AC-1 | spec/objects/interfaces/FR-322-checked-package-artifact.md:3272 | context_only |
+| FR-322-AC-81 | spec/objects/interfaces/FR-322-checked-package-artifact.md:3347 | context_only |
+| equivalence_anchor_ordinal_is_the_declaration_index | qsl-semantics/src/check/lowering/tests/dimension_equivalence.rs:200-239 | examined |
+| a_package_dimension_node_is_model_owned_with_no_declaration | qsl-semantics/tests/it/dimension_equivalence.rs:563-605 | examined |
+| a_source_time_nominal_is_located_at_its_own_declaration | qsl-package/src/emit/tests/timed_source.rs:167-208 | examined |
+
+## Findings
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-001 | medium | `equivalence_anchor_ordinal_is_the_declaration_index` is tagged FR-322-AC-51, but it asserts the anchor ordinal and region and no owner. AC-51 is about owners only. The criterion it actually checks is the "Nominal nodes"/equivalence anchor rule, which has no live AC because AC-118 is withdrawn. The matrix therefore counts AC-51 as covered by a test that cannot fail on an owner defect. | qsl-semantics/src/check/lowering/tests/dimension_equivalence.rs:200 |
+| FND-002 | medium | `a_source_time_nominal_is_located_at_its_own_declaration` is tagged FR-322-AC-51, but it asserts only a source-map region. No live AC states the nominal declaration region; AC-1 requires only that some region exists. This is the same mis-trace as FND-001. | qsl-package/src/emit/tests/timed_source.rs:167 |
+| FND-003 | medium | FR-322's equivalence paragraph requires the anchor ordinal to be the declaration's index among the source's equivalence declarations, with the declaration's region, but no AC states it. The behaviour this PR fixes is unverifiable from the matrix. QSpec needs an AC, for example "two equivalence declarations E0, E1 in source order carry anchor ordinals 0 and 1, each with its declaration's region". Until it has one, the two tests above have nothing correct to trace to. | spec/objects/interfaces/FR-322-checked-package-artifact.md:1598-1601 |
+
+## Verdict
+
+**CONDITIONAL.** The code changes are real and not stubs, and each test fails on the reverted code. The gaps are traceability gaps:
+- Two tests are tagged to an owner criterion they do not check.
+- The anchor-ordinal rule has no AC.
+- The ModelOwner test checks only the in-memory graph, not the wire (see SR-1951001 FND-001).
+
+Binding check: `a_package_dimension_node_is_model_owned_with_no_declaration` → FR-322-AC-51 is correct. It asserts the `ModelOwner {identity, node}` on a model-owned dimension, and the `SourceOwner` on the unit's declared dimensions.
+
+## Coverage
+
+Plan completion: not assessed. The criteria-to-test check was done by hand over the PR diff and FR-322's AC table. The `quire matrix` run was not used. Semantic review: done over the diff, comparing FR-322's text with the tests and the code.

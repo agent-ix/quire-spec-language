@@ -2891,6 +2891,9 @@ pub enum KeyFault {
     /// A dimension or unit node whose key a node of another form already
     /// holds.
     NominalKeyClash(quire_exact::NodeKey),
+    /// A node whose occurrence of one role was placed at an ordinal it, or a
+    /// later one, already holds.
+    OccurrenceOrdinalTaken(quire_exact::NodeKey),
     /// A `Population<T>[N]`-typed node whose object type `T` no population
     /// binding names.
     UntargetedPopulation,
@@ -2965,6 +2968,7 @@ impl KeyFault {
             Self::UnheldUnit(_) => "compound-unit-held",
             Self::UnheldNominal(_) => "unit-nominal-preimage-held",
             Self::NominalKeyClash(_) => "unit-nominal-key-unshared",
+            Self::OccurrenceOrdinalTaken(_) => "occurrence-ordinal-free",
             Self::UntargetedPopulation => "population-target-bound",
             Self::UnbuiltLiteral => "literal-kind-built",
             Self::UnknownComposite(_) => "composite-declared",

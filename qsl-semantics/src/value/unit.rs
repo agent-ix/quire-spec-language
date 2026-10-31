@@ -144,7 +144,7 @@ impl DimensionPreimage {
     /// [`InvalidNodeKey`] when the key cannot be built.
     pub fn key(&self) -> Result<NodeKey, InvalidNodeKey> {
         self.owner
-            .declaration_key_at(&self.qualified_declaration, DIMENSION_ORDINAL)
+            .nominal_key("dimension", &self.qualified_declaration, DIMENSION_ORDINAL)
     }
 
     /// The dimension's qualified name, which lowering builds its node from
@@ -362,7 +362,7 @@ impl UnitPreimage {
         // A unit shares package and path with a same-named dimension; the
         // ordinal keeps the two ids distinct.
         self.owner
-            .declaration_key_at(&self.qualified_declaration, UNIT_ORDINAL)
+            .nominal_key("unit", &self.qualified_declaration, UNIT_ORDINAL)
     }
 
     /// Refuse an unreduced rational, then a zero scale or a non-identity root

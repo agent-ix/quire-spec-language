@@ -197,7 +197,7 @@ fn declared_nominal_nodes_carry_the_source_owner() {
 /// occurrence has the ordinal of its declaration among the equivalence
 /// declarations of its source in source order, with that declaration's own
 /// region.
-#[trace("FR-322-AC-51")]
+#[trace("FR-322-AC-287")]
 #[test]
 fn equivalence_anchor_ordinal_is_the_declaration_index() {
     let first = "dimension A ~ B by 1 ua = 1000 ub;";
