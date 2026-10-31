@@ -115,6 +115,71 @@ that compares only reference-valued fields (`PopulationMember::field_values`,
   `Incomplete(RefusalRecord)`, each with a catalog code, a cause and the input
   path (document identity, population, object key, field) it names.
 
+## Admitted current-observation authority for protocol slots
+
+For [FR-390](FR-390-evaluate-a-protocol-node-expression-from-a-checked-package.md),
+layer-4 `qsl-package` SHALL retain successful current-snapshot admission as an
+opaque, immutable `AdmittedProtocolObservation<'view>` tied to the exact
+`AdmittedEvaluationView` that selected the models. The authority SHALL retain
+the admitted snapshot's document identity, its selected-model provenance,
+the normalized model/type/population associations used by this admission,
+the complete population manifest and bundles, the admitted object environment
+and FR-106 population/reference closure facts. It SHALL retain the population
+declarations' exact checked node identities, including empty and unlisted
+populations; object presence is not evidence of population completeness.
+
+The layer-4 construction entry SHALL reuse this requirement's current-snapshot
+admission over the view's own model selections and type environment, with the
+existing package input, model-normalization limits, snapshot provision,
+selected `DocumentRef` and `ObservationLimits`. A successful authority SHALL
+own its admitted observation data and borrow its originating view; it SHALL
+borrow neither snapshot bytes nor caller-owned provisions. The entry SHALL
+accept no evaluation `Meter`, evaluate no expression and create no replacement
+meter. Its admission usage and limits SHALL remain FR-106's, separate from
+S6a charges.
+
+An authority SHALL expose read accessors only: no public fields, mutable
+environment, mutable completeness flag, mutable model provenance or mutable
+population association. Only the successful FR-106 admission path SHALL
+construct an authority; converting a caller-built `Observation`, an
+`ObjectEnvironment`, a document identity or a model label into one SHALL be
+impossible through the public API. Cloning an authority MAY retain the same
+immutable admitted data and witness association, but SHALL NOT permit
+retargeting it to another view or selected model.
+
+The observation admission result SHALL retain a refused or incomplete FR-106
+record without constructing an authority. When FR-390 reaches its observation
+admission step, it SHALL preserve that record, including code, cause,
+document/population/object/field components, typed nested path and kernel
+construction cause, with no truth value and no evaluation charge. A rejected
+model selection SHALL remain `invalid_model_binding`/`wrong-model-selection`;
+the call SHALL NOT replace it with an inferred foreign-reference result.
+
+For a successfully admitted authority, FR-390 SHALL reuse checks 7 and 8 over
+the retained population facts for the exact reference-valued supplied sources
+of the selected slot. Required populations SHALL comprise those named by
+those supplied references, including nested references, and the recursive
+closure through reference fields and relationship ends specified by check 7.
+Admission SHALL test required-population completeness before target presence,
+even when every supplied reference already resolves to an admitted object.
+The first required incomplete population in FR-106 walk order SHALL yield
+`incomplete_population`/`incomplete-scope` naming its population declaration
+node and retaining the original FR-106 record. An unrelated incomplete
+population SHALL NOT make the call incomplete. Closure defects in complete
+required populations SHALL retain check 8's dangling-reference record.
+These are FR-106's existing model-admission checks over retained facts, not a
+second evaluator checker, a new document reader or a new refusal vocabulary.
+
+IR-1198 owns the shared canonical admission record, population locus and
+typed admitted-or-refused result needed to carry this authority through the
+protocol-call boundary. The layer-4 authority entry and FR-390 input SHALL
+use that single shared result rather than a QSL-owned mirror of
+`CallAdmissionFailure`. This dependency grants no new shared field, variant,
+constructor or conversion: those public signatures belong to IR-1198.
+Complete AC-6 record transport depends on that shared contract preserving all
+FR-106 record components; a flattened binder locus is not a replacement for
+the required population node or the original model-admission record.
+
 ## Document forms
 
 Both documents are UTF-8 JSON objects with closed member sets. A document is read by `quire-canonical`'s shared reader, so formatting does
