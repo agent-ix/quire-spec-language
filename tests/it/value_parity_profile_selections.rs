@@ -7,7 +7,6 @@
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
-use qsl_foundation::digest::{DigestDomain, DigestRecord};
 use qsl_foundation::SourceIdentity;
 use qsl_replay::{
     call_site, replay_value_parity, CanonicalAssignment, DependencyInput, EnvelopeSource,
@@ -154,7 +153,6 @@ fn a_unit_whose_lock_selects_profiles_replays_with_an_empty_selection_list() {
             wire.clone(),
             ValueClaim {
                 generated: integer(generated),
-                content_identity: DigestRecord::mint(DigestDomain::SourceBytesV1, [9; 32]),
             },
             ReplayLimits::default(),
         );

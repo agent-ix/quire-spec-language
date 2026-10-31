@@ -18,7 +18,6 @@ use quire_exact::{
 };
 use quire_semantic_value::catalog::InternalFault;
 
-use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use quire_semantic_value::supplied_stop::SuppliedLimits;
 
@@ -307,11 +306,6 @@ pub struct OperatorClaim {
     /// The native outcome of the same proved generated artifact at the
     /// operands.
     pub generated: NativeOutcome,
-    /// The canonical content identity of the generated artifact alone. The
-    /// operands and limits are separate claim fields, not part of this
-    /// digest. Carried into the claim identity; never recomputed or checked
-    /// here.
-    pub identity: DigestRecord,
 }
 
 impl OperatorClaim {
@@ -322,7 +316,6 @@ impl OperatorClaim {
         OperatorIdentity {
             obligation,
             node: self.node.clone(),
-            identity: self.identity,
             operation: self.operation.clone(),
             occurrence: self.occurrence.clone(),
             obligation_kind: self.obligation_kind.clone(),
@@ -333,17 +326,14 @@ impl OperatorClaim {
     }
 }
 
-/// The identity of an operator-level claim. `identity` is the generated
-/// artifact's content identity: QSL carries it unchanged and binds it into this identity, and
-/// never authenticates it against the generated artifact (the driver does).
+/// The identity of an operator-level claim, comprising the retained request
+/// and observation fields.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OperatorIdentity {
     /// The obligation the claim replays, as the request carried it.
     pub obligation: ObligationIdentity,
     /// The scalar node the operator is tied to.
     pub node: NodeKey,
-    /// The content identity of the generated artifact alone.
-    pub identity: DigestRecord,
     /// The operator and its operands.
     pub operation: ScalarOperation,
     /// The application node's occurrence key.
@@ -364,10 +354,6 @@ pub struct OperatorIdentity {
 pub struct ValueClaim {
     /// The generated outcome at the request's bindings.
     pub generated: ScalarOutcome,
-    /// The generated-content identity the driver authenticated against the
-    /// artifact it ran. QSL binds it into the claim and carries it unchanged;
-    /// it never recomputes, authenticates or refuses it.
-    pub content_identity: DigestRecord,
 }
 
 /// The identity of a function-level value-parity claim (FR-484): every
@@ -399,15 +385,12 @@ pub struct ValueIdentity {
     pub supplied: SuppliedLimits,
     /// The generated outcome the claim says QSL's exact one equals.
     pub generated: ScalarOutcome,
-    /// The generated-content identity, as the driver supplied it.
-    pub content_identity: DigestRecord,
 }
 
 impl ValueIdentity {
     /// Bytes this identity adds to an encoded record beyond its fixed size.
     fn measured_bytes(&self) -> usize {
-        2 * 32
-            + self.package_name.len()
+        32 + self.package_name.len()
             + self
                 .function
                 .iter()
@@ -435,7 +418,6 @@ impl ValueIdentity {
             limits: wire.effective_accounting_limits(),
             supplied: wire.supplied_limits.unwrap_or_default(),
             generated: claim.generated.clone(),
-            content_identity: claim.content_identity,
         }
     }
 }
@@ -486,7 +468,7 @@ impl ScalarAgreement {
     pub(crate) fn measured_bytes(&self) -> usize {
         let claim = match &*self.claim {
             ScalarClaim::Operator(identity) => {
-                3 * 32
+                2 * 32
                     + identity.operation.measured_bytes()
                     + identity.generated.measured_bytes()
                     + identity.occurrence.role().as_str().len()
@@ -578,7 +560,7 @@ impl OperatorParityReport {
 
     /// The claim identity the request and claim carried: the obligation,
     /// scalar node, operator, operands with their ranges, result range,
-    /// limits and observation digest. A consumer checks `claim()` equals the
+    /// limits and generated outcome. A consumer checks `claim()` equals the
     /// claim it sent.
     pub fn claim(&self) -> &OperatorIdentity {
         &self.claim
