@@ -29,7 +29,7 @@ use super::{
 use crate::proof_result::SettlementBasis;
 
 /// FR-330 Inputs: the observations a temporal clause is run over, each a
-/// snapshot named by digest (FR-106).
+/// snapshot named by its labels (FR-106).
 #[derive(Clone, Debug)]
 pub enum TraceInput {
     /// A finite trace: a closed trace under a bounded profile, a finite
