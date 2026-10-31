@@ -273,5 +273,5 @@ fn a_source_relation_is_emitted_and_unbound_items_name_the_population() {
         elements[0].key,
         qsl_semantics::check::AbstractionKey::Population(_)
     ));
-    assert_eq!(elements[0].package, spine::DOMAIN_PACKAGE);
+    assert_eq!(elements[0].package, spine::PACKAGE_IDENTITY);
 }
