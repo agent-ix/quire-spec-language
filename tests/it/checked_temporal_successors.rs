@@ -7,7 +7,6 @@ use qsl_replay::spine::DependencyInput;
 use quire_spec_language::temporal::{
     self, Basis, Closure, Completeness, Execution, Position, Truth,
 };
-use serde_json::json;
 use std::collections::BTreeMap;
 
 const TEMPORAL_SOURCE: &str = r#"
@@ -63,7 +62,7 @@ fn origin_trace() -> temporal::Trace {
         trigger_scope: Closure::Closed,
         decision_scope: Closure::Closed,
         surrounding_execution: Closure::Closed,
-        execution: Execution::Complete,
+        execution: Execution::Completed,
         completeness: Completeness::Complete,
         authoritative_origin: true,
         watermark: 1,
