@@ -5549,7 +5549,8 @@ fn walked_operands(content: &NodeContent) -> Vec<quire_exact::PathSegment> {
             if !self.seen.insert(PathSegment::Node(key.clone())) {
                 return;
             }
-            self.operands.push(PathSegment::Text(key.package().to_owned()));
+            self.operands
+                .push(PathSegment::Text(key.package().to_owned()));
             self.operands.extend(key.path());
         }
         fn leaf(&mut self, leaf: &LeafTerm) {

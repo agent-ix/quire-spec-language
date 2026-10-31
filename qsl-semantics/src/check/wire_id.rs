@@ -64,20 +64,21 @@ pub enum WireIdError {
     Key(#[from] InvalidNodeKey),
 }
 
-thread_local! {
-    /// This thread's interned operand ids, by key: every structural id built
-    /// here holds one shared operand id per operand node, so building one is
-    /// linear in its own path and equal operands are one allocation.
-    static INTERNED: std::cell::RefCell<HashMap<NodeKey, Arc<CheckedNodeId>>> =
-        std::cell::RefCell::new(HashMap::new());
+/// Structural ids built for one task (an emission, a refinement encoding),
+/// each operand id interned: every structural id built through one
+/// `StructuralIds` holds one shared operand id per operand node, so building
+/// one is linear in its own path and equal operands are one allocation.
+#[derive(Debug, Default)]
+pub struct StructuralIds {
+    interned: std::cell::RefCell<HashMap<NodeKey, Arc<CheckedNodeId>>>,
 }
 
-/// The structural form of `key`: each operand is a
-/// [`CheckedNodePathSegment::Node`] holding the operand's own id, interned on
-/// this thread, so every structural id built for one operand shares it.
-pub fn structural_id(key: &NodeKey) -> CheckedNodeId {
-    INTERNED.with(|interned| {
-        let mut done = interned.borrow_mut();
+impl StructuralIds {
+    /// The structural form of `key`: each operand is a
+    /// [`CheckedNodePathSegment::Node`] holding the operand's own id, shared
+    /// with every other id built here that names that operand.
+    pub fn id(&self, key: &NodeKey) -> CheckedNodeId {
+        let mut done = self.interned.borrow_mut();
         let path = key
             .path()
             .into_iter()
@@ -93,13 +94,13 @@ pub fn structural_id(key: &NodeKey) -> CheckedNodeId {
             path,
             ordinal: key.ordinal(),
         }
-    })
+    }
 }
 
-/// Release this thread's interned operand ids. The emitter calls this once
-/// a package is written; ids already built keep their operands alive.
-pub fn release_structural_ids() {
-    INTERNED.with(|interned| interned.borrow_mut().clear());
+/// The structural form of `key` on its own: [`StructuralIds::id`] with
+/// operands shared within this one id.
+pub fn structural_id(key: &NodeKey) -> CheckedNodeId {
+    StructuralIds::default().id(key)
 }
 
 /// The interned id of `key`, converting each operand not yet interned once.
@@ -305,10 +306,21 @@ fn index_segments(id: &CheckedNodeId) -> Vec<u64> {
 
 /// One checked-package document's `semantic_graph`: the rebuilt key of every
 /// node, by graph index, and the index of every key.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Default)]
 pub struct WireGraph {
     keys: Vec<NodeKey>,
     index: HashMap<NodeKey, u64>,
+}
+
+/// The keys in graph order; the index is derived from them, and a hash map's
+/// iteration order would make two equal graphs format differently.
+impl std::fmt::Debug for WireGraph {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("WireGraph")
+            .field("keys", &self.keys)
+            .finish_non_exhaustive()
+    }
 }
 
 impl WireGraph {

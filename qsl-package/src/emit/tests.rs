@@ -29,6 +29,11 @@ use quire_semantic_value::declaration::{
 use serde_json::{json, Value};
 
 use super::*;
+
+/// [`super::node_id`] for a test's one id.
+fn node_id(key: impl std::borrow::Borrow<NodeKey>) -> CheckedNodeId {
+    qsl_semantics::check::wire_id::structural_id(key.borrow())
+}
 use crate::checked_v2::{read_v2, Read, V2ReadLimits};
 
 mod abstraction;
@@ -509,14 +514,18 @@ fn written_nodes(package: &CheckedPackage) -> Vec<Value> {
         .semantic_graph()
         .nodes()
         .map(|node| {
-            Candidate::of(node, recorded.remove(&node.key()).unwrap_or_default())
-                .expect("a candidate")
+            Candidate::of(
+                &StructuralIds::default(),
+                node,
+                recorded.remove(&node.key()).unwrap_or_default(),
+            )
+            .expect("a candidate")
         })
         .collect();
     let all: Vec<&Candidate<'_>> = candidates.iter().collect();
     let mut nodes: Vec<_> = graph_order(&all)
         .into_iter()
-        .map(|candidate| candidate.wire_node().unwrap())
+        .map(|candidate| candidate.wire_node(&StructuralIds::default()).unwrap())
         .collect();
     write_index_segments(&mut nodes, &mut [], &mut []).expect("every operand is written");
     nodes
@@ -865,15 +874,20 @@ fn a_declaration_without_its_occurrence_is_omitted() {
                         occurrence.role != CheckedOccurrenceRole::Declaration
                     });
                 }
-                Candidate::of(node, occurrences).expect("a candidate")
+                Candidate::of(&StructuralIds::default(), node, occurrences).expect("a candidate")
             })
             .collect(),
     );
-    let omitted: Vec<OmittedNode> =
-        omissions(&candidates, graph.source(), &ir_decodes, &HashSet::new())
-            .into_iter()
-            .map(|(_, omission)| omission)
-            .collect();
+    let omitted: Vec<OmittedNode> = omissions(
+        &StructuralIds::default(),
+        &candidates,
+        graph.source(),
+        &ir_decodes,
+        &HashSet::new(),
+    )
+    .into_iter()
+    .map(|(_, omission)| omission)
+    .collect();
     assert_eq!(
         omitted,
         [OmittedNode {

@@ -649,7 +649,7 @@ fn a_presence_reads_the_place_template_at_its_owner() {
             .find(|node| node.node_id == id)
             .expect("a node");
         assert_eq!(
-            crate::emit::timed_model_node_id(&node).expect("a key"),
+            crate::emit::timed_model_node_id(&StructuralIds::default(), &node).expect("a key"),
             node.node_id,
             "S3's place key is the key IR derives"
         );
