@@ -78,7 +78,7 @@ fn rejected(rule: CertificateRule, at: StateKey) -> TemporalCertificateCheck {
     })
 }
 
-/// The digest of the one reachable state where `select` holds.
+/// The state key of the one reachable state where `select` holds.
 pub(crate) fn state_where(
     world: &World,
     keys: &[&str],
@@ -88,7 +88,7 @@ pub(crate) fn state_where(
         .0
         .into_iter()
         .filter(|(_, state)| select(state))
-        .map(|(digest, _)| digest)
+        .map(|(state_key, _)| state_key)
         .collect();
     assert_eq!(found.len(), 1, "one state selected");
     found[0].clone()
@@ -168,14 +168,14 @@ fn the_checker_accepts_the_engines_rank_certificates() {
     );
     let expected: BTreeMap<StateKey, u32> = states
         .iter()
-        .map(|(digest, state)| {
+        .map(|(state_key, state)| {
             let d = match world.value(state, "a", "versionNumber") {
                 2 => 0,
                 1 => 1,
                 0 => 2,
                 other => panic!("va = {other}"),
             };
-            (digest.clone(), d)
+            (state_key.clone(), d)
         })
         .collect();
     assert_eq!(ranks_of(&certificate), expected);
@@ -222,13 +222,13 @@ fn the_checker_accepts_the_engines_rank_certificates() {
     );
 }
 
-/// The successor digests of each reachable state of `world`, one per edge.
+/// The successor state keys of each reachable state of `world`, one per edge.
 fn successors(world: &World, keys: &[&str]) -> BTreeMap<StateKey, Vec<StateKey>> {
     let system = system(world, keys);
     reachable(world, keys)
         .0
         .into_iter()
-        .map(|(digest, state)| {
+        .map(|(state_key, state)| {
             let next = system
                 .successors(&state)
                 .expect("expands")
@@ -236,7 +236,7 @@ fn successors(world: &World, keys: &[&str]) -> BTreeMap<StateKey, Vec<StateKey>>
                 .into_iter()
                 .map(|(_, next)| system.state_key(&next).expect("encodes").0.into())
                 .collect();
-            (digest, next)
+            (state_key, next)
         })
         .collect()
 }
@@ -366,9 +366,9 @@ fn the_checker_rejects_a_certificate_over_an_undefined_target() {
     let va = |state: &ModelSimState| world.value(state, "a", "versionNumber");
     let ranks: BTreeMap<StateKey, u32> = states
         .iter()
-        .map(|(digest, state)| {
+        .map(|(state_key, state)| {
             (
-                digest.clone(),
+                state_key.clone(),
                 [1, 0, 2][usize::try_from(va(state)).expect("fits")],
             )
         })
@@ -376,7 +376,7 @@ fn the_checker_rejects_a_certificate_over_an_undefined_target() {
     let undefined: BTreeSet<StateKey> = states
         .iter()
         .filter(|(_, state)| va(state) == 2)
-        .map(|(digest, _)| digest.clone())
+        .map(|(state_key, _)| state_key.clone())
         .collect();
     assert!(undefined.contains(&config(&world, 2, 0)));
     let certificate = with_ranks(states.keys().cloned().collect(), &ranks);
@@ -467,7 +467,7 @@ fn the_checker_rejects_altered_count_certificates() {
         .0
         .into_iter()
         .find(|(_, state)| world.value(state, "j", "done") == 0)
-        .map(|(digest, _)| digest)
+        .map(|(state_key, _)| state_key)
         .expect("a node other than `to`");
     assert_eq!(
         check(

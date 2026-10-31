@@ -119,13 +119,13 @@ impl<O> Checker<'_, '_, O> {
             if witness.start != node || self.witness_ends(witness, zone.clone())?.is_err() {
                 return fails();
             }
-            let digest = self.digest(&state)?;
+            let state_key = self.state_key(&state)?;
             let point = if self.timed.tick_period().is_none() {
                 with_z(&zone)?
             } else {
                 zone
             };
-            let holds = match divergent.get(&digest) {
+            let holds = match divergent.get(&state_key) {
                 Some(held) => held.covers(&point)?,
                 None => false,
             };
@@ -170,7 +170,7 @@ impl<O> Checker<'_, '_, O> {
     }
 
     /// The valuations of each model state the certificate reaches with a
-    /// time-divergent continuation, by the state's digest; under a dense
+    /// time-divergent continuation, by the state's state key; under a dense
     /// source over the clock places and `z`.
     fn divergent_valuations(
         &self,
@@ -179,10 +179,12 @@ impl<O> Checker<'_, '_, O> {
         let mut index: BTreeMap<qsl_eval::simulation::StateKey, usize> = BTreeMap::new();
         let mut states = Vec::new();
         for state in self.states.iter().flatten() {
-            let digest = self.digest(state)?;
-            if let std::collections::btree_map::Entry::Vacant(entry) = index.entry(digest.clone()) {
+            let state_key = self.state_key(state)?;
+            if let std::collections::btree_map::Entry::Vacant(entry) =
+                index.entry(state_key.clone())
+            {
                 entry.insert(states.len());
-                states.push((digest.clone(), state.clone()));
+                states.push((state_key.clone(), state.clone()));
             }
         }
         let mut places = Vec::with_capacity(states.len());
@@ -190,7 +192,7 @@ impl<O> Checker<'_, '_, O> {
         for (_, state) in &states {
             let mut moves = Vec::new();
             for step in self.timed.guarded_steps(state).or_else(undecided)? {
-                let Some(&to) = index.get(&self.digest(step.post())?) else {
+                let Some(&to) = index.get(&self.state_key(step.post())?) else {
                     continue;
                 };
                 let target = self.invariants(step.post())?;
@@ -309,7 +311,7 @@ impl<O> Checker<'_, '_, O> {
         }
         Ok(states
             .into_iter()
-            .map(|(digest, _)| digest)
+            .map(|(state_key, _)| state_key)
             .zip(outer)
             .collect())
     }

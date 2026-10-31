@@ -3,7 +3,7 @@
 //! liveness run that found no fair accepting component.
 //!
 //! The closure lists every explored product state, written as the core's
-//! checker will recompute it: the model state's digest and the canonical key
+//! checker will recompute it: the model state's state key and canonical key
 //! of its automaton state in the key context of its instance. The
 //! components are the strongly connected components the fairness kernels
 //! decomposed each binding's graph into, with the witness the filter found

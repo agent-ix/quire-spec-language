@@ -234,7 +234,7 @@ struct Decision<'r, 'x, 'a> {
     end: &'r RunEnd,
     /// The product states the run did not fully expand, with the reason.
     open: BTreeMap<ProductStateId, OpenCause>,
-    /// The digest of each initial state of the subject, in subject order.
+    /// The state key of each initial state of the subject, in subject order.
     initials: Vec<qsl_eval::simulation::StateKey>,
 }
 
@@ -876,8 +876,8 @@ impl<'a> Decision<'_, '_, 'a> {
         self.open.values().copied().collect()
     }
 
-    /// The index of the initial state of the subject whose digest is
-    /// `digest`: the first with it.
+    /// The index of the initial state of the subject whose state key is
+    /// `state_key`: the first with it.
     fn initial_of(&self, key: &qsl_eval::simulation::StateKey) -> Result<usize, ModelCheckRefusal> {
         self.initials
             .iter()
@@ -885,8 +885,8 @@ impl<'a> Decision<'_, '_, 'a> {
             .ok_or_else(|| fault("a-root-component-is-an-initial-state"))
     }
 
-    /// The digest of the model state of product state `id`.
-    fn model_digest(
+    /// The state key of the model state of product state `id`.
+    fn model_state_key(
         &self,
         id: ProductStateId,
     ) -> Result<qsl_eval::simulation::StateKey, ModelCheckRefusal> {
@@ -907,10 +907,10 @@ impl<'a> Decision<'_, '_, 'a> {
     /// states whose model state is that initial state's.
     fn part(&self, initial: usize) -> Result<Part, ModelCheckRefusal> {
         let graph = &self.product.graph;
-        let digest = self.initials.get(initial);
+        let state_key = self.initials.get(initial);
         let mut roots = Vec::new();
         for root in graph.initial() {
-            if Some(&self.model_digest(*root)?) == digest {
+            if Some(&self.model_state_key(*root)?) == state_key {
                 roots.push(*root);
             }
         }
@@ -1167,7 +1167,7 @@ impl<'a> Decision<'_, '_, 'a> {
         })))
     }
 
-    /// The model steps of `edges`, each with the digest of its post-state. The
+    /// The model steps of `edges`, each with the state key of its post-state. The
     /// terminal stutter steps of a path are all at its end and repeat the
     /// terminal state, so they are left out.
     fn model_steps(
@@ -1179,7 +1179,7 @@ impl<'a> Decision<'_, '_, 'a> {
             match edge.transition.0.as_slice() {
                 [ComponentStep::Model(transition)] => steps.push(ModelStep {
                     transition: transition.clone(),
-                    post_state: self.model_digest(edge.target)?,
+                    post_state: self.model_state_key(edge.target)?,
                     delay: None,
                 }),
                 [ComponentStep::Stutter] => {}
@@ -1205,7 +1205,7 @@ impl<'a> Decision<'_, '_, 'a> {
         if steps.len() != path.len() {
             return Err(fault("an-undefined-letter-is-reached-by-model-steps"));
         }
-        let initial = self.initial_of(&self.model_digest(root)?)?;
+        let initial = self.initial_of(&self.model_state_key(root)?)?;
         Ok(ExistentialOutcome::Undefined {
             stem: ModelPath {
                 initial: u32::try_from(initial).map_err(|_| fault("initial-index-fits-u32"))?,
@@ -1214,7 +1214,7 @@ impl<'a> Decision<'_, '_, 'a> {
             undefined: UndefinedEvaluation {
                 site: UndefinedSite {
                     position: widen(steps.len()),
-                    state_key: self.model_digest(at)?,
+                    state_key: self.model_state_key(at)?,
                     locus: UndefinedLocus::Atom(*atom),
                     transition: None,
                     time: None,

@@ -60,14 +60,14 @@ pub(crate) fn reachable(
     let mut queue: VecDeque<ModelSimState> = system.initial().into();
     while let Some(state) = queue.pop_front() {
         let (bytes, _) = system.state_key(&state).expect("encodes");
-        let digest = StateKey::from_canonical_bytes(bytes);
-        if seen.contains_key(&digest) {
+        let state_key = StateKey::from_canonical_bytes(bytes);
+        if seen.contains_key(&state_key) {
             continue;
         }
         let expansion = system.successors(&state).expect("expands");
         edges += expansion.successors.len();
         queue.extend(expansion.successors.into_iter().map(|(_, next)| next));
-        seen.insert(digest, state);
+        seen.insert(state_key, state);
     }
     (seen, edges)
 }
@@ -651,7 +651,7 @@ fn combined_reductions_are_reported_in_canonical_order() {
 
 /// The state at each position of `path`, re-executed from its initial
 /// state: each step's post-state is the successor of its transition whose
-/// digest it records.
+/// state key it records.
 fn positions(world: &World, keys: &[&str], path: &ModelPath) -> Vec<ModelSimState> {
     let system = system(world, keys);
     let index = usize::try_from(path.initial).expect("fits");
@@ -745,24 +745,28 @@ fn versions(world: &World, path: &ModelPath) -> Vec<(i64, i64)> {
         .collect()
 }
 
-/// The digest of the one reachable state where `select` holds.
-fn digest_where(world: &World, keys: &[&str], select: impl Fn(&ModelSimState) -> bool) -> StateKey {
+/// The state key of the one reachable state where `select` holds.
+fn state_key_where(
+    world: &World,
+    keys: &[&str],
+    select: impl Fn(&ModelSimState) -> bool,
+) -> StateKey {
     let (states, _) = reachable(world, keys);
     let found: Vec<_> = states
         .iter()
         .filter(|(_, state)| select(state))
-        .map(|(digest, _)| digest.clone())
+        .map(|(state_key, _)| state_key.clone())
         .collect();
     assert_eq!(found.len(), 1, "one state selected");
     found[0].clone()
 }
 
-fn node_of(run: &StateGraphRun, digest: StateKey) -> NodeIndex {
+fn node_of(run: &StateGraphRun, state_key: StateKey) -> NodeIndex {
     let index = run
         .graph
         .nodes
         .iter()
-        .position(|node| node.key == digest)
+        .position(|node| node.key == state_key)
         .expect("the state was explored");
     nodes(run)
         .into_iter()
@@ -911,7 +915,7 @@ fn each_worked_example_explores_once_to_its_graph() {
 fn a_horizon_and_a_state_limit_leave_their_nodes_open() {
     let world = config_world(REACHES_TWO, &[(0, 0)]);
     let at = |va, vb| {
-        digest_where(&world, AB, |state| {
+        state_key_where(&world, AB, |state| {
             world.value(state, "a", "versionNumber") == va
                 && world.value(state, "b", "versionNumber") == vb
         })
@@ -1577,7 +1581,7 @@ fn second_path_choice(world: &World, to: i64, order: [&str; 2]) -> (Vec<String>,
     let result = run(world.request(&["f"], vec![world.item("Once")], no_samples()));
     let root = node_of(
         &result,
-        digest_where(world, &["f"], |state| world.value(state, "f", "pos") == 0),
+        state_key_where(world, &["f"], |state| world.value(state, "f", "pos") == 0),
     );
     assert_eq!(edge_names(&result, root), order, "the premise");
     let StateGraphOutcome::PathPair {
@@ -1679,7 +1683,7 @@ fn a_trap_counts_past_a_horizon_and_an_unreached_target_does_not() {
     );
     request.max_depth = Some(3);
     let result = run(request);
-    let won_one = digest_where(&world, &["g"], |state| {
+    let won_one = state_key_where(&world, &["g"], |state| {
         world.value(state, "g", "phase") == 3 && world.value(state, "g", "n") == 1
     });
     let open = node_of(&result, won_one);
@@ -1761,7 +1765,7 @@ fn an_explored_witness_descends_toward_the_target_not_an_open_node() {
     let at = |pos| {
         node_of(
             &result,
-            digest_where(&world, &["f"], |state| {
+            state_key_where(&world, &["f"], |state| {
                 world.value(state, "f", "pos") == pos
             }),
         )

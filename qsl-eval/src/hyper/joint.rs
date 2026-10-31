@@ -136,7 +136,7 @@ impl<'r, 's> Joint<'r, 's> {
     }
 
     /// The FR-101 state key of each component.
-    pub(super) fn digests(
+    pub(super) fn state_keys(
         &self,
         components: &[ModelSimState],
     ) -> Result<Vec<crate::simulation::StateKey>, ExpansionStop> {
@@ -155,8 +155,8 @@ impl<'r, 's> Joint<'r, 's> {
     /// The letter of the joint position `components`, read once per tuple of
     /// model states.
     pub(super) fn reading(&self, components: &[ModelSimState]) -> Result<Reading, ExpansionStop> {
-        let digests = self.digests(components)?;
-        if let Some(known) = self.readings.borrow().get(&digests) {
+        let state_keys = self.state_keys(components)?;
+        if let Some(known) = self.readings.borrow().get(&state_keys) {
             return Ok(known.clone());
         }
         let states: Vec<&ModelSimState> = components.iter().collect();
@@ -193,7 +193,9 @@ impl<'r, 's> Joint<'r, 's> {
             }
         }
         let reading = reading.unwrap_or(Reading::Defined(letter));
-        self.readings.borrow_mut().insert(digests, reading.clone());
+        self.readings
+            .borrow_mut()
+            .insert(state_keys, reading.clone());
         Ok(reading)
     }
 

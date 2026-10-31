@@ -288,9 +288,9 @@ pub(crate) fn operations(counterexample: &TemporalCounterexample) -> Vec<String>
 /// `T = 4 ms`, with a certificate, and, with `T = 3 ms`, is violated at
 /// `trace_position` 3 by `send`, `timeout`, `reply` with the least delays
 /// `0`, `3`, `0`; the deadlock-freedom item holds under both. Each step's
-/// `post_state` is the digest of the timed state the subject reaches by the
+/// `post_state` is the state key of the timed state the subject reaches by the
 /// same steps after the same delays; with `qsl-eval`'s
-/// `a_timed_post_state_key_changes_with_its_clock_value_alone`, this is
+/// `a_timed_post_state key_changes_with_its_clock_value_alone`, this is
 /// FR-236-AC-1.
 #[trace("TC-694", "FR-239-AC-1")]
 #[trace("TC-696", "FR-241-AC-1")]
@@ -322,7 +322,7 @@ fn no_late_reply_holds_at_four_and_is_refuted_at_three() {
     assert_eq!(counterexample.final_delay, None);
     assert!(counterexample.over_binding.is_some());
 
-    // FR-236-AC-1: each step's `post_state` is the digest of the timed
+    // FR-236-AC-1: each step's `post_state` is the state key of the timed
     // state the subject reaches by taking the same steps after the same
     // delays.
     let system = three.system();
@@ -338,7 +338,9 @@ fn no_late_reply_holds_at_four_and_is_refuted_at_three() {
             )
             .expect("the counterexample's step is admitted");
         assert_eq!(
-            timed.state_key(behaviour.last().state()).expect("a digest"),
+            timed
+                .state_key(behaviour.last().state())
+                .expect("a state_key"),
             step.post_state
         );
     }

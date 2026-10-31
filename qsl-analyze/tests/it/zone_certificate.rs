@@ -193,7 +193,7 @@ fn each_tampering_is_rejected_at_its_rule_and_locus() {
 
     let mut misplaced = certificate.clone();
     misplaced.initials = vec![target];
-    let CertificateLocus::ModelState(digest) = (match verdict(&world, &misplaced) {
+    let CertificateLocus::ModelState(state_key) = (match verdict(&world, &misplaced) {
         ZoneCertificateVerdict::Rejected(CertificateRejection {
             rule: CertificateRule::InitialMissing,
             at,
@@ -202,7 +202,7 @@ fn each_tampering_is_rejected_at_its_rule_and_locus() {
     }) else {
         panic!("the initial discrete state's locus");
     };
-    assert_eq!(digest, certificate.nodes[0].state_key.clone());
+    assert_eq!(state_key, certificate.nodes[0].state_key.clone());
 }
 
 /// Part of FR-245-AC-3 (TC-700): `NoLateReply`'s certificate checked for the

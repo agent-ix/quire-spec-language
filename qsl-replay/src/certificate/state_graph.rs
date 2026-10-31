@@ -283,7 +283,7 @@ impl Check<'_, '_> {
             let key = StateKey::from_canonical_bytes(bytes);
             initial.entry(key).or_insert(state);
         }
-        if let Some(missing) = initial.keys().find(|digest| !self.member(digest)) {
+        if let Some(missing) = initial.keys().find(|state_key| !self.member(state_key)) {
             return Err(reject(CertificateRule::InitialMissing, (*missing).clone()));
         }
         let mut reached = self.explore(&initial)?;
@@ -291,15 +291,18 @@ impl Check<'_, '_> {
         match form {
             StateGraphForm::Possible { .. } => {
                 let ranks = self.ranks()?;
-                if let Some(missing) = initial.keys().find(|digest| !ranks.contains_key(digest)) {
+                if let Some(missing) = initial
+                    .keys()
+                    .find(|state_key| !ranks.contains_key(state_key))
+                {
                     return Err(reject(CertificateRule::RankMissing, missing.clone()));
                 }
                 self.check_ranks(&reached, &ranks)
             }
             StateGraphForm::AlwaysPossible { .. } => {
                 let ranks = self.ranks()?;
-                if let Some((missing, _)) = reached.iter().find(|(digest, state)| {
-                    state.holds(PredicateRole::From) && !ranks.contains_key(digest)
+                if let Some((missing, _)) = reached.iter().find(|(state_key, state)| {
+                    state.holds(PredicateRole::From) && !ranks.contains_key(state_key)
                 }) {
                     return Err(reject(CertificateRule::RankMissing, missing.clone()));
                 }
@@ -321,17 +324,17 @@ impl Check<'_, '_> {
         let mut leaves = BTreeSet::new();
         let mut bad = BTreeSet::new();
         let mut edges: usize = 0;
-        for (digest, state) in initial {
+        for (state_key, state) in initial {
             self.admit(&reached)?;
             reached.insert(
-                digest.clone(),
+                state_key.clone(),
                 Reached {
                     state: state.clone(),
                     successors: Vec::new(),
                     holds: Vec::new(),
                 },
             );
-            queue.push_back(digest.clone());
+            queue.push_back(state_key.clone());
         }
         while let Some(at) = queue.pop_front() {
             self.poll()?;
@@ -412,7 +415,7 @@ impl Check<'_, '_> {
             .iter()
             .map(|(_, body)| (*body, self.over))
             .collect();
-        for (digest, entry) in states {
+        for (state_key, entry) in states {
             self.poll()?;
             let readings = self
                 .system
@@ -424,7 +427,10 @@ impl Check<'_, '_> {
                     PredicateReading::True => holds.push((*role, true)),
                     PredicateReading::False => holds.push((*role, false)),
                     PredicateReading::Undefined { .. } | PredicateReading::Refused(_) => {
-                        return Err(reject(CertificateRule::PredicateUndefined, digest.clone()));
+                        return Err(reject(
+                            CertificateRule::PredicateUndefined,
+                            state_key.clone(),
+                        ));
                     }
                 }
             }
@@ -448,8 +454,8 @@ impl Check<'_, '_> {
         reached: &BTreeMap<StateKey, Reached>,
         ranks: &BTreeMap<StateKey, u32>,
     ) -> Step<()> {
-        for (digest, state) in reached {
-            let Some(d) = ranks.get(digest) else {
+        for (state_key, state) in reached {
+            let Some(d) = ranks.get(state_key) else {
                 continue;
             };
             let holds = match d.checked_sub(1) {
@@ -460,7 +466,7 @@ impl Check<'_, '_> {
                     .any(|successor| ranks.get(successor) == Some(&next)),
             };
             if !holds {
-                return Err(reject(CertificateRule::RankBroken, digest.clone()));
+                return Err(reject(CertificateRule::RankBroken, state_key.clone()));
             }
         }
         Ok(())
@@ -475,8 +481,8 @@ impl Check<'_, '_> {
             .iter()
             .map(|(index, count, order)| Ok((self.state_at(*index)?, (*count, *order))))
             .collect::<Step<_>>()?;
-        for (digest, state) in reached {
-            let Some((count, order)) = counts.get(digest) else {
+        for (state_key, state) in reached {
+            let Some((count, order)) = counts.get(state_key) else {
                 continue;
             };
             if *count >= 2 || state.holds(PredicateRole::To) {
@@ -488,11 +494,11 @@ impl Check<'_, '_> {
                     .is_some_and(|(_, later)| later >= order)
             });
             if backward {
-                return Err(reject(CertificateRule::OrderBroken, digest.clone()));
+                return Err(reject(CertificateRule::OrderBroken, state_key.clone()));
             }
         }
-        for (digest, state) in reached {
-            let count = counts.get(digest).map_or(0, |(count, _)| *count);
+        for (state_key, state) in reached {
+            let count = counts.get(state_key).map_or(0, |(count, _)| *count);
             let expected = if state.holds(PredicateRole::To) {
                 1
             } else {
@@ -503,7 +509,7 @@ impl Check<'_, '_> {
                     .fold(0u8, |sum, count| sum.saturating_add(count).min(2))
             };
             if count != expected || (state.holds(PredicateRole::From) && count != 1) {
-                return Err(reject(CertificateRule::CountBroken, digest.clone()));
+                return Err(reject(CertificateRule::CountBroken, state_key.clone()));
             }
         }
         Ok(())

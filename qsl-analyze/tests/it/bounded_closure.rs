@@ -94,8 +94,8 @@ impl Bounded {
         BoundedTranslation::clause(&fixture.clauses[0], &context).expect("translates")
     }
 
-    /// The digest of the model state `c = v`.
-    fn digest(&self, v: i64) -> qsl_eval::simulation::StateKey {
+    /// The state key of the model state `c = v`.
+    fn state_key(&self, v: i64) -> qsl_eval::simulation::StateKey {
         let fixture = &self.fixture;
         let system = ModelSystem::new(
             subject(
@@ -126,7 +126,7 @@ impl Bounded {
     /// The product state of `c = v` read to `state`.
     fn at(&self, v: i64, state: BoundedState) -> ProductStateRef {
         ProductStateRef {
-            model_state: self.digest(v),
+            model_state: self.state_key(v),
             automaton_state: self.translation().key(state).expect("encodes"),
         }
     }

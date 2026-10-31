@@ -269,10 +269,10 @@ fn assert_weakly_fair(
     assert!(!lasso.terminal_stutter);
     let states = fixture.positions(counterexample);
     let system = fixture.system();
-    let digest = |state: &ModelSimState| system.state_key(state).expect("encodes").1;
+    let state_key = |state: &ModelSimState| system.state_key(state).expect("encodes").1;
     assert_eq!(
-        digest(states.last().expect("a position")),
-        digest(&states[lasso.entry]),
+        state_key(states.last().expect("a position")),
+        state_key(&states[lasso.entry]),
         "the loop re-enters its entry state"
     );
     let loop_steps = &counterexample.prefix[lasso.entry..];
@@ -288,7 +288,7 @@ fn assert_weakly_fair(
                 .into_iter()
                 .map(|(transition, next)| qsl_replay::ModelStep {
                     transition,
-                    post_state: digest(&next),
+                    post_state: state_key(&next),
                     delay: None,
                 })
                 .collect()
