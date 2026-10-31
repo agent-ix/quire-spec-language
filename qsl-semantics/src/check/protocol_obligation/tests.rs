@@ -502,7 +502,7 @@ fn a_registration_capture_cannot_read_itself() {
 
     let (text, cause) = only(&changed(
         "capture target: M::Total = forward.total;",
-        "capture a: Boolean = b; capture b: Boolean = true;",
+        "capture target: M::Total = forward.total; capture a: Boolean = b; capture b: Boolean = true;",
     ));
     assert_eq!(stage_read(&cause).0, "b");
     assert_eq!(stage_read(&cause).1, ObligationStage::RegistrationCapture);
