@@ -942,6 +942,19 @@ fn an_unbounded_population_has_its_own_node_and_no_maximum() {
     };
     let unbounded = parameter("Population<M::A>");
     let bounded = parameter("Population<M::A>[4]");
+    let set = parameter("Set<M::A>");
+    let unbounded_key = parameter_type_node(&unbounded);
+    let bounded_key = parameter_type_node(&bounded);
+    let set_key = parameter_type_node(&set);
+    assert_ne!(
+        unbounded_key, bounded_key,
+        "the population maximum enters its key"
+    );
+    assert_ne!(
+        unbounded_key, set_key,
+        "an unbounded population is not a set"
+    );
+    assert_ne!(bounded_key, set_key, "a bounded population is not a set");
 
     let node = |graph: &CheckedGraph| {
         let node = graph
