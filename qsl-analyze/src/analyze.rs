@@ -673,17 +673,28 @@ pub(crate) fn terminal_records(records: Vec<AnalyzeRecord>) -> Vec<TerminalRecor
         .map(|record| match record.settlement {
             Settlement::Terminal(terminal) => *terminal,
             Settlement::Disposed(disposed) => {
-                let value = match disposed.kind {
+                let diagnostic = disposed
+                    .diagnostic
+                    .map(|diagnostic| diagnostic.code)
+                    .unwrap_or(CatalogCode::new(
+                        "runtime_invariant",
+                        "established-invariant-broken",
+                    ));
+                match disposed.kind {
                     DispositionKind::RequiresBound | DispositionKind::Unsupported => {
-                        TerminalValue::Unsupported(UnavailabilityCause::BackendAbsent)
+                        TerminalRecord::disposition_unsupported(
+                            record.request_index,
+                            UnavailabilityCause::BackendAbsent,
+                            diagnostic,
+                        )
                     }
-                    DispositionKind::InvalidRequest => TerminalValue::Declined {
-                        cause: ProofRefusalCause::InvalidInput,
-                        code: DeclineCode::Qsl(Code::InvalidRequest),
-                    },
-                };
-                let diagnostic = disposed.diagnostic.map(|diagnostic| diagnostic.code);
-                TerminalRecord::from_value(record.request_index, value).with_diagnostic(diagnostic)
+                    DispositionKind::InvalidRequest => TerminalRecord::disposition_declined(
+                        record.request_index,
+                        ProofRefusalCause::InvalidInput,
+                        DeclineCode::Qsl(Code::InvalidRequest),
+                        diagnostic,
+                    ),
+                }
             }
         })
         .collect()

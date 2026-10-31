@@ -1343,6 +1343,23 @@ impl TerminalRecord {
         )
     }
 
+    /// Build a declined record settled by request disposition, with no
+    /// producing backend and the disposition's diagnostic.
+    pub fn disposition_declined(
+        request_index: RequestIndex,
+        cause: ProofRefusalCause,
+        code: DeclineCode,
+        diagnostic: CatalogCode,
+    ) -> Self {
+        Self {
+            request_index,
+            backend: None,
+            value: TerminalValue::Declined { cause, code },
+            replay: None,
+            diagnostic: Some(diagnostic),
+        }
+    }
+
     /// Build an unsupported record with the producing backend identity.
     pub fn unsupported(
         request_index: RequestIndex,
@@ -1350,6 +1367,22 @@ impl TerminalRecord {
         cause: UnavailabilityCause,
     ) -> Self {
         Self::with_backend(request_index, backend, TerminalValue::Unsupported(cause))
+    }
+
+    /// Build an unsupported record settled by request disposition, with no
+    /// producing backend and the disposition's diagnostic.
+    pub fn disposition_unsupported(
+        request_index: RequestIndex,
+        cause: UnavailabilityCause,
+        diagnostic: CatalogCode,
+    ) -> Self {
+        Self {
+            request_index,
+            backend: None,
+            value: TerminalValue::Unsupported(cause),
+            replay: None,
+            diagnostic: Some(diagnostic),
+        }
     }
 
     /// Build an incomplete record with the producing backend identity.
