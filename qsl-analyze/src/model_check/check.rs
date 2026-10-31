@@ -224,12 +224,6 @@ pub enum ModelCheckRefusal {
     /// yet (`unsupported_construct`/`not-yet-implemented`).
     #[error("unsupported_construct/not-yet-implemented: EN-1 does not decide a liveness clause over an `ra` `parallel` yet")]
     WeakLiveness,
-    /// A liveness clause over an `activation on each` protocol: the liveness
-    /// engine does not read the instance bound (FR-209) yet, so a run could
-    /// pass over instance-limited states
-    /// (`unsupported_construct`/`not-yet-implemented`).
-    #[error("unsupported_construct/not-yet-implemented: EN-1 does not decide a liveness clause over an `activation on each` protocol yet")]
-    InstanceLiveness,
     /// A liveness clause with a state constraint selected: the liveness
     /// engine runs reduced under symmetry and partial-order reduction only.
     #[error("EN-1 does not decide a liveness clause under a state constraint yet")]
@@ -838,13 +832,13 @@ fn check_protocol_liveness(
         request.max_store_buffer,
         request.max_messages,
     );
-    if activates_on_each(protocol) {
-        return Err(if matches!(memory, SubjectMemory::Ra(_)) {
-            ModelCheckRefusal::WeakLiveness
-        } else {
-            ModelCheckRefusal::InstanceLiveness
-        });
+    if activates_on_each(protocol) && matches!(memory, SubjectMemory::Ra(_)) {
+        return Err(ModelCheckRefusal::WeakLiveness);
     }
+    let live_instances = live_instance_bound(request.max_live_instances);
+    let instance_bound = activates_on_each(protocol).then_some(InstanceBound {
+        value: live_instances,
+    });
     let decided = match memory {
         SubjectMemory::Ra(_) => return Err(ModelCheckRefusal::WeakLiveness),
         SubjectMemory::Tso(tso) => {
@@ -855,13 +849,14 @@ fn check_protocol_liveness(
             ProtocolSystem::new(model, subject, tso).map(|system| {
                 super::liveness::check_protocol(
                     subject,
-                    &system,
+                    &system.with_max_live_instances(live_instances),
                     Some(bound),
                     request.item,
                     request.max_depth,
                     super::liveness::ProtocolLivenessOptions {
                         limits: request.limits,
                         ignore_memory_constraints: request.ignore_memory_constraints,
+                        instance_bound,
                     },
                     cancel,
                 )
@@ -870,13 +865,14 @@ fn check_protocol_liveness(
         SubjectMemory::Sc => ProtocolSystem::new(model, subject, Sc).map(|system| {
             super::liveness::check_protocol(
                 subject,
-                &system,
+                &system.with_max_live_instances(live_instances),
                 None,
                 request.item,
                 request.max_depth,
                 super::liveness::ProtocolLivenessOptions {
                     limits: request.limits,
                     ignore_memory_constraints: request.ignore_memory_constraints,
+                    instance_bound,
                 },
                 cancel,
             )

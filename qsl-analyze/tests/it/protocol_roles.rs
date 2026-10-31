@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-208 (TC-653), FR-209-AC-3 (TC-654), FR-205-AC-4, FR-211-AC-4,
-//! FR-211-AC-5 and FR-216-AC-5: replicated roles and `activation on each`
+//! FR-208 (TC-653), FR-209-AC-3/5/6/7 (TC-654), FR-205-AC-4,
+//! FR-211-AC-4/5 and FR-216-AC-5: replicated roles and `activation on each`
 //! on `ProtocolSystem<Sc>` (ADR-027 ST-13 to ST-15, AE-1 to AE-4, RR-1 to
 //! RR-4).
 //!
@@ -12,7 +12,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use ix_trace_rs::trace;
 use qsl_analyze::model_check::{
-    check_protocol, ModelCheckRefusal, ProtocolCheckRequest, SubjectContext, SubjectIdentity,
+    check_protocol, ProtocolCheckRequest, SubjectContext, SubjectIdentity,
 };
 use qsl_eval::model_subject::{
     AtomStop, ModelInstance, ModelLetters, ProtocolSubject, RoleBinding,
@@ -41,8 +41,8 @@ use quire_exact::{Cancel, Meter};
 use serde_json::Value as Json;
 
 use crate::fill::{
-    class_of, contracts, document, instance, json_of, model_subject, package_with, reachable,
-    sc_system, source_memory, unit_text, universe, v, Documents, Reached, PACKAGE,
+    attempt, class_of, contracts, document, instance, json_of, model_subject, package_with,
+    reachable, sc_system, source_memory, unit_text, universe, v, Documents, Reached, PACKAGE,
 };
 use crate::model_settle::{envelope_at, request};
 use crate::protocol_compensation::{pay_run, refund, REFUND};
@@ -1229,39 +1229,132 @@ fn an_instance_limited_state_with_no_successor_is_not_closed_as_terminal() {
     assert!(*states >= 1);
 }
 
-/// FR-212 (TC-657): a liveness clause over an `activation on each` protocol
-/// refuses `unsupported_construct`/`not-yet-implemented`, since the liveness
-/// engine does not read `max_live_instances` (FR-209) yet.
+/// FR-209-AC-5 (TC-654): liveness over an `on each` protocol explores the
+/// bounded graph and returns the instance-bound cause when no fair lasso is
+/// found.
+#[trace("TC-654", "FR-209-AC-5")]
 #[test]
-fn a_liveness_clause_over_an_on_each_protocol_refuses() {
-    let eventually = "temporal Live using t0 over (k: M::Cell) clock \"model-steps\" \
-                      on origin { eventually holds(k.v = 1) }\n";
+fn liveness_over_on_each_settles_instance_bound_after_no_fair_lasso() {
+    let run = format!(
+        "sequence Main {{ {} }}",
+        attempt("T", "setTwo", "TwoPre, TwoPost", "t", "true")
+    );
+    let claim = "temporal Live using t0 over (k: M::Cell) clock \"model-steps\" \
+                 on origin { always eventually holds(k.v = 2) }\n";
+    let world = World::new(&(unit(EACH, "", "", &run) + claim), &["c"], &[0]);
+    let letters = CellV { holds: |v| v == 2 };
+    let item = world.claim(&letters);
+
+    for bound in [1, 2] {
+        let outcome = world.check(item, None, Some(bound));
+        let ModelCheckOutcome::Undecided {
+            cause:
+                UndecidedCause::InstanceBoundReached {
+                    bound: used,
+                    states,
+                },
+            stats,
+        } = &outcome
+        else {
+            panic!("bound {bound}: {outcome:?}");
+        };
+        assert_eq!(used.value, bound);
+        assert!(*states > 0);
+        assert_eq!(stats.instance_limited, *states);
+        let record = world.settle(item, &letters, &outcome, Some(bound));
+        assert_eq!(
+            record.value,
+            TerminalValue::Inconclusive(InconclusiveCause::InstanceBoundReached {
+                bound: *used,
+                states: *states,
+            })
+        );
+        assert_eq!(
+            record.instance_bound,
+            Some(StatedInstanceBound {
+                bound: *used,
+                reached: true,
+            })
+        );
+    }
+}
+
+/// FR-209-AC-6 (TC-654): a fair lasso through an instance-limited state is a
+/// real counterexample even though the enabled activation is not expanded.
+#[trace("TC-654", "FR-209-AC-6")]
+#[test]
+fn a_fair_liveness_lasso_may_pass_through_an_instance_limited_state() {
     let run = format!("sequence Main {{ {} }}", touch("T"));
-    let world = World::new(&(unit(EACH, "", "", &run) + eventually), &["c"], &[0]);
+    let claim = "temporal Live using t0 over (k: M::Cell) clock \"model-steps\" \
+                 on origin { always eventually holds(k.v = 1) }\n";
+    let world = World::new(&(unit(EACH, "", "", &run) + claim), &["c"], &[0]);
     let letters = CellV { holds: |v| v == 1 };
-    let refusal = check_protocol(
-        ProtocolCheckRequest {
-            subject: world.subject(),
-            item: world.claim(&letters),
-            max_depth: None,
-            max_store_buffer: None,
-            max_messages: None,
-            max_live_instances: None,
-            limits: ModelCheckLimits::default(),
-            ignore_memory_constraints: false,
-        },
-        &Cancel::new(),
-    )
-    .expect_err("the liveness engine does not read the instance bound");
-    assert!(
-        matches!(refusal, ModelCheckRefusal::InstanceLiveness),
-        "{refusal:?}"
-    );
+    let item = world.claim(&letters);
+    let outcome = world.check(item, None, Some(1));
+    let ModelCheckOutcome::Violated {
+        counterexample,
+        stats,
+    } = &outcome
+    else {
+        panic!("{outcome:?}");
+    };
+    let lasso = counterexample
+        .lasso
+        .as_ref()
+        .expect("liveness counterexample");
+    let loop_kinds: Vec<_> = counterexample.prefix[lasso.entry..]
+        .iter()
+        .map(|step| step.transition.kind())
+        .collect();
+    assert!(loop_kinds.contains(&StepKind::Activate), "{loop_kinds:?}");
+    assert!(loop_kinds.contains(&StepKind::Attempt), "{loop_kinds:?}");
+    assert!(loop_kinds.contains(&StepKind::Finish), "{loop_kinds:?}");
+    assert!(stats.instance_limited > 0);
+    let record = world.settle(item, &letters, &outcome, Some(1));
+    assert_eq!(record.label, ResultLabel::Refuted);
     assert_eq!(
-        refusal.to_string(),
-        "unsupported_construct/not-yet-implemented: EN-1 does not decide a liveness clause \
-         over an `activation on each` protocol yet"
+        record.instance_bound,
+        Some(StatedInstanceBound {
+            bound: InstanceBound { value: 1 },
+            reached: true,
+        })
     );
+}
+
+/// FR-209-AC-7 (TC-654): an infinite repeat of an enabled self-loop remains
+/// fair at an instance-limited state even though `activate` is unexpanded.
+#[trace("TC-654", "FR-209-AC-7")]
+#[test]
+fn an_on_each_repeat_self_loop_is_fair_at_the_instance_bound() {
+    let run = format!(
+        "repeat Loop by w visible () while {{ true }} {}",
+        touch("T")
+    );
+    let claim = "temporal Live using t0 over (k: M::Cell) clock \"model-steps\" \
+                 on origin { always eventually holds(k.v = 1) }\n";
+    let world = World::new(&(unit(EACH, "", "", &run) + claim), &["c"], &[0]);
+    let letters = CellV { holds: |v| v == 1 };
+    let item = world.claim(&letters);
+    let outcome = world.check(item, None, Some(1));
+    let ModelCheckOutcome::Violated {
+        counterexample,
+        stats,
+    } = &outcome
+    else {
+        panic!("{outcome:?}");
+    };
+    let lasso = counterexample
+        .lasso
+        .as_ref()
+        .expect("liveness counterexample");
+    assert_eq!(lasso.entry, counterexample.prefix.len() - 1);
+    assert_eq!(
+        counterexample.prefix[lasso.entry].transition.kind(),
+        StepKind::Attempt
+    );
+    assert!(stats.instance_limited > 0);
+    let record = world.settle(item, &letters, &outcome, Some(1));
+    assert_eq!(record.label, ResultLabel::Refuted);
 }
 
 /// FR-212 (TC-657): an authored `each` fairness member over a node a
