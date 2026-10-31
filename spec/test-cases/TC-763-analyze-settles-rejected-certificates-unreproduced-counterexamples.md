@@ -1,18 +1,18 @@
 ---
 id: TC-763
-title: "analyze settles rejected certificates, unreproduced counterexamples and budgets without a false verdict"
+title: "analyze settles rejected certificates, unreproduced counterexamples, budgets and deadlines without a false verdict"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-281
     type: verifies
 ---
-# TC-763: analyze settles rejected certificates, unreproduced counterexamples and budgets without a false verdict
+# TC-763: analyze settles rejected certificates, unreproduced counterexamples, budgets and deadlines without a false verdict
 
 ## Description
 
 Verify the adverse and uncertified settlements of `analyze`, using test engines registered in layer A under `cfg(test)` and EN-1 under reduction.
 
-Scope: FR-281-AC-4 to FR-281-AC-7, FR-281-AC-11.
+Scope: FR-281-AC-4 to FR-281-AC-7, FR-281-AC-11 and FR-281-AC-12.
 
 ## Test Procedure
 
@@ -23,6 +23,7 @@ Scope: FR-281-AC-4 to FR-281-AC-7, FR-281-AC-11.
 5. Over a finite model with one reachable state at which `x` is 0, run `analyze` with an EN-1 item claiming the invariant `100 / x > 0`, replay the record's counterexample, and map the outcome's category through FR-285.
 6. Run `analyze` with six items, each settled `Supported` on a test engine that refuses it: with a refused `Admission`, `RequiresBound` from an engine advertising (`value-validity`, `bounded`), `Symmetry`, `NotStatistical`, a refusal carrying `unsupported_construct`/`not-yet-implemented`, and a refusal carrying `invalid_runtime_input`/`wrong-value-kind`. Then run a seventh request of one item whose test engine reports an incomplete `Admission`.
 7. Over a model one of whose operations `modifies` a field of type `Integer`, run `analyze` over `Engines::qsl()` with one EN-1 item settled `Supported` on EN-1.
+8. Using a deterministic clock and cancellation fake, verify FR-281-AC-12 for a request whose deadline ends an active item, a caller cancellation that happens first, and an engine or accounting limit that happens first; include an item settled before expiry. Do not use wall-clock sleeps.
 
 Tag the tests `#[trace("TC-763", "<AC id>")]`.
 
@@ -35,3 +36,4 @@ Tag the tests `#[trace("TC-763", "<AC id>")]`.
 - Step 5: the item settles `refuted`, category violation, with cause `UndefinedEvaluation` whose `where` names the state with `x` 0 and whose `cause` is `division-by-zero`; replay reproduces the undefined value; the record carries no `undefined` label; the exit code is 10.
 - Step 6: six records in `request_index` order, each naming its engine: `declined`, `invalid-input`, with the admission diagnostic; `unsupported`, `unsupported_projection`/`unbounded-extent` whose payload names `value-validity`, the engine's `BackendId` and `bounded`; `declined`, `invalid-input`, `invalid_runtime_input`/`invalid-value`; `invalid-request`, `invalid_capability`/`not-statistical`, no result; `unsupported` with `unsupported_construct`/`not-yet-implemented`; `failed` with `invalid_runtime_input`/`wrong-value-kind`. The seventh request returns one `declined`, `incomplete-input` record with the admission diagnostic.
 - Step 7: one record naming EN-1, `unsupported` with `unsupported_projection`/`unbounded-extent` whose payload names `temporal-satisfaction`, EN-1's `BackendId` and `bounded`; no state is explored.
+- Step 8: the deadline-ended open item is `incomplete` with `cancelled{source: deadline}` and an earlier settled record is unchanged; caller cancellation first yields `cancelled{source: requested}`; the engine or accounting limit reached first retains its own typed limit result; binding admission refusal remains a whole-request `StageFailure::Refused` before items run.
