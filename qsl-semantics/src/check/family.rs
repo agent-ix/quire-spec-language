@@ -1409,7 +1409,7 @@ pub(crate) fn check_declaration_body(
 /// is an index. Neither `record` nor `resolve` scans another entry, and
 /// neither compares node keys beyond a hash and an equality test, so a key's
 /// nesting depth never multiplies their cost. The ascending iterations rank
-/// the keys once per call ([`super::key_order`]).
+/// the keys once per call (`super::key_order`).
 #[derive(Clone, Eq, PartialEq)]
 pub(crate) struct OccurrenceMap<S> {
     spans: HashMap<NodeKey, Roles<S>>,
