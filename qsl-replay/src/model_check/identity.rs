@@ -100,7 +100,7 @@ fn read_back(
         EmitRefusal::Cancelled { cause } => ClauseRootRefusal::Cancelled(cause),
         other => ClauseRootRefusal::Package(other.to_string()),
     })?;
-    let library = LibraryName::new("package")
+    let library = LibraryName::new(emission.package().name())
         .map_err(|refusal| ClauseRootRefusal::Package(format!("{refusal:?}")))?;
     let mut admitted = AdmittedPackages::default();
     read_import_view(
