@@ -27,6 +27,8 @@ use qsl_semantics::library::{ImportView, LibraryName};
 use quire_exact::{NodeKey, Origin, Role};
 use quire_semantic_value::catalog::{CatalogCode, CatalogCoded, Category};
 
+mod protocol_corpus;
+
 fn node_ref(label: &str) -> Value {
     json!({"package": "pkg", "path": label.split("::").skip(1).collect::<Vec<_>>(), "ordinal": 0})
 }

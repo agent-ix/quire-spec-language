@@ -49,7 +49,7 @@ Compile or read one unit or graph per row and assert the stated result.
 
 | # | Edit to **W**'s package | Expected, from QSpec FR-464 to FR-466 |
 | --- | --- | --- |
-| 8a | `roles` out of ascending node-id order; a repeated `roles` entry | `invalid_semantic_graph` at the clause |
+| 8a | `roles` out of ascending node-id order; a repeated `roles` entry | `invalid_semantic_graph` at the clause for the out-of-order set; `invalid_semantic_graph` at the repeated role member for the repeated entry |
 | 8b | the queue of `Charges` removed; a second queue naming `Charges` | `invalid_semantic_graph` |
 | 8c | the control `Finalized` removed from `Main`'s children but kept as a node | `invalid_semantic_graph` at the control |
 | 8d | `Received` sequenced before `Requested` | `invalid_package`/`definition-cycle`, naming the controls on the cycle |
