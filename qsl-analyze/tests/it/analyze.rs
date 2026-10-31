@@ -20,7 +20,8 @@
 
 use ix_trace_rs::trace;
 use qsl_analyze::analyze::{
-    analyze, model_item, AnalyzeItem, DispositionKind, Engine, Engines, Payload, Settlement,
+    analyze as analyze_request, analyze_items, model_item, AnalyzeItem, AnalyzeLimits,
+    AnalyzeRequest, DispositionKind, Engine, Engines, Payload, Settlement,
 };
 use qsl_eval::simulation::Limits;
 use qsl_eval::temporal::UndefinedCause;
@@ -75,7 +76,7 @@ fn value(record: &qsl_analyze::analyze::AnalyzeRecord) -> TerminalValue {
 #[test]
 fn a_broken_item_settles_refuted_and_its_counterexample_replays() {
     let case = case(CONTRACT, &[0]);
-    let record = only(analyze(
+    let record = only(analyze_items(
         &en1(),
         vec![model_item(index(0), case.model_item())],
         &Cancel::new(),
@@ -114,7 +115,7 @@ fn three_items_give_three_records_the_first_unsupported_naming_its_kind() {
     let world = world("", &[("c", 0)]);
     let invariant = world.invariant("always holds(c.value <= 3)", |v| Some(v <= 3));
     let broken = case(CONTRACT, &[0]);
-    let records = analyze(
+    let records = analyze_items(
         &Engines::qsl().expect("the layer-A manifests register"),
         vec![
             AnalyzeItem::unadapted(index(0), Capability::Monitorability),
@@ -166,7 +167,7 @@ fn a_rejected_certificate_is_inconclusive_and_an_accepted_one_certified() {
     let world = world(CONTRACT, &[("c", 0)]);
     let invariant = world.invariant("always holds(c.value <= 3)", |v| Some(v <= 3));
     let run = |item| {
-        only(analyze(
+        only(analyze_items(
             &en1(),
             vec![model_item(index(0), item)],
             &Cancel::new(),
@@ -221,7 +222,7 @@ fn a_proof_with_no_core_checker_settles_proved_uncertified_naming_its_engine() {
             panic!("a proved item replays nothing")
         });
         item.request.reductions.partial_order = reduced;
-        only(analyze(
+        only(analyze_items(
             &en1(),
             vec![model_item(index(0), item)],
             &Cancel::new(),
@@ -263,7 +264,7 @@ fn a_counterexample_settles_refuted_only_when_replay_reproduces_it() {
             alter(&mut payload);
             replay(&case, payload)
         });
-        value(&only(analyze(
+        value(&only(analyze_items(
             &en1(),
             vec![model_item(index(0), item)],
             &Cancel::new(),
@@ -295,7 +296,7 @@ fn a_state_budget_of_one_and_a_cancelled_handle_settle_incomplete() {
         },
         ..ModelCheckLimits::default()
     };
-    let record = only(analyze(
+    let record = only(analyze_items(
         &en1(),
         vec![model_item(
             index(0),
@@ -313,7 +314,7 @@ fn a_state_budget_of_one_and_a_cancelled_handle_settle_incomplete() {
 
     let cancel = Cancel::new();
     cancel.cancel(CancelCause::Requested);
-    let records = analyze(
+    let records = analyze_items(
         &en1(),
         vec![model_item(
             index(0),
@@ -396,7 +397,7 @@ fn an_undefined_claim_evaluation_settles_refuted_with_the_undefined_cause() {
         };
         Ok(result)
     });
-    let mut record = only(analyze(
+    let mut record = only(analyze_items(
         &en1(),
         vec![model_item(index(0), item)],
         &Cancel::new(),
@@ -475,6 +476,23 @@ fn service_request<'w>(
     }
 }
 
+fn routed_service_item(world: &crate::prob_world::World) -> qsl_analyze::provider::RoutedItem<'_> {
+    let request = service_request(world);
+    qsl_analyze::provider::RoutedItem {
+        item: qsl_analyze::provider::ClaimItem {
+            request_index: index(0),
+            claim: request.claim,
+            method: request.method,
+            seed: request.seed,
+            sampler: request.sampler,
+            limits: request.limits,
+            max_witnesses: request.max_witnesses,
+            symmetry: request.symmetry,
+        },
+        backend: BackendId::new("en-4"),
+    }
+}
+
 /// The `analyze` half of FR-280-AC-5 (TC-761 step 4); FR-280-AC-2 stays
 /// open for EN-1, which has no provider entry yet: over
 /// `Service`, whose checked package S4 refuses to emit, the record `analyze`
@@ -488,8 +506,6 @@ fn service_request<'w>(
 #[test]
 fn analyze_and_the_provider_entry_settle_one_record_for_one_en4_item() {
     use crate::prob_world::{self, World};
-    use qsl_analyze::analyze::statistical_item;
-    use qsl_analyze::statistical::provider::serve_items;
     use qsl_replay::statistical::Decision;
 
     let claim = "probabilistic Two using ev on M over (s: M::Server) under Steady on origin \
@@ -499,23 +515,34 @@ fn analyze_and_the_provider_entry_settle_one_record_for_one_en4_item() {
     let world = World::new(&prob_world::service(claim));
     qsl_package::emit_checked(&world.package).expect_err("S4 refuses Service");
 
-    let analyzed = only(analyze(
-        &Engines::qsl().expect("they register"),
-        vec![statistical_item(index(0), service_request(&world))],
-        &Cancel::new(),
-    ))
-    .terminal()
-    .cloned()
-    .expect("the item settles a record");
-    let served = serve_items(
-        vec![qsl_analyze::statistical::provider::RoutedItem {
-            index: index(0),
-            request: service_request(&world),
-        }],
+    let engines = Engines::qsl().expect("they register");
+    let limits = AnalyzeLimits {
+        accounting: prob_world::UNLIMITED,
+        ..AnalyzeLimits::default()
+    };
+    let analyzed = analyze_request(
+        &world.package,
+        AnalyzeRequest {
+            binding: world.binding(),
+            items: vec![routed_service_item(&world)],
+        },
+        &engines,
+        &limits,
         &Cancel::new(),
     )
-    .remove(0)
-    .expect("the item settles a record");
+    .expect("Service's binding admits")
+    .into_value()
+    .records
+    .remove(0);
+    let served = qsl_analyze::provider::run(
+        &world.package,
+        &world.binding(),
+        &[routed_service_item(&world)],
+        &engines,
+        &limits,
+        &Cancel::new(),
+    )
+    .remove(0);
 
     assert_eq!(analyzed, served);
     assert_eq!(analyzed.backend().map(BackendId::as_str), Some("en-4"));
@@ -524,5 +551,55 @@ fn analyze_and_the_provider_entry_settle_one_record_for_one_en4_item() {
     };
     assert_eq!(verdict.decision, Decision::Rejected);
     assert_eq!(verdict.witnesses.len(), 3);
+    for witness in &verdict.witnesses {
+        assert_eq!(
+            crate::statistical_witness_replay::replay(&world, "Two", &verdict.provenance, witness,)
+                .expect("provider witness replays"),
+            qsl_replay::statistical::SampledWitnessReplay::Reproduced
+        );
+    }
     qsl_package::emit_checked(&world.package).expect_err("S4 still refuses Service");
+}
+
+/// FR-280-AC-6 (TC-761 step 5): a provider binding that omits a required
+/// population returns a declined record for the routed item.
+#[trace("TC-761", "FR-280-AC-6")]
+#[test]
+fn provider_entry_settles_an_incomplete_binding_per_item() {
+    use crate::prob_world::{self, World};
+    use qsl_replay::{ProofRefusalCause, TerminalValue};
+
+    let claim = "probabilistic Two using ev on M over (s: M::Server) under Steady on origin \
+         with alpha 0.01, beta 0.01, indifference 0.01 \
+         { quantile 0.95 of (accumulate duration from holds(s.phase = 1) \
+         until holds(s.phase = 2) within 10) <= 2 }\n";
+    let world = World::new(&prob_world::service(claim));
+    let mut binding = world.binding();
+    binding.initial[0].identity.push_str("-missing");
+    let limits = AnalyzeLimits {
+        accounting: prob_world::UNLIMITED,
+        ..AnalyzeLimits::default()
+    };
+    let records = qsl_analyze::provider::run(
+        &world.package,
+        &binding,
+        &[routed_service_item(&world)],
+        &Engines::qsl().expect("they register"),
+        &limits,
+        &Cancel::new(),
+    );
+
+    assert_eq!(records.len(), 1);
+    assert!(matches!(
+        records[0].value(),
+        TerminalValue::Declined {
+            cause: ProofRefusalCause::IncompleteInput,
+            ..
+        }
+    ));
+    assert_eq!(records[0].backend(), None);
+    assert_eq!(
+        records[0].diagnostic().map(|code| code.to_string()),
+        Some("unavailable_observation/missing-required-artifact".to_owned())
+    );
 }

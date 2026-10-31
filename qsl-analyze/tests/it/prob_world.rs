@@ -452,6 +452,16 @@ impl World {
         }
     }
 
+    /// FR-280's subject binding for provider-entry tests.
+    pub(crate) fn binding(&self) -> qsl_analyze::analyze::SubjectBinding<'_> {
+        qsl_analyze::analyze::SubjectBinding {
+            packages: &self.packages,
+            snapshots: &self.snapshots,
+            initial: self.initial.clone(),
+            universes: vec![self.universe.clone()],
+        }
+    }
+
     /// The product request of the claim `name` under `limits`.
     pub(crate) fn request(&self, name: &str, limits: ModelCheckLimits) -> ProductRequest<'_> {
         ProductRequest {
