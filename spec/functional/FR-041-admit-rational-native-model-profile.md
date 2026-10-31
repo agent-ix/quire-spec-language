@@ -146,8 +146,8 @@ in scope for [QSL-1380](https://linear.app/agent-ix/issue/QSL-1380/track-retaine
 | FR-048 | Keep | Checked choreography evaluation succeeds to FR-390 and TC-1070..1073; retain any remaining native-only behavior not covered there and track it in the Layer-4 follow-up. |
 | FR-049 | Keep | TC-136 succeeds AC-1..6 and AC-10/11; TC-137 succeeds AC-7/8; TC-142 and TC-1070..1073 succeed AC-9's protocol-slot selection, typed outcomes and shared-meter behavior. |
 | FR-050 | Keep | Authenticated temporal artifact behavior has no complete named spine successor in this migration; retain and track Layer-4 follow-up. |
-| FR-052 | Keep | Native temporal evaluation-owner behavior has no complete named spine successor in this migration; retain and track Layer-4 follow-up. |
-| FR-053 | Keep | Opaque semantic trigger identity has no complete named spine successor in this migration; retain and track Layer-4 follow-up. |
+| FR-052 | Keep behavior; retire only the M-6d request/result carrier and its API-specific criteria | FR-052-AC-9–12 define the Layer-4 checked-package evaluation-owner successor; TC-144 is its named test obligation. TC-140 and `tests/it/native_temporal_owner.rs` are historical/retiring and provide no successor evidence. |
+| FR-053 | Keep behavior; retire only the M-6d request/result carrier and its API-specific criteria | FR-053-AC-7–9 define the Layer-4 opaque trigger-identity successor; TC-149 is its named test obligation. TC-141 and `tests/it/native_temporal_owner.rs` are historical/retiring and provide no successor evidence. |
 | TC-121 | Retire in M-6d | The case verifies the FR-042 artifact contract that is superseded by the spine package tests above. |
 
 ## Dependencies
