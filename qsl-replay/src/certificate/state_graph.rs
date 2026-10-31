@@ -358,23 +358,23 @@ impl Check<'_, '_> {
                 }
                 edges = edges.saturating_add(1);
                 let (bytes, _) = self.system.state_key(&next)?;
-                let digest = StateKey::from_canonical_bytes(bytes);
-                successors.push(digest.clone());
-                if !self.member(&digest) {
+                let key = StateKey::from_canonical_bytes(bytes);
+                successors.push(key.clone());
+                if !self.member(&key) {
                     leaves.insert(at.clone());
                     continue;
                 }
-                if !reached.contains_key(&digest) {
+                if !reached.contains_key(&key) {
                     self.admit(&reached)?;
                     reached.insert(
-                        digest.clone(),
+                        key.clone(),
                         Reached {
                             state: next,
                             successors: Vec::new(),
                             holds: Vec::new(),
                         },
                     );
-                    queue.push_back(digest);
+                    queue.push_back(key);
                 }
             }
             if let Some(entry) = reached.get_mut(&at) {
@@ -517,7 +517,8 @@ mod tests {
     use super::*;
 
     fn key(byte: u8) -> StateKey {
-        StateKey::from_canonical_bytes(vec![byte; 32])
+        let bytes = serde_json::to_vec(&byte).expect("the fixture state encodes");
+        StateKey::from_canonical_bytes(bytes)
     }
 
     /// FR-169's `Malformed` rule, applied before any recomputation: an

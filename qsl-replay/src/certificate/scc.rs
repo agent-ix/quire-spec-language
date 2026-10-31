@@ -524,10 +524,9 @@ mod tests {
     const UPD_B: Identity = Identity::new(1);
 
     fn product_state(model: [u8; 2], automaton: &str) -> ProductStateRef {
-        let mut digest = [0; 32];
-        digest[..2].copy_from_slice(&model);
+        let model_state = serde_json::to_vec(&model).expect("the model state encodes");
         ProductStateRef {
-            model_state: qsl_eval::simulation::StateKey::from_canonical_bytes(digest.to_vec()),
+            model_state: qsl_eval::simulation::StateKey::from_canonical_bytes(model_state),
             automaton_state: AutomatonStateKey::imported(automaton.as_bytes().to_vec()),
         }
     }
