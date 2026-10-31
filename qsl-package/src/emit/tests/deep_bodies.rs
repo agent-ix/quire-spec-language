@@ -215,7 +215,10 @@ fn a_100000_term_sum_reads_back_verifies_clones_compares_and_drops_on_a_small_st
             .into_value();
             let clone = read.clone();
             assert!(read == clone, "the read equals its clone");
-            assert!(!format!("{read:?}").is_empty());
+            let mut debug = DebugByteCount::default();
+            write!(&mut debug, "{read:?}")
+                .unwrap_or_else(|error| panic!("debug formatting completes: {error}"));
+            assert!(debug.bytes > 0, "the read's debug output is nonempty");
             drop(clone);
             drop(read);
         })
