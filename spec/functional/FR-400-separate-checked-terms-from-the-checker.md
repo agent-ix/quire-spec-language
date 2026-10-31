@@ -314,6 +314,13 @@ An in-process read SHALL project its stored `NodeKind` into this same generic
 enum, and a reader-backed read SHALL project retained typed admitted data
 into it. The evaluator SHALL match this single enum for both reads, with
 unchanged operation execution and charge points.
+Every cost-relevant metadata field SHALL survive this projection unchanged,
+including `NodeKind::Attribute.derefed`: a borrowed operation SHALL distinguish
+an explicit dereference from a bare field read with the same result. If the
+admitted representation lacks that fact, then it cannot supply a lossless
+`NodeRead`; FR-390's view admission SHALL report the missing charge semantics
+before yielding a view. No projection SHALL invent the fact from erased
+source information or treat the missing fact as equivalent execution.
 
 `NodeRead` and the parameterized operation descriptors are plain read data,
 not `Node`, `CheckedBody`, `CheckedGraph` or an admission witness. Constructing

@@ -296,7 +296,8 @@ or fallback to an unchecked or serialized interpretation.
 `unknown_required_feature`/`unsupported-feature`, the owning package identity,
 the affected node's `NodeKey`, its `Location`, and one typed reason:
 `MissingTypeRepresentation`, `MissingLiteralProjection`,
-`MissingOperationProjection` or `MissingBindingProjection`.
+`MissingOperationProjection`, `MissingBindingProjection` or
+`MissingChargeSemantics`.
 If more than one projection is unsupported, view creation SHALL report the
 first by ascending package identity, node key and the reason order above.
 This is evaluation-input admission before S6a, category unsupported, exit 21;
@@ -309,20 +310,38 @@ within the retained I2 resource ceilings; exhaustion SHALL yield no view and
 return `ViewFailure::Limit` with the existing I2 limit vocabulary, never
 `Unsupported`. A failed I2 read itself retains its existing staged result.
 
-The upstream typed read dependencies are tracked as IR-1193 and IR-969.
-They comprise admitted literal payloads, closed operation/member projections,
-protocol slot and binder identities/levels/types, exact source occurrences,
-callable/dispatch closure associations and semantic-type conversion to kernel
-`ValueType`. General type conversion needs explicit extensions for String,
-Uuid, Timestamp, Dimension, Alias and Union, and exact declaration/object/unit
-identity associations for Composite, Reference and Quantity. Nested Option
-and Collection types require the same associations recursively. These are
-upstream dependencies, not signatures or constructors defined by QSL.
+The upstream dependencies are tracked as IR-1193 (public typed literal,
+binding-name and operation/member reads), IR-969 (checked-term placement),
+IR-1194 (semantic-type and exact identity joins), and STD-611 (lossless
+bare/explicit-dereference semantics). FR-400 owns the canonical checked-term
+read vocabulary. The projections require protocol slot and binder
+identities/levels/types, exact source occurrences and callable/dispatch closure
+associations. IR's `expression::ValueType` is separate from the canonical
+evaluation target `quire_exact::ValueType`; neither a type-name match nor a
+structural `CheckedNodeId` is an admitted identity conversion. IR-1194 must
+supply exact `NodeKey`/`EffectiveId` associations for Composite and Reference
+and unit identities for Quantity. General coverage of String, Uuid, Timestamp,
+Dimension, Alias and Union requires explicit shared-type extensions wherever
+the canonical target cannot represent the admitted type; nested Option and
+Collection types require the same joins recursively. These tracker references
+record dependencies, not new spec-artifact edges or upstream API signatures.
+
+The reader projection SHALL preserve every evaluation- and charge-relevant
+operation flag, including `NodeKind::Attribute.derefed`. A bare object-field
+read and an explicit `deref` of the same reference SHALL retain FR-107's
+distinct charge logs through emission, admission and `NodeRead`, even when
+their completed values are equal. If the admitted representation has erased
+that distinction, then view creation SHALL return `MissingChargeSemantics`
+with no partial view; the required AC-11 comparison remains unmet. The bridge
+SHALL NOT infer explicitness from source spans, source text, a guessed flag,
+recompilation or an otherwise identical semantic graph. STD-611 and the owning
+IR contract determine the lossless encoding; this requirement prescribes no
+new wire field, operation or mode.
 
 For AC-11 and TC-1073, the upstream extensions SHALL at least cover Boolean,
 bounded Integer, the Receipt/Attempt/Flag/Tick record types with exact member
-and declaration identities, and Reference<Node> with its exact model/object
-identity, as TC-1070 fixture E defines. A type that QSL emits and evaluates
+and declaration identities, Node's object type, and Reference<Node> with its
+exact model/object identity, as TC-1070 fixture E defines. A type that QSL emits and evaluates
 remains subject to complete AC-11 parity: an unsupported projection of such a
 type SHALL count as an unmet dependency, not a passing parity case or a scope
 reduction. Unrelated IR types that QSL cannot evaluate MAY return the typed
@@ -470,6 +489,7 @@ value; check 6 does not apply to it.
 | FR-390-AC-16 | Inspection finds one slot-selection view contract and one existing machine/ProtocolClause execution path for both input variants, using FR-400's single generic `NodeKind` read vocabulary, no checked-term reconstruction, no new `construct` caller and no second family dispatch. With `std` off the in-process view compiles without IR; the reader-result entry is absent, and the existing no_std closure acquires no dependency on IR or `std`. | Inspection |
 | FR-390-AC-17 | An admitted IR type without a kernel representation yields `ViewFailure::Unsupported` before any view exists, with `unknown_required_feature`/`unsupported-feature`, the affected package/node/location and `MissingTypeRepresentation`; no meter is accepted or charged. A missing literal, operation or binding projection yields its corresponding typed reason. A projection-resource limit yields `Limit`, no partial view. A handle from another owner returns an invariant fault rather than a node. | Test |
 | FR-390-AC-18 | Reader views resolve Boolean, bounded Integer, record/composite and Reference<Node> identities of TC-1070 fixture E to the exact kernel values/types of the in-process view, including recursively nested Option/Collection values used by a slot. AC-11/15 fail if a required QSL-emitted type is reported unsupported; unsupported cases cannot replace any required result/log comparison. | Test |
+| FR-390-AC-19 | A bare `view.total` read and an explicit `deref(view).total` read over the same observation retain their respective in-process charge logs through emitted-package admission and `NodeRead`, including FR-107's explicit-dereference charge distinction. If the representation erases that distinction, view creation returns `MissingChargeSemantics` before a view or meter charge exists, and AC-11 remains unmet; equal completed values or an unsupported result cannot pass the required parity comparison. | Test |
 
 ## Dependencies
 
