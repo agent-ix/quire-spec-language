@@ -16,7 +16,7 @@
 //! negotiation (CG) and qsl-route".
 
 use ix_trace_rs::trace;
-use qsl_analyze::analyze::{analyze, hyper_form_item, DispositionKind, Engines, Settlement};
+use qsl_analyze::analyze::{analyze_items, hyper_form_item, DispositionKind, Engines, Settlement};
 use qsl_analyze::model_check::ModelCheckRefusal;
 use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::bound::{DomainKey, DomainKind};
@@ -707,7 +707,7 @@ fn routed_hp4_hyper_item_settles_unsupported_requested_capability() {
     ));
 
     let analyze_item = hyper_form_item(item, &form).expect("HP-4 settles at negotiation");
-    let results = analyze(&Engines::default(), vec![analyze_item], &Cancel::new());
+    let results = analyze_items(&Engines::default(), vec![analyze_item], &Cancel::new());
     let [result] = results.as_slice() else {
         panic!("one analysis result");
     };

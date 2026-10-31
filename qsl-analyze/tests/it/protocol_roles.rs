@@ -1531,7 +1531,7 @@ fn a_send_from_a_role_over_an_empty_universe_waits_with_no_role_instance() {
 #[test]
 fn a_protocol_derived_items_max_live_instances_reaches_the_run_and_the_check() {
     use crate::derived_request::{items_of_kind, protocol_request_under, settled};
-    use qsl_analyze::analyze::{analyze, derived_protocol_item, Engines, ProtocolItem};
+    use qsl_analyze::analyze::{analyze_items, derived_protocol_item, Engines, ProtocolItem};
     use qsl_route::deadlock::ProtocolTemporalItem;
     use qsl_route::request::{DerivedLimits, ItemKind};
 
@@ -1583,7 +1583,7 @@ fn a_protocol_derived_items_max_live_instances_reaches_the_run_and_the_check() {
             },
             replay: Box::new(|_| panic!("the run reports no counterexample")),
         };
-        analyze(
+        analyze_items(
             &Engines::qsl().expect("the layer-A manifests register"),
             vec![derived_protocol_item(derived, obligation, item).expect("the run")],
             &Cancel::new(),
