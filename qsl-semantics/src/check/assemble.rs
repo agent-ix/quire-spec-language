@@ -71,6 +71,8 @@ use std::sync::Arc;
 mod equivalence;
 mod units;
 
+pub(crate) use units::package_dimension;
+
 pub use equivalence::{
     DimensionEquivalence, EquivalenceClasses, EquivalenceFault, EquivalenceRetained,
 };

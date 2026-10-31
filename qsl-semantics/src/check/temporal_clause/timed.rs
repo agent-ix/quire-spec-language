@@ -112,6 +112,10 @@ pub struct TimeNominalNode {
     /// The terms, target and exact conversion of a dimension or unit node,
     /// for source-owned and model-selected nodes alike.
     pub nominal: Option<crate::value::nominal_payload::NominalPayload>,
+    /// The span of the node's own declaration in the checked source (FR-322:
+    /// each declaration's own region): `Some` for a [`NodeOwner::Source`]
+    /// node, `None` for a model-owned node, which no source form declares.
+    pub declaration_span: Option<qsl_foundation::Span>,
 }
 
 impl std::hash::Hash for TimeNominalNode {

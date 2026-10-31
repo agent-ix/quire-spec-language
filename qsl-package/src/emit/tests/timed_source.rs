@@ -162,6 +162,51 @@ fn a_checked_time_source_emits_and_reads_back_its_resolved_nodes() {
     assert!(timed.constraints.is_empty());
 }
 
+/// QSpec FR-322 "Nominal nodes": a source dimension or unit a timed source
+/// names is located at its own declaration, not at the `time` declaration.
+#[trace("FR-322-AC-51")]
+#[test]
+fn a_source_time_nominal_is_located_at_its_own_declaration() {
+    let document = config_version_unit::DOMAIN_PACKAGE.as_bytes();
+    let packages = qsl_semantics::model::intake::package_input([document]).unwrap();
+    let unit = config_version_unit::unit_text().replace(
+        "profile v = \"quire.model.complete/v1\";\n",
+        "profile v = \"quire.model.complete/v1\";\n\
+         profile t = \"quire.temporal.complete/v1\";\n",
+    );
+    let unit = format!(
+        "{unit}dimension Time;\nunit ms : Time = rational(1, 1);\ntime Config dense unit ms;\n"
+    );
+    let graph = assemble_with_models(unit.as_bytes(), &packages)
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("the time source checks: {refusals:?}"));
+    let [checked_source] = graph.time_sources() else {
+        panic!("one checked time source");
+    };
+    let nominals = [
+        (checked_source.time_dimension.clone(), "Time"),
+        (checked_source.unit_node.clone(), "ms"),
+    ];
+    let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
+    let wire = wire(&emission);
+    for (key, declaration) in nominals {
+        let id = qsl_foundation::node_wire::node_key_to_json(&key).unwrap();
+        let entry = wire["source_map"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["node_id"] == id && entry["role"] == "declaration")
+            .unwrap_or_else(|| panic!("a declaration occurrence of {declaration}"));
+        let region = &entry["regions"][0];
+        let (start, end) = (
+            region["start"].as_u64().unwrap() as usize,
+            region["end"].as_u64().unwrap() as usize,
+        );
+        assert_eq!(&unit[start..end], declaration);
+    }
+}
+
 #[trace("FR-230-AC-5", "FR-230-AC-32", "FR-230-AC-38")]
 #[test]
 fn a_package_owned_time_unit_emits_its_model_owned_nominal_nodes() {
