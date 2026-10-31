@@ -16,7 +16,7 @@ use qsl_eval::simulation::protocol::{
     visible, CarriedComponent, ClaimReads, MemoryChoice, MemorySelection, ProtocolState,
     ProtocolSystem, ProtocolTransition, Ra, RestKind, StepKind,
 };
-use qsl_eval::simulation::{independent, SubjectSystem, TransitionSystem};
+use qsl_eval::simulation::{independent, TransitionSystem};
 use qsl_foundation::MemoryModelName;
 use qsl_replay::{
     MemoryBound, MemoryBoundMember, ModelCheckOutcome, ModelTraceRefusal, ModelTraceSettlement,
@@ -342,6 +342,141 @@ fn the_memory_member_is_empty_outside_a_weak_parallel() {
             assert!(state.state.memory().is_empty());
         }
     }
+}
+
+/// FR-229-AC-1 (TC-674): the SC event graph member of the state key, which
+/// names each SC event by thread, kind, location and message depths and each
+/// edge by the pair of events, is exactly this JSON at the `seq_cst` `SB`'s
+/// state with the most events.
+#[trace("TC-674", "FR-229-AC-1")]
+#[test]
+fn the_sc_graph_member_names_events_and_edges_by_depth() {
+    let case = Case::new(&sb_unit(&sb_run("", "seq_cst", "seq_cst")));
+    let system = case.system(&ra_both(), Ra::default()).expect("builds");
+    let mut widest = None;
+    for state in reachable(&system) {
+        let member = memory_member(&system, &state.state);
+        let graph = member["entries"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|entry| entry["key"]["type"] == "sc-graph")
+            .map(|entry| entry["value"].clone());
+        if let Some(graph) = graph {
+            let events = graph["events"].as_array().map_or(0, Vec::len);
+            if widest.as_ref().is_none_or(|(most, _, _)| events > *most) {
+                widest = Some((events, graph, member));
+            }
+        }
+    }
+    let (events, graph, member) = widest.expect("a state with an SC graph");
+    assert_eq!(events, 4);
+    // A view is a map from a location (or thread) to a depth (or count).
+    let pairs = |map: &serde_json::Value| -> Vec<(String, String)> {
+        map["entries"]
+            .as_array()
+            .expect("a map")
+            .iter()
+            .map(|entry| {
+                let key = &entry["key"];
+                let name = key["object"]["identity"]
+                    .as_str()
+                    .or_else(|| key["steps"][0]["branch"].as_str())
+                    .expect("a location or a thread");
+                (
+                    name.to_owned(),
+                    entry["value"].as_str().expect("text").to_owned(),
+                )
+            })
+            .collect()
+    };
+    let entries = member["entries"].as_array().expect("entries");
+    let left = entries
+        .iter()
+        .find(|entry| entry["key"]["thread"]["steps"][0]["branch"] == "left")
+        .expect("the left thread's views");
+    let owned = |pairs: &[(&str, &str)]| -> Vec<(String, String)> {
+        pairs
+            .iter()
+            .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+            .collect()
+    };
+    assert_eq!(
+        pairs(&left["value"]["cur"]["at"]),
+        owned(&[("x", "0"), ("y", "0")])
+    );
+    assert_eq!(
+        pairs(&left["value"]["cur"]["frontier"]),
+        owned(&[("left", "2"), ("right", "1")])
+    );
+    assert_eq!(pairs(&left["value"]["acq"]["at"]), owned(&[("y", "0")]));
+    assert_eq!(
+        pairs(&left["value"]["acq"]["frontier"]),
+        owned(&[("right", "1")])
+    );
+    let messages_x = entries
+        .iter()
+        .find(|entry| {
+            entry["key"]["type"] == "messages"
+                && entry["key"]["location"]["object"]["identity"] == "x"
+        })
+        .expect("x's messages");
+    let first = &messages_x["value"]["elements"][0];
+    assert_eq!(first["value"]["value"], "1");
+    assert_eq!(pairs(&first["view"]["at"]), owned(&[("x", "0")]));
+    assert_eq!(pairs(&first["view"]["frontier"]), owned(&[("left", "1")]));
+    let location = |object: &str| {
+        serde_json::json!({
+            "field": "v",
+            "object": {
+                "identity": object,
+                "object_type": {
+                    "original": {"node": "ix://test/litmus/Cell", "package": "test/litmus"},
+                    "owner_effective_type": null
+                },
+                "type": "reference",
+                "universe": {
+                    "ordinal": 0,
+                    "package": "test/litmus",
+                    "path": ["model", "object_type", "ix://test/litmus/Cell"]
+                }
+            },
+            "type": "location"
+        })
+    };
+    let thread = |branch: &str| {
+        serde_json::json!({
+            "instance": "0",
+            "steps": [{"branch": branch, "node": "Both", "ordinal": "0"}],
+            "type": "thread-path"
+        })
+    };
+    let read = |object: &str, branch: &str| {
+        serde_json::json!({
+            "kind": "read", "location": location(object), "read": "0", "thread": thread(branch)
+        })
+    };
+    let write = |object: &str, branch: &str| {
+        serde_json::json!({
+            "kind": "write", "location": location(object), "thread": thread(branch), "write": "0"
+        })
+    };
+    let (read_x, read_y) = (read("x", "right"), read("y", "left"));
+    let (write_x, write_y) = (write("x", "left"), write("y", "right"));
+    assert_eq!(
+        graph,
+        serde_json::json!({
+            "edges": [
+                [write_x, read_x],
+                [write_x, read_y],
+                [write_y, read_x],
+                [write_y, read_y]
+            ],
+            "events": [read_x, read_y, write_x, write_y],
+            "owed": {"entries": [], "type": "map"},
+            "summaries": {"entries": [], "type": "map"}
+        })
+    );
 }
 
 /// FR-222-AC-2 (TC-667): each litmus test of ADR-025 §3.3's table, run
@@ -728,8 +863,8 @@ fn the_sc_event_graph_stays_within_the_live_messages() {
 /// The state keys of `system`, in exploration order.
 fn keys(system: &ProtocolSystem<'_, Ra>) -> Vec<Vec<u8>> {
     reachable(system)
-        .iter()
-        .map(|state| system.state_key(&state.state).expect("a key").0)
+        .into_iter()
+        .map(|state| state.key)
         .collect()
 }
 
