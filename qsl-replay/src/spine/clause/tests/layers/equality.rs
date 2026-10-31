@@ -280,7 +280,7 @@ fn an_unselected_declaration_keeps_default_value_admission() {
     .expect("no header selection leaves equalities unrestricted");
 }
 
-#[trace("TC-490", "FR-110-AC-10", "FR-110-AC-11")]
+#[trace("TC-490", "FR-110-AC-10")]
 #[test]
 fn tuple_union_and_collection_kinds_are_whole_values() {
     for ty in [
