@@ -24,11 +24,15 @@ temporal Due using t over (view: M::Widget) clock "orders" on origin {{
 }
 
 fn checked(body: &str, profile: &str) -> qsl_replay::spine::CheckedUnit {
+    checked_named("test:checked-temporal", body, profile)
+}
+
+fn checked_named(identity: &str, body: &str, profile: &str) -> qsl_replay::spine::CheckedUnit {
     let packages =
         qsl_semantics::model::intake::package_input([tests_fixture_spine_model().as_slice()])
             .expect("checked model fixture");
     crate::support::front_end::checked(
-        SourceIdentity::new("agent-ix", "test:checked-temporal", "fixture", "1"),
+        SourceIdentity::new("agent-ix", identity, "fixture", "1"),
         "checked-temporal.native",
         temporal_source(body, profile).as_bytes(),
         &packages,
@@ -166,4 +170,44 @@ fn checked_mapping_accumulates_finite_window_and_direction_limits() {
         classification.retained.profile.identity(),
         temporal::TIMESTAMPED_WINDOW
     );
+}
+
+/// FR-043-AC-10: progress retained for one checked node cannot contradict an
+/// unrelated checked package at the same temporal-clause index.
+#[trace("TC-123", "FR-043-AC-10")]
+#[test]
+fn checked_progress_is_keyed_by_checked_clause_identity() {
+    let first = checked_named(
+        "test:checked-temporal-first",
+        "always[0,1] true",
+        temporal::EVENT_POSITION,
+    );
+    let second = checked_named(
+        "test:checked-temporal-second",
+        "always[0,1] true",
+        temporal::EVENT_POSITION,
+    );
+    let mut ledger = temporal::Ledger::new();
+    let mut earlier = origin_trace();
+    earlier.watermark = 5;
+    assert!(temporal::evaluate_checked_with_progress(
+        first.package(),
+        0,
+        &earlier,
+        temporal::Limits::default(),
+        &mut ledger,
+    )
+    .result()
+    .is_ok());
+    let mut unrelated = origin_trace();
+    unrelated.watermark = 1;
+    assert!(temporal::evaluate_checked_with_progress(
+        second.package(),
+        0,
+        &unrelated,
+        temporal::Limits::default(),
+        &mut ledger,
+    )
+    .result()
+    .is_ok());
 }

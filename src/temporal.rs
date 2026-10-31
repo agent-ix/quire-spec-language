@@ -41,6 +41,7 @@ pub use mapping::{
     Operators, Retained, Support, Target, Unmatched, OUTSTANDING_PREMISES,
 };
 pub use profile::{Profile, EVENT_POSITION, FIXED_SAMPLE, TIMESTAMPED_WINDOW};
+use progress::CheckedBinding;
 pub use progress::{AuthenticatedBinding, Binding, Ledger, Progress};
 pub use result::{
     Activation, Assessment, Basis, Capture, Closure, Completeness, Dimension, Error, Execution,
@@ -109,7 +110,16 @@ pub fn evaluate_checked_with_progress(
     ledger: &mut Ledger,
 ) -> Report {
     let mut work = budget::Work::new(limits);
-    let result = match ledger.record(Binding::of(declaration, trace), Progress::of(trace)) {
+    let result = match package
+        .graph()
+        .temporal_clauses()
+        .get(declaration)
+        .map(|node| CheckedBinding::of(declaration, node.identity(), trace))
+        .ok_or(Refusal::Reference {
+            subject: declaration_subject(declaration),
+        })
+        .and_then(|binding| ledger.record_checked(binding, Progress::of(trace)))
+    {
         Ok(retained) => run_checked(package, declaration, trace, retained.watermark, &mut work),
         Err(refusal) => Err(refusal.into()),
     };

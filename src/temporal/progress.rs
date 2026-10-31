@@ -18,6 +18,7 @@ use std::collections::BTreeMap;
 
 use super::result::{Closure, Completeness, Dimension, Refusal, Subject};
 use super::trace::Trace;
+use quire_exact::NodeKey;
 
 /// The exact clock identity a strict version-2 evaluation authenticated before
 /// it ran any evaluation work.
@@ -50,6 +51,28 @@ pub struct Binding {
     pub clock: String,
     /// Asserted registered temporal profile identity.
     pub profile_identity: String,
+}
+
+/// Progress key for an S3 checked clause. The exact checked node identity is
+/// package authority and prevents equal declaration indexes in unrelated
+/// checked packages from sharing retained progress.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(super) struct CheckedBinding {
+    declaration: usize,
+    identity: NodeKey,
+    clock: String,
+    profile_identity: String,
+}
+
+impl CheckedBinding {
+    pub(super) fn of(declaration: usize, identity: NodeKey, trace: &Trace) -> Self {
+        Self {
+            declaration,
+            identity,
+            clock: trace.clock.name.clone(),
+            profile_identity: trace.clock.profile_identity.clone(),
+        }
+    }
 }
 
 impl Binding {
@@ -95,6 +118,7 @@ impl Progress {
 #[derive(Clone, Debug, Default)]
 pub struct Ledger {
     retained: BTreeMap<Binding, Progress>,
+    checked: BTreeMap<CheckedBinding, Progress>,
     authenticated: BTreeMap<AuthenticatedBinding, Progress>,
 }
 
@@ -143,6 +167,37 @@ impl Ledger {
             }
         }
         self.retained.insert(binding, progress);
+        Ok(progress)
+    }
+
+    pub(super) fn record_checked(
+        &mut self,
+        binding: CheckedBinding,
+        progress: Progress,
+    ) -> Result<Progress, Refusal> {
+        let subject = Subject {
+            declaration: binding.declaration,
+            ..Subject::default()
+        };
+        if let Some(retained) = self.checked.get(&binding) {
+            if progress.watermark < retained.watermark {
+                return Err(Refusal::Progress {
+                    dimension: Dimension::Watermark,
+                    clock: binding.clock,
+                    subject,
+                });
+            }
+            if retained.completeness == Completeness::Complete
+                && progress.completeness == Completeness::Incomplete
+            {
+                return Err(Refusal::Progress {
+                    dimension: Dimension::Completeness,
+                    clock: binding.clock,
+                    subject,
+                });
+            }
+        }
+        self.checked.insert(binding, progress);
         Ok(progress)
     }
 
