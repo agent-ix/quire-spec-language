@@ -3289,6 +3289,7 @@ impl PackageDeclarations {
                 .and_then(|index| model_roots.get(index).cloned())
         };
         for checked in &mut refinements {
+            checked.package_name = Some(package_name.clone());
             let abstract_model = models
                 .iter()
                 .find(|model| model.alias() == Some(checked.abstract_model()));
@@ -6689,7 +6690,7 @@ impl CheckedGraph {
 
     /// ADR-012 §15.4: the domain key of the state field `field` of the
     /// object type `object` of the `model` alias -- the object type node
-    /// that *declares* the field, and one path element, the field's ordinal
+    /// that *declares* the field, and path `[0, f]`, `f` the field's ordinal
     /// among that type's own field declarations in ascending field-name
     /// UTF-8 byte order. `field` resolves in `object`'s effective attribute
     /// set, so an inherited field is keyed under its declaring type, never
@@ -6742,7 +6743,7 @@ impl CheckedGraph {
         let ordinal = u32::try_from(position).map_err(|_| fault("field-ordinal-past-u32"))?;
         Ok(Some(qsl_foundation::bound::DomainKey::Node {
             node: claims::wire(node.clone()),
-            path: vec![ordinal],
+            path: vec![0, ordinal],
         }))
     }
 

@@ -229,7 +229,7 @@ impl OperationSite {
 pub struct FieldSite {
     /// The field's domain key, always a [`DomainKey::Node`]: the
     /// `model`/`object_type` node of the type that declares the field, and
-    /// one path element, the field's ordinal among that type's own field
+    /// the path `[0, f]`, `f` the field's ordinal among that type's own field
     /// declarations in ascending field-name UTF-8 byte order. A domain
     /// inside the field's type extends this path with the child-index path
     /// into that type. The key a `DeclaredDomain` bounding the field names.

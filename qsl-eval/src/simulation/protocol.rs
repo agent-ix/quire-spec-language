@@ -693,17 +693,21 @@ fn subject_domains(
     model: &ModelSystem<'_>,
     protocol: &CheckedProtocol,
     graph: &CheckedGraph,
-) -> Vec<(NodeKey, ValueType)> {
-    let mut domains = model.domains();
-    domains.extend(protocol_domains(protocol, graph));
+) -> Vec<(NodeKey, Vec<u32>, ValueType)> {
+    let mut domains = model.rooted_domains();
+    domains.extend(
+        protocol_domains(protocol, graph)
+            .into_iter()
+            .map(|(node, value_type)| (node, Vec::new(), value_type)),
+    );
     domains
 }
 
 /// `domains` as the requires-bound pre-check reads them.
-fn roots(domains: &[(NodeKey, ValueType)]) -> Vec<(NodeKey, &ValueType)> {
+fn roots(domains: &[(NodeKey, Vec<u32>, ValueType)]) -> Vec<(NodeKey, Vec<u32>, &ValueType)> {
     domains
         .iter()
-        .map(|(id, value_type)| (id.clone(), value_type))
+        .map(|(id, base, value_type)| (id.clone(), base.clone(), value_type))
         .collect()
 }
 

@@ -340,19 +340,37 @@ pub fn classify_extent(
     types: &TypeEnvironment,
     position_limit: u64,
 ) -> Result<ClaimExtent, ClassifyFailure> {
-    let types_only: Vec<&ValueType> = roots.iter().map(|(_, value_type)| *value_type).collect();
+    let rooted: Vec<(NodeKey, Vec<u32>, &ValueType)> = roots
+        .iter()
+        .map(|(node, value_type)| (node.clone(), Vec::new(), *value_type))
+        .collect();
+    classify_extent_at(&rooted, types, position_limit)
+}
+
+/// [`classify_extent`] over roots that sit below a base child-index path in
+/// their node: a model member's domain is `{node, path}` with the member's
+/// own path first (QSpec FR-331 "Model member domain keys"), and the path
+/// into the member's type after it.
+pub fn classify_extent_at(
+    roots: &[(NodeKey, Vec<u32>, &ValueType)],
+    types: &TypeEnvironment,
+    position_limit: u64,
+) -> Result<ClaimExtent, ClassifyFailure> {
+    let types_only: Vec<&ValueType> = roots.iter().map(|(_, _, value_type)| *value_type).collect();
     let mut domains = BTreeMap::new();
     for ((root, path), kind) in classify_domains(&types_only, types, position_limit)? {
-        let Some((node, _)) = roots.get(root) else {
+        let Some((node, base, _)) = roots.get(root) else {
             return Err(ClassifyFailure::Fault(InternalFault::new(
                 STAGE,
                 "domain-root-classified",
             )));
         };
+        let mut full = base.clone();
+        full.extend(path);
         domains.insert(
             DomainKey::Node {
                 node: node.clone(),
-                path,
+                path: full,
             },
             kind,
         );

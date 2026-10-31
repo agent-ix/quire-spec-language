@@ -70,8 +70,8 @@ pub use contract::{Diagnostic, DiagnosticSink, ScopeStack, StageLimits};
 pub(crate) use contract::{DiagnosticSink, ScopeStack, StageLimits};
 pub use outcome::CheckOutcome;
 pub use requirements::{
-    classify_domains, classify_extent, ClaimEvidence, ClaimExtent, ClassifyFailure, Requirements,
-    UnboundedDomains, UnsupportedItem,
+    classify_domains, classify_extent, classify_extent_at, ClaimEvidence, ClaimExtent,
+    ClassifyFailure, Requirements, UnboundedDomains, UnsupportedItem,
 };
 
 // ADR-013 O-11's `QualifiedName` (the replay executor's typed

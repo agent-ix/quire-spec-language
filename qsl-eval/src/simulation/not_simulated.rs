@@ -3,7 +3,7 @@
 //! sampled.
 
 use qsl_foundation::selection::DefinitionRef;
-use qsl_semantics::family::{classify_extent, ClaimExtent, ClassifyFailure, UnboundedDomains};
+use qsl_semantics::family::{classify_extent_at, ClaimExtent, ClassifyFailure, UnboundedDomains};
 use quire_exact::NodeKey;
 use quire_exact::ValueType;
 use quire_semantic_value::catalog::{CatalogCode, CatalogCoded};
@@ -117,15 +117,55 @@ impl NotSimulated {
     }
 }
 
+/// A requires-bound root: the node that carries it, the child-index path
+/// below that node at which its type sits (empty for the node itself; QSpec
+/// FR-331 gives a model member its own path), and its checked type.
+pub trait Root {
+    /// The carrying node.
+    fn node(&self) -> &NodeKey;
+    /// The base path of the root's type in the node.
+    fn base(&self) -> &[u32];
+    /// The root's checked type.
+    fn value_type(&self) -> &ValueType;
+}
+
+impl Root for (NodeKey, &ValueType) {
+    fn node(&self) -> &NodeKey {
+        &self.0
+    }
+    fn base(&self) -> &[u32] {
+        &[]
+    }
+    fn value_type(&self) -> &ValueType {
+        self.1
+    }
+}
+
+impl Root for (NodeKey, Vec<u32>, &ValueType) {
+    fn node(&self) -> &NodeKey {
+        &self.0
+    }
+    fn base(&self) -> &[u32] {
+        &self.1
+    }
+    fn value_type(&self) -> &ValueType {
+        self.2
+    }
+}
+
 /// Classify `domains`' extent (ADR-014 §4) before any `TransitionSystem`
 /// method is called, shared by `explore_request` and `sample_request`
 /// (FR-101).
-pub(crate) fn check_requires_bound(
-    domains: &[(NodeKey, &ValueType)],
+pub(crate) fn check_requires_bound<R: Root>(
+    domains: &[R],
     types: &TypeEnvironment,
     position_limit: u64,
 ) -> Result<(), NotSimulated> {
-    match classify_extent(domains, types, position_limit) {
+    let rooted: Vec<(NodeKey, Vec<u32>, &ValueType)> = domains
+        .iter()
+        .map(|root| (root.node().clone(), root.base().to_vec(), root.value_type()))
+        .collect();
+    match classify_extent_at(&rooted, types, position_limit) {
         Ok(ClaimExtent::Bounded) => Ok(()),
         Ok(ClaimExtent::Unbounded(domains)) => {
             Err(NotSimulated::RequiresBound(RequiresBound { domains }))
