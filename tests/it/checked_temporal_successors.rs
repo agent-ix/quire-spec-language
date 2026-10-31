@@ -292,20 +292,16 @@ fn checked_activation_keeps_siblings_and_capture_identity() {
 #[trace("TC-127", "TC-128", "FR-046-AC-5")]
 #[test]
 fn checked_aggregate_proof_is_explicitly_unsupported_before_charging() {
-    let packages =
-        qsl_semantics::model::intake::package_input([tests_fixture_spine_model().as_slice()])
-            .expect("checked model fixture");
     let source = r#"
 language "ix:native" edition "1-draft";
 profile v = "quire.model.complete/v1";
 profile t = "quire.temporal.event-position.false-extension/v1";
-model M = "acme/orders";
 record Counter { level: Int[0, 9]; }
 temporal Due using t over (c: Int[0,9]) clock "orders" on origin {
     always[0,2] count over past[0,3] >= 1
 }
 "#;
-    let checked = crate::support::front_end::checked(
+    let parsed = qsl_cst::parse(
         SourceIdentity::new(
             "agent-ix",
             "test:checked-temporal-aggregate",
@@ -314,16 +310,22 @@ temporal Due using t over (c: Int[0,9]) clock "orders" on origin {
         ),
         "checked-temporal-aggregate.native",
         source.as_bytes(),
-        &packages,
-        &DependencyInput::default(),
     )
-    .expect("S1-S4 retain checked aggregate formula");
-    let report = temporal::evaluate_checked(
-        checked.package(),
-        0,
-        &origin_trace(),
-        temporal::Limits::default(),
-    );
+    .expect("S1 parses aggregate temporal source");
+    let unit = qsl_forms::build_unit(&parsed).expect("S2 builds aggregate temporal source");
+    let graph = qsl_semantics::check::PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        "checked-temporal-aggregate".into(),
+        unit,
+        qsl_semantics::model::intake::SelectedModels::default(),
+        Vec::new(),
+    )
+    .expect("S3 package assembly")
+    .check(quire_semantic_value::checking::CheckingLimits::default())
+    .expect("S3 retains the aggregate formula");
+    let checked = qsl_package::CheckedPackage::link(graph);
+    let report =
+        temporal::evaluate_checked(&checked, 0, &origin_trace(), temporal::Limits::default());
     assert!(matches!(
         report.result(),
         Err(temporal::Error::Unsupported(
