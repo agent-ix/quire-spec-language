@@ -547,8 +547,12 @@ pub(crate) struct Lowering<'a> {
     /// the package has so far).
     unsettled_functions: Vec<usize>,
     unsettled_composites: Vec<NodeKey>,
-    /// Composites whose node is being built.
+    /// Composites whose node is being built, innermost last.
     composites_in_progress: Vec<NodeKey>,
+    /// [`Self::composites_in_progress`] as a set: a chain of composites
+    /// each reaching the next is as deep as it is long, so membership is
+    /// a lookup, never a scan of the stack.
+    composites_open: BTreeSet<NodeKey>,
     /// The placeholder naming each composite in progress that reached
     /// itself.
     composite_placeholders: BTreeMap<NodeKey, NodeRef>,
@@ -1569,6 +1573,7 @@ impl<'a> Lowering<'a> {
             unsettled_functions: Vec::new(),
             unsettled_composites: Vec::new(),
             composites_in_progress: Vec::new(),
+            composites_open: BTreeSet::new(),
             composite_placeholders: BTreeMap::new(),
             functions_open: false,
             timed_places: Vec::new(),
@@ -2068,7 +2073,9 @@ impl<'a> Lowering<'a> {
         if built.is_err() {
             // The composites a refusal left mid-build are no longer being
             // built.
-            self.composites_in_progress.truncate(open);
+            for declaration in self.composites_in_progress.drain(open..) {
+                self.composites_open.remove(&declaration);
+            }
         }
         built
     }
@@ -2362,7 +2369,7 @@ impl<'a> Lowering<'a> {
                 CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch),
             ));
         };
-        if self.composites_in_progress.contains(&declaration) {
+        if self.composites_open.contains(&declaration) {
             // FR-092: a record reaching itself is in a recursion group; a
             // placeholder names it until its node is built.
             if let Some(placeholder) = self.composite_placeholders.get(&declaration) {
@@ -2375,6 +2382,7 @@ impl<'a> Lowering<'a> {
         }
         let name = qualified_name(composite.name(), location)?;
         self.composites_in_progress.push(declaration.clone());
+        self.composites_open.insert(declaration.clone());
         let shape = composite.shape();
         let members = match shape {
             CompositeShape::Record(fields) => fields.len(),
@@ -2476,7 +2484,9 @@ impl<'a> Lowering<'a> {
             members,
             ..
         } = composite;
-        self.composites_in_progress.pop();
+        if let Some(closed) = self.composites_in_progress.pop() {
+            self.composites_open.remove(&closed);
+        }
         let form = match shape {
             CompositeShape::Record(_) => "record",
             CompositeShape::Tuple(_) => "tuple",
@@ -5741,28 +5751,44 @@ fn roots(
     roots
 }
 
-/// `anchors` relaxed along [`reached_nodes`] until no anchor lowers, never
-/// into a node `placed` already anchors. Each anchor only decreases, over
-/// the finitely many declaration roots, so this ends.
+/// `roots` propagated along [`reached_nodes`], never into a node `placed`
+/// already anchors: each node reached from a root, directly or through
+/// other nodes, takes the least anchor of the roots that reach it, and a
+/// root keeps its own anchor unless a lesser root reaches it.
+///
+/// The roots are visited in ascending anchor order and each node is
+/// anchored and expanded once, by the first (least) root to reach it, so
+/// this is linear in the reached nodes and edges up to the map lookups.
+/// The walk is an explicit worklist: graph depth is unbounded.
 fn relax(
     graph: &SemanticGraph,
     members: &BTreeMap<NodeKey, Vec<NodeKey>>,
-    mut anchors: BTreeMap<NodeKey, Location>,
+    roots: BTreeMap<NodeKey, Location>,
     placed: &BTreeMap<NodeKey, Location>,
 ) -> BTreeMap<NodeKey, Location> {
-    let mut work: Vec<NodeKey> = anchors.keys().cloned().collect();
-    while let Some(key) = work.pop() {
-        let (Some(node), Some(anchor)) = (graph.nodes.get(&key), anchors.get(&key).cloned()) else {
+    let mut ordered: Vec<(NodeKey, Location)> = roots.into_iter().collect();
+    ordered.sort_by(|(_, left), (_, right)| left.cmp(right));
+    let mut anchors: BTreeMap<NodeKey, Location> = BTreeMap::new();
+    let mut work: Vec<NodeKey> = Vec::new();
+    for (root, anchor) in ordered {
+        // A lesser root already reached this one, and everything it reaches.
+        let btree_map::Entry::Vacant(entry) = anchors.entry(root.clone()) else {
             continue;
         };
-        for named in reached_nodes(node, members) {
-            if placed.contains_key(&named) {
+        entry.insert(anchor.clone());
+        work.push(root);
+        while let Some(key) = work.pop() {
+            let Some(node) = graph.nodes.get(&key) else {
                 continue;
-            }
-            let lowers = anchors.get(&named).is_none_or(|current| anchor < *current);
-            if lowers {
-                anchors.insert(named.clone(), anchor.clone());
-                work.push(named);
+            };
+            for named in reached_nodes(node, members) {
+                if placed.contains_key(&named) {
+                    continue;
+                }
+                if let btree_map::Entry::Vacant(entry) = anchors.entry(named) {
+                    work.push(entry.key().clone());
+                    entry.insert(anchor.clone());
+                }
             }
         }
     }

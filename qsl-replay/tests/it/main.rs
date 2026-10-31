@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Integration tests that reach `qsl-replay` through its public facade only.
 
+mod admitted_record_chain;
 mod category_facade;
 mod checked_body_failure;
 mod compile_ieee_profile;
