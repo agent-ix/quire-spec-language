@@ -10,7 +10,7 @@
 use std::num::NonZeroU64;
 
 use ix_trace_rs::trace;
-use qsl_analyze::analyze::{analyze, contract_item, AnalyzeRecord, Engines, Settlement};
+use qsl_analyze::analyze::{analyze_items, contract_item, AnalyzeRecord, Engines, Settlement};
 use qsl_analyze::contract_check::{manifest, ContractRequest};
 use qsl_eval::simulation::model::ModelSystem;
 use qsl_forms::StateClauseKind;
@@ -54,7 +54,7 @@ fn run(world: &World, claim: &OccurrenceKey, max_cases: Option<u64>) -> AnalyzeR
         abstract_subject: None,
         max_cases: max_cases.and_then(NonZeroU64::new),
     });
-    analyze(
+    analyze_items(
         &Engines::qsl().expect("the linked engines register"),
         vec![contract_item(RequestIndex::new(0), request)],
         &Cancel::new(),
@@ -430,7 +430,7 @@ mod simulation {
             }),
             max_cases: None,
         });
-        analyze(
+        analyze_items(
             &Engines::qsl().expect("the linked engines register"),
             vec![contract_item(RequestIndex::new(0), request)],
             &Cancel::new(),
@@ -683,7 +683,7 @@ fn assert_no_per_step_reading(
             // A budget of one case: a check that ran would reach it.
             max_cases: NonZeroU64::new(1),
         });
-        let record = analyze(
+        let record = analyze_items(
             &Engines::qsl().expect("the linked engines register"),
             vec![contract_item(RequestIndex::new(0), request)],
             &Cancel::new(),

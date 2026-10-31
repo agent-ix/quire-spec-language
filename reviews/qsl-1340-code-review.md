@@ -53,9 +53,9 @@ Ticket: QSL-1340. PR: quire-spec-language#1953, head 2282c6a49. Method: code-rev
 
 ## Dispositions
 
-Round 1, fix commit `cfe66261f`.
+Disposition pass 1, head 96e889d92 (fix commit cfe66261f), checked against the diff and by mutation.
 
 | FND | outcome | reason |
 | --- | --- | --- |
-| FND-001 | fixed | `ModelSystem::package()` added; `derived_zone_item` joins `item.request.subject.system().package()` and the certificate package. `a_timed_deadlock_verdict_is_joined_on_the_run_and_check_packages` refuses a symmetry-reduced run over the `when { true }` package for an item written with no declaration; dropping the run package from the join fails it. |
-| FND-002 | fixed | `model_item`, `protocol_item` and `zone_item` return `Result` and refuse a deadlock-, race- or time-lock-freedom run with `DerivedItemMismatch::DerivedRun`; the derived adapters build through private `run_*` functions, so no public path settles a derived item without its join. TC-762's deadlock tests now run through `derived_model_item`. |
+| FND-001 | fixed | `ModelSystem::package()` exists (qsl-eval/src/simulation/model.rs:509-513), and `derived_zone_item` joins `[item.request.subject.system().package(), item.certificate.simulation.package]` for both the anchor and the terminal keys (items.rs:634-645). Mutations that drop the run package (M3) or the whole EN-6 terminal join (M2) both fail `a_timed_deadlock_verdict_is_joined_on_the_run_and_check_packages`. |
+| FND-002 | fixed | `model_item`, `protocol_item` and `zone_item` return `Result` and refuse `DeadlockFreedom`/`RaceFreedom`/`TimeLockFreedom` with `DerivedRun` (items.rs:95-109,165-175,261-271). The derived adapters call the private `run_*` builders. `AnalyzeItem::new` is `pub(crate)`, and `timed_refinement_item` builds only refinement runs, so no public path is left. Removing the model_item guard (M4) or the zone_item guard (M5) fails `a_derived_run_settles_only_through_its_joined_adapter`. TC-762 and FR-281-AC-3 are not weakened. `a_broken_item...` keeps every assertion: refuted, en-1, a Deadlock counterexample, and a replay that reproduces. The three-items test still has one unsupported, one refuted and one proved item, three records in request order, and the same diagnostic. Only the refuted item moved to index 1, because the derived item's index comes from the written request. |

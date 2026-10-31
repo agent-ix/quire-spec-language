@@ -41,10 +41,17 @@ Ticket: QSL-1340. Plan completion: not assessed. The one new test, `a_deadlock_v
 
 ## Dispositions
 
-Round 1, fix commit `cfe66261f`. Each mutation below was applied alone and `cargo test -p qsl-analyze --test it -- derived_request` re-run.
+Disposition pass 1, head 96e889d92 (fix commit cfe66261f). I re-ran the mutations myself, one at a time, with `cargo test -p qsl-analyze --test it -- derived_request analyze:: zone_dense deadlock_item`. M1, the EN-1 run package, fails the AC-5 test. M2, the whole EN-6 terminal join, and M3, the EN-6 run package, fail the EN-6 test. M4 (model_item guard), M5 (zone_item guard) and M7 (EN-1 anchor join) fail the AC-6 adapter test. M9 neutralises the replay wrapper and fails the AC-5 test. M6 (protocol_item guard) and M8 (EN-6 anchor join) survive the full `cargo test -p qsl-analyze`. The same 8 unrelated tests fail with or without either mutation, and also on the unmutated head.
 
 | FND | outcome | reason |
 | --- | --- | --- |
-| FND-001 | fixed | New EN-6 test: reduced-run mismatch, certificate-only mismatch, matching reduced proof. Deleting the EN-6 terminal join fails `a_timed_deadlock_verdict_is_joined_on_the_run_and_check_packages`, as does dropping the run package from it. |
-| FND-002 | fixed | Run-only case (`none` run, `when` certificate) added; dropping the run package from `derived_model_item`'s join fails `a_deadlock_verdict_is_joined_on_the_terminal_declaration`. |
-| FND-003 | fixed | Asserts the `value = 3` and `value = 2` keys differ, and a run and check over the `value = 2` package refuse naming both keys. |
+| FND-001 | fixed | `a_timed_deadlock_verdict_is_joined_on_the_run_and_check_packages` covers a reduced-run-only mismatch, a certificate-only mismatch and a matching `Proved{Reduced}`. M2 and M3 are killed. |
+| FND-002 | fixed | A `run_only` case (none run, when certificate) is added at derived_request.rs:729-735. M1 is killed. |
+| FND-003 | fixed | `assert_ne!(at_two_key, when_key, ...)` is present, and a run and check over the `value = 2` package refuse naming both keys. |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | `protocol_item`'s `DerivedRun` guard is untested. Replacing it with `_ => Ok(run_protocol_item(..))` (M6) leaves all of `cargo test -p qsl-analyze` green apart from 8 failures that also occur on the unmutated head. FR-411 names `protocol_item` in the `DerivedRun` SHALL, but AC-6 tests only `model_item` and `zone_item`. | qsl-analyze/src/analyze/items.rs:165-175 |
+| FND-005 | low | The EN-6 anchor join is untested. Deleting `join_anchor(derived, packages)?` from `derived_zone_item` (M8) leaves every test green apart from the same 8 head failures. `OtherAnchor` is tested only on EN-1. | qsl-analyze/src/analyze/items.rs:641 |

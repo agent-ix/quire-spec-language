@@ -42,10 +42,16 @@ Ticket: QSL-1340. Method: spec-review (spec-integrity-analysis, with an EARS rea
 
 ## Dispositions
 
-Round 1, fix commit `cfe66261f`.
+Disposition pass 1, head 96e889d92 (fix commit cfe66261f). `quire validate --scope .` passes on FR-411 and TC-1142 (exit 0).
 
 | FND | outcome | reason |
 | --- | --- | --- |
-| FND-001 | fixed | The code joins the EN-6 run's package (SR-1953001 FND-001); FR-411 states the EN-6 clause and AC-6 tests it (TC-1142 step 6). |
-| FND-002 | fixed | Implemented the comparable part: `OtherAnchor` checks the request item's anchor (the node of the 3-tuple) against the run's and check's `model_root` nodes; kind and subject were already compared. The bullet now names exactly these and says why the model identity, ordinal, arguments and domains need no comparison for a derived item. AC-6 tests `OtherAnchor`. |
-| FND-003 | fixed | The owner list names the derived adapters and the replay refusal; the FR-127 and FR-235 maps are stated to take no part, and FR-127 is dropped from the dependencies. |
+| FND-001 | fixed | The EN-6 bullet now requires the run's and the check's packages, "on EN-1 and on EN-6 alike", and the code meets it. AC-6 and TC-1142 step 6 test a reduced EN-6 run alone, a certificate alone, and the matching proof. |
+| FND-002 | fixed | The narrowed bullet holds against ADR-013 O-09. The 3-tuple is (node, model identity, ordinal). A derived item's node is its `model_root` anchor, which `OtherAnchor` now compares. The model identity is the anchor's model. The ordinal is assigned per (node, model), and a derived item is unique per kind and subject, so the compared kind fixes it. A derived item has no arguments or domains (unbounded, no extents), so none is left to compare. AC-6 tests `OtherAnchor`. |
+| FND-003 | fixed | The owners are now the two derived adapters and the FR-128 replay refusal. The FR-127/FR-235 maps are explicitly excluded, and the FR-127 dependency edge is gone. |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | The refusal bullet says "If the kind or the subject differs, then the adapter SHALL refuse `OtherItem`" with no engine scope. `derived_zone_item` compares no subject identity: it checks the kind, the obligation kind, the anchor, the terminals and the clock bound. The preceding bullet correctly scopes the subject comparison to "for EN-1". Scope the refusal bullet the same way, so it does not claim an EN-6 subject check. | spec/functional/FR-411-emit-a-checked-model-terminal-declaration-as-a-v2-terminal-node.md:141-142 |

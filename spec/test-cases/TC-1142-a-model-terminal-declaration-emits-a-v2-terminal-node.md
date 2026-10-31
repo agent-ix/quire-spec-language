@@ -46,16 +46,19 @@ Use FR-126-AC-9's `Counter` unit.
    `when` package; settle the no-declaration item over the `when` package
    and over its own. Then settle the no-declaration item over its own run
    with its replay recompiling the `value = 2` package.
-6. Hand `model_item` the Counter's deadlock-freedom run and `zone_item` a
-   timed deadlock-freedom run. Hand `derived_model_item` the dense `Rpc`'s
-   derived deadlock-freedom item with the Counter's obligation and run.
-   Over FR-430-AC-3's latching timers, write the timed deadlock-freedom item
+6. Hand `model_item` the Counter's deadlock-freedom run, `protocol_item` a
+   protocol subject's deadlock-freedom and race-freedom runs, and
+   `zone_item` a timed deadlock-freedom run. Hand `derived_model_item` the
+   dense `Rpc`'s derived deadlock-freedom item with the Counter's
+   obligation and run. Over FR-430-AC-3's latching timers, write the timed deadlock-freedom item
    over the package with no declaration and over the package declaring
    `terminal Done using v on M when { true };`; through `derived_zone_item`,
    settle the first with a symmetry-reduced run over the `when` package and
    the certificate request over its own, with an unreduced run over its own
    and the certificate request over the `when` package, and settle the
-   second with the reduced run and certificate request over its own.
+   second with the reduced run and certificate request over its own. Hand
+   `derived_zone_item` the timers' derived deadlock-freedom item with the
+   run and certificate request over a package of another model.
 
 Tag the tests `#[trace("TC-1142", "FR-411-AC-n")]` with the AC each step
 backs.
@@ -79,7 +82,7 @@ backs.
   over the `when` package settles `proved` and the no-declaration item over
   its own package `refuted`; with the `value = 2` replay it settles
   `inconclusive`, `replay_refused`.
-- Step 6 (FR-411-AC-6): `DerivedRun` from both public adapters;
-  `OtherAnchor` naming the `Rpc` item's anchor; `TerminalDeclaration`
-  naming `none` and the `when` key for the reduced run and for the
-  certificate request; `Proved{Reduced}` on EN-6 for the matching item.
+- Step 6 (FR-411-AC-6): `DerivedRun` from the three public adapters;
+  `OtherAnchor` naming the `Rpc` item's anchor, on EN-1 and on EN-6;
+  `TerminalDeclaration` naming `none` and the `when` key for the reduced
+  run and for the certificate request; `Proved{Reduced}` on EN-6 for the matching item.

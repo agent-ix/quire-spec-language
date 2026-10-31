@@ -186,7 +186,7 @@ fn an_item_over_an_untimed_subject_keeps_its_candidates() {
 /// `zone_item`: the zone search, FR-245's certificate check and FR-237's
 /// replay, under the package identity `package`.
 fn analyzed(world: &World) -> qsl_analyze::analyze::AnalyzeRecord {
-    use qsl_analyze::analyze::{analyze, zone_item, Engines, TimedItem};
+    use qsl_analyze::analyze::{analyze_items, zone_item, Engines, TimedItem};
     use qsl_analyze::zone_check::{ZoneCheckItem, ZoneCheckLimits, ZoneCheckRequest};
     use qsl_eval::simulation::model::{TimedSystem, DEFAULT_MAX_CLOCKS};
     use qsl_replay::{CertificateCheckLimits, CertifiedItem, ModelTraceReplayResult};
@@ -239,7 +239,7 @@ fn analyzed(world: &World) -> qsl_analyze::analyze::AnalyzeRecord {
             })
         }),
     };
-    let mut records = analyze(
+    let mut records = analyze_items(
         &Engines::qsl().expect("the layer-A manifests register"),
         vec![zone_item(qsl_foundation::RequestIndex::new(0), item).expect("a clause run")],
         &quire_exact::Cancel::new(),

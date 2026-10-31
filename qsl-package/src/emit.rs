@@ -573,7 +573,9 @@ impl<'g> Candidate<'g> {
         if node.node_tag() == NodeTag::BoundedDomain {
             dependencies.insert(semantic_type.clone());
         }
-        if node.node_tag() == NodeTag::Value && node.semantic_form() == "enum_value" {
+        if CheckedNodeKind::decode(ir_tag(node.node_tag()), node.semantic_form())
+            == Some(CheckedNodeKind::Value(ValueForm::EnumValue))
+        {
             dependencies.insert(semantic_type.clone());
         }
         if let Some(nominal) = node.nominal_payload() {

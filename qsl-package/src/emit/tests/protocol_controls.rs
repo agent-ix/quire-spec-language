@@ -1087,6 +1087,38 @@ fn a_choice_emits_its_owner_facts_and_sorted_cases_and_reads_back() {
     assert_eq!(negated["dependencies"], json!([fact]));
 }
 
+/// FR-218-AC-34 and FR-383-AC-6 (TC-1056): accepted visible entries, including
+/// a composite that reads a capture, are emitted as expression-node refs for
+/// both choice and repeat and admitted by IR's reader.
+#[trace("TC-1056", "FR-218-AC-34", "FR-383-AC-6")]
+#[test]
+fn choice_and_repeat_visible_entries_reference_expression_nodes() {
+    let source = deciding(&format!(
+        "sequence Main {{\n{RECEIVED}\
+         choice Pick by Seller visible (got.ok, true and limit) {{ \
+         case yes when {{ got.ok }} sequence Yes {{ }} \
+         case no when {{ not got.ok }} sequence No {{ }} }}\
+         repeat Again by Seller visible (got.ok, true and limit) max 1 \
+         while {{ got.ok }} sequence Body {{ \
+         event Tick by Seller as (tick: Ack) {{ true }}; }} \
+         exhausted sequence Exhausted {{ }}\n}}"
+    ));
+    let source = source.replace("role Buyer", "capture limit: Boolean = true;\nrole Buyer");
+    let lowered = emitted(&source);
+    for (name, members) in [("Pick", &CHOICE[..]), ("Again", &REPEAT[..])] {
+        let visible = argument(run_control(&lowered.wire, name), members, "visible");
+        let entries = visible["members"].as_array().expect("visible set members");
+        assert_eq!(entries.len(), 2, "{name} visible entry count");
+        for entry in entries {
+            let expression = target(&lowered.wire, entry);
+            assert_eq!(
+                expression["node_tag"], "expression",
+                "{name} visible entries reference expression nodes"
+            );
+        }
+    }
+}
+
 /// FR-466 "Control layouts" (FR-464-AC-1, AC-2, AC-4): a `repeat` writes its
 /// owning role, its `visible` entries, the written `maximum`, its `proof`
 /// Group, its guard, its body and the `exhausted` control present exactly
@@ -1187,15 +1219,14 @@ fn choices_and_repeats_nest_in_each_other_and_read_back() {
 }
 
 /// A post-test `repeat`, whose guard reads a binder its body declares, has
-/// no FR-466 node form (the guard reads the repeat's entry only); nor has a
-/// literal or bare-binder `visible` entry (FR-466 lists `expression`
-/// nodes), nor a repeat whose `visible`
-/// entry, invariant or variant reads a body binder; a guard that refers to
-/// a protocol directly is not written yet either; QSpec #481 (STD-539)
-/// settles these as non-encodings. A repeat that steps only through a
-/// nested repeat has a node form (FR-464 "Nested `repeat` rule") but is
-/// withheld until IR's reader decides that rule (IR-1100). Each refuses the protocol
-/// `unsupported_construct`/`not-yet-implemented` naming the construct.
+/// no FR-466 node form (the guard reads the repeat's entry only), as does a
+/// repeat whose `visible` entry, invariant or variant reads a body binder; a
+/// guard that refers to a protocol directly is not written yet either;
+/// QSpec #481 (STD-539) settles these as non-encodings. A repeat that steps
+/// only through a nested repeat has a node form (FR-464 "Nested `repeat`
+/// rule") but is withheld until IR's reader decides that rule (IR-1100).
+/// Each refuses the protocol `unsupported_construct`/`not-yet-implemented`
+/// naming the construct.
 #[trace("FR-092-AC-18", "TC-1021")]
 #[test]
 fn decisions_without_a_node_form_are_not_written() {
@@ -1210,15 +1241,6 @@ fn decisions_without_a_node_form_are_not_written() {
                 "sequence Main { repeat Loop by Seller visible (got.ok) while { not got.ok } \
                  sequence Body { send Placed via Ch as (placed: Ack) { true }; \
                  receive Got via Ch of Placed as (got: Ack) { true }; } }",
-            ),
-        ),
-        (
-            ProtocolConstruct::VisibleEntryNotAnExpression,
-            "STD-539",
-            flow(
-                "sequence Main { event E by Buyer as (e: Boolean) { true }; \
-                 repeat Loop by Buyer visible (e) while { e } \
-                 sequence Body { event Tick by Buyer as (tick: Boolean) { true }; } }",
             ),
         ),
         (
@@ -1266,14 +1288,6 @@ fn decisions_without_a_node_form_are_not_written() {
                 "sequence Main { repeat Loop by Buyer visible () while { true } \
                  repeat Inner by Buyer visible () while { true } \
                  sequence Step { event Tick by Buyer as (tick: Boolean) { true }; } }",
-            ),
-        ),
-        (
-            ProtocolConstruct::VisibleEntryNotAnExpression,
-            "STD-539",
-            flow(
-                "sequence Main { repeat Loop by Buyer visible (true) while { true } \
-                 sequence Body { event Tick by Buyer as (tick: Boolean) { true }; } }",
             ),
         ),
         (

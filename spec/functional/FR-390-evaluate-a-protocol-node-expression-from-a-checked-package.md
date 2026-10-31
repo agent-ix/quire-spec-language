@@ -49,6 +49,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-058
     type: depends_on
+  - target: ix://agent-ix/quire-semantic-value/FR-130
+    type: depends_on
 ---
 # FR-390: Evaluate a protocol node's expression from a checked package at S6a with shared accounting
 
@@ -108,16 +110,81 @@ names the counter or the value that stopped the evaluation.
     as the slot table below lists it;
   - `index` is the position within a list member, and is present exactly for
     such a member.
-- A `ProtocolSupply { binders, observation }`:
+- A `ProtocolSupply<'a> { binders, observation }`:
   - `binders`: the supplied sources, each a binder node key paired with a
-    `SuppliedValue`, which is either a value of FR-106's closed value grammar
-    (a Boolean, an integer, a record, a reference to an object of the supplied
-    observation, an option or a sequence of those) or `Unavailable(cause)`. A
-    captured value is supplied under its capture's binder key;
-  - `observation`: none, or one current snapshot admitted as FR-106 admits the
-    snapshot of a `ValueInvariants` selection, with no clause, anchor
-    comparison or invocation. It is needed exactly when a supplied value is a
-    reference.
+    `ProtocolSuppliedValue`. It contains the existing `SuppliedValue` (a value
+    of FR-106's closed value grammar or `Unavailable(cause)`) and a sequence of
+    `ProtocolReferenceOccurrence` entries. Each occurrence pairs a path rooted
+    at that binder, expressed with
+    `quire_semantic_value::admission::PathStep`, with the exact checked
+    population declaration `NodeKey` that the caller used to construct that
+    reference. The path identifies one reference occurrence in the supplied
+    value: the root reference has an empty relative path; a reference inside a
+    record, a present option or a sequence has the corresponding field,
+    option-value or index steps. This is provenance for the value already
+    supplied, not a second value, object identity or population-membership
+    claim. A captured value is supplied under its capture's binder key;
+  - `observation`: `Option<&'a quire_semantic_value::admission::ObservationAdmission<qsl_package::observation::AdmittedProtocolObservation<'a>>>`,
+    using QSV's existing generic directly as FR-106 defines. Its `Admitted`
+    arm carries a current-snapshot authority for the evaluated view and the
+    protocol's selected model; its other arms retain the original admission
+    result. It is required exactly when a supplied source value contains a
+    reference, including a nested reference. It carries no raw snapshot,
+    provision or caller-constructed `Observation`.
+  `ProtocolSuppliedValue` and `ProtocolReferenceOccurrence` are QSL
+  layer-5 supply wrappers around the existing supplied value and shared path
+  vocabulary. They SHALL NOT change `ObjectReference` identity, create a
+  second admission result/carrier, contain raw snapshot or call inputs, or
+  infer a population from object presence or from a model/type match. The
+  checked `NodeKey` in each occurrence selects the intended population even
+  when several declarations have the same normalized universe and effective
+  member type. A caller SHALL be able to construct a supplied value with the
+  existing typed `SuppliedValue` and its occurrence entries; the wrapper
+  exposes no mutable admitted authority. Admission rechecks every supplied
+  node against the selected view, so constructing an occurrence does not
+  grant it authority.
+
+The public QSL layer-5 input types SHALL be:
+
+```rust
+pub struct ProtocolReferenceOccurrence {
+    pub path: Vec<quire_semantic_value::admission::PathStep>,
+    pub population: quire_exact::NodeKey,
+}
+
+pub struct ProtocolSuppliedValue {
+    pub value: qsl_eval::value::SuppliedValue,
+    pub references: Vec<ProtocolReferenceOccurrence>,
+}
+
+pub struct ProtocolSupply<'view> {
+    pub binders: Vec<(quire_exact::NodeKey, ProtocolSuppliedValue)>,
+    pub observation: Option<&'view quire_semantic_value::admission::ObservationAdmission<
+        qsl_package::observation::AdmittedProtocolObservation<'view>,
+    >>,
+}
+```
+
+`path` is relative to the source value root and uses the shared typed field,
+option-value and index steps; `population` is the checked declaration node
+key in the selected model. An empty path therefore describes a root
+reference. `value` is the existing QSL supplied-value type; these wrappers add
+only the occurrence-to-declaration association and do not define a new value
+grammar, result type or checker. `ProtocolSupply` remains the sole supply
+accepted by `evaluate_protocol_slot`.
+
+The public entry remains the S6a protocol-slot method, with the existing
+failure and meter types:
+
+```rust
+pub fn evaluate_protocol_slot(
+    &self,
+    slot: &qsl_eval::value::ProtocolSlot,
+    supply: &qsl_eval::value::ProtocolSupply<'_>,
+    meter: &mut quire_exact::Meter,
+) -> Result<qsl_eval::value::ProtocolSlotEvaluation, quire_eval::CallFailure>;
+```
+
 - A `Meter` (FR-107).
 
 The slots of a protocol node:
@@ -162,8 +229,10 @@ the proof before emission and a termination claim is their only reader
 - `CallFailure::Admission(Box<CallAdmissionFailure>)` for a selection or
   supply refused or left incomplete before S6a. `CallAdmissionFailure` is the
   one closed `Refused`/`Incomplete` result owned by quire-eval; each variant
-  carries its catalog code, cause and node/member/binder locus. No QSL-owned
-  mirror admission type is introduced, and nothing is charged.
+  carries the original shared QSV `AdmissionRecord` and the checked-package
+  locus, including a population node where completeness fails, as shared
+  FR-130 requires. No QSL-owned mirror call-admission record or fault type is
+  introduced, and nothing is charged.
 - `CallFailure::Fault(InternalFault)` for an S6a invariant break, as FR-107.
 
 Exit statuses are FR-285's `Category::exit_code` of the outcome's category and
@@ -409,16 +478,52 @@ check with its one record:
    argument; a payload that is not in the type's domain refuses
    `invalid_runtime_input`/`invalid-value`. Each refusal names the binder. A
    captured value is checked against its capture's declared type.
-6. If a supplied value is a reference and `observation` is none, then admission
+   Admission SHALL then match the supplied value's reference occurrences to
+   that binder's `ProtocolReferenceOccurrence` entries in FR-106 value-walk
+   order. Every occurrence SHALL have exactly one entry at its exact nested
+   path. An omitted path SHALL refuse `invalid_runtime_input`/`missing-member`;
+   a repeated path SHALL refuse `invalid_runtime_input`/`duplicate-member`;
+   an entry whose path is extra or does not end at a reference SHALL refuse
+   `invalid_runtime_input`/`unknown-member`; and an entry whose declaration
+   does not name a population in the exact selected model, whose effective
+   member type does not conform to the reference target, or whose normalized
+   universe/effective target type disagrees with the declaration SHALL refuse
+   with the existing `invalid_model_binding`/`wrong-model-selection` or
+   `invalid_runtime_input`/`wrong-value-kind` respectively. A genuinely
+   foreign reference model retains `foreign_reference`/`foreign-universe`.
+   The declaration identity is checked even for an empty population, an
+   unlisted population, or a key absent from the snapshot; object presence
+   SHALL NOT supply or repair provenance. A source that is `Unavailable` has
+   no reference occurrences and SHALL have no occurrence entries. These
+   checks introduce no catalog code or cause.
+6. If a supplied value contains a reference and `observation` is none, then admission
    SHALL return `Incomplete` with `unavailable_observation`/
-   `missing-required-artifact`, naming the binder. Otherwise it SHALL resolve
-   each reference in the observation: an absent target in a complete population
-   refuses `dangling_reference`/`absent-target-in-complete-population`; a
-   required population the observation does not mark complete returns
-   `Incomplete` with `incomplete_population`/`incomplete-scope`, as FR-106
-   check 7 and 8 state. An observation that FR-106 refuses is refused with
-   FR-106's record (for the model the package selects, `invalid_model_binding`/
-   `wrong-model-selection`).
+   `missing-required-artifact`, naming the first such binder in the source
+   order above. When observation admission is required, the call SHALL inspect
+   the supplied typed result after checks 1 through 5: `Refused` and
+   `Incomplete` retain their respective failure kinds and the entire original
+   QSV admission record; `Fault` returns the original `InternalFault` through
+   `CallFailure::Fault`; no non-admitted arm yields an authority. For
+   `Admitted`, admission SHALL verify the authority's association with this
+   evaluated view and the protocol's selected model using FR-106's retained
+   provenance, never infer it from the objects that happen to be present.
+   A wrong model retains `invalid_model_binding`/`wrong-model-selection`.
+   Admission SHALL use each occurrence's exact checked population declaration
+   as the initial population provenance for that supplied reference. It SHALL
+   combine those supplied-value facts with the authority's parsed object
+   fields, relationship extents, population manifest and normalized model
+   associations, and reuse FR-106 checks 7 and 8 for exactly those initial
+   populations and their recursive required closure. It SHALL NOT derive an
+   initial population from a normalized universe/effective-type pair or a
+   matching object key. A
+   required incomplete population returns `Incomplete` with
+   `incomplete_population`/`incomplete-scope` naming its population node and
+   retaining the full FR-106 record, even if the referenced object is present.
+   An unrelated incomplete population has no effect. Only after completeness
+   succeeds SHALL FR-106 check 8 decide absent targets in complete populations
+   as `dangling_reference`/`absent-target-in-complete-population`. These checks
+   operate on the authority's retained admitted facts, read no bytes, perform
+   no expression evaluation and leave the caller's meter unchanged.
 
 A source supplied as `Unavailable` is admitted by checks 4 and 5 without a
 value; check 6 does not apply to it.
@@ -495,6 +600,10 @@ value; check 6 does not apply to it.
 | FR-390-AC-17 | An admitted IR type without a kernel representation yields `ViewFailure::Unsupported` before any view exists, with `unknown_required_feature`/`unsupported-feature`, the affected package/node/location and `MissingTypeRepresentation`; no meter is accepted or charged. A missing literal, operation or binding projection yields its corresponding typed reason. A projection-resource limit yields `Limit`, no partial view. A handle from another owner returns an invariant fault rather than a node. | Test |
 | FR-390-AC-18 | Reader views resolve Boolean, bounded Integer, record/composite and Reference<Node> identities of TC-1070 fixture E to the exact kernel values/types of the in-process view, including recursively nested Option/Collection values used by a slot. AC-11/15 fail if a required QSL-emitted type is reported unsupported; unsupported cases cannot replace any required result/log comparison. | Test |
 | FR-390-AC-19 | A bare `view.total` read and an explicit `deref(view).total` read over the same observation retain their respective in-process charge logs through emitted-package admission and `NodeRead`, including FR-107's explicit-dereference charge distinction. If the representation erases that distinction, view creation returns `MissingChargeSemantics` before a view or meter charge exists, and AC-11 remains unmet; equal completed values or an unsupported result cannot pass the required parity comparison. | Test |
+| FR-390-AC-20 | TC-1071 row 20 uses a successful immutable observation authority in the typed result; although `n5` exists, `nodes` incomplete returns `CallFailure::Admission` with category incomplete, the population locus and the unchanged QSV FR-106 record. An unrelated incomplete population does not alter the successful call. The meter is unchanged on either admission failure. | Test |
+| FR-390-AC-21 | TC-1071 row 21 supplies the `Refused` result of FR-106 current-snapshot admission for another model and returns the original `invalid_model_binding`/`wrong-model-selection` record without a foreign-reference replacement. `Incomplete` preserves its kind/record and `Fault` preserves its `InternalFault`; none supplies successful authority or charges the meter. | Test |
+| FR-390-AC-22 | A malformed slot, duplicate source, unknown source, missing source and wrong-shaped value combined with a refused observation result return the corresponding check-1-through-5 failure before the observation result is inspected. With those defects absent, a reference-valued source and no observation returns the existing unavailable-observation record; a present failed result returns its original arm. All failures leave the caller's existing meter unchanged, and TC-1071 row 22 charges only its successful evaluation. | Test |
+| FR-390-AC-23 | TC-1070's E-P procedure carries one exact population declaration for every root and nested reference occurrence in a supplied source, including record, present-option and sequence paths. Its `Receipt.peer: Reference<Other>` is present in the supplied forward `Receipt` despite the selected initializer reading only `forward.total`; `Other` is not a direct protocol context, while `otherNodes` and `otherSpare` both declare `Other`. A missing, duplicate, extra or non-reference path refuses with the existing cause and typed path before observation inspection; a declaration from another model refuses `invalid_model_binding`/`wrong-model-selection`; wrong normalized identity/type refuses with its existing cause. A ghost key explicitly attributed to an empty `otherSpare` marked incomplete, or to an unlisted `otherSpare`, returns `incomplete_population`/`incomplete-scope` at that declaration node even if a matching object is present in `otherNodes`; the same ghost against a complete empty `otherSpare` returns `dangling_reference`/`absent-target-in-complete-population` for `otherSpare`. An unrelated incomplete population leaves the call admissible. Completing the seeded population then exposes any dangling reference in the recursive reference-field or relationship-end closure in FR-106 walk order. Every refusal/incomplete result retains the original shared FR-106 `AdmissionRecord`, and the meter is unchanged. | Test (TC-1070) |
 
 ## Dependencies
 

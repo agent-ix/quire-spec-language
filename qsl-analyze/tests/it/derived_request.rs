@@ -10,7 +10,7 @@
 
 use ix_trace_rs::trace;
 use qsl_analyze::analyze::{
-    analyze, derived_model_item, derived_zone_item, AnalyzeItem, AnalyzeRecord,
+    analyze_items, derived_model_item, derived_zone_item, AnalyzeItem, AnalyzeRecord,
     DerivedItemMismatch, Engines, ModelItem, TimedItem,
 };
 use qsl_analyze::model_check::manifest as en1;
@@ -50,7 +50,7 @@ use std::num::NonZeroU64;
 use crate::counter::{clause_text, CONTRACT};
 use crate::dense_route::{ids, registry};
 use crate::model_settle::case;
-use crate::timed_world::{World, PACKAGE};
+use crate::timed_world::{World, DENSE, PACKAGE};
 use crate::zone_search::{rpc, rpc_claim, INFINITE};
 
 /// The derived items, each with its obligation, that
@@ -302,7 +302,7 @@ fn zone_run<'w>(
 
 /// The records `analyze` settles for `items`.
 fn analyzed(items: Vec<AnalyzeItem<'_>>) -> Vec<AnalyzeRecord> {
-    analyze(
+    analyze_items(
         &Engines::qsl().expect("the layer-A manifests register"),
         items,
         &Cancel::new(),
@@ -575,7 +575,7 @@ fn an_untimed_subjects_deadlock_item_settles_on_en1() {
             ids(derived.candidates().expect("its candidates")),
             [en1::BACKEND_ID, en6::BACKEND_ID]
         );
-        let mut records = analyze(
+        let mut records = analyze_items(
             &Engines::qsl().expect("the layer-A manifests register"),
             vec![derived_model_item(derived, obligation, item).expect("the deadlock-freedom run")],
             &Cancel::new(),
@@ -745,7 +745,7 @@ fn a_deadlock_verdict_is_joined_on_the_terminal_declaration() {
 
     let engines = Engines::qsl().expect("the layer-A manifests register");
     let run = |item| {
-        let mut records = analyze(&engines, vec![item], &Cancel::new());
+        let mut records = analyze_items(&engines, vec![item], &Cancel::new());
         settled(&records.remove(0)).1
     };
     let value =
@@ -855,7 +855,8 @@ fn a_derived_run_settles_only_through_its_joined_adapter() {
 /// package declaring `terminal Done using v on M when { true };`, though
 /// the certificate request matches; and when only the certificate request
 /// is over that package. Written over the `when` package, the same reduced
-/// run settles `Proved{Reduced}`.
+/// run settles `Proved{Reduced}`. The timers' item, run and checked over
+/// a package of another model, refuses `OtherAnchor`.
 #[trace("TC-1142", "FR-411-AC-6")]
 #[test]
 fn a_timed_deadlock_verdict_is_joined_on_the_run_and_check_packages() {
@@ -907,6 +908,31 @@ fn a_timed_deadlock_verdict_is_joined_on_the_run_and_check_packages() {
         deadlock(&written_none, &when, &none_timed, &plain).err(),
         refused,
         "the certificate's package alone differs"
+    );
+    let elsewhere = crate::timed_world::world_built_in(
+        "test/elsewhere",
+        &crate::timed_world::renamed_package(
+            &crate::timed_world::document(&[], &[("go", &["phase"])]),
+            "test/elsewhere",
+        ),
+        INFINITE,
+        &format!(
+            "{DENSE}pre Go using v on M::Call::go {{ self.phase = 0 }}\n\
+             post Gone using v on M::Call::go {{ self.phase = 1 }}\n"
+        ),
+        &["c"],
+        &[],
+        &serde_json::json!({}),
+    );
+    let elsewhere_system = elsewhere.system();
+    let elsewhere_timed = TimedSystem::new(&elsewhere_system, "M").expect("a timed subject");
+    assert_eq!(
+        deadlock(&written_none, &elsewhere, &elsewhere_timed, &plain).err(),
+        Some(DerivedItemMismatch::OtherAnchor {
+            index: written_none.items()[1].index(),
+            occurrence: written_none.items()[1].occurrence().clone(),
+        }),
+        "a package of another model holds no `model_root` at the timers item's anchor"
     );
     let records = analyzed(vec![
         deadlock(&written_when, &when, &when_timed, &swap).expect("the reduced run")
