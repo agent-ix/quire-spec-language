@@ -247,30 +247,6 @@ pub(crate) fn parameter_node(name: &str) -> Option<NodeKey> {
     qsl_foundation::node_wire::node_key_from_text(&json).ok()
 }
 
-/// A parameter node's transcript name: its compact JSON object with every
-/// byte the transcript grammar reads (`%`, `=`, `;`, `|`, `<`, `>`) or that
-/// is not printable ASCII-safe percent-escaped, so distinct nodes never
-/// share a name and the entry separators never occur inside one.
-#[cfg(test)]
-pub(crate) fn parameter_name(node: &NodeKey) -> Option<String> {
-    let json = qsl_foundation::node_wire::node_key_to_text(node).ok()?;
-    Some(percent_encode(&json))
-}
-
-#[cfg(test)]
-fn percent_encode(text: &str) -> String {
-    let mut bytes = Vec::with_capacity(text.len());
-    for byte in text.bytes() {
-        if matches!(byte, b'%' | b'=' | b';' | b'|' | b'<' | b'>') || byte < 0x20 || byte == 0x7f {
-            bytes.extend_from_slice(format!("%{byte:02X}").as_bytes());
-        } else {
-            bytes.push(byte);
-        }
-    }
-    // Escapes are ASCII and every other byte is the input's own UTF-8.
-    String::from_utf8(bytes).unwrap_or_default()
-}
-
 fn percent_decode(text: &str) -> Option<String> {
     let raw = text.as_bytes();
     let mut bytes = Vec::with_capacity(raw.len());
@@ -710,7 +686,7 @@ mod witness_tests {
     }
 
     fn pn_(node: &NodeKey) -> String {
-        super::parameter_name(node).expect("a node spells")
+        crate::pn(node)
     }
 
     use super::*;
@@ -1640,7 +1616,7 @@ mod deep_parameter_tests {
     #[test]
     fn a_deeply_nested_parameter_node_round_trips_through_its_name() {
         let key = deep_key();
-        let name = parameter_name(&key).expect("a deep key spells");
+        let name = crate::pn(&key);
         assert_eq!(parameter_node(&name), Some(key));
     }
 }

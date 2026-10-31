@@ -280,9 +280,9 @@ pub use quire_semantic_value::declaration::EqualityOperator;
 // this crate alone, names them without naming `qsl_foundation`.
 pub use outcome::undefined_reason;
 pub use outcome::{
-    ArtifactKind, ExecuteResult, ItemCause, ItemLabel, Operation, OutcomeArtifact,
-    OutcomeDiagnostic, OutcomeDocument, OutcomeItem, OutcomeLocus, OutcomeStage, OutcomeWriteError,
-    ParityReason, ResultLimit, ResultValue, OUTCOME_FORMAT,
+    ExecuteResult, ItemCause, ItemLabel, Operation, OutcomeDiagnostic, OutcomeDocument,
+    OutcomeItem, OutcomeLocus, OutcomeStage, OutcomeWriteError, ParityReason, ResultLimit,
+    ResultValue, OUTCOME_FORMAT,
 };
 pub use proof_result::{
     read_backend_provider_envelope, read_first_party_solver_basis, read_plugin_assignments,
@@ -431,10 +431,21 @@ pub(crate) fn fixture_node(fill: u8) -> NodeKey {
     .expect("a fixture node is admissible")
 }
 
-/// A parameter node's transcript name.
+/// A parameter node's transcript name: its compact JSON object with every
+/// byte the transcript grammar reads (`%`, `=`, `;`, `|`, `<`, `>`) or that
+/// is not printable ASCII-safe percent-escaped.
 #[cfg(test)]
 pub(crate) fn pn(node: &NodeKey) -> String {
-    crate::witness::parameter_name(node).expect("a node spells")
+    let json = qsl_foundation::node_wire::node_key_to_text(node).expect("a node spells");
+    let mut bytes = Vec::with_capacity(json.len());
+    for byte in json.bytes() {
+        if matches!(byte, b'%' | b'=' | b';' | b'|' | b'<' | b'>') || byte < 0x20 || byte == 0x7f {
+            bytes.extend_from_slice(format!("%{byte:02X}").as_bytes());
+        } else {
+            bytes.push(byte);
+        }
+    }
+    String::from_utf8(bytes).expect("escapes are ASCII and the rest is the input's UTF-8")
 }
 
 /// The admitted node identity of a checked node reference.
