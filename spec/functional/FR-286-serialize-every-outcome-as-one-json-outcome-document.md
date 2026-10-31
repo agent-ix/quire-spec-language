@@ -58,11 +58,9 @@ the same document (QSpec FR-300-AC-3). The document's members are:
   `execute` outcome (FR-285).
 - `diagnostics`: each with its typed cause, catalog code, `Locus` (ADR-013
   T-5, FR-095) and message.
-- `artifacts`: the identities of the artifacts produced, such as a
-  `package_id` or a generated artifact's content identity. An operation that
-  mints no identity writes an empty array: `check` produces a
-  `CheckedPackage` and no `package_id` (ADR-029 OP-1), so a `check` document's
-  `artifacts` is empty, and the `package` outcome carries the `package_id`.
+- `artifacts`: always an empty array `[]`. No operation writes an artifact
+  identity into the outcome document: `check` produces a `CheckedPackage` and
+  no `package_id` (ADR-029 OP-1).
 - `result`: the evaluation result of an `execute` outcome, the outcome
   FR-100's `spine-run-result/1` member `outcome` carries for a completed,
   undefined or incomplete call. It is `null` for every other operation, and
@@ -126,7 +124,7 @@ The outcome document's bytes.
   empty array when the outcome has no items.
 - `OutcomeDocument::from_run` shall serialize `qsl_replay::spine::run`'s
   result as one `execute` document: a call that ran is `from_call`'s
-  document with the compiled package's `package_id` as its artifact; a
+  document with `artifacts` an empty array; a
   compile refusal carries the stage it reached, the refusal's category and its
   diagnostic; a call-stage refusal (FR-100) carries `S6a`, its category and its
   code; a cancelled run is incomplete with `last_stage` `null`, whichever
@@ -149,12 +147,12 @@ The outcome document's bytes.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-286-AC-1 | The `check` outcome over `tests/fixtures/spine-compile.native` serializes to a document whose `format` is `quire-outcome/1`, `operation` `check`, `last_stage` S4, `category` success, `items`, `diagnostics` and `artifacts` each an empty array, and `result` `null`. The `package` outcome over that `check` outcome serializes with `operation` `package`, `last_stage` S4, `category` success and `artifacts` holding exactly the emitted package's `package_id`. | Test (TC-770) |
+| FR-286-AC-1 | The `check` outcome over `tests/fixtures/spine-compile.native` serializes to a document whose `format` is `quire-outcome/1`, `operation` `check`, `last_stage` S4, `category` success, `items`, `diagnostics` and `artifacts` each an empty array, and `result` `null`. The `package` outcome over that `check` outcome serializes with `operation` `package`, `last_stage` S4, `category` success and `artifacts` an empty array `[]`. | Test (TC-770) |
 | FR-286-AC-2 | The `check` outcome of FR-100-AC-5's `inv` source serializes with `category` refusal and one diagnostic whose cause, catalog code `ill_typed`, `Locus` and message equal the `StageFailure`'s. | Test (TC-770) |
 | FR-286-AC-3 | An `analyze` outcome of three items serializes with three `items` entries in request order, each holding its terminal record and category. Serializing any outcome twice gives equal bytes. | Test (TC-770) |
 | FR-286-AC-4 | FR-281-AC-7's `analyze` outcome serializes its item with category violation and cause `undefined-evaluation`, and the document holds no `undefined` label; FR-283-AC-5's `monitor` outcome serializes the same way; FR-100-AC-10's `execute` outcome serializes with category undefined and the label `undefined`. | Test (TC-770) |
 | FR-286-AC-5 | The `execute` outcome of FR-100-AC-1's `seven` serializes with `category` success and `result` `{"kind": "completed", "value": {"kind": "integer", "decimal": "7"}}`; FR-100-AC-10's empty `sum` with `category` undefined and `result` `{"kind": "undefined", "reason": "sum-out-of-domain"}`; FR-100-AC-6's `seven` with `call.accounting` `{"work_units": 0}` with `category` incomplete and `result` `{"kind": "incomplete", "limit": {"kind": "work_units", "bound": "0", "counter": "1", "field": "work_units", "setting": "accounting.work_units"}}`. A `check` called with a `Cancel` already cancelled serializes with `category` incomplete, `last_stage` `null`, `items` `[]` and `result` `null`. | Test (TC-770) |
-| FR-286-AC-6 | `OutcomeDocument::from_run` over a completed run holds the call's document and one `package_id` artifact; over `run` refusing `ill_typed` source, `category` refusal, `last_stage` S3 and one `ill_typed` diagnostic; over an unknown function, `category` refusal at S6a with `missing_declaration`; over `run` with a cancelled handle, `category` incomplete, `last_stage` null and one `cancelled` diagnostic with cause `requested`; over an internal fault, internal failure with its catalog code; and a driver's `OutcomeDocument::new(Execute, None, Unsupported)` for an unbuilt engine holds one diagnostic whose code serializes as `unimplemented_capability` with cause `backend-not-supplied` and `backend` naming the engine, with `category` unsupported, `last_stage` `null`, and exits 21. | Test (TC-770) |
+| FR-286-AC-6 | `OutcomeDocument::from_run` over a completed run holds the call's document and `artifacts` an empty array; over `run` refusing `ill_typed` source, `category` refusal, `last_stage` S3 and one `ill_typed` diagnostic; over an unknown function, `category` refusal at S6a with `missing_declaration`; over `run` with a cancelled handle, `category` incomplete, `last_stage` null and one `cancelled` diagnostic with cause `requested`; over an internal fault, internal failure with its catalog code; and a driver's `OutcomeDocument::new(Execute, None, Unsupported)` for an unbuilt engine holds one diagnostic whose code serializes as `unimplemented_capability` with cause `backend-not-supplied` and `backend` naming the engine, with `category` unsupported, `last_stage` `null`, and exits 21. | Test (TC-770) |
 | FR-286-AC-7 | TC-792's present lookup through the public spine run entry serializes through `OutcomeDocument::from_run` as one `quire-outcome/1` execute document, with category success, one compiled package artifact and `result` `{"kind":"completed","value":{"kind":"reference","universe":U,"type":T,"object_identity":O}}`. All three components equal the actual returned shared Reference. A second source-compiled Reference-valued function returning a different admitted reference from its input serializes the returned reference, not the input. The existing Boolean/Integer completions remain unchanged; no Reference completion is emitted as a `/2` clause truth or a Population payload. | Test |
 
 ## Status
