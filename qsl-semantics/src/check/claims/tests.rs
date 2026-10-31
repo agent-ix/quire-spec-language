@@ -908,8 +908,9 @@ fn tc_160_two_sites_of_one_node_pair_by_location_not_order() {
         vec![claim_at(first.clone()), claim_at(second.clone())],
         vec![claim_at(second.clone()), claim_at(first.clone())],
     ] {
-        let records = key_claims(claims, &occurrences, graph, &binders)
-            .expect("each site pairs with its own occurrence");
+        let records: RequirementMap = key_claims(claims, &occurrences, graph, &binders)
+            .expect("each site pairs with its own occurrence")
+            .into();
         assert_eq!(
             records.keys().cloned().collect::<Vec<_>>(),
             [
