@@ -1043,10 +1043,14 @@ impl RaComponent {
             .at
             .iter()
             .filter_map(|(location, id)| {
-                let len = self.shared.get(location)?.messages.len();
-                let at = self.position(location, *id)?;
+                let shared = self.shared.get(location)?;
+                let len = shared.messages.len();
+                let at = shared
+                    .messages
+                    .iter()
+                    .position(|message| message.id == *id)?;
                 Some((
-                    self.location_enc(location),
+                    location_enc(location, Some(&shared.cell)),
                     Enc::text(depth(len, at).to_string()),
                 ))
             })
@@ -1090,19 +1094,30 @@ impl RaComponent {
         let Some(event) = self.events.get(&id) else {
             return Enc::Null;
         };
-        let named = |message: Option<Id>| {
-            let location = event.location.as_ref()?;
-            let len = self.shared.get(location)?.messages.len();
-            let at = self.position(location, message?)?;
-            Some(Enc::text(depth(len, at).to_string()))
-        };
         let mut members = vec![
             ("thread", event.thread.enc()),
             ("kind", Enc::text(event.kind.text())),
         ];
-        if let Some(location) = &event.location {
-            members.push(("location", self.location_enc(location)));
+        // One lookup of the event's location serves its name and the depths
+        // of the messages it read and wrote.
+        let shared = event
+            .location
+            .as_ref()
+            .map(|location| (location, self.shared.get(location)));
+        if let Some((location, shared)) = shared {
+            members.push((
+                "location",
+                location_enc(location, shared.map(|shared| &shared.cell)),
+            ));
         }
+        let named = |message: Option<Id>| {
+            let shared = shared?.1?;
+            let at = shared
+                .messages
+                .iter()
+                .position(|held| Some(held.id) == message)?;
+            Some(Enc::text(depth(shared.messages.len(), at).to_string()))
+        };
         if let Some(read) = named(event.read) {
             members.push(("read", read));
         }
@@ -1113,17 +1128,26 @@ impl RaComponent {
     }
 
     fn graph_enc(&self) -> Enc {
+        // An event is named once however many edges and sets mention it.
+        let named: std::cell::RefCell<BTreeMap<Id, Enc>> = std::cell::RefCell::new(BTreeMap::new());
+        let event = |id: Id| {
+            named
+                .borrow_mut()
+                .entry(id)
+                .or_insert_with(|| self.event_enc(id))
+                .clone()
+        };
         Enc::Object(vec![
             (
                 "events",
-                sorted(self.events.keys().map(|id| self.event_enc(*id)).collect()),
+                sorted(self.events.keys().map(|id| event(*id)).collect()),
             ),
             (
                 "edges",
                 sorted(
                     self.order
                         .iter()
-                        .map(|(a, b)| Enc::Array(vec![self.event_enc(*a), self.event_enc(*b)]))
+                        .map(|(a, b)| Enc::Array(vec![event(*a), event(*b)]))
                         .collect(),
                 ),
             ),
@@ -1135,7 +1159,7 @@ impl RaComponent {
                         .map(|(thread, events)| {
                             (
                                 thread.enc(),
-                                sorted(events.iter().map(|id| self.event_enc(*id)).collect()),
+                                sorted(events.iter().map(|id| event(*id)).collect()),
                             )
                         })
                         .collect(),
@@ -1149,7 +1173,7 @@ impl RaComponent {
                         .map(|(location, events)| {
                             (
                                 self.location_enc(location),
-                                sorted(events.iter().map(|id| self.event_enc(*id)).collect()),
+                                sorted(events.iter().map(|id| event(*id)).collect()),
                             )
                         })
                         .collect(),

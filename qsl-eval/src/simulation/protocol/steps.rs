@@ -478,7 +478,8 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                             let enabled: Vec<(ModelTransition, Option<Value>)> =
                                 if attempt.constraint.is_some() {
                                     self.model
-                                        .apply_operation_matching(
+                                        .apply_attempt(
+                                            &format!("{node:?}"),
                                             &observed,
                                             &operation,
                                             &select,
@@ -491,7 +492,8 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                                         .collect()
                                 } else {
                                     self.model
-                                        .enabled_transitions_matching(
+                                        .enabled_attempt(
+                                            &format!("{node:?}"),
                                             &observed,
                                             &operation,
                                             &select,
@@ -1221,9 +1223,15 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         let select = |clause| attempt.contracts.contains(&clause);
         let reading = self.reading(state, ordinal, path, node, accesses);
         let probe = self.memory.observe(&state.memory, path, &state.model);
-        let applications =
-            self.model
-                .apply_operation(&probe, &operation, &select, &mut gathered.budget)?;
+        let attempt_tag = format!("{node:?}");
+        let applications = self.model.apply_attempt(
+            &attempt_tag,
+            &probe,
+            &operation,
+            &select,
+            None,
+            &mut gathered.budget,
+        )?;
         gathered.findings.extend(applications.findings);
         let mut observations: Vec<Observation<'_>> = applications
             .successors
@@ -1243,10 +1251,12 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         // each message separately.
         for (location, reads) in &reading {
             for read in reads {
-                let applications = self.model.apply_operation(
+                let applications = self.model.apply_attempt(
+                    &attempt_tag,
                     &read.observed,
                     &operation,
                     &select,
+                    None,
                     &mut gathered.budget,
                 )?;
                 gathered.findings.extend(applications.findings);

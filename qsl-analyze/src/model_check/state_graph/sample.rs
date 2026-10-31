@@ -15,7 +15,7 @@
 
 use std::collections::BTreeMap;
 
-use qsl_eval::simulation::model::{sample_model_walk, ModelSystem, PredicateReading};
+use qsl_eval::simulation::model::{sample_model_walk, ModelSystem, PredicateReading, WalkMemo};
 use qsl_eval::simulation::{NotSimulated, SampleProvenance, StopReason, TransitionSystem};
 use qsl_foundation::selection::DefinitionRef;
 use qsl_replay::{
@@ -88,6 +88,8 @@ pub(super) struct Phase<'r, 'a> {
     pub(super) seed: u64,
     pub(super) cancel: &'r Cancel,
     pub(super) budgets: Budgets,
+    /// The expansions phase 0's walks share: each state is expanded once.
+    pub(super) walks: WalkMemo,
 }
 
 impl Phase<'_, '_> {
@@ -208,6 +210,7 @@ impl Phase<'_, '_> {
             self.seed,
             trace,
             step_ceiling(self.limits, self.horizon),
+            Some(&self.walks),
             |state| {
                 let here = position;
                 position += 1;

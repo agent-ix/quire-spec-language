@@ -10,6 +10,9 @@ use qsl_semantics::model::observation::Observation;
 use quire_exact::{EffectiveId, NodeKey};
 use quire_semantic_value::model_transition::ModelTransition;
 
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Mutex;
+
 use super::walk::{rows_of, sorted_contract_findings, walk_of, Applied, Budget, Row, Walk};
 use super::{contracts, frames, Application, ModelFinding, ModelSimState, ModelSystem};
 use crate::simulation::expansion::ExpansionStop;
@@ -27,6 +30,7 @@ pub(crate) struct OperationRef<'o> {
 }
 
 /// The successors and contract findings of one attempt's applications.
+#[derive(Clone)]
 pub(crate) struct Applications {
     /// Every successor, receivers in ascending (population, key) order.
     pub(crate) successors: Vec<Applied>,
@@ -295,5 +299,150 @@ impl<'a> ModelSystem<'a> {
             );
         }
         Ok(FirstApplication::None)
+    }
+}
+
+/// What one attempt's application of an observed state came to: the memo key
+/// is the observed state's key and anchor, the attempt (its operation and the
+/// clauses it selects are the attempt's alone) and the transition identities
+/// the caller checks.
+type AppliedAt = (
+    Vec<u8>,
+    String,
+    String,
+    Option<BTreeSet<ModelTransition>>,
+    bool,
+);
+
+/// A memoized application and the candidates it charged.
+enum AppliedKind {
+    Applications(Applications),
+    Enabled(Vec<ModelTransition>),
+}
+
+/// The applications of one run's attempts. An application is a function of
+/// the observed state, the attempt and the checked identities (each call
+/// draws its own budget), so a state seen again gives the same result, and
+/// the candidates it charged are charged again. The system owns the memo, so
+/// it lives and dies with the run.
+#[derive(Default)]
+pub(crate) struct AppliedMemo {
+    applied: Mutex<BTreeMap<AppliedAt, (AppliedKind, u64)>>,
+}
+
+impl ModelSystem<'_> {
+    /// [`Self::apply_operation_matching`] for the attempt `attempt`, whose
+    /// `operation` and `select` it names, remembered per observed state.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::apply_operation_matching`].
+    pub(crate) fn apply_attempt(
+        &self,
+        attempt: &str,
+        observed: &ModelSimState,
+        operation: &OperationRef<'_>,
+        select: &dyn Fn(NodeKey) -> bool,
+        selected_transitions: Option<&BTreeSet<ModelTransition>>,
+        budget: &mut Budget,
+    ) -> Result<Applications, ExpansionStop> {
+        let at = self.applied_at(attempt, observed, selected_transitions, false);
+        if let Some(at) = &at {
+            if let Some((AppliedKind::Applications(found), charged)) = self.lock_applied().get(at) {
+                budget.charge_many(usize::try_from(*charged).unwrap_or(usize::MAX))?;
+                return Ok(found.clone());
+            }
+        }
+        let before = budget.used();
+        let applications = self.apply_operation_matching(
+            observed,
+            operation,
+            select,
+            selected_transitions,
+            budget,
+        )?;
+        if let Some(at) = at {
+            self.lock_applied().insert(
+                at,
+                (
+                    AppliedKind::Applications(applications.clone()),
+                    budget.used() - before,
+                ),
+            );
+        }
+        Ok(applications)
+    }
+
+    /// [`Self::enabled_transitions_matching`] for the attempt `attempt`,
+    /// remembered per observed state.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::enabled_transitions_matching`].
+    pub(crate) fn enabled_attempt(
+        &self,
+        attempt: &str,
+        observed: &ModelSimState,
+        operation: &OperationRef<'_>,
+        select: &dyn Fn(NodeKey) -> bool,
+        selected_transitions: Option<&BTreeSet<ModelTransition>>,
+        budget: &mut Budget,
+    ) -> Result<Vec<ModelTransition>, ExpansionStop> {
+        let at = self.applied_at(attempt, observed, selected_transitions, true);
+        if let Some(at) = &at {
+            if let Some((AppliedKind::Enabled(found), charged)) = self.lock_applied().get(at) {
+                budget.charge_many(usize::try_from(*charged).unwrap_or(usize::MAX))?;
+                return Ok(found.clone());
+            }
+        }
+        let before = budget.used();
+        let enabled = self.enabled_transitions_matching(
+            observed,
+            operation,
+            select,
+            selected_transitions,
+            budget,
+        )?;
+        if let Some(at) = at {
+            self.lock_applied().insert(
+                at,
+                (
+                    AppliedKind::Enabled(enabled.clone()),
+                    budget.used() - before,
+                ),
+            );
+        }
+        Ok(enabled)
+    }
+
+    fn lock_applied(&self) -> std::sync::MutexGuard<'_, BTreeMap<AppliedAt, (AppliedKind, u64)>> {
+        self.applied
+            .applied
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// The memo key of `attempt` at `observed`; `None` when the state has no
+    /// key, which is then not remembered.
+    fn applied_at(
+        &self,
+        attempt: &str,
+        observed: &ModelSimState,
+        selected_transitions: Option<&BTreeSet<ModelTransition>>,
+        enabled_only: bool,
+    ) -> Option<AppliedAt> {
+        let key = super::encode::model_key(&self.model, &observed.state, self.typing());
+        let bytes = quire_canonical::to_vec(
+            &key,
+            quire_canonical::Limits::new(super::identity_limits().input_bytes),
+        )
+        .ok()?;
+        Some((
+            bytes,
+            format!("{:?}", observed.anchor),
+            attempt.to_owned(),
+            selected_transitions.cloned(),
+            enabled_only,
+        ))
     }
 }
