@@ -1508,9 +1508,9 @@ fn multi_initial_sample_starts_at_trace_index_mod_m() {
 }
 
 /// TC-454 step 7, FR-101-AC-5: an unaltered trace replays; a shared-identity
-/// step replays by taking the successor whose digest matches; a non-first
-/// initial state is found by its digest; and each of a tampered initial
-/// digest, transition and step digest refuses at that exact step.
+/// step replays by transition identity and then the recorded ordinal; a
+/// non-first initial state is found by its recomputed key; and each of a
+/// tampered initial key and tampered transition refuses at that exact step.
 #[trace("TC-454", "FR-101-AC-5")]
 #[test]
 fn sample_then_replay_round_trips_and_refuses_tampered_traces() {
@@ -1519,9 +1519,10 @@ fn sample_then_replay_round_trips_and_refuses_tampered_traces() {
         vec![("0", op("recv"), "1"), ("0", op("recv"), "2")],
     );
     // Seed 2 draws index 1 (recomputed independently), the second-listed
-    // `recv` edge to "2": this is what makes the test discriminate a
-    // replay that only takes the first matching-identity successor from a
-    // replay that matches by digest, per FR-101-AC-5.
+    // `recv` edge to "2", recorded as ordinal 1: this is what makes the
+    // test discriminate a replay that only takes the first
+    // matching-identity successor from a replay that selects by ordinal,
+    // per FR-101-AC-5.
     let sampled = sample_request(
         &duplicate_ids,
         NO_DOMAINS,
@@ -1535,6 +1536,7 @@ fn sample_then_replay_round_trips_and_refuses_tampered_traces() {
     )
     .expect("a bounded, generator-matched sample");
     assert_eq!(sampled.steps[0].key, key("2"));
+    assert_eq!(sampled.steps[0].ordinal, 1);
     assert_eq!(
         replay(&duplicate_ids, &sampled, IdentityLimits::default()),
         Ok(())
