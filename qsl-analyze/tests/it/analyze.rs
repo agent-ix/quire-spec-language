@@ -655,7 +655,7 @@ fn provider_entry_refuses_undeclared_population_before_running_items_in_input_or
     assert_eq!(
         records
             .iter()
-            .map(|record| record.request_index)
+            .map(|record| record.request_index())
             .collect::<Vec<_>>(),
         [index(1), index(0)]
     );
