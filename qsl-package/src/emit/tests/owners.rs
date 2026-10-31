@@ -412,3 +412,35 @@ fn model_declaration_nodes_and_clause_functions_carry_their_model_owner() {
         "the clause functions are owned by their operation members"
     );
 }
+
+/// FR-092-AC-8: a source enum and its members are written with structural
+/// ids, the declaration path and the source owner.
+#[trace("FR-092-AC-8", "TC-413")]
+#[test]
+fn a_source_enum_and_member_carry_structural_ids_path_and_source_owner() {
+    let status = status_enum(
+        json!({"kind": "source", "authority": "a", "identity": "u", "package_name": "pkg"}),
+        "Status",
+    );
+    let package = declared_types(vec![status], Vec::new());
+    let emission = emit(&package);
+    assert_eq!(emission.omitted, []);
+    verified(&emission);
+    let wire = wire(&emission);
+    let declaration = declared(&wire, "Status");
+    assert_eq!(
+        declaration["declaration"]["qualified_name"],
+        json!(["Status"])
+    );
+    assert_eq!(declaration["owner"], owner_json("a", "u"));
+    let members: Vec<&Value> = nodes(&wire)
+        .iter()
+        .filter(|node| node["semantic_form"] == "enum_value")
+        .collect();
+    assert_eq!(members.len(), 2);
+    for node in std::iter::once(declaration).chain(members) {
+        qsl_foundation::node_wire::node_key_from_json(&node["node_id"])
+            .expect("a structural node id");
+        assert!(node.get("nominal_identity_preimage").is_none());
+    }
+}
