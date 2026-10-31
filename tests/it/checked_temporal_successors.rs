@@ -286,6 +286,53 @@ fn checked_activation_keeps_siblings_and_capture_identity() {
     assert_eq!(active.captures[0].value, "7");
 }
 
+/// FR-046-AC-5: an aggregate whose proof representation has not been
+/// transferred is a typed unsupported result, with no partial evaluation or
+/// charge artifact.
+#[trace("TC-127", "TC-128", "FR-046-AC-5")]
+#[test]
+fn checked_aggregate_proof_is_explicitly_unsupported_before_charging() {
+    let packages =
+        qsl_semantics::model::intake::package_input([tests_fixture_spine_model().as_slice()])
+            .expect("checked model fixture");
+    let source = r#"
+language "ix:native" edition "1-draft";
+profile v = "quire.model.complete/v1";
+profile t = "quire.temporal.event-position.false-extension/v1";
+model M = "acme/orders";
+temporal Due using t over (value: Int[0,9]) clock "orders" on origin {
+    always[0,2] count over past[0,3] >= 1
+}
+"#;
+    let checked = crate::support::front_end::checked(
+        SourceIdentity::new(
+            "agent-ix",
+            "test:checked-temporal-aggregate",
+            "fixture",
+            "1",
+        ),
+        "checked-temporal-aggregate.native",
+        source.as_bytes(),
+        &packages,
+        &DependencyInput::default(),
+    )
+    .expect("S1-S4 retain checked aggregate formula");
+    let report = temporal::evaluate_checked(
+        checked.package(),
+        0,
+        &origin_trace(),
+        temporal::Limits::default(),
+    );
+    assert!(matches!(
+        report.result(),
+        Err(temporal::Error::Unsupported(
+            quire_spec_language::checking::composed::proofs::Unsupported::ValueRepresentation
+        ))
+    ));
+    assert_eq!(report.usage().positions, 0);
+    assert_eq!(report.usage().valuations, 0);
+}
+
 /// FR-043: checked profile and clock identity are authenticated before any
 /// position work, and a missing required valuation is unavailable rather than
 /// a false truth.
