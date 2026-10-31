@@ -148,7 +148,9 @@ pub fn admit_protocol_observation<'view>(
     snapshots: &BTreeMap<DocumentRef, Vec<u8>>,
     selected: &DocumentRef,
     limits: ObservationLimits,
-) -> qsl_package::observation::ProtocolObservationAdmission<'view>;
+) -> quire_semantic_value::admission::ObservationAdmission<
+    qsl_package::observation::AdmittedProtocolObservation<'view>,
+>;
 ```
 
 The entry SHALL reuse FR-106 current-snapshot admission with no clause,
@@ -167,26 +169,22 @@ S6a charges. The authority SHALL expose `usage(&self) -> AdmissionUsage`,
 `identity(&self) -> &DocumentRef`, `model_selection(&self) -> &DomainPackageRef`
 and `environment(&self) -> &ObjectEnvironment` as read-only accessors.
 
-The canonical QSL-owned observation-result API SHALL be
-`qsl_package::observation::ProtocolObservationAdmission<'view>` with exactly
-these arms, implementing shared
-[FR-130](ix://agent-ix/quire-semantic-value/FR-130):
+The observation result SHALL be the existing QSV
+`quire_semantic_value::admission::ObservationAdmission<T>`, specialized with
+`T = qsl_package::observation::AdmittedProtocolObservation<'view>`, as shared
+[FR-130](ix://agent-ix/quire-semantic-value/FR-130) defines. Its existing
+`Admitted(T)`, `Refused(AdmissionRecord)`, `Incomplete(AdmissionRecord)` and
+`Fault(InternalFault)` arms SHALL retain their payloads unchanged. The existing
+`authority(&self) -> Result<&T, &Self>` method SHALL expose the admitted
+authority or the original non-admitted arm; QSL SHALL NOT implement another
+authority query or flatten that result to `None`.
 
-```rust
-pub enum ProtocolObservationAdmission<'view> {
-    Admitted(AdmittedProtocolObservation<'view>),
-    Refused(quire_semantic_value::admission::AdmissionRecord),
-    Incomplete(quire_semantic_value::admission::AdmissionRecord),
-    Fault(quire_semantic_value::catalog::InternalFault),
-}
-```
-
-Its `authority(&self) -> Result<&AdmittedProtocolObservation<'view>, &Self>`
-SHALL return the borrowed authority for `Admitted`, and the original borrowed
-non-admitted arm for every other result. It SHALL NOT flatten absence of
-authority to `None`. The enum is the observation-admission result, not a copy
-of `CallAdmissionFailure`: the only input-path record and nested path types
-are QSV's, and `InternalFault` remains the existing fault vocabulary.
+Layer-4 `qsl-package` SHALL import this generic directly from QSV. It SHALL
+declare no observation-result enum or result alias and SHALL NOT import the
+generic through `quire-eval`'s re-export. The authority and its factory remain
+QSL layer-4 responsibilities; QSV owns the result, record and path vocabulary,
+and `InternalFault` remains the existing fault vocabulary. This factory SHALL
+introduce no layer-4 dependency on `quire-eval`.
 
 An authority SHALL expose read accessors only: no public fields, mutable
 environment, mutable completeness flag, mutable model provenance or mutable
@@ -223,8 +221,8 @@ second evaluator checker, a new document reader or a new refusal vocabulary.
 Shared FR-130 governs the QSV record and `quire-eval`'s downstream call-record
 and population-locus transport; QSL owns the observation API above and the
 admission decision. Runtime delivery of that consumer transport is an
-implementation dependency tracked as IR-1199, distinct from IR-1198's shared
-record contract. This requirement defines no future `quire-eval` field
+implementation dependency tracked as IR-1199; IR-1200 governs direct QSV
+result ownership below both consumers. This requirement defines no future `quire-eval` field
 or variant spelling. Complete AC-6 transport requires the full shared record
 and population node; a flattened binder locus is not a replacement for them.
 
@@ -1233,7 +1231,7 @@ required; check 10 settles it.
 | FR-106-AC-60 | Over TC-1171's numeric fixture (also declaring `names: Set<String>[0, 4]`, `notes: Set<Option<String>>[0, 2]` and `lines: OrderedSet<String>[0, 3]`), a current snapshot whose `t1` holds `names` `{"set": [b, "", "\u00e9", "e\u0301"]}` (each as a String object) admits four members, the composed and the decomposed spelling of `é` being two, written `[{"kind":"string","text":""},{"kind":"string","text":"b"},{"kind":"string","text":"e\u0301"},{"kind":"string","text":"\u00e9"}]` ordered by those bytes; `notes` `{"set": [{"present": {"kind":"string","text":"x"}}, {"absent": {}}]}` is written `[{"absent":{}},{"present":{"kind":"string","text":"x"}}]`; `lines` keeps its order. `names` holding `a` twice and `lines` holding `a` twice refuse `invalid_runtime_input`/`duplicate-member` at element 1 naming element 0; a Text object `{"kind":"text","text":"a"}` as an element of `names`, a UUID object, and `{"kind":"string","text":1}` refuse `wrong-value-kind` at element 0, the last naming `text`; `names` with five elements refuses `cardinality_out_of_bound`/`above-maximum` before any element is read. A `retag` invocation whose post `names` holds the pre members in another order is no change, and one whose post `names` replaces U+00E9 by U+0065 U+0301 refuses `frame_violation`/`unauthorized-change` naming `t1` and `names`. | Test (TC-1171) |
 | FR-106-AC-61 | A snapshot whose object type has fields `blob: Bytes`, `doc: JsonObject` and `span: Duration` (the unit of compilation declaring `dimension Time; unit s : Time = rational(1, 1);`) admits `blob` `{"kind":"bytes","text":"00ff"}`, `doc` `{"kind":"json_object","text":"{\"a\":1}"}` and `span` as the quantity form of `3/2` over `s`, and two snapshots differing only in JSON member order of the enclosing document have one typed observation. `blob` `00FF`, `doc` `{"a": 1}` refuse `invalid_runtime_input`/`invalid-value`; the Bytes object in `doc`, the JsonObject object in `blob` and a String object in either refuse `wrong-value-kind`; an object with an extra member or a non-string `text` refuses as the String object does. | Test (TC-1231) |
 
-| FR-106-AC-62 | A current snapshot admitted through the view entry returns `ProtocolObservationAdmission::Admitted`; its authority retains the exact selected model, document identity, population manifest/bundles and admission usage after the caller drops the provisions. Public struct construction, mutation of its environment or completeness/provenance, and conversion from a caller-built `Observation` fail to compile; reading the documented accessors compiles. | Test |
+| FR-106-AC-62 | A current snapshot admitted through the view entry returns QSV `ObservationAdmission::Admitted`; its authority retains the exact selected model, document identity, population manifest/bundles and admission usage after the caller drops the provisions. Public struct construction, mutation of its environment or completeness/provenance, and conversion from a caller-built `Observation` fail to compile; reading the documented accessors compiles. The factory's result type is QSV's generic specialized to the opaque QSL authority; no local result declaration/alias or layer-4 dependency on `quire-eval` exists. | Test |
 | FR-106-AC-63 | A snapshot of another model yields `Refused` with the original QSV `AdmissionRecord` and `invalid_model_binding`/`wrong-model-selection`; a nested-value refusal preserves every `catalog`, `fields`, `path` and `kernel` component. `authority()` on `Refused`, `Incomplete` and `Fault` returns that same distinct arm and payload; `Fault` preserves the original `InternalFault`. The QSL admission implementation uses QSV's record/path types with no local copies. | Test |
 | FR-106-AC-64 | Over TC-1071 row 20, an authority retaining `n5` but marking its required `nodes` population incomplete yields `incomplete_population`/`incomplete-scope` naming that population's exact node, before any dangling check. With `nodes` complete and a second unreferenced population incomplete, the same supplied source admits. A recursively required incomplete population is reported in FR-106 walk order; completing it exposes any subsequent check-8 dangling defect. | Test |
 

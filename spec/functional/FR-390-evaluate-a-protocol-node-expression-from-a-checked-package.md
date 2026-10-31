@@ -116,8 +116,8 @@ names the counter or the value that stopped the evaluation.
     (a Boolean, an integer, a record, a reference to an object of the supplied
     observation, an option or a sequence of those) or `Unavailable(cause)`. A
     captured value is supplied under its capture's binder key;
-  - `observation`: `Option<&'a ProtocolObservationAdmission<'a>>`, using the
-    one `qsl_package::observation` result defined by FR-106. Its `Admitted`
+  - `observation`: `Option<&'a quire_semantic_value::admission::ObservationAdmission<qsl_package::observation::AdmittedProtocolObservation<'a>>>`,
+    using QSV's existing generic directly as FR-106 defines. Its `Admitted`
     arm carries a current-snapshot authority for the evaluated view and the
     protocol's selected model; its other arms retain the original admission
     result. It is required exactly when a supplied source value contains a
