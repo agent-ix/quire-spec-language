@@ -14,6 +14,7 @@ use qsl_replay::statistical::StatisticalLimits;
 use qsl_replay::TerminalRecord;
 use qsl_semantics::check::CheckedProbabilisticClaim;
 use quire_exact::Cancel;
+use quire_semantic_value::catalog::CatalogCode;
 
 /// An EN-4 claim and its sampling settings, without the subject supplied by
 /// the provider request.
